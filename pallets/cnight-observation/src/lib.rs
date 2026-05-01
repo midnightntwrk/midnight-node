@@ -591,6 +591,27 @@ pub mod pallet {
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
 
+			// While a multi-block migration of `Mapping` is still draining v0 storage,
+			// `unique_dust_key` (and therefore `handle_registration`,
+			// `handle_registration_removal`, `handle_create`) reads only v1, missing
+			// any v0 row that hasn't been moved yet. Acting on that partial view would
+			// silently corrupt registration state — e.g. a deregistration whose v0
+			// row is still pending would no-op here and then re-appear as live once
+			// the migration drains it. Skip processing entirely; `NextCardanoPosition`
+			// stays unchanged so the next block's inherent re-presents the same UTXOs
+			// (plus any new ones) and we resume once the migration finishes.
+			if Pallet::<T>::on_chain_storage_version() < STORAGE_VERSION {
+				log::warn!(
+					"cnight-observation: skipping process_tokens (on-chain storage version {:?} < {:?}); MBM in progress",
+					Pallet::<T>::on_chain_storage_version(),
+					STORAGE_VERSION,
+				);
+				return Ok(PostDispatchInfo {
+					actual_weight: Some(T::DbWeight::get().reads_writes(2, 1)),
+					pays_fee: Pays::No,
+				});
+			}
+
 			let prev = NextCardanoPosition::<T>::get();
 			ensure!(next_cardano_position >= prev, Error::<T>::CardanoPositionRegression);
 			let jump = next_cardano_position.block_number.saturating_sub(prev.block_number);

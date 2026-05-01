@@ -1540,6 +1540,89 @@ fn position_guard_works_with_utxos_present() {
 	});
 }
 
+/// While the v0 -> v1 MBM is still draining, `process_tokens` must short-circuit:
+/// reading only v1 mid-migration would silently corrupt registration state for any
+/// reward address whose v0 row hasn't been moved yet (e.g. a deregistration would
+/// no-op here and then re-appear as live once the migration completes).
+///
+/// This test forces `on_chain_storage_version` back to 0 to simulate a block where
+/// the MBM is mid-flight, then asserts that an inherent carrying real UTXOs:
+/// - leaves `NextCardanoPosition` unchanged,
+/// - writes nothing to `Mapping`,
+/// - emits no pallet events.
+/// After flipping the version to 1 (migration complete), the same call processes
+/// normally and updates state.
+#[test]
+fn process_tokens_skips_during_mbm_then_resumes() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// Simulate mid-MBM: storage version still at 0.
+		StorageVersion::new(0).put::<CNightObservation>();
+
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+		let utxos = vec![ObservedUtxo {
+			header: test_header(10, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key: dust_public_key.clone(),
+			}),
+		}];
+
+		let position_before = NextCardanoPosition::<Test>::get();
+
+		let inherent = create_inherent(utxos.clone(), test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(
+			NextCardanoPosition::<Test>::get(),
+			position_before,
+			"NextCardanoPosition must not advance during MBM",
+		);
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
+			0,
+			"no Mapping rows must be written during MBM",
+		);
+		assert!(
+			!any_event(|e| matches!(
+				e,
+				RuntimeEvent::CNightObservation(_) | RuntimeEvent::MidnightSystem(_),
+			)),
+			"no pallet events must be emitted during MBM",
+		);
+
+		// Duplicate-inherent guard still holds during MBM: the gate runs after the
+		// `InherentExecutedThisBlock` check, so a second dispatch in the same block
+		// is rejected as before.
+		let dup = Call::process_tokens {
+			utxos: utxos.clone(),
+			next_cardano_position: test_position(10, 1),
+		};
+		assert_noop!(
+			RuntimeCall::CNightObservation(dup).dispatch(RawOrigin::None.into()),
+			Error::<Test>::InherentAlreadyExecuted,
+		);
+
+		advance_block_and_reset_events();
+
+		// Migration completes: storage version flips to 1; the next inherent
+		// processes the same UTXOs normally.
+		StorageVersion::new(1).put::<CNightObservation>();
+
+		let inherent = create_inherent(utxos, test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(NextCardanoPosition::<Test>::get(), test_position(10, 1));
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect::<Vec<_>>(),
+			vec![dust_public_key],
+		);
+	});
+}
+
 #[test]
 fn position_guards_hold_across_multiple_advances() {
 	new_test_ext().execute_with(|| {
