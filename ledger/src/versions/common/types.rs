@@ -553,6 +553,14 @@ impl From<LedgerApiError> for u8 {
 	}
 }
 
+/// u8 codes that were assigned in earlier revisions and shipped on `main`,
+/// but are no longer produced by `From<LedgerApiError> for u8`. Do not reuse
+/// these values for new variants — they were observable to mempool clients
+/// (via `InvalidTransaction::Custom`) and reuse would silently collide on
+/// the wire. Pick a fresh code instead. See `retired_codes_are_not_reused`.
+#[allow(dead_code)]
+const RETIRED_U8_ERROR_CODES: &[u8] = &[168, 182, 186, 187, 188, 193, 205];
+
 // Implement the `std::error::Error` trait only when `std` is enabled.
 #[cfg(feature = "std")]
 impl std::error::Error for LedgerApiError {}
@@ -605,6 +613,18 @@ mod tests {
 		let mut prefix = Vec::with_capacity(MAX_DEPTH);
 		recurse(&mut prefix, &mut result);
 		result
+	}
+
+	#[test]
+	fn retired_codes_are_not_reused() {
+		for error in all_ledger_api_errors() {
+			let desc = format!("{error}");
+			let code: u8 = error.into();
+			assert!(
+				!RETIRED_U8_ERROR_CODES.contains(&code),
+				"retired error code {code} reused by '{desc}'",
+			);
+		}
 	}
 
 	#[test]
