@@ -17,6 +17,7 @@ import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
 import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { snapshot } from "./commands/snapshot";
+import { verifyFinality } from "./commands/verifyFinality";
 import {
   RunOptions,
   ImageUpgradeOptions,
@@ -174,6 +175,41 @@ program
   .action(async (network: string, options: RunOptions) => {
     await stop(network, options);
   });
+
+program
+  .command("verify-finality <network>")
+  .option(
+    "-b, --target-block <number>",
+    "Wait until every node has finalized at least this block number",
+    "1",
+  )
+  .option(
+    "-t, --timeout <seconds>",
+    "Maximum seconds to wait before failing",
+    "300",
+  )
+  .description(
+    "Wait for every validator in the named network to finalize a block — fails if GRANDPA stalls",
+  )
+  .action(
+    async (
+      network: string,
+      cliOpts: { targetBlock: string; timeout: string },
+    ) => {
+      const targetBlock = Number.parseInt(cliOpts.targetBlock, 10);
+      const timeoutSec = Number.parseInt(cliOpts.timeout, 10);
+      if (!Number.isFinite(targetBlock) || targetBlock < 0) {
+        throw new Error(`Invalid --target-block: ${cliOpts.targetBlock}`);
+      }
+      if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) {
+        throw new Error(`Invalid --timeout: ${cliOpts.timeout}`);
+      }
+      await verifyFinality(network, {
+        targetBlock,
+        timeoutMs: timeoutSec * 1_000,
+      });
+    },
+  );
 
 program
   .command("governance-runtime-upgrade <network>")
