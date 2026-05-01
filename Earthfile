@@ -1556,6 +1556,50 @@ extract-toolkit-artifacts:
     USER root
     SAVE ARTIFACT /midnight-node-toolkit AS LOCAL artifacts-$NATIVEARCH/midnight-node-toolkit
 
+# sync-mainnet-1000-snapshot generates a minimal cexplorer snapshot from
+# a host-local cardano db-sync. The host must expose db-sync on the address
+# given by SOURCE_DSN (default: 127.0.0.1:10010). The snapshot is saved as
+# a local artifact for re-use by +sync-mainnet-1000.
+sync-mainnet-1000-snapshot:
+    LOCALLY
+    ARG SOURCE_DSN=postgres://127.0.0.1:10010/cexplorer
+    ARG MIN_BLOCK_NO=13160000
+    ARG MAX_BLOCK_NO=13180000
+    ARG MIN_EPOCH=617
+    RUN mkdir -p artifacts/sync-test
+    RUN SOURCE_DSN=$SOURCE_DSN \
+        MIN_BLOCK_NO=$MIN_BLOCK_NO \
+        MAX_BLOCK_NO=$MAX_BLOCK_NO \
+        MIN_EPOCH=$MIN_EPOCH \
+        OUTPUT=artifacts/sync-test/snapshot.sql.xz \
+        ./scripts/sync-test/build-snapshot.sh
+
+# sync-mainnet-1000 runs a fresh midnight-node against a self-contained
+# postgres preloaded with a local cardano-db-sync snapshot, and verifies
+# the node syncs the first 1000 blocks of Midnight Mainnet.
+#
+# Requires:
+#   - host db-sync available at SOURCE_DSN (default 127.0.0.1:10010, cardano mainnet)
+#   - docker available locally (the target uses WITH DOCKER)
+#
+# Usage:
+#   earthly -P +sync-mainnet-1000
+sync-mainnet-1000:
+    LOCALLY
+    ARG SOURCE_DSN=postgres://127.0.0.1:10010/cexplorer
+    ARG SYNC_UNTIL=1000
+    ARG NODE_IMAGE_TAG=localhost/midnight-node:sync-test
+    ARG SYNC_TIMEOUT_SECS=1800
+    BUILD +sync-mainnet-1000-snapshot --SOURCE_DSN=$SOURCE_DSN
+    WITH DOCKER --load $NODE_IMAGE_TAG=+node-image
+        RUN NODE_IMAGE=$NODE_IMAGE_TAG \
+            SNAPSHOT=artifacts/sync-test/snapshot.sql.xz \
+            CFG_PRESET=mainnet \
+            SYNC_UNTIL=$SYNC_UNTIL \
+            SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+            ./scripts/sync-test/run-sync.sh
+    END
+
 #images Build all the images
 images:
     FROM scratch
