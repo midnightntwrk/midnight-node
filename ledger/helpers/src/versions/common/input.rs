@@ -20,12 +20,12 @@ use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShieldedCoinSelectionError {
-	#[error("arithmetic overflow in shielded coin selection")]
-	ArithmeticOverflow,
 	#[error(
 		"insufficient shielded coins: need {required} of token {token_type:?} from seed {seed:?}"
 	)]
 	InsufficientBalance { required: u128, token_type: ShieldedTokenType, seed: WalletSeed },
+	#[error("arithmetic overflow in shielded coin selection")]
+	ArithmeticOverflow,
 }
 
 #[derive(Clone, Copy)]

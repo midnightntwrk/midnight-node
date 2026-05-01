@@ -28,14 +28,14 @@ pub struct PinnedUtxoNotFound {
 
 #[derive(Debug, thiserror::Error)]
 pub enum UtxoSelectionError {
-	#[error("arithmetic overflow in UTXO selection")]
-	ArithmeticOverflow,
 	#[error("insufficient UTXOs: need {required} of token {token_type:?} from seed {seed:?}")]
 	InsufficientBalance { required: u128, token_type: UnshieldedTokenType, seed: WalletSeed },
 	#[error("no UTXO of token {token_type:?} with value >= {min_value} for seed {seed:?}")]
 	NoMatchingUtxo { min_value: u128, token_type: UnshieldedTokenType, seed: WalletSeed },
 	#[error("pinned UTXO not found: {0:?}")]
 	PinnedUtxoNotFound(Box<PinnedUtxoNotFound>),
+	#[error("arithmetic overflow in UTXO selection")]
+	ArithmeticOverflow,
 }
 
 pub struct UtxoSpendInfo<O> {
