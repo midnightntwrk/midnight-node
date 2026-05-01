@@ -339,6 +339,7 @@ mod tests {
 			vec![wallet1, wallet2],
 			u128::MAX,
 			token_type,
+			&[],
 		);
 
 		assert!(matches!(result, Err(UtxoSelectionError::ArithmeticOverflow)));
