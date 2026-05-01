@@ -312,10 +312,17 @@ pub mod pallet {
 		const INHERENT_IDENTIFIER: InherentIdentifier = INHERENT_IDENTIFIER;
 
 		fn create_inherent(data: &InherentData) -> Option<Self::Call> {
-			Self::get_data_from_inherent_data(data).map(|data| Call::process_tokens {
-				utxos: data.utxos,
-				next_cardano_position: data.next_cardano_position,
-			})
+			match Self::get_data_from_inherent_data(data) {
+				Ok(Some(data)) => Some(Call::process_tokens {
+					utxos: data.utxos,
+					next_cardano_position: data.next_cardano_position,
+				}),
+				Ok(None) => None,
+				Err(e) => {
+					log::error!(target: "cnight-observation", "Failed to decode inherent data: {e:?}");
+					None
+				},
+			}
 		}
 
 		fn check_inherent(call: &Self::Call, data: &InherentData) -> Result<(), Self::Error> {
@@ -323,7 +330,7 @@ pub mod pallet {
 				return Ok(());
 			};
 
-			let parsed = Self::get_data_from_inherent_data(data).ok_or(InherentError::Other)?;
+			let parsed = Self::get_data_from_inherent_data(data)?.ok_or(InherentError::Other)?;
 			if parsed.utxos != *utxos || parsed.next_cardano_position != *next_cardano_position {
 				return Err(InherentError::Other);
 			}
@@ -335,25 +342,17 @@ pub mod pallet {
 		}
 
 		fn is_inherent_required(data: &InherentData) -> Result<Option<Self::Error>, Self::Error> {
-			Ok(if Self::get_data_from_inherent_data(data).is_some() {
-				Some(InherentError::Missing)
-			} else {
-				None
-			})
+			let data = Self::get_data_from_inherent_data(data)?;
+			Ok(if data.is_some() { Some(InherentError::Missing) } else { None })
 		}
 	}
 
 	impl<T: Config> Pallet<T> {
-		// Intentionally panic on codec error. Inherent data is produced by the node's own
-		// inherent data provider — a decoding failure here indicates a node-internal programming
-		// error, not malformed external input. Silently returning None would drop token movements
-		// for the entire block, a strictly worse failure mode than surfacing the error immediately.
-		#[allow(clippy::unwrap_in_result)]
 		fn get_data_from_inherent_data(
 			data: &InherentData,
-		) -> Option<MidnightObservationTokenMovement> {
+		) -> Result<Option<MidnightObservationTokenMovement>, InherentError> {
 			data.get_data::<MidnightObservationTokenMovement>(&INHERENT_IDENTIFIER)
-				.expect("Token transfer data not encoded correctly")
+				.map_err(|_| InherentError::DecodeFailed)
 		}
 
 		pub fn get_registration(wallet: &CardanoRewardAddressBytes) -> Option<DustPublicKeyBytes> {

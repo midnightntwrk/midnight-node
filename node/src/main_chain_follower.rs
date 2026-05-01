@@ -32,7 +32,12 @@ use super::cfg::midnight_cfg::MidnightCfg;
 use midnight_primitives::BridgeRecipient;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
-use std::{error::Error, str::FromStr as _, sync::Arc};
+use std::{
+	error::Error,
+	str::FromStr as _,
+	sync::Arc,
+	time::{Duration as StdDuration, Instant},
+};
 
 use midnight_primitives_mainchain_follower::{
 	CNightObservationDataSourceMock, FederatedAuthorityObservationDataSource,
@@ -143,6 +148,64 @@ pub async fn create_index_if_not_exists(pool: &Pool<Postgres>) {
 	}
 }
 
+const DB_SYNC_STARTUP_PROBE_WARN_THRESHOLD: StdDuration = StdDuration::from_millis(500);
+
+async fn log_db_sync_startup_probe(block_data_source: &BlockDataSourceImpl) {
+	let latest_tip_started = Instant::now();
+	let latest_tip_result = block_data_source.get_latest_block_info().await;
+	let latest_tip_elapsed = latest_tip_started.elapsed();
+
+	let block_lookup = if let Ok(latest_tip) = &latest_tip_result {
+		let block_lookup_started = Instant::now();
+		let block_lookup_result =
+			block_data_source.get_block_by_hash(latest_tip.hash.clone()).await;
+		Some((block_lookup_started.elapsed(), block_lookup_result))
+	} else {
+		None
+	};
+
+	let latest_tip_state = match &latest_tip_result {
+		Ok(_) => "present",
+		Err(_) => "query_failed",
+	};
+	let block_lookup_state = match &block_lookup {
+		Some((_, Ok(Some(_)))) => "confirmed",
+		Some((_, Ok(None))) => "missing",
+		Some((_, Err(_))) => "query_failed",
+		None => "skipped",
+	};
+	let block_lookup_elapsed_ms = block_lookup
+		.as_ref()
+		.map(|(elapsed, _)| elapsed.as_millis().to_string())
+		.unwrap_or_else(|| "n/a".to_string());
+
+	log::info!(
+		"DB-sync startup probe: latest_tip={} ({} ms), block_lookup={} ({} ms).",
+		latest_tip_state,
+		latest_tip_elapsed.as_millis(),
+		block_lookup_state,
+		block_lookup_elapsed_ms,
+	);
+
+	let mut slow_probes = Vec::new();
+	if latest_tip_elapsed > DB_SYNC_STARTUP_PROBE_WARN_THRESHOLD {
+		slow_probes.push(format!("latest_tip={} ms", latest_tip_elapsed.as_millis()));
+	}
+	if let Some((elapsed, _)) = &block_lookup
+		&& *elapsed > DB_SYNC_STARTUP_PROBE_WARN_THRESHOLD
+	{
+		slow_probes.push(format!("block_lookup={} ms", elapsed.as_millis()));
+	}
+
+	if !slow_probes.is_empty() {
+		log::warn!(
+			"DB-sync startup probe reported slow reads (threshold: {} ms): {}.",
+			DB_SYNC_STARTUP_PROBE_WARN_THRESHOLD.as_millis(),
+			slow_probes.join(", "),
+		);
+	}
+}
+
 pub const CANDIDATES_FOR_EPOCH_CACHE_SIZE: usize = 64;
 pub const BRIDGE_TRANSFER_CACHE_LOOKAHEAD: u32 = 1000;
 
@@ -239,6 +302,7 @@ pub async fn create_cached_data_sources(
 		db_sync_block_data_source_config.clone(),
 		&mc,
 	));
+	log_db_sync_startup_probe(sidechain_block_data_source.as_ref()).await;
 	let sidechain_rpc = SidechainRpcDataSourceImpl::new(
 		sidechain_block_data_source.clone(),
 		mc_metrics_opt.clone(),
