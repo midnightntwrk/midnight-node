@@ -67,6 +67,8 @@ pub mod pallet {
 		GetTransactionContextError,
 		#[codec(index = 13)]
 		ContractNotPresent,
+		#[codec(index = 14)]
+		BeneficiaryNotFound,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
@@ -88,6 +90,7 @@ pub mod pallet {
 					Error::<T>::GetTransactionContextError
 				},
 				LedgerApiError::ContractNotPresent => Error::<T>::ContractNotPresent,
+				LedgerApiError::BeneficiaryNotFound => Error::<T>::BeneficiaryNotFound,
 			}
 		}
 	}
