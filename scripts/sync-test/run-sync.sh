@@ -77,10 +77,15 @@ exec docker-entrypoint.sh postgres \
   -c ssl_key_file=$SSL_DIR/server.key'
 
 echo "==> Starting postgres ($POSTGRES_IMAGE)..." >&2
+# --shm-size: postgres uses POSIX shared memory (/dev/shm) for parallel-query
+# scratch space. The docker default is 64 MB, which is small enough that even
+# moderate parallel scans (the cnight observation queries trigger several)
+# fail with "No space left on device" inside dsm_impl_posix.
 docker run -d --rm \
   --name "$PG_CONTAINER" \
   --network "$NETWORK_NAME" \
   --network-alias postgres \
+  --shm-size=1g \
   -e POSTGRES_PASSWORD="$PG_PASSWORD" \
   -e POSTGRES_USER=cardano \
   -e POSTGRES_DB=cexplorer \
