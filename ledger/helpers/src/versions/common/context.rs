@@ -118,11 +118,11 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let resolver = MutexTokio::new(&*DEFAULT_RESOLVER);
 
 		for seed in wallet_seeds {
-			let wallet = Wallet::default(*seed, &ledger_state);
+			let wallet = Wallet::default(seed.clone(), &ledger_state);
 			wallets
 				.lock()
 				.expect("Error locking `LedgerContext` wallets")
-				.insert(*seed, wallet);
+				.insert(seed.clone(), wallet);
 		}
 
 		Self {
@@ -447,7 +447,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let wallet = Self::wallet_for_seed(&mut wallet_guard, seed);
 
 		Wallet {
-			root_seed: wallet.root_seed,
+			root_seed: wallet.root_seed.clone(),
 			shielded: wallet.shielded.clone(),
 			unshielded: wallet.unshielded.clone(),
 			dust: wallet.dust.clone(),

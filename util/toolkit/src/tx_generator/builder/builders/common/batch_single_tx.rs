@@ -78,7 +78,7 @@ impl BatchSingleTxBuilder {
 			.funding_seed
 			.as_ref()
 			.map(|s| convert_wallet_seed(s.parse().expect("invalid funding_seed hex")))
-			.unwrap_or(source_seed);
+			.unwrap_or(source_seed.clone());
 
 		let rng_seed: Option<[u8; 32]> = spec.rng_seed.as_ref().map(|s| {
 			let bytes = hex::decode(s).expect("invalid rng_seed hex");
@@ -104,7 +104,7 @@ impl BatchSingleTxBuilder {
 
 			let intents = build_unshielded_intents(
 				context.clone(),
-				source_seed,
+				source_seed.clone(),
 				vec![dest_wallet],
 				amount,
 				token_type,

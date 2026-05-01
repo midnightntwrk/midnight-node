@@ -256,6 +256,7 @@ pub enum LedgerApiError {
 	HostApiError,
 	GetTransactionContextError,
 	ContractNotPresent,
+	BeneficiaryNotFound,
 }
 
 impl core::fmt::Display for LedgerApiError {
@@ -346,6 +347,9 @@ impl core::fmt::Display for LedgerApiError {
 			},
 			LedgerApiError::ContractNotPresent => {
 				write!(f, "Error, contract is not present")
+			},
+			LedgerApiError::BeneficiaryNotFound => {
+				write!(f, "Error, beneficiary is not found")
 			},
 		}
 	}
@@ -541,6 +545,7 @@ impl From<LedgerApiError> for u8 {
 			LedgerApiError::BlockLimitExceededError => 154,
 			LedgerApiError::FeeCalculationError => 155,
 			LedgerApiError::ContractNotPresent => 156,
+			LedgerApiError::BeneficiaryNotFound => 157,
 			LedgerApiError::GetTransactionContextError => 165,
 			// Error in the Host API, not coming from Ledger
 			LedgerApiError::HostApiError => 255,

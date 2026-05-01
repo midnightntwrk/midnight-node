@@ -26,7 +26,7 @@ pub trait BuildUtxoOutput<D: DB + Clone>: Send + Sync {
 
 impl<D: DB + Clone> BuildUtxoOutput<D> for UtxoOutputInfo<WalletSeed> {
 	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoOutput {
-		context.with_wallet_from_seed(self.owner, |wallet| UtxoOutput {
+		context.with_wallet_from_seed(self.owner.clone(), |wallet| UtxoOutput {
 			value: self.value,
 			owner: wallet.unshielded.signing_key().verifying_key().into(),
 			type_: self.token_type,

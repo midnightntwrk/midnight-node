@@ -361,7 +361,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 			let (new_spends, updated_state) =
 				wallet.dust.speculative_spend(remaining, ctime, params)?;
 			if !new_spends.is_empty() {
-				updated_states.insert(*seed, updated_state);
+				updated_states.insert(seed.clone(), updated_state);
 			}
 			for spend in new_spends {
 				remaining -= spend.v_fee;
@@ -507,28 +507,31 @@ impl<D: DB + Clone> ClaimMintInfo<D> {
 	fn build(&mut self) -> UnprovenTransaction<D> {
 		let nonce = self.rng.r#gen();
 		self.context.with_ledger_state(|ledger_state| {
-			let claim_rewards = self.context.with_wallet_from_seed(self.coin.owner, |wallet| {
-				let unsigned_claim_mint: ClaimRewardsTransaction<(), D> = ClaimRewardsTransaction {
-					network_id: ledger_state.network_id.clone(),
-					value: self.coin.value,
-					owner: wallet.unshielded.signing_key().verifying_key(),
-					nonce,
-					signature: (),
-					kind: ClaimKind::Reward,
-				};
+			let claim_rewards =
+				self.context.with_wallet_from_seed(self.coin.owner.clone(), |wallet| {
+					let unsigned_claim_mint: ClaimRewardsTransaction<(), D> =
+						ClaimRewardsTransaction {
+							network_id: ledger_state.network_id.clone(),
+							value: self.coin.value,
+							owner: wallet.unshielded.signing_key().verifying_key(),
+							nonce,
+							signature: (),
+							kind: ClaimKind::Reward,
+						};
 
-				let data_to_sign = unsigned_claim_mint.data_to_sign();
-				let signature = wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
+					let data_to_sign = unsigned_claim_mint.data_to_sign();
+					let signature =
+						wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
 
-				ClaimRewardsTransaction {
-					network_id: ledger_state.network_id.clone(),
-					value: self.coin.value,
-					owner: wallet.unshielded.signing_key().verifying_key(),
-					nonce,
-					signature,
-					kind: ClaimKind::Reward,
-				}
-			});
+					ClaimRewardsTransaction {
+						network_id: ledger_state.network_id.clone(),
+						value: self.coin.value,
+						owner: wallet.unshielded.signing_key().verifying_key(),
+						nonce,
+						signature,
+						kind: ClaimKind::Reward,
+					}
+				});
 
 			Transaction::ClaimRewards(claim_rewards)
 		})
