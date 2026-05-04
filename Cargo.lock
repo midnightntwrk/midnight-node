@@ -10514,9 +10514,9 @@ dependencies = [
 [[package]]
 name = "parity-db"
 version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6985a45b0597d68448dac9db2907f9f72bbaf63fe3383d4ba15f99096c87212f"
+source = "git+https://github.com/midnightntwrk/parity-db.git?branch=giles-overlay-ahash#3e23518b1c623dbed0cfbc8d5c8086c487452100"
 dependencies = [
+ "ahash 0.8.12",
  "blake2 0.10.6",
  "crc32fast",
  "fs2",
