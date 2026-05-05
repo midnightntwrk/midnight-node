@@ -1609,6 +1609,9 @@ sync-mainnet-1000:
     ARG NODE_IMAGE_TAG=localhost/midnight-node:sync-test
     ARG SYNC_UNTIL=1000
     ARG SYNC_TIMEOUT_SECS=1800
+    # PRINT_LOGS=1 dumps the node and postgres container logs to stderr after
+    # the run finishes (success or failure). Useful for local debugging.
+    ARG PRINT_LOGS=0
     IF echo "$NODE_IMAGE" | grep -q '^+'
         WITH DOCKER --load $NODE_IMAGE_TAG=$NODE_IMAGE
             RUN NODE_IMAGE=$NODE_IMAGE_TAG \
@@ -1616,6 +1619,7 @@ sync-mainnet-1000:
                 CFG_PRESET=mainnet \
                 SYNC_UNTIL=$SYNC_UNTIL \
                 SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+                PRINT_LOGS=$PRINT_LOGS \
                 ./scripts/sync-test/run-sync.sh
         END
     ELSE
@@ -1625,6 +1629,7 @@ sync-mainnet-1000:
                 CFG_PRESET=mainnet \
                 SYNC_UNTIL=$SYNC_UNTIL \
                 SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+                PRINT_LOGS=$PRINT_LOGS \
                 ./scripts/sync-test/run-sync.sh
         END
     END

@@ -33,6 +33,7 @@ NODE_CONTAINER=${NODE_CONTAINER:-midnight-sync-test-node}
 PG_PASSWORD=${PG_PASSWORD:-cardano}
 SYNC_TIMEOUT_SECS=${SYNC_TIMEOUT_SECS:-1800}
 STALL_TIMEOUT_SECS=${STALL_TIMEOUT_SECS:-180}
+PRINT_LOGS=${PRINT_LOGS:-0}
 
 if [[ ! -f "$SNAPSHOT" ]]; then
   echo "Snapshot file not found: $SNAPSHOT" >&2
@@ -45,8 +46,14 @@ cleanup() {
   local rc=$?
   if [[ "$KEEP_CONTAINERS" != "1" ]]; then
     echo "Cleaning up..." >&2
-    docker logs --tail 500 "$NODE_CONTAINER" >/tmp/midnight-node.log 2>&1 || true
-    docker logs --tail 500 "$PG_CONTAINER" >/tmp/midnight-pg.log 2>&1 || true
+    docker logs "$NODE_CONTAINER" >/tmp/midnight-node.log 2>&1 || true
+    docker logs "$PG_CONTAINER" >/tmp/midnight-pg.log 2>&1 || true
+    if [[ "$PRINT_LOGS" == "1" ]]; then
+      echo "==> midnight-node logs:" >&2
+      cat /tmp/midnight-node.log >&2 || true
+      echo "==> postgres logs:" >&2
+      cat /tmp/midnight-pg.log >&2 || true
+    fi
     docker rm -f "$NODE_CONTAINER" "$PG_CONTAINER" >/dev/null 2>&1 || true
     docker network rm "$NETWORK_NAME" >/dev/null 2>&1 || true
   else

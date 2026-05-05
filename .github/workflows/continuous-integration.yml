@@ -511,6 +511,16 @@ jobs:
           SYNC_TIMEOUT_SECS: "1800"
         run: bash scripts/sync-test/run-sync.sh
 
+      - name: Print sync logs
+        if: always()
+        run: |
+          echo "::group::midnight-node.log"
+          cat /tmp/midnight-node.log 2>/dev/null || echo "(no node log)"
+          echo "::endgroup::"
+          echo "::group::midnight-pg.log"
+          cat /tmp/midnight-pg.log 2>/dev/null || echo "(no postgres log)"
+          echo "::endgroup::"
+
       - name: Upload sync logs on failure
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f #v7.0.0
