@@ -224,7 +224,8 @@ mod tests {
 		// cause a panic, and the call must return None.
 		let large = u128::MAX / 2 + 1;
 		let inputs = vec![make_input(large), make_input(large), make_input(large)];
-		let result = InputInfo::select_inputs(inputs, u128::MAX, CoinSelectionStrategy::LargestFirst);
+		let result =
+			InputInfo::select_inputs(inputs, u128::MAX, CoinSelectionStrategy::LargestFirst);
 		assert!(result.is_none());
 	}
 
