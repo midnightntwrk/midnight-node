@@ -207,8 +207,10 @@ ANALYZE w_night_producers;
 -- 4. The full set of tx_outs we keep:
 --    a) at Midnight addresses (any block, for committee-selection / cnight
 --       registrations / governed-map);
---    b) every output in the detail window (for cnight asset_create at any
---       holder, and for spending-side tx_in joins);
+--    b) in-window outputs that hold a \$POLICIES token (for cnight
+--       asset_create at any holder). Non-\$POLICIES in-window outputs are
+--       unreachable: every cnight scan over a block range joins ma_tx_out
+--       and filters ma_tx_out.ident to a specific \$POLICIES asset.
 --    c) the night-producer set from #3 (for cnight asset_spend's producer
 --       join).
 CREATE TEMP TABLE k_tx_outs (id bigint PRIMARY KEY, tx_id bigint) ON COMMIT PRESERVE ROWS;
@@ -216,12 +218,14 @@ INSERT INTO k_tx_outs (id, tx_id)
   SELECT id, tx_id FROM tx_out WHERE address IN ($ADDR_LIST)
   ON CONFLICT DO NOTHING;
 INSERT INTO k_tx_outs (id, tx_id)
-  SELECT o.id, o.tx_id FROM tx_out o
-  INNER JOIN w_blocks wb ON wb.id IN (SELECT block_id FROM tx WHERE tx.id = o.tx_id)
-  WHERE EXISTS (
-    SELECT 1 FROM tx INNER JOIN w_blocks wb2 ON wb2.id = tx.block_id
-    WHERE tx.id = o.tx_id
-  )
+  SELECT DISTINCT o.id, o.tx_id FROM tx_out o
+  INNER JOIN tx t ON t.id = o.tx_id
+  WHERE t.block_id IN (SELECT id FROM w_blocks)
+    AND EXISTS (
+      SELECT 1 FROM ma_tx_out m
+      INNER JOIN multi_asset ma ON ma.id = m.ident
+      WHERE m.tx_out_id = o.id AND ma.policy IN ($POLICY_LIST)
+    )
   ON CONFLICT DO NOTHING;
 INSERT INTO k_tx_outs (id, tx_id)
   SELECT tx_out_id, tx_id FROM w_night_producers
@@ -295,8 +299,16 @@ SELECT 'COPY public.tx FROM stdin;';
 COPY (SELECT t.* FROM tx t WHERE t.id IN (SELECT id FROM k_txs)) TO STDOUT;
 SELECT '\\.';
 
+-- tx_metadata is read by exactly one query (the c2m bridge in
+-- partner-chains/toolkit/data-sources/db-sync/src/db_model.rs), and that
+-- join filters on key = TOKEN_TRANSFER_METADATUM_KEY = 6500973. All other
+-- metadata labels are unreachable.
 SELECT 'COPY public.tx_metadata FROM stdin;';
-COPY (SELECT m.* FROM tx_metadata m WHERE m.tx_id IN (SELECT id FROM w_txs)) TO STDOUT;
+COPY (
+  SELECT m.* FROM tx_metadata m
+  WHERE m.tx_id IN (SELECT id FROM w_txs)
+    AND m.key = 6500973
+) TO STDOUT;
 SELECT '\\.';
 
 SELECT 'COPY public.tx_out FROM stdin;';
@@ -322,16 +334,23 @@ COPY (
 ) TO STDOUT;
 SELECT '\\.';
 
+-- ma_tx_out / multi_asset: every consumer (cnight asset_create / asset_spend
+-- / registrations, federated_authority, governed-map) joins with a strict
+-- multi_asset.policy equality, or resolves the (policy, name) ident via
+-- MultiAssetCache, both restricted to the \$POLICIES set. Rows for any other
+-- policy are unreachable and pure bloat.
 SELECT 'COPY public.ma_tx_out FROM stdin;';
-COPY (SELECT m.* FROM ma_tx_out m WHERE m.tx_out_id IN (SELECT id FROM k_tx_outs)) TO STDOUT;
+COPY (
+  SELECT m.* FROM ma_tx_out m
+  INNER JOIN multi_asset ma ON ma.id = m.ident
+  WHERE m.tx_out_id IN (SELECT id FROM k_tx_outs)
+    AND ma.policy IN ($POLICY_LIST)
+) TO STDOUT;
 SELECT '\\.';
 
 SELECT 'COPY public.multi_asset FROM stdin;';
 COPY (
-  SELECT * FROM multi_asset WHERE id IN (
-    SELECT DISTINCT m.ident FROM ma_tx_out m
-    WHERE m.tx_out_id IN (SELECT id FROM k_tx_outs)
-  )
+  SELECT * FROM multi_asset WHERE policy IN ($POLICY_LIST)
 ) TO STDOUT;
 SELECT '\\.';
 
@@ -385,8 +404,10 @@ SELECT 'RESET session_replication_role;';
 SELECT 'ANALYZE;';
 SQL
 
-# Pipe assembled SQL through xz for shipping. xz -6 gives ~6× ratio on this
-# data; the loader (run-sync.sh) decompresses on the fly with `xz -d`.
+# Pipe assembled SQL through xz for shipping. -9 -e (extreme) buys an extra
+# few percent over -6 at the cost of more CPU; the SQL is highly repetitive
+# (COPY-tab-separated rows, hex-encoded bytea) so the bigger dictionary
+# helps. The loader (run-sync.sh) decompresses on the fly with `xz -d`.
 echo "Assembling $OUTPUT..." >&2
 {
   echo "-- Midnight Mainnet sync snapshot"
@@ -397,6 +418,6 @@ echo "Assembling $OUTPUT..." >&2
   cat "$SCHEMA_NO_FK"
   echo
   cat "$DATA_FILE"
-} | xz -6 -c >"$OUTPUT"
+} | xz -9 -e -c >"$OUTPUT"
 
 echo "Snapshot written: $OUTPUT ($(wc -c <"$OUTPUT" | awk '{printf "%.1f MB", $1/1024/1024}'))" >&2
