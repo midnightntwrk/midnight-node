@@ -250,6 +250,12 @@ pub struct SingleTxArgs {
 	/// Destination address, both shielded and unshielded
 	#[arg(long, required = true)]
 	pub destination_address: Vec<WalletAddress>,
+	/// Pin specific wallet UTXOs as inputs to the unshielded transfer. Format:
+	/// <intent_hash_hex>#<output_no>, e.g. abc123…#0. Repeatable. When set, the
+	/// toolkit skips its built-in coin selection and uses exactly these UTXOs;
+	/// their summed value must be >= --unshielded-amount * destinations.
+	#[arg(long = "input-utxo", value_parser = cli::utxo_id_decode)]
+	pub input_utxos: Vec<UtxoId>,
 	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
@@ -472,8 +478,8 @@ impl Builder {
 				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
 			},
 			Builder::SingleTx(args) => {
-				let mut seeds = vec![args.source_seed];
-				seeds.extend(args.funding_seed.iter());
+				let mut seeds = vec![args.source_seed.clone()];
+				seeds.extend(args.funding_seed.iter().cloned());
 				Ok(seeds)
 			},
 			Builder::RegisterDustAddress(args) => {
@@ -717,8 +723,8 @@ async fn load_and_partition_cache(
 	let mut cached: Vec<(WalletSeed, CachedWalletState)> = Vec::new();
 	for (seed, cached_state) in wallet_seeds.iter().zip(raw_cached) {
 		match cached_state {
-			Some(state) => cached.push((*seed, state)),
-			None => uncached_seeds.push(*seed),
+			Some(state) => cached.push((seed.clone(), state)),
+			None => uncached_seeds.push(seed.clone()),
 		}
 	}
 	cached.sort_by_key(|(_, ws)| ws.block_height);

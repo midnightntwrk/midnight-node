@@ -37,7 +37,7 @@ use test_log::test;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb(
+	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -149,6 +149,18 @@ fn test_get_contract_state_not_present() {
 
 		let result = mock::Midnight::get_contract_state(&addr);
 		assert_eq!(result, Err(LedgerApiError::ContractNotPresent));
+	})
+}
+
+#[test]
+fn test_get_unclaimed_amount_beneficiary_not_found() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		// A 32-byte address that has never had any unclaimed rewards in the genesis state
+		let addr = [0u8; 32];
+		let result = mock::Midnight::get_unclaimed_amount(&addr);
+		assert_eq!(result, Err(LedgerApiError::BeneficiaryNotFound));
 	})
 }
 
