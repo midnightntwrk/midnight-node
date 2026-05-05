@@ -390,6 +390,11 @@ impl PartialOrd for ObservedUtxoHeader {
 }
 
 decl_runtime_apis! {
+	// v2 marks the consensus-affecting reduction of the cNight db-sync over-fetch
+	// factor from 64x to 4x. Node binaries gate the multiplier on this version so
+	// the change only takes effect at the runtime upgrade boundary; mixing old and
+	// new binaries against the same runtime version stays consensus-equivalent.
+	#[api_version(2)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums
 		fn get_mapping_validator_address() -> Vec<u8>;
