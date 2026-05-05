@@ -285,8 +285,34 @@ SELECT 'COPY public.schema_version FROM stdin;';
 COPY (SELECT * FROM schema_version) TO STDOUT;
 SELECT '\\.';
 
+-- block: project only the columns the runtime actually reads (block_no,
+-- hash, epoch_no, slot_no, time, tx_count, id+slot_leader_id for joins) and
+-- emit zero/NULL for the rest. The receiving postgres still has the schema
+-- columns, but vrf_key / op_cert / size / proto_*  / epoch_slot_no /
+-- previous_id are unused by every db-sync query the node makes (verified by
+-- grepping for block.<col>). FK constraints are already stripped earlier so
+-- previous_id NULL is fine.
 SELECT 'COPY public.block FROM stdin;';
-COPY (SELECT b.* FROM block b WHERE b.id IN (SELECT id FROM k_blocks)) TO STDOUT;
+COPY (
+  SELECT
+    b.id,
+    b.hash,
+    b.epoch_no,
+    b.slot_no,
+    NULL::integer  AS epoch_slot_no,
+    b.block_no,
+    NULL::bigint   AS previous_id,
+    b.slot_leader_id,
+    0              AS size,
+    b.time,
+    b.tx_count,
+    0              AS proto_major,
+    0              AS proto_minor,
+    NULL::varchar  AS vrf_key,
+    NULL::bytea    AS op_cert,
+    NULL::bigint   AS op_cert_counter
+  FROM block b WHERE b.id IN (SELECT id FROM k_blocks)
+) TO STDOUT;
 SELECT '\\.';
 
 SELECT 'COPY public.slot_leader FROM stdin;';
