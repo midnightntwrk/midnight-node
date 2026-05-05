@@ -98,16 +98,25 @@ fn subminimal_transfer_handling() {
 		});
 		//90
 		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		assert_eq!(pallet::SubminimalTransfers::<Test>::get(), (1, 90));
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
 		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
 		assert!(frame_system::Pallet::<Test>::events().is_empty());
 		//180
 		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		assert_eq!(pallet::SubminimalTransfers::<Test>::get(), (2, 180));
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 2, sum: 180 }
+		);
 		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
 		//270 > 250. Should flush everything in one transfer.
 		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		assert_eq!(pallet::SubminimalTransfers::<Test>::get(), (0, 0));
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 0, sum: 0 }
+		);
 		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
 
 		let events: Vec<_> =

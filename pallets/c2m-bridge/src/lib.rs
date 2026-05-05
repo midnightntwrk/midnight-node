@@ -53,6 +53,12 @@ impl From<u128> for Stars {
 /// Domain constant
 pub(crate) const STARS_PER_NIGHT: u128 = 1_000_000;
 
+#[derive(Debug, Decode, Encode, Default, TypeInfo, MaxEncodedLen, PartialEq, Eq)]
+pub struct SubminimalTransfersState {
+	count: u32,
+	sum: u64,
+}
+
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
@@ -143,7 +149,7 @@ pub mod pallet {
 		StorageValue<_, SubminimalTransfersConfig, ValueQuery>;
 
 	#[pallet::storage]
-	pub type SubminimalTransfers<T: Config> = StorageValue<_, (u32, u64), ValueQuery>;
+	pub type SubminimalTransfers<T: Config> = StorageValue<_, SubminimalTransfersState, ValueQuery>;
 
 	/// Block-scoped counter used for deterministic nonce generation per transfer.
 	/// Because on_finalize kill call, it doesn't cost any storage operations.
@@ -206,15 +212,6 @@ pub mod pallet {
 			SubminimalTransfersConfiguration::<T>::get()
 		}
 
-		/// Returns the minimum bridge transfer amount, read from ledger parameters.
-		/// Falls back to 0 if the ledger parameter cannot be read.
-		fn minimal_transfer_amount() -> Stars {
-			T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount().unwrap_or_else(|e| {
-				log::error!("Failed to read c_to_m_bridge_min_amount from ledger: {e:?}");
-				Stars(0)
-			})
-		}
-
 		/// Generate a deterministic unique nonce for a bridge transfer.
 		///
 		/// Uses the parent hash (unique per block) combined with an
@@ -263,25 +260,25 @@ pub mod pallet {
 		}
 
 		fn handle_subminimal_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
-			let (count, accumulated) = SubminimalTransfers::<T>::get();
+			let SubminimalTransfersState { count, sum } = SubminimalTransfers::<T>::get();
 			let config = SubminimalTransfersConfiguration::<T>::get();
 
-			// + is safe, because all existing cNight fits in u64.
-			let new_sum = accumulated + transfer.amount;
-			let new_count = count + 1;
-			if new_sum > config.subminimal_transfers_flush_threshold {
-				SubminimalTransfers::<T>::put((0, 0));
+			// Safe, because all existing cNight fits in u64.
+			let sum = sum.saturating_add(transfer.amount);
+			let count = count + 1;
+			if sum > config.subminimal_transfers_flush_threshold {
+				SubminimalTransfers::<T>::kill();
 				Self::execute_serialized_tx(
-					LedgerApi::construct_distribute_treasury_system_tx(new_sum.into()),
+					LedgerApi::construct_distribute_treasury_system_tx(sum.into()),
 					|midnight_tx_hash| Event::SubminimalFlushTransfer {
-						amount: new_sum,
-						count: new_count,
+						amount: sum,
+						count,
 						midnight_tx_hash,
 					},
-					&alloc::format!("subminimal transfers flush of total {}", new_sum),
+					&alloc::format!("subminimal transfers flush of total {}", sum),
 				);
 			} else {
-				SubminimalTransfers::<T>::put((new_count, new_sum));
+				SubminimalTransfers::<T>::put(SubminimalTransfersState { count, sum });
 			}
 		}
 
@@ -324,7 +321,12 @@ pub mod pallet {
 	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for Pallet<T> {
 		fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
 			let amount = transfer.amount;
-			if Stars::from_cnight(amount) < Self::minimal_transfer_amount() {
+			let minimal_transfer_amount =
+				T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount().unwrap_or_else(|e| {
+					log::error!("Failed to read c_to_m_bridge_min_amount from ledger: {e:?}");
+					Stars(0)
+				});
+			if Stars::from_cnight(amount) < minimal_transfer_amount {
 				Self::handle_subminimal_transfer(transfer);
 			} else {
 				let mc_tx_hash = transfer.mc_tx_hash;
