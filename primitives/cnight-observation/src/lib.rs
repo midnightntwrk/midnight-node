@@ -408,6 +408,9 @@ decl_runtime_apis! {
 
 		fn get_cardano_block_window_size() -> u32;
 
+		// Despite the historic name, this returns the per-block *transaction* capacity
+		// (`pallet_cnight_observation::CardanoTxCapacityPerBlock`), not a UTXO count.
+		// Callers must multiply by the per-tx UTXO over-fetch factor to get a row limit.
 		fn get_utxo_capacity_per_block() -> u32;
 	}
 }
