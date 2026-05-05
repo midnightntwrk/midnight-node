@@ -16,7 +16,7 @@
 mod common;
 
 use clap::Parser;
-use common::test_image;
+use common::{test_image, wait_for_node::wait_for_block};
 use midnight_node_toolkit::cli::{Cli, run_command};
 use std::{process::Command, time::Duration};
 use testcontainers::{
@@ -78,7 +78,7 @@ async fn hardfork_single_tx() {
 	let url = format!("ws://127.0.0.1:{port}");
 
 	// Wait for at least 2 blocks to be produced (6s block time).
-	tokio::time::sleep(Duration::from_secs(20)).await;
+	wait_for_block(&url, 2, Duration::from_secs(60)).await;
 
 	// 3. Pre-fork: run single-tx to verify the new node works with the fork-from chain-spec
 	run_cli(&[

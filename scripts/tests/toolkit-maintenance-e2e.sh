@@ -15,6 +15,8 @@
 
 set -euxo pipefail
 
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 NODE_IMAGE="${1:-ghcr.io/midnight-ntwrk/midnight-node:0.18.0-rc.3}"
 TOOLKIT_IMAGE="${2:-ghcr.io/midnight-ntwrk/midnight-node-toolkit:0.18.0-rc.3}"
 
@@ -45,8 +47,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "⏳ Waiting for node to boot..."
-sleep 5
+wait_for_block http://localhost:9945 1
 
 # Run toolkit commands
 echo "📦 Setting up test environment..."

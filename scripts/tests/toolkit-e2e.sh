@@ -15,6 +15,8 @@
 
 set -euxo pipefail
 
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 NODE_IMAGE="$1"
 TOOLKIT_IMAGE="$2"
 RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
@@ -42,6 +44,7 @@ echo "🚀 Starting node container..."
 docker run -d --rm \
   --name midnight-node-tx \
   --network toolkit-e2e-net \
+  -p 9944:9944 \
   -e CFG_PRESET=dev \
   "$NODE_IMAGE"
 
@@ -56,8 +59,7 @@ cleanup() {
 # --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
-echo "⏳ Waiting for node to boot... (allow at least 2 blocks to be produced)"
-sleep 20
+wait_for_block http://localhost:9944 2
 
 # Run toolkit commands
 echo "📦 Running toolkit tests..."

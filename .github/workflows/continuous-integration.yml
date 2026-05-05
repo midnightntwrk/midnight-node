@@ -352,7 +352,7 @@ jobs:
         with:
           registry: ghcr.io
           username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Free disk space
         run: scripts/free-disk-space.sh
@@ -361,7 +361,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict \
+          PUSH_FLAG=""
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            PUSH_FLAG="--push"
+          fi
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \
+            --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             +test-toolkit
 

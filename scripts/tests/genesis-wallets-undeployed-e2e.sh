@@ -15,6 +15,8 @@
 
 set -euxo pipefail
 
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 NODE_IMAGE="$1"
 TOOLKIT_IMAGE="$2"
 NETWORK="${3:-midnight-net-genesis}"
@@ -37,8 +39,7 @@ docker run -d --rm \
   -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "$NODE_IMAGE"
 
-echo "⏳ Waiting for node to boot..."
-sleep 30
+wait_for_block http://localhost:9944 1
 
 # Run wallets check script
 echo "📦 Running genesis wallets tests..."

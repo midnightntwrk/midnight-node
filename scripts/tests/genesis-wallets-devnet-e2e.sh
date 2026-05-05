@@ -15,6 +15,8 @@
 
 set -euxo pipefail
 
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 NODE_IMAGE="$1"
 TOOLKIT_IMAGE="$2"
 NETWORK="${3:-midnight-net-genesis-devnet}"
@@ -38,8 +40,7 @@ docker run -d --rm \
   -e MOCK_REGISTRATIONS_FILE="/res/mock-bridge-data/qanet-mock.json" \
   "$NODE_IMAGE"
 
-echo "⏳ Waiting for node to boot..."
-sleep 30
+wait_for_block http://localhost:9944 1
 
 # Run wallets check script
 echo "📦 Running genesis wallets tests..."

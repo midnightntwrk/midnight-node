@@ -15,6 +15,8 @@
 
 set -euxo pipefail
 
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 NODE_IMAGE="$1"
 TOOLKIT_IMAGE="$2"
 
@@ -46,8 +48,7 @@ cleanup() {
 # --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
-echo "⏳ Waiting for node to boot..."
-sleep 5
+wait_for_block http://localhost:9944 1
 
 # Run toolkit commands
 echo "📦 Running toolkit contract tests..."

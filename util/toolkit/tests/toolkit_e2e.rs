@@ -19,6 +19,7 @@ use clap::Parser;
 use common::{
 	test_image,
 	toolkit_helper::{CircuitCall, ToolkitTestHelper},
+	wait_for_node::wait_for_block,
 };
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
@@ -54,11 +55,12 @@ async fn node_ws_url() -> &'static str {
 
 			let port =
 				container.get_host_port_ipv4(9944).await.expect("failed to get node RPC port");
+			let ws_url = format!("ws://127.0.0.1:{port}");
 
 			// Wait for at least 2 blocks to be produced (6s block time).
-			tokio::time::sleep(Duration::from_secs(20)).await;
+			wait_for_block(&ws_url, 2, Duration::from_secs(60)).await;
 
-			SharedNode { _container: container, ws_url: format!("ws://127.0.0.1:{port}") }
+			SharedNode { _container: container, ws_url }
 		})
 		.await
 		.ws_url
