@@ -109,6 +109,17 @@ This enables four combinations of querying and sending transactions:
 
 Use the `-h` flag for full usage information.
 
+#### Coin selection strategy
+
+`single-tx`, `batches`, and `batch-single-tx` accept `--coin-selection <largest-first|smallest-first>` to control how candidate coins/UTXOs are ordered when more than one input is needed:
+
+- `largest-first` (default) — minimizes the number of inputs.
+- `smallest-first` — consolidates dust by spending the smallest coins/UTXOs first.
+
+```shell
+midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> single-tx --coin-selection smallest-first <BUILDER_ARGS>
+```
+
 **NOTE 1**
 Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGenerator` reads and send `TransactionWithContext` instead of `Transaction`. The reason is now it is necessary to know the `BlockContext` a transaction is valid.
 
@@ -129,7 +140,7 @@ $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
 [..]Dry-run: Source transactions from url: "ws://127.0.0.1:9944"[..]
 [..]Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"][..]
 [..]Dry-run: Destination rate: 1.0 TPS[..]
-[..]Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })[..]
+[..]Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false, coin_selection: LargestFirst })[..]
 [..]Dry-run: local prover (no proof server)[..]
 
 ```
