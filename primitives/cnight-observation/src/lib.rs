@@ -217,6 +217,8 @@ pub enum InherentError {
 	Missing,
 	#[cfg_attr(feature = "std", error("Other unexpected inherent error"))]
 	Other,
+	#[cfg_attr(feature = "std", error("Inherent data decode failed"))]
+	DecodeFailed,
 }
 
 impl sp_inherents::IsFatalError for InherentError {

@@ -12,6 +12,7 @@ onchain-runtime = { workspace = true, optional = true }
 midnight-serialize = { workspace = true, optional = true }
 ledger-storage = { workspace = true, optional = true }
 midnight-storage-core = { workspace = true, optional = true }
+parity-db = { workspace = true, optional = true }
 transient-crypto = { workspace = true, optional = true }
 zswap = { workspace = true, optional = true }
 
@@ -71,6 +72,7 @@ std = [
     "midnight-serialize",
     "ledger-storage",
     "midnight-storage-core",
+    "parity-db",
     "transient-crypto",
     "zswap",
     "mn-ledger-8",
