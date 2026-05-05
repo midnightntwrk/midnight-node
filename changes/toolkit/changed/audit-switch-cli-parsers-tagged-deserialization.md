@@ -1,10 +1,14 @@
 #toolkit #audit
-# Switch CLI parsers to tagged deserialization and enforce trailing-byte rejection
+# Enforce EOF on untagged CLI parser path; document ADR-0022 untagged contract
 
-`coin_public_decode` and `contract_address_decode` now use tagged deserialization
-instead of unconditionally falling back to untagged parsing. The untagged fallback
-is removed. `hex_ledger_untagged_decode` now rejects trailing bytes after the
-deserialized value. Misleading "failed to parse seed" error messages are corrected.
+`hex_ledger_untagged_decode` now rejects trailing bytes after the deserialized
+value, closing the silent-fallback ambiguity surface flagged by audit
+issue #307. `coin_public_decode` and `contract_address_decode` continue to use
+untagged decoding per ADR-0022 (wallet keys and addresses use untagged
+serialization, with Bech32m HRP playing the role of a tag at the user-facing
+boundary). Inline comments above both parsers cite ADR-0022 and PR #853 to
+prevent future re-introduction of tagged decoding for these types. Misleading
+"failed to parse seed" error messages are corrected to "invalid hex input".
 
 Closes https://github.com/shieldedtech/shielded-security-engineering/issues/307
 PR: https://github.com/midnightntwrk/midnight-node/pull/1437

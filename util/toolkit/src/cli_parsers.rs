@@ -78,12 +78,22 @@ pub fn hex_ledger_decode<T: Deserializable + Tagged>(input: &str) -> Result<T, c
 	hex_ledger_tagged_decode::<T>(input)
 }
 
+// ADR-0022: wallet keys and addresses (including contract addresses and coin
+// public keys) use *untagged* serialization. They are surfaced to users as
+// Bech32m, where the human-readable-part already plays the role of a tag.
+// Switching to `hex_ledger_decode` (tagged) was tried and reverted in PR #853;
+// do not re-introduce it without first updating ADR-0022. EOF enforcement in
+// `hex_ledger_untagged_decode` is the audit-#307 hardening that closes the
+// silent-fallback ambiguity surface without changing the wire format.
 pub fn coin_public_decode(input: &str) -> Result<CoinPublicKey, clap::error::Error> {
-	hex_ledger_decode(input)
+	hex_ledger_untagged_decode(input)
 }
 
+// ADR-0022: see the comment on `coin_public_decode`. `ContractAddress` is in
+// the same untagged set; switching to tagged decoding was reverted in PR #853
+// and must not be re-introduced without first updating ADR-0022.
 pub fn contract_address_decode(input: &str) -> Result<ContractAddress, clap::error::Error> {
-	hex_ledger_decode(input)
+	hex_ledger_untagged_decode(input)
 }
 
 pub fn hex_ledger_untagged_decode<T>(input: &str) -> Result<T, clap::error::Error>
@@ -219,56 +229,28 @@ pub fn utxo_id_decode(input: &str) -> Result<UtxoId, clap::Error> {
 mod tests {
 	use super::*;
 
-	/// Helper: serialize a Tagged value to its tagged hex representation.
-	fn to_tagged_hex<T: Serializable + Tagged>(val: &T) -> String {
-		let bytes = serialize(val).expect("serialization should succeed");
-		hex::encode(bytes)
+	// `coin_public_decode` — untagged per ADR-0022.
+
+	#[test]
+	fn coin_public_decode_accepts_untagged_input() {
+		// 32-byte all-zeros payload — the untagged decoder consumes exactly 32 bytes.
+		let res = coin_public_decode(&"00".repeat(32));
+		assert!(res.is_ok(), "valid untagged 32-byte input should decode");
 	}
 
 	#[test]
-	fn coin_public_decode_accepts_tagged_input() {
-		let key = CoinPublicKey(HashOutput([0u8; 32]));
-		let tagged_hex = to_tagged_hex(&key);
-		assert!(coin_public_decode(&tagged_hex).is_ok());
-	}
-
-	#[test]
-	fn contract_address_decode_accepts_tagged_input() {
-		let tagged_hex =
-			include_str!("../../../../res/test-contract/contract_address_undeployed_tagged.mn")
-				.trim();
-		assert!(contract_address_decode(tagged_hex).is_ok());
-	}
-
-	#[test]
-	fn coin_public_decode_rejects_untagged_input() {
-		let res = coin_public_decode(&"0".repeat(64)); // 32 bytes raw, no tag
-		assert!(res.is_err(), "untagged input should be rejected for CoinPublicKey");
-	}
-
-	#[test]
-	fn contract_address_decode_rejects_untagged_input() {
-		let res = contract_address_decode(&"0".repeat(64)); // 32 bytes raw, no tag
-		assert!(res.is_err(), "untagged input should be rejected for ContractAddress");
-	}
-
-	#[test]
-	fn coin_public_decode_rejects_wrong_tag() {
-		// Serialize a ContractAddress and try to decode as CoinPublicKey — tags differ.
-		let addr = ContractAddress(HashOutput([0u8; 32]));
-		let wrong_tag_hex = to_tagged_hex(&addr);
-		let res = coin_public_decode(&wrong_tag_hex);
-		assert!(res.is_err(), "wrong tag should be rejected");
-	}
-
-	#[test]
-	fn contract_address_decode_rejects_trailing_bytes() {
-		let tagged_hex =
-			include_str!("../../../../res/test-contract/contract_address_undeployed_tagged.mn")
-				.trim();
-		let with_trailing = format!("{}00", tagged_hex);
-		let res = contract_address_decode(&with_trailing);
+	fn coin_public_decode_rejects_trailing_bytes() {
+		// Valid 32-byte payload plus one extra byte — EOF enforcement should reject.
+		let with_trailing = format!("{}00", "00".repeat(32));
+		let res = coin_public_decode(&with_trailing);
 		assert!(res.is_err(), "trailing bytes should be rejected (EOF enforcement)");
+	}
+
+	#[test]
+	fn coin_public_decode_rejects_truncated_input() {
+		// 30 bytes (60 hex chars) — short of the 32-byte payload.
+		let res = coin_public_decode(&"00".repeat(30));
+		assert!(res.is_err(), "truncated input should be rejected");
 	}
 
 	#[test]
@@ -277,18 +259,42 @@ mod tests {
 		assert!(res.is_err(), "invalid hex should be rejected");
 	}
 
+	// `contract_address_decode` — untagged per ADR-0022.
+
+	#[test]
+	fn contract_address_decode_accepts_untagged_input() {
+		// Reuse the canonical untagged fixture also consumed by `generate_txs.rs`.
+		let untagged_hex =
+			include_str!("../../../res/test-contract/contract_address_undeployed.mn").trim();
+		assert!(
+			contract_address_decode(untagged_hex).is_ok(),
+			"valid untagged ContractAddress hex should decode"
+		);
+	}
+
+	#[test]
+	fn contract_address_decode_rejects_trailing_bytes() {
+		let untagged_hex =
+			include_str!("../../../res/test-contract/contract_address_undeployed.mn").trim();
+		let with_trailing = format!("{untagged_hex}00");
+		let res = contract_address_decode(&with_trailing);
+		assert!(res.is_err(), "trailing bytes should be rejected (EOF enforcement)");
+	}
+
+	#[test]
+	fn contract_address_decode_rejects_truncated_input() {
+		// 30 bytes — short of the 32-byte payload.
+		let res = contract_address_decode(&"00".repeat(30));
+		assert!(res.is_err(), "truncated input should be rejected");
+	}
+
 	#[test]
 	fn contract_address_decode_rejects_invalid_hex() {
 		let res = contract_address_decode("zzzz");
 		assert!(res.is_err(), "invalid hex should be rejected");
 	}
 
-	#[test]
-	fn hex_ledger_untagged_decode_enforces_eof() {
-		// HashOutput is 32 bytes; 33 bytes of data should fail
-		let res = hex_ledger_untagged_decode::<HashOutput>(&"ab".repeat(33));
-		assert!(res.is_err(), "trailing data in untagged decode should be rejected");
-	}
+	// `hex_ledger_untagged_decode::<HashOutput>` — the audit-#307 EOF hardening.
 
 	#[test]
 	fn hex_ledger_untagged_decode_accepts_exact_length() {
@@ -297,11 +303,22 @@ mod tests {
 	}
 
 	#[test]
-	fn tagged_decode_rejects_trailing_bytes() {
-		let key = CoinPublicKey(HashOutput([0u8; 32]));
-		let mut tagged_hex = to_tagged_hex(&key);
-		tagged_hex.push_str("ff");
-		let res = coin_public_decode(&tagged_hex);
-		assert!(res.is_err(), "tagged decode should reject trailing bytes");
+	fn hex_ledger_untagged_decode_rejects_trailing_bytes() {
+		// 33 bytes — one byte too many.
+		let res = hex_ledger_untagged_decode::<HashOutput>(&"ab".repeat(33));
+		assert!(res.is_err(), "trailing data in untagged decode should be rejected");
+	}
+
+	#[test]
+	fn hex_ledger_untagged_decode_rejects_truncated_input() {
+		// 30 bytes — short of the 32-byte payload.
+		let res = hex_ledger_untagged_decode::<HashOutput>(&"ab".repeat(30));
+		assert!(res.is_err(), "truncated input should be rejected");
+	}
+
+	#[test]
+	fn hex_ledger_untagged_decode_rejects_invalid_hex() {
+		let res = hex_ledger_untagged_decode::<HashOutput>("not-valid-hex!!");
+		assert!(res.is_err(), "invalid hex should be rejected");
 	}
 }
