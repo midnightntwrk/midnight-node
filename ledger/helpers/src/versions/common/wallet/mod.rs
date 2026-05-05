@@ -38,9 +38,9 @@ pub struct Wallet<D: DB + Clone> {
 
 impl<D: DB + Clone> Wallet<D> {
 	pub fn default(root_seed: WalletSeed, ledger_state: &LedgerState<D>) -> Self {
-		let shielded = ShieldedWallet::default(root_seed);
-		let unshielded = UnshieldedWallet::default(root_seed);
-		let dust = DustWallet::default(root_seed, Some(&ledger_state.parameters));
+		let shielded = ShieldedWallet::default(root_seed.clone());
+		let unshielded = UnshieldedWallet::default(root_seed.clone());
+		let dust = DustWallet::default(root_seed.clone(), Some(&ledger_state.parameters));
 
 		Self { root_seed: Some(root_seed), shielded, unshielded, dust }
 	}

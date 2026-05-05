@@ -172,6 +172,7 @@ pallet-membership = { default-features = false, git = "https://github.com/parity
 pallet-collective = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 pallet-scheduler = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 pallet-session = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
+pallet-staking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 sp-offchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 sp-session = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 sp-transaction-pool = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
@@ -277,6 +278,7 @@ lru = { version = "0.16.3" }
 subxt = "0.50.0"
 subxt-signer = "0.50.0"
 thiserror = { version = "2.0", default-features = false }
+zeroize = { version = "1", features = ["derive"] }
 rand = { version = "0.10.0", default-features = false }
 rayon = "1.11"
 sha2 = "0.10.8"
@@ -441,7 +443,7 @@ midnight-onchain-vm       = { git = "https://github.com/midnightntwrk/midnight-l
 midnight-onchain-state    = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-state-3.1.0-rc.1" }
 midnight-onchain-runtime  = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-runtime-3.1.0-rc.1" }
 midnight-serialize        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.1.0-rc.1" }
-midnight-storage-core     = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.2.0-rc.2" }
+midnight-storage-core     = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.2.0-rc.3" }
 
 [workspace.metadata.cargo-shear]
 ignored = []

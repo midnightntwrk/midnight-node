@@ -2,6 +2,8 @@
 
 CLI tool for interacting with the Midnight blockchain. Supports transaction generation, wallet management, contract deployment, and testing.
 
+For background, scope, users, and roadmap, see the [Toolkit PRD](./PRD.md).
+
 ---
 
 ## 🚀 **Quick Start: See Usage Examples**

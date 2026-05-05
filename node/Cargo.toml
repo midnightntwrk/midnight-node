@@ -80,6 +80,7 @@ substrate-frame-rpc-system.workspace = true
 # These dependencies are used for runtime benchmarking
 frame-benchmarking = {workspace = true, optional = true}
 frame-benchmarking-cli = {workspace = true, default-features = true }
+pallet-staking = { workspace = true, features = ["std"], optional = true }
 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
@@ -175,7 +176,10 @@ runtime-benchmarks = [
 ]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.
-try-runtime = ["midnight-node-runtime/try-runtime"]
+try-runtime = [
+    "midnight-node-runtime/try-runtime",
+    "pallet-staking/try-runtime",
+]
 experimental = [
     #"sp-block-rewards",
 ]
