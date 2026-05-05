@@ -90,7 +90,10 @@ pub mod pallet {
 	use sp_core::H256;
 
 	use midnight_node_ledger::types::{
-		Hash as LedgerHash, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
+		Hash as LedgerHash, active_ledger_bridge as LedgerApi,
+		active_version::{
+			DeserializationError, LedgerApiError, SerializationError, TransactionError,
+		},
 	};
 
 	use crate::config::CNightGenesis;
@@ -168,18 +171,50 @@ pub mod pallet {
 		/// A Cardano Wallet address was sent, but was longer than expected
 		MaxCardanoAddrLengthExceeded,
 		MaxRegistrationsExceeded,
-		LedgerApiError(LedgerApiError),
 		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
 		/// Next Cardano position does not advance beyond current position
 		CardanoPositionRegression,
 		/// UTXO count exceeds `CardanoTxCapacityPerBlock * UTXO_PER_TX_OVERESTIMATE`
 		TooManyUtxos,
+		// Ledger errors mirrored from `LedgerApiError`. Flattened (rather than wrapped)
+		// so the encoding fits within `MAX_MODULE_ERROR_ENCODED_SIZE`.
+		Deserialization(DeserializationError),
+		Serialization(SerializationError),
+		Transaction(TransactionError),
+		LedgerCacheError,
+		NoLedgerState,
+		LedgerStateScaleDecodingError,
+		ContractCallCostError,
+		BlockLimitExceededError,
+		FeeCalculationError,
+		HostApiError,
+		GetTransactionContextError,
+		ContractNotPresent,
+		BeneficiaryNotFound,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
 		fn from(value: LedgerApiError) -> Self {
-			Error::<T>::LedgerApiError(value)
+			match value {
+				LedgerApiError::Deserialization(e) => Error::<T>::Deserialization(e),
+				LedgerApiError::Serialization(e) => Error::<T>::Serialization(e),
+				LedgerApiError::Transaction(e) => Error::<T>::Transaction(e),
+				LedgerApiError::LedgerCacheError => Error::<T>::LedgerCacheError,
+				LedgerApiError::NoLedgerState => Error::<T>::NoLedgerState,
+				LedgerApiError::LedgerStateScaleDecodingError => {
+					Error::<T>::LedgerStateScaleDecodingError
+				},
+				LedgerApiError::ContractCallCostError => Error::<T>::ContractCallCostError,
+				LedgerApiError::BlockLimitExceededError => Error::<T>::BlockLimitExceededError,
+				LedgerApiError::FeeCalculationError => Error::<T>::FeeCalculationError,
+				LedgerApiError::HostApiError => Error::<T>::HostApiError,
+				LedgerApiError::GetTransactionContextError => {
+					Error::<T>::GetTransactionContextError
+				},
+				LedgerApiError::ContractNotPresent => Error::<T>::ContractNotPresent,
+				LedgerApiError::BeneficiaryNotFound => Error::<T>::BeneficiaryNotFound,
+			}
 		}
 	}
 
