@@ -48,22 +48,36 @@
 
 set -Eeuo pipefail
 
-SOURCE_DSN=${SOURCE_DSN:-"postgres://127.0.0.1:10010/cexplorer"}
+SOURCE_DSN=${SOURCE_DSN:-"postgres://127.0.0.1:5432/cexplorer"}
 OUTPUT=${OUTPUT:-"snapshot.sql.xz"}
 
-# Cardano mainnet block window. Midnight block #1's mc_hash references
-# Cardano 13172990 (2026-03-18), and block #1000 is ~300 blocks later. The
-# detail window 13160000..13180000 generously covers all 1000 mc_hash
-# references with margin. We don't bother keeping a wider header-only block
-# range past the detail window: chain-tip announce-verification fails anyway
-# with a partial Cardano view, and the block-data-source's
-# get_latest_block_info / get_blocks_by_numbers only need to resolve
-# mc_hashes for Midnight blocks 1..1000, all in window.
-MIN_BLOCK_NO=${MIN_BLOCK_NO:-13160000}
-MAX_BLOCK_NO=${MAX_BLOCK_NO:-13180000}
+# Cardano mainnet block window for Midnight blocks 1..1000.
+#
+# Lower bound 13164005 = the Midnight genesis cardano-tip
+# (res/mainnet/cardano-tip.json, == cnight observation cursor in
+# cnight-config.json). The cnight observation iterates Cardano blocks
+# starting from this position, so trimming below this would miss token
+# events the producer saw and break cnight-observation's byte-exact
+# inherent check.
+#
+# Upper bound 13174340 = empirically the smallest value that still lets
+# midnight-node sync to block 1000. mc_hash advanced faster than wall
+# clock during the producer's initial catch-up phase: by Midnight block
+# 332 the mc_hash is already at 13173503, by 924 it's at 13174301, and
+# the highest mc_hash referenced in blocks 1..1000 is somewhere in
+# (13174335, 13174340]. 13174335 stalls at #991; 13174340 reaches #1000+.
+#
+# Header range and detail range are deliberately the same: the
+# block-data-source's get_latest_block_info / get_blocks_by_numbers only
+# need to resolve mc_hashes for Midnight blocks 1..1000 (all in window),
+# and chain-tip announce-verification fails anyway with a partial
+# Cardano view, so widening the header range past the detail range
+# would just bloat the snapshot.
+MIN_BLOCK_NO=${MIN_BLOCK_NO:-13164005}
+MAX_BLOCK_NO=${MAX_BLOCK_NO:-13174340}
 MIN_EPOCH=${MIN_EPOCH:-617}
-DETAIL_MIN_BLOCK_NO=${DETAIL_MIN_BLOCK_NO:-13160000}
-DETAIL_MAX_BLOCK_NO=${DETAIL_MAX_BLOCK_NO:-13180000}
+DETAIL_MIN_BLOCK_NO=${DETAIL_MIN_BLOCK_NO:-13164005}
+DETAIL_MAX_BLOCK_NO=${DETAIL_MAX_BLOCK_NO:-13174340}
 
 # Midnight script addresses on Cardano mainnet. Sourced from res/mainnet/*.json
 # unless noted. Every tx_out at one of these addresses is kept in the snapshot

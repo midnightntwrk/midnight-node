@@ -1565,8 +1565,8 @@ extract-toolkit-artifacts:
 #   earthly +sync-mainnet-1000-snapshot --SOURCE_DSN=postgres://user:pass@host:5432/cexplorer
 sync-mainnet-1000-snapshot:
     ARG SOURCE_DSN
-    ARG MIN_BLOCK_NO=13160000
-    ARG MAX_BLOCK_NO=13180000
+    ARG MIN_BLOCK_NO=13164005
+    ARG MAX_BLOCK_NO=13174340
     ARG MIN_EPOCH=617
     # postgres:17.4-alpine matches the loader image used by run-sync.sh and
     # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
