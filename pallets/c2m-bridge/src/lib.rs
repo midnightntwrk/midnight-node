@@ -35,9 +35,12 @@ pub type MidnightTxHash = [u8; 32];
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Stars(u128);
 
+// Build-time proof: `from_cnight` must handle the largest bridge `amount` without `u128` overflow.
+const _: Stars = Stars::from_cnight(u64::MAX);
+
 impl Stars {
-	fn from_cnight(c_night: u64) -> Stars {
-		Stars(STARS_PER_NIGHT * u128::from(c_night))
+	const fn from_cnight(c_night: u64) -> Stars {
+		Stars(STARS_PER_NIGHT * c_night as u128)
 	}
 }
 
@@ -48,7 +51,7 @@ impl From<u128> for Stars {
 }
 
 /// Domain constant
-pub const STARS_PER_NIGHT: u128 = 1_000_000;
+pub(crate) const STARS_PER_NIGHT: u128 = 1_000_000;
 
 #[frame_support::pallet]
 pub mod pallet {

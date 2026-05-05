@@ -14,7 +14,7 @@ pub const TEST_MINIMAL_TRANSFER_CNIGHT: u64 = 99;
 #[frame_support::pallet]
 pub mod mock_pallet {
 	use super::*;
-	use crate::{MinBridgeAmountProvider, STARS_PER_NIGHT, Stars};
+	use crate::{MinBridgeAmountProvider, Stars};
 	use frame_support::pallet_prelude::*;
 	use midnight_node_ledger::latest::api::LedgerApiError;
 
@@ -44,7 +44,7 @@ pub mod mock_pallet {
 	impl<T> MinBridgeAmountProvider for Pallet<T> {
 		// Returns value in STARS, pallet denominates it to cNIGHT
 		fn get_c_to_m_bridge_min_amount() -> Result<Stars, LedgerApiError> {
-			Ok(Stars(STARS_PER_NIGHT * u128::from(TEST_MINIMAL_TRANSFER_CNIGHT)))
+			Ok(Stars::from_cnight(TEST_MINIMAL_TRANSFER_CNIGHT))
 		}
 	}
 }
