@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Require a DCO (Signed-off-by) in the commit message
 if ! grep -q "Signed-off-by:" "$1"; then

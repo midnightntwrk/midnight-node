@@ -478,8 +478,8 @@ impl Builder {
 				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
 			},
 			Builder::SingleTx(args) => {
-				let mut seeds = vec![args.source_seed];
-				seeds.extend(args.funding_seed.iter());
+				let mut seeds = vec![args.source_seed.clone()];
+				seeds.extend(args.funding_seed.iter().cloned());
 				Ok(seeds)
 			},
 			Builder::RegisterDustAddress(args) => {
@@ -723,8 +723,8 @@ async fn load_and_partition_cache(
 	let mut cached: Vec<(WalletSeed, CachedWalletState)> = Vec::new();
 	for (seed, cached_state) in wallet_seeds.iter().zip(raw_cached) {
 		match cached_state {
-			Some(state) => cached.push((*seed, state)),
-			None => uncached_seeds.push(*seed),
+			Some(state) => cached.push((seed.clone(), state)),
+			None => uncached_seeds.push(seed.clone()),
 		}
 	}
 	cached.sort_by_key(|(_, ws)| ws.block_height);
