@@ -86,8 +86,8 @@ mod tests {
 		t_token,
 		tx_generator::{
 			builder::{
-				BatchSingleTxArgs, BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs,
-				ContractDeployArgs, SingleTxArgs, TransferArgs,
+				BatchSingleTxArgs, BatchesArgs, ClaimRewardsArgs, CoinSelectionStrategy,
+				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
 			},
 			source::FetchCacheConfig,
 		},
@@ -148,6 +148,7 @@ mod tests {
 		],
 		input_utxos: vec![],
 		rng_seed: None,
+		coin_selection: CoinSelectionStrategy::LargestFirst,
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"single-tx"
@@ -175,6 +176,7 @@ mod tests {
 		initial_unshielded_intent_value: 50_000_000_000_000,
 		unshielded_token_type: NIGHT,
 		enable_shielded: false,
+		coin_selection: CoinSelectionStrategy::LargestFirst,
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"batches-tx"
@@ -256,6 +258,7 @@ mod tests {
 					transfers: None,
 				},
 				concurrency: Some(1),
+				coin_selection: CoinSelectionStrategy::LargestFirst,
 			}),
 			["genesis/genesis_block_undeployed.mn"]
 		);
