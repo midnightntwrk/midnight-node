@@ -291,6 +291,17 @@ mod tests {
 	}
 
 	#[test]
+	fn select_inputs_overflow_with_remaining_inputs_returns_none() {
+		// After two inputs the accumulator overflows; the remaining input must not
+		// cause a panic, and the call must return None.
+		let large = u128::MAX / 2 + 1;
+		let inputs = vec![make_utxo(large), make_utxo(large), make_utxo(large)];
+		let result =
+			UtxoSpendInfo::select_inputs(inputs, u128::MAX, CoinSelectionStrategy::LargestFirst);
+		assert!(result.is_none());
+	}
+
+	#[test]
 	fn select_inputs_multiple_sum_to_required() {
 		let inputs = vec![make_utxo(60), make_utxo(40)];
 		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
