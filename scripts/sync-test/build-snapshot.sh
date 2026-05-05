@@ -65,28 +65,41 @@ MIN_EPOCH=${MIN_EPOCH:-617}
 DETAIL_MIN_BLOCK_NO=${DETAIL_MIN_BLOCK_NO:-13160000}
 DETAIL_MAX_BLOCK_NO=${DETAIL_MAX_BLOCK_NO:-13180000}
 
+# Midnight script addresses on Cardano mainnet. Sourced from res/mainnet/*.json
+# unless noted. Every tx_out at one of these addresses is kept in the snapshot
+# regardless of block window -- needed for committee selection / cnight
+# registrations / governed-map / reserve & ICS reads on cold start.
 ADDRS=(
-  addr1w9e7ft4rrdd4rkdseguxr9hudfxyytm5ckh2qy0yhz7lfeg9lvhq7
-  addr1wxg3mm3436f57r4r9t6cqdvxe0hwjusayz4ed8ulmlenttqj62ul2
-  addr1w8umlgsw6cfkxpdk2jekzwa7rjdx7tc937mpahhyn00430s074k8y
-  addr1w950c5zxn5fhwlauvpy3ssk287q0qlwz6e2zc4gaj62vaxsy3s9p0
-  addr1wyczfpxfnf5hvp36mrn655ye4k2cwluvlez6phx8jx46k6s2ttdaq
-  addr1w9cky55qfmt98yvf0yxa0rzvynm7ag5c8c2f3xwsaja8y5cwpj7fy
-  addr1wykryf2zuv5p0un2wk7yn6408n5rrd3d4ljqgr3099hr8xst409lt
+  addr1w9e7ft4rrdd4rkdseguxr9hudfxyytm5ckh2qy0yhz7lfeg9lvhq7  # cNIGHT mapping validator -- DustMappingDatum UTxOs (cnight-addresses.json)
+  addr1wxg3mm3436f57r4r9t6cqdvxe0hwjusayz4ed8ulmlenttqj62ul2  # Federated authority: Council (federated-authority-addresses.json)
+  addr1w8umlgsw6cfkxpdk2jekzwa7rjdx7tc937mpahhyn00430s074k8y  # Federated authority: Technical Committee
+  addr1w950c5zxn5fhwlauvpy3ssk287q0qlwz6e2zc4gaj62vaxsy3s9p0  # Reserve validator -- locked NIGHT reserve (reserve-addresses.json)
+  addr1wyczfpxfnf5hvp36mrn655ye4k2cwluvlez6phx8jx46k6s2ttdaq  # Illiquid Circulation Supply (ICS) validator (ics-addresses.json)
+  addr1w9cky55qfmt98yvf0yxa0rzvynm7ag5c8c2f3xwsaja8y5cwpj7fy  # Committee candidates -- stake-based registrations (registered-candidates-addresses.json)
+  addr1wykryf2zuv5p0un2wk7yn6408n5rrd3d4ljqgr3099hr8xst409lt  # Permissioned candidates / D-parameter list validator (holds NFTs of policy 2c322542..., not in res/mainnet/*.json)
 )
 ADDR_LIST=$(printf "'%s', " "${ADDRS[@]}")
 ADDR_LIST="${ADDR_LIST%, }"
 
+# Cardano native-asset policies whose producer tx_outs we backfill when consumed
+# inside the detail window (asset_spend producer-side join). Sourced from
+# res/mainnet/*.json.
+#
+# Deliberately absent (no in-window producer joins observed on first 1000
+# blocks, so backfilling them would just bloat the snapshot):
+#   * 68fc50469d13777fbc60491842ca3f80f07dc2d6542c551d9694ce9a (reserve validator NFT)
+#   * d24b012f7b2a99a671b7e1196847f183982d70db02ed37068e4e49e9 (reserve two-stage)
+#   * cb797228400c64a31a7a7053305f244a55af7602238e7428813f82ca (permissioned-candidates two-stage)
 POLICIES=(
-  0691b2fecca1ac4f53cb6dfb00b7013e561d1f34403b957cbb5af1fa
-  911dee358e934f0ea32af5803586cbeee9721d20ab969f9fdff335ac
-  e91becb9536df62eed161713311cc534ae909636ba9529b38e2a18f3
-  f9bfa20ed6136305b654b3613bbe1c9a6f2f058fb61edee49bdf58be
-  11d1de535579d929060a22828992802c77f329470adadaec10d2490c
-  00d92f55c57d6d95f863202885e76304e6ef970767249413561b289c
-  302484c99a6976063ad8e7aa5099ad95877f8cfe45a0dcc791abab6a
-  8f2c043f857c6acb716d27d67e9cb609c9c9814b7d7b938d6c410733
-  2c322542e32817f26a75bc49eaaf3ce831b62dafe4040e2f296e339a
+  0691b2fecca1ac4f53cb6dfb00b7013e561d1f34403b957cbb5af1fa  # $NIGHT asset (cnight_policy_id)
+  911dee358e934f0ea32af5803586cbeee9721d20ab969f9fdff335ac  # Council NFT (council_policy_id)
+  e91becb9536df62eed161713311cc534ae909636ba9529b38e2a18f3  # Council two-stage (council_two_stage_policy_id)
+  f9bfa20ed6136305b654b3613bbe1c9a6f2f058fb61edee49bdf58be  # Technical Committee NFT (technical_committee_policy_id)
+  11d1de535579d929060a22828992802c77f329470adadaec10d2490c  # Technical Committee two-stage
+  00d92f55c57d6d95f863202885e76304e6ef970767249413561b289c  # Authorization / governed-map (authorization-addresses.json)
+  302484c99a6976063ad8e7aa5099ad95877f8cfe45a0dcc791abab6a  # ICS validator NFT (illiquid_circulation_supply_validator_policy_id)
+  8f2c043f857c6acb716d27d67e9cb609c9c9814b7d7b938d6c410733  # ICS two-stage
+  2c322542e32817f26a75bc49eaaf3ce831b62dafe4040e2f296e339a  # Permissioned-candidates NFT (permissioned_candidates_policy_id)
 )
 POLICY_LIST=$(printf "decode('%s', 'hex'), " "${POLICIES[@]}")
 POLICY_LIST="${POLICY_LIST%, }"
