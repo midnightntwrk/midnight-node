@@ -1558,11 +1558,11 @@ extract-toolkit-artifacts:
 
 # sync-mainnet-1000-snapshot generates a minimal cexplorer snapshot from
 # a host-local cardano db-sync. The host must expose db-sync on the address
-# given by SOURCE_DSN (default: 127.0.0.1:10010). The snapshot is saved as
+# given by SOURCE_DSN (default: 127.0.0.1:5432). The snapshot is saved as
 # a local artifact for re-use by +sync-mainnet-1000.
 sync-mainnet-1000-snapshot:
     LOCALLY
-    ARG SOURCE_DSN=postgres://127.0.0.1:10010/cexplorer
+    ARG SOURCE_DSN=postgres://$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer
     ARG MIN_BLOCK_NO=13160000
     ARG MAX_BLOCK_NO=13180000
     ARG MIN_EPOCH=617

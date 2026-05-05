@@ -23,11 +23,9 @@
 # Concretely the snapshot includes:
 #   * meta / schema_version (tiny reference rows)
 #   * `block` for: the cardano window 13160000..13180000 + Byron EBBs in
-#     epoch >= MIN_EPOCH + every block past 13180000 up to live tip (so
-#     get_latest_block_info / block-announce validation see a recent tip)
-#     + every historical block that produced or consumed a Midnight UTxO
-#     + every block that produced a $POLICIES tx_out consumed inside the
-#     detail window.
+#     epoch >= MIN_EPOCH + every historical block that produced or consumed
+#     a Midnight UTxO + every block that produced a $POLICIES tx_out
+#     consumed inside the detail window.
 #   * `slot_leader` referenced by those blocks (FK only; not queried).
 #   * `tx` in the detail window + every tx that produced/consumed a Midnight
 #     UTxO + every tx that produced a $POLICIES tx_out consumed in window.
@@ -39,9 +37,11 @@
 #   * `datum` referenced by any tx_out we kept.
 #   * `ma_tx_out` for any tx_out we kept.
 #   * `multi_asset` for any ident we kept.
-#   * Pool / epoch tables (small).
-#   * `stake_address` / `epoch_stake` left empty (mainnet's first 1000 blocks
-#     have no registered candidates).
+#   * `epoch` / `epoch_param` for the epoch range covering the window.
+#   * Pool and stake tables left empty (`pool_hash`, `pool_metadata_ref`,
+#     `pool_update`, `pool_owner`, `pool_retire`, `stake_address`,
+#     `epoch_stake`): mainnet's first 1000 blocks have no stake-based
+#     candidates.
 #
 # Approach: one psql session, server-side TEMP TABLEs to materialise the
 # "consumed-in-window NIGHT producer" tx_out set once, reused everywhere.
@@ -51,14 +51,14 @@ set -Eeuo pipefail
 SOURCE_DSN=${SOURCE_DSN:-"postgres://127.0.0.1:10010/cexplorer"}
 OUTPUT=${OUTPUT:-"snapshot.sql.xz"}
 
-# Cardano mainnet block window. 13164005 is Midnight Mainnet's cardano-tip;
-# Midnight block #1's mc_hash references Cardano 13172990 (2026-03-18), and
-# block #1000 is ~300 blocks later. The detail window 13160000..13180000
-# generously covers all 1000 mc_hash references with margin. We don't bother
-# keeping a wider header-only block range past the detail window: chain-tip
-# announce-verification fails anyway with a partial Cardano view, and the
-# block-data-source's get_latest_block_info / get_blocks_by_numbers only
-# need to resolve mc_hashes for Midnight blocks 1..1000, all in window.
+# Cardano mainnet block window. Midnight block #1's mc_hash references
+# Cardano 13172990 (2026-03-18), and block #1000 is ~300 blocks later. The
+# detail window 13160000..13180000 generously covers all 1000 mc_hash
+# references with margin. We don't bother keeping a wider header-only block
+# range past the detail window: chain-tip announce-verification fails anyway
+# with a partial Cardano view, and the block-data-source's
+# get_latest_block_info / get_blocks_by_numbers only need to resolve
+# mc_hashes for Midnight blocks 1..1000, all in window.
 MIN_BLOCK_NO=${MIN_BLOCK_NO:-13160000}
 MAX_BLOCK_NO=${MAX_BLOCK_NO:-13180000}
 MIN_EPOCH=${MIN_EPOCH:-617}
@@ -111,7 +111,9 @@ SCHEMA_FILE=$TMPDIR/schema.sql
 
 # Strip pg_dump 18 \restrict directives (postgres 17 client doesn't recognise
 # them) and any FK constraint emitted across two lines. Without removing the
-# FKs the empty stake_address / epoch_stake tables fail to load.
+# FKs, COPYing into the populated tables fails because some rows reference
+# the empty pool / stake tables (pool_hash, pool_metadata_ref, pool_update,
+# pool_owner, pool_retire, stake_address, epoch_stake).
 SCHEMA_NO_FK=$TMPDIR/schema_no_fk.sql
 awk '
   /^\\restrict / || /^\\unrestrict / { next }
@@ -222,9 +224,8 @@ INSERT INTO k_txs (id, block_id)
 CREATE INDEX ON k_txs (block_id);
 ANALYZE k_txs;
 
--- 6. The full set of blocks we keep: detail window + Byron EBBs + every
---    block past detail window up to live tip (header-only, for
---    block-announce validation) + every block referenced by a kept tx.
+-- 6. The full set of blocks we keep: detail window + Byron EBBs in
+--    epoch >= MIN_EPOCH + every block referenced by a kept tx.
 CREATE TEMP TABLE k_blocks (id bigint PRIMARY KEY) ON COMMIT PRESERVE ROWS;
 INSERT INTO k_blocks
   SELECT id FROM block
