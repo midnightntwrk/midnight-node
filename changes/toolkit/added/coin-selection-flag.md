@@ -7,5 +7,5 @@ coins/UTXOs are ordered during input selection.
 `largest-first` (the default) minimizes the number of inputs.
 `smallest-first` consolidates dust by spending the smallest coins/UTXOs first.
 
-PR:
-JIRA: https://github.com/midnightntwrk/midnight-node/issues/1456
+PR: https://github.com/midnightntwrk/midnight-node/pull/1457
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1456
