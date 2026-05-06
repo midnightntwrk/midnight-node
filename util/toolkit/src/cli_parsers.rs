@@ -41,6 +41,24 @@ pub fn token_decode<T: TokenDecode>(input: &str) -> Result<T, clap::error::Error
 	Ok(token)
 }
 
+pub fn coin_selection_strategy(input: &str) -> Result<CoinSelectionStrategy, clap::error::Error> {
+	match input {
+		"largest-first" => Ok(CoinSelectionStrategy::LargestFirst),
+		"smallest-first" => Ok(CoinSelectionStrategy::SmallestFirst),
+		other => {
+			let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+			err.insert(
+				clap::error::ContextKind::Custom,
+				clap::error::ContextValue::String(format!(
+					"invalid coin selection strategy '{}': expected 'largest-first' or 'smallest-first'",
+					other
+				)),
+			);
+			Err(err)
+		},
+	}
+}
+
 pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error> {
 	input.parse().map_err(|e| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
