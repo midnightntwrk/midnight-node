@@ -296,7 +296,11 @@ pub trait Ledger8Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
-		Bridge::<Signature, Database>::get_c_to_m_bridge_min_amount(state_key)
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_c_to_m_bridge_min_amount(state_key)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_c_to_m_bridge_min_amount(state_key)
+		}
 	}
 
 	/*
