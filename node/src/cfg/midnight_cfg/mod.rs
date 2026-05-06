@@ -94,11 +94,14 @@ pub struct MidnightCfg {
 	/// Whether substrate and midnight storage should be separate or unified
 	pub storage_separation: StorageSeparation,
 
-	/// Allow non-SSL database connections (not recommended for production)
+	/// Deprecated: plaintext database connections are no longer permitted.
+	/// This flag is ignored — all connections use TLS. It will be removed in a future release.
 	pub allow_non_ssl: bool,
 
 	/// Path to SSL root certificate for database connections.
-	/// Required when allow_non_ssl is false for proper certificate validation.
+	/// When set, connections use PgSslMode::VerifyFull (certificate + hostname validation).
+	/// When absent, connections use PgSslMode::Require (encrypted but no certificate validation).
+	#[validate(custom = |s| maybe(s, path_exists))]
 	pub ssl_root_cert: Option<String>,
 
 	/// URL of the Prometheus Remote Write endpoint to push metrics to.

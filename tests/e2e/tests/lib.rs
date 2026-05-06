@@ -320,7 +320,7 @@ async fn register_2_cardano_same_dust_address_production() {
     println!("Second Cardano wallet created: {:?}", address_bech_32_2);
 
     let midnight_wallet_seed = MidnightClient::new_seed();
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering First Cardano wallet {} with DUST address {}",
@@ -600,7 +600,7 @@ async fn cnight_produces_dust() {
         "Midnight wallet seed: {}",
         hex::encode(midnight_wallet_seed.as_bytes())
     );
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         bech32_address, dust_hex
@@ -679,7 +679,7 @@ async fn cnight_produces_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: "".to_string(),
         },
-        seed: midnight_wallet_seed,
+        seed: midnight_wallet_seed.clone(),
         dry_run: false,
     };
 
@@ -734,7 +734,7 @@ async fn deregister_from_dust_production() {
     println!("New Cardano wallet created: {:?}", address_bech32);
 
     let midnight_wallet_seed = MidnightClient::new_seed();
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
@@ -1552,7 +1552,7 @@ async fn register_twice_with_same_cardano_address() {
     println!("New Cardano wallet created: {:?}", address_bech32);
 
     let midnight_wallet_seed = MidnightClient::new_seed();
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
@@ -1620,7 +1620,7 @@ async fn register_twice_with_same_cardano_address() {
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
     let midnight_wallet_seed2 = MidnightClient::new_seed();
-    let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2);
+    let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2.clone());
     let register_tx_id2 = cardano_client
         .register(&dust_hex2, &tx_in2, &collateral_utxo)
         .await
@@ -1724,7 +1724,7 @@ async fn deregister_with_valid_cnight_utxo() {
     println!("New Cardano wallet created: {:?}", address_bech32);
 
     let midnight_wallet_seed = MidnightClient::new_seed();
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
@@ -1870,7 +1870,7 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_compute_concurrency: None,
             ledger_state_db: "".to_string(),
         },
-        seed: midnight_wallet_seed,
+        seed: midnight_wallet_seed.clone(),
         dry_run: false,
     };
 
@@ -2036,7 +2036,7 @@ async fn deregister_first_mapping() {
     println!("New Cardano wallet created: {:?}", address_bech32);
 
     let midnight_wallet_seed = MidnightClient::new_seed();
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
@@ -2113,7 +2113,7 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: "".to_string(),
         },
-        seed: midnight_wallet_seed,
+        seed: midnight_wallet_seed.clone(),
         dry_run: false,
     };
 
@@ -2131,7 +2131,7 @@ async fn deregister_first_mapping() {
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
     let midnight_wallet_seed2 = MidnightClient::new_seed();
-    let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2);
+    let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2.clone());
     let register_tx_id2 = cardano_client
         .register(&dust_hex2, &tx_in2, &collateral_utxo)
         .await
@@ -2256,7 +2256,7 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: "".to_string(),
         },
-        seed: midnight_wallet_seed,
+        seed: midnight_wallet_seed.clone(),
         dry_run: false,
     };
 
@@ -2316,7 +2316,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     faucet.request_tokens(&address_bech32, 7_000_000).await;
 
     let midnight_wallet_seed = MidnightClient::new_seed();
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     println!(
         "Registering Cardano wallet {} with DUST address {}",
@@ -2368,7 +2368,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_compute_concurrency: None,
             ledger_state_db: "".to_string(),
         },
-        seed: midnight_wallet_seed,
+        seed: midnight_wallet_seed.clone(),
         dry_run: false,
     };
 
@@ -2464,7 +2464,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
     faucet.request_tokens(&address_bech32, 7_000_000).await;
 
     let midnight_wallet_seed = MidnightClient::new_seed();
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         address_bech32, dust_hex
@@ -2553,7 +2553,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_compute_concurrency: None,
             ledger_state_db: "".to_string(),
         },
-        seed: midnight_wallet_seed,
+        seed: midnight_wallet_seed.clone(),
         dry_run: false,
     };
 
@@ -2630,7 +2630,7 @@ async fn spend_cnight_producing_dust() {
     println!("Bob's Cardano wallet created: {:?}", bob_bech32);
 
     let midnight_wallet_seed = MidnightClient::new_seed();
-    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     println!(
         "Registering Cardano wallet {} with DUST address {}",
         bech32_address, dust_hex
@@ -2710,7 +2710,7 @@ async fn spend_cnight_producing_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: "".to_string(),
         },
-        seed: midnight_wallet_seed,
+        seed: midnight_wallet_seed.clone(),
         dry_run: false,
     };
 
