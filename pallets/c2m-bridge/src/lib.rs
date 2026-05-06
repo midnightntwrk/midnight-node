@@ -50,7 +50,7 @@ impl From<u128> for Stars {
 	}
 }
 
-/// Domain constant
+/// 10^6 STARS = 1 NIGHT. STAR is atomic.
 pub(crate) const STARS_PER_NIGHT: u128 = 1_000_000;
 
 #[derive(Debug, Decode, Encode, Default, TypeInfo, MaxEncodedLen, PartialEq, Eq)]
@@ -69,6 +69,7 @@ pub mod pallet {
 	};
 	use midnight_primitives::{BridgeRecipient, MidnightSystemTransactionExecutor};
 	use sidechain_domain::McTxHash;
+	use sp_core::hexdisplay::HexDisplay;
 	use sp_partner_chains_bridge::{
 		BridgeTransferV1, SubminimalTransfersConfig, TransferRecipient,
 	};
@@ -238,10 +239,10 @@ pub mod pallet {
 				Ok(serialized_tx) => {
 					log::debug!("Serialized transaction for {}", description);
 					match T::MidnightSystemTransactionExecutor::execute_system_transaction(
-						serialized_tx.clone(),
+						serialized_tx,
 					) {
 						Ok(tx_hash) => {
-							log::debug!("Serialized transaction for {}", description);
+							log::debug!("Executed system transaction for {}", description);
 							let event = make_event(tx_hash);
 							Self::deposit_event(event);
 						},
@@ -265,9 +266,8 @@ pub mod pallet {
 
 			// Safe, because all existing cNight fits in u64.
 			let sum = sum.saturating_add(transfer.amount);
-			let count = count + 1;
+			let count = count.saturating_add(1);
 			if sum > config.subminimal_transfers_flush_threshold {
-				SubminimalTransfers::<T>::kill();
 				Self::execute_serialized_tx(
 					LedgerApi::construct_distribute_treasury_system_tx(sum.into()),
 					|midnight_tx_hash| Event::SubminimalFlushTransfer {
@@ -277,6 +277,7 @@ pub mod pallet {
 					},
 					&alloc::format!("subminimal transfers flush of total {}", sum),
 				);
+				SubminimalTransfers::<T>::kill();
 			} else {
 				SubminimalTransfers::<T>::put(SubminimalTransfersState { count, sum });
 			}
@@ -310,10 +311,15 @@ pub mod pallet {
 				|midnight_tx_hash| Event::UserTransfer {
 					mc_tx_hash,
 					amount,
-					recipient,
+					recipient: recipient.clone(),
 					midnight_tx_hash,
 				},
-				&alloc::format!("'Reserve' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
+				&alloc::format!(
+					"'User' transfer of {} to {} from Cardano Tx: {}",
+					amount,
+					HexDisplay::from(&recipient.as_ref()),
+					mc_tx_hash
+				),
 			);
 		}
 	}
@@ -321,8 +327,11 @@ pub mod pallet {
 	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for Pallet<T> {
 		fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
 			let amount = transfer.amount;
+
 			let minimal_transfer_amount =
 				T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount().unwrap_or_else(|e| {
+					// If ledger read fails, then subminimal transfers functionality is bypassed.
+					// Most likely, if ledger reads fail, the code will never succeed making a transaction.
 					log::error!("Failed to read c_to_m_bridge_min_amount from ledger: {e:?}");
 					Stars(0)
 				});
