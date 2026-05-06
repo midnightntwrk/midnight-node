@@ -24,7 +24,7 @@ wait_for_block() {
             -d '{"jsonrpc":"2.0","method":"chain_getHeader","params":[],"id":1}' \
             "$url" 2>/dev/null \
             | grep -oE '"number":"0x[0-9a-fA-F]+"' \
-            | grep -oE '0x[0-9a-fA-F]+')
+            | grep -oE '0x[0-9a-fA-F]+' || true)
         if [ -n "$hex" ] && [ "$((hex))" -ge "$target" ]; then
             echo "✅ Block $((hex)) ≥ ${target} after ${elapsed}s"
             return 0
