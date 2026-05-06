@@ -283,6 +283,18 @@ pub mod pallet {
 			}
 		}
 
+		fn handle_regular_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
+			let amount = transfer.amount;
+			let mc_tx_hash = transfer.mc_tx_hash;
+			match transfer.recipient {
+				TransferRecipient::Invalid => Self::handle_invalid_transfer(mc_tx_hash, amount),
+				TransferRecipient::Reserve => Self::handle_reserve_transfer(mc_tx_hash, amount),
+				TransferRecipient::Address { recipient } => {
+					Self::handle_user_transfer(mc_tx_hash, amount, recipient)
+				},
+			}
+		}
+
 		fn handle_invalid_transfer(mc_tx_hash: McTxHash, amount: u64) {
 			Self::execute_serialized_tx(
 				LedgerApi::construct_distribute_treasury_system_tx(amount.into()),
@@ -326,27 +338,21 @@ pub mod pallet {
 
 	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for Pallet<T> {
 		fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
-			let amount = transfer.amount;
-
-			let minimal_transfer_amount =
-				T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount().unwrap_or_else(|e| {
+			match T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount() {
+				Ok(min_amount) => {
+					if Stars::from_cnight(transfer.amount) < min_amount {
+						Self::handle_subminimal_transfer(transfer);
+					} else {
+						Self::handle_regular_transfer(transfer);
+					}
+				},
+				Err(e) => {
 					// If ledger read fails, then subminimal transfers functionality is bypassed.
 					// Most likely, if ledger reads fail, the code will never succeed making a transaction.
 					log::error!("Failed to read c_to_m_bridge_min_amount from ledger: {e:?}");
-					Stars(0)
-				});
-			if Stars::from_cnight(amount) < minimal_transfer_amount {
-				Self::handle_subminimal_transfer(transfer);
-			} else {
-				let mc_tx_hash = transfer.mc_tx_hash;
-				match transfer.recipient {
-					TransferRecipient::Invalid => Self::handle_invalid_transfer(mc_tx_hash, amount),
-					TransferRecipient::Reserve => Self::handle_reserve_transfer(mc_tx_hash, amount),
-					TransferRecipient::Address { recipient } => {
-						Self::handle_user_transfer(mc_tx_hash, amount, recipient)
-					},
-				}
-			}
+					Self::handle_regular_transfer(transfer);
+				},
+			};
 		}
 	}
 }
