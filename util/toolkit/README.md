@@ -621,6 +621,24 @@ Update parameters based on a serialized value:
 $ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
 
+#### Print Serialized System Transaction
+Pass `--print-system-tx-hex` to build the `SystemTransaction::OverwriteParameters` payload, print
+it as a `0x`-prefixed hex string, and exit without submitting any extrinsic. Council and Technical
+Committee keys are not required in this mode.
+
+```ignore
+$ midnight-node-toolkit update-ledger-parameters --c-to-m-bridge-min-amount 2000 --print-system-tx-hex
+0x...
+```
+
+This is useful for testing governance flows manually through the Polkadot-JS Apps UI: take the
+printed hex and paste it as the `mn_system_transaction` argument to
+`midnightSystem.sendMnSystemTransaction(...)` from the **Developer → Extrinsics** tab, then drive
+the federated motion through Council and Technical Committee votes from the UI.
+
+If `--parameters` is not supplied the command still connects to `--rpc-url` to fetch the current
+ledger parameters as the base.
+
 ### Root Call (Execute Call via Governance)
 Execute an arbitrary runtime call with Root origin through the federated authority governance mechanism using proper governance (Council + Technical Committee approval).
 
