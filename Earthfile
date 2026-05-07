@@ -1556,6 +1556,84 @@ extract-toolkit-artifacts:
     USER root
     SAVE ARTIFACT /midnight-node-toolkit AS LOCAL artifacts-$NATIVEARCH/midnight-node-toolkit
 
+# sync-mainnet-1000-snapshot generates a minimal cexplorer snapshot from a
+# cardano-db-sync postgres reachable via SOURCE_DSN. The snapshot is saved as
+# an artifact under static/sync-test/ so it can be reused by +sync-mainnet-1000
+# and consumed by CI without re-running the (heavy, db-sync-dependent) build.
+#
+# Usage:
+#   earthly +sync-mainnet-1000-snapshot --SOURCE_DSN=postgres://user:pass@host:5432/cexplorer
+sync-mainnet-1000-snapshot:
+    ARG SOURCE_DSN
+    ARG MIN_BLOCK_NO=13164005
+    ARG MAX_BLOCK_NO=13174340
+    ARG MIN_EPOCH=617
+    # postgres:17.4-alpine matches the loader image used by run-sync.sh and
+    # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
+    FROM postgres:17.4-alpine
+    RUN apk add --no-cache bash xz
+    WORKDIR /work
+    COPY scripts/sync-test/build-snapshot.sh ./
+    RUN --no-cache \
+        SOURCE_DSN="$SOURCE_DSN" \
+        MIN_BLOCK_NO=$MIN_BLOCK_NO \
+        MAX_BLOCK_NO=$MAX_BLOCK_NO \
+        MIN_EPOCH=$MIN_EPOCH \
+        OUTPUT=/work/snapshot.sql.xz \
+        bash ./build-snapshot.sh
+    SAVE ARTIFACT /work/snapshot.sql.xz snapshot.sql.xz AS LOCAL static/sync-test/snapshot.sql.xz
+
+# sync-mainnet-1000 runs a fresh midnight-node against a self-contained
+# postgres preloaded with a pre-built cardano-db-sync snapshot, and verifies
+# the node syncs the first 1000 blocks of Midnight Mainnet.
+#
+# The snapshot is NOT rebuilt here -- run +sync-mainnet-1000-snapshot first
+# (or fetch the artifact from a CI workflow) to populate
+# static/sync-test/snapshot.sql.xz.
+#
+# Requires:
+#   - static/sync-test/snapshot.sql.xz present locally
+#   - docker available locally (the target uses WITH DOCKER)
+#
+# Usage:
+#   earthly -P +sync-mainnet-1000
+sync-mainnet-1000:
+    LOCALLY
+    # NODE_IMAGE may be either an earthly target reference (default `+node-image`,
+    # which is built and tagged locally as $NODE_IMAGE_TAG before running) or a
+    # docker image reference (e.g. `ghcr.io/midnight-ntwrk/midnight-node:tag`),
+    # which is pre-pulled by buildkit (so private-registry creds work) and used
+    # directly. The latter lets CI run the sync test against an already-built
+    # image without re-running +node-image.
+    ARG NODE_IMAGE=+node-image
+    ARG NODE_IMAGE_TAG=localhost/midnight-node:sync-test
+    ARG SYNC_UNTIL=1000
+    ARG SYNC_TIMEOUT_SECS=1800
+    # PRINT_LOGS=1 dumps the node and postgres container logs to stderr after
+    # the run finishes (success or failure). Useful for local debugging.
+    ARG PRINT_LOGS=0
+    IF echo "$NODE_IMAGE" | grep -q '^+'
+        WITH DOCKER --load $NODE_IMAGE_TAG=$NODE_IMAGE
+            RUN NODE_IMAGE=$NODE_IMAGE_TAG \
+                SNAPSHOT=static/sync-test/snapshot.sql.xz \
+                CFG_PRESET=mainnet \
+                SYNC_UNTIL=$SYNC_UNTIL \
+                SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+                PRINT_LOGS=$PRINT_LOGS \
+                ./scripts/sync-test/run-sync.sh
+        END
+    ELSE
+        WITH DOCKER --pull $NODE_IMAGE
+            RUN NODE_IMAGE=$NODE_IMAGE \
+                SNAPSHOT=static/sync-test/snapshot.sql.xz \
+                CFG_PRESET=mainnet \
+                SYNC_UNTIL=$SYNC_UNTIL \
+                SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+                PRINT_LOGS=$PRINT_LOGS \
+                ./scripts/sync-test/run-sync.sh
+        END
+    END
+
 #images Build all the images
 images:
     FROM scratch
