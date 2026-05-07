@@ -1451,9 +1451,11 @@ local-env-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
+    RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:

@@ -7694,6 +7694,7 @@ dependencies = [
  "serde",
  "serde_json",
  "subxt 0.50.0",
+ "tempfile",
  "tiny-bip39",
  "tokio",
  "whisky",
