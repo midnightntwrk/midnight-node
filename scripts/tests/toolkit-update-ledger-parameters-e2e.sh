@@ -15,11 +15,11 @@
 
 set -euxo pipefail
 
+# shellcheck disable=SC1091
 . "$(dirname "$0")/lib/wait-for-node.sh"
 
 NODE_IMAGE="$1"
 TOOLKIT_IMAGE="$2"
-RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
 
 echo "🎯 Running Toolkit E2E test"
 echo "🧱 NODE_IMAGE: $NODE_IMAGE"
@@ -52,7 +52,7 @@ cleanup() {
 # --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
-if ! wait_for_block http://localhost:9944 2; then
+if ! wait_for_unfinalized_block http://localhost:9944 2; then
     echo "📋 Container status:"
     docker container inspect midnight-node --format '{{.State.Status}} - Exit code: {{.State.ExitCode}}' || true
     echo "📋 Container logs:"

@@ -15,6 +15,7 @@
 
 set -euxo pipefail
 
+# shellcheck disable=SC1091
 . "$(dirname "$0")/lib/wait-for-node.sh"
 
 NODE_IMAGE="$1"
@@ -28,7 +29,8 @@ echo "🧱 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
 # Ensure Docker network exists
 docker network create toolkit-e2e-net || true
 
-export POSTGRES_PASSWORD=$(uuidgen | tr -d '-' | head -c 16)
+POSTGRES_PASSWORD=$(uuidgen | tr -d '-' | head -c 16)
+export POSTGRES_PASSWORD
 
 # Start a postgres container for the toolkit sync-cache
 docker run -d --rm \
@@ -54,12 +56,12 @@ cleanup() {
     docker container stop midnight-node-tx
     docker container stop postgres-test
     echo "🧹 Removing tempdir..."
-    rm -rf $tempdir
+    rm -rf "$tempdir"
 }
 # --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
-wait_for_block http://localhost:9944 2
+wait_for_unfinalized_block http://localhost:9944 2
 
 # Run toolkit commands
 echo "📦 Running toolkit tests..."
@@ -77,22 +79,22 @@ docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" \
     -s ws://midnight-node-tx:9944 \
     -d ws://midnight-node-tx:9944
 
-docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" generate-txs \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v "$tempdir":/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" generate-txs \
     --dest-file "/out/$deploy_filename" \
     contract-simple deploy \
     --rng-seed "$RNG_SEED" \
     -s ws://midnight-node-tx:9944
 
 contract_address=$(
-    docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out "$TOOLKIT_IMAGE" \
+    docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v "$tempdir":/out "$TOOLKIT_IMAGE" \
         contract-address --src-file "/out/$deploy_filename"
 )
 
-docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" generate-txs \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v "$tempdir":/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" generate-txs \
     --src-file="/out/$deploy_filename" send \
     -d ws://midnight-node-tx:9944
 
-docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v "$tempdir":/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs contract-simple maintenance \
     --rng-seed "$RNG_SEED" \
     --contract-address "$contract_address" \
@@ -100,7 +102,7 @@ docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tem
     -s ws://midnight-node-tx:9944 \
     -d ws://midnight-node-tx:9944
 
-docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v "$tempdir":/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs contract-simple call \
     --call-key store \
     --rng-seed "$RNG_SEED" \
@@ -108,7 +110,7 @@ docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tem
     -s ws://midnight-node-tx:9944 \
     -d ws://midnight-node-tx:9944
 
-docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v $tempdir:/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
+docker run --rm -e RESTORE_OWNER="$(id -u):$(id -g)" -e RUST_BACKTRACE=1 -v "$tempdir":/out --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs contract-simple call \
     --call-key check \
     --rng-seed "$RNG_SEED" \
