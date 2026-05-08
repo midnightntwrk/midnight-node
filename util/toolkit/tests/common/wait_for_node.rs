@@ -13,49 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Two flavours of "is the node ready" wait, picked deliberately at the call
-//! site:
-//!
-//! * [`wait_for_unfinalized_block`] — best-chain head; fast, sufficient for
-//!   "node is alive and producing".
-//! * [`wait_for_finalized_block`] — GRANDPA-finalized; required when the test
-//!   asserts on something only meaningful after finality (e.g. startup smoke
-//!   checks that finality is advancing).
+//! Wait until the node's **finalized** (GRANDPA-confirmed) block height reaches
+//! a target. The toolkit CLI calls `get_block_one_hash` on transaction-generating
+//! commands, which fails with `OnlyGenesisFinalized` until finality has reached
+//! block 1, so finality (not best-block) is what tests need to wait for.
 
 use midnight_node_toolkit::client::MidnightNodeClient;
 use std::time::{Duration, Instant};
 
-/// Wait until the node's **best** (head-of-chain) block height reaches `target`.
-/// Best ≠ finalized: a best block can still be reorged. Use this when you only
-/// need "the node is producing".
-pub async fn wait_for_unfinalized_block(ws_url: &str, target_block: u64, timeout: Duration) {
-	let client = connect(ws_url, timeout).await;
-	let start = Instant::now();
-	loop {
-		match client.get_best_height().await {
-			Ok(h) if h >= target_block => {
-				eprintln!(
-					"[wait_for_block] reached best block {h} (target {target_block}, elapsed: {:.1}s)",
-					start.elapsed().as_secs_f32()
-				);
-				return;
-			},
-			Ok(h) => eprintln!(
-				"[wait_for_block] best block {h} < target {target_block} (elapsed: {:.1}s)",
-				start.elapsed().as_secs_f32()
-			),
-			Err(e) => eprintln!("[wait_for_block] rpc error fetching best height: {e}"),
-		}
-		bail_or_sleep(start, timeout, "best", target_block, ws_url).await;
-	}
-}
-
-/// Wait until the node's **finalized** (GRANDPA-confirmed) block height
-/// reaches `target`. Slower but stable — use when finality matters.
-///
-/// Currently no Rust test calls this; kept as part of the deliberate API pair
-/// so future callers don't have to add it back from scratch.
-#[allow(dead_code)]
 pub async fn wait_for_finalized_block(ws_url: &str, target_block: u64, timeout: Duration) {
 	let client = connect(ws_url, timeout).await;
 	let start = Instant::now();

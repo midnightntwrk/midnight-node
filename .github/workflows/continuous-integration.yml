@@ -360,9 +360,10 @@ jobs:
       - name: Run toolkit tests
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           PUSH_FLAG=""
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
+          if [ "$EVENT_NAME" = "merge_group" ]; then
             PUSH_FLAG="--push"
           fi
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \

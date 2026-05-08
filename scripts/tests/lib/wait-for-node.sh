@@ -35,7 +35,7 @@ _rpc_get_best_height() {
         "$url" 2>/dev/null \
         | grep -oE '"number"[[:space:]]*:[[:space:]]*"0x[0-9a-fA-F]+"' \
         | grep -oE '0x[0-9a-fA-F]+' || true)
-    [ -n "$hex" ] && echo "$((hex))"
+    if [ -n "$hex" ]; then echo "$((hex))"; fi
 }
 
 # _rpc_get_finalized_height <url>: prints finalized block height as decimal, or empty on error.
@@ -54,7 +54,7 @@ _rpc_get_finalized_height() {
         "$url" 2>/dev/null \
         | grep -oE '"number"[[:space:]]*:[[:space:]]*"0x[0-9a-fA-F]+"' \
         | grep -oE '0x[0-9a-fA-F]+' || true)
-    [ -n "$hex" ] && echo "$((hex))"
+    if [ -n "$hex" ]; then echo "$((hex))"; fi
 }
 
 # _wait_for_block_inner <fetcher_fn> <label> <url> <target> <timeout>
