@@ -127,9 +127,9 @@ use alloc::vec::*;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use serde::{Deserialize, Serialize};
-use sidechain_domain::{
-	AssetId, AssetName, MainchainAddress, McBlockHash, McBlockNumber, McTxHash, PolicyId,
-};
+#[cfg(feature = "std")]
+use sidechain_domain::McBlockHash;
+use sidechain_domain::{AssetId, AssetName, MainchainAddress, McBlockNumber, McTxHash, PolicyId};
 use sp_inherents::*;
 
 #[cfg(feature = "std")]
@@ -233,6 +233,13 @@ pub struct BridgeTransferV1<RecipientAddress> {
 	pub amount: u64,
 	/// Transfer recipient on the Partner Chain
 	pub recipient: TransferRecipient<RecipientAddress>,
+}
+
+impl<RecipientAddress> BridgeTransferV1<RecipientAddress> {
+	/// Creates a transfer with Invalid recipient
+	pub fn new_invalid(mc_tx_hash: McTxHash, amount: u64) -> Self {
+		Self { mc_tx_hash, amount, recipient: TransferRecipient::Invalid }
+	}
 }
 
 /// Details of bridge transfer recipient

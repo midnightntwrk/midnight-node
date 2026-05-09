@@ -48,9 +48,7 @@ pub use frame_support::{
 };
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot};
-use midnight_node_ledger::types::{
-	GasCost, Tx, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
-};
+use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
@@ -118,7 +116,6 @@ pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;
 pub mod beefy;
-mod c2m_bridge;
 pub mod check_call_filter;
 mod constants;
 mod currency;
@@ -841,12 +838,28 @@ impl pallet_cnight_observation::Config for Runtime {
 impl pallet_partner_chains_bridge::Config for Runtime {
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 	type Recipient = BridgeRecipient;
-	type TransferHandler = crate::c2m_bridge::MidnightTokenTransferHandler;
-	type HandlerResult = crate::c2m_bridge::MidnightTxHash;
+	type TransferHandler = C2MBridge;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
 	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
+}
+
+/// Provider for the minimum bridge transfer amount from the Midnight ledger.
+pub struct MidnightMinBridgeAmount;
+impl pallet_c2m_bridge::pallet::MinBridgeAmountProvider for MidnightMinBridgeAmount {
+	fn get_c_to_m_bridge_min_amount()
+	-> Result<pallet_c2m_bridge::Stars, midnight_node_ledger::types::active_version::LedgerApiError>
+	{
+		Ok(pallet_c2m_bridge::Stars::from(Midnight::get_c_to_m_bridge_min_amount()?))
+	}
+}
+
+impl pallet_c2m_bridge::Config for Runtime {
+	type MidnightSystemTransactionExecutor = MidnightSystem;
+	/// Provides access to the ledger's `c_to_m_bridge_min_amount` parameter.
+	type MinBridgeAmountProvider = MidnightMinBridgeAmount;
+	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -929,6 +942,9 @@ mod runtime {
 
 	#[runtime::pallet_index(32)]
 	pub type Bridge = pallet_partner_chains_bridge::Pallet<Runtime>;
+
+	#[runtime::pallet_index(33)]
+	pub type C2MBridge = pallet_c2m_bridge::Pallet<Runtime>;
 
 	// Governance
 	#[runtime::pallet_index(40)]
@@ -1496,7 +1512,7 @@ impl_runtime_apis! {
 		}
 
 		fn execute_block(
-			block: Block,
+			block: <Block as BlockT>::LazyBlock,
 			state_root_check: bool,
 			signature_check: bool,
 			select: frame_try_runtime::TryStateSelect

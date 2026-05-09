@@ -27,7 +27,7 @@ use midnight_node_ledger_helpers::{
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
 	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, INHERENT_IDENTIFIER,
-	MidnightObservationTokenMovement, TimestampUnixMillis,
+	InherentError, MidnightObservationTokenMovement, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -130,7 +130,7 @@ fn extract_events(midnight_system_tx: &[u8]) -> Vec<CNightGeneratesDustEvent> {
 fn init_ledger_state() {
 	let block_context = get_block_context(UndeployedNetwork.genesis_block());
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb(
+	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -1578,5 +1578,42 @@ fn position_guards_hold_across_multiple_advances() {
 			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
 			Error::<Test>::CardanoPositionRegression
 		);
+	});
+}
+
+fn create_malformed_inherent() -> InherentData {
+	let mut inherent_data = InherentData::new();
+	inherent_data
+		.put_data(INHERENT_IDENTIFIER, &vec![0xFF_u8, 0xFE, 0xFD])
+		.expect("inherent data insertion should not fail");
+	inherent_data
+}
+
+#[test]
+fn create_inherent_with_malformed_data_returns_none() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let result = CNightObservation::create_inherent(&malformed);
+		assert!(result.is_none(), "create_inherent should return None on malformed data");
+	});
+}
+
+#[test]
+fn check_inherent_with_malformed_data_returns_error() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(1, 0) };
+		let result = CNightObservation::check_inherent(&call, &malformed);
+		assert_eq!(result, Err(InherentError::DecodeFailed));
+	});
+}
+
+#[test]
+fn is_inherent_required_with_malformed_data_returns_error() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let result = CNightObservation::is_inherent_required(&malformed);
+		assert_eq!(result, Err(InherentError::DecodeFailed));
 	});
 }
