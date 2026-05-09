@@ -815,7 +815,7 @@ mod test {
 
 		let wallets = seeds
 			.iter()
-			.map(|seed| Wallet::default(*seed, &genesis.state))
+			.map(|seed| Wallet::default(seed.clone(), &genesis.state))
 			.collect::<Vec<_>>();
 
 		let state = genesis.state;

@@ -845,8 +845,20 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type BenchmarkHelper = ();
 }
 
+/// Provider for the minimum bridge transfer amount from the Midnight ledger.
+pub struct MidnightMinBridgeAmount;
+impl pallet_c2m_bridge::pallet::MinBridgeAmountProvider for MidnightMinBridgeAmount {
+	fn get_c_to_m_bridge_min_amount()
+	-> Result<pallet_c2m_bridge::Stars, midnight_node_ledger::types::active_version::LedgerApiError>
+	{
+		Ok(pallet_c2m_bridge::Stars::from(Midnight::get_c_to_m_bridge_min_amount()?))
+	}
+}
+
 impl pallet_c2m_bridge::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	/// Provides access to the ledger's `c_to_m_bridge_min_amount` parameter.
+	type MinBridgeAmountProvider = MidnightMinBridgeAmount;
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
 }
 

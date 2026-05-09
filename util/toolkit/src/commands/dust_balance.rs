@@ -55,19 +55,22 @@ pub async fn execute(
 	let source_blocks = src.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
-	let fork_ctx =
-		build_fork_aware_context_cached(&[args.seed], &source_blocks, wallet_cache.as_deref())
-			.await;
+	let fork_ctx = build_fork_aware_context_cached(
+		&[args.seed.clone()],
+		&source_blocks,
+		wallet_cache.as_deref(),
+	)
+	.await;
 
 	let json = fork_ctx.dispatch(
 		|ctx| {
 			let seed_v7 =
 				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(
-					args.seed,
+					args.seed.clone(),
 				);
 			crate::commands::fork::ledger_7::dust_balance::dust_balance(&ctx, seed_v7)
 		},
-		|ctx| crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, args.seed),
+		|ctx| crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, args.seed.clone()),
 	)?;
 
 	Ok(DustBalanceResult::Json(json))

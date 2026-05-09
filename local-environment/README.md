@@ -63,7 +63,7 @@ In addition to well-known networks, you can launch a dynamic local environment t
 > **Warning:** Public use of Local env is currently disabled, until we publish Governance Smart Contracts. For anyone who already has acccess,
 you need to clone [midnight-reserve-contracts](https://github.com/midnightntwrk/midnight-reserve-contracts) to the same location where midnight-node repo sits.
 
-> **Note:** Local development environments set `ALLOW_NON_SSL=true` to allow connections to PostgreSQL without SSL certificates. Production deployments require SSL.
+> **Note:** Local development environments use a self-signed TLS certificate for PostgreSQL connections. Production deployments should set `ssl_root_cert` for full certificate validation (`PgSslMode::VerifyFull`).
 
 When first run, all images are pulled from public repositories. This may take some time.
 

@@ -42,6 +42,7 @@ subxt.workspace = true
 subxt-signer.workspace = true
 serde_json.workspace = true
 serde_bytes = "0.11"
+zeroize = { workspace = true }
 
 [features]
 default = []

@@ -341,6 +341,28 @@ pub async fn create_cnight_observation_indexes(pool: &Pool<Postgres>) -> Result<
 	Ok(())
 }
 
+/// Lower autovacuum_analyze_scale_factor on the cardano-db-sync hot tables that
+/// midnight-node queries. Postgres's default of 0.1 means autoanalyze only fires after
+/// 10% row growth — for append-heavy multi-million-row tables (tx_out, ma_tx_out, etc.)
+/// that threshold takes weeks to hit, so the planner runs on weeks-stale statistics and
+/// picks bad join orders for high-cardinality lookups (observed ~430s queries on a
+/// preview/preprod cnight observation lookup against an otherwise idle DB).
+///
+/// Lowering to 0.01 keeps stats fresh as db-sync ingests blocks. Idempotent.
+pub async fn apply_cnight_observation_autovacuum_tuning(
+	pool: &Pool<Postgres>,
+) -> Result<(), sqlx::Error> {
+	const TABLES: &[&str] = &["block", "tx", "tx_out", "tx_in", "ma_tx_out", "datum"];
+	for table in TABLES {
+		info!("Applying autovacuum tuning to '{table}'");
+		let sql = format!(
+			"ALTER TABLE {table} SET (autovacuum_analyze_scale_factor = 0.01, autovacuum_vacuum_scale_factor = 0.05)"
+		);
+		sqlx::query(&sql).execute(pool).await?;
+	}
+	Ok(())
+}
+
 /// Query to get the block by its hash
 pub(crate) async fn get_block_by_hash(
 	pool: &Pool<Postgres>,
