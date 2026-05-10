@@ -41,6 +41,24 @@ pub fn token_decode<T: TokenDecode>(input: &str) -> Result<T, clap::error::Error
 	Ok(token)
 }
 
+pub fn coin_selection_strategy(input: &str) -> Result<CoinSelectionStrategy, clap::error::Error> {
+	match input {
+		"largest-first" => Ok(CoinSelectionStrategy::LargestFirst),
+		"smallest-first" => Ok(CoinSelectionStrategy::SmallestFirst),
+		other => {
+			let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+			err.insert(
+				clap::error::ContextKind::Custom,
+				clap::error::ContextValue::String(format!(
+					"invalid coin selection strategy '{}': expected 'largest-first' or 'smallest-first'",
+					other
+				)),
+			);
+			Err(err)
+		},
+	}
+}
+
 pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error> {
 	input.parse().map_err(|e| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
@@ -78,10 +96,20 @@ pub fn hex_ledger_decode<T: Deserializable + Tagged>(input: &str) -> Result<T, c
 	hex_ledger_tagged_decode::<T>(input)
 }
 
+// ADR-0022: wallet keys and addresses (including contract addresses and coin
+// public keys) use *untagged* serialization. They are surfaced to users as
+// Bech32m, where the human-readable-part already plays the role of a tag.
+// Switching to `hex_ledger_decode` (tagged) was tried and reverted in PR #853;
+// do not re-introduce it without first updating ADR-0022. EOF enforcement in
+// `hex_ledger_untagged_decode` is the audit-#307 hardening that closes the
+// silent-fallback ambiguity surface without changing the wire format.
 pub fn coin_public_decode(input: &str) -> Result<CoinPublicKey, clap::error::Error> {
 	hex_ledger_untagged_decode(input)
 }
 
+// ADR-0022: see the comment on `coin_public_decode`. `ContractAddress` is in
+// the same untagged set; switching to tagged decoding was reverted in PR #853
+// and must not be re-introduced without first updating ADR-0022.
 pub fn contract_address_decode(input: &str) -> Result<ContractAddress, clap::error::Error> {
 	hex_ledger_untagged_decode(input)
 }
@@ -94,12 +122,13 @@ where
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
 			clap::error::ContextKind::Custom,
-			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+			clap::error::ContextValue::String(format!("invalid hex input: {}", e)),
 		);
 		err
 	})?;
 
-	let res = <T as Deserializable>::deserialize(&mut &bytes[..], 0).map_err(|e| {
+	let mut cursor = &bytes[..];
+	let res = <T as Deserializable>::deserialize(&mut cursor, 0).map_err(|e| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
 			clap::error::ContextKind::Custom,
@@ -107,6 +136,18 @@ where
 		);
 		err
 	})?;
+
+	if !cursor.is_empty() {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!(
+				"trailing data after deserialization: {} extra byte(s)",
+				cursor.len()
+			)),
+		);
+		return Err(err);
+	}
 
 	Ok(res)
 }
@@ -143,7 +184,7 @@ pub fn hex_bytes(input: &str) -> Result<Vec<u8>, clap::error::Error> {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
 			clap::error::ContextKind::Custom,
-			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+			clap::error::ContextValue::String(format!("invalid hex input: {}", e)),
 		);
 		err
 	})
@@ -154,7 +195,6 @@ where
 	T: TryFrom<Vec<u8>, Error = Vec<u8>>,
 {
 	let bytes = hex_bytes(input)?;
-
 	let res: T = bytes.try_into().map_err(|e: Vec<u8>| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
 		err.insert(
@@ -173,12 +213,10 @@ where
 pub fn fetch_cache_config(input: &str) -> Result<FetchCacheConfig, clap::Error> {
 	FetchCacheConfig::from_str(input).map_err(|error| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
-
 		err.insert(
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("invalid fetch cache config: {}", error)),
 		);
-
 		err
 	})
 }
@@ -190,7 +228,6 @@ pub fn wallet_address(input: &str) -> Result<WalletAddress, clap::Error> {
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("invalid wallet address: {}", error)),
 		);
-
 		err
 	})
 }
@@ -202,7 +239,104 @@ pub fn utxo_id_decode(input: &str) -> Result<UtxoId, clap::Error> {
 			clap::error::ContextKind::Custom,
 			clap::error::ContextValue::String(format!("invalid utxo id: {}", error)),
 		);
-
 		err
 	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	// `coin_public_decode` — untagged per ADR-0022.
+
+	#[test]
+	fn coin_public_decode_accepts_untagged_input() {
+		// 32-byte all-zeros payload — the untagged decoder consumes exactly 32 bytes.
+		let res = coin_public_decode(&"00".repeat(32));
+		assert!(res.is_ok(), "valid untagged 32-byte input should decode");
+	}
+
+	#[test]
+	fn coin_public_decode_rejects_trailing_bytes() {
+		// Valid 32-byte payload plus one extra byte — EOF enforcement should reject.
+		let with_trailing = format!("{}00", "00".repeat(32));
+		let res = coin_public_decode(&with_trailing);
+		assert!(res.is_err(), "trailing bytes should be rejected (EOF enforcement)");
+	}
+
+	#[test]
+	fn coin_public_decode_rejects_truncated_input() {
+		// 30 bytes (60 hex chars) — short of the 32-byte payload.
+		let res = coin_public_decode(&"00".repeat(30));
+		assert!(res.is_err(), "truncated input should be rejected");
+	}
+
+	#[test]
+	fn coin_public_decode_rejects_invalid_hex() {
+		let res = coin_public_decode("not-valid-hex!!");
+		assert!(res.is_err(), "invalid hex should be rejected");
+	}
+
+	// `contract_address_decode` — untagged per ADR-0022.
+
+	#[test]
+	fn contract_address_decode_accepts_untagged_input() {
+		// Reuse the canonical untagged fixture also consumed by `generate_txs.rs`.
+		let untagged_hex =
+			include_str!("../../../res/test-contract/contract_address_undeployed.mn").trim();
+		assert!(
+			contract_address_decode(untagged_hex).is_ok(),
+			"valid untagged ContractAddress hex should decode"
+		);
+	}
+
+	#[test]
+	fn contract_address_decode_rejects_trailing_bytes() {
+		let untagged_hex =
+			include_str!("../../../res/test-contract/contract_address_undeployed.mn").trim();
+		let with_trailing = format!("{untagged_hex}00");
+		let res = contract_address_decode(&with_trailing);
+		assert!(res.is_err(), "trailing bytes should be rejected (EOF enforcement)");
+	}
+
+	#[test]
+	fn contract_address_decode_rejects_truncated_input() {
+		// 30 bytes — short of the 32-byte payload.
+		let res = contract_address_decode(&"00".repeat(30));
+		assert!(res.is_err(), "truncated input should be rejected");
+	}
+
+	#[test]
+	fn contract_address_decode_rejects_invalid_hex() {
+		let res = contract_address_decode("zzzz");
+		assert!(res.is_err(), "invalid hex should be rejected");
+	}
+
+	// `hex_ledger_untagged_decode::<HashOutput>` — the audit-#307 EOF hardening.
+
+	#[test]
+	fn hex_ledger_untagged_decode_accepts_exact_length() {
+		let res = hex_ledger_untagged_decode::<HashOutput>(&"00".repeat(32));
+		assert!(res.is_ok(), "exact-length untagged input should succeed");
+	}
+
+	#[test]
+	fn hex_ledger_untagged_decode_rejects_trailing_bytes() {
+		// 33 bytes — one byte too many.
+		let res = hex_ledger_untagged_decode::<HashOutput>(&"ab".repeat(33));
+		assert!(res.is_err(), "trailing data in untagged decode should be rejected");
+	}
+
+	#[test]
+	fn hex_ledger_untagged_decode_rejects_truncated_input() {
+		// 30 bytes — short of the 32-byte payload.
+		let res = hex_ledger_untagged_decode::<HashOutput>(&"ab".repeat(30));
+		assert!(res.is_err(), "truncated input should be rejected");
+	}
+
+	#[test]
+	fn hex_ledger_untagged_decode_rejects_invalid_hex() {
+		let res = hex_ledger_untagged_decode::<HashOutput>("not-valid-hex!!");
+		assert!(res.is_err(), "invalid hex should be rejected");
+	}
 }

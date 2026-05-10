@@ -19,10 +19,14 @@ set -euxo pipefail
 # Source the mainchain env
 . /shared/mc.env
 
+export STORAGE_SEPARATION=unified
+
 ./midnight-node \
   --chain=/shared/chain-spec.json \
   --validator \
   --node-key=0000000000000000000000000000000000000000000000000000000000000004 \
+  --port=30336 \
+  --public-addr=/dns/midnight-node-4/tcp/30336/p2p/12D3KooWSsChzF81YDUKpe9Uk5AHV5oqAaXAcWNSPYgoLauUk4st \
   --bootnodes="/dns/midnight-node-1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   --base-path=/data \
   --keystore-path=/keystore \

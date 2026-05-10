@@ -92,24 +92,27 @@ pub mod pallet {
 	#[pallet::error]
 	pub enum Error<T> {
 		/// The motion has already been approved by this authority.
+		#[codec(index = 0)]
 		MotionAlreadyApproved,
 		/// The authority trying to kill a motion was not found in the list of approvers.
+		#[codec(index = 1)]
 		MotionApprovalMissing,
 		/// The motion approval excees T::MaxAuthorityBodies
+		#[codec(index = 2)]
 		MotionApprovalExceedsBounds,
 		/// Motion not found
+		#[codec(index = 3)]
 		MotionNotFound,
 		/// Motion not finished
+		#[codec(index = 4)]
 		MotionNotEnded,
 		/// Motion has ended and therefore it doesn't accept more changes
+		#[codec(index = 5)]
 		MotionHasEnded,
-		/// Motion is approved but need to wait until the approval period ends
-		MotionTooEarlyToClose,
-		/// Motion already exists
-		MotionAlreadyExists,
-		/// Motion expired without enough approvals
-		MotionExpired,
+		// Indices 6, 7, 8 previously held MotionTooEarlyToClose, MotionAlreadyExists,
+		// and MotionExpired. Reserved to preserve historical block decoding.
 		/// The provided weight bound is too low for the motion's call
+		#[codec(index = 9)]
 		MotionWeightBoundTooLow,
 	}
 
@@ -313,10 +316,7 @@ pub mod pallet {
 				// persist regardless of the dispatch outcome.
 				Self::deposit_event(Event::MotionDispatched { motion_hash, motion_result });
 				Self::motion_remove(motion_hash);
-				// Propagate dispatch error after cleanup
-				motion_result?;
 
-				// Return actual weight for approved motion
 				Ok(PostDispatchInfo {
 					actual_weight: Some(
 						T::WeightInfo::motion_close_approved().saturating_add(dispatch_weight),

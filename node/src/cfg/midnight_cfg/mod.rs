@@ -19,6 +19,13 @@ use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use super::validation_utils::{maybe, path_exists};
 use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
 
+#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StorageSeparation {
+	#[default]
+	Separate,
+	Unified,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
 /// Parameters specific to Midnight
@@ -84,11 +91,17 @@ pub struct MidnightCfg {
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
 
-	/// Allow non-SSL database connections (not recommended for production)
+	/// Whether substrate and midnight storage should be separate or unified
+	pub storage_separation: StorageSeparation,
+
+	/// Deprecated: plaintext database connections are no longer permitted.
+	/// This flag is ignored — all connections use TLS. It will be removed in a future release.
 	pub allow_non_ssl: bool,
 
 	/// Path to SSL root certificate for database connections.
-	/// Required when allow_non_ssl is false for proper certificate validation.
+	/// When set, connections use PgSslMode::VerifyFull (certificate + hostname validation).
+	/// When absent, connections use PgSslMode::Require (encrypted but no certificate validation).
+	#[validate(custom = |s| maybe(s, path_exists))]
 	pub ssl_root_cert: Option<String>,
 
 	/// URL of the Prometheus Remote Write endpoint to push metrics to.
