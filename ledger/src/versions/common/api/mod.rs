@@ -211,3 +211,18 @@ impl Api {
 pub(crate) fn new() -> Api {
 	Api::new()
 }
+
+/// Validates that `bytes` decode to a well-formed `DustPublicKey`.
+///
+/// The `BoundedVec<u8, ConstU32<33>>` envelope on `DustPublicKeyBytes` enforces
+/// only the wire length. The Fr-range check requires actually attempting the
+/// `DustPublicKey` deserialisation, since values whose 33-byte encoding sits
+/// above the Bls12-381 Fr modulus pass the length check but fail downstream
+/// circuit use. This helper performs that check without emitting the
+/// `log::error!` line that `Api::deserialize` produces on failure — call sites
+/// that filter inputs upstream (e.g. the cNight-observation inherent-data
+/// provider) treat invalid registrations as a per-UTXO non-fatal outcome, so
+/// the deserialise failure must not surface as an `error`-severity log line.
+pub fn dust_public_key_is_valid(bytes: &[u8]) -> bool {
+	<DustPublicKey as Deserializable>::deserialize(&mut &*bytes, 0).is_ok()
+}
