@@ -553,7 +553,25 @@ pub mod pallet {
 					Some(CNightGeneratesDustEventSerialized(event_bytes))
 				},
 				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
+					// The DustPublicKey deserialise variant is not fatal at the call
+					// site — invalid registrations are filtered at the IDP from
+					// CNightObservationApi v3 onward, and at legacy api versions the
+					// pallet ingests them but cannot construct the downstream event.
+					// All other LedgerApiError variants signal a real bridge failure
+					// and stay at `warn` severity. The misleading "Fatal:" prefix is
+					// dropped in both branches.
+					match e {
+						LedgerApiError::Deserialization(DeserializationError::DustPublicKey) => {
+							log::debug!(
+								"Skipping AssetCreate for registration with out-of-Fr-range DustPublicKey: {e:?}"
+							);
+						},
+						_ => {
+							log::warn!(
+								"Unable to construct CNightGeneratesDustEvent for AssetCreate: {e:?}"
+							);
+						},
+					}
 					None
 				},
 			}
@@ -591,7 +609,19 @@ pub mod pallet {
 			match event {
 				Ok(event_bytes) => Some(CNightGeneratesDustEventSerialized(event_bytes)),
 				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
+					// See handle_create above for rationale on variant narrowing.
+					match e {
+						LedgerApiError::Deserialization(DeserializationError::DustPublicKey) => {
+							log::debug!(
+								"Skipping AssetSpend for registration with out-of-Fr-range DustPublicKey: {e:?}"
+							);
+						},
+						_ => {
+							log::warn!(
+								"Unable to construct CNightGeneratesDustEvent for AssetSpend: {e:?}"
+							);
+						},
+					}
 					None
 				},
 			}
