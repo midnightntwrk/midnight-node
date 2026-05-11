@@ -32,6 +32,8 @@ fn main_chain_scripts() -> MainChainScripts {
 			"validator address",
 		)
 		.unwrap(),
+		reserve_validator_address: MainchainAddress::from_str("reserve validator address")
+			.unwrap(),
 	}
 }
 

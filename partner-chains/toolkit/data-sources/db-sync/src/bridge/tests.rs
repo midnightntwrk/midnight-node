@@ -28,6 +28,10 @@ fn illiquid_circulation_supply_validator_address() -> MainchainAddress {
 	MainchainAddress::from_str("ics address").unwrap()
 }
 
+fn reserver_validator_address() -> MainchainAddress {
+	MainchainAddress::from_str("reserve address").unwrap()
+}
+
 fn block_2_hash() -> McBlockHash {
 	McBlockHash(hex!("b000000000000000000000000000000000000000000000000000000000000002"))
 }
@@ -119,6 +123,7 @@ fn main_chain_scripts() -> MainChainScripts {
 		token_asset_name: token_asset_name(),
 		illiquid_circulation_supply_validator_address:
 			illiquid_circulation_supply_validator_address(),
+		reserve_validator_address: reserver_validator_address(),
 	}
 }
 
