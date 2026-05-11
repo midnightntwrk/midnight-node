@@ -13,7 +13,11 @@
 
 //! Native Token Observation Inherent Data Provider
 
-use crate::{MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo};
+use crate::{
+	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
+	ObservedUtxoData,
+};
+use midnight_node_ledger::latest::api::dust_public_key_is_valid;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
 	TimestampUnixMillis,
@@ -141,7 +145,33 @@ impl MidnightCNightObservationInherentDataProvider {
 			.await
 			.map_err(IDPCreationError::DataSourceError)?;
 
-		Ok(Self { utxos: observed_utxos.utxos, next_cardano_position: observed_utxos.end })
+		// At CNightObservationApi v3+, drop registration UTXOs whose DustPublicKey
+		// payload is structurally valid (length ≤ 33) but out of range for the
+		// Bls12-381 Fr scalar field. The check is consensus-affecting because the
+		// inherent payload changes, so it is gated on the runtime API version —
+		// matching the v1 → v2 over-fetch-factor gate above. At v2 and earlier the
+		// legacy pass-through is preserved so old-runtime + new-binary pairings
+		// stay consensus-equivalent across the upgrade window.
+		let mut utxos = observed_utxos.utxos;
+		if api_version >= 3 {
+			utxos.retain(|utxo| match &utxo.data {
+				ObservedUtxoData::Registration(reg) => {
+					let valid = dust_public_key_is_valid(&reg.dust_public_key.0);
+					if !valid {
+						log::debug!(
+							"Dropping registration with out-of-Fr-range DustPublicKey: \
+							 cardano_reward_address={} dust_public_key_bytes={}",
+							hex::encode(&reg.cardano_reward_address.0),
+							hex::encode(&reg.dust_public_key.0),
+						);
+					}
+					valid
+				},
+				_ => true,
+			});
+		}
+
+		Ok(Self { utxos, next_cardano_position: observed_utxos.end })
 	}
 }
 
