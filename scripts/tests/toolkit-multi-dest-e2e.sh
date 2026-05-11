@@ -212,7 +212,6 @@ else
 fi
 
 echo "Step 5: Verify transactions were processed"
-sleep 10
 ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 120
 
 echo "Toolkit Multi-Destination URL E2E Test completed successfully"

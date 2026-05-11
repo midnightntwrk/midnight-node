@@ -66,9 +66,14 @@ pub enum UtxoActionType {
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
 
-/// Overestimate factor for UTXOs per Cardano transaction.
-/// The mainchain follower applies this multiplier to `CardanoTxCapacityPerBlock`
-/// when pre-allocating the UTXO buffer (see `get_utxos_up_to_capacity`).
+/// Runtime acceptance envelope: upper bound on the UTXO-to-TX ratio that
+/// `process_tokens` and the worst-case weight will accept per inherent.
+///
+/// This is intentionally *wider* than the IDP's actual fetch factor (which the
+/// node binary picks per `CNightObservationApi` version — 4x at v2+, 64x at v1).
+/// The runtime must keep accepting the legacy 64x envelope so that v1 binaries
+/// pairing with a v2 runtime during the upgrade window can still have their
+/// inherents verified. Do not lower this to match the IDP fetch factor.
 pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
 
 /// Upper bound on UTXO count per block, used for worst-case weight declaration.

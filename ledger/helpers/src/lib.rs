@@ -16,8 +16,23 @@ mod utils;
 pub use utils::find_dependency_version;
 pub mod extract_tx_with_context;
 
+/// Strategy for ordering candidate coins/UTXOs during input selection.
+///
+/// Defined at the crate root (not inside the version-specific `common` module) so that
+/// `ledger_7` and `ledger_8` see the same type, allowing it to flow through the toolkit's
+/// version-dispatched builders unchanged.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CoinSelectionStrategy {
+	/// Use the largest coins/UTXOs first. Minimizes the number of inputs.
+	#[default]
+	LargestFirst,
+	/// Use the smallest coins/UTXOs first. Consolidates dust.
+	SmallestFirst,
+}
+
 #[path = "versions"]
 pub mod ledger_7 {
+	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
 	pub use {
@@ -36,6 +51,7 @@ pub mod ledger_7 {
 
 #[path = "versions"]
 pub mod ledger_8 {
+	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
 	pub use {

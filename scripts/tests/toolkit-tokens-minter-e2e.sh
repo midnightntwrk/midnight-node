@@ -15,6 +15,9 @@
 
 set -euxo pipefail
 
+# shellcheck disable=SC1091
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 echo "🎯 Running Toolkit Tokens Minter test"
 
 contract_dir="contract"
@@ -46,12 +49,12 @@ if [[ "${1-}" != "" && "${2-}" != "" ]]; then
     echo "🚀 Starting node container..."
     docker run -d --rm \
         --name midnight-node-contracts \
+        -p 9944:9944 \
         -e CFG_PRESET=dev \
         -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
         "$NODE_IMAGE"
 
-    echo "⏳ Waiting for node to boot..."
-    sleep 15
+    wait_for_unfinalized_block http://localhost:9944 1
 
     tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'toolkitcontracts')
 
@@ -59,7 +62,7 @@ if [[ "${1-}" != "" && "${2-}" != "" ]]; then
         echo "🛑 Killing node container..."
         docker container stop midnight-node-contracts
         echo "🧹 Removing tempdir..."
-        rm -rf $tempdir
+        rm -rf "$tempdir"
     }
     # Set up trap to cleanup on exit
     trap cleanup EXIT
@@ -67,7 +70,7 @@ if [[ "${1-}" != "" && "${2-}" != "" ]]; then
     # Compiled mint contract is included in the toolkit image
     tmpid=$(docker create "$TOOLKIT_IMAGE")
     docker cp "$tmpid:/toolkit-js/test/minter_contract" "$tempdir/$contract_dir"
-    docker rm -v $tmpid
+    docker rm -v "$tmpid"
 else
     echo "🧱 NODE_IMAGE: local"
     echo "🧱 TOOLKIT_IMAGE: local"
@@ -83,13 +86,13 @@ else
 fi
 
 toolkit() {
-    if [ $mode == "docker" ]; then
+    if [ "$mode" = "docker" ]; then
         docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-contracts \
             -e RESTORE_OWNER="$(id -u):$(id -g)" \
-            -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
-            $TOOLKIT_IMAGE $@
+            -v "$tempdir":/out -v "$tempdir/$contract_dir":/toolkit-js/contract \
+            "$TOOLKIT_IMAGE" "$@"
     else
-        $local_toolkit_bin $@
+        "$local_toolkit_bin" "$@"
     fi
 }
 
@@ -151,12 +154,12 @@ contract_address=$(
 echo "Get contract state"
 toolkit \
     contract-state \
-    --contract-address $contract_address \
+    --contract-address "$contract_address" \
     --dest-file $outdir/$state_filename
 
 test -f "$tempdir/$state_filename"
 
-domain_sep=$(echo "feeb000000000000000000000000000000000000000000000000000000000000")
+domain_sep="feeb000000000000000000000000000000000000000000000000000000000000"
 
 user_address=$(
     toolkit \
@@ -187,7 +190,7 @@ toolkit \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/$state_filename" \
     --input-private-state "$outdir/$initial_private_state_filename" \
-    --contract-address $contract_address \
+    --contract-address "$contract_address" \
     --output-intent "$outdir/$mint_shielded_intent_filename" \
     --output-onchain-state "$outdir/onchain_state_1.mn" \
     --output-private-state "$outdir/temp_shielded_private_state.json" \
@@ -203,7 +206,7 @@ toolkit \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/onchain_state_1.mn" \
     --input-private-state "$outdir/temp_shielded_private_state.json" \
-    --contract-address $contract_address \
+    --contract-address "$contract_address" \
     --output-intent "$outdir/$mint_unshielded_intent_filename" \
     --output-onchain-state "$outdir/onchain_state_2.mn" \
     --output-private-state "$outdir/temp_unshielded_private_state.json" \
@@ -219,7 +222,7 @@ toolkit \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/onchain_state_2.mn" \
     --input-private-state "$outdir/temp_unshielded_private_state.json" \
-    --contract-address $contract_address \
+    --contract-address "$contract_address" \
     --output-intent "$outdir/$send_unshielded_intent_filename" \
     --output-onchain-state "$outdir/onchain_state_3.mn" \
     --output-private-state "$outdir/temp_send_private_state.json" \
@@ -252,7 +255,7 @@ toolkit \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/onchain_state_3.mn" \
     --input-private-state "$outdir/temp_send_private_state.json" \
-    --contract-address $contract_address \
+    --contract-address "$contract_address" \
     --output-intent "$outdir/$set_token_intent_filename" \
     --output-onchain-state "$outdir/onchain_state_4.mn" \
     --output-private-state "$outdir/temp_shielded_private_state.json" \
@@ -269,7 +272,7 @@ toolkit \
     --coin-public "$coin_public" \
     --input-onchain-state "$outdir/onchain_state_4.mn" \
     --input-private-state "$outdir/temp_shielded_private_state.json" \
-    --contract-address $contract_address \
+    --contract-address "$contract_address" \
     --output-intent "$outdir/$receive_and_send_unshielded_intent_filename" \
     --output-onchain-state "$outdir/onchain_state_5.mn" \
     --output-private-state "$outdir/temp_shielded_private_state_2.json" \

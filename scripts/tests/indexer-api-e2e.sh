@@ -2,23 +2,23 @@
 set -euo pipefail
 
 READY_URL="http://localhost:8088/ready"
+TIMEOUT_SECS=60
 
-echo "📡 Checking Indexer readiness at $READY_URL..."
-echo "Wait 30 seconds to avoid any race conditions..."
-sleep 30
+echo "📡 Polling Indexer readiness at $READY_URL (timeout: ${TIMEOUT_SECS}s)..."
 
-HTTP_CODE=$(curl -s -o /tmp/ready_response.txt -w "%{http_code}" "$READY_URL")
-BODY=$(cat /tmp/ready_response.txt)
+elapsed=0
+while [ "$elapsed" -lt "$TIMEOUT_SECS" ]; do
+    HTTP_CODE=$(curl -s -o /tmp/ready_response.txt -w "%{http_code}" --max-time 2 "$READY_URL" 2>/dev/null || echo "000")
+    BODY=$(cat /tmp/ready_response.txt 2>/dev/null || echo "")
 
+    if [[ "$HTTP_CODE" == "200" && -z "$BODY" ]]; then
+        echo "✅ Indexer is ready (200 + empty body) after ${elapsed}s"
+        exit 0
+    fi
 
-if [[ "$HTTP_CODE" == "200" && -z "$BODY" ]]; then
-  echo "✅ Indexer is ready (200 + empty body)"
-elif [[ "$HTTP_CODE" == "503" ]]; then
-  echo "❌ Indexer not ready (503)"
-  exit 1
-else
-  echo "❌ Unexpected response"
-  echo "HTTP $HTTP_CODE"
-  echo "Body: $BODY"
-  exit 1
-fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+done
+
+echo "❌ Indexer not ready after ${TIMEOUT_SECS}s (last HTTP $HTTP_CODE, body: $BODY)"
+exit 1
