@@ -1326,6 +1326,171 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 			)
 		});
 		assert!(!system_tx_found, "No SystemTransactionApplied event should be emitted");
+
+		// Log-severity expectation (not asserted directly because the pallet
+		// mock does not install a tracing subscriber): the DustPublicKey
+		// deserialise variant of LedgerApiError MUST log at `debug`, never at
+		// `error`, and must not include the literal substring "Fatal" anywhere
+		// in the formatted output. Validated by inspection of
+		// pallet-cnight-observation/src/lib.rs handle_create.
+		//
+		// Refs: shieldedtech/shielded-security-engineering#233, PM-22301
+	});
+}
+
+#[test]
+fn handle_spend_returns_none_for_invalid_dust_public_key() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let cardano_addr = cardano_reward_address(b"cardano1");
+		let invalid_dust_key = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFFu8; 32]).unwrap());
+
+		// Seed a registration with the invalid key first, then a create UTXO
+		// (so UtxoOwners gets the invalid key inserted), then a spend referring
+		// to that create. The spend's handle_spend will pull the invalid key
+		// out of UtxoOwners, attempt event construction, and route through the
+		// downgraded DustPublicKey arm.
+		let create_utxo_tx_hash = tx_hash(1, 3);
+		let create_utxo_tx_index: u16 = 0;
+		let spending_tx_hash = tx_hash(2, 0);
+
+		let utxos = vec![
+			ObservedUtxo {
+				header: test_header(1, 2, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address: cardano_addr,
+					dust_public_key: invalid_dust_key,
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(2, 0, 0, None),
+				data: ObservedUtxoData::AssetCreate(CreateData {
+					value: 100,
+					owner: cardano_addr,
+					utxo_tx_hash: create_utxo_tx_hash,
+					utxo_tx_index: create_utxo_tx_index,
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(3, 0, 0, None),
+				data: ObservedUtxoData::AssetSpend(SpendData {
+					value: 100,
+					owner: cardano_addr,
+					utxo_tx_hash: create_utxo_tx_hash,
+					utxo_tx_index: create_utxo_tx_index,
+					spending_tx_hash,
+				}),
+			},
+		];
+
+		let inherent_data = create_inherent(utxos, test_position(4, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		// Dispatch must succeed end-to-end — the batch tolerates per-UTXO event
+		// construction failures, including on the spend leg.
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		// No SystemTransactionApplied event should have been emitted because
+		// neither create nor spend produced a CNightGeneratesDustEvent.
+		let system_tx_found = frame_system::Pallet::<Test>::events().iter().any(|record| {
+			matches!(
+				record.event,
+				mock::RuntimeEvent::MidnightSystem(
+					pallet_midnight_system::Event::SystemTransactionApplied(_)
+				)
+			)
+		});
+		assert!(!system_tx_found, "No SystemTransactionApplied event should be emitted");
+
+		// Log-severity expectation (same caveat as the handle_create test
+		// above): handle_spend's DustPublicKey deserialise arm MUST log at
+		// `debug` without the literal "Fatal" substring. Validated by
+		// inspection of pallet-cnight-observation/src/lib.rs handle_spend.
+		//
+		// Refs: shieldedtech/shielded-security-engineering#233, PM-22301
+	});
+}
+
+#[test]
+fn process_tokens_preserves_batch_tolerance_with_invalid_registration() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// One holder with a valid registration, plus one holder with an
+		// invalid registration. Each gets an AssetCreate; both creates flow
+		// through handle_create, but only the valid-key holder's create
+		// reaches event construction successfully — invalid-key registration
+		// is admitted at the pallet (legacy api semantics) but handle_create
+		// returns None when the downstream event cannot be built.
+		let (valid_addr, valid_dust_key) = test_wallet_pairing();
+		let invalid_addr = cardano_reward_address(b"cardano-invalid");
+		let invalid_dust_key = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFFu8; 32]).unwrap());
+
+		let valid_create_hash = tx_hash(1, 4);
+		let invalid_create_hash = tx_hash(1, 5);
+
+		let utxos = vec![
+			ObservedUtxo {
+				header: test_header(1, 2, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address: valid_addr,
+					dust_public_key: valid_dust_key,
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(1, 3, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address: invalid_addr,
+					dust_public_key: invalid_dust_key,
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(2, 4, 0, None),
+				data: ObservedUtxoData::AssetCreate(CreateData {
+					value: 100,
+					owner: valid_addr,
+					utxo_tx_hash: valid_create_hash,
+					utxo_tx_index: 0,
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(2, 5, 0, None),
+				data: ObservedUtxoData::AssetCreate(CreateData {
+					value: 100,
+					owner: invalid_addr,
+					utxo_tx_hash: invalid_create_hash,
+					utxo_tx_index: 0,
+				}),
+			},
+		];
+
+		let inherent_data = create_inherent(utxos, test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		// Dispatch must succeed despite the invalid registration — batch
+		// tolerance is the safety net for per-UTXO failures.
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		// Exactly one SystemTransactionApplied event should have been emitted
+		// (from the valid-key create). The invalid-key create produces no
+		// event but does not poison the batch.
+		let applied_events: usize = frame_system::Pallet::<Test>::events()
+			.iter()
+			.filter(|record| {
+				matches!(
+					record.event,
+					mock::RuntimeEvent::MidnightSystem(
+						pallet_midnight_system::Event::SystemTransactionApplied(_)
+					)
+				)
+			})
+			.count();
+		assert_eq!(
+			applied_events, 1,
+			"Exactly one SystemTransactionApplied event expected for the valid-key create"
+		);
 	});
 }
 
