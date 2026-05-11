@@ -212,14 +212,29 @@ pub(crate) fn new() -> Api {
 	Api::new()
 }
 
+/// Validates that `bytes` decode to a well-formed `DustPublicKey`.
+///
+/// The `BoundedVec<u8, ConstU32<33>>` envelope on `DustPublicKeyBytes` enforces
+/// only the wire length. The Fr-range check requires actually attempting the
+/// `DustPublicKey` deserialisation, since values whose 33-byte encoding sits
+/// above the Bls12-381 Fr modulus pass the length check but fail downstream
+/// circuit use. This helper performs that check without emitting the
+/// `log::error!` line that `Api::deserialize` produces on failure — call sites
+/// that filter inputs upstream (e.g. the cNight-observation inherent-data
+/// provider) treat invalid registrations as a per-UTXO non-fatal outcome, so
+/// the deserialise failure must not surface as an `error`-severity log line.
+pub fn dust_public_key_is_valid(bytes: &[u8]) -> bool {
+	<DustPublicKey as Deserializable>::deserialize(&mut &*bytes, 0).is_ok()
+}
+
 #[cfg(test)]
 mod tests {
 	//! Unit tests for the `dust_public_key_is_valid` validator.
 	//!
 	//! Refs: shieldedtech/shielded-security-engineering#233, PM-22301
 	use super::dust_public_key_is_valid;
-	use super::mn_ledger_local::dust::{DustPublicKey, DustSecretKey};
 	use super::midnight_serialize_local;
+	use super::mn_ledger_local::dust::{DustPublicKey, DustSecretKey};
 
 	/// Build a deterministic, valid DustPublicKey byte vector.
 	///
@@ -229,9 +244,8 @@ mod tests {
 	fn known_good_dust_public_key_bytes() -> Vec<u8> {
 		let sk = DustSecretKey::derive_secret_key(&[0u8; 32]);
 		let pk: DustPublicKey = DustPublicKey::from(sk);
-		let mut bytes = Vec::with_capacity(
-			midnight_serialize_local::Serializable::serialized_size(&pk),
-		);
+		let mut bytes =
+			Vec::with_capacity(midnight_serialize_local::Serializable::serialized_size(&pk));
 		midnight_serialize_local::Serializable::serialize(&pk, &mut bytes)
 			.expect("DustPublicKey serializes cleanly");
 		// Sanity-check the serialized form against the wire-length envelope
@@ -253,7 +267,10 @@ mod tests {
 		// A 33-byte vector with the leading byte 0xff forces the encoded value
 		// above the Bls12-381 Fr modulus (~2^254), so deserialisation must fail.
 		let bytes = vec![0xffu8; 33];
-		assert!(!dust_public_key_is_valid(&bytes), "out-of-range DustPublicKey bytes were accepted");
+		assert!(
+			!dust_public_key_is_valid(&bytes),
+			"out-of-range DustPublicKey bytes were accepted"
+		);
 	}
 
 	#[test]
@@ -266,19 +283,4 @@ mod tests {
 		let bytes = vec![0u8; 1];
 		assert!(!dust_public_key_is_valid(&bytes), "single byte was accepted as a DustPublicKey");
 	}
-}
-
-/// Validates that `bytes` decode to a well-formed `DustPublicKey`.
-///
-/// The `BoundedVec<u8, ConstU32<33>>` envelope on `DustPublicKeyBytes` enforces
-/// only the wire length. The Fr-range check requires actually attempting the
-/// `DustPublicKey` deserialisation, since values whose 33-byte encoding sits
-/// above the Bls12-381 Fr modulus pass the length check but fail downstream
-/// circuit use. This helper performs that check without emitting the
-/// `log::error!` line that `Api::deserialize` produces on failure — call sites
-/// that filter inputs upstream (e.g. the cNight-observation inherent-data
-/// provider) treat invalid registrations as a per-UTXO non-fatal outcome, so
-/// the deserialise failure must not surface as an `error`-severity log line.
-pub fn dust_public_key_is_valid(bytes: &[u8]) -> bool {
-	<DustPublicKey as Deserializable>::deserialize(&mut &*bytes, 0).is_ok()
 }

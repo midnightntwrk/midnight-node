@@ -177,14 +177,44 @@ fn filter_invalid_dust_public_key_registrations(utxos: &mut Vec<ObservedUtxo>, a
 				log::debug!(
 					"Dropping registration with out-of-Fr-range DustPublicKey: \
 					 cardano_reward_address={} dust_public_key_bytes={}",
-					hex::encode(&reg.cardano_reward_address.0),
-					hex::encode(&reg.dust_public_key.0),
+					hex::encode(reg.cardano_reward_address.0),
+					hex::encode(reg.dust_public_key.0.as_slice()),
 				);
 			}
 			valid
 		},
 		_ => true,
 	});
+}
+
+#[async_trait::async_trait]
+impl sp_inherents::InherentDataProvider for MidnightCNightObservationInherentDataProvider {
+	async fn provide_inherent_data(
+		&self,
+		inherent_data: &mut sp_inherents::InherentData,
+	) -> Result<(), sp_inherents::Error> {
+		inherent_data.put_data(
+			INHERENT_IDENTIFIER,
+			&MidnightObservationTokenMovement {
+				utxos: self.utxos.clone(),
+				next_cardano_position: self.next_cardano_position.clone(),
+			},
+		)
+	}
+
+	async fn try_handle_error(
+		&self,
+		identifier: &sp_inherents::InherentIdentifier,
+		mut error: &[u8],
+	) -> Option<Result<(), sp_inherents::Error>> {
+		if *identifier != INHERENT_IDENTIFIER {
+			return None;
+		}
+
+		let error = InherentError::decode(&mut error).ok()?;
+
+		Some(Err(sp_inherents::Error::Application(Box::from(error))))
+	}
 }
 
 #[cfg(test)]
@@ -195,10 +225,11 @@ mod tests {
 	//! only parameter that matters for the filter's decision.
 	//!
 	//! The "valid" fixture takes the canonical path the production code uses:
-	//! derive a `DustSecretKey` deterministically, convert to `DustPublicKey`,
-	//! and serialise via the ledger crate's `Serializable` surface. This keeps
-	//! the fixture in lock-step with the validator if the encoding ever
-	//! changes.
+	//! the zero scalar is in Fr and round-trips through
+	//! `<DustPublicKey as Deserializable>::deserialize` cleanly. The fixture
+	//! is asserted against the production validator so any future encoding
+	//! change surfaces here as a loud test failure rather than silently
+	//! flipping the test's truth condition.
 	//!
 	//! Refs: shieldedtech/shielded-security-engineering#233, PM-22301
 
@@ -310,11 +341,8 @@ mod tests {
 
 	#[test]
 	fn filter_is_per_utxo_and_variant_scoped() {
-		let mut utxos = vec![
-			asset_spend(1),
-			registration(2, invalid_dust_public_key()),
-			asset_create(3),
-		];
+		let mut utxos =
+			vec![asset_spend(1), registration(2, invalid_dust_public_key()), asset_create(3)];
 		filter_invalid_dust_public_key_registrations(&mut utxos, 3);
 		assert_eq!(utxos.len(), 2, "only the registration must be dropped");
 		assert!(matches!(utxos[0].data, ObservedUtxoData::AssetSpend(_)));
@@ -345,35 +373,5 @@ mod tests {
 				last = idx;
 			}
 		}
-	}
-}
-
-#[async_trait::async_trait]
-impl sp_inherents::InherentDataProvider for MidnightCNightObservationInherentDataProvider {
-	async fn provide_inherent_data(
-		&self,
-		inherent_data: &mut sp_inherents::InherentData,
-	) -> Result<(), sp_inherents::Error> {
-		inherent_data.put_data(
-			INHERENT_IDENTIFIER,
-			&MidnightObservationTokenMovement {
-				utxos: self.utxos.clone(),
-				next_cardano_position: self.next_cardano_position.clone(),
-			},
-		)
-	}
-
-	async fn try_handle_error(
-		&self,
-		identifier: &sp_inherents::InherentIdentifier,
-		mut error: &[u8],
-	) -> Option<Result<(), sp_inherents::Error>> {
-		if *identifier != INHERENT_IDENTIFIER {
-			return None;
-		}
-
-		let error = InherentError::decode(&mut error).ok()?;
-
-		Some(Err(sp_inherents::Error::Application(Box::from(error))))
 	}
 }
