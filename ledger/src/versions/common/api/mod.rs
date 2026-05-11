@@ -212,6 +212,62 @@ pub(crate) fn new() -> Api {
 	Api::new()
 }
 
+#[cfg(test)]
+mod tests {
+	//! Unit tests for the `dust_public_key_is_valid` validator.
+	//!
+	//! Refs: shieldedtech/shielded-security-engineering#233, PM-22301
+	use super::dust_public_key_is_valid;
+	use super::mn_ledger_local::dust::{DustPublicKey, DustSecretKey};
+	use super::midnight_serialize_local;
+
+	/// Build a deterministic, valid DustPublicKey byte vector.
+	///
+	/// Uses `DustSecretKey::derive_secret_key` to avoid pulling `rand` into the
+	/// ledger crate's dev-dependencies — the derivation is deterministic so the
+	/// test does not need entropy.
+	fn known_good_dust_public_key_bytes() -> Vec<u8> {
+		let sk = DustSecretKey::derive_secret_key(&[0u8; 32]);
+		let pk: DustPublicKey = DustPublicKey::from(sk);
+		let mut bytes = Vec::with_capacity(
+			midnight_serialize_local::Serializable::serialized_size(&pk),
+		);
+		midnight_serialize_local::Serializable::serialize(&pk, &mut bytes)
+			.expect("DustPublicKey serializes cleanly");
+		// Sanity-check the serialized form against the wire-length envelope
+		// (DustPublicKeyBytes is BoundedVec<u8, ConstU32<33>>): the encoding
+		// must fit. If this ever stops being true the IDP-level filter would
+		// need a different validator factoring — surface that here.
+		assert!(bytes.len() <= 33, "serialized DustPublicKey length {} > 33", bytes.len());
+		bytes
+	}
+
+	#[test]
+	fn dust_public_key_is_valid_accepts_known_good() {
+		let bytes = known_good_dust_public_key_bytes();
+		assert!(dust_public_key_is_valid(&bytes), "known-good DustPublicKey bytes were rejected");
+	}
+
+	#[test]
+	fn dust_public_key_is_valid_rejects_high_byte_set() {
+		// A 33-byte vector with the leading byte 0xff forces the encoded value
+		// above the Bls12-381 Fr modulus (~2^254), so deserialisation must fail.
+		let bytes = vec![0xffu8; 33];
+		assert!(!dust_public_key_is_valid(&bytes), "out-of-range DustPublicKey bytes were accepted");
+	}
+
+	#[test]
+	fn dust_public_key_is_valid_rejects_empty() {
+		assert!(!dust_public_key_is_valid(&[]), "empty bytes were accepted as a DustPublicKey");
+	}
+
+	#[test]
+	fn dust_public_key_is_valid_rejects_too_short() {
+		let bytes = vec![0u8; 1];
+		assert!(!dust_public_key_is_valid(&bytes), "single byte was accepted as a DustPublicKey");
+	}
+}
+
 /// Validates that `bytes` decode to a well-formed `DustPublicKey`.
 ///
 /// The `BoundedVec<u8, ConstU32<33>>` envelope on `DustPublicKeyBytes` enforces
