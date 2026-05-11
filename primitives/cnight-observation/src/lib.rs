@@ -394,7 +394,15 @@ decl_runtime_apis! {
 	// factor from 64x to 4x. Node binaries gate the multiplier on this version so
 	// the change only takes effect at the runtime upgrade boundary; mixing old and
 	// new binaries against the same runtime version stays consensus-equivalent.
-	#[api_version(2)]
+	//
+	// v3 gates the IDP-level Fr-range validation of `DustPublicKey` payloads on
+	// registration UTXOs. Until v3, registrations whose 33-byte key encoding sits
+	// above the Bls12-381 Fr modulus are forwarded into the inherent payload
+	// (legacy semantics preserved across the runtime-upgrade window); from v3 they
+	// are filtered at `MidnightCNightObservationInherentDataProvider::new` and
+	// never reach pallet storage. The filter is consensus-affecting because the
+	// inherent payload changes, so the gate is required.
+	#[api_version(3)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums
 		fn get_mapping_validator_address() -> Vec<u8>;
