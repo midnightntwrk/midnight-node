@@ -1,4 +1,4 @@
-#ci #build
+#ci
 # Bump srtool image to Rust 1.93.0 for konst 0.4.3 MSRV compatibility
 
 `midnight-storage-core` 1.2.0-rc.3 pulled in `konst` 0.4.3, which raised its MSRV
@@ -9,4 +9,4 @@ producing any artifact. Bumping both `srtool-build` and `srtool-info` targets to
 shifts the deterministic build baseline — downstream consumers verifying srtool
 digests should re-anchor against the new image.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1497/
