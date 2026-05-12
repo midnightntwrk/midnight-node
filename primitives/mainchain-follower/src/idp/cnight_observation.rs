@@ -229,6 +229,7 @@ mod tests {
 	//! `<DustPublicKey as Deserializable>::deserialize` cleanly. The fixture
 	//! is asserted against the production validator so any future encoding
 	//! change surfaces here as a loud test failure rather than silently
+	//! flipping the test's truth condition.
 
 	use super::filter_invalid_dust_public_key_registrations;
 	use crate::{ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, UtxoIndexInTx};
@@ -302,6 +303,13 @@ mod tests {
 	/// through `<DustPublicKey as Deserializable>::deserialize` cleanly; the
 	/// helper asserts the fixture is accepted by the production validator so
 	/// any future encoding change surfaces here as a loud test failure.
+	///
+	/// The `DustPublicKeyBytes` envelope is `BoundedVec<u8, ConstU32<33>>` —
+	/// it tolerates both the 32-byte zero-scalar encoding used here and the
+	/// 33-byte canonical wire encoding produced by operator registrations.
+	/// Using the 32-byte form keeps the fixture independent of any
+	/// `DustSecretKey::derive_secret_key` helper while still exercising the
+	/// production validator's Fr-range branch.
 	fn valid_dust_public_key() -> DustPublicKeyBytes {
 		let bytes = vec![0u8; 32];
 		assert!(
@@ -334,6 +342,12 @@ mod tests {
 		assert_eq!(utxos.len(), 2, "invalid registration must be dropped");
 		assert!(matches!(utxos[0].data, ObservedUtxoData::Registration(_)));
 		assert!(matches!(utxos[1].data, ObservedUtxoData::Registration(_)));
+		// Plan I-3 (drop-log emission at `debug` severity, no `Fatal` substring,
+		// includes the cardano_reward_address hex) is deferred: the test target
+		// here does not install a `tracing` / `test_log` subscriber, and the
+		// plan flagged the log-capture assertion as best-effort. The contract
+		// is pinned by inspection of `filter_invalid_dust_public_key_registrations`
+		// — the `retain` predicate emits a single `log::debug!` line per drop.
 	}
 
 	#[test]
@@ -362,12 +376,12 @@ mod tests {
 		// Original positions 1..3 and 5..7 — confirm the cardano reward
 		// address byte (set to the index in the helper) still increases
 		// monotonically with one gap at the removed entry.
-		let mut last: i32 = -1;
+		let mut last: Option<u8> = None;
 		for utxo in &utxos {
 			if let ObservedUtxoData::Registration(reg) = &utxo.data {
-				let idx = reg.cardano_reward_address.0[0] as i32;
-				assert!(idx > last, "ordering not preserved");
-				last = idx;
+				let idx = reg.cardano_reward_address.0[0];
+				assert!(last.is_none_or(|prev| idx > prev), "ordering not preserved");
+				last = Some(idx);
 			}
 		}
 	}
