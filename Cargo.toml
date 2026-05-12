@@ -261,7 +261,7 @@ async-trait = { default-features = false, version = "0.1.89" }
 futures = { default-features = false, version = "0.3.32", features = ["thread-pool"] }
 log = { default-features = false, version = "0.4.29" }
 tracing = { default-features = false, version = "0.1.44" }
-tracing-subscriber = { version = "=0.3.19", features = ["json", "env-filter"] }
+tracing-subscriber = { version = "=0.3.20", features = ["json", "env-filter"] }
 tokio = { version = "1.52.2", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
 assert_matches = "1.5.0"
 hex = { default-features = false, version = "0.4.3", features = ["alloc"] }
