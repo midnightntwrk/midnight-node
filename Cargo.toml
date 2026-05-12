@@ -262,7 +262,7 @@ futures = { default-features = false, version = "0.3.32", features = ["thread-po
 log = { default-features = false, version = "0.4.29" }
 tracing = { default-features = false, version = "0.1.44" }
 tracing-subscriber = { version = "=0.3.19", features = ["json", "env-filter"] }
-tokio = { version = "1.47.0", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
+tokio = { version = "1.52.2", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
 assert_matches = "1.5.0"
 hex = { default-features = false, version = "0.4.3", features = ["alloc"] }
 hex-literal = { version = "1.1.0", default-features = false }
