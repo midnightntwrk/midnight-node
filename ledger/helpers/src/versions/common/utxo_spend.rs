@@ -15,6 +15,7 @@ use super::{
 	DB, IntentHash, LedgerContext, SigningKey, Sp, UnshieldedTokenType, Utxo, UtxoId, UtxoSpend,
 	Wallet, WalletSeed,
 };
+use crate::CoinSelectionStrategy;
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -89,6 +90,7 @@ impl UtxoSpendInfo<WalletSeed> {
 		seed: WalletSeed,
 		required_value: u128,
 		token_type: UnshieldedTokenType,
+		strategy: CoinSelectionStrategy,
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
 			context.with_wallet_from_seed(seed.clone(), |wallet| {
@@ -108,7 +110,7 @@ impl UtxoSpendInfo<WalletSeed> {
 						output_number: Some(utxo.0.output_no),
 					})
 					.collect();
-				Self::select_inputs(matching_inputs, required_value).ok_or(
+				Self::select_inputs(matching_inputs, required_value, strategy).ok_or(
 					UtxoSelectionError::InsufficientBalance {
 						required: required_value,
 						token_type,
@@ -176,22 +178,23 @@ impl UtxoSpendInfo<WalletSeed> {
 		})
 	}
 
-	/// From given `inputs` it select coins of at least `required`.
+	/// From given `inputs` select coins totaling at least `required`, ordered by `strategy`.
 	/// Returns selected coins and change.
 	fn select_inputs<O>(
 		mut inputs: Vec<UtxoSpendInfo<O>>,
 		required: u128,
+		strategy: CoinSelectionStrategy,
 	) -> Option<(Vec<UtxoSpendInfo<O>>, u128)> {
+		inputs.sort_by_key(|input| input.value);
+		if matches!(strategy, CoinSelectionStrategy::LargestFirst) {
+			inputs.reverse();
+		}
+
 		let mut total = 0u128;
-		let mut selected = vec![];
-		while !inputs.is_empty() {
-			let idx = inputs
-				.iter()
-				.position(|qi| qi.value.checked_add(total).is_some_and(|sum| sum > required))
-				.unwrap_or(inputs.len() - 1);
-			let utxo = inputs.swap_remove(idx);
-			total = total.checked_add(utxo.value)?;
-			selected.push(utxo);
+		let mut selected = Vec::with_capacity(inputs.len());
+		for input in inputs {
+			total = total.checked_add(input.value)?;
+			selected.push(input);
 			if let Some(change) = total.checked_sub(required) {
 				return Some((selected, change));
 			}
@@ -263,7 +266,7 @@ mod tests {
 	#[test]
 	fn select_inputs_exact_match() {
 		let inputs = vec![make_utxo(100)];
-		let result = UtxoSpendInfo::select_inputs(inputs, 100);
+		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
 		let (selected, change) = result.expect("should select inputs");
 		assert_eq!(selected.len(), 1);
 		assert_eq!(change, 0);
@@ -272,7 +275,7 @@ mod tests {
 	#[test]
 	fn select_inputs_change_produced() {
 		let inputs = vec![make_utxo(150)];
-		let result = UtxoSpendInfo::select_inputs(inputs, 100);
+		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
 		let (selected, change) = result.expect("should select inputs");
 		assert_eq!(selected.len(), 1);
 		assert_eq!(change, 50);
@@ -282,24 +285,26 @@ mod tests {
 	fn select_inputs_accumulation_overflow_returns_none() {
 		let half_plus_one = u128::MAX / 2 + 1;
 		let inputs = vec![make_utxo(half_plus_one), make_utxo(half_plus_one)];
-		let result = UtxoSpendInfo::select_inputs(inputs, u128::MAX);
+		let result =
+			UtxoSpendInfo::select_inputs(inputs, u128::MAX, CoinSelectionStrategy::LargestFirst);
 		assert!(result.is_none(), "accumulation overflow should return None");
 	}
 
 	#[test]
-	fn select_inputs_comparison_overflow_does_not_panic() {
-		// Verifies that the checked_add in the .position() comparison closure
-		// handles overflow gracefully instead of panicking.
+	fn select_inputs_overflow_with_remaining_inputs_returns_none() {
+		// After two inputs the accumulator overflows; the remaining input must not
+		// cause a panic, and the call must return None.
 		let large = u128::MAX / 2 + 1;
 		let inputs = vec![make_utxo(large), make_utxo(large), make_utxo(large)];
-		let result = UtxoSpendInfo::select_inputs(inputs, u128::MAX);
+		let result =
+			UtxoSpendInfo::select_inputs(inputs, u128::MAX, CoinSelectionStrategy::LargestFirst);
 		assert!(result.is_none());
 	}
 
 	#[test]
 	fn select_inputs_multiple_sum_to_required() {
 		let inputs = vec![make_utxo(60), make_utxo(40)];
-		let result = UtxoSpendInfo::select_inputs(inputs, 100);
+		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
 		let (selected, change) = result.expect("should select inputs");
 		assert_eq!(selected.len(), 2);
 		assert_eq!(change, 0);
@@ -308,7 +313,7 @@ mod tests {
 	#[test]
 	fn select_inputs_zero_required() {
 		let inputs = vec![make_utxo(50)];
-		let result = UtxoSpendInfo::select_inputs(inputs, 0);
+		let result = UtxoSpendInfo::select_inputs(inputs, 0, CoinSelectionStrategy::LargestFirst);
 		let (selected, change) = result.expect("zero required should select first input");
 		assert_eq!(selected.len(), 1);
 		assert_eq!(change, 50);
@@ -317,7 +322,28 @@ mod tests {
 	#[test]
 	fn select_inputs_insufficient_returns_none() {
 		let inputs = vec![make_utxo(30), make_utxo(20)];
-		let result = UtxoSpendInfo::select_inputs(inputs, 100);
+		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
 		assert!(result.is_none(), "insufficient inputs should return None");
+	}
+
+	#[test]
+	fn select_inputs_largest_first_minimizes_count() {
+		let inputs = vec![make_utxo(10), make_utxo(20), make_utxo(100)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 25, CoinSelectionStrategy::LargestFirst);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(selected[0].value, 100);
+		assert_eq!(change, 75);
+	}
+
+	#[test]
+	fn select_inputs_smallest_first_consolidates_dust() {
+		let inputs = vec![make_utxo(10), make_utxo(20), make_utxo(100)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 25, CoinSelectionStrategy::SmallestFirst);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 2);
+		assert_eq!(selected[0].value, 10);
+		assert_eq!(selected[1].value, 20);
+		assert_eq!(change, 5);
 	}
 }

@@ -15,9 +15,11 @@
 
 set -euxo pipefail
 
+# shellcheck disable=SC1091
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 NODE_IMAGE="$1"
 TOOLKIT_IMAGE="$2"
-RNG_SEED="0000000000000000000000000000000000000000000000000000000000000037"
 
 echo "🎯 Running Toolkit E2E test"
 echo "🧱 NODE_IMAGE: $NODE_IMAGE"
@@ -31,6 +33,7 @@ echo "🚀 Starting node container..."
 docker run -d \
   --name midnight-node \
   --network ledger-params-e2e-net \
+  -p 9944:9944 \
   -e CFG_PRESET=dev \
   -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "$NODE_IMAGE"
@@ -49,44 +52,13 @@ cleanup() {
 # --- Always-cleanup: runs on success, error, or interrupt ---
 trap cleanup EXIT
 
-# Wait for node to be ready with health check
-echo "⏳ Waiting for node to boot..."
-MAX_ATTEMPTS=30
-ATTEMPT=0
-while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-    ATTEMPT=$((ATTEMPT + 1))
-    
-    # Check if container is still running
-    if ! docker container inspect midnight-node --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
-        echo "❌ Node container is not running!"
-        echo "📋 Container status:"
-        docker container inspect midnight-node --format '{{.State.Status}} - Exit code: {{.State.ExitCode}}' || true
-        echo "📋 Container logs:"
-        docker logs midnight-node || true
-        exit 1
-    fi
-    
-    # Try to connect to RPC endpoint
-    if docker run --rm --network ledger-params-e2e-net curlimages/curl:latest \
-        --silent --fail --max-time 2 \
-        -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","method":"system_health","params":[],"id":1}' \
-        http://midnight-node:9944 > /dev/null 2>&1; then
-        echo "✅ Node is ready after $ATTEMPT attempts"
-        break
-    fi
-    
-    echo "⏳ Waiting for node... (attempt $ATTEMPT/$MAX_ATTEMPTS)"
-    sleep 2
-done
-
-if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-    echo "❌ Node failed to become ready within timeout"
+if ! wait_for_unfinalized_block http://localhost:9944 2; then
+    echo "📋 Container status:"
+    docker container inspect midnight-node --format '{{.State.Status}} - Exit code: {{.State.ExitCode}}' || true
+    echo "📋 Container logs:"
+    docker logs midnight-node || true
     exit 1
 fi
-
-# Allow a couple more blocks to be produced
-sleep 10
 
 # Run toolkit commands
 echo "📦 Running toolkit tests..."

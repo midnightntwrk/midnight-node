@@ -136,6 +136,14 @@ impl MidnightNodeClient {
 		Ok(latest_block.block_number())
 	}
 
+	/// Best (head-of-chain) block height. May be ahead of finality; can also reorg.
+	/// Use this when you only need "the node is producing"; use
+	/// [`Self::get_finalized_height`] when you need a stable, GRANDPA-finalized number.
+	pub async fn get_best_height(&self) -> Result<u64, ClientError> {
+		let header = self.rpc.chain_get_header(None).await?.ok_or(ClientError::NoBestHeader)?;
+		Ok(header.number)
+	}
+
 	pub async fn get_ledger_parameters(&self) -> Result<LedgerParameters, ClientError> {
 		let call = mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_ledger_parameters();
 		let response = self.api.at_current_block().await?.runtime_apis().call(call).await?;
@@ -166,6 +174,8 @@ pub enum ClientError {
 	BlockHashNotFound(u32),
 	#[error("chain not yet started - only genesis is finalized")]
 	OnlyGenesisFinalized,
+	#[error("node returned no best block header (rpc returned null)")]
+	NoBestHeader,
 	#[error("Failed to deserialize ledger parameters: {0}")]
 	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
 }

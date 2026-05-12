@@ -17,6 +17,7 @@ import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
 import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { snapshot } from "./commands/snapshot";
+import { verifyFinality } from "./commands/verifyFinality";
 import {
   RunOptions,
   ImageUpgradeOptions,
@@ -174,6 +175,59 @@ program
   .action(async (network: string, options: RunOptions) => {
     await stop(network, options);
   });
+
+program
+  .command("verify-finality [network]")
+  .option(
+    "-b, --target-block <number>",
+    "Wait until every node has finalized at least this block number",
+    "1",
+  )
+  .option(
+    "-t, --timeout <seconds>",
+    "Maximum seconds to wait before failing",
+    "300",
+  )
+  .option(
+    "-n, --node <name=url>",
+    "Override compose discovery: probe the given name=url endpoint(s). Repeatable.",
+    (value: string, prev: string[] = []) => [...prev, value],
+    [] as string[],
+  )
+  .description(
+    "Wait for every validator to finalize a block — fails if GRANDPA stalls. " +
+      "Validators are auto-discovered from the named network's compose file " +
+      "(services labeled io.midnight.role=validator). Pass --node to override discovery.",
+  )
+  .action(
+    async (
+      network: string | undefined,
+      cliOpts: { targetBlock: string; timeout: string; node: string[] },
+    ) => {
+      const targetBlock = Number.parseInt(cliOpts.targetBlock, 10);
+      const timeoutSec = Number.parseInt(cliOpts.timeout, 10);
+      if (!Number.isFinite(targetBlock) || targetBlock < 0) {
+        throw new Error(`Invalid --target-block: ${cliOpts.targetBlock}`);
+      }
+      if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) {
+        throw new Error(`Invalid --timeout: ${cliOpts.timeout}`);
+      }
+      const nodeOverrides = cliOpts.node.map((spec) => {
+        const idx = spec.indexOf("=");
+        if (idx <= 0 || idx === spec.length - 1) {
+          throw new Error(
+            `Invalid --node spec '${spec}': expected name=url (e.g. node-1=http://localhost:9933)`,
+          );
+        }
+        return { name: spec.slice(0, idx), url: spec.slice(idx + 1) };
+      });
+      await verifyFinality(network, {
+        targetBlock,
+        timeoutMs: timeoutSec * 1_000,
+        nodeOverrides: nodeOverrides.length > 0 ? nodeOverrides : undefined,
+      });
+    },
+  );
 
 program
   .command("governance-runtime-upgrade <network>")
