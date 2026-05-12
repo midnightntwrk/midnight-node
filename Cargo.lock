@@ -8235,6 +8235,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-rpc-api"
+version = "0.1.0"
+dependencies = [
+ "jsonrpsee",
+ "serde",
+]
+
+[[package]]
 name = "midnight-serialize"
 version = "1.1.0"
 source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=serialize-1.1.0-rc.1#fdea5bbdd2759c293843cfc52543436b94673e95"
@@ -10096,6 +10104,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "jsonrpsee",
+ "midnight-rpc-api",
  "pallet-midnight",
  "sc-client-api",
  "schemars 0.8.22",
