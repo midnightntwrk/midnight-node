@@ -229,9 +229,6 @@ mod tests {
 	//! `<DustPublicKey as Deserializable>::deserialize` cleanly. The fixture
 	//! is asserted against the production validator so any future encoding
 	//! change surfaces here as a loud test failure rather than silently
-	//! flipping the test's truth condition.
-	//!
-	//! Refs: shieldedtech/shielded-security-engineering#233, PM-22301
 
 	use super::filter_invalid_dust_public_key_registrations;
 	use crate::{ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, UtxoIndexInTx};
