@@ -1036,7 +1036,7 @@ build:
 build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests partner-chains .
+    ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
     ARG NATIVEARCH
 
