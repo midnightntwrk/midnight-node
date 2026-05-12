@@ -483,7 +483,7 @@ parameter_types! {
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	#[cfg(not(feature = "runtime-benchmarks"))]
-	type Migrations = ();
+	type Migrations = (pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,);
 	// Benchmarks need mocked migrations to guarantee that they succeed.
 	#[cfg(feature = "runtime-benchmarks")]
 	type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
@@ -1011,7 +1011,7 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = pallet_throttle::migration::ClearAccountUsageV1<Runtime>;
+pub type Migrations = (pallet_throttle::migration::ClearAccountUsageV1<Runtime>,);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where

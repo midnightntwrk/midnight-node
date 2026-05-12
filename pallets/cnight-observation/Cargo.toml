@@ -8,7 +8,7 @@ license-file.workspace = true
 [dependencies]
 frame-support.workspace = true
 frame-system.workspace = true
-sidechain-domain.workspace = true
+sidechain-domain = { workspace = true, features = ["serde"] }
 midnight-primitives.workspace = true
 midnight-primitives-mainchain-follower.workspace = true
 midnight-primitives-cnight-observation.workspace = true
@@ -17,6 +17,7 @@ parity-scale-codec.workspace = true
 scale-info.workspace = true
 log.workspace = true
 sp-core.workspace = true
+sp-runtime.workspace = true
 hex.workspace = true
 derive-new.workspace= true
 serde = { workspace = true}
@@ -42,11 +43,13 @@ std = [
     "scale-info/std",
     "serde/std",
     "sp-core/std",
+    "sp-runtime/std",
     "parity-scale-codec/std",
     "midnight-primitives/std",
     "midnight-primitives-mainchain-follower/std",
     "midnight-primitives-cnight-observation/std",
     "pallet-cnight-observation-mock/std",
+    "sidechain-domain/std",
     "derive-new/std",
     "serde_valid",
     "frame-benchmarking?/std",
@@ -55,6 +58,11 @@ runtime-benchmarks = [
     "frame-benchmarking/runtime-benchmarks",
     "frame-support/runtime-benchmarks",
     "frame-system/runtime-benchmarks",
+]
+try-runtime = [
+    "frame-support/try-runtime",
+    "frame-system/try-runtime",
+    "sp-runtime/try-runtime",
 ]
 
 [package.metadata.cargo-shear]
