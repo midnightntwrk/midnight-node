@@ -143,7 +143,7 @@ async fn register_for_dust_production() {
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == dust_bytes
-                && map.0.utxo_tx_hash.0 == register_tx_id
+                && map.0.utxo_id.tx_hash.0 == register_tx_id
         });
     assert!(
         mapping_added.is_some(),
@@ -447,7 +447,7 @@ async fn register_2_cardano_same_dust_address_production() {
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address_1
                 && map.0.dust_public_key.0.0 == dust_bytes
-                && map.0.utxo_tx_hash.0 == register_tx_id_1
+                && map.0.utxo_id.tx_hash.0 == register_tx_id_1
         });
 
     let mapping_added_2 = registration_events_2
@@ -457,7 +457,7 @@ async fn register_2_cardano_same_dust_address_production() {
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address_2
                 && map.0.dust_public_key.0.0 == dust_bytes
-                && map.0.utxo_tx_hash.0 == register_tx_id_2
+                && map.0.utxo_id.tx_hash.0 == register_tx_id_2
         });
     assert!(
         mapping_added_1.is_some(),
@@ -833,7 +833,7 @@ async fn deregister_from_dust_production() {
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == dust_bytes
-                && map.0.utxo_tx_hash.0 == register_tx_id
+                && map.0.utxo_id.tx_hash.0 == register_tx_id
         });
     assert!(
         mapping_removed.is_some(),
@@ -1021,7 +1021,7 @@ async fn removing_excessive_registrations() {
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == dust_address
-                && map.0.utxo_tx_hash.0 == register_tx_id
+                && map.0.utxo_id.tx_hash.0 == register_tx_id
         });
     assert!(
         mapping_added.is_some(),
@@ -1055,7 +1055,7 @@ async fn removing_excessive_registrations() {
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == second_dust_address
-                && map.0.utxo_tx_hash.0 == second_register_tx_id
+                && map.0.utxo_id.tx_hash.0 == second_register_tx_id
         });
     assert!(
         second_mapping_added.is_some(),
@@ -1120,7 +1120,7 @@ async fn removing_excessive_registrations() {
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == dust_address
-                && map.0.utxo_tx_hash.0 == register_tx_id
+                && map.0.utxo_id.tx_hash.0 == register_tx_id
         });
     assert!(
         mapping_removed.is_some(),
@@ -2045,7 +2045,7 @@ async fn deregister_with_valid_cnight_utxo() {
         .find(|map| {
             map.0.cardano_reward_address.0 == reward_address
                 && map.0.dust_public_key.0.0 == dust_bytes
-                && map.0.utxo_tx_hash.0 == register_tx_id
+                && map.0.utxo_id.tx_hash.0 == register_tx_id
         });
     assert!(
         mapping_removed.is_some(),
