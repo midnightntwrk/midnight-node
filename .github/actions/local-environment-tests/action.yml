@@ -99,6 +99,11 @@ runs:
         echo "WALLET_INDEXER_IMAGE: ${WALLET_INDEXER_IMAGE}"
 
         echo "🚀 Running Earthly command..."
+        # Source .envrc so EARTHLY_CONFIG is set (self-hosted vs default switch).
+        # Without this, earthly falls back to ~/.earthly/config.yml which has a
+        # different settings hash than the other Hetzner jobs and recycles the
+        # shared earthly-buildkitd container, cancelling concurrent builds.
+        . ./.envrc
         earthly +start-local-env-with-indexer-ci \
           --NODE_IMAGE="${NODE_IMAGE}" \
           --INDEXER_API_IMAGE="${INDEXER_API_IMAGE}" \
@@ -128,7 +133,9 @@ runs:
 
     - name: e2e tests
       id: e2e-tests
-      run: earthly +local-env-e2e
+      # Source .envrc so EARTHLY_CONFIG matches other Hetzner jobs (see comment
+      # on the earlier earthly invocation in this action for why).
+      run: . ./.envrc && earthly +local-env-e2e
       shell: bash
 
     - name: toolkit-multi-dest-e2e
