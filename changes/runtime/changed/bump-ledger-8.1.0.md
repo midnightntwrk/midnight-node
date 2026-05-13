@@ -14,4 +14,4 @@ chain's crates.io-resolved `base-crypto`/`coin-structure`/`zkir`/`storage`
 copies conflict with the L8 chain's git-sourced versions (same crate version,
 drifted source).
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1510
