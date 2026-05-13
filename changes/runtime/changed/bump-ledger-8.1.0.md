@@ -1,4 +1,4 @@
-#runtime #node
+#node
 # Bump midnight-ledger from 8.1.0-rc.1 to 8.1.0
 
 Promotes the Ledger 8 pin from the release candidate (`crate-ledger-8.1.0-rc.1`)
