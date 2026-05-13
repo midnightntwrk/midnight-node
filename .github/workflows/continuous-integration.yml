@@ -938,6 +938,15 @@ jobs:
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [ run, build-indexer-images ]
     runs-on: [self-hosted, "tier:medium"]
+    # The local-env stack (kupo, ogmios, db-sync, indexers, postgres, nats,
+    # cardano-node, ...) binds fixed ports on 0.0.0.0 — 1442, 1337, 8088,
+    # 4222, 5432, 30000, 32000 — so concurrent jobs on the same Hetzner host
+    # collide. Serialize across the whole repo with a fixed concurrency
+    # group; queue rather than cancel so a long-running stack actually
+    # finishes (the next PR's job picks up when this one is done).
+    concurrency:
+      group: local-environment-tests-hetzner
+      cancel-in-progress: false
     permissions:
       pull-requests: write
       packages: read
