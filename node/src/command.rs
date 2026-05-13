@@ -63,6 +63,20 @@ pub(crate) fn safe_exit(code: i32) -> ! {
 	std::process::exit(code)
 }
 
+/// Refuse to run chain-affecting operations when the binary was built with
+/// `--features runtime-benchmarks`. The benchmarking runtime relaxes origin
+/// checks and exposes helper extrinsics, so it must never be used against a
+/// real chain. The `benchmark` subcommand bypasses this guard.
+fn bail_if_runtime_benchmarks(context: &str) {
+	if cfg!(feature = "runtime-benchmarks") {
+		eprintln!(
+			"error: this binary was built with `--features runtime-benchmarks` and must not be used for {context}. \
+			 Rebuild without that feature, or use the `benchmark` subcommand."
+		);
+		safe_exit(1);
+	}
+}
+
 /// Parse and run command line arguments
 pub fn run() -> sc_cli::Result<()> {
 	let first_arg_char = std::env::args().nth(1).map(|arg| arg.chars().next());
@@ -152,6 +166,7 @@ fn decode_genesis_state(
 }
 
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
+	bail_if_runtime_benchmarks("running a node");
 	let run_cmd: RunCmd = cfg
 		.substrate_cfg
 		.clone()
@@ -377,6 +392,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 	match subcommand {
 		Subcommand::Key(ref cmd) => cmd.run(&cfg),
 		Subcommand::PartnerChains(cmd) => {
+			bail_if_runtime_benchmarks("the partner-chains subcommand");
 			let midnight_cfg = cfg.midnight_cfg.clone();
 			let make_dependencies = |config: sc_service::Configuration| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)
@@ -417,6 +433,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			})
 		},
 		Subcommand::ExportBlocks(ref cmd) => {
+			bail_if_runtime_benchmarks("exporting blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
@@ -445,6 +462,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			})
 		},
 		Subcommand::ImportBlocks(ref cmd) => {
+			bail_if_runtime_benchmarks("importing blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
@@ -464,6 +482,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			runner.sync_run(|config| cmd.run(config.database))
 		},
 		Subcommand::Revert(ref cmd) => {
+			bail_if_runtime_benchmarks("reverting blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
