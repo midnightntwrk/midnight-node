@@ -334,6 +334,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9933"
     ports:
       - "30333:30333"
       - "9933:9933"
@@ -361,6 +364,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9934"
     ports:
       - "30334:30334"
       - "9934:9934"
@@ -388,6 +394,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9935"
     ports:
       - "30335:30335"
       - "9935:9935"
@@ -417,6 +426,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9936"
     ports:
       - "30336:30336"
       - "9936:9936"
@@ -446,6 +458,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "30337:30337"
       - "9944:9944"

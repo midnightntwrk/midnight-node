@@ -25,6 +25,7 @@
     "stop:testnet-02": "ts-node src/index.ts stop testnet-02",
     "stop:local-env": "ts-node src/index.ts stop local-env",
     "stop:local-env-with-indexer": "ts-node src/index.ts stop local-env -p withindexer",
+    "verify-finality:local-env": "ts-node src/index.ts verify-finality local-env",
     "governance-runtime-upgrade:qanet": "ts-node src/index.ts governance-runtime-upgrade qanet",
     "governance-runtime-upgrade:devnet": "ts-node src/index.ts governance-runtime-upgrade devnet",
     "governance-runtime-upgrade:govnet": "ts-node src/index.ts governance-runtime-upgrade govnet",
