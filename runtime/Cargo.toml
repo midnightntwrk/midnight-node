@@ -179,6 +179,8 @@ runtime-benchmarks = [
     "pallet-cnight-observation/runtime-benchmarks",
     # TODO: Enable native-token-mgmt benchmarks when available
     "pallet-partner-chains-bridge/runtime-benchmarks",
+    "pallet-mmr/runtime-benchmarks",
+    "pallet-preimage/runtime-benchmarks",
     "pallet-scheduler/runtime-benchmarks",
     "pallet-timestamp/runtime-benchmarks",
     "pallet-tx-pause/runtime-benchmarks",
