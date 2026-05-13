@@ -670,6 +670,13 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		tracing_execute_block: None,
 	})?;
 
+	crate::d_param_check::spawn_startup_check(
+		&task_manager.spawn_handle(),
+		client.clone(),
+		data_sources.authority_selection.clone(),
+		epoch_config.clone(),
+	);
+
 	if let Some(hwbench) = hwbench {
 		sc_sysinfo::print_hwbench(&hwbench);
 		match SUBSTRATE_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {
