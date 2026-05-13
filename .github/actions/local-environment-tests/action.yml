@@ -101,6 +101,15 @@ runs:
         CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
 
+    # Fails fast if any validator (including unified-storage nodes 4 and 5)
+    # is stuck or panicking — GRANDPA needs 2/3 quorum, so a non-finalizing
+    # validator stalls the network and per-node finality probing surfaces
+    # the regression deterministically.
+    - name: Verify all validators reach finality
+      working-directory: local-environment
+      run: npm run verify-finality:local-env -- --target-block 1 --timeout 300
+      shell: bash
+
 #    - name: Run Indexer E2E Tests
 #      uses: ./.github/actions/reusable-e2e-tests
 #      with:

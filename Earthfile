@@ -858,8 +858,14 @@ test:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
     # - partner-chains-cardano-offchain are: 1) flaky, 2) long running, 3) test in partner-chains repo, 4) cover functionality used to e2e test partner-chains (non-production)
+    # DOCKERHUB_USER/TOKEN default to empty so local builds and fork PRs (where secrets
+    # aren't exposed) still work — at the cost of unauthenticated pull rate limits.
     WITH DOCKER
-        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
+        RUN --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN= \
+            if [ -n "$DOCKERHUB_TOKEN" ]; then \
+              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            fi && \
+            MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
             --exclude partner-chains-cardano-offchain \
             -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
@@ -1038,7 +1044,7 @@ build:
 build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests partner-chains .
+    ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
     ARG NATIVEARCH
 
@@ -1062,14 +1068,14 @@ subwasm:
 # This ensures reproducible builds across different environments
 # See: https://github.com/paritytech/srtool
 #
-# Note: srtool uses its own pinned Rust version (currently 1.88.0) for deterministic builds.
+# Note: srtool uses its own pinned Rust version (currently 1.93.0) for deterministic builds.
 # The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
 # reproducibility - srtool's environment is fixed and verified.
 srtool-build:
     # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_VERSION=0.18.3
-    # srtool 1.88.0 uses Rust 1.88.0 - this is intentional for determinism
-    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+    ARG SRTOOL_VERSION=0.18.4
+    # srtool 1.93.0 uses Rust 1.93.0 - this is intentional for determinism
+    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
 
     # srtool expects source code in /build
     WORKDIR /build
@@ -1098,8 +1104,8 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    ARG SRTOOL_VERSION=0.18.3
-    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+    ARG SRTOOL_VERSION=0.18.4
+    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
