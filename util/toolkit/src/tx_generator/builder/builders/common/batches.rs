@@ -12,11 +12,11 @@
 // limitations under the License.
 
 use super::ledger_helpers_local::{
-	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, FromContext,
-	InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment,
-	SerdeTransaction, ShieldedCoinSelectionError, ShieldedTokenType, StandardTrasactionInfo,
-	TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType, UtxoOutputInfo,
-	UtxoSpendInfo, Wallet, WalletSeed,
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, CoinSelectionStrategy,
+	DefaultDB, FromContext, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo,
+	ProofProvider, Segment, SerdeTransaction, ShieldedCoinSelectionError, ShieldedTokenType,
+	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
+	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 };
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
@@ -66,6 +66,7 @@ pub struct BatchesBuilder {
 	initial_unshielded_intent_value: u128,
 	unshielded_token_type: UnshieldedTokenType,
 	enable_shielded: bool,
+	coin_selection: CoinSelectionStrategy,
 }
 
 impl BatchesBuilder {
@@ -88,6 +89,7 @@ impl BatchesBuilder {
 			initial_unshielded_intent_value: args.initial_unshielded_intent_value,
 			unshielded_token_type: convert_unshielded_token_type(args.unshielded_token_type),
 			enable_shielded: args.enable_shielded,
+			coin_selection: args.coin_selection,
 		}
 	}
 
@@ -107,6 +109,7 @@ impl BatchesBuilder {
 			funding_seed.clone(),
 			total_coins_required,
 			self.shielded_token_type,
+			self.coin_selection,
 		)?;
 
 		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = input_infos
@@ -153,6 +156,7 @@ impl BatchesBuilder {
 			funding_seed.clone(),
 			self.initial_unshielded_intent_value,
 			self.unshielded_token_type,
+			self.coin_selection,
 		)
 		.expect("insufficient UTXOs for transfer");
 

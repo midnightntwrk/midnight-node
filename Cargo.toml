@@ -262,7 +262,7 @@ futures = { default-features = false, version = "0.3.32", features = ["thread-po
 log = { default-features = false, version = "0.4.29" }
 tracing = { default-features = false, version = "0.1.44" }
 tracing-subscriber = { version = "=0.3.19", features = ["json", "env-filter"] }
-tokio = { version = "1.47.0", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
+tokio = { version = "1.52.2", features = ["net", "rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
 assert_matches = "1.5.0"
 hex = { default-features = false, version = "0.4.3", features = ["alloc"] }
 hex-literal = { version = "1.1.0", default-features = false }
@@ -274,7 +274,7 @@ clap = { version = "4.5", features = ["env", "derive"] }
 lazy_static = { version = "1.4.0", default-features = false }
 derive-new = { version = "0.7.0", default-features = false }
 figment = { version = "0.10.19", features = ["env", "test"] }
-lru = { version = "0.16.3" }
+lru = { version = "0.18.0" }
 subxt = "0.50.0"
 subxt-signer = "0.50.0"
 thiserror = { version = "2.0", default-features = false }
@@ -436,6 +436,7 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 yamux = { git = "https://github.com/midnightntwrk/rust-yamux", branch = "yamux-v0.12.2" }
+parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "master" }
 midnight-ledger           = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-8.1.0-rc.1" }
 midnight-zswap            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-8.1.0-rc.1" }
 midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.1.0-rc.1" }

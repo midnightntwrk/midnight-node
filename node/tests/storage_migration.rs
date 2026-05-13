@@ -16,16 +16,15 @@
 //! Scenarios intentionally run sequentially inside a single `#[test]` because
 //! `midnight_node_ledger::...::init_storage_paritydb_*` installs a process-wide
 //! `default_storage` singleton; parallel sub-tests would race on that global.
-//!
-//! In-process coverage omits `Unified -> Unified` restart: the first `Unified` call
-//! keeps an `Arc<parity_db::Db>` alive via the global storage, so reopening the same
-//! path hits parity-db's "Database file is in use" file-lock error. In production the
-//! old process has exited and released the lock, so this is a test-only artifact.
-//! That scenario belongs in the e2e/local-env harness instead.
+//! Each scenario calls `drop_all_default_storage()` between opens (and at end
+//! of scope) to release the registered `Arc<parity_db::Db>` so the next open
+//! sees a clean slate and parity-db's background commit thread is joined
+//! before the `TempDir` removes the data directory.
 
 use midnight_node::backend::open_paritydb;
 use midnight_node::cfg::midnight_cfg::StorageSeparation;
 use midnight_node::service::StorageInit;
+use midnight_node_ledger::drop_all_default_storage;
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_ledger::LedgerStorageDb;
 use std::path::{Path, PathBuf};
@@ -46,13 +45,12 @@ fn paritydb_path(base: &Path) -> PathBuf {
 
 #[test]
 fn storage_migration_scenarios() {
-	// 1. Unified mode opens cleanly on a fresh dir. Smoke test for the new code path;
-	//    we cannot follow it with a reopen in-process (see module-level comment).
+	// 1. Unified mode opens cleanly on a fresh dir. Smoke test for the new code path.
 	{
 		let base = TempDir::new().unwrap();
 		let cfg = storage_init(base.path(), StorageSeparation::Unified);
 
-		let (_db, storage, require_create) = open_paritydb(&paritydb_path(base.path()), &cfg)
+		let (db, storage, require_create) = open_paritydb(&paritydb_path(base.path()), &cfg)
 			.unwrap_or_else(|e| panic!("fresh Unified open failed: {e}"));
 
 		assert!(require_create, "fresh paritydb should be flagged for create");
@@ -60,6 +58,8 @@ fn storage_migration_scenarios() {
 			matches!(storage, LedgerStorageDb::UnifiedDb(_)),
 			"Unified mode must return UnifiedDb",
 		);
+		drop((db, storage));
+		drop_all_default_storage();
 	}
 
 	// 2. Separate -> Unified on the same data dir must be rejected at the parity-db
@@ -74,6 +74,7 @@ fn storage_migration_scenarios() {
 		let (db, storage, _) = open_paritydb(&path, &sep_cfg)
 			.unwrap_or_else(|e| panic!("fresh Separate open failed: {e}"));
 		drop((db, storage));
+		drop_all_default_storage();
 
 		let msg = match open_paritydb(&path, &uni_cfg) {
 			Ok(_) => panic!("cross-mode swap must error"),
@@ -83,6 +84,7 @@ fn storage_migration_scenarios() {
 			msg.contains("storage_separation"),
 			"expected storage_separation hint in error, got: {msg}",
 		);
+		drop_all_default_storage();
 	}
 
 	// 3. Unified -> Separate on the same data dir: same hazard in the opposite
@@ -96,6 +98,7 @@ fn storage_migration_scenarios() {
 		let (db, storage, _) = open_paritydb(&path, &uni_cfg)
 			.unwrap_or_else(|e| panic!("fresh Unified open failed: {e}"));
 		drop((db, storage));
+		drop_all_default_storage();
 
 		let msg = match open_paritydb(&path, &sep_cfg) {
 			Ok(_) => panic!("cross-mode swap must error"),
@@ -105,5 +108,6 @@ fn storage_migration_scenarios() {
 			msg.contains("storage_separation"),
 			"expected storage_separation hint in error, got: {msg}",
 		);
+		drop_all_default_storage();
 	}
 }

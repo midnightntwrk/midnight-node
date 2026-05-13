@@ -33,6 +33,15 @@ fn invalid_transfer() -> BridgeTransferV1<BridgeRecipient> {
 	}
 }
 
+// It is valid from partner-chains-bridge-pallet perspective, but amount is below threshold of 99.
+fn subminimal_transfer() -> BridgeTransferV1<BridgeRecipient> {
+	BridgeTransferV1 {
+		amount: 90,
+		mc_tx_hash: McTxHash([4; 32]),
+		recipient: TransferRecipient::Address { recipient: recipient() },
+	}
+}
+
 #[test]
 fn emits_events() {
 	new_test_ext().execute_with(|| {
@@ -46,23 +55,21 @@ fn emits_events() {
 			frame_system::Pallet::<Test>::events().into_iter().map(|e| e.event).collect();
 
 		let expected: Vec<<mock::Test as frame_system::Config>::RuntimeEvent> = vec![
-			mock::RuntimeEvent::C2MBridge(Event::Transfer {
+			mock::RuntimeEvent::C2MBridge(Event::UserTransfer {
 				mc_tx_hash: McTxHash([1; 32]),
 				amount: 100,
-				result: [0u8; 32],
-				recipient: TransferRecipient::Address { recipient: recipient() },
+				recipient: recipient(),
+				midnight_tx_hash: [0u8; 32],
 			}),
-			mock::RuntimeEvent::C2MBridge(Event::Transfer {
+			mock::RuntimeEvent::C2MBridge(Event::ReserveTransfer {
 				mc_tx_hash: McTxHash([2; 32]),
 				amount: 200,
-				result: [1u8; 32],
-				recipient: TransferRecipient::Reserve,
+				midnight_tx_hash: [1u8; 32],
 			}),
-			mock::RuntimeEvent::C2MBridge(Event::Transfer {
+			mock::RuntimeEvent::C2MBridge(Event::InvalidTransfer {
 				mc_tx_hash: McTxHash([3; 32]),
 				amount: 300,
-				result: [2u8; 32],
-				recipient: TransferRecipient::Invalid,
+				midnight_tx_hash: [2u8; 32],
 			}),
 		];
 
@@ -80,5 +87,47 @@ fn nonce_influences_addressed_transfers() {
 			panic!("expected exactly two transfers");
 		};
 		assert_ne!(first, second);
+	})
+}
+
+#[test]
+fn subminimal_transfer_handling() {
+	new_test_ext().execute_with(|| {
+		pallet::SubminimalTransfersConfiguration::<Test>::set(SubminimalTransfersConfig {
+			subminimal_transfers_flush_threshold: 250,
+		});
+		//90
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+		assert!(frame_system::Pallet::<Test>::events().is_empty());
+		//180
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 2, sum: 180 }
+		);
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+		//270 > 250. Should flush everything in one transfer.
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 0, sum: 0 }
+		);
+		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
+
+		let events: Vec<_> =
+			frame_system::Pallet::<Test>::events().into_iter().map(|e| e.event).collect();
+		let expected: Vec<<mock::Test as frame_system::Config>::RuntimeEvent> =
+			vec![mock::RuntimeEvent::C2MBridge(Event::SubminimalFlushTransfer {
+				amount: 270,
+				count: 3,
+				midnight_tx_hash: [0u8; 32],
+			})];
+
+		assert_eq!(events, expected);
 	})
 }

@@ -3,8 +3,15 @@ use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
 };
 use serde::{Deserialize, Serialize};
+use sidechain_domain::McTxHash;
 
-use crate::MappingEntry;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MappingEntryGenesis {
+	pub cardano_reward_address: CardanoRewardAddressBytes,
+	pub dust_public_key: DustPublicKeyBytes,
+	pub utxo_tx_hash: McTxHash,
+	pub utxo_index: u16,
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "std", derive(serde_valid::Validate))]
@@ -13,7 +20,7 @@ pub struct CNightGenesis {
 	pub addresses: CNightAddresses,
 	pub observed_utxos: ObservedUtxos,
 	#[serde(with = "mappings_serde")]
-	pub mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>,
+	pub mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntryGenesis>>,
 	#[serde(with = "utxo_owners_serde")]
 	pub utxo_owners: BTreeMap<[u8; 32], DustPublicKeyBytes>,
 	pub next_cardano_position: CardanoPosition,
@@ -25,7 +32,7 @@ mod mappings_serde {
 	use serde::{Deserializer, Serializer, de::MapAccess, ser::SerializeMap};
 
 	pub fn serialize<S>(
-		map: &BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>,
+		map: &BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntryGenesis>>,
 		serializer: S,
 	) -> Result<S::Ok, S::Error>
 	where
@@ -41,14 +48,14 @@ mod mappings_serde {
 
 	pub fn deserialize<'de, D>(
 		deserializer: D,
-	) -> Result<BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>, D::Error>
+	) -> Result<BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntryGenesis>>, D::Error>
 	where
 		D: Deserializer<'de>,
 	{
 		struct MapVisitor;
 
 		impl<'de> serde::de::Visitor<'de> for MapVisitor {
-			type Value = BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntry>>;
+			type Value = BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntryGenesis>>;
 
 			fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
 				formatter.write_str("a map with hex-encoded CardanoRewardAddressBytes keys")
@@ -59,7 +66,9 @@ mod mappings_serde {
 				M: MapAccess<'de>,
 			{
 				let mut map = BTreeMap::new();
-				while let Some((key, value)) = access.next_entry::<String, Vec<MappingEntry>>()? {
+				while let Some((key, value)) =
+					access.next_entry::<String, Vec<MappingEntryGenesis>>()?
+				{
 					let bytes: Vec<u8> = hex::decode(&key).map_err(serde::de::Error::custom)?;
 					let addr = CardanoRewardAddressBytes::try_from(bytes).map_err(|_| {
 						serde::de::Error::custom("invalid CardanoRewardAddressBytes length")
