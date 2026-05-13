@@ -9,4 +9,4 @@ producing any artifact. Bumping both `srtool-build` and `srtool-info` targets to
 shifts the deterministic build baseline — downstream consumers verifying srtool
 digests should re-anchor against the new image.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1508
