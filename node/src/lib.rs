@@ -20,7 +20,6 @@ pub mod cfg;
 pub mod chain_spec;
 pub mod cli;
 pub mod command;
-pub mod d_param_check;
 pub mod extensions;
 mod filtering_pool;
 pub mod genesis;
