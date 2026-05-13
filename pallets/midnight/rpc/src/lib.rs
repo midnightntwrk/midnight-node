@@ -23,7 +23,10 @@ use std::sync::Arc;
 
 // Re-export the RPC trait, error types, and constants from midnight-rpc-api
 // so existing consumers of pallet-midnight-rpc don't break.
-pub use midnight_rpc_api::*;
+pub use midnight_rpc_api::{
+    BlockRpcError, EventsError, MidnightApiClient, MidnightApiServer, RpcResult, StateRpcError,
+    API_VERSIONS,
+};
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
 pub enum Operation {
