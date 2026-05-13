@@ -52,7 +52,8 @@ runs:
     # buildkitd — taking down any concurrent earthly build on the same host.
     - name: Disable earthly TLS (Hetzner runner has no certs)
       shell: bash
-      run: echo "    tls_enabled: false" >> .earthly/config.yml
+      run: |
+        echo "    tls_enabled: false" >> .earthly/config.yml
 
     - name: Docker Login
       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
