@@ -12,7 +12,6 @@
 //! The server-side implementation lives in `pallet-midnight-rpc`.
 
 use serde::Serialize;
-use std::fmt::{Display, Formatter};
 
 use jsonrpsee::{
     proc_macros::rpc,
@@ -58,103 +57,49 @@ pub trait MidnightApi<BlockHash> {
 // Error types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum StateRpcError {
+    #[error("Unable to decode contract address: {0}")]
     BadContractAddress(String),
+    #[error("Unable to decode account address: {0}")]
     BadAccountAddress(String),
+    #[error("Contract not present")]
     ContractNotPresent,
+    #[error("Unable to get requested contract state")]
     UnableToGetContractState,
+    #[error("Unable to get requested zswap chain state")]
     UnableToGetZSwapChainState,
+    #[error("Unable to get requested zswap state root")]
     UnableToGetZSwapStateRoot,
+    #[error("Unable to get requested ledger state root")]
     UnableToGetLedgerStateRoot,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum BlockRpcError {
+    #[error("Error while getting block: {0}")]
     UnableToGetBlock(String),
+    #[error("Unable to get block by hash")]
     BlockNotFound,
+    #[error("Unable to get ledger state")]
     UnableToGetLedgerState,
+    #[error("Unable to decode transactions for block: {0}")]
     UnableToDecodeTransactions(String),
+    #[error("Unable to serialize block to JSON: {0}")]
     UnableToSerializeBlock(String),
+    #[error("Unable to read chain name")]
     UnableToGetChainVersion,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, thiserror::Error)]
 pub enum EventsError {
+    #[error("Unable to hex decode event: {event}, because of {error}")]
     HexDecode { event: String, error: String },
+    #[error("Unable to decode event: {event}, because of {error}")]
     Decode { event: String, error: String },
+    #[error("Unable to serialize event to json: {event}, because of {error}")]
     UnableToSerializeEvent { event: String, error: String },
 }
-
-impl Display for StateRpcError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            StateRpcError::BadContractAddress(addr) => {
-                write!(f, "Unable to decode contract address: {addr}")
-            }
-            StateRpcError::BadAccountAddress(addr) => {
-                write!(f, "Unable to decode account address: {addr}")
-            }
-            StateRpcError::ContractNotPresent => {
-                write!(f, "Contract not present")
-            }
-            StateRpcError::UnableToGetContractState => {
-                write!(f, "Unable to get requested contract state")
-            }
-            StateRpcError::UnableToGetZSwapChainState => {
-                write!(f, "Unable to get requested zswap chain state")
-            }
-            StateRpcError::UnableToGetZSwapStateRoot => {
-                write!(f, "Unable to get requested zswap state root")
-            }
-            StateRpcError::UnableToGetLedgerStateRoot => {
-                write!(f, "Unable to get requested ledger state root")
-            }
-        }
-    }
-}
-
-impl Display for BlockRpcError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BlockRpcError::UnableToGetBlock(reason) => {
-                write!(f, "Error while getting block: {reason}")
-            }
-            BlockRpcError::BlockNotFound => write!(f, "Unable to get block by hash"),
-            BlockRpcError::UnableToGetLedgerState => write!(f, "Unable to get ledger state"),
-            BlockRpcError::UnableToDecodeTransactions(reason) => {
-                write!(f, "Unable to decode transactions for block: {reason}")
-            }
-            BlockRpcError::UnableToSerializeBlock(reason) => {
-                write!(f, "Unable to serialize block to JSON: {reason}")
-            }
-            BlockRpcError::UnableToGetChainVersion => write!(f, "Unable to read chain name"),
-        }
-    }
-}
-
-impl Display for EventsError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EventsError::HexDecode { event, error } => {
-                write!(f, "Unable to hex decode event: {event}, because of {error}")
-            }
-            EventsError::Decode { event, error } => {
-                write!(f, "Unable to decode event: {event}, because of {error}")
-            }
-            EventsError::UnableToSerializeEvent { event, error } => {
-                write!(
-                    f,
-                    "Unable to serialize event to json: {event}, because of {error}"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for StateRpcError {}
-impl std::error::Error for BlockRpcError {}
-impl std::error::Error for EventsError {}
 
 impl From<StateRpcError> for ErrorObjectOwned {
     fn from(value: StateRpcError) -> Self {

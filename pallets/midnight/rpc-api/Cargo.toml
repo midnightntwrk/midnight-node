@@ -8,6 +8,7 @@ description = "RPC trait and types for the Midnight pallet."
 [dependencies]
 jsonrpsee = { workspace = true, features = ["client", "macros"] }
 serde.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
