@@ -9,7 +9,7 @@ The Cardano-to-Midnight (C2M) bridge conceptually allows transferring NIGHT from
   - These are `Reserve Transfers`.
 - Cardano Unlocked to Cardano Locked transactions
   - The bridge observes transactions that lock cNIGHT at the ICS from addresses other than the Reserve Validator.
-  - The bridge computes the net difference at the ICS as the amount of the transfer.
+  - The bridge computes the net difference given transaction has at the ICS as the amount of the transfer.
   - The bridge unlocks this amount of mNIGHT, minus fees, from the Midnight Locked pool as a claimable amount for the designated transfer recipient.
   - There is one transfer recipient encoded in the Cardano transaction metadata.
   - These are `User Transfers`.
@@ -35,7 +35,7 @@ The complete C2M bridge implementation is split between two pallets and their su
 
 - idempotent Cardano observation and IDP creation
 - classification of Cardano transactions into `User Transfers` and `Reserve Transfers`
-- it also uses an injected runtime function that parses metadata into a recipient address; if this transformation fails, the transfer is classified as an `Invalid Transfer`
+- it also uses an injected runtime function that parses metadata into a recipient data (public key hash); if this transformation fails, the transfer is classified as an `Invalid Transfer`
 - for each transfer it executes a callback
 
 `c2m-bridge-pallet` builds on `pallet-bridge` functionality:
@@ -48,3 +48,10 @@ The complete C2M bridge implementation is split between two pallets and their su
   - allows addition of approved hashes
   - cleans up observed hashes
 - for each transfer it executes a Midnight Ledger operation (with the exception of subminimal transfers — many are required for one Midnight operation) and emits events for the indexer
+
+## Assumptions
+
+In order to calculate transfer amounts two assumptions are made:
+
+- Reserve Validator allows to spend cNIGHT only to ICS
+- ICS Withdrawals are not part of the same transaction as locking tokens in ICS
