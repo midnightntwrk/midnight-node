@@ -52,8 +52,8 @@ NUM_WALLETS=3  # One wallet per funding seed to avoid DUST conflicts
 #
 # The tempdir is bind-mounted (`docker run -v "$tempdir:/out"`) into the
 # toolkit container so it can write `tx_*.mn` files the host script then
-# reads back. On a self-hosted runner whose systemd unit has PrivateTmp=true
-# (e.g. the Hetzner pool), `/tmp` is a per-service namespace that the host's
+# reads back. On a self-hosted runner whose systemd unit has PrivateTmp=true,
+# `/tmp` is a per-service namespace that the host's
 # dockerd can't see — the bind mount silently fails to a hidden empty dir
 # and `find tempdir -name 'tx_*.mn'` returns nothing. Use $RUNNER_TEMP if
 # set (GHA exposes it; it lives under /var/lib/actions-runner/N/_temp which

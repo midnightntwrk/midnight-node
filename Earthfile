@@ -1536,7 +1536,7 @@ start-local-env-with-indexer-ci:
     RUN npm ci
     # Tear down any stack left over from a previous run before starting a fresh
     # one. Without this, named volumes (local-env_midnight-node-N-data, etc.)
-    # persist on shared CI hosts (e.g. self-hosted Hetzner runners) and the new
+    # persist on shared CI hosts (e.g. self-hosted runners) and the new
     # run boots validators with stale db state from the prior run — which
     # breaks chain-indexer with "unsupported protocol version" when the
     # genesis/runtime expectations disagree. The non-CI sibling target
