@@ -118,7 +118,7 @@ fn sign_registration_message_with_sidechain_key(
 	ecdsa_pair: ecdsa::Pair,
 ) -> Result<String, anyhow::Error> {
 	let seed = ecdsa_pair.seed();
-	let secret_key = secp256k1::SecretKey::from_slice(&seed).map_err(|e| anyhow!(e))?;
+	let secret_key = secp256k1::SecretKey::from_byte_array(seed).map_err(|e| anyhow!(e))?;
 	let (_, sig) = sc_public_key_and_signature_for_datum(secret_key, message.clone());
 	Ok(hex::encode(sig.serialize_compact()))
 }
