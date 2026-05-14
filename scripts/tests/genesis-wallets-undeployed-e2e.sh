@@ -15,6 +15,9 @@
 
 set -euxo pipefail
 
+# shellcheck disable=SC1091
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 NODE_IMAGE="$1"
 TOOLKIT_IMAGE="$2"
 NETWORK="${3:-midnight-net-genesis}"
@@ -25,20 +28,19 @@ echo "🧱 NODE_IMAGE: $NODE_IMAGE"
 echo "🧱 TOOLKIT_IMAGE: $TOOLKIT_IMAGE"
 
 # Ensure Docker network exists
-docker network create $NETWORK || true
+docker network create "$NETWORK" || true
 
 # Start node in background
 echo "🚀 Starting node container..."
 docker run -d --rm \
-  --name $NODE_CONTAINER \
-  --network $NETWORK \
+  --name "$NODE_CONTAINER" \
+  --network "$NETWORK" \
   -p 9944:9944 \
   -e CFG_PRESET=dev \
   -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "$NODE_IMAGE"
 
-echo "⏳ Waiting for node to boot..."
-sleep 30
+wait_for_unfinalized_block http://localhost:9944 1
 
 # Run wallets check script
 echo "📦 Running genesis wallets tests..."
@@ -46,7 +48,7 @@ TOOLKIT_IMAGE="$TOOLKIT_IMAGE" NETWORK="$NETWORK" NODE_CONTAINER="$NODE_CONTAINE
 
 # Teardown node
 echo "🛑 Cleaning up..."
-docker kill $NODE_CONTAINER || true
+docker kill "$NODE_CONTAINER" || true
 
 # Exit with test result
 if [ "${TEST_FAILED:-false}" = true ]; then
