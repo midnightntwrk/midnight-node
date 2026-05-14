@@ -102,6 +102,24 @@ jobs:
       - name: Recycle earthly-buildkitd to pick up current docker auth
         run: docker rm -f earthly-buildkitd 2>/dev/null || true
 
+      # docker/login-action writes auth to $DOCKER_CONFIG/config.json (a per-step
+      # temp dir). Earthly reads ~/.docker/config.json (HOME-based) and doesn't
+      # honor $DOCKER_CONFIG. Without the copy, earthly's buildkit-side push
+      # has no GHCR creds and falls back to anonymous token, which GHCR rejects
+      # with 403.
+      - name: Make docker auth visible to earthly at ~/.docker/config.json
+        run: |
+          echo "DOCKER_CONFIG=${DOCKER_CONFIG:-<unset>}"
+          echo "HOME=$HOME"
+          ls -la "$HOME/.docker" 2>&1 || true
+          if [ -n "$DOCKER_CONFIG" ] && [ -f "$DOCKER_CONFIG/config.json" ]; then
+            mkdir -p "$HOME/.docker"
+            cp "$DOCKER_CONFIG/config.json" "$HOME/.docker/config.json"
+            echo "Copied $DOCKER_CONFIG/config.json -> $HOME/.docker/config.json"
+          fi
+          echo "Registries with creds:"
+          jq '.auths | keys' "$HOME/.docker/config.json"
+
       - name: Compute image tags
         id: image_tags
         run: |
