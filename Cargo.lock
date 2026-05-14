@@ -8260,12 +8260,12 @@ dependencies = [
 
 [[package]]
 name = "midnight-serialize"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cf09a5e7e71e9cda92d6a401448cccaf6147ecb2b473bda2bb0afcccebdfd12"
+checksum = "2004ff7647d284d7072ff56c85b9be35b37963079e32180104f7638b92fbd90a"
 dependencies = [
  "crypto",
- "konst 0.3.16",
+ "konst 0.4.3",
  "lazy_static",
  "midnight-serialize-macros",
  "serde",

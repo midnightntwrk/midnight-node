@@ -85,7 +85,7 @@ zswap-ledger-8 = { version = "=8.1.0", package = "midnight-zswap" }
 midnight-storage-core = { version = "1.2.0", features = ["layout-v2", "gc-v1"] }
 
 # res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
-midnight-serialize = { version = "=1.0.0", package = "midnight-serialize" }
+midnight-serialize = { version = "=1.1.0", package = "midnight-serialize" }
 
 # Midnight local dependencies
 midnight-node-ledger = { path = "ledger", default-features = false }
