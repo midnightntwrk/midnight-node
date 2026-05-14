@@ -1076,10 +1076,7 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (
-    pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,,
-   	pallet_partner_chains_bridge::migration::MigrateMainChainScriptsToV1<Runtime>,
-);
+pub type Migrations = (pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where

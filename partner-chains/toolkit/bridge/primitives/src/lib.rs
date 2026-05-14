@@ -207,21 +207,6 @@ impl MainChainScripts {
 	}
 }
 
-/// Pre-v2 shape of [MainChainScripts], without `reserve_validator_address`.
-///
-/// Returned by [TokenBridgeIDPRuntimeApi]'s legacy `get_main_chain_scripts` so nodes running
-/// against a runtime that hasn't yet executed the v0->v1 storage migration can still decode
-/// the on-chain value.
-#[derive(Clone, PartialEq, Eq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
-pub struct MainChainScriptsV0 {
-	/// Minting policy ID of the native token
-	pub token_policy_id: PolicyId,
-	/// Asset name of the native token
-	pub token_asset_name: AssetName,
-	/// Address of the illiquid supply validator
-	pub illiquid_circulation_supply_validator_address: MainchainAddress,
-}
-
 /// Configuration of subminimal transfer stashing and flushing.
 #[derive(
 	Default,
@@ -407,15 +392,10 @@ impl<RecipientAddress: Encode + Send + Sync> sp_inherents::InherentDataProvider
 
 sp_api::decl_runtime_apis! {
 	/// Runtime API used by [TokenBridgeInherentDataProvider]
-	#[api_version(2)]
+	#[api_version(1)]
 	pub trait TokenBridgeIDPRuntimeApi {
 		/// Returns the current version of the pallet, 1-based.
 		fn get_pallet_version() -> u32;
-		/// Returns the currently configured main chain scripts (pre-v2 shape, without
-		/// `reserve_validator_address`). The macro exposes this as
-		/// `get_main_chain_scripts_before_version_2` on the node side.
-		#[changed_in(2)]
-		fn get_main_chain_scripts() -> Option<MainChainScriptsV0>;
 		/// Returns the currently configured main chain scripts
 		fn get_main_chain_scripts() -> Option<MainChainScripts>;
 		/// Returns the currently configured transfer number limit
@@ -454,16 +434,14 @@ impl<RecipientAddress: Encode + Send + Sync> TokenBridgeInherentDataProvider<Rec
 		};
 
 		match pallet_version {
-			1 => Self::new_with_v0_scripts(api, parent_hash, current_mc_hash, data_source).await,
-			2 => Self::new_v1(api, parent_hash, current_mc_hash, data_source).await,
+			1 => Self::new_v1(api, parent_hash, current_mc_hash, data_source).await,
 			unsupported_version => {
-				Err(InherentDataCreationError::UnsupportedPalletVersion(unsupported_version, 2))
+				Err(InherentDataCreationError::UnsupportedPalletVersion(unsupported_version, 1))
 			},
 		}
 	}
 
-	/// Creates new [TokenBridgeInherentDataProvider::ActiveV1] against a runtime at
-	/// [TokenBridgeIDPRuntimeApi] version 2 (current).
+	/// Creates new [TokenBridgeInherentDataProvider::ActiveV1]
 	pub async fn new_v1<'a, Block, Api>(
 		api: sp_api::ApiRef<'a, Api>,
 		parent_hash: Block::Hash,
@@ -475,54 +453,22 @@ impl<RecipientAddress: Encode + Send + Sync> TokenBridgeInherentDataProvider<Rec
 		Api: TokenBridgeIDPRuntimeApi<Block>,
 	{
 		let max_transfers = api.get_max_transfers_per_block(parent_hash)?;
-		let (Some(last_checkpoint), Some(main_chain_scripts)) =
-			(api.get_last_data_checkpoint(parent_hash)?, api.get_main_chain_scripts(parent_hash)?)
-		else {
-			log::info!("💤 Skipping token bridge transfer observation. Pallet not configured.");
-			return Ok(Self::Inert);
-		};
-
-		let (transfers, new_checkpoint) = data_source
-			.get_transfers(main_chain_scripts, last_checkpoint, max_transfers, current_mc_hash)
-			.await
-			.map_err(InherentDataCreationError::DataSourceError)?;
-
-		Ok(Self::ActiveV1 {
-			data: TokenBridgeTransfersV1 { transfers, data_checkpoint: new_checkpoint },
-		})
-	}
-
-	/// Creates new [TokenBridgeInherentDataProvider::ActiveV1] against a runtime at
-	/// [TokenBridgeIDPRuntimeApi] version 1, where on-chain `MainChainScripts` is still in
-	/// the pre-v2 shape (no `reserve_validator_address`). The missing field is filled with
-	/// [MainchainAddress::default()] (an empty address), which produces no reserve transfer
-	/// matches at the data source until the address is configured via a runtime call.
-	#[allow(deprecated)] // the v1 method is intentionally called here for backwards compat
-	async fn new_with_v0_scripts<'a, Block, Api>(
-		api: sp_api::ApiRef<'a, Api>,
-		parent_hash: Block::Hash,
-		current_mc_hash: McBlockHash,
-		data_source: &dyn TokenBridgeDataSource<RecipientAddress>,
-	) -> Result<Self, InherentDataCreationError>
-	where
-		Block: BlockT,
-		Api: TokenBridgeIDPRuntimeApi<Block>,
-	{
-		let max_transfers = api.get_max_transfers_per_block(parent_hash)?;
-		let (Some(last_checkpoint), Some(v0)) = (
-			api.get_last_data_checkpoint(parent_hash)?,
-			api.get_main_chain_scripts_before_version_2(parent_hash)?,
-		) else {
-			log::info!("💤 Skipping token bridge transfer observation. Pallet not configured.");
-			return Ok(Self::Inert);
-		};
-
-		let main_chain_scripts = MainChainScripts {
-			token_policy_id: v0.token_policy_id,
-			token_asset_name: v0.token_asset_name,
-			illiquid_circulation_supply_validator_address: v0
-				.illiquid_circulation_supply_validator_address,
-			reserve_validator_address: MainchainAddress::default(),
+		let (last_checkpoint, main_chain_scripts) = {
+			if let Some(last_checkpoint) = api.get_last_data_checkpoint(parent_hash)? {
+				if let Some(main_chain_scripts) = api.get_main_chain_scripts(parent_hash)? {
+					(last_checkpoint, main_chain_scripts)
+				} else {
+					log::info!(
+						"💤 Skipping token bridge transfer observation. Pallet main chain addresses are not configured."
+					);
+					return Ok(Self::Inert);
+				}
+			} else {
+				log::info!(
+					"💤 Skipping token bridge transfer observation. Pallet last data checkpoint not configured."
+				);
+				return Ok(Self::Inert);
+			}
 		};
 
 		let (transfers, new_checkpoint) = data_source

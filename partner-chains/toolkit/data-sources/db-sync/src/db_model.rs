@@ -166,17 +166,30 @@ pub(crate) struct TokenTxOutput {
 	pub datum: Option<DbDatum>,
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub struct NativeTokenAmount(pub u128);
+/// Reflect native token amount type, Db-sync uses:
+/// CREATE DOMAIN "word64type" AS numeric(20,0)	CONSTRAINT flyway_needs_this CHECK (VALUE >= 0::numeric AND VALUE <= '18446744073709551615'::numeric);
+#[derive(Debug, Clone, PartialEq, Copy, PartialOrd)]
+pub struct NativeTokenAmount(pub u64);
+
 impl From<NativeTokenAmount> for sidechain_domain::NativeTokenAmount {
 	fn from(value: NativeTokenAmount) -> Self {
-		Self(value.0)
+		Self(value.0.into())
+	}
+}
+
+impl From<NativeTokenAmount> for u64 {
+	fn from(value: NativeTokenAmount) -> Self {
+		value.0
 	}
 }
 
 impl NativeTokenAmount {
 	pub fn checked_sub(self, rhs: NativeTokenAmount) -> Option<NativeTokenAmount> {
 		self.0.checked_sub(rhs.0).map(NativeTokenAmount)
+	}
+
+	pub fn saturating_sub(self, rhs: NativeTokenAmount) -> NativeTokenAmount {
+		NativeTokenAmount(self.0.saturating_sub(rhs.0))
 	}
 
 	pub fn is_zero(&self) -> bool {
@@ -193,7 +206,7 @@ impl sqlx::Type<Postgres> for NativeTokenAmount {
 impl<'r> Decode<'r, Postgres> for NativeTokenAmount {
 	fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
 		let decoded = <sqlx::types::BigDecimal as Decode<Postgres>>::decode(value)?;
-		let i = decoded.to_u128().ok_or("NativeTokenQuantity is always a u128".to_string())?;
+		let i = decoded.to_u64().ok_or("NativeTokenQuantity is always a u64".to_string())?;
 		Ok(Self(i))
 	}
 }
@@ -589,10 +602,17 @@ pub(crate) struct BridgeTx {
 	pub(crate) block_number: BlockNumber,
 	pub(crate) tx_ix: TxIndexInBlock,
 	pub(crate) tx_hash: TxHash,
-	pub(crate) amount: NativeTokenAmount,
 	/// Value of transaction metadata with a specific C-to-M key.
 	/// Not the full metadata JSON. Db-sync metadata uses a separate row per metadata key.
 	pub(crate) c2m_metadata: Option<JsonValue>,
+	/// Sum of bridge token amounts in inputs at bridge address for given tx
+	pub(crate) bridge_in: NativeTokenAmount,
+	/// Sum of bridge token amounts in outputs at bridge address for given tx
+	pub(crate) bridge_out: NativeTokenAmount,
+	// Sum of bridge token amounts in inputs at reserve address for given tx
+	pub(crate) reserve_in: NativeTokenAmount,
+	/// Sum of bridge token amounts in outputs at reserve address for given tx
+	pub(crate) reserve_out: NativeTokenAmount,
 }
 #[cfg(feature = "bridge")]
 impl BridgeTx {
@@ -654,10 +674,12 @@ WHERE tx.hash = $1
 }
 
 #[cfg(feature = "bridge")]
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn get_bridge_txs(
 	tx_in_configuration: TxInConfiguration,
 	pool: &Pool<Postgres>,
-	icp_address: &Address,
+	ics_address: &Address,
+	reserve_address: &Address,
 	native_token: Asset,
 	checkpoint: ResolvedBridgeDataCheckpoint,
 	to_block: BlockNumber,
@@ -676,81 +698,136 @@ pub(crate) async fn get_bridge_txs(
 			format!("(block.block_no, tx.block_index) > ({}, {})", block_number.0, tx_ix.0)
 		},
 	};
-	// TODO: improve query by using metadata.ident "cache" and tx, tx_out, ma_tx_out, tx_metadata and tx_in ids boundries. https://github.com/midnightntwrk/partner-chains/issues/26
-	let transfers_subquery = format!(
-		"
-		SELECT
-			  block.block_no                            AS block_number
-			, tx.block_index                            AS tx_ix
-			, tx.hash                                   AS tx_hash
-			, tx.id                                     AS tx_id
-			, tx_metadata.json						    AS c2m_metadata
-			, coalesce(sum(output_tokens.quantity), 0)  AS tokens_out
-			, native_token.id                           AS native_token_id
-		FROM tx_out         outputs
-		JOIN tx                               ON outputs.tx_id = tx.id
-		JOIN block                            ON tx.block_id = block.id
-		JOIN ma_tx_out      output_tokens     ON output_tokens.tx_out_id = outputs.id
-		JOIN multi_asset    native_token      ON native_token.id = output_tokens.ident
-		LEFT JOIN           tx_metadata       ON tx_metadata.tx_id = tx.id AND tx_metadata.key = $5
-		WHERE native_token.policy = $2
-          AND native_token.name = $3
-          AND outputs.address = $1
-          AND block_no <= $4
-          AND {checkpoint_limit}
-		GROUP BY tx.id, tx.hash, tx_metadata.json, block.block_no, tx.block_index, native_token.id
-		LIMIT {max_rows}
-"
-	);
 
-	let inputs_subquery = match tx_in_configuration {
+	// Collects every native-token tx_out at the ICS address that has
+	// been consumed by another tx, attributed to the consuming tx. Two variants depending on
+	// whether db-sync's `tx_out.consumed_by_tx_id` denormalization is populated.
+	let bridge_inputs_subquery = match tx_in_configuration {
 		TxInConfiguration::Consumed => {
 			"
 			SELECT
 				  tx_out.consumed_by_tx_id  AS consuming_tx_id
-                , ma_tx_out.ident           AS native_token_id
-                , ma_tx_out.quantity        AS tokens_in
+				, ma_tx_out.quantity        AS quantity
 			FROM tx_out
-			LEFT JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
-			WHERE tx_out.address = $1
+				JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+				JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+			WHERE multi_asset.policy = $3
+			  AND multi_asset.name = $4
+			  AND tx_out.address = $1
+			  AND tx_out.consumed_by_tx_id IS NOT NULL
 		"
 		},
 		TxInConfiguration::Enabled => {
 			"
 			SELECT
-                  tx_in.tx_in_id         AS consuming_tx_id
-                , ma_tx_out.ident        AS native_token_id
-                , ma_tx_out.quantity     AS tokens_in
-			FROM tx_out
-			LEFT JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
-			LEFT JOIN tx_in     ON tx_in.tx_out_id = tx_out.tx_id and tx_in.tx_out_index = tx_out.index
-			WHERE tx_out.address = $1
+			    tx_in.tx_in_id     AS consuming_tx_id
+			  , ma_tx_out.quantity AS quantity
+			FROM tx_in
+				JOIN tx_out      ON tx_out.tx_id = tx_in.tx_out_id AND tx_out.index = tx_in.tx_out_index
+				JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+				JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+			WHERE multi_asset.policy = $3
+				AND multi_asset.name = $4
+				AND tx_out.address = $1
 		"
 		},
 	};
 
-	let mut query_builder = QueryBuilder::new(&format!("
-		WITH
-            transfers AS ({transfers_subquery})
-		  , inputs    AS ({inputs_subquery})
+	let reserve_inputs_subquery = match tx_in_configuration {
+		TxInConfiguration::Consumed => {
+			"
+			SELECT
+				  tx_out.consumed_by_tx_id  AS consuming_tx_id
+				, ma_tx_out.quantity        AS quantity
+			FROM tx_out
+				JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+				JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+			WHERE multi_asset.policy = $3
+			  AND multi_asset.name = $4
+			  AND tx_out.address = $2
+			  AND tx_out.consumed_by_tx_id IS NOT NULL
+		"
+		},
+		TxInConfiguration::Enabled => {
+			"
+			SELECT
+			    tx_in.tx_in_id     AS consuming_tx_id
+			  , ma_tx_out.quantity AS quantity
+			FROM tx_in
+				JOIN tx_out      ON tx_out.tx_id = tx_in.tx_out_id AND tx_out.index = tx_in.tx_out_index
+				JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+				JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+			WHERE multi_asset.policy = $3
+				AND multi_asset.name = $4
+				AND tx_out.address = $2
+		"
+		},
+	};
+
+	// Collects every native-token tx_out at the ICS address, attributed to the producing tx.
+	let bridge_outputs_subquery = "
 		SELECT
-            block_number
-          , tx_ix
-          , tx_hash
-          , tokens_out - coalesce(sum(tokens_in), 0) as amount
-          , c2m_metadata
-		FROM transfers
-		LEFT JOIN inputs ON inputs.consuming_tx_id = transfers.tx_id AND inputs.native_token_id = transfers.native_token_id
-		GROUP BY tx_hash, c2m_metadata, block_number, tx_ix, tokens_out
-		ORDER BY block_number, tx_ix;
-	"));
+			  tx_out.tx_id       AS producing_tx_id
+			, ma_tx_out.quantity AS quantity
+		FROM tx_out
+			JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+			JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+		WHERE multi_asset.policy = $3
+		  AND multi_asset.name = $4
+		  AND tx_out.address = $1
+	";
+
+	let reserve_outputs_subquery = "
+		SELECT
+			  tx_out.tx_id       AS producing_tx_id
+			, ma_tx_out.quantity AS quantity
+		FROM tx_out
+			JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+			JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+		WHERE multi_asset.policy = $3
+		  AND multi_asset.name = $4
+		  AND tx_out.address = $2
+	";
+
+	// TODO: improve query by using metadata.ident "cache" and tx, tx_out, ma_tx_out,
+	// tx_metadata and tx_in ids boundaries. https://github.com/midnightntwrk/partner-chains/issues/26
+	let mut query_builder = QueryBuilder::new(&format!(
+		"
+		WITH
+			bridge_inputs  AS ({bridge_inputs_subquery}),
+			bridge_outputs AS ({bridge_outputs_subquery}),
+			reserve_inputs  AS ({reserve_inputs_subquery}),
+			reserve_outputs AS ({reserve_outputs_subquery}),
+			relevant_txs AS (SELECT DISTINCT producing_tx_id AS tx_id FROM bridge_outputs)
+		SELECT * FROM
+			(SELECT
+				  block.block_no   AS block_number
+				, tx.block_index   AS tx_ix
+				, tx.hash          AS tx_hash
+				, tx_metadata.json AS c2m_metadata
+				, COALESCE((SELECT sum(quantity) FROM bridge_inputs WHERE consuming_tx_id = tx.id), 0) AS bridge_in
+				, COALESCE((SELECT sum(quantity) FROM bridge_outputs WHERE producing_tx_id = tx.id), 0) AS bridge_out
+				, COALESCE((SELECT sum(quantity) FROM reserve_inputs WHERE consuming_tx_id = tx.id), 0) AS reserve_in
+				, COALESCE((SELECT sum(quantity) FROM reserve_outputs WHERE producing_tx_id = tx.id), 0) AS reserve_out
+			FROM tx
+			    JOIN block        ON block.id = tx.block_id
+			    JOIN relevant_txs ON relevant_txs.tx_id = tx.id
+			    LEFT JOIN tx_metadata ON tx_metadata.tx_id = tx.id AND tx_metadata.key = $5
+			WHERE block.block_no <= $6
+				AND {checkpoint_limit})
+		WHERE bridge_out > bridge_in OR reserve_in > reserve_out
+		ORDER BY block_number, tx_ix
+		LIMIT {max_rows};
+		"
+	));
 
 	let query = query_builder
 		.build_query_as::<BridgeTx>()
-		.bind(&icp_address.0)
+		.bind(&ics_address.0)
+		.bind(&reserve_address.0)
 		.bind(&native_token.policy_id.0)
 		.bind(&native_token.asset_name.0)
-		.bind(to_block)
-		.bind(i64::try_from(TOKEN_TRANSFER_METADATUM_KEY).expect("Constant is valid i64"));
+		.bind(i64::try_from(TOKEN_TRANSFER_METADATUM_KEY).expect("Constant is valid i64"))
+		.bind(to_block);
 	Ok(query.fetch_all(pool).await?)
 }

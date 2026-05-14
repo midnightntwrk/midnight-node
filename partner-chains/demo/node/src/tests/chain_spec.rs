@@ -39,7 +39,8 @@ fn pc_create_chain_spec_test() {
 		  "mainChainScripts": {
 			"token_policy_id": "0x04040404040404040404040404040404040404040404040404040404",
 			"token_asset_name": "0x040404",
-			"illiquid_circulation_supply_validator_address": "addr_nativetokenisc"
+			"illiquid_circulation_supply_validator_address": "addr_nativetokenisc",
+			"reserve_validator_address": ""
 		  },
 		  "marker": null
 		})

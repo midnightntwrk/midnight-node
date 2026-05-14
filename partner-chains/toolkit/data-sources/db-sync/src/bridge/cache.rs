@@ -143,16 +143,7 @@ observed_async_trait!(
 					},
 				};
 
-			let new_checkpoint = match txs.last() {
-				Some(tx) if (txs.len() as u32) >= max_transfers => {
-					BridgeDataCheckpoint::Tx(tx.tx_id())
-				},
-				_ => BridgeDataCheckpoint::Block(to_block.into()),
-			};
-
-			let transfers = txs.into_iter().map(tx_to_transfer).collect();
-
-			Ok((transfers, new_checkpoint))
+			Ok(txs_to_transfers(txs, max_transfers, to_block))
 		}
 	}
 );
@@ -211,6 +202,7 @@ impl CachedTokenBridgeDataSourceImpl {
 			self.db_sync_config.get_tx_in_config().await?,
 			&self.pool,
 			&main_chain_scripts.illiquid_circulation_supply_validator_address.clone().into(),
+			&main_chain_scripts.reserve_validator_address.clone().into(),
 			main_chain_scripts.asset_id().into(),
 			effective_data_checkpoint,
 			to_block.into(),

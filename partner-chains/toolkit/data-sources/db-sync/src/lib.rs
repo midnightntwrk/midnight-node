@@ -45,9 +45,6 @@
 //!     	.await?
 //!     	.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 //!
-//!     let block_participation =
-//!     	StakeDistributionDataSourceImpl::new(pool.clone(), metrics.clone(), STAKE_CACHE_SIZE);
-//!
 //!     Ok(())
 //! }
 //! ```

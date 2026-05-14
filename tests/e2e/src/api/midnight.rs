@@ -4,7 +4,6 @@ use blake2::Blake2bVar;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{DefaultDB, DustWallet, WalletSeed, serialize_untagged};
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::utxo_owners::Output as UtxoOwners;
-use midnight_node_metadata::midnight_metadata_latest::runtime_types::bounded_collections::bounded_vec::BoundedVec;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives::bridge::BridgeRecipient;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::BridgeTransferV1;
 use midnight_node_metadata::midnight_metadata_latest::federated_authority_observation::events::{CouncilMembersReset, TechnicalCommitteeMembersReset};
@@ -190,10 +189,10 @@ impl MidnightClient {
 
                     println!(
                         "  BridgeHandler::handle_transfers called with {} transfers",
-                        transfers.0.len()
+                        transfers.len()
                     );
 
-                    if !transfers.0.is_empty() {
+                    if !transfers.is_empty() {
                         let events = ext.events().await?;
                         return Ok(events);
                     }
@@ -233,10 +232,10 @@ impl MidnightClient {
 
     fn extract_bridge_calls(
         call: &mn_meta::Call,
-    ) -> Option<&BoundedVec<BridgeTransferV1<BridgeRecipient>>> {
+    ) -> Option<&Vec<BridgeTransferV1<BridgeRecipient>>> {
         match call {
             mn_meta::Call::Bridge(bridge::Call::handle_transfers { transfers, .. }) => {
-                Some(transfers)
+                Some(&transfers.0)
             }
             _ => None,
         }

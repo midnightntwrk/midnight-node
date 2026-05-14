@@ -192,15 +192,9 @@ pub mod benchmarking;
 /// Weight types and default weight values
 pub mod weights;
 
-/// Storage migrations for the bridge pallet.
-pub mod migration;
-
 use frame_support::pallet_prelude::*;
 pub use pallet::*;
 use sp_partner_chains_bridge::BridgeTransferV1;
-
-/// Current on-chain storage version for the bridge pallet.
-pub const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
 
 /// Runtime logic for handling incoming token bridge transfers from Cardano
 ///
@@ -237,7 +231,6 @@ pub mod pallet {
 	pub const PALLET_VERSION: u32 = 1;
 
 	#[pallet::pallet]
-	#[pallet::storage_version(crate::STORAGE_VERSION)]
 	pub struct Pallet<T>(_);
 
 	#[pallet::config]
