@@ -46,7 +46,7 @@ jobs:
     # validator copy; the smaller org runners can't hold all 12 copies).
     # Devnet/govnet would fit on smaller runners but the cost delta is small
     # and using one runner keeps the workflow simple.
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: [self-hosted, "tier:large"]
     timeout-minutes: 45
 
     steps:

@@ -21,7 +21,7 @@ permissions: {}
 jobs:
   publish-amd64:
     name: AMD Build and Publish
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: [self-hosted, "tier:large"]
     outputs:
       IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
     env:
