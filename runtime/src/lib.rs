@@ -1267,6 +1267,12 @@ impl_runtime_apis! {
 		}
 	}
 
+	impl pallet_c2m_bridge::C2MBridgeApi<Block> for Runtime {
+		fn get_approved_mc_tx_hashes() -> Vec<sidechain_domain::McTxHash> {
+			C2MBridge::get_approved_mc_tx_hashes()
+		}
+	}
+
 	impl sp_api::Metadata<Block> for Runtime {
 		fn metadata() -> OpaqueMetadata {
 			OpaqueMetadata::new(Runtime::metadata().into())
