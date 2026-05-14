@@ -35,10 +35,10 @@ use crate::{
 			verify_reserve_auth_script,
 		},
 	},
+	reference_hardware::MIDNIGHT_REFERENCE_HARDWARE,
 	service::{self, StorageInit},
 };
 use clap::Parser;
-use frame_benchmarking_cli::SUBSTRATE_REFERENCE_HARDWARE;
 use midnight_node_runtime::Block;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityAddresses;
@@ -277,7 +277,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			.then(|| {
 				config.database.path().map(|database_path| {
 					let _ = std::fs::create_dir_all(database_path);
-					sc_sysinfo::gather_hwbench(Some(database_path), &SUBSTRATE_REFERENCE_HARDWARE)
+					sc_sysinfo::gather_hwbench(Some(database_path), &MIDNIGHT_REFERENCE_HARDWARE)
 				})
 			})
 			.flatten();
@@ -604,7 +604,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Machine(cmd) => {
-						cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone())
+						cmd.run(&config, MIDNIGHT_REFERENCE_HARDWARE.clone())
 					},
 				}
 			})

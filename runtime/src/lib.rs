@@ -63,8 +63,8 @@ pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
-	MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData, ScEpochNumber,
-	ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
+	DParameter, MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData,
+	ScEpochNumber, ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -543,7 +543,28 @@ fn select_authorities_optionally_overriding(
 	let d_parameter = SystemParameters::get_d_parameter();
 	input.d_parameter.num_permissioned_candidates = d_parameter.num_permissioned_candidates;
 	input.d_parameter.num_registered_candidates = d_parameter.num_registered_candidates;
+	log_if_d_param_below_permissioned_candidates(&d_parameter, &input.permissioned_candidates);
 	select_authorities(Sidechain::genesis_utxo(), input, sidechain_epoch)
+}
+
+/// Log an error when the D-parameter's permissioned slots are fewer than the available
+/// permissioned candidates. In a federated network this means that no candidate has a
+/// guaranteed committee seat, which risks liveness if any node is repeatedly selected.
+/// See <https://github.com/midnightntwrk/midnight-node/issues/1481>.
+pub fn log_if_d_param_below_permissioned_candidates(
+	d_parameter: &DParameter,
+	permissioned_candidates: &[PermissionedCandidateData],
+) {
+	let d = d_parameter.num_permissioned_candidates as usize;
+	let p = permissioned_candidates.len();
+	if d < p {
+		log::error!(
+			"D-parameter num_permissioned_candidates ({d}) is less than the number of available \
+			 permissioned candidates ({p}). With D_P < n_P, candidates do not have guaranteed \
+			 committee seats, risking liveness in a federated network. \
+			 See https://github.com/midnightntwrk/midnight-node/issues/1481"
+		);
+	}
 }
 
 impl pallet_session_validator_management::Config for Runtime {
