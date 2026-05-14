@@ -158,7 +158,15 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	let mut t: TestExternalities = RuntimeGenesisConfig {
 		system: Default::default(),
 		c_night_observation: Default::default(),
-		midnight: midnight_test_config(),
+		midnight: MidnightConfig {
+			_config: Default::default(),
+			network_id: UndeployedNetwork.id().to_string(),
+			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
+				UndeployedNetwork.genesis_state(),
+				Some(UndeployedNetwork.id()),
+			)
+			.unwrap(),
+		},
 	}
 	.build_storage()
 	.unwrap()
@@ -169,41 +177,4 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	});
 
 	t
-}
-
-/// Returns the `MidnightConfig` used by the mock runtime. Exposed so tests that
-/// construct a `RuntimeGenesisConfig` directly (e.g. to exercise the cnight-observation
-/// genesis-build panic paths) can reuse the existing `genesis_state_key` initialization
-/// rather than copy-paste it.
-#[cfg(feature = "std")]
-pub fn midnight_test_config() -> MidnightConfig {
-	MidnightConfig {
-		_config: Default::default(),
-		network_id: UndeployedNetwork.id().to_string(),
-		genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
-			UndeployedNetwork.genesis_state(),
-			Some(UndeployedNetwork.id()),
-		)
-		.unwrap(),
-	}
-}
-
-/// Builds a `RuntimeGenesisConfig` whose `c_night_observation` section carries the
-/// supplied `CNightAddresses`. Used by tests that drive the `BuildGenesisConfig::build`
-/// panic paths with over-length address fields.
-#[cfg(feature = "std")]
-pub fn runtime_genesis_with_cnight_addresses(
-	addresses: midnight_primitives_cnight_observation::CNightAddresses,
-) -> RuntimeGenesisConfig {
-	RuntimeGenesisConfig {
-		system: Default::default(),
-		c_night_observation: pallet_cnight_observation::GenesisConfig::<Test> {
-			config: pallet_cnight_observation::config::CNightGenesis {
-				addresses,
-				..Default::default()
-			},
-			_marker: Default::default(),
-		},
-		midnight: midnight_test_config(),
-	}
 }

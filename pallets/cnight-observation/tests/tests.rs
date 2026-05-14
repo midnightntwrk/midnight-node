@@ -26,9 +26,9 @@ use midnight_node_ledger_helpers::{
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
-	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNightAddresses,
-	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, INHERENT_IDENTIFIER,
-	InherentError, MidnightObservationTokenMovement, TimestampUnixMillis,
+	CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNightAddresses, CardanoPosition, CardanoRewardAddressBytes,
+	DustPublicKeyBytes, INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement,
+	TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -37,7 +37,6 @@ use midnight_primitives_mainchain_follower::{
 use pallet_cnight_observation::*;
 use pallet_cnight_observation_mock::mock::{
 	self, CNightObservation, RuntimeCall, RuntimeEvent, System, Test, new_test_ext,
-	runtime_genesis_with_cnight_addresses,
 };
 use rand::prelude::*;
 use sidechain_domain::{McBlockHash, McTxHash};
@@ -1620,160 +1619,46 @@ fn is_inherent_required_with_malformed_data_returns_error() {
 	});
 }
 
-// -----------------------------------------------------------------------------
-// Genesis-build panic-message tests
-//
-// These tests assert that the diagnostic panic emitted by
-// `pallet_cnight_observation::BuildGenesisConfig::build` for over-length address
-// fields names BOTH the dotted chain-spec field path (operator-facing) AND the
-// numeric cap (`maximum <N>`, read from the destination `BoundedVec` type via
-// `bound()`). They use `std::panic::catch_unwind` rather than
-// `#[should_panic(expected = ...)]` because that attribute supports only a
-// single substring; we want to pin two independent assertions per test.
-//
-// The field paths match the JSON keys an operator edits in chain-spec files
-// under `res/`, e.g. `cNightObservation.config.addresses.<field>` — the runtime
-// pallet name is `CNightObservation` (declared in `runtime/src/lib.rs`) which
-// Substrate's `#[runtime::*]` form renders as `cNightObservation` in JSON.
-//
-// `cnight_policy_id` is intentionally not exercised — its source type is a
-// fixed-size `[u8; 28]`, so the panic at the corresponding call site cannot be
-// reached via chain-spec deserialization (serde rejects mismatched lengths
-// first). The diagnostic helper is invoked there as defence-in-depth against
-// a future widening of the source type.
-// -----------------------------------------------------------------------------
-
-/// Extracts the panic message string from a `catch_unwind` payload, trying both
-/// `String` (the format!-produced kind we emit) and `&'static str` (the literal
-/// kind used elsewhere in the codebase) before giving up.
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
-	if let Some(s) = payload.downcast_ref::<String>() {
-		s.clone()
-	} else if let Some(s) = payload.downcast_ref::<&'static str>() {
-		(*s).to_string()
-	} else {
-		panic!("panic payload was neither String nor &'static str");
-	}
-}
-
+// One representative regression guard for the operator-facing panic shape in
+// `BuildGenesisConfig::build`. The four call sites use a byte-identical format
+// string differing only in the dotted field path and the destination bound;
+// `cnight_policy_id` is not exercised because its source type `[u8; 28]` makes
+// the panic at that site unreachable from chain-spec deserialization.
 #[test]
-fn build_panics_with_field_name_and_const_when_mapping_validator_address_too_long() {
-	let over_length_addr: String = "a".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize + 1);
+fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_long() {
+	let over_length = "a".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize + 1);
+	let genesis = pallet_cnight_observation::GenesisConfig::<Test> {
+		config: pallet_cnight_observation::config::CNightGenesis {
+			addresses: CNightAddresses {
+				mapping_validator_address: over_length,
+				auth_token_asset_name: String::new(),
+				cnight_policy_id: [0u8; 28],
+				cnight_asset_name: String::new(),
+			},
+			..Default::default()
+		},
+		_marker: Default::default(),
+	};
 
-	let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-		use frame_support::sp_runtime::BuildStorage;
-		let _ = runtime_genesis_with_cnight_addresses(CNightAddresses {
-			mapping_validator_address: over_length_addr,
-			auth_token_asset_name: String::new(),
-			cnight_policy_id: [0u8; 28],
-			cnight_asset_name: String::new(),
-		})
-		.build_storage()
-		.unwrap();
-	}));
+	let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+		sp_io::TestExternalities::default().execute_with(|| {
+			genesis.build();
+		});
+	}))
+	.expect_err("genesis build must panic on over-length mapping_validator_address");
 
-	let payload =
-		result.expect_err("genesis build must panic on over-length mapping_validator_address");
-	let msg = panic_message(payload);
+	let msg = payload
+		.downcast_ref::<String>()
+		.cloned()
+		.or_else(|| payload.downcast_ref::<&'static str>().map(|s| s.to_string()))
+		.expect("panic payload should be String or &'static str");
+
 	assert!(
 		msg.contains("cNightObservation.config.addresses.mapping_validator_address"),
-		"panic message must name the chain-spec field path; got: {msg}"
+		"panic must name the chain-spec field path; got: {msg}"
 	);
 	assert!(
 		msg.contains(&format!("maximum {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
-		"panic message must name the bound from the destination type; got: {msg}"
+		"panic must name the destination bound; got: {msg}"
 	);
-}
-
-#[test]
-fn build_panics_with_field_name_and_const_when_auth_token_asset_name_too_long() {
-	let over_length_name: String = "a".repeat(CARDANO_ASSET_NAME_MAX_LENGTH as usize + 1);
-
-	let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-		use frame_support::sp_runtime::BuildStorage;
-		let _ = runtime_genesis_with_cnight_addresses(CNightAddresses {
-			mapping_validator_address: String::new(),
-			auth_token_asset_name: over_length_name,
-			cnight_policy_id: [0u8; 28],
-			cnight_asset_name: String::new(),
-		})
-		.build_storage()
-		.unwrap();
-	}));
-
-	let payload =
-		result.expect_err("genesis build must panic on over-length auth_token_asset_name");
-	let msg = panic_message(payload);
-	assert!(
-		msg.contains("cNightObservation.config.addresses.auth_token_asset_name"),
-		"panic message must name the chain-spec field path; got: {msg}"
-	);
-	assert!(
-		msg.contains(&format!("maximum {CARDANO_ASSET_NAME_MAX_LENGTH}")),
-		"panic message must name the bound from the destination type; got: {msg}"
-	);
-}
-
-#[test]
-fn build_panics_with_field_name_and_const_when_cnight_asset_name_too_long() {
-	let over_length_name: String = "a".repeat(CARDANO_ASSET_NAME_MAX_LENGTH as usize + 1);
-
-	let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-		use frame_support::sp_runtime::BuildStorage;
-		let _ = runtime_genesis_with_cnight_addresses(CNightAddresses {
-			mapping_validator_address: String::new(),
-			auth_token_asset_name: String::new(),
-			cnight_policy_id: [0u8; 28],
-			cnight_asset_name: over_length_name,
-		})
-		.build_storage()
-		.unwrap();
-	}));
-
-	let payload = result.expect_err("genesis build must panic on over-length cnight_asset_name");
-	let msg = panic_message(payload);
-	assert!(
-		msg.contains("cNightObservation.config.addresses.cnight_asset_name"),
-		"panic message must name the chain-spec field path; got: {msg}"
-	);
-	assert!(
-		msg.contains(&format!("maximum {CARDANO_ASSET_NAME_MAX_LENGTH}")),
-		"panic message must name the bound from the destination type; got: {msg}"
-	);
-}
-
-// -----------------------------------------------------------------------------
-// `bounded_or_panic_with_field_path` helper-level tests
-//
-// The helper is the single point through which `BuildGenesisConfig::build`
-// routes its four `Vec<u8> → BoundedVec<u8, S>` conversions. These tests pin
-// its panic shape (field path, supplied length, and `maximum N` from the
-// destination type's `bound()`) and its happy path independently of any
-// pallet-level call site, so a future refactor that changes the call sites
-// cannot mask a regression in the helper itself.
-// -----------------------------------------------------------------------------
-
-#[test]
-fn bounded_or_panic_with_field_path_panics_with_field_and_bound_for_oversized_input() {
-	let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-		// A small bound keeps the test self-contained and avoids depending on
-		// the production constants.
-		let _: BoundedVec<u8, ConstU32<4>> = bounded_or_panic_with_field_path::<ConstU32<4>>(
-			"test.path.field",
-			vec![1u8, 2, 3, 4, 5],
-		);
-	}));
-
-	let payload = result.expect_err("helper must panic on oversized input");
-	let msg = panic_message(payload);
-	assert!(msg.contains("test.path.field"), "panic must name field path; got: {msg}");
-	assert!(msg.contains("length 5"), "panic must name supplied length; got: {msg}");
-	assert!(msg.contains("maximum 4"), "panic must name the destination bound; got: {msg}");
-}
-
-#[test]
-fn bounded_or_panic_with_field_path_succeeds_when_input_fits_bound() {
-	let bv: BoundedVec<u8, ConstU32<4>> =
-		bounded_or_panic_with_field_path::<ConstU32<4>>("test.path", vec![1u8, 2]);
-	assert_eq!(bv.into_inner(), vec![1u8, 2]);
 }
