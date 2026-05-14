@@ -8,10 +8,9 @@ fixes for a race condition in `force_as_arc`, an `Sp` serialization panic, a
 memory leak in pending `Updates`, and a lock-ordering violation. `midnight-ledger`
 itself adds finer-grained WASM wallet bindings (wallet-facing only).
 
-All midnight-ledger workspace crates are now sourced from a single tag
-(`ledger-8.1.0`) to keep the dependency graph consistent — without this, the L7
-chain's crates.io-resolved `base-crypto`/`coin-structure`/`zkir`/`storage`
-copies conflict with the L8 chain's git-sourced versions (same crate version,
-drifted source).
+All midnight-ledger workspace crates are now resolved from crates.io at their
+8.1.0 release versions; the previous `[patch.crates-io]` block pinning them to
+the `ledger-8.1.0` git tag has been removed now that the 8.1.0 crates are
+published.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1510
