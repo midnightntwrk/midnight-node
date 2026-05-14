@@ -67,6 +67,18 @@ fn generate_registration_utxos(count: u32) -> Vec<ObservedUtxo> {
 		.collect()
 }
 
+fn reset_benchmark_state<T: Config>() {
+	let _ = Mapping::<T>::clear(u32::MAX, None);
+	let _ = UtxoOwners::<T>::clear(u32::MAX, None);
+	InherentExecutedThisBlock::<T>::kill();
+	NextCardanoPosition::<T>::set(CardanoPosition {
+		block_hash: McBlockHash([0u8; 32]),
+		block_number: 1,
+		block_timestamp: TimestampUnixMillis(20_000),
+		tx_index_in_block: 0,
+	});
+}
+
 #[benchmarks]
 mod benchmarks {
 	use super::*;
@@ -76,6 +88,8 @@ mod benchmarks {
 	/// Component `n`: number of observed UTXOs (0..MAX_UTXO_COUNT).
 	#[benchmark]
 	fn process_tokens(n: Linear<0, MAX_UTXO_COUNT>) {
+		reset_benchmark_state::<T>();
+
 		let utxos = generate_registration_utxos(n);
 
 		let next_position = CardanoPosition {
