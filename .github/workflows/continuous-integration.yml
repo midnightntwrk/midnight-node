@@ -28,6 +28,7 @@ concurrency:
 jobs:
   run:
     name: Build node and images (linux/amd64, ubuntu-latest-16-core-x64, amd64)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     permissions:
       id-token: write
       contents: read
@@ -145,6 +146,7 @@ jobs:
 
   run-arm64:
     name: Build node and images (arm64)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     permissions:
       id-token: write
       contents: read
@@ -714,7 +716,7 @@ jobs:
           key: ${{ steps.guard.outputs.key }}
 
   build-indexer-images:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) && ((github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group')
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

@@ -35,6 +35,26 @@
           "type": "string"
         }
       },
+      "examples": [
+        {
+          "name": "midnight_contractState_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "contract_address",
+              "value": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "state",
+            "value": "0x"
+          }
+        }
+      ],
       "errors": [
         {
           "$ref": "#/components/errors/StateRpcError"
@@ -67,6 +87,27 @@
           }
         }
       },
+      "examples": [
+        {
+          "name": "midnight_zswapStateRoot_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "root",
+            "value": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        }
+      ],
       "errors": [
         {
           "$ref": "#/components/errors/StateRpcError"
@@ -99,6 +140,27 @@
           }
         }
       },
+      "examples": [
+        {
+          "name": "midnight_ledgerStateRoot_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "root",
+            "value": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        }
+      ],
       "errors": [
         {
           "$ref": "#/components/errors/StateRpcError"
@@ -119,7 +181,20 @@
             "type": "integer"
           }
         }
-      }
+      },
+      "examples": [
+        {
+          "name": "midnight_apiVersions_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "versions",
+            "value": [
+              2
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "midnight_ledgerVersion",
@@ -142,6 +217,22 @@
           "type": "string"
         }
       },
+      "examples": [
+        {
+          "name": "midnight_ledgerVersion_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "version",
+            "value": "1.0.0"
+          }
+        }
+      ],
       "errors": [
         {
           "$ref": "#/components/errors/BlockRpcError"
@@ -176,6 +267,25 @@
           ]
         }
       },
+      "examples": [
+        {
+          "name": "systemParameters_getTermsAndConditions_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "termsAndConditions",
+            "value": {
+              "hash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+              "url": "https://example.com/terms"
+            }
+          }
+        }
+      ],
       "errors": [
         {
           "$ref": "#/components/errors/SystemParametersRpcError"
@@ -203,6 +313,25 @@
           "$ref": "#/components/schemas/DParameterRpcResponse"
         }
       },
+      "examples": [
+        {
+          "name": "systemParameters_getDParameter_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "dParameter",
+            "value": {
+              "numPermissionedCandidates": 1,
+              "numRegisteredCandidates": 2
+            }
+          }
+        }
+      ],
       "errors": [
         {
           "$ref": "#/components/errors/SystemParametersRpcError"
@@ -239,6 +368,33 @@
           "$ref": "#/components/schemas/AriadneParametersRpcResponse"
         }
       },
+      "examples": [
+        {
+          "name": "systemParameters_getAriadneParameters_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "epoch_number",
+              "value": 42
+            },
+            {
+              "name": "d_parameter_at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "ariadneParameters",
+            "value": {
+              "permissionedCandidates": [],
+              "candidateRegistrations": {},
+              "dParameter": {
+                "numPermissionedCandidates": 1,
+                "numRegisteredCandidates": 2
+              }
+            }
+          }
+        }
+      ],
       "errors": [
         {
           "$ref": "#/components/errors/SystemParametersRpcError"
@@ -259,7 +415,27 @@
             "$ref": "#/components/schemas/PeerReputationInfo"
           }
         }
-      }
+      },
+      "examples": [
+        {
+          "name": "network_peerReputations_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "peers",
+            "value": [
+              {
+                "peerId": "12D3KooWExamplePeerId1111111111111111111111111111111111",
+                "roles": "FULL",
+                "bestHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "bestNumber": 1,
+                "reputation": 256,
+                "isBanned": false
+              }
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "network_peerReputation",
@@ -281,7 +457,30 @@
         "schema": {
           "$ref": "#/components/schemas/PeerReputationInfo"
         }
-      }
+      },
+      "examples": [
+        {
+          "name": "network_peerReputation_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "peer_id",
+              "value": "12D3KooWExamplePeerId1111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "peer",
+            "value": {
+              "peerId": "12D3KooWExamplePeerId1111111111111111111111111111111111",
+              "roles": "FULL",
+              "bestHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+              "bestNumber": 1,
+              "reputation": 256,
+              "isBanned": false
+            }
+          }
+        }
+      ]
     },
     {
       "name": "network_unbanPeer",
@@ -304,6 +503,22 @@
           "type": "null"
         }
       },
+      "examples": [
+        {
+          "name": "network_unbanPeer_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "peer_id",
+              "value": "12D3KooWExamplePeerId1111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": null
+          }
+        }
+      ],
       "x-unsafe": true
     },
     {
@@ -325,7 +540,20 @@
             "genesis_utxo"
           ]
         }
-      }
+      },
+      "examples": [
+        {
+          "name": "sidechain_getParams_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "params",
+            "value": {
+              "genesis_utxo": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#0"
+            }
+          }
+        }
+      ]
     },
     {
       "name": "sidechain_getStatus",
@@ -339,6 +567,27 @@
           "$ref": "#/components/schemas/GetStatusResponse"
         }
       },
+      "examples": [
+        {
+          "name": "sidechain_getStatus_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "status",
+            "value": {
+              "sidechain": {
+                "epoch": 1,
+                "nextEpochTimestamp": 1700000000000
+              },
+              "mainchain": {
+                "epoch": 42,
+                "slot": 1000,
+                "nextEpochTimestamp": 1700000600000
+              }
+            }
+          }
+        }
+      ],
       "errors": [
         {
           "$ref": "#/components/errors/GetStatusRpcError"
@@ -366,7 +615,30 @@
         "schema": {
           "$ref": "#/components/schemas/GetCommitteeResponse"
         }
-      }
+      },
+      "examples": [
+        {
+          "name": "sidechain_getEpochCommittee_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "epoch_number",
+              "value": 42
+            }
+          ],
+          "result": {
+            "name": "committee",
+            "value": {
+              "sidechainEpoch": 42,
+              "committee": [
+                {
+                  "sidechainPubKey": "0x6666666666666666666666666666666666666666666666666666666666666666"
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     {
       "name": "sidechain_getRegistrations",
@@ -400,7 +672,27 @@
             "$ref": "#/components/schemas/CandidateRegistrationEntry"
           }
         }
-      }
+      },
+      "examples": [
+        {
+          "name": "sidechain_getRegistrations_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "mc_epoch_number",
+              "value": 42
+            },
+            {
+              "name": "mc_public_key",
+              "value": "0x2222222222222222222222222222222222222222222222222222222222222222"
+            }
+          ],
+          "result": {
+            "name": "registrations",
+            "value": []
+          }
+        }
+      ]
     },
     {
       "name": "sidechain_getAriadneParameters",
@@ -424,6 +716,29 @@
           "$ref": "#/components/schemas/AriadneParametersRpcResponse"
         }
       },
+      "examples": [
+        {
+          "name": "sidechain_getAriadneParameters_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "epoch_number",
+              "value": 42
+            }
+          ],
+          "result": {
+            "name": "ariadneParameters",
+            "value": {
+              "permissionedCandidates": [],
+              "candidateRegistrations": {},
+              "dParameter": {
+                "numPermissionedCandidates": 1,
+                "numRegisteredCandidates": 2
+              }
+            }
+          }
+        }
+      ],
       "deprecated": true
     },
     {
@@ -434,6 +749,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_name_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "midnight-node"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -444,6 +770,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_version_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "1.0.0"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -454,6 +791,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_chain_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "Development"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -464,6 +812,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_chainType_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "Development"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -474,6 +833,20 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_properties_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": {
+              "tokenDecimals": 12,
+              "tokenSymbol": "DUST"
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -484,6 +857,21 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_health_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": {
+              "peers": 1,
+              "isSyncing": false,
+              "shouldHavePeers": true
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -494,6 +882,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_localPeerId_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "12D3KooWExamplePeerId1111111111111111111111111111111111"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -504,6 +903,19 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_localListenAddresses_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": [
+              "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWExamplePeerId1111111111111111111111111111111111"
+            ]
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -514,6 +926,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_peers_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": []
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -524,6 +947,19 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_nodeRoles_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": [
+              "Full"
+            ]
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -534,6 +970,21 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_syncState_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": {
+              "startingBlock": 0,
+              "currentBlock": 1,
+              "highestBlock": 1
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -544,6 +995,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_addReservedPeer_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "peer",
+              "value": "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWExamplePeerId1111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": null
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-unsafe": true
     },
@@ -555,6 +1022,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_removeReservedPeer_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "peer",
+              "value": "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWExamplePeerId1111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": null
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-unsafe": true
     },
@@ -566,6 +1049,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_reservedPeers_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": []
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -576,6 +1070,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_accountNextIndex_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "accountId",
+              "value": "5GrwvaEF5zXb26Fz9rcQpDWS5M7vQp93bYj6dBzU1gk9fH8Z"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": 0
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -586,6 +1096,28 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "system_dryRun_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "extrinsic",
+              "value": "0x280402000b"
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "Ok": []
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-unsafe": true
     },
@@ -597,6 +1129,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "author_submitExtrinsic_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "extrinsic",
+              "value": "0x280402000b"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": "0x2222222222222222222222222222222222222222222222222222222222222222"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -607,6 +1155,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "author_pendingExtrinsics_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": []
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -617,6 +1176,24 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "author_removeExtrinsic_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "bytesOrHash",
+              "value": "0x280402000b"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": [
+              "0x2222222222222222222222222222222222222222222222222222222222222222"
+            ]
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -627,6 +1204,26 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "author_hasKey_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "publicKey",
+              "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+            },
+            {
+              "name": "keyType",
+              "value": "aura"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": true
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -637,6 +1234,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "author_hasSessionKeys_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "sessionKeys",
+              "value": "0x44444444444444444444444444444444"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": true
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -647,6 +1260,30 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "author_insertKey_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "keyType",
+              "value": "aura"
+            },
+            {
+              "name": "suri",
+              "value": "//Alice"
+            },
+            {
+              "name": "publicKey",
+              "value": "0x3333333333333333333333333333333333333333333333333333333333333333"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": null
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-unsafe": true
     },
@@ -658,6 +1295,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "author_rotateKeys_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x44444444444444444444444444444444"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-unsafe": true
     },
@@ -669,6 +1317,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "author_submitAndWatchExtrinsic_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "extrinsic",
+              "value": "0x280402000b"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": "0x1"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-subscription": true
     },
@@ -680,6 +1344,30 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "chain_getHeader_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "hash",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "parentHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+              "number": "0x1",
+              "stateRoot": "0x1111111111111111111111111111111111111111111111111111111111111111",
+              "extrinsicsRoot": "0x1111111111111111111111111111111111111111111111111111111111111111",
+              "digest": {
+                "logs": []
+              }
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -690,6 +1378,36 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "chain_getBlock_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "hash",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "block": {
+                "header": {
+                  "parentHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                  "number": "0x1",
+                  "stateRoot": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                  "extrinsicsRoot": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                  "digest": {
+                    "logs": []
+                  }
+                },
+                "extrinsics": []
+              },
+              "justifications": null
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -700,6 +1418,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "chain_getBlockHash_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "blockNumber",
+              "value": 1
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -710,6 +1444,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "chain_getFinalizedHead_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -720,6 +1465,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "chain_subscribeNewHeads_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-subscription": true
     },
@@ -731,6 +1487,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "chain_subscribeFinalizedHeads_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-subscription": true
     },
@@ -742,6 +1509,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "chain_subscribeAllHeads_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-subscription": true
     },
@@ -753,6 +1531,30 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_call_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "method",
+              "value": "Core_version"
+            },
+            {
+              "name": "data",
+              "value": "0x"
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": "0x"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -763,6 +1565,28 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_getKeys_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "prefix",
+              "value": "0x"
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": [
+              "0x3a636f6465"
+            ]
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -773,6 +1597,36 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_getKeysPaged_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "prefix",
+              "value": "0x"
+            },
+            {
+              "name": "count",
+              "value": 10
+            },
+            {
+              "name": "startKey",
+              "value": null
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": [
+              "0x3a636f6465"
+            ]
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -783,6 +1637,26 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_getStorage_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "key",
+              "value": "0x3a636f6465"
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": "0x"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -793,6 +1667,26 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_getStorageHash_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "key",
+              "value": "0x3a636f6465"
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -803,6 +1697,26 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_getStorageSize_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "key",
+              "value": "0x3a636f6465"
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": 0
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -813,6 +1727,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_getMetadata_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -823,6 +1748,31 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_getRuntimeVersion_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "specName": "midnight-node",
+              "implName": "midnight-node",
+              "authoringVersion": 1,
+              "specVersion": 1,
+              "implVersion": 1,
+              "apis": [],
+              "transactionVersion": 1,
+              "stateVersion": 1
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -833,6 +1783,42 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_queryStorage_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "keys",
+              "value": [
+                "0x3a636f6465"
+              ]
+            },
+            {
+              "name": "fromBlock",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "name": "toBlock",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": [
+              {
+                "block": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "changes": [
+                  [
+                    "0x3a636f6465",
+                    "0x"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -843,6 +1829,38 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_queryStorageAt_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "keys",
+              "value": [
+                "0x3a636f6465"
+              ]
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": [
+              {
+                "block": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "changes": [
+                  [
+                    "0x3a636f6465",
+                    "0x"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -853,6 +1871,31 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_getReadProof_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "keys",
+              "value": [
+                "0x3a636f6465"
+              ]
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "at": "0x1111111111111111111111111111111111111111111111111111111111111111",
+              "proof": []
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -863,6 +1906,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_subscribeRuntimeVersion_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-subscription": true
     },
@@ -874,6 +1928,24 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_subscribeStorage_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "keys",
+              "value": [
+                "0x3a636f6465"
+              ]
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": "0x1"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-subscription": true
     },
@@ -885,6 +1957,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "state_traceBlock_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "hash",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {}
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-unsafe": true
     },
@@ -896,6 +1984,29 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "grandpa_roundState_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": {
+              "round": 1,
+              "totalWeight": 1,
+              "thresholdWeight": 1,
+              "prevotes": {
+                "currentWeight": 1,
+                "missing": []
+              },
+              "precommits": {
+                "currentWeight": 1,
+                "missing": []
+              }
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -906,6 +2017,22 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "grandpa_proveFinality_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "hash",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": "0x"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -916,6 +2043,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "grandpa_subscribeJustifications_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-subscription": true
     },
@@ -927,6 +2065,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "mmr_root_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -937,6 +2086,41 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "mmr_generateProof_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [
+            {
+              "name": "blockNumbers",
+              "value": [
+                1
+              ]
+            },
+            {
+              "name": "bestKnownBlockNumber",
+              "value": null
+            },
+            {
+              "name": "at",
+              "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ],
+          "result": {
+            "name": "result",
+            "value": {
+              "blockHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+              "proof": {
+                "leafIndices": [
+                  1
+                ],
+                "leafCount": 2,
+                "items": []
+              }
+            }
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -947,6 +2131,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "beefy_getFinalizedHead_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation."
     },
     {
@@ -957,6 +2152,17 @@
         "name": "result",
         "schema": {}
       },
+      "examples": [
+        {
+          "name": "beefy_subscribeJustifications_example",
+          "summary": "Minimal JSON-RPC example",
+          "params": [],
+          "result": {
+            "name": "result",
+            "value": "0x1"
+          }
+        }
+      ],
       "description": "Standard Substrate RPC method. See https://paritytech.github.io/polkadot-sdk/master/sc_rpc/index.html for upstream documentation.",
       "x-subscription": true
     }
