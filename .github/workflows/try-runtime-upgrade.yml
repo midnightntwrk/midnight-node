@@ -16,100 +16,61 @@ on:
         type: boolean
         default: true
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-
-env:
-  TRY_RUNTIME_CLI_VERSION: v0.10.1
-  RUNTIME_WASM: target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm
 
 jobs:
   dry-run:
     name: Build node and dry-run upgrade
     runs-on: ubuntu-latest-16-core-x64
     timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: true
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - name: Setup Earthly
+        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
-          shared-key: try-runtime
-          cache-on-failure: true
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
 
-      - name: Install standalone try-runtime-cli
-        run: |
-          cargo install --git https://github.com/paritytech/try-runtime-cli \
-            --tag ${TRY_RUNTIME_CLI_VERSION} --locked try-runtime-cli
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
 
-      - name: Build midnight-node with try-runtime feature
+      - name: Build node with try-runtime feature
         run: |
-          cargo build --release --features try-runtime -p midnight-node
-
-      - name: Show runtime version embedded in build
-        run: |
-          ls -la "${RUNTIME_WASM}"
-          ./target/release/midnight-node --version
-
-      - name: Create snapshot — preview
-        if: ${{ !cancelled() && inputs.preview }}
-        run: |
-          try-runtime create-snapshot \
-            --uri wss://rpc.preview.midnight.network preview.snap
+          . ./.envrc && earthly -P +try-runtime-build
 
       - name: Dry-run on-runtime-upgrade — preview
-        if: ${{ !cancelled() && inputs.preview && hashFiles('preview.snap') != '' }}
+        if: ${{ !cancelled() && inputs.preview }}
         run: |
-          ./target/release/midnight-node try-runtime \
-            --snap preview.snap \
-            --runtime "${RUNTIME_WASM}" \
-            --checks all \
-            2>&1 | tee preview.log
-
-      - name: Create snapshot — preprod
-        if: ${{ !cancelled() && inputs.preprod }}
-        run: |
-          try-runtime create-snapshot \
-            --uri wss://rpc.preprod.midnight.network preprod.snap
+          . ./.envrc && earthly -P +try-runtime-dry-run-preview
 
       - name: Dry-run on-runtime-upgrade — preprod
-        if: ${{ !cancelled() && inputs.preprod && hashFiles('preprod.snap') != '' }}
+        if: ${{ !cancelled() && inputs.preprod }}
         run: |
-          ./target/release/midnight-node try-runtime \
-            --snap preprod.snap \
-            --runtime "${RUNTIME_WASM}" \
-            --checks all \
-            2>&1 | tee preprod.log
-
-      - name: Create snapshot — mainnet
-        if: ${{ !cancelled() && inputs.mainnet }}
-        run: |
-          try-runtime create-snapshot \
-            --uri wss://rpc.mainnet.midnight.network mainnet.snap
+          . ./.envrc && earthly -P +try-runtime-dry-run-preprod
 
       - name: Dry-run on-runtime-upgrade — mainnet
-        if: ${{ !cancelled() && inputs.mainnet && hashFiles('mainnet.snap') != '' }}
+        if: ${{ !cancelled() && inputs.mainnet }}
         run: |
-          ./target/release/midnight-node try-runtime \
-            --snap mainnet.snap \
-            --runtime "${RUNTIME_WASM}" \
-            --checks all \
-            2>&1 | tee mainnet.log
+          . ./.envrc && earthly -P +try-runtime-dry-run-mainnet
 
-      - name: Upload snapshots and logs
+      - name: Upload snapshots
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: try-runtime-${{ github.run_id }}
-          path: |
-            *.snap
-            *.log
+          path: artifacts-try-runtime/
           if-no-files-found: ignore
           retention-days: 14
