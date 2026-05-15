@@ -14,13 +14,12 @@
 use std::{
 	any::type_name,
 	cmp::Ordering,
-	fs::{File, OpenOptions},
+	fs::{File, OpenOptions, TryLockError},
 	path::{Path, PathBuf},
 	sync::Arc,
 };
 
 use core::fmt::Debug;
-use fs2::FileExt;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use redb::{Database, Key, ReadableDatabase, TableDefinition, TypeName, Value};
 use serde::{Deserialize, Serialize};
@@ -77,18 +76,20 @@ impl RedbBackend {
 				panic!("failed to open redb cache lockfile '{}': {e}", lock_path.display())
 			});
 
-		if let Err(e) = lock_file.try_lock_exclusive() {
-			if e.kind() == std::io::ErrorKind::WouldBlock {
+		match lock_file.try_lock() {
+			Ok(()) => {},
+			Err(TryLockError::WouldBlock) => {
 				eprintln!(
 					"waiting for lock on redb cache at {} (held by another toolkit process)...",
 					p.display()
 				);
-				lock_file.lock_exclusive().unwrap_or_else(|e| {
+				lock_file.lock().unwrap_or_else(|e| {
 					panic!("failed to acquire lock on redb cache '{}': {e}", lock_path.display())
 				});
-			} else {
+			},
+			Err(TryLockError::Error(e)) => {
 				panic!("failed to lock redb cache '{}': {e}", lock_path.display());
-			}
+			},
 		}
 
 		Self {

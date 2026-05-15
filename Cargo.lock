@@ -7914,7 +7914,6 @@ dependencies = [
  "backoff",
  "clap",
  "console",
- "fs2",
  "futures",
  "hex",
  "hex-literal 1.1.0",
