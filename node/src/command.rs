@@ -35,10 +35,10 @@ use crate::{
 			verify_reserve_auth_script,
 		},
 	},
+	reference_hardware::MIDNIGHT_REFERENCE_HARDWARE,
 	service::{self, StorageInit},
 };
 use clap::Parser;
-use frame_benchmarking_cli::SUBSTRATE_REFERENCE_HARDWARE;
 use midnight_node_runtime::Block;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityAddresses;
@@ -61,6 +61,20 @@ pub(crate) fn safe_exit(code: i32) -> ! {
 	let _ = std::io::stdout().lock().flush();
 	let _ = std::io::stderr().lock().flush();
 	std::process::exit(code)
+}
+
+/// Refuse to run chain-affecting operations when the binary was built with
+/// `--features runtime-benchmarks`. The benchmarking runtime relaxes origin
+/// checks and exposes helper extrinsics, so it must never be used against a
+/// real chain. The `benchmark` subcommand bypasses this guard.
+fn bail_if_runtime_benchmarks(context: &str) {
+	if cfg!(feature = "runtime-benchmarks") {
+		eprintln!(
+			"error: this binary was built with `--features runtime-benchmarks` and must not be used for {context}. \
+			 Rebuild without that feature, or use the `benchmark` subcommand."
+		);
+		safe_exit(1);
+	}
 }
 
 /// Parse and run command line arguments
@@ -152,6 +166,7 @@ fn decode_genesis_state(
 }
 
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
+	bail_if_runtime_benchmarks("running a node");
 	let run_cmd: RunCmd = cfg
 		.substrate_cfg
 		.clone()
@@ -262,7 +277,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			.then(|| {
 				config.database.path().map(|database_path| {
 					let _ = std::fs::create_dir_all(database_path);
-					sc_sysinfo::gather_hwbench(Some(database_path), &SUBSTRATE_REFERENCE_HARDWARE)
+					sc_sysinfo::gather_hwbench(Some(database_path), &MIDNIGHT_REFERENCE_HARDWARE)
 				})
 			})
 			.flatten();
@@ -377,6 +392,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 	match subcommand {
 		Subcommand::Key(ref cmd) => cmd.run(&cfg),
 		Subcommand::PartnerChains(cmd) => {
+			bail_if_runtime_benchmarks("the partner-chains subcommand");
 			let midnight_cfg = cfg.midnight_cfg.clone();
 			let make_dependencies = |config: sc_service::Configuration| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)
@@ -417,6 +433,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			})
 		},
 		Subcommand::ExportBlocks(ref cmd) => {
+			bail_if_runtime_benchmarks("exporting blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
@@ -445,6 +462,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			})
 		},
 		Subcommand::ImportBlocks(ref cmd) => {
+			bail_if_runtime_benchmarks("importing blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
@@ -464,6 +482,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			runner.sync_run(|config| cmd.run(config.database))
 		},
 		Subcommand::Revert(ref cmd) => {
+			bail_if_runtime_benchmarks("reverting blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
@@ -585,7 +604,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Machine(cmd) => {
-						cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone())
+						cmd.run(&config, MIDNIGHT_REFERENCE_HARDWARE.clone())
 					},
 				}
 			})
