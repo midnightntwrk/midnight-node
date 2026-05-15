@@ -8,7 +8,7 @@ This project provides a unified way to spin up Midnight resources for developmen
 
 ## Features
 
-- Launch dockerized **well-known Midnight networks** (e.g. `qanet`, `devnet`, `govnet`, `testnet-02`, etc.)
+- Fork **well-known Midnight networks** (e.g. `qanet`, `devnet`, `testnet-02`) locally from a snapshot URI, with validators replaced by a synthesized mock authority set.
 - Perform **state-changing operations** such as image upgrades (runtime upgrades and hard forks planned).
 - Launch a fully **dynamic local environment** with sped-up Cardano resources for quick testing of Partner Chains/Cardano capabilities.
 
@@ -20,24 +20,24 @@ All functionality is available via npm/yarn scripts defined in `package.json`.
 
 ### Launching Networks
 
-You can run different Midnight networks locally with:
+Well-known networks are forked locally from a snapshot URI. `mock-authorities` rewrites the snapshot's authority set so a local validator set can produce blocks on top of the forked state — there is no cluster-backed bring-up path.
+
+A snapshot URI is **required** for every well-known network. Pass it through the npm script with `--`, or invoke the CLI directly:
 
 ```bash
-npm run run:qanet
-npm run run:devnet
-npm run run:govnet
-npm run run:testnet-02
+npm run run:qanet -- --from-snapshot https://example.com/snapshots/qanet-latest.tar.gz
+npm run run:devnet -- --from-snapshot https://example.com/snapshots/devnet-latest.tar.gz
+npm run run:testnet-02 -- --from-snapshot https://example.com/snapshots/testnet-02-latest.tar.gz
 ```
 
 ### Upgrading Networks
 
-You can also launch a network and immediately apply image upgrades:
+You can also launch a network and immediately apply image upgrades. The same `--from-snapshot` URI is required, since image-upgrade brings the network up first:
 
 ```bash
-npm run image-upgrade:qanet
-npm run image-upgrade:devnet
-npm run image-upgrade:govnet
-npm run image-upgrade:testnet-02
+npm run image-upgrade:qanet -- --from-snapshot <uri>
+npm run image-upgrade:devnet -- --from-snapshot <uri>
+npm run image-upgrade:testnet-02 -- --from-snapshot <uri>
 ```
 
 ### Stopping Networks
@@ -47,7 +47,6 @@ To stop any running network:
 ```bash
 npm run stop:qanet
 npm run stop:devnet
-npm run stop:govnet
 npm run stop:testnet-02
 ```
 

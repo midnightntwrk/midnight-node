@@ -16,32 +16,55 @@ import os from "os";
 import path from "path";
 import { spawnSync } from "child_process";
 import YAML from "yaml";
-import { ensureSnapshotCredentials } from "./snapshotEnv";
 
 interface RestoreSnapshotOptions {
   namespace: string;
   composeFile: string;
-  snapshotId: string;
+  /** Fully-qualified http:// or https:// snapshot URI. */
+  snapshotUri: string;
   env: Record<string, string>;
+  /**
+   * If true, `chmod -R a+rwX` each restored data dir after extraction so the
+   * non-root container appuser can open parity-db RDWR.
+   */
+  permissive?: boolean;
+  /**
+   * Number of leading path components to strip when extracting the tar.
+   * Snapshots from the backup system are wrapped in a top-level `node/` dir;
+   * passing 1 strips it so chains/ lands at the data dir root.
+   */
+  stripComponents?: number;
 }
 
-export async function restoreSnapshotFromS3(
+export async function restoreSnapshot(
   options: RestoreSnapshotOptions,
-): Promise<void> {
-  const { namespace, composeFile, snapshotId, env } = options;
-  if (!snapshotId) return;
+): Promise<string[]> {
+  const {
+    namespace,
+    composeFile,
+    snapshotUri,
+    env,
+    permissive,
+    stripComponents,
+  } = options;
+  if (!snapshotUri) return [];
+
+  if (
+    !snapshotUri.startsWith("http://") &&
+    !snapshotUri.startsWith("https://")
+  ) {
+    throw new Error(
+      `Unsupported snapshot URI scheme: ${snapshotUri}. Expected http:// or https://.`,
+    );
+  }
 
   const resolvedCompose = path.resolve(composeFile);
   const composeDir = path.dirname(resolvedCompose);
   const dataRoot = path.resolve(composeDir, "data");
 
-  const snapshotUri = resolveSnapshotUri(snapshotId, env);
-
   console.log(
     `Restoring snapshot '${snapshotUri}' for namespace '${namespace}'`,
   );
-
-  ensureAwsCli(env);
 
   const stagingDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "midnight-snapshot-"),
@@ -51,70 +74,43 @@ export async function restoreSnapshotFromS3(
   const extractDir = path.join(stagingDir, "extracted");
   fs.mkdirSync(extractDir, { recursive: true });
 
-  const mergedEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...env,
-  };
+  const mergedEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
 
   try {
-    const credentials = ensureSnapshotCredentials(toStringRecord(mergedEnv));
-    downloadSnapshot(
-      snapshotUri,
-      archivePath,
-      mergedEnv,
-      credentials.endpointUrl,
-    );
+    downloadSnapshot(snapshotUri, archivePath, mergedEnv);
 
-    const unpackedRoot = extractSnapshotArchive(archivePath, extractDir);
+    const unpackedRoot = extractSnapshotArchive(
+      archivePath,
+      extractDir,
+      stripComponents,
+    );
 
     const targetDirs = discoverDataMounts(resolvedCompose, dataRoot);
     if (targetDirs.length === 0) {
       console.warn(
         `No data directories discovered in compose file ${resolvedCompose}; skipping snapshot restore`,
       );
-      return;
+      return [];
     }
 
     replicateSnapshot(unpackedRoot, targetDirs);
 
+    if (permissive) {
+      makeWritableForContainerUser(targetDirs);
+    }
+
     const noun = targetDirs.length === 1 ? "directory" : "directories";
     console.log(`Restored snapshot into ${targetDirs.length} data ${noun}`);
+    return targetDirs;
   } finally {
     fs.rmSync(stagingDir, { recursive: true, force: true });
   }
 }
 
-function resolveSnapshotUri(
-  snapshotId: string,
-  env: Record<string, string>,
-): string {
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(snapshotId)) {
-    return snapshotId;
-  }
-
-  const base = env.MN_SNAPSHOT_S3_URI ?? process.env.MN_SNAPSHOT_S3_URI;
-  if (!base || base.trim().length === 0) {
-    throw new Error(
-      "No snapshot S3 base URI provided. Pass --from-snapshot with a fully qualified URI or set MN_SNAPSHOT_S3_URI.",
-    );
-  }
-
-  const root = base.replace(/\/$/, "");
-
-  const trimmedId = snapshotId.replace(/^\/+/, "");
-  return `${root}/${trimmedId}`;
-}
-
-function ensureAwsCli(env: Record<string, string>) {
-  const check = spawnSync("aws", ["--version"], {
-    stdio: "ignore",
-    env: { ...process.env, ...env },
-  });
-
+function ensureBinary(bin: string, hint: string, env: NodeJS.ProcessEnv) {
+  const check = spawnSync(bin, ["--version"], { stdio: "ignore", env });
   if (check.status !== 0) {
-    throw new Error(
-      "AWS CLI is required to restore snapshots. Install it locally or ensure it is on your PATH.",
-    );
+    throw new Error(`${bin} is required to restore snapshots. ${hint}`);
   }
 }
 
@@ -122,31 +118,51 @@ function downloadSnapshot(
   snapshotUri: string,
   destination: string,
   env: NodeJS.ProcessEnv,
-  endpointUrl: string,
 ) {
   console.log(`Downloading snapshot archive to ${destination}`);
+  ensureBinary("curl", "Install curl or ensure it is on PATH.", env);
   const result = spawnSync(
-    "aws",
-    ["s3", "cp", "--endpoint-url", endpointUrl, snapshotUri, destination],
-    {
-      stdio: "inherit",
-      env,
-    },
+    "curl",
+    [
+      "-fL",
+      "--retry",
+      "3",
+      "--retry-delay",
+      "5",
+      "-o",
+      destination,
+      snapshotUri,
+    ],
+    { stdio: "inherit", env },
   );
-
   if (result.status !== 0) {
     throw new Error(`Failed to download snapshot from ${snapshotUri}`);
   }
 }
 
-function extractSnapshotArchive(archivePath: string, dest: string): string {
+function makeWritableForContainerUser(targetDirs: string[]): void {
+  for (const dir of targetDirs) {
+    const result = spawnSync("chmod", ["-R", "a+rwX", dir], {
+      stdio: "inherit",
+    });
+    if (result.status !== 0) {
+      throw new Error(`Failed to chmod restored data dir: ${dir}`);
+    }
+  }
+}
+
+function extractSnapshotArchive(
+  archivePath: string,
+  dest: string,
+  stripComponents?: number,
+): string {
   if (!fs.existsSync(archivePath)) {
     throw new Error(`Snapshot archive missing at ${archivePath}`);
   }
 
   if (archivePath.endsWith(".tar.zst") || archivePath.endsWith(".zst")) {
     const tarPath = decompressZstd(archivePath);
-    return untarArchive(tarPath, dest);
+    return untarArchive(tarPath, dest, stripComponents);
   }
 
   if (
@@ -154,7 +170,7 @@ function extractSnapshotArchive(archivePath: string, dest: string): string {
     archivePath.endsWith(".tgz") ||
     archivePath.endsWith(".tar")
   ) {
-    return untarArchive(archivePath, dest);
+    return untarArchive(archivePath, dest, stripComponents);
   }
 
   throw new Error(
@@ -186,11 +202,20 @@ function decompressZstd(archivePath: string): string {
   return tarPath;
 }
 
-function untarArchive(archivePath: string, dest: string): string {
+function untarArchive(
+  archivePath: string,
+  dest: string,
+  stripComponents?: number,
+): string {
   console.log(`Extracting ${archivePath} into ${dest}`);
-  const args = archivePath.endsWith(".gz")
-    ? ["-xzf", archivePath, "-C", dest]
-    : ["-xf", archivePath, "-C", dest];
+  const baseFlags = archivePath.endsWith(".gz")
+    ? ["-xzf", archivePath]
+    : ["-xf", archivePath];
+  const stripFlag =
+    stripComponents && stripComponents > 0
+      ? [`--strip-components=${stripComponents}`]
+      : [];
+  const args = [...baseFlags, "-C", dest, ...stripFlag];
 
   const result = spawnSync("tar", args, { stdio: "inherit" });
   if (result.status !== 0) {
@@ -266,27 +291,8 @@ function replicateSnapshot(sourceDir: string, targets: string[]): void {
 
     for (const entry of entries) {
       const src = path.join(sourceDir, entry);
-      const destBase = path.join(target, entry);
-
-      // Hack for networks with unexpected names due to misconfiguration(ie devnet/qanet)
-      if (entry === "chains") {
-        const chainChildren = fs.readdirSync(src);
-        for (const child of chainChildren) {
-          const srcChild = path.join(src, child);
-          if (child === "devnet") {
-            const qanetDest = path.join(destBase, "qanet");
-            fs.cpSync(srcChild, qanetDest, { recursive: true });
-          }
-        }
-      }
-
       const dest = path.join(target, entry);
       fs.cpSync(src, dest, { recursive: true });
-    }
-
-    const keystorePath = path.join(target, "keystore");
-    if (fs.existsSync(keystorePath)) {
-      fs.rmSync(keystorePath, { recursive: true, force: true });
     }
   }
 }
@@ -301,10 +307,4 @@ function determineArchiveName(snapshotUri: string): string {
     }
   }
   return "snapshot.tar";
-}
-
-function toStringRecord(env: NodeJS.ProcessEnv): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(env).filter(([, value]) => typeof value === "string"),
-  ) as Record<string, string>;
 }
