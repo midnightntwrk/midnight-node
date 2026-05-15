@@ -52,7 +52,9 @@ npm run stop:testnet-02
 
 ### Fork Testing
 
-See [fork-testing.md](../docs/fork-testing.md)
+See [fork-testing.md](../docs/fork-testing.md).
+
+Before forking from a snapshot, confirm the chainspec embedded in the node image was built with the same `networkId` as the genesis used to produce the snapshot. Recent runtimes validate this at boot and the node will refuse to start on a mismatch.
 
 ### Local Environment
 

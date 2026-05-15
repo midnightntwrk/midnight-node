@@ -140,12 +140,6 @@ export async function signAndWait(
           console.log(
             `${label} included in block ${result.status.asInBlock.toHex()}`,
           );
-        }
-
-        if (result.status.isFinalized) {
-          console.log(
-            `${label} finalized in block ${result.status.asFinalized.toHex()}`,
-          );
           cleanup();
           resolve(result);
         }

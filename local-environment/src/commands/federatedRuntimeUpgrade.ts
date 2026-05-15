@@ -88,7 +88,14 @@ export async function federatedRuntimeUpgrade(
       techCommitteeMemberCount,
     );
 
-    const authorizeUpgradeCall = api.tx.system.authorizeUpgrade(wasm.hash);
+    const authorizeUpgradeCall = opts.allowSameVersion
+      ? api.tx.system.authorizeUpgradeWithoutChecks(wasm.hash)
+      : api.tx.system.authorizeUpgrade(wasm.hash);
+    if (opts.allowSameVersion) {
+      console.log(
+        "Using system.authorizeUpgradeWithoutChecks (--allow-same-version): spec_version check bypassed.",
+      );
+    }
     const federatedApproveCall = api.tx.federatedAuthority.motionApprove(
       authorizeUpgradeCall.method,
     );
@@ -145,8 +152,9 @@ export async function federatedRuntimeUpgrade(
     );
 
     console.log("Closing federated motion to execute authorize_upgrade...");
+    const motionCloseWeight = api.createType("WeightV2", CLOSE_WEIGHT);
     await signAndWait(
-      api.tx.federatedAuthority.motionClose(motionHash),
+      api.tx.federatedAuthority.motionClose(motionHash, motionCloseWeight),
       motionExecutor,
       "federatedAuthority.motionClose",
     );

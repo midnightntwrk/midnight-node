@@ -31,6 +31,7 @@ import {
 } from "../lib/mockAuthorities";
 import {
   generateMockComposeOverride,
+  mockOverridePath,
   MOCKED_CONFIG_DIRNAME,
 } from "../lib/mockComposeOverride";
 
@@ -43,7 +44,7 @@ import {
 export async function run(network: string, runOptions: RunOptions) {
   if (network === "local-env") {
     console.log("Running environment with local Cardano/PC resources");
-    runLocalEnvironment(runOptions);
+    await runLocalEnvironment(runOptions);
     return;
   }
 
@@ -55,12 +56,6 @@ export async function run(network: string, runOptions: RunOptions) {
 }
 
 async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
-  if (!runOptions.fromSnapshot) {
-    throw new Error(
-      "Forking a well-known network requires --from-snapshot (an http(s):// snapshot URI).",
-    );
-  }
-
   const networkConfig = loadNetworkConfig(namespace);
   const mock = requireMockConfig(namespace, networkConfig);
 
@@ -77,47 +72,62 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     }
   }
 
-  const restoredDirs = await restoreSnapshot({
-    namespace,
-    composeFile,
-    snapshotUri: runOptions.fromSnapshot,
-    env,
-    permissive: true,
-    // Snapshot tarballs are wrapped in a top-level `node/` dir; strip it so
-    // chains/<chainId>/ lands directly at the data dir root, where both
-    // mock-authorities and the node binary expect it.
-    stripComponents: 1,
-  });
-  if (restoredDirs.length === 0) {
-    throw new Error(
-      `Snapshot restore produced no data dirs for '${namespace}'; cannot run mock-authorities convert.`,
-    );
+  let overridePath: string;
+  if (runOptions.fromSnapshot) {
+    const restoredDirs = await restoreSnapshot({
+      namespace,
+      composeFile,
+      snapshotUri: runOptions.fromSnapshot,
+      env,
+      permissive: true,
+      // Snapshot tarballs are wrapped in a top-level `node/` dir; strip it so
+      // chains/<chainId>/ lands directly at the data dir root, where both
+      // mock-authorities and the node binary expect it.
+      stripComponents: 1,
+    });
+    if (restoredDirs.length === 0) {
+      throw new Error(
+        `Snapshot restore produced no data dirs for '${namespace}'; cannot run mock-authorities convert.`,
+      );
+    }
+
+    // mock-authorities expects --data-dir to be the parent containing every
+    // per-validator subdir (data/node-1, data/node-2, ...) so it can patch each
+    // one's paritydb with the synthesized authority set in a single pass.
+    // Pointing it at one validator's dir leaves the others on the original
+    // authority set and consensus never converges.
+    const dataParentDir = path.dirname(restoredDirs[0]);
+    const mockedConfigDir = path.join(composeDir, MOCKED_CONFIG_DIRNAME);
+    runMockAuthoritiesConvert({
+      dataDir: dataParentDir,
+      outputDir: mockedConfigDir,
+      chainId: mock.chainId,
+      numValidators: mock.numValidators,
+      image: defaultMockAuthoritiesImage(),
+    });
+
+    overridePath = generateMockComposeOverride({
+      composeDir,
+      network: namespace,
+      validatorServices: mock.validatorServices,
+      extraServices: mock.extraServices,
+    });
+    console.log(`Generated fork-mode override: ${overridePath}`);
+  } else {
+    // No snapshot: reuse the fork-mode artifacts from a previous bring-up.
+    // The override file is the canonical signal that the data dirs were
+    // already restored and converted; without it docker-compose would start
+    // the validators against the live mainchain.
+    overridePath = mockOverridePath(composeDir, namespace);
+    if (!fs.existsSync(overridePath)) {
+      throw new Error(
+        `--from-snapshot was not provided and no existing fork-mode override was found at ${overridePath}. Provide --from-snapshot to fork from a snapshot, or run a prior bring-up so the override and mocked-config exist.`,
+      );
+    }
+    console.log(`Reusing existing fork-mode override: ${overridePath}`);
   }
 
-  // mock-authorities expects --data-dir to be the parent containing every
-  // per-validator subdir (data/node-1, data/node-2, ...) so it can patch each
-  // one's paritydb with the synthesized authority set in a single pass.
-  // Pointing it at one validator's dir leaves the others on the original
-  // authority set and consensus never converges.
-  const dataParentDir = path.dirname(restoredDirs[0]);
-  const mockedConfigDir = path.join(composeDir, MOCKED_CONFIG_DIRNAME);
-  runMockAuthoritiesConvert({
-    dataDir: dataParentDir,
-    outputDir: mockedConfigDir,
-    chainId: mock.chainId,
-    numValidators: mock.numValidators,
-    image: defaultMockAuthoritiesImage(),
-  });
-
-  const overridePath = generateMockComposeOverride({
-    composeDir,
-    network: namespace,
-    validatorServices: mock.validatorServices,
-    extraServices: mock.extraServices,
-  });
-  console.log(`Generated fork-mode override: ${overridePath}`);
-
-  runDockerCompose({
+  await runDockerCompose({
     composeFile,
     extraComposeFiles: [overridePath],
     env,
@@ -126,7 +136,7 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
   });
 }
 
-function runLocalEnvironment(runOptions: RunOptions) {
+async function runLocalEnvironment(runOptions: RunOptions) {
   console.log("⚙️  Preparing local environment...");
   console.log(
     "ℹ️  Note: Midnight Governance will be active in 2 Cardano epochs.",
@@ -175,14 +185,12 @@ function runLocalEnvironment(runOptions: RunOptions) {
     "../networks/local-env/docker-compose.yml",
   );
 
-  runDockerCompose({
+  await runDockerCompose({
     composeFile,
     env,
     profiles: runOptions.profiles,
     detach: true,
   });
-
-  return;
 }
 
 function resolveComposeFile(namespace: string): string {
