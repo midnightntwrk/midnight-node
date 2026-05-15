@@ -91,17 +91,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
-      # Self-hosted-runner-specific: earthly-buildkitd is a persistent docker
-      # container shared across all jobs on the host. It bakes in registry
-      # auth at startup, so fresh `docker login` from the steps above don't
-      # propagate to a buildkitd that was already running (e.g. spun up by an
-      # earlier earthly invocation on a different runner agent). Force-recycle
-      # it so the next earthly call starts buildkitd with current host auth.
-      # The `earthly-cache` docker volume persists across this restart, so
-      # build cache is preserved.
-      - name: Recycle earthly-buildkitd to pick up current docker auth
-        run: docker rm -f earthly-buildkitd 2>/dev/null || true
-
       # docker/login-action writes auth to $DOCKER_CONFIG/config.json (a per-step
       # temp dir). Earthly reads ~/.docker/config.json (HOME-based) and doesn't
       # honor $DOCKER_CONFIG. Without the copy, earthly's buildkit-side push
