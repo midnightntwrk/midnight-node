@@ -32,8 +32,11 @@ OUTPUT_DIR="/runtime-values"
 AIKEN_TOML="${CONTRACTS_DIR}/aiken.toml"
 PLUTUS_JSON="${CONTRACTS_DIR}/plutus-local.json"
 
-# Copy contracts to writable location
+# Copy contracts to writable location.
+# Wipe any leftover state from a previous failed run on this container layer —
+# `cp -r` can't overwrite read-only files (e.g. .git pack files) created last time.
 echo "Copying contracts to writable location..."
+rm -rf "${CONTRACTS_DIR}"
 cp -r $CONTRACTS_SRC /tmp
 cp /.env $CONTRACTS_DIR
 echo "✓ Contracts copied to ${CONTRACTS_DIR}"

@@ -9886,6 +9886,7 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
+ "sp-api",
  "sp-core",
  "sp-io",
  "sp-partner-chains-bridge",

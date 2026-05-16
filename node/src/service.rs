@@ -50,7 +50,7 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
-use frame_benchmarking_cli::SUBSTRATE_REFERENCE_HARDWARE;
+use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
@@ -672,7 +672,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 
 	if let Some(hwbench) = hwbench {
 		sc_sysinfo::print_hwbench(&hwbench);
-		match SUBSTRATE_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {
+		match MIDNIGHT_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {
 			Err(err) if role.is_authority() => {
 				log::warn!(
 					"⚠️  The hardware does not meet the minimal requirements {} for role 'Authority'.",
