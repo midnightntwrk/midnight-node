@@ -108,8 +108,10 @@ pallet-cnight-observation-mock = { workspace = true, default-features = true}
 # In-tree `try-runtime` subcommand. The standalone `try-runtime-cli` only links
 # `sp_io::SubstrateHostFunctions` and so cannot resolve Midnight's custom
 # `ledger_*_bridge` host functions. We embed a minimal dry-run path that uses
-# the node's full `service::HostFunctions` tuple.
-frame-remote-externalities = { workspace = true, optional = true }
+# the node's full `service::HostFunctions` tuple. The snapshot reader is
+# inlined (see `try_runtime.rs`) rather than pulling `frame-remote-externalities`,
+# which perturbs the workspace's `rand_core` resolution and breaks
+# `pallas-wallet` (and the rest of the workspace) at lock-resolution time.
 frame-try-runtime = { workspace = true, optional = true, features = ["std"] }
 
 thiserror = "1.0.50"
@@ -182,7 +184,6 @@ runtime-benchmarks = [
 try-runtime = [
     "midnight-node-runtime/try-runtime",
     "pallet-staking/try-runtime",
-    "dep:frame-remote-externalities",
     "dep:frame-try-runtime",
 ]
 experimental = [

@@ -15,25 +15,48 @@
 // the standalone tool only links `sp_io::SubstrateHostFunctions` and so cannot
 // resolve the `ledger_*_bridge` host functions that `pallet-midnight`'s
 // `on_runtime_upgrade` invokes.
+//
+// The snapshot loader is hand-rolled (rather than pulling
+// `frame-remote-externalities`) because that crate's transitive deps perturb
+// `rand_core` resolution in the workspace and break unrelated crates such as
+// `pallas-wallet`. The on-disk format is plain SCALE — see
+// `substrate/utils/frame/remote-externalities/src/config.rs` upstream.
 
 use std::path::PathBuf;
 
 use clap::Args;
-use frame_remote_externalities::{Builder, Mode, OfflineConfig, SnapshotConfig};
 use frame_support::weights::Weight;
 use frame_try_runtime::UpgradeCheckSelect;
-use parity_scale_codec::{Decode, Encode};
+use parity_scale_codec::{Compact, Decode, Encode};
 use sc_executor::{DEFAULT_HEAP_ALLOC_STRATEGY, WasmExecutor};
 use sp_api::CallContext;
 use sp_core::storage::well_known_keys;
 use sp_core::traits::ReadRuntimeVersion;
 use sp_externalities::Extensions;
-use sp_runtime::traits::HashingFor;
-use sp_state_machine::{OverlayedChanges, StateMachine, backend::TryPendingCode};
+use sp_runtime::StateVersion;
+use sp_runtime::traits::{Block as BlockT, HashingFor};
+use sp_state_machine::{
+	OverlayedChanges, StateMachine, TestExternalities, backend::TryPendingCode,
+};
 use sp_version::RuntimeVersion;
 
 use crate::service::HostFunctions;
 use midnight_node_runtime::Block;
+
+/// Snapshot file format produced by `try-runtime create-snapshot`. Mirrors the
+/// upstream `frame_remote_externalities::Snapshot<B>` layout (snapshot version
+/// 4) so files created with that tool can be decoded here.
+#[derive(Decode)]
+struct Snapshot {
+	snapshot_version: Compact<u16>,
+	state_version: StateVersion,
+	raw_storage: Vec<(Vec<u8>, (Vec<u8>, i32))>,
+	storage_root: <Block as BlockT>::Hash,
+	#[allow(dead_code)]
+	header: <Block as BlockT>::Header,
+}
+
+const EXPECTED_SNAPSHOT_VERSION: Compact<u16> = Compact(4);
 
 #[derive(Debug, Clone, Args)]
 pub struct TryRuntimeCmd {
@@ -62,22 +85,13 @@ pub struct TryRuntimeCmd {
 
 impl TryRuntimeCmd {
 	pub fn run(&self) -> sc_cli::Result<()> {
-		let tokio = sc_cli::build_runtime()?;
-		tokio.block_on(self.run_inner())
-	}
-
-	async fn run_inner(&self) -> sc_cli::Result<()> {
 		let executor: WasmExecutor<HostFunctions> = WasmExecutor::builder()
 			.with_onchain_heap_alloc_strategy(DEFAULT_HEAP_ALLOC_STRATEGY)
 			.with_offchain_heap_alloc_strategy(DEFAULT_HEAP_ALLOC_STRATEGY)
 			.build();
 
-		let mut ext = Builder::<Block>::new()
-			.mode(Mode::Offline(OfflineConfig {
-				state_snapshot: SnapshotConfig::new(&self.snap),
-			}))
-			.build()
-			.await?;
+		log::info!("Loading snapshot from {:?}", self.snap);
+		let mut ext = load_snapshot(&self.snap)?;
 
 		let original_code = ext
 			.execute_with(|| sp_io::storage::get(well_known_keys::CODE))
@@ -118,15 +132,10 @@ impl TryRuntimeCmd {
 			}
 		}
 
-		log::info!(
-			"🔬 Running TryRuntime_on_runtime_upgrade with checks: {:?}",
-			self.checks
-		);
+		log::info!("🔬 Running TryRuntime_on_runtime_upgrade with checks: {:?}", self.checks);
 
-		let runtime_code_backend = sp_state_machine::backend::BackendRuntimeCode::new(
-			&ext.backend,
-			TryPendingCode::No,
-		);
+		let runtime_code_backend =
+			sp_state_machine::backend::BackendRuntimeCode::new(&ext.backend, TryPendingCode::No);
 		let runtime_code = runtime_code_backend.runtime_code()?;
 		let mut changes = OverlayedChanges::<HashingFor<Block>>::default();
 		let mut extensions = Extensions::default();
@@ -152,13 +161,41 @@ impl TryRuntimeCmd {
 	}
 }
 
+/// Decode a `Snapshot` file produced by `try-runtime create-snapshot` (version 4)
+/// and rebuild a `TestExternalities` from its raw key-value pairs.
+fn load_snapshot(path: &PathBuf) -> sc_cli::Result<TestExternalities<HashingFor<Block>>> {
+	let bytes = std::fs::read(path).map_err(|e| format!("reading snapshot {path:?}: {e}"))?;
+
+	// The first SCALE-encoded item is the version. Decode it first so a wrong
+	// version yields a clear error instead of a confusing struct-decode failure.
+	let version = Compact::<u16>::decode(&mut &*bytes)
+		.map_err(|e| format!("decoding snapshot version: {e:?}"))?;
+	if version != EXPECTED_SNAPSHOT_VERSION {
+		return Err(format!(
+			"unsupported snapshot version {}: expected {}; recreate with a matching try-runtime-cli",
+			version.0, EXPECTED_SNAPSHOT_VERSION.0,
+		)
+		.into());
+	}
+
+	let snapshot =
+		Snapshot::decode(&mut &*bytes).map_err(|e| format!("decoding snapshot body: {e:?}"))?;
+
+	Ok(TestExternalities::from_raw_snapshot(
+		snapshot.raw_storage,
+		snapshot.storage_root,
+		snapshot.state_version,
+	))
+}
+
 fn decode_version(
 	executor: &WasmExecutor<HostFunctions>,
 	code: &[u8],
-	ext: &mut frame_remote_externalities::RemoteExternalities<Block>,
+	ext: &mut TestExternalities<HashingFor<Block>>,
 ) -> sc_cli::Result<RuntimeVersion> {
 	let encoded = executor
 		.read_runtime_version(code, &mut ext.ext())
 		.map_err(|e| format!("read_runtime_version failed: {e:?}"))?;
-	RuntimeVersion::decode(&mut &*encoded).map_err(|e| format!("decode RuntimeVersion: {e:?}").into())
+	RuntimeVersion::decode(&mut &*encoded)
+		.map_err(|e| format!("decode RuntimeVersion: {e:?}").into())
 }
