@@ -35,6 +35,7 @@ type: Task
 # QA checklist
  - [ ] Deployed and burned in for 24h in qanet?
  - [ ] Sync Test Completed?
+ - [ ] Try-Runtime tests run against preview/pre-prod/mainnet?
  - [ ] Test against Forked/preview/pre-prod/mainnet [Eg This ticket](https://github.com/midnightntwrk/midnight-node/issues/1520#issuecomment-4461534758)
  - [ ] Final Release Notes Reviewed
  - [ ] Regression Test Results Link provided to Release Team
