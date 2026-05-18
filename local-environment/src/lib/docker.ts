@@ -17,20 +17,23 @@ import { spawn } from "child_process";
 
 export interface DockerComposeOptions {
   composeFile: string;
+  /** Additional compose files layered on top via repeated `-f`. Order matters: later files override earlier. */
+  extraComposeFiles?: string[];
   env: Record<string, string>;
   profiles?: string[];
   detach?: boolean;
 }
 
+function fileArgs(options: DockerComposeOptions): string[] {
+  const args = ["-f", options.composeFile];
+  for (const extra of options.extraComposeFiles ?? []) {
+    args.push("-f", extra);
+  }
+  return args;
+}
+
 export function stopDockerCompose(options: DockerComposeOptions) {
-  const args = [
-    "-f",
-    options.composeFile,
-    "down",
-    "--volumes",
-    "--timeout",
-    "0",
-  ];
+  const args = [...fileArgs(options), "down", "--volumes", "--timeout", "0"];
 
   if (options.profiles) {
     for (const profile of options.profiles) {
@@ -53,7 +56,7 @@ export function stopDockerCompose(options: DockerComposeOptions) {
 }
 
 export function runDockerCompose(options: DockerComposeOptions) {
-  const args = ["-f", options.composeFile, "up", "--build"];
+  const args = [...fileArgs(options), "up", "--build"];
   if (options.detach) {
     args.push("--detach");
   }

@@ -16,13 +16,11 @@ import { run } from "./commands/run";
 import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
 import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
-import { snapshot } from "./commands/snapshot";
 import { verifyFinality } from "./commands/verifyFinality";
 import {
   RunOptions,
   ImageUpgradeOptions,
   FederatedRuntimeUpgradeOptions,
-  SnapshotOptions,
 } from "./lib/types";
 
 const program = new Command();
@@ -53,62 +51,19 @@ interface FederatedRuntimeUpgradeCliOpts {
   fromSnapshot?: string;
 }
 
-interface SnapshotCliOpts {
-  bootnode?: string;
-  pvc?: string;
-  s3Uri?: string;
-  snapshotImage?: string;
-  timeout?: number;
-}
-
 program
   .command("run <network>")
   .option("-p, --profiles <profile...>", "Docker Compose profiles to activate")
   .option("--env-file <path...>", "specify one or more env files")
   .option(
-    "--from-snapshot <id>",
-    "Restore a bootnode snapshot before launching services",
+    "--from-snapshot <uri>",
+    "http(s):// snapshot URI to fork the network from. Required for well-known networks.",
   )
   .description(
-    "Connect to Kubernetes, extract secrets, then run docker-compose up",
+    "Bring up a forked well-known network from a snapshot using mock-authorities, or run the local-env target.",
   )
   .action(async (network: string, options: RunOptions) => {
     await run(network, options);
-  });
-
-program
-  .command("snapshot <network>")
-  .option(
-    "--bootnode <name>",
-    "Name of the bootnode statefulset to snapshot (default: from network config, or midnight-node-boot-01)",
-  )
-  .option("--pvc <name>", "Explicit PVC name to mount when snapshotting")
-  .option(
-    "--s3-uri <uri>",
-    "Destination S3 URI for the archived /node state (default MN_SNAPSHOT_S3_URI or s3://midnight-node-snapshots)",
-  )
-  .option(
-    "--snapshot-image <image>",
-    "Container image used to run the snapshot helper pod",
-  )
-  .option(
-    "--timeout <minutes>",
-    "Minutes to wait for the snapshot pod to finish (default 30)",
-    parseInt,
-  )
-  .description(
-    "Archive the /node volume from a bootnode PVC and upload it to the configured S3 destination",
-  )
-  .action(async (network: string, cliOpts: SnapshotCliOpts) => {
-    const opts: SnapshotOptions = {
-      bootnodeStatefulSet: cliOpts.bootnode,
-      pvcName: cliOpts.pvc,
-      s3Uri: cliOpts.s3Uri,
-      snapshotImage: cliOpts.snapshotImage,
-      timeoutMinutes: cliOpts.timeout,
-    };
-
-    await snapshot(network, opts);
   });
 
 program
@@ -141,8 +96,8 @@ program
     "Do not wait for healthchecks, just waitBetween",
   )
   .option(
-    "--from-snapshot <id>",
-    "Restore a bootnode snapshot before launching the rollout",
+    "--from-snapshot <uri>",
+    "http(s):// snapshot URI to fork the network from before rolling the image",
   )
   .description(
     "Gradually roll out a new docker image tag across services in the given network",

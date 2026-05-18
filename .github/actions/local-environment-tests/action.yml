@@ -57,15 +57,9 @@ runs:
       with:
         tool: just
 
-    - name: Checkout midnight-reserve-contracts
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      with:
-        repository: midnightntwrk/midnight-reserve-contracts
-        ref: c38439f6bae88252917bbf4f9797b7701ee78ee9
-        token: ${{ inputs.ghcr-password }}
-        path: midnight-reserve-contracts
-
     - name: Set contracts path
+      # midnight-reserve-contracts is a submodule of this repo, checked out by the caller's
+      # actions/checkout (with submodules: true). Pinning lives in .gitmodules, not here.
       run: echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${GITHUB_WORKSPACE}/midnight-reserve-contracts" >> "$GITHUB_ENV"
       shell: bash
 
