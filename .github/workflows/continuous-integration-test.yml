@@ -54,8 +54,10 @@ jobs:
       # Authenticate to Docker Hub on internal PRs / pushes to avoid the unauthenticated
       # pull rate limit when WITH DOCKER pulls images like postgres for testcontainers.
       # Skipped on fork PRs where these secrets are not available.
+      # If for some reason we can't log in we should proceed unauthed.
       - name: Log in to Docker Hub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        continue-on-error: true
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
