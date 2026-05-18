@@ -15,8 +15,11 @@ on:
         description: "Dry-run against mainnet"
         type: boolean
         default: true
+  # TODO: Remove before merge.
+  push:
+    branches: [ jacek-try-runtime-subcommand ]
 
-permissions: {}
+permissions: { }
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,25 +47,25 @@ jobs:
           github-token: ${{ github.token }}
           use-cache: false
 
-      - name: Free disk space
-        run: scripts/free-disk-space.sh
-
       - name: Build node with try-runtime feature
         run: |
           . ./.envrc && earthly -P +try-runtime-build
 
-      - name: Dry-run on-runtime-upgrade — preview
-        if: ${{ !cancelled() && inputs.preview }}
+      - name: Dry-run on-runtime-upgrade - preview
+        # TODO: Remove before merge.
+        if: ${{ !cancelled() && (github.event_name == 'push' || inputs.preview) }}
         run: |
           . ./.envrc && earthly -P +try-runtime-dry-run-preview
 
-      - name: Dry-run on-runtime-upgrade — preprod
-        if: ${{ !cancelled() && inputs.preprod }}
+      - name: Dry-run on-runtime-upgrade - preprod
+        # TODO: Remove before merge.
+        if: ${{ !cancelled() && (github.event_name == 'push' || inputs.preprod) }}
         run: |
           . ./.envrc && earthly -P +try-runtime-dry-run-preprod
 
-      - name: Dry-run on-runtime-upgrade — mainnet
-        if: ${{ !cancelled() && inputs.mainnet }}
+      - name: Dry-run on-runtime-upgrade - mainnet
+        # TODO: Remove before merge.
+        if: ${{ !cancelled() && (github.event_name == 'push' || inputs.mainnet) }}
         run: |
           . ./.envrc && earthly -P +try-runtime-dry-run-mainnet
 
