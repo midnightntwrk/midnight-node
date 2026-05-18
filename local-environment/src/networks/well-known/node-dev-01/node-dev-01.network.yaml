@@ -54,6 +54,9 @@ services:
     <<: *node-common
     hostname: node1
     container_name: node1
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -89,6 +92,9 @@ services:
     <<: *node-common
     hostname: node2
     container_name: node2
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -124,6 +130,9 @@ services:
     <<: *node-common
     hostname: node3
     container_name: node3
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -160,6 +169,9 @@ services:
     <<: *node-common
     hostname: node4
     container_name: node4
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -194,6 +206,9 @@ services:
     <<: *node-common
     hostname: node5
     container_name: node5
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -229,6 +244,9 @@ services:
     <<: *node-common
     hostname: node6
     container_name: node6
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -265,6 +283,9 @@ services:
     <<: *node-common
     hostname: node7
     container_name: node7
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -301,6 +322,9 @@ services:
     <<: *node-common
     hostname: node8
     container_name: node8
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -336,6 +360,9 @@ services:
     <<: *node-common
     hostname: node9
     container_name: node9
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -371,6 +398,9 @@ services:
     <<: *node-common
     hostname: node10
     container_name: node10
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -406,6 +436,9 @@ services:
     <<: *node-common
     hostname: node11
     container_name: node11
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy
@@ -441,6 +474,9 @@ services:
     <<: *node-common
     hostname: node12
     container_name: node12
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     depends_on:
       boot-node:
         condition: service_healthy

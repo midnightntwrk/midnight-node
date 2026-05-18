@@ -11,18 +11,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_ledger::LedgerStorageExt;
+
 use super::LOG_TARGET;
 use super::ledger_storage_local::{
-	db::ParityDb,
+	db::{ParityDb, paritydb::OwnedDb},
 	storage::{try_get_default_storage, unsafe_drop_default_storage},
 };
 
+// Storage may be registered under either of two `ParityDb` instantiations
+// depending on the operator's `storage_separation` config: the default
+// (column offset 0) for `Separate`, or column offset = NUM_COLUMNS_POLKADOT
+// for `Unified`. Drop whichever exists.
+type DbSeparate = ParityDb;
+type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
+
 pub fn drop_default_storage_if_exists() {
-	if try_get_default_storage::<ParityDb>().is_some() {
-		unsafe_drop_default_storage::<ParityDb>();
+	if try_get_default_storage::<DbSeparate>().is_some() {
+		unsafe_drop_default_storage::<DbSeparate>();
 		log::info!(
 			target: LOG_TARGET,
-			"Dropped HF storage after rollback"
+			"Dropped HF storage after rollback (separate)"
+		);
+	}
+	if try_get_default_storage::<DbUnified>().is_some() {
+		unsafe_drop_default_storage::<DbUnified>();
+		log::info!(
+			target: LOG_TARGET,
+			"Dropped HF storage after rollback (unified)"
 		);
 	}
 }

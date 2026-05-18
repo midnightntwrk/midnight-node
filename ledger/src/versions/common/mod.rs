@@ -748,6 +748,13 @@ where
 		api.tagged_serialize(&ledger_parameters)
 	}
 
+	pub fn get_c_to_m_bridge_min_amount(state_key: &[u8]) -> Result<u128, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let ledger_parameters = Self::get_deserialized_ledger_parameters(&ledger);
+		Ok(ledger_parameters.c_to_m_bridge_min_amount)
+	}
+
 	pub fn get_transaction_cost(
 		state_key: &[u8],
 		tx: &[u8],

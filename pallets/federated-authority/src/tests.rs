@@ -28,6 +28,16 @@ fn create_remark_call(data: Vec<u8>) -> Box<RuntimeCall> {
 	Box::new(RuntimeCall::System(frame_system::Call::remark { remark: data }))
 }
 
+/// Creates a call that fails when dispatched as Root.
+/// `pallet_collective::Call::vote` uses `ensure_signed`, which rejects Root with BadOrigin.
+fn create_root_failing_call() -> Box<RuntimeCall> {
+	Box::new(RuntimeCall::Council(pallet_collective::Call::vote {
+		proposal: H256::zero(),
+		index: 0,
+		approve: false,
+	}))
+}
+
 fn get_motion_hash(call: &RuntimeCall) -> H256 {
 	<Test as frame_system::Config>::Hashing::hash_of(call)
 }
@@ -659,6 +669,45 @@ fn multiple_concurrent_motions_work() {
 			events.iter().filter(|e| matches!(e, Event::MotionRemoved { .. })).count();
 		assert_eq!(dispatched_count, 3, "Should have 3 MotionDispatched events");
 		assert_eq!(removed_count, 3, "Should have 3 MotionRemoved events");
+	});
+}
+
+#[test]
+fn motion_close_removes_motion_on_failed_dispatch() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		let call = create_root_failing_call();
+		let motion_hash = get_motion_hash(&call);
+
+		// Both authorities approve
+		assert_ok!(FederatedAuthority::motion_approve(council_origin(), call.clone()));
+		assert_ok!(FederatedAuthority::motion_approve(tech_origin(), call));
+
+		// Close the motion — dispatch will fail (vote requires signed origin, not root).
+		// motion_close returns Ok because the close operation itself succeeded:
+		// the motion was removed and events emitted. The dispatch failure is
+		// captured in the MotionDispatched event, not in the extrinsic return.
+		assert_ok!(FederatedAuthority::motion_close(
+			RuntimeOrigin::signed(1),
+			motion_hash,
+			Weight::MAX
+		));
+
+		// Motion must be removed from storage despite dispatch failure
+		assert!(
+			Motions::<Test>::get(motion_hash).is_none(),
+			"Motion should be removed even when dispatch fails"
+		);
+
+		// Verify events: MotionDispatched with Err + MotionRemoved
+		let events = federated_authority_events();
+		let dispatched_event = events.iter().find(
+			|e| matches!(e, Event::MotionDispatched { motion_result, .. } if motion_result.is_err()),
+		);
+		let removed_event = events.iter().find(|e| matches!(e, Event::MotionRemoved { .. }));
+
+		assert!(dispatched_event.is_some(), "MotionDispatched with Err result should be emitted");
+		assert!(removed_event.is_some(), "MotionRemoved should be emitted");
 	});
 }
 

@@ -21,7 +21,7 @@ use jsonrpsee::{
 	types::error::{ErrorObject, ErrorObjectOwned, INVALID_PARAMS_CODE},
 };
 
-use pallet_midnight::MidnightRuntimeApi;
+use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
 use sc_client_api::{BlockBackend, BlockchainEvents};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
@@ -78,6 +78,7 @@ pub trait MidnightApi<BlockHash> {
 pub enum StateRpcError {
 	BadContractAddress(String),
 	BadAccountAddress(String),
+	ContractNotPresent,
 	UnableToGetContractState,
 	UnableToGetZSwapChainState,
 	UnableToGetZSwapStateRoot,
@@ -134,6 +135,9 @@ impl Display for StateRpcError {
 			},
 			StateRpcError::BadAccountAddress(malformed_address) => {
 				write!(f, "Unable to decode account address: {}", malformed_address)
+			},
+			StateRpcError::ContractNotPresent => {
+				write!(f, "Contract not present at the requested address")
 			},
 			StateRpcError::UnableToGetContractState => {
 				write!(f, "Unable to get requested contract state")
@@ -293,6 +297,9 @@ where
 			.map_err(|_| StateRpcError::UnableToGetContractState)?;
 
 		let result = if api_version < 2 {
+			// Legacy path: v1 of the RPC contract predates ContractNotPresent,
+			// so callers on api_version < 2 must continue to see the generic
+			// UnableToGetContractState. Do not surface ContractNotPresent here.
 			#[allow(deprecated)]
 			api.get_contract_state_before_version_2(at, dehexed)
 				.map_err(|_e| StateRpcError::UnableToGetContractState)?
@@ -300,7 +307,10 @@ where
 			api.get_contract_state(at, dehexed)
 				.map_err(|_e| StateRpcError::UnableToGetContractState)
 				.and_then(|inner_res| {
-					inner_res.map_err(|_| StateRpcError::UnableToGetContractState)
+					inner_res.map_err(|e| match e {
+						LedgerApiError::ContractNotPresent => StateRpcError::ContractNotPresent,
+						_ => StateRpcError::UnableToGetContractState,
+					})
 				})?
 		};
 

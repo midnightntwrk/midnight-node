@@ -16,7 +16,7 @@
 mod common;
 
 use clap::Parser;
-use common::test_image;
+use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_node_toolkit::cli::{Cli, run_command};
 use std::{process::Command, time::Duration};
 use testcontainers::{
@@ -77,8 +77,10 @@ async fn hardfork_single_tx() {
 	let port = container.get_host_port_ipv4(9944).await.expect("failed to get node RPC port");
 	let url = format!("ws://127.0.0.1:{port}");
 
-	// Wait for at least 2 blocks to be produced (6s block time).
-	tokio::time::sleep(Duration::from_secs(20)).await;
+	// Wait for finality. The toolkit CLI calls get_block_one_hash on
+	// transaction-generating commands, which fails with OnlyGenesisFinalized
+	// until finalized height >= 1.
+	wait_for_finalized_block(&url, 1, Duration::from_secs(60)).await;
 
 	// 3. Pre-fork: run single-tx to verify the new node works with the fork-from chain-spec
 	run_cli(&[

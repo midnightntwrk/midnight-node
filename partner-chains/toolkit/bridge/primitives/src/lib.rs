@@ -235,6 +235,13 @@ pub struct BridgeTransferV1<RecipientAddress> {
 	pub recipient: TransferRecipient<RecipientAddress>,
 }
 
+impl<RecipientAddress> BridgeTransferV1<RecipientAddress> {
+	/// Creates a transfer with Invalid recipient
+	pub fn new_invalid(mc_tx_hash: McTxHash, amount: u64) -> Self {
+		Self { mc_tx_hash, amount, recipient: TransferRecipient::Invalid }
+	}
+}
+
 /// Details of bridge transfer recipient
 #[derive(
 	Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Eq, MaxEncodedLen,
