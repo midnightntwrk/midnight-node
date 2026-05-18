@@ -22,6 +22,8 @@
 // `pallas-wallet`. The on-disk format is plain SCALE — see
 // `substrate/utils/frame/remote-externalities/src/config.rs` upstream.
 
+#![allow(clippy::result_large_err)]
+
 use std::path::PathBuf;
 
 use clap::Args;
@@ -46,10 +48,19 @@ use midnight_node_runtime::Block;
 /// Snapshot file format produced by `try-runtime create-snapshot`. Mirrors the
 /// upstream `frame_remote_externalities::Snapshot<B>` layout (snapshot version
 /// 4) so files created with that tool can be decoded here.
+// `raw_storage` mirrors the upstream `Snapshot<B>` layout exactly — the inner
+// tuple is `(hashed_key, (value, ref_count))`, which is how the trie node
+// payload + refcount is serialised. Not worth introducing an alias the
+// upstream doesn't use.
 #[derive(Decode)]
 struct Snapshot {
+	// Decoded as part of the struct for layout fidelity with the upstream
+	// `Snapshot<B>`; the actual version check happens against the prefix in
+	// `load_snapshot`, so the field itself is read-only-by-derive here.
+	#[allow(dead_code)]
 	snapshot_version: Compact<u16>,
 	state_version: StateVersion,
+	#[allow(clippy::type_complexity)]
 	raw_storage: Vec<(Vec<u8>, (Vec<u8>, i32))>,
 	storage_root: <Block as BlockT>::Hash,
 	#[allow(dead_code)]
