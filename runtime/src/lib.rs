@@ -63,8 +63,8 @@ pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
 use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
-	MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData, ScEpochNumber,
-	ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
+	DParameter, MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData,
+	ScEpochNumber, ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
 };
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -121,13 +121,16 @@ mod constants;
 mod currency;
 mod migrations;
 mod session_manager;
+pub mod weights;
 
 use check_call_filter::CheckCallFilter;
 use constants::time_units::DAYS;
 use pallet_federated_authority::{
 	AuthorityBody, FederatedAuthorityEnsureProportionAtLeast, FederatedAuthorityOriginManager,
 };
-use runtime_common::governance::{AlwaysNo, MembershipHandler, MembershipObservationHandler};
+#[cfg(not(feature = "runtime-benchmarks"))]
+use runtime_common::governance::AlwaysNo;
+use runtime_common::governance::{MembershipHandler, MembershipObservationHandler};
 
 use crate::beefy::{
 	compute_current_authority_set, compute_next_authority_set, current_beefy_stakes,
@@ -360,7 +363,7 @@ impl frame_system::Config for Runtime {
 	/// The data to be stored in an account.
 	type AccountData = ();
 	/// Weight information for the extrinsics of this pallet.
-	type SystemWeightInfo = ();
+	type SystemWeightInfo = weights::frame_system::WeightInfo<Runtime>;
 	/// This is used as an identifier of the chain. 42 is the generic substrate prefix.
 	type SS58Prefix = SS58Prefix;
 	/// The set code logic, just the default since we're not a parachain.
@@ -391,7 +394,7 @@ pallet_partner_chains_session::impl_pallet_session_config!(Runtime);
 impl pallet_grandpa::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 
-	type WeightInfo = ();
+	type WeightInfo = weights::pallet_grandpa::WeightInfo<Runtime>;
 	type MaxAuthorities = MaxAuthorities;
 	type MaxNominators = ConstU32<5>;
 	type MaxSetIdSessionEntries = ConstU64<0>;
@@ -418,7 +421,7 @@ impl pallet_mmr::Config for Runtime {
 	type LeafData = pallet_beefy_mmr::Pallet<Runtime>;
 	type OnNewRoot = pallet_beefy_mmr::DepositBeefyDigest<Runtime>;
 	type BlockHashProvider = pallet_mmr::DefaultBlockHashProvider<Runtime>;
-	type WeightInfo = ();
+	type WeightInfo = weights::pallet_mmr::WeightInfo<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
 }
@@ -462,7 +465,7 @@ impl pallet_beefy_mmr::Config for Runtime {
 	type BeefyAuthorityToMerkleLeaf = RawBeefyId;
 	type LeafExtra = Vec<u8>;
 	type BeefyDataProvider = ();
-	type WeightInfo = ();
+	type WeightInfo = weights::pallet_beefy_mmr::WeightInfo<Runtime>;
 }
 
 impl pallet_timestamp::Config for Runtime {
@@ -470,7 +473,7 @@ impl pallet_timestamp::Config for Runtime {
 	type Moment = u64;
 	type OnTimestampSet = Aura;
 	type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
-	type WeightInfo = ();
+	type WeightInfo = weights::pallet_timestamp::WeightInfo<Runtime>;
 }
 
 /// Existential deposit.
@@ -483,7 +486,7 @@ parameter_types! {
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	#[cfg(not(feature = "runtime-benchmarks"))]
-	type Migrations = ();
+	type Migrations = (pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,);
 	// Benchmarks need mocked migrations to guarantee that they succeed.
 	#[cfg(feature = "runtime-benchmarks")]
 	type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
@@ -492,7 +495,7 @@ impl pallet_migrations::Config for Runtime {
 	type MigrationStatusHandler = ();
 	type FailedMigrationHandler = frame_support::migrations::FreezeChainOnFailedMigration;
 	type MaxServiceWeight = MbmServiceWeight;
-	type WeightInfo = pallet_migrations::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_migrations::WeightInfo<Runtime>;
 }
 
 parameter_types! {
@@ -511,7 +514,7 @@ impl pallet_scheduler::Config for Runtime {
 	type MaxScheduledPerBlock = ConstU32<512>;
 	#[cfg(not(feature = "runtime-benchmarks"))]
 	type MaxScheduledPerBlock = ConstU32<50>;
-	type WeightInfo = pallet_scheduler::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_scheduler::WeightInfo<Runtime>;
 	type OriginPrivilegeCmp = EqualPrivilegeOnly;
 	type Preimages = Preimage;
 	type BlockNumberProvider = frame_system::Pallet<Runtime>;
@@ -540,7 +543,28 @@ fn select_authorities_optionally_overriding(
 	let d_parameter = SystemParameters::get_d_parameter();
 	input.d_parameter.num_permissioned_candidates = d_parameter.num_permissioned_candidates;
 	input.d_parameter.num_registered_candidates = d_parameter.num_registered_candidates;
+	log_if_d_param_below_permissioned_candidates(&d_parameter, &input.permissioned_candidates);
 	select_authorities(Sidechain::genesis_utxo(), input, sidechain_epoch)
+}
+
+/// Log an error when the D-parameter's permissioned slots are fewer than the available
+/// permissioned candidates. In a federated network this means that no candidate has a
+/// guaranteed committee seat, which risks liveness if any node is repeatedly selected.
+/// See <https://github.com/midnightntwrk/midnight-node/issues/1481>.
+pub fn log_if_d_param_below_permissioned_candidates(
+	d_parameter: &DParameter,
+	permissioned_candidates: &[PermissionedCandidateData],
+) {
+	let d = d_parameter.num_permissioned_candidates as usize;
+	let p = permissioned_candidates.len();
+	if d < p {
+		log::error!(
+			"D-parameter num_permissioned_candidates ({d}) is less than the number of available \
+			 permissioned candidates ({p}). With D_P < n_P, candidates do not have guaranteed \
+			 committee seats, risking liveness in a federated network. \
+			 See https://github.com/midnightntwrk/midnight-node/issues/1481"
+		);
+	}
 }
 
 impl pallet_session_validator_management::Config for Runtime {
@@ -561,8 +585,7 @@ impl pallet_session_validator_management::Config for Runtime {
 		Sidechain::current_epoch_number()
 	}
 
-	// TODO: Benchmark all pallets
-	type WeightInfo = ();
+	type WeightInfo = weights::pallet_session_validator_management::WeightInfo<Runtime>;
 
 	type CommitteeMember = CommitteeMember<CrossChainPublic, SessionKeys>;
 
@@ -663,7 +686,7 @@ impl pallet_version::Config for Runtime {
 }
 
 impl pallet_preimage::Config for Runtime {
-	type WeightInfo = pallet_preimage::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_preimage::WeightInfo<Runtime>;
 	type RuntimeEvent = RuntimeEvent;
 	type Currency = currency::CurrencyWaiver;
 	type ManagerOrigin = EnsureRoot<AccountId>;
@@ -677,7 +700,7 @@ impl pallet_tx_pause::Config for Runtime {
 	type UnpauseOrigin = EnsureRoot<AccountId>;
 	type WhitelistedCalls = Nothing;
 	type MaxNameLen = ConstU32<256>;
-	type WeightInfo = pallet_tx_pause::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_tx_pause::WeightInfo<Runtime>;
 }
 
 pub const MOTION_DURATION: BlockNumber = 5 * DAYS;
@@ -698,27 +721,49 @@ impl pallet_collective::Config<CouncilCollectiveInstance> for Runtime {
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
+	#[cfg(not(feature = "runtime-benchmarks"))]
 	type DefaultVote = AlwaysNo;
-	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
+	#[cfg(feature = "runtime-benchmarks")]
+	type DefaultVote = pallet_collective::PrimeDefaultVote;
+	// Production: managed from `pallet_membership`. Benchmarks need an origin
+	// whose `try_successful_origin` succeeds so setup helpers can install members.
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type SetMembersOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type SetMembersOrigin = EnsureRoot<Self::AccountId>;
 	type MaxProposalWeight = MaxProposalWeight;
 	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
 	type KillOrigin = EnsureRoot<Self::AccountId>;
 	type Consideration = ();
-	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_collective::WeightInfo<Runtime>;
 }
 
 type CouncilMembershipInstance = pallet_membership::Instance1;
 impl pallet_membership::Config<CouncilMembershipInstance> for Runtime {
 	type RuntimeEvent = RuntimeEvent;
-	type AddOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
-	type RemoveOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
-	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
+	// Production: members managed only by `ResetOrigin`. Benchmarks need successful
+	// origins so the upstream `set_members`/`set_prime` helpers don't panic.
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type AddOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type AddOrigin = EnsureRoot<Self::AccountId>;
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type RemoveOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type RemoveOrigin = EnsureRoot<Self::AccountId>;
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type SwapOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type SwapOrigin = EnsureRoot<Self::AccountId>;
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
-	type PrimeOrigin = NeverEnsureOrigin<()>; // No Prime member. Members only managed by `ResetOrigin`
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type PrimeOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type PrimeOrigin = EnsureRoot<Self::AccountId>;
 	type MembershipInitialized = MembershipHandler<Runtime, Council>;
 	type MembershipChanged = MembershipHandler<Runtime, Council>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
-	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_membership::WeightInfo<Runtime>;
 }
 
 /// Technical Committee
@@ -730,27 +775,47 @@ impl pallet_collective::Config<TechnicalCommitteeCollectiveInstance> for Runtime
 	type MotionDuration = MotionDuration;
 	type MaxProposals = ConstU32<MAX_PROPOSALS>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>; // Should be same as `pallet_membership`
+	#[cfg(not(feature = "runtime-benchmarks"))]
 	type DefaultVote = AlwaysNo;
-	type SetMembersOrigin = NeverEnsureOrigin<()>; // Should be managed from `pallet_membership`
+	#[cfg(feature = "runtime-benchmarks")]
+	type DefaultVote = pallet_collective::PrimeDefaultVote;
+	// See Council instance above for rationale.
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type SetMembersOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type SetMembersOrigin = EnsureRoot<Self::AccountId>;
 	type MaxProposalWeight = MaxProposalWeight;
 	type DisapproveOrigin = EnsureRoot<Self::AccountId>;
 	type KillOrigin = EnsureRoot<Self::AccountId>;
 	type Consideration = ();
-	type WeightInfo = pallet_collective::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_collective::WeightInfo<Runtime>;
 }
 
 type TechnicalCommitteeMembershipInstance = pallet_membership::Instance2;
 impl pallet_membership::Config<TechnicalCommitteeMembershipInstance> for Runtime {
 	type RuntimeEvent = RuntimeEvent;
-	type AddOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
-	type RemoveOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
-	type SwapOrigin = NeverEnsureOrigin<()>; // Members only managed by `ResetOrigin`
+	// See CouncilMembership instance above for rationale.
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type AddOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type AddOrigin = EnsureRoot<Self::AccountId>;
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type RemoveOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type RemoveOrigin = EnsureRoot<Self::AccountId>;
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type SwapOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type SwapOrigin = EnsureRoot<Self::AccountId>;
 	type ResetOrigin = EnsureNone<Self::AccountId>; // To be called by an Inherent with `RawOrigin::None`
-	type PrimeOrigin = NeverEnsureOrigin<()>; // No Prime member. Members only managed by `ResetOrigin`
+	#[cfg(not(feature = "runtime-benchmarks"))]
+	type PrimeOrigin = NeverEnsureOrigin<()>;
+	#[cfg(feature = "runtime-benchmarks")]
+	type PrimeOrigin = EnsureRoot<Self::AccountId>;
 	type MembershipInitialized = MembershipHandler<Runtime, TechnicalCommittee>;
 	type MembershipChanged = MembershipHandler<Runtime, TechnicalCommittee>;
 	type MaxMembers = ConstU32<MAX_MEMBERS>;
-	type WeightInfo = pallet_membership::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_membership::WeightInfo<Runtime>;
 }
 
 pub const MAX_NUM_BODIES: u32 = 2; // TechnicalCommittee + Council
@@ -793,7 +858,7 @@ impl pallet_federated_authority::Config for Runtime {
 		FederatedAuthorityOriginManager<(CouncilApproval, TechnicalCommitteeApproval)>;
 	type MotionRevokeOrigin =
 		FederatedAuthorityOriginManager<(CouncilRevoke, TechnicalCommitteeRevoke)>;
-	type WeightInfo = ();
+	type WeightInfo = weights::pallet_federated_authority::WeightInfo<Runtime>;
 }
 
 impl pallet_federated_authority_observation::Config for Runtime {
@@ -803,12 +868,12 @@ impl pallet_federated_authority_observation::Config for Runtime {
 		MembershipObservationHandler<Runtime, CouncilMembershipInstance>;
 	type TechnicalCommitteeMembershipHandler =
 		MembershipObservationHandler<Runtime, TechnicalCommitteeMembershipInstance>;
-	type WeightInfo = ();
+	type WeightInfo = weights::pallet_federated_authority_observation::WeightInfo<Runtime>;
 }
 
 impl pallet_system_parameters::Config for Runtime {
 	type SystemOrigin = EnsureRoot<AccountId>;
-	type WeightInfo = ();
+	type WeightInfo = weights::pallet_system_parameters::WeightInfo<Runtime>;
 }
 
 parameter_types! {
@@ -832,7 +897,7 @@ parameter_types! {
 
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
-	type WeightInfo = pallet_cnight_observation::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_cnight_observation::WeightInfo<Runtime>;
 }
 
 impl pallet_partner_chains_bridge::Config for Runtime {
@@ -1011,7 +1076,7 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = pallet_throttle::migration::ClearAccountUsageV1<Runtime>;
+pub type Migrations = (pallet_throttle::migration::ClearAccountUsageV1<Runtime>,);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where
@@ -1121,10 +1186,18 @@ mod benches {
 		[frame_benchmarking, BaselineBench::<Runtime>]
 		[frame_system, SystemBench::<Runtime>]
 		[pallet_beefy_mmr, BeefyMmrLeaf]
+		[pallet_grandpa, Grandpa]
 		[pallet_timestamp, Timestamp]
+		[pallet_mmr, Mmr]
 		[pallet_migrations, MultiBlockMigrations]
+		[pallet_preimage, Preimage]
+		[pallet_scheduler, Scheduler]
+		[pallet_tx_pause, TxPause]
+		[pallet_collective, Council]
+		[pallet_collective, TechnicalCommittee]
+		[pallet_membership, CouncilMembership]
+		[pallet_membership, TechnicalCommitteeMembership]
 		[pallet_session_validator_management, SessionCommitteeManagement]
-		[pallet_midnight, Midnight]
 		[pallet_federated_authority, FederatedAuthority]
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
 		[pallet_system_parameters, SystemParameters]
@@ -1212,6 +1285,12 @@ impl_runtime_apis! {
 
 		fn get_last_data_checkpoint() -> Option<BridgeDataCheckpoint> {
 			Bridge::get_data_checkpoint()
+		}
+	}
+
+	impl pallet_c2m_bridge::C2MBridgeApi<Block> for Runtime {
+		fn get_approved_mc_tx_hashes() -> Vec<sidechain_domain::McTxHash> {
+			C2MBridge::get_approved_mc_tx_hashes()
 		}
 	}
 

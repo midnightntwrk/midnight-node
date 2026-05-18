@@ -14,6 +14,9 @@ on:
       - ".github/workflows/*.yml"
       - ".github/workflows/*.yaml"
 
+# no top level default permissions for security reasons
+permissions: {}
+
 jobs:
   actionlint:
     name: Lint workflows
@@ -25,8 +28,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - name: Run actionlint
+        if: steps.guard.outputs.hit != 'true'
         uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2
         with:
           matcher: true # Enable GitHub annotations for errors
           fail-on-error: true # Fail CI when errors are found
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

@@ -22,11 +22,16 @@ extern crate alloc;
 
 #[cfg(test)]
 mod mock;
+mod runtime_api;
 #[cfg(test)]
 mod tests;
 
 use frame_support::pallet_prelude::*;
 pub use pallet::*;
+pub use runtime_api::*;
+
+/// Maximum number of approved mainchain transaction hashes that can be added in a single batch.
+pub const MAX_APPROVALS_PER_BATCH: u32 = 32;
 
 /// Hash of a Midnight ledger transaction, returned by the system transaction executor.
 pub type MidnightTxHash = [u8; 32];
@@ -47,6 +52,12 @@ impl Stars {
 impl From<u128> for Stars {
 	fn from(value: u128) -> Self {
 		Self(value)
+	}
+}
+
+impl From<Stars> for u128 {
+	fn from(value: Stars) -> u128 {
+		value.0
 	}
 }
 
@@ -157,6 +168,13 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type TransferCounter<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+	/// Set of mainchain transaction hashes pre-approved by governance for crediting
+	/// mNIGHT to the recipient. Modeled as a map-with-unit-value: presence of a key
+	/// denotes membership; absence denotes non-membership.
+	#[pallet::storage]
+	pub type ApprovedMcTxHashes<T: Config> =
+		StorageMap<_, Blake2_128Concat, McTxHash, (), OptionQuery>;
+
 	/// Genesis configuration of the pallet.
 	#[pallet::genesis_config]
 	pub struct GenesisConfig<T: Config> {
@@ -205,12 +223,33 @@ pub mod pallet {
 			SubminimalTransfersConfiguration::<T>::put(config);
 			Ok(())
 		}
+
+		/// Add a batch of mainchain transaction hashes to the approval set.
+		///
+		/// Must be called via governance.
+		#[pallet::call_index(1)]
+		#[pallet::weight(T::DbWeight::get().writes(hashes.len() as u64))]
+		pub fn add_approved_mc_tx_hashes(
+			origin: OriginFor<T>,
+			hashes: BoundedVec<McTxHash, ConstU32<MAX_APPROVALS_PER_BATCH>>,
+		) -> DispatchResult {
+			T::GovernanceOrigin::ensure_origin(origin)?;
+			for hash in hashes {
+				ApprovedMcTxHashes::<T>::insert(hash, ());
+			}
+			Ok(())
+		}
 	}
 
 	impl<T: Config> Pallet<T> {
 		/// Returns the current subminimal transfers configuration.
 		pub fn get_subminimal_transfers_config() -> SubminimalTransfersConfig {
 			SubminimalTransfersConfiguration::<T>::get()
+		}
+
+		/// Returns the full set of mainchain transaction hashes pre-approved by governance.
+		pub fn get_approved_mc_tx_hashes() -> Vec<McTxHash> {
+			ApprovedMcTxHashes::<T>::iter_keys().collect()
 		}
 
 		/// Generate a deterministic unique nonce for a bridge transfer.
@@ -297,7 +336,9 @@ pub mod pallet {
 
 		fn handle_invalid_transfer(mc_tx_hash: McTxHash, amount: u64) {
 			Self::execute_serialized_tx(
-				LedgerApi::construct_distribute_treasury_system_tx(amount.into()),
+				LedgerApi::construct_distribute_treasury_system_tx(
+					Stars::from_cnight(amount).into(),
+				),
 				|midnight_tx_hash| Event::InvalidTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Invalid' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
 			);
@@ -305,34 +346,61 @@ pub mod pallet {
 
 		fn handle_reserve_transfer(mc_tx_hash: McTxHash, amount: u64) {
 			Self::execute_serialized_tx(
-				LedgerApi::construct_distribute_reserve_system_tx(amount.into()),
+				LedgerApi::construct_distribute_reserve_system_tx(
+					Stars::from_cnight(amount).into(),
+				),
 				|midnight_tx_hash| Event::ReserveTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Reserve' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
 			);
 		}
 
 		fn handle_user_transfer(mc_tx_hash: McTxHash, amount: u64, recipient: BridgeRecipient) {
-			// TODO: Transaction Approval logic in the pallet
-			let nonce = Self::generate_nonce();
-			Self::execute_serialized_tx(
-				LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
-					amount.into(),
-					recipient.as_bytes(),
-					nonce,
-				),
-				|midnight_tx_hash| Event::UserTransfer {
-					mc_tx_hash,
-					amount,
-					recipient: recipient.clone(),
-					midnight_tx_hash,
+			// Approval is single-use: remove before executing so a failed ledger call
+			// cannot be replayed against the same approval.
+			match ApprovedMcTxHashes::<T>::take(mc_tx_hash) {
+				None => {
+					// Not pre-approved by governance — redirect funds to the Treasury.
+					Self::execute_serialized_tx(
+						LedgerApi::construct_distribute_treasury_system_tx(
+							Stars::from_cnight(amount).into(),
+						),
+						|midnight_tx_hash| Event::UnapprovedTransfer {
+							mc_tx_hash,
+							amount,
+							recipient: recipient.clone(),
+							midnight_tx_hash,
+						},
+						&alloc::format!(
+							"Unapproved 'User' transfer of {} NIGHT to {} from Cardano Tx: {}",
+							amount,
+							HexDisplay::from(&recipient.as_ref()),
+							mc_tx_hash
+						),
+					);
 				},
-				&alloc::format!(
-					"'User' transfer of {} to {} from Cardano Tx: {}",
-					amount,
-					HexDisplay::from(&recipient.as_ref()),
-					mc_tx_hash
-				),
-			);
+				Some(_) => {
+					let nonce = Self::generate_nonce();
+					Self::execute_serialized_tx(
+						LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
+							Stars::from_cnight(amount).into(),
+							recipient.as_bytes(),
+							nonce,
+						),
+						|midnight_tx_hash| Event::UserTransfer {
+							mc_tx_hash,
+							amount,
+							recipient: recipient.clone(),
+							midnight_tx_hash,
+						},
+						&alloc::format!(
+							"'User' transfer of {} NIGHT to {} from Cardano Tx: {}",
+							amount,
+							HexDisplay::from(&recipient.as_ref()),
+							mc_tx_hash
+						),
+					);
+				},
+			}
 		}
 	}
 

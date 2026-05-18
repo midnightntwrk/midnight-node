@@ -1,8 +1,0 @@
-volumes:
-  shared-volume: {}
-  cardano-node-1-data: {}
-  postgres-data: {}
-  db-sync-data: {}
-  db-sync-state-dir: {}
-  ogmios-data: {}
-  ipc: {}
