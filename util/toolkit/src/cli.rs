@@ -89,9 +89,9 @@ pub enum Commands {
 	ApplyAuthorizedUpgrade(ApplyAuthorizedUpgradeArgs),
 	/// Batch one or more SCALE-encoded calls and dispatch the result through governance
 	///
-	/// Wraps the supplied `--encoded-call` blobs in `Utility::batch_all` (atomic) and forwards
+	/// Wraps the supplied `--encoded-call` blobs in `Batch::batch_all` (atomic) and forwards
 	/// the resulting call to the federated-authority motion flow. Pass `--allow-partial-failure`
-	/// to use `Utility::batch` instead.
+	/// to use `Batch::batch` instead.
 	Batch(BatchArgs),
 	/// Execute a call through governance with Root origin
 	///

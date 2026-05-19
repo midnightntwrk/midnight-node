@@ -14,6 +14,7 @@ members = [
     "pallets/system-parameters/rpc",
     "pallets/throttle",
     "pallets/version",
+    "pallets/batch",
     "primitives/beefy",
     "primitives/ics-observation",
     "primitives/reserve-observation",
@@ -106,6 +107,7 @@ pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", def
 pallet-version = { path = "pallets/version", default-features = false }
 pallet-system-parameters = { path = "pallets/system-parameters", default-features = false }
 pallet-throttle = { path = "pallets/throttle", default-features = false }
+pallet-batch = { path = "pallets/batch", default-features = false }
 pallet-system-parameters-rpc = { path = "pallets/system-parameters/rpc", default-features = true }
 pallet-federated-authority = { path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
@@ -173,7 +175,6 @@ pallet-collective = { default-features = false, git = "https://github.com/parity
 pallet-scheduler = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 pallet-session = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 pallet-staking = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
-pallet-utility = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 sp-offchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 sp-session = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
 sp-transaction-pool = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }

@@ -520,11 +520,10 @@ impl pallet_scheduler::Config for Runtime {
 	type BlockNumberProvider = frame_system::Pallet<Runtime>;
 }
 
-impl pallet_utility::Config for Runtime {
+impl pallet_batch::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type RuntimeCall = RuntimeCall;
-	type PalletsOrigin = OriginCaller;
-	type WeightInfo = pallet_utility::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = pallet_batch::weights::SubstrateWeight<Runtime>;
 }
 
 impl pallet_partner_chains_session::Config for Runtime {
@@ -984,7 +983,7 @@ mod runtime {
 	#[runtime::pallet_index(13)]
 	pub type CNightObservation = pallet_cnight_observation::Pallet<Runtime>;
 
-	// Utility
+	// Batch
 	#[runtime::pallet_index(15)]
 	pub type Preimage = pallet_preimage::Pallet<Runtime>;
 
@@ -1001,7 +1000,7 @@ mod runtime {
 	#[runtime::pallet_index(19)]
 	pub type TxPause = pallet_tx_pause::Pallet<Runtime>;
 	#[runtime::pallet_index(20)]
-	pub type Utility = pallet_utility::Pallet<Runtime>;
+	pub type Batch = pallet_batch::Pallet<Runtime>;
 
 	// BEEFY Bridges support.
 	#[runtime::pallet_index(21)]

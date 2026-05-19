@@ -13,12 +13,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Batch one or more SCALE-encoded calls through `pallet-utility` and dispatch the result via
+//! Batch one or more SCALE-encoded calls through `pallet-batch` and dispatch the result via
 //! federated-authority governance.
 //!
 //! Each `--encoded-call` is the full SCALE-encoded `RuntimeCall` (typically the output of
 //! another toolkit subcommand's `--encode-only`). They are decoded against runtime metadata,
-//! wrapped in `Utility::batch_all` (or `Utility::batch` with `--allow-partial-failure`), and
+//! wrapped in `Batch::batch_all` (or `Batch::batch` with `--allow-partial-failure`), and
 //! the resulting call is forwarded to `root_call::execute` for council + technical-committee
 //! voting.
 
@@ -70,7 +70,7 @@ pub struct BatchArgs {
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
 	pub rpc_url: String,
 
-	/// Use `Utility::batch` (continues on individual failures) instead of `Utility::batch_all`
+	/// Use `Batch::batch` (continues on individual failures) instead of `Batch::batch_all`
 	/// (atomic — reverts the whole batch on any failure). Defaults to `batch_all`.
 	#[arg(long)]
 	pub allow_partial_failure: bool,
@@ -89,7 +89,7 @@ pub async fn execute(args: BatchArgs) -> Result<(), BatchError> {
 	}
 
 	log::info!(
-		"Batching {} call(s) with Utility::{}",
+		"Batching {} call(s) with Batch::{}",
 		args.encoded_calls.len(),
 		if args.allow_partial_failure { "batch" } else { "batch_all" }
 	);
@@ -107,7 +107,7 @@ pub async fn execute(args: BatchArgs) -> Result<(), BatchError> {
 
 	let batch_call_name = if args.allow_partial_failure { "batch" } else { "batch_all" };
 	let batch_call =
-		dynamic::tx("Utility", batch_call_name, vec![Value::unnamed_composite(call_values)]);
+		dynamic::tx("Batch", batch_call_name, vec![Value::unnamed_composite(call_values)]);
 	let encoded_call = api.tx().await?.call_data(&batch_call)?;
 	log::info!("Batched call ({} bytes): 0x{}", encoded_call.len(), hex::encode(&encoded_call));
 

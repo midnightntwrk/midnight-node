@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Verifies that pallet-utility correctly batches governance calls: an
+# Verifies that pallet-batch correctly batches governance calls: an
 # `update-ledger-parameters` call and a `runtime-upgrade` (authorize_upgrade) call
-# are encoded, batched via `Utility::batch_all`, dispatched through one
+# are encoded, batched via `Batch::batch_all`, dispatched through one
 # federated-authority motion, and the upgrade is then applied. The runtime WASM
 # is extracted from the node image so the upgrade is a no-op same-bytes swap
 # that still exercises the full authorize → apply → CodeUpdated path.
