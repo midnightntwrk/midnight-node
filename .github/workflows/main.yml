@@ -45,6 +45,7 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to DockerHub
+        continue-on-error: true
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
@@ -124,7 +125,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          # We don't use --ci as we want artifacts to be saved 
+          # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
@@ -488,6 +489,7 @@ jobs:
 
       - name: Login to DockerHub
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        continue-on-error: true
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -632,103 +634,103 @@ jobs:
               "ghcr.io/midnightntwrk/${IMAGE}:${IMAGE_TAG}-arm64"
           done
 
-      - name: Create and push `latest-main` images (Docker Hub)
-        if: (github.event.inputs.branch || github.ref_name) == 'main'
-        run: |
-          export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
+      # - name: Create and push `latest-main` images (Docker Hub)
+      #   if: (github.event.inputs.branch || github.ref_name) == 'main'
+      #   run: |
+      #     export IMAGE_TAG="${{ needs.publish-amd64.outputs.IMAGE_TAG }}"
 
-          echo "Creating manifests for node/toolkit from $IMAGE_TAG images"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
+      #     echo "Creating manifests for node/toolkit from $IMAGE_TAG images"
+      #     docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64"
+      #     docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64"
+      #     docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
+      #     docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
 
-          echo "Tagging each image with 'latest-main'"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64" "midnightntwrk/midnight-node:latest-main-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64" "midnightntwrk/midnight-node:latest-main-arm64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" "midnightntwrk/midnight-node-toolkit:latest-main-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64" "midnightntwrk/midnight-node-toolkit:latest-main-arm64"
+      #     echo "Tagging each image with 'latest-main'"
+      #     docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-amd64" "midnightntwrk/midnight-node:latest-main-amd64"
+      #     docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG}-arm64" "midnightntwrk/midnight-node:latest-main-arm64"
+      #     docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" "midnightntwrk/midnight-node-toolkit:latest-main-amd64"
+      #     docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64" "midnightntwrk/midnight-node-toolkit:latest-main-arm64"
 
-          echo "Push 'latest-main' images to Docker Hub"
-          docker push midnightntwrk/midnight-node:latest-main-amd64
-          docker push midnightntwrk/midnight-node:latest-main-arm64
-          docker push midnightntwrk/midnight-node-toolkit:latest-main-amd64
-          docker push midnightntwrk/midnight-node-toolkit:latest-main-arm64
+      #     echo "Push 'latest-main' images to Docker Hub"
+      #     docker push midnightntwrk/midnight-node:latest-main-amd64
+      #     docker push midnightntwrk/midnight-node:latest-main-arm64
+      #     docker push midnightntwrk/midnight-node-toolkit:latest-main-amd64
+      #     docker push midnightntwrk/midnight-node-toolkit:latest-main-arm64
 
-          echo "Create multi-arch manifests for Docker Hub"
-          docker manifest create midnightntwrk/midnight-node:latest-main \
-            midnightntwrk/midnight-node:latest-main-amd64 \
-            midnightntwrk/midnight-node:latest-main-arm64
+      #     echo "Create multi-arch manifests for Docker Hub"
+      #     docker manifest create midnightntwrk/midnight-node:latest-main \
+      #       midnightntwrk/midnight-node:latest-main-amd64 \
+      #       midnightntwrk/midnight-node:latest-main-arm64
 
-          docker manifest create midnightntwrk/midnight-node-toolkit:latest-main \
-            midnightntwrk/midnight-node-toolkit:latest-main-amd64 \
-            midnightntwrk/midnight-node-toolkit:latest-main-arm64
+      #     docker manifest create midnightntwrk/midnight-node-toolkit:latest-main \
+      #       midnightntwrk/midnight-node-toolkit:latest-main-amd64 \
+      #       midnightntwrk/midnight-node-toolkit:latest-main-arm64
 
-          echo "Push manifests to Docker Hub"
-          docker manifest push midnightntwrk/midnight-node:latest-main
-          docker manifest push midnightntwrk/midnight-node-toolkit:latest-main
+      #     echo "Push manifests to Docker Hub"
+      #     docker manifest push midnightntwrk/midnight-node:latest-main
+      #     docker manifest push midnightntwrk/midnight-node-toolkit:latest-main
 
-      - name: Get Docker Hub image digests (latest-main)
-        if: (github.event.inputs.branch || github.ref_name) == 'main'
-        id: dockerhub-digests
-        run: |
-          # Arch-specific digests
-          NODE_AMD64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main-amd64" --raw | sha256sum | awk '{print "sha256:"$1}')
-          echo "node-amd64=${NODE_AMD64}" >> "$GITHUB_OUTPUT"
-          NODE_ARM64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
-          echo "node-arm64=${NODE_ARM64}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_AMD64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main-amd64" --raw | sha256sum | awk '{print "sha256:"$1}')
-          echo "toolkit-amd64=${TOOLKIT_AMD64}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_ARM64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
-          echo "toolkit-arm64=${TOOLKIT_ARM64}" >> "$GITHUB_OUTPUT"
+      # - name: Get Docker Hub image digests (latest-main)
+      #   if: (github.event.inputs.branch || github.ref_name) == 'main'
+      #   id: dockerhub-digests
+      #   run: |
+      #     # Arch-specific digests
+      #     NODE_AMD64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main-amd64" --raw | sha256sum | awk '{print "sha256:"$1}')
+      #     echo "node-amd64=${NODE_AMD64}" >> "$GITHUB_OUTPUT"
+      #     NODE_ARM64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
+      #     echo "node-arm64=${NODE_ARM64}" >> "$GITHUB_OUTPUT"
+      #     TOOLKIT_AMD64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main-amd64" --raw | sha256sum | awk '{print "sha256:"$1}')
+      #     echo "toolkit-amd64=${TOOLKIT_AMD64}" >> "$GITHUB_OUTPUT"
+      #     TOOLKIT_ARM64=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main-arm64" --raw | sha256sum | awk '{print "sha256:"$1}')
+      #     echo "toolkit-arm64=${TOOLKIT_ARM64}" >> "$GITHUB_OUTPUT"
 
-          # Multi-arch manifest digests
-          NODE_MULTI=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main" --raw | sha256sum | awk '{print "sha256:"$1}')
-          echo "node-multi=${NODE_MULTI}" >> "$GITHUB_OUTPUT"
-          TOOLKIT_MULTI=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main" --raw | sha256sum | awk '{print "sha256:"$1}')
-          echo "toolkit-multi=${TOOLKIT_MULTI}" >> "$GITHUB_OUTPUT"
+      #     # Multi-arch manifest digests
+      #     NODE_MULTI=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:latest-main" --raw | sha256sum | awk '{print "sha256:"$1}')
+      #     echo "node-multi=${NODE_MULTI}" >> "$GITHUB_OUTPUT"
+      #     TOOLKIT_MULTI=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:latest-main" --raw | sha256sum | awk '{print "sha256:"$1}')
+      #     echo "toolkit-multi=${TOOLKIT_MULTI}" >> "$GITHUB_OUTPUT"
 
-      - name: Attest Docker Hub node image (amd64)
-        if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-name: index.docker.io/midnightntwrk/midnight-node
-          subject-digest: ${{ steps.dockerhub-digests.outputs.node-amd64 }}
+      # - name: Attest Docker Hub node image (amd64)
+      #   if: (github.event.inputs.branch || github.ref_name) == 'main'
+      #   uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+      #   with:
+      #     subject-name: index.docker.io/midnightntwrk/midnight-node
+      #     subject-digest: ${{ steps.dockerhub-digests.outputs.node-amd64 }}
 
-      - name: Attest Docker Hub node image (arm64)
-        if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-name: index.docker.io/midnightntwrk/midnight-node
-          subject-digest: ${{ steps.dockerhub-digests.outputs.node-arm64 }}
+      # - name: Attest Docker Hub node image (arm64)
+      #   if: (github.event.inputs.branch || github.ref_name) == 'main'
+      #   uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+      #   with:
+      #     subject-name: index.docker.io/midnightntwrk/midnight-node
+      #     subject-digest: ${{ steps.dockerhub-digests.outputs.node-arm64 }}
 
-      - name: Attest Docker Hub toolkit image (amd64)
-        if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
-          subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-amd64 }}
+      # - name: Attest Docker Hub toolkit image (amd64)
+      #   if: (github.event.inputs.branch || github.ref_name) == 'main'
+      #   uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+      #   with:
+      #     subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
+      #     subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-amd64 }}
 
-      - name: Attest Docker Hub toolkit image (arm64)
-        if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
-          subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-arm64 }}
+      # - name: Attest Docker Hub toolkit image (arm64)
+      #   if: (github.event.inputs.branch || github.ref_name) == 'main'
+      #   uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+      #   with:
+      #     subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
+      #     subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-arm64 }}
 
-      - name: Attest Docker Hub node multi-arch manifest
-        if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-name: index.docker.io/midnightntwrk/midnight-node
-          subject-digest: ${{ steps.dockerhub-digests.outputs.node-multi }}
+      # - name: Attest Docker Hub node multi-arch manifest
+      #   if: (github.event.inputs.branch || github.ref_name) == 'main'
+      #   uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+      #   with:
+      #     subject-name: index.docker.io/midnightntwrk/midnight-node
+      #     subject-digest: ${{ steps.dockerhub-digests.outputs.node-multi }}
 
-      - name: Attest Docker Hub toolkit multi-arch manifest
-        if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
-          subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-multi }}
+      # - name: Attest Docker Hub toolkit multi-arch manifest
+      #   if: (github.event.inputs.branch || github.ref_name) == 'main'
+      #   uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+      #   with:
+      #     subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
+      #     subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-multi }}
 
       - name: Get `latest-main` digests (GHCR midnightntwrk)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
