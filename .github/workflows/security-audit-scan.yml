@@ -19,28 +19,34 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      actions: write
     if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        with:
-          version: v0.8.16
-          github-token: ${{ github.token }}
-          use-cache: false
-
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
 
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
       - name: Run cargo deny
+        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly --use-inline-cache --strict +audit-rust
 
       - name: Fix cargo-deny SARIF format
-        if: hashFiles('scan_reports/cargo-deny.sarif') != ''
+        if: steps.guard.outputs.hit != 'true' && hashFiles('scan_reports/cargo-deny.sarif') != ''
         run: |
           # cargo-deny produces snippet/message as strings, but SARIF spec requires objects
           jq '(.. | .snippet? | strings) |= {"text": .}' scan_reports/cargo-deny.sarif | \
@@ -49,40 +55,51 @@ jobs:
 
       - name: Upload cargo-deny SARIF
         uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
-        if: (success() || failure()) && hashFiles('scan_reports/cargo-deny.sarif') != ''
+        if: (success() || failure()) && steps.guard.outputs.hit != 'true' && hashFiles('scan_reports/cargo-deny.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: scan_reports/cargo-deny.sarif
           category: cargo-deny
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   audit-typescript:
     name: audit job npm
     permissions:
       contents: read
       security-events: write
+      actions: write
     if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        with:
-          version: v0.8.16
-          github-token: ${{ github.token }}
-          use-cache: false
-
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
 
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
       - name: Run npm audit
+        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly --use-inline-cache --strict +audit-nodejs
 
       - name: Upload npm-audit-local-environment SARIF
         uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
-        if: (success() || failure()) && hashFiles('scan_reports/npm-audit-local-environment.sarif') != ''
+        if: (success() || failure()) && steps.guard.outputs.hit != 'true' && hashFiles('scan_reports/npm-audit-local-environment.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: scan_reports/npm-audit-local-environment.sarif
@@ -90,8 +107,13 @@ jobs:
 
       - name: Upload npm-audit-node-toolkit-js SARIF
         uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a #codeql-bundle-v2.23.6
-        if: (success() || failure()) && hashFiles('scan_reports/npm-audit-toolkit-js.sarif') != ''
+        if: (success() || failure()) && steps.guard.outputs.hit != 'true' && hashFiles('scan_reports/npm-audit-toolkit-js.sarif') != ''
         continue-on-error: true
         with:
           sarif_file: scan_reports/npm-audit-toolkit-js.sarif
           category: npm-audit-node-toolkit-js
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

@@ -38,7 +38,7 @@ use pallet_cnight_observation_mock::mock::{
 	self, CNightObservation, RuntimeCall, RuntimeEvent, System, Test, new_test_ext,
 };
 use rand::prelude::*;
-use sidechain_domain::{McBlockHash, McTxHash};
+use sidechain_domain::{McBlockHash, McTxHash, UtxoId};
 use test_log::test;
 
 fn create_inherent(
@@ -352,10 +352,8 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		let stored: Vec<DustPublicKeyBytes> = Mappings::<Test>::get(cardano_reward_address)
-			.into_iter()
-			.map(|r| r.dust_public_key)
-			.collect();
+		let stored: Vec<DustPublicKeyBytes> =
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect();
 
 		assert_eq!(stored, vec![dust_public_key]);
 
@@ -583,8 +581,7 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key: dust_public_key.clone(),
-					utxo_tx_hash: reg_header.utxo_tx_hash,
-					utxo_index: reg_header.utxo_index.0,
+					utxo_id: UtxoId::new(reg_header.utxo_tx_hash.0, reg_header.utxo_index.0),
 				};
 
 				assert_eq!(m, &expected);
@@ -652,8 +649,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key: dust_public_key.clone(),
-					utxo_tx_hash: reg_header.utxo_tx_hash,
-					utxo_index: reg_header.utxo_index.0,
+					utxo_id: UtxoId::new(reg_header.utxo_tx_hash.0, reg_header.utxo_index.0),
 				};
 
 				assert_eq!(m, &expected);
@@ -1302,9 +1298,8 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 
 		// Verify registration succeeded — proves handle_create reached event construction,
 		// not the early "No valid dust registration" bail-out
-		assert_eq!(
-			Mappings::<Test>::get(cardano_addr).len(),
-			1,
+		assert!(
+			CNightObservation::is_registered(&cardano_addr),
 			"Registration must succeed so handle_create reaches event construction"
 		);
 
@@ -1541,6 +1536,89 @@ fn position_guard_works_with_utxos_present() {
 		assert_noop!(
 			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
 			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+/// While the v0 -> v1 MBM is still draining, `process_tokens` must short-circuit:
+/// reading only v1 mid-migration would silently corrupt registration state for any
+/// reward address whose v0 row hasn't been moved yet (e.g. a deregistration would
+/// no-op here and then re-appear as live once the migration completes).
+///
+/// This test forces `on_chain_storage_version` back to 0 to simulate a block where
+/// the MBM is mid-flight, then asserts that an inherent carrying real UTXOs:
+/// - leaves `NextCardanoPosition` unchanged,
+/// - writes nothing to `Mapping`,
+/// - emits no pallet events.
+/// After flipping the version to 1 (migration complete), the same call processes
+/// normally and updates state.
+#[test]
+fn process_tokens_skips_during_mbm_then_resumes() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// Simulate mid-MBM: storage version still at 0.
+		StorageVersion::new(0).put::<CNightObservation>();
+
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+		let utxos = vec![ObservedUtxo {
+			header: test_header(10, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key: dust_public_key.clone(),
+			}),
+		}];
+
+		let position_before = NextCardanoPosition::<Test>::get();
+
+		let inherent = create_inherent(utxos.clone(), test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(
+			NextCardanoPosition::<Test>::get(),
+			position_before,
+			"NextCardanoPosition must not advance during MBM",
+		);
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
+			0,
+			"no Mapping rows must be written during MBM",
+		);
+		assert!(
+			!any_event(|e| matches!(
+				e,
+				RuntimeEvent::CNightObservation(_) | RuntimeEvent::MidnightSystem(_),
+			)),
+			"no pallet events must be emitted during MBM",
+		);
+
+		// Duplicate-inherent guard still holds during MBM: the gate runs after the
+		// `InherentExecutedThisBlock` check, so a second dispatch in the same block
+		// is rejected as before.
+		let dup = Call::process_tokens {
+			utxos: utxos.clone(),
+			next_cardano_position: test_position(10, 1),
+		};
+		assert_noop!(
+			RuntimeCall::CNightObservation(dup).dispatch(RawOrigin::None.into()),
+			Error::<Test>::InherentAlreadyExecuted,
+		);
+
+		advance_block_and_reset_events();
+
+		// Migration completes: storage version flips to 1; the next inherent
+		// processes the same UTXOs normally.
+		StorageVersion::new(1).put::<CNightObservation>();
+
+		let inherent = create_inherent(utxos, test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(NextCardanoPosition::<Test>::get(), test_position(10, 1));
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect::<Vec<_>>(),
+			vec![dust_public_key],
 		);
 	});
 }

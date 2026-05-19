@@ -28,6 +28,8 @@ pub use midnight_primitives::{
 	LedgerMutFn, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
 };
 
+pub use midnight_node_ledger::types::active_version::LedgerApiError;
+
 #[cfg(test)]
 mod mock;
 

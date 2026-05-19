@@ -475,6 +475,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 	}
 
 	/// Operate on two wallets identified by origin and destination seeds.
+	///
+	/// Acquires `self.wallets` exactly once and produces two disjoint
+	/// `&mut Wallet<D>` references via `HashMap::get_disjoint_mut`. The two
+	/// seeds must be distinct: passing the same seed twice panics, since a
+	/// single wallet cannot be borrowed mutably twice. A seed that is not
+	/// present in the wallets map also panics, matching the existing
+	/// `wallet_for_seed` behaviour.
 	pub fn with_wallets_from_seeds<F, R>(
 		&self,
 		origin_seed: WalletSeed,
@@ -484,11 +491,22 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		F: FnOnce(&mut Wallet<D>, &mut Wallet<D>) -> R,
 	{
-		let mut wallet_guard = self.wallets.lock().expect("Error locking `LedgerContext` wallets");
-		let origin_wallet = Self::wallet_for_seed(&mut wallet_guard, origin_seed);
+		assert!(
+			origin_seed != destination_seed,
+			"with_wallets_from_seeds: origin_seed and destination_seed must differ \
+			 (cannot produce two disjoint &mut to the same wallet)"
+		);
 
 		let mut wallet_guard = self.wallets.lock().expect("Error locking `LedgerContext` wallets");
-		let destination_wallet = Self::wallet_for_seed(&mut wallet_guard, destination_seed);
+
+		let [origin_opt, destination_opt] =
+			wallet_guard.get_disjoint_mut([&origin_seed, &destination_seed]);
+		let origin_wallet = origin_opt.unwrap_or_else(|| {
+			panic!("Wallet with seed {origin_seed:?} does not exist in the `LedgerContext`")
+		});
+		let destination_wallet = destination_opt.unwrap_or_else(|| {
+			panic!("Wallet with seed {destination_seed:?} does not exist in the `LedgerContext`")
+		});
 
 		f(origin_wallet, destination_wallet)
 	}
@@ -514,9 +532,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use std::sync::{
-		Arc,
-		atomic::{AtomicU64, Ordering},
+	use std::{
+		sync::{
+			Arc,
+			atomic::{AtomicU64, Ordering},
+			mpsc,
+		},
+		time::Duration,
 	};
 
 	type TestDB = storage::DefaultDB;
@@ -575,5 +597,86 @@ mod tests {
 			matches!(err, LedgerContextError::Deserialization(_)),
 			"expected Deserialization error, got: {err}"
 		);
+	}
+
+	/// Regression test for R-059: pins the fix for the deadlock in
+	/// `with_wallets_from_seeds`. The previous implementation locked the wallets
+	/// mutex twice — the second `lock()` deadlocks because `std::sync::Mutex` is
+	/// not reentrant. The bug shape is "the call never returns", so this test
+	/// runs the call on a worker thread and joins via a bounded `recv_timeout`
+	/// on an `mpsc` channel. A 5s wall-clock deadline is several orders of
+	/// magnitude above the expected return time but well below any plausible
+	/// CI hard timeout, so it cleanly discriminates "fixed" from "still hung".
+	///
+	/// Covers: AC-3 (non-blocking completion), AC-2 (closure shape preserved).
+	#[test]
+	fn with_wallets_from_seeds_does_not_deadlock() {
+		let seed_a = WalletSeed::Medium([0x01; 32]);
+		let seed_b = WalletSeed::Medium([0x02; 32]);
+		let ctx: Arc<LedgerContext<TestDB>> =
+			Arc::new(LedgerContext::<TestDB>::new_from_wallet_seeds(
+				"test-net",
+				&[seed_a.clone(), seed_b.clone()],
+			));
+		let counter = Arc::new(AtomicU64::new(0));
+
+		let (tx, rx) = mpsc::channel();
+		let ctx_worker = Arc::clone(&ctx);
+		let counter_worker = Arc::clone(&counter);
+		let seed_a_worker = seed_a.clone();
+		let seed_b_worker = seed_b.clone();
+		std::thread::spawn(move || {
+			ctx_worker.with_wallets_from_seeds(seed_a_worker, seed_b_worker, |_a, _b| {
+				counter_worker.fetch_add(1, Ordering::SeqCst);
+			});
+			let _ = tx.send(());
+		});
+
+		match rx.recv_timeout(Duration::from_secs(5)) {
+			Ok(()) => {},
+			Err(_) => {
+				panic!("with_wallets_from_seeds did not return within 5s — likely deadlocked")
+			},
+		}
+
+		assert_eq!(
+			counter.load(Ordering::SeqCst),
+			1,
+			"closure side-effect was not observed after with_wallets_from_seeds returned"
+		);
+	}
+
+	/// Regression test for R-059: the same-seed-twice case cannot produce two
+	/// disjoint `&mut Wallet` references, so the function panics with a clear
+	/// message rather than relying on `get_disjoint_mut`'s opaque `None` for
+	/// aliased keys.
+	///
+	/// Covers: AC-4 (aliased seed panics with stable substring).
+	#[test]
+	#[should_panic(expected = "origin_seed and destination_seed must differ")]
+	fn with_wallets_from_seeds_panics_on_aliased_seed() {
+		let seed_a = WalletSeed::Medium([0x01; 32]);
+		let ctx = LedgerContext::<TestDB>::new_from_wallet_seeds(
+			"test-net",
+			std::slice::from_ref(&seed_a),
+		);
+		ctx.with_wallets_from_seeds(seed_a.clone(), seed_a, |_, _| ());
+	}
+
+	/// Regression test for R-059: a seed not registered in `self.wallets`
+	/// panics with the same message style as the existing `wallet_for_seed`
+	/// panic.
+	///
+	/// Covers: AC-4 (missing seed panics with stable substring).
+	#[test]
+	#[should_panic(expected = "Wallet with seed")]
+	fn with_wallets_from_seeds_panics_on_missing_seed() {
+		let seed_a = WalletSeed::Medium([0x01; 32]);
+		let seed_b = WalletSeed::Medium([0x02; 32]);
+		let ctx = LedgerContext::<TestDB>::new_from_wallet_seeds(
+			"test-net",
+			std::slice::from_ref(&seed_a),
+		);
+		ctx.with_wallets_from_seeds(seed_a, seed_b, |_, _| ());
 	}
 }

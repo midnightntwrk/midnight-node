@@ -21,6 +21,9 @@ services:
     <<: *node-common
     hostname: node1
     container_name: node1
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "9950:9944"
       - "30334:30334"
@@ -50,6 +53,9 @@ services:
     <<: *node-common
     hostname: node2
     container_name: node2
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "9951:9944"
       - "30335:30335"
@@ -81,6 +87,9 @@ services:
     <<: *node-common
     hostname: node3
     container_name: node3
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "9952:9944"
       - "30336:30336"
@@ -111,6 +120,9 @@ services:
     <<: *node-common
     hostname: node4
     container_name: node4
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "9953:9944"
       - "30337:30337"
@@ -141,6 +153,9 @@ services:
     <<: *node-common
     hostname: node5
     container_name: node5
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "9954:9944"
       - "30338:30338"
@@ -171,6 +186,9 @@ services:
     <<: *node-common
     hostname: node6
     container_name: node6
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "9955:9944"
       - "30339:30333"

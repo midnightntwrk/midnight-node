@@ -134,11 +134,11 @@ pub struct UpdateLedgerParametersArgs {
 	parameters: Option<String>,
 
 	/// Council member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, long, required_unless_present = "encode_only")]
+	#[arg(short, long, required_unless_present_any = ["encode_only", "print_system_tx_hex"])]
 	council_members: Vec<String>,
 
 	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, long, required_unless_present = "encode_only")]
+	#[arg(short, long, required_unless_present_any = ["encode_only", "print_system_tx_hex"])]
 	technical_committee_members: Vec<String>,
 
 	/// RPC URL for sending the update.
@@ -151,18 +151,24 @@ pub struct UpdateLedgerParametersArgs {
 	#[arg(long)]
 	encode_only: bool,
 
+	/// Print the serialized ledger `SystemTransaction` as a hex string and exit
+	/// without submitting the root call. Useful for offline review or signing flows.
+	#[arg(long)]
+	print_system_tx_hex: bool,
+
 	#[command(flatten)]
 	params: UpdateableParams,
 }
 
 /// Build the SCALE-encoded `MidnightSystem::send_mn_system_transaction` call that an
-/// `update-ledger-parameters` invocation would dispatch.
+/// `update-ledger-parameters` invocation would dispatch, along with the inner
+/// serialized ledger `SystemTransaction`.
 ///
 /// Connects to `args.rpc_url` to fetch base parameters (when `--parameters` is absent)
 /// and to encode the call against runtime metadata.
 pub async fn build_encoded_call(
 	args: &UpdateLedgerParametersArgs,
-) -> Result<Vec<u8>, LedgerParametersError> {
+) -> Result<(Vec<u8>, Vec<u8>), LedgerParametersError> {
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
 
 	let bytes = match &args.parameters {
@@ -282,16 +288,24 @@ pub async fn build_encoded_call(
 	log::info!("Ledger params loaded: {:#?}", parameters);
 
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters);
+	let serialized_system_tx =
+		serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?;
 	let send_system_tx_call = dynamic::tx(
 		"MidnightSystem",
 		"send_mn_system_transaction",
-		vec![serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?],
+		vec![serialized_system_tx.clone()],
 	);
-	Ok(api.tx().await?.call_data(&send_system_tx_call)?)
+	let encoded_call = api.tx().await?.call_data(&send_system_tx_call)?;
+	Ok((serialized_system_tx, encoded_call))
 }
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
-	let encoded_call = build_encoded_call(&args).await?;
+	let (serialized_system_tx, encoded_call) = build_encoded_call(&args).await?;
+
+	if args.print_system_tx_hex {
+		println!("0x{}", hex::encode(&serialized_system_tx));
+		return Ok(());
+	}
 
 	if args.encode_only {
 		println!("0x{}", hex::encode(&encoded_call));
