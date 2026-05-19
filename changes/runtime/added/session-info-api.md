@@ -9,5 +9,5 @@ pallet's storage directly.
 
 Requires a metadata rebuild.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/1534
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1399

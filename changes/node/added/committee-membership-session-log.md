@@ -11,5 +11,5 @@ Motivated by an incident where a validator silently failed to produce
 blocks because its keystore held the wrong AURA key — the standard logs
 gave no indication.
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/1534
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1399
