@@ -115,12 +115,6 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      - name: Login to DockerHub
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
-        with:
-          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
-          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
-
       - name: Checkout repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
@@ -311,84 +305,6 @@ jobs:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-digests-toolkit.outputs.digest }}
 
-      # --- Docker Hub: Node ---
-      - name: Retag and push node release images (Docker Hub)
-        if: inputs.skip-node != true
-        run: |
-          echo "Creating node images for Docker Hub from $IMAGE_TAG_CONTENT_HASH"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64"
-
-          echo "Tagging node images with $IMAGE_TAG_RELEASE"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
-
-          echo "Push node ${IMAGE_TAG_RELEASE} images to Docker Hub"
-          docker push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
-          docker push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
-
-          echo "Create node multi-arch manifest for Docker Hub"
-          docker manifest create "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}" \
-            "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64" \
-            "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
-
-          echo "Push node manifest to Docker Hub"
-          docker manifest push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}"
-
-      # --- Docker Hub: Toolkit ---
-      - name: Retag and push toolkit release images (Docker Hub)
-        if: inputs.skip-toolkit != true
-        run: |
-          echo "Creating toolkit images for Docker Hub from $IMAGE_TAG_CONTENT_HASH"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64"
-
-          echo "Tagging toolkit images with $TOOLKIT_TAG_RELEASE"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64" "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-arm64"
-
-          echo "Push toolkit ${TOOLKIT_TAG_RELEASE} images to Docker Hub"
-          docker push "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-amd64"
-          docker push "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-arm64"
-
-          echo "Create toolkit multi-arch manifest for Docker Hub"
-          docker manifest create "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}" \
-            "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-amd64" \
-            "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-arm64"
-
-          echo "Push toolkit manifest to Docker Hub"
-          docker manifest push "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}"
-
-      # --- Docker Hub digests ---
-      - name: Get Docker Hub node release image digest
-        if: inputs.skip-node != true
-        id: dockerhub-digests-node
-        run: |
-          NODE_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
-          echo "digest=${NODE_DIGEST}" >> "$GITHUB_OUTPUT"
-
-      - name: Get Docker Hub toolkit release image digest
-        if: inputs.skip-toolkit != true
-        id: dockerhub-digests-toolkit
-        run: |
-          TOOLKIT_DIGEST=$(docker buildx imagetools inspect "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}" --raw | sha256sum | awk '{print "sha256:"$1}')
-          echo "digest=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
-
-      # --- Docker Hub attestations ---
-      - name: Attest node release image (Docker Hub)
-        if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-name: index.docker.io/midnightntwrk/midnight-node
-          subject-digest: ${{ steps.dockerhub-digests-node.outputs.digest }}
-
-      - name: Attest toolkit release image (Docker Hub)
-        if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
-        with:
-          subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
-          subject-digest: ${{ steps.dockerhub-digests-toolkit.outputs.digest }}
-
   # SBOM scan jobs run here (defined below) - they depend on prepare-release
   # and gate finalize-release
 
@@ -398,7 +314,7 @@ jobs:
       pull-requests: write
     name: Create release
     runs-on: ubuntu-latest
-    needs: [validate-inputs, prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-dockerhub-node, sbom-scan-dockerhub-toolkit, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
+    needs: [validate-inputs, prepare-release, sbom-scan-ghcr-node, sbom-scan-ghcr-toolkit, sbom-scan-midnightntwrk-node, sbom-scan-midnightntwrk-toolkit]
     # Allow running when SBOM jobs are skipped (due to skip-node/skip-toolkit) but not when they fail
     if: ${{ !cancelled() && !failure() }}
     env:
@@ -455,12 +371,12 @@ jobs:
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
         run: |
           if [ "$SKIP_NODE" != "true" ]; then
-            export SEASON_VAR_NODE_DOCKER_IMAGE="midnightntwrk/midnight-node:$IMAGE_TAG_RELEASE"
+            export SEASON_VAR_NODE_DOCKER_IMAGE="ghcr.io/midnightntwrk/midnight-node:$IMAGE_TAG_RELEASE"
             export SEASON_VAR_NODE_VERSION="$NODE_VERSION"
             export SEASON_VAR_NODE_TAG="$IMAGE_TAG_RELEASE"
           fi
           if [ "$SKIP_TOOLKIT" != "true" ]; then
-            export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="midnightntwrk/midnight-node-toolkit:$TOOLKIT_TAG_RELEASE"
+            export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="ghcr.io/midnightntwrk/midnight-node-toolkit:$TOOLKIT_TAG_RELEASE"
             export SEASON_VAR_TOOLKIT_VERSION="$TOOLKIT_VERSION"
             export SEASON_VAR_TOOLKIT_TAG="$TOOLKIT_TAG_RELEASE"
           fi
@@ -985,46 +901,6 @@ jobs:
     with:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ghcr-${{ matrix.arch }}-release
-      tlog-upload: true
-    secrets: inherit
-
-  sbom-scan-dockerhub-node:
-    if: github.event.inputs.skip-node != 'true'
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    name: SBOM Attest Node Docker Hub (${{ matrix.arch }})
-    needs: [validate-inputs, prepare-release, sbom-scan-ghcr-node]
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-    uses: ./.github/workflows/sbom-scan-image.yml
-    with:
-      image: midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-release }}-${{ matrix.arch }}
-      sbom-artifact-name: sbom-midnight-node-dockerhub-${{ matrix.arch }}-release
-      skip-scan: true
-      tlog-upload: true
-    secrets: inherit
-
-  sbom-scan-dockerhub-toolkit:
-    if: github.event.inputs.skip-toolkit != 'true'
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    name: SBOM Attest Toolkit Docker Hub (${{ matrix.arch }})
-    needs: [validate-inputs, prepare-release, sbom-scan-ghcr-toolkit]
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-    uses: ./.github/workflows/sbom-scan-image.yml
-    with:
-      image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.toolkit-tag-release }}-${{ matrix.arch }}
-      sbom-artifact-name: sbom-midnight-node-toolkit-dockerhub-${{ matrix.arch }}-release
-      skip-scan: true
       tlog-upload: true
     secrets: inherit
 
