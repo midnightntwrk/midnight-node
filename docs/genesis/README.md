@@ -95,11 +95,11 @@ See [Verification Guide](verification.md) for detailed instructions.
 │   └─────────────┘    └─────────────┘    └─────────────┘    └───────────┘  │
 │                                                                  │        │
 │                                                                  ▼        │
-│                                                            ┌───────────┐  │
-│                                                            │  Step 4   │  │
-│                                                            │  Auth     │  │
-│                                                            │  Script   │  │
-│                                                            └───────────┘  │
+│   ┌─────────────┐    ┌─────────────┐                       ┌───────────┐  │
+│   │   Step 6    │◀───│   Step 5    │◀──────────────────────│  Step 4   │  │
+│   │  Timestamp  │    │   Message   │                       │  Auth     │  │
+│   │  Verify     │    │   Verify    │                       │  Script   │  │
+│   └─────────────┘    └─────────────┘                       └───────────┘  │
 │                                                                           │
 └───────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -117,14 +117,15 @@ See [Verification Guide](verification.md) for detailed instructions.
 
 ### Networks
 
-Available networks for genesis generation/verification:
+Available networks for genesis generation:
 - `mainnet` - Production network
 - `qanet` - QA testing network
 - `devnet` - Development network
 - `govnet` - Governance testing network
-- `node-dev-01` - Single node development
 - `preview` - Preview/staging network
 - `preprod` - Pre-production network
+
+The genesis verification script (`genesis-verification.sh`) targets `mainnet` only.
 
 ### Cardano Tip
 

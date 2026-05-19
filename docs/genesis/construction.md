@@ -90,6 +90,9 @@ Genesis generation creates the initial chain state for a Midnight network. The p
 │ candidates-         │  │
 │ config.json         │  │
 ├─────────────────────┤  │
+│ message-config.json │──┤
+│ (optional)          │  │
+├─────────────────────┤  │
 │ bootnodes-config.   │──┘
 │ json                │
 └─────────────────────┘
@@ -120,6 +123,7 @@ These files contain Cardano smart contract addresses and must be configured befo
 | `pc-chain-config.json` | Partner chain configuration (security parameter, etc.) |
 | `system-parameters-config.json` | System-level parameters |
 | `bootnodes-config.json` | Initial peer-to-peer bootnode multiaddresses injected into the chain spec |
+| `message-config.json` | Optional genesis remark message. If provided, a `System::remark` extrinsic with this message is embedded in the genesis block. If not provided, no remark extrinsic is added. |
 
 ### Generated Config Files (from Address Files)
 
@@ -140,7 +144,7 @@ The `cardano-tip.json` file stores the Cardano block hash and timestamp used for
 | Field | Description |
 |-------|-------------|
 | `cardano_tip` | Cardano block hash used as reference point for smart contract queries |
-| `timestamp` | Unix epoch seconds of the genesis block. Used as the block timestamp during ledger state generation and verification. If not provided, defaults to the hardcoded Glacier Drop start timestamp (`1754395200`, Aug 5, 2025). |
+| `timestamp` | Unix epoch seconds of the genesis block. Used as the block timestamp during ledger state generation and verification. Required for `verify-ledger-state-genesis`. |
 
 Example:
 ```json
@@ -270,10 +274,10 @@ The `genesis-construction.sh` script provides an interactive wizard for genesis 
 ### Step 1: Select Network
 
 The tool presents available networks:
+- `mainnet`
 - `qanet`
 - `devnet`
 - `govnet`
-- `node-dev-01`
 - `preview`
 
 ### Step 2: Provide Configuration
@@ -291,7 +295,8 @@ Enter the following when prompted:
 
 3. **RNG seed for ledger state**
    - Default: `0000000000000000000000000000000000000000000000000000000000000037`
-   - Used for deterministic genesis generation
+   - Used for deterministic genesis generation (faucet wallet funding)
+   - N/A for `mainnet` (no faucet wallets are funded)
 
 ### Step 3: Genesis Config Generation
 
@@ -355,13 +360,13 @@ It consists of three main steps:
 
 Available networks:
 
-1) qanet
-2) devnet
-3) govnet
-4) node-dev-01
+1) mainnet
+2) qanet
+3) devnet
+4) govnet
 5) preview
 
-Select network (1-5): 1
+Select network (1-5): 2
 ✓ Selected network: qanet
 
 ▶ Configuration

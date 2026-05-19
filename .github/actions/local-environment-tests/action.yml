@@ -57,16 +57,21 @@ runs:
       with:
         tool: just
 
-    - name: Checkout midnight-reserve-contracts
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      with:
-        repository: midnightntwrk/midnight-reserve-contracts
-        ref: b4aa876c040263ce94c65fbcfcff7f3213ffd29f
-        token: ${{ inputs.ghcr-password }}
-        path: midnight-reserve-contracts
-
     - name: Set contracts path
+      # midnight-reserve-contracts is a submodule of this repo, checked out by the caller's
+      # actions/checkout (with submodules: true). Pinning lives in .gitmodules, not here.
       run: echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${GITHUB_WORKSPACE}/midnight-reserve-contracts" >> "$GITHUB_ENV"
+      shell: bash
+
+    - name: Setup Node.js
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  #v6.3.0
+      with:
+        # Keep in sync with NODE_VERSION in Earthfile audit-npm target
+        node-version: '22'
+
+    - name: Upgrade npm
+      # Keep in sync with npm version in Earthfile audit-npm target
+      run: npm install -g npm@11.11.0
       shell: bash
 
     - name: Deploy local environment
@@ -89,6 +94,15 @@ runs:
         INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}
         CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
+
+    # Fails fast if any validator (including unified-storage nodes 4 and 5)
+    # is stuck or panicking — GRANDPA needs 2/3 quorum, so a non-finalizing
+    # validator stalls the network and per-node finality probing surfaces
+    # the regression deterministically.
+    - name: Verify all validators reach finality
+      working-directory: local-environment
+      run: npm run verify-finality:local-env -- --target-block 1 --timeout 300
+      shell: bash
 
 #    - name: Run Indexer E2E Tests
 #      uses: ./.github/actions/reusable-e2e-tests

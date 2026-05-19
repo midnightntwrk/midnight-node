@@ -1,7 +1,4 @@
 {
-  "bootnodes": [
-    "/dns/preprod/tcp/30333/p2p/12D3KooWDU3ydya1JaGttYuorL2e6EnZrEBzmWH1fGef1NnsSmtF"
-  ],
   "chain_parameters": {
     "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
   },

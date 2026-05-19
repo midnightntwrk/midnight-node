@@ -105,6 +105,12 @@ pub struct MainChainScripts {
 	pub permissioned_candidates_policy_id: String,
 }
 
+/// Config loaded from `message-config.json`
+#[derive(Clone, Debug, Deserialize)]
+pub struct MessageConfig {
+	pub message: String,
+}
+
 /// Config loaded from `registered-candidates-addresses.json`
 #[derive(Clone, Debug, Deserialize)]
 pub struct RegisteredCandidatesAddresses {
@@ -117,6 +123,13 @@ pub struct PermissionedCandidatesConfig {
 	pub permissioned_candidates_policy_id: String,
 	#[serde(default)]
 	pub initial_permissioned_candidates: Vec<InitialAuthorityData>,
+}
+
+/// Config loaded from `c2m-bridge-config.json`
+#[derive(Clone, Debug, Deserialize)]
+pub struct C2MBridgeConfig {
+	pub initial_data_checkpoint: Option<String>,
+	pub subminimal_transfers_flush_threshold: u64,
 }
 
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
@@ -180,6 +193,8 @@ pub trait MidnightNetwork {
 	fn cnight_genesis(&self) -> CNightGenesis;
 	fn ics_config(&self) -> IcsConfig;
 	fn reserve_config(&self) -> ReserveConfig;
+	fn message_config(&self) -> Option<MessageConfig>;
+	fn c2m_bridge_config(&self) -> C2MBridgeConfig;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)

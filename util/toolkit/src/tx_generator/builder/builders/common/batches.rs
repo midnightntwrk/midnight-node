@@ -12,10 +12,11 @@
 // limitations under the License.
 
 use super::ledger_helpers_local::{
-	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, FromContext,
-	InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider, Segment,
-	SerdeTransaction, ShieldedTokenType, StandardTrasactionInfo, TransactionWithContext,
-	UnshieldedOfferInfo, UnshieldedTokenType, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, CoinSelectionStrategy,
+	DefaultDB, FromContext, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo,
+	ProofProvider, Segment, SerdeTransaction, ShieldedCoinSelectionError, ShieldedTokenType,
+	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
+	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 };
 use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
@@ -31,7 +32,7 @@ pub fn compute_batches_seeds(
 	funding_seed: &str,
 	num_txs_per_batch: usize,
 	num_batches: usize,
-) -> Vec<WalletSeed> {
+) -> Result<Vec<WalletSeed>, &'static str> {
 	let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(funding_seed);
 	let inputs_wallet_seeds = vec![funding_seed];
 
@@ -42,11 +43,11 @@ pub fn compute_batches_seeds(
 		for _ in 0..num_txs_per_batch {
 			init_output_wallet_seeds
 				.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
-			wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str);
+			wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str)?;
 		}
 	}
 
-	[&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat()
+	Ok([&inputs_wallet_seeds[..], &init_output_wallet_seeds[..]].concat())
 }
 
 /// The higher the number of transactions per batch, the longer it will take to generate the
@@ -65,6 +66,7 @@ pub struct BatchesBuilder {
 	initial_unshielded_intent_value: u128,
 	unshielded_token_type: UnshieldedTokenType,
 	enable_shielded: bool,
+	coin_selection: CoinSelectionStrategy,
 }
 
 impl BatchesBuilder {
@@ -87,6 +89,7 @@ impl BatchesBuilder {
 			initial_unshielded_intent_value: args.initial_unshielded_intent_value,
 			unshielded_token_type: convert_unshielded_token_type(args.unshielded_token_type),
 			enable_shielded: args.enable_shielded,
+			coin_selection: args.coin_selection,
 		}
 	}
 
@@ -95,24 +98,33 @@ impl BatchesBuilder {
 		context: Arc<LedgerContext<DefaultDB>>,
 		funding_seed: WalletSeed,
 		output_wallets: Vec<WalletSeed>,
-	) -> OfferInfo<DefaultDB> {
-		let total_coins_required = self.coin_amount * self.num_txs_per_batch as u128;
+	) -> Result<OfferInfo<DefaultDB>, ShieldedCoinSelectionError> {
+		let total_coins_required = self
+			.coin_amount
+			.checked_mul(self.num_txs_per_batch as u128)
+			.ok_or(ShieldedCoinSelectionError::ArithmeticOverflow)?;
 
-		// Input info
-		let input_info = InputInfo {
-			origin: funding_seed,
-			token_type: self.shielded_token_type,
-			value: total_coins_required,
-		};
+		let (input_infos, change) = InputInfo::coins_to_cover_value(
+			context,
+			funding_seed.clone(),
+			total_coins_required,
+			self.shielded_token_type,
+			self.coin_selection,
+		)?;
 
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![Box::new(input_info)];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = input_infos
+			.into_iter()
+			.map(|input| {
+				let input: Box<dyn BuildInput<DefaultDB>> = Box::new(input);
+				input
+			})
+			.collect();
 
-		// Outputs info
 		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = output_wallets
 			.iter()
 			.map(|wallet_seed| {
 				let output: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
-					destination: *wallet_seed,
+					destination: wallet_seed.clone(),
 					token_type: self.shielded_token_type,
 					value: self.coin_amount,
 				});
@@ -120,23 +132,16 @@ impl BatchesBuilder {
 			})
 			.collect();
 
-		// Calculate total coins amount required for future txs to match the spends of the funding wallet
+		if change > 0 {
+			let output_info_refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
+				destination: funding_seed,
+				token_type: self.shielded_token_type,
+				value: change,
+			});
+			outputs_info.push(output_info_refund);
+		}
 
-		let funding_wallet = context.clone().wallet_from_seed(funding_seed);
-		let already_spent = input_info.min_match_coin(&funding_wallet.shielded.state).value;
-		let remaining_coins = already_spent - total_coins_required;
-
-		// Create an `Output` to its self with the remaining coins to avoid spending the whole `Input`
-		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
-			destination: funding_seed,
-			token_type: self.shielded_token_type,
-			value: remaining_coins,
-		});
-
-		outputs_info.push(output_info_refund);
-
-		// Offer info
-		OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] }
+		Ok(OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] })
 	}
 
 	fn initial_unshielded_intents(
@@ -148,10 +153,12 @@ impl BatchesBuilder {
 	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
 		let (inputs, remaining_nights) = UtxoSpendInfo::utxos_to_cover_value(
 			context,
-			funding_seed,
+			funding_seed.clone(),
 			self.initial_unshielded_intent_value,
 			self.unshielded_token_type,
-		);
+			self.coin_selection,
+		)
+		.expect("insufficient UTXOs for transfer");
 
 		let inputs: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
 			.into_iter()
@@ -167,7 +174,7 @@ impl BatchesBuilder {
 			.map(|wallet_seed| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
 					value: amount_to_send_per_output,
-					owner: *wallet_seed,
+					owner: wallet_seed.clone(),
 					token_type: self.unshielded_token_type,
 				});
 				output
@@ -232,7 +239,7 @@ impl BuildTxs for BatchesBuilder {
 		let spin = Spin::new("generating initial tx...");
 		// - Calculate the funding `WalletSeed` (can be more than one)
 		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
-		let inputs_wallet_seeds = vec![funding_seed];
+		let inputs_wallet_seeds = vec![funding_seed.clone()];
 
 		// - Calculate `WalletSeed` to be funded
 		// set the initial `wallet_seed`
@@ -245,7 +252,8 @@ impl BuildTxs for BatchesBuilder {
 			for _ in 0..self.num_txs_per_batch {
 				init_output_wallet_seeds
 					.push(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed_str));
-				wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str);
+				wallet_seed_str = Wallet::<DefaultDB>::increment_seed(&wallet_seed_str)
+					.expect("wallet seed overflow: batch seed exhaustion is physically impossible");
 			}
 		}
 
@@ -266,11 +274,13 @@ impl BuildTxs for BatchesBuilder {
 			init_output_wallet_seeds[0..self.num_txs_per_batch].to_vec();
 
 		if self.enable_shielded {
-			let initial_shielded_offer_info = self.initial_shielded_offer(
-				context_arc.clone(),
-				funding_seed,
-				first_batch_output_wallets.clone(),
-			);
+			let initial_shielded_offer_info = self
+				.initial_shielded_offer(
+					context_arc.clone(),
+					funding_seed.clone(),
+					first_batch_output_wallets.clone(),
+				)
+				.expect("insufficient shielded coins for initial batch");
 
 			tx_info.set_guaranteed_offer(initial_shielded_offer_info);
 		}
@@ -298,7 +308,9 @@ impl BuildTxs for BatchesBuilder {
 			block_context: block_context.clone(),
 		};
 
-		context_arc.clone().update_from_tx(&initial_tx_with_context.tx, &block_context);
+		context_arc
+			.update_from_tx(&initial_tx_with_context.tx, &block_context)
+			.expect("failed to update context from initial tx");
 
 		spin.finish("generated initial tx.");
 
@@ -365,23 +377,24 @@ impl BuildTxs for BatchesBuilder {
 					);
 
 					let input_seed = seed;
-					let output_seed = output_wallet_seeds[index];
+					let output_seed = output_wallet_seeds[index].clone();
 
 					if self.enable_shielded {
 						// ---------------- SHIELDED ------------------------
 						// Input info
 						let input_info = InputInfo {
-							origin: input_seed,
+							origin: input_seed.clone(),
 							token_type: self.shielded_token_type,
 							// All funds that where intially received
 							value: self.coin_amount,
+							nullifier: None,
 						};
 						let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> =
 							vec![Box::new(input_info)];
 
 						// Output info
 						let output_info = OutputInfo {
-							destination: output_seed,
+							destination: output_seed.clone(),
 							token_type: self.shielded_token_type,
 							value: self.coin_amount,
 						};
@@ -454,7 +467,9 @@ impl BuildTxs for BatchesBuilder {
 					tx: SerdeTransaction::Midnight(tx),
 					block_context: block_context.clone(),
 				};
-				context_arc.clone().update_from_tx(&tx_with_context.tx, &block_context);
+				context_arc
+					.update_from_tx(&tx_with_context.tx, &block_context)
+					.expect("failed to update context from tx");
 				txs.push(tx_with_context);
 			}
 

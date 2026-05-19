@@ -18,21 +18,24 @@ use serde_valid::Validate as _;
 use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
-	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
-	CouncilConfig, CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig,
-	MidnightCall, MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SystemCall,
-	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
-	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
+	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
+	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
+	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
+	SidechainConfig, Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
+	TechnicalCommitteeMembershipConfig, TimestampCall, UncheckedExtrinsic, WASM_BINARY,
+	opaque::SessionKeys,
 };
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::{AssetName, MainchainAddress};
+use sidechain_domain::{AssetName, MainchainAddress, McTxHash};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
-use sp_partner_chains_bridge::MainChainScripts as BridgeMainChainScripts;
+use sp_partner_chains_bridge::{
+	MainChainScripts as BridgeMainChainScripts, SubminimalTransfersConfig,
+};
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
 use std::{fmt, str::FromStr};
 
@@ -53,6 +56,7 @@ pub enum ChainSpecInitError {
 	Missing(String),
 	ParseError(String),
 	Serialization(String),
+	GenesisStateError(midnight_node_ledger::ledger_8::storage::GetRootError),
 }
 
 impl fmt::Display for ChainSpecInitError {
@@ -62,6 +66,9 @@ impl fmt::Display for ChainSpecInitError {
 			ChainSpecInitError::ParseError(msg) => write!(f, "ChainSpec Parse error: {msg}"),
 			ChainSpecInitError::Serialization(msg) => {
 				write!(f, "ChainSpec Serialization error: {msg}")
+			},
+			ChainSpecInitError::GenesisStateError(msg) => {
+				write!(f, "ChainSpec GenesisState error: {msg}")
 			},
 		}
 	}
@@ -114,12 +121,10 @@ pub fn runtime_wasm() -> &'static [u8] {
 	WASM_BINARY.expect("Runtime wasm not available")
 }
 
-/// Message embedded in the genesis block as a System::remark extrinsic.
-const GENESIS_REMARK: &[u8] = b"The One remains, the many change and pass; Heaven's light forever shines, Earth's shadows fly; Life, like a dome of many-colour'd glass, Stains the white radiance of Eternity, Until Death tramples it to fragments.";
-
 pub fn get_chainspec_extrinsics(
 	genesis_block: &[u8],
 	observed_utxos_cnight: &ObservedUtxos,
+	genesis_remark: Option<&[u8]>,
 ) -> Vec<String> {
 	let genesis_block: SerializedTxBatches =
 		serde_json::from_slice(genesis_block).expect("failed to deseriailzed genesis block");
@@ -154,17 +159,32 @@ pub fn get_chainspec_extrinsics(
 	}
 
 	// Add Timestamp Set extrinsic
+	let timestamp_millis = if let Some(ctx) = block_context {
+		ctx.tblock.to_secs() * 1000
+	} else {
+		// No txs in genesis block (mainnet case): read timestamp from cardano-tip.json
+		use crate::genesis::CardanoTipConfig;
+		let tip: CardanoTipConfig = serde_json::from_str(
+			&std::fs::read_to_string("res/mainnet/cardano-tip.json")
+				.expect("failed to read res/mainnet/cardano-tip.json for genesis timestamp"),
+		)
+		.expect("failed to parse res/mainnet/cardano-tip.json");
+		tip.timestamp.parse::<u64>().expect("invalid timestamp in cardano-tip.json") * 1000
+	};
 	let timestamp_extrinsic =
 		UncheckedExtrinsic::new_bare(RuntimeCall::Timestamp(TimestampCall::set {
-			now: block_context.expect("missing block context").tblock.to_secs() * 1000,
+			now: timestamp_millis,
 		}));
 	extrinsics.push(hex::encode(timestamp_extrinsic.encode()));
 
-	// Add System::remark extrinsic with genesis message
-	let remark_extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::System(SystemCall::remark {
-		remark: GENESIS_REMARK.to_vec(),
-	}));
-	extrinsics.push(hex::encode(remark_extrinsic.encode()));
+	// Add System::remark extrinsic with genesis message (if configured)
+	if let Some(remark) = genesis_remark {
+		let remark_extrinsic =
+			UncheckedExtrinsic::new_bare(RuntimeCall::System(SystemCall::remark {
+				remark: remark.to_vec(),
+			}));
+		extrinsics.push(hex::encode(remark_extrinsic.encode()));
+	}
 
 	// Add CNight extrinsic
 	if !observed_utxos_cnight.utxos.is_empty() {
@@ -184,9 +204,10 @@ pub fn get_chainspec_properties(
 	genesis_block: &[u8],
 	genesis_state: &[u8],
 	observed_utxos_cnight: &ObservedUtxos,
+	genesis_remark: Option<&[u8]>,
 ) -> serde_json::map::Map<String, serde_json::Value> {
 	serde_json::json!({
-		"genesis_extrinsics": get_chainspec_extrinsics(genesis_block, observed_utxos_cnight),
+		"genesis_extrinsics": get_chainspec_extrinsics(genesis_block, observed_utxos_cnight, genesis_remark),
 		"genesis_state": hex::encode(genesis_state),
 	})
 	.as_object()
@@ -207,6 +228,7 @@ pub fn chain_config<T: MidnightNetwork>(genesis: T) -> Result<ChainSpec, ChainSp
 			genesis.genesis_block(),
 			genesis.genesis_state(),
 			&genesis.cnight_genesis().observed_utxos,
+			genesis.message_config().as_ref().map(|m| m.message.as_bytes()),
 		))
 		.with_genesis_config(genesis_config(genesis)?);
 
@@ -248,7 +270,9 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			network_id: genesis.network_id(),
 			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
 				genesis.genesis_state(),
-			),
+				Some(&genesis.network_id()),
+			)
+			.map_err(ChainSpecInitError::GenesisStateError)?,
 		},
 		session: SessionConfig {
 			initial_validators: authority_keys
@@ -333,6 +357,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		bridge: {
 			let ics_config = genesis.ics_config();
+			let bridge_config = genesis.c2m_bridge_config();
 			BridgeConfig {
 				main_chain_scripts: if ics_config
 					.illiquid_circulation_supply_validator_address
@@ -349,7 +374,20 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
 					})
 				},
-				initial_checkpoint: None,
+				initial_checkpoint: bridge_config.initial_data_checkpoint.map(|s| {
+					McTxHash::decode_hex(&s)
+						.expect("Failed to decode Bridge initial_data_checkpoint")
+				}),
+				_marker: Default::default(),
+			}
+		},
+		c2m_bridge: {
+			let bridge_config = genesis.c2m_bridge_config();
+			C2MBridgeConfig {
+				subminimal_transfers_config: SubminimalTransfersConfig {
+					subminimal_transfers_flush_threshold: bridge_config
+						.subminimal_transfers_flush_threshold,
+				},
 				_marker: Default::default(),
 			}
 		},

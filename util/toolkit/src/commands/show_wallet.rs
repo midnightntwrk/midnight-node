@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use crate::source::Source;
-use crate::tx_generator::builder::build_fork_aware_context_raw;
+use crate::tx_generator::builder::build_fork_aware_context_cached;
+use crate::tx_generator::source::create_file_wallet_cache;
 use crate::{HRP_CREDENTIAL_SHIELDED, TxGenerator, WalletAddress, WalletSeed};
 use crate::{
 	cli_parsers::{self as cli},
@@ -45,6 +46,8 @@ pub struct ShowWalletArgs {
 pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	let ledger_state_db = args.source.ledger_state_db.clone();
+	let fetch_cache = args.source.fetch_cache.clone();
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	if args.dry_run {
@@ -57,14 +60,20 @@ pub async fn execute(
 	}
 
 	let source_blocks = src.get_txs().await?;
+	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
 	if let Some(seed) = args.seed {
-		let fork_ctx = build_fork_aware_context_raw(&source_blocks, &[seed]);
+		let fork_ctx = build_fork_aware_context_cached(
+			&[seed.clone()],
+			&source_blocks,
+			wallet_cache.as_deref(),
+		)
+		.await;
 
 		Ok(fork_ctx.dispatch(
 			|ctx| {
 				let seed_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed);
+					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed.clone());
 				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
 					&ctx, seed_v7, args.debug,
 				);
@@ -72,7 +81,7 @@ pub async fn execute(
 			},
 			|ctx| {
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
-					&ctx, seed, args.debug,
+					&ctx, seed.clone(), args.debug,
 				);
 				fork_wallet_result_v8(result)
 			},
@@ -83,7 +92,8 @@ pub async fn execute(
 			return Err("unavailable information - secret key needed".into());
 		}
 
-		let fork_ctx = build_fork_aware_context_raw(&source_blocks, &[]);
+		let fork_ctx =
+			build_fork_aware_context_cached(&[], &source_blocks, wallet_cache.as_deref()).await;
 
 		let address_clone = address.clone();
 		Ok(fork_ctx.dispatch(
@@ -168,6 +178,7 @@ mod tests {
 				ignore_block_context: false,
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
+				ledger_state_db: String::new(),
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -218,6 +229,7 @@ mod tests {
 				ignore_block_context: false,
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
+				ledger_state_db: String::new(),
 			},
 			seed: Some(seed),
 			address: None,

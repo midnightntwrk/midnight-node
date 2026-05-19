@@ -24,6 +24,7 @@ pub enum RuntimeVersionError {
 pub enum RuntimeVersion {
 	V0_21_0,
 	V0_22_0,
+	V1_0_0,
 }
 impl TryFrom<u32> for RuntimeVersion {
 	type Error = RuntimeVersionError;
@@ -31,6 +32,7 @@ impl TryFrom<u32> for RuntimeVersion {
 		match value {
 			000_021_000 => Ok(Self::V0_21_0),
 			000_022_000 => Ok(Self::V0_22_0),
+			001_000_000 => Ok(Self::V1_0_0),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
 	}
@@ -42,6 +44,7 @@ impl RuntimeVersion {
 		match self {
 			Self::V0_21_0 => 000_021_000,
 			Self::V0_22_0 => 000_022_000,
+			Self::V1_0_0 => 001_000_000,
 		}
 	}
 
@@ -64,7 +67,7 @@ impl<'a> TryFrom<&'a [u8]> for RuntimeVersion {
 
 pub trait MidnightMetadata {
 	type Call: subxt::ext::scale_decode::DecodeAsType;
-	type SystemTransactionAppliedEvent: subxt::ext::subxt_core::events::StaticEvent;
+	type SystemTransactionAppliedEvent: subxt::events::DecodeAsEvent;
 
 	fn send_mn_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>>;
@@ -134,4 +137,10 @@ impl_midnight_metadata!(
 	MidnightMetadata0_22_0,
 	mn_meta_0_22_0,
 	midnight_node_metadata::midnight_metadata_0_22_0
+);
+
+impl_midnight_metadata!(
+	MidnightMetadata1_0_0,
+	mn_meta_1_0_0,
+	midnight_node_metadata::midnight_metadata_1_0_0
 );

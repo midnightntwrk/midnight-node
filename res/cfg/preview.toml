@@ -14,3 +14,4 @@ chainspec_federated_authority_config = "res/preview/federated-authority-config.j
 chainspec_system_parameters_config = "res/preview/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/preview/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/preview/registered-candidates-addresses.json"
+chainspec_c2m_bridge_config = "res/preview/c2m-bridge-config.json"

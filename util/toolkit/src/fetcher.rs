@@ -15,12 +15,13 @@ pub mod compute_task;
 pub mod fetch_storage;
 pub mod fetch_task;
 pub mod runtimes;
+pub mod trusted_deserialize;
 pub mod wallet_state_cache;
 
 use std::time::Duration;
 
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
-use subxt::{OnlineClient, blocks::Block, ext::subxt_rpcs, utils::H256};
+use subxt::{client::OnlineClientAtBlock, rpcs, utils::H256};
 use tokio::task::JoinSet;
 
 use crate::{
@@ -32,7 +33,7 @@ use crate::{
 	},
 };
 
-pub type MidnightBlock = Block<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>;
+pub type MidnightClientAtBlock = OnlineClientAtBlock<MidnightNodeClientConfig>;
 
 /// Number of blocks to process per batch. Tuned for memory/parallelism tradeoff.
 const BLOCKS_PER_JOB: u64 = 100;
@@ -45,7 +46,7 @@ pub enum FetchError {
 	#[error("subxt error while fetching")]
 	SubxtError(#[from] subxt::Error),
 	#[error("subxt rpc error while fetching")]
-	SubxtRpcError(#[from] subxt_rpcs::Error),
+	SubxtRpcError(#[from] rpcs::Error),
 	#[error("error creating client")]
 	NodeClientError(#[from] ClientError),
 	#[error("block hash missing for block number {0}")]
@@ -69,12 +70,34 @@ enum TaskResult {
 	ComputeWorker,
 }
 
+/// Fetch a single block by hash. Checks cache first, falls back to node RPC.
+/// On cache miss, fetches from the node and stores the result in cache.
+pub async fn fetch_single_block(
+	chain_id: H256,
+	block_number: u64,
+	block_hash: H256,
+	client: Option<&MidnightNodeClient>,
+	storage: &(impl FetchStorage + Clone + 'static),
+) -> Result<RawBlockData, FetchError> {
+	if let Some(block) = storage.get_block_data(chain_id, block_number).await {
+		return Ok(block);
+	}
+	let client = client.ok_or(FetchError::BlockMissing(block_number))?;
+	let fetched = FetchTask::fetch_block(client, block_hash).await?;
+	let raw = ComputeTask::extract_data(&fetched).await?;
+	storage.insert_block_data(chain_id, block_number, raw.clone()).await;
+	Ok(raw)
+}
+
 pub async fn read_blocks_from_cache(
 	chain_id: H256,
 	fetch_storage: impl FetchStorage + Clone + 'static,
 ) -> Result<Vec<RawBlockData>, FetchError> {
+	let t = std::time::Instant::now();
 	let max_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
+	log::debug!("[perf] get_highest_verified_block took {:?}", t.elapsed());
 
+	let t = std::time::Instant::now();
 	let mut blocks: Vec<_> = fetch_storage
 		.get_block_data_range(chain_id, (0..max_height + 1).into_iter())
 		.await
@@ -82,12 +105,15 @@ pub async fn read_blocks_from_cache(
 		.enumerate()
 		.map(|(i, b)| b.unwrap_or_else(|| panic!("missing block {i}")))
 		.collect();
+	log::debug!("[perf] get_block_data_range: {} blocks in {:?}", blocks.len(), t.elapsed());
 
 	// Set last_block_time for all blocks
 	// windows_mut() iterator does not exist - so we're indexing here
+	let t = std::time::Instant::now();
 	for i in 1..blocks.len() {
 		blocks[i].last_block_time_secs = blocks[i - 1].tblock_secs;
 	}
+	log::debug!("[perf] last_block_time fixup: {} blocks in {:?}", blocks.len(), t.elapsed());
 
 	Ok(blocks)
 }
@@ -105,7 +131,7 @@ pub async fn fetch_all(
 		let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 
 		log::info!(
-			"read {} blocks from cache, total transations: {}",
+			"read {} blocks from cache, total transactions: {}",
 			blocks.len(),
 			blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 		);
@@ -129,6 +155,7 @@ pub async fn fetch_from_rpc(
 		);
 	}
 
+	let t_rpc_total = std::time::Instant::now();
 	let client = MidnightNodeClient::new(&url, None).await?;
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
@@ -140,6 +167,10 @@ pub async fn fetch_from_rpc(
 	} else {
 		BLOCKS_PER_JOB
 	};
+
+	// Cap workers to the number of jobs to avoid unnecessary connections.
+	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
+	let num_workers = num_workers.min(num_jobs as usize).max(1);
 
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
@@ -168,7 +199,7 @@ pub async fn fetch_from_rpc(
 		});
 	}
 
-	log::info!("spawning {num_workers} fetch workers");
+	log::info!("spawning {num_workers} fetch workers (capped from requested, {num_jobs} jobs)");
 
 	// Spawn fetch workers
 	for worker_id in 0..num_workers {
@@ -303,12 +334,27 @@ pub async fn fetch_from_rpc(
 	compute_to_compute_rx.close();
 	final_jobs_rx.close();
 
+	// Wait for all workers to fully exit so their Arc<Database> handles are dropped.
+	// Without this, the JoinSet drop aborts tasks but doesn't synchronously release
+	// resources, causing "DatabaseAlreadyOpen" when the DB is reopened.
+	while let Some(result) = join_set.join_next().await {
+		if let Err(join_err) = result {
+			if join_err.is_panic() {
+				log::warn!("Worker task panicked during cleanup: {}", join_err);
+			}
+		}
+	}
+
+	log::debug!("[perf] fetch_from_rpc RPC pipeline took {:?}", t_rpc_total.elapsed());
+
 	// Set highest verified height for quicker fetch next time
 	fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
+	let t = std::time::Instant::now();
 	let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
+	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
 	log::info!(
-		"fetched {} blocks, read {} blocks from cache, total transations: {}",
+		"fetched {} blocks, read {} blocks from cache, total transactions: {}",
 		finalized_height - min_height,
 		blocks.len() - (finalized_height - min_height) as usize,
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),

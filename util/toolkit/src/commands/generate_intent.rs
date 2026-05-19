@@ -1,8 +1,8 @@
 use crate::client::MidnightNodeClient;
 use crate::toolkit_js;
 use crate::toolkit_js::{EncodedZswapLocalState, RelativePath};
-use crate::tx_generator::builder::build_fork_aware_context_raw;
-use crate::tx_generator::source::Source;
+use crate::tx_generator::builder::build_fork_aware_context_cached;
+use crate::tx_generator::source::{Source, create_file_wallet_cache};
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::{
@@ -21,38 +21,38 @@ pub enum JsCommand {
 #[derive(Args, Debug)]
 pub struct CircuitCommandArgs {
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 
 	/// Seed for the source wallet zswap state
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	wallet_seed: Option<WalletSeed>,
+	pub wallet_seed: Option<WalletSeed>,
 
 	#[command(flatten)]
-	toolkit_js: toolkit_js::ToolkitJs,
+	pub toolkit_js: toolkit_js::ToolkitJs,
 
 	#[command(flatten)]
-	circuit_call: toolkit_js::CircuitArgs,
+	pub circuit_call: toolkit_js::CircuitArgs,
 
 	/// Custom serialized ledger parameters, otherwise the latest will be fetched.
 	#[arg(long)]
-	custom_ledger_parameters: Option<String>,
+	pub custom_ledger_parameters: Option<String>,
 
 	/// Dry-run - don't generate intent, just print out settings
 	#[arg(long, global = true)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
 pub struct DeployCommandArgs {
 	#[command(flatten)]
-	toolkit_js: toolkit_js::ToolkitJs,
+	pub toolkit_js: toolkit_js::ToolkitJs,
 
 	#[command(flatten)]
-	deploy: toolkit_js::DeployArgs,
+	pub deploy: toolkit_js::DeployArgs,
 
 	/// Dry-run - don't generate intent, just print out settings
 	#[arg(long, global = true)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
@@ -85,7 +85,7 @@ pub struct MaintainCircuitCommandArgs {
 pub struct GenerateIntentArgs {
 	/// Supported commands
 	#[clap(subcommand)]
-	js_command: JsCommand,
+	pub js_command: JsCommand,
 }
 
 pub async fn fetch_zswap_state(
@@ -94,6 +94,8 @@ pub async fn fetch_zswap_state(
 	coin_public: CoinPublicKey,
 	dry_run: bool,
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
+	let ledger_state_db = source.ledger_state_db.clone();
+	let fetch_cache = source.fetch_cache.clone();
 	let source = TxGenerator::source(source, dry_run).await?;
 	if dry_run {
 		log::info!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
@@ -105,13 +107,19 @@ pub async fn fetch_zswap_state(
 	}
 
 	let received_tx = source.get_txs().await?;
-	let fork_ctx = build_fork_aware_context_raw(&received_tx, &[wallet_seed]);
+	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
+	let fork_ctx = build_fork_aware_context_cached(
+		&[wallet_seed.clone()],
+		&received_tx,
+		wallet_cache.as_deref(),
+	)
+	.await;
 
 	Ok(fork_ctx.dispatch(
 		|ctx| {
 			let seed_v7 =
 				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(
-					wallet_seed,
+					wallet_seed.clone(),
 				);
 			let cpk_v7 =
 				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_coin_public_key(
@@ -124,7 +132,7 @@ pub async fn fetch_zswap_state(
 		|ctx| {
 			crate::commands::fork::ledger_8::generate_intent::fetch_zswap_state_from_context(
 				&ctx,
-				wallet_seed,
+				wallet_seed.clone(),
 				coin_public,
 			)
 		},
@@ -435,6 +443,7 @@ mod test {
 			&contract_address_hex,
 			"--signing",
 			&signing_key_hex,
+			"--new-authority",
 			&signing_key_hex,
 		];
 		let cli = Cli::parse_from(args);

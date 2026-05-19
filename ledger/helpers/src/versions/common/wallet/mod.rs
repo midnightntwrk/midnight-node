@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::super::{
-	DB, LedgerState, Storable, Utxo, WalletSeed,
+	DB, IntoWalletState, LedgerState, Storable, Utxo, WalletSeed,
 	mn_ledger::{error::EventReplayError, events::Event},
 	onchain_runtime::context::BlockContext,
 	zswap::Offer,
@@ -38,9 +38,9 @@ pub struct Wallet<D: DB + Clone> {
 
 impl<D: DB + Clone> Wallet<D> {
 	pub fn default(root_seed: WalletSeed, ledger_state: &LedgerState<D>) -> Self {
-		let shielded = ShieldedWallet::default(root_seed);
-		let unshielded = UnshieldedWallet::default(root_seed);
-		let dust = DustWallet::default(root_seed, Some(&ledger_state.parameters));
+		let shielded = ShieldedWallet::default(root_seed.clone());
+		let unshielded = UnshieldedWallet::default(root_seed.clone());
+		let dust = DustWallet::default(root_seed.clone(), Some(&ledger_state.parameters));
 
 		Self { root_seed: Some(root_seed), shielded, unshielded, dust }
 	}
@@ -48,7 +48,8 @@ impl<D: DB + Clone> Wallet<D> {
 	pub fn update_state_from_offers<P: Storable<D>>(&mut self, offers: &[Offer<P, D>]) {
 		let secret_keys = self.shielded.secret_keys().clone();
 		for offer in offers {
-			self.shielded.state = self.shielded.state.apply(&secret_keys, offer);
+			self.shielded.state =
+				self.shielded.state.apply(&secret_keys, offer).into_wallet_state();
 		}
 
 		// // TODO UNSHIELDED
@@ -57,7 +58,13 @@ impl<D: DB + Clone> Wallet<D> {
 		// }
 	}
 
-	pub fn update_dust_from_tx(&mut self, events: &[Event<D>]) -> Result<(), EventReplayError> {
+	pub fn update_dust_from_tx<'a>(
+		&mut self,
+		events: impl IntoIterator<Item = &'a Event<D>>,
+	) -> Result<(), EventReplayError>
+	where
+		D: 'a,
+	{
 		self.dust.replay_events(events)
 	}
 
@@ -79,15 +86,49 @@ impl<D: DB + Clone> Wallet<D> {
 	}
 
 	#[cfg(feature = "can-panic")]
-	pub fn increment_seed(s: &str) -> String {
+	pub fn increment_seed(s: &str) -> Result<String, &'static str> {
 		let num = u128::from_str_radix(s, 2).expect("Invalid wallet seed");
-		let result = num + 1;
+		let result = num.checked_add(1).ok_or("wallet seed overflow")?;
 		let width = s.len();
-		format!("{result:0width$b}")
+		Ok(format!("{result:0width$b}"))
 	}
 
 	#[cfg(feature = "can-panic")]
 	pub fn wallet_seed_decode(input: &str) -> WalletSeed {
 		input.parse().expect("failed to decode seed")
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::Wallet;
+	type TestDB = super::super::DefaultDB;
+
+	#[test]
+	fn test_increment_seed_normal() {
+		let input = "0000000000000000000000000000000000000000000000000000000000000010";
+		let expected = "0000000000000000000000000000000000000000000000000000000000000011";
+		assert_eq!(Wallet::<TestDB>::increment_seed(input), Ok(expected.to_string()));
+	}
+
+	#[test]
+	fn test_increment_seed_overflow() {
+		let max_u128 = "1".repeat(128);
+		assert_eq!(Wallet::<TestDB>::increment_seed(&max_u128), Err("wallet seed overflow"));
+	}
+
+	#[test]
+	fn test_increment_seed_preserves_width() {
+		let input = "00000001";
+		let result = Wallet::<TestDB>::increment_seed(input).unwrap();
+		assert_eq!(result.len(), input.len());
+		assert_eq!(result, "00000010");
+	}
+
+	#[test]
+	fn test_increment_seed_from_zero() {
+		let input = "0000000000000000000000000000000000000000000000000000000000000000";
+		let expected = "0000000000000000000000000000000000000000000000000000000000000001";
+		assert_eq!(Wallet::<TestDB>::increment_seed(input), Ok(expected.to_string()));
 	}
 }

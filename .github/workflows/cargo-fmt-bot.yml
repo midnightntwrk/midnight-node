@@ -22,7 +22,7 @@ jobs:
       - name: Check user permission
         if: github.event_name == 'issue_comment'
         id: check_permission
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const association = context.payload.comment.author_association;
@@ -42,7 +42,7 @@ jobs:
 
       - name: Add reaction to comment
         if: github.event_name == 'issue_comment'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             github.rest.reactions.createForIssueComment({
@@ -54,11 +54,13 @@ jobs:
 
       - name: Get PR branch
         id: pr
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
         with:
           script: |
             const prNumber = context.eventName === 'workflow_dispatch'
-              ? '${{ github.event.inputs.pr_number }}'
+              ? process.env.PR_NUMBER
               : context.issue.number;
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
@@ -76,7 +78,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ steps.pr.outputs.ref }}
+          ref: ${{ steps.pr.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
@@ -84,7 +86,7 @@ jobs:
         run: cargo fmt --all
 
       - name: Commit and push changes
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: commit
         with:
           script: |
@@ -155,7 +157,7 @@ jobs:
 
       - name: Post success comment
         if: env.CHANGES_MADE == 'true'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :white_check_mark: Cargo format complete! Changes have been committed.
@@ -163,7 +165,7 @@ jobs:
 
       - name: Post no-changes comment
         if: env.CHANGES_MADE == 'false'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :white_check_mark: Cargo format complete. No changes detected.
@@ -171,7 +173,7 @@ jobs:
 
       - name: Post failure comment
         if: failure()
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         with:
           message: |
             :x: Cargo format failed. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.

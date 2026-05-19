@@ -15,7 +15,9 @@ services:
       - ./configurations/busybox:/busybox
       - ./configurations/cardano/entrypoint.sh:/entrypoint.sh
       - ./configurations/cardano/topology-pool1.json:/shared/node-1-topology.json
+      - ./configurations/cardano/keys/cold.skey:/keys/cold.skey
       - ./configurations/cardano/keys/cold.vkey:/keys/cold.vkey
+      - ./configurations/cardano/governance-keys:/governance-keys
       - ./configurations/cardano/keys/kes.skey:/keys/kes.skey
       - ./configurations/cardano/keys/vrf.skey:/keys/vrf.skey
       - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
@@ -43,7 +45,7 @@ services:
 
   cardano-node-socat:
     container_name: cardano-node-1-socat
-    image: alpine/socat
+    image: alpine/socat@sha256:78b3a1f99ca8f9179c9dbbdcd09d9ceee4c5fa8349847a42cfa3d0c279be8022
     command: TCP-LISTEN:30000,fork,reuseaddr, UNIX-CONNECT:/data/node.socket
     depends_on:
       - cardano-node-1
@@ -72,12 +74,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/ready"]
-      interval: 5s
-      timeout: 5s
-      retries: 120
-      start_period: 10s
 
   kupo:
     container_name: kupo
@@ -170,7 +166,14 @@ services:
     container_name: postgres
     image: ${POSTGRES_IMAGE}
     platform: ${ARCHITECTURE}
-    command: postgres -c maintenance_work_mem=256MB -p ${POSTGRES_PORT}
+    command: >
+      postgres
+      -c maintenance_work_mem=256MB
+      -c ssl=on
+      -c ssl_cert_file=/etc/ssl/postgres/server.crt
+      -c ssl_key_file=/etc/ssl/postgres/server.key
+      -c max_connections=120
+      -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -185,6 +188,7 @@ services:
       - POSTGRES_MULTIPLE_DATABASES=cexplorer,qa_demo
     ports:
       - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    entrypoint: ["/bin/bash", "/usr/local/bin/custom-entrypoint.sh"]
     volumes:
       - ./configurations/postgres/entrypoint.sh:/usr/local/bin/custom-entrypoint.sh
       - ./configurations/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh
@@ -330,6 +334,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9933"
     ports:
       - "30333:30333"
       - "9933:9933"
@@ -357,6 +364,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9934"
     ports:
       - "30334:30334"
       - "9934:9934"
@@ -384,6 +394,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9935"
     ports:
       - "30335:30335"
       - "9935:9935"
@@ -413,6 +426,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9936"
     ports:
       - "30336:30336"
       - "9936:9936"
@@ -442,6 +458,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "30337:30337"
       - "9944:9944"
@@ -461,7 +480,7 @@ services:
       ogmios:
         condition: service_healthy
       contract-compiler:
-        condition: service_healthy
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     user: "0:0"

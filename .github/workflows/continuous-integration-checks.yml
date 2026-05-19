@@ -9,8 +9,7 @@ on:
   push:
     branches: ["main"]
 # no top level default permissions for security reasons
-permissions:
-  contents: read
+permissions: {}
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
@@ -18,24 +17,94 @@ jobs:
   run:
     name: Fomatting and Linting
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     env:
       FORCE_COLOR: 1
     steps:
+      - name: Checkout node repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
+      - name: Merge Conflict Finder
+        if: steps.guard.outputs.hit != 'true'
+        uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
+
+      - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
-      - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-
-      - name: Merge Conflict Finder
-        uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
-
       - name: Free disk space
+        if: steps.guard.outputs.hit != 'true'
         run: scripts/free-disk-space.sh
 
       - name: Run build
+        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly --ci +check
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  feature-unification:
+    name: Feature Unification Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
+      - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Free disk space
+        if: steps.guard.outputs.hit != 'true'
+        run: scripts/free-disk-space.sh
+
+      - name: Run feature unification check
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          . ./.envrc && earthly --ci +check-feature-unification
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

@@ -28,9 +28,24 @@ pub struct RunMidnight {
 	#[clap(flatten)]
 	pub run: sc_cli::RunCmd,
 
+	/// Disable automatic hardware benchmarks.
+	///
+	/// By default these benchmarks are automatically run at startup and measure
+	/// the CPU speed, the memory bandwidth and the disk speed.
+	///
+	/// The results are then printed in the logs, and also sent as part of
+	/// telemetry if telemetry is enabled.
+	#[arg(long)]
+	pub no_hardware_benchmarks: bool,
+
 	/// Rejects transactions that contain Deploy and Maintain Operations from being accepted to the transaction pool.
 	#[arg(long)]
 	pub filter_deploy_txs: bool,
+
+	/// Maximum number of concurrent finality RPC subscriptions (GRANDPA + BEEFY combined).
+	/// Connections that exceed this limit will have their subscription requests rejected.
+	#[arg(long, default_value_t = 512)]
+	pub rpc_max_finality_subscriptions: u32,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -194,8 +209,8 @@ pub struct VerifyLedgerStateGenesisCmd {
 	#[arg(long)]
 	pub network: Option<String>,
 
-	/// Path to cardano-tip.json containing the genesis timestamp. If not provided,
-	/// defaults to the hardcoded Glacier Drop start timestamp.
+	/// Path to cardano-tip.json containing the genesis timestamp (required for timestamp
+	/// verification)
 	#[arg(long)]
 	pub cardano_tip_config: Option<std::path::PathBuf>,
 }
@@ -236,6 +251,11 @@ pub struct VerifyAuthScriptCmd {
 	/// Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
 	#[arg(long = "permissioned-candidates-addresses")]
 	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing reserve addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long = "reserve-addresses")]
+	pub reserve_addresses: Option<std::path::PathBuf>,
 
 	/// Path to JSON file containing the expected authorization policy ID.
 	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
@@ -282,6 +302,30 @@ pub struct VerifyIcsAuthScriptCmd {
 }
 
 #[derive(Debug, Parser)]
+pub struct VerifyGenesisMessageCmd {
+	/// Path to the chain-spec-raw.json file to inspect
+	#[arg(long)]
+	pub chain_spec: std::path::PathBuf,
+
+	/// Path to message-config.json containing the expected genesis remark message.
+	/// Defaults to res/<CFG_PRESET>/message-config.json
+	#[arg(long)]
+	pub message_config: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyGenesisTimestampCmd {
+	/// Path to the chain-spec-raw.json file to inspect
+	#[arg(long)]
+	pub chain_spec: std::path::PathBuf,
+
+	/// Path to cardano-tip.json containing the expected genesis timestamp.
+	/// Defaults to res/<CFG_PRESET>/cardano-tip.json
+	#[arg(long)]
+	pub cardano_tip_config: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
 pub struct VerifyPermissionedCandidatesAuthScriptCmd {
 	/// The Cardano block hash assumed to be the latest for this query.
 	///
@@ -293,6 +337,25 @@ pub struct VerifyPermissionedCandidatesAuthScriptCmd {
 	/// Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
 	#[arg(long = "permissioned-candidates-addresses")]
 	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyReserveAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing reserve addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long = "reserve-addresses")]
+	pub reserve_addresses: Option<std::path::PathBuf>,
 
 	/// Path to JSON file containing the expected authorization policy ID.
 	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
@@ -346,9 +409,9 @@ pub enum Subcommand {
 	/// the security_parameter from pc-chain-config.json).
 	VerifyCardanoTipFinalized(VerifyCardanoTipFinalizedCmd),
 
-	/// Verify that all upgradable contracts (Federated Authority, ICS, Permissioned Candidates)
-	/// use the expected authorization script. This runs all three verification commands and
-	/// checks that they all share the same authorization script.
+	/// Verify that all upgradable contracts (Federated Authority, ICS, Permissioned Candidates,
+	/// Reserve) use the expected authorization script. This runs all four verification commands
+	/// and checks that they all share the same authorization script.
 	VerifyAuthScript(VerifyAuthScriptCmd),
 
 	/// Verify that the federated authority contracts (Council, Technical Committee) use the
@@ -371,6 +434,25 @@ pub enum Subcommand {
 	/// 2. The two_stage_policy_id is embedded in the compiled_code
 	/// 3. The authorization script observed on Cardano matches the expected value
 	VerifyPermissionedCandidatesAuthScript(VerifyPermissionedCandidatesAuthScriptCmd),
+
+	/// Verify that the reserve validator contract uses the expected authorization script.
+	/// This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyReserveAuthScript(VerifyReserveAuthScriptCmd),
+
+	/// Verify that the genesis remark message in chain-spec-raw.json matches the expected
+	/// message from message-config.json. This checks:
+	/// 1. A System::remark extrinsic exists in genesis_extrinsics
+	/// 2. The remark content matches the expected message
+	VerifyGenesisMessage(VerifyGenesisMessageCmd),
+
+	/// Verify that the genesis timestamp in chain-spec-raw.json matches the expected
+	/// timestamp from cardano-tip.json. This checks:
+	/// 1. A Timestamp::set extrinsic exists in genesis_extrinsics
+	/// 2. The timestamp value matches cardano-tip.json (seconds * 1000 = milliseconds)
+	VerifyGenesisTimestamp(VerifyGenesisTimestampCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),

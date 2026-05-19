@@ -1,0 +1,14 @@
+{
+  "extends": "@tsconfig/node24/tsconfig.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["ES2022"],
+    "sourceMap": true,
+    "strict": true,
+    "outDir": "dist",
+    "declaration": true,
+    "rootDir": "src",
+    "resolveJsonModule": true
+  }
+}

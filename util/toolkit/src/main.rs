@@ -85,13 +85,25 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 						.with_writer(std::io::stderr)
 						.init();
 				} else {
+					// Plain format (no timestamp/level) keeps CLI output stable for trycmd README
+					// snapshots and matches historical `log` output users see in terminals.
 					tracing_subscriber::fmt()
+						.without_time()
+						.with_level(false)
 						.with_env_filter(env_filter)
 						.with_writer(std::io::stderr)
 						.with_target(cli.verbose)
 						.with_file(cli.verbose)
 						.with_line_number(cli.verbose)
 						.init();
+				}
+
+				if let Some(n) = cli.replay_concurrency {
+					rayon::ThreadPoolBuilder::new()
+						.num_threads(n)
+						.build_global()
+						.expect("failed to configure global rayon thread pool");
+					log::info!("Rayon global pool set to {} threads", n);
 				}
 
 				let res = run_command(cli.command).await;

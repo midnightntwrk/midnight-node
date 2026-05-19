@@ -11,21 +11,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "std")]
-use std::path::Path;
+use midnight_primitives_ledger::LedgerStorageExt;
 
 use super::LOG_TARGET;
 use super::ledger_storage_local::{
-	db::ParityDb,
+	db::{ParityDb, paritydb::OwnedDb},
 	storage::{try_get_default_storage, unsafe_drop_default_storage},
 };
 
+// Storage may be registered under either of two `ParityDb` instantiations
+// depending on the operator's `storage_separation` config: the default
+// (column offset 0) for `Separate`, or column offset = NUM_COLUMNS_POLKADOT
+// for `Unified`. Drop whichever exists.
+type DbSeparate = ParityDb;
+type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
+
 pub fn drop_default_storage_if_exists() {
-	if try_get_default_storage::<ParityDb>().is_some() {
-		unsafe_drop_default_storage::<ParityDb>();
+	if try_get_default_storage::<DbSeparate>().is_some() {
+		unsafe_drop_default_storage::<DbSeparate>();
 		log::info!(
 			target: LOG_TARGET,
-			"Dropped HF storage after rollback"
+			"Dropped HF storage after rollback (separate)"
+		);
+	}
+	if try_get_default_storage::<DbUnified>().is_some() {
+		unsafe_drop_default_storage::<DbUnified>();
+		log::info!(
+			target: LOG_TARGET,
+			"Dropped HF storage after rollback (unified)"
 		);
 	}
 }
@@ -38,19 +51,48 @@ use {
 	super::transient_crypto_local::commitment::PureGeneratorPedersen,
 };
 
-pub fn get_root(state: &[u8]) -> Vec<u8> {
+#[derive(Debug)]
+pub enum GetRootError {
+	DeserializationFailure(std::io::Error),
+	NetworkIdMismatch,
+	SerializationFailure(std::io::Error),
+}
+
+impl core::fmt::Display for GetRootError {
+	fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+		match self {
+			GetRootError::DeserializationFailure(e) => {
+				write!(f, "Failed to deserialize genesis state: {e}")
+			},
+			GetRootError::NetworkIdMismatch => {
+				write!(f, "genesis state network id != configured chainspec network id")
+			},
+			GetRootError::SerializationFailure(e) => {
+				write!(f, "Failed to serialize genesis state: {e}")
+			},
+		}
+	}
+}
+
+pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRootError> {
 	// Get empty state key
 	use super::api::Ledger;
 	use super::ledger_storage_local::{DefaultDB, storage::default_storage};
 
 	let state: super::mn_ledger_local::structure::LedgerState<DefaultDB> =
 		super::midnight_serialize_local::tagged_deserialize(state)
-			.expect("Failed to deserialize initial state");
+			.map_err(GetRootError::DeserializationFailure)?;
 	let state = Ledger::new(state);
+
+	if network_id.is_some_and(|n| state.state.network_id != n) {
+		return Err(GetRootError::NetworkIdMismatch);
+	}
+
 	let state = default_storage::<DefaultDB>().arena.alloc(state);
 	let mut bytes = vec![];
-	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes).unwrap();
-	bytes
+	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
+		.map_err(GetRootError::SerializationFailure)?;
+	Ok(bytes)
 }
 
 #[cfg(feature = "std")]
@@ -75,7 +117,7 @@ where
 }
 
 #[cfg(feature = "std")]
-pub fn init_storage_paritydb<P: AsRef<Path>>(
+pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	dir: P,
 	genesis_state: &[u8],
 	cache_size: usize,
@@ -95,4 +137,36 @@ pub fn init_storage_paritydb<P: AsRef<Path>>(
 	}
 
 	alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
+}
+
+#[cfg(feature = "std")]
+pub fn set_init_options_paritydb(
+	options: &mut parity_db::Options,
+	column_offset: u8,
+	use_compression: bool,
+) {
+	midnight_storage_core::db::paritydb::set_init_options(options, column_offset, use_compression);
+}
+
+#[cfg(feature = "std")]
+pub fn init_storage_paritydb_unified<
+	D: std::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+	const COLUMN_OFFSET: u8,
+>(
+	db_instance: D,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> Vec<u8> {
+	use super::base_crypto_local::signatures::Signature;
+	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
+
+	let res = set_default_storage(|| {
+		let db = ParityDb::<sha2::Sha256, D, COLUMN_OFFSET>::from_existing_db(db_instance);
+		Storage::new(cache_size, db)
+	});
+	if res.is_err() {
+		log::warn!("Warning: Failed to set default storage: {res:?}");
+	}
+
+	alloc_with_initial_state::<Signature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(genesis_state)
 }

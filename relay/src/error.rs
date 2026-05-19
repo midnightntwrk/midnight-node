@@ -1,4 +1,4 @@
-use subxt::ext::subxt_rpcs;
+use subxt::rpcs;
 
 use crate::BlockNumber;
 
@@ -12,9 +12,15 @@ pub enum Error {
 
 	#[error("Subxt Error: {0}")]
 	Subxt(#[from] subxt::Error),
+	#[error("online client error: {0}")]
+	OnlineClientError(#[from] subxt::error::OnlineClientError),
+	#[error("online client at block error: {0}")]
+	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
+	#[error("runtime api error: {0}")]
+	RuntimeApiError(#[from] subxt::error::RuntimeApiError),
 
 	#[error("Rpc Error: {0}")]
-	Rpc(#[from] subxt_rpcs::Error),
+	Rpc(#[from] rpcs::Error),
 
 	#[error("Codec Error: {0}")]
 	Codec(#[from] parity_scale_codec::Error),

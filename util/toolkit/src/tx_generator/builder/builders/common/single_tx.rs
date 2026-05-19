@@ -11,14 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, convert::Infallible, sync::Arc};
+use std::{
+	collections::{HashMap, HashSet},
+	convert::Infallible,
+	sync::Arc,
+};
 
 use super::ledger_helpers_local::{
-	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
-	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
-	Segment, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,
-	UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet, UtxoOutputInfo, UtxoSpendInfo,
-	WalletAddress, WalletSeed,
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, CoinSelectionStrategy,
+	DefaultDB, FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo,
+	ProofProvider, Segment, ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet,
+	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
+	UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletAddress,
+	WalletSeed,
 };
 use async_trait::async_trait;
 
@@ -29,7 +34,7 @@ use crate::{
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
-const MAX_GUARANTEED_OUTPUTS: usize = 2;
+pub(crate) const MAX_GUARANTEED_OUTPUTS: usize = 2;
 const MAX_GUARANTEED_INPUTS_OUTPUTS: usize = 3;
 
 pub struct SingleTxBuilder {
@@ -42,7 +47,9 @@ pub struct SingleTxBuilder {
 	source_seed: WalletSeed,
 	funding_seed: Option<WalletSeed>,
 	destination_address: Vec<WalletAddress>,
+	input_utxos: Vec<UtxoId>,
 	rng_seed: Option<[u8; 32]>,
+	coin_selection: CoinSelectionStrategy,
 }
 
 impl SingleTxBuilder {
@@ -66,7 +73,16 @@ impl SingleTxBuilder {
 				.iter()
 				.map(convert_wallet_address)
 				.collect(),
+			input_utxos: {
+				let mut seen: HashSet<([u8; 32], u32)> = HashSet::new();
+				args.input_utxos
+					.iter()
+					.filter(|id| seen.insert((id.intent_hash.0.0, id.output_number)))
+					.map(convert_utxo_id)
+					.collect()
+			},
 			rng_seed: args.rng_seed,
+			coin_selection: args.coin_selection,
 		}
 	}
 
@@ -84,7 +100,7 @@ impl BuildTxs for SingleTxBuilder {
 		let spin = Spin::new("generating single tx...");
 
 		let context = self.context.clone();
-		let funding_seed = self.funding_seed.unwrap_or(self.source_seed);
+		let funding_seed = self.funding_seed.clone().unwrap_or(self.source_seed.clone());
 
 		// - Transaction info
 		let mut tx_info = StandardTrasactionInfo::new_from_context(
@@ -116,12 +132,15 @@ impl BuildTxs for SingleTxBuilder {
 		}
 
 		if !shielded_wallets.is_empty() {
-			let offer = self.build_shielded_offer(
+			let offer = build_shielded_offer(
 				context.clone(),
-				self.source_seed,
+				self.source_seed.clone(),
 				shielded_wallets,
 				self.shielded_amount.unwrap(),
-			);
+				self.shielded_token_type,
+				self.coin_selection,
+			)
+			.expect("insufficient shielded coins for transfer");
 			if offer.outputs.len() > MAX_GUARANTEED_OUTPUTS {
 				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
 			} else {
@@ -130,12 +149,18 @@ impl BuildTxs for SingleTxBuilder {
 		}
 
 		if !unshielded_wallets.is_empty() {
-			let intents = self.build_unshielded_intents(
+			let intents = build_unshielded_intents(
 				context.clone(),
-				self.source_seed,
+				self.source_seed.clone(),
 				unshielded_wallets,
 				self.unshielded_amount.unwrap(),
-			);
+				self.unshielded_token_type,
+				&self.input_utxos,
+				self.coin_selection,
+			)
+			.unwrap_or_else(|error| {
+				panic!("failed to select unshielded UTXOs for transfer: {error}")
+			});
 			tx_info.set_intents(intents);
 		}
 
@@ -158,130 +183,191 @@ impl BuildTxs for SingleTxBuilder {
 	}
 }
 
-impl SingleTxBuilder {
-	fn build_shielded_offer(
-		&self,
-		context: Arc<LedgerContext<DefaultDB>>,
-		funding_seed: WalletSeed,
-		output_wallets: Vec<ShieldedWallet<DefaultDB>>,
-		amount: u128,
-	) -> OfferInfo<DefaultDB> {
-		let total_required = amount
-			.checked_mul(output_wallets.len() as u128)
-			.expect("shielded amount overflow");
+pub(crate) fn build_shielded_offer(
+	context: Arc<LedgerContext<DefaultDB>>,
+	funding_seed: WalletSeed,
+	output_wallets: Vec<ShieldedWallet<DefaultDB>>,
+	amount: u128,
+	token_type: ShieldedTokenType,
+	coin_selection: CoinSelectionStrategy,
+) -> Result<OfferInfo<DefaultDB>, ShieldedCoinSelectionError> {
+	let total_required = amount
+		.checked_mul(output_wallets.len() as u128)
+		.ok_or(ShieldedCoinSelectionError::ArithmeticOverflow)?;
 
-		let input_info = InputInfo {
-			origin: funding_seed,
-			token_type: self.shielded_token_type,
-			value: total_required,
-		};
+	let (input_infos, change) = InputInfo::coins_to_cover_value(
+		context,
+		funding_seed.clone(),
+		total_required,
+		token_type,
+		coin_selection,
+	)?;
 
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![Box::new(input_info)];
+	let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = input_infos
+		.into_iter()
+		.map(|input| {
+			let input: Box<dyn BuildInput<DefaultDB>> = Box::new(input);
+			input
+		})
+		.collect();
 
-		let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>>;
+	let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = output_wallets
+		.iter()
+		.map(|wallet| {
+			let output: Box<dyn BuildOutput<DefaultDB>> =
+				Box::new(OutputInfo { destination: wallet.clone(), token_type, value: amount });
+			output
+		})
+		.collect();
 
-		// Outputs info
-		outputs_info = output_wallets
-			.iter()
-			.map(|wallet| {
-				let output: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
-					destination: wallet.clone(),
-					token_type: self.shielded_token_type,
-					value: amount,
-				});
-				output
-			})
-			.collect();
-
-		let funding_wallet = context.clone().wallet_from_seed(funding_seed);
-		let input_amount = input_info.min_match_coin(&funding_wallet.shielded.state).value;
-		let remaining_coins = input_amount
-			.checked_sub(total_required)
-			.expect("insufficient shielded input for total required amount");
-
-		// Create an `Output` to its self with the remaining coins to avoid spending the whole `Input`
-		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
-			destination: funding_seed,
-			token_type: self.shielded_token_type,
-			value: remaining_coins,
-		});
-
+	if change > 0 {
+		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> =
+			Box::new(OutputInfo { destination: funding_seed, token_type, value: change });
 		outputs_info.push(output_info_refund);
-
-		OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] }
 	}
 
-	fn build_unshielded_intents(
-		&self,
-		context: Arc<LedgerContext<DefaultDB>>,
-		source_seed: WalletSeed,
-		output_wallets: Vec<UnshieldedWallet>,
-		amount_to_send_per_output: u128,
-	) -> HashMap<u16, Box<dyn BuildIntent<DefaultDB>>> {
-		let total_required = amount_to_send_per_output
-			.checked_mul(output_wallets.len() as u128)
-			.expect("unshielded amount overflow");
+	Ok(OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] })
+}
 
-		let (inputs_info, remaining_nights) = UtxoSpendInfo::utxos_to_cover_value(
-			context.clone(),
-			source_seed,
+pub(crate) fn build_unshielded_intents(
+	context: Arc<LedgerContext<DefaultDB>>,
+	source_seed: WalletSeed,
+	output_wallets: Vec<UnshieldedWallet>,
+	amount_to_send_per_output: u128,
+	token_type: UnshieldedTokenType,
+	input_utxos: &[UtxoId],
+	coin_selection: CoinSelectionStrategy,
+) -> Result<HashMap<u16, Box<dyn BuildIntent<DefaultDB>>>, UtxoSelectionError> {
+	let total_required = amount_to_send_per_output
+		.checked_mul(output_wallets.len() as u128)
+		.ok_or(UtxoSelectionError::ArithmeticOverflow)?;
+
+	let (inputs_info, remaining_nights) = if input_utxos.is_empty() {
+		UtxoSpendInfo::utxos_to_cover_value(
+			context,
+			source_seed.clone(),
 			total_required,
-			self.unshielded_token_type,
+			token_type,
+			coin_selection,
+		)?
+	} else {
+		UtxoSpendInfo::utxos_by_ids(
+			context,
+			source_seed.clone(),
+			total_required,
+			token_type,
+			input_utxos,
+		)?
+	};
+
+	let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs_info
+		.into_iter()
+		.map(|input| {
+			let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
+			input
+		})
+		.collect();
+
+	// Outputs info
+	let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
+		.iter()
+		.map(|wallet| {
+			let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
+				value: amount_to_send_per_output,
+				owner: wallet.clone(),
+				token_type,
+			});
+			output
+		})
+		.collect();
+
+	// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
+	let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB>> =
+		Box::new(UtxoOutputInfo { value: remaining_nights, owner: source_seed, token_type });
+
+	if remaining_nights > 0 {
+		outputs_info.push(output_info_refund);
+	}
+
+	let inputs_outputs_len = inputs_info.len() + outputs_info.len();
+	let unshielded_offer = UnshieldedOfferInfo { inputs: inputs_info, outputs: outputs_info };
+
+	let intent_info = if inputs_outputs_len > MAX_GUARANTEED_INPUTS_OUTPUTS {
+		IntentInfo {
+			guaranteed_unshielded_offer: None,
+			fallible_unshielded_offer: Some(unshielded_offer),
+			actions: vec![],
+		}
+	} else {
+		IntentInfo {
+			guaranteed_unshielded_offer: Some(unshielded_offer),
+			fallible_unshielded_offer: None,
+			actions: vec![],
+		}
+	};
+	let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
+
+	let mut intents = HashMap::new();
+	intents.insert(Segment::Fallible.into(), boxed_intent);
+
+	Ok(intents)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::super::ledger_helpers_local::{
+		HashOutput, LedgerContext, ShieldedWallet, UnshieldedWallet,
+	};
+	use super::*;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::Short([0u8; 16])
+	}
+
+	fn test_seed_2() -> WalletSeed {
+		WalletSeed::Short([1u8; 16])
+	}
+
+	fn test_context() -> Arc<LedgerContext<DefaultDB>> {
+		Arc::new(LedgerContext::new("test"))
+	}
+
+	#[test]
+	fn build_shielded_offer_mul_overflow_returns_arithmetic_error() {
+		let context = test_context();
+		let wallet1 = ShieldedWallet::default(test_seed());
+		let wallet2 = ShieldedWallet::default(test_seed_2());
+		let token_type = ShieldedTokenType(HashOutput([0u8; 32]));
+
+		let result = build_shielded_offer(
+			context,
+			test_seed(),
+			vec![wallet1, wallet2],
+			u128::MAX,
+			token_type,
+			CoinSelectionStrategy::default(),
 		);
 
-		let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs_info
-			.into_iter()
-			.map(|input| {
-				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
-				input
-			})
-			.collect();
+		assert!(matches!(result, Err(ShieldedCoinSelectionError::ArithmeticOverflow)));
+	}
 
-		// Outputs info
-		let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
-			.iter()
-			.map(|wallet| {
-				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
-					value: amount_to_send_per_output,
-					owner: wallet.clone(),
-					token_type: self.unshielded_token_type,
-				});
-				output
-			})
-			.collect();
+	#[test]
+	fn build_unshielded_intents_mul_overflow_returns_arithmetic_error() {
+		let context = test_context();
+		let wallet1 = UnshieldedWallet::default(test_seed());
+		let wallet2 = UnshieldedWallet::default(test_seed_2());
+		let token_type = UnshieldedTokenType(HashOutput([0u8; 32]));
 
-		// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
-		let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
-			value: remaining_nights,
-			owner: source_seed,
-			token_type: self.unshielded_token_type,
-		});
+		let result = build_unshielded_intents(
+			context,
+			test_seed(),
+			vec![wallet1, wallet2],
+			u128::MAX,
+			token_type,
+			&[],
+			CoinSelectionStrategy::default(),
+		);
 
-		if remaining_nights > 0 {
-			outputs_info.push(output_info_refund);
-		}
-
-		let inputs_outputs_len = inputs_info.len() + outputs_info.len();
-		let unshielded_offer = UnshieldedOfferInfo { inputs: inputs_info, outputs: outputs_info };
-
-		let intent_info = if inputs_outputs_len > MAX_GUARANTEED_INPUTS_OUTPUTS {
-			IntentInfo {
-				guaranteed_unshielded_offer: None,
-				fallible_unshielded_offer: Some(unshielded_offer),
-				actions: vec![],
-			}
-		} else {
-			IntentInfo {
-				guaranteed_unshielded_offer: Some(unshielded_offer),
-				fallible_unshielded_offer: None,
-				actions: vec![],
-			}
-		};
-		let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
-
-		let mut intents = HashMap::new();
-		intents.insert(Segment::Fallible.into(), boxed_intent);
-
-		intents
+		assert!(matches!(result, Err(UtxoSelectionError::ArithmeticOverflow)));
 	}
 }

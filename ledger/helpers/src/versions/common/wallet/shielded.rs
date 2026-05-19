@@ -14,9 +14,9 @@
 #![cfg(feature = "can-panic")]
 
 use super::super::{
-	CoinPublicKey, DB, DerivationPath, DeriveSeed, Deserializable, EncryptionPublicKey,
-	HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK, HashOutput,
-	IntoWalletAddress, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
+	CoinPublicKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable,
+	EncryptionPublicKey, HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK,
+	HashOutput, IntoWalletAddress, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
 	WalletState,
 };
 use bech32::{Bech32m, Hrp};
@@ -67,9 +67,13 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 		Self::from_seed(derived_seed)
 	}
 
-	pub fn from_path(root_seed: WalletSeed, path: &DerivationPath) -> Self {
+	pub fn from_path(
+		root_seed: WalletSeed,
+		path: &DerivationPath,
+	) -> Result<Self, DerivationPathError> {
+		path.validate_role(&[Role::Zswap])?;
 		let derived_seed = Self::derive_seed(root_seed, path);
-		Self::from_seed(derived_seed)
+		Ok(Self::from_seed(derived_seed))
 	}
 
 	pub fn from_pub_keys(
@@ -102,6 +106,34 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 			.expect("encryption secret key can be serialized");
 
 		bech32::encode::<Bech32m>(hrp, &data).expect("viewing key can be bech32 encoded")
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::super::super::{DefaultDB, DerivationPath, Role, WalletSeed};
+	use super::ShieldedWallet;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::from([0u8; 32])
+	}
+
+	#[test]
+	fn from_path_accepts_zswap_role() {
+		let path = DerivationPath::default_for_role(Role::Zswap);
+		let _wallet = ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).unwrap();
+	}
+
+	#[test]
+	fn from_path_rejects_dust_role() {
+		let path = DerivationPath::default_for_role(Role::Dust);
+		assert!(ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).is_err());
+	}
+
+	#[test]
+	fn from_path_rejects_unshielded_role() {
+		let path = DerivationPath::default_for_role(Role::UnshieldedExternal);
+		assert!(ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).is_err());
 	}
 }
 

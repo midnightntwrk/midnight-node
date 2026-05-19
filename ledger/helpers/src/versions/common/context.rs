@@ -21,14 +21,35 @@ use super::{
 	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
-use hex::{ToHex, encode as hex_encode};
+use hex::encode as hex_encode;
 use lazy_static::lazy_static;
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Mutex,
 	time::{SystemTime, UNIX_EPOCH},
 };
+use thiserror::Error;
 use tokio::sync::Mutex as MutexTokio;
+
+#[derive(Debug, Error)]
+pub enum LedgerContextError {
+	#[error("mutex poisoned: {0}")]
+	MutexPoisoned(String),
+	#[error("invalid transaction: {0}")]
+	InvalidTransaction(String),
+	#[error("cost calculation failed: {0}")]
+	CostCalculation(String),
+	#[error("block update failed: {0}")]
+	BlockUpdate(String),
+	#[error(
+		"state root mismatch: expected {expected}, actual {actual} (parent block hash: {parent_block_hash})"
+	)]
+	StateRootMismatch { expected: String, actual: String, parent_block_hash: String },
+	#[error("deserialization failed: {0}")]
+	Deserialization(String),
+	#[error("dust update failed for tx {tx_hash}: {reason}")]
+	DustUpdate { tx_hash: String, reason: String },
+}
 
 lazy_static! {
 	pub static ref DEFAULT_RESOLVER: Resolver = Resolver::new(
@@ -97,11 +118,11 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let resolver = MutexTokio::new(&*DEFAULT_RESOLVER);
 
 		for seed in wallet_seeds {
-			let wallet = Wallet::default(*seed, &ledger_state);
+			let wallet = Wallet::default(seed.clone(), &ledger_state);
 			wallets
 				.lock()
 				.expect("Error locking `LedgerContext` wallets")
-				.insert(*seed, wallet);
+				.insert(seed.clone(), wallet);
 		}
 
 		Self {
@@ -112,32 +133,28 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 	}
 
-	pub fn update_ledger_state_from_txs<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+	/// Apply all transactions in a block to the ledger, returning events without
+	/// processing wallets. Also applies `post_block_update` (fee adjustments).
+	fn apply_txs_collect_events<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		txs: &[SerdeTransaction<S, P, D>],
 		block_context: &BlockContext,
-	) where
+	) -> Result<Vec<Event<D>>, LedgerContextError>
+	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
 		let mut total_cost = SyntheticCost::ZERO;
+		let mut all_events: Vec<Event<D>> = Vec::new();
 		for tx in txs {
-			let (events, cost) = self.update_from_tx(tx, block_context);
-			for wallet in
-				self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
-			{
-				wallet.update_dust_from_tx(&events).unwrap_or_else(|e| {
-					panic!(
-						"failed to replay dust events for tx {}: {e}",
-						tx.transaction_hash().0.0.encode_hex::<String>()
-					)
-				});
-			}
+			let (events, cost) = self.update_from_tx(tx, block_context)?;
+			all_events.extend(events);
 			total_cost = total_cost + cost;
 		}
 
-		// Only when done processing txs for the same block, it's time to call `post_block_update`
-		let mut latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let mut latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		let block_limits = latest_ledger_state.parameters.limits.block_limits;
 		let normalized_fullness =
 			clamp_and_normalize(&total_cost, &block_limits, "update_from_block");
@@ -145,66 +162,92 @@ impl<D: DB + Clone> LedgerContext<D> {
 		*latest_ledger_state = Sp::new(
 			latest_ledger_state
 				.post_block_update(block_context.tblock, normalized_fullness, overall_fullness)
-				.expect("Error applying block updates"),
+				.map_err(|e| LedgerContextError::BlockUpdate(format!("{e:?}")))?,
 		);
+
+		Ok(all_events)
 	}
 
-	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) {
-		let mut latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
-		let new_state: LedgerState<D> =
-			deserialize(state).expect("failed to deserialize state bytes");
+	/// Replay accumulated dust events to all wallets in parallel (no TTL processing).
+	pub fn update_dust_from_events(&self, events: &[Event<D>])
+	where
+		D: Sync,
+	{
+		use rayon::prelude::*;
+		log::debug!(
+			"[perf] flushing {} events for {} wallets",
+			events.len(),
+			self.wallets.lock().expect("lock").len(),
+		);
+		self.wallets
+			.lock()
+			.expect("Error locking `LedgerContext` wallets")
+			.par_iter_mut()
+			.for_each(|(_, wallet)| {
+				wallet
+					.update_dust_from_tx(events)
+					.unwrap_or_else(|e| panic!("failed to replay dust events: {e}"));
+			});
+	}
+
+	pub fn update_dust_from_block(&self, block_context: &BlockContext)
+	where
+		D: Sync,
+	{
+		use rayon::prelude::*;
+		self.wallets
+			.lock()
+			.expect("Error locking `LedgerContext` wallets")
+			.par_iter_mut()
+			.for_each(|(_, wallet)| {
+				wallet.update_dust_from_block(block_context);
+			});
+	}
+
+	pub fn update_ledger_state_from_bytes(&self, state: &[u8]) -> Result<(), LedgerContextError> {
+		let mut latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
+		let new_state: LedgerState<D> = deserialize(state)
+			.map_err(|e| LedgerContextError::Deserialization(format!("{e:?}")))?;
 		*latest_ledger_state = Sp::new(new_state);
+		Ok(())
 	}
 
+	/// Updates ledger state with transactions from a block and produces events. Caller must
+	/// eventually call `update_dust_from_events` with accumulated events and `update_dust_from_block`
+	/// with last processed block if he needs `self.wallets` to be up to date.
+	///
+	/// Safety: only use during cold-start replay where no concurrent `spend()`/`mark_spent()`
+	/// calls are active — `pending_until` and `spent_utxos` clearing depend on per-block
+	/// `process_ttls` which is deferred. This is naturally satisfied by the toolkit, which
+	/// always replays all blocks to reconstruct state before building any transactions.
 	pub fn update_from_block<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		txs: &[SerdeTransaction<S, P, D>],
 		block_context: &BlockContext,
 		state_root: Option<&Vec<u8>>,
 		state: Option<&Vec<u8>>,
-	) where
+	) -> Result<Vec<Event<D>>, LedgerContextError>
+	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		self.update_ledger_state_from_txs(txs, block_context);
+		let events = self.apply_txs_collect_events(txs, block_context)?;
 
-		// This case is hit for the genesis block - in this case, we still need to process the txs
-		// to set dust info correctly for all the wallets, but we want the final ledger state for
-		// this block to == the final state in the genesis block
-		//
-		// Values used in the ledger state constructor are not directly observable in the genesis
-		// block, so it's no possible to reconstruct the ledger state by applying the genesis
-		// transactions to an empty state.
+		// Genesis block: overwrite ledger state with the canonical genesis state,
+		// since constructor params aren't directly observable from genesis txs.
 		if let Some(state) = state {
-			self.update_ledger_state_from_bytes(state);
+			self.update_ledger_state_from_bytes(state)?;
 		}
 
-		// Only when done processing txs for the same block, it's time to call `post_block_update`
-		let latest_ledger_state =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
-		if let Some(expected_root) = state_root {
-			match Self::compute_state_root(&*latest_ledger_state) {
-				Some(actual_root) if actual_root != *expected_root => {
-					panic!(
-						"Ledger state root mismatch: expected {}, actual {}. Parent block hash: {}",
-						hex_encode(expected_root),
-						hex_encode(&actual_root),
-						hex_encode(block_context.parent_block_hash.0),
-					);
-				},
-				Some(_) => {},
-				None => println!("Failed to compute local ledger state root for comparison"),
-			}
-		}
-		// Update Local Wallets
-		for wallet in
-			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
-		{
-			wallet.update_dust_from_block(block_context);
-		}
-		// Update latest block context
-		*self.latest_block_context.lock().expect("error locking latest_block_context") =
-			Some(block_context.clone());
+		self.verify_state_root(block_context, state_root)?;
+
+		*self.latest_block_context.lock().map_err(|e| {
+			LedgerContextError::MutexPoisoned(format!("latest_block_context: {e:?}"))
+		})? = Some(block_context.clone());
+
+		Ok(events)
 	}
 
 	pub fn latest_block_context(&self) -> BlockContext {
@@ -224,6 +267,31 @@ impl<D: DB + Clone> LedgerContext<D> {
 			})
 	}
 
+	fn verify_state_root(
+		&self,
+		block_context: &BlockContext,
+		state_root: Option<&Vec<u8>>,
+	) -> Result<(), LedgerContextError> {
+		let latest_ledger_state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
+		if let Some(expected_root) = state_root {
+			match Self::compute_state_root(&*latest_ledger_state) {
+				Some(actual_root) if actual_root != *expected_root => {
+					return Err(LedgerContextError::StateRootMismatch {
+						expected: hex_encode(expected_root),
+						actual: hex_encode(&actual_root),
+						parent_block_hash: hex_encode(block_context.parent_block_hash.0),
+					});
+				},
+				Some(_) => {},
+				None => println!("Failed to compute local ledger state root for comparison"),
+			}
+		}
+		Ok(())
+	}
+
 	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
 		let storage = default_storage::<D>();
 		let ledger = StorableLedgerState::new(state.clone());
@@ -235,12 +303,14 @@ impl<D: DB + Clone> LedgerContext<D> {
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
 		block_context: &BlockContext,
-	) -> (Vec<Event<D>>, SyntheticCost)
+	) -> Result<(Vec<Event<D>>, SyntheticCost), LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let mut ledger_state_guard =
-			self.ledger_state.lock().expect("Error locking `LedgerContext` ledger_state");
+		let mut ledger_state_guard = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
 		let tx_context = TransactionContext {
 			ref_state: (**ledger_state_guard).clone(),
 			block_context: block_context.clone(),
@@ -261,10 +331,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 			SerdeTransaction::Midnight(tx) => {
 				let valid_tx: VerifiedTransaction<_> = tx
 					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
-					.expect("applying invalid transaction");
+					.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
 				let cost = tx
 					.cost(&tx_context.ref_state.parameters, false)
-					.expect("error calculating fees");
+					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
 
 				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
 				let offers = Self::successful_shielded_offers(tx, &result);
@@ -301,15 +371,19 @@ impl<D: DB + Clone> LedgerContext<D> {
 			},
 		};
 
-		// Update Local Wallets
-		for wallet in
-			self.wallets.lock().expect("Error locking `LedgerContext` wallets").values_mut()
 		{
-			wallet.update_state_from_offers(&offers);
+			use rayon::prelude::*;
+			self.wallets
+				.lock()
+				.map_err(|e| LedgerContextError::MutexPoisoned(format!("wallets: {e:?}")))?
+				.par_iter_mut()
+				.for_each(|(_, wallet)| {
+					wallet.update_state_from_offers(&offers);
+				});
 		}
 
 		*ledger_state_guard = Sp::new(new_ledger_state);
-		(events, cost)
+		Ok((events, cost))
 	}
 
 	fn successful_shielded_offers<S: SignatureKind<D>, P: ProofKind<D>>(
@@ -373,7 +447,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let wallet = Self::wallet_for_seed(&mut wallet_guard, seed);
 
 		Wallet {
-			root_seed: wallet.root_seed,
+			root_seed: wallet.root_seed.clone(),
 			shielded: wallet.shielded.clone(),
 			unshielded: wallet.unshielded.clone(),
 			dust: wallet.dust.clone(),
@@ -401,6 +475,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 	}
 
 	/// Operate on two wallets identified by origin and destination seeds.
+	///
+	/// Acquires `self.wallets` exactly once and produces two disjoint
+	/// `&mut Wallet<D>` references via `HashMap::get_disjoint_mut`. The two
+	/// seeds must be distinct: passing the same seed twice panics, since a
+	/// single wallet cannot be borrowed mutably twice. A seed that is not
+	/// present in the wallets map also panics, matching the existing
+	/// `wallet_for_seed` behaviour.
 	pub fn with_wallets_from_seeds<F, R>(
 		&self,
 		origin_seed: WalletSeed,
@@ -410,11 +491,22 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		F: FnOnce(&mut Wallet<D>, &mut Wallet<D>) -> R,
 	{
-		let mut wallet_guard = self.wallets.lock().expect("Error locking `LedgerContext` wallets");
-		let origin_wallet = Self::wallet_for_seed(&mut wallet_guard, origin_seed);
+		assert!(
+			origin_seed != destination_seed,
+			"with_wallets_from_seeds: origin_seed and destination_seed must differ \
+			 (cannot produce two disjoint &mut to the same wallet)"
+		);
 
 		let mut wallet_guard = self.wallets.lock().expect("Error locking `LedgerContext` wallets");
-		let destination_wallet = Self::wallet_for_seed(&mut wallet_guard, destination_seed);
+
+		let [origin_opt, destination_opt] =
+			wallet_guard.get_disjoint_mut([&origin_seed, &destination_seed]);
+		let origin_wallet = origin_opt.unwrap_or_else(|| {
+			panic!("Wallet with seed {origin_seed:?} does not exist in the `LedgerContext`")
+		});
+		let destination_wallet = destination_opt.unwrap_or_else(|| {
+			panic!("Wallet with seed {destination_seed:?} does not exist in the `LedgerContext`")
+		});
 
 		f(origin_wallet, destination_wallet)
 	}
@@ -440,9 +532,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use std::sync::{
-		Arc,
-		atomic::{AtomicU64, Ordering},
+	use std::{
+		sync::{
+			Arc,
+			atomic::{AtomicU64, Ordering},
+			mpsc,
+		},
+		time::Duration,
 	};
 
 	type TestDB = storage::DefaultDB;
@@ -489,5 +585,98 @@ mod tests {
 			n_threads * iterations,
 			"Lost updates detected: ledger_state mutex did not serialize concurrent RMW"
 		);
+	}
+
+	#[test]
+	fn update_ledger_state_from_bytes_returns_error_on_invalid_bytes() {
+		let ctx = LedgerContext::<TestDB>::new("test-net");
+		let result = ctx.update_ledger_state_from_bytes(&[0xFF, 0xFE, 0xFD]);
+		assert!(result.is_err());
+		let err = result.unwrap_err();
+		assert!(
+			matches!(err, LedgerContextError::Deserialization(_)),
+			"expected Deserialization error, got: {err}"
+		);
+	}
+
+	/// Regression test for R-059: pins the fix for the deadlock in
+	/// `with_wallets_from_seeds`. The previous implementation locked the wallets
+	/// mutex twice — the second `lock()` deadlocks because `std::sync::Mutex` is
+	/// not reentrant. The bug shape is "the call never returns", so this test
+	/// runs the call on a worker thread and joins via a bounded `recv_timeout`
+	/// on an `mpsc` channel. A 5s wall-clock deadline is several orders of
+	/// magnitude above the expected return time but well below any plausible
+	/// CI hard timeout, so it cleanly discriminates "fixed" from "still hung".
+	///
+	/// Covers: AC-3 (non-blocking completion), AC-2 (closure shape preserved).
+	#[test]
+	fn with_wallets_from_seeds_does_not_deadlock() {
+		let seed_a = WalletSeed::Medium([0x01; 32]);
+		let seed_b = WalletSeed::Medium([0x02; 32]);
+		let ctx: Arc<LedgerContext<TestDB>> =
+			Arc::new(LedgerContext::<TestDB>::new_from_wallet_seeds(
+				"test-net",
+				&[seed_a.clone(), seed_b.clone()],
+			));
+		let counter = Arc::new(AtomicU64::new(0));
+
+		let (tx, rx) = mpsc::channel();
+		let ctx_worker = Arc::clone(&ctx);
+		let counter_worker = Arc::clone(&counter);
+		let seed_a_worker = seed_a.clone();
+		let seed_b_worker = seed_b.clone();
+		std::thread::spawn(move || {
+			ctx_worker.with_wallets_from_seeds(seed_a_worker, seed_b_worker, |_a, _b| {
+				counter_worker.fetch_add(1, Ordering::SeqCst);
+			});
+			let _ = tx.send(());
+		});
+
+		match rx.recv_timeout(Duration::from_secs(5)) {
+			Ok(()) => {},
+			Err(_) => {
+				panic!("with_wallets_from_seeds did not return within 5s — likely deadlocked")
+			},
+		}
+
+		assert_eq!(
+			counter.load(Ordering::SeqCst),
+			1,
+			"closure side-effect was not observed after with_wallets_from_seeds returned"
+		);
+	}
+
+	/// Regression test for R-059: the same-seed-twice case cannot produce two
+	/// disjoint `&mut Wallet` references, so the function panics with a clear
+	/// message rather than relying on `get_disjoint_mut`'s opaque `None` for
+	/// aliased keys.
+	///
+	/// Covers: AC-4 (aliased seed panics with stable substring).
+	#[test]
+	#[should_panic(expected = "origin_seed and destination_seed must differ")]
+	fn with_wallets_from_seeds_panics_on_aliased_seed() {
+		let seed_a = WalletSeed::Medium([0x01; 32]);
+		let ctx = LedgerContext::<TestDB>::new_from_wallet_seeds(
+			"test-net",
+			std::slice::from_ref(&seed_a),
+		);
+		ctx.with_wallets_from_seeds(seed_a.clone(), seed_a, |_, _| ());
+	}
+
+	/// Regression test for R-059: a seed not registered in `self.wallets`
+	/// panics with the same message style as the existing `wallet_for_seed`
+	/// panic.
+	///
+	/// Covers: AC-4 (missing seed panics with stable substring).
+	#[test]
+	#[should_panic(expected = "Wallet with seed")]
+	fn with_wallets_from_seeds_panics_on_missing_seed() {
+		let seed_a = WalletSeed::Medium([0x01; 32]);
+		let seed_b = WalletSeed::Medium([0x02; 32]);
+		let ctx = LedgerContext::<TestDB>::new_from_wallet_seeds(
+			"test-net",
+			std::slice::from_ref(&seed_a),
+		);
+		ctx.with_wallets_from_seeds(seed_a, seed_b, |_, _| ());
 	}
 }

@@ -67,6 +67,7 @@ contractlog.json
 
 # Node project files to ignore
 node_modules/
+.turbo/
 
 # local environment generated files
 local-environment/.env
@@ -89,6 +90,11 @@ dist
 
 # Toolkit cache
 toolkit.db
+toolkit_cache/
+
+# toolkit artifacts
+/out/
+util/toolkit-js/result.json
 
 # AGENTS.local.md - locally-defined rules for AI agents
 AGENTS.local.md

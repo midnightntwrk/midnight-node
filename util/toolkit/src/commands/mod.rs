@@ -11,10 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod bridge_transfer;
 pub mod contract_address;
 pub mod contract_state;
 pub mod dust_balance;
+pub mod fetch;
 pub mod generate_genesis;
+pub mod generate_intent;
 pub mod generate_sample_intent;
 pub mod generate_txs;
 pub mod random_address;
@@ -22,6 +25,7 @@ pub mod root_call;
 pub mod runtime_upgrade;
 pub mod send_intent;
 pub mod show_address;
+pub mod show_block;
 pub mod show_ledger_parameters;
 pub mod show_seed;
 pub mod show_token_type;
@@ -30,5 +34,5 @@ pub mod show_viewing_key;
 pub mod show_wallet;
 pub mod update_ledger_parameters;
 
+pub mod common;
 pub mod fork;
-pub mod generate_intent;
