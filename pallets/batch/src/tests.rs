@@ -248,9 +248,6 @@ fn batch_limit() {
 			Batch::batch(RuntimeOrigin::root(), calls.clone()),
 			Error::<Test>::TooManyCalls,
 		);
-		assert_noop!(
-			Batch::batch_all(RuntimeOrigin::root(), calls),
-			Error::<Test>::TooManyCalls,
-		);
+		assert_noop!(Batch::batch_all(RuntimeOrigin::root(), calls), Error::<Test>::TooManyCalls,);
 	});
 }
