@@ -51,7 +51,7 @@ pub mod example {
 			_start_weight: Weight,
 			end_weight: Option<Weight>,
 		) -> DispatchResultWithPostInfo {
-			ensure_signed(origin)?;
+			ensure_root(origin)?;
 			if err {
 				let error: DispatchError = "The cake is a lie.".into();
 				if let Some(weight) = end_weight {

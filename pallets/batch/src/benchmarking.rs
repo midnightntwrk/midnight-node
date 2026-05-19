@@ -33,10 +33,9 @@ mod benchmark {
 	#[benchmark]
 	fn batch(c: Linear<0, 1000>) {
 		let calls = vec![frame_system::Call::remark { remark: vec![] }.into(); c as usize];
-		let caller = whitelisted_caller();
 
 		#[extrinsic_call]
-		_(RawOrigin::Signed(caller), calls);
+		_(RawOrigin::Root, calls);
 
 		assert_last_event::<T>(Event::BatchCompleted.into());
 	}
@@ -44,10 +43,9 @@ mod benchmark {
 	#[benchmark]
 	fn batch_all(c: Linear<0, 1000>) {
 		let calls = vec![frame_system::Call::remark { remark: vec![] }.into(); c as usize];
-		let caller = whitelisted_caller();
 
 		#[extrinsic_call]
-		_(RawOrigin::Signed(caller), calls);
+		_(RawOrigin::Root, calls);
 
 		assert_last_event::<T>(Event::BatchCompleted.into());
 	}

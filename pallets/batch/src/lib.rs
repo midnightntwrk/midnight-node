@@ -31,10 +31,9 @@
 //!   and stops, but does not revert prior calls in the batch.
 //! - [`Call::batch_all`] — atomic batching; any inner failure reverts the whole batch.
 //!
-//! Both calls reject `None` origins. When invoked with `Root`, inner calls are
-//! dispatched with `dispatch_bypass_filter` (matching how governance already invokes
-//! single calls via `federated-authority`); otherwise they go through the standard
-//! origin filter.
+//! Both calls require `Root` origin and reject everything else with `BadOrigin`.
+//! Inner calls are dispatched with `dispatch_bypass_filter`, matching how governance
+//! already invokes single calls via `federated-authority`.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -51,9 +50,9 @@ mod tests;
 use alloc::vec::Vec;
 use frame_support::{
 	dispatch::{GetDispatchInfo, PostDispatchInfo, extract_actual_weight},
-	traits::{IsSubType, OriginTrait, UnfilteredDispatchable},
+	traits::UnfilteredDispatchable,
 };
-use sp_runtime::traits::{BadOrigin, Dispatchable};
+use sp_runtime::traits::Dispatchable;
 pub use weights::WeightInfo;
 
 pub use pallet::*;
@@ -84,7 +83,6 @@ pub mod pallet {
 			+ GetDispatchInfo
 			+ From<frame_system::Call<Self>>
 			+ UnfilteredDispatchable<RuntimeOrigin = Self::RuntimeOrigin>
-			+ IsSubType<Call<Self>>
 			+ IsType<<Self as frame_system::Config>::RuntimeCall>;
 
 		/// Weight information for extrinsics in this pallet.
@@ -146,22 +144,19 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		/// Send a batch of dispatch calls.
 		///
-		/// May be called from any origin except `None`.
+		/// Must be called from `Root`; any other origin is rejected with `BadOrigin`.
+		/// Inner calls are dispatched with `dispatch_bypass_filter`, bypassing
+		/// `frame_system::Config::BaseCallFilter`.
 		///
-		/// - `calls`: The calls to be dispatched from the same origin. The number of call must not
-		///   exceed the constant: `batched_calls_limit` (available in constant metadata).
-		///
-		/// If origin is root then the calls are dispatched without checking origin filter. (This
-		/// includes bypassing `frame_system::Config::BaseCallFilter`).
+		/// - `calls`: The calls to be dispatched. The number of calls must not exceed the
+		///   constant: `batched_calls_limit` (available in constant metadata).
 		///
 		/// ## Complexity
 		/// - O(C) where C is the number of calls to be batched.
 		///
-		/// This will return `Ok` in all circumstances. To determine the success of the batch, an
-		/// event is deposited. If a call failed and the batch was interrupted, then the
-		/// `BatchInterrupted` event is deposited, along with the number of successful calls made
-		/// and the error of the failed call. If all were successful, then the `BatchCompleted`
-		/// event is deposited.
+		/// On success this returns `Ok`. To determine whether each inner call succeeded, observe
+		/// the deposited events: `BatchInterrupted` (with the failing index and error) on the
+		/// first failure, or `BatchCompleted` if all calls succeeded.
 		#[pallet::call_index(0)]
 		#[pallet::weight({
 			let (dispatch_weight, dispatch_class) = Pallet::<T>::weight_and_dispatch_class(&calls);
@@ -172,12 +167,8 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			calls: Vec<<T as Config>::RuntimeCall>,
 		) -> DispatchResultWithPostInfo {
-			// Do not allow the `None` origin.
-			if ensure_none(origin.clone()).is_ok() {
-				return Err(BadOrigin.into());
-			}
+			ensure_root(origin.clone())?;
 
-			let is_root = ensure_root(origin.clone()).is_ok();
 			let calls_len = calls.len();
 			ensure!(calls_len <= Self::batched_calls_limit() as usize, Error::<T>::TooManyCalls);
 
@@ -185,12 +176,7 @@ pub mod pallet {
 			let mut weight = Weight::zero();
 			for (index, call) in calls.into_iter().enumerate() {
 				let info = call.get_dispatch_info();
-				// If origin is root, don't apply any dispatch filters; root can call anything.
-				let result = if is_root {
-					call.dispatch_bypass_filter(origin.clone())
-				} else {
-					call.dispatch(origin.clone())
-				};
+				let result = call.dispatch_bypass_filter(origin.clone());
 				// Add the weight of this call.
 				weight = weight.saturating_add(extract_actual_weight(&result, &info));
 				if let Err(e) = result {
@@ -213,13 +199,12 @@ pub mod pallet {
 		/// Send a batch of dispatch calls and atomically execute them.
 		/// The whole transaction will rollback and fail if any of the calls failed.
 		///
-		/// May be called from any origin except `None`.
+		/// Must be called from `Root`; any other origin is rejected with `BadOrigin`.
+		/// Inner calls are dispatched with `dispatch_bypass_filter`, bypassing
+		/// `frame_system::Config::BaseCallFilter`.
 		///
-		/// - `calls`: The calls to be dispatched from the same origin. The number of call must not
-		///   exceed the constant: `batched_calls_limit` (available in constant metadata).
-		///
-		/// If origin is root then the calls are dispatched without checking origin filter. (This
-		/// includes bypassing `frame_system::Config::BaseCallFilter`).
+		/// - `calls`: The calls to be dispatched. The number of calls must not exceed the
+		///   constant: `batched_calls_limit` (available in constant metadata).
 		///
 		/// ## Complexity
 		/// - O(C) where C is the number of calls to be batched.
@@ -233,12 +218,8 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			calls: Vec<<T as Config>::RuntimeCall>,
 		) -> DispatchResultWithPostInfo {
-			// Do not allow the `None` origin.
-			if ensure_none(origin.clone()).is_ok() {
-				return Err(BadOrigin.into());
-			}
+			ensure_root(origin.clone())?;
 
-			let is_root = ensure_root(origin.clone()).is_ok();
 			let calls_len = calls.len();
 			ensure!(calls_len <= Self::batched_calls_limit() as usize, Error::<T>::TooManyCalls);
 
@@ -246,20 +227,7 @@ pub mod pallet {
 			let mut weight = Weight::zero();
 			for (index, call) in calls.into_iter().enumerate() {
 				let info = call.get_dispatch_info();
-				// If origin is root, bypass any dispatch filter; root can call anything.
-				let result = if is_root {
-					call.dispatch_bypass_filter(origin.clone())
-				} else {
-					let mut filtered_origin = origin.clone();
-					// Don't allow users to nest `batch_all` calls.
-					filtered_origin.add_filter(
-						move |c: &<T as frame_system::Config>::RuntimeCall| {
-							let c = <T as Config>::RuntimeCall::from_ref(c);
-							!matches!(c.is_sub_type(), Some(Call::batch_all { .. }))
-						},
-					);
-					call.dispatch(filtered_origin)
-				};
+				let result = call.dispatch_bypass_filter(origin.clone());
 				// Add the weight of this call.
 				weight = weight.saturating_add(extract_actual_weight(&result, &info));
 				result.map_err(|mut err| {
