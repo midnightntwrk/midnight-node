@@ -7605,6 +7605,7 @@ dependencies = [
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-reserve-observation",
+ "midnight-primitives-session-info",
  "midnight-primitives-system-parameters",
  "midnight-storage-core",
  "mmr-gadget",
@@ -7849,6 +7850,7 @@ dependencies = [
  "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
+ "midnight-primitives-session-info",
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
@@ -8203,6 +8205,13 @@ dependencies = [
  "serde",
  "sidechain-domain",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "midnight-primitives-session-info"
+version = "0.1.0"
+dependencies = [
+ "sp-api",
 ]
 
 [[package]]

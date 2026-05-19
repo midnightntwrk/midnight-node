@@ -19,6 +19,7 @@ members = [
     "primitives/reserve-observation",
     "primitives/midnight",
     "primitives/ledger",
+    "primitives/session-info",
     "primitives/system-parameters",
     "res",
     "runtime",
@@ -119,6 +120,7 @@ midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
 midnight-primitives-ics-observation = { path = "primitives/ics-observation", default-features = false }
 midnight-primitives-reserve-observation = { path = "primitives/reserve-observation", default-features = false }
+midnight-primitives-session-info = { path = "primitives/session-info", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
 midnight-primitives-system-parameters = { path = "primitives/system-parameters", default-features = false }
 

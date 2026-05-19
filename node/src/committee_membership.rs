@@ -26,70 +26,41 @@ use midnight_node_runtime::{
 	CrossChainPublic,
 	opaque::{Block, SessionKeys},
 };
-use parity_scale_codec::Decode;
-use sc_client_api::{Backend, BlockchainEvents, StorageProvider};
+use midnight_primitives_session_info::SessionInfoApi;
+use sc_client_api::BlockchainEvents;
 use sidechain_domain::ScEpochNumber;
 use sp_api::ProvideRuntimeApi;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_core::{crypto::KeyTypeId, storage::StorageKey, twox_128};
+use sp_core::crypto::KeyTypeId;
 use sp_keystore::{Keystore, KeystorePtr};
 use sp_session_validator_management::{CommitteeMember as _, SessionValidatorManagementApi};
 use std::sync::Arc;
 
-type SessionIndex = u32;
-
 const AURA_KEY_TYPE: KeyTypeId = KeyTypeId(*b"aura");
 const LOG_TARGET: &str = "committee-membership";
 
-/// Storage key for `pallet_partner_chains_session::CurrentIndex`. The pallet is
-/// constructed under the name `Session` in the runtime, so the prefix is
-/// `twox_128("Session") ++ twox_128("CurrentIndex")`.
-fn session_index_storage_key() -> StorageKey {
-	let mut key = Vec::with_capacity(32);
-	key.extend_from_slice(&twox_128(b"Session"));
-	key.extend_from_slice(&twox_128(b"CurrentIndex"));
-	StorageKey(key)
-}
-
-pub async fn watch<C, B>(client: Arc<C>, keystore: KeystorePtr)
+pub async fn watch<C>(client: Arc<C>, keystore: KeystorePtr)
 where
-	C: ProvideRuntimeApi<Block>
-		+ BlockchainEvents<Block>
-		+ StorageProvider<Block, B>
-		+ Send
-		+ Sync
-		+ 'static,
-	B: Backend<Block>,
+	C: ProvideRuntimeApi<Block> + BlockchainEvents<Block> + Send + Sync + 'static,
 	C::Api: SessionValidatorManagementApi<
 			Block,
 			CommitteeMember<CrossChainPublic, SessionKeys>,
 			AuthoritySelectionInputs,
 			ScEpochNumber,
-		>,
+		> + SessionInfoApi<Block>,
 {
 	let mut notifications = client.import_notification_stream();
-	let session_key = session_index_storage_key();
-	let mut last_session: Option<SessionIndex> = None;
+	let mut last_session: Option<u32> = None;
 
 	while let Some(notification) = notifications.next().await {
 		let block_hash = notification.hash;
 
-		let session_index = match client.storage(block_hash, &session_key) {
-			Ok(Some(data)) => match SessionIndex::decode(&mut &data.0[..]) {
-				Ok(idx) => idx,
-				Err(err) => {
-					log::error!(
-						target: LOG_TARGET,
-						"Failed to decode session index at {block_hash:?}: {err}",
-					);
-					continue;
-				},
-			},
-			Ok(None) => 0,
+		let session_index = match client.runtime_api().current_session_index(block_hash) {
+			Ok(idx) => idx,
 			Err(err) => {
 				log::error!(
 					target: LOG_TARGET,
-					"Failed to read session index storage at {block_hash:?}: {err}",
+					"Failed to query session index at {block_hash:?}: {err}",
 				);
 				continue;
 			},
