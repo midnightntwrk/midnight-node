@@ -11024,6 +11024,7 @@ dependencies = [
  "partner-chains-db-sync-data-sources",
  "serde_json",
  "sidechain-domain",
+ "sidechain-mc-hash",
  "sp-timestamp",
  "tokio",
 ]
@@ -15812,7 +15813,6 @@ dependencies = [
  "async-trait",
  "derive-new",
  "log",
- "sc-partner-chains-consensus",
  "sidechain-domain",
  "sp-blockchain",
  "sp-consensus",

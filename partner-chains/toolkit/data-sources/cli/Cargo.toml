@@ -21,5 +21,6 @@ tokio = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 sidechain-domain = { workspace = true }
+sidechain-mc-hash = { workspace = true }
 authority-selection-inherents = { workspace = true }
 sp-timestamp = { workspace = true }

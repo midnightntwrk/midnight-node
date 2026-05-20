@@ -3,6 +3,7 @@ use crate::BlockDataSourceImpl;
 use crate::db_model::BridgeTx;
 use futures::lock::Mutex;
 use sidechain_domain::{MainchainBlock, McBlockHash, McTxHash};
+use sidechain_mc_hash::{BlockByHash, LatestStableBlockForTimestamp};
 use std::{cmp::min, collections::HashMap, error::Error, sync::Arc};
 
 /// Bridge transfer data source with block range-based caching
@@ -229,11 +230,13 @@ impl CachedTokenBridgeDataSourceImpl {
 		&self,
 	) -> Result<Option<BlockNumber>, Box<dyn Error + Send + Sync>> {
 		let latest_block_timestamp = self.blocks.get_latest_block_info().await?.timestamp;
-		Ok(self
-			.blocks
-			.get_latest_stable_block_for(latest_block_timestamp.into())
-			.await?
-			.map(|block| block.number.into()))
+		Ok(match self.blocks.get_latest_stable_block_for(latest_block_timestamp.into()).await? {
+			LatestStableBlockForTimestamp::Found(block) => Some(block.number.into()),
+			LatestStableBlockForTimestamp::NoStableBlockInRange { .. } => None,
+			LatestStableBlockForTimestamp::LocalDataUnavailable { reason } => {
+				return Err(Box::new(reason));
+			},
+		})
 	}
 
 	async fn resolve_checkpoint_for_tx_hash(
@@ -268,10 +271,12 @@ impl CachedTokenBridgeDataSourceImpl {
 		&self,
 		mc_block_hash: &McBlockHash,
 	) -> Result<MainchainBlock, Box<dyn Error + Send + Sync>> {
-		Ok(self
-			.blocks
-			.get_block_by_hash(mc_block_hash.clone())
-			.await?
-			.ok_or(format!("Could not find block for hash {mc_block_hash:?}"))?)
+		Ok(match self.blocks.get_block_by_hash(mc_block_hash.clone()).await? {
+			BlockByHash::Found(block) => block,
+			BlockByHash::NotFound { .. } => {
+				return Err(format!("Could not find block for hash {mc_block_hash:?}").into());
+			},
+			BlockByHash::LocalDataUnavailable { reason } => return Err(Box::new(reason)),
+		})
 	}
 }

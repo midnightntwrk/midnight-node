@@ -3,8 +3,10 @@ use crate::{
 	block::BlockDataSourceImpl,
 	metrics::{McFollowerMetrics, observed_async_trait},
 };
-use sidechain_domain::{MainchainBlock, McBlockHash};
-use sidechain_mc_hash::{McHashDataSource, StableBlockByHashResult};
+use sidechain_domain::McBlockHash;
+use sidechain_mc_hash::{
+	BlockByHash, LatestStableBlockForTimestamp, McHashDataSource, StableBlockForHash,
+};
 use sp_timestamp::Timestamp;
 use std::sync::Arc;
 
@@ -30,7 +32,8 @@ impl McHashDataSource for McHashDataSourceImpl {
 	async fn get_latest_stable_block_for(
 		&self,
 		reference_timestamp: sp_timestamp::Timestamp,
-	) -> std::result::Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> std::result::Result<LatestStableBlockForTimestamp, Box<dyn std::error::Error + Send + Sync>>
+	{
 		Ok(self
 			.inner
 			.get_latest_stable_block_for(Timestamp::new(reference_timestamp.as_millis()))
@@ -41,8 +44,9 @@ impl McHashDataSource for McHashDataSourceImpl {
 		&self,
 		hash: McBlockHash,
 		reference_timestamp: sp_timestamp::Timestamp,
-	) -> std::result::Result<StableBlockByHashResult, Box<dyn std::error::Error + Send + Sync>> {
-		self.inner
+	) -> std::result::Result<StableBlockForHash, Box<dyn std::error::Error + Send + Sync>> {
+		Ok(self
+			.inner
 			.get_stable_block_for(hash, Timestamp::new(reference_timestamp.as_millis()))
 			.await
 	}
@@ -50,20 +54,20 @@ impl McHashDataSource for McHashDataSourceImpl {
 	async fn get_block_by_hash(
 		&self,
 		hash: McBlockHash,
-	) -> std::result::Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> std::result::Result<BlockByHash, Box<dyn std::error::Error + Send + Sync>> {
 		Ok(self.inner.get_block_by_hash(hash).await?)
 	}
 
 	async fn is_cardano_tip_fresh(
-		&self
-	) -> std::result::Result<bool,  Box<dyn std::error::Error + Send + Sync>> {
-		Ok(self.inner.is_cardano_tip_fresh().await?)
+		&self,
+	) -> std::result::Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+		self.inner.is_cardano_tip_fresh().await
 	}
 
 	async fn is_cardano_ok(
-		&self
-	) -> std::result::Result<bool,  Box<dyn std::error::Error + Send + Sync>> {
-		Ok(self.inner.is_cardano_ok().await?)
+		&self,
+	) -> std::result::Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+		self.inner.is_cardano_ok().await
 	}
 }
 );

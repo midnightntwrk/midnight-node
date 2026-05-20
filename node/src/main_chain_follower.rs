@@ -24,7 +24,7 @@ use partner_chains_mock_data_sources::{
 	SidechainRpcDataSourceMock, TokenBridgeDataSourceMock,
 };
 use sc_service::error::Error as ServiceError;
-use sidechain_mc_hash::McHashDataSource;
+use sidechain_mc_hash::{BlockByHash, McHashDataSource};
 use sp_partner_chains_bridge::TokenBridgeDataSource;
 use sqlx::{Pool, Postgres};
 
@@ -169,8 +169,9 @@ async fn log_db_sync_startup_probe(block_data_source: &BlockDataSourceImpl) {
 		Err(_) => "query_failed",
 	};
 	let block_lookup_state = match &block_lookup {
-		Some((_, Ok(Some(_)))) => "confirmed",
-		Some((_, Ok(None))) => "missing",
+		Some((_, Ok(BlockByHash::Found(_)))) => "confirmed",
+		Some((_, Ok(BlockByHash::NotFound { .. }))) => "missing",
+		Some((_, Ok(BlockByHash::LocalDataUnavailable { .. }))) => "cardano_is_stale",
 		Some((_, Err(_))) => "query_failed",
 		None => "skipped",
 	};

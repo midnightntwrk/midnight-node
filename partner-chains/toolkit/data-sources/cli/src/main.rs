@@ -11,6 +11,7 @@ use partner_chains_db_sync_data_sources::{
 	BlockDataSourceImpl, CandidatesDataSourceImpl, PgPool, StableBlockByHashResult,
 };
 use sidechain_domain::*;
+use sidechain_mc_hash::{LatestStableBlockForTimestamp, StableBlockForHash};
 use sp_timestamp::Timestamp;
 use std::error::Error;
 
@@ -110,9 +111,19 @@ mod data_source {
 			&self,
 			reference_timestamp: u64,
 		) -> Result<Option<MainchainBlock>> {
-			self.inner
-				.get_latest_stable_block_for(Timestamp::new(reference_timestamp))
-				.await
+			Ok(
+				match self
+					.inner
+					.get_latest_stable_block_for(Timestamp::new(reference_timestamp))
+					.await?
+				{
+					LatestStableBlockForTimestamp::Found(block) => Some(block),
+					LatestStableBlockForTimestamp::NoStableBlockInRange { .. } => None,
+					LatestStableBlockForTimestamp::LocalDataUnavailable { reason } => {
+						return Err(Box::new(reason));
+					},
+				},
+			)
 		}
 
 		pub(crate) async fn get_stable_block_for(
@@ -120,16 +131,21 @@ mod data_source {
 			hash: McBlockHash,
 			reference_timestamp: u64,
 		) -> Result<Option<MainchainBlock>> {
-			match self
-				.inner
-				.get_stable_block_for(hash, Timestamp::new(reference_timestamp))
-				.await?
-			{
-				StableBlockByHashResult::BlockStable { info } => Ok(Some(info)),
-				StableBlockByHashResult::NotEnoughConfirmations { .. }
-				| StableBlockByHashResult::BlockTimestampOutRange { .. }
-				| StableBlockByHashResult::BlockNotFound => Ok(None),
-			}
+			Ok(
+				match self
+					.inner
+					.get_stable_block_for(hash, Timestamp::new(reference_timestamp))
+					.await?
+				{
+					StableBlockForHash::Found(block) => Some(block),
+					StableBlockForHash::LocalDataUnavailable { reason } => {
+						return Err(Box::new(reason));
+					},
+					StableBlockForHash::BlockNotFound { .. }
+					| StableBlockForHash::BlockFoundButNotStable { .. }
+					| StableBlockForHash::BlockTimestampOutOfRange { .. } => None,
+				},
+			)
 		}
 	}
 
