@@ -8,7 +8,7 @@ This project provides a unified way to spin up Midnight resources for developmen
 
 ## Features
 
-- Launch dockerized **well-known Midnight networks** (e.g. `qanet`, `devnet`, `govnet`, `testnet-02`, etc.)
+- Fork **well-known Midnight networks** (e.g. `qanet`, `devnet`, `testnet-02`) locally from a snapshot URI, with validators replaced by a synthesized mock authority set.
 - Perform **state-changing operations** such as image upgrades (runtime upgrades and hard forks planned).
 - Launch a fully **dynamic local environment** with sped-up Cardano resources for quick testing of Partner Chains/Cardano capabilities.
 
@@ -20,24 +20,24 @@ All functionality is available via npm/yarn scripts defined in `package.json`.
 
 ### Launching Networks
 
-You can run different Midnight networks locally with:
+Well-known networks are forked locally from a snapshot URI. `mock-authorities` rewrites the snapshot's authority set so a local validator set can produce blocks on top of the forked state — there is no cluster-backed bring-up path.
+
+A snapshot URI is **required** for every well-known network. Pass it through the npm script with `--`, or invoke the CLI directly:
 
 ```bash
-npm run run:qanet
-npm run run:devnet
-npm run run:govnet
-npm run run:testnet-02
+npm run run:qanet -- --from-snapshot https://example.com/snapshots/qanet-latest.tar.gz
+npm run run:devnet -- --from-snapshot https://example.com/snapshots/devnet-latest.tar.gz
+npm run run:testnet-02 -- --from-snapshot https://example.com/snapshots/testnet-02-latest.tar.gz
 ```
 
 ### Upgrading Networks
 
-You can also launch a network and immediately apply image upgrades:
+You can also launch a network and immediately apply image upgrades. The same `--from-snapshot` URI is required, since image-upgrade brings the network up first:
 
 ```bash
-npm run image-upgrade:qanet
-npm run image-upgrade:devnet
-npm run image-upgrade:govnet
-npm run image-upgrade:testnet-02
+npm run image-upgrade:qanet -- --from-snapshot <uri>
+npm run image-upgrade:devnet -- --from-snapshot <uri>
+npm run image-upgrade:testnet-02 -- --from-snapshot <uri>
 ```
 
 ### Stopping Networks
@@ -47,7 +47,6 @@ To stop any running network:
 ```bash
 npm run stop:qanet
 npm run stop:devnet
-npm run stop:govnet
 npm run stop:testnet-02
 ```
 
@@ -60,10 +59,13 @@ See [fork-testing.md](../docs/fork-testing.md)
 In addition to well-known networks, you can launch a dynamic local environment that connects multiple components together.
 
 ### Local env – step by step
-> **Warning:** Public use of Local env is currently disabled, until we publish Governance Smart Contracts. For anyone who already has acccess,
-you need to clone [midnight-reserve-contracts](https://github.com/midnightntwrk/midnight-reserve-contracts) to the same location where midnight-node repo sits.
+> **Note:** The governance contracts are tracked as a git submodule at `midnight-reserve-contracts/`. If you cloned without `--recurse-submodules`, run:
+> ```
+> git submodule update --init midnight-reserve-contracts
+> ```
+> The submodule pin is the version used in CI; do not edit it on the local-env path.
 
-> **Note:** Local development environments set `ALLOW_NON_SSL=true` to allow connections to PostgreSQL without SSL certificates. Production deployments require SSL.
+> **Note:** Local development environments use a self-signed TLS certificate for PostgreSQL connections. Production deployments should set `ssl_root_cert` for full certificate validation (`PgSslMode::VerifyFull`).
 
 When first run, all images are pulled from public repositories. This may take some time.
 

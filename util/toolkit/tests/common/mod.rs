@@ -12,6 +12,7 @@
 // limitations under the License.
 
 pub mod toolkit_helper;
+pub mod wait_for_node;
 
 use serde::Deserialize;
 use std::sync::LazyLock;

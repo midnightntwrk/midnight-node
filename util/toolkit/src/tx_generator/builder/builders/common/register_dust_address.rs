@@ -56,7 +56,7 @@ fn generationless_fee_availability(
 ) -> u128 {
 	context.with_ledger_state(|ledger_state| {
 		let dust_params = &ledger_state.parameters.dust;
-		context.with_wallet_from_seed(seed, |wallet| {
+		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			wallet
 				.unshielded_utxos(ledger_state)
 				.iter()
@@ -102,14 +102,14 @@ impl BuildTxs for RegisterDustAddressBuilder {
 		);
 
 		let inputs = context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed, |wallet| {
+			context.with_wallet_from_seed(seed.clone(), |wallet| {
 				wallet
 					.unshielded_utxos(ledger_state)
 					.iter()
 					.filter(|utxo| utxo.type_ == NIGHT)
 					.map(|utxo| UtxoSpendInfo {
 						value: utxo.value,
-						owner: seed,
+						owner: seed.clone(),
 						token_type: NIGHT,
 						intent_hash: Some(utxo.intent_hash),
 						output_number: Some(utxo.output_no),
@@ -123,7 +123,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			.map(|input| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
 					value: input.value,
-					owner: input.owner,
+					owner: input.owner.clone(),
 					token_type: input.token_type,
 				});
 				output
@@ -160,12 +160,12 @@ impl BuildTxs for RegisterDustAddressBuilder {
 		// Compute allow_fee_payment for self-funding when no funding seed is provided
 		let allow_fee_payment = if funding_seed.is_none() {
 			let now = context.latest_block_context().tblock;
-			generationless_fee_availability(&context, seed, now)
+			generationless_fee_availability(&context, seed.clone(), now)
 		} else {
 			0
 		};
 
-		context.with_wallet_from_seed(seed, |wallet| {
+		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			let destination_dust = self.destination_dust.clone().map_or(
 				wallet.dust.public_key,
 				|destination_dust_arg| {

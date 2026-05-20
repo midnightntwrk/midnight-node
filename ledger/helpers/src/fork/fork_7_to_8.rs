@@ -87,7 +87,7 @@ pub fn fork_context_7_to_8(
 			})
 			.transpose();
 		let new_wallet = Wallet {
-			root_seed: v.root_seed.map(|s| {
+			root_seed: v.root_seed.as_ref().map(|s| {
 				WalletSeed::try_from(s.as_bytes())
 					.expect("wallet seed different length between versions")
 			}),

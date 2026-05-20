@@ -73,7 +73,7 @@ Implementation of the Midnight blockchain node, providing consensus, transaction
 
 ### Runtime Pallets
 
-Midnight Node includes six custom runtime pallets that implement core blockchain functionality:
+Midnight Node includes seven custom runtime pallets that implement core blockchain functionality:
 
 **[pallet-midnight](pallets/midnight)** - Core pallet managing ledger state and transaction execution
 - Processes privacy-preserving smart contract transactions
@@ -102,6 +102,9 @@ Midnight Node includes six custom runtime pallets that implement core blockchain
 **[pallet-version](pallets/version)** - Runtime version tracking
 - Records runtime spec version in block digests
 - Enables version monitoring and upgrade tracking
+
+**[pallet-c2m-bridge](pallets/c2m-bridge)** - Cardano-to-Midnight bridge
+- Tracks transfers to Illiquid Circullation Supply and relects them in the ledger
 
 ### Node Services
 
@@ -172,6 +175,7 @@ that we are still in the process of being release. As such:
   - [Verification Guide](docs/security/verification-guide.md) - How to verify image signatures and SBOMs
   - [Signing Runbook](docs/security/signing-runbook.md) - Operational procedures for signing
 - [Operations](docs/operations/release-checklist.md) - Release checklist with security verification steps
+- [Cardano-to-Midnight bridge](docs/c-to-m-bridge.md) - Summary of Cardano-to-Midnight bridge
 
 ## Prerequisites
 

@@ -70,9 +70,9 @@ pub enum ShowAddress {
 }
 
 pub fn execute(args: ShowAddressArgs) -> ShowAddress {
-	let shielded_wallet = ShieldedWallet::<DefaultDB>::default(args.seed);
-	let unshielded_wallet = UnshieldedWallet::default(args.seed);
-	let dust_wallet = DustWallet::<DefaultDB>::default(args.seed, None);
+	let shielded_wallet = ShieldedWallet::<DefaultDB>::default(args.seed.clone());
+	let unshielded_wallet = UnshieldedWallet::default(args.seed.clone());
+	let dust_wallet = DustWallet::<DefaultDB>::default(args.seed.clone(), None);
 
 	let all = Addresses {
 		shielded: shielded_wallet.address(&args.network).to_bech32(),

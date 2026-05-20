@@ -14,6 +14,7 @@
 use async_trait::async_trait;
 use builders::{DoNothingBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand};
+pub use midnight_node_ledger_helpers::CoinSelectionStrategy;
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
 		ForkAwareLedgerContext, apply_block_7, apply_block_8, block_context_from_raw_7,
@@ -216,6 +217,10 @@ pub struct BatchesArgs {
 	/// Enable Shielded transfers in batches
 	#[arg(long)]
 	pub enable_shielded: bool,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
 }
 
 // TODO: TokenIDs for shielded and unshielded
@@ -261,6 +266,10 @@ pub struct SingleTxArgs {
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
 	pub rng_seed: Option<[u8; 32]>,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
 }
 #[derive(Args, Clone, Debug)]
 pub struct RegisterDustAddressArgs {
@@ -331,6 +340,10 @@ pub struct BatchSingleTxArgs {
 	/// Number of concurrent tx generation tasks (default: available CPUs)
 	#[arg(long)]
 	pub concurrency: Option<usize>,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
 }
 
 impl BatchSingleTxArgs {
@@ -478,8 +491,8 @@ impl Builder {
 				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
 			},
 			Builder::SingleTx(args) => {
-				let mut seeds = vec![args.source_seed];
-				seeds.extend(args.funding_seed.iter());
+				let mut seeds = vec![args.source_seed.clone()];
+				seeds.extend(args.funding_seed.iter().cloned());
 				Ok(seeds)
 			},
 			Builder::RegisterDustAddress(args) => {
@@ -723,8 +736,8 @@ async fn load_and_partition_cache(
 	let mut cached: Vec<(WalletSeed, CachedWalletState)> = Vec::new();
 	for (seed, cached_state) in wallet_seeds.iter().zip(raw_cached) {
 		match cached_state {
-			Some(state) => cached.push((*seed, state)),
-			None => uncached_seeds.push(*seed),
+			Some(state) => cached.push((seed.clone(), state)),
+			None => uncached_seeds.push(seed.clone()),
 		}
 	}
 	cached.sort_by_key(|(_, ws)| ws.block_height);
