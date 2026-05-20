@@ -27,7 +27,10 @@ use midnight_primitives_cnight_observation::{
 };
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
+use lru::LruCache;
 use std::fmt::Debug;
+use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
 
 #[derive(
 	Debug,
@@ -86,8 +89,7 @@ pub enum RegistrationDatumDecodeError {
 pub struct MidnightCNightObservationDataSourceImpl {
 	pub pool: PgPool,
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
-	#[allow(dead_code)]
-	cache_size: u16,
+	cache: Arc<Mutex<LruCache<(McBlockHash, u32, u32), ObservedUtxos>>>,
 	multi_asset_cache: MultiAssetCache,
 }
 
@@ -98,7 +100,9 @@ impl MidnightCNightObservationDataSourceImpl {
 		cache_size: u16,
 	) -> Self {
 		let multi_asset_cache = MultiAssetCache::new(pool.clone());
-		Self { pool, metrics_opt, cache_size, multi_asset_cache }
+		let cap = NonZeroUsize::new(cache_size.max(1) as usize).unwrap();
+		let cache = Arc::new(Mutex::new(LruCache::new(cap)));
+		Self { pool, metrics_opt, cache, multi_asset_cache }
 	}
 }
 
@@ -112,6 +116,22 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		tx_capacity: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		let cnight_asset_name = config.cnight_asset_name.as_bytes();
+
+		// Memoize by (current_tip, start_block, start_tx_index). config and tx_capacity are
+		// effectively constant per node, so they aren't part of the key. Hot path for sync: many
+		// Midnight blocks reference the same Cardano tip and we observed 8-11 redundant calls per
+		// Cardano block before this cache.
+		let cache_key = (
+			current_tip.clone(),
+			start_position.block_number,
+			start_position.tx_index_in_block,
+		);
+		if let Ok(mut cache) = self.cache.lock()
+			&& let Some(cached) = cache.get(&cache_key)
+		{
+			log::debug!("cnight cache hit for key {:?}", cache_key);
+			return Ok(cached.clone());
+		}
 
 		let mapping_validator_address = Address::from_bech32(&config.mapping_validator_address)
 			.map_err(|e| {
@@ -278,20 +298,25 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			truncated_utxos.push(utxo);
 		}
 
-		if num_txs < tx_capacity {
+		let result = if num_txs < tx_capacity {
 			// We couldn't find enough UTXOs in the range, which means we're up-to-date with the
 			// current_tip
-			Ok(ObservedUtxos { start: start_position.clone(), end, utxos: truncated_utxos })
+			ObservedUtxos { start: start_position.clone(), end, utxos: truncated_utxos }
 		} else {
-			Ok(ObservedUtxos {
+			let new_end = truncated_utxos
+				.last()
+				.map_or(start_position.clone(), |u| u.header.tx_position.clone())
+				.increment();
+			ObservedUtxos {
 				start: start_position.clone(),
-				end: truncated_utxos
-					.last()
-					.map_or(start_position.clone(), |u| u.header.tx_position.clone())
-					.increment(),
+				end: new_end,
 				utxos: truncated_utxos,
-			})
+			}
+		};
+		if let Ok(mut cache) = self.cache.lock() {
+			cache.put(cache_key, result.clone());
 		}
+		Ok(result)
 	}
 }
 );

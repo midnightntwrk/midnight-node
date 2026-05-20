@@ -17,20 +17,32 @@ use crate::{
 	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
 };
 use cardano_serialization_lib::PlutusData;
-use derive_new::new;
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
 	FederatedAuthorityObservationConfig, GovernanceAuthorityDatumR0, GovernanceAuthorityDatums,
 };
 use sidechain_domain::{McBlockHash, PolicyId};
 pub use sqlx::PgPool;
+use lru::LruCache;
+use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
 
-#[derive(new)]
 pub struct FederatedAuthorityObservationDataSourceImpl {
 	pub pool: PgPool,
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
-	#[allow(dead_code)]
-	cache_size: u16,
+	cache: Arc<Mutex<LruCache<McBlockHash, FederatedAuthorityData>>>,
+}
+
+impl FederatedAuthorityObservationDataSourceImpl {
+	pub fn new(
+		pool: PgPool,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		cache_size: u16,
+	) -> Self {
+		let cap = NonZeroUsize::new(cache_size.max(1) as usize).unwrap();
+		let cache = Arc::new(Mutex::new(LruCache::new(cap)));
+		Self { pool, metrics_opt, cache }
+	}
 }
 
 observed_async_trait!(
@@ -40,6 +52,14 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		config: &FederatedAuthorityObservationConfig,
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
+		// Memoize by mc_block_hash. Observed 8-11 redundant calls per Cardano block before cache.
+		if let Ok(mut cache) = self.cache.lock()
+			&& let Some(cached) = cache.get(mc_block_hash)
+		{
+			log::debug!("fedauth cache hit for mc_block_hash {:?}", mc_block_hash);
+			return Ok(cached.clone());
+		}
+
 		// Get block number from hash
 		let _block_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_block_by_hash");
 		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone()).await?;
@@ -120,11 +140,15 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 		};
 
-		Ok(FederatedAuthorityData {
+		let result = FederatedAuthorityData {
 			council_authorities,
 			technical_committee_authorities,
 			mc_block_hash: mc_block_hash.clone(),
-		})
+		};
+		if let Ok(mut cache) = self.cache.lock() {
+			cache.put(mc_block_hash.clone(), result.clone());
+		}
+		Ok(result)
 	}
 }
 );
