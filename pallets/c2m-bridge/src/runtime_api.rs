@@ -11,29 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate alloc;
+//! Runtime API definitions for the c2m-bridge pallet.
 
-pub mod backend;
-#[cfg(feature = "runtime-benchmarks")]
-pub mod benchmarking;
-pub mod cfg;
-pub mod chain_spec;
-pub mod cli;
-pub mod command;
-pub mod extensions;
-mod filtering_pool;
-pub mod genesis;
-pub mod inherent_data;
-pub mod main_chain_follower;
-pub mod memory_monitor;
-pub mod metrics_push;
-pub mod openrpc;
-pub mod partner_chains;
-pub mod payload;
-pub mod peer_info_rpc;
-pub mod reference_hardware;
-pub mod rpc;
-pub mod service;
-pub mod sidechain_params_cmd;
-pub mod subscription_bounds;
-mod util;
+use alloc::vec::Vec;
+use sidechain_domain::McTxHash;
+
+sp_api::decl_runtime_apis! {
+	/// Runtime API for querying c2m-bridge approval state.
+	pub trait C2MBridgeApi {
+		/// Returns the full set of mainchain transaction hashes that have been
+		/// pre-approved by governance for crediting mNIGHT to the recipient.
+		fn get_approved_mc_tx_hashes() -> Vec<McTxHash>;
+	}
+}

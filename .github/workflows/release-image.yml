@@ -95,6 +95,7 @@ jobs:
       node-version: ${{ steps.release-env.outputs.node_version }}
       image-tag-content-hash: ${{ steps.release-env.outputs.image_tag_content_hash }}
       image-tag-release: ${{ steps.release-env.outputs.image_tag_release }}
+      release-sha: ${{ steps.release-env.outputs.release_sha }}
       git-tag-release: ${{ steps.release-config.outputs.git_tag_release }}
       git-tag-node: ${{ steps.release-config.outputs.git_tag_node }}
       git-tag-toolkit: ${{ steps.release-config.outputs.git_tag_toolkit }}
@@ -150,6 +151,10 @@ jobs:
           TOOLKIT_TAG_RELEASE="$TOOLKIT_VERSION$SUFFIX"
           RUNTIME_TAG_RELEASE="$RUNTIME_VERSION$SUFFIX"
 
+          # Resolve inputs.ref to a concrete commit SHA so every downstream
+          # tag/release points at the exact tree we just built from.
+          RELEASE_SHA="$(git rev-parse HEAD)"
+
           # Job outputs (for downstream jobs)
           echo "node_version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
           echo "toolkit_version=$TOOLKIT_VERSION" >> "$GITHUB_OUTPUT"
@@ -158,6 +163,7 @@ jobs:
           echo "image_tag_release=$IMAGE_TAG_RELEASE" >> "$GITHUB_OUTPUT"
           echo "toolkit_tag_release=$TOOLKIT_TAG_RELEASE" >> "$GITHUB_OUTPUT"
           echo "runtime_tag_release=$RUNTIME_TAG_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
 
           # Env vars (for subsequent steps in this job)
           echo "NODE_VERSION=$NODE_VERSION" >> "$GITHUB_ENV"
@@ -429,6 +435,7 @@ jobs:
           RUNTIME_VERSION: ${{ needs.prepare-release.outputs.runtime-version }}
           TOOLKIT_TAG_RELEASE: ${{ needs.prepare-release.outputs.toolkit-tag-release }}
           RUNTIME_TAG_RELEASE: ${{ needs.prepare-release.outputs.runtime-tag-release }}
+          RELEASE_SHA: ${{ needs.prepare-release.outputs.release-sha }}
         run: |
           echo "IMAGE_TAG_CONTENT_HASH=$IMAGE_TAG_CONTENT_HASH" >> "$GITHUB_ENV"
           echo "IMAGE_TAG_RELEASE=$IMAGE_TAG_RELEASE" >> "$GITHUB_ENV"
@@ -438,6 +445,7 @@ jobs:
           echo "RUNTIME_VERSION=$RUNTIME_VERSION" >> "$GITHUB_ENV"
           echo "TOOLKIT_TAG_RELEASE=$TOOLKIT_TAG_RELEASE" >> "$GITHUB_ENV"
           echo "RUNTIME_TAG_RELEASE=$RUNTIME_TAG_RELEASE" >> "$GITHUB_ENV"
+          echo "RELEASE_SHA=$RELEASE_SHA" >> "$GITHUB_ENV"
 
       - name: Build Release Notes
         shell: bash
@@ -481,6 +489,23 @@ jobs:
           FORCE: ${{ github.event.inputs.force }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # If the tag already exists on the remote, refuse to publish unless it
+          # points at the commit we built from. Without this guard, a pre-existing
+          # tag at the wrong commit (e.g. created by a previous buggy run) would
+          # be silently reused by `gh release create/edit`.
+          if EXISTING_TAG_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${GIT_TAG_RELEASE}" 2>/dev/null); then
+            EXISTING_SHA=$(echo "$EXISTING_TAG_JSON" | jq -r '.object.sha')
+            EXISTING_TYPE=$(echo "$EXISTING_TAG_JSON" | jq -r '.object.type')
+            if [ "$EXISTING_TYPE" = "tag" ]; then
+              EXISTING_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXISTING_SHA}" --jq '.object.sha')
+            fi
+            if [ "$EXISTING_SHA" != "$RELEASE_SHA" ]; then
+              echo "::error::Tag ${GIT_TAG_RELEASE} already exists at ${EXISTING_SHA} but the release was built from ${RELEASE_SHA}."
+              echo "::error::Refusing to publish a release whose tag does not match the built tree."
+              exit 1
+            fi
+          fi
+
           if gh release view --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" --json isDraft 2>/dev/null; then
             if gh release view --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" --json isDraft -q '.isDraft' | grep -q false; then
               if [ "$FORCE" != "true" ]; then
@@ -502,6 +527,13 @@ jobs:
             latest)     FLAGS=("--latest" "--draft=false") ;;
           esac
 
+          # `--target` is only valid (and only meaningful) when gh creates the
+          # tag. Without it, gh creates the tag on the repository's default
+          # branch (main) — which is exactly the bug we're fixing.
+          if [ "$EDIT_OR_CREATE" = "create" ]; then
+            FLAGS+=("--target" "$RELEASE_SHA")
+          fi
+
           gh release --repo "$GITHUB_REPOSITORY" "$EDIT_OR_CREATE" "$GIT_TAG_RELEASE" \
             --title "$GIT_TAG_RELEASE" \
             "${FLAGS[@]}" \
@@ -516,8 +548,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Create separate tags for toolkit and runtime (node tag is the primary release tag)
-          # This ensures each component has its own tag for independent versioning
-          RELEASE_SHA="$GITHUB_SHA"
+          # This ensures each component has its own tag for independent versioning.
+          # RELEASE_SHA is the resolved SHA of inputs.ref (set by Setup Env), not
+          # $GITHUB_SHA — which would be the workflow ref, possibly main.
 
           # Toolkit tag (only if toolkit is included and not skipped)
           if [ "$SKIP_TOOLKIT" != "true" ]; then
