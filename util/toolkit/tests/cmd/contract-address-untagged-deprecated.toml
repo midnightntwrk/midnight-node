@@ -11,5 +11,5 @@ stdout = """
 """
 
 stderr = """
-...--untagged is deprecated; the bare/untagged address is now the default...
+[..]--untagged is deprecated; the bare/untagged address is now the default[..]
 """

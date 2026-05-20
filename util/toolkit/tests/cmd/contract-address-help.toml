@@ -1,5 +1,6 @@
 bin.name = "midnight-node-toolkit"
 args = ["contract-address", "--help"]
+env.COLUMNS = "200"
 status.code = 0
 stderr = ""
 
