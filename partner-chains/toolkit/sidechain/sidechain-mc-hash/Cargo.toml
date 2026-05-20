@@ -13,6 +13,7 @@ workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+log = { workspace = true }
 sp-consensus-slots = { workspace = true }
 sp-partner-chains-consensus-aura = { workspace = true, features = ["std"] }
 sidechain-domain = { workspace = true, features = ["std"] }
@@ -22,6 +23,7 @@ sp-inherents = { workspace = true, features = ["std"] }
 sp-runtime = { workspace = true, features = ["std"] }
 sp-timestamp = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
 derive-new = { workspace = true, optional = true }
 
 [dev-dependencies]

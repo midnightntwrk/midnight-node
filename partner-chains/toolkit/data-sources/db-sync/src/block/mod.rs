@@ -12,24 +12,30 @@ use log::{debug, info, warn};
 use serde::Deserialize;
 use sidechain_domain::mainchain_epoch::{MainchainEpochConfig, MainchainEpochDerivation};
 use sidechain_domain::*;
+use sidechain_mc_hash::{
+	BlockByHash, LatestStableBlockForTimestamp, LocalDataUnavailableReason, StableBlockForHash,
+};
 use sp_timestamp::Timestamp;
 use sqlx::PgPool;
 use std::{
 	error::Error,
 	sync::{Arc, Mutex},
 };
+use time_source::{SystemTimeSource, TimeSource};
 
 #[cfg(test)]
 mod tests;
 
 #[derive(Debug, thiserror::Error)]
 enum StableBlockByHashError {
-	#[error("Database query failed: {0}")]
-	Database(String),
-	#[error("Block with hash {0} was not found.")]
-	BlockNotFound(McBlockHash),
+	#[error("Database query failed while checking block hash {hash}: {error}")]
+	Database { hash: McBlockHash, error: String },
+	#[error("Block with hash {hash} was not found.")]
+	BlockNotFound { hash: McBlockHash },
 	#[error("Latest block info was unavailable while checking block hash {0}.")]
 	LatestBlockUnavailable(McBlockHash),
+	#[error("Local Cardano tip {latest_block:?} is too old to classify the referenced hash.")]
+	LocalTipTooOld { latest_block: Block },
 	#[error(
 		"Block with hash {hash} is not stable yet: block {block_no} requires latest block >= {required_latest_block_no}, but latest block is {latest_block_no}."
 	)]
@@ -78,12 +84,17 @@ pub struct BlockDataSourceImpl {
 	/// This parameter should be 0 by default and should only be increased to 1 in networks
 	/// struggling with frequent block rejections due to Db-Sync or Cardano node lag.
 	block_stability_margin: u32,
+	/// Maximum tolerated age of the latest observed Cardano block before our view of
+	/// Cardano is considered stale by [Self::is_cardano_tip_fresh].
+	max_latest_block_age_seconds: u32,
 	/// Number of contiguous Cardano blocks to be cached by this data source
 	cache_size: u16,
 	/// Internal block cache
 	stable_blocks_cache: Arc<Mutex<BlocksCache>>,
 	/// Prometheus metrics client
 	metrics_opt: Option<McFollowerMetrics>,
+	/// Time source used for current-time queries (e.g. Cardano sync health checks)
+	time_source: Arc<dyn TimeSource + Send + Sync>,
 }
 
 impl BlockDataSourceImpl {
@@ -97,19 +108,93 @@ impl BlockDataSourceImpl {
 			.ok_or(ExpectedDataNotFound("No latest block on chain.".to_string()).into())
 	}
 
+	/// Tests if our Cardano tip is at most `max_latest_block_age_seconds` old, measured
+	/// against the wall-clock time provided by the configured [TimeSource].
+	///
+	/// This is a heuristic: it can spuriously return `false` if Cardano chain density
+	/// genuinely drops across the network. Use only as a secondary signal, e.g. after
+	/// another hint (such as a referenced block being unknown) suggests our local
+	/// observability is lagging.
+	pub async fn is_cardano_tip_fresh(
+		&self,
+	) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+		let block = self.get_latest_block_info().await?;
+		let is_block_time_valid = self.is_latest_block_time_valid(&block);
+		log::debug!(
+			"is_cardano_tip_fresh block: {block:?}, is_block_time_valid: {is_block_time_valid}"
+		);
+		Ok(is_block_time_valid)
+	}
+
+	/// Tests if our Cardano view matches Praos chain-density requirements: at least one
+	/// block must exist in the latest `security_parameter` blocks within the allowed
+	/// time window relative to current wall-clock time.
+	///
+	/// Unlike [Self::is_cardano_tip_fresh], this is not a heuristic.
+	pub async fn is_cardano_ok(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+		let timestamp = Timestamp::new(self.time_source.get_current_time_millis());
+		let timestamp = BlockDataSourceImpl::timestamp_to_db_type(timestamp)?;
+		let latest = self.get_latest_block_info().await?;
+		let stable = latest.number.saturating_sub(self.security_parameter).into();
+		let block = self.get_latest_block(stable, timestamp).await?;
+		log::debug!("is_cardano_ok timestamp: {timestamp}, stable: {stable:?}, block: {block:?}");
+		Ok(block.is_some())
+	}
+
 	/// Returns the latest _stable_ Cardano block from the Db-Sync database that is within
 	/// acceptable bounds from `reference_timestamp`, accounting for the additional stability
 	/// offset configured by [block_stability_margin][Self::block_stability_margin].
 	pub async fn get_latest_stable_block_for(
 		&self,
 		reference_timestamp: Timestamp,
-	) -> Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<LatestStableBlockForTimestamp, Box<dyn std::error::Error + Send + Sync>> {
 		let reference_timestamp = BlockDataSourceImpl::timestamp_to_db_type(reference_timestamp)?;
-		let latest = self.get_latest_block_info().await?;
+		let latest = match db_model::get_latest_block_info(&self.pool).await {
+			Ok(latest) => latest,
+			Err(err) => {
+				return Ok(LatestStableBlockForTimestamp::LocalDataUnavailable {
+					reason: LocalDataUnavailableReason::DatabaseError {
+						context: "querying latest Cardano block".into(),
+						error: format!("{err:?}"),
+					},
+				});
+			},
+		};
+		let Some(latest) = latest else {
+			return Ok(LatestStableBlockForTimestamp::LocalDataUnavailable {
+				reason: LocalDataUnavailableReason::LatestBlockUnavailable,
+			});
+		};
+		self.observe_latest_cardano_block_metrics(&latest);
 		let offset = self.security_parameter + self.block_stability_margin;
-		let stable = latest.number.saturating_sub(offset).into();
+		let stable = latest.block_no.saturating_sub(offset).into();
 		let block = self.get_latest_block(stable, reference_timestamp).await?;
-		Ok(block.map(From::from))
+		Ok(match block {
+			Some(block) => LatestStableBlockForTimestamp::Found(block.into()),
+			None if !self.is_local_cardano_tip_recent(&latest, reference_timestamp) => {
+				LatestStableBlockForTimestamp::LocalDataUnavailable {
+					reason: LocalDataUnavailableReason::LocalTipTooOld {
+						latest_block: latest.into(),
+						max_allowed_timestamp: Self::db_timestamp_to_sp_timestamp(
+							self.max_allowed_block_time(reference_timestamp),
+						),
+						reference_timestamp: Self::db_timestamp_to_sp_timestamp(
+							reference_timestamp,
+						),
+					},
+				}
+			},
+			None => LatestStableBlockForTimestamp::NoStableBlockInRange {
+				max_stable_block_number: McBlockNumber(stable.0),
+				min_allowed_timestamp: Self::db_timestamp_to_sp_timestamp(
+					self.min_block_allowed_time(reference_timestamp),
+				),
+				max_allowed_timestamp: Self::db_timestamp_to_sp_timestamp(
+					self.max_allowed_block_time(reference_timestamp),
+				),
+				reference_timestamp: Self::db_timestamp_to_sp_timestamp(reference_timestamp),
+			},
+		})
 	}
 
 	/// Finds a block by its `hash` and verifies that it is stable in reference to `reference_timestamp`
@@ -118,7 +203,7 @@ impl BlockDataSourceImpl {
 		&self,
 		hash: McBlockHash,
 		reference_timestamp: Timestamp,
-	) -> Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<StableBlockForHash, Box<dyn std::error::Error + Send + Sync>> {
 		let reference_timestamp = BlockDataSourceImpl::timestamp_to_db_type(reference_timestamp)?;
 		self.get_stable_block_by_hash(hash, reference_timestamp).await
 	}
@@ -127,7 +212,7 @@ impl BlockDataSourceImpl {
 	pub async fn get_block_by_hash(
 		&self,
 		hash: McBlockHash,
-	) -> Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<BlockByHash, Box<dyn std::error::Error + Send + Sync>> {
 		let from_cache = if let Ok(cache) = self.stable_blocks_cache.lock() {
 			cache.find_by_hash(hash.clone())
 		} else {
@@ -135,9 +220,21 @@ impl BlockDataSourceImpl {
 		};
 		let block_opt = match from_cache {
 			Some(block) => Some(block),
-			None => db_model::get_block_by_hash(&self.pool, hash).await?,
+			None => match db_model::get_block_by_hash(&self.pool, hash.clone()).await {
+				Ok(block) => block,
+				Err(err) => {
+					return Ok(BlockByHash::LocalDataUnavailable {
+						reason: LocalDataUnavailableReason::DatabaseError {
+							context: format!("querying Cardano block {hash}"),
+							error: format!("{err:?}"),
+						},
+					});
+				},
+			},
 		};
-		Ok(block_opt.map(From::from))
+		Ok(block_opt
+			.map(|block| BlockByHash::Found(block.into()))
+			.unwrap_or(BlockByHash::NotFound { hash }))
 	}
 }
 
@@ -227,9 +324,21 @@ impl BlockDataSourceImpl {
 		metrics_opt: Option<McFollowerMetrics>,
 	) -> BlockDataSourceImpl {
 		let k: f64 = cardano_security_parameter.into();
-		let slot_duration: f64 = mc_epoch_config.slot_duration_millis.millis() as f64;
-		let min_slot_boundary = (slot_duration * k / cardano_active_slots_coeff).round() as i64;
+		let slot_duration_ms: f64 = mc_epoch_config.slot_duration_millis.millis() as f64;
+		let slot_duration_seconds: f64 = slot_duration_ms / 1000f64;
+		let min_slot_boundary = (slot_duration_ms * k / cardano_active_slots_coeff).round() as i64;
 		let max_slot_boundary = 3 * min_slot_boundary;
+		let expected_blocks_interval_seconds: u32 = ((slot_duration_seconds
+			/ cardano_active_slots_coeff)
+			.round() as u64)
+			.try_into()
+			.unwrap_or_else(|_| {
+				panic!(
+					"Invalid Cardano observability configuration: slot duration {slot_duration_seconds}[s] is too big or active slots coefficient {cardano_active_slots_coeff} is too small"
+				)
+			});
+		let max_latest_block_age_seconds =
+			block_stability_margin.max(1).saturating_mul(expected_blocks_interval_seconds);
 		let cache_size = 100;
 		BlockDataSourceImpl::new(
 			pool,
@@ -238,9 +347,11 @@ impl BlockDataSourceImpl {
 			TimeDelta::milliseconds(max_slot_boundary),
 			mc_epoch_config.clone(),
 			block_stability_margin,
+			max_latest_block_age_seconds,
 			cache_size,
 			BlocksCache::new_arc_mutex(),
 			metrics_opt,
+			Arc::new(SystemTimeSource),
 		)
 	}
 	async fn get_latest_block(
@@ -274,6 +385,15 @@ impl BlockDataSourceImpl {
 			&& block.time <= self.max_allowed_block_time(timestamp)
 	}
 
+	/// Heuristic check (used by [Self::is_cardano_tip_fresh]) that the latest observed
+	/// Cardano block is not older than `max_latest_block_age_seconds` relative to the
+	/// current wall-clock time.
+	fn is_latest_block_time_valid(&self, block: &MainchainBlock) -> bool {
+		let current_time_secs = self.time_source.get_current_time_millis() / 1000;
+		let delta_secs = current_time_secs.saturating_sub(block.timestamp);
+		delta_secs < self.max_latest_block_age_seconds.into()
+	}
+
 	fn observe_latest_cardano_block_metrics(&self, latest_block: &Block) {
 		if let Some(metrics) = &self.metrics_opt {
 			metrics.latest_cardano_block_number().set(u64::from(latest_block.block_no.0));
@@ -292,25 +412,101 @@ impl BlockDataSourceImpl {
 		&self,
 		hash: McBlockHash,
 		reference_timestamp: NaiveDateTime,
-	) -> Result<Option<MainchainBlock>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<StableBlockForHash, Box<dyn std::error::Error + Send + Sync>> {
 		if let Some(block) =
 			self.get_stable_block_by_hash_from_cache(hash.clone(), reference_timestamp)
 		{
 			debug!("Block by hash: {hash} found in cache.");
-			Ok(Some(From::from(block)))
+			Ok(StableBlockForHash::Found(From::from(block)))
 		} else {
 			debug!("Block by hash: {hash}, not found in cache, serving from database.");
 			match self.get_stable_block_by_hash_from_db(hash, reference_timestamp).await {
 				Ok(block_by_hash) => {
 					self.fill_cache(&block_by_hash).await?;
-					Ok(Some(MainchainBlock::from(block_by_hash)))
+					Ok(StableBlockForHash::Found(MainchainBlock::from(block_by_hash)))
 				},
 				Err(err) => {
 					warn!("Get stable block by hash failed: {err}");
-					Ok(None)
+					Ok(self.classify_stable_block_error(err, reference_timestamp))
 				},
 			}
 		}
+	}
+
+	fn classify_stable_block_error(
+		&self,
+		err: StableBlockByHashError,
+		reference_timestamp: NaiveDateTime,
+	) -> StableBlockForHash {
+		let max_allowed_timestamp = self.max_allowed_block_time(reference_timestamp);
+		match err {
+			StableBlockByHashError::LatestBlockUnavailable(_hash) => {
+				StableBlockForHash::LocalDataUnavailable {
+					reason: LocalDataUnavailableReason::LatestBlockUnavailable,
+				}
+			},
+			StableBlockByHashError::LocalTipTooOld { latest_block } => {
+				self.local_tip_too_old(latest_block, max_allowed_timestamp, reference_timestamp)
+			},
+			StableBlockByHashError::BlockNotFound { hash } => {
+				StableBlockForHash::BlockNotFound { hash }
+			},
+			StableBlockByHashError::NotStableYet {
+				hash,
+				block_no,
+				required_latest_block_no,
+				latest_block_no,
+			} => StableBlockForHash::BlockFoundButNotStable {
+				hash,
+				block_number: McBlockNumber(block_no),
+				latest_block_number: McBlockNumber(latest_block_no),
+				required_latest_block: McBlockNumber(required_latest_block_no),
+			},
+			StableBlockByHashError::TimestampOutOfRange {
+				hash,
+				block_time,
+				min_allowed_time,
+				max_allowed_time,
+				reference_timestamp,
+			} => StableBlockForHash::BlockTimestampOutOfRange {
+				hash,
+				block_timestamp: Self::db_timestamp_to_sp_timestamp(block_time),
+				min_allowed_timestamp: Self::db_timestamp_to_sp_timestamp(min_allowed_time),
+				max_allowed_timestamp: Self::db_timestamp_to_sp_timestamp(max_allowed_time),
+				reference_timestamp: Self::db_timestamp_to_sp_timestamp(reference_timestamp),
+			},
+			StableBlockByHashError::Database { hash, error } => {
+				StableBlockForHash::LocalDataUnavailable {
+					reason: LocalDataUnavailableReason::DatabaseError {
+						context: format!("checking block hash {hash}"),
+						error,
+					},
+				}
+			},
+		}
+	}
+
+	fn local_tip_too_old(
+		&self,
+		latest_block: Block,
+		max_allowed_timestamp: NaiveDateTime,
+		reference_timestamp: NaiveDateTime,
+	) -> StableBlockForHash {
+		StableBlockForHash::LocalDataUnavailable {
+			reason: LocalDataUnavailableReason::LocalTipTooOld {
+				latest_block: latest_block.into(),
+				max_allowed_timestamp: Self::db_timestamp_to_sp_timestamp(max_allowed_timestamp),
+				reference_timestamp: Self::db_timestamp_to_sp_timestamp(reference_timestamp),
+			},
+		}
+	}
+
+	fn is_local_cardano_tip_recent(
+		&self,
+		latest_block: &Block,
+		reference_timestamp: NaiveDateTime,
+	) -> bool {
+		latest_block.time >= self.max_allowed_block_time(reference_timestamp)
 	}
 
 	fn get_stable_block_by_hash_from_cache(
@@ -333,19 +529,24 @@ impl BlockDataSourceImpl {
 		hash: McBlockHash,
 		reference_timestamp: NaiveDateTime,
 	) -> Result<Block, StableBlockByHashError> {
-		let latest_block = db_model::get_latest_block_info(&self.pool)
-			.await
-			.map_err(|err| StableBlockByHashError::Database(format!("{err:?}")))?;
+		let latest_block = db_model::get_latest_block_info(&self.pool).await.map_err(|err| {
+			StableBlockByHashError::Database { hash: hash.clone(), error: format!("{err:?}") }
+		})?;
 		let Some(latest_block) = latest_block else {
 			return Err(StableBlockByHashError::LatestBlockUnavailable(hash));
 		};
 		self.observe_latest_cardano_block_metrics(&latest_block);
+		let is_local_tip_recent =
+			self.is_local_cardano_tip_recent(&latest_block, reference_timestamp);
 
-		let block = db_model::get_block_by_hash(&self.pool, hash.clone())
-			.await
-			.map_err(|err| StableBlockByHashError::Database(format!("{err:?}")))?;
+		let block = db_model::get_block_by_hash(&self.pool, hash.clone()).await.map_err(|err| {
+			StableBlockByHashError::Database { hash: hash.clone(), error: format!("{err:?}") }
+		})?;
 		let Some(block) = block else {
-			return Err(StableBlockByHashError::BlockNotFound(hash));
+			if !is_local_tip_recent {
+				return Err(StableBlockByHashError::LocalTipTooOld { latest_block });
+			}
+			return Err(StableBlockByHashError::BlockNotFound { hash });
 		};
 		self.observe_referenced_cardano_block_metrics(&block);
 
@@ -356,6 +557,9 @@ impl BlockDataSourceImpl {
 		let is_time_valid = self.is_block_time_valid(&block, reference_timestamp);
 
 		if !is_stable {
+			if !is_local_tip_recent {
+				return Err(StableBlockByHashError::LocalTipTooOld { latest_block });
+			}
 			return Err(StableBlockByHashError::NotStableYet {
 				hash,
 				block_no: block.block_no.0,
@@ -364,6 +568,9 @@ impl BlockDataSourceImpl {
 			});
 		}
 		if !is_time_valid {
+			if !is_local_tip_recent {
+				return Err(StableBlockByHashError::LocalTipTooOld { latest_block });
+			}
 			return Err(StableBlockByHashError::TimestampOutOfRange {
 				hash,
 				block_time: block.time,
@@ -430,6 +637,10 @@ impl BlockDataSourceImpl {
 			.and_then(DateTime::from_timestamp_millis)
 			.ok_or(BadRequest(format!("Timestamp out of range: {timestamp:?}")))?;
 		Ok(NaiveDateTime::new(dt.date_naive(), dt.time()))
+	}
+
+	fn db_timestamp_to_sp_timestamp(timestamp: NaiveDateTime) -> Timestamp {
+		Timestamp::new(timestamp.and_utc().timestamp_millis().max(0) as u64)
 	}
 }
 
