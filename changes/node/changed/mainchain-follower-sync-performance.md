@@ -1,15 +1,14 @@
 #node
-# Speed up mainchain-follower db-sync reads during node sync
+# Cache repeated mainchain-follower inherent reads during node sync
 
-Reduce mainchain-follower sync latency versus `release/node-1.0.0` by cutting
-repeated db-sync round trips and improving slow inherent-data queries. This
-branch adds caching for candidate epoch nonces and federated-authority
-observations, rewrites the candidate token UTXO lookup to force an
-`ma_tx_out.ident`-first plan, and parallelizes the cNIGHT and federated
-authority subqueries that were previously serialized.
+Reduce repeated db-sync round trips during node sync by caching inherent data
+that is repeatedly requested for the same Cardano context. This branch caches
+candidate epoch nonces per epoch and caches federated-authority observation
+results per Cardano block hash so repeated council and technical committee
+lookups can be served from memory.
 
-In the preview sync reproduction used for validation, these changes improved
-steady-state sync throughput from about 1.1 blocks/sec to about 2.0 blocks/sec.
+These changes are intentionally limited to caching behavior and do not change
+cNIGHT observation query flow or candidate token UTXO SQL planning.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1546
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1531
