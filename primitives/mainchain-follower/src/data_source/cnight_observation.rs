@@ -22,12 +22,12 @@ use cardano_serialization_lib::{
 	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, EnterpriseAddress,
 	PlutusData, RewardAddress, ScriptHash,
 };
+use lru::LruCache;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
 };
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
-use lru::LruCache;
 use std::fmt::Debug;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -158,18 +158,14 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				))?;
 
 		// Resolve multi_asset.id for auth token and cNight token (cached after first call)
-		let auth_token_ident = self
-			.multi_asset_cache
-			.resolve_ident(
-				&mapping_validator_policy_id.to_bytes(),
+		let mapping_validator_policy_id_bytes = mapping_validator_policy_id.to_bytes();
+		let (auth_token_ident, cnight_ident) = tokio::try_join!(
+			self.multi_asset_cache.resolve_ident(
+				&mapping_validator_policy_id_bytes,
 				config.auth_token_asset_name.as_bytes(),
-			)
-			.await?;
-
-		let cnight_ident = self
-			.multi_asset_cache
-			.resolve_ident(&config.cnight_policy_id, cnight_asset_name)
-			.await?;
+			),
+			self.multi_asset_cache.resolve_ident(&config.cnight_policy_id, cnight_asset_name),
+		)?;
 
 		// Get end position from cardano block hash
 		let _block_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_block_by_hash");

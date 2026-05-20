@@ -286,23 +286,36 @@ pub(crate) async fn get_token_utxo_for_epoch(
 	ident: i64,
 	epoch: EpochNumber,
 ) -> Result<Option<TokenTxOutput>, SqlxError> {
-	let sql = "SELECT
-			origin_tx.hash        AS origin_tx_hash,
-        	tx_out.index          AS utxo_index,
-        	origin_block.epoch_no AS tx_epoch_no,
-        	origin_block.block_no AS tx_block_no,
-        	origin_block.slot_no  AS tx_slot_no,
-        	origin_tx.block_index AS tx_block_index,
-        	datum.value           AS datum
-        FROM ma_tx_out
-        INNER JOIN tx_out               ON ma_tx_out.tx_out_id = tx_out.id
-        INNER JOIN tx origin_tx         ON tx_out.tx_id = origin_tx.id
-        INNER JOIN block origin_block   ON origin_tx.block_id = origin_block.id
-        LEFT JOIN datum                 ON tx_out.data_hash = datum.hash
-        WHERE ma_tx_out.ident = $1
-        AND origin_block.epoch_no <= $2
-        ORDER BY tx_block_no DESC, origin_tx.block_index DESC
-        LIMIT 1";
+	// Force PostgreSQL to start from the highly-selective `ma_tx_out.ident` predicate before
+	// sorting, instead of walking blocks backwards and probing every candidate tx_out.
+	let sql = "WITH candidate_outputs AS MATERIALIZED (
+			SELECT
+				origin_tx.hash        AS origin_tx_hash,
+        		tx_out.index          AS utxo_index,
+        		origin_block.epoch_no AS tx_epoch_no,
+        		origin_block.block_no AS tx_block_no,
+        		origin_block.slot_no  AS tx_slot_no,
+        		origin_tx.block_index AS tx_block_index,
+        		tx_out.data_hash      AS data_hash
+        	FROM ma_tx_out
+        	INNER JOIN tx_out             ON ma_tx_out.tx_out_id = tx_out.id
+        	INNER JOIN tx origin_tx       ON tx_out.tx_id = origin_tx.id
+        	INNER JOIN block origin_block ON origin_tx.block_id = origin_block.id
+        	WHERE ma_tx_out.ident = $1
+        	AND origin_block.epoch_no <= $2
+		)
+		SELECT
+			candidate_outputs.origin_tx_hash,
+			candidate_outputs.utxo_index,
+			candidate_outputs.tx_epoch_no,
+			candidate_outputs.tx_block_no,
+			candidate_outputs.tx_slot_no,
+			candidate_outputs.tx_block_index,
+			datum.value AS datum
+		FROM candidate_outputs
+		LEFT JOIN datum ON candidate_outputs.data_hash = datum.hash
+		ORDER BY candidate_outputs.tx_block_no DESC, candidate_outputs.tx_block_index DESC
+		LIMIT 1";
 	Ok(sqlx::query_as::<_, TokenTxOutput>(sql)
 		.bind(ident)
 		.bind(epoch)

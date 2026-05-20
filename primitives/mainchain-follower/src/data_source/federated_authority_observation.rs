@@ -17,13 +17,13 @@ use crate::{
 	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
 };
 use cardano_serialization_lib::PlutusData;
+use lru::LruCache;
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
 	FederatedAuthorityObservationConfig, GovernanceAuthorityDatumR0, GovernanceAuthorityDatums,
 };
 use sidechain_domain::{McBlockHash, PolicyId};
 pub use sqlx::PgPool;
-use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
@@ -72,16 +72,32 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 		};
 
-		// Query council UTXO
-		let _council_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_council_utxo");
-		let council_utxo = get_governance_body_utxo(
-			&self.pool,
-			&config.council.address,
-			&config.council.policy_id,
-			block_number,
-		)
-		.await?;
-		drop(_council_timer);
+		let (council_utxo, technical_committee_utxo) = tokio::try_join!(
+			async {
+				let _council_timer =
+					start_sub_query_timer(&self.metrics_opt, "fedauth_get_council_utxo");
+				get_governance_body_utxo(
+					&self.pool,
+					&config.council.address,
+					&config.council.policy_id,
+					block_number,
+				)
+				.await
+			},
+			async {
+				let _techcomm_timer = start_sub_query_timer(
+					&self.metrics_opt,
+					"fedauth_get_technical_committee_utxo",
+				);
+				get_governance_body_utxo(
+					&self.pool,
+					&config.technical_committee.address,
+					&config.technical_committee.policy_id,
+					block_number,
+				)
+				.await
+			},
+		)?;
 
 		let council_authorities: AuthoritiesData = match council_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
@@ -105,17 +121,6 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 				AuthoritiesData { authorities: vec![], round: 0 }
 			},
 		};
-
-		// Query technical committee UTXO
-		let _techcomm_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_technical_committee_utxo");
-		let technical_committee_utxo = get_governance_body_utxo(
-			&self.pool,
-			&config.technical_committee.address,
-			&config.technical_committee.policy_id,
-			block_number,
-		)
-		.await?;
-		drop(_techcomm_timer);
 
 		let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
