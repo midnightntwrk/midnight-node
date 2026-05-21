@@ -1,0 +1,53 @@
+# GitLab CI: cross-check deterministic runtime WASM build against the
+# GitHub Actions srtool pipeline (.github/workflows/srtool-build.yml).
+#
+# Runs the same `earthly +srtool-build` target GitHub uses, then prints
+# the blake2_256 from srtool-digest.json. To verify a cross-check, compare
+# the compressed-runtime blake2_256 against the GitHub run for the same
+# commit.
+#
+# Requires a GitLab runner with the docker executor + privileged mode
+# (for Docker-in-Docker), or a shell executor with Docker installed.
+
+stages:
+  - build
+
+variables:
+  EARTHLY_VERSION: "v0.8.16"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+
+srtool-build:
+  stage: build
+  image: docker:27
+  services:
+    - name: docker:27-dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: "tcp://docker:2375"
+  before_script:
+    - apk add --no-cache bash curl git jq coreutils
+    - curl -fsSL -o /usr/local/bin/earthly
+        "https://github.com/earthly/earthly/releases/download/${EARTHLY_VERSION}/earthly-linux-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+    - chmod +x /usr/local/bin/earthly
+    - earthly --version
+  script:
+    - . ./.envrc && earthly -P +srtool-build
+    - cd artifacts/srtool
+    - sha256sum *.wasm | tee SHA256SUMS-srtool
+    - echo "--- srtool blake2_256 ---"
+    - jq -r '.runtimes | to_entries[] | "\(.key)\t\(.value.subwasm.blake2_256 // .value.blake2_256)"' srtool-digest.json
+  artifacts:
+    name: "runtime-wasm-${CI_COMMIT_SHORT_SHA}"
+    expire_in: 90 days
+    paths:
+      - artifacts/srtool/
+  rules:
+    # Auto-trigger on release tag push (e.g. release/node-1.0.0).
+    - if: '$CI_COMMIT_TAG =~ /^release\//'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$SRTOOL_BUILD == "1"'
+      when: always
+    - when: manual
+      allow_failure: true
