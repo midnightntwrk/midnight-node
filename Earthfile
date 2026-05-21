@@ -1,5 +1,25 @@
 VERSION 0.8
 
+# INSTALL_SFW installs the Socket Firewall (sfw) package-manager network proxy.
+# Pre-reqs in the calling target's environment: curl, sha256sum, /usr/local/bin
+# writable. Works on glibc Linux (Debian, Amazon Linux, Ubuntu, etc.); Alpine
+# (musl) needs gcompat first.
+# renovate: datasource=github-releases packageName=SocketDev/sfw-free
+INSTALL_SFW:
+    FUNCTION
+    ARG SFW_VERSION=1.10.0
+    RUN ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then \
+            SFW_ARCH="arm64"; \
+            SFW_SHA="d7e969c17e6d23ac1cb0dea81ff87ef9bca2d83570270d91aab14b2a7fb66ad4"; \
+        else \
+            SFW_ARCH="x86_64"; \
+            SFW_SHA="1ea16f15f1217bde66ac9c7d0262c7126b7bb1b2d60e14e8fa0982456139ae6e"; \
+        fi && \
+        curl -fsSL "https://github.com/SocketDev/sfw-free/releases/download/v${SFW_VERSION}/sfw-free-linux-${SFW_ARCH}" -o /usr/local/bin/sfw && \
+        echo "${SFW_SHA}  /usr/local/bin/sfw" | sha256sum -c - && \
+        chmod +x /usr/local/bin/sfw
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -112,14 +132,10 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.95-trixie
-    RUN rustup component add rustfmt
-    # Install cargo binstall:
-    # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    # RUN cargo install cargo-binstall --version 1.6.9
+    FROM +prep-no-copy
     COPY Cargo.toml deps.toml
     LET SUBXT_VERSION = "$(cat deps.toml | grep -m 1 subxt | sed 's/subxt *= *"\([^\"]*\)".*/\1/')"
-    RUN cargo install subxt-cli@${SUBXT_VERSION} --locked
+    RUN sfw cargo install subxt-cli@${SUBXT_VERSION} --locked
     ENTRYPOINT ["subxt"]
     SAVE IMAGE localhost/subxt
 
@@ -131,7 +147,7 @@ build-node-only:
 
     ARG NATIVEARCH
 
-    RUN cargo auditable build -p midnight-node --locked --release
+    RUN sfw cargo auditable build -p midnight-node --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH
@@ -184,7 +200,7 @@ rebuild-sqlx:
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
-        cargo sqlx prepare --workspace
+        sfw cargo sqlx prepare --workspace
     SAVE ARTIFACT .sqlx AS LOCAL .sqlx
 
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
@@ -646,6 +662,25 @@ node-ci-image-single-platform:
         mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
         rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
 
+    # Install Socket Firewall (sfw) — package-manager network firewall.
+    # Used by downstream targets that prefix package-manager commands with `sfw`.
+    DO +INSTALL_SFW
+
+    # Install Node.js + npm from official binaries (AL2023's nodejs is v18, too old).
+    # Pre-installed here so downstream targets (audit-*, fix-lock-*, etc.) share
+    # the same toolchain as the CI image instead of each re-installing node.
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=22.22.0
+    ARG NPM_VERSION=11.11.0
+    RUN microdnf -y install xz && microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+    RUN ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        npm install -g "npm@${NPM_VERSION}" && \
+        node --version && npm --version
+
     # Download compactc compiler from public midnightntwrk/compact releases
     COPY COMPACTC_VERSION .
     RUN set -e && \
@@ -684,13 +719,13 @@ prep-no-copy:
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
-    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
+    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    # FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
     # ca-certificates and curl-minimal already present in the CI base image
 
     RUN cargo --version
-    RUN cargo binstall --no-confirm cargo-auditable
+    RUN sfw cargo binstall --no-confirm cargo-auditable
 
     SAVE ARTIFACT /compactc-bin
 
@@ -735,12 +770,12 @@ toolkit-js-prep:
     ENV COMPACT_TAG_PREFIX=compactc-v
 
     WORKDIR /toolkit-js
-    RUN npm ci
-    RUN npm run build
+    RUN sfw npm ci
+    RUN sfw npm run build
     # Compile compact contracts (fetch-compactc downloads compactc via COMPACTC_VERSION)
     # GITHUB_TOKEN is passed as an Earthly secret in CI to avoid GitHub API rate limits.
     # Defaulting to empty allows local builds without the secret (at risk of rate-limiting).
-    RUN --secret GITHUB_TOKEN= npm run compact
+    RUN --secret GITHUB_TOKEN= sfw npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
@@ -757,7 +792,7 @@ toolkit-js-prep-local:
 # check-deps checks for unused dependencies
 check-deps:
     FROM +prep
-    RUN cargo install cargo-shear --version 1.6.6 --locked
+    RUN sfw cargo install cargo-shear --version 1.6.6 --locked
 
     # shear
     RUN cargo shear
@@ -796,7 +831,7 @@ check-rust:
 
     # ensure runtime benchmark and try runtime features enable to check they compile.
     # SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD speeds up the build by 2 minutes+.
-    RUN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks,try-runtime -- -D warnings
+    RUN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1 sfw cargo clippy --workspace --all-targets --features runtime-benchmarks,try-runtime -- -D warnings
 
     ENV SKIP_WASM_BUILD=1
 
@@ -813,8 +848,8 @@ check-feature-unification:
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    RUN cargo binstall --no-confirm cargo-hack
-    RUN cargo hack check --workspace --no-dev-deps
+    RUN sfw cargo binstall --no-confirm cargo-hack
+    RUN sfw cargo hack check --workspace --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -865,7 +900,7 @@ test:
             if [ -n "$DOCKERHUB_TOKEN" ]; then \
               echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
             fi && \
-            MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
+            MIDNIGHT_LEDGER_EXPERIMENTAL=1 sfw cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
             --exclude partner-chains-cardano-offchain \
             -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
@@ -899,7 +934,7 @@ test-pallet-fixtures:
 
     # Run pallet-midnight fixture tests in debug mode (compiles much faster)
     WITH DOCKER
-        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
+        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 sfw cargo nextest r --profile ci --locked \
             -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
     END
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
@@ -1031,7 +1066,7 @@ build:
 
     # Default build (no hardfork)
     RUN \
-        cargo auditable build --workspace --locked --release
+        sfw cargo auditable build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
@@ -1050,7 +1085,7 @@ build-benchmarks:
 
     # Build with runtime-benchmarks feature
     RUN \
-        cargo auditable build --workspace --locked --release --features runtime-benchmarks
+        sfw cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
@@ -1248,74 +1283,33 @@ audit-rust:
     FROM +prep
     RUN mkdir -p /scan_reports
     # See deny.toml for which advisories are getting ignored
-    RUN --no-cache cargo deny -f sarif check > /scan_reports/cargo-deny.sarif || true
+    RUN --no-cache sfw cargo deny -f sarif check > /scan_reports/cargo-deny.sarif || true
     SAVE ARTIFACT scan_reports/cargo-deny.sarif AS LOCAL scan_reports/cargo-deny.sarif
 
 audit-npm:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
-
-    # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
-    ARG TARGETARCH
-    RUN if [ "$TARGETARCH" = "arm64" ]; then \
-            NODE_ARCH="arm64"; \
-        else \
-            NODE_ARCH="x64"; \
-        fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        npm install -g npm@11.11.0 && \
-        node --version && npm --version
-
+    FROM +prep-no-copy
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN mkdir -p /scan_reports
-    RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
-      && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
+    RUN --no-cache sfw npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
+      && sfw npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
     SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-yarn:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
-
-    # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
-    ARG TARGETARCH
-    RUN if [ "$TARGETARCH" = "arm64" ]; then \
-            NODE_ARCH="arm64"; \
-        else \
-            NODE_ARCH="x64"; \
-        fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        npm install -g npm@11.11.0 && \
-        node --version && npm --version
-
+    FROM +prep-no-copy
     # Install and enable corepack for yarn support
-    RUN npm install -g corepack && corepack enable
-
+    RUN sfw npm install -g corepack && corepack enable
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
-    RUN yarn install --immutable
+    RUN sfw yarn install --immutable
     RUN mkdir -p /scan_reports
-    RUN --no-cache OUTPUT="$(yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
-      && if [ -s "npm-audit-${REPORT_NAME}.json" ]; then npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; fi
+    RUN --no-cache OUTPUT="$(sfw yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
+      && if [ -s "npm-audit-${REPORT_NAME}.json" ]; then sfw npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; fi
     SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-local-environment:
@@ -1337,29 +1331,10 @@ audit:
 # fix-lock-npm regenerates a single npm package-lock.json inside a container
 fix-lock-npm:
     ARG DIRECTORY
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
-
-    RUN microdnf -y install tar gzip xz && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Keep in sync with audit-npm target
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
-    ARG TARGETARCH
-    RUN if [ "$TARGETARCH" = "arm64" ]; then \
-            NODE_ARCH="arm64"; \
-        else \
-            NODE_ARCH="x64"; \
-        fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
-        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
-        rm node.tar.xz && \
-        npm install -g npm@11.11.0 && \
-        node --version && npm --version
-
+    FROM +prep-no-copy
     COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/
     WORKDIR ${DIRECTORY}
-    RUN npm install
+    RUN sfw npm install
     SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
 
 # fix-lock-js regenerates all npm lockfiles
@@ -1370,7 +1345,7 @@ fix-lock-js:
 # fix-lock-rust regenerates Cargo.lock
 fix-lock-rust:
     FROM +prep
-    RUN cargo generate-lockfile
+    RUN sfw cargo generate-lockfile
     SAVE ARTIFACT Cargo.lock AS LOCAL Cargo.lock
 
 # fix-lock regenerates all lockfiles
@@ -1461,7 +1436,7 @@ local-env-e2e:
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
+    RUN sfw cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
