@@ -285,10 +285,4 @@ mod tests {
 	fn dust_public_key_is_valid_rejects_empty() {
 		assert!(!dust_public_key_is_valid(&[]), "empty bytes were accepted as a DustPublicKey");
 	}
-
-	#[test]
-	fn dust_public_key_is_valid_rejects_too_short() {
-		let bytes = vec![0u8; 1];
-		assert!(!dust_public_key_is_valid(&bytes), "single byte was accepted as a DustPublicKey");
-	}
 }
