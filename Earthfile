@@ -724,6 +724,16 @@ prep-no-copy:
 
     # ca-certificates and curl-minimal already present in the CI base image
 
+    # Make cargo shell out to system `git` for fetching git deps, so libcurl
+    # honours $GIT_SSL_CAINFO (set by sfw to point at its MITM CA bundle).
+    # The default libgit2 path ignores GIT_SSL_CAINFO and fails verification
+    # with "unable to get local issuer certificate" when running under sfw.
+    ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+    # Suppress sfw's "Protected by Socket Firewall" stdout banner so callers
+    # that redirect stdout to a file (e.g. `npm audit --json > out.json`)
+    # don't end up with a non-JSON prefix in the captured output.
+    ENV SFW_SILENT=1
+
     RUN cargo --version
     RUN sfw cargo binstall --no-confirm cargo-auditable
 
