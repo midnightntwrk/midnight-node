@@ -1,0 +1,8 @@
+#toolkit
+# Update toolkit to Compact 0.31.0
+
+Bumped `COMPACTC_VERSION` from `0.30.0` to `0.31.0` so the toolkit pulls the
+latest compactc release, enabling QA to test against Compact 0.31.0.
+
+PR:
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1535
