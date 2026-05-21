@@ -125,6 +125,34 @@ Highest-signal-per-minute checks for this release candidate.
 
 ---
 
+### TC-7 · Runtime upgrade dry-run on forked preview / pre-prod / mainnet ([#1520](https://github.com/midnightntwrk/midnight-node/issues/1520))
+
+**Why:** before cutting 1.0.0 GA we dry-ran the runtime upgrade on snapshots of the live chains (preview, pre-prod, mainnet) to confirm the `spec_version` 22_000 → 1_000_000 bump, the `SignedExtension` → `TransactionExtension` migration, and the `AccountUsage` storage migration all apply cleanly against real chain state rather than just `dev`/`local`.
+
+1. Fork each target network from a recent snapshot.
+2. Apply the rc.8 runtime upgrade.
+3. Confirm block production and finality resume post-upgrade and that storage migrations complete without error.
+
+**Expected:** upgrade applies cleanly on every forked network; no panics or migration failures; chain continues producing and finalizing blocks. See [#1520](https://github.com/midnightntwrk/midnight-node/issues/1520).
+
+**Result:** ✅ &nbsp;&nbsp; **Notes:**
+
+---
+
+### TC-8 · `try-runtime` migration check 22_000 → 1_000_000 ([#1554](https://github.com/midnightntwrk/midnight-node/issues/1554))
+
+**Why:** independent verification of the runtime upgrade path using `try-runtime --checks all` against a mainnet-state snapshot. Exercises every pallet's `on_runtime_upgrade`, full state decode, and all `try_state` hooks before touching a live chain.
+
+1. Take a recent `midnight-22000@latest.snap` snapshot.
+2. Run `./midnight-node try-runtime --snap <snap> --runtime <1.0.0-rc.8 try-runtime wasm> --checks all`.
+3. Inspect the report for migration warnings, decode errors, and weight consumption.
+
+**Expected:** original runtime reported as version 22000, new as 1000000; entire runtime state decodes without error; all per-pallet `try-state` checks pass; migration weight well under max block weight. See [#1554](https://github.com/midnightntwrk/midnight-node/issues/1554) for the captured run.
+
+**Result:** ✅ &nbsp;&nbsp; **Notes:**
+
+---
+
 ## Sign-off
 
 | Field | Value |
