@@ -16,9 +16,10 @@ export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
   /**
-   * Snapshot URI (http://, https://, or local path) to fork the well-known
-   * network from. Required for well-known networks since they only have a
-   * mock-authorities-driven bring-up path.
+   * Snapshot URI (http:// or https://) to fork the well-known network from.
+   * Required on the first bring-up of a well-known network; later runs can
+   * omit it to reuse existing restored data plus generated mock-authorities
+   * output.
    */
   fromSnapshot?: string;
 }

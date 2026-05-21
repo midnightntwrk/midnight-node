@@ -34,7 +34,10 @@ interface ProposalInfo {
   proposalIndex: number;
 }
 
-const CLOSE_WEIGHT = { refTime: new BN(10_000_000_000), proofSize: new BN(65_536) };
+const CLOSE_WEIGHT = {
+  refTime: new BN(10_000_000_000),
+  proofSize: new BN(65_536),
+};
 
 export async function federatedRuntimeUpgrade(
   namespace: string,
@@ -112,12 +115,7 @@ export async function federatedRuntimeUpgrade(
       councilMembers[0],
       councilApprovalThreshold,
     );
-    await voteCollectiveMotion(
-      api,
-      "council",
-      councilProposal,
-      councilMembers,
-    );
+    await voteCollectiveMotion(api, "council", councilProposal, councilMembers);
     await closeCollectiveProposal(
       api,
       "council",
@@ -197,13 +195,13 @@ async function proposeCollectiveMotion(
   const extrinsic =
     collective === "council"
       ? api.tx.council.propose(approvalThreshold, call, lengthBound)
-      : api.tx.technicalCommittee.propose(
-          approvalThreshold,
-          call,
-          lengthBound,
-        );
+      : api.tx.technicalCommittee.propose(approvalThreshold, call, lengthBound);
 
-  const result = await signAndWait(extrinsic, proposer, `${collective}.propose`);
+  const result = await signAndWait(
+    extrinsic,
+    proposer,
+    `${collective}.propose`,
+  );
   return extractProposalInfo(result, collective);
 }
 
@@ -269,10 +267,12 @@ function extractProposalInfo(
   result: ISubmittableResult,
   collective: Collective,
 ): ProposalInfo {
-  const targetSection = collective === "council" ? "council" : "technicalcommittee";
+  const targetSection =
+    collective === "council" ? "council" : "technicalcommittee";
   const proposed = result.events.find(
     ({ event }) =>
-      event.section.toLowerCase() === targetSection && event.method === "Proposed",
+      event.section.toLowerCase() === targetSection &&
+      event.method === "Proposed",
   );
 
   if (!proposed) {
@@ -297,7 +297,10 @@ async function getCollectiveMembersCount(
   return (members.toJSON() as unknown[]).length;
 }
 
-function computeTwoThirdsThreshold(totalMembers: number, label: string): number {
+function computeTwoThirdsThreshold(
+  totalMembers: number,
+  label: string,
+): number {
   if (totalMembers <= 0) {
     throw new Error(
       `${label} has no on-chain members; cannot compute approval threshold.`,

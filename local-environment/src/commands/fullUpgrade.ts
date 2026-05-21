@@ -43,7 +43,9 @@ export async function fullUpgrade(
     requireHealthy: opts.requireHealthy,
   });
 
-  console.log(`[full-upgrade ${namespace}] phase 2/2: governance runtime upgrade`);
+  console.log(
+    `[full-upgrade ${namespace}] phase 2/2: governance runtime upgrade`,
+  );
   await federatedRuntimeUpgrade(namespace, {
     profiles: opts.profiles,
     envFile: opts.envFile,

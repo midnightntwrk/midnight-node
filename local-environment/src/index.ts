@@ -82,10 +82,10 @@ program
   .option("--env-file <path...>", "specify one or more env files")
   .option(
     "--from-snapshot <uri>",
-    "http(s):// snapshot URI to fork the network from. Required for well-known networks.",
+    "http(s):// snapshot URI to restore before the first well-known-network bring-up. Later runs can omit it to reuse existing local fork state.",
   )
   .description(
-    "Bring up a forked well-known network from a snapshot using mock-authorities, or run the local-env target.",
+    "Bring up a forked well-known network from a snapshot using mock-authorities, reuse an existing local fork, or run the local-env target.",
   )
   .action(async (network: string, options: RunOptions) => {
     await run(network, options);
@@ -235,8 +235,8 @@ program
   .option("-p, --profiles <profile...>", "Docker Compose profiles to activate")
   .option("--env-file <path...>", "specify one or more env files")
   .option(
-    "--from-snapshot <id>",
-    "Restore a bootnode snapshot before launching services",
+    "--from-snapshot <uri>",
+    "Restore an http(s) snapshot before launching services. Omit it to reuse existing local fork state.",
   )
   .option(
     "--allow-same-version",
@@ -331,7 +331,7 @@ program
   .option("--env-file <path...>", "specify one or more env files")
   .option(
     "--from-snapshot <uri>",
-    "http(s):// or s3:// snapshot URI to fork the network from before phase 1",
+    "http(s):// snapshot URI to restore before phase 1. Required for the first bring-up of a well-known network.",
   )
   .option(
     "--allow-same-version",
