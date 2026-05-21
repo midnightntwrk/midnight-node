@@ -223,29 +223,36 @@ pub struct BatchesArgs {
 	pub coin_selection: CoinSelectionStrategy,
 }
 
-// TODO: TokenIDs for shielded and unshielded
 #[derive(Args, Clone, Debug)]
 pub struct SingleTxArgs {
-	/// Amount to send to each shielded wallet
+	/// Amount(s) to send to shielded destinations.
+	///
+	/// Provide once to broadcast the same amount to every shielded destination,
+	/// or repeat once per shielded destination (in the order they appear in
+	/// `--destination-address`) for per-destination amounts.
 	#[arg(long)]
-	pub shielded_amount: Option<u128>,
-	/// Type of shielded token to send
+	pub shielded_amount: Vec<u128>,
+	/// Token type(s) for shielded destinations.
+	///
+	/// Same broadcast / per-destination semantics as `--shielded-amount`. If
+	/// omitted, defaults to the all-zeros token type and broadcasts to every
+	/// shielded destination.
 	#[arg(
 		long,
 		value_parser = cli::token_decode::<ShieldedTokenType>,
-		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
 	)]
-	pub shielded_token_type: ShieldedTokenType,
-	/// Amount to send to each unshielded wallet
+	pub shielded_token_type: Vec<ShieldedTokenType>,
+	/// Amount(s) to send to unshielded destinations. Same broadcast /
+	/// per-destination semantics as `--shielded-amount`.
 	#[arg(long)]
-	pub unshielded_amount: Option<u128>,
-	/// Type of unshielded token to send
+	pub unshielded_amount: Vec<u128>,
+	/// Token type(s) for unshielded destinations. Same broadcast /
+	/// per-destination semantics as `--shielded-token-type`.
 	#[arg(
 		long,
 		value_parser = cli::token_decode::<UnshieldedTokenType>,
-		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
 	)]
-	pub unshielded_token_type: UnshieldedTokenType,
+	pub unshielded_token_type: Vec<UnshieldedTokenType>,
 	/// Seed for source wallet
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	pub source_seed: WalletSeed,
@@ -258,7 +265,9 @@ pub struct SingleTxArgs {
 	/// Pin specific wallet UTXOs as inputs to the unshielded transfer. Format:
 	/// <intent_hash_hex>#<output_no>, e.g. abc123…#0. Repeatable. When set, the
 	/// toolkit skips its built-in coin selection and uses exactly these UTXOs;
-	/// their summed value must be >= --unshielded-amount * destinations.
+	/// their summed value must be >= the total of `--unshielded-amount` across
+	/// destinations of the same token type. Only valid when exactly one
+	/// unshielded token type is used.
 	#[arg(long = "input-utxo", value_parser = cli::utxo_id_decode)]
 	pub input_utxos: Vec<UtxoId>,
 	#[arg(

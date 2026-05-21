@@ -37,16 +37,28 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 pub(crate) const MAX_GUARANTEED_OUTPUTS: usize = 2;
 const MAX_GUARANTEED_INPUTS_OUTPUTS: usize = 3;
 
+/// Per-destination shielded output spec, after CLI argument resolution
+/// (broadcast / index alignment) has produced one entry per destination.
+pub(crate) struct ShieldedOutputSpec<D: super::ledger_helpers_local::DB + Clone> {
+	pub wallet: ShieldedWallet<D>,
+	pub amount: u128,
+	pub token_type: ShieldedTokenType,
+}
+
+/// Per-destination unshielded output spec, after CLI argument resolution.
+pub(crate) struct UnshieldedOutputSpec {
+	pub wallet: UnshieldedWallet,
+	pub amount: u128,
+	pub token_type: UnshieldedTokenType,
+}
+
 pub struct SingleTxBuilder {
 	context: Arc<LedgerContext<DefaultDB>>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
-	shielded_amount: Option<u128>,
-	shielded_token_type: ShieldedTokenType,
-	unshielded_amount: Option<u128>,
-	unshielded_token_type: UnshieldedTokenType,
+	shielded_outputs: Vec<ShieldedOutputSpec<DefaultDB>>,
+	unshielded_outputs: Vec<UnshieldedOutputSpec>,
 	source_seed: WalletSeed,
 	funding_seed: Option<WalletSeed>,
-	destination_address: Vec<WalletAddress>,
 	input_utxos: Vec<UtxoId>,
 	rng_seed: Option<[u8; 32]>,
 	coin_selection: CoinSelectionStrategy,
@@ -59,20 +71,70 @@ impl SingleTxBuilder {
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		use super::type_convert::*;
+
+		let local_destinations: Vec<WalletAddress> =
+			args.destination_address.iter().map(convert_wallet_address).collect();
+
+		// Convert amount/token vecs to version-local types.
+		let shielded_amounts: Vec<u128> = args.shielded_amount.clone();
+		let unshielded_amounts: Vec<u128> = args.unshielded_amount.clone();
+		let shielded_token_types: Vec<ShieldedTokenType> = args
+			.shielded_token_type
+			.iter()
+			.copied()
+			.map(convert_shielded_token_type)
+			.collect();
+		let unshielded_token_types: Vec<UnshieldedTokenType> = args
+			.unshielded_token_type
+			.iter()
+			.copied()
+			.map(convert_unshielded_token_type)
+			.collect();
+
+		// Classify each destination address as shielded or unshielded, preserving
+		// command-line order on each side. Per-output amounts and token types are
+		// later assigned by the order in which destinations of each kind appeared.
+		let mut shielded_wallets: Vec<ShieldedWallet<DefaultDB>> = Vec::new();
+		let mut unshielded_wallets: Vec<UnshieldedWallet> = Vec::new();
+		for (idx, addr) in local_destinations.iter().enumerate() {
+			if let Ok(sw) = <ShieldedWallet<DefaultDB>>::try_from(addr) {
+				shielded_wallets.push(sw);
+			} else if let Ok(uw) = UnshieldedWallet::try_from(addr) {
+				unshielded_wallets.push(uw);
+			} else {
+				log::error!(
+					"destination address at position {} does not parse as shielded or unshielded: {:?}",
+					idx,
+					addr
+				);
+				panic!("destination_address parse error");
+			}
+		}
+
+		// Resolve amounts/tokens against the destination count on each side, with
+		// broadcast (single value) or per-destination alignment.
+		let shielded_outputs = resolve_outputs(
+			"shielded",
+			&shielded_wallets,
+			&shielded_amounts,
+			&shielded_token_types,
+			|wallet, amount, token_type| ShieldedOutputSpec { wallet, amount, token_type },
+		);
+		let unshielded_outputs = resolve_outputs(
+			"unshielded",
+			&unshielded_wallets,
+			&unshielded_amounts,
+			&unshielded_token_types,
+			|wallet, amount, token_type| UnshieldedOutputSpec { wallet, amount, token_type },
+		);
+
 		Self {
 			context,
 			prover,
-			shielded_amount: args.shielded_amount,
-			shielded_token_type: convert_shielded_token_type(args.shielded_token_type),
-			unshielded_amount: args.unshielded_amount,
-			unshielded_token_type: convert_unshielded_token_type(args.unshielded_token_type),
+			shielded_outputs,
+			unshielded_outputs,
 			source_seed: convert_wallet_seed(args.source_seed),
 			funding_seed: args.funding_seed.map(convert_wallet_seed),
-			destination_address: args
-				.destination_address
-				.iter()
-				.map(convert_wallet_address)
-				.collect(),
 			input_utxos: {
 				let mut seen: HashSet<([u8; 32], u32)> = HashSet::new();
 				args.input_utxos
@@ -87,6 +149,68 @@ impl SingleTxBuilder {
 	}
 
 	pub fn build() {}
+}
+
+/// Pair per-destination wallets with their amount and token type, supporting
+/// either broadcast (single value applied to all) or full per-destination
+/// alignment by index. Panics with a clear message on mismatched lengths.
+fn resolve_outputs<W: Clone, Tt: Copy + Default, S>(
+	side: &str,
+	wallets: &[W],
+	amounts: &[u128],
+	token_types_local: &[Tt],
+	mk: impl Fn(W, u128, Tt) -> S,
+) -> Vec<S> {
+	let n = wallets.len();
+	if n == 0 {
+		if !amounts.is_empty() {
+			log::warn!(
+				"--{side}-amount was provided ({} value(s)) but no {side} destinations were given; ignoring",
+				amounts.len()
+			);
+		}
+		if !token_types_local.is_empty() {
+			log::warn!(
+				"--{side}-token-type was provided ({} value(s)) but no {side} destinations were given; ignoring",
+				token_types_local.len()
+			);
+		}
+		return Vec::new();
+	}
+
+	if amounts.is_empty() {
+		log::error!("--{side}-amount is required when at least one {side} destination is given");
+		panic!("missing --{side}-amount");
+	}
+
+	if amounts.len() != 1 && amounts.len() != n {
+		log::error!(
+			"--{side}-amount must be provided once (broadcast) or exactly {n} time(s) to match destinations; got {}",
+			amounts.len()
+		);
+		panic!("--{side}-amount length mismatch");
+	}
+
+	if !token_types_local.is_empty() && token_types_local.len() != 1 && token_types_local.len() != n
+	{
+		log::error!(
+			"--{side}-token-type must be omitted, provided once (broadcast), or exactly {n} time(s) to match destinations; got {}",
+			token_types_local.len()
+		);
+		panic!("--{side}-token-type length mismatch");
+	}
+
+	(0..n)
+		.map(|i| {
+			let amount = if amounts.len() == 1 { amounts[0] } else { amounts[i] };
+			let token_type = match token_types_local.len() {
+				0 => Tt::default(),
+				1 => token_types_local[0],
+				_ => token_types_local[i],
+			};
+			mk(wallets[i].clone(), amount, token_type)
+		})
+		.collect()
 }
 
 #[async_trait]
@@ -109,35 +233,11 @@ impl BuildTxs for SingleTxBuilder {
 			self.rng_seed,
 		);
 
-		let shielded_wallets: Vec<ShieldedWallet<DefaultDB>> =
-			self.destination_address.iter().filter_map(|d| d.try_into().ok()).collect();
-
-		let unshielded_wallets: Vec<UnshieldedWallet> =
-			self.destination_address.iter().filter_map(|d| d.try_into().ok()).collect();
-
-		if shielded_wallets.len() + unshielded_wallets.len() < self.destination_address.len() {
-			log::error!("Not all --destination_address values were successfully parsed.");
-			log::error!("destination_addresses: {:#?}", self.destination_address);
-			panic!("destination_address parse error");
-		}
-
-		if !shielded_wallets.is_empty() && self.shielded_amount.is_none() {
-			log::error!("Passing shielded wallet addresses requires --shielded-amount");
-			panic!("missing --shielded-amount");
-		}
-
-		if !unshielded_wallets.is_empty() && self.unshielded_amount.is_none() {
-			log::error!("Passing unshielded wallet addresses requires --unshielded-amount");
-			panic!("missing --unshielded-amount");
-		}
-
-		if !shielded_wallets.is_empty() {
+		if !self.shielded_outputs.is_empty() {
 			let offer = build_shielded_offer(
 				context.clone(),
 				self.source_seed.clone(),
-				shielded_wallets,
-				self.shielded_amount.unwrap(),
-				self.shielded_token_type,
+				self.shielded_outputs.iter().map(clone_shielded_spec).collect(),
 				self.coin_selection,
 			)
 			.expect("insufficient shielded coins for transfer");
@@ -148,13 +248,11 @@ impl BuildTxs for SingleTxBuilder {
 			}
 		}
 
-		if !unshielded_wallets.is_empty() {
+		if !self.unshielded_outputs.is_empty() {
 			let intents = build_unshielded_intents(
 				context.clone(),
 				self.source_seed.clone(),
-				unshielded_wallets,
-				self.unshielded_amount.unwrap(),
-				self.unshielded_token_type,
+				self.unshielded_outputs.iter().map(clone_unshielded_spec).collect(),
 				&self.input_utxos,
 				self.coin_selection,
 			)
@@ -168,8 +266,9 @@ impl BuildTxs for SingleTxBuilder {
 		tx_info.use_mock_proofs_for_fees(true);
 
 		if tx_info.is_empty() {
-			log::error!("transaction is empty! No valid destination_addresses were found");
-			log::error!("destination_addresses: {:#?}", self.destination_address);
+			log::error!(
+				"transaction is empty! No valid destination_addresses were resolved into outputs"
+			);
 			panic!("transaction empty");
 		}
 
@@ -183,110 +282,166 @@ impl BuildTxs for SingleTxBuilder {
 	}
 }
 
+fn clone_shielded_spec(spec: &ShieldedOutputSpec<DefaultDB>) -> ShieldedOutputSpec<DefaultDB> {
+	ShieldedOutputSpec {
+		wallet: spec.wallet.clone(),
+		amount: spec.amount,
+		token_type: spec.token_type,
+	}
+}
+
+fn clone_unshielded_spec(spec: &UnshieldedOutputSpec) -> UnshieldedOutputSpec {
+	UnshieldedOutputSpec {
+		wallet: spec.wallet.clone(),
+		amount: spec.amount,
+		token_type: spec.token_type,
+	}
+}
+
+/// Build a shielded offer that may contain outputs of multiple distinct token
+/// types. Inputs are selected separately per token type; one change output per
+/// token type is appended when needed.
 pub(crate) fn build_shielded_offer(
 	context: Arc<LedgerContext<DefaultDB>>,
 	funding_seed: WalletSeed,
-	output_wallets: Vec<ShieldedWallet<DefaultDB>>,
-	amount: u128,
-	token_type: ShieldedTokenType,
+	outputs: Vec<ShieldedOutputSpec<DefaultDB>>,
 	coin_selection: CoinSelectionStrategy,
 ) -> Result<OfferInfo<DefaultDB>, ShieldedCoinSelectionError> {
-	let total_required = amount
-		.checked_mul(output_wallets.len() as u128)
-		.ok_or(ShieldedCoinSelectionError::ArithmeticOverflow)?;
+	// Sum amounts per token type, in the order each token type first appears so
+	// behaviour is deterministic for callers.
+	let mut totals: Vec<(ShieldedTokenType, u128)> = Vec::new();
+	for spec in &outputs {
+		match totals.iter_mut().find(|(tt, _)| *tt == spec.token_type) {
+			Some((_, sum)) => {
+				*sum = sum
+					.checked_add(spec.amount)
+					.ok_or(ShieldedCoinSelectionError::ArithmeticOverflow)?;
+			},
+			None => totals.push((spec.token_type, spec.amount)),
+		}
+	}
 
-	let (input_infos, change) = InputInfo::coins_to_cover_value(
-		context,
-		funding_seed.clone(),
-		total_required,
-		token_type,
-		coin_selection,
-	)?;
+	let mut inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = Vec::new();
+	let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = Vec::new();
 
-	let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = input_infos
-		.into_iter()
-		.map(|input| {
+	// User outputs first, in the order they were given.
+	for spec in outputs {
+		let output: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
+			destination: spec.wallet,
+			token_type: spec.token_type,
+			value: spec.amount,
+		});
+		outputs_info.push(output);
+	}
+
+	// Per token type: select inputs and append a change refund if needed.
+	for (token_type, total_required) in totals {
+		let (token_inputs, change) = InputInfo::coins_to_cover_value(
+			context.clone(),
+			funding_seed.clone(),
+			total_required,
+			token_type,
+			coin_selection,
+		)?;
+
+		for input in token_inputs {
 			let input: Box<dyn BuildInput<DefaultDB>> = Box::new(input);
-			input
-		})
-		.collect();
+			inputs_info.push(input);
+		}
 
-	let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = output_wallets
-		.iter()
-		.map(|wallet| {
-			let output: Box<dyn BuildOutput<DefaultDB>> =
-				Box::new(OutputInfo { destination: wallet.clone(), token_type, value: amount });
-			output
-		})
-		.collect();
-
-	if change > 0 {
-		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> =
-			Box::new(OutputInfo { destination: funding_seed, token_type, value: change });
-		outputs_info.push(output_info_refund);
+		if change > 0 {
+			let refund: Box<dyn BuildOutput<DefaultDB>> = Box::new(OutputInfo {
+				destination: funding_seed.clone(),
+				token_type,
+				value: change,
+			});
+			outputs_info.push(refund);
+		}
 	}
 
 	Ok(OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] })
 }
 
+/// Build the unshielded intents that may contain outputs of multiple distinct
+/// token types. UTXOs are selected separately per token type; one change output
+/// per token type is appended when needed.
+///
+/// `input_utxos`, when non-empty, pins the inputs used for the spend. This is
+/// only supported when exactly one unshielded token type is used across all
+/// outputs (the pinned UTXOs must all share that token type).
 pub(crate) fn build_unshielded_intents(
 	context: Arc<LedgerContext<DefaultDB>>,
 	source_seed: WalletSeed,
-	output_wallets: Vec<UnshieldedWallet>,
-	amount_to_send_per_output: u128,
-	token_type: UnshieldedTokenType,
+	outputs: Vec<UnshieldedOutputSpec>,
 	input_utxos: &[UtxoId],
 	coin_selection: CoinSelectionStrategy,
 ) -> Result<HashMap<u16, Box<dyn BuildIntent<DefaultDB>>>, UtxoSelectionError> {
-	let total_required = amount_to_send_per_output
-		.checked_mul(output_wallets.len() as u128)
-		.ok_or(UtxoSelectionError::ArithmeticOverflow)?;
+	// Sum amounts per token type, preserving first-seen order.
+	let mut totals: Vec<(UnshieldedTokenType, u128)> = Vec::new();
+	for spec in &outputs {
+		match totals.iter_mut().find(|(tt, _)| *tt == spec.token_type) {
+			Some((_, sum)) => {
+				*sum =
+					sum.checked_add(spec.amount).ok_or(UtxoSelectionError::ArithmeticOverflow)?;
+			},
+			None => totals.push((spec.token_type, spec.amount)),
+		}
+	}
 
-	let (inputs_info, remaining_nights) = if input_utxos.is_empty() {
-		UtxoSpendInfo::utxos_to_cover_value(
-			context,
-			source_seed.clone(),
-			total_required,
-			token_type,
-			coin_selection,
-		)?
-	} else {
-		UtxoSpendInfo::utxos_by_ids(
-			context,
-			source_seed.clone(),
-			total_required,
-			token_type,
-			input_utxos,
-		)?
-	};
+	if !input_utxos.is_empty() && totals.len() > 1 {
+		panic!(
+			"--input-utxo is only supported when a single unshielded token type is used; got {} distinct types",
+			totals.len()
+		);
+	}
 
-	let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs_info
-		.into_iter()
-		.map(|input| {
+	let mut inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = Vec::new();
+	let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = Vec::new();
+
+	// User outputs first, in the order they were given.
+	for spec in outputs {
+		let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
+			value: spec.amount,
+			owner: spec.wallet,
+			token_type: spec.token_type,
+		});
+		outputs_info.push(output);
+	}
+
+	// Per token type: select utxos (or use pinned utxos for the single-token case)
+	// and append a change refund if needed.
+	for (token_type, total_required) in totals {
+		let (token_inputs, remaining) = if input_utxos.is_empty() {
+			UtxoSpendInfo::utxos_to_cover_value(
+				context.clone(),
+				source_seed.clone(),
+				total_required,
+				token_type,
+				coin_selection,
+			)?
+		} else {
+			UtxoSpendInfo::utxos_by_ids(
+				context.clone(),
+				source_seed.clone(),
+				total_required,
+				token_type,
+				input_utxos,
+			)?
+		};
+
+		for input in token_inputs {
 			let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
-			input
-		})
-		.collect();
+			inputs_info.push(input);
+		}
 
-	// Outputs info
-	let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
-		.iter()
-		.map(|wallet| {
-			let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
-				value: amount_to_send_per_output,
-				owner: wallet.clone(),
+		if remaining > 0 {
+			let refund: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
+				value: remaining,
+				owner: source_seed.clone(),
 				token_type,
 			});
-			output
-		})
-		.collect();
-
-	// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
-	let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB>> =
-		Box::new(UtxoOutputInfo { value: remaining_nights, owner: source_seed, token_type });
-
-	if remaining_nights > 0 {
-		outputs_info.push(output_info_refund);
+			outputs_info.push(refund);
+		}
 	}
 
 	let inputs_outputs_len = inputs_info.len() + outputs_info.len();
@@ -339,12 +494,15 @@ mod tests {
 		let wallet2 = ShieldedWallet::default(test_seed_2());
 		let token_type = ShieldedTokenType(HashOutput([0u8; 32]));
 
+		let outputs = vec![
+			ShieldedOutputSpec { wallet: wallet1, amount: u128::MAX, token_type },
+			ShieldedOutputSpec { wallet: wallet2, amount: u128::MAX, token_type },
+		];
+
 		let result = build_shielded_offer(
 			context,
 			test_seed(),
-			vec![wallet1, wallet2],
-			u128::MAX,
-			token_type,
+			outputs,
 			CoinSelectionStrategy::default(),
 		);
 
@@ -358,12 +516,15 @@ mod tests {
 		let wallet2 = UnshieldedWallet::default(test_seed_2());
 		let token_type = UnshieldedTokenType(HashOutput([0u8; 32]));
 
+		let outputs = vec![
+			UnshieldedOutputSpec { wallet: wallet1, amount: u128::MAX, token_type },
+			UnshieldedOutputSpec { wallet: wallet2, amount: u128::MAX, token_type },
+		];
+
 		let result = build_unshielded_intents(
 			context,
 			test_seed(),
-			vec![wallet1, wallet2],
-			u128::MAX,
-			token_type,
+			outputs,
 			&[],
 			CoinSelectionStrategy::default(),
 		);

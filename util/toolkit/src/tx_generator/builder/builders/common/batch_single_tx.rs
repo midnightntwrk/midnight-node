@@ -19,7 +19,10 @@ use super::ledger_helpers_local::{
 	TransactionWithContext, UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError,
 	WalletAddress,
 };
-use super::single_tx::{MAX_GUARANTEED_OUTPUTS, build_shielded_offer, build_unshielded_intents};
+use super::single_tx::{
+	MAX_GUARANTEED_OUTPUTS, ShieldedOutputSpec, UnshieldedOutputSpec, build_shielded_offer,
+	build_unshielded_intents,
+};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
 
@@ -109,9 +112,7 @@ impl BatchSingleTxBuilder {
 			let intents = build_unshielded_intents(
 				context.clone(),
 				source_seed.clone(),
-				vec![dest_wallet],
-				amount,
-				token_type,
+				vec![UnshieldedOutputSpec { wallet: dest_wallet, amount, token_type }],
 				&[],
 				coin_selection,
 			)?;
@@ -129,9 +130,7 @@ impl BatchSingleTxBuilder {
 			let offer = build_shielded_offer(
 				context,
 				source_seed,
-				vec![dest_wallet],
-				amount,
-				token_type,
+				vec![ShieldedOutputSpec { wallet: dest_wallet, amount, token_type }],
 				coin_selection,
 			)?;
 
