@@ -732,7 +732,7 @@ prep-no-copy:
     # Suppress sfw's "Protected by Socket Firewall" stdout banner so callers
     # that redirect stdout to a file (e.g. `npm audit --json > out.json`)
     # don't end up with a non-JSON prefix in the captured output.
-    ENV SFW_SILENT=1
+    ENV SFW_SILENT=true
 
     RUN cargo --version
     RUN sfw cargo binstall --no-confirm cargo-auditable
