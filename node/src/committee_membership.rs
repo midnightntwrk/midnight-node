@@ -108,7 +108,7 @@ where
 					.collect();
 				log::warn!(
 					target: LOG_TARGET,
-					"Session {session_index}: this node is NOT in the committee \
+					"Session {session_index}: this node IS NOT in the committee \
 					 for this session (local AURA keys: {local_hex:?}, committee size: {committee_size})."
 				);
 			},
