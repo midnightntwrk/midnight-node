@@ -753,6 +753,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		task_manager
 			.spawn_essential_handle()
 			.spawn_blocking("aura", Some("block-authoring"), aura);
+
+		task_manager.spawn_handle().spawn(
+			"committee-membership-watch",
+			None,
+			crate::committee_membership::watch(client.clone(), keystore_container.keystore()),
+		);
 	}
 
 	if enable_grandpa {

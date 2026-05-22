@@ -16,7 +16,6 @@ impl PartnerChainRuntime for MockRuntime {
 			"session":config.pallet_partner_chains_session_config::<MockRuntime>(),
 			"sessionCommitteeManagement": config.pallet_session_validator_management_config::<MockRuntime>(),
 			"sidechain": config.pallet_sidechain_config::<MockRuntime>(SlotsPerEpoch(13)),
-			"governedMap":config.governed_map_config::<MockRuntime>(),
 			"bridge":config.bridge_config::<MockRuntime>(),
 		})
 	}
@@ -154,10 +153,6 @@ fn cardano_addresses_json() -> serde_json::Value {
 				"asset_name": "0x5043546f6b656e44656d6f",
 			},
 			"illiquid_circulation_supply_validator_address": "addr_test1wrhvtvx3f0g9wv9rx8kfqc60jva3e07nqujk2cspekv4mqs9rjdvz"
-		},
-		"governed_map": {
-			"validator_address": "addr_test1wqpjpjq08treyvmqjca0qy5kw8xgq4awgt945v46jsxgyhsafz4ws",
-			"policy_id": "0xc814db91bfaf7f0078e2c69d13443ffc46c9957393174f7baa8d0000"
 		}
 	})
 }
@@ -189,13 +184,6 @@ fn show_chain_parameters() -> MockIO {
 		),
 		MockIO::print(
 			"- illiquid circulation supply validator address: addr_test1wrhvtvx3f0g9wv9rx8kfqc60jva3e07nqujk2cspekv4mqs9rjdvz",
-		),
-		MockIO::print("Governed Map Configuration:"),
-		MockIO::print(
-			"- validator address: addr_test1wqpjpjq08treyvmqjca0qy5kw8xgq4awgt945v46jsxgyhsafz4ws",
-		),
-		MockIO::print(
-			"- asset policy ID: 0xc814db91bfaf7f0078e2c69d13443ffc46c9957393174f7baa8d0000",
 		),
 	])
 }
@@ -247,13 +235,6 @@ fn generated_chain_spec() -> serde_json::Value {
 			"sidechain":{
 				"genesisUtxo": "0000000000000000000000000000000000000000000000000000000000000000#0",
 				"slotsPerEpoch": 13,
-			},
-			"governedMap": {
-				"mainChainScripts": {
-					"asset_policy_id": "0xc814db91bfaf7f0078e2c69d13443ffc46c9957393174f7baa8d0000",
-					"validator_address": "addr_test1wqpjpjq08treyvmqjca0qy5kw8xgq4awgt945v46jsxgyhsafz4ws"
-				},
-				"marker": null,
 			},
 			"bridge": {
 				"initialCheckpoint": "0x0000000000000000000000000000000000000000000000000000000000000000",

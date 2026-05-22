@@ -4,10 +4,9 @@ use crate::{
 	cli::{Cli, Subcommand},
 	service,
 };
-use partner_chains_demo_runtime::{Block, BlockProducerMetadataType};
+use partner_chains_demo_runtime::Block;
 use sc_cli::SubstrateCli;
 use sc_service::PartialComponents;
-use sp_runtime::AccountId32;
 
 impl SubstrateCli for Cli {
 	fn impl_name() -> String {
@@ -66,15 +65,11 @@ pub fn run() -> sc_cli::Result<()> {
 		Some(Subcommand::Key(cmd)) => cmd.run(&cli),
 		Some(Subcommand::PartnerChains(cmd)) => {
 			let make_dependencies = |config| service::new_pc_command_deps(&config);
-			partner_chains_node_commands::run::<
-				_,
-				_,
-				_,
-				_,
-				BlockProducerMetadataType,
-				WizardBindings,
-				AccountId32,
-			>(&cli, make_dependencies, cmd.clone())
+			partner_chains_node_commands::run::<_, _, _, _, WizardBindings>(
+				&cli,
+				make_dependencies,
+				cmd.clone(),
+			)
 		},
 		Some(Subcommand::BuildSpec(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
