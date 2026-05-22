@@ -28,7 +28,7 @@ mod full_crypto {
 	/// Calculates the public key and signature for given private key and hashed data.
 	pub fn sc_public_key_and_signature(key: SecretKey, hashed: [u8; 32]) -> (PublicKey, Signature) {
 		let public_key = PublicKey::from_secret_key_global(&key);
-		let signature = key.sign_ecdsa(Message::from_digest(hashed));
+		let signature = key.sign_ecdsa(Message::from_digest_slice(hashed.as_slice()).unwrap());
 		(public_key, signature)
 	}
 
