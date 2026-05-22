@@ -152,38 +152,7 @@ lazy_static! {
 			.time_to_idle(TX_VALIDATION_CACHE_TTI)
 			.time_to_live(SOFT_TX_VALIDATION_CACHE_TTL)
 			.build();
-
-	/// Within a block, hold a strong reference to the in-flight ledger state
-	/// across consecutive `apply_transaction` calls. Without this pin the
-	/// substrate storage cache may evict arena subtrees mid-block under
-	/// pressure and the next tx pays a disk-fetch cost.
-	///
-	/// Cleared in `post_block_update` every `LEDGER_PIN_RESET_BLOCKS`
-	/// blocks so retained arena subtrees can be released — otherwise the
-	/// pin holds them indefinitely and memory grows without bound.
-	static ref INTRA_BLOCK_LEDGER_PIN: std::sync::Mutex<Option<Arc<dyn Any + Send + Sync>>> =
-		std::sync::Mutex::new(None);
 }
-
-/// How often (in blocks) to drop `INTRA_BLOCK_LEDGER_PIN` so retained arena
-/// subtrees can be released. Each clear pays one block's worth of arena
-/// cache misses on the next block, so during major sync (where blocks are
-/// processed back-to-back) we clear far less often.
-#[cfg(feature = "std")]
-const LEDGER_PIN_RESET_BLOCKS_NORMAL: u64 = 200;
-#[cfg(feature = "std")]
-const LEDGER_PIN_RESET_BLOCKS_MAJOR_SYNC: u64 = 20_000;
-
-#[cfg(feature = "std")]
-static LEDGER_PIN_BLOCK_COUNTER: std::sync::atomic::AtomicU64 =
-	std::sync::atomic::AtomicU64::new(0);
-
-/// Probe set by the node service so the ledger can ask "are we major-syncing
-/// right now?" without taking a dependency on `sp_consensus::SyncOracle`.
-/// Used to widen `INTRA_BLOCK_LEDGER_PIN`'s reset cadence during catch-up.
-#[cfg(feature = "std")]
-pub static MAJOR_SYNCING_PROBE: std::sync::OnceLock<Box<dyn Fn() -> bool + Send + Sync>> =
-	std::sync::OnceLock::new();
 
 #[cfg(feature = "std")]
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
@@ -315,25 +284,6 @@ where
 			"⏱️  Ledger persisted (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-
-		// Periodically drop the intra-block ledger pin so retained arena
-		// subtrees can be released. The pin only matters within a block;
-		// clearing at a block boundary costs at most one block's worth of
-		// arena cache misses. Cadence widens during major sync — back-to-back
-		// blocks make those cache misses expensive — and tightens at tip,
-		// where memory turnover matters more than per-block latency.
-		let major_syncing = MAJOR_SYNCING_PROBE.get().is_some_and(|f| f());
-		let cadence = if major_syncing {
-			LEDGER_PIN_RESET_BLOCKS_MAJOR_SYNC
-		} else {
-			LEDGER_PIN_RESET_BLOCKS_NORMAL
-		};
-		let n = LEDGER_PIN_BLOCK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-		if n.is_multiple_of(cadence)
-			&& let Ok(mut guard) = INTRA_BLOCK_LEDGER_PIN.lock()
-		{
-			*guard = None;
-		}
 
 		Ok(state_root)
 	}
@@ -527,13 +477,6 @@ where
 			"⏱️  Ledger persisted (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-
-		// Keep the in-flight ledger state alive across consecutive
-		// apply_transaction calls so the substrate storage cache does not
-		// evict arena subtrees we'll need for the next tx in this block.
-		if let Ok(mut guard) = INTRA_BLOCK_LEDGER_PIN.lock() {
-			*guard = Some(Arc::new(new_ledger.state.clone()) as Arc<dyn Any + Send + Sync>);
-		}
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();

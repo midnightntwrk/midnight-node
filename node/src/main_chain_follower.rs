@@ -163,6 +163,86 @@ const BRIDGE_POOL_CFG: DbPoolCfg =
 const ICS_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 
+/// Build the cNIGHT-observation data source.
+///
+/// Uses `BulkCachedCNightObservationDataSource` (in-memory sliding window) when
+/// `chainspec_cnight_genesis` is configured — the path is needed to resolve
+/// the cNIGHT addresses we query db-sync for. Falls back to the per-call
+/// db-backed source otherwise; sync is significantly slower in that case.
+async fn build_cnight_observation_data_source(
+	cnight_observation_window_size: Option<u32>,
+	cnight_genesis_path: Option<String>,
+	cnight_observation_pool: Pool<Postgres>,
+	db_sync_block_data_source_config: &DbSyncBlockDataSourceConfig,
+	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
+) -> Result<
+	Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
+	Box<dyn Error + Send + Sync + 'static>,
+> {
+	use midnight_primitives_mainchain_follower::data_source::{
+		BulkCachedCNightObservationDataSource, DEFAULT_WINDOW_SIZE,
+	};
+
+	match cnight_genesis_path {
+		Some(path) => {
+			let cnight_genesis_str = std::fs::read_to_string(&path)
+				.map_err(|e| format!("failed to read chainspec_cnight_genesis ({path}): {e}"))?;
+			let cnight_genesis: pallet_cnight_observation::config::CNightGenesis =
+				serde_json::from_str(&cnight_genesis_str).map_err(|e| {
+					format!("failed to parse chainspec_cnight_genesis ({path}): {e}")
+				})?;
+			let cnight_addresses = cnight_genesis.addresses;
+			// Anchor the cache at the cardano position the runtime
+			// observes from. Setting snapshot_end = next - 1 makes the
+			// first refresh's `from_block = old_end + 1` land exactly on
+			// `next` (inclusive of the boundary event).
+			let next_pos: u32 = cnight_genesis.next_cardano_position.block_number;
+			let init_horizon = next_pos.saturating_sub(1);
+			let window_size: u32 = cnight_observation_window_size.unwrap_or(DEFAULT_WINDOW_SIZE);
+
+			// Empty initial cache so the node starts up immediately. The
+			// first follower call will see `tip_pos > horizon`, delegate
+			// to db_fallback for that one call, and kick a background
+			// refresh that populates the window. Subsequent calls hit
+			// the cache.
+			log::info!(
+				"cNIGHT observation: sliding window cache (anchor = Cardano block {next_pos}, window = {window_size})"
+			);
+			let stability_margin = db_sync_block_data_source_config
+				.cardano_security_parameter
+				.saturating_add(db_sync_block_data_source_config.block_stability_margin);
+			let db_fallback = Arc::new(MidnightCNightObservationDataSourceImpl::new(
+				cnight_observation_pool.clone(),
+				midnight_metrics_opt.clone(),
+				1000,
+			));
+			Ok(Arc::new(BulkCachedCNightObservationDataSource::new(
+				Vec::new(),
+				init_horizon,
+				init_horizon,
+				window_size,
+				cnight_observation_pool,
+				db_fallback,
+				cnight_addresses,
+				stability_margin,
+				midnight_metrics_opt,
+			)))
+		},
+		None => {
+			log::warn!(
+				"cNIGHT observation: chainspec_cnight_genesis not set — falling back to per-call db-sync queries. \
+				Sync will be significantly slower. \
+				Set `CHAINSPEC_CNIGHT_GENESIS=/path/to/cnight-config.json` (or `chainspec_cnight_genesis = \"…\"` in the toml) to enable the in-memory bulk-read.",
+			);
+			Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(
+				cnight_observation_pool,
+				midnight_metrics_opt,
+				1000,
+			)))
+		},
+	}
+}
+
 pub async fn create_cached_data_sources(
 	cfg: MidnightCfg,
 	cnight_genesis_path: Option<String>,
@@ -274,74 +354,14 @@ pub async fn create_cached_data_sources(
 		log::warn!("Failed to connect to database for cnight_observation data source: {e}");
 		e
 	})?;
-	let cnight_observation: Arc<dyn MidnightCNightObservationDataSource + Send + Sync> = {
-		use midnight_primitives_mainchain_follower::data_source::BulkCachedCNightObservationDataSource;
-
-		// Bulk-read is gated on `chainspec_cnight_genesis` — without it we
-		// can't resolve the cNIGHT addresses to query db-sync. Fall back to
-		// the live db-backed source (slower per-call, but functional).
-		match cnight_genesis_path {
-			Some(path) => {
-				let cnight_genesis_str = std::fs::read_to_string(&path).map_err(|e| {
-					format!("failed to read chainspec_cnight_genesis ({path}): {e}")
-				})?;
-				let cnight_genesis: pallet_cnight_observation::config::CNightGenesis =
-					serde_json::from_str(&cnight_genesis_str).map_err(|e| {
-						format!("failed to parse chainspec_cnight_genesis ({path}): {e}")
-					})?;
-				let cnight_addresses = cnight_genesis.addresses;
-				// Anchor the cache at the cardano position the runtime
-				// observes from. Setting snapshot_end = next - 1 makes the
-				// first refresh's `from_block = old_end + 1` land exactly on
-				// `next` (inclusive of the boundary event).
-				let next_pos: u32 = cnight_genesis.next_cardano_position.block_number;
-				let init_horizon = next_pos.saturating_sub(1);
-				use midnight_primitives_mainchain_follower::data_source::DEFAULT_WINDOW_SIZE;
-				let window_size: u32 =
-					cfg.cnight_observation_window_size.unwrap_or(DEFAULT_WINDOW_SIZE);
-
-				// Empty initial cache so the node starts up immediately. The
-				// first follower call will see `tip_pos > horizon`, delegate
-				// to db_fallback for that one call, and kick a background
-				// refresh that populates the window. Subsequent calls hit
-				// the cache.
-				log::info!(
-					"cNIGHT observation: sliding window cache (anchor = Cardano block {next_pos}, window = {window_size})"
-				);
-				let stability_margin = db_sync_block_data_source_config
-					.cardano_security_parameter
-					.saturating_add(db_sync_block_data_source_config.block_stability_margin);
-				let db_fallback = Arc::new(MidnightCNightObservationDataSourceImpl::new(
-					cnight_observation_pool.clone(),
-					midnight_metrics_opt.clone(),
-					1000,
-				));
-				Arc::new(BulkCachedCNightObservationDataSource::new(
-					Vec::new(),
-					init_horizon,
-					init_horizon,
-					window_size,
-					cnight_observation_pool,
-					db_fallback,
-					cnight_addresses,
-					stability_margin,
-					midnight_metrics_opt.clone(),
-				))
-			},
-			None => {
-				log::warn!(
-					"cNIGHT observation: chainspec_cnight_genesis not set — falling back to per-call db-sync queries. \
-					Sync will be significantly slower. \
-					Set `CHAINSPEC_CNIGHT_GENESIS=/path/to/cnight-config.json` (or `chainspec_cnight_genesis = \"…\"` in the toml) to enable the in-memory bulk-read.",
-				);
-				Arc::new(MidnightCNightObservationDataSourceImpl::new(
-					cnight_observation_pool,
-					midnight_metrics_opt.clone(),
-					1000,
-				))
-			},
-		}
-	};
+	let cnight_observation = build_cnight_observation_data_source(
+		cfg.cnight_observation_window_size,
+		cnight_genesis_path,
+		cnight_observation_pool,
+		&db_sync_block_data_source_config,
+		midnight_metrics_opt.clone(),
+	)
+	.await?;
 
 	let federated_authority_observation_pool = get_connection(
 		postgres_uri,

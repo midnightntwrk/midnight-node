@@ -572,16 +572,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// Capture peer_id before network is moved
 	let peer_id = network.local_peer_id().to_base58();
 
-	// Hand the ledger a closure that calls substrate's `is_major_syncing()`
-	// directly, so it can widen its intra-block-pin reset cadence during
-	// catch-up without taking a dependency on `sp_consensus::SyncOracle`.
-	{
-		use sc_consensus_aura::SyncOracle as _;
-		let sync_oracle = sync_service.clone();
-		let _ = midnight_node_ledger::ledger_8::MAJOR_SYNCING_PROBE
-			.set(Box::new(move || sync_oracle.is_major_syncing()));
-	}
-
 	if config.offchain_worker.enabled {
 		task_manager.spawn_handle().spawn(
 			"offchain-workers-runner",
