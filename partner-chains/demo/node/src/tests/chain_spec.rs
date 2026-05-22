@@ -26,24 +26,11 @@ fn pc_create_chain_spec_test() {
 			"addr_nativetokenisc",
 		)
 		.unwrap(),
-		governed_map_validator_address: Some(MainchainAddress::from_str("addr_govmap").unwrap()),
-		governed_map_asset_policy_id: Some(PolicyId([5u8; 28])),
 	};
 
 	let json = pc_create_chain_spec(&config);
 	let config = json.pointer("/genesis/runtimeGenesis/config").unwrap().clone();
 	let config_obj = config.as_object().unwrap().clone();
-
-	assert_eq!(
-		config_obj.get("governedMap").unwrap(),
-		&serde_json::json!({
-		  "mainChainScripts": {
-			"asset_policy_id": "0x05050505050505050505050505050505050505050505050505050505",
-			"validator_address": "addr_govmap"
-		  },
-		  "marker": null
-		})
-	);
 
 	assert_eq!(
 		config_obj.get("bridge").unwrap(),

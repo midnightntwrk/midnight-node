@@ -26,7 +26,6 @@
 //!
 //! pub const CANDIDATES_FOR_EPOCH_CACHE_SIZE: usize = 64;
 //! pub const STAKE_CACHE_SIZE: usize = 100;
-//! pub const GOVERNED_MAP_CACHE_SIZE: u16 = 100;
 //!
 //! async fn create_data_sources(
 //!     metrics_registry_opt: Option<&substrate_prometheus_endpoint::Registry>
@@ -49,8 +48,6 @@
 //!     let block_participation =
 //!     	StakeDistributionDataSourceImpl::new(pool.clone(), metrics.clone(), STAKE_CACHE_SIZE);
 //!
-//!     let governed_map =
-//!         GovernedMapDataSourceCachedImpl::new(pool, metrics.clone(), GOVERNED_MAP_CACHE_SIZE, block).await?;
 //!     Ok(())
 //! }
 //! ```
@@ -106,14 +103,10 @@ pub use crate::block::{BlockDataSourceImpl, DbSyncBlockDataSourceConfig};
 pub use crate::bridge::{TokenBridgeDataSourceImpl, cache::CachedTokenBridgeDataSourceImpl};
 #[cfg(feature = "candidate-source")]
 pub use crate::candidates::CandidatesDataSourceImpl;
-#[cfg(feature = "governed-map")]
-pub use crate::governed_map::{GovernedMapDataSourceCachedImpl, GovernedMapDataSourceImpl};
 #[cfg(feature = "mc-hash")]
 pub use crate::mc_hash::McHashDataSourceImpl;
 #[cfg(feature = "sidechain-rpc")]
 pub use crate::sidechain_rpc::SidechainRpcDataSourceImpl;
-#[cfg(feature = "block-participation")]
-pub use crate::stake_distribution::StakeDistributionDataSourceImpl;
 
 mod data_sources;
 mod db_datum;
@@ -126,14 +119,10 @@ mod block;
 mod bridge;
 #[cfg(feature = "candidate-source")]
 mod candidates;
-#[cfg(feature = "governed-map")]
-mod governed_map;
 #[cfg(feature = "mc-hash")]
 mod mc_hash;
 #[cfg(feature = "sidechain-rpc")]
 mod sidechain_rpc;
-#[cfg(feature = "block-participation")]
-mod stake_distribution;
 
 #[derive(Debug)]
 /// Wrapper error type for [sqlx::Error]
@@ -177,9 +166,6 @@ pub enum DataSourceError {
 	)]
 	InvalidData(String),
 }
-
-#[cfg(feature = "governed-map")]
-pub(crate) type Result<T> = std::result::Result<T, DataSourceError>;
 
 #[cfg(test)]
 mod tests {

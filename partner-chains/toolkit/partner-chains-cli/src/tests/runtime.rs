@@ -61,7 +61,6 @@ construct_runtime! {
 		System: frame_system,
 		Balances: pallet_balances::pallet,
 		Bridge: pallet_partner_chains_bridge::pallet,
-		GovernedMap: pallet_governed_map::pallet,
 		SessionCommitteeManagement: pallet_session_validator_management::pallet,
 		Session: pallet_partner_chains_session::pallet,
 	}
@@ -116,32 +115,6 @@ impl pallet_partner_chains_bridge::Config for MockRuntime {
 	type Recipient = AccountId32;
 	type TransferHandler = ();
 	type MaxTransfersPerBlock = ConstU32<3>;
-	type WeightInfo = ();
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
-}
-
-pub(crate) const TEST_MAX_CHANGES: u32 = 8;
-pub(crate) type MaxChanges = ConstU32<TEST_MAX_CHANGES>;
-pub(crate) type MaxKeyLength = ConstU32<64>;
-pub(crate) type MaxValueLength = ConstU32<512>;
-
-impl sp_governed_map::OnGovernedMappingChange<MaxKeyLength, MaxValueLength> for Mock {
-	fn on_governed_mapping_change(
-		_key: sidechain_domain::byte_string::BoundedString<MaxKeyLength>,
-		_new_value: Option<BoundedVec<u8, MaxValueLength>>,
-		_old_value: Option<BoundedVec<u8, MaxValueLength>>,
-	) {
-		unimplemented!()
-	}
-}
-
-impl pallet_governed_map::Config for MockRuntime {
-	type MaxChanges = MaxChanges;
-	type MaxKeyLength = MaxKeyLength;
-	type MaxValueLength = MaxValueLength;
-	type OnGovernedMappingChange = ();
-	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
 	type WeightInfo = ();
 	#[cfg(feature = "runtime-benchmarks")]
 	type BenchmarkHelper = ();
