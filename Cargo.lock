@@ -1898,24 +1898,18 @@ dependencies = [
  "clap",
  "ed25519-zebra",
  "hex",
- "hex-literal 1.1.0",
  "k256",
- "pallet-address-associations",
- "parity-scale-codec",
  "plutus",
  "plutus-datum-derive",
- "pretty_assertions",
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
  "sidechain-domain",
  "sp-api",
- "sp-block-producer-metadata",
  "sp-blockchain",
  "sp-runtime",
  "sp-sidechain",
  "thiserror 2.0.18",
- "time-source",
 ]
 
 [[package]]
@@ -9585,23 +9579,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-address-associations"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hex-literal 1.1.0",
- "pallet-balances",
- "parity-scale-codec",
- "scale-info",
- "sidechain-domain",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
 name = "pallet-asset-conversion"
 version = "28.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
@@ -9747,106 +9724,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-block-participation"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sp-block-participation",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-block-producer-fees"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "scale-info",
- "sp-block-producer-fees",
- "sp-consensus-slots",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-std",
-]
-
-[[package]]
-name = "pallet-block-producer-fees-rpc"
-version = "1.8.1"
-dependencies = [
- "derive-new",
- "jsonrpsee",
- "parity-scale-codec",
- "serde",
- "sp-api",
- "sp-block-producer-fees",
- "sp-blockchain",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-block-producer-metadata"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hex-literal 1.1.0",
- "k256",
- "pallet-balances",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sidechain-domain",
- "sp-block-producer-metadata",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-block-producer-metadata-rpc"
-version = "1.8.1"
-dependencies = [
- "derive-new",
- "jsonrpsee",
- "parity-scale-codec",
- "sidechain-domain",
- "sp-api",
- "sp-block-producer-metadata",
- "sp-blockchain",
- "sp-core",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-block-production-log"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "scale-info",
- "sidechain-domain",
- "sp-block-production-log",
- "sp-consensus-slots",
- "sp-io",
- "sp-std",
-]
-
-[[package]]
 name = "pallet-broker"
 version = "0.25.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
@@ -9986,24 +9863,6 @@ dependencies = [
  "scale-info",
  "sidechain-domain",
  "sp-inherents",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-governed-map"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sidechain-domain",
- "sp-core",
- "sp-governed-map",
  "sp-io",
  "sp-runtime",
 ]
@@ -10719,7 +10578,6 @@ dependencies = [
  "libp2p-identity",
  "ogmios-client",
  "pallet-balances",
- "pallet-governed-map",
  "pallet-partner-chains-bridge",
  "pallet-partner-chains-session",
  "pallet-session-validator-management",
@@ -10736,7 +10594,6 @@ dependencies = [
  "sidechain-domain",
  "sidechain-slots",
  "sp-core",
- "sp-governed-map",
  "sp-partner-chains-bridge",
  "sp-runtime",
  "sp-session-validator-management",
@@ -10784,8 +10641,6 @@ dependencies = [
  "serde",
  "sidechain-domain",
  "sidechain-mc-hash",
- "sp-block-participation",
- "sp-governed-map",
  "sp-partner-chains-bridge",
  "sp-timestamp",
  "sqlx",
@@ -10807,8 +10662,6 @@ dependencies = [
  "hex-literal 1.1.0",
  "jsonrpsee",
  "log",
- "pallet-block-producer-fees-rpc",
- "pallet-block-producer-metadata-rpc",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
  "pallet-transaction-payment-rpc",
@@ -10838,14 +10691,9 @@ dependencies = [
  "sidechain-slots",
  "sp-api",
  "sp-block-builder",
- "sp-block-participation",
- "sp-block-producer-fees",
- "sp-block-producer-metadata",
- "sp-block-production-log",
  "sp-blockchain",
  "sp-consensus-aura",
  "sp-core",
- "sp-governed-map",
  "sp-inherents",
  "sp-io",
  "sp-partner-chains-bridge",
@@ -10877,14 +10725,8 @@ dependencies = [
  "hex-literal 1.1.0",
  "log",
  "minicbor 2.2.1",
- "pallet-address-associations",
  "pallet-aura",
  "pallet-balances",
- "pallet-block-participation",
- "pallet-block-producer-fees",
- "pallet-block-producer-metadata",
- "pallet-block-production-log",
- "pallet-governed-map",
  "pallet-grandpa",
  "pallet-partner-chains-bridge",
  "pallet-partner-chains-session",
@@ -10904,16 +10746,11 @@ dependencies = [
  "sidechain-slots",
  "sp-api",
  "sp-block-builder",
- "sp-block-participation",
- "sp-block-producer-fees",
- "sp-block-producer-metadata",
- "sp-block-production-log",
  "sp-consensus-aura",
  "sp-consensus-grandpa",
  "sp-consensus-slots",
  "sp-core",
  "sp-genesis-builder",
- "sp-governed-map",
  "sp-inherents",
  "sp-io",
  "sp-keyring",
@@ -10944,8 +10781,6 @@ dependencies = [
  "serde_json",
  "sidechain-domain",
  "sidechain-mc-hash",
- "sp-block-participation",
- "sp-governed-map",
  "sp-partner-chains-bridge",
  "sp-timestamp",
 ]
@@ -10963,7 +10798,6 @@ dependencies = [
  "once_cell",
  "parity-scale-codec",
  "partner-chains-cli",
- "partner-chains-smart-contracts-commands",
  "plutus",
  "sc-cli",
  "sc-service",
@@ -10991,23 +10825,6 @@ dependencies = [
  "sidechain-domain",
  "sp-core",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "partner-chains-smart-contracts-commands"
-version = "1.8.1"
-dependencies = [
- "anyhow",
- "clap",
- "hex",
- "hex-literal 1.1.0",
- "ogmios-client",
- "partner-chains-cardano-offchain",
- "serde",
- "serde_json",
- "sidechain-domain",
- "sp-runtime",
- "tokio",
 ]
 
 [[package]]
@@ -15991,57 +15808,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-block-participation"
-version = "1.8.1"
-dependencies = [
- "async-trait",
- "log",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sidechain-domain",
- "sp-api",
- "sp-consensus-slots",
- "sp-inherents",
- "sp-runtime",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "sp-block-producer-fees"
-version = "1.8.1"
-dependencies = [
- "parity-scale-codec",
- "sp-api",
- "sp-std",
-]
-
-[[package]]
-name = "sp-block-producer-metadata"
-version = "1.8.1"
-dependencies = [
- "hex-literal 1.1.0",
- "k256",
- "parity-scale-codec",
- "sidechain-domain",
- "sp-api",
-]
-
-[[package]]
-name = "sp-block-production-log"
-version = "1.8.1"
-dependencies = [
- "async-trait",
- "parity-scale-codec",
- "sidechain-slots",
- "sp-api",
- "sp-inherents",
- "sp-runtime",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "sp-blockchain"
 version = "44.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
@@ -16283,25 +16049,6 @@ dependencies = [
  "serde_json",
  "sp-api",
  "sp-runtime",
-]
-
-[[package]]
-name = "sp-governed-map"
-version = "1.8.1"
-dependencies = [
- "async-trait",
- "envy",
- "log",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "serde",
- "sidechain-domain",
- "sp-api",
- "sp-inherents",
- "sp-runtime",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]

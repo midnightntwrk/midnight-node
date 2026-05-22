@@ -336,21 +336,7 @@ whisky = { git = "https://github.com/midnightntwrk/whisky", branch = "wasm-bindg
 # Partner-chains local crates (not directly used but needed for workspace resolution)
 partner-chains-demo-runtime = { path = "partner-chains/demo/runtime", default-features = false }
 partner-chains-cardano-offchain = { path = "partner-chains/toolkit/smart-contracts/offchain", default-features = false }
-partner-chains-smart-contracts-commands = { path = "partner-chains/toolkit/smart-contracts/commands", default-features = false }
 sidechain-block-search = { path = "partner-chains/toolkit/sidechain/sidechain-block-search", default-features = false }
-pallet-address-associations = { path = "partner-chains/toolkit/address-associations/pallet", default-features = false }
-pallet-governed-map = { path = "partner-chains/toolkit/governed-map/pallet", default-features = false }
-sp-block-participation = { path = "partner-chains/toolkit/block-participation/primitives", default-features = false }
-sp-block-producer-metadata = { path = "partner-chains/toolkit/block-producer-metadata/primitives", default-features = false }
-sp-governed-map = { path = "partner-chains/toolkit/governed-map/primitives", default-features = false }
-pallet-block-participation = { path = "partner-chains/toolkit/block-participation/pallet", default-features = false }
-pallet-block-producer-fees = { path = "partner-chains/toolkit/block-producer-fees/pallet", default-features = false }
-sp-block-producer-fees = { path = "partner-chains/toolkit/block-producer-fees/primitives", default-features = false }
-pallet-block-producer-fees-rpc = { path = "partner-chains/toolkit/block-producer-fees/rpc", default-features = false }
-pallet-block-producer-metadata = { path = "partner-chains/toolkit/block-producer-metadata/pallet", default-features = false }
-pallet-block-producer-metadata-rpc = { path = "partner-chains/toolkit/block-producer-metadata/rpc", default-features = false }
-pallet-block-production-log = { path = "partner-chains/toolkit/block-production-log/pallet", default-features = false }
-sp-block-production-log = { path = "partner-chains/toolkit/block-production-log/primitives", default-features = false }
 
 # Substrate deps needed by partner-chains
 pallet-balances = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }

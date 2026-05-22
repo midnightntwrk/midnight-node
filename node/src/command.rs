@@ -15,7 +15,7 @@
 
 use crate::{
 	cfg::{Cfg, midnight_cfg::StorageSeparation},
-	cli::{self, Cli, RunMidnight, Subcommand},
+	cli::{Cli, RunMidnight, Subcommand},
 	filtering_pool::TxFilterConfig,
 	genesis::{
 		creation::{
@@ -407,11 +407,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
-			partner_chains_node_commands::run::<_, _, _, _, cli::MidnightBlockProducerMetadata, _, _>(
-				&cfg,
-				make_dependencies,
-				cmd.clone(),
-			)
+			partner_chains_node_commands::run::<_, _, _, _, _>(&cfg, make_dependencies, cmd.clone())
 		},
 		Subcommand::BuildSpec(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
