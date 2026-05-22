@@ -97,7 +97,8 @@ where
 		match local_match {
 			Some(key) => log::info!(
 				target: LOG_TARGET,
-				"Session {session_index}: this node IS in the committee (AURA key: 0x{}, committee size: {committee_size})",
+				"Session {session_index}: this node IS in the committee for this session \
+				 (AURA key: 0x{}, committee size: {committee_size})",
 				hex::encode(AsRef::<[u8]>::as_ref(key)),
 			),
 			None => {
@@ -108,8 +109,7 @@ where
 				log::warn!(
 					target: LOG_TARGET,
 					"Session {session_index}: this node is NOT in the committee \
-					 (local AURA keys: {local_hex:?}, committee size: {committee_size}). \
-					 If this node is expected to produce blocks, check the keystore.",
+					 for this session (local AURA keys: {local_hex:?}, committee size: {committee_size})."
 				);
 			},
 		}
