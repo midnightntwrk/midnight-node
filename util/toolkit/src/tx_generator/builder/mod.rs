@@ -388,7 +388,56 @@ pub enum Builder {
 	ContractCustom(CustomContractArgs),
 	/// Claim rewards
 	ClaimRewards(ClaimRewardsArgs),
-	/// Send single transaction with one-or-many outputs
+	/// Send a single transaction with one-or-many outputs across shielded
+	/// and/or unshielded destinations, optionally mixing multiple token types
+	/// in one tx.
+	#[clap(long_about = "\
+Send a single transaction with one-or-many outputs across shielded and/or \
+unshielded destinations, optionally mixing multiple token types in one tx.
+
+Each --destination-address is classified automatically as shielded or \
+unshielded by its HRP. Amounts and token types are taken from the matching \
+side (--shielded-amount / --shielded-token-type or --unshielded-amount / \
+--unshielded-token-type).
+
+Per-side broadcast vs per-destination semantics:
+  * Provide the amount/token flag once     -> broadcast to every destination on that side.
+  * Provide it once per destination        -> aligned by command-line order of the destinations on that side.
+  * Omit --*-token-type                    -> defaults to the all-zeros token (NIGHT) for every destination on that side.
+
+Examples:
+
+  # One shielded + one unshielded destination, different token types (mixed-token tx):
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --destination-address mn_addr1... \\
+    --unshielded-amount 410000000 \\
+    --unshielded-token-type 0000...0000 \\
+    --destination-address mn_shield-addr1... \\
+    --shielded-amount 41 \\
+    --shielded-token-type 0000...0001
+
+  # Two unshielded destinations, same token type and amount (broadcast):
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --unshielded-amount 100 \\
+    --destination-address mn_addr1...A \\
+    --destination-address mn_addr1...B
+
+  # Two unshielded destinations, different amounts and token types (per-destination):
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --destination-address mn_addr1...A \\
+    --unshielded-amount 100 \\
+    --unshielded-token-type 0000...0000 \\
+    --destination-address mn_addr1...B \\
+    --unshielded-amount 250 \\
+    --unshielded-token-type 0000...0001
+
+Notes:
+  * --input-utxo is only supported when exactly one unshielded token type is used.
+  * Mismatched flag counts (e.g. 3 destinations on a side but 2 amounts) are rejected with a clear error.
+")]
 	SingleTx(SingleTxArgs),
 	/// Register a DUST address for the wallet
 	RegisterDustAddress(RegisterDustAddressArgs),
