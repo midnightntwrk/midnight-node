@@ -31,12 +31,11 @@ use sc_client_api::BlockchainEvents;
 use sidechain_domain::ScEpochNumber;
 use sp_api::ProvideRuntimeApi;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_core::crypto::KeyTypeId;
+use sp_core::crypto::key_types::AURA as AURA_KEY_TYPE;
 use sp_keystore::{Keystore, KeystorePtr};
 use sp_session_validator_management::{CommitteeMember as _, SessionValidatorManagementApi};
 use std::sync::Arc;
 
-const AURA_KEY_TYPE: KeyTypeId = KeyTypeId(*b"aura");
 const LOG_TARGET: &str = "committee-membership";
 
 pub async fn watch<C>(client: Arc<C>, keystore: KeystorePtr)
