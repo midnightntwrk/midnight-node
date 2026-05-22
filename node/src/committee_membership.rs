@@ -106,7 +106,7 @@ where
 					.iter()
 					.map(|k| format!("0x{}", hex::encode(AsRef::<[u8]>::as_ref(k))))
 					.collect();
-				log::warn!(
+				log::info!(
 					target: LOG_TARGET,
 					"Session {session_index}: this node IS NOT in the committee \
 					 for this session (local AURA keys: {local_hex:?}, committee size: {committee_size})."
