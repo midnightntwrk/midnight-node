@@ -32,7 +32,7 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3b5a285706ce2bffa5313bbbd40146404890b03f
         if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
