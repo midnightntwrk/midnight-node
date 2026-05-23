@@ -31,9 +31,6 @@ substrate-prometheus-endpoint = { workspace = true }
 derive-new = { workspace = true }
 lru = { workspace = true }
 sp-timestamp = { workspace = true, features = ["std"] }
-sp-governed-map = { workspace = true, features = [
-    "std",
-], optional = true }
 sidechain-mc-hash = { workspace = true, optional = true }
 pallet-sidechain-rpc = { workspace = true, optional = true }
 authority-selection-inherents = { workspace = true, features = [
@@ -41,9 +38,6 @@ authority-selection-inherents = { workspace = true, features = [
 ], optional = true }
 cardano-serialization-lib = { workspace = true }
 partner-chains-plutus-data = { workspace = true }
-sp-block-participation = { workspace = true, features = [
-    "std",
-], optional = true }
 sp-partner-chains-bridge = { workspace = true, optional = true, features = ["std"] }
 
 [dev-dependencies]
@@ -56,8 +50,6 @@ pretty_assertions = { workspace = true }
 default = []
 block-source = []
 candidate-source = ["authority-selection-inherents"]
-governed-map = ["sp-governed-map"]
 mc-hash = ["sidechain-mc-hash", "block-source"]
 sidechain-rpc = ["pallet-sidechain-rpc", "block-source"]
-block-participation = ["sp-block-participation"]
 bridge = ["sp-partner-chains-bridge"]

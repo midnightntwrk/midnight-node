@@ -15,6 +15,11 @@
 export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
+  /**
+   * Snapshot URI (http://, https://, or local path) to fork the well-known
+   * network from. Required for well-known networks since they only have a
+   * mock-authorities-driven bring-up path.
+   */
   fromSnapshot?: string;
 }
 
@@ -56,22 +61,8 @@ export interface FederatedRuntimeUpgradeOptions
   motionExecutorUri: string;
 }
 
-export interface SnapshotOptions {
-  /** name of the bootnode statefulset to snapshot */
-  bootnodeStatefulSet?: string;
-  /** optional pvc name override */
-  pvcName?: string;
-  /** s3 uri that receives the archive */
-  s3Uri?: string;
-  /** container image used to perform the snapshot */
-  snapshotImage?: string;
-  /** timeout window in minutes */
-  timeoutMinutes?: number;
-}
-
 export const WELL_KNOWN_NAMESPACES = [
   "devnet",
-  "govnet",
   "preview",
   "qanet",
   "testnet-02",
@@ -82,6 +73,8 @@ export function assertWellKnownNamespace(
   ns: string,
 ): asserts ns is WellKnownNamespace {
   if (!WELL_KNOWN_NAMESPACES.includes(ns as WellKnownNamespace)) {
-    throw new Error(`Unknown namespace '${ns}'. Expected one of ${WELL_KNOWN_NAMESPACES.join(", ")}`);
+    throw new Error(
+      `Unknown namespace '${ns}'. Expected one of ${WELL_KNOWN_NAMESPACES.join(", ")}`,
+    );
   }
 }
