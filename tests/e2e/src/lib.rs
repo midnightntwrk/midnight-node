@@ -3,3 +3,4 @@
 pub mod api;
 pub mod config;
 pub mod faucet;
+pub mod logger;

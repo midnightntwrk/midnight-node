@@ -7712,6 +7712,8 @@ dependencies = [
  "tempfile",
  "tiny-bip39",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "whisky",
 ]
 
