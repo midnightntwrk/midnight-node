@@ -453,22 +453,17 @@ impl<RecipientAddress: Encode + Send + Sync> TokenBridgeInherentDataProvider<Rec
 		Api: TokenBridgeIDPRuntimeApi<Block>,
 	{
 		let max_transfers = api.get_max_transfers_per_block(parent_hash)?;
-		let (last_checkpoint, main_chain_scripts) = {
-			if let Some(last_checkpoint) = api.get_last_data_checkpoint(parent_hash)? {
-				if let Some(main_chain_scripts) = api.get_main_chain_scripts(parent_hash)? {
-					(last_checkpoint, main_chain_scripts)
-				} else {
-					log::info!(
-						"💤 Skipping token bridge transfer observation. Pallet main chain addresses are not configured."
-					);
-					return Ok(Self::Inert);
-				}
-			} else {
-				log::info!(
-					"💤 Skipping token bridge transfer observation. Pallet last data checkpoint not configured."
-				);
-				return Ok(Self::Inert);
-			}
+		let Some(last_checkpoint) = api.get_last_data_checkpoint(parent_hash)? else {
+			log::info!(
+				"💤 Skipping token bridge transfer observation. Pallet last data checkpoint not configured."
+			);
+			return Ok(Self::Inert);
+		};
+		let Some(main_chain_scripts) = api.get_main_chain_scripts(parent_hash)? else {
+			log::info!(
+				"💤 Skipping token bridge transfer observation. Pallet main chain addresses are not configured."
+			);
+			return Ok(Self::Inert);
 		};
 
 		let (transfers, new_checkpoint) = data_source
