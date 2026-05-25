@@ -28,6 +28,7 @@ members = [
     "util/aiken-deployer",
     "util/aiken-contracts-lib",
     "tests/e2e",
+    "tests/e2e/macros",
     "relay",
     "docs",
     "partner-chains/demo/node",

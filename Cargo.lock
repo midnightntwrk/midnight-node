@@ -7700,6 +7700,7 @@ dependencies = [
  "aiken-contracts-lib",
  "blake2 0.10.6",
  "hex",
+ "midnight-node-e2e-macros",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
  "midnight-node-res",
@@ -7715,6 +7716,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "whisky",
+]
+
+[[package]]
+name = "midnight-node-e2e-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.45",
+ "syn 2.0.117",
 ]
 
 [[package]]

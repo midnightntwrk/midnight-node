@@ -1,6 +1,7 @@
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::{self, Settings};
+use midnight_node_e2e::e2e_test;
 use midnight_node_e2e::faucet::FaucetManager;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
@@ -71,9 +72,8 @@ async fn global_faucet_manager() -> Arc<FaucetManager> {
 
 // -------- TESTS --------
 
-#[tokio::test]
+#[e2e_test]
 async fn register_for_dust_production() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("register_for_dust_production");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client).await;
@@ -163,9 +163,8 @@ async fn register_for_dust_production() {
 /// 1. Council Forever contract exists at the expected address with NFT
 /// 2. Technical Authority Forever contract exists at the expected address with NFT
 /// 3. Midnight blockchain emits membership reset events for the deployed contracts
-#[tokio::test]
+#[e2e_test]
 async fn verify_governance_contracts_and_validate_membership_reset() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("verify_governance_contracts_and_validate_membership_reset");
     tracing::info!("=== Verifying Governance Contracts Deployed by midnight-setup ===");
 
     let settings = Settings::default();
@@ -272,9 +271,8 @@ async fn verify_governance_contracts_and_validate_membership_reset() {
 /// This test verifies:
 /// 1. Federated Operators Forever contract exists at the expected address
 /// 2. The contract NFT was minted with the expected policy ID
-#[tokio::test]
+#[e2e_test]
 async fn verify_federated_ops_contract_deployment() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("verify_federated_ops_contract_deployment");
     tracing::info!("=== Verifying Federated Operators Contract Deployed by midnight-setup ===");
 
     let settings = Settings::default();
@@ -320,9 +318,8 @@ async fn verify_federated_ops_contract_deployment() {
     tracing::info!("\n=== Federated Operators Contract Verification Complete ===");
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn register_2_cardano_same_dust_address_production() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("register_2_cardano_same_dust_address_production");
     let settings = Settings::default();
     let base_url = settings.node_client.base_url.clone();
     let cardano_client_1 =
@@ -602,9 +599,8 @@ async fn register_2_cardano_same_dust_address_production() {
     }
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn cnight_produces_dust() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("cnight_produces_dust");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
@@ -741,9 +737,8 @@ async fn cnight_produces_dust() {
     );
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn deregister_from_dust_production() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("deregister_from_dust_production");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
@@ -877,9 +872,8 @@ async fn deregister_from_dust_production() {
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total == 0));
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn alice_cannot_deregister_bob() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("alice_cannot_deregister_bob");
     let settings = Settings::default();
 
     // Create Alice and Bob wallets
@@ -944,9 +938,8 @@ async fn alice_cannot_deregister_bob() {
     );
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn removing_excessive_registrations() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("removing_excessive_registrations");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client).await;
@@ -1193,9 +1186,8 @@ async fn removing_excessive_registrations() {
     );
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn create_hundred_registrations() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("create_hundred_registrations");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client).await;
@@ -1333,9 +1325,8 @@ async fn create_hundred_registrations() {
 /// (due to ContractNotPresent) is rejected at the RPC level via pre_dispatch.
 /// This prevents the DDoS attack vector where attackers fill blocks with
 /// failing transactions that don't pay fees.
-#[tokio::test]
+#[e2e_test]
 async fn ddos_attack_transaction_rejected_at_rpc() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("ddos_attack_transaction_rejected_at_rpc");
     use midnight_node_res::undeployed::transactions::STORE_TX;
 
     let settings = Settings::default();
@@ -1378,9 +1369,8 @@ async fn ddos_attack_transaction_rejected_at_rpc() {
 ///
 /// Verifies that multiple attack transactions are all rejected.
 /// Simulates an attacker attempting to flood the network with failing transactions.
-#[tokio::test]
+#[e2e_test]
 async fn ddos_batch_attack_all_rejected() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("ddos_batch_attack_all_rejected");
     use midnight_node_res::undeployed::transactions::STORE_TX;
 
     let settings = Settings::default();
@@ -1426,9 +1416,8 @@ async fn ddos_batch_attack_all_rejected() {
 /// Verifies that submitting the same transaction twice results in rejection.
 /// The replay protection mechanism should reject the duplicate transaction
 /// at pre_dispatch, preventing replay attacks from consuming blockspace.
-#[tokio::test]
+#[e2e_test]
 async fn replay_attack_rejected_via_rpc() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("replay_attack_rejected_via_rpc");
     use midnight_node_res::undeployed::transactions::DEPLOY_TX;
 
     let settings = Settings::default();
@@ -1517,10 +1506,9 @@ async fn replay_attack_rejected_via_rpc() {
 ///
 /// Confirms no regression - valid transactions should still be accepted.
 /// Note: This test requires a fresh node state where the contract hasn't been deployed.
-#[tokio::test]
+#[e2e_test]
 #[ignore = "Requires fresh node state - run manually with cargo test-e2e-local"]
 async fn valid_deploy_transaction_succeeds_via_rpc() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("valid_deploy_transaction_succeeds_via_rpc");
     use midnight_node_res::undeployed::transactions::DEPLOY_TX;
 
     let settings = Settings::default();
@@ -1562,9 +1550,8 @@ fn assert_contract_not_present_error(err: &(dyn std::error::Error + 'static)) {
 /// Uses CONTRACT_ADDR (the address DEPLOY_TX deploys to) so we know the
 /// address itself parses; the only reason for failure is "no contract here".
 /// Pre-deploy gated so it runs before any DEPLOY_TX submission.
-#[tokio::test]
+#[e2e_test]
 async fn contract_state_for_undeployed_address_returns_not_present() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("contract_state_for_undeployed_address_returns_not_present");
     use midnight_node_res::undeployed::transactions::CONTRACT_ADDR;
 
     let settings = Settings::default();
@@ -1585,9 +1572,8 @@ async fn contract_state_for_undeployed_address_returns_not_present() {
 /// #1166: an unparseable (non-hex) address must be rejected at the RPC layer
 /// with BadContractAddress, distinct from ContractNotPresent. This protects
 /// the new error variant from being conflated with input-validation failures.
-#[tokio::test]
+#[e2e_test]
 async fn contract_state_rejects_unparseable_address() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("contract_state_rejects_unparseable_address");
     let settings = Settings::default();
     let client = MidnightClient::new(settings.node_client).await;
 
@@ -1612,9 +1598,8 @@ async fn contract_state_rejects_unparseable_address() {
 ///
 /// Block 1 (the first block after genesis) is the pre-deploy reference —
 /// no user transaction can have been included yet.
-#[tokio::test]
+#[e2e_test]
 async fn contract_state_distinguishes_historical_and_current_blocks() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("contract_state_distinguishes_historical_and_current_blocks");
     use midnight_node_ledger_helpers::extract_tx_with_context;
     use midnight_node_toolkit::commands::contract_address::{self, ContractAddressArgs};
     use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
@@ -1756,9 +1741,8 @@ async fn contract_state_distinguishes_historical_and_current_blocks() {
     );
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn register_twice_with_same_cardano_address() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("register_twice_with_same_cardano_address");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
@@ -1929,9 +1913,8 @@ async fn register_twice_with_same_cardano_address() {
     assert!(matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total == 0));
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn deregister_with_valid_cnight_utxo() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("deregister_with_valid_cnight_utxo");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
@@ -2145,9 +2128,8 @@ async fn deregister_with_valid_cnight_utxo() {
 /// a governance transaction would need to update the D-parameter between blocks.
 /// However, this test does verify the historical query code path is exercised
 /// by querying at different block heights and validating error handling.
-#[tokio::test]
+#[e2e_test]
 async fn query_d_parameter_at_historical_block() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("query_d_parameter_at_historical_block");
     tracing::info!("=== D-Parameter Historical Block Query E2E Test ===");
 
     let settings = Settings::default();
@@ -2242,9 +2224,8 @@ async fn query_d_parameter_at_historical_block() {
     tracing::info!("To fully test historical value differences, use update_d_parameter");
     tracing::info!("via federated authority governance between block queries.");
 }
-#[tokio::test]
+#[e2e_test]
 async fn deregister_first_mapping() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("deregister_first_mapping");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
@@ -2518,9 +2499,8 @@ async fn deregister_first_mapping() {
     );
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn produce_dust_from_tokens_owned_before_registration() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("produce_dust_from_tokens_owned_before_registration");
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
     let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
@@ -2665,9 +2645,8 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     assert!(matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn stop_dust_producing_after_deregistration_and_rotation() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("stop_dust_producing_after_deregistration_and_rotation");
     // case for stop dust production (reg -> mint -> dereg -> rotate)
     let settings = Settings::default();
     let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
@@ -2834,9 +2813,8 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
     );
 }
 
-#[tokio::test]
+#[e2e_test]
 async fn spend_cnight_producing_dust() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("spend_cnight_producing_dust");
     let settings = Settings::default();
     let cardano_client =
         CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
@@ -2992,9 +2970,8 @@ async fn spend_cnight_producing_dust() {
 /// - D-Parameter with permissioned and registered candidate counts
 /// - Block info metadata showing where D-Parameter was fetched from
 /// - Permissioned candidates list (may be None if not set on mainchain)
-#[tokio::test]
+#[e2e_test]
 async fn get_ariadne_parameters_returns_valid_structure() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("get_ariadne_parameters_returns_valid_structure");
     tracing::info!("=== TC-PC-001: Ariadne Parameters Structure Validation ===");
 
     let settings = Settings::default();
@@ -3032,9 +3009,8 @@ async fn get_ariadne_parameters_returns_valid_structure() {
 ///
 /// The D-Parameter is now sourced from pallet-system-parameters instead of Cardano.
 /// In local environment, it's configured as (4, 1) - 4 permissioned, 1 registered.
-#[tokio::test]
+#[e2e_test]
 async fn d_parameter_from_pallet_matches_config() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("d_parameter_from_pallet_matches_config");
     tracing::info!("=== TC-PC-003: D-Parameter Pallet Integration ===");
 
     let settings = Settings::default();
@@ -3093,9 +3069,8 @@ async fn d_parameter_from_pallet_matches_config() {
 /// In local environment, 3 permissioned candidates (Alice, Bob, Charlie)
 /// are inserted during setup. This test verifies they are returned in the
 /// Aiken contract format with the correct structure.
-#[tokio::test]
+#[e2e_test]
 async fn permissioned_candidates_aiken_format() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("permissioned_candidates_aiken_format");
     tracing::info!("=== TC-PC-002: Aiken Permissioned Candidates Format Validation ===");
 
     let settings = Settings::default();
@@ -3172,9 +3147,8 @@ async fn permissioned_candidates_aiken_format() {
 ///
 /// This confirms that the Aiken-format permissioned candidates are correctly
 /// parsed and available via the systemParameters RPC.
-#[tokio::test]
+#[e2e_test]
 async fn authority_selection_uses_aiken_candidates() {
-    let _e2e_guard = ::midnight_node_e2e::e2e_test!("authority_selection_uses_aiken_candidates");
     tracing::info!("=== TC-PC-004: Aiken Permissioned Candidates Validation ===");
 
     let settings = Settings::default();
