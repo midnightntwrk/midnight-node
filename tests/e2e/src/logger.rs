@@ -33,7 +33,9 @@ struct E2eClock {
 
 impl Default for E2eClock {
     fn default() -> Self {
-        Self { start: Instant::now() }
+        Self {
+            start: Instant::now(),
+        }
     }
 }
 
@@ -51,8 +53,12 @@ impl FormatTime for E2eClock {
         write!(
             w,
             "{:02}:{:02}:{:02}.{:03} {:>4}.{:03}s",
-            h, m, s, ms,
-            up.as_secs(), up.subsec_millis()
+            h,
+            m,
+            s,
+            ms,
+            up.as_secs(),
+            up.subsec_millis()
         )
     }
 }
@@ -76,4 +82,3 @@ pub fn init() {
             .try_init();
     });
 }
-

@@ -361,7 +361,8 @@ impl MidnightClient {
 
         tracing::info!(
             "Events not found in historical blocks. Council: {}, TechCommittee: {}",
-            found_council_reset, found_tech_committee_reset
+            found_council_reset,
+            found_tech_committee_reset
         );
 
         // If not found in history, subscribe to new finalized blocks
@@ -527,7 +528,9 @@ impl MidnightClient {
             let status = self.get_sidechain_status().await?;
             tracing::info!(
                 "Current epoch: {}, slot: {}, target: {}",
-                status.epoch, status.slot, target_epoch
+                status.epoch,
+                status.slot,
+                target_epoch
             );
 
             if status.epoch >= target_epoch {

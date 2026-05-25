@@ -571,7 +571,8 @@ impl CardanoClient {
         let payment_addr = self.address_as_bech32();
         tracing::info!(
             "Sending assets from {} to address: {}",
-            payment_addr, tx_out_addr
+            payment_addr,
+            tx_out_addr
         );
 
         let input_tx_hash = hex::encode(tx_in.transaction.id);
@@ -685,7 +686,9 @@ impl CardanoClient {
         let start_slot = tip.slot;
         tracing::info!(
             "Current slot is {}. Waiting for {} more slots (limit {} checks)...",
-            start_slot, SLOTS_NUMBER, LIMIT
+            start_slot,
+            SLOTS_NUMBER,
+            LIMIT
         );
 
         let target = start_slot

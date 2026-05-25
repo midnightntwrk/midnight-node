@@ -85,7 +85,8 @@ async fn register_for_dust_production() {
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        address_bech32, dust_hex
+        address_bech32,
+        dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -260,7 +261,9 @@ async fn verify_governance_contracts_and_validate_membership_reset() {
         }
         Err(_) => {
             tracing::info!("\n=== Governance Contracts Verification PARTIAL SUCCESS ===");
-            tracing::info!("Contracts verified on-chain, but events were not received within timeout.");
+            tracing::info!(
+                "Contracts verified on-chain, but events were not received within timeout."
+            );
             panic!("⚠ Timeout waiting for federated authority events (30 seconds elapsed)");
         }
     }
@@ -337,11 +340,13 @@ async fn register_2_cardano_same_dust_address_production() {
     let dust_bytes: [u8; 33] = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     tracing::info!(
         "Registering First Cardano wallet {} with DUST address {}",
-        address_bech_32_1, dust_hex
+        address_bech_32_1,
+        dust_hex
     );
     tracing::info!(
         "Registering Second Cardano wallet {} with DUST address {}",
-        address_bech_32_2, dust_hex
+        address_bech_32_2,
+        dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -616,7 +621,8 @@ async fn cnight_produces_dust() {
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        bech32_address, dust_hex
+        bech32_address,
+        dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -751,7 +757,8 @@ async fn deregister_from_dust_production() {
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        address_bech32, dust_hex
+        address_bech32,
+        dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -898,7 +905,8 @@ async fn alice_cannot_deregister_bob() {
     // Bob registers his DUST address
     tracing::info!(
         "Registering Bob wallet {} with DUST address {}",
-        bob_bech32, dust_hex
+        bob_bech32,
+        dust_hex
     );
     let register_tx_id = bob
         .register(&dust_hex, &register_tx_in, &bob_collateral)
@@ -950,14 +958,16 @@ async fn removing_excessive_registrations() {
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        address_bech32, dust_hex
+        address_bech32,
+        dust_hex
     );
 
     let second_midnight_wallet_seed = MidnightClient::new_seed();
     let second_dust_hex = MidnightClient::new_dust_hex(second_midnight_wallet_seed);
     tracing::info!(
         "Registering Cardano wallet {} with second DUST address {}",
-        address_bech32, second_dust_hex
+        address_bech32,
+        second_dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -1212,7 +1222,8 @@ async fn create_hundred_registrations() {
         dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
         tracing::info!(
             "Registering Cardano wallet {} with DUST address {}",
-            address_bech32, dust_hex
+            address_bech32,
+            dust_hex
         );
 
         let register_tx_in = cardano_client
@@ -1362,7 +1373,9 @@ async fn ddos_attack_transaction_rejected_at_rpc() {
         error_msg
     );
 
-    tracing::info!("✓ PR367-TC-0003-06 PASSED: Attack transaction rejected, no blockspace consumed");
+    tracing::info!(
+        "✓ PR367-TC-0003-06 PASSED: Attack transaction rejected, no blockspace consumed"
+    );
 }
 
 /// PR367-TC-0003-06: DDoS Attack Prevention - Batch Attack
@@ -1526,7 +1539,9 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
         result.err()
     );
 
-    tracing::info!("✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
+    tracing::info!(
+        "✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block"
+    );
 }
 
 // ============================================================================
@@ -1754,7 +1769,8 @@ async fn register_twice_with_same_cardano_address() {
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        address_bech32, dust_hex
+        address_bech32,
+        dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -1927,7 +1943,8 @@ async fn deregister_with_valid_cnight_utxo() {
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        address_bech32, dust_hex
+        address_bech32,
+        dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -2237,7 +2254,8 @@ async fn deregister_first_mapping() {
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        address_bech32, dust_hex
+        address_bech32,
+        dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -2518,7 +2536,8 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     let dust_bytes: Vec<u8> = hex::decode(&dust_hex).unwrap().try_into().unwrap();
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        address_bech32, dust_hex
+        address_bech32,
+        dust_hex
     );
 
     let amount = 100;
@@ -2665,7 +2684,8 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        address_bech32, dust_hex
+        address_bech32,
+        dust_hex
     );
 
     let register_tx_id = cardano_client
@@ -2831,7 +2851,8 @@ async fn spend_cnight_producing_dust() {
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
     tracing::info!(
         "Registering Cardano wallet {} with DUST address {}",
-        bech32_address, dust_hex
+        bech32_address,
+        dust_hex
     );
 
     let faucet = global_faucet_manager().await;
@@ -3024,7 +3045,8 @@ async fn d_parameter_from_pallet_matches_config() {
 
     tracing::info!(
         "D-Parameter from pallet-system-parameters: ({}, {})",
-        d_param.num_permissioned_candidates, d_param.num_registered_candidates
+        d_param.num_permissioned_candidates,
+        d_param.num_registered_candidates
     );
 
     // Also query via getAriadneParameters to verify consistency
@@ -3113,7 +3135,9 @@ async fn permissioned_candidates_aiken_format() {
 
             tracing::info!(
                 "  Candidate {}: sidechain={}, has_keys={}",
-                i, has_sidechain_key, has_keys
+                i,
+                has_sidechain_key,
+                has_keys
             );
 
             assert!(
@@ -3133,7 +3157,9 @@ async fn permissioned_candidates_aiken_format() {
         );
     } else {
         // In some test environments, permissioned candidates might not be set
-        tracing::info!("⚠ No permissioned candidates returned (may be expected in some environments)");
+        tracing::info!(
+            "⚠ No permissioned candidates returned (may be expected in some environments)"
+        );
     }
 }
 
