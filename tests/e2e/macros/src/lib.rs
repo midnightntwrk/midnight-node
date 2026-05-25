@@ -45,7 +45,8 @@ use syn::{ItemFn, parse_macro_input};
 /// async fn slow_test() { /* ... */ }
 /// ```
 #[proc_macro_attribute]
-pub fn e2e_test(_args: TokenStream, item: TokenStream) -> TokenStream {
+pub fn e2e_test(args: TokenStream, item: TokenStream) -> TokenStream {
+    let args = proc_macro2::TokenStream::from(args);
     let input = parse_macro_input!(item as ItemFn);
 
     let attrs = &input.attrs;
@@ -54,8 +55,14 @@ pub fn e2e_test(_args: TokenStream, item: TokenStream) -> TokenStream {
     let block = &input.block;
     let name_lit = sig.ident.to_string();
 
+    let tokio_test = if args.is_empty() {
+        quote! { #[::tokio::test] }
+    } else {
+        quote! { #[::tokio::test(#args)] }
+    };
+
     quote! {
-        #[::tokio::test]
+        #tokio_test
         #(#attrs)*
         #vis #sig {
             ::midnight_node_e2e::logger::init();
