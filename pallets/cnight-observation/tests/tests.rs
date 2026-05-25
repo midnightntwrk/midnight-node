@@ -146,7 +146,18 @@ pub fn get_block_context(genesis_block: &[u8]) -> BlockContext {
 	let genesis_block: SerializedTxBatches =
 		serde_json::from_slice(genesis_block).expect("failed to deseriailzed genesis block");
 	let first_tx = genesis_block.batches.iter().flatten().next().unwrap();
-	first_tx.context.clone().into()
+	// `SerializedTx.context` is the ledger_8 onchain-runtime BlockContext; convert
+	// it to a ledger_9 onchain-runtime BlockContext (single-versioned inner types
+	// — Timestamp / HashOutput — make this a direct field copy), then `.into()`
+	// to the SCALE-friendly ledger_9 BlockContext the pallet expects.
+	let v8 = first_tx.context.clone();
+	let v9 = midnight_node_ledger_helpers::ledger_9::BlockContext {
+		tblock: v8.tblock,
+		tblock_err: v8.tblock_err,
+		parent_block_hash: v8.parent_block_hash,
+		last_block_time: v8.last_block_time,
+	};
+	v9.into()
 }
 
 fn any_event<F: Fn(&RuntimeEvent) -> bool>(f: F) -> bool {

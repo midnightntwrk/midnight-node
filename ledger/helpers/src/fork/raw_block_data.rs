@@ -59,8 +59,9 @@ mod hex_or_bytes_32 {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LedgerVersion {
 	Ledger7,
-	#[default]
 	Ledger8,
+	#[default]
+	Ledger9,
 }
 
 /// A transaction stored as raw bytes, before version-specific deserialization.
@@ -114,13 +115,18 @@ pub struct RawBlockData {
 impl LedgerVersion {
 	/// Convert a raw spec version to a `LedgerVersion`.
 	///
-	/// Versions up to 0.21.x use Ledger7, version 0.22.0+ uses Ledger8.
+	/// Versions up to 0.21.x use Ledger7, 0.22.x–TODO use Ledger8, TODO+ uses Ledger9.
+	/// The L9 cutoff spec version is a placeholder — update once the runtime version
+	/// that introduces ledger-9 is finalized.
 	pub fn from_spec_version(spec_version: u32) -> Option<Self> {
+		// TODO(ledger-9): set the actual L9 cutoff spec version.
+		const LEDGER_9_CUTOFF: u32 = u32::MAX;
 		match spec_version {
 			#[allow(clippy::zero_prefixed_literal)]
 			000_017_000..=000_021_999 => Some(LedgerVersion::Ledger7),
 			#[allow(clippy::zero_prefixed_literal)]
-			000_022_000.. => Some(LedgerVersion::Ledger8),
+			000_022_000..LEDGER_9_CUTOFF => Some(LedgerVersion::Ledger8),
+			LEDGER_9_CUTOFF.. => Some(LedgerVersion::Ledger9),
 			_ => None,
 		}
 	}

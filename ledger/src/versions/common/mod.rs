@@ -12,6 +12,9 @@
 // limitations under the License.
 
 #[cfg(feature = "std")]
+pub(crate) use super::TransactionSignature;
+
+#[cfg(feature = "std")]
 use super::{
 	base_crypto_local, coin_structure_local, helpers_local, ledger_storage_local,
 	midnight_serialize_local, mn_ledger_local, onchain_runtime_local, transient_crypto_local,
@@ -1091,7 +1094,7 @@ where
 
 	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let system_tx = SystemTransaction::DistributeReserve(amount);
+		let system_tx = super::error_ext::distribute_reserve_system_tx(amount);
 		api.tagged_serialize(&system_tx)
 	}
 
@@ -1116,7 +1119,7 @@ fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiE
 		SystemTransaction::PayBlockRewardsToTreasury { .. } => Ok("pay_block_rewards_to_treasury"),
 		SystemTransaction::PayFromTreasuryShielded { .. } => Ok("pay_from_treasury_shielded"),
 		SystemTransaction::PayFromTreasuryUnshielded { .. } => Ok("pay_from_treasury_unshielded"),
-		SystemTransaction::DistributeReserve(_) => Ok("distribute_reserve"),
+		tx if super::error_ext::is_distribute_reserve_system_tx(tx) => Ok("distribute_reserve"),
 		SystemTransaction::CNightGeneratesDustUpdate { .. } => Ok("cnight_generates_dust_update"),
 		other => {
 			log::error!(
@@ -1239,7 +1242,10 @@ mod tests {
 
 	#[test]
 	fn get_system_tx_type_distribute_reserve() {
-		let tx = SystemTransaction::DistributeReserve(0);
+		// `super::error_ext` here resolves to `common::error_ext` (which doesn't exist)
+		// because this is inside `mod tests`; we need `super::super::error_ext` to reach
+		// the ledger_X module's per-version `mod error_ext;` declaration.
+		let tx = super::super::error_ext::distribute_reserve_system_tx(0);
 		assert_eq!(get_system_tx_type(&tx).unwrap(), "distribute_reserve");
 	}
 

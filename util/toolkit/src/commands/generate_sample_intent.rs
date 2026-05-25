@@ -61,15 +61,21 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	}
 
 	match version {
-		LedgerVersion::Ledger8 => {
-			let context = Arc::new(fork_ctx.into_ledger8().expect("expected ledger 8 context"));
+		LedgerVersion::Ledger9 => {
+			let context = Arc::new(fork_ctx.into_ledger9().expect("expected ledger 9 context"));
 			let prover: Arc<
 				dyn midnight_node_ledger_helpers::ProofProvider<
 						midnight_node_ledger_helpers::DefaultDB,
 					>,
 			> = Arc::new(midnight_node_ledger_helpers::LocalProofServer::new());
 
-			execute_with_builders_v8(args.contract_call, context, prover, &args.dest_dir).await;
+			execute_with_builders_v9(args.contract_call, context, prover, &args.dest_dir).await;
+		},
+		LedgerVersion::Ledger8 => {
+			panic!(
+				"generating sample intents against legacy ledger 8 is not supported \
+				 (active build targets ledger 9)"
+			);
 		},
 		LedgerVersion::Ledger7 => {
 			let context = Arc::new(fork_ctx.into_ledger7().expect("expected ledger 7 context"));
@@ -84,7 +90,7 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	}
 }
 
-async fn execute_with_builders_v8(
+async fn execute_with_builders_v9(
 	contract_call: ContractCall,
 	context: Arc<
 		midnight_node_ledger_helpers::context::LedgerContext<

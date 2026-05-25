@@ -246,11 +246,11 @@ impl GenesisGenerator {
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		// In the initial ledger state, the reserve pool is full of NIGHT.
 		// Move any that we want to distribute into the reward pool.
-		let sys_tx_distribute = SystemTransaction::DistributeReserve(
-			funding.unshielded_mint_amount
+		let sys_tx_distribute = SystemTransaction::DistributeReserve {
+			amount: funding.unshielded_mint_amount
 				* funding.unshielded_num_funding_outputs as u128
 				* wallets.len() as u128,
-		);
+		};
 		self.apply_system_tx(sys_tx_distribute, block_context)?;
 
 		// And now reward it to each wallet.
@@ -311,7 +311,7 @@ impl GenesisGenerator {
 		let unsigned_claim: ClaimRewardsTransaction<(), DefaultDB> = ClaimRewardsTransaction {
 			network_id: self.state.network_id.clone(),
 			value: rewards,
-			owner: wallet.unshielded.verifying_key.clone().unwrap(),
+			owner: signature_verifying_key(wallet.unshielded.verifying_key.clone().unwrap()),
 			nonce: rng.r#gen(),
 			signature: (),
 			kind: ClaimKind::Reward,
@@ -322,7 +322,7 @@ impl GenesisGenerator {
 			value: unsigned_claim.value,
 			owner: unsigned_claim.owner,
 			nonce: unsigned_claim.nonce,
-			signature,
+			signature: transaction_signature(signature),
 			kind: unsigned_claim.kind,
 		};
 		Transaction::ClaimRewards(signed_claim)
@@ -549,10 +549,10 @@ impl GenesisGenerator {
 			let night_key = wallet.unshielded.verifying_key.unwrap();
 			let dust_address = wallet.dust.public_key;
 			registrations.push(DustRegistration {
-				night_key,
+				night_key: signature_verifying_key(night_key),
 				dust_address: Some(Sp::new(dust_address)),
 				allow_fee_payment: 0,
-				signature: Some(Sp::new(signature)),
+				signature: Some(Sp::new(transaction_signature(signature))),
 			});
 		}
 		if registrations.is_empty() {
@@ -593,7 +593,7 @@ impl GenesisGenerator {
 				let raw_tx = RawTransaction::Midnight(serialize(&tx)?);
 				self.txs.batches[0].push(SerializedTx {
 					tx: raw_tx,
-					context: block_context.clone(),
+					context: to_serialized_block_context(block_context),
 					tx_hash,
 				});
 				Ok(())
@@ -617,10 +617,26 @@ impl GenesisGenerator {
 		let raw_tx = RawTransaction::System(serialize(&tx)?);
 		self.txs.batches[0].push(SerializedTx {
 			tx: raw_tx,
-			context: block_context.clone(),
+			context: to_serialized_block_context(block_context),
 			tx_hash,
 		});
 		Ok(())
+	}
+}
+
+/// `SerializedTx.context` is typed against ledger_8's onchain-runtime crate, so when
+/// the generator (which operates on the latest ledger_9 types) writes a transaction
+/// into the batches we have to rebuild the BlockContext under the ledger_8 type. The
+/// inner Timestamp / HashOutput types come from single-versioned base-crypto, so this
+/// is a direct field copy.
+fn to_serialized_block_context(
+	ctx: &BlockContext,
+) -> midnight_node_ledger_helpers::ledger_8::BlockContext {
+	midnight_node_ledger_helpers::ledger_8::BlockContext {
+		tblock: ctx.tblock,
+		tblock_err: ctx.tblock_err,
+		parent_block_hash: ctx.parent_block_hash,
+		last_block_time: ctx.last_block_time,
 	}
 }
 

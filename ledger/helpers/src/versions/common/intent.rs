@@ -16,6 +16,7 @@ use super::{
 	DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, LedgerContext,
 	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker,
 	ProvingKeyMaterial, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	transaction_signing_key,
 };
 use async_trait::async_trait;
 use rand::{CryptoRng, Rng};
@@ -93,6 +94,11 @@ impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
 			intent.fallible_unshielded_offer = Some(unshielded_offer);
 			fallible_signing_keys = signing_keys;
 		}
+
+		let guaranteed_signing_keys =
+			guaranteed_signing_keys.iter().map(transaction_signing_key).collect::<Vec<_>>();
+		let fallible_signing_keys =
+			fallible_signing_keys.iter().map(transaction_signing_key).collect::<Vec<_>>();
 
 		intent
 			.sign(

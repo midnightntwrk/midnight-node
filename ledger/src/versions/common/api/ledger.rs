@@ -234,10 +234,11 @@ impl<D: DB> Borrow<LedgerState<D>> for Ledger<D> {
 // grcov-excl-start
 #[cfg(test)]
 mod tests {
-	use super::super::super::super::{CRATE_NAME, helpers_local::extract_tx_with_context};
+	use super::super::super::super::{
+		CRATE_NAME, TransactionSignature as Signature, helpers_local::extract_tx_with_context,
+	};
 	use super::super::Api;
 	use super::*;
-	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
 	use midnight_node_res::{
 		networks::{MidnightNetwork, UndeployedNetwork},

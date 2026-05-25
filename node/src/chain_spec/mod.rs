@@ -15,7 +15,9 @@ use midnight_node_ledger_helpers::fork::raw_block_data::{RawTransaction, Seriali
 use midnight_node_res::networks::MidnightNetwork;
 use serde_valid::Validate as _;
 
-use midnight_node_ledger_helpers::BlockContext;
+// `SerializedTx.context` is typed against ledger_8's onchain-runtime crate, so this
+// helper inspects the L8 BlockContext directly rather than the latest (L9) re-export.
+use midnight_node_ledger_helpers::ledger_8::BlockContext;
 
 use midnight_node_runtime::{
 	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,

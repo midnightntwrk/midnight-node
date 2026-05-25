@@ -1,10 +1,10 @@
 #[cfg(feature = "std")]
-use crate::ledger_8::Bridge;
+use crate::ledger_9::Bridge;
 use crate::{
 	common::types::{
 		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
 	},
-	ledger_8::{BlockContext, types::LedgerApiError},
+	ledger_9::{BlockContext, types::LedgerApiError},
 };
 use alloc::vec::Vec;
 use sp_runtime_interface::pass_by::{
@@ -20,7 +20,7 @@ use {
 };
 
 #[cfg(feature = "std")]
-type Signature = crate::ledger_8::TransactionSignature;
+type Signature = crate::ledger_9::TransactionSignature;
 
 // `Bridge<S, D>` instantiates `default_storage::<D>()` lookups against
 // `Storage<D>`'s TypeId. The two storage modes register storages with different
@@ -29,11 +29,11 @@ type Signature = crate::ledger_8::TransactionSignature;
 // instance with substrate state. Each host call therefore reads
 // `LedgerStorageExt` and dispatches to the matching `D`.
 #[cfg(feature = "std")]
-type DbSeparate = crate::ledger_8::ledger_storage_local::db::ParityDb;
+type DbSeparate = crate::ledger_9::ledger_storage_local::db::ParityDb;
 #[cfg(feature = "std")]
-type DbUnified = crate::ledger_8::ledger_storage_local::db::ParityDb<
+type DbUnified = crate::ledger_9::ledger_storage_local::db::ParityDb<
 	sha2::Sha256,
-	crate::ledger_8::ledger_storage_local::db::paritydb::OwnedDb,
+	crate::ledger_9::ledger_storage_local::db::paritydb::OwnedDb,
 	{ LedgerStorageExt::COLUMN_OFFSET },
 >;
 
@@ -46,7 +46,7 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 }
 
 #[runtime_interface]
-pub trait Ledger8Bridge {
+pub trait Ledger9Bridge {
 	fn set_default_storage(&mut self) {
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self)

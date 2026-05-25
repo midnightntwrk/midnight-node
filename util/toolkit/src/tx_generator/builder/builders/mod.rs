@@ -11,19 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod ledger_8;
-pub use ledger_8::*;
+pub mod ledger_9;
+pub use ledger_9::*;
 
 pub mod ledger_7;
+pub mod ledger_8;
 
 // Conversion impls for encoded zswap types to ledger types.
-// These live here (not in common/) because common/ is compiled twice
-// (once for ledger_7, once for ledger_8) and both versions now share
-// the same coin_structure types, which would cause E0119 conflicts.
+// These live here (not in common/) because common/ is compiled three times
+// (once per ledger version slot) and ledger_8/ledger_9 share the same
+// coin_structure types via patches, which would cause E0119 conflicts.
 use crate::toolkit_js::encoded_zswap_local_state::{
 	EncodedOutput, EncodedQualifiedShieldedCoinInfo, EncodedRecipient,
 };
-use midnight_node_ledger_helpers::ledger_8::{
+use midnight_node_ledger_helpers::ledger_9::{
 	CoinInfo, CoinPublicKey, ContractAddress, Deserializable, HashOutput, Nonce, QualifiedInfo,
 	Recipient, Serializable, ShieldedTokenType,
 };

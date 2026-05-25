@@ -50,7 +50,14 @@ pub async fn execute(
 			crate::commands::fork::ledger_7::contract_state::get_contract_state(&ctx, addr)
 		},
 		|ctx| {
-			crate::commands::fork::ledger_8::contract_state::get_contract_state(
+			let addr =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_contract_address(
+					args.contract_address,
+				);
+			crate::commands::fork::ledger_8::contract_state::get_contract_state(&ctx, addr)
+		},
+		|ctx| {
+			crate::commands::fork::ledger_9::contract_state::get_contract_state(
 				&ctx,
 				args.contract_address,
 			)

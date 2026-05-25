@@ -70,7 +70,14 @@ pub async fn execute(
 				);
 			crate::commands::fork::ledger_7::dust_balance::dust_balance(&ctx, seed_v7)
 		},
-		|ctx| crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, args.seed.clone()),
+		|ctx| {
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+					args.seed.clone(),
+				);
+			crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, seed_v8)
+		},
+		|ctx| crate::commands::fork::ledger_9::dust_balance::dust_balance(&ctx, args.seed.clone()),
 	)?;
 
 	Ok(DustBalanceResult::Json(json))

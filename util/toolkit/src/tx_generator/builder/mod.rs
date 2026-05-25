@@ -17,8 +17,9 @@ use clap::{Args, Subcommand};
 pub use midnight_node_ledger_helpers::CoinSelectionStrategy;
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
-		ForkAwareLedgerContext, apply_block_7, apply_block_8, block_context_from_raw_7,
-		block_context_from_raw_8, fork_context_7_to_8,
+		ForkAwareLedgerContext, apply_block_7, apply_block_8, apply_block_9,
+		block_context_from_raw_7, block_context_from_raw_8, block_context_from_raw_9,
+		fork_context_7_to_8, fork_context_8_to_9,
 	},
 	raw_block_data::{LedgerVersion, RawBlockData},
 };
@@ -405,6 +406,11 @@ pub enum BuilderConstructionError {
 	RemoteProverNotSupportedForLedger7,
 	#[error("{0} builder is not supported for ledger 7")]
 	NotSupportedForLedger7(&'static str),
+	#[error(
+		"building new transactions against ledger 8 is not supported \
+		 (the active build path targets ledger 9)"
+	)]
+	NotSupportedForLedger8,
 	#[error("chain has not reached any known ledger version")]
 	NoContext,
 	#[error("internal error: version mismatch in fork context")]
@@ -447,8 +453,8 @@ impl std::fmt::Display for DynamicError {
 	}
 }
 
-impl From<ContextNotLedger8Error> for DynamicError {
-	fn from(e: ContextNotLedger8Error) -> Self {
+impl From<ContextNotLedger9Error> for DynamicError {
+	fn from(e: ContextNotLedger9Error) -> Self {
 		Self { error: Box::new(e) }
 	}
 }
@@ -557,9 +563,10 @@ impl Builder {
 						> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
 						self_clone.to_builder_v7(Arc::new(context), prover)
 					},
+					|_context| Err(BuilderConstructionError::NotSupportedForLedger8),
 					|context| {
 						let prover = Self::make_prover(prover_config);
-						Ok(self.to_builder_v8(Arc::new(context), prover))
+						Ok(self.to_builder_v9(Arc::new(context), prover))
 					},
 				)
 			},
@@ -579,7 +586,7 @@ impl Builder {
 		}
 	}
 
-	fn to_builder_v8(
+	fn to_builder_v9(
 		self,
 		context: Arc<LedgerContext<DefaultDB>>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
@@ -590,40 +597,40 @@ impl Builder {
 			Box::new(DynamicTransactionBuilder { builder })
 		}
 
-		use builders::ledger_8 as v8;
+		use builders::ledger_9 as v9;
 
 		match self {
-			Builder::Batches(args) => constr(v8::BatchesBuilder::new(args, context, prover)),
+			Builder::Batches(args) => constr(v9::BatchesBuilder::new(args, context, prover)),
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
-					constr(v8::ContractDeployBuilder::new(args, context, prover))
+					constr(v9::ContractDeployBuilder::new(args, context, prover))
 				},
 				ContractCall::Call(args) => {
-					constr(v8::ContractCallBuilder::new(args, context, prover))
+					constr(v9::ContractCallBuilder::new(args, context, prover))
 				},
 				ContractCall::Maintenance(args) => {
-					constr(v8::ContractMaintenanceBuilder::new(args, context, prover))
+					constr(v9::ContractMaintenanceBuilder::new(args, context, prover))
 				},
 			},
 			Builder::ContractCustom(args) => {
-				constr(v8::CustomContractBuilder::new(args, context, prover))
+				constr(v9::CustomContractBuilder::new(args, context, prover))
 			},
 			Builder::ClaimRewards(args) => {
-				constr(v8::ClaimRewardsBuilder::new(args, context, prover))
+				constr(v9::ClaimRewardsBuilder::new(args, context, prover))
 			},
 			Builder::SingleTx(args) => {
-				constr(v8::single_tx::SingleTxBuilder::new(args, context, prover))
+				constr(v9::single_tx::SingleTxBuilder::new(args, context, prover))
 			},
 			Builder::RegisterDustAddress(args) => {
-				constr(v8::RegisterDustAddressBuilder::new(args, context, prover))
+				constr(v9::RegisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::DeregisterDustAddress(args) => {
-				constr(v8::DeregisterDustAddressBuilder::new(args, context, prover))
+				constr(v9::DeregisterDustAddressBuilder::new(args, context, prover))
 			},
 			Builder::BatchSingleTx(args) => {
-				constr(v8::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
+				constr(v9::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
 			},
-			Builder::Send => constr(v8::DoNothingBuilder::new()),
+			Builder::Send => constr(v9::DoNothingBuilder::new()),
 		}
 	}
 
@@ -745,7 +752,10 @@ async fn load_and_partition_cache(
 	(uncached_seeds, cached)
 }
 
-/// Inject a batch of cached wallets into a ledger context. Panics on failure (corrupted cache).
+/// Inject a batch of cached wallets into a ledger-9 context. Panics on failure (corrupted cache).
+///
+/// Cache injection only operates against the active (ledger-9) version. Earlier-version
+/// replay paths skip cached wallets — wallets are reconstituted at the L9 fork boundary.
 fn inject_cached_wallets(
 	ctx: &LedgerContext<DefaultDB>,
 	wallets: &[(WalletSeed, CachedWalletState)],
@@ -800,12 +810,13 @@ async fn initialize_context(
 			)
 		});
 
-		ForkAwareLedgerContext::Ledger8(ctx)
+		ForkAwareLedgerContext::Ledger9(ctx)
 	}
 }
 
 type Db7 = midnight_node_ledger_helpers::ledger_7::DefaultDB;
 type Db8 = midnight_node_ledger_helpers::ledger_8::DefaultDB;
+type Db9 = midnight_node_ledger_helpers::ledger_9::DefaultDB;
 
 const DUST_BATCH_SIZE: usize = 1000;
 
@@ -835,9 +846,32 @@ fn replay_blocks_7(
 fn replay_blocks_8(
 	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[&RawBlockData],
-	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
+	let total = blocks_sorted_by_height.len();
+
+	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
+		events.extend(apply_block_8(ctx, block));
+
+		let is_last = i + 1 == total;
+		if events.len() >= DUST_BATCH_SIZE || is_last {
+			ctx.update_dust_from_events(events.as_slice());
+			events.clear();
+			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+		}
+	}
+
+	if let Some(block) = blocks_sorted_by_height.last() {
+		ctx.update_dust_from_block(&block_context_from_raw_8(block));
+	}
+}
+
+fn replay_blocks_9(
+	ctx: &midnight_node_ledger_helpers::ledger_9::context::LedgerContext<Db9>,
+	blocks_sorted_by_height: &[&RawBlockData],
+	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
+) {
+	let mut events: Vec<midnight_node_ledger_helpers::ledger_9::Event<Db9>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
 
@@ -854,13 +888,13 @@ fn replay_blocks_8(
 			remaining = rest;
 		}
 
-		events.extend(apply_block_8(ctx, block));
+		events.extend(apply_block_9(ctx, block));
 
 		let is_last = i + 1 == total;
 		if events.len() >= DUST_BATCH_SIZE || is_last {
 			ctx.update_dust_from_events(events.as_slice());
 			events.clear();
-			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+			log::debug!("[perf] replay_blocks_9 progress: {}/{} blocks", i + 1, total);
 		}
 	}
 
@@ -873,12 +907,12 @@ fn replay_blocks_8(
 	}
 
 	if let Some(block) = blocks_sorted_by_height.last() {
-		ctx.update_dust_from_block(&block_context_from_raw_8(block));
+		ctx.update_dust_from_block(&block_context_from_raw_9(block));
 	}
 }
 
-/// Replays blocks across a potential Ledger7→Ledger8 fork boundary,
-/// injecting cached wallets at their saved height.
+/// Replays blocks across a potential Ledger7 → Ledger8 → Ledger9 fork chain,
+/// injecting cached wallets at their saved height (cache is L9-only).
 pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
 	blocks: &[&RawBlockData],
@@ -894,25 +928,49 @@ pub(crate) fn replay_blocks(
 
 	let t_replay = std::time::Instant::now();
 
-	let fork_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger7);
-	let (l7_blocks, l8_blocks) = blocks.split_at(fork_idx);
+	let l7_end = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger7);
+	let l8_end = blocks.partition_point(|b| {
+		matches!(b.ledger_version(), LedgerVersion::Ledger7 | LedgerVersion::Ledger8)
+	});
+	let (l7_blocks, rest) = blocks.split_at(l7_end);
+	let (l8_blocks, l9_blocks) = rest.split_at(l8_end - l7_end);
 
 	let result = match fork_ctx {
 		ForkAwareLedgerContext::Ledger7(ctx7) => {
 			replay_blocks_7(&ctx7, l7_blocks);
-			if l8_blocks.is_empty() {
-				assert!(cached.is_empty(), "cached wallets with no Ledger8 blocks");
+			if l8_blocks.is_empty() && l9_blocks.is_empty() {
+				assert!(cached.is_empty(), "cached wallets with no L8/L9 blocks");
 				ForkAwareLedgerContext::Ledger7(ctx7)
 			} else {
-				let ctx8 = fork_context_7_to_8(ctx7).expect("fork failed");
-				replay_blocks_8(&ctx8, l8_blocks, cached);
-				ForkAwareLedgerContext::Ledger8(ctx8)
+				let ctx8 = fork_context_7_to_8(ctx7).expect("L7→L8 fork failed");
+				replay_blocks_8(&ctx8, l8_blocks);
+				if l9_blocks.is_empty() {
+					assert!(cached.is_empty(), "cached wallets with no L9 blocks");
+					ForkAwareLedgerContext::Ledger8(ctx8)
+				} else {
+					let ctx9 = fork_context_8_to_9(ctx8).expect("L8→L9 fork failed");
+					replay_blocks_9(&ctx9, l9_blocks, cached);
+					ForkAwareLedgerContext::Ledger9(ctx9)
+				}
 			}
 		},
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
-			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger8 context");
-			replay_blocks_8(&ctx8, l8_blocks, cached);
-			ForkAwareLedgerContext::Ledger8(ctx8)
+			assert!(l7_blocks.is_empty(), "L7 blocks with L8 context");
+			replay_blocks_8(&ctx8, l8_blocks);
+			if l9_blocks.is_empty() {
+				assert!(cached.is_empty(), "cached wallets with no L9 blocks");
+				ForkAwareLedgerContext::Ledger8(ctx8)
+			} else {
+				let ctx9 = fork_context_8_to_9(ctx8).expect("L8→L9 fork failed");
+				replay_blocks_9(&ctx9, l9_blocks, cached);
+				ForkAwareLedgerContext::Ledger9(ctx9)
+			}
+		},
+		ForkAwareLedgerContext::Ledger9(ctx9) => {
+			assert!(l7_blocks.is_empty(), "L7 blocks with L9 context");
+			assert!(l8_blocks.is_empty(), "L8 blocks with L9 context");
+			replay_blocks_9(&ctx9, l9_blocks, cached);
+			ForkAwareLedgerContext::Ledger9(ctx9)
 		},
 	};
 
@@ -975,7 +1033,7 @@ pub async fn build_fork_aware_context_cached(
 	fork_ctx
 }
 
-/// Save per-wallet cache from a `ForkAwareLedgerContext` if it holds a ledger 8 context.
+/// Save per-wallet cache from a `ForkAwareLedgerContext` if it holds a ledger 9 context.
 async fn try_save_cache_v2(
 	fork_ctx: &ForkAwareLedgerContext,
 	wallet_seeds: &[WalletSeed],
@@ -984,9 +1042,13 @@ async fn try_save_cache_v2(
 	storage: &dyn WalletStateCaching,
 ) {
 	let ctx = match fork_ctx {
-		ForkAwareLedgerContext::Ledger8(ctx) => ctx,
+		ForkAwareLedgerContext::Ledger9(ctx) => ctx,
 		ForkAwareLedgerContext::Ledger7(_) => {
 			log::debug!("Skipping cache save: context is still on ledger 7");
+			return;
+		},
+		ForkAwareLedgerContext::Ledger8(_) => {
+			log::debug!("Skipping cache save: context is still on ledger 8");
 			return;
 		},
 	};
@@ -1051,8 +1113,8 @@ async fn try_save_cache_v2(
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("chain has not reached ledger 8 (final version: {0:?})")]
-pub struct ContextNotLedger8Error(pub LedgerVersion);
+#[error("chain has not reached ledger 9 (final version: {0:?})")]
+pub struct ContextNotLedger9Error(pub LedgerVersion);
 
 /// Build a fork-aware context from source transactions, returning the raw
 /// `ForkAwareLedgerContext` without extracting a specific version.
@@ -1065,7 +1127,7 @@ pub fn build_fork_aware_context_raw(
 		.blocks
 		.first()
 		.map(|b| b.ledger_version())
-		.unwrap_or(LedgerVersion::Ledger8);
+		.unwrap_or(LedgerVersion::Ledger9);
 
 	let t = std::time::Instant::now();
 	let ctx =
@@ -1076,15 +1138,15 @@ pub fn build_fork_aware_context_raw(
 	replay_blocks(ctx, &blocks, &[])
 }
 
-/// Build a fork-aware context from source transactions, returning a ledger 8 context.
+/// Build a fork-aware context from source transactions, returning a ledger 9 context.
 ///
-/// This handles chains that may have forked from ledger 7 to ledger 8 by using
+/// This handles chains that may have forked from ledger 7 → 8 → 9 by using
 /// `ForkAwareLedgerContext` to process blocks across version boundaries.
 pub fn build_fork_aware_context(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
-) -> Result<LedgerContext<DefaultDB>, ContextNotLedger8Error> {
+) -> Result<LedgerContext<DefaultDB>, ContextNotLedger9Error> {
 	let ctx = build_fork_aware_context_raw(received_tx, wallet_seeds);
 	let final_version = ctx.version();
-	ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))
+	ctx.into_ledger9().ok_or(ContextNotLedger9Error(final_version))
 }

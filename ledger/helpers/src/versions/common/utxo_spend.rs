@@ -13,7 +13,7 @@
 
 use super::{
 	DB, IntentHash, LedgerContext, SigningKey, Sp, UnshieldedTokenType, Utxo, UtxoId, UtxoSpend,
-	Wallet, WalletSeed,
+	Wallet, WalletSeed, signature_verifying_key,
 };
 use crate::CoinSelectionStrategy;
 use itertools::Itertools;
@@ -59,7 +59,7 @@ impl UtxoSpendInfo<WalletSeed> {
 		wallet: &Wallet<D>,
 	) -> Result<Sp<Utxo, D>, UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
-			let owner = wallet.unshielded.signing_key().verifying_key();
+			let owner = signature_verifying_key(wallet.unshielded.signing_key().verifying_key());
 
 			ledger_state
 				.utxo
@@ -94,7 +94,8 @@ impl UtxoSpendInfo<WalletSeed> {
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
 			context.with_wallet_from_seed(seed.clone(), |wallet| {
-				let owner = wallet.unshielded.signing_key().verifying_key();
+				let owner =
+					signature_verifying_key(wallet.unshielded.signing_key().verifying_key());
 				let matching_inputs = ledger_state
 					.utxo
 					.utxos
@@ -134,7 +135,8 @@ impl UtxoSpendInfo<WalletSeed> {
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
 			context.with_wallet_from_seed(seed.clone(), |wallet| {
-				let owner = wallet.unshielded.signing_key().verifying_key();
+				let owner =
+					signature_verifying_key(wallet.unshielded.signing_key().verifying_key());
 				let mut selected: Vec<UtxoSpendInfo<WalletSeed>> =
 					Vec::with_capacity(utxo_ids.len());
 				let mut total: u128 = 0;
@@ -206,7 +208,7 @@ impl UtxoSpendInfo<WalletSeed> {
 impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
 	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoSpend {
 		context.with_wallet_from_seed(self.owner.clone(), |wallet| {
-			let owner = wallet.unshielded.signing_key().verifying_key();
+			let owner = signature_verifying_key(wallet.unshielded.signing_key().verifying_key());
 			// If self identifies an UTXO then use it, otherwise try to find best matching UTXO in the wallet.
 			match (self.intent_hash, self.output_number) {
 				(Some(intent_hash), Some(output_no)) => UtxoSpend {
