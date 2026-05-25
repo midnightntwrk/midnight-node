@@ -51,6 +51,8 @@ pub mod ledger_7 {
 	mod error_ext;
 
 	pub const CRATE_NAME: &str = "mn-ledger";
+	#[cfg(feature = "std")]
+	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
@@ -76,6 +78,8 @@ pub mod ledger_8 {
 	mod error_ext;
 
 	pub const CRATE_NAME: &str = "mn-ledger-8";
+	#[cfg(feature = "std")]
+	pub(crate) type TransactionSignature = mn_ledger_local::structure::Signature;
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;

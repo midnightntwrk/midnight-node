@@ -47,6 +47,35 @@ pub mod ledger_7 {
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
+
+	pub use base_crypto::signatures::{
+		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
+		VerifyingKey as SignatureVerifyingKey,
+	};
+
+	pub fn signature_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		key
+	}
+
+	pub fn transaction_signing_key(
+		key: &base_crypto::signatures::SigningKey,
+	) -> TransactionSigningKey {
+		key.clone()
+	}
+
+	pub fn transaction_signature(
+		signature: base_crypto::signatures::Signature,
+	) -> TransactionSignature {
+		signature
+	}
+
+	pub fn maintenance_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		key
+	}
 }
 
 #[path = "versions"]
@@ -68,6 +97,36 @@ pub mod ledger_8 {
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
+
+	pub use mn_ledger::structure::{
+		Signature as TransactionSignature, SignatureVerifyingKey,
+		SigningKey as TransactionSigningKey,
+	};
+	pub use onchain_runtime::state::ContractMaintenanceVerifyingKey;
+
+	pub fn signature_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		SignatureVerifyingKey::Schnorr(key)
+	}
+
+	pub fn transaction_signing_key(
+		key: &base_crypto::signatures::SigningKey,
+	) -> TransactionSigningKey {
+		TransactionSigningKey::Schnorr(key.clone())
+	}
+
+	pub fn transaction_signature(
+		signature: base_crypto::signatures::Signature,
+	) -> TransactionSignature {
+		TransactionSignature::Schnorr(signature)
+	}
+
+	pub fn maintenance_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> ContractMaintenanceVerifyingKey {
+		ContractMaintenanceVerifyingKey::Schnorr(key)
+	}
 }
 
 pub use ledger_8 as latest;

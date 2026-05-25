@@ -24,6 +24,7 @@ use super::{
 	mn_ledger_local::error::{
 		SystemTransactionError as LedgerSystemTransactionError, TransactionInvalid,
 	},
+	mn_ledger_local::structure::SystemTransaction,
 	zswap_local::error::TransactionInvalid as ZswapTransactionInvalid,
 };
 
@@ -54,4 +55,12 @@ pub fn try_convert_extra_system_tx(
 		},
 		other => Err(other),
 	}
+}
+
+pub fn distribute_reserve_system_tx(amount: u128) -> SystemTransaction {
+	SystemTransaction::DistributeReserve { amount }
+}
+
+pub fn is_distribute_reserve_system_tx(tx: &SystemTransaction) -> bool {
+	matches!(tx, SystemTransaction::DistributeReserve { .. })
 }

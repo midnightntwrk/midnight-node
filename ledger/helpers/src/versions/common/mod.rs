@@ -13,6 +13,10 @@
 
 pub use super::make_block_context;
 pub use super::{
+	TransactionSignature as Signature, maintenance_verifying_key, signature_verifying_key,
+	transaction_signature, transaction_signing_key,
+};
+pub use super::{
 	base_crypto::{
 		cost_model::{
 			CostDuration, FeePrices, FixedPoint, NormalizedCost, RunningCost, SyntheticCost,
@@ -21,7 +25,7 @@ pub use super::{
 		fab::AlignedValue,
 		hash::{HashOutput, PERSISTENT_HASH_BYTES, persistent_commit, persistent_hash},
 		rng::SplittableRng,
-		signatures::{Signature, SigningKey, VerifyingKey},
+		signatures::{SigningKey, VerifyingKey},
 		time::{Duration, Timestamp},
 	},
 	coin_structure::{

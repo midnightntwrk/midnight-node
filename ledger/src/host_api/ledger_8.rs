@@ -20,7 +20,7 @@ use {
 };
 
 #[cfg(feature = "std")]
-type Signature = crate::ledger_8::base_crypto_local::signatures::Signature;
+type Signature = crate::ledger_8::TransactionSignature;
 
 // `Bridge<S, D>` instantiates `default_storage::<D>()` lookups against
 // `Storage<D>`'s TypeId. The two storage modes register storages with different
