@@ -2,7 +2,7 @@ use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 
-use crate::{finished_pre_deploy_test, wait_before_deploying};
+use crate::{PreDeployGuard, wait_before_deploying};
 
 // ============================================================================
 // DDoS Mitigation E2E Tests (PR367)
@@ -17,6 +17,7 @@ use crate::{finished_pre_deploy_test, wait_before_deploying};
 /// failing transactions that don't pay fees.
 #[e2e_test]
 async fn ddos_attack_transaction_rejected_at_rpc() {
+    let _pre_deploy_guard = PreDeployGuard::new();
     use midnight_node_res::undeployed::transactions::STORE_TX;
 
     let settings = Settings::default();
@@ -30,8 +31,6 @@ async fn ddos_attack_transaction_rejected_at_rpc() {
     tracing::info!("Expected: Transaction rejected at pre_dispatch (ContractNotPresent)");
 
     let result = client.submit_expecting_rejection(STORE_TX.to_vec()).await;
-
-    finished_pre_deploy_test();
 
     assert!(
         result.is_ok(),
@@ -63,6 +62,7 @@ async fn ddos_attack_transaction_rejected_at_rpc() {
 /// Simulates an attacker attempting to flood the network with failing transactions.
 #[e2e_test]
 async fn ddos_batch_attack_all_rejected() {
+    let _pre_deploy_guard = PreDeployGuard::new();
     use midnight_node_res::undeployed::transactions::STORE_TX;
 
     let settings = Settings::default();
@@ -88,8 +88,6 @@ async fn ddos_batch_attack_all_rejected() {
             );
         }
     }
-
-    finished_pre_deploy_test();
 
     assert_eq!(
         rejected_count, total_attacks,

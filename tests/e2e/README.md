@@ -9,12 +9,38 @@ alias: `cargo test-e2e-local`
 To run test in parallel use `--test-threads N` argument, e.g.
 `cargo test --test e2e_tests --no-default-features --features local -- --test-threads 6 --no-capture`
 
-`--test-threads` must be `>= NUM_PRE_DEPLOY_TESTS + NUM_DEPLOY_TESTS` (currently 6) — see
-the gate constants in `tests/e2e/tests/lib.rs`. Lower values can deadlock the deploy gate.
+`--test-threads` should be large enough to let pre-deploy and deploy tests
+run concurrently. Six is the historic recommendation (3 pre-deploy + 3
+deploy tests in a full run); higher is fine.
 
-To run a single deploy test (e.g. `cargo test <name>`), set `E2E_SKIP_DEPLOY_GATE=1` to
-bypass the pre-deploy gate. Without it, the deploy test will block forever waiting for
-pre-deploy tests that aren't being run.
+## Pre-deploy / deploy gate
+
+A few tests assert behaviour that depends on the test contract NOT being
+deployed yet (RPC `ContractNotPresent`, DDoS rejection, etc.). They must
+finish before any test that submits `DEPLOY_TX`.
+
+The gate works by counter quiescence, not a hard-coded count, so it
+adapts to subset runs:
+
+- Each pre-deploy test holds a `PreDeployGuard` for its body (see
+  `tests/e2e/tests/lib.rs`). Construction increments `PRE_DEPLOY_ENTERED`;
+  drop increments `PRE_DEPLOY_COMPLETED`.
+- `wait_before_deploying()` polls until `entered == completed` *and* no
+  counter change has happened for `PRE_DEPLOY_QUIESCENCE` (5 s).
+- If no pre-deploy test ever enters (e.g. a subset that selected only
+  deploy tests), the gate opens after `NO_PRE_DEPLOY_GRACE` (30 s) since
+  process start and logs a warning.
+
+This means `cargo test ... contract_state::` and `... rpc_abuse::` work
+without manual intervention even though they each run fewer pre-deploy
+tests than a full run.
+
+Bypass the gate entirely with `E2E_SKIP_DEPLOY_GATE=1` when running a
+single deploy test directly:
+
+```bash
+E2E_SKIP_DEPLOY_GATE=1 cargo test-e2e-local valid_deploy_transaction
+```
 
 ## Layout
 

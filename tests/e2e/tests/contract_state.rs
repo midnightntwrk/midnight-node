@@ -4,7 +4,7 @@ use midnight_node_e2e::e2e_test;
 use midnight_node_toolkit::tx_generator::source::FetchCacheConfig;
 use tokio::time::{Duration, sleep, timeout};
 
-use crate::{finished_pre_deploy_test, wait_before_deploying};
+use crate::{PreDeployGuard, wait_before_deploying};
 
 // ============================================================================
 // Audit Issue AD (#1166): Return ContractNotPresent Instead of Default State
@@ -29,6 +29,7 @@ fn assert_contract_not_present_error(err: &(dyn std::error::Error + 'static)) {
 /// Pre-deploy gated so it runs before any DEPLOY_TX submission.
 #[e2e_test]
 async fn contract_state_for_undeployed_address_returns_not_present() {
+    let _pre_deploy_guard = PreDeployGuard::new();
     use midnight_node_res::undeployed::transactions::CONTRACT_ADDR;
 
     let settings = Settings::default();
@@ -39,8 +40,6 @@ async fn contract_state_for_undeployed_address_returns_not_present() {
         .trim();
 
     let result = client.get_contract_state(addr).await;
-
-    finished_pre_deploy_test();
 
     let err = result.expect_err("expected ContractNotPresent for undeployed contract, got Ok");
     assert_contract_not_present_error(err.as_ref());
