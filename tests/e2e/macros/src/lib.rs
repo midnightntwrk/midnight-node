@@ -20,7 +20,15 @@ use quote::quote;
 use syn::{ItemFn, parse_macro_input};
 
 /// Drop-in replacement for `#[tokio::test]` that also initialises the e2e
-/// tracing subscriber and enters a span tagged with the function name.
+/// tracing subscriber and attaches a span tagged with the function name to
+/// the test future via `tracing::Instrument`.
+///
+/// `Instrument` is used rather than `Span::entered()` so the span follows
+/// the future across `.await` points instead of sitting on the thread-local
+/// span stack — otherwise auxiliary tasks polled on the same thread while
+/// the guard is alive would be misattributed to the current test, and that
+/// would silently break the moment a test switches to a multi-threaded
+/// runtime flavour.
 ///
 /// ```ignore
 /// #[e2e_test]
@@ -50,11 +58,12 @@ pub fn e2e_test(_args: TokenStream, item: TokenStream) -> TokenStream {
         #[::tokio::test]
         #(#attrs)*
         #vis #sig {
-            let _e2e_guard = {
-                ::midnight_node_e2e::logger::init();
-                ::tracing::info_span!(#name_lit).entered()
-            };
-            #block
+            ::midnight_node_e2e::logger::init();
+            ::tracing::Instrument::instrument(
+                async move #block,
+                ::tracing::info_span!(#name_lit),
+            )
+            .await
         }
     }
     .into()
