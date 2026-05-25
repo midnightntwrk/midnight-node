@@ -1,3 +1,4 @@
+use std::time::Duration;
 use whisky::csl::NetworkInfo as CardanoNetworkInfo;
 use whisky::{LanguageVersion, Network as CardanoNetwork};
 
@@ -42,6 +43,10 @@ pub struct Settings {
     pub node_client: NodeClientSettings,
     pub ogmios_client: OgmiosClientSettings,
     pub constants: Constants,
+    /// Timeout for waiting for a Midnight observation event *after* the
+    /// underlying Cardano tx has reached stability. Generous on networks
+    /// with longer block production / follower epochs.
+    pub finality_timeout: Duration,
 }
 
 impl Settings {
@@ -60,7 +65,7 @@ impl Settings {
                     base_url: "ws://172.17.0.1:9933".into(),
 
                     #[cfg(feature = "qanet")]
-                    base_url: "wss://rpc.qanet.dev.midnight.network".into(),
+                    base_url: "wss://rpc.qanet.midnight.network".into(),
                 },
                 ogmios_client: OgmiosClientSettings {
                     #[cfg(any(feature = "local", feature = "local-dev"))]
@@ -68,11 +73,15 @@ impl Settings {
                     #[cfg(feature = "local-ci")]
                     base_url: "ws://172.17.0.1:1337".into(),
                     #[cfg(feature = "qanet")]
-                    base_url: "wss://ogmios.qanet.dev.midnight.network".into(),
+                    base_url: "wss://ogmios.devnet.midnight.network".into(),
                     timeout_seconds: 180,
                     network: CardanoNetwork::Preview,
                     network_info,
                 },
+                #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
+                finality_timeout: Duration::from_secs(60),
+                #[cfg(feature = "qanet")]
+                finality_timeout: Duration::from_secs(300),
                 constants: Constants {
                     payments: Payments {
                         funded_address:

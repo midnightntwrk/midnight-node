@@ -2,8 +2,11 @@ name: nightly runs
 
 on:
   schedule:
-    # Runs every night at 00:00 UTC
+    # Runs every night at 00:00 UTC against the default branch.
     - cron: "0 0 * * *"
+  # Manual dispatch lets you pick any branch from the GitHub UI's
+  # "Use workflow from" dropdown (defaults to the default branch).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,7 +17,9 @@ concurrency:
 
 jobs:
   rust_e2e:
-    runs-on: ubuntu-latest
+    # Hetzner self-hosted; its static IP is on the toolkit-cache NLB
+    # allowlist. ubuntu-latest cannot reach the shared cache.
+    runs-on: [self-hosted, "tier:large"]
     timeout-minutes: 360
 
     steps:
@@ -23,32 +28,57 @@ jobs:
         shell: bash
         run: |
           echo "env=qanet" >> "$GITHUB_OUTPUT"
-          echo "e2e_ref=e2e-cngd-for-cardano-preview" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout e2e branch
+      - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
-          ref: ${{ steps.vars.outputs.e2e_ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 #v1
         with:
           toolchain: stable
 
-      - name: Install system dependencies (protoc)
+      - name: Install system dependencies (protoc, postgresql-client)
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          sudo apt-get install -y protobuf-compiler postgresql-client
           protoc --version
 
-      - name: Run e2e tests (all)
+      # Fail fast (~1 s) if the shared toolkit cache is unreachable,
+      # before the ~4 h cargo test job starts.
+      - name: Smoke test toolkit-cache DB
+        shell: bash
+        env:
+          TOOLKIT_CACHE_DB_URL: ${{ secrets.TOOLKIT_CACHE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TOOLKIT_CACHE_DB_URL" ]; then
+            echo "::error::TOOLKIT_CACHE_DB_URL secret is not set"
+            exit 1
+          fi
+          psql "$TOOLKIT_CACHE_DB_URL" -c 'SELECT 1;' >/dev/null
+
+      # --release: qanet replays the long-lived Preview chain; the dev
+      # profile is ~50× slower (see tests/e2e/README.md).
+      # --test-threads 16: all observation tests must run concurrently;
+      # otherwise the shared stability window (~3 h on Cardano Preview)
+      # is paid once per batch and the run blows past the 6 h job timeout.
+      # See tests/e2e/README.md "Cardano stability barrier".
+      - name: Run e2e observation tests
         working-directory: tests/e2e/tests
         env:
           RUST_BACKTRACE: "1"
+          TOOLKIT_CACHE_DB_URL: ${{ secrets.TOOLKIT_CACHE_DB_URL }}
+          # Right-size the faucet for --test-threads 16 (default is 4).
+          # With fewer workers than tests, parallel request_tokens calls
+          # queue, can push some seeds past the warmup quiescence window,
+          # and force those tests into their own full Preview replay.
+          E2E_FAUCET_WORKERS: "16"
+          E2E_FEATURE: ${{ steps.vars.outputs.env }}
         run: |
-          cargo test --test e2e_tests cnight --no-default-features --features "${{ steps.vars.outputs.env }}" -- --no-capture
+          cargo test --release --test e2e_tests --no-default-features --features "$E2E_FEATURE" -- cnight::observation:: --no-capture --test-threads 16
 
       - name: Notify Slack
         if: always()
@@ -57,13 +87,13 @@ jobs:
           STATUS: ${{ job.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ENV_NAME: ${{ steps.vars.outputs.env }}
-          E2E_REF: ${{ steps.vars.outputs.e2e_ref }}
+          REF_NAME: ${{ github.ref_name }}
         shell: bash
         run: |
           if [ "$STATUS" = "success" ]; then
-            MESSAGE="✅ ${ENV_NAME} env nightly e2e cNgD passed successfully\n${RUN_URL}"
+            MESSAGE="✅ ${ENV_NAME} env nightly e2e cNgD passed successfully on ${REF_NAME}\n${RUN_URL}"
           else
-            MESSAGE="❌ ${ENV_NAME} env nightly e2e cNgD failed\n${RUN_URL}"
+            MESSAGE="❌ ${ENV_NAME} env nightly e2e cNgD failed on ${REF_NAME}\n${RUN_URL}"
           fi
 
           curl -X POST -H "Content-type: application/json" \

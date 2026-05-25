@@ -67,8 +67,19 @@ impl FormatTime for E2eClock {
 /// every test.
 pub fn init() {
     INIT.call_once(|| {
+        // `midnight_ledger::semantics` emits one INFO line per privileged
+        // system tx (e.g. `[privileged] DistributeNight outputs=...`). That's
+        // the right level for production audit, but during toolkit chain
+        // replay (warmup, `dust_balance::execute_many`) every historical
+        // privileged tx fires it in a tight loop — pages of validator-wallet
+        // bootstrap output between fetch-progress and warmup-complete logs.
+        // Demote it to WARN; the test logger still shows replay progress via
+        // the toolkit's own info-level logs.
         let filter = EnvFilter::try_from_env("E2E_LOG").unwrap_or_else(|_| {
-            EnvFilter::new("info,subxt=warn,jsonrpsee=warn,hyper=warn,reqwest=warn")
+            EnvFilter::new(
+                "info,subxt=warn,jsonrpsee=warn,hyper=warn,reqwest=warn,\
+                 midnight_ledger::semantics=warn",
+            )
         });
         let _ = tracing_subscriber::fmt()
             .with_env_filter(filter)

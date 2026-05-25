@@ -1,4 +1,5 @@
-use crate::config::NodeClientSettings;
+use crate::api::cardano::CardanoClient;
+use crate::config::{NodeClientSettings, OgmiosClientSettings};
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use hex::ToHex;
@@ -60,8 +61,16 @@ pub struct AriadneParametersResponse {
 }
 
 pub struct MidnightClient {
-    pub online_client: OnlineClient<SubstrateConfig>,
+    /// Wrapped in `RwLock` so the poll loop in `await_cnight_observations`
+    /// can replace the inner client when subxt's background task dies
+    /// (the "restart required" / "background task closed" error is
+    /// terminal for the OnlineClient instance — every subsequent call
+    /// on it fails forever, so we must rebuild it). Reads are cheap:
+    /// `OnlineClient<T>` is internally Arc-wrapped, so the clone the
+    /// getter returns is just an Arc bump.
+    online_client: std::sync::RwLock<OnlineClient<SubstrateConfig>>,
     rpc_client: RpcClient,
+    base_url: String,
 }
 
 impl MidnightClient {
@@ -74,9 +83,25 @@ impl MidnightClient {
             .await
             .expect("Failed to initialize RPC client");
         Self {
-            online_client,
+            online_client: std::sync::RwLock::new(online_client),
             rpc_client,
+            base_url: node_settings.base_url,
         }
+    }
+
+    /// Get a clone of the current `OnlineClient`. Cheap — internally
+    /// `Arc`-wrapped, so the clone is just an `Arc` bump.
+    pub fn online_client(&self) -> OnlineClient<SubstrateConfig> {
+        self.online_client.read().unwrap().clone()
+    }
+
+    /// Replace the inner `OnlineClient` with a freshly-built one. Used
+    /// to recover from "background task closed" errors after a transport
+    /// hiccup — those leave the previous client permanently broken.
+    async fn reconnect_online_client(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let new_client = OnlineClient::<SubstrateConfig>::from_insecure_url(&self.base_url).await?;
+        *self.online_client.write().unwrap() = new_client;
+        Ok(())
     }
 
     pub fn new_seed() -> WalletSeed {
@@ -97,76 +122,508 @@ impl MidnightClient {
         dust_public_hex
     }
 
-    pub async fn subscribe_to_cnight_observation_events(
-        &self,
-        tx_id: &[u8],
-    ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
+    /// Wait until at least `cardano_blocks` Cardano blocks AND
+    /// `midnight_blocks` Midnight blocks have elapsed past the moment of
+    /// the call. Used by tests that submit two batches upfront and need
+    /// the second batch to land in a Cardano block that's measurably
+    /// past the first — sufficient that at least one Midnight
+    /// `process_tokens` extrinsic fires between them, processing the
+    /// first batch but not the second.
+    ///
+    /// Why block-based instead of time-based: Cardano block time differs
+    /// per env (~20s on Preview, sub-second on local-env), and Midnight
+    /// is 6s everywhere. A time-based sleep tuned for one env breaks the
+    /// other. Block counts encode the requirement directly: "ensure N
+    /// process_tokens-firing opportunities pass before the second
+    /// submission".
+    pub async fn wait_for_block_spacing(
+        ogmios_settings: &OgmiosClientSettings,
+        midnight_client: &MidnightClient,
+        cardano_blocks: u64,
+        midnight_blocks: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let cardano_start = CardanoClient::current_block_height(ogmios_settings)
+            .await
+            .ok_or("wait_for_block_spacing: failed to read initial Cardano tip")?;
+        let midnight_start = midnight_client
+            .online_client()
+            .at_current_block()
+            .await?
+            .block_number();
         tracing::info!(
-            "Subscribing for cNIGHT observation extrinsic with tx_id: 0x{}",
-            hex::encode(tx_id)
+            "wait_for_block_spacing: waiting for {cardano_blocks} cardano + {midnight_blocks} midnight \
+             blocks past (cardano #{cardano_start}, midnight #{midnight_start})"
         );
-        let mut blocks_sub = self.online_client.stream_blocks().await?;
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let cardano_now = match CardanoClient::current_block_height(ogmios_settings).await {
+                Some(h) => h,
+                None => continue,
+            };
+            let midnight_now = match midnight_client.online_client().at_current_block().await {
+                Ok(b) => b.block_number(),
+                Err(_) => continue,
+            };
+            let cardano_delta = cardano_now.saturating_sub(cardano_start);
+            let midnight_delta = midnight_now.saturating_sub(midnight_start);
+            if cardano_delta >= cardano_blocks && midnight_delta >= midnight_blocks {
+                tracing::info!(
+                    "wait_for_block_spacing: satisfied (cardano #{cardano_now}, +{cardano_delta}; \
+                     midnight #{midnight_now}, +{midnight_delta})"
+                );
+                return Ok(());
+            }
+        }
+    }
 
+    /// Wait until Midnight has observed every Cardano tx in `tx_ids`, then
+    /// return the matching `ExtrinsicEvents` (one per `process_tokens`
+    /// extrinsic that carried one of the tx_ids).
+    ///
+    /// This is the only barrier needed for a cNIGHT observation test.
+    /// The helper polls Midnight's `nextCardanoPosition` watermark at
+    /// the current head every 5s until it crosses a Cardano-block
+    /// target (default: tip at call time; explicit via
+    /// [`Self::await_cnight_observations_at`]). Once it does,
+    /// binary-search to localise the first Midnight block whose
+    /// `process_tokens` crossed the target, then walk backward decoding
+    /// `process_tokens` extrinsics until every tx_id is matched.
+    ///
+    /// Why polling instead of a `stream_blocks` subscription: long-lived
+    /// subxt subscriptions are fragile on multi-hour Preview waits — any
+    /// TCP retransmit timeout or middleware idle-killer kills the
+    /// subscription permanently. Polling is one short RPC every 5s;
+    /// transient errors (including "background task closed; restart
+    /// required") trigger an automatic `OnlineClient` rebuild on the
+    /// next iteration.
+    pub async fn await_cnight_observations(
+        &self,
+        tx_ids: &[[u8; 32]],
+        ogmios_settings: &OgmiosClientSettings,
+        timeout_duration: Duration,
+    ) -> Result<Vec<ExtrinsicEvents<SubstrateConfig>>, Box<dyn std::error::Error>> {
+        // Snapshot a Cardano tip that is *guaranteed* past any tx the
+        // caller just submitted (see
+        // [`CardanoClient::snapshot_tip_after_advance`]). Tests that
+        // submit a *second* batch upfront with
+        // [`Self::wait_for_block_spacing`] snapshot the tip themselves
+        // and call [`Self::await_cnight_observations_at`] with the
+        // explicit target instead.
+        let target = CardanoClient::snapshot_tip_after_advance(ogmios_settings)
+            .await
+            .ok_or("await_cnight_observations: failed to read Cardano tip for target snapshot")?;
+        self.await_cnight_observations_at(tx_ids, target, ogmios_settings, timeout_duration)
+            .await
+    }
+
+    /// Like [`Self::await_cnight_observations`] but with an explicit
+    /// target Cardano block (instead of snapshotting the tip on call).
+    /// Use this when the test needs to wait for a *subset* of its
+    /// submissions — typically the spacing tests
+    /// (`spend_cnight_producing_dust`,
+    /// `stop_dust_producing_after_deregistration_and_rotation`) that
+    /// submit a second batch upfront but want the first await to
+    /// resolve before the second batch lands.
+    ///
+    /// The target must be a Cardano block such that every tx_id you
+    /// want observed has landed at or before it. A snapshot of
+    /// `CardanoClient::current_block_height` taken *after* the
+    /// of-interest submissions and *before* any unwanted submissions
+    /// satisfies that.
+    pub async fn await_cnight_observations_at(
+        &self,
+        tx_ids: &[[u8; 32]],
+        target: u64,
+        ogmios_settings: &OgmiosClientSettings,
+        timeout_duration: Duration,
+    ) -> Result<Vec<ExtrinsicEvents<SubstrateConfig>>, Box<dyn std::error::Error>> {
+        let total = tx_ids.len();
+
+        // `k` is the Cardano security parameter — used for the
+        // follower-lag sanity check and the heartbeat ETA display.
+        let k = CardanoClient::cardano_security_parameter(ogmios_settings)
+            .await
+            .map(|v| v as u64)
+            .unwrap_or(0);
+
+        tracing::info!(
+            "await_cnight_observations: {} tx_id(s), target_cardano_block={} (k={}): [{}]",
+            total,
+            target,
+            k,
+            tx_ids
+                .iter()
+                .map(|t| format!("0x{}", hex::encode(t)))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+
+        // Empirical Midnight follower lag on Preview/qanet: ~30 Cardano
+        // blocks beyond k. Under normal conditions the watermark trails
+        // the target by ~k+30; if the initial diff is materially larger
+        // we log a one-shot WARN so a stuck follower is obvious early
+        // rather than after a multi-hour timeout.
+        const BLOCK_STABILITY_MARGIN: u64 = 30;
+        let mut sanity_check_done = false;
+
+        // Short interval is important for tests that submit a second batch
+        // a few minutes after a first batch (e.g. spend_cnight_producing_dust):
+        // the helper needs to detect the first-batch `mint_target` watermark
+        // crossing well *before* the second-batch `spend_target` crosses, so
+        // the test has a window to read `balance_before` at the
+        // mint-observed / spend-not-yet state. See `PRE_AWAIT_SUBMISSION_SPACING`
+        // in `tests/lib.rs` for the spacing/poll-interval interaction.
+        const POLL_INTERVAL: Duration = Duration::from_secs(5);
         let inner = async {
-            while let Some(block_result) = blocks_sub.next().await {
-                let block = block_result?;
+            loop {
+                // Each iteration is two short-lived RPC calls: head lookup +
+                // storage fetch at that head. Transient errors (Connection
+                // Closed, ETIMEDOUT, …) are caught, logged, and retried on
+                // the next iteration. The outer `tokio::time::timeout`
+                // bounds the total wait.
+                let probe = async {
+                    let head_num = self
+                        .online_client()
+                        .at_current_block()
+                        .await?
+                        .block_number();
+                    let watermark = self.read_next_cardano_position_at(head_num).await?;
+                    Ok::<_, Box<dyn std::error::Error>>((head_num, watermark))
+                }
+                .await;
 
-                let block_number = block.header().number;
-                tracing::info!("Finalized block #{}", block_number);
-
-                let block_ref = block.at().await?;
-                let extrinsic = block_ref.extrinsics().fetch().await?;
-
-                for ext in extrinsic.iter().filter_map(Result::ok) {
-                    let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
-                        continue;
-                    };
-
-                    let Some(utxos) = MidnightClient::extract_process_tokens_utxos(&decoded) else {
-                        continue;
-                    };
-
-                    tracing::info!(
-                        "  NativeTokenObservation::process_tokens called with {} UTXOs",
-                        utxos.len()
-                    );
-
-                    if utxos.is_empty() {
-                        continue;
-                    }
-
-                    if utxos.iter().any(|u| u.header.tx_hash.0 == tx_id) {
+                match probe {
+                    Ok((head_num, watermark)) if watermark >= target => {
                         tracing::info!(
-                            "*** Found UTXO with matching registration tx hash: 0x{} ***",
-                            hex::encode(tx_id)
+                            "await_cnight_observations: watermark @ midnight #{head_num} \
+                             = {} >= target {}; scanning past blocks",
+                            watermark,
+                            target,
                         );
-                        let events = ext.events().await?;
-                        return Ok(events);
-                    } else {
-                        for u in utxos {
-                            let seen = u.header.tx_hash.0;
-                            tracing::info!(
-                                "Tx hash 0x{} does not match expected registration tx hash 0x{}",
-                                hex::encode(seen),
-                                hex::encode(tx_id)
+                        return self.scan_past_for_tx_ids(tx_ids, head_num, target).await;
+                    }
+                    Ok((head_num, watermark)) => {
+                        // One-shot sanity check: under normal conditions the
+                        // initial watermark trails the target by ~k + 30
+                        // (k = Cardano stability, +30 = Midnight follower
+                        // processing lag observed on Preview). Anything
+                        // materially larger means the follower is lagging
+                        // beyond its usual budget and the wait will be
+                        // longer than expected.
+                        if !sanity_check_done {
+                            sanity_check_done = true;
+                            if k > 0 {
+                                let expected_diff = k + BLOCK_STABILITY_MARGIN;
+                                let actual_diff = target.saturating_sub(watermark);
+                                if actual_diff > expected_diff.saturating_mul(3) / 2 {
+                                    tracing::warn!(
+                                        "await_cnight_observations: Midnight follower appears to \
+                                         be lagging. watermark={watermark} target={target} \
+                                         diff={actual_diff}, expected ~{expected_diff} \
+                                         (k={k} + ~{BLOCK_STABILITY_MARGIN} processing lag). \
+                                         Test wait will exceed the usual stability window."
+                                    );
+                                }
+                            }
+                        }
+
+                        // Heartbeat shows per-test progress: how far the
+                        // watermark is from this test's target. The Cardano
+                        // tip is included for absolute-time context but the
+                        // primary signal is `target - watermark`.
+                        let cardano_tip = CardanoClient::current_block_height(ogmios_settings)
+                            .await
+                            .map(|tip| format!(" (cardano tip={tip})"))
+                            .unwrap_or_default();
+                        let blocks_to_target = target.saturating_sub(watermark);
+                        tracing::info!(
+                            "await_cnight_observations: polling; midnight #{head_num} \
+                             watermark={watermark} target={target} ({blocks_to_target} blocks \
+                             behind target){cardano_tip}, 0/{total} observed",
+                        );
+                    }
+                    Err(e) => {
+                        // subxt's `OnlineClient` runs an internal background
+                        // task for its websocket. When that task dies (TCP
+                        // retransmit timeout, middleware idle-killer, brief
+                        // outage…) every subsequent call on the same client
+                        // fails forever with "background task closed;
+                        // restart required". Detect that string and rebuild
+                        // the client — without this we'd just log the same
+                        // WARN every 5s for the remainder of the test.
+                        let err_msg = e.to_string();
+                        let needs_reconnect = err_msg.contains("restart required")
+                            || err_msg.contains("background task closed");
+                        if needs_reconnect {
+                            tracing::warn!(
+                                "await_cnight_observations: subxt background task closed; \
+                                 rebuilding OnlineClient",
+                            );
+                            if let Err(reconnect_err) = self.reconnect_online_client().await {
+                                tracing::warn!(
+                                    "await_cnight_observations: reconnect failed (will retry in {:?}): {reconnect_err}",
+                                    POLL_INTERVAL,
+                                );
+                            }
+                        } else {
+                            tracing::warn!(
+                                "await_cnight_observations: poll failed (will retry in {:?}): {e}",
+                                POLL_INTERVAL,
                             );
                         }
                     }
                 }
+                tokio::time::sleep(POLL_INTERVAL).await;
             }
-            Err("Did not find registration event".into())
         };
 
-        timeout(Duration::from_secs(60), inner)
-            .await
-            .unwrap_or_else(|_| Err("Timeout waiting for registration event".into()))
+        match timeout(timeout_duration, inner).await {
+            Ok(Ok(events)) => Ok(events),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(format!(
+                "await_cnight_observations timed out after {timeout_duration:?}"
+            )
+            .into()),
+        }
+    }
+
+    /// Read `cNightObservation.nextCardanoPosition.block_number` at a
+    /// specific Midnight block (by number). Used by the past-scan path
+    /// to binary-search the watermark across history.
+    async fn read_next_cardano_position_at(
+        &self,
+        midnight_block: u64,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        // Wrap the RPC sequence in a timeout + reconnect retry loop. Without
+        // this, a transient transport stall (subxt's "background task closed"
+        // or a hung TCP read) inside `at_block(...)` or `storage().try_fetch(...)`
+        // would freeze the past-scan walk for the remainder of the outer
+        // helper's timeout.
+        const PER_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
+        const MAX_ATTEMPTS: u32 = 5;
+        let addr = mn_meta::storage()
+            .c_night_observation()
+            .next_cardano_position();
+        for attempt in 1..=MAX_ATTEMPTS {
+            let result = timeout(PER_ATTEMPT_TIMEOUT, async {
+                let at = self.online_client().at_block(midnight_block).await?;
+                let value = at
+                    .storage()
+                    .try_fetch(addr.clone(), ())
+                    .await?
+                    .map(|v| v.decode())
+                    .transpose()?;
+                Ok::<_, Box<dyn std::error::Error>>(
+                    value.map(|p| p.block_number as u64).unwrap_or(0),
+                )
+            })
+            .await;
+            match result {
+                Ok(Ok(v)) => return Ok(v),
+                Ok(Err(e)) => {
+                    let msg = e.to_string();
+                    if (msg.contains("restart required") || msg.contains("background task closed"))
+                        && attempt < MAX_ATTEMPTS
+                    {
+                        tracing::warn!(
+                            "read_next_cardano_position_at(#{midnight_block}): transport error \
+                             (attempt {attempt}/{MAX_ATTEMPTS}); reconnecting: {e}"
+                        );
+                        let _ = self.reconnect_online_client().await;
+                        continue;
+                    }
+                    return Err(e);
+                }
+                Err(_) => {
+                    if attempt < MAX_ATTEMPTS {
+                        tracing::warn!(
+                            "read_next_cardano_position_at(#{midnight_block}): timed out after \
+                             {PER_ATTEMPT_TIMEOUT:?} (attempt {attempt}/{MAX_ATTEMPTS}); reconnecting"
+                        );
+                        let _ = self.reconnect_online_client().await;
+                        continue;
+                    }
+                    return Err(format!(
+                        "read_next_cardano_position_at(#{midnight_block}) timed out after \
+                         {MAX_ATTEMPTS} attempts"
+                    )
+                    .into());
+                }
+            }
+        }
+        unreachable!()
+    }
+
+    /// Binary-search for the smallest Midnight block `M` where the
+    /// `nextCardanoPosition` watermark is at least `target`. Such an
+    /// `M` is the Midnight block whose `process_tokens` extrinsic
+    /// crossed `target` (the previous block's watermark was strictly
+    /// less than `target`, by monotonicity).
+    async fn binary_search_watermark(
+        &self,
+        target: u64,
+        head_num: u64,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let mut lo: u64 = 1;
+        let mut hi: u64 = head_num;
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            let wm = self.read_next_cardano_position_at(mid).await?;
+            if wm >= target {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        Ok(lo)
+    }
+
+    /// Past-scan: locate `M_safe` via binary search on the watermark, then
+    /// walk backward decoding each Midnight block's extrinsics looking for
+    /// `process_tokens` calls that carried our tx_ids. The walk is bounded
+    /// by how far back the earliest tx_id's observation lies (at most
+    /// ~k Cardano blocks worth of Midnight blocks past `M_safe`).
+    async fn scan_past_for_tx_ids(
+        &self,
+        tx_ids: &[[u8; 32]],
+        head_num: u64,
+        target: u64,
+    ) -> Result<Vec<ExtrinsicEvents<SubstrateConfig>>, Box<dyn std::error::Error>> {
+        use std::collections::HashSet;
+
+        let total = tx_ids.len();
+        let m_safe = self.binary_search_watermark(target, head_num).await?;
+        tracing::info!(
+            "await_cnight_observations: binary search settled on midnight #{m_safe}; \
+             walking backward for {} tx_id(s)",
+            total,
+        );
+
+        let mut remaining: HashSet<[u8; 32]> = tx_ids.iter().copied().collect();
+        let mut collected: Vec<ExtrinsicEvents<SubstrateConfig>> = Vec::new();
+        let mut m = m_safe;
+        const WALK_PER_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
+        const WALK_MAX_ATTEMPTS: u32 = 5;
+        while !remaining.is_empty() && m > 0 {
+            // Same transport-resilience wrapping as `read_next_cardano_position_at`:
+            // wrap the per-block RPC sequence in a timeout + reconnect retry loop
+            // so a stalled `at_block` / `extrinsics().fetch()` / `ext.events()` call
+            // doesn't freeze the walk indefinitely.
+            type BlockScan = (Vec<ExtrinsicEvents<SubstrateConfig>>, Vec<[u8; 32]>);
+            let mut walk_result: Option<BlockScan> = None;
+            for attempt in 1..=WALK_MAX_ATTEMPTS {
+                let attempt_outcome = timeout(WALK_PER_ATTEMPT_TIMEOUT, async {
+                    let at = self.online_client().at_block(m).await?;
+                    let exts = at.extrinsics().fetch().await?;
+                    let mut block_collected: Vec<ExtrinsicEvents<SubstrateConfig>> = Vec::new();
+                    let mut block_matched: Vec<[u8; 32]> = Vec::new();
+                    for ext in exts.iter().filter_map(Result::ok) {
+                        let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
+                            continue;
+                        };
+                        let Some(utxos) = Self::extract_process_tokens_utxos(&decoded) else {
+                            continue;
+                        };
+                        if utxos.is_empty() {
+                            continue;
+                        }
+                        let matched: Vec<[u8; 32]> = utxos
+                            .iter()
+                            .map(|u| u.header.tx_hash.0)
+                            .filter(|h| remaining.contains(h) && !block_matched.contains(h))
+                            .collect();
+                        if matched.is_empty() {
+                            continue;
+                        }
+                        // Stage matches locally; commit to `remaining`
+                        // only after the whole block scan succeeds, so a
+                        // mid-block failure + retry doesn't drop matched
+                        // ids whose events haven't been collected yet.
+                        let events = ext.events().await?;
+                        block_matched.extend(&matched);
+                        block_collected.push(events);
+                    }
+                    Ok::<_, Box<dyn std::error::Error>>((block_collected, block_matched))
+                })
+                .await;
+                match attempt_outcome {
+                    Ok(Ok(v)) => {
+                        walk_result = Some(v);
+                        break;
+                    }
+                    Ok(Err(e)) => {
+                        let msg = e.to_string();
+                        if (msg.contains("restart required")
+                            || msg.contains("background task closed"))
+                            && attempt < WALK_MAX_ATTEMPTS
+                        {
+                            tracing::warn!(
+                                "scan_past: walk at midnight #{m}: transport error \
+                                 (attempt {attempt}/{WALK_MAX_ATTEMPTS}); reconnecting: {e}"
+                            );
+                            let _ = self.reconnect_online_client().await;
+                            continue;
+                        }
+                        return Err(e);
+                    }
+                    Err(_) => {
+                        if attempt < WALK_MAX_ATTEMPTS {
+                            tracing::warn!(
+                                "scan_past: walk at midnight #{m}: timed out after \
+                                 {WALK_PER_ATTEMPT_TIMEOUT:?} (attempt {attempt}/{WALK_MAX_ATTEMPTS}); \
+                                 reconnecting"
+                            );
+                            let _ = self.reconnect_online_client().await;
+                            continue;
+                        }
+                        return Err(format!(
+                            "scan_past: walk at midnight #{m} timed out after \
+                             {WALK_MAX_ATTEMPTS} attempts"
+                        )
+                        .into());
+                    }
+                }
+            }
+            if let Some((mut block_events, block_matched)) = walk_result {
+                for h in &block_matched {
+                    remaining.remove(h);
+                    tracing::info!(
+                        "await_cnight_observations: scan-back matched tx_id 0x{} \
+                         in midnight #{m} ({}/{total} observed, waiting on {})",
+                        hex::encode(h),
+                        total - remaining.len(),
+                        remaining.len(),
+                    );
+                }
+                collected.append(&mut block_events);
+            }
+            if m == 0 {
+                break;
+            }
+            m -= 1;
+        }
+
+        if !remaining.is_empty() {
+            let missing: Vec<String> = remaining
+                .iter()
+                .map(|h| format!("0x{}", hex::encode(h)))
+                .collect();
+            return Err(format!(
+                "await_cnight_observations: scan-back from #{m_safe} exhausted \
+                 without finding: [{}]",
+                missing.join(", "),
+            )
+            .into());
+        }
+        Ok(collected)
     }
 
     pub async fn subscribe_to_c2n_bridge_transfers(
         &self,
+        timeout_duration: Duration,
     ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
         tracing::info!("Subscribing for C-to-N transfer extrinsic",);
-        let mut blocks_sub = self.online_client.stream_blocks().await?;
+        let mut blocks_sub = self.online_client().stream_blocks().await?;
 
         let inner = async {
             while let Some(block_result) = blocks_sub.next().await {
@@ -201,7 +658,7 @@ impl MidnightClient {
             Err("Did not find bridge extrinsics".into())
         };
 
-        timeout(Duration::from_secs(60), inner)
+        timeout(timeout_duration, inner)
             .await
             .unwrap_or_else(|_| Err("Timeout waiting for bridge exrinsics".into()))
     }
@@ -249,7 +706,7 @@ impl MidnightClient {
         let storage_address = mn_meta::storage().c_night_observation().utxo_owners();
 
         let owners = self
-            .online_client
+            .online_client()
             .at_current_block()
             .await?
             .storage()
@@ -259,30 +716,6 @@ impl MidnightClient {
             .transpose()?;
 
         Ok(owners)
-    }
-
-    pub async fn poll_utxo_owners_until_change(
-        &self,
-        utxo: String,
-        initial_value: Option<UtxoOwners>,
-        timeout_secs: u64,
-        poll_interval_ms: u64,
-    ) -> Result<Option<UtxoOwners>, Box<dyn std::error::Error>> {
-        let start = Instant::now();
-        loop {
-            let current_value = self.query_night_utxo_owners(utxo.clone()).await?;
-            if current_value.as_ref().map(|v| v.0.0.clone())
-                != initial_value.as_ref().map(|v| v.0.0.clone())
-            {
-                tracing::info!("UtxoOwners storage changed: {:?}", current_value);
-                return Ok(current_value);
-            }
-            if start.elapsed() > Duration::from_secs(timeout_secs) {
-                tracing::info!("Timeout reached without change");
-                return Ok(current_value);
-            }
-            sleep(Duration::from_millis(poll_interval_ms)).await;
-        }
     }
 
     pub async fn subscribe_to_federated_authority_events(
@@ -326,7 +759,7 @@ impl MidnightClient {
 
         // First, check historical finalized blocks for the events
         // The events may have been emitted before we started listening
-        let finalized_at = self.online_client.at_current_block().await?;
+        let finalized_at = self.online_client().at_current_block().await?;
         let current_finalized = finalized_at.block_number();
 
         tracing::info!(
@@ -343,7 +776,7 @@ impl MidnightClient {
                 .request("chain_getBlockHash", rpc_params![block_num])
                 .await?;
 
-            let at_block = self.online_client.at_block(block_hash).await?;
+            let at_block = self.online_client().at_block(block_hash).await?;
             let events = at_block.events().fetch().await?;
 
             check_block_events(
@@ -367,7 +800,7 @@ impl MidnightClient {
 
         // If not found in history, subscribe to new finalized blocks
         tracing::info!("Subscribing to new finalized blocks for remaining events...");
-        let mut blocks_sub = self.online_client.stream_blocks().await?;
+        let mut blocks_sub = self.online_client().stream_blocks().await?;
 
         let result = timeout(Duration::from_secs(120), async {
             while let Some(block) = blocks_sub.next().await {
@@ -445,7 +878,7 @@ impl MidnightClient {
 
     /// Wait for a new finalized block and return its hash.
     pub async fn wait_for_next_finalized_block(&self) -> Result<H256, Box<dyn std::error::Error>> {
-        let mut blocks_sub = self.online_client.stream_blocks().await?;
+        let mut blocks_sub = self.online_client().stream_blocks().await?;
 
         let result = timeout(Duration::from_secs(30), async {
             if let Some(block_result) = blocks_sub.next().await {
@@ -566,7 +999,7 @@ impl MidnightClient {
         Box<dyn std::error::Error>,
     > {
         let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_bytes);
-        let unsigned_extrinsic = self.online_client.tx().await?.create_unsigned(&mn_tx)?;
+        let unsigned_extrinsic = self.online_client().tx().await?.create_unsigned(&mn_tx)?;
         Ok(unsigned_extrinsic.submit_and_watch().await?)
     }
 
