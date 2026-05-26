@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # required for AWS OIDC
 
 concurrency:
   group: nightly-e2e-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -36,17 +37,103 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install system dependencies (protoc)
+      - name: Install system dependencies (protoc, postgresql-client)
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          sudo apt-get install -y protobuf-compiler postgresql-client
           protoc --version
+
+      # --- Toolkit fetch cache: tunnel to the shared RDS via StrongDM -----
+      #
+      # See shieldedtech/shielded-gitops#2152 and the toolkit-cache-rds
+      # stack in shielded-iac for the data plane. Flow:
+      #
+      #   1. OIDC into shielded-dev (account 962595532105).
+      #   2. Pull SDM service-account token + RDS master credentials from
+      #      Secrets Manager.
+      #   3. `sdm login` then `sdm connect toolkit-cache-postgres` — SDM
+      #      assigns an ephemeral localhost port that the runner can talk
+      #      to over loopback.
+      #   4. Smoke `SELECT 1;` to fail fast if anything's wrong before the
+      #      4-hour e2e job starts.
+      #   5. Export TOOLKIT_CACHE_DB_URL for the test process; the qanet
+      #      branch of tests/e2e/tests/lib.rs::fetch_cache_config() reads
+      #      this env var (pending consumer change on the e2e branch).
+      - name: Configure AWS credentials (shielded-dev OIDC)
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
+        with:
+          role-to-assume: ${{ vars.SHIELDED_DEV_OIDC_ROLE_ARN }}
+          aws-region: eu-west-1
+          role-duration-seconds: 14400 # nightly e2e runs up to ~4h
+
+      - name: Install StrongDM CLI
+        shell: bash
+        run: |
+          curl -fsSL https://app.strongdm.com/releases/cli/linux -o sdm.zip
+          unzip -q sdm.zip -d "$HOME/.sdm"
+          echo "$HOME/.sdm" >> "$GITHUB_PATH"
+
+      - name: Fetch toolkit-cache credentials from Secrets Manager
+        id: cache_creds
+        shell: bash
+        run: |
+          set -euo pipefail
+          # SDM service-account credentials for the nightly workflow.
+          sdm_secret=$(aws secretsmanager get-secret-value \
+            --secret-id toolkit-cache/sdm-ci-account \
+            --query SecretString --output text)
+          echo "::add-mask::$(jq -r .token <<<"$sdm_secret")"
+          echo "SDM_ADMIN_TOKEN=$(jq -r .token <<<"$sdm_secret")" >> "$GITHUB_ENV"
+
+          # RDS master credentials (toolkit_cache_admin user).
+          db_secret=$(aws secretsmanager get-secret-value \
+            --secret-id toolkit-cache/master \
+            --query SecretString --output text)
+          echo "::add-mask::$(jq -r .password <<<"$db_secret")"
+          echo "TOOLKIT_CACHE_DB_USER=$(jq -r .username <<<"$db_secret")" >> "$GITHUB_ENV"
+          echo "TOOLKIT_CACHE_DB_PASSWORD=$(jq -r .password <<<"$db_secret")" >> "$GITHUB_ENV"
+          echo "TOOLKIT_CACHE_DB_NAME=toolkit_cache_qanet" >> "$GITHUB_ENV"
+
+      - name: Open StrongDM tunnel to toolkit-cache-postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdm login --admin-token "$SDM_ADMIN_TOKEN"
+          # Background `sdm connect`; capture the assigned localhost port.
+          sdm connect toolkit-cache-postgres &
+          # Poll until the resource shows a bound port. SDM exposes this
+          # via `sdm status --json`.
+          for _ in $(seq 1 30); do
+            port=$(sdm status --json 2>/dev/null \
+              | jq -r '.[] | select(.name=="toolkit-cache-postgres") | .listen_address' \
+              | awk -F: '{print $2}')
+            [ -n "$port" ] && [ "$port" != "null" ] && break
+            sleep 1
+          done
+          if [ -z "${port:-}" ] || [ "$port" = "null" ]; then
+            echo "::error::StrongDM tunnel never came up"
+            sdm status --json || true
+            exit 1
+          fi
+          echo "TOOLKIT_CACHE_DB_PORT=$port" >> "$GITHUB_ENV"
+          echo "TOOLKIT_CACHE_DB_URL=postgresql://${TOOLKIT_CACHE_DB_USER}:${TOOLKIT_CACHE_DB_PASSWORD}@127.0.0.1:${port}/${TOOLKIT_CACHE_DB_NAME}?sslmode=require" >> "$GITHUB_ENV"
+
+      - name: Smoke test the cache DB connection
+        shell: bash
+        env:
+          PGPASSWORD: ${{ env.TOOLKIT_CACHE_DB_PASSWORD }}
+        run: |
+          psql "host=127.0.0.1 port=${TOOLKIT_CACHE_DB_PORT} dbname=${TOOLKIT_CACHE_DB_NAME} user=${TOOLKIT_CACHE_DB_USER} sslmode=require" \
+            -c 'SELECT 1;'
 
       - name: Run e2e tests (all)
         working-directory: tests/e2e/tests
         env:
           RUST_BACKTRACE: "1"
+          # Consumed by tests/e2e/tests/lib.rs::fetch_cache_config() on
+          # the qanet branch — pending the e2e-branch lib.rs change.
+          TOOLKIT_CACHE_DB_URL: ${{ env.TOOLKIT_CACHE_DB_URL }}
         run: |
           cargo test --test e2e_tests cnight --no-default-features --features "${{ steps.vars.outputs.env }}" -- --no-capture
 
