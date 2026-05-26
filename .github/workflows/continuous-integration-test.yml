@@ -16,7 +16,7 @@ concurrency:
 jobs:
   run:
     name: Run tests
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: [self-hosted, "tier:large"]
     permissions:
       contents: read
       packages: write
@@ -40,7 +40,7 @@ jobs:
           use-cache: false
 
       - name: Free disk space
-        if: steps.guard.outputs.hit != 'true'
+        if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
         run: scripts/free-disk-space.sh
 
       - name: Log in to GHCR (for remote cache)
@@ -51,16 +51,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      # Authenticate to Docker Hub on internal PRs / pushes to avoid the unauthenticated
+      # pull rate limit when WITH DOCKER pulls images like postgres for testcontainers.
+      # Skipped on fork PRs where these secrets are not available.
+      # If for some reason we can't log in we should proceed unauthed.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        continue-on-error: true
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
       - name: Run build
         if: steps.guard.outputs.hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
         run: |
           PUSH_FLAG=""
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             PUSH_FLAG="--push"
           fi
-          . ./.envrc && earthly -P --secret GITHUB_TOKEN="$GITHUB_TOKEN" --strict $PUSH_FLAG --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test +test
+          . ./.envrc && earthly -P \
+            --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+            --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
+            --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+            --strict $PUSH_FLAG \
+            --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test +test
 
       - name: Upload test report artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

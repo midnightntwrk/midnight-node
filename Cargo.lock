@@ -181,7 +181,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -192,7 +192,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1898,24 +1898,18 @@ dependencies = [
  "clap",
  "ed25519-zebra",
  "hex",
- "hex-literal 1.1.0",
  "k256",
- "pallet-address-associations",
- "parity-scale-codec",
  "plutus",
  "plutus-datum-derive",
- "pretty_assertions",
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
  "sidechain-domain",
  "sp-api",
- "sp-block-producer-metadata",
  "sp-blockchain",
  "sp-runtime",
  "sp-sidechain",
  "thiserror 2.0.18",
- "time-source",
 ]
 
 [[package]]
@@ -1970,7 +1964,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3263,7 +3257,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3731,7 +3725,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5497,7 +5491,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "system-configuration 0.7.0",
  "tokio",
  "tower-service",
@@ -5917,7 +5911,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7605,6 +7599,7 @@ dependencies = [
  "midnight-primitives-ledger",
  "midnight-primitives-mainchain-follower",
  "midnight-primitives-reserve-observation",
+ "midnight-primitives-session-info",
  "midnight-primitives-system-parameters",
  "midnight-storage-core",
  "mmr-gadget",
@@ -7705,6 +7700,7 @@ dependencies = [
  "aiken-contracts-lib",
  "blake2 0.10.6",
  "hex",
+ "midnight-node-e2e-macros",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
  "midnight-node-res",
@@ -7717,7 +7713,18 @@ dependencies = [
  "tempfile",
  "tiny-bip39",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "whisky",
+]
+
+[[package]]
+name = "midnight-node-e2e-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.45",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -7849,6 +7856,7 @@ dependencies = [
  "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
+ "midnight-primitives-session-info",
  "pallet-aura",
  "pallet-beefy",
  "pallet-beefy-mmr",
@@ -8203,6 +8211,13 @@ dependencies = [
  "serde",
  "sidechain-domain",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "midnight-primitives-session-info"
+version = "0.1.0"
+dependencies = [
+ "sp-api",
 ]
 
 [[package]]
@@ -9275,9 +9290,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl"
-version = "0.10.79"
+version = "0.10.80"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf0b434746ee2832f4f0baf10137e1cabb18cbe6912c69e2e33263c45250f542"
+checksum = "a45fa2aa886c42762255da344f0a0d313e254066c46aad76f300c3d3da62d967"
 dependencies = [
  "bitflags 2.11.0",
  "cfg-if",
@@ -9306,9 +9321,9 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.115"
+version = "0.9.116"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "158fe5b292746440aa6e7a7e690e55aeb72d41505e2804c23c6973ad0e9c9781"
+checksum = "f28a22dc7140cda5f096e5e7724a6962ca81a7f8bfd2979f9b18c11af56318c4"
 dependencies = [
  "cc",
  "libc",
@@ -9372,7 +9387,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.45.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9585,23 +9600,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-address-associations"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hex-literal 1.1.0",
- "pallet-balances",
- "parity-scale-codec",
- "scale-info",
- "sidechain-domain",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
 name = "pallet-asset-conversion"
 version = "28.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
@@ -9747,106 +9745,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-block-participation"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sp-block-participation",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-block-producer-fees"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "parity-scale-codec",
- "scale-info",
- "sp-block-producer-fees",
- "sp-consensus-slots",
- "sp-core",
- "sp-io",
- "sp-runtime",
- "sp-std",
-]
-
-[[package]]
-name = "pallet-block-producer-fees-rpc"
-version = "1.8.1"
-dependencies = [
- "derive-new",
- "jsonrpsee",
- "parity-scale-codec",
- "serde",
- "sp-api",
- "sp-block-producer-fees",
- "sp-blockchain",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-block-producer-metadata"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "hex-literal 1.1.0",
- "k256",
- "pallet-balances",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sidechain-domain",
- "sp-block-producer-metadata",
- "sp-core",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-block-producer-metadata-rpc"
-version = "1.8.1"
-dependencies = [
- "derive-new",
- "jsonrpsee",
- "parity-scale-codec",
- "sidechain-domain",
- "sp-api",
- "sp-block-producer-metadata",
- "sp-blockchain",
- "sp-core",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-block-production-log"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "scale-info",
- "sidechain-domain",
- "sp-block-production-log",
- "sp-consensus-slots",
- "sp-io",
- "sp-std",
-]
-
-[[package]]
 name = "pallet-broker"
 version = "0.25.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
@@ -9877,6 +9775,7 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
+ "sp-api",
  "sp-core",
  "sp-io",
  "sp-partner-chains-bridge",
@@ -9910,6 +9809,7 @@ dependencies = [
  "sidechain-domain",
  "sp-core",
  "sp-io",
+ "sp-runtime",
  "tempfile",
  "test-log",
 ]
@@ -9984,24 +9884,6 @@ dependencies = [
  "scale-info",
  "sidechain-domain",
  "sp-inherents",
- "sp-io",
- "sp-runtime",
-]
-
-[[package]]
-name = "pallet-governed-map"
-version = "1.8.1"
-dependencies = [
- "frame-benchmarking",
- "frame-support",
- "frame-system",
- "log",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sidechain-domain",
- "sp-core",
- "sp-governed-map",
  "sp-io",
  "sp-runtime",
 ]
@@ -10534,9 +10416,9 @@ dependencies = [
 [[package]]
 name = "parity-db"
 version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6985a45b0597d68448dac9db2907f9f72bbaf63fe3383d4ba15f99096c87212f"
+source = "git+https://github.com/midnightntwrk/parity-db.git?branch=master#d44ef4fafd15ed8326e74b88f2558afaf458f7f6"
 dependencies = [
+ "ahash 0.8.12",
  "blake2 0.10.6",
  "crc32fast",
  "fs2",
@@ -10717,7 +10599,6 @@ dependencies = [
  "libp2p-identity",
  "ogmios-client",
  "pallet-balances",
- "pallet-governed-map",
  "pallet-partner-chains-bridge",
  "pallet-partner-chains-session",
  "pallet-session-validator-management",
@@ -10734,7 +10615,6 @@ dependencies = [
  "sidechain-domain",
  "sidechain-slots",
  "sp-core",
- "sp-governed-map",
  "sp-partner-chains-bridge",
  "sp-runtime",
  "sp-session-validator-management",
@@ -10782,8 +10662,6 @@ dependencies = [
  "serde",
  "sidechain-domain",
  "sidechain-mc-hash",
- "sp-block-participation",
- "sp-governed-map",
  "sp-partner-chains-bridge",
  "sp-timestamp",
  "sqlx",
@@ -10805,8 +10683,6 @@ dependencies = [
  "hex-literal 1.1.0",
  "jsonrpsee",
  "log",
- "pallet-block-producer-fees-rpc",
- "pallet-block-producer-metadata-rpc",
  "pallet-session-validator-management-rpc",
  "pallet-sidechain-rpc",
  "pallet-transaction-payment-rpc",
@@ -10836,14 +10712,9 @@ dependencies = [
  "sidechain-slots",
  "sp-api",
  "sp-block-builder",
- "sp-block-participation",
- "sp-block-producer-fees",
- "sp-block-producer-metadata",
- "sp-block-production-log",
  "sp-blockchain",
  "sp-consensus-aura",
  "sp-core",
- "sp-governed-map",
  "sp-inherents",
  "sp-io",
  "sp-partner-chains-bridge",
@@ -10875,14 +10746,8 @@ dependencies = [
  "hex-literal 1.1.0",
  "log",
  "minicbor 2.2.1",
- "pallet-address-associations",
  "pallet-aura",
  "pallet-balances",
- "pallet-block-participation",
- "pallet-block-producer-fees",
- "pallet-block-producer-metadata",
- "pallet-block-production-log",
- "pallet-governed-map",
  "pallet-grandpa",
  "pallet-partner-chains-bridge",
  "pallet-partner-chains-session",
@@ -10902,16 +10767,11 @@ dependencies = [
  "sidechain-slots",
  "sp-api",
  "sp-block-builder",
- "sp-block-participation",
- "sp-block-producer-fees",
- "sp-block-producer-metadata",
- "sp-block-production-log",
  "sp-consensus-aura",
  "sp-consensus-grandpa",
  "sp-consensus-slots",
  "sp-core",
  "sp-genesis-builder",
- "sp-governed-map",
  "sp-inherents",
  "sp-io",
  "sp-keyring",
@@ -10942,8 +10802,6 @@ dependencies = [
  "serde_json",
  "sidechain-domain",
  "sidechain-mc-hash",
- "sp-block-participation",
- "sp-governed-map",
  "sp-partner-chains-bridge",
  "sp-timestamp",
 ]
@@ -10961,7 +10819,6 @@ dependencies = [
  "once_cell",
  "parity-scale-codec",
  "partner-chains-cli",
- "partner-chains-smart-contracts-commands",
  "plutus",
  "sc-cli",
  "sc-service",
@@ -10989,23 +10846,6 @@ dependencies = [
  "sidechain-domain",
  "sp-core",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "partner-chains-smart-contracts-commands"
-version = "1.8.1"
-dependencies = [
- "anyhow",
- "clap",
- "hex",
- "hex-literal 1.1.0",
- "ogmios-client",
- "partner-chains-cardano-offchain",
- "serde",
- "serde_json",
- "sidechain-domain",
- "sp-runtime",
- "tokio",
 ]
 
 [[package]]
@@ -12314,7 +12154,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.2",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -12351,7 +12191,7 @@ dependencies = [
  "cfg_aliases 0.2.1",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -13143,7 +12983,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -15885,7 +15725,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -15986,57 +15826,6 @@ dependencies = [
  "sp-api",
  "sp-inherents",
  "sp-runtime",
-]
-
-[[package]]
-name = "sp-block-participation"
-version = "1.8.1"
-dependencies = [
- "async-trait",
- "log",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "sidechain-domain",
- "sp-api",
- "sp-consensus-slots",
- "sp-inherents",
- "sp-runtime",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "sp-block-producer-fees"
-version = "1.8.1"
-dependencies = [
- "parity-scale-codec",
- "sp-api",
- "sp-std",
-]
-
-[[package]]
-name = "sp-block-producer-metadata"
-version = "1.8.1"
-dependencies = [
- "hex-literal 1.1.0",
- "k256",
- "parity-scale-codec",
- "sidechain-domain",
- "sp-api",
-]
-
-[[package]]
-name = "sp-block-production-log"
-version = "1.8.1"
-dependencies = [
- "async-trait",
- "parity-scale-codec",
- "sidechain-slots",
- "sp-api",
- "sp-inherents",
- "sp-runtime",
- "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -16281,25 +16070,6 @@ dependencies = [
  "serde_json",
  "sp-api",
  "sp-runtime",
-]
-
-[[package]]
-name = "sp-governed-map"
-version = "1.8.1"
-dependencies = [
- "async-trait",
- "envy",
- "log",
- "parity-scale-codec",
- "pretty_assertions",
- "scale-info",
- "serde",
- "sidechain-domain",
- "sp-api",
- "sp-inherents",
- "sp-runtime",
- "thiserror 2.0.18",
- "tokio",
 ]
 
 [[package]]
@@ -18093,7 +17863,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -18112,7 +17882,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -18399,9 +18169,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.51.0"
+version = "1.52.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bd1c4c0fc4a7ab90fc15ef6daaa3ec3b893f004f915f2392557ed23237820cd"
+checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
 dependencies = [
  "bytes",
  "libc",
@@ -20202,7 +19972,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
