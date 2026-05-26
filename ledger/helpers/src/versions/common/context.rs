@@ -31,6 +31,9 @@ use std::{
 use thiserror::Error;
 use tokio::sync::Mutex as MutexTokio;
 
+pub mod builder_context;
+pub use builder_context::BuilderContext;
+
 #[derive(Debug, Error)]
 pub enum LedgerContextError {
 	#[error("mutex poisoned: {0}")]
@@ -508,6 +511,50 @@ impl<D: DB + Clone> LedgerContext<D> {
 			block_context,
 			whitelist: None,
 		})
+	}
+}
+
+impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
+	fn wallet_from_seed(&self, seed: WalletSeed) -> Wallet<D> {
+		self.wallet_from_seed(seed)
+	}
+
+	fn with_wallet_from_seed<F, R>(&self, seed: WalletSeed, f: F) -> R
+	where
+		F: FnOnce(&mut Wallet<D>) -> R,
+	{
+		self.with_wallet_from_seed(seed, f)
+	}
+
+	fn with_wallets_from_seeds<F, R>(
+		&self,
+		origin_seed: WalletSeed,
+		destination_seed: WalletSeed,
+		f: F,
+	) -> R
+	where
+		F: FnOnce(&mut Wallet<D>, &mut Wallet<D>) -> R,
+	{
+		self.with_wallets_from_seeds(origin_seed, destination_seed, f)
+	}
+
+	fn tx_context(&self, block_context: BlockContext) -> TransactionContext<D> {
+		self.tx_context(block_context)
+	}
+
+	fn latest_block_context(&self) -> BlockContext {
+		todo!()
+	}
+
+	fn ledger_parameters(&self) -> mn_ledger::structure::LedgerParameters {
+		todo!()
+	}
+
+	fn update_resolver(
+		&self,
+		resolver: &'static Resolver,
+	) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+		todo!()
 	}
 }
 

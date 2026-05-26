@@ -14,12 +14,13 @@
 use rand::Rng as _;
 
 use super::{
-	BindingKind, BuildIntent, ClaimKind, ClaimRewardsTransaction, DB, DustActions, DustPublicKey,
-	DustRegistration, DustSpend, HashMapStorage, Intent, LedgerContext, Offer, OfferInfo, Pedersen,
-	PedersenDowngradeable, PedersenRandomness, ProofKind, ProofMarker, ProofPreimage,
-	ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment, SegmentId,
-	Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng, Storable,
-	Tagged, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness, serialize,
+	BindingKind, BuildIntent, BuilderContext, ClaimKind, ClaimRewardsTransaction, DB, DustActions,
+	DustPublicKey, DustRegistration, DustSpend, HashMapStorage, Intent, LedgerContext, Offer,
+	OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind, ProofMarker,
+	ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment,
+	SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng,
+	Storable, Tagged, Timestamp, TokenType, Transaction, WalletSeed, WellFormedStrictness,
+	serialize,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -32,9 +33,9 @@ pub type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
 
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 
-pub trait FromContext<D: DB + Clone> {
+pub trait FromContext<D: DB + Clone, C: BuilderContext<D>> {
 	fn new_from_context(
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<D>>,
 		maybe_rng_seed: Option<[u8; 32]>,
 	) -> Self;
@@ -74,8 +75,8 @@ impl DustRegistrationBuilder {
 	}
 }
 
-pub struct StandardTrasactionInfo<D: DB + Clone> {
-	pub context: Arc<LedgerContext<D>>,
+pub struct StandardTrasactionInfo<D: DB + Clone, C: BuilderContext<D>> {
+	pub context: Arc<C>,
 	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D>>>,
 	pub guaranteed_offer: Option<OfferInfo<D>>,
 	pub fallible_offers: HashMap<u16, OfferInfo<D>>,
@@ -86,9 +87,9 @@ pub struct StandardTrasactionInfo<D: DB + Clone> {
 	pub dust_registrations: Vec<DustRegistrationBuilder>,
 }
 
-impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
+impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTrasactionInfo<D, C> {
 	fn new_from_context(
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<D>>,
 		maybe_rng_seed: Option<[u8; 32]>,
 	) -> Self {
@@ -108,7 +109,7 @@ impl<D: DB + Clone> FromContext<D> for StandardTrasactionInfo<D> {
 	}
 }
 
-impl<D: DB + Clone> StandardTrasactionInfo<D> {
+impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 	pub fn set_guaranteed_offer(&mut self, offer: OfferInfo<D>) {
 		self.guaranteed_offer = Some(offer);
 	}
@@ -147,7 +148,7 @@ impl<D: DB + Clone> StandardTrasactionInfo<D> {
 
 	async fn build(&mut self) -> Result<FinalizedTransaction<D>> {
 		let now = self.context.latest_block_context().tblock;
-		let delay = self.context.with_ledger_state(|ls| ls.parameters.global_ttl);
+		let delay = self.context.ledger_parameters().global_ttl;
 		let ttl = now + delay;
 
 		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self

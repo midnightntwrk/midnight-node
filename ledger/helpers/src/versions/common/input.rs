@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use super::{
-	DB, Input, LedgerContext, Nullifier, ProofPreimage, QualifiedInfo, Segment, ShieldedTokenType,
-	Sp, StdRng, TokenInfo, WalletSeed, WalletState,
+	BuilderContext, DB, Input, LedgerContext, Nullifier, ProofPreimage, QualifiedInfo, Segment,
+	ShieldedTokenType, Sp, StdRng, TokenInfo, WalletSeed, WalletState,
 };
 use itertools::Itertools;
 use std::sync::Arc;
@@ -43,12 +43,8 @@ impl<O> TokenInfo for InputInfo<O> {
 	}
 }
 
-pub trait BuildInput<D: DB + Clone>: TokenInfo + Send + Sync {
-	fn build(
-		&mut self,
-		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
-	) -> Input<ProofPreimage, D>;
+pub trait BuildInput<D: DB + Clone, C: BuilderContext<D>>: TokenInfo + Send + Sync {
+	fn build(&mut self, rng: &mut StdRng, context: Arc<C>) -> Input<ProofPreimage, D>;
 }
 
 impl InputInfo<WalletSeed> {
@@ -134,12 +130,8 @@ impl InputInfo<WalletSeed> {
 	}
 }
 
-impl<D: DB + Clone> BuildInput<D> for InputInfo<WalletSeed> {
-	fn build(
-		&mut self,
-		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
-	) -> Input<ProofPreimage, D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildInput<D, C> for InputInfo<WalletSeed> {
+	fn build(&mut self, rng: &mut StdRng, context: Arc<C>) -> Input<ProofPreimage, D> {
 		context.with_wallet_from_seed(self.origin, |wallet| {
 			let coin: Sp<QualifiedInfo, D> = self.min_match_coin(&wallet.shielded.state);
 

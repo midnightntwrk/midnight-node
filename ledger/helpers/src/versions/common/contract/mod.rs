@@ -12,12 +12,12 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use std::{any::Any, sync::Arc};
+use std::{any::Any, pin::Pin, sync::Arc};
 
 use super::super::{
-	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
-	Intent, LedgerContext, Op, PedersenRandomness, ProofPreimageMarker, Resolver, ResultModeGather,
-	ResultModeVerify, Signature, Sp, StdRng, Transcripts,
+	AlignedValue, BuilderContext, ContractAddress, ContractCallPrototype, ContractDeploy,
+	ContractOperation, DB, Intent, LedgerContext, Op, PedersenRandomness, ProofPreimageMarker,
+	Resolver, ResultModeGather, ResultModeVerify, Signature, Sp, StdRng, Transcripts,
 };
 
 // Re-export types needed by submodules
@@ -88,12 +88,16 @@ pub trait Contract<D: DB + Clone>: Send + Sync {
 	) -> ContractCallPrototype<D>;
 }
 
-#[async_trait]
-pub trait BuildContractAction<D: DB + Clone>: Send + Sync {
-	async fn build(
+pub trait BuildContractAction<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
+	fn build(
 		&mut self,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
+	) -> Pin<
+		Box<
+			dyn Future<Output = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>>
+				+ Send,
+		>,
+	>;
 }

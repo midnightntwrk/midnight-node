@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use super::{
-	Array, BuildContractAction, ContractAction, ContractAddress, ContractEffects, DB,
-	DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, LedgerContext,
+	Array, BuildContractAction, BuilderContext, ContractAction, ContractAddress, ContractEffects,
+	DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, LedgerContext,
 	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker,
 	ProvingKeyMaterial, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
 };
@@ -22,6 +22,7 @@ use rand::{CryptoRng, Rng};
 use std::{
 	io,
 	path::Path,
+	pin::{Pin, pin},
 	sync::Arc,
 	time::{SystemTime, UNIX_EPOCH},
 };
@@ -29,31 +30,29 @@ use std::{
 pub type SegmentId = u16;
 
 type IntentOf<D> = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
-#[async_trait]
-pub trait BuildIntent<D: DB + Clone>: Send + Sync {
+pub trait BuildIntent<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
 		ttl: Timestamp,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		segment_id: SegmentId,
 	) -> IntentOf<D>;
 }
 
-pub struct IntentInfo<D: DB + Clone> {
+pub struct IntentInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
 	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
-	pub actions: Vec<Box<dyn BuildContractAction<D>>>,
+	pub actions: Vec<Box<dyn BuildContractAction<D, C>>>,
 	// TODO: Add TTL Option here
 }
 
-#[async_trait]
-impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D> {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
 		ttl: Timestamp,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		segment_id: SegmentId,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let mut intent = Intent::<Signature, _, _, _>::empty(rng, ttl);
@@ -234,13 +233,12 @@ impl<D: DB + Clone> IntentCustom<D> {
 	}
 }
 
-#[async_trait]
-impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentCustom<D> {
 	async fn build(
 		&mut self,
 		_rng: &mut StdRng,
 		ttl: Timestamp,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		_segment_id: SegmentId,
 	) -> IntentOf<D> {
 		log::debug!("Updating the resolver...");
@@ -252,28 +250,38 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
 }
 
 #[async_trait]
-impl<D: DB + Clone> BuildContractAction<D> for IntentCustom<D> {
-	async fn build(
+impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for IntentCustom<D> {
+	fn build(
 		&mut self,
 		_rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+	) -> Pin<
+		Box<
+			dyn Future<Output = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>>
+				+ Send,
+		>,
+	> {
 		let mut actions = intent.actions.clone();
 
 		for action in self.intent.actions.iter() {
 			actions = actions.push((*action).clone());
 		}
 
-		context.update_resolver(self.resolver).await;
-
-		IntentOf::<D> {
+		let result = IntentOf::<D> {
 			guaranteed_unshielded_offer: intent.guaranteed_unshielded_offer.clone(),
 			fallible_unshielded_offer: intent.fallible_unshielded_offer.clone(),
 			actions,
 			dust_actions: intent.dust_actions.clone(),
 			ttl: intent.ttl,
 			binding_commitment: intent.binding_commitment,
-		}
+		};
+
+		let context = context.clone();
+
+		Box::pin(async move {
+			context.update_resolver(self.resolver).await;
+			result
+		})
 	}
 }

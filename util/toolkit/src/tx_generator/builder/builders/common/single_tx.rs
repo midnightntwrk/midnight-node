@@ -14,11 +14,11 @@
 use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
 use super::ledger_helpers_local::{
-	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, DefaultDB,
-	FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo, ProofProvider,
-	Segment, ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo,
-	TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet,
-	UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletAddress, WalletSeed,
+	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, BuilderContext,
+	DefaultDB, FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo,
+	ProofProvider, Segment, ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet,
+	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
+	UnshieldedWallet, UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletAddress, WalletSeed,
 };
 use async_trait::async_trait;
 
@@ -32,8 +32,8 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 pub(crate) const MAX_GUARANTEED_OUTPUTS: usize = 2;
 const MAX_GUARANTEED_INPUTS_OUTPUTS: usize = 3;
 
-pub struct SingleTxBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct SingleTxBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	shielded_amount: Option<u128>,
 	shielded_token_type: ShieldedTokenType,
@@ -45,10 +45,10 @@ pub struct SingleTxBuilder {
 	rng_seed: Option<[u8; 32]>,
 }
 
-impl SingleTxBuilder {
+impl<C: BuilderContext<DefaultDB>> SingleTxBuilder<C> {
 	pub fn new(
 		args: SingleTxArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		use super::type_convert::*;
@@ -74,7 +74,7 @@ impl SingleTxBuilder {
 }
 
 #[async_trait]
-impl BuildTxs for SingleTxBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 	type Error = Infallible;
 
 	async fn build_txs_from(
