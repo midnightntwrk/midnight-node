@@ -809,12 +809,19 @@ type Db8 = midnight_node_ledger_helpers::ledger_8::DefaultDB;
 
 const DUST_BATCH_SIZE: usize = 1000;
 
+/// Interval between info-level "replay progress: …" log lines emitted from
+/// `replay_blocks_{7,8}`. Fine-grained per-batch progress remains at
+/// `log::debug!`; this throttle is what users see by default during a
+/// multi-hour replay so it doesn't look like the process has hung.
+const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(30);
+
 fn replay_blocks_7(
 	ctx: &midnight_node_ledger_helpers::ledger_7::context::LedgerContext<Db7>,
 	blocks_sorted_by_height: &[&RawBlockData],
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_7::Event<Db7>> = Vec::new();
 	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
 		events.extend(apply_block_7(ctx, block));
@@ -824,6 +831,20 @@ fn replay_blocks_7(
 			ctx.update_dust_from_events(events.as_slice());
 			events.clear();
 			log::debug!("[perf] replay_blocks_7 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// Heartbeat lives outside the flush branch so a long stretch of
+		// blocks with no dust events still gets a "still alive" signal.
+		// Inside the flush branch this would only fire on `DUST_BATCH_SIZE`
+		// or `is_last`, which on sparse chains can be far apart.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log::info!(
+				"replay progress: {}/{} blocks ({:.1}%)",
+				i + 1,
+				total,
+				(i + 1) as f64 / total as f64 * 100.0,
+			);
+			last_info_at = std::time::Instant::now();
 		}
 	}
 
@@ -840,6 +861,7 @@ fn replay_blocks_8(
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
 		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
@@ -861,6 +883,19 @@ fn replay_blocks_8(
 			ctx.update_dust_from_events(events.as_slice());
 			events.clear();
 			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// See note in `replay_blocks_7`: heartbeat must be evaluated every
+		// iteration, not gated on the event-flush condition, so sparse
+		// chains still get a "still alive" signal at the 30 s cadence.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log::info!(
+				"replay progress: {}/{} blocks ({:.1}%)",
+				i + 1,
+				total,
+				(i + 1) as f64 / total as f64 * 100.0,
+			);
+			last_info_at = std::time::Instant::now();
 		}
 	}
 
