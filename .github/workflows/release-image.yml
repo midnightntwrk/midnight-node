@@ -493,7 +493,8 @@ jobs:
           # points at the commit we built from. Without this guard, a pre-existing
           # tag at the wrong commit (e.g. created by a previous buggy run) would
           # be silently reused by `gh release create/edit`.
-          if EXISTING_TAG_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/${GIT_TAG_RELEASE}" 2>/dev/null); then
+          # `git/ref/tags/<n>` is the exact-match endpoint; `git/refs/...` is a prefix match and returns an array.
+          if EXISTING_TAG_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GIT_TAG_RELEASE}" 2>/dev/null); then
             EXISTING_SHA=$(echo "$EXISTING_TAG_JSON" | jq -r '.object.sha')
             EXISTING_TYPE=$(echo "$EXISTING_TAG_JSON" | jq -r '.object.type')
             if [ "$EXISTING_TYPE" = "tag" ]; then
