@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-runtime"
-version = "0.2.3"
+version = "2.0.0"
 description = "A fresh FRAME-based Substrate node, ready for hacking."
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 edition = "2024"

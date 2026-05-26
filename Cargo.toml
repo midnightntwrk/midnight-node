@@ -80,12 +80,18 @@ transient-crypto = { version = "^2.0.0", package = "midnight-transient-crypto" }
 zswap = { version = "=7.0.3", package = "midnight-zswap" }
 zkir = { version = "^2.1.0", package = "midnight-zkir" }
 
-# Ledger 8 (compatible with layout-v2; midnight-ledger-v9 crate)
+# Ledger 8 (compatible with layout-v2)
 # coin-structure, transient-crypto and zkir share versions with L7 so reuse those entries.
-mn-ledger-8 = { version = "=0.1.0", package = "midnight-ledger-v9" }
+mn-ledger-8 = { version = "=8.1.0", package = "midnight-ledger" }
 ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db"] }
-onchain-runtime-ledger-8 = { version = "=4.0.0", package = "midnight-onchain-runtime" }
-zswap-ledger-8 = { version = "=9.0.0", package = "midnight-zswap" }
+onchain-runtime-ledger-8 = { version = "=3.1.0", package = "midnight-onchain-runtime" }
+zswap-ledger-8 = { version = "=8.1.0", package = "midnight-zswap" }
+
+# Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
+# coin-structure, transient-crypto, storage, and zkir share versions with L8 so reuse those entries.
+mn-ledger-9 = { version = "=0.1.0", package = "midnight-ledger-v9" }
+onchain-runtime-ledger-9 = { version = "=4.0.0", package = "midnight-onchain-runtime" }
+zswap-ledger-9 = { version = "=9.0.0", package = "midnight-zswap" }
 
 # Storage core v2 layout
 midnight-storage-core = { version = "1.2.0", features = ["layout-v2", "gc-v1"] }

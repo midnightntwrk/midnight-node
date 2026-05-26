@@ -138,11 +138,11 @@ async fn verify_cache_state(
 async fn test_cache_and_restore(backend: &dyn WalletStateCaching, source: &SourceTransactions) {
 	let seeds = vec![wallet_seed(0x01), wallet_seed(0x02)];
 
-	let raw = build_fork_aware_context_raw(&source, &seeds).into_ledger8().unwrap();
+	let raw = build_fork_aware_context_raw(&source, &seeds).into_ledger9().unwrap();
 
 	let cached = build_fork_aware_context_cached(&seeds, &source, Some(backend))
 		.await
-		.into_ledger8()
+		.into_ledger9()
 		.unwrap();
 	verify_cache_state(backend, source.chain_id().unwrap(), source.blocks.len(), seeds.clone())
 		.await;
@@ -153,7 +153,7 @@ async fn test_cache_and_restore(backend: &dyn WalletStateCaching, source: &Sourc
 	verify_cache_state(backend, source.chain_id().unwrap(), source.blocks.len(), seeds.clone())
 		.await;
 
-	let cached = cached.into_ledger8().expect("cached: expected ledger 8");
+	let cached = cached.into_ledger9().expect("cached: expected ledger 8");
 
 	assert_contexts_equal("2 seeds restored", &cached, &raw, &seeds);
 }
@@ -170,8 +170,8 @@ async fn test_split_cached(backend: &dyn WalletStateCaching, source: &SourceTran
 
 	let raw_ctx = build_fork_aware_context_raw(&source, &seeds);
 
-	let cached = cached_ctx.into_ledger8().expect("cached: expected ledger 8");
-	let raw = raw_ctx.into_ledger8().expect("raw: expected ledger 8");
+	let cached = cached_ctx.into_ledger9().expect("cached: expected ledger 8");
+	let raw = raw_ctx.into_ledger9().expect("raw: expected ledger 8");
 
 	assert_contexts_equal("split_cached", &cached, &raw, &seeds);
 }

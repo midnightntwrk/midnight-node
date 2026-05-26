@@ -2,7 +2,7 @@
   "openrpc": "1.4.0",
   "info": {
     "title": "Midnight Node JSON-RPC API",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "JSON-RPC API for the Midnight privacy blockchain node. Custom methods provide access to the privacy ledger, governance parameters, and peer management. Standard Substrate methods are also listed."
   },
   "methods": [

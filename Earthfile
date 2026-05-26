@@ -212,6 +212,9 @@ rebuild-redemption-skeleton:
 rebuild-genesis-state:
     ARG NETWORK
     ARG GENERATE_TEST_TXS=false
+    # ledger-9 migration WIP: toolkit-js still emits intent[v6] (ledger-8).
+    # Disabled by default until util/toolkit-js gets a v9 variant.
+    ARG GENERATE_JS_TEST_TXS=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     # Override with a pre-built registry image to skip rebuilding (e.g. in CI)
@@ -370,7 +373,7 @@ rebuild-genesis-state:
         ; fi
 
     RUN mkdir -p /res/test-data/contract/counter \
-        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+        && if [ "$GENERATE_JS_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
                     /midnight-node-toolkit \
@@ -401,7 +404,7 @@ rebuild-genesis-state:
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
     RUN mkdir -p /res/test-data/contract/mint \
-        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+        && if [ "$GENERATE_JS_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
                     /midnight-node-toolkit \
