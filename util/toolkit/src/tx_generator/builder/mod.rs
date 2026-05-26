@@ -19,7 +19,7 @@ use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
 		ForkAwareLedgerContext, apply_block_7, apply_block_8, apply_block_9,
 		block_context_from_raw_7, block_context_from_raw_8, block_context_from_raw_9,
-		fork_context_7_to_8, fork_context_8_to_9,
+		fork_context_7_to_8,
 	},
 	raw_block_data::{LedgerVersion, RawBlockData},
 };
@@ -911,8 +911,12 @@ fn replay_blocks_9(
 	}
 }
 
-/// Replays blocks across a potential Ledger7 → Ledger8 → Ledger9 fork chain,
-/// injecting cached wallets at their saved height (cache is L9-only).
+/// Replays blocks across a potential L7→L8 fork boundary, or against a
+/// pure-L9 chain that starts at genesis.
+///
+/// L9 chains have no live migration from L8 — they begin fresh at genesis,
+/// so mixed L8+L9 streams are rejected here rather than at the storage layer.
+/// Cached wallet injection is L9-only.
 pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
 	blocks: &[&RawBlockData],
@@ -941,29 +945,29 @@ pub(crate) fn replay_blocks(
 			if l8_blocks.is_empty() && l9_blocks.is_empty() {
 				assert!(cached.is_empty(), "cached wallets with no L8/L9 blocks");
 				ForkAwareLedgerContext::Ledger7(ctx7)
-			} else {
+			} else if l9_blocks.is_empty() {
 				let ctx8 = fork_context_7_to_8(ctx7).expect("L7→L8 fork failed");
 				replay_blocks_8(&ctx8, l8_blocks);
-				if l9_blocks.is_empty() {
-					assert!(cached.is_empty(), "cached wallets with no L9 blocks");
-					ForkAwareLedgerContext::Ledger8(ctx8)
-				} else {
-					let ctx9 = fork_context_8_to_9(ctx8).expect("L8→L9 fork failed");
-					replay_blocks_9(&ctx9, l9_blocks, cached);
-					ForkAwareLedgerContext::Ledger9(ctx9)
-				}
+				assert!(cached.is_empty(), "cached wallets with no L9 blocks");
+				ForkAwareLedgerContext::Ledger8(ctx8)
+			} else {
+				panic!(
+					"unsupported chain shape: L7 source mixed with L9 blocks. \
+					 L9 chains must start at genesis (no live L8→L9 migration)."
+				);
 			}
 		},
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
 			assert!(l7_blocks.is_empty(), "L7 blocks with L8 context");
-			replay_blocks_8(&ctx8, l8_blocks);
 			if l9_blocks.is_empty() {
+				replay_blocks_8(&ctx8, l8_blocks);
 				assert!(cached.is_empty(), "cached wallets with no L9 blocks");
 				ForkAwareLedgerContext::Ledger8(ctx8)
 			} else {
-				let ctx9 = fork_context_8_to_9(ctx8).expect("L8→L9 fork failed");
-				replay_blocks_9(&ctx9, l9_blocks, cached);
-				ForkAwareLedgerContext::Ledger9(ctx9)
+				panic!(
+					"unsupported chain shape: L8 source mixed with L9 blocks. \
+					 L9 chains must start at genesis (no live L8→L9 migration)."
+				);
 			}
 		},
 		ForkAwareLedgerContext::Ledger9(ctx9) => {

@@ -115,9 +115,12 @@ pub struct RawBlockData {
 impl LedgerVersion {
 	/// Convert a raw spec version to a `LedgerVersion`.
 	///
-	/// Versions up to 0.21.x use Ledger7, 0.22.x–TODO use Ledger8, TODO+ uses Ledger9.
-	/// The L9 cutoff spec version is a placeholder — update once the runtime version
-	/// that introduces ledger-9 is finalized.
+	/// 0.17.x–0.21.x → Ledger7, 0.22.x–LEDGER_9_CUTOFF → Ledger8, LEDGER_9_CUTOFF+ → Ledger9.
+	///
+	/// L9 chains start fresh at genesis (no live L8→L9 migration), so an existing L8
+	/// chain stays on L8 forever — the cutoff applies only to new chains whose genesis
+	/// runtime version is already in the L9 range. The cutoff is a placeholder until
+	/// the L9 runtime spec version is finalized.
 	pub fn from_spec_version(spec_version: u32) -> Option<Self> {
 		// TODO(ledger-9): set the actual L9 cutoff spec version.
 		const LEDGER_9_CUTOFF: u32 = u32::MAX;
