@@ -20,23 +20,25 @@ deployed yet (RPC `ContractNotPresent`, DDoS rejection, etc.). They must
 finish before any test that submits `DEPLOY_TX`.
 
 The gate works by counter quiescence, not a hard-coded count, so it
-adapts to subset runs:
+adapts to subset runs that still include some pre-deploy tests:
 
 - Each pre-deploy test holds a `PreDeployGuard` for its body (see
   `tests/e2e/tests/lib.rs`). Construction increments `PRE_DEPLOY_ENTERED`;
   drop increments `PRE_DEPLOY_COMPLETED`.
-- `wait_before_deploying()` polls until `entered == completed` *and* no
-  counter change has happened for `PRE_DEPLOY_QUIESCENCE` (5 s).
-- If no pre-deploy test ever enters (e.g. a subset that selected only
-  deploy tests), the gate opens after `NO_PRE_DEPLOY_GRACE` (30 s) since
-  process start and logs a warning.
+- `wait_before_deploying()` polls until `entered > 0`,
+  `entered == completed`, and no counter change has happened for
+  `PRE_DEPLOY_QUIESCENCE` (5 s).
 
-This means `cargo test ... contract_state::` and `... rpc_abuse::` work
-without manual intervention even though they each run fewer pre-deploy
-tests than a full run.
+`cargo test ... contract_state::` and `... rpc_abuse::` work without
+any manual setup — both modules carry at least one pre-deploy test.
 
-Bypass the gate entirely with `E2E_SKIP_DEPLOY_GATE=1` when running a
-single deploy test directly:
+**Subset runs that select only deploy tests must opt out explicitly**
+via `E2E_SKIP_DEPLOY_GATE=1`. The gate does not auto-open on a
+timeout: there's no in-process way to distinguish "no pre-deploy tests
+in this run" from "pre-deploy tests are scheduled but haven't started
+yet" (e.g. under tight `--test-threads`), and opening on a timeout
+would be unsound — a deploy test could race ahead and mutate chain
+state before the pre-deploy assertions run.
 
 ```bash
 E2E_SKIP_DEPLOY_GATE=1 cargo test-e2e-local valid_deploy_transaction

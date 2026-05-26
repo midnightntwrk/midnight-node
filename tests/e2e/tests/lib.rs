@@ -24,27 +24,24 @@ use tokio::time::sleep;
 // subset runs (`cargo test ... contract_state::`, `... rpc_abuse::`) where
 // fewer pre-deploy tests are scheduled — we never hard-code the count.
 //
-// If no pre-deploy test ever enters (e.g. only deploy tests in the subset),
-// the gate opens after a longer `NO_PRE_DEPLOY_GRACE` since process start.
-// The extra grace guards against scheduling delays where a pre-deploy test
-// is queued behind a deploy test under tight `--test-threads`.
+// The gate refuses to open on `entered == 0`: there is no in-process way
+// to distinguish "no pre-deploy tests in this run" from "pre-deploy tests
+// are scheduled but haven't started yet" (e.g. under tight `--test-threads`
+// or a reordered run). Opening on a timeout would be unsound — a deploy
+// test could race ahead and mutate chain state before the pre-deploy
+// tests assert against it.
 //
-// `E2E_SKIP_DEPLOY_GATE=1` bypasses the wait entirely (useful when running
-// a single deploy test directly: `cargo test <name>`).
+// `E2E_SKIP_DEPLOY_GATE=1` is the explicit opt-out for subset runs that
+// intentionally select only deploy tests — use it when you know no
+// pre-deploy test is being scheduled.
 
 /// Wait for `entered == completed` to stay stable for this long before
 /// declaring pre-deploy tests done. Short enough to keep full runs snappy.
 const PRE_DEPLOY_QUIESCENCE: Duration = Duration::from_secs(5);
 
-/// If no pre-deploy test has entered at all, wait this long since process
-/// start before assuming none will. Long enough to survive scheduling
-/// delays in heavily-loaded CI runners.
-const NO_PRE_DEPLOY_GRACE: Duration = Duration::from_secs(30);
-
 /// Polling interval while a deploy test waits for the gate.
 const PRE_DEPLOY_POLL: Duration = Duration::from_millis(200);
 
-static PROCESS_START: LazyLock<Instant> = LazyLock::new(Instant::now);
 static PRE_DEPLOY_ENTERED: AtomicUsize = AtomicUsize::new(0);
 static PRE_DEPLOY_COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static LAST_CHANGE_AT: Mutex<Option<Instant>> = Mutex::new(None);
@@ -100,28 +97,20 @@ pub(crate) async fn wait_before_deploying() -> MutexGuard<'static, ()> {
 }
 
 async fn wait_for_pre_deploy_quiescence() {
-    let process_start = *PROCESS_START;
     loop {
         let entered = PRE_DEPLOY_ENTERED.load(Ordering::SeqCst);
         let completed = PRE_DEPLOY_COMPLETED.load(Ordering::SeqCst);
         let last_change = *LAST_CHANGE_AT.lock().unwrap();
-        let now = Instant::now();
 
         if entered > 0 && entered == completed {
-            let reference = last_change.unwrap_or(process_start);
-            if now.duration_since(reference) >= PRE_DEPLOY_QUIESCENCE {
-                tracing::info!(
-                    "Deploy gate: {entered}/{entered} pre-deploy test(s) complete; proceeding",
-                );
-                return;
+            if let Some(t) = last_change {
+                if Instant::now().duration_since(t) >= PRE_DEPLOY_QUIESCENCE {
+                    tracing::info!(
+                        "Deploy gate: {entered}/{entered} pre-deploy test(s) complete; proceeding",
+                    );
+                    return;
+                }
             }
-        }
-        if entered == 0 && now.duration_since(process_start) >= NO_PRE_DEPLOY_GRACE {
-            tracing::warn!(
-                "Deploy gate: no pre-deploy tests observed after {NO_PRE_DEPLOY_GRACE:?}; \
-                 proceeding (likely a subset run that selected no pre-deploy tests)",
-            );
-            return;
         }
 
         sleep(PRE_DEPLOY_POLL).await;
