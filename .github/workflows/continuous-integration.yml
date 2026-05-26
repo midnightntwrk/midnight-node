@@ -8,10 +8,6 @@ env:
 
 on:
   merge_group:
-  pull_request:
-    branches: [ "**" ]
-    paths-ignore:
-      - "changes/**"
   workflow_dispatch:
     inputs:
       force_rebuild:
