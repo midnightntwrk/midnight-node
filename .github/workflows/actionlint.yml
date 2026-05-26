@@ -1,7 +1,5 @@
 name: Validate GitHub Actions Workflows
 
-permissions: {}
-
 on:
   merge_group:
   pull_request:

@@ -46,7 +46,7 @@ jobs:
     # validator copy; the smaller org runners can't hold all 12 copies).
     # Devnet/govnet would fit on smaller runners but the cost delta is small
     # and using one runner keeps the workflow simple.
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: [self-hosted, "tier:large"]
     timeout-minutes: 45
 
     steps:
@@ -54,8 +54,10 @@ jobs:
       # `docker image prune --all --force` would nuke the developer's local
       # image cache (including the locally-cached mock-authorities image we
       # rely on as the pull fallback). Skip it on act runs.
+      # Also skip on self-hosted — the action's targets (e.g. /usr/share/swift,
+      # android SDK) aren't on our self-hosted runner.
       - name: Free disk space
-        if: ${{ env.ACT != 'true' }}
+        if: env.ACT != 'true' && runner.environment != 'self-hosted'
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: true

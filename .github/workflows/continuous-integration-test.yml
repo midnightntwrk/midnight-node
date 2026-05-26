@@ -16,7 +16,7 @@ concurrency:
 jobs:
   run:
     name: Run tests
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: [self-hosted, "tier:large"]
     permissions:
       contents: read
       packages: write
@@ -40,7 +40,7 @@ jobs:
           use-cache: false
 
       - name: Free disk space
-        if: steps.guard.outputs.hit != 'true'
+        if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
         run: scripts/free-disk-space.sh
 
       - name: Log in to GHCR (for remote cache)

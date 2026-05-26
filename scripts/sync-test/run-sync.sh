@@ -101,10 +101,23 @@ docker run -d --rm \
   -c "$PG_INIT" >/dev/null
 
 echo "==> Waiting for postgres..." >&2
+pg_ready=0
 for _ in $(seq 1 60); do
-  if docker exec "$PG_CONTAINER" pg_isready -U cardano -d cexplorer >/dev/null 2>&1; then break; fi
+  if docker exec "$PG_CONTAINER" pg_isready -U cardano -d cexplorer >/dev/null 2>&1; then
+    pg_ready=1
+    break
+  fi
   sleep 1
 done
+if [[ "$pg_ready" != "1" ]]; then
+  echo "FAIL: postgres did not become ready within 60s" >&2
+  echo "==> postgres container state:" >&2
+  docker ps -a --filter "name=^${PG_CONTAINER}$" \
+    --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' >&2 || true
+  echo "==> postgres logs:" >&2
+  docker logs "$PG_CONTAINER" >&2 || true
+  exit 1
+fi
 
 echo "==> Loading snapshot ($(stat -c %s "$SNAPSHOT" | awk '{printf "%.1f MB", $1/1048576}'))..." >&2
 case "$SNAPSHOT" in
