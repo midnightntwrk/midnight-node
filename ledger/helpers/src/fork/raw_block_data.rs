@@ -115,15 +115,14 @@ pub struct RawBlockData {
 impl LedgerVersion {
 	/// Convert a raw spec version to a `LedgerVersion`.
 	///
-	/// 0.17.x–0.21.x → Ledger7, 0.22.x–LEDGER_9_CUTOFF → Ledger8, LEDGER_9_CUTOFF+ → Ledger9.
+	/// 0.17.x–0.21.x → Ledger7, 0.22.x–1.1.x → Ledger8, 1.2.0+ → Ledger9.
 	///
 	/// L9 chains start fresh at genesis (no live L8→L9 migration), so an existing L8
 	/// chain stays on L8 forever — the cutoff applies only to new chains whose genesis
-	/// runtime version is already in the L9 range. The cutoff is a placeholder until
-	/// the L9 runtime spec version is finalized.
+	/// runtime version is already in the L9 range.
 	pub fn from_spec_version(spec_version: u32) -> Option<Self> {
-		// TODO(ledger-9): set the actual L9 cutoff spec version.
-		const LEDGER_9_CUTOFF: u32 = u32::MAX;
+		#[allow(clippy::zero_prefixed_literal)]
+		const LEDGER_9_CUTOFF: u32 = 001_002_000;
 		match spec_version {
 			#[allow(clippy::zero_prefixed_literal)]
 			000_017_000..=000_021_999 => Some(LedgerVersion::Ledger7),
