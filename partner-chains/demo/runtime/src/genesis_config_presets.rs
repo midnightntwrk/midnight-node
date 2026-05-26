@@ -15,10 +15,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-	AccountId, BalancesConfig, GovernedMapConfig, RuntimeGenesisConfig, SudoConfig,
-	test_helper_pallet,
-};
+use crate::{AccountId, BalancesConfig, RuntimeGenesisConfig, SudoConfig};
 use alloc::{vec, vec::Vec};
 use serde_json::Value;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -49,21 +46,12 @@ fn testnet_genesis(
 			..Default::default()
 		},
 		sudo: SudoConfig { key: Some(root) },
-		test_helper_pallet: test_helper_pallet::GenesisConfig {
-			participation_data_release_period:
-				test_helper_pallet::DEFAULT_PARTICIPATION_DATA_RELEASE_PERIOD,
-			_phantom: core::marker::PhantomData,
-		},
 		system: Default::default(),
 		transaction_payment: Default::default(),
 		sidechain: Default::default(),
 		session_committee_management: Default::default(),
 		pallet_session: Default::default(),
 		session: Default::default(),
-		governed_map: GovernedMapConfig {
-			main_chain_scripts: Some(sp_governed_map::MainChainScriptsV1::default()),
-			..Default::default()
-		},
 		bridge: Default::default(),
 	};
 
