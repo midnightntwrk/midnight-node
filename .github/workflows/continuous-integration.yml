@@ -97,7 +97,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -205,7 +205,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -253,7 +253,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly +check-deps
+          . ./.envrc && earth +check-deps
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -313,7 +313,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
             +rebuild-genesis
@@ -355,7 +355,7 @@ jobs:
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earthly -P --strict +test-pallet-fixtures
+          . ./.envrc && earth -P --strict +test-pallet-fixtures
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -410,7 +410,7 @@ jobs:
           if [ "$EVENT_NAME" = "merge_group" ]; then
             PUSH_FLAG="--push"
           fi
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \
             --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             +test-toolkit
@@ -581,7 +581,7 @@ jobs:
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earthly --ci -P \
+          . ./.envrc && earth --ci -P \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save

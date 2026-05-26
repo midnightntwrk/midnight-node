@@ -38,9 +38,9 @@ echo "Building partnerchains-dev container..."
 
 # Check if --push-image flag is passed
 if [[ "$push_image" == true ]]; then
-    earthly --platform linux/amd64 --push +partnerchains-dev
+    earth --platform linux/amd64 --push +partnerchains-dev
 else
-    earthly +partnerchains-dev
+    earth +partnerchains-dev
 fi
 
 NODE_POD_NAME=${POD_NAME:-db-sync-cardano-node-02-0}

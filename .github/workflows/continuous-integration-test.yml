@@ -74,7 +74,7 @@ jobs:
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             PUSH_FLAG="--push"
           fi
-          . ./.envrc && earthly -P \
+          . ./.envrc && earth -P \
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \

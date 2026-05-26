@@ -60,7 +60,7 @@ jobs:
 
       - name: Run srtool build
         run: |
-          . ./.envrc && earthly +srtool-build
+          . ./.envrc && earth +srtool-build
 
       - name: Rename WASM assets with version
         if: inputs.runtime-tag-release != ''

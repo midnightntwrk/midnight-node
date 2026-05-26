@@ -162,7 +162,7 @@ jobs:
           # Split networks and run earthly for each
           for network in $NETWORKS; do
             echo "Rebuilding chainspec for network: $network"
-            earthly -P +rebuild-chainspec --NETWORK="$network" --NODE_IMAGE="$NODE_IMAGE"
+            earth -P +rebuild-chainspec --NETWORK="$network" --NODE_IMAGE="$NODE_IMAGE"
           done
 
       - name: Commit and push changes

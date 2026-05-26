@@ -68,7 +68,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
+          . ./.envrc && earth --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
 
           RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
           COMPACTC_VERSION=$(cat COMPACTC_VERSION)
