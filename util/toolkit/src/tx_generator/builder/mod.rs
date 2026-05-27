@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use builders::{DoNothingBuilder, compute_batches_seeds};
+use builders::DoNothingBuilder;
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
@@ -171,53 +171,6 @@ pub struct ContractMaintenanceArgs {
 	pub rng_seed: Option<[u8; 32]>,
 }
 
-#[derive(Args, Clone, Debug)]
-pub struct BatchesArgs {
-	/// Seed for funding the transactions
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
-	/// Number of txs that can be sent concurrently
-	#[arg(long, short = 'n', default_value = "1")]
-	pub num_txs_per_batch: usize,
-	/// Number of batches to generate
-	#[arg(long, short = 'b', default_value = "1")]
-	pub num_batches: usize,
-	/// Number of transactions to generate in parallel. Default: # Available CPUs
-	#[arg(long)]
-	pub concurrency: Option<usize>,
-	#[arg(
-        long,
-        value_parser = cli::hex_str_decode::<[u8; 32]>,
-    )]
-	pub rng_seed: Option<[u8; 32]>,
-	/// Coin amount per transaction
-	#[arg(short, long, default_value_t = 100)]
-	pub coin_amount: u128,
-	/// Type of shielded token to send
-	#[arg(
-		long,
-		value_parser = cli::token_decode::<ShieldedTokenType>,
-		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
-	)]
-	pub shielded_token_type: ShieldedTokenType,
-	/// Initial unshielded offer amount
-	#[arg(short, long, default_value_t = 10_000)]
-	pub initial_unshielded_intent_value: u128,
-	/// Type of unshielded token to send
-	#[arg(
-		long,
-		value_parser = cli::token_decode::<UnshieldedTokenType>,
-		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
-	)]
-	pub unshielded_token_type: UnshieldedTokenType,
-	/// Enable Shielded transfers in batches
-	#[arg(long)]
-	pub enable_shielded: bool,
-}
-
 // TODO: TokenIDs for shielded and unshielded
 #[derive(Args, Clone, Debug)]
 pub struct SingleTxArgs {
@@ -351,8 +304,6 @@ pub enum ContractCall {
 
 #[derive(Subcommand, Clone, Debug)]
 pub enum Builder {
-	/// Construct batches of transactions
-	Batches(BatchesArgs),
 	/// Simple built-in contract
 	#[clap(subcommand)]
 	ContractSimple(ContractCall),
@@ -454,9 +405,6 @@ impl Builder {
 	/// the full builder (which requires context/prover). Returns empty for pass-through builders.
 	pub fn relevant_wallet_seeds(&self) -> Result<Vec<WalletSeed>, &'static str> {
 		match self {
-			Builder::Batches(args) => {
-				compute_batches_seeds(&args.funding_seed, args.num_txs_per_batch, args.num_batches)
-			},
 			Builder::ContractSimple(call) => {
 				let seed_str = match call {
 					ContractCall::Deploy(args) => &args.funding_seed,
@@ -574,7 +522,6 @@ impl Builder {
 		use builders::ledger_8 as v8;
 
 		match self {
-			Builder::Batches(args) => constr(v8::BatchesBuilder::new(args, context, prover)),
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
 					constr(v8::ContractDeployBuilder::new(args, context, prover))
@@ -630,7 +577,6 @@ impl Builder {
 		use builders::ledger_7 as v7;
 
 		Ok(match self {
-			Builder::Batches(args) => constr(v7::BatchesBuilder::new(args, context, prover)),
 			Builder::ContractSimple(call) => match call {
 				ContractCall::Deploy(args) => {
 					constr(v7::ContractDeployBuilder::new(args, context, prover))

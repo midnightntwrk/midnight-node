@@ -13,16 +13,15 @@
 
 use super::{
 	Array, BuildContractAction, BuilderContext, ContractAction, ContractAddress, ContractEffects,
-	DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, LedgerContext,
-	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker,
-	ProvingKeyMaterial, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, MidnightDataProvider,
+	OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker, ProvingKeyMaterial,
+	Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
 };
-use async_trait::async_trait;
 use rand::{CryptoRng, Rng};
 use std::{
 	io,
 	path::Path,
-	pin::{Pin, pin},
+	pin::Pin,
 	sync::Arc,
 	time::{SystemTime, UNIX_EPOCH},
 };
@@ -31,77 +30,79 @@ pub type SegmentId = u16;
 
 type IntentOf<D> = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 pub trait BuildIntent<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
-	async fn build(
-		&mut self,
-		rng: &mut StdRng,
+	fn build<'a>(
+		&'a mut self,
+		rng: &'a mut StdRng,
 		ttl: Timestamp,
 		context: Arc<C>,
 		segment_id: SegmentId,
-	) -> IntentOf<D>;
+	) -> Pin<Box<dyn Future<Output = IntentOf<D>> + Send + 'a>>
+	where
+		C: 'a;
 }
 
 pub struct IntentInfo<D: DB + Clone, C: BuilderContext<D>> {
-	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
-	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
+	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D, C>>,
+	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D, C>>,
 	pub actions: Vec<Box<dyn BuildContractAction<D, C>>>,
 	// TODO: Add TTL Option here
 }
 
-impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D> {
-	async fn build(
-		&mut self,
-		rng: &mut StdRng,
+impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D, C> {
+	fn build<'a>(
+		&'a mut self,
+		rng: &'a mut StdRng,
 		ttl: Timestamp,
 		context: Arc<C>,
 		segment_id: SegmentId,
-	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
-		let mut intent = Intent::<Signature, _, _, _>::empty(rng, ttl);
+	) -> Pin<Box<dyn Future<Output = IntentOf<D>> + Send + 'a>>
+	where
+		C: 'a,
+	{
+		Box::pin(async move {
+			let mut intent = Intent::<Signature, _, _, _>::empty(rng, ttl);
 
-		for action in self.actions.iter_mut() {
-			intent = action.build(rng, context.clone(), &intent).await;
-		}
+			for action in self.actions.iter_mut() {
+				let next = action.build(rng, context.clone(), &intent).await;
+				intent = next;
+			}
 
-		let mut guaranteed_signing_keys = Vec::default();
-		let mut fallible_signing_keys = Vec::default();
-		let dust_registration_signing_keys = Vec::default();
+			let mut guaranteed_signing_keys = Vec::default();
+			let mut fallible_signing_keys = Vec::default();
+			let dust_registration_signing_keys = Vec::default();
 
-		if let Some((unshielded_offer, signing_keys)) =
-			self.guaranteed_unshielded_offer.as_ref().map(|guo| {
-				(
-					guo.build(context.clone()),
-					guo.inputs
-						.iter()
-						.map(|input| input.signing_key(context.clone()))
-						.collect::<Vec<_>>(),
+			if let Some(guo) = self.guaranteed_unshielded_offer.as_ref() {
+				let unshielded_offer = guo.build(context.clone()).await;
+				let signing_keys = guo
+					.inputs
+					.iter()
+					.map(|input| input.signing_key(context.clone()))
+					.collect::<Vec<_>>();
+				intent.guaranteed_unshielded_offer = Some(unshielded_offer);
+				guaranteed_signing_keys = signing_keys;
+			}
+
+			if let Some(guo) = self.fallible_unshielded_offer.as_ref() {
+				let unshielded_offer = guo.build(context.clone()).await;
+				let signing_keys = guo
+					.inputs
+					.iter()
+					.map(|input| input.signing_key(context.clone()))
+					.collect::<Vec<_>>();
+				intent.fallible_unshielded_offer = Some(unshielded_offer);
+				fallible_signing_keys = signing_keys;
+			}
+
+			intent
+				.sign(
+					rng,
+					segment_id,
+					guaranteed_signing_keys.as_slice(),
+					fallible_signing_keys.as_slice(),
+					dust_registration_signing_keys.as_slice(),
 				)
-			}) {
-			intent.guaranteed_unshielded_offer = Some(unshielded_offer);
-			guaranteed_signing_keys = signing_keys;
-		}
-
-		if let Some((unshielded_offer, signing_keys)) =
-			self.fallible_unshielded_offer.as_ref().map(|guo| {
-				(
-					guo.build(context.clone()),
-					guo.inputs
-						.iter()
-						.map(|input| input.signing_key(context.clone()))
-						.collect::<Vec<_>>(),
-				)
-			}) {
-			intent.fallible_unshielded_offer = Some(unshielded_offer);
-			fallible_signing_keys = signing_keys;
-		}
-
-		intent
-			.sign(
-				rng,
-				segment_id,
-				guaranteed_signing_keys.as_slice(),
-				fallible_signing_keys.as_slice(),
-				dust_registration_signing_keys.as_slice(),
-			)
-			.unwrap_or_else(|_| panic!("Intent signing with segment_id {segment_id:?} failed"))
+				.unwrap_or_else(|_| panic!("Intent signing with segment_id {segment_id:?} failed"))
+		})
 	}
 }
 
@@ -234,34 +235,43 @@ impl<D: DB + Clone> IntentCustom<D> {
 }
 
 impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentCustom<D> {
-	async fn build(
-		&mut self,
-		_rng: &mut StdRng,
+	fn build<'a>(
+		&'a mut self,
+		_rng: &'a mut StdRng,
 		ttl: Timestamp,
 		context: Arc<C>,
 		_segment_id: SegmentId,
-	) -> IntentOf<D> {
-		log::debug!("Updating the resolver...");
-		context.update_resolver(self.resolver).await;
+	) -> Pin<Box<dyn Future<Output = IntentOf<D>> + Send + 'a>>
+	where
+		C: 'a,
+	{
+		let resolver = self.resolver;
 		let mut intent = self.intent.clone();
-		intent.ttl = ttl;
-		intent
+		Box::pin(async move {
+			log::debug!("Updating the resolver...");
+			context.update_resolver(resolver).await;
+			intent.ttl = ttl;
+			intent
+		})
 	}
 }
 
-#[async_trait]
 impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for IntentCustom<D> {
-	fn build(
-		&mut self,
-		_rng: &mut StdRng,
+	fn build<'a>(
+		&'a mut self,
+		_rng: &'a mut StdRng,
 		context: Arc<C>,
-		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+		intent: &'a Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Pin<
 		Box<
 			dyn Future<Output = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>>
-				+ Send,
+				+ Send
+				+ 'a,
 		>,
-	> {
+	>
+	where
+		C: 'a,
+	{
 		let mut actions = intent.actions.clone();
 
 		for action in self.intent.actions.iter() {
@@ -277,10 +287,11 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for IntentCu
 			binding_commitment: intent.binding_commitment,
 		};
 
-		let context = context.clone();
+		// `&'static Resolver` is `Copy`; copy it out so the returned future doesn't borrow `*self`.
+		let resolver = self.resolver;
 
 		Box::pin(async move {
-			context.update_resolver(self.resolver).await;
+			context.update_resolver(resolver).await;
 			result
 		})
 	}

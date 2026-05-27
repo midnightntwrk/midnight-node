@@ -15,7 +15,7 @@ type BuildResult<T> = std::result::Result<T, Box<dyn std::error::Error + Send + 
 /// The backend is either a local [`super::super::LedgerContext`] (which owns a
 /// [`super::super::LedgerState`]) or, in the future, an indexer-backed client that answers the
 /// same queries without replaying every block locally (see issue #1186).
-pub trait BuilderContext<D: DB + Clone>: Send + Sync {
+pub trait BuilderContext<D: DB + Clone>: Send + Sync + 'static {
 	/// Operate on a single wallet identified by seed.
 	fn with_wallet_from_seed<F, R>(&self, seed: WalletSeed, f: F) -> R
 	where

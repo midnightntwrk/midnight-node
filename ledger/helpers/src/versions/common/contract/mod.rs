@@ -11,12 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
 use std::{any::Any, pin::Pin, sync::Arc};
 
 use super::super::{
 	AlignedValue, BuilderContext, ContractAddress, ContractCallPrototype, ContractDeploy,
-	ContractOperation, DB, Intent, LedgerContext, Op, PedersenRandomness, ProofPreimageMarker,
+	ContractOperation, DB, Intent, LedgerParameters, Op, PedersenRandomness, ProofPreimageMarker,
 	Resolver, ResultModeGather, ResultModeVerify, Signature, Sp, StdRng, Transcripts,
 };
 
@@ -47,30 +46,34 @@ pub use maintenance::*;
 #[cfg(feature = "can-panic")]
 pub use merkle_tree::*;
 
-#[async_trait]
 pub trait Contract<D: DB + Clone>: Send + Sync {
-	async fn deploy(
-		&self,
-		commitee: &[VerifyingKey],
+	fn deploy<'a>(
+		&'a self,
+		commitee: &'a [VerifyingKey],
 		commitee_threshold: u32,
-		rng: &mut StdRng,
-	) -> ContractDeploy<D>;
+		rng: &'a mut StdRng,
+	) -> Pin<Box<dyn Future<Output = ContractDeploy<D>> + Send + 'a>>;
 
 	fn resolver(&self) -> &'static Resolver;
 
+	/// Build the call transcripts against a pre-fetched contract state and ledger parameters.
+	///
+	/// State is fetched by the async caller (via [`BuilderContext`]) and passed in, keeping this
+	/// method synchronous and free of any backend dependency.
 	fn transcript(
 		&self,
 		key: &str,
 		input: &Box<dyn Any + Send + Sync>,
 		address: &ContractAddress,
-		context: Arc<LedgerContext<D>>,
+		contract_state: &ContractState<D>,
+		parameters: &LedgerParameters,
 	) -> (AlignedValue, Vec<AlignedValue>, Vec<Transcripts<D>>);
 
 	fn operation(
 		&self,
 		key: &str,
 		address: &ContractAddress,
-		context: Arc<LedgerContext<D>>,
+		contract_state: &ContractState<D>,
 	) -> Sp<ContractOperation, D>;
 
 	fn program_with_results(
@@ -84,20 +87,24 @@ pub trait Contract<D: DB + Clone>: Send + Sync {
 		key: &'static str,
 		input: &Box<dyn Any + Send + Sync>,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		contract_state: &ContractState<D>,
+		parameters: &LedgerParameters,
 	) -> ContractCallPrototype<D>;
 }
 
 pub trait BuildContractAction<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
-	fn build(
-		&mut self,
-		rng: &mut StdRng,
+	fn build<'a>(
+		&'a mut self,
+		rng: &'a mut StdRng,
 		context: Arc<C>,
-		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+		intent: &'a Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Pin<
 		Box<
 			dyn Future<Output = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>>
-				+ Send,
+				+ Send
+				+ 'a,
 		>,
-	>;
+	>
+	where
+		C: 'a;
 }

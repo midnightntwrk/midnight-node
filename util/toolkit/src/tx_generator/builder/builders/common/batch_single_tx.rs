@@ -14,7 +14,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::ledger_helpers_local::{
-	DefaultDB, FromContext as _, LedgerContext, ProofProvider, ShieldedCoinSelectionError,
+	BuilderContext, DefaultDB, FromContext as _, ProofProvider, ShieldedCoinSelectionError,
 	ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,
 	UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError, WalletAddress,
 };
@@ -37,17 +37,17 @@ enum BatchTransferError {
 	ProvingFailed(String),
 }
 
-pub struct BatchSingleTxBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct BatchSingleTxBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	transfers: Vec<TransferSpec>,
 	concurrency: usize,
 }
 
-impl BatchSingleTxBuilder {
+impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 	pub fn new(
 		args: BatchSingleTxArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		let transfers = args.get_transfer_specs();
@@ -59,7 +59,7 @@ impl BatchSingleTxBuilder {
 	}
 
 	async fn build_single_transfer(
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 		spec: &TransferSpec,
 	) -> Result<
@@ -108,7 +108,8 @@ impl BatchSingleTxBuilder {
 				vec![dest_wallet],
 				amount,
 				token_type,
-			)?;
+			)
+			.await?;
 			tx_info.set_intents(intents);
 		}
 
@@ -163,7 +164,7 @@ fn parse_hash_output(hex_str: Option<&str>) -> midnight_node_ledger_helpers::Has
 }
 
 #[async_trait]
-impl BuildTxs for BatchSingleTxBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 	type Error = BatchSingleTxError;
 
 	async fn build_txs_from(

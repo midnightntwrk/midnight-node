@@ -1,0 +1,18 @@
+#toolkit #refactor
+# Abstract toolkit transaction builders over a `BuilderContext` trait
+
+Transaction builders in `ledger/helpers` and `util/toolkit` previously took a
+concrete `Arc<LedgerContext<D>>`, which forced every builder to replay the whole
+chain locally. They are now generic over a new `BuilderContext<D>` trait that
+exposes only the queries builders actually need (latest block context, ledger
+parameters, network id, unshielded UTXOs, zswap state, contract state, resolver,
+well-formedness check, and wallet access). `LedgerContext` implements the trait,
+so runtime behaviour is unchanged. A stub `IndexerContext` proves the trait can
+be satisfied by a non-local backend, preparing the toolkit to talk to a node via
+indexer queries (issue #1186) without touching the builders again.
+
+No user-visible behaviour change. The rarely-used `batches` builder
+(`tx-generator builder batches`) was removed; use `batch-single-tx` instead.
+
+PR: <link to PR>
+JIRA: <link to JIRA ticket, if applicable>

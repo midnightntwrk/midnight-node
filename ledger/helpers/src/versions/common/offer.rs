@@ -171,7 +171,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> OfferInfo<D, C> {
 
 #[cfg(test)]
 mod tests {
-	use super::super::{DefaultDB, HashOutput};
+	use super::super::{DefaultDB, HashOutput, LedgerContext};
 	use super::*;
 
 	fn token_a() -> ShieldedTokenType {

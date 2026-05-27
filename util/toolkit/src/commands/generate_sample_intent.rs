@@ -99,7 +99,10 @@ async fn execute_with_builders_v8(
 	use crate::tx_generator::builder::builders::{
 		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
 	};
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile + Send>, &str) = match contract_call
+	type Ctx = midnight_node_ledger_helpers::context::LedgerContext<
+		midnight_node_ledger_helpers::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) = match contract_call
 	{
 		ContractCall::Deploy(a) => {
 			(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
@@ -131,7 +134,10 @@ async fn execute_with_builders_v7(
 	use crate::tx_generator::builder::builders::ledger_7::{
 		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
 	};
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile + Send>, &str) = match contract_call
+	type Ctx = midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
+		midnight_node_ledger_helpers::ledger_7::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) = match contract_call
 	{
 		ContractCall::Deploy(a) => {
 			(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")

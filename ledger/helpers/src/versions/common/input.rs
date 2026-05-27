@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use super::{
-	BuilderContext, DB, Input, LedgerContext, Nullifier, ProofPreimage, QualifiedInfo, Segment,
-	ShieldedTokenType, Sp, StdRng, TokenInfo, WalletSeed, WalletState,
+	BuilderContext, DB, Input, Nullifier, ProofPreimage, QualifiedInfo, Segment, ShieldedTokenType,
+	Sp, StdRng, TokenInfo, WalletSeed, WalletState,
 };
 use itertools::Itertools;
 use std::sync::Arc;
@@ -76,8 +76,8 @@ impl InputInfo<WalletSeed> {
 
 	/// Returns a vector of InputInfo matching coins selected from the wallet to cover
 	/// required_value of a token_type, plus the remaining change value.
-	pub fn coins_to_cover_value<D: DB + Clone>(
-		context: Arc<LedgerContext<D>>,
+	pub fn coins_to_cover_value<D: DB + Clone, C: BuilderContext<D>>(
+		context: Arc<C>,
 		seed: WalletSeed,
 		required_value: u128,
 		token_type: ShieldedTokenType,

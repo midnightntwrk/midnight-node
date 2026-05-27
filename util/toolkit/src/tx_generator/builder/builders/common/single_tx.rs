@@ -15,10 +15,10 @@ use std::{collections::HashMap, convert::Infallible, sync::Arc};
 
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, BuilderContext,
-	DefaultDB, FromContext as _, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo,
-	ProofProvider, Segment, ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet,
-	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
-	UnshieldedWallet, UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletAddress, WalletSeed,
+	DefaultDB, FromContext as _, InputInfo, IntentInfo, OfferInfo, OutputInfo, ProofProvider,
+	Segment, ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo,
+	TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType, UnshieldedWallet,
+	UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletAddress, WalletSeed,
 };
 use async_trait::async_trait;
 
@@ -139,6 +139,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 				self.unshielded_amount.unwrap(),
 				self.unshielded_token_type,
 			)
+			.await
 			.expect("insufficient UTXOs for transfer");
 			tx_info.set_intents(intents);
 		}
@@ -162,13 +163,13 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 	}
 }
 
-pub(crate) fn build_shielded_offer(
-	context: Arc<LedgerContext<DefaultDB>>,
+pub(crate) fn build_shielded_offer<C: BuilderContext<DefaultDB>>(
+	context: Arc<C>,
 	funding_seed: WalletSeed,
 	output_wallets: Vec<ShieldedWallet<DefaultDB>>,
 	amount: u128,
 	token_type: ShieldedTokenType,
-) -> Result<OfferInfo<DefaultDB>, ShieldedCoinSelectionError> {
+) -> Result<OfferInfo<DefaultDB, C>, ShieldedCoinSelectionError> {
 	let total_required = amount
 		.checked_mul(output_wallets.len() as u128)
 		.expect("shielded amount overflow");
@@ -176,25 +177,25 @@ pub(crate) fn build_shielded_offer(
 	let (input_infos, change) =
 		InputInfo::coins_to_cover_value(context, funding_seed, total_required, token_type)?;
 
-	let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = input_infos
+	let inputs_info: Vec<Box<dyn BuildInput<DefaultDB, C>>> = input_infos
 		.into_iter()
 		.map(|input| {
-			let input: Box<dyn BuildInput<DefaultDB>> = Box::new(input);
+			let input: Box<dyn BuildInput<DefaultDB, C>> = Box::new(input);
 			input
 		})
 		.collect();
 
-	let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = output_wallets
+	let mut outputs_info: Vec<Box<dyn BuildOutput<DefaultDB, C>>> = output_wallets
 		.iter()
 		.map(|wallet| {
-			let output: Box<dyn BuildOutput<DefaultDB>> =
+			let output: Box<dyn BuildOutput<DefaultDB, C>> =
 				Box::new(OutputInfo { destination: wallet.clone(), token_type, value: amount });
 			output
 		})
 		.collect();
 
 	if change > 0 {
-		let output_info_refund: Box<dyn BuildOutput<DefaultDB>> =
+		let output_info_refund: Box<dyn BuildOutput<DefaultDB, C>> =
 			Box::new(OutputInfo { destination: funding_seed, token_type, value: change });
 		outputs_info.push(output_info_refund);
 	}
@@ -202,33 +203,34 @@ pub(crate) fn build_shielded_offer(
 	Ok(OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] })
 }
 
-pub(crate) fn build_unshielded_intents(
-	context: Arc<LedgerContext<DefaultDB>>,
+pub(crate) async fn build_unshielded_intents<C: BuilderContext<DefaultDB>>(
+	context: Arc<C>,
 	source_seed: WalletSeed,
 	output_wallets: Vec<UnshieldedWallet>,
 	amount_to_send_per_output: u128,
 	token_type: UnshieldedTokenType,
-) -> Result<HashMap<u16, Box<dyn BuildIntent<DefaultDB>>>, UtxoSelectionError> {
+) -> Result<HashMap<u16, Box<dyn BuildIntent<DefaultDB, C>>>, UtxoSelectionError> {
 	let total_required = amount_to_send_per_output
 		.checked_mul(output_wallets.len() as u128)
 		.expect("unshielded amount overflow");
 
 	let (inputs_info, remaining_nights) =
-		UtxoSpendInfo::utxos_to_cover_value(context, source_seed, total_required, token_type)?;
+		UtxoSpendInfo::utxos_to_cover_value(context, source_seed, total_required, token_type)
+			.await?;
 
-	let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs_info
+	let inputs_info: Vec<Box<dyn BuildUtxoSpend<DefaultDB, C>>> = inputs_info
 		.into_iter()
 		.map(|input| {
-			let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
+			let input: Box<dyn BuildUtxoSpend<DefaultDB, C>> = Box::new(input);
 			input
 		})
 		.collect();
 
 	// Outputs info
-	let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB>>> = output_wallets
+	let mut outputs_info: Vec<Box<dyn BuildUtxoOutput<DefaultDB, C>>> = output_wallets
 		.iter()
 		.map(|wallet| {
-			let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
+			let output: Box<dyn BuildUtxoOutput<DefaultDB, C>> = Box::new(UtxoOutputInfo {
 				value: amount_to_send_per_output,
 				owner: wallet.clone(),
 				token_type,
@@ -238,7 +240,7 @@ pub(crate) fn build_unshielded_intents(
 		.collect();
 
 	// Create an `UtxoOutput` to its self with the remaining nights to avoid spending the whole `UtxoSpend`
-	let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB>> =
+	let output_info_refund: Box<dyn BuildUtxoOutput<DefaultDB, C>> =
 		Box::new(UtxoOutputInfo { value: remaining_nights, owner: source_seed, token_type });
 
 	if remaining_nights > 0 {
@@ -261,7 +263,7 @@ pub(crate) fn build_unshielded_intents(
 			actions: vec![],
 		}
 	};
-	let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
+	let boxed_intent: Box<dyn BuildIntent<DefaultDB, C>> = Box::new(intent_info);
 
 	let mut intents = HashMap::new();
 	intents.insert(Segment::Fallible.into(), boxed_intent);

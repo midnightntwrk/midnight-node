@@ -33,6 +33,7 @@ use thiserror::Error;
 use tokio::sync::Mutex as MutexTokio;
 
 pub mod builder_context;
+pub mod indexer_context;
 pub use builder_context::BuilderContext;
 
 #[derive(Debug, Error)]
