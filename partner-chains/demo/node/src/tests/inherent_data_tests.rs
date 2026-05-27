@@ -1,22 +1,16 @@
 use crate::inherent_data::{ProposalCIDP, VerifierCIDP};
 use crate::tests::mock::{test_client, test_create_inherent_data_config};
-use crate::tests::runtime_api_mock;
 use crate::tests::runtime_api_mock::{TestApi, mock_header};
 use authority_selection_inherents::{
 	AuthoritySelectionInputs, mock::MockAuthoritySelectionDataSource,
 };
-use hex_literal::hex;
-use partner_chains_demo_runtime::{AccountId, BlockAuthor};
-use partner_chains_mock_data_sources::StakeDistributionDataSourceMock;
-use partner_chains_mock_data_sources::{GovernedMapDataSourceMock, TokenBridgeDataSourceMock};
+use partner_chains_demo_runtime::AccountId;
+use partner_chains_mock_data_sources::TokenBridgeDataSourceMock;
 use sidechain_domain::{
-	DelegatorKey, MainchainBlock, McBlockHash, McBlockNumber, McEpochNumber, McSlotNumber,
-	ScEpochNumber,
+	MainchainBlock, McBlockHash, McBlockNumber, McEpochNumber, McSlotNumber, ScEpochNumber,
 };
 use sidechain_mc_hash::mock::MockMcHashDataSource;
-use sp_block_participation::BlockProductionData;
 use sp_consensus_aura::Slot;
-use sp_core::ecdsa;
 use sp_inherents::CreateInherentDataProviders;
 use sp_inherents::{InherentData, InherentDataProvider};
 use sp_timestamp::Timestamp;
@@ -48,8 +42,6 @@ async fn block_proposal_cidp_should_be_created_correctly() {
 			.into(),
 		Arc::new(mc_hash_data_source),
 		Arc::new(MockAuthoritySelectionDataSource::default()),
-		Arc::new(StakeDistributionDataSourceMock::new()),
-		Arc::new(GovernedMapDataSourceMock::default()),
 		Arc::new(TokenBridgeDataSourceMock::<AccountId>::new()),
 	)
 	.create_inherent_data_providers(mock_header().hash(), ())
@@ -85,31 +77,6 @@ async fn block_proposal_cidp_should_be_created_correctly() {
 			.unwrap()
 			.is_some()
 	);
-	assert_eq!(
-		inherent_data
-			.get_data::<BlockAuthor>(&sp_block_production_log::INHERENT_IDENTIFIER)
-			.unwrap(),
-		Some(BlockAuthor::ProBono(
-			ecdsa::Public::from_raw(hex!(
-				"000000000000000000000000000000000000000000000000000000000000000001"
-			))
-			.into()
-		))
-	);
-	assert_eq!(
-		inherent_data
-			.get_data::<Slot>(&sp_block_participation::INHERENT_IDENTIFIER)
-			.unwrap(),
-		Some(Slot::from(30))
-	);
-	assert_eq!(
-		inherent_data
-			.get_data::<BlockProductionData<BlockAuthor, DelegatorKey>>(
-				&runtime_api_mock::TEST_TARGET_INHERENT_ID
-			)
-			.unwrap(),
-		Some(BlockProductionData::new(Slot::from(30), vec![]))
-	);
 }
 
 #[tokio::test]
@@ -137,8 +104,6 @@ async fn block_verification_cidp_should_be_created_correctly() {
 		test_client(),
 		Arc::new(mc_hash_data_source),
 		Arc::new(MockAuthoritySelectionDataSource::default()),
-		Arc::new(StakeDistributionDataSourceMock::new()),
-		Arc::new(GovernedMapDataSourceMock::default()),
 		Arc::new(TokenBridgeDataSourceMock::new()),
 	);
 
@@ -160,30 +125,5 @@ async fn block_verification_cidp_should_be_created_correctly() {
 			)
 			.unwrap()
 			.is_some()
-	);
-	assert_eq!(
-		inherent_data
-			.get_data::<BlockAuthor>(&sp_block_production_log::INHERENT_IDENTIFIER)
-			.unwrap(),
-		Some(BlockAuthor::ProBono(
-			ecdsa::Public::from_raw(hex!(
-				"000000000000000000000000000000000000000000000000000000000000000001"
-			))
-			.into()
-		))
-	);
-	assert_eq!(
-		inherent_data
-			.get_data::<Slot>(&sp_block_participation::INHERENT_IDENTIFIER)
-			.unwrap(),
-		Some(Slot::from(30))
-	);
-	assert_eq!(
-		inherent_data
-			.get_data::<BlockProductionData<BlockAuthor, DelegatorKey>>(
-				&runtime_api_mock::TEST_TARGET_INHERENT_ID
-			)
-			.unwrap(),
-		Some(BlockProductionData::new(Slot::from(30), vec![]))
 	);
 }

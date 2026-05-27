@@ -94,6 +94,16 @@ Ports: P2P 30333, RPC 9944
 **Recommended tools:**
 - [gh CLI](https://cli.github.com/) - GitHub CLI for creating PRs, viewing issues, etc.
 
+**Troubleshooting WASM runtime builds (Linux):** If `cargo check` / `cargo build` fails inside `secp256k1-sys`'s build script with `error: call to undeclared library function 'memmove'` (and similar `-Wimplicit-function-declaration` errors), your clang is newer than the bundled `wasm/wasm-sysroot/string.h` expects. Demote the warning back to non-fatal — for example in `~/.cargo/config.toml`:
+
+```toml
+[env]
+CFLAGS_wasm32v1_none = "-Wno-error=implicit-function-declaration"
+CFLAGS_wasm32_unknown_unknown = "-Wno-error=implicit-function-declaration"
+```
+
+The symbols still resolve at link time from the real wasi/libc pulled in by the Substrate runtime build.
+
 ## When to Rebuild
 
 **Metadata** (use `/bot rebuild-metadata` on PR, or `earthly -P +rebuild-metadata`):

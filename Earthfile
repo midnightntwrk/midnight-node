@@ -1534,6 +1534,14 @@ start-local-env-with-indexer-ci:
     ARG WALLET_INDEXER_IMAGE
     WORKDIR local-environment
     RUN npm ci
+    # Tear down any stack left over from a previous run before starting a fresh
+    # one. Without this, named volumes (local-env_midnight-node-N-data, etc.)
+    # persist on shared CI hosts (e.g. self-hosted runners) and the new
+    # run boots validators with stale db state from the prior run — which
+    # breaks chain-indexer with "unsupported protocol version" when the
+    # genesis/runtime expectations disagree. The non-CI sibling target
+    # `+start-local-env-with-indexer` does this same down already.
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
     RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
