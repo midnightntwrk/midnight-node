@@ -19,9 +19,9 @@ use tokio::sync::{Mutex, MutexGuard, OnceCell, Semaphore};
 use tokio::time::{Duration, sleep, timeout};
 
 // Tests that must complete before any DEPLOY_TX submission.
-// IMPORTANT: --test-threads must be >= NUM_PRE_DEPLOY_TESTS + NUM_DEPLOY_TESTS (currently 6),
+// IMPORTANT: --test-threads must be >= NUM_PRE_DEPLOY_TESTS + NUM_DEPLOY_TESTS (currently 7),
 // otherwise these tests cannot run concurrently and will deadlock.
-const NUM_PRE_DEPLOY_TESTS: usize = 3;
+const NUM_PRE_DEPLOY_TESTS: usize = 4;
 const NUM_DEPLOY_TESTS: usize = 3;
 
 static PRE_DEPLOY_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -1526,6 +1526,106 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
     );
 
     println!("✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block");
+}
+
+// ============================================================================
+// midnight_validateTransaction RPC
+//
+// Exercises the read-only validation endpoint added alongside the txpool
+// DDoS work above. The RPC takes hex tx bytes and returns either the tx_hash
+// (success) or one of three JSON-RPC errors: -32602 bad hex, -32001 validation
+// failure with structured `data.{error_code, reason, details}`, or -32005
+// rate-limited (per-tx cooldown or global). Defaults: 50 calls/sec global,
+// 30s per-tx cooldown (`res/cfg/default.toml:52-55`).
+// ============================================================================
+
+/// Bad hex must be rejected before the rate-limit bucket is touched, so this
+/// test is safe to run unfettered: it cannot pollute the per-tx cooldown for
+/// any other test.
+#[tokio::test]
+async fn validate_transaction_rejects_invalid_hex() {
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    let err = client
+        .validate_transaction("zz_not_hex")
+        .await
+        .expect_err("expected -32602 for invalid hex, got Ok");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("-32602") || msg.to_lowercase().contains("invalid hex"),
+        "expected invalid-hex error, got: {msg}"
+    );
+}
+
+/// STORE_TX references a contract that has not been deployed when this test
+/// runs (pre-deploy gated). validate_transaction must surface the underlying
+/// ContractNotPresent rather than succeeding or returning a generic error.
+#[tokio::test]
+async fn validate_transaction_pre_deploy_store_returns_not_present() {
+    use midnight_node_res::undeployed::transactions::STORE_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    let tx_hex = hex::encode(STORE_TX);
+    let result = client.validate_transaction(&tx_hex).await;
+
+    finished_pre_deploy_test();
+
+    let err = result.expect_err("expected validation failure for STORE_TX without DEPLOY_TX");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("-32001") || msg.to_lowercase().contains("validation failed"),
+        "expected -32001 Transaction validation failed, got: {msg}"
+    );
+    assert!(
+        msg.to_lowercase().contains("contractnotpresent")
+            || msg.to_lowercase().contains("contract is not present")
+            || msg.to_lowercase().contains("not present"),
+        "expected ContractNotPresent in error details, got: {msg}"
+    );
+}
+
+/// Two back-to-back validations of the same tx hex must trip the per-tx
+/// cooldown bucket. Uses freshly-randomized bytes so the bucket key
+/// (blake2_256 of the bytes) cannot collide with any other test's tx.
+#[tokio::test]
+async fn validate_transaction_per_tx_rate_limit_blocks_replay() {
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    // Random ~100 bytes: valid hex (passes the hex-decode gate before the
+    // limiter), invalid tx structure (validation will reject it on the merits).
+    let junk: [u8; 100] = rand::random();
+    let tx_hex = hex::encode(junk);
+
+    let first = client.validate_transaction(&tx_hex).await;
+    assert!(
+        first.is_err(),
+        "random bytes must not validate; got Ok({:?})",
+        first.ok()
+    );
+    let first_msg = first.unwrap_err().to_string();
+    assert!(
+        !first_msg.contains("-32005"),
+        "first call should fail on validation, not rate limit: {first_msg}"
+    );
+
+    let second = client
+        .validate_transaction(&tx_hex)
+        .await
+        .expect_err("second call with same hex must be rate-limited");
+    let second_msg = second.to_string();
+    assert!(
+        second_msg.contains("-32005") || second_msg.to_lowercase().contains("rate limit"),
+        "expected -32005 per-tx rate limit, got: {second_msg}"
+    );
+    assert!(
+        second_msg.to_lowercase().contains("per-transaction")
+            || second_msg.to_lowercase().contains("cooldown"),
+        "expected per-transaction cooldown message, got: {second_msg}"
+    );
 }
 
 // ============================================================================
