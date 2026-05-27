@@ -6,4 +6,5 @@ falls back to `false` instead of producing a `missing field` config error
 at startup. This restores compatibility for deployments running a new node
 binary against an older `default.toml` that predates the field.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1601
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1599
