@@ -55,12 +55,57 @@ jobs:
         id: get_sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      # TEST ONLY — let earthly manage its own buildkitd on the self-hosted
+      # runner, but without TLS (no certs are provisioned). Earthly defaults
+      # to TLS for its managed buildkitd, which fails on a fresh runner.
+      # Appending `tls_enabled: false` to the repo's existing .earthly/config.yml
+      # keeps the rest of midnight-node's earthly settings intact.
+      - name: Disable earthly TLS (self-hosted runner has no certs)
+        run: |
+          echo "    tls_enabled: false" >> .earthly/config.yml
+          echo "--- updated .earthly/config.yml ---"
+          cat .earthly/config.yml
+
+      # Self-hosted runners share a persistent HOME (/opt/actions-runner) across
+      # every runner slot on the host, making ~/.docker/config.json shared
+      # mutable state. Concurrent jobs' `docker login` (read-modify-write) race
+      # and clobber each other's registry entries — e.g. a Docker Hub login
+      # wiping the ghcr.io entry — leaving the build's push with no GHCR creds
+      # (anonymous token -> 403). Pin DOCKER_CONFIG to the per-slot runner temp
+      # dir so each job gets an isolated docker config that docker/login-action
+      # writes to and earthly reads from (earthly honors DOCKER_CONFIG). Set via
+      # $GITHUB_ENV in a step because runner.temp is unavailable in job-level env.
+      - name: Isolate docker config (self-hosted shared HOME)
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
       - name: Login to GHCR
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      # Earthfile FROMs midnightntwrk/midnight-node-ci and several library/*
+      # images that resolve to docker.io. With --push, earthly tries to write
+      # inline cache back to the midnightntwrk Docker Hub namespace and fails
+      # auth without this login.
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      # Both logins above wrote to the isolated $DOCKER_CONFIG/config.json (see
+      # the DOCKER_CONFIG note at job level). Confirm both registries are present
+      # before the build so an auth regression surfaces here rather than as an
+      # opaque anonymous-token 403 mid-push.
+      - name: Verify registry creds visible to earthly
+        run: |
+          echo "DOCKER_CONFIG=${DOCKER_CONFIG:-<unset>}"
+          echo "Registries with creds:"
+          jq '.auths | keys' "$DOCKER_CONFIG/config.json"
 
       - name: Compute image tags
         id: image_tags
@@ -346,6 +391,371 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      # Isolate docker config per runner slot — see the matching step in the
+      # `run` job. runner.temp is not available in job-level env, so set it here.
+      - name: Isolate docker config (self-hosted shared HOME)
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      # Earthfile FROMs midnightntwrk/midnight-node-ci and other docker.io
+      # images; earthly pushes inline cache back to those repos under --push,
+      # which needs Docker Hub auth.
+      - name: Login to Docker Hub
+        if: steps.guard.outputs.hit != 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      - name: Free disk space
+        if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
+        run: scripts/free-disk-space.sh
+
+      # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
+      # but no certs are provisioned on the runner. Append tls_enabled: false
+      # to the workspace .earthly/config.yml so earthly skips TLS for its own
+      # buildkitd container.
+      - name: Disable earthly TLS (self-hosted runner has no certs)
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          echo "    tls_enabled: false" >> .earthly/config.yml
+
+      - name: Run toolkit tests
+        if: steps.guard.outputs.hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          EVENT_NAME: ${{ github.event_name }}
+          # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true.
+          # Force earthly's tempdir to live under $RUNNER_TEMP which is
+          # outside the per-service PrivateTmp namespace.
+          TMPDIR: ${{ runner.temp }}
+          # Force-clear in case a runner process has stale EARTHLY_REMOTE_CACHE
+          # from before we cleaned the runner .env.
+          EARTHLY_REMOTE_CACHE: ""
+          # The runner's .env redirects ACTIONS_CACHE_URL to a local cache
+          # server. Earthly auto-detects this and tries to push to it with the
+          # wrong auth; override to empty for the earthly call.
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
+        run: |
+          PUSH_FLAG=""
+          if [ "$EVENT_NAME" = "merge_group" ]; then
+            PUSH_FLAG="--push"
+          fi
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \
+            --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
+            +test-toolkit
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  toolkit-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  toolkit-update-ledger-parameters-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Update Ledger Parameters E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-update-ledger-parameters-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  toolkit-maintenance-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Maintenance E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-maintenance-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  toolkit-mint-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Mint E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-mint-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  toolkit-tokens-minter-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Unshielded Token E2E
+    needs: [ run ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-tokens-minter-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  metadata-check:
+    permissions:
+      contents: read
+      actions: write
+    name: Metadata Check
+    needs: run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+      - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Run metadata check
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          . ./.envrc && earthly --ci -P \
+            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
+            +check-metadata
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  mainnet-sync-test:
+    permissions:
+      contents: read
+      packages: read
+    name: Mainnet Sync (1000 blocks)
+    needs: [run]
+    runs-on: [self-hosted, "tier:medium"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      # Isolate docker config per runner slot — see the matching step in the
+      # `run` job. runner.temp is not available in job-level env, so set it here.
+      - name: Isolate docker config (self-hosted shared HOME)
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Sync first 1000 blocks of mainnet
+        env:
+          NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          SNAPSHOT: static/sync-test/snapshot.sql.xz
+          CFG_PRESET: mainnet
+          SYNC_UNTIL: "1000"
+          SYNC_TIMEOUT_SECS: "1800"
+        run: bash scripts/sync-test/run-sync.sh
+
+      - name: Print sync logs
+        if: always()
+        run: |
+          echo "::group::midnight-node.log"
+          cat /tmp/midnight-node.log 2>/dev/null || echo "(no node log)"
+          echo "::endgroup::"
+          echo "::group::midnight-pg.log"
+          cat /tmp/midnight-pg.log 2>/dev/null || echo "(no postgres log)"
+          echo "::endgroup::"
+
+      - name: Upload sync logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
+        with:
+          name: mainnet-sync-logs
+          path: |
+            /tmp/midnight-node.log
+            /tmp/midnight-pg.log
+          if-no-files-found: ignore
+
+  toolkit-contracts-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Contracts E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-contracts-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  startup-dev-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Startup E2E in dev mode
+    needs: run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: startup-dev-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
+
+  chainspec-validation:
+    permissions:
+      contents: read
+    name: Chainspec Validation
+    needs: run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Login to GHCR
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
@@ -671,6 +1081,19 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
           submodules: true
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
+      # Isolate docker config per runner slot — see the matching step in the
+      # `run` job. The concurrency group only serializes this job against itself;
+      # other self-hosted jobs on the same host can still clobber the shared
+      # ~/.docker. Inherited by the composite action's docker login and pulls.
+      - name: Isolate docker config (self-hosted shared HOME)
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Deploy and test against local environment
         uses: ./.github/actions/local-environment-tests
