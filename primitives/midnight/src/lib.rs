@@ -25,6 +25,16 @@ use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
 
+/// Maximum allowed drift, in seconds, between a transaction's declared block time and
+/// the validating node's clock (`tblock_err` in a [`BlockContext`]).
+///
+/// Mirrors substrate's private `MAX_TIMESTAMP_DRIFT_MILLIS` (30_000 ms) from
+/// `substrate/frame/timestamp/src/lib.rs`. Block authoring applies the same drift in
+/// `LedgerBlockContextProvider::get_block_context` (see `pallet-midnight`), so any code
+/// that builds a `BlockContext` for validation off-chain (e.g. the `midnight_validateTransaction`
+/// RPC) must use this value to stay in sync with what the runtime accepts.
+pub const MAX_TIMESTAMP_DRIFT_SECS: u32 = 30;
+
 pub type LedgerMutFn<E> = fn(Vec<u8>) -> Result<Vec<u8>, E>;
 /// Trait to allow pallets to mutate the Ledger state
 pub trait LedgerStateProviderMut {

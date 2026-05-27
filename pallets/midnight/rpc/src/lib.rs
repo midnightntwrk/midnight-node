@@ -22,6 +22,7 @@ use jsonrpsee::{
 };
 
 use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
+use midnight_primitives::MAX_TIMESTAMP_DRIFT_SECS;
 use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
 use parity_scale_codec::Decode;
 use sc_client_api::{BlockBackend, BlockchainEvents};
@@ -266,19 +267,51 @@ struct ValidationRateLimiter {
 		DefaultClock,
 	>,
 	per_tx: KeyedRateLimiter,
+	/// Eviction bookkeeping for the keyed `per_tx` limiter.
+	///
+	/// The keyed store is an unbounded `DashMap`: an attacker sending uniquely-hashing
+	/// transactions grows it without bound (governor only GCs lazily). We bound it by
+	/// periodically calling [`RateLimiter::retain_recent`], which drops keys whose cooldown
+	/// has fully elapsed (i.e. keys that would pass the check anyway), followed by
+	/// `shrink_to_fit` to release the backing capacity.
+	///
+	/// GC runs at most once per `gc_interval`, triggered opportunistically from the
+	/// validation handler rather than from a background timer — `Midnight` is constructed
+	/// per RPC connection (see `node/src/rpc.rs`), so a per-connection interval task would
+	/// be wasteful.
+	last_gc: std::sync::Mutex<std::time::Instant>,
+	gc_interval: std::time::Duration,
 }
 
 impl ValidationRateLimiter {
 	fn new(config: &ValidateRateLimitConfig) -> Self {
+		let cooldown_secs = config.per_tx_cooldown_secs.max(1);
 		let global_quota =
 			Quota::per_second(NonZeroU32::new(config.global_rate_limit.max(1)).unwrap());
-		let per_tx_quota =
-			Quota::with_period(std::time::Duration::from_secs(config.per_tx_cooldown_secs.max(1)))
-				.expect("per_tx_cooldown_secs > 0");
+		let per_tx_quota = Quota::with_period(std::time::Duration::from_secs(cooldown_secs))
+			.expect("per_tx_cooldown_secs > 0");
 
 		Self {
 			global: governor::RateLimiter::direct(global_quota),
 			per_tx: governor::RateLimiter::keyed(per_tx_quota),
+			last_gc: std::sync::Mutex::new(std::time::Instant::now()),
+			// Sweep at the cooldown cadence: by the time a key is `gc_interval` old its
+			// token has refilled, so eviction never drops a key that is still rate-limiting.
+			gc_interval: std::time::Duration::from_secs(cooldown_secs),
+		}
+	}
+
+	/// Evict stale keys from the `per_tx` store if at least `gc_interval` has elapsed since
+	/// the last sweep. Non-blocking: if another thread is already sweeping (or validating),
+	/// we skip this round rather than contend on the lock.
+	fn maybe_gc(&self) {
+		let Ok(mut last_gc) = self.last_gc.try_lock() else {
+			return;
+		};
+		if last_gc.elapsed() >= self.gc_interval {
+			self.per_tx.retain_recent();
+			self.per_tx.shrink_to_fit();
+			*last_gc = std::time::Instant::now();
 		}
 	}
 }
@@ -463,7 +496,19 @@ where
 			)
 		})?;
 
-		// Per-tx rate limit (keyed by blake2_256 of tx bytes)
+		// Global rate limit first: when the node is saturated we reject here without ever
+		// touching the keyed per-tx store, which bounds how fast that store can grow under
+		// unique-hash spam.
+		if self.validate_rate_limiter.global.check().is_err() {
+			return Err(ErrorObject::owned(-32005, "Rate limit exceeded", None::<()>));
+		}
+
+		// Opportunistically evict stale keys before we (potentially) insert a new one.
+		self.validate_rate_limiter.maybe_gc();
+
+		// Per-tx rate limit (keyed by blake2_256 of tx bytes). This only guards against
+		// trivial replay of the *same* transaction; it is not a DoS shield against an
+		// attacker varying bytes to mint fresh keys (see PER_METHOD_RATE_LIMITS.md).
 		let tx_key = blake2_256(&tx_bytes);
 		if self.validate_rate_limiter.per_tx.check_key(&tx_key).is_err() {
 			return Err(ErrorObject::owned(
@@ -473,11 +518,6 @@ where
 			));
 		}
 
-		// Global rate limit
-		if self.validate_rate_limiter.global.check().is_err() {
-			return Err(ErrorObject::owned(-32005, "Rate limit exceeded", None::<()>));
-		}
-
 		let at = at.unwrap_or_else(|| self.client.info().best_hash);
 
 		// Read validation context from storage queries
@@ -485,19 +525,40 @@ where
 			ErrorObject::owned(-32603, format!("Failed to get state: {e}"), None::<()>)
 		})?;
 
+		// These reads use hardcoded pallet/storage names (the trade-off taken in 663d719bf to
+		// avoid a runtime-API version bump). A rename therefore can't be caught at compile
+		// time — so fail loudly at the first call rather than silently validating against a
+		// bogus (zeroed) context. The error names the exact storage path to grep for.
+		const MISSING_CTX: &str = "validation context storage not found — runtime/RPC storage layout mismatch \
+			 (was the pallet or storage item renamed?)";
+
 		let state_key: Vec<u8> =
 			read_storage_value::<Vec<u8>, HashingFor<Block>>(&state, "Midnight", "StateKey")
 				.map_err(|e| ErrorObject::owned(-32603, e, None::<()>))?
-				.ok_or_else(|| ErrorObject::owned(-32603, "No ledger state", None::<()>))?;
+				.ok_or_else(|| {
+					ErrorObject::owned(
+						-32603,
+						format!("Midnight::StateKey: {MISSING_CTX}"),
+						None::<()>,
+					)
+				})?;
 
 		let last_block_time: u64 =
 			read_storage_value::<u64, HashingFor<Block>>(&state, "Midnight", "ParentTimestamp")
 				.map_err(|e| ErrorObject::owned(-32603, e, None::<()>))?
-				.unwrap_or(0);
+				.ok_or_else(|| {
+					ErrorObject::owned(
+						-32603,
+						format!("Midnight::ParentTimestamp: {MISSING_CTX}"),
+						None::<()>,
+					)
+				})?;
 
 		let now_ms: u64 = read_storage_value::<u64, HashingFor<Block>>(&state, "Timestamp", "Now")
 			.map_err(|e| ErrorObject::owned(-32603, e, None::<()>))?
-			.unwrap_or(0);
+			.ok_or_else(|| {
+				ErrorObject::owned(-32603, format!("Timestamp::Now: {MISSING_CTX}"), None::<()>)
+			})?;
 
 		let header = self
 			.client
@@ -509,7 +570,7 @@ where
 
 		let block_context = midnight_node_ledger::types::active_version::BlockContext {
 			tblock: now_ms / 1000,
-			tblock_err: 30,
+			tblock_err: MAX_TIMESTAMP_DRIFT_SECS,
 			parent_block_hash: header.parent_hash().as_ref().to_vec(),
 			last_block_time,
 		};

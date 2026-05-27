@@ -10017,6 +10017,7 @@ dependencies = [
  "jsonrpsee",
  "log",
  "midnight-node-ledger",
+ "midnight-primitives",
  "pallet-midnight",
  "parity-scale-codec",
  "sc-client-api",

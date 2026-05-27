@@ -154,6 +154,25 @@ lazy_static! {
 			.build();
 }
 
+/// Which path invoked transaction validation. Used only to tag log lines so the same
+/// `do_validate_transaction` body produces accurate messages for each caller.
+#[derive(Clone, Copy, Debug)]
+pub enum ValidationCaller {
+	/// The mempool / runtime-API validation path (`validate_transaction`).
+	Mempool,
+	/// The `midnight_validateTransaction` RPC path (`validate_transaction_verbose`).
+	Rpc,
+}
+
+impl core::fmt::Display for ValidationCaller {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			ValidationCaller::Mempool => write!(f, "mempool"),
+			ValidationCaller::Rpc => write!(f, "RPC"),
+		}
+	}
+}
+
 #[cfg(feature = "std")]
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
 	_phantom: core::marker::PhantomData<(S, D)>,
@@ -560,9 +579,14 @@ where
 
 		let wrapped_cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 
-		let was_cached =
-			Self::do_validate_transaction(&ledger, &tx, &block_context, &wrapped_cache_key)
-				.map_err(|e| e.error)?;
+		let was_cached = Self::do_validate_transaction(
+			&ledger,
+			&tx,
+			&block_context,
+			&wrapped_cache_key,
+			ValidationCaller::Mempool,
+		)
+		.map_err(|e| e.error)?;
 
 		let tx_details = if get_tx_details {
 			let tx_gas_cost =
@@ -930,10 +954,14 @@ where
 		Ok(verified_tx)
 	}
 
-	/// Validates a transaction for the mempool using the soft cache.
+	/// Validates a transaction using the soft cache.
 	///
-	/// Uses `tx_hash` only for quick revalidation of transactions already in the pool.
-	/// The soft cache prevents redundant ZK proof verification for mempool housekeeping.
+	/// Shared by two callers — the mempool/runtime-API path (`validate_transaction`) and the
+	/// `midnight_validateTransaction` RPC path (`validate_transaction_verbose`). The `caller`
+	/// tag distinguishes them in the logs that oncall greps for.
+	///
+	/// Uses `tx_hash` only for quick revalidation of transactions already validated.
+	/// The soft cache prevents redundant ZK proof verification.
 	///
 	/// Returns `true` if the validation was served from cache, `false` if validation was performed.
 	fn do_validate_transaction(
@@ -941,26 +969,27 @@ where
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
+		caller: ValidationCaller,
 	) -> Result<bool, types::DetailedTransactionError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let soft_key = SoftTxValidationKey { tx_hash: tx_hash.0 };
 
-		// Check soft cache first (quick tx_hash-only lookup for mempool revalidation)
+		// Check soft cache first (quick tx_hash-only lookup for revalidation)
 		if let Some(cached) = SOFT_TX_VALIDATION_CACHE.get(&soft_key) {
 			return cached.map(|_| true).map_err(types::DetailedTransactionError::from);
 		}
 
-		// Cache miss: transaction is entering the mempool or being re-validated
+		// Cache miss: transaction is being validated for the first time or re-validated
 		let tx_hash_hex = hex::encode(tx.hash());
 		let verified_tx = match Self::get_verified_transaction(ledger, tx, block_context, tx_hash) {
 			Ok(vt) => vt,
 			Err(e) => {
 				log::warn!(
 					target: LOG_TARGET,
-					"🚫 Rejected transaction {} from mempool: {}",
-					tx_hash_hex, e.error
+					"🚫 Rejected transaction {} from {}: {}",
+					tx_hash_hex, caller, e.error
 				);
 				return Err(e);
 			},
@@ -977,8 +1006,8 @@ where
 			| mn_ledger_local::semantics::TransactionResult::PartialSuccess(_, _) => {
 				log::info!(
 					target: LOG_TARGET,
-					"📋 Validated transaction {} for mempool",
-					tx_hash_hex
+					"📋 Validated transaction {} for {}",
+					tx_hash_hex, caller
 				);
 				// Cache the success (only successes are cached)
 				SOFT_TX_VALIDATION_CACHE.insert(soft_key, Ok(()));
@@ -987,8 +1016,8 @@ where
 			mn_ledger_local::semantics::TransactionResult::Failure(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
-					"🚫 Rejected transaction {} from mempool: guaranteed execution would fail: {reason:?}",
-					tx_hash_hex
+					"🚫 Rejected transaction {} from {}: guaranteed execution would fail: {reason:?}",
+					tx_hash_hex, caller
 				);
 				let details = format!("{reason:?}");
 				let error =
@@ -1072,7 +1101,7 @@ where
 		tx_serialized: &[u8],
 		block_context: BlockContext,
 		runtime_version: u32,
-		_max_weight: u64,
+		max_weight: u64,
 	) -> Result<Hash, types::DetailedTransactionError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -1083,8 +1112,22 @@ where
 			.map_err(types::DetailedTransactionError::from)?;
 		let ledger =
 			Self::get_ledger(&api, state_key).map_err(types::DetailedTransactionError::from)?;
+
+		// Reject transactions that can't fit the block weight budget. `get_transaction_cost`
+		// normalizes the tx cost against the block limits and returns `BlockLimitExceededError`
+		// when it overflows, so a tx the runtime would never include is rejected here with a
+		// clear error instead of passing the verbose validator.
+		Self::get_transaction_cost(state_key, tx_serialized, &block_context, max_weight)
+			.map_err(types::DetailedTransactionError::from)?;
+
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
-		Self::do_validate_transaction(&ledger, &tx, &block_context, &cache_key)?;
+		Self::do_validate_transaction(
+			&ledger,
+			&tx,
+			&block_context,
+			&cache_key,
+			ValidationCaller::Rpc,
+		)?;
 		Ok(cache_key.0)
 	}
 

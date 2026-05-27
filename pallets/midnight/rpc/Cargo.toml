@@ -20,6 +20,7 @@ sp-blockchain.workspace = true
 sp-state-machine.workspace = true
 parity-scale-codec.workspace = true
 pallet-midnight.workspace = true
+midnight-primitives.workspace = true
 midnight-node-ledger = { workspace = true, default-features = true }
 governor.workspace = true
 
@@ -29,7 +30,8 @@ std = [
     "sp-api/std",
     "sp-runtime/std",
     "sp-core/std",
-    "pallet-midnight/std"
+    "pallet-midnight/std",
+    "midnight-primitives/std"
 ]
 
 [lints]
