@@ -23,5 +23,5 @@ any victim account). The vendored pallet drops `dispatch_as`, `as_derivative`,
 associated type that exists solely to support `dispatch_as`. What remains is
 only the atomic-batch primitive governance actually needs.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/463
+PR: https://github.com/midnightntwrk/midnight-node/pull/1541
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1143
