@@ -84,6 +84,25 @@ runs:
       run: npm install -g npm@11.11.0
       shell: bash
 
+    # The local-env stack uses fixed container_names and publishes fixed host
+    # ports (validators 30333-30337 / 9933-9944 / 9615-9619, plus 32000, 30000,
+    # 8088, 4222). On a shared self-hosted host a container left by a cancelled
+    # or crashed prior run keeps a name/port bound, so the fresh stack fails with
+    # "port is already allocated" or a name conflict. The job's concurrency group
+    # only serialises this job against itself, not against leftovers. Tear the
+    # whole compose project down by label so every leftover service is reclaimed
+    # regardless of which name/port it holds — rather than a hand-maintained port
+    # list, which drifts as the compose file changes.
+    - name: Reclaim leftover local-env stack (self-hosted shared host)
+      shell: bash
+      run: |
+        docker compose -p local-env down --remove-orphans --volumes 2>/dev/null || true
+        leftovers=$(docker ps -aq --filter "label=com.docker.compose.project=local-env" || true)
+        if [ -n "$leftovers" ]; then
+          echo "Force-removing leftover local-env containers: $leftovers"
+          docker rm -f $leftovers || true
+        fi
+
     - name: Deploy local environment
       run: |
         echo "🔍 Debug: Checking input values..."
