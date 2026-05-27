@@ -4,6 +4,10 @@ self-hosted-runner:
     - ubuntu-latest-16-core-x64
     - ubuntu-latest-8-core-arm64
     - ubuntu-slim  # This is actually a public github runner https://github.com/raven-actions/actionlint/issues/44
+    # Self-hosted runner tier labels — `runs-on: [self-hosted, "tier:medium"]` etc.
+    - tier:small
+    - tier:medium
+    - tier:large
 
 paths:
   .github/workflows/*.{yml,yaml}:

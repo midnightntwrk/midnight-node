@@ -1612,6 +1612,12 @@ impl_runtime_apis! {
 		}
 	}
 
+	impl midnight_primitives_session_info::SessionInfoApi<Block> for Runtime {
+		fn current_session_index() -> u32 {
+			Session::current_index()
+		}
+	}
+
 	impl sp_sidechain::GetGenesisUtxo<Block> for Runtime {
 		fn genesis_utxo() -> UtxoId {
 			Sidechain::genesis_utxo()

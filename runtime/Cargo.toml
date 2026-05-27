@@ -83,6 +83,7 @@ pallet-throttle.workspace = true
 pallet-version.workspace = true
 midnight-primitives-beefy.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
+midnight-primitives-session-info.workspace = true
 pallet-c2m-bridge.workspace = true
 pallet-cnight-observation.workspace = true
 midnight-primitives-cnight-observation.workspace = true
@@ -166,6 +167,7 @@ std = [
     "midnight-primitives/std",
     "midnight-primitives-beefy/std",
     "midnight-primitives-cnight-observation/std",
+    "midnight-primitives-session-info/std",
     "runtime-common/std"
 ]
 runtime-benchmarks = [

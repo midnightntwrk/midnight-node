@@ -1,16 +1,12 @@
 use super::mock::mock_genesis_utxo;
 use authority_selection_inherents::{AuthoritySelectionInputs, CommitteeMember};
-use hex_literal::hex;
+use partner_chains_demo_runtime::CrossChainPublic;
 use partner_chains_demo_runtime::opaque::SessionKeys;
-use partner_chains_demo_runtime::{BlockAuthor, CrossChainPublic};
 use sidechain_domain::*;
 use sidechain_mc_hash::McHashInherentDigest;
-use sidechain_slots::Slot;
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
-use sp_core::{ecdsa, ed25519, sr25519};
-use sp_governed_map::MainChainScriptsV1;
-use sp_inherents::InherentIdentifier;
+use sp_core::ecdsa;
 use sp_runtime::Digest;
 use sp_runtime::key_types::{AURA, GRANDPA};
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT, NumberFor, Zero};
@@ -58,8 +54,6 @@ impl ProvideRuntimeApi<Block> for TestApi {
 	}
 }
 
-pub const TEST_TARGET_INHERENT_ID: InherentIdentifier = [42; 8];
-
 sp_api::mock_impl_runtime_apis! {
 	impl GetGenesisUtxo<Block> for TestApi {
 		fn genesis_utxo() -> UtxoId { mock_genesis_utxo() }
@@ -94,39 +88,6 @@ sp_api::mock_impl_runtime_apis! {
 				d_parameter_policy_id: PolicyId::default(),
 				permissioned_candidates_policy_id: PolicyId::default(),
 			}
-		}
-	}
-
-	impl sp_block_production_log::BlockProductionLogApi<Block, CommitteeMember<CrossChainPublic, SessionKeys>> for TestApi {
-		fn get_author(_slot: Slot) -> Option<CommitteeMember<CrossChainPublic, SessionKeys>> {
-			Some(CommitteeMember::permissioned(
-				ecdsa::Public::from_raw(hex!("000000000000000000000000000000000000000000000000000000000000000001")).into(),
-				SessionKeys {
-					aura: sr25519::Public::default().into(),
-					grandpa: ed25519::Public::default().into()
-				}
-			))
-		}
-	}
-
-	impl sp_block_participation::BlockParticipationApi<Block, BlockAuthor> for TestApi {
-		fn should_release_data(slot: Slot) -> Option<Slot> {
-			Some(slot)
-		}
-		fn blocks_produced_up_to_slot(_slot: Slot) -> Vec<(Slot, BlockAuthor)> {
-			vec![]
-		}
-		fn target_inherent_id() -> InherentIdentifier {
-			TEST_TARGET_INHERENT_ID
-		}
-	}
-
-	impl sp_governed_map::GovernedMapIDPApi<Block> for TestApi {
-		fn get_main_chain_scripts() -> Option<MainChainScriptsV1> {
-			Default::default()
-		}
-		fn get_pallet_version() -> u32 {
-			1
 		}
 	}
 
