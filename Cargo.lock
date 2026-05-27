@@ -10015,7 +10015,6 @@ dependencies = [
  "governor 0.8.1",
  "hex",
  "jsonrpsee",
- "log",
  "midnight-node-ledger",
  "midnight-primitives",
  "pallet-midnight",
