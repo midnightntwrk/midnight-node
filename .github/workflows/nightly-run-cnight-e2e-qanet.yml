@@ -14,7 +14,12 @@ concurrency:
 
 jobs:
   rust_e2e:
-    runs-on: ubuntu-latest
+    # Self-hosted Hetzner runner (fsn1-runner-01.hetzner.shielded.tools).
+    # The runner's static public IP (178.63.134.209) is on the
+    # toolkit-cache NLB security-group allowlist, so it can talk directly
+    # to the shared RDS without VPN/SDM. `ubuntu-latest` is NOT supported
+    # for this workflow - GH-hosted runner egress is unallowlistable.
+    runs-on: [self-hosted, "tier:large"]
     timeout-minutes: 360
 
     steps:
@@ -36,17 +41,42 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install system dependencies (protoc)
+      - name: Install system dependencies (protoc, postgresql-client)
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          sudo apt-get install -y protobuf-compiler postgresql-client
           protoc --version
+          psql --version
+
+      # Toolkit fetch cache: shared RDS Postgres in shielded-dev fronted
+      # by an NLB locked to this runner's static IP. See:
+      #   - shieldedtech/shielded-iac    aws/dev/eu-west-1/toolkit-cache-rds
+      #   - shieldedtech/shielded-gitops issue #2152
+      #
+      # TOOLKIT_CACHE_DB_URL is a repo secret of the form:
+      #   postgresql://toolkit_cache_admin:<pw>@toolkit-cache-nlb-...elb.eu-west-1.amazonaws.com:5432/toolkit_cache_qanet?sslmode=require
+      - name: Smoke test toolkit-cache DB
+        shell: bash
+        env:
+          TOOLKIT_CACHE_DB_URL: ${{ secrets.TOOLKIT_CACHE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TOOLKIT_CACHE_DB_URL" ]; then
+            echo "::error::TOOLKIT_CACHE_DB_URL secret is not set"
+            exit 1
+          fi
+          psql "$TOOLKIT_CACHE_DB_URL" -c 'SELECT 1;' >/dev/null
+          echo "toolkit-cache DB reachable from this runner."
 
       - name: Run e2e tests (all)
         working-directory: tests/e2e/tests
         env:
           RUST_BACKTRACE: "1"
+          # Consumed by tests/e2e/tests/lib.rs::fetch_cache_config() on
+          # the qanet branch - pending a consumer change on the
+          # e2e-cngd-for-cardano-preview branch that reads this env var.
+          TOOLKIT_CACHE_DB_URL: ${{ secrets.TOOLKIT_CACHE_DB_URL }}
         run: |
           cargo test --test e2e_tests cnight --no-default-features --features "${{ steps.vars.outputs.env }}" -- --no-capture
 
@@ -61,9 +91,9 @@ jobs:
         shell: bash
         run: |
           if [ "$STATUS" = "success" ]; then
-            MESSAGE="✅ ${ENV_NAME} env nightly e2e cNgD passed successfully\n${RUN_URL}"
+            MESSAGE="OK ${ENV_NAME} env nightly e2e cNgD passed successfully\n${RUN_URL}"
           else
-            MESSAGE="❌ ${ENV_NAME} env nightly e2e cNgD failed\n${RUN_URL}"
+            MESSAGE="FAIL ${ENV_NAME} env nightly e2e cNgD failed\n${RUN_URL}"
           fi
 
           curl -X POST -H "Content-type: application/json" \
