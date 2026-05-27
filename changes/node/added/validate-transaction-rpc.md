@@ -10,10 +10,12 @@ it returns one of these structured JSON-RPC errors:
   touched).
 - `-32001` — validation failure, with structured `data.{error_code, reason,
   details}` surfacing the underlying ledger error (e.g. `ContractNotPresent`).
-- `-32005` — rate limited. The global call-rate quota is checked first (so a
-  saturated node rejects without growing the keyed store), then the
-  per-transaction cooldown (keyed by `blake2_256` of the tx bytes). The keyed
-  store is bounded by periodically evicting keys whose cooldown has elapsed.
+- `-32005` — rate limited. The per-transaction cooldown (keyed by `blake2_256`
+  of the tx bytes) is checked before the global call-rate quota, so a client
+  replaying the same transaction is rejected without consuming a global token
+  and cannot drain the shared budget for other callers. The keyed store is
+  bounded by size: keys whose cooldown has elapsed are evicted once the store
+  grows past a fixed threshold.
 - `-32601` — the node's runtime predates `MidnightRuntimeApi` v6 and so does
   not expose the validation context.
 - `-32603` — internal error fetching the validation context from the runtime.
