@@ -149,6 +149,48 @@
       ]
     },
     {
+      "name": "midnight_validateTransaction",
+      "summary": "Validates a transaction without submitting it to the transaction pool.",
+      "description": "Runs a hex-encoded transaction through the ledger's verbose validation against the state at `at` (or the best block) and returns its hash on success. Read-only: nothing is added to the txpool. Rate limited per-call and per-transaction.",
+      "params": [
+        {
+          "name": "tx_hex",
+          "description": "Hex-encoded serialized transaction",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "at",
+          "description": "Block hash to validate against (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "tx_hash",
+        "description": "0x-prefixed hex-encoded transaction hash",
+        "schema": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]+$"
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/ValidateTransactionFailed"
+        },
+        {
+          "$ref": "#/components/errors/ValidateTransactionRateLimited"
+        },
+        {
+          "$ref": "#/components/errors/ValidateTransactionUnsupported"
+        }
+      ]
+    },
+    {
       "name": "systemParameters_getTermsAndConditions",
       "summary": "Get the current Terms and Conditions.",
       "description": "Returns the hash and URL of the current terms and conditions, or null if not set.",
@@ -1717,6 +1759,42 @@
         "message": "Sidechain status error",
         "data": {
           "description": "Custom error from partner-chains sidechain RPC"
+        }
+      },
+      "ValidateTransactionFailed": {
+        "code": -32001,
+        "message": "Transaction validation failed",
+        "data": {
+          "description": "Structured ledger validation failure",
+          "type": "object",
+          "properties": {
+            "error_code": {
+              "type": "integer",
+              "description": "Ledger error discriminant"
+            },
+            "reason": {
+              "type": "string",
+              "description": "Short failure reason"
+            },
+            "details": {
+              "type": "string",
+              "description": "Detailed failure description"
+            }
+          }
+        }
+      },
+      "ValidateTransactionRateLimited": {
+        "code": -32005,
+        "message": "Rate limit exceeded",
+        "data": {
+          "description": "Rejected by the global call-rate quota or the per-transaction cooldown"
+        }
+      },
+      "ValidateTransactionUnsupported": {
+        "code": -32601,
+        "message": "Method not supported",
+        "data": {
+          "description": "The node's runtime predates MidnightRuntimeApi v6 and does not expose the validation context"
         }
       }
     }
