@@ -19,6 +19,7 @@ members = [
     "primitives/reserve-observation",
     "primitives/midnight",
     "primitives/ledger",
+    "primitives/session-info",
     "primitives/system-parameters",
     "res",
     "runtime",
@@ -27,6 +28,7 @@ members = [
     "util/aiken-deployer",
     "util/aiken-contracts-lib",
     "tests/e2e",
+    "tests/e2e/macros",
     "relay",
     "docs",
     "partner-chains/demo/node",
@@ -119,6 +121,7 @@ midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
 midnight-primitives-ics-observation = { path = "primitives/ics-observation", default-features = false }
 midnight-primitives-reserve-observation = { path = "primitives/reserve-observation", default-features = false }
+midnight-primitives-session-info = { path = "primitives/session-info", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
 midnight-primitives-system-parameters = { path = "primitives/system-parameters", default-features = false }
 
@@ -337,21 +340,7 @@ whisky = { git = "https://github.com/midnightntwrk/whisky", branch = "wasm-bindg
 # Partner-chains local crates (not directly used but needed for workspace resolution)
 partner-chains-demo-runtime = { path = "partner-chains/demo/runtime", default-features = false }
 partner-chains-cardano-offchain = { path = "partner-chains/toolkit/smart-contracts/offchain", default-features = false }
-partner-chains-smart-contracts-commands = { path = "partner-chains/toolkit/smart-contracts/commands", default-features = false }
 sidechain-block-search = { path = "partner-chains/toolkit/sidechain/sidechain-block-search", default-features = false }
-pallet-address-associations = { path = "partner-chains/toolkit/address-associations/pallet", default-features = false }
-pallet-governed-map = { path = "partner-chains/toolkit/governed-map/pallet", default-features = false }
-sp-block-participation = { path = "partner-chains/toolkit/block-participation/primitives", default-features = false }
-sp-block-producer-metadata = { path = "partner-chains/toolkit/block-producer-metadata/primitives", default-features = false }
-sp-governed-map = { path = "partner-chains/toolkit/governed-map/primitives", default-features = false }
-pallet-block-participation = { path = "partner-chains/toolkit/block-participation/pallet", default-features = false }
-pallet-block-producer-fees = { path = "partner-chains/toolkit/block-producer-fees/pallet", default-features = false }
-sp-block-producer-fees = { path = "partner-chains/toolkit/block-producer-fees/primitives", default-features = false }
-pallet-block-producer-fees-rpc = { path = "partner-chains/toolkit/block-producer-fees/rpc", default-features = false }
-pallet-block-producer-metadata = { path = "partner-chains/toolkit/block-producer-metadata/pallet", default-features = false }
-pallet-block-producer-metadata-rpc = { path = "partner-chains/toolkit/block-producer-metadata/rpc", default-features = false }
-pallet-block-production-log = { path = "partner-chains/toolkit/block-production-log/pallet", default-features = false }
-sp-block-production-log = { path = "partner-chains/toolkit/block-production-log/primitives", default-features = false }
 
 # Substrate deps needed by partner-chains
 pallet-balances = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
@@ -437,6 +426,7 @@ zeroize = { opt-level = 3 }
 
 [patch.crates-io]
 yamux = { git = "https://github.com/midnightntwrk/rust-yamux", branch = "yamux-v0.12.2" }
+parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "master" }
 midnight-ledger           = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-8.1.0-rc.1" }
 midnight-zswap            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-8.1.0-rc.1" }
 midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.1.0-rc.1" }

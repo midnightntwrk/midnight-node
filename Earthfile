@@ -1044,7 +1044,7 @@ build:
 build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests partner-chains .
+    ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
     ARG NATIVEARCH
 
@@ -1068,14 +1068,14 @@ subwasm:
 # This ensures reproducible builds across different environments
 # See: https://github.com/paritytech/srtool
 #
-# Note: srtool uses its own pinned Rust version (currently 1.88.0) for deterministic builds.
+# Note: srtool uses its own pinned Rust version (currently 1.93.0) for deterministic builds.
 # The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
 # reproducibility - srtool's environment is fixed and verified.
 srtool-build:
     # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_VERSION=0.18.3
-    # srtool 1.88.0 uses Rust 1.88.0 - this is intentional for determinism
-    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+    ARG SRTOOL_VERSION=0.18.4
+    # srtool 1.93.0 uses Rust 1.93.0 - this is intentional for determinism
+    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
 
     # srtool expects source code in /build
     WORKDIR /build
@@ -1104,8 +1104,8 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    ARG SRTOOL_VERSION=0.18.3
-    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+    ARG SRTOOL_VERSION=0.18.4
+    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
@@ -1534,6 +1534,14 @@ start-local-env-with-indexer-ci:
     ARG WALLET_INDEXER_IMAGE
     WORKDIR local-environment
     RUN npm ci
+    # Tear down any stack left over from a previous run before starting a fresh
+    # one. Without this, named volumes (local-env_midnight-node-N-data, etc.)
+    # persist on shared CI hosts (e.g. self-hosted runners) and the new
+    # run boots validators with stale db state from the prior run — which
+    # breaks chain-indexer with "unsupported protocol version" when the
+    # genesis/runtime expectations disagree. The non-CI sibling target
+    # `+start-local-env-with-indexer` does this same down already.
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
     RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 

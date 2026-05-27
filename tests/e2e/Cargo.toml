@@ -26,6 +26,9 @@ subxt.workspace = true
 midnight-node-metadata.workspace = true
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
 blake2 = "0.10.6"
+tracing = { workspace = true, default-features = true }
+tracing-subscriber = { workspace = true }
+midnight-node-e2e-macros = { path = "macros" }
 
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test"] }

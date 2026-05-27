@@ -1,8 +1,7 @@
 use crate::chain_spec::*;
 use partner_chains_demo_runtime::{
-	AuraConfig, BalancesConfig, BridgeConfig, GovernedMapConfig, GrandpaConfig,
-	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	SudoConfig, SystemConfig, TestHelperPalletConfig,
+	AuraConfig, BalancesConfig, BridgeConfig, GrandpaConfig, RuntimeGenesisConfig,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
 use sc_service::ChainType;
 use sp_core::serde::de::Error;
@@ -37,14 +36,6 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			// Same as SessionConfig
 			initial_authorities: vec![],
 			main_chain_scripts: sp_session_validator_management::MainChainScripts::read_from_env()?,
-		},
-		governed_map: GovernedMapConfig {
-			main_chain_scripts: Some(sp_governed_map::MainChainScriptsV1::read_from_env()?),
-			..Default::default()
-		},
-		test_helper_pallet: TestHelperPalletConfig {
-			participation_data_release_period: 30,
-			..Default::default()
 		},
 		bridge: BridgeConfig {
 			main_chain_scripts: Some(sp_partner_chains_bridge::MainChainScripts::read_from_env()?),
