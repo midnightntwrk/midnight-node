@@ -121,6 +121,7 @@ async fn hardfork_single_tx() {
 	let wasm_path = tempdir.path().join("runtime.wasm");
 	std::fs::write(&wasm_path, &wasm_output.stdout).expect("write wasm");
 
+	// 4a. Authorize the upgrade through federated governance.
 	run_cli(&[
 		"runtime-upgrade",
 		"--wasm-file",
@@ -133,6 +134,16 @@ async fn hardfork_single_tx() {
 		"//Alice",
 		"-t",
 		"//Bob",
+		"--rpc-url",
+		&url,
+	])
+	.await;
+
+	// 4b. Apply the authorized upgrade to actually swap the code.
+	run_cli(&[
+		"apply-authorized-upgrade",
+		"--wasm-file",
+		wasm_path.to_str().unwrap(),
 		"--rpc-url",
 		&url,
 		"--signer-key",
