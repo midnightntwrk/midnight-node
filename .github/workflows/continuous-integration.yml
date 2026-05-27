@@ -73,6 +73,19 @@ jobs:
           echo "--- updated .earthly/config.yml ---"
           cat .earthly/config.yml
 
+      # Self-hosted runners share a persistent HOME (/opt/actions-runner) across
+      # every runner slot on the host, making ~/.docker/config.json shared
+      # mutable state. Concurrent jobs' `docker login` (read-modify-write) race
+      # and clobber each other's registry entries — e.g. a Docker Hub login
+      # wiping the ghcr.io entry — leaving the build's push with no GHCR creds
+      # (anonymous token -> 403). Pin DOCKER_CONFIG to the per-slot runner temp
+      # dir so each job gets an isolated docker config that docker/login-action
+      # writes to and earthly reads from (earthly honors DOCKER_CONFIG). Set via
+      # $GITHUB_ENV in a step because runner.temp is unavailable in job-level env.
+      - name: Isolate docker config (self-hosted shared HOME)
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
@@ -91,23 +104,15 @@ jobs:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
-      # docker/login-action writes auth to $DOCKER_CONFIG/config.json (a per-step
-      # temp dir). Earthly reads ~/.docker/config.json (HOME-based) and doesn't
-      # honor $DOCKER_CONFIG. Without the copy, earthly's buildkit-side push
-      # has no GHCR creds and falls back to anonymous token, which GHCR rejects
-      # with 403.
-      - name: Make docker auth visible to earthly at ~/.docker/config.json
+      # Both logins above wrote to the isolated $DOCKER_CONFIG/config.json (see
+      # the DOCKER_CONFIG note at job level). Confirm both registries are present
+      # before the build so an auth regression surfaces here rather than as an
+      # opaque anonymous-token 403 mid-push.
+      - name: Verify registry creds visible to earthly
         run: |
           echo "DOCKER_CONFIG=${DOCKER_CONFIG:-<unset>}"
-          echo "HOME=$HOME"
-          ls -la "$HOME/.docker" 2>&1 || true
-          if [ -n "$DOCKER_CONFIG" ] && [ -f "$DOCKER_CONFIG/config.json" ]; then
-            mkdir -p "$HOME/.docker"
-            cp "$DOCKER_CONFIG/config.json" "$HOME/.docker/config.json"
-            echo "Copied $DOCKER_CONFIG/config.json -> $HOME/.docker/config.json"
-          fi
           echo "Registries with creds:"
-          jq '.auths | keys' "$HOME/.docker/config.json"
+          jq '.auths | keys' "$DOCKER_CONFIG/config.json"
 
       - name: Compute image tags
         id: image_tags
@@ -474,6 +479,14 @@ jobs:
           github-token: ${{ github.token }}
           use-cache: false
 
+      # Isolate docker config per runner slot — see the matching step in the
+      # `run` job. runner.temp is not available in job-level env, so set it here.
+      - name: Isolate docker config (self-hosted shared HOME)
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
@@ -716,6 +729,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      # Isolate docker config per runner slot — see the matching step in the
+      # `run` job. runner.temp is not available in job-level env, so set it here.
+      - name: Isolate docker config (self-hosted shared HOME)
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
@@ -999,6 +1019,16 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+
+      # Isolate docker config per runner slot — see the matching step in the
+      # `run` job. The concurrency group only serializes this job against itself;
+      # other self-hosted jobs on the same host can still clobber the shared
+      # ~/.docker. Inherited by the composite action's docker login and pulls.
+      - name: Isolate docker config (self-hosted shared HOME)
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Deploy and test against local environment
         if: steps.guard.outputs.hit != 'true'
