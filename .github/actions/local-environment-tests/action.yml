@@ -45,6 +45,16 @@ runs:
         version: v0.8.16
         use-cache: false
 
+    # Match the tls_enabled: false setting the other self-hosted earthly
+    # jobs apply (run / test-toolkit). Without this, this action's earthly
+    # invocation has a different settings hash than the one already running
+    # on the host, and earthly's reuse-or-recycle logic SIGTERMs the existing
+    # buildkitd — taking down any concurrent earthly build on the same host.
+    - name: Disable earthly TLS (self-hosted runner has no certs)
+      shell: bash
+      run: |
+        echo "    tls_enabled: false" >> .earthly/config.yml
+
     - name: Docker Login
       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
       with:
@@ -83,6 +93,11 @@ runs:
         echo "WALLET_INDEXER_IMAGE: ${WALLET_INDEXER_IMAGE}"
 
         echo "🚀 Running Earthly command..."
+        # Source .envrc so EARTHLY_CONFIG is set (self-hosted vs default switch).
+        # Without this, earthly falls back to ~/.earthly/config.yml which has a
+        # different settings hash than the other self-hosted jobs and recycles
+        # the shared earthly-buildkitd container, cancelling concurrent builds.
+        . ./.envrc
         earthly +start-local-env-with-indexer-ci \
           --NODE_IMAGE="${NODE_IMAGE}" \
           --INDEXER_API_IMAGE="${INDEXER_API_IMAGE}" \
@@ -112,7 +127,9 @@ runs:
 
     - name: e2e tests
       id: e2e-tests
-      run: earthly +local-env-e2e
+      # Source .envrc so EARTHLY_CONFIG matches other self-hosted jobs (see
+      # comment on the earlier earthly invocation in this action for why).
+      run: . ./.envrc && earthly +local-env-e2e
       shell: bash
 
     - name: toolkit-multi-dest-e2e
