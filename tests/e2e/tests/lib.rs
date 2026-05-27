@@ -16,6 +16,28 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 use tokio::time::{Duration, timeout};
 
+// -------- TOOLKIT FETCH CACHE --------
+
+/// Returns the `FetchCacheConfig` for toolkit dust-balance / tx-generator
+/// calls in these e2e tests.
+///
+/// Reads `TOOLKIT_CACHE_DB_URL` from the environment (a Postgres connection
+/// string of the form
+/// `postgresql://user:pass@host:port/dbname?sslmode=require`). The nightly
+/// CI workflow injects it from a repo secret pointing at the shared
+/// `toolkit-cache` RDS in shielded-dev. Falls back to `InMemory` when the
+/// env var is unset or empty, so local-dev runs work without the shared
+/// cache.
+///
+/// See: shieldedtech/shielded-gitops#2152.
+#[allow(dead_code)]
+fn fetch_cache_config() -> FetchCacheConfig {
+    match std::env::var("TOOLKIT_CACHE_DB_URL") {
+        Ok(url) if !url.is_empty() => FetchCacheConfig::Postgres { database_url: url },
+        _ => FetchCacheConfig::InMemory,
+    }
+}
+
 // -------- GLOBAL ASYNC FAUCET MANAGER --------
 
 static FAUCET_MANAGER: OnceCell<Arc<FaucetManager>> = OnceCell::const_new();
