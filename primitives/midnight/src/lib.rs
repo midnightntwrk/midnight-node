@@ -35,6 +35,25 @@ use sp_runtime::DispatchError;
 /// RPC) must use this value to stay in sync with what the runtime accepts.
 pub const MAX_TIMESTAMP_DRIFT_SECS: u32 = 30;
 
+/// Cheap, runtime-provided context needed to validate a transaction off-chain (e.g. via the
+/// `midnight_validateTransaction` RPC) without submitting it to the txpool.
+///
+/// Returned by `MidnightRuntimeApi::get_validation_context` so the node never has to reconstruct
+/// the validation context from individual storage reads — a layout-fragile approach that can't be
+/// caught at compile time. Bundling these together also guarantees they're all read at the same
+/// block.
+#[derive(Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
+pub struct ValidationContext {
+	/// Serialized ledger state key at the queried block.
+	pub state_key: Vec<u8>,
+	/// Block context (timestamps, parent hash, allowed drift) exactly as built by block authoring.
+	pub block_context: BlockContext,
+	/// Runtime spec version at the queried block.
+	pub spec_version: u32,
+	/// Maximum block weight (ref_time) the runtime will admit; used to reject oversized txs.
+	pub max_block_weight: u64,
+}
+
 pub type LedgerMutFn<E> = fn(Vec<u8>) -> Result<Vec<u8>, E>;
 /// Trait to allow pallets to mutate the Ledger state
 pub trait LedgerStateProviderMut {

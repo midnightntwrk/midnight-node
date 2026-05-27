@@ -478,7 +478,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let validate_rate_limit_config = pallet_midnight_rpc::ValidateRateLimitConfig {
 		global_rate_limit: midnight_cfg.rpc_validate_rate_limit,
 		per_tx_cooldown_secs: midnight_cfg.rpc_validate_per_tx_cooldown,
-		max_block_weight: midnight_node_runtime::BlockWeights::get().max_block.ref_time(),
 	};
 	let new_partial_components =
 		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;

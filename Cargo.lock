@@ -10018,7 +10018,6 @@ dependencies = [
  "midnight-node-ledger",
  "midnight-primitives",
  "pallet-midnight",
- "parity-scale-codec",
  "sc-client-api",
  "schemars 0.8.22",
  "serde",
@@ -10026,7 +10025,6 @@ dependencies = [
  "sp-blockchain",
  "sp-core",
  "sp-runtime",
- "sp-state-machine",
 ]
 
 [[package]]
