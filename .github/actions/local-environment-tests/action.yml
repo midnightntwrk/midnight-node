@@ -84,6 +84,25 @@ runs:
       run: npm install -g npm@11.11.0
       shell: bash
 
+    # The local-env stack publishes fixed host ports (1442, 1337, 8088, 4222,
+    # 5432, 30000, 32000). On a shared self-hosted host a container left behind
+    # by a cancelled or crashed prior run keeps a port bound, so the fresh stack
+    # fails with "Bind for 127.0.0.1:8088 failed: port is already allocated".
+    # The job's concurrency group only serialises this job against itself, not
+    # against leftovers. Tear down the project and reclaim any container still
+    # holding those ports before bringing the stack up.
+    - name: Reclaim leftover containers and ports (self-hosted shared host)
+      shell: bash
+      run: |
+        docker compose -p local-env down --remove-orphans --volumes 2>/dev/null || true
+        for port in 1442 1337 8088 4222 5432 30000 32000; do
+          cids=$(docker ps -q --filter "publish=$port" || true)
+          if [ -n "$cids" ]; then
+            echo "Reclaiming port $port from container(s): $cids"
+            docker rm -f $cids || true
+          fi
+        done
+
     - name: Deploy local environment
       run: |
         echo "🔍 Debug: Checking input values..."
