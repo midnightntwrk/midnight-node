@@ -212,6 +212,148 @@ mod tests {
 		assert!(res.is_empty(), "empty seeds should yield empty result without touching source");
 	}
 
+	/// Regression test for the multi-seed (and dust_warp) cache save bug.
+	///
+	/// Before the fix: `build_fork_aware_context_cached` used `blocks.last()`
+	/// to determine the height to save the wallet/ledger snapshot at, but
+	/// `SourceTransactions::from_blocks(_, dust_warp = true, _)` appends a
+	/// synthetic timestamp-only block with `number = 0` at the end. The
+	/// cache was therefore saved with `block_height = 0` even when the
+	/// inner state had been replayed all the way to the chain head. On the
+	/// next run the snapshot was loaded and replayed starting at block 0,
+	/// re-inserting dust events into an already-full generation tree and
+	/// panicking with a non-linear-insertion error.
+	///
+	/// The test drives `build_fork_aware_context_cached` directly (not via
+	/// `execute`) because file-loaded `SourceTransactions` go through
+	/// `from_batches` -> `new_from_timestamp`, which hardcodes
+	/// `RawBlockData::number = 0` for every block. With every block at
+	/// height 0, `SourceTransactions::chain_id()` returns `None` and the
+	/// builder short-circuits to the non-caching `_raw` path before any
+	/// snapshot save / load runs. Renumbering the real blocks 1..N here
+	/// makes `chain_id()` resolve and forces both calls through the cache
+	/// path that the fix is meant to protect.
+	///
+	/// Pins three invariants:
+	///   1. After call 1, the wallet cache holds a snapshot tagged at the
+	///      real chain head (`max(block.number)`), not at the synthetic
+	///      dust-warp block's `number = 0`.
+	///   2. No snapshot is ever saved at `block_height = 0` — the negative
+	///      version of (1), since under the old bug that's where the
+	///      snapshot lived.
+	///   3. After call 2 (warm restore), `latest_block_context.tblock` is
+	///      "now", not the value persisted from call 1. This guards the
+	///      separate fix where the synthetic dust-warp block is re-applied
+	///      after warm restore so downstream callers
+	///      (`register_dust_address`, batch builders) don't read a stale
+	///      timestamp out of the restored snapshot.
+	#[tokio::test]
+	async fn check_balance_caches_at_real_head_with_dust_warp() {
+		// `WalletStateCaching` methods (`get_latest_ledger_height`,
+		// `get_ledger_snapshot`) come into scope via the `&dyn
+		// WalletStateCaching` trait object type that `create_file_wallet_cache`
+		// returns — no explicit `use` import needed for method dispatch.
+		use midnight_node_ledger_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
+		use std::time::{SystemTime, UNIX_EPOCH};
+
+		let tempdir = tempfile::tempdir().expect("create tempdir for cache");
+		let seed_hex = "0000000000000000000000000000000000000000000000000000000000000001";
+		let src_files = vec![td("genesis/genesis_block_undeployed.mn")];
+		let fetch_cache_path = tempdir.path().join("fetch_cache.db");
+		let ledger_state_db = tempdir.path().join("ledger_cache_db");
+		let fetch_cache_cfg = FetchCacheConfig::Redb {
+			filename: fetch_cache_path.to_string_lossy().into_owned(),
+		};
+		let ledger_state_db_str = ledger_state_db.to_string_lossy().into_owned();
+
+		let source = Source {
+			src_url: None,
+			fetch_concurrency: 1,
+			fetch_compute_concurrency: None,
+			src_files: Some(src_files.clone()),
+			dust_warp: true,
+			ignore_block_context: false,
+			fetch_only_cached: false,
+			fetch_cache: fetch_cache_cfg.clone(),
+			ledger_state_db: ledger_state_db_str.clone(),
+		};
+		let src = TxGenerator::source(source, false).await.expect("build source");
+		let mut source_blocks = src.get_txs().await.expect("get_txs");
+
+		// The fixture is loaded with dust_warp=true so the last block is the
+		// synthetic warp marker. Renumber the real blocks 1..N (leaving the
+		// synthetic at number=0) so chain_id() returns Some and both
+		// execute() calls go through the cache path.
+		assert!(!source_blocks.blocks.is_empty(), "fixture must produce >= 1 block");
+		let real_count = source_blocks.blocks.len() - 1;
+		assert!(
+			real_count >= 1,
+			"fixture must produce >= 1 real block alongside the dust-warp synthetic",
+		);
+		for (i, block) in source_blocks.blocks.iter_mut().take(real_count).enumerate() {
+			block.number = (i + 1) as u64;
+			// `chain_id()` keys on `blocks[0].hash`; give every real block a
+			// stable non-zero hash so the cache key is deterministic across
+			// the two calls.
+			block.hash = [(i + 1) as u8; 32];
+		}
+		let chain_id = source_blocks.chain_id().expect("chain_id should resolve after renumber");
+		let real_head = source_blocks
+			.blocks
+			.iter()
+			.map(|b| b.number)
+			.max()
+			.expect("blocks non-empty");
+		assert_eq!(real_head, real_count as u64, "real head must be N (the synthetic stays at 0)");
+
+		let seeds = vec![WalletSeed::try_from_hex_str(seed_hex).unwrap()];
+
+		let wallet_cache = create_file_wallet_cache(&ledger_state_db_str, &fetch_cache_cfg);
+		let storage = wallet_cache.as_deref().expect("file wallet cache must be Some");
+
+		// First call: cold cache, full replay, must persist a snapshot at
+		// the real chain head.
+		let test_start_secs =
+			SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_secs();
+		let _ = build_fork_aware_context_cached(&seeds, &source_blocks, Some(storage)).await;
+
+		// Invariant (1) + (2): snapshot tagged at real head, never at 0.
+		let latest = storage.get_latest_ledger_height(chain_id).await;
+		assert_eq!(
+			latest,
+			Some(real_head),
+			"snapshot must be tagged at the real chain head ({}), not at the synthetic \
+			 dust-warp block's number=0",
+			real_head,
+		);
+		assert!(
+			storage.get_ledger_snapshot(chain_id, 0).await.is_none(),
+			"no snapshot must be stored at block_height = 0",
+		);
+
+		// Second call: warm restore, must not panic and must re-warp tblock.
+		let fork_ctx_2 =
+			build_fork_aware_context_cached(&seeds, &source_blocks, Some(storage)).await;
+
+		// Invariant (3): synthetic warp re-applied on warm restore. Before
+		// the fix, the warm-path filter dropped the synthetic and tblock
+		// kept whatever the call-1 snapshot persisted.
+		match fork_ctx_2 {
+			ForkAwareLedgerContext::Ledger8(ctx) => {
+				let ctx_tblock = ctx.latest_block_context().tblock.to_secs();
+				assert!(
+					ctx_tblock >= test_start_secs,
+					"latest_block_context.tblock should be >= test start \
+					 ({test_start_secs}) after warm restore with dust_warp=true; \
+					 got {ctx_tblock}",
+				);
+			},
+			ForkAwareLedgerContext::Ledger7(_) => {
+				panic!("post-fork context should be on Ledger8 after replay")
+			},
+		}
+	}
+
 	#[tokio::test]
 	async fn check_balance_many_dry_run_skips_fetch() {
 		let seeds = vec![

@@ -1002,8 +1002,39 @@ pub async fn build_fork_aware_context_cached(
 	// 5. Replay with mid-replay wallet injection.
 	let fork_ctx = replay_blocks(fork_ctx, &blocks, &cached);
 
+	// 5b. Re-apply the dust-warp synthetic block (if present) after replay so
+	// `latest_block_context.tblock` reflects wall-clock "now" even on warm
+	// restore. `from_blocks(_, dust_warp = true, _)` appends a synthetic
+	// timestamp-only block with `number = 0`; the warm-path filter at step 4
+	// (`b.number > start_height`) drops it whenever `start_height > 0`,
+	// leaving downstream callers (`register_dust_address`, batch builders) to
+	// read whatever `tblock` the cache snapshot captured on a previous run —
+	// possibly hours or days stale. On the cold path the synthetic was
+	// already in `blocks` and replayed, so the re-apply is a cheap no-op
+	// (zero transactions, idempotent latest_block_context overwrite); we
+	// run it unconditionally to keep both paths symmetric.
+	if let Some(synthetic) = received_tx.blocks.last().filter(|last| {
+		last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0)
+	}) {
+		if let ForkAwareLedgerContext::Ledger8(ctx8) = &fork_ctx {
+			apply_block_8(ctx8, synthetic);
+		}
+	}
+
 	// 6. Save updated cache.
-	if let Some(final_block) = blocks.last() {
+	//
+	// Use `max_by_key(|b| b.number)` rather than `blocks.last()`:
+	// `SourceTransactions::from_blocks(_, dust_warp = true, _)` appends a
+	// synthetic timestamp-only block at the end of `blocks` with
+	// `RawBlockData::new_from_timestamp(...)`, which sets `number = 0`
+	// (see `ledger/helpers/src/fork/raw_block_data.rs:139`). Using
+	// `.last()` here would tag the cache with `block_height = 0` even
+	// though the inner state has been replayed to the actual head — on
+	// the next run the saved snapshot would be picked up, the replay
+	// would start at block 0, and dust events would be re-inserted into
+	// an already-full dust generation tree (non-linear insert panic in
+	// `ledger/helpers/src/versions/common/context.rs`).
+	if let Some(final_block) = blocks.iter().max_by_key(|b| b.number) {
 		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage).await;
 	}
 
