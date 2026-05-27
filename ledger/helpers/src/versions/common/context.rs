@@ -12,13 +12,14 @@
 // limitations under the License.
 
 use super::{
-	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, LedgerState,
-	Loader, MidnightDataProvider, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
-	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Sp, Storable, SyntheticCost,
-	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
-	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
-	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
+	ArenaKey, BindingKind, BlockContext, ContractAddress, ContractState, DB, DUST_EXPECTED_FILES,
+	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, Loader, MidnightDataProvider,
+	Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen,
+	Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged,
+	Timestamp, Transaction, TransactionContext, TransactionResult, Utxo, VerifiedTransaction,
+	Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState, clamp_and_normalize,
+	compute_overall_fullness, default_storage, deserialize, mn_ledger_serialize as serialize,
+	mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
 use hex::encode as hex_encode;
@@ -515,10 +516,6 @@ impl<D: DB + Clone> LedgerContext<D> {
 }
 
 impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
-	fn wallet_from_seed(&self, seed: WalletSeed) -> Wallet<D> {
-		self.wallet_from_seed(seed)
-	}
-
 	fn with_wallet_from_seed<F, R>(&self, seed: WalletSeed, f: F) -> R
 	where
 		F: FnOnce(&mut Wallet<D>) -> R,
@@ -538,23 +535,92 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 		self.with_wallets_from_seeds(origin_seed, destination_seed, f)
 	}
 
-	fn tx_context(&self, block_context: BlockContext) -> TransactionContext<D> {
-		self.tx_context(block_context)
+	fn latest_block_context(
+		&self,
+	) -> std::pin::Pin<Box<dyn Future<Output = BlockContext> + Send + '_>> {
+		let block_context = self.latest_block_context();
+		Box::pin(async move { block_context })
 	}
 
-	fn latest_block_context(&self) -> BlockContext {
-		todo!()
+	fn ledger_parameters(
+		&self,
+	) -> std::pin::Pin<Box<dyn Future<Output = LedgerParameters> + Send + '_>> {
+		let parameters = self.with_ledger_state(|ledger_state| (*ledger_state.parameters).clone());
+		Box::pin(async move { parameters })
 	}
 
-	fn ledger_parameters(&self) -> mn_ledger::structure::LedgerParameters {
-		todo!()
+	fn network_id(&self) -> std::pin::Pin<Box<dyn Future<Output = String> + Send + '_>> {
+		let network_id = self.with_ledger_state(|ledger_state| ledger_state.network_id.clone());
+		Box::pin(async move { network_id })
+	}
+
+	fn unshielded_utxos(
+		&self,
+		seed: WalletSeed,
+	) -> std::pin::Pin<Box<dyn Future<Output = Vec<(Utxo, Timestamp)>> + Send + '_>> {
+		let utxos = self.with_ledger_state(|ledger_state| {
+			self.with_wallet_from_seed(seed, |wallet| {
+				wallet
+					.unshielded_utxos(ledger_state)
+					.into_iter()
+					.map(|utxo| {
+						let ctime = ledger_state
+							.utxo
+							.utxos
+							.get(&utxo)
+							.expect("utxo is from this ledger state")
+							.ctime;
+						(utxo, ctime)
+					})
+					.collect::<Vec<_>>()
+			})
+		});
+		Box::pin(async move { utxos })
+	}
+
+	fn zswap_state(
+		&self,
+	) -> std::pin::Pin<Box<dyn Future<Output = ZswapChainState<D>> + Send + '_>> {
+		let zswap = self.with_ledger_state(|ledger_state| (*ledger_state.zswap).clone());
+		Box::pin(async move { zswap })
+	}
+
+	fn contract_state(
+		&self,
+		address: ContractAddress,
+	) -> std::pin::Pin<Box<dyn Future<Output = Option<ContractState<D>>> + Send + '_>> {
+		let state = self.with_ledger_state(|ledger_state| ledger_state.index(address));
+		Box::pin(async move { state })
+	}
+
+	fn resolver(&self) -> std::pin::Pin<Box<dyn Future<Output = &'static Resolver> + Send + '_>> {
+		Box::pin(async move { *self.resolver.lock().await })
 	}
 
 	fn update_resolver(
 		&self,
 		resolver: &'static Resolver,
 	) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-		todo!()
+		Box::pin(self.update_resolver(resolver))
+	}
+
+	fn well_formed<S, P, B>(
+		&self,
+		tx: &Transaction<S, P, B, D>,
+		now: Timestamp,
+	) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>>
+	where
+		S: SignatureKind<D>,
+		P: ProofKind<D> + Storable<D>,
+		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged,
+	{
+		let ref_state = self
+			.ledger_state
+			.lock()
+			.map_err(|_| "ledger state lock was poisoned".to_string())?
+			.clone();
+		tx.well_formed(&*ref_state, WellFormedStrictness::default(), now)?;
+		Ok(())
 	}
 }
 

@@ -100,7 +100,8 @@ pub use super::{
 		Delta, Input, Offer, Output, Transient, ZSWAP_EXPECTED_FILES,
 		error::OfferCreationFailed,
 		keys::{SecretKeys, Seed},
-		local::State as WalletState,
+		ledger::State as ZswapChainState,
+			local::State as WalletState,
 		prove::ZswapResolver,
 	},
 };
