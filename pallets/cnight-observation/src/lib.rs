@@ -177,6 +177,8 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// A Cardano Wallet address was sent, but was longer than expected
 		MaxCardanoAddrLengthExceeded,
+		/// A cNIGHT identifier component (policy id or asset name) exceeded its bound
+		CardanoIdentifierLengthExceeded,
 		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
 		/// Next Cardano position does not advance beyond current position
@@ -768,6 +770,48 @@ pub mod pallet {
 					.clone()
 					.try_into()
 					.map_err(|_| Error::<T>::MaxCardanoAddrLengthExceeded)?,
+			);
+
+			Ok(())
+		}
+
+		/// Replaces the (policy id, asset name) pair identifying the cNIGHT native asset
+		/// on Cardano. Intended for ephemeral forks redirecting to STAGING contracts.
+		///
+		/// This extrinsic needs Root origin.
+		#[pallet::call_index(3)]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
+		pub fn set_cnight_identifier(
+			origin: OriginFor<T>,
+			policy_id: Vec<u8>,
+			asset_name: Vec<u8>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			let bounded_policy_id: BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>> = policy_id
+				.try_into()
+				.map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
+			let bounded_asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
+				asset_name.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
+			CNightIdentifier::<T>::set((bounded_policy_id, bounded_asset_name));
+
+			Ok(())
+		}
+
+		/// Replaces the asset name of the auth token used by the mapping validator on Cardano.
+		/// Intended for ephemeral forks redirecting to STAGING contracts.
+		///
+		/// This extrinsic needs Root origin.
+		#[pallet::call_index(4)]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
+		pub fn set_auth_token_asset_name(
+			origin: OriginFor<T>,
+			asset_name: Vec<u8>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			MainChainAuthTokenAssetName::<T>::set(
+				asset_name
+					.try_into()
+					.map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?,
 			);
 
 			Ok(())
