@@ -17,5 +17,5 @@ the local ledger between chained transactions, which the abstract trait
 deliberately does not expose). It also picks up a new `--coin-selection` flag
 matching the other builders.
 
-PR: <link to PR>
-JIRA: <link to JIRA ticket, if applicable>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1605
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1186
