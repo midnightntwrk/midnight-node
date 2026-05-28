@@ -234,19 +234,29 @@ mod tests {
 	/// makes `chain_id()` resolve and forces both calls through the cache
 	/// path that the fix is meant to protect.
 	///
-	/// Pins three invariants:
+	/// Pins five invariants:
 	///   1. After call 1, the wallet cache holds a snapshot tagged at the
 	///      real chain head (`max(block.number)`), not at the synthetic
 	///      dust-warp block's `number = 0`.
 	///   2. No snapshot is ever saved at `block_height = 0` — the negative
 	///      version of (1), since under the old bug that's where the
 	///      snapshot lived.
-	///   3. After call 2 (warm restore), `latest_block_context.tblock` is
-	///      "now", not the value persisted from call 1. This guards the
-	///      separate fix where the synthetic dust-warp block is re-applied
-	///      after warm restore so downstream callers
-	///      (`register_dust_address`, batch builders) don't read a stale
-	///      timestamp out of the restored snapshot.
+	///   3. After call 2 (warm restore), the in-memory
+	///      `latest_block_context.tblock` is wall-clock "now" — the
+	///      synthetic dust-warp block must be re-applied after warm restore
+	///      so downstream callers (`register_dust_address`, batch builders)
+	///      don't read a stale timestamp out of the restored snapshot.
+	///   4. The persisted snapshot's `latest_block_context.tblock_secs`
+	///      equals the *real-head block's* `tblock_secs`, NOT the synthetic
+	///      dust-warp block's wall-clock value. Persisting wall-clock-now
+	///      under the real-head height would surface as a silent warp-leak
+	///      on a later `dust_warp = false` run against the same
+	///      `ledger_state_db` (the restored snapshot would feed
+	///      wall-clock-now to downstream callers even though warping was
+	///      disabled).
+	///   5. The warm-restore second call must not re-persist the warp
+	///      either — re-checking the snapshot after the second call
+	///      confirms the post-save warp re-apply stays in-memory only.
 	#[tokio::test]
 	async fn check_balance_caches_at_real_head_with_dust_warp() {
 		// `WalletStateCaching` methods (`get_latest_ledger_height`,
@@ -331,19 +341,54 @@ mod tests {
 			"no snapshot must be stored at block_height = 0",
 		);
 
-		// Second call: warm restore, must not panic and must re-warp tblock.
+		// Invariant (4): the persisted snapshot must carry the real-head
+		// block's `tblock_secs`, NOT the synthetic dust-warp block's
+		// wall-clock tblock. Persisting the warp under the real-head
+		// height would surface as a silent warp-leak on a later
+		// `dust_warp = false` run against the same `ledger_state_db`:
+		// the restored snapshot would feed wall-clock-now to
+		// `register_dust_address` / batch builders even though warping
+		// was disabled.
+		let snapshot = storage
+			.get_ledger_snapshot(chain_id, real_head)
+			.await
+			.expect("snapshot must exist at real head");
+		let real_head_block = source_blocks
+			.blocks
+			.iter()
+			.find(|b| b.number == real_head)
+			.expect("real head block must be in source");
+		assert_eq!(
+			snapshot.latest_block_context.tblock_secs, real_head_block.tblock_secs,
+			"snapshot.latest_block_context.tblock_secs must equal the real-head \
+			 block's tblock_secs (the dust-warp synthetic must NOT be applied \
+			 before save); test_start={test_start_secs}",
+		);
+		assert!(
+			snapshot.latest_block_context.tblock_secs < test_start_secs,
+			"snapshot tblock_secs ({}) should pre-date the test start \
+			 ({test_start_secs}) — the fixture's chain timestamps are historic; \
+			 a value >= test_start would mean the dust-warp synthetic leaked \
+			 into the persisted snapshot",
+			snapshot.latest_block_context.tblock_secs,
+		);
+
+		// Second call: warm restore, must not panic and must apply the
+		// warp in-memory only.
 		let fork_ctx_2 =
 			build_fork_aware_context_cached(&seeds, &source_blocks, Some(storage)).await;
 
-		// Invariant (3): synthetic warp re-applied on warm restore. Before
-		// the fix, the warm-path filter dropped the synthetic and tblock
-		// kept whatever the call-1 snapshot persisted.
+		// Invariant (3): in-memory warp re-applied on warm restore. The
+		// warm-path filter drops the synthetic (number=0 ≤ start_height),
+		// so without the post-save re-apply step the in-memory tblock
+		// would be the real-head block's historic tblock instead of
+		// wall-clock-now.
 		match fork_ctx_2 {
 			ForkAwareLedgerContext::Ledger8(ctx) => {
 				let ctx_tblock = ctx.latest_block_context().tblock.to_secs();
 				assert!(
 					ctx_tblock >= test_start_secs,
-					"latest_block_context.tblock should be >= test start \
+					"in-memory latest_block_context.tblock should be >= test start \
 					 ({test_start_secs}) after warm restore with dust_warp=true; \
 					 got {ctx_tblock}",
 				);
@@ -352,6 +397,21 @@ mod tests {
 				panic!("post-fork context should be on Ledger8 after replay")
 			},
 		}
+
+		// Invariant (5): the second call must not have re-persisted the
+		// warp under the real-head height. Re-check the snapshot after
+		// the warm-restore path runs end-to-end.
+		let snapshot_after_warm = storage
+			.get_ledger_snapshot(chain_id, real_head)
+			.await
+			.expect("snapshot must still exist after warm restore");
+		assert_eq!(
+			snapshot_after_warm.latest_block_context.tblock_secs,
+			real_head_block.tblock_secs,
+			"snapshot tblock_secs must remain at real-head value after warm \
+			 restore — the post-save warp re-apply must not leak into the \
+			 persisted state",
+		);
 	}
 
 	#[tokio::test]

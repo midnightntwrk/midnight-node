@@ -993,49 +993,71 @@ pub async fn build_fork_aware_context_cached(
 		initialize_context(received_tx, &uncached_seeds, start_height, storage, chain_id).await;
 
 	// 4. Determine blocks to replay.
-	let blocks: Vec<_> = if start_height == 0 {
-		received_tx.blocks.iter().collect()
+	//
+	// Exclude any dust-warp synthetic block from the replay set so the
+	// persisted snapshot (step 6) captures the real-head `BlockContext`
+	// rather than wall-clock-now. `from_blocks(_, dust_warp = true, _)`
+	// appends a synthetic timestamp-only block via
+	// `RawBlockData::new_from_timestamp(...)` which hard-codes
+	// `number = 0`. If that block is replayed before save, the snapshot's
+	// `latest_block_context.tblock` becomes the warp timestamp but the
+	// snapshot is keyed at the real chain height; a later run on the
+	// same `ledger_state_db` with `dust_warp = false` would then restore
+	// the warped context and downstream callers (`register_dust_address`,
+	// batch builders) would read warp time even though warping is off.
+	//
+	// The synthetic is always pushed last by `from_blocks`, so we
+	// detect it as last-block-number=0 alongside at least one block
+	// with number>0 (guards against legitimate fixture-loaded sources
+	// where every block has number=0 — those won't pass the chain_id
+	// check anyway, but we double-guard for clarity). We apply it
+	// explicitly *after* save as step 7 so the in-memory context for
+	// this run reflects the warp.
+	let synthetic_dust_warp = received_tx.blocks.last().filter(|last| {
+		last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0)
+	});
+	let real_blocks: &[RawBlockData] = if synthetic_dust_warp.is_some() {
+		&received_tx.blocks[..received_tx.blocks.len() - 1]
 	} else {
-		received_tx.blocks.iter().filter(|b| b.number > start_height).collect()
+		&received_tx.blocks[..]
+	};
+	let blocks: Vec<_> = if start_height == 0 {
+		real_blocks.iter().collect()
+	} else {
+		real_blocks.iter().filter(|b| b.number > start_height).collect()
 	};
 
 	// 5. Replay with mid-replay wallet injection.
 	let fork_ctx = replay_blocks(fork_ctx, &blocks, &cached);
 
-	// 5b. Re-apply the dust-warp synthetic block (if present) after replay so
-	// `latest_block_context.tblock` reflects wall-clock "now" even on warm
-	// restore. `from_blocks(_, dust_warp = true, _)` appends a synthetic
-	// timestamp-only block with `number = 0`; the warm-path filter at step 4
-	// (`b.number > start_height`) drops it whenever `start_height > 0`,
-	// leaving downstream callers (`register_dust_address`, batch builders) to
-	// read whatever `tblock` the cache snapshot captured on a previous run —
-	// possibly hours or days stale. On the cold path the synthetic was
-	// already in `blocks` and replayed, so the re-apply is a cheap no-op
-	// (zero transactions, idempotent latest_block_context overwrite); we
-	// run it unconditionally to keep both paths symmetric.
-	if let Some(synthetic) = received_tx.blocks.last().filter(|last| {
-		last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0)
-	}) {
-		if let ForkAwareLedgerContext::Ledger8(ctx8) = &fork_ctx {
-			apply_block_8(ctx8, synthetic);
-		}
-	}
-
 	// 6. Save updated cache.
 	//
-	// Use `max_by_key(|b| b.number)` rather than `blocks.last()`:
-	// `SourceTransactions::from_blocks(_, dust_warp = true, _)` appends a
-	// synthetic timestamp-only block at the end of `blocks` with
-	// `RawBlockData::new_from_timestamp(...)`, which sets `number = 0`
-	// (see `ledger/helpers/src/fork/raw_block_data.rs:139`). Using
-	// `.last()` here would tag the cache with `block_height = 0` even
-	// though the inner state has been replayed to the actual head — on
-	// the next run the saved snapshot would be picked up, the replay
-	// would start at block 0, and dust events would be re-inserted into
-	// an already-full dust generation tree (non-linear insert panic in
+	// `max_by_key(|b| b.number)` (rather than `blocks.last()`) is now
+	// redundant with step 4's pre-filter — the synthetic is no longer in
+	// `blocks` — but it remains as a defence in depth: any future change
+	// that puts a number=0 block into the replay set won't accidentally
+	// tag the cache at block_height=0. Tagging at 0 would cause the next
+	// run to restart replay at block 0 and re-insert dust events into an
+	// already-full generation tree (non-linear insert panic in
 	// `ledger/helpers/src/versions/common/context.rs`).
 	if let Some(final_block) = blocks.iter().max_by_key(|b| b.number) {
 		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage).await;
+	}
+
+	// 7. Apply the dust-warp synthetic block (in-memory only, post-save).
+	//
+	// Intentionally runs *after* `try_save_cache_v2`: applying the
+	// synthetic overwrites `latest_block_context` with wall-clock-now,
+	// and persisting that under the real-head height would surface as a
+	// silent warp-leak on later `dust_warp = false` runs against the
+	// same `ledger_state_db`. Doing it here keeps the warp in-memory
+	// only — the saved snapshot stays clean. Downstream callers in
+	// this run (`register_dust_address`, batch builders) read the
+	// warped tblock as expected.
+	if let Some(synthetic) = synthetic_dust_warp {
+		if let ForkAwareLedgerContext::Ledger8(ctx8) = &fork_ctx {
+			apply_block_8(ctx8, synthetic);
+		}
 	}
 
 	fork_ctx
