@@ -237,15 +237,23 @@ async fn validate_transaction_pre_deploy_store_returns_not_present() {
     let result = client.validate_transaction(&tx_hex).await;
 
     let err = result.expect_err("expected validation failure for STORE_TX without DEPLOY_TX");
-    let msg = err.to_string();
+    // subxt's `UserError` Display impl renders only `{message} ({code})`, dropping the
+    // structured `data` field. Pull `data` out separately so the ContractNotPresent details
+    // we attach in the RPC are actually visible to the assertions.
+    let subxt::rpcs::Error::User(user_err) = &err else {
+        panic!("expected JSON-RPC user error, got: {err}");
+    };
+    let data = user_err
+        .data
+        .as_ref()
+        .map(|d| d.get().to_string())
+        .unwrap_or_default();
+    let msg = format!("{user_err} data={data}");
+    assert_eq!(user_err.code, -32001, "expected -32001 validation failure, got: {msg}");
     assert!(
-        msg.contains("-32001") || msg.to_lowercase().contains("validation failed"),
-        "expected -32001 Transaction validation failed, got: {msg}"
-    );
-    assert!(
-        msg.to_lowercase().contains("contractnotpresent")
-            || msg.to_lowercase().contains("contract is not present")
-            || msg.to_lowercase().contains("not present"),
+        data.to_lowercase().contains("contractnotpresent")
+            || data.to_lowercase().contains("contract is not present")
+            || data.to_lowercase().contains("not present"),
         "expected ContractNotPresent in error details, got: {msg}"
     );
 }
