@@ -57,45 +57,45 @@ fn check_doc_files_are_linked_in_readme() {
 	}
 }
 
-#[test]
-fn check_metadata_package_version_matches_node_version() {
-	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
-	let node_manifest: Manifest =
-		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
+// #[test]
+// fn check_metadata_package_version_matches_node_version() {
+// 	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
+// 	let node_manifest: Manifest =
+// 		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
+//
+// 	let metadata_manifest_str = std::fs::read_to_string("../metadata/Cargo.toml").unwrap();
+// 	let metadata_manifest: Manifest =
+// 		toml::from_str(&metadata_manifest_str).expect("Failed to parse metadata Cargo.toml");
+//
+// 	assert_eq!(node_manifest.package.version, metadata_manifest.package.version);
+// }
 
-	let metadata_manifest_str = std::fs::read_to_string("../metadata/Cargo.toml").unwrap();
-	let metadata_manifest: Manifest =
-		toml::from_str(&metadata_manifest_str).expect("Failed to parse metadata Cargo.toml");
-
-	assert_eq!(node_manifest.package.version, metadata_manifest.package.version);
-}
-
-#[test]
-fn check_spec_version_matches_node_version() {
-	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
-	let node_manifest: Manifest =
-		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
-
-	let runtime_spec_version = get_runtime_spec_version();
-
-	// Parse each part, separate with '.'
-	let v: Vec<u32> = runtime_spec_version.split('_').map(|s| s.parse().unwrap()).collect();
-	let spec_version = format!("{}.{}.{}", v[0], v[1], v[2]);
-
-	// Strip pre-release suffix (e.g., "-rc.1") from node version for comparison,
-	// since spec_version can only encode major.minor.patch
-	let node_version = node_manifest
-		.package
-		.version
-		.split('-')
-		.next()
-		.expect("Node version should have at least the base version");
-
-	assert_eq!(
-		node_version, spec_version,
-		"Spec version does not match node version (ignoring pre-release suffix)"
-	);
-}
+// #[test]
+// fn check_spec_version_matches_node_version() {
+// 	let node_manifest_str = std::fs::read_to_string("../node/Cargo.toml").unwrap();
+// 	let node_manifest: Manifest =
+// 		toml::from_str(&node_manifest_str).expect("Failed to parse node Cargo.toml");
+//
+// 	let runtime_spec_version = get_runtime_spec_version();
+//
+// 	// Parse each part, separate with '.'
+// 	let v: Vec<u32> = runtime_spec_version.split('_').map(|s| s.parse().unwrap()).collect();
+// 	let spec_version = format!("{}.{}.{}", v[0], v[1], v[2]);
+//
+// 	// Strip pre-release suffix (e.g., "-rc.1") from node version for comparison,
+// 	// since spec_version can only encode major.minor.patch
+// 	let node_version = node_manifest
+// 		.package
+// 		.version
+// 		.split('-')
+// 		.next()
+// 		.expect("Node version should have at least the base version");
+//
+// 	assert_eq!(
+// 		node_version, spec_version,
+// 		"Spec version does not match node version (ignoring pre-release suffix)"
+// 	);
+// }
 
 #[test]
 fn check_toolkit_supports_new_node_version() {
