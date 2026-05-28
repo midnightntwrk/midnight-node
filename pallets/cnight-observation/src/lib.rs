@@ -759,7 +759,7 @@ pub mod pallet {
 		///
 		/// This extrinsic needs Root origin
 		#[pallet::call_index(2)]
-		#[pallet::weight((1, DispatchClass::Normal))]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
 		pub fn set_mapping_validator_contract_address(
 			origin: OriginFor<T>,
 			address: Vec<u8>,
@@ -780,7 +780,7 @@ pub mod pallet {
 		///
 		/// This extrinsic needs Root origin.
 		#[pallet::call_index(3)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
+		#[pallet::weight((T::WeightInfo::set_cnight_identifier(), DispatchClass::Normal))]
 		pub fn set_cnight_identifier(
 			origin: OriginFor<T>,
 			policy_id: Vec<u8>,
@@ -802,7 +802,7 @@ pub mod pallet {
 		///
 		/// This extrinsic needs Root origin.
 		#[pallet::call_index(4)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
+		#[pallet::weight((T::WeightInfo::set_auth_token_asset_name(), DispatchClass::Normal))]
 		pub fn set_auth_token_asset_name(
 			origin: OriginFor<T>,
 			asset_name: Vec<u8>,

@@ -26,9 +26,9 @@ use midnight_node_ledger_helpers::{
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
-	CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNightAddresses, CardanoPosition, CardanoRewardAddressBytes,
-	DustPublicKeyBytes, INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement,
-	TimestampUnixMillis,
+	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -1739,4 +1739,121 @@ fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_lon
 		msg.contains(&format!("maximum {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
 		"panic must name the destination bound; got: {msg}"
 	);
+}
+
+#[test]
+fn set_cnight_identifier_works() {
+	new_test_ext().execute_with(|| {
+		let policy_id = vec![0xAB; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = b"staging-cnight".to_vec();
+
+		assert_ok!(CNightObservation::set_cnight_identifier(
+			RawOrigin::Root.into(),
+			policy_id.clone(),
+			asset_name.clone(),
+		));
+
+		let (got_pid, got_name) = pallet_cnight_observation::CNightIdentifier::<Test>::get();
+		assert_eq!(got_pid.to_vec(), policy_id);
+		assert_eq!(got_name.to_vec(), asset_name);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_requires_root() {
+	new_test_ext().execute_with(|| {
+		let policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = b"x".to_vec();
+
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Signed(1).into(),
+				policy_id.clone(),
+				asset_name.clone(),
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::None.into(),
+				policy_id,
+				asset_name,
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_rejects_oversized_input() {
+	new_test_ext().execute_with(|| {
+		let oversized_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize + 1];
+		let valid_asset_name = b"x".to_vec();
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Root.into(),
+				oversized_policy_id,
+				valid_asset_name,
+			),
+			pallet_cnight_observation::Error::<Test>::CardanoIdentifierLengthExceeded,
+		);
+
+		let valid_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let oversized_asset_name = vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize + 1];
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Root.into(),
+				valid_policy_id,
+				oversized_asset_name,
+			),
+			pallet_cnight_observation::Error::<Test>::CardanoIdentifierLengthExceeded,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_works() {
+	new_test_ext().execute_with(|| {
+		let asset_name = b"staging-auth-token".to_vec();
+
+		assert_ok!(CNightObservation::set_auth_token_asset_name(
+			RawOrigin::Root.into(),
+			asset_name.clone(),
+		));
+
+		assert_eq!(
+			pallet_cnight_observation::MainChainAuthTokenAssetName::<Test>::get().to_vec(),
+			asset_name,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_requires_root() {
+	new_test_ext().execute_with(|| {
+		let asset_name = b"x".to_vec();
+
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(
+				RawOrigin::Signed(1).into(),
+				asset_name.clone(),
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::None.into(), asset_name),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_rejects_oversized_input() {
+	new_test_ext().execute_with(|| {
+		let oversized = vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize + 1];
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::Root.into(), oversized),
+			pallet_cnight_observation::Error::<Test>::CardanoIdentifierLengthExceeded,
+		);
+	});
 }
