@@ -1013,9 +1013,10 @@ pub async fn build_fork_aware_context_cached(
 	// check anyway, but we double-guard for clarity). We apply it
 	// explicitly *after* save as step 7 so the in-memory context for
 	// this run reflects the warp.
-	let synthetic_dust_warp = received_tx.blocks.last().filter(|last| {
-		last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0)
-	});
+	let synthetic_dust_warp = received_tx
+		.blocks
+		.last()
+		.filter(|last| last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0));
 	let real_blocks: &[RawBlockData] = if synthetic_dust_warp.is_some() {
 		&received_tx.blocks[..received_tx.blocks.len() - 1]
 	} else {
@@ -1054,9 +1055,23 @@ pub async fn build_fork_aware_context_cached(
 	// only — the saved snapshot stays clean. Downstream callers in
 	// this run (`register_dust_address`, batch builders) read the
 	// warped tblock as expected.
+	//
+	// Mirrors `replay_blocks_8`'s contract: `apply_block_8` only
+	// updates the ledger context (and `latest_block_context`); the
+	// per-wallet dust TTL advance lives in `update_dust_from_block`,
+	// which `replay_blocks_8` always calls for the last replayed block
+	// (see `replay_blocks_8` final stanza). Without this second call
+	// the warp would advance the *ledger's* clock but leave wallets'
+	// dust nullifier windows pinned at the real-head block's tblock,
+	// so transaction builders would read a warped `latest_block_context`
+	// while the wallet's dust availability still reflects real-head
+	// time. The synthetic has no transactions, so we don't need a
+	// matching `update_dust_from_events` — `apply_block_8` returns an
+	// empty event vec on a tx-less block.
 	if let Some(synthetic) = synthetic_dust_warp {
 		if let ForkAwareLedgerContext::Ledger8(ctx8) = &fork_ctx {
-			apply_block_8(ctx8, synthetic);
+			let _events = apply_block_8(ctx8, synthetic);
+			ctx8.update_dust_from_block(&block_context_from_raw_8(synthetic));
 		}
 	}
 

@@ -271,9 +271,8 @@ mod tests {
 		let src_files = vec![td("genesis/genesis_block_undeployed.mn")];
 		let fetch_cache_path = tempdir.path().join("fetch_cache.db");
 		let ledger_state_db = tempdir.path().join("ledger_cache_db");
-		let fetch_cache_cfg = FetchCacheConfig::Redb {
-			filename: fetch_cache_path.to_string_lossy().into_owned(),
-		};
+		let fetch_cache_cfg =
+			FetchCacheConfig::Redb { filename: fetch_cache_path.to_string_lossy().into_owned() };
 		let ledger_state_db_str = ledger_state_db.to_string_lossy().into_owned();
 
 		let source = Source {
@@ -308,12 +307,8 @@ mod tests {
 			block.hash = [(i + 1) as u8; 32];
 		}
 		let chain_id = source_blocks.chain_id().expect("chain_id should resolve after renumber");
-		let real_head = source_blocks
-			.blocks
-			.iter()
-			.map(|b| b.number)
-			.max()
-			.expect("blocks non-empty");
+		let real_head =
+			source_blocks.blocks.iter().map(|b| b.number).max().expect("blocks non-empty");
 		assert_eq!(real_head, real_count as u64, "real head must be N (the synthetic stays at 0)");
 
 		let seeds = vec![WalletSeed::try_from_hex_str(seed_hex).unwrap()];
@@ -406,8 +401,7 @@ mod tests {
 			.await
 			.expect("snapshot must still exist after warm restore");
 		assert_eq!(
-			snapshot_after_warm.latest_block_context.tblock_secs,
-			real_head_block.tblock_secs,
+			snapshot_after_warm.latest_block_context.tblock_secs, real_head_block.tblock_secs,
 			"snapshot tblock_secs must remain at real-head value after warm \
 			 restore — the post-save warp re-apply must not leak into the \
 			 persisted state",
