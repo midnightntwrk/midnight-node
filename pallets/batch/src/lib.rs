@@ -159,7 +159,7 @@ pub mod pallet {
 		/// first failure, or `BatchCompleted` if all calls succeeded.
 		#[pallet::call_index(0)]
 		#[pallet::weight({
-			let (dispatch_weight, dispatch_class) = Pallet::<T>::weight_and_dispatch_class(&calls);
+			let (dispatch_weight, dispatch_class) = Pallet::<T>::weight_and_dispatch_class(calls);
 			let dispatch_weight = dispatch_weight.saturating_add(T::WeightInfo::batch(calls.len() as u32));
 			(dispatch_weight, dispatch_class)
 		})]
@@ -210,7 +210,7 @@ pub mod pallet {
 		/// - O(C) where C is the number of calls to be batched.
 		#[pallet::call_index(1)]
 		#[pallet::weight({
-			let (dispatch_weight, dispatch_class) = Pallet::<T>::weight_and_dispatch_class(&calls);
+			let (dispatch_weight, dispatch_class) = Pallet::<T>::weight_and_dispatch_class(calls);
 			let dispatch_weight = dispatch_weight.saturating_add(T::WeightInfo::batch_all(calls.len() as u32));
 			(dispatch_weight, dispatch_class)
 		})]
