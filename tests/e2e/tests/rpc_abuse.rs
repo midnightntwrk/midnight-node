@@ -249,7 +249,10 @@ async fn validate_transaction_pre_deploy_store_returns_not_present() {
         .map(|d| d.get().to_string())
         .unwrap_or_default();
     let msg = format!("{user_err} data={data}");
-    assert_eq!(user_err.code, -32001, "expected -32001 validation failure, got: {msg}");
+    assert_eq!(
+        user_err.code, -32001,
+        "expected -32001 validation failure, got: {msg}"
+    );
     assert!(
         data.to_lowercase().contains("contractnotpresent")
             || data.to_lowercase().contains("contract is not present")

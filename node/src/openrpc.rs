@@ -227,11 +227,7 @@ fn build_custom_method(name: &str) -> Option<Value> {
 			"Validates a transaction without submitting it to the transaction pool.",
 			"Runs a hex-encoded transaction through the ledger's verbose validation against the state at `at` (or the best block) and returns its hash on success. Read-only: nothing is added to the txpool. Rate limited per-call and per-transaction.",
 			&[
-				param(
-					"tx_hex",
-					"Hex-encoded serialized transaction",
-					json!({"type": "string"}),
-				),
+				param("tx_hex", "Hex-encoded serialized transaction", json!({"type": "string"})),
 				param_optional(
 					"at",
 					"Block hash to validate against (defaults to best block)",
