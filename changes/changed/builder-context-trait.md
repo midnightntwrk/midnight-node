@@ -11,8 +11,11 @@ so runtime behaviour is unchanged. A stub `IndexerContext` proves the trait can
 be satisfied by a non-local backend, preparing the toolkit to talk to a node via
 indexer queries (issue #1186) without touching the builders again.
 
-No user-visible behaviour change. The rarely-used `batches` builder
-(`tx-generator builder batches`) was removed; use `batch-single-tx` instead.
+No user-visible behaviour change. The `batches` builder retains its previous CLI
+surface but stays pinned to the concrete `LedgerContext` backend (it advances
+the local ledger between chained transactions, which the abstract trait
+deliberately does not expose). It also picks up a new `--coin-selection` flag
+matching the other builders.
 
 PR: <link to PR>
 JIRA: <link to JIRA ticket, if applicable>

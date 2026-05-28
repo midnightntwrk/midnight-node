@@ -18,6 +18,7 @@
 pub mod inner {
 	pub use midnight_node_ledger_helpers::ledger_7 as ledger_helpers_local;
 
+	mod batches;
 	mod build_txs_ext;
 	mod claim_rewards;
 	mod contract_call;
@@ -32,6 +33,7 @@ pub mod inner {
 	mod tx_serialization;
 	pub mod type_convert;
 
+	pub use batches::*;
 	pub use build_txs_ext::*;
 	pub use claim_rewards::*;
 	pub use contract_call::*;
