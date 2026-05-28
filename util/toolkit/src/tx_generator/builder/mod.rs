@@ -1056,22 +1056,34 @@ pub async fn build_fork_aware_context_cached(
 	// this run (`register_dust_address`, batch builders) read the
 	// warped tblock as expected.
 	//
-	// Mirrors `replay_blocks_8`'s contract: `apply_block_8` only
+	// Mirrors `replay_blocks_{7,8}`'s contract: `apply_block_*` only
 	// updates the ledger context (and `latest_block_context`); the
 	// per-wallet dust TTL advance lives in `update_dust_from_block`,
-	// which `replay_blocks_8` always calls for the last replayed block
-	// (see `replay_blocks_8` final stanza). Without this second call
-	// the warp would advance the *ledger's* clock but leave wallets'
-	// dust nullifier windows pinned at the real-head block's tblock,
-	// so transaction builders would read a warped `latest_block_context`
-	// while the wallet's dust availability still reflects real-head
-	// time. The synthetic has no transactions, so we don't need a
-	// matching `update_dust_from_events` — `apply_block_8` returns an
-	// empty event vec on a tx-less block.
+	// which `replay_blocks_{7,8}` always calls for the last replayed
+	// block (see their final stanzas). Without this second call the
+	// warp would advance the *ledger's* clock but leave wallets' dust
+	// nullifier windows pinned at the real-head block's tblock, so
+	// transaction builders would read a warped `latest_block_context`
+	// while wallet dust availability still reflects real-head time.
+	// The synthetic has no transactions, so we don't need a matching
+	// `update_dust_from_events` — `apply_block_*` returns an empty
+	// event vec on a tx-less block.
+	//
+	// Handle both Ledger7 and Ledger8 variants: a pre-fork chain
+	// produces a `Ledger7` context out of step 5, and the raw/no-cache
+	// path replays the synthetic block inline in that case, so the
+	// cached path must do the same to preserve dust-warp semantics on
+	// pre-Ledger8 sources.
 	if let Some(synthetic) = synthetic_dust_warp {
-		if let ForkAwareLedgerContext::Ledger8(ctx8) = &fork_ctx {
-			let _events = apply_block_8(ctx8, synthetic);
-			ctx8.update_dust_from_block(&block_context_from_raw_8(synthetic));
+		match &fork_ctx {
+			ForkAwareLedgerContext::Ledger8(ctx8) => {
+				let _events = apply_block_8(ctx8, synthetic);
+				ctx8.update_dust_from_block(&block_context_from_raw_8(synthetic));
+			},
+			ForkAwareLedgerContext::Ledger7(ctx7) => {
+				let _events = apply_block_7(ctx7, synthetic);
+				ctx7.update_dust_from_block(&block_context_from_raw_7(synthetic));
+			},
 		}
 	}
 
