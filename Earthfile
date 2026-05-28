@@ -1,5 +1,19 @@
 VERSION 0.8
 
+# Scopes the cargo build directory (`/target`) so PRs running on the same
+# self-hosted runner host don't share `.rmeta` / `.rlib` artifacts via a
+# stable auto-generated cache id. Without scoping, an in-flight branch
+# that's changed a pallet's trait surface can leak its build into the
+# next PR's job and cause spurious E0046 trait/impl mismatches.
+#
+# Default is constant so local invocations share one cache. CI must
+# override this with a per-branch value (passed via `--build-arg
+# CACHE_KEY=<sanitized PR head ref>`). The Earthly builtin
+# EARTHLY_GIT_BRANCH is NOT a reliable source here because actions/checkout
+# leaves the workspace on the PR merge commit in detached-HEAD state, so
+# the builtin resolves to the literal string `HEAD` across every PR.
+ARG --global CACHE_KEY=local
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -180,7 +194,8 @@ rebuild-sqlx:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -767,7 +782,8 @@ planner:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
     RUN cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
@@ -844,7 +860,8 @@ test:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # Test
     RUN mkdir /test-artifacts
@@ -887,7 +904,8 @@ test-pallet-fixtures:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
     # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
@@ -913,7 +931,8 @@ build-test-toolkit:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
     RUN microdnf -y install tar gzip xz docker && \
