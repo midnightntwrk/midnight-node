@@ -445,8 +445,19 @@ jobs:
 
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
+        env:
+          # See +test's `Run build` step for why EARTHLY_GIT_BRANCH is unsafe
+          # under actions/checkout; reach for the actual head/ref name instead.
+          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         run: |
-          . ./.envrc && earthly -P --strict +test-pallet-fixtures
+          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
+          if [ -z "$CACHE_KEY" ]; then
+            echo "::error::could not derive CACHE_KEY from refs (head_ref=$GITHUB_REF_RAW)"
+            exit 1
+          fi
+          echo "Using CACHE_KEY=$CACHE_KEY"
+          . ./.envrc && earthly -P --strict \
+            +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -535,15 +546,28 @@ jobs:
           # wrong auth; override to empty for the earthly call.
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
+          # +test-toolkit pulls in +build-test-toolkit's `target-${CACHE_KEY}`
+          # cache mount. Pass the PR ref so it's scoped per-branch on this
+          # shared self-hosted runner — see +test's `Run build` step for the
+          # full rationale and why EARTHLY_GIT_BRANCH is unsafe here.
+          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
           PUSH_FLAG=""
           if [ "$EVENT_NAME" = "merge_group" ]; then
             PUSH_FLAG="--push"
           fi
+          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
+          if [ -z "$CACHE_KEY" ]; then
+            echo "::error::could not derive CACHE_KEY from refs (head_ref=$GITHUB_REF_RAW)"
+            exit 1
+          fi
+          echo "Using CACHE_KEY=$CACHE_KEY"
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \
             --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
-            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
-            +test-toolkit
+            +test-toolkit \
+              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${NODE_IMAGE_TAG}" \
+              --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

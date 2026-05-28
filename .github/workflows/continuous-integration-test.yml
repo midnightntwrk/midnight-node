@@ -69,17 +69,34 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+          # actions/checkout leaves the workspace on the PR merge commit in
+          # detached-HEAD state, so the EARTHLY_GIT_BRANCH builtin resolves to
+          # the literal string "HEAD" for every PR — useless for cache scoping.
+          # Use the actual head ref (PR source branch) or ref_name (push /
+          # merge_group). Sanitize: substitute any char outside [A-Za-z0-9._-]
+          # with '-' so e.g. `feat/foo` becomes `feat-foo`.
+          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          GH_REF_FOR_BUILD: ${{ github.ref }}
         run: |
           PUSH_FLAG=""
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$GH_REF_FOR_BUILD" = "refs/heads/main" ]; then
             PUSH_FLAG="--push"
           fi
+          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
+          # tr produces an empty string for empty input; guard so we never
+          # cache as `target-` (would silently merge all unkeyed runs).
+          if [ -z "$CACHE_KEY" ]; then
+            echo "::error::could not derive CACHE_KEY from refs (head_ref=$GITHUB_REF_RAW)"
+            exit 1
+          fi
+          echo "Using CACHE_KEY=$CACHE_KEY"
           . ./.envrc && earthly -P \
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             --strict $PUSH_FLAG \
-            --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test +test
+            --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test \
+            +test --CACHE_KEY="$CACHE_KEY"
 
       - name: Upload test report artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
