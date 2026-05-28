@@ -67,9 +67,9 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D, C>
 		let mut fallible_signing_keys = Vec::default();
 		let dust_registration_signing_keys = Vec::default();
 
-		if let Some(guo) = self.guaranteed_unshielded_offer.as_ref() {
-			let unshielded_offer = guo.build(context.clone()).await;
-			let signing_keys = guo
+		if let Some(ref guaranteed_unshielded_offer) = self.guaranteed_unshielded_offer {
+			let unshielded_offer = guaranteed_unshielded_offer.build(context.clone()).await;
+			let signing_keys = guaranteed_unshielded_offer
 				.inputs
 				.iter()
 				.map(|input| input.signing_key(context.clone()))
@@ -78,9 +78,9 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D, C>
 			guaranteed_signing_keys = signing_keys;
 		}
 
-		if let Some(guo) = self.fallible_unshielded_offer.as_ref() {
-			let unshielded_offer = guo.build(context.clone()).await;
-			let signing_keys = guo
+		if let Some(ref fallible_unshielded_offer) = self.fallible_unshielded_offer {
+			let unshielded_offer = fallible_unshielded_offer.build(context.clone()).await;
+			let signing_keys = fallible_unshielded_offer
 				.inputs
 				.iter()
 				.map(|input| input.signing_key(context.clone()))
