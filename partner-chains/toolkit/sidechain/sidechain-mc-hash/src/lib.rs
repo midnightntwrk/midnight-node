@@ -187,6 +187,9 @@ use std::{error::Error, ops::Deref};
 #[cfg(test)]
 mod test;
 
+mod block_announce_validator;
+pub use block_announce_validator::McHashBlockAnnounceValidator;
+
 /// Inherent identifier under which the main chain block reference is provided
 ///
 /// Data under this ID is not used by any pallet and is instead put in the block

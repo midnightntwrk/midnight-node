@@ -16,7 +16,7 @@ use sc_service::{Configuration, TaskManager, WarpSyncConfig, error::Error as Ser
 use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
-use sidechain_mc_hash::McHashInherentDigest;
+use sidechain_mc_hash::{McHashBlockAnnounceValidator, McHashInherentDigest};
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_runtime::traits::Block as BlockT;
 use std::{sync::Arc, time::Duration};
@@ -274,6 +274,7 @@ pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as 
 		Vec::default(),
 	));
 
+	let block_announce_data_source = data_sources.mc_hash.clone();
 	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
@@ -283,7 +284,9 @@ pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as 
 			spawn_handle: task_manager.spawn_handle(),
 			spawn_essential_handle: task_manager.spawn_essential_handle(),
 			import_queue,
-			block_announce_validator_builder: None,
+			block_announce_validator_builder: Some(Box::new(move |_| {
+				Box::new(McHashBlockAnnounceValidator::new(block_announce_data_source))
+			})),
 			warp_sync_config: Some(WarpSyncConfig::WithProvider(warp_sync)),
 			block_relay: None,
 			metrics,
