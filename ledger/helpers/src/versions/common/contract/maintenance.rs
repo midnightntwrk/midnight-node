@@ -13,7 +13,9 @@
 
 //! Contract maintenance module.
 
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
+
+use async_trait::async_trait;
 
 use super::super::{
 	BuilderContext, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
@@ -41,53 +43,43 @@ pub struct MaintenanceUpdateInfo {
 	pub counter: u32,
 }
 
+#[async_trait]
 impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for MaintenanceUpdateInfo {
-	fn build<'a>(
-		&'a mut self,
-		rng: &'a mut StdRng,
+	async fn build(
+		&mut self,
+		rng: &mut StdRng,
 		_context: Arc<C>,
-		intent: &'a Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Pin<
-		Box<
-			dyn Future<Output = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>>
-				+ Send
-				+ 'a,
-		>,
-	>
-	where
-		C: 'a,
-	{
-		Box::pin(async move {
-			let updates = self
-				.updates
-				.iter()
-				.map(|update| match update {
-					UpdateInfo::ReplaceAuthority(info) => {
-						SingleUpdate::ReplaceAuthority(ContractMaintenanceAuthority {
-							committee: info.new_committee.iter().map(|s| s.verifying_key()).collect(),
-							threshold: info.threshold,
-							counter: info.counter,
-						})
-					},
-					UpdateInfo::VerifierKeyRemove(k) => {
-						SingleUpdate::VerifierKeyRemove(k.clone(), ContractOperationVersion::V3)
-					},
-					UpdateInfo::VerifierKeyInsert(k, new_key) => {
-						SingleUpdate::VerifierKeyInsert(k.clone(), new_key.clone())
-					},
-				})
-				.collect();
+		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+		let updates = self
+			.updates
+			.iter()
+			.map(|update| match update {
+				UpdateInfo::ReplaceAuthority(info) => {
+					SingleUpdate::ReplaceAuthority(ContractMaintenanceAuthority {
+						committee: info.new_committee.iter().map(|s| s.verifying_key()).collect(),
+						threshold: info.threshold,
+						counter: info.counter,
+					})
+				},
+				UpdateInfo::VerifierKeyRemove(k) => {
+					SingleUpdate::VerifierKeyRemove(k.clone(), ContractOperationVersion::V3)
+				},
+				UpdateInfo::VerifierKeyInsert(k, new_key) => {
+					SingleUpdate::VerifierKeyInsert(k.clone(), new_key.clone())
+				},
+			})
+			.collect();
 
-			let mut update = MaintenanceUpdate::new(self.address, updates, self.counter);
+		let mut update = MaintenanceUpdate::new(self.address, updates, self.counter);
 
-			// Sign with existing committee
-			let data_to_sign = update.data_to_sign();
-			for (idx, key) in self.committee.iter().enumerate() {
-				let signature = key.sign(rng, &data_to_sign);
-				update = update.add_signature(idx as u32, signature)
-			}
+		// Sign with existing committee
+		let data_to_sign = update.data_to_sign();
+		for (idx, key) in self.committee.iter().enumerate() {
+			let signature = key.sign(rng, &data_to_sign);
+			update = update.add_signature(idx as u32, signature)
+		}
 
-			intent.add_maintenance_update(update)
-		})
+		intent.add_maintenance_update(update)
 	}
 }

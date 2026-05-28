@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{any::Any, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{any::Any, marker::PhantomData, sync::Arc};
+
+use async_trait::async_trait;
 
 use super::super::{
 	BuildContractAction, BuilderContext, Contract, ContractAddress, DB, Intent, PedersenRandomness,
@@ -26,44 +28,34 @@ pub struct CallInfo<C: Contract<D>, D: DB + Clone> {
 	pub _marker: PhantomData<D>,
 }
 
+#[async_trait]
 impl<C: Contract<D>, D: DB + Clone, BC: BuilderContext<D>> BuildContractAction<D, BC>
 	for CallInfo<C, D>
 {
-	fn build<'a>(
-		&'a mut self,
-		rng: &'a mut StdRng,
+	async fn build(
+		&mut self,
+		rng: &mut StdRng,
 		context: Arc<BC>,
-		intent: &'a Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Pin<
-		Box<
-			dyn Future<Output = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>>
-				+ Send
-				+ 'a,
-		>,
-	>
-	where
-		BC: 'a,
-	{
-		Box::pin(async move {
-			let resolver = self.type_.resolver();
-			context.update_resolver(resolver).await;
+		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+		let resolver = self.type_.resolver();
+		context.update_resolver(resolver).await;
 
-			let contract_state =
-				context.contract_state(self.address).await.unwrap_or_else(|| {
-					panic!("Contract with address {:?} does not exist", self.address)
-				});
-			let parameters = context.ledger_parameters().await;
+		let contract_state = context
+			.contract_state(self.address)
+			.await
+			.unwrap_or_else(|| panic!("Contract with address {:?} does not exist", self.address));
+		let parameters = context.ledger_parameters().await;
 
-			let call = self.type_.contract_call(
-				&self.address,
-				self.key,
-				&self.input,
-				rng,
-				&contract_state,
-				&parameters,
-			);
+		let call = self.type_.contract_call(
+			&self.address,
+			self.key,
+			&self.input,
+			rng,
+			&contract_state,
+			&parameters,
+		);
 
-			intent.add_call::<ProofPreimage>(call)
-		})
+		intent.add_call::<ProofPreimage>(call)
 	}
 }

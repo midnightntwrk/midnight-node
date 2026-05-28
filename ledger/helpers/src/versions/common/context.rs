@@ -516,6 +516,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 	}
 }
 
+#[async_trait::async_trait]
 impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 	fn with_wallet_from_seed<F, R>(&self, seed: WalletSeed, f: F) -> R
 	where
@@ -536,30 +537,20 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 		self.with_wallets_from_seeds(origin_seed, destination_seed, f)
 	}
 
-	fn latest_block_context(
-		&self,
-	) -> std::pin::Pin<Box<dyn Future<Output = BlockContext> + Send + '_>> {
-		let block_context = self.latest_block_context();
-		Box::pin(async move { block_context })
+	async fn latest_block_context(&self) -> BlockContext {
+		self.latest_block_context()
 	}
 
-	fn ledger_parameters(
-		&self,
-	) -> std::pin::Pin<Box<dyn Future<Output = LedgerParameters> + Send + '_>> {
-		let parameters = self.with_ledger_state(|ledger_state| (*ledger_state.parameters).clone());
-		Box::pin(async move { parameters })
+	async fn ledger_parameters(&self) -> LedgerParameters {
+		self.with_ledger_state(|ledger_state| (*ledger_state.parameters).clone())
 	}
 
-	fn network_id(&self) -> std::pin::Pin<Box<dyn Future<Output = String> + Send + '_>> {
-		let network_id = self.with_ledger_state(|ledger_state| ledger_state.network_id.clone());
-		Box::pin(async move { network_id })
+	async fn network_id(&self) -> String {
+		self.with_ledger_state(|ledger_state| ledger_state.network_id.clone())
 	}
 
-	fn unshielded_utxos(
-		&self,
-		seed: WalletSeed,
-	) -> std::pin::Pin<Box<dyn Future<Output = Vec<(Utxo, Timestamp)>> + Send + '_>> {
-		let utxos = self.with_ledger_state(|ledger_state| {
+	async fn unshielded_utxos(&self, seed: WalletSeed) -> Vec<(Utxo, Timestamp)> {
+		self.with_ledger_state(|ledger_state| {
 			self.with_wallet_from_seed(seed, |wallet| {
 				wallet
 					.unshielded_utxos(ledger_state)
@@ -575,34 +566,23 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 					})
 					.collect::<Vec<_>>()
 			})
-		});
-		Box::pin(async move { utxos })
+		})
 	}
 
-	fn zswap_state(
-		&self,
-	) -> std::pin::Pin<Box<dyn Future<Output = ZswapChainState<D>> + Send + '_>> {
-		let zswap = self.with_ledger_state(|ledger_state| (*ledger_state.zswap).clone());
-		Box::pin(async move { zswap })
+	async fn zswap_state(&self) -> ZswapChainState<D> {
+		self.with_ledger_state(|ledger_state| (*ledger_state.zswap).clone())
 	}
 
-	fn contract_state(
-		&self,
-		address: ContractAddress,
-	) -> std::pin::Pin<Box<dyn Future<Output = Option<ContractState<D>>> + Send + '_>> {
-		let state = self.with_ledger_state(|ledger_state| ledger_state.index(address));
-		Box::pin(async move { state })
+	async fn contract_state(&self, address: ContractAddress) -> Option<ContractState<D>> {
+		self.with_ledger_state(|ledger_state| ledger_state.index(address))
 	}
 
-	fn resolver(&self) -> std::pin::Pin<Box<dyn Future<Output = &'static Resolver> + Send + '_>> {
-		Box::pin(async move { *self.resolver.lock().await })
+	async fn resolver(&self) -> &'static Resolver {
+		*self.resolver.lock().await
 	}
 
-	fn update_resolver(
-		&self,
-		resolver: &'static Resolver,
-	) -> std::pin::Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-		Box::pin(self.update_resolver(resolver))
+	async fn update_resolver(&self, resolver: &'static Resolver) {
+		self.update_resolver(resolver).await
 	}
 
 	fn well_formed<S, P, B>(

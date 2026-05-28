@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{marker::PhantomData, pin::Pin, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
+
+use async_trait::async_trait;
 
 use super::super::{
 	BuildContractAction, BuilderContext, Contract, DB, Intent, PedersenRandomness,
@@ -25,34 +27,24 @@ pub struct ContractDeployInfo<C: Contract<D>, D: DB + Clone> {
 	pub _marker: PhantomData<D>,
 }
 
+#[async_trait]
 impl<C: Contract<D>, D: DB + Clone, BC: BuilderContext<D>> BuildContractAction<D, BC>
 	for ContractDeployInfo<C, D>
 {
-	fn build<'a>(
-		&'a mut self,
-		rng: &'a mut StdRng,
+	async fn build(
+		&mut self,
+		rng: &mut StdRng,
 		context: Arc<BC>,
-		intent: &'a Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Pin<
-		Box<
-			dyn Future<Output = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>>
-				+ Send
-				+ 'a,
-		>,
-	>
-	where
-		BC: 'a,
-	{
-		Box::pin(async move {
-			let resolver = self.type_.resolver();
-			context.update_resolver(resolver).await;
+		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+		let resolver = self.type_.resolver();
+		context.update_resolver(resolver).await;
 
-			let contract_deploy =
-				self.type_.deploy(&self.committee, self.committee_threshold, rng).await;
+		let contract_deploy =
+			self.type_.deploy(&self.committee, self.committee_threshold, rng).await;
 
-			println!("CONTRACT ADDRESS: {:?}", contract_deploy.address());
+		println!("CONTRACT ADDRESS: {:?}", contract_deploy.address());
 
-			intent.add_deploy(contract_deploy)
-		})
+		intent.add_deploy(contract_deploy)
 	}
 }

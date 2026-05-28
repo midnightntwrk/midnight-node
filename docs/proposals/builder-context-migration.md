@@ -18,7 +18,7 @@ The crate does **not** compile yet: the original WIP commit left several builder
 
 Sync (hold a local lock across a sync closure): `with_wallet_from_seed`, `with_wallets_from_seeds`.
 
-Async (manual `Pin<Box<dyn Future + Send + '_>>` — no `#[async_trait]`):
+Async (via `#[async_trait]` — the trait is `dyn`-used heavily, so the boxed-future desugaring is centralized by the macro):
 `latest_block_context`, `ledger_parameters`, `network_id`, `unshielded_utxos(seed) -> Vec<(Utxo, Timestamp)>`, `zswap_state`, `contract_state(address)`, `resolver`, `update_resolver`.
 
 Generic: `well_formed<S, P, B>(tx, now) -> Result<()>` — the local backend checks against its `LedgerState`; an indexer backend cannot and relies on the node validating on submission.
@@ -63,12 +63,14 @@ For iterating, rely on rust-analyzer's live diagnostics; do a fresh-target full 
    | `tx.well_formed(&ref_state, ..)` (the `validate` fn) | `context.well_formed(&tx, now)?` |
    | `self.context.resolver().await` (field + lock) | `context.resolver().await` |
 
-4. **Sync vs async.** `with_wallet_from_seed` / `with_wallets_from_seeds` stay sync. Builders touching only wallets stay sync (see `utxo_output.rs`). Builders that hit any state query become async; use the manual boxed-future form with an explicit lifetime (template from `utxo_spend.rs`):
+4. **Sync vs async.** `with_wallet_from_seed` / `with_wallets_from_seeds` stay sync. Builders touching only wallets stay sync (see `utxo_output.rs`). Builders that hit any state query become async; annotate the trait and its impls with `#[async_trait]` and write the methods as plain `async fn` (template from `utxo_spend.rs`):
    ```rust
-   fn build<'a>(&'a self, context: Arc<C>) -> Pin<Box<dyn Future<Output = T> + Send + 'a>>
-   where C: 'a { let copied = self.field; Box::pin(async move { /* context.<method>().await */ }) }
+   #[async_trait]
+   pub trait BuildUtxoSpend<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
+       async fn build(&self, context: Arc<C>) -> UtxoSpend;
+   }
    ```
-   Copy `Copy` fields out before `async move` so the future doesn't borrow `*self`; the `C: 'a` bound is required because the future owns `Arc<C>`.
+   The macro expands these to `Pin<Box<dyn Future<Output = T> + Send + '_>>` under the hood, so the methods are still object-safe and `Box<dyn BuildUtxoSpend<…>>` keeps working.
 5. **`.await` newly-async inherent calls.** `latest_block_context()` and `ledger_parameters()` were sync inherent methods; through the trait they return futures, so `.tblock` / `.global_ttl` accesses need `.await` first.
 
 ## Remaining work

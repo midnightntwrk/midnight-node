@@ -13,8 +13,9 @@
 
 //! MerkleTree contract implementation.
 
+use async_trait::async_trait;
 use lazy_static::lazy_static;
-use std::{any::Any, borrow::Cow, pin::Pin};
+use std::{any::Any, borrow::Cow};
 
 use super::super::{
 	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
@@ -70,33 +71,32 @@ impl Default for MerkleTreeContract {
 	}
 }
 
+#[async_trait]
 impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
-	fn deploy<'a>(
-		&'a self,
-		commitee: &'a [VerifyingKey],
+	async fn deploy(
+		&self,
+		commitee: &[VerifyingKey],
 		commitee_threshold: u32,
-		rng: &'a mut StdRng,
-	) -> Pin<Box<dyn Future<Output = ContractDeploy<D>> + Send + 'a>> {
-		Box::pin(async move {
-			let root = MerkleTree::<()>::blank(10).root();
-			let store_op = ContractOperation::new(verifier_key(self.resolver, "store").await);
-			let check_op = ContractOperation::new(verifier_key(self.resolver, "check").await);
+		rng: &mut StdRng,
+	) -> ContractDeploy<D> {
+		let root = MerkleTree::<()>::blank(10).root();
+		let store_op = ContractOperation::new(verifier_key(self.resolver, "store").await);
+		let check_op = ContractOperation::new(verifier_key(self.resolver, "check").await);
 
-			let contract = ContractState {
-				data: ChargedState::new(stval!([[{MT(10) {}}, (0u64), {root => null}]])),
-				operations: HashMap::new()
-					.insert(b"store"[..].into(), store_op.clone())
-					.insert(b"check"[..].into(), check_op.clone()),
-				maintenance_authority: ContractMaintenanceAuthority {
-					committee: commitee.to_vec(),
-					threshold: commitee_threshold,
-					counter: 0,
-				},
-				balance: HashMap::new(),
-			};
+		let contract = ContractState {
+			data: ChargedState::new(stval!([[{MT(10) {}}, (0u64), {root => null}]])),
+			operations: HashMap::new()
+				.insert(b"store"[..].into(), store_op.clone())
+				.insert(b"check"[..].into(), check_op.clone()),
+			maintenance_authority: ContractMaintenanceAuthority {
+				committee: commitee.to_vec(),
+				threshold: commitee_threshold,
+				counter: 0,
+			},
+			balance: HashMap::new(),
+		};
 
-			ContractDeploy::new(rng, contract)
-		})
+		ContractDeploy::new(rng, contract)
 	}
 
 	fn resolver(&self) -> &'static Resolver {

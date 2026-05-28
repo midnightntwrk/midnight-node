@@ -14,8 +14,9 @@
 use super::{
 	BuilderContext, DB, IntentHash, SigningKey, UnshieldedTokenType, Utxo, UtxoSpend, WalletSeed,
 };
+use async_trait::async_trait;
 use itertools::Itertools;
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UtxoSelectionError {
@@ -33,10 +34,9 @@ pub struct UtxoSpendInfo<O> {
 	pub output_number: Option<u32>,
 }
 
+#[async_trait]
 pub trait BuildUtxoSpend<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
-	fn build<'a>(&'a self, context: Arc<C>) -> Pin<Box<dyn Future<Output = UtxoSpend> + Send + 'a>>
-	where
-		C: 'a;
+	async fn build(&self, context: Arc<C>) -> UtxoSpend;
 	fn signing_key(&self, context: Arc<C>) -> SigningKey;
 }
 
@@ -115,36 +115,31 @@ impl UtxoSpendInfo<WalletSeed> {
 	}
 }
 
+#[async_trait]
 impl<D: DB + Clone, C: BuilderContext<D>> BuildUtxoSpend<D, C> for UtxoSpendInfo<WalletSeed> {
-	fn build<'a>(&'a self, context: Arc<C>) -> Pin<Box<dyn Future<Output = UtxoSpend> + Send + 'a>>
-	where
-		C: 'a,
-	{
+	async fn build(&self, context: Arc<C>) -> UtxoSpend {
 		let owner = context
 			.with_wallet_from_seed(self.owner, |wallet| wallet.unshielded.signing_key().verifying_key());
-		Box::pin(async move {
-			// If self identifies an UTXO then use it, otherwise find the best matching UTXO.
-			match (self.intent_hash, self.output_number) {
-				(Some(intent_hash), Some(output_no)) => UtxoSpend {
-					value: self.value,
+		// If self identifies an UTXO then use it, otherwise find the best matching UTXO.
+		match (self.intent_hash, self.output_number) {
+			(Some(intent_hash), Some(output_no)) => UtxoSpend {
+				value: self.value,
+				owner,
+				type_: self.token_type,
+				intent_hash,
+				output_no,
+			},
+			_ => {
+				let utxo = self.min_match_utxo(context.clone()).await.expect("UTXO lookup failed");
+				UtxoSpend {
+					value: utxo.value,
 					owner,
-					type_: self.token_type,
-					intent_hash,
-					output_no,
-				},
-				_ => {
-					let utxo =
-						self.min_match_utxo(context.clone()).await.expect("UTXO lookup failed");
-					UtxoSpend {
-						value: utxo.value,
-						owner,
-						type_: utxo.type_,
-						intent_hash: utxo.intent_hash,
-						output_no: utxo.output_no,
-					}
-				},
-			}
-		})
+					type_: utxo.type_,
+					intent_hash: utxo.intent_hash,
+					output_no: utxo.output_no,
+				}
+			},
+		}
 	}
 
 	fn signing_key(&self, context: Arc<C>) -> SigningKey {

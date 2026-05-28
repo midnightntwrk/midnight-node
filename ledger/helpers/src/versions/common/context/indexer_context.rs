@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{marker::PhantomData, pin::Pin};
+use std::marker::PhantomData;
+
+use async_trait::async_trait;
 
 use super::BuilderContext;
 use super::super::{
@@ -19,8 +21,6 @@ use super::super::{
 	PedersenDowngradeable, ProofKind, Resolver, Serializable, SignatureKind, Storable, Tagged,
 	Timestamp, Transaction, Utxo, Wallet, WalletSeed, ZswapChainState,
 };
-
-type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// An indexer-backed [`BuilderContext`] that answers builder queries via indexer GraphQL queries
 /// instead of replaying every block into a local [`super::super::LedgerState`] (see issue #1186).
@@ -47,6 +47,7 @@ impl<D: DB + Clone> Default for IndexerContext<D> {
 	}
 }
 
+#[async_trait]
 impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 	fn with_wallet_from_seed<F, R>(&self, _seed: WalletSeed, _f: F) -> R
 	where
@@ -67,39 +68,36 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		todo!("indexer: client-side wallet store, not yet implemented")
 	}
 
-	fn latest_block_context(&self) -> BoxFuture<'_, BlockContext> {
+	async fn latest_block_context(&self) -> BlockContext {
 		todo!("indexer: R6 — block() query")
 	}
 
-	fn ledger_parameters(&self) -> BoxFuture<'_, LedgerParameters> {
+	async fn ledger_parameters(&self) -> LedgerParameters {
 		todo!("indexer: R1 — Block.ledgerParameters blob")
 	}
 
-	fn network_id(&self) -> BoxFuture<'_, String> {
+	async fn network_id(&self) -> String {
 		// R2: the indexer has no network-id field; the real impl reads it from stored config.
 		todo!("indexer: R2 — network id from stored config (indexer has no field)")
 	}
 
-	fn unshielded_utxos(&self, _seed: WalletSeed) -> BoxFuture<'_, Vec<(Utxo, Timestamp)>> {
+	async fn unshielded_utxos(&self, _seed: WalletSeed) -> Vec<(Utxo, Timestamp)> {
 		todo!("indexer: R3 — unshieldedTransactions query")
 	}
 
-	fn zswap_state(&self) -> BoxFuture<'_, ZswapChainState<D>> {
+	async fn zswap_state(&self) -> ZswapChainState<D> {
 		todo!("indexer: R4 — merkle update stream")
 	}
 
-	fn contract_state(
-		&self,
-		_address: ContractAddress,
-	) -> BoxFuture<'_, Option<ContractState<D>>> {
+	async fn contract_state(&self, _address: ContractAddress) -> Option<ContractState<D>> {
 		todo!("indexer: R5 — contractAction(address).state blob")
 	}
 
-	fn resolver(&self) -> BoxFuture<'_, &'static Resolver> {
+	async fn resolver(&self) -> &'static Resolver {
 		todo!("indexer: client-side resolver, not yet implemented")
 	}
 
-	fn update_resolver(&self, _resolver: &'static Resolver) -> BoxFuture<'_, ()> {
+	async fn update_resolver(&self, _resolver: &'static Resolver) {
 		todo!("indexer: client-side resolver, not yet implemented")
 	}
 

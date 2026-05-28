@@ -11,7 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{any::Any, pin::Pin, sync::Arc};
+use std::{any::Any, sync::Arc};
+
+use async_trait::async_trait;
 
 use super::super::{
 	AlignedValue, BuilderContext, ContractAddress, ContractCallPrototype, ContractDeploy,
@@ -46,13 +48,14 @@ pub use maintenance::*;
 #[cfg(feature = "can-panic")]
 pub use merkle_tree::*;
 
+#[async_trait]
 pub trait Contract<D: DB + Clone>: Send + Sync {
-	fn deploy<'a>(
-		&'a self,
-		commitee: &'a [VerifyingKey],
+	async fn deploy(
+		&self,
+		commitee: &[VerifyingKey],
 		commitee_threshold: u32,
-		rng: &'a mut StdRng,
-	) -> Pin<Box<dyn Future<Output = ContractDeploy<D>> + Send + 'a>>;
+		rng: &mut StdRng,
+	) -> ContractDeploy<D>;
 
 	fn resolver(&self) -> &'static Resolver;
 
@@ -92,19 +95,12 @@ pub trait Contract<D: DB + Clone>: Send + Sync {
 	) -> ContractCallPrototype<D>;
 }
 
+#[async_trait]
 pub trait BuildContractAction<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
-	fn build<'a>(
-		&'a mut self,
-		rng: &'a mut StdRng,
+	async fn build(
+		&mut self,
+		rng: &mut StdRng,
 		context: Arc<C>,
-		intent: &'a Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
-	) -> Pin<
-		Box<
-			dyn Future<Output = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>>
-				+ Send
-				+ 'a,
-		>,
-	>
-	where
-		C: 'a;
+		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 }
