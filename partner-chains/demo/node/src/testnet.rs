@@ -1,14 +1,14 @@
 use crate::chain_spec::*;
 use authority_selection_inherents::CommitteeMember;
 use partner_chains_demo_runtime::{
-	AccountId, AuraConfig, BalancesConfig, BridgeConfig, GovernedMapConfig, GrandpaConfig,
-	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	SudoConfig, SystemConfig, TestHelperPalletConfig,
+	AccountId, AuraConfig, BalancesConfig, BridgeConfig, GrandpaConfig, RuntimeGenesisConfig,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
 use sc_service::ChainType;
 use sidechain_domain::*;
 use sidechain_slots::SlotsPerEpoch;
 use sp_core::bytes::from_hex;
+use sp_core::serde::de::Error;
 use sp_core::{ed25519, sr25519};
 use std::str::FromStr;
 
@@ -50,14 +50,15 @@ pub fn development_config() -> Result<ChainSpec, envy::Error> {
 				AccountId::from_str(
 					"0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
 				)
-				.unwrap(),
+				.map_err(|_| envy::Error::custom("Invalid hardcoded value"))?,
 				AccountId::from_str(
 					"0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48",
 				)
-				.unwrap(),
+				.map_err(|_| envy::Error::custom("Invalid hardcoded value"))?,
 				// SDETs test accounts, keys are in e2e-tests/secrets
 				// negative-test
-				AccountId::from_str("5F1N52dZx48UpXNLtcCzSMHZEroqQDuYKfidg46Tp37SjPcE").unwrap(),
+				AccountId::from_str("5F1N52dZx48UpXNLtcCzSMHZEroqQDuYKfidg46Tp37SjPcE")
+					.map_err(|_| envy::Error::custom("Invalid hardcoded value"))?,
 			],
 			true,
 		)?)
@@ -202,14 +203,6 @@ pub fn testnet_genesis(
 				.collect(),
 			main_chain_scripts: sp_session_validator_management::MainChainScripts::read_from_env()?,
 		},
-		governed_map: GovernedMapConfig {
-			main_chain_scripts: Some(sp_governed_map::MainChainScriptsV1::read_from_env()?),
-			..Default::default()
-		},
-		test_helper_pallet: TestHelperPalletConfig {
-			participation_data_release_period: 30,
-			..Default::default()
-		},
 		bridge: BridgeConfig {
 			main_chain_scripts: Some(sp_partner_chains_bridge::MainChainScripts::read_from_env()?),
 			initial_checkpoint: Some(genesis_utxo.tx_hash),
@@ -217,5 +210,6 @@ pub fn testnet_genesis(
 		},
 	};
 
-	Ok(serde_json::to_value(config).expect("Genesis config must be serialized correctly"))
+	serde_json::to_value(config)
+		.map_err(|_| envy::Error::custom("Could not serialize genesis config"))
 }

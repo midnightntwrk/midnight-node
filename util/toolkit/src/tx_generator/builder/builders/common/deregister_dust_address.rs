@@ -14,9 +14,10 @@
 use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
 use super::ledger_helpers_local::{
-	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB, DustRegistrationBuilder,
-	FromContext, IntentInfo, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
-	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
+	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB,
+	DustRegistrationBuilder, FromContext, IntentInfo, NIGHT, ProofProvider, Segment,
+	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
+	UtxoSpendInfo, Wallet,
 };
 use async_trait::async_trait;
 
@@ -83,14 +84,14 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> 
 		);
 
 		let inputs: Vec<UtxoSpendInfo<_>> = context
-			.unshielded_utxos(seed)
+			.unshielded_utxos(seed.clone())
 			.await
 			.into_iter()
 			.map(|(utxo, _ctime)| utxo)
 			.filter(|utxo| utxo.type_ == NIGHT)
 			.map(|utxo| UtxoSpendInfo {
 				value: utxo.value,
-				owner: seed,
+				owner: seed.clone(),
 				token_type: NIGHT,
 				intent_hash: Some(utxo.intent_hash),
 				output_number: Some(utxo.output_no),
@@ -102,7 +103,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> 
 			.map(|input| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB, C>> = Box::new(UtxoOutputInfo {
 					value: input.value,
-					owner: input.owner,
+					owner: input.owner.clone(),
 					token_type: input.token_type,
 				});
 				output
@@ -137,7 +138,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> 
 		tx_info.add_intent(Segment::Fallible.into(), boxed_intent);
 
 		// Deregistration: pass dust_address: None instead of Some(dust_address)
-		context.with_wallet_from_seed(seed, |wallet| {
+		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			tx_info.add_dust_registration(DustRegistrationBuilder {
 				signing_key: wallet.unshielded.signing_key().clone(),
 				dust_address: None,

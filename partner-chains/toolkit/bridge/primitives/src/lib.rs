@@ -127,9 +127,9 @@ use alloc::vec::*;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use serde::{Deserialize, Serialize};
-use sidechain_domain::{
-	AssetId, AssetName, MainchainAddress, McBlockHash, McBlockNumber, McTxHash, PolicyId,
-};
+#[cfg(feature = "std")]
+use sidechain_domain::McBlockHash;
+use sidechain_domain::{AssetId, AssetName, MainchainAddress, McBlockNumber, McTxHash, PolicyId};
 use sp_inherents::*;
 
 #[cfg(feature = "std")]
@@ -159,6 +159,8 @@ pub struct MainChainScripts {
 	///
 	/// All tokens sent to that address are effectively locked and considered "sent" to the Partner Chain.
 	pub illiquid_circulation_supply_validator_address: MainchainAddress,
+	/// Address of the reserve validator.
+	pub reserve_validator_address: MainchainAddress,
 }
 
 impl MainChainScripts {
@@ -179,26 +181,50 @@ impl MainChainScripts {
 	/// - `BRIDGE_TOKEN_POLICY_ID`
 	/// - `BRIDGE_TOKEN_ASSET_NAME`
 	/// - `ILLIQUID_CIRCULATION_SUPPLY_VALIDATOR_ADDRESS`
+	/// - `RESERVE_VALIDATOR_ADDRESS`
 	pub fn read_from_env() -> Result<Self, envy::Error> {
 		#[derive(serde::Serialize, serde::Deserialize)]
 		pub struct MainChainScriptsEnvConfig {
 			pub bridge_token_policy_id: PolicyId,
 			pub bridge_token_asset_name: AssetName,
 			pub illiquid_circulation_supply_validator_address: MainchainAddress,
+			pub reserve_validator_address: MainchainAddress,
 		}
 
 		let MainChainScriptsEnvConfig {
 			bridge_token_policy_id,
 			bridge_token_asset_name,
 			illiquid_circulation_supply_validator_address,
+			reserve_validator_address,
 		} = envy::from_env::<MainChainScriptsEnvConfig>()?;
 
 		Ok(Self {
 			token_policy_id: bridge_token_policy_id,
 			token_asset_name: bridge_token_asset_name,
 			illiquid_circulation_supply_validator_address,
+			reserve_validator_address,
 		})
 	}
+}
+
+/// Configuration of subminimal transfer stashing and flushing.
+#[derive(
+	Default,
+	Debug,
+	Clone,
+	PartialEq,
+	Eq,
+	TypeInfo,
+	Encode,
+	Decode,
+	DecodeWithMemTracking,
+	MaxEncodedLen,
+	Serialize,
+	Deserialize,
+)]
+pub struct SubminimalTransfersConfig {
+	/// Threshold of stashed transfers flush
+	pub subminimal_transfers_flush_threshold: u64,
 }
 
 /// Type containing all information needed to process a single transfer incoming from
@@ -206,28 +232,36 @@ impl MainChainScripts {
 #[derive(
 	Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Eq, MaxEncodedLen,
 )]
-pub enum BridgeTransferV1<RecipientAddress> {
-	/// Token transfer initiated by a user on Cardano
-	UserTransfer {
-		/// Amount of tokens tranfered
-		token_amount: u64,
-		/// Transfer recipient on the Partner Chain
+pub struct BridgeTransferV1<RecipientAddress> {
+	/// Cardano transaction for this transfer
+	pub mc_tx_hash: McTxHash,
+	/// Amount of tokens tranfered
+	pub amount: u64,
+	/// Transfer recipient on the Partner Chain
+	pub recipient: TransferRecipient<RecipientAddress>,
+}
+
+impl<RecipientAddress> BridgeTransferV1<RecipientAddress> {
+	/// Creates a transfer with Invalid recipient
+	pub fn new_invalid(mc_tx_hash: McTxHash, amount: u64) -> Self {
+		Self { mc_tx_hash, amount, recipient: TransferRecipient::Invalid }
+	}
+}
+
+/// Details of bridge transfer recipient
+#[derive(
+	Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Eq, MaxEncodedLen,
+)]
+pub enum TransferRecipient<RecipientAddress> {
+	/// Transfer to the specified recipient address
+	Address {
+		/// Address of the transfer recipient
 		recipient: RecipientAddress,
 	},
-	/// Token transfer carrying reserve funds being moved from Cardano to the Partner Chain
-	ReserveTransfer {
-		/// Amount of tokens tranfered
-		token_amount: u64,
-	},
-	/// Invalid transfer coming from a Transaction on Cardano that does not contain a metadata that can be
-	/// correctly interpreted. These transfers can either be ignored and considered lost or recovered
-	/// through some custom mechanism.
-	InvalidTransfer {
-		/// Amount of tokens tranfered
-		token_amount: u64,
-		/// ID of the UTXO containing an invalid transfer
-		tx_hash: sidechain_domain::McTxHash,
-	},
+	/// Transfer to the reserve
+	Reserve,
+	/// Invalid transfer. Amount was deposited but kind designation / recipient was not encoded properly
+	Invalid,
 }
 
 /// Structure representing all token bridge transfers incoming from Cardano that are to be
@@ -362,7 +396,7 @@ sp_api::decl_runtime_apis! {
 	pub trait TokenBridgeIDPRuntimeApi {
 		/// Returns the current version of the pallet, 1-based.
 		fn get_pallet_version() -> u32;
-		/// Returns the currenlty configured main chain scripts
+		/// Returns the currently configured main chain scripts
 		fn get_main_chain_scripts() -> Option<MainChainScripts>;
 		/// Returns the currently configured transfer number limit
 		fn get_max_transfers_per_block() -> u32;
@@ -419,10 +453,16 @@ impl<RecipientAddress: Encode + Send + Sync> TokenBridgeInherentDataProvider<Rec
 		Api: TokenBridgeIDPRuntimeApi<Block>,
 	{
 		let max_transfers = api.get_max_transfers_per_block(parent_hash)?;
-		let (Some(last_checkpoint), Some(main_chain_scripts)) =
-			(api.get_last_data_checkpoint(parent_hash)?, api.get_main_chain_scripts(parent_hash)?)
-		else {
-			log::info!("💤 Skipping token bridge transfer observation. Pallet not configured.");
+		let Some(last_checkpoint) = api.get_last_data_checkpoint(parent_hash)? else {
+			log::info!(
+				"💤 Skipping token bridge transfer observation. Pallet last data checkpoint not configured."
+			);
+			return Ok(Self::Inert);
+		};
+		let Some(main_chain_scripts) = api.get_main_chain_scripts(parent_hash)? else {
+			log::info!(
+				"💤 Skipping token bridge transfer observation. Pallet main chain addresses are not configured."
+			);
 			return Ok(Self::Inert);
 		};
 

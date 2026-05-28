@@ -131,7 +131,7 @@ pub async fn fetch_all(
 		let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 
 		log::info!(
-			"read {} blocks from cache, total transations: {}",
+			"read {} blocks from cache, total transactions: {}",
 			blocks.len(),
 			blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 		);
@@ -354,7 +354,7 @@ pub async fn fetch_from_rpc(
 	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
 	log::info!(
-		"fetched {} blocks, read {} blocks from cache, total transations: {}",
+		"fetched {} blocks, read {} blocks from cache, total transactions: {}",
 		finalized_height - min_height,
 		blocks.len() - (finalized_height - min_height) as usize,
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),

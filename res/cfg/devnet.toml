@@ -14,3 +14,4 @@ chainspec_federated_authority_config = "res/devnet/federated-authority-config.js
 chainspec_system_parameters_config = "res/devnet/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/devnet/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/devnet/registered-candidates-addresses.json"
+chainspec_c2m_bridge_config = "res/devnet/c2m-bridge-config.json"

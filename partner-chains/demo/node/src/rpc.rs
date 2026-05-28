@@ -10,15 +10,13 @@ use authority_selection_inherents::{
 	AuthoritySelectionInputs, CandidateValidationApi, CommitteeMember,
 };
 use jsonrpsee::RpcModule;
-use pallet_block_producer_fees_rpc::*;
-use pallet_block_producer_metadata_rpc::*;
 use pallet_session_validator_management_rpc::*;
 use pallet_sidechain_rpc::*;
 use partner_chains_demo_runtime::{
 	AccountId, Balance, Nonce,
 	opaque::{Block, SessionKeys},
 };
-use partner_chains_demo_runtime::{BlockNumber, BlockProducerMetadataType, CrossChainPublic, Hash};
+use partner_chains_demo_runtime::{BlockNumber, CrossChainPublic, Hash};
 use sc_consensus_grandpa::{
 	FinalityProofProvider, GrandpaJustificationStream, SharedAuthoritySet, SharedVoterState,
 };
@@ -77,8 +75,6 @@ where
 	C::Api: sidechain_slots::SlotApi<Block>,
 	C::Api: sp_sidechain::GetGenesisUtxo<Block>,
 	C::Api: sp_sidechain::GetSidechainStatus<Block>,
-	C::Api: sp_block_producer_fees::BlockProducerFeesApi<Block, AccountId>,
-	C::Api: sp_block_producer_metadata::BlockProducerMetadataApi<Block, BlockProducerMetadataType>,
 	C::Api: sp_session_validator_management::SessionValidatorManagementApi<
 			Block,
 			CommitteeMember<CrossChainPublic, SessionKeys>,
@@ -102,14 +98,12 @@ where
 	module.merge(
 		SidechainRpc::new(
 			client.clone(),
-			MainchainEpochConfig::read_from_env().unwrap(),
+			MainchainEpochConfig::read_from_env().map_err(|e| e.to_string())?,
 			data_sources.sidechain_rpc.clone(),
 			time_source.clone(),
 		)
 		.into_rpc(),
 	)?;
-	module.merge(BlockProducerFeesRpc::new(client.clone()).into_rpc())?;
-	module.merge(BlockProducerMetadataRpc::new(client.clone()).into_rpc())?;
 
 	let GrandpaDeps {
 		shared_voter_state,

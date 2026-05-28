@@ -1,10 +1,10 @@
 use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
 use super::ledger_helpers_local::{
-	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB, DustRegistrationBuilder,
-	DustWallet, FromContext, IntentInfo, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
-	Timestamp, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
-	WalletAddress, WalletSeed,
+	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB,
+	DustRegistrationBuilder, DustWallet, FromContext, IntentInfo, NIGHT, ProofProvider, Segment,
+	StandardTrasactionInfo, Timestamp, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
+	UtxoSpendInfo, Wallet, WalletAddress, WalletSeed,
 };
 use async_trait::async_trait;
 
@@ -93,14 +93,14 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 		);
 
 		let inputs: Vec<UtxoSpendInfo<WalletSeed>> = context
-			.unshielded_utxos(seed)
+			.unshielded_utxos(seed.clone())
 			.await
 			.into_iter()
 			.map(|(utxo, _ctime)| utxo)
 			.filter(|utxo| utxo.type_ == NIGHT)
 			.map(|utxo| UtxoSpendInfo {
 				value: utxo.value,
-				owner: seed,
+				owner: seed.clone(),
 				token_type: NIGHT,
 				intent_hash: Some(utxo.intent_hash),
 				output_number: Some(utxo.output_no),
@@ -112,7 +112,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 			.map(|input| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB, C>> = Box::new(UtxoOutputInfo {
 					value: input.value,
-					owner: input.owner,
+					owner: input.owner.clone(),
 					token_type: input.token_type,
 				});
 				output
@@ -149,12 +149,12 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 		// Compute allow_fee_payment for self-funding when no funding seed is provided
 		let allow_fee_payment = if funding_seed.is_none() {
 			let now = context.latest_block_context().await.tblock;
-			generationless_fee_availability(context.as_ref(), seed, now).await
+			generationless_fee_availability(context.as_ref(), seed.clone(), now).await
 		} else {
 			0
 		};
 
-		context.with_wallet_from_seed(seed, |wallet| {
+		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			let destination_dust = self.destination_dust.clone().map_or(
 				wallet.dust.public_key,
 				|destination_dust_arg| {

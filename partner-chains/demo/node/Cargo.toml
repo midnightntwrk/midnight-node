@@ -1,6 +1,6 @@
 [package]
 name = "partner-chains-demo-node"
-version.workspace = true
+version = "1.8.1"
 description = "A reference implementation of a partner chain node"
 authors.workspace = true
 edition.workspace = true
@@ -9,9 +9,6 @@ repository.workspace = true
 license = "Unlicense"
 publish = false
 build = "build.rs"
-
-[package.metadata.cargo-shear]
-ignored = ["sc-client-db"]
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -25,7 +22,7 @@ workspace = true
 [dependencies]
 clap = { workspace = true }
 log = { workspace = true }
-sc-cli = { workspace = true, features = ["rocksdb"] }
+sc-cli = { workspace = true }
 sp-core = { workspace = true }
 sc-executor = { workspace = true }
 sc-network = { workspace = true }
@@ -41,14 +38,11 @@ sc-consensus = { workspace = true }
 sc-consensus-grandpa = { workspace = true }
 sc-consensus-grandpa-rpc = { workspace = true }
 sc-client-api = { workspace = true }
-# This node template uses RocksDB as the storage backend by default.
-sc-client-db = { workspace = true, features = ["rocksdb"] }
 sp-runtime = { workspace = true }
 sp-io = { workspace = true }
 sp-timestamp = { workspace = true }
 sp-inherents = { workspace = true }
 authority-selection-inherents = { workspace = true }
-sp-block-production-log = { workspace = true }
 sidechain-domain = { workspace = true }
 sidechain-slots = { workspace = true }
 sp-sidechain = { workspace = true }
@@ -72,8 +66,6 @@ sp-blockchain = { workspace = true }
 sp-block-builder = { workspace = true }
 sc-basic-authorship = { workspace = true }
 substrate-frame-rpc-system = { workspace = true }
-pallet-block-producer-fees-rpc = { workspace = true }
-sp-block-producer-fees = { workspace = true }
 pallet-transaction-payment-rpc = { workspace = true }
 
 # Local Dependencies
@@ -82,26 +74,18 @@ sidechain-mc-hash = { workspace = true, features = ["mock"] }
 partner-chains-db-sync-data-sources = { workspace = true, features = [
 	"block-source",
 	"candidate-source",
-	"governed-map",
 	"mc-hash",
 	"sidechain-rpc",
-	"block-participation",
 	"bridge",
 ] }
 partner-chains-mock-data-sources = { workspace = true, features = [
 	"block-source",
 	"candidate-source",
-	"governed-map",
 	"mc-hash",
 	"sidechain-rpc",
-	"block-participation",
 	"bridge",
 ] }
 tokio = { workspace = true }
-sp-block-participation = { workspace = true, features = ["std"] }
-sp-block-producer-metadata = { workspace = true, features = ["std"] }
-pallet-block-producer-metadata-rpc = { workspace = true }
-sp-governed-map = { workspace = true, features = ["std"] }
 
 [build-dependencies]
 substrate-build-script-utils = { workspace = true }
@@ -109,12 +93,16 @@ substrate-build-script-utils = { workspace = true }
 [dev-dependencies]
 hex-literal = { workspace = true }
 time-source = { workspace = true, features = ["mock"] }
-assert_cmd = { workspace = true }
 pallet-sidechain-rpc = { workspace = true }
 authority-selection-inherents = { workspace = true, features = ["mock"] }
 
 [features]
-default = ["sidechain-domain/std"]
+default = [
+	"sidechain-domain/std",
+	"wasm-runtime",
+	"partner-chains-demo-runtime/std",
+]
+wasm-runtime = ["partner-chains-demo-runtime/wasm-runtime"]
 
 [lib]
 doctest = false

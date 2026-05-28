@@ -20,6 +20,54 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 * **Feature Request:** Clearly describe your feature, its benefits, and most importantly, the expected outcome. This helps us analyze the proposed solution and develop alternatives.
 * **Enhancement:** (WIP)
 
+## Developer Certificate of Origin (DCO)
+
+All contributions must include a sign-off in every commit message, certifying that you have the right to submit the code under the project license. This is done by adding a `Signed-off-by` trailer using `git commit -s`:
+
+```
+git commit -s -m "feat: your commit message"
+```
+
+This produces a commit message like:
+
+```
+feat: your commit message
+
+Signed-off-by: Your Name <your@email.com>
+```
+
+By signing off, you agree to the [Developer Certificate of Origin (version 1.1)](https://developercertificate.org/).
+
+If you have forgotten to sign off past commits in a PR, you can amend them:
+
+```bash
+# Amend the last commit
+git commit --amend -s --no-edit
+
+# Or rebase to sign off multiple commits (replace N with the number of commits)
+git rebase --signoff HEAD~N
+```
+
+A DCO GitHub App runs on every pull request and will block merges until all commits are signed off.
+
+### Automating sign-off
+
+To avoid having to remember `-s` on every commit, install a `prepare-commit-msg` hook in your clone of this repo that appends the sign-off automatically:
+
+```bash
+cat > .git/hooks/prepare-commit-msg <<'EOF'
+#!/bin/sh
+NAME=$(git config user.name)
+EMAIL=$(git config user.email)
+grep -qs "^Signed-off-by: " "$1" || printf "\nSigned-off-by: %s <%s>\n" "$NAME" "$EMAIL" >> "$1"
+EOF
+chmod +x .git/hooks/prepare-commit-msg
+```
+
+After installing the hook, every `git commit` in this repo will include a `Signed-off-by` trailer automatically. Make sure your `user.name` and `user.email` are set correctly, since the hook certifies the DCO on your behalf for every commit.
+
+NOTE: DCO strictly forbids automatically signing off AI generated code. Please instruct any AIs that they are not allowed to use `-s` or sign off code on your behalf. (See https://github.com/torvalds/linux/blob/master/Documentation/process/coding-assistants.rst#signed-off-by-and-developer-certificate-of-origin )
+
 ## Code Contribution Process
 
 * **Pull Requests:** Code contributions are submitted via Pull Requests.
@@ -28,7 +76,7 @@ Ensure the title is a clear summary of the requirement and provides enough conte
   prefixed with a short name moniker (e.g. `jill-my-feature`).
 * **Follow Coding Standards:** Adhere to the coding style guides specified in our documentation.
 * **Write Tests:** Include unit tests and integration tests to cover your changes.
-* **Commit Messages:** Write clear and concise commit messages.
+* **Commit Messages:** Write clear and concise commit messages, and always sign off with `git commit -s`.
 * **Submit Pull Request:** Submit your pull request to the appropriate branch in the main repository.
 * **Please do not `--force` pushes** - doing so means that reviewers will have to re-review all
   commits in the PR rather than commits since last review.

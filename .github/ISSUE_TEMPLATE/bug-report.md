@@ -2,15 +2,16 @@
 name: Bug report
 about: Submit a bug report
 title: ""
-labels: midnight-template-repo, public
+labels: ""
 assignees: ""
+type: Bug
 ---
 
-### Context & versions:
+### Context & versions
 
 <!-- Explain your setup and what versions have been used. -->
 
-### Steps to reproduce:
+### Steps to reproduce
 
 <!--
   1. Prepared x
@@ -20,10 +21,10 @@ assignees: ""
   If not reproducible, describe the steps you took as you remember it.
 -->
 
-### Actual behavior:
-
-<!-- A description of the (reproducible) outcome. -->
-
-### Expected behavior:
+### Expected behavior
 
 <!-- A description of what you expect to happen instead. -->
+
+### Actual behavior
+
+<!-- A description of the (reproducible) outcome. -->

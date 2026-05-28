@@ -2,11 +2,11 @@ use super::build_txs_ext::BuildTxsExt;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildUtxoOutput, BuildUtxoSpend,
 	BuilderContext, ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction, ContractAddress,
-	ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input, IntentCustom, IntentInfo,
-	OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider, PublicAddress, Recipient,
-	ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType, TransactionWithContext,
-	Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo,
-	Wallet, WalletAddress, WalletSeed, zswap,
+	ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input, IntentCustom,
+	IntentInfo, OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider,
+	PublicAddress, Recipient, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType,
+	TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
+	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, zswap,
 };
 use crate::{
 	serde_def::SourceTransactions,
@@ -56,11 +56,7 @@ impl EncodedOutputInfo {
 }
 
 impl<D: DB + Clone, C: BuilderContext<D>> BuildOutput<D, C> for EncodedOutputInfo {
-	fn build(
-		&self,
-		rng: &mut rand::prelude::StdRng,
-		_context: Arc<C>,
-	) -> Output<ProofPreimage, D> {
+	fn build(&self, rng: &mut rand::prelude::StdRng, _context: Arc<C>) -> Output<ProofPreimage, D> {
 		let coin_info: CoinInfo = (&self.encoded_output).into();
 		let recipient: Recipient = (&self.encoded_output.recipient).into();
 

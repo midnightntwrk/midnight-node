@@ -309,7 +309,7 @@ pub fn inject_wallet_from_cache(
 	seed: &WalletSeed,
 	ledger_state: &LedgerState<DefaultDB>,
 ) -> Result<(), CacheError> {
-	let mut wallet = Wallet::default(*seed, ledger_state);
+	let mut wallet = Wallet::default(seed.clone(), ledger_state);
 
 	if !cached.shielded_state_bytes.is_empty() {
 		let shielded_state =
@@ -331,7 +331,7 @@ pub fn inject_wallet_from_cache(
 		.wallets
 		.lock()
 		.map_err(|_| CacheError::LockPoisoned("wallets".to_string()))?;
-	wallets.insert(*seed, wallet);
+	wallets.insert(seed.clone(), wallet);
 
 	Ok(())
 }
@@ -491,7 +491,7 @@ mod tests {
 			"0000000000000000000000000000000000000000000000000000000000000001",
 		)
 		.unwrap();
-		let wallet_seeds = vec![wallet_seed];
+		let wallet_seeds = vec![wallet_seed.clone()];
 
 		let (source, context) = load_genesis_context(&wallet_seeds);
 		let total_blocks = source.blocks.len() as u64;
@@ -549,7 +549,7 @@ mod tests {
 			"0000000000000000000000000000000000000000000000000000000000000001",
 		)
 		.unwrap();
-		let wallet_seeds = vec![wallet_seed];
+		let wallet_seeds = vec![wallet_seed.clone()];
 
 		let (source, _) = load_genesis_context(&wallet_seeds);
 
@@ -586,8 +586,7 @@ mod tests {
 		// Replay remaining blocks
 		use crate::tx_generator::builder::replay_blocks;
 		let fork_ctx = ForkAwareLedgerContext::Ledger8(restored);
-		let blocks: Vec<_> = second_half.iter().collect();
-		let fork_ctx = replay_blocks(fork_ctx, &blocks, &[]);
+		let fork_ctx = replay_blocks(fork_ctx, second_half, &[]);
 		let incremental_context = fork_ctx.into_ledger8().expect("expected ledger 8 after replay");
 
 		// Compare ledger state

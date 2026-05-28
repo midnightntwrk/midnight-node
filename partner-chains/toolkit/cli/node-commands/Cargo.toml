@@ -1,6 +1,6 @@
 [package]
 name = "partner-chains-node-commands"
-version.workspace = true
+version = "1.8.1"
 license = "GPL-3.0-or-later WITH Classpath-exception-2.0"
 authors.workspace = true
 edition.workspace = true
@@ -22,7 +22,6 @@ log = { workspace = true }
 log4rs = { workspace = true }
 parity-scale-codec = { workspace = true }
 partner-chains-cli = { workspace = true }
-partner-chains-smart-contracts-commands = { workspace = true }
 plutus = { workspace = true }
 sidechain-domain = { workspace = true, features = ["std"] }
 sc-cli = { workspace = true }

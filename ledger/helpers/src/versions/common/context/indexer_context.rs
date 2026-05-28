@@ -15,12 +15,12 @@ use std::marker::PhantomData;
 
 use async_trait::async_trait;
 
-use super::BuilderContext;
 use super::super::{
 	BindingKind, BlockContext, ContractAddress, ContractState, DB, LedgerParameters,
 	PedersenDowngradeable, ProofKind, Resolver, Serializable, SignatureKind, Storable, Tagged,
 	Timestamp, Transaction, Utxo, Wallet, WalletSeed, ZswapChainState,
 };
+use super::BuilderContext;
 
 /// An indexer-backed [`BuilderContext`] that answers builder queries via indexer GraphQL queries
 /// instead of replaying every block into a local [`super::super::LedgerState`] (see issue #1186).

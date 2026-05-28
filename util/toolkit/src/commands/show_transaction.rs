@@ -9,7 +9,7 @@ use crate::{
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 
 pub struct ShowTransactionResult {
-	txs: Vec<ShowBlockTransaction>,
+	pub txs: Vec<ShowBlockTransaction>,
 }
 
 impl fmt::Display for ShowTransactionResult {
@@ -25,7 +25,7 @@ impl fmt::Display for ShowTransactionResult {
 pub struct ShowTransactionArgs {
 	/// Serialized Transaction
 	#[arg(long, short)]
-	src_file: String,
+	pub src_file: String,
 }
 
 pub fn execute(

@@ -15,11 +15,12 @@ use rand::Rng as _;
 
 use super::{
 	BindingKind, BuildIntent, BuilderContext, ClaimKind, ClaimRewardsTransaction, DB, DustActions,
-	DustParameters, DustPublicKey, DustRegistration, DustSpend, HashMapStorage, Intent, Offer,
-	OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind, ProofMarker,
-	ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen, SeedableRng, Segment,
-	SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp, SplittableRng, StdRng,
-	Storable, Tagged, Timestamp, TokenType, Transaction, WalletSeed, serialize,
+	DustLocalState, DustParameters, DustPublicKey, DustRegistration, DustSpend, HashMapStorage,
+	Intent, Offer, OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind,
+	ProofMarker, ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen,
+	SeedableRng, Segment, SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp,
+	SplittableRng, StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, WalletSeed,
+	serialize,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -31,6 +32,9 @@ pub type FinalizedTransaction<D> = Transaction<Signature, ProofMarker, PureGener
 pub type FinalizedTransaction<D> = Transaction<Signature, (), Pedersen, D>;
 
 type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
+
+type DustSpendStates<D> = HashMap<WalletSeed, Sp<DustLocalState<D>, D>>;
+type GatheredDustSpends<D> = (Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendStates<D>);
 
 pub trait FromContext<D: DB + Clone, C: BuilderContext<D>> {
 	fn new_from_context(
@@ -210,7 +214,8 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 		let dust_params = self.context.ledger_parameters().await.dust;
 
 		for _ in 0..10 {
-			let spends = self.gather_dust_spends(missing_dust, now, &dust_params)?;
+			let (spends, updated_states) =
+				self.gather_dust_spends(missing_dust, now, &dust_params)?;
 			let mut paid_tx = tx.clone();
 			self.apply_dust(&mut paid_tx, &spends, self.rng.clone().split(), now, ttl);
 
@@ -220,7 +225,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 				if let Some(dust) = computed_missing_dust {
 					missing_dust += dust;
 				} else {
-					self.confirm_dust_spends(&spends)?;
+					self.confirm_dust_spends(&spends, updated_states)?;
 					return self.prove_tx(paid_tx).await;
 				}
 			} else {
@@ -229,7 +234,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 				if let Some(dust) = computed_missing_dust {
 					missing_dust += dust;
 				} else {
-					self.confirm_dust_spends(&spends)?;
+					self.confirm_dust_spends(&spends, updated_states)?;
 					return Ok(proven_tx);
 				}
 			}
@@ -325,18 +330,21 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 		required_amount: u128,
 		ctime: Timestamp,
 		params: &DustParameters,
-	) -> Result<Vec<DustSpend<ProofPreimageMarker, D>>> {
+	) -> Result<GatheredDustSpends<D>> {
 		let mut spends = vec![];
+		let mut updated_states = HashMap::new();
 		let mut remaining = required_amount;
 		for seed in &self.funding_seeds {
 			if remaining == 0 {
-				return Ok(spends);
+				return Ok((spends, updated_states));
 			}
-			let new_spends = self
-				.context
-				.with_wallet_from_seed(*seed, |wallet| wallet.dust.speculative_spend(remaining, ctime, params))?;
-			// We asked the wallet to spend `remaining` DUST,
-			// so the total amount spent will be <= `remaining`.
+			let (new_spends, updated_state) =
+				self.context.with_wallet_from_seed(seed.clone(), |wallet| {
+					wallet.dust.speculative_spend(remaining, ctime, params)
+				})?;
+			if !new_spends.is_empty() {
+				updated_states.insert(seed.clone(), updated_state);
+			}
 			for spend in new_spends {
 				remaining -= spend.v_fee;
 				spends.push(spend);
@@ -348,13 +356,21 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			)
 			.into())
 		} else {
-			Ok(spends)
+			Ok((spends, updated_states))
 		}
 	}
 
-	fn confirm_dust_spends(&mut self, spends: &[DustSpend<ProofPreimageMarker, D>]) -> Result<()> {
+	fn confirm_dust_spends(
+		&mut self,
+		spends: &[DustSpend<ProofPreimageMarker, D>],
+		mut updated_states: DustSpendStates<D>,
+	) -> Result<()> {
 		for seed in &self.funding_seeds {
-			self.context.with_wallet_from_seed(*seed, |wallet| wallet.dust.mark_spent(spends));
+			if let Some(updated_state) = updated_states.remove(seed) {
+				self.context.with_wallet_from_seed(seed.clone(), |wallet| {
+					wallet.dust.mark_spent(spends, updated_state);
+				});
+			}
 		}
 		Ok(())
 	}
@@ -465,7 +481,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 	async fn build(&mut self) -> UnprovenTransaction<D> {
 		let nonce = self.rng.r#gen();
 		let network_id = self.context.network_id().await;
-		let claim_rewards = self.context.with_wallet_from_seed(self.coin.owner, |wallet| {
+		let claim_rewards = self.context.with_wallet_from_seed(self.coin.owner.clone(), |wallet| {
 			let unsigned_claim_mint: ClaimRewardsTransaction<(), D> = ClaimRewardsTransaction {
 				network_id: network_id.clone(),
 				value: self.coin.value,

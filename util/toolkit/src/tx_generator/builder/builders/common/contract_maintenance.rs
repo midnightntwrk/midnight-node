@@ -52,18 +52,21 @@ impl<C: BuilderContext<DefaultDB>> ContractMaintenanceBuilder<C> {
 		use super::type_convert::{convert_contract_address, convert_wallet_seed};
 
 		let commitee_seeds: Vec<WalletSeed> =
-			args.authority_seeds.iter().map(|s| convert_wallet_seed(*s)).collect();
-		let new_commitee_seeds: Vec<WalletSeed> =
-			args.new_authority_seeds.iter().map(|s| convert_wallet_seed(*s)).collect();
+			args.authority_seeds.iter().map(|s| convert_wallet_seed(s.clone())).collect();
+		let new_commitee_seeds: Vec<WalletSeed> = args
+			.new_authority_seeds
+			.iter()
+			.map(|s| convert_wallet_seed(s.clone()))
+			.collect();
 
 		let current_committee = commitee_seeds
 			.iter()
-			.map(|s| UnshieldedWallet::default(*s).signing_key().clone())
+			.map(|s| UnshieldedWallet::default(s.clone()).signing_key().clone())
 			.collect();
 
 		let new_committee = new_commitee_seeds
 			.iter()
-			.map(|s| UnshieldedWallet::default(*s).signing_key().clone())
+			.map(|s| UnshieldedWallet::default(s.clone()).signing_key().clone())
 			.collect();
 
 		Self {
@@ -218,9 +221,10 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 		// - LedgerContext and TransactionInfo
 		let (context, mut tx_info) = self.context_and_tx_info();
 
-		let contract_state = context.contract_state(self.contract_address).await.ok_or_else(|| {
-			ContractMaintenanceBuilderError::ContractNotPresent(self.contract_address)
-		})?;
+		let contract_state =
+			context.contract_state(self.contract_address).await.ok_or_else(|| {
+				ContractMaintenanceBuilderError::ContractNotPresent(self.contract_address)
+			})?;
 
 		let mut committee = self.current_committee.clone();
 		let mut committee_verifying_keys: Vec<_> =

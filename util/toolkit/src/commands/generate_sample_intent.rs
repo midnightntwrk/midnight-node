@@ -102,14 +102,16 @@ async fn execute_with_builders_v8(
 	type Ctx = midnight_node_ledger_helpers::context::LedgerContext<
 		midnight_node_ledger_helpers::DefaultDB,
 	>;
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) = match contract_call
-	{
-		ContractCall::Deploy(a) => {
-			(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
-		},
-		ContractCall::Call(a) => (Box::new(ContractCallBuilder::new(a, context, prover)), "call"),
-		ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
-	};
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
 
 	builder
 		.generate_intent_file(dest_dir, partial_file_name)
@@ -137,14 +139,16 @@ async fn execute_with_builders_v7(
 	type Ctx = midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
 		midnight_node_ledger_helpers::ledger_7::DefaultDB,
 	>;
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) = match contract_call
-	{
-		ContractCall::Deploy(a) => {
-			(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
-		},
-		ContractCall::Call(a) => (Box::new(ContractCallBuilder::new(a, context, prover)), "call"),
-		ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
-	};
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
 
 	builder
 		.generate_intent_file(dest_dir, partial_file_name)

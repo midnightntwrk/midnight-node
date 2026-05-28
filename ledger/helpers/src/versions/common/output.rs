@@ -53,7 +53,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildOutput<D, C> for OutputInfo<Contr
 
 impl<D: DB + Clone, C: BuilderContext<D>> BuildOutput<D, C> for OutputInfo<WalletSeed> {
 	fn build(&self, rng: &mut StdRng, context: Arc<C>) -> Output<ProofPreimage, D> {
-		context.with_wallet_from_seed(self.destination, |wallet| {
+		context.with_wallet_from_seed(self.destination.clone(), |wallet| {
 			let coin_info = self.coin_info(rng);
 
 			wallet.shielded.state = wallet

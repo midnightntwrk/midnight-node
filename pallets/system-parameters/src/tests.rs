@@ -247,3 +247,30 @@ fn get_d_parameter_helper_works() {
 		assert_eq!(stored.num_registered_candidates, 4);
 	});
 }
+
+#[test]
+#[should_panic(expected = "Genesis terms and conditions URL must be set")]
+fn genesis_panics_with_hash_only() {
+	let hash = H256::from_low_u64_be(123);
+	// Providing hash without URL should panic during genesis build
+	new_test_ext_with_genesis(Some(hash), None, None);
+}
+
+#[test]
+#[should_panic(expected = "Genesis terms and conditions hash must be set")]
+fn genesis_panics_with_url_only() {
+	let url = "https://example.com/terms".to_string();
+	// Providing URL without hash should panic during genesis build
+	new_test_ext_with_genesis(None, Some(url), None);
+}
+
+#[test]
+fn genesis_succeeds_with_terms_and_conditions_without_d_parameter() {
+	let hash = H256::from_low_u64_be(123);
+	let url = "https://example.com/terms".to_string();
+	new_test_ext_with_genesis(Some(hash), Some(url.clone()), None).execute_with(|| {
+		let stored = SystemParameters::terms_and_conditions().expect("Should have terms");
+		assert_eq!(stored.hash, hash);
+		assert_eq!(stored.url.to_vec(), url.as_bytes().to_vec());
+	});
+}

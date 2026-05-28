@@ -44,10 +44,22 @@ pub struct SendBatchError {
 
 #[derive(Debug, Error)]
 pub enum SenderError {
-	#[error("failed to reach best block")]
-	FailedToReachBestBlock,
-	#[error("failed to finalize")]
+	#[error(
+		"tx did not reach a best block within timeout (last seen status: {last_status}). \
+		 The node accepted the extrinsic but it was never included — common causes: \
+		 runtime rejected the tx during block-building (check the node's logs for \
+		 `InvalidTransaction`/`UnknownTransaction`), fee/weight too high, or the tx pool \
+		 evicted it. A synced node with finalized blocks does not imply the tx is valid."
+	)]
+	FailedToReachBestBlock { last_status: String },
+	#[error("tx reached best block but was not finalized within timeout")]
 	FailedToFinalize,
+	#[error("runtime reported tx invalid: {message}")]
+	InvalidTransaction { message: String },
+	#[error("tx was dropped from the pool: {message}")]
+	DroppedTransaction { message: String },
+	#[error("tx subscription returned error status: {message}")]
+	TransactionError { message: String },
 	#[error("failed sending to {url}: {source}")]
 	SendToUrlError {
 		url: String,
@@ -281,22 +293,47 @@ impl Sender {
 		mut progress: Progress,
 	) -> (
 		Progress,
-		Option<
+		Result<
 			TransactionInBlock<
 				MidnightNodeClientConfig,
 				OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
 			>,
+			SenderError,
 		>,
 	) {
 		const BEST_BLOCK_TIMEOUT: Duration = Duration::from_secs(30);
 
+		let mut last_status: &'static str = "<none>";
 		let wait_future = async {
 			while let Some(prog) = progress.tx_progress.next().await {
-				if let Ok(TransactionStatus::InBestBlock(info)) = prog {
-					return Some(info);
+				match prog {
+					Ok(TransactionStatus::InBestBlock(info)) => return Ok(info),
+					Ok(TransactionStatus::Invalid { message }) => {
+						return Err(SenderError::InvalidTransaction { message });
+					},
+					Ok(TransactionStatus::Dropped { message }) => {
+						return Err(SenderError::DroppedTransaction { message });
+					},
+					Ok(TransactionStatus::Error { message }) => {
+						return Err(SenderError::TransactionError { message });
+					},
+					Ok(status) => {
+						last_status = match status {
+							TransactionStatus::Validated => "Validated",
+							TransactionStatus::Broadcasted => "Broadcasted",
+							TransactionStatus::NoLongerInBestBlock => "NoLongerInBestBlock",
+							TransactionStatus::InFinalizedBlock(_) => "InFinalizedBlock",
+							_ => "Unknown",
+						};
+					},
+					Err(e) => {
+						return Err(SenderError::TransactionError { message: e.to_string() });
+					},
 				}
 			}
-			None
+			Err(SenderError::FailedToReachBestBlock {
+				last_status: format!("{last_status} (stream ended)"),
+			})
 		};
 
 		match tokio::time::timeout(BEST_BLOCK_TIMEOUT, wait_future).await {
@@ -307,7 +344,13 @@ impl Sender {
 					"Timeout waiting for best block after {} seconds",
 					BEST_BLOCK_TIMEOUT.as_secs()
 				);
-				(progress, None)
+				let err = SenderError::FailedToReachBestBlock {
+					last_status: format!(
+						"{last_status} (no terminal status after {}s)",
+						BEST_BLOCK_TIMEOUT.as_secs()
+					),
+				};
+				(progress, Err(err))
 			},
 		}
 	}
@@ -347,17 +390,26 @@ impl Sender {
 
 	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) -> Result<(), SenderError> {
 		let url = tx.url.clone();
-		let (progress, best_block) = Self::wait_for_best_block(tx).await;
-		if best_block.is_none() {
-			log::info!(
-				url = &url,
-				extrinsic_hash = &tx_hashes.extrinsic_hash,
-				midnight_tx_hash = &tx_hashes.midnight_tx_hash;
-				"FAILED_TO_REACH_BEST_BLOCK"
-			);
-			return Err(SenderError::FailedToReachBestBlock);
-		}
-		let best_block = best_block.unwrap();
+		let (progress, best_block_result) = Self::wait_for_best_block(tx).await;
+		let best_block = match best_block_result {
+			Ok(info) => info,
+			Err(err) => {
+				let tag = match &err {
+					SenderError::InvalidTransaction { .. } => "INVALID_TRANSACTION",
+					SenderError::DroppedTransaction { .. } => "DROPPED_TRANSACTION",
+					SenderError::TransactionError { .. } => "TRANSACTION_ERROR",
+					_ => "FAILED_TO_REACH_BEST_BLOCK",
+				};
+				log::info!(
+					url = &url,
+					extrinsic_hash = &tx_hashes.extrinsic_hash,
+					midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+					reason = err.to_string().as_str();
+					"{tag}"
+				);
+				return Err(err);
+			},
+		};
 		log::info!(
 			url = &url,
 			extrinsic_hash = &tx_hashes.extrinsic_hash,

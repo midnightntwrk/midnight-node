@@ -57,16 +57,16 @@ use {
 	ledger_storage_local::{
 		Storage,
 		arena::{ArenaKey, Sp, TypedArenaKey},
-		db::{DB, ParityDb},
+		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
+	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
-			MaintenanceUpdate, ProofMarker, SignatureKind, SingleUpdate,
-			Transaction as LedgerTransaction, VerifiedTransaction,
+			MaintenanceUpdate, OutputInstructionUnshielded, ProofMarker, SignatureKind,
+			SingleUpdate, Transaction as LedgerTransaction, VerifiedTransaction,
 		},
 	},
 	std::{
@@ -168,13 +168,33 @@ where
 	pub fn set_default_storage(mut externalities: &mut dyn Externalities) {
 		let maybe_storage = externalities.extension::<LedgerStorageExt>();
 		if let Some(storage) = maybe_storage {
-			let res = set_default_storage(|| {
-				let db = ParityDb::<sha2::Sha256>::open(storage.0.db_path.as_path());
-				Storage::new(storage.0.cache_size, db)
-			});
-			if res.is_err() {
-				log::warn!("Warning: Failed to set default storage: {res:?}");
-			}
+			match &storage.db {
+				LedgerStorageDb::UnifiedDb(db) => {
+					let res = set_default_storage(|| {
+						let db =
+                            ParityDb::<sha2::Sha256, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(OwnedDb(db.clone()));
+						Storage::new(storage.cache_size, db)
+					});
+					if res.is_err() {
+						log::warn!(
+							target: LOG_TARGET,
+							"Warning: Failed to set default storage, already initialized (UnifiedDb)"
+						);
+					}
+				},
+				LedgerStorageDb::SeparateDb(db_path) => {
+					let res = set_default_storage(|| {
+						let db = ParityDb::<sha2::Sha256>::open(db_path.as_path());
+						Storage::new(storage.0.cache_size, db)
+					});
+					if res.is_err() {
+						log::warn!(
+							target: LOG_TARGET,
+							"Warning: Failed to set default storage, already initialized (SeparateDb)"
+						);
+					}
+				},
+			};
 		} else {
 			log::error!(
 				target: LOG_TARGET,
@@ -665,7 +685,9 @@ where
 		let addr = api.deserialize::<ContractAddress>(contract_address)?;
 		let ledger = Self::get_ledger(api, state_key)?;
 
-		ledger.get_contract_state(addr).map_or(Ok(Vec::new()), f)
+		ledger
+			.get_contract_state(addr)
+			.map_or(Err(LedgerApiError::ContractNotPresent), f)
 	}
 
 	pub fn get_contract_state(
@@ -713,7 +735,10 @@ where
 		let night_addr = api.night_address(beneficiary)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		Ok(*ledger.get_unclaimed_amount(night_addr).unwrap_or(&0))
+		ledger
+			.get_unclaimed_amount(night_addr)
+			.copied()
+			.ok_or(LedgerApiError::BeneficiaryNotFound)
 	}
 
 	pub fn get_ledger_parameters(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
@@ -721,6 +746,13 @@ where
 		let ledger = Self::get_ledger(&api, state_key)?;
 		let ledger_parameters = Self::get_deserialized_ledger_parameters(&ledger);
 		api.tagged_serialize(&ledger_parameters)
+	}
+
+	pub fn get_c_to_m_bridge_min_amount(state_key: &[u8]) -> Result<u128, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let ledger_parameters = Self::get_deserialized_ledger_parameters(&ledger);
+		Ok(ledger_parameters.c_to_m_bridge_min_amount)
 	}
 
 	pub fn get_transaction_cost(
@@ -1038,6 +1070,37 @@ where
 		let events: Result<Vec<CNightGeneratesDustEvent>, LedgerApiError> =
 			events.iter().map(|e| api.tagged_deserialize(e)).collect();
 		let system_tx = SystemTransaction::CNightGeneratesDustUpdate { events: events? };
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_night_cardano_bridge_system_tx(
+		amount: u128,
+		target_address_bytes: &[u8],
+		nonce_bytes: [u8; 32],
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let target_address = api.night_address(target_address_bytes)?;
+		let output = OutputInstructionUnshielded {
+			amount,
+			target_address,
+			nonce: Nonce(HashOutput(nonce_bytes)),
+		};
+		let system_tx = SystemTransaction::DistributeNight(ClaimKind::CardanoBridge, vec![output]);
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let system_tx = SystemTransaction::DistributeReserve(amount);
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_treasury_system_tx(
+		amount: u128,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		//TODO: this is wrong transaction, ledger is missing the correct one yet. https://github.com/midnightntwrk/midnight-node/issues/1277
+		let system_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
 		api.tagged_serialize(&system_tx)
 	}
 }
