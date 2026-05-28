@@ -11,18 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct Manifest {
-	package: Package,
-}
-
-#[derive(Deserialize)]
-struct Package {
-	version: String,
-}
-
 fn get_runtime_spec_version() -> String {
 	let runtime_lib_str = std::fs::read_to_string("../runtime/src/lib.rs").unwrap();
 	for line in runtime_lib_str.lines() {
