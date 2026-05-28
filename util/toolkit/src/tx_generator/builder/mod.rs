@@ -817,7 +817,7 @@ const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_sec
 
 fn replay_blocks_7(
 	ctx: &midnight_node_ledger_helpers::ledger_7::context::LedgerContext<Db7>,
-	blocks_sorted_by_height: &[&RawBlockData],
+	blocks_sorted_by_height: &[RawBlockData],
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_7::Event<Db7>> = Vec::new();
 	let total = blocks_sorted_by_height.len();
@@ -855,7 +855,7 @@ fn replay_blocks_7(
 
 fn replay_blocks_8(
 	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
-	blocks_sorted_by_height: &[&RawBlockData],
+	blocks_sorted_by_height: &[RawBlockData],
 	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
@@ -916,7 +916,7 @@ fn replay_blocks_8(
 /// injecting cached wallets at their saved height.
 pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
-	blocks: &[&RawBlockData],
+	blocks: &[RawBlockData],
 	cached: &[(WalletSeed, CachedWalletState)],
 ) -> ForkAwareLedgerContext {
 	if !blocks.is_empty() && !cached.is_empty() {
@@ -1022,26 +1022,25 @@ pub async fn build_fork_aware_context_cached(
 	} else {
 		&received_tx.blocks[..]
 	};
-	let blocks: Vec<_> = if start_height == 0 {
-		real_blocks.iter().collect()
+	// Warm path uses `partition_point` (O(log n) binary search) rather
+	// than a linear `.filter()` — `real_blocks` is sorted by `b.number`
+	// ascending (the rest of `replay_blocks_*` already relies on this).
+	// Cold path takes the whole slice.
+	let blocks: &[RawBlockData] = if start_height == 0 {
+		real_blocks
 	} else {
-		real_blocks.iter().filter(|b| b.number > start_height).collect()
+		let i = real_blocks.partition_point(|b| b.number <= start_height);
+		&real_blocks[i..]
 	};
 
 	// 5. Replay with mid-replay wallet injection.
-	let fork_ctx = replay_blocks(fork_ctx, &blocks, &cached);
+	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached);
 
-	// 6. Save updated cache.
-	//
-	// `max_by_key(|b| b.number)` (rather than `blocks.last()`) is now
-	// redundant with step 4's pre-filter — the synthetic is no longer in
-	// `blocks` — but it remains as a defence in depth: any future change
-	// that puts a number=0 block into the replay set won't accidentally
-	// tag the cache at block_height=0. Tagging at 0 would cause the next
-	// run to restart replay at block 0 and re-insert dust events into an
-	// already-full generation tree (non-linear insert panic in
-	// `ledger/helpers/src/versions/common/context.rs`).
-	if let Some(final_block) = blocks.iter().max_by_key(|b| b.number) {
+	// 6. Save updated cache. `blocks.last()` is sound here because
+	// step 4 already excluded the dust-warp synthetic (`number = 0`)
+	// from `blocks`; the last entry is the real chain head, and
+	// pointer lookup beats an O(n) `max_by_key` on long replays.
+	if let Some(final_block) = blocks.last() {
 		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage).await;
 	}
 
@@ -1187,8 +1186,7 @@ pub fn build_fork_aware_context_raw(
 		ForkAwareLedgerContext::new_from_wallet_seeds(initial_version, network_id, wallet_seeds);
 	log::debug!("[perf] new_from_wallet_seeds (raw) took {:?}", t.elapsed());
 
-	let blocks: Vec<_> = received_tx.blocks.iter().collect();
-	replay_blocks(ctx, &blocks, &[])
+	replay_blocks(ctx, &received_tx.blocks, &[])
 }
 
 /// Build a fork-aware context from source transactions, returning a ledger 8 context.
