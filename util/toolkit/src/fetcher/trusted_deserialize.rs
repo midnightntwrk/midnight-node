@@ -38,6 +38,18 @@ use midnight_node_ledger_helpers::{
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, io};
 
+/// Minimum stack required before `stacker::maybe_grow` allocates an
+/// extension stack. Empirically ~64 KiB is enough headroom for a
+/// `Loader::get` frame plus the work `T::from_binary_repr` does at that
+/// frame; anything tighter risks an overflow before `maybe_grow` is
+/// re-evaluated at the next recursion level.
+const STACKER_RED_ZONE: usize = 64 * 1024;
+
+/// Size of each extension stack allocated by `stacker::maybe_grow`. 1
+/// MiB matches what rustc and other deep-recursion-prone crates use as
+/// the default extension chunk.
+const STACKER_GROW_SIZE: usize = 1024 * 1024;
+
 /// Reimplements `child_from` from `midnight-storage-core/storable.rs`.
 ///
 /// Must stay in sync with upstream's `child_from` + `is_in_small_object_limit`.
@@ -102,7 +114,14 @@ impl Loader<DefaultDB> for TrustedCacheLoader<'_> {
 		&self,
 		key: &ArenaKey<<DefaultDB as DB>::Hasher>,
 	) -> Result<Sp<T, DefaultDB>, io::Error> {
-		match key {
+		// `T::from_binary_repr` recursively calls back into `Loader::get`
+		// for each child node, which on a long-running chain's snapshot
+		// (millions of arena nodes, dust generation tree depth tracking
+		// log2(n)) can exhaust the default 2 MiB stack of a tokio worker
+		// thread. `stacker::maybe_grow` checks remaining stack and, only
+		// if it's below the red zone, allocates a fresh 1 MiB stack to
+		// continue on. Same pattern rustc / regex / syn / swc use.
+		stacker::maybe_grow(STACKER_RED_ZONE, STACKER_GROW_SIZE, || match key {
 			ArenaKey::Direct(node) => {
 				let child_loader = TrustedCacheLoader { node_map: self.node_map };
 				let value = T::from_binary_repr(
@@ -124,7 +143,7 @@ impl Loader<DefaultDB> for TrustedCacheLoader<'_> {
 				)?;
 				Ok(default_storage::<DefaultDB>().arena.alloc(value))
 			},
-		}
+		})
 	}
 
 	fn alloc<T: Storable<DefaultDB>>(&self, obj: T) -> Sp<T, DefaultDB> {
