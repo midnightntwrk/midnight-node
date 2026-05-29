@@ -5,18 +5,22 @@ import { sep } from 'node:path';
 
 /** A regular expression to match module resolution paths in error messages. */
 const ERROR_MODULE_REGEXP = /module '(?<path>.*)'$/;
-/** Currently supported ledger versions. */
-const SUPPORTED_LEDGER_VERSIONS = [7, 8];
+/** Currently supported `compactc` versions (in `<major>.<minor>` form). Each maps to a sibling
+ * `compact-<major>.<minor>/` workspace pinning the matched `@midnight-ntwrk/compact-js` line. */
+const SUPPORTED_COMPACTC_VERSIONS = ['0.29', '0.30', '0.31'];
+const DEFAULT_COMPACTC_VERSION = '0.31';
 
-const ledgerVersionStr = process.env.LEDGER_VERSION ?? '8';
-const ledgerVersion = parseInt(ledgerVersionStr, 10);
+// Accept either `<major>.<minor>` or `<major>.<minor>.<patch>` — `compact-js` is patch-stable, so we
+// dispatch on `<major>.<minor>` only.
+const rawCompactcVersion = process.env.COMPACTC_VERSION ?? DEFAULT_COMPACTC_VERSION;
+const compactcVersion = rawCompactcVersion.split('.').slice(0, 2).join('.');
 
-if (!SUPPORTED_LEDGER_VERSIONS.includes(ledgerVersion)) {
-  console.error(`Unsupported LEDGER_VERSION: ${ledgerVersionStr} (expected one of ${SUPPORTED_LEDGER_VERSIONS.join(', ')})`);
+if (!SUPPORTED_COMPACTC_VERSIONS.includes(compactcVersion)) {
+  console.error(`Unsupported COMPACTC_VERSION: ${rawCompactcVersion} (expected one of ${SUPPORTED_COMPACTC_VERSIONS.join(', ')})`);
   process.exit(1);
 }
 
-const toolkitPackageName = `@midnight-ntwrk/node-toolkit-v${ledgerVersion}`;
+const toolkitPackageName = `@midnight-ntwrk/node-toolkit-compact-${compactcVersion}`;
 const require = createRequire(import.meta.url);
 const toolkitRequire = createRequire(require.resolve(toolkitPackageName));
 const cjsPathSegment = `${sep}dist${sep}cjs${sep}`;
@@ -49,8 +53,9 @@ const toolkitResolve = (specifier: string) => {
 
 registerHooks({
   resolve(specifier: string, context: ResolveHookContext, next) {
-    // Intercept imports of the 'compact-js*' and 'compact-runtime' packages, and resolve them relative to
-    // their version installed in the toolkit package that will be run for the current LEDGER_VERSION...
+    // Intercept imports of the 'compact-js*' and 'compact-runtime' packages, and resolve them relative
+    // to the version installed in the toolkit package that will be run for the current
+    // COMPACTC_VERSION...
     if (specifier.startsWith('@midnight-ntwrk/compact-js') || specifier.startsWith('@midnight-ntwrk/compact-runtime')) {
       return {
         url: `file://${toolkitResolve(specifier)}`,
@@ -62,8 +67,8 @@ registerHooks({
   }
 });
 
-// Dynamically import the appropriate version of the toolkit based on the LEDGER_VERSION environment variable
-// and run it.
+// Dynamically import the appropriate version of the toolkit based on the COMPACTC_VERSION environment
+// variable and run it.
 import(toolkitPackageName)
   .then(({run}) => run())
   .catch((error) => {
