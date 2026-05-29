@@ -117,6 +117,7 @@ observed_async_trait!(
 				self.db_sync_config.get_tx_in_config().await?,
 				&self.pool,
 				&main_chain_scripts.illiquid_circulation_supply_validator_address.into(),
+				&main_chain_scripts.reserve_validator_address.into(),
 				asset,
 				data_checkpoint,
 				current_mc_block.block_no,
@@ -124,43 +125,88 @@ observed_async_trait!(
 			)
 			.await?;
 
-			let new_checkpoint = match txs.last() {
-				None => BridgeDataCheckpoint::Block(current_mc_block.block_no.into()),
-				Some(_) if (txs.len() as u32) < max_transfers => {
-					BridgeDataCheckpoint::Block(current_mc_block.block_no.into())
-				},
-				Some(tx) => BridgeDataCheckpoint::Tx(tx.tx_id()),
-			};
-
-			let transfers = txs.into_iter().map(tx_to_transfer).collect();
-
-			Ok((transfers, new_checkpoint))
+			Ok(txs_to_transfers(txs, max_transfers, current_mc_block.block_no))
 		}
 	}
 );
 
-fn tx_to_transfer<RecipientAddress>(tx: BridgeTx) -> BridgeTransferV1<RecipientAddress>
+fn txs_to_transfers<RecipientAddress>(
+	txs: Vec<BridgeTx>,
+	max_transfers: u32,
+	block_bound: BlockNumber,
+) -> (Vec<BridgeTransferV1<RecipientAddress>>, BridgeDataCheckpoint)
 where
 	RecipientAddress: for<'a> TryFrom<&'a [u8]>,
 {
-	let amount = tx.amount.0.try_into().expect("There can't be more than u64 of cNIGHT");
+	let mut transfers: Vec<BridgeTransferV1<RecipientAddress>> = vec![];
+	let mut checkpoint = BridgeDataCheckpoint::Block(block_bound.into());
+	// Add Cardano transaction transfers only if all of them fit into max_transfers
+	for tx in &txs {
+		let tx_transfers = tx_to_transfers::<RecipientAddress>(tx.clone());
+		// Would go over limit, return accumulated state from previous iteration
+		if transfers.len() + tx_transfers.len() > max_transfers as usize {
+			return (transfers, checkpoint);
+		}
+		transfers.extend(tx_transfers);
+		checkpoint = BridgeDataCheckpoint::Tx(tx.tx_id())
+	}
+	let checkpoint = if transfers.len() == max_transfers as usize {
+		checkpoint
+	} else {
+		BridgeDataCheckpoint::Block(block_bound.into())
+	};
+	(transfers, checkpoint)
+}
+
+/// This function from [BridgeTx] to [Vec<BridgeTransferV1>] works under assumption that
+/// Reserve can unlock only to ICS. If reserve shrinked, then delta went to ICS.
+/// User transfer is computed in the second place as the rest of ICS surplus.
+/// In case the second step took tokens out of ICS, it means it was ICS withdrawal.
+/// ICS are not supported by this bride, so no additional [BridgeTransferV1] is emmited in such a case.
+fn tx_to_transfers<RecipientAddress>(tx: BridgeTx) -> Vec<BridgeTransferV1<RecipientAddress>>
+where
+	RecipientAddress: for<'a> TryFrom<&'a [u8]>,
+{
 	let mc_tx_hash = tx.tx_id();
-	let recipient = match tx.c2m_metadata {
-		Some(JsonValue::Array(values)) => match values.first() {
-			None => TransferRecipient::Reserve,
-			Some(JsonValue::String(str)) => {
-				let str = str.trim_start_matches("0x");
-				match hex::decode(str)
-					.ok()
+	let reserve_debit: u64 = tx.reserve_in.saturating_sub(tx.reserve_out).into();
+	let ics_credit: u64 = tx.bridge_out.saturating_sub(tx.bridge_in).into();
+	let locked_amount = ics_credit.saturating_sub(reserve_debit);
+
+	let mut transfers = Vec::with_capacity(2);
+
+	if reserve_debit > 0 {
+		let recipient = TransferRecipient::Reserve;
+		transfers.push(BridgeTransferV1 { mc_tx_hash, amount: reserve_debit, recipient })
+	}
+
+	if locked_amount > 0 {
+		let recipient = metadata_to_recipient(tx.c2m_metadata);
+		transfers.push(BridgeTransferV1 { mc_tx_hash, amount: locked_amount, recipient })
+	}
+
+	transfers
+}
+
+fn metadata_to_recipient<RecipientAddress>(
+	metadata: Option<JsonValue>,
+) -> TransferRecipient<RecipientAddress>
+where
+	RecipientAddress: for<'a> TryFrom<&'a [u8]>,
+{
+	match metadata {
+		Some(JsonValue::Array(values)) => match values.as_slice() {
+			[JsonValue::String(str)] => {
+				match str
+					.strip_prefix("0x")
+					.and_then(|str| hex::decode(str).ok())
 					.and_then(|bytes| RecipientAddress::try_from(&bytes).ok())
 				{
 					Some(recipient) => TransferRecipient::Address { recipient },
-					None => TransferRecipient::Invalid,
+					_ => TransferRecipient::Invalid,
 				}
 			},
 			_ => TransferRecipient::Invalid,
 		},
 		_ => TransferRecipient::Invalid,
-	};
-	BridgeTransferV1 { mc_tx_hash, amount, recipient }
+	}
 }
