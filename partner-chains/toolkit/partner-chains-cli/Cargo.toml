@@ -44,8 +44,6 @@ pallet-partner-chains-bridge = { workspace = true, features = ["std"] }
 sp-partner-chains-bridge = { workspace = true, features = ["std"] }
 pallet-partner-chains-session = { workspace = true, features = ["std"] }
 pallet-sidechain = { workspace = true, features = ["std"] }
-pallet-governed-map = { workspace = true, features = ["std"] }
-sp-governed-map = { workspace = true, features = ["std"] }
 sidechain-slots = { workspace = true }
 authority-selection-inherents = { workspace = true, features = ["std"] }
 

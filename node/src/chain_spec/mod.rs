@@ -357,6 +357,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		bridge: {
 			let ics_config = genesis.ics_config();
+			let reserve_config = genesis.reserve_config();
 			let bridge_config = genesis.c2m_bridge_config();
 			BridgeConfig {
 				main_chain_scripts: if ics_config
@@ -372,6 +373,10 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 							&ics_config.illiquid_circulation_supply_validator_address,
 						)
 						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
+						reserve_validator_address: MainchainAddress::from_str(
+							&reserve_config.reserve_validator_address,
+						)
+						.expect("Failed to decode reserve_validator_address"),
 					})
 				},
 				initial_checkpoint: bridge_config.initial_data_checkpoint.map(|s| {
