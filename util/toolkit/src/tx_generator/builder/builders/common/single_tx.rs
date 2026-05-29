@@ -499,12 +499,8 @@ mod tests {
 			ShieldedOutputSpec { wallet: wallet2, amount: u128::MAX, token_type },
 		];
 
-		let result = build_shielded_offer(
-			context,
-			test_seed(),
-			outputs,
-			CoinSelectionStrategy::default(),
-		);
+		let result =
+			build_shielded_offer(context, test_seed(), outputs, CoinSelectionStrategy::default());
 
 		assert!(matches!(result, Err(ShieldedCoinSelectionError::ArithmeticOverflow)));
 	}
