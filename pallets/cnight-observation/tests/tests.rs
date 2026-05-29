@@ -1783,6 +1783,8 @@ fn set_cnight_identifier_requires_root() {
 #[test]
 fn set_cnight_identifier_rejects_oversized_input() {
 	new_test_ext().execute_with(|| {
+		// An oversized policy id is rejected by the exact-length check before the
+		// BoundedVec conversion is reached.
 		let oversized_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize + 1];
 		let valid_asset_name = b"x".to_vec();
 		assert_noop!(
@@ -1791,7 +1793,7 @@ fn set_cnight_identifier_rejects_oversized_input() {
 				oversized_policy_id,
 				valid_asset_name,
 			),
-			pallet_cnight_observation::Error::<Test>::CardanoIdentifierLengthExceeded,
+			pallet_cnight_observation::Error::<Test>::InvalidCNightPolicyIdLength,
 		);
 
 		let valid_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize];
@@ -1803,6 +1805,24 @@ fn set_cnight_identifier_rejects_oversized_input() {
 				oversized_asset_name,
 			),
 			pallet_cnight_observation::Error::<Test>::CardanoIdentifierLengthExceeded,
+		);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_rejects_short_policy_id() {
+	new_test_ext().execute_with(|| {
+		// A policy id shorter than the exact length fits the BoundedVec bound but
+		// is not a valid Cardano policy id, so it must be rejected.
+		let short_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize - 1];
+		let valid_asset_name = b"x".to_vec();
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Root.into(),
+				short_policy_id,
+				valid_asset_name,
+			),
+			pallet_cnight_observation::Error::<Test>::InvalidCNightPolicyIdLength,
 		);
 	});
 }
