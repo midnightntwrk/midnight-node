@@ -9,7 +9,7 @@ env:
 on:
   merge_group:
   pull_request:
-    branches: [ "**" ]
+    branches: ["**"]
     paths-ignore:
       - "changes/**"
   workflow_dispatch:
@@ -39,6 +39,7 @@ jobs:
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
+      node_image_tag_no_dev: ${{ steps.image_tags.outputs.node_image_tag_no_dev }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
@@ -120,6 +121,7 @@ jobs:
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "node_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+          echo "node_image_tag_no_dev=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
           echo "toolkit_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
@@ -312,6 +314,72 @@ jobs:
           name: Test artifacts (arm64)
           path: test-artifacts-arm64/
 
+  # Combine the per-platform images (`<tag>-amd64`, `<tag>-arm64`) pushed by
+  # `run` and `run-arm64` under a single multi-arch tag.
+  push-combined-manifest:
+    name: Push combined multi-arch manifest
+    needs: [run, run-arm64]
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Compute combined image tags
+        id: tags
+        env:
+          NODE_AMD64_TAG: ${{ needs.run.outputs.node_image_tag_no_dev }}
+          TOOLKIT_AMD64_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
+        run: |
+          node_amd64="$NODE_AMD64_TAG"
+          toolkit_amd64="$TOOLKIT_AMD64_TAG"
+          node_combined="${node_amd64%-amd64}"
+          toolkit_combined="${toolkit_amd64%-amd64}"
+          node_arm64="${node_combined}-arm64"
+          toolkit_arm64="${toolkit_combined}-arm64"
+          {
+            echo "node_combined=${node_combined}"
+            echo "node_amd64=${node_amd64}"
+            echo "node_arm64=${node_arm64}"
+            echo "toolkit_combined=${toolkit_combined}"
+            echo "toolkit_amd64=${toolkit_amd64}"
+            echo "toolkit_arm64=${toolkit_arm64}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Push combined manifest for midnight-node
+        env:
+          IMAGE: ghcr.io/midnightntwrk/midnight-node
+          COMBINED_TAG: ${{ steps.tags.outputs.node_combined }}
+          AMD64_TAG: ${{ steps.tags.outputs.node_amd64 }}
+          ARM64_TAG: ${{ steps.tags.outputs.node_arm64 }}
+        run: |
+          docker buildx imagetools create \
+            -t "${IMAGE}:${COMBINED_TAG}" \
+            "${IMAGE}:${AMD64_TAG}" \
+            "${IMAGE}:${ARM64_TAG}"
+          docker buildx imagetools inspect "${IMAGE}:${COMBINED_TAG}"
+
+      - name: Push combined manifest for midnight-node-toolkit
+        env:
+          IMAGE: ghcr.io/midnightntwrk/midnight-node-toolkit
+          COMBINED_TAG: ${{ steps.tags.outputs.toolkit_combined }}
+          AMD64_TAG: ${{ steps.tags.outputs.toolkit_amd64 }}
+          ARM64_TAG: ${{ steps.tags.outputs.toolkit_arm64 }}
+        run: |
+          docker buildx imagetools create \
+            -t "${IMAGE}:${COMBINED_TAG}" \
+            "${IMAGE}:${AMD64_TAG}" \
+            "${IMAGE}:${ARM64_TAG}"
+          docker buildx imagetools inspect "${IMAGE}:${COMBINED_TAG}"
 
   check-unused-deps:
     permissions:
@@ -353,7 +421,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [ run ]
+    needs: [run]
     permissions:
       id-token: write
       contents: read
@@ -683,7 +751,7 @@ jobs:
       contents: read
       actions: write
     name: Toolkit Unshielded Token E2E
-    needs: [ run ]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -1019,7 +1087,7 @@ jobs:
   local-environment-tests:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    needs: [ run, build-indexer-images ]
+    needs: [run, build-indexer-images]
     runs-on: [self-hosted, "tier:medium"]
     # The local-env stack (kupo, ogmios, db-sync, indexers, postgres, nats,
     # cardano-node, ...) binds fixed ports on 0.0.0.0 — 1442, 1337, 8088,
