@@ -228,12 +228,18 @@ async fn validate_transaction_rejects_invalid_hex() {
 #[e2e_test]
 async fn validate_transaction_pre_deploy_store_returns_not_present() {
     let _pre_deploy_guard = PreDeployGuard::new();
+    use midnight_node_ledger_helpers::extract_tx_with_context;
     use midnight_node_res::undeployed::transactions::STORE_TX;
 
     let settings = Settings::default();
     let client = MidnightClient::new(settings.node_client).await;
 
-    let tx_hex = hex::encode(STORE_TX);
+    // STORE_TX is a `SerializedTx` JSON bundle (tx_bytes + block_context), not raw tx
+    // bytes. The RPC's `tagged_deserialize` rejects the JSON wrapper as
+    // `Deserialization(Transaction)` before validation can fire, so we must unwrap it
+    // first to actually exercise the ContractNotPresent path.
+    let (tx_bytes, _block_context) = extract_tx_with_context(STORE_TX);
+    let tx_hex = hex::encode(&tx_bytes);
     let result = client.validate_transaction(&tx_hex).await;
 
     let err = result.expect_err("expected validation failure for STORE_TX without DEPLOY_TX");
