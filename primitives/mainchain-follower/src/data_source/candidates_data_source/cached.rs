@@ -91,7 +91,12 @@ impl AuthoritySelectionDataSource for CandidateDataSourceCached {
 		}
 
 		let response = self.inner.get_epoch_nonce(epoch).await?;
-		if let Ok(mut cache) = self.get_epoch_nonce_for_epoch_cache.lock() {
+		// Only cache a present nonce. A `None` here means the db-sync `epoch_param`
+		// row for this epoch hasn't been populated yet; caching it would pin the
+		// miss and keep serving `None` even after the row lands.
+		if response.is_some()
+			&& let Ok(mut cache) = self.get_epoch_nonce_for_epoch_cache.lock()
+		{
 			log::debug!("Caching epoch nonce for epoch: {:?}", epoch.0);
 			cache.put(epoch, response.clone());
 		}

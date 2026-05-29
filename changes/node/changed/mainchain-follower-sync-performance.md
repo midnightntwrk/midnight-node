@@ -10,5 +10,5 @@ lookups can be served from memory.
 These changes are intentionally limited to caching behavior and do not change
 cNIGHT observation query flow or candidate token UTXO SQL planning.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1546
+PR: https://github.com/midnightntwrk/midnight-node/pull/1551
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1531

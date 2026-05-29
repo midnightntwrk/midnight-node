@@ -27,10 +27,39 @@ pub use sqlx::PgPool;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
+/// Cache key for `get_federated_authority_data`.
+///
+/// The result is derived from the Cardano block *and* the governance bodies the
+/// query reads (council and technical committee addresses + policy ids), so all
+/// of those must take part in the key. Keying on `mc_block_hash` alone would
+/// serve stale data if the governance config changes (e.g. across a runtime
+/// upgrade) while the block hash is unchanged. The genesis-only `members` /
+/// `members_mainchain` fields don't affect the query, so they're left out.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct FederatedAuthorityCacheKey {
+	mc_block_hash: McBlockHash,
+	council_address: String,
+	council_policy_id: PolicyId,
+	technical_committee_address: String,
+	technical_committee_policy_id: PolicyId,
+}
+
+impl FederatedAuthorityCacheKey {
+	fn new(config: &FederatedAuthorityObservationConfig, mc_block_hash: &McBlockHash) -> Self {
+		Self {
+			mc_block_hash: mc_block_hash.clone(),
+			council_address: config.council.address.clone(),
+			council_policy_id: config.council.policy_id.clone(),
+			technical_committee_address: config.technical_committee.address.clone(),
+			technical_committee_policy_id: config.technical_committee.policy_id.clone(),
+		}
+	}
+}
+
 pub struct FederatedAuthorityObservationDataSourceImpl {
 	pub pool: PgPool,
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
-	cache: Arc<Mutex<LruCache<McBlockHash, FederatedAuthorityData>>>,
+	cache: Arc<Mutex<LruCache<FederatedAuthorityCacheKey, FederatedAuthorityData>>>,
 }
 
 impl FederatedAuthorityObservationDataSourceImpl {
@@ -52,9 +81,11 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		config: &FederatedAuthorityObservationConfig,
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
-		// Memoize combined council and technical committee data by Cardano block hash.
+		// Memoize combined council and technical committee data by Cardano block
+		// hash *and* the governance config the query reads from.
+		let cache_key = FederatedAuthorityCacheKey::new(config, mc_block_hash);
 		if let Ok(mut cache) = self.cache.lock()
-			&& let Some(cached) = cache.get(mc_block_hash)
+			&& let Some(cached) = cache.get(&cache_key)
 		{
 			log::debug!("fedauth cache hit for mc_block_hash {:?}", mc_block_hash);
 			return Ok(cached.clone());
@@ -145,7 +176,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			mc_block_hash: mc_block_hash.clone(),
 		};
 		if let Ok(mut cache) = self.cache.lock() {
-			cache.put(mc_block_hash.clone(), result.clone());
+			cache.put(cache_key, result.clone());
 		}
 		Ok(result)
 	}
