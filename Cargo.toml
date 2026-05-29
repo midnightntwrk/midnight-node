@@ -294,6 +294,7 @@ test-log = "0.2"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"] }
 prost = { version = "0.13.5", default-features = false}
 reqwest = { version = "0.12.22", default-features = false, features = [ "rustls-tls", "blocking", "json" ] }
+stacker = "0.1.24"
 strum = { version = "0.28.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
 
