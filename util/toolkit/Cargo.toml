@@ -54,6 +54,7 @@ ogmios-client = { workspace = true, features = ["jsonrpsee-client"] }
 whisky.workspace = true
 sidechain-domain.workspace = true
 zeroize.workspace = true
+stacker.workspace = true
 
 [dev-dependencies]
 test-case = "3.3.1"
