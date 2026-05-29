@@ -787,9 +787,8 @@ pub mod pallet {
 			asset_name: Vec<u8>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
-			let bounded_policy_id: BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>> = policy_id
-				.try_into()
-				.map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
+			let bounded_policy_id: BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>> =
+				policy_id.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
 			let bounded_asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
 				asset_name.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
 			CNightIdentifier::<T>::set((bounded_policy_id, bounded_asset_name));
@@ -809,9 +808,7 @@ pub mod pallet {
 		) -> DispatchResult {
 			ensure_root(origin)?;
 			MainChainAuthTokenAssetName::<T>::set(
-				asset_name
-					.try_into()
-					.map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?,
+				asset_name.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?,
 			);
 
 			Ok(())

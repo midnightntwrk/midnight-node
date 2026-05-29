@@ -1774,11 +1774,7 @@ fn set_cnight_identifier_requires_root() {
 			sp_runtime::DispatchError::BadOrigin,
 		);
 		assert_noop!(
-			CNightObservation::set_cnight_identifier(
-				RawOrigin::None.into(),
-				policy_id,
-				asset_name,
-			),
+			CNightObservation::set_cnight_identifier(RawOrigin::None.into(), policy_id, asset_name,),
 			sp_runtime::DispatchError::BadOrigin,
 		);
 	});
