@@ -15,6 +15,9 @@
 
 set -euxo pipefail
 
+# shellcheck disable=SC1091
+. "$(dirname "$0")/lib/wait-for-node.sh"
+
 NODE_IMAGE="${1:-ghcr.io/midnight-ntwrk/midnight-node:0.18.0-rc.3}"
 TOOLKIT_IMAGE="${2:-ghcr.io/midnight-ntwrk/midnight-node-toolkit:0.18.0-rc.3}"
 
@@ -41,25 +44,23 @@ cleanup() {
     echo "🛑 Killing node container..."
     docker container stop midnight-node-maintenance-bug 2>/dev/null || true
     echo "🧹 Removing tempdir..."
-    rm -rf $tempdir
+    rm -rf "$tempdir"
 }
 trap cleanup EXIT
 
-echo "⏳ Waiting for node to boot..."
-sleep 5
+wait_for_unfinalized_block http://localhost:9945 1
 
 # Run toolkit commands
 echo "📦 Setting up test environment..."
 
 deploy_tx_filename="deploy_tx.mn"
-maintenance_tx_filename="maintenance_tx.mn"
 contract_dir="contract"
 
 # Compile counter contract is included in the toolkit image
 # Copy it out to simulate compiling a contract externally
 tmpid=$(docker create "$TOOLKIT_IMAGE")
 docker cp "$tmpid:/toolkit-js/test/contract" "$tempdir/$contract_dir"
-docker rm -v $tmpid
+docker rm -v "$tmpid"
 
 coin_public=$(
     docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
@@ -78,7 +79,7 @@ echo "Deploying counter contract with Toolkit-JS..."
 
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    -v "$tempdir":/out -v "$tempdir/$contract_dir":/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-intent deploy -c /toolkit-js/contract/contract.config.ts \
     --coin-public "$coin_public" \
@@ -91,7 +92,7 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenanc
 echo "Generate deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    -v "$tempdir":/out -v "$tempdir/$contract_dir":/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     send-intent \
     --intent-file "/out/deploy.bin" \
@@ -101,14 +102,14 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenanc
 echo "Send deploy tx"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    -v "$tempdir":/out -v "$tempdir/$contract_dir":/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-txs --src-file /out/$deploy_tx_filename -r 1 send
 
 contract_address=$(
     docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    -v "$tempdir":/out -v "$tempdir/$contract_dir":/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     contract-address \
     --src-file /out/$deploy_tx_filename
@@ -117,7 +118,7 @@ contract_address=$(
 echo "Switch to use new maintenance authority"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    -v "$tempdir":/out -v "$tempdir/$contract_dir":/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-txs contract-simple maintenance \
     --authority-seed 0000000000000000000000000000000000000000000000000000000000000001 \
@@ -125,12 +126,12 @@ docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenanc
     --rng-seed 0000000000000000000000000000000000000000000000000000000000000001 \
     --contract-address "$contract_address"
 
-cp $tempdir/$contract_dir/managed/counter/keys/increment.verifier $tempdir/$contract_dir/managed/counter/keys/increment2.verifier
+cp "$tempdir/$contract_dir/managed/counter/keys/increment.verifier" "$tempdir/$contract_dir/managed/counter/keys/increment2.verifier"
 
 echo "Add a new increment endpoint, update increment entypoint, and remove the decrement entrypoint"
 docker run --rm -e RUST_BACKTRACE=1 --network container:midnight-node-maintenance-bug \
     -e RESTORE_OWNER="$(id -u):$(id -g)" \
-    -v $tempdir:/out -v $tempdir/$contract_dir:/toolkit-js/contract \
+    -v "$tempdir":/out -v "$tempdir/$contract_dir":/toolkit-js/contract \
     "$TOOLKIT_IMAGE" \
     generate-txs contract-simple maintenance \
     --remove-entrypoint decrement \

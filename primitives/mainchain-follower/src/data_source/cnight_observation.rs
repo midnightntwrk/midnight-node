@@ -121,6 +121,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
+		utxo_overestimate: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Resolve current_tip → CardanoPosition.
 		let _block_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_block_by_hash");
@@ -158,7 +159,11 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			tip_pos.increment()
 		};
 
-		let utxos = bulk_pull(&self.pool, config, start_position, &end).await?;
+		// The over-fetch bound is consensus-affecting and runtime-supplied, so it
+		// must flow into the SQL row limit (see `bulk_pull`) rather than a fixed
+		// client-side constant.
+		let utxos =
+			bulk_pull(&self.pool, config, start_position, &end, utxo_overestimate).await?;
 		let (result, _full_window) = truncate_to_tx_capacity(
 			utxos,
 			tx_capacity,

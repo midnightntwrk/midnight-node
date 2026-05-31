@@ -14,6 +14,7 @@
 use async_trait::async_trait;
 use builders::{DoNothingBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand};
+pub use midnight_node_ledger_helpers::CoinSelectionStrategy;
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
 		ForkAwareLedgerContext, apply_block_7, apply_block_8, block_context_from_raw_7,
@@ -216,6 +217,10 @@ pub struct BatchesArgs {
 	/// Enable Shielded transfers in batches
 	#[arg(long)]
 	pub enable_shielded: bool,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
 }
 
 // TODO: TokenIDs for shielded and unshielded
@@ -261,6 +266,10 @@ pub struct SingleTxArgs {
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
 	pub rng_seed: Option<[u8; 32]>,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
 }
 #[derive(Args, Clone, Debug)]
 pub struct RegisterDustAddressArgs {
@@ -331,6 +340,10 @@ pub struct BatchSingleTxArgs {
 	/// Number of concurrent tx generation tasks (default: available CPUs)
 	#[arg(long)]
 	pub concurrency: Option<usize>,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
 }
 
 impl BatchSingleTxArgs {
@@ -478,8 +491,8 @@ impl Builder {
 				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
 			},
 			Builder::SingleTx(args) => {
-				let mut seeds = vec![args.source_seed];
-				seeds.extend(args.funding_seed.iter());
+				let mut seeds = vec![args.source_seed.clone()];
+				seeds.extend(args.funding_seed.iter().cloned());
 				Ok(seeds)
 			},
 			Builder::RegisterDustAddress(args) => {
@@ -723,8 +736,8 @@ async fn load_and_partition_cache(
 	let mut cached: Vec<(WalletSeed, CachedWalletState)> = Vec::new();
 	for (seed, cached_state) in wallet_seeds.iter().zip(raw_cached) {
 		match cached_state {
-			Some(state) => cached.push((*seed, state)),
-			None => uncached_seeds.push(*seed),
+			Some(state) => cached.push((seed.clone(), state)),
+			None => uncached_seeds.push(seed.clone()),
 		}
 	}
 	cached.sort_by_key(|(_, ws)| ws.block_height);
@@ -796,12 +809,19 @@ type Db8 = midnight_node_ledger_helpers::ledger_8::DefaultDB;
 
 const DUST_BATCH_SIZE: usize = 1000;
 
+/// Interval between info-level "replay progress: …" log lines emitted from
+/// `replay_blocks_{7,8}`. Fine-grained per-batch progress remains at
+/// `log::debug!`; this throttle is what users see by default during a
+/// multi-hour replay so it doesn't look like the process has hung.
+const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(30);
+
 fn replay_blocks_7(
 	ctx: &midnight_node_ledger_helpers::ledger_7::context::LedgerContext<Db7>,
-	blocks_sorted_by_height: &[&RawBlockData],
+	blocks_sorted_by_height: &[RawBlockData],
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_7::Event<Db7>> = Vec::new();
 	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
 		events.extend(apply_block_7(ctx, block));
@@ -812,6 +832,20 @@ fn replay_blocks_7(
 			events.clear();
 			log::debug!("[perf] replay_blocks_7 progress: {}/{} blocks", i + 1, total);
 		}
+
+		// Heartbeat lives outside the flush branch so a long stretch of
+		// blocks with no dust events still gets a "still alive" signal.
+		// Inside the flush branch this would only fire on `DUST_BATCH_SIZE`
+		// or `is_last`, which on sparse chains can be far apart.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log::info!(
+				"replay progress: {}/{} blocks ({:.1}%)",
+				i + 1,
+				total,
+				(i + 1) as f64 / total as f64 * 100.0,
+			);
+			last_info_at = std::time::Instant::now();
+		}
 	}
 
 	if let Some(block) = blocks_sorted_by_height.last() {
@@ -821,12 +855,13 @@ fn replay_blocks_7(
 
 fn replay_blocks_8(
 	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
-	blocks_sorted_by_height: &[&RawBlockData],
+	blocks_sorted_by_height: &[RawBlockData],
 	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
 		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
@@ -849,6 +884,19 @@ fn replay_blocks_8(
 			events.clear();
 			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
 		}
+
+		// See note in `replay_blocks_7`: heartbeat must be evaluated every
+		// iteration, not gated on the event-flush condition, so sparse
+		// chains still get a "still alive" signal at the 30 s cadence.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log::info!(
+				"replay progress: {}/{} blocks ({:.1}%)",
+				i + 1,
+				total,
+				(i + 1) as f64 / total as f64 * 100.0,
+			);
+			last_info_at = std::time::Instant::now();
+		}
 	}
 
 	// Inject remaining wallets at the last replayed block height.
@@ -868,7 +916,7 @@ fn replay_blocks_8(
 /// injecting cached wallets at their saved height.
 pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
-	blocks: &[&RawBlockData],
+	blocks: &[RawBlockData],
 	cached: &[(WalletSeed, CachedWalletState)],
 ) -> ForkAwareLedgerContext {
 	if !blocks.is_empty() && !cached.is_empty() {
@@ -945,18 +993,97 @@ pub async fn build_fork_aware_context_cached(
 		initialize_context(received_tx, &uncached_seeds, start_height, storage, chain_id).await;
 
 	// 4. Determine blocks to replay.
-	let blocks: Vec<_> = if start_height == 0 {
-		received_tx.blocks.iter().collect()
+	//
+	// Exclude any dust-warp synthetic block from the replay set so the
+	// persisted snapshot (step 6) captures the real-head `BlockContext`
+	// rather than wall-clock-now. `from_blocks(_, dust_warp = true, _)`
+	// appends a synthetic timestamp-only block via
+	// `RawBlockData::new_from_timestamp(...)` which hard-codes
+	// `number = 0`. If that block is replayed before save, the snapshot's
+	// `latest_block_context.tblock` becomes the warp timestamp but the
+	// snapshot is keyed at the real chain height; a later run on the
+	// same `ledger_state_db` with `dust_warp = false` would then restore
+	// the warped context and downstream callers (`register_dust_address`,
+	// batch builders) would read warp time even though warping is off.
+	//
+	// The synthetic is always pushed last by `from_blocks`, so we
+	// detect it as last-block-number=0 alongside at least one block
+	// with number>0 (guards against legitimate fixture-loaded sources
+	// where every block has number=0 — those won't pass the chain_id
+	// check anyway, but we double-guard for clarity). We apply it
+	// explicitly *after* save as step 7 so the in-memory context for
+	// this run reflects the warp.
+	let synthetic_dust_warp = received_tx
+		.blocks
+		.last()
+		.filter(|last| last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0));
+	let real_blocks: &[RawBlockData] = if synthetic_dust_warp.is_some() {
+		&received_tx.blocks[..received_tx.blocks.len() - 1]
 	} else {
-		received_tx.blocks.iter().filter(|b| b.number > start_height).collect()
+		&received_tx.blocks[..]
+	};
+	// Warm path uses `partition_point` (O(log n) binary search) rather
+	// than a linear `.filter()` — `real_blocks` is sorted by `b.number`
+	// ascending (the rest of `replay_blocks_*` already relies on this).
+	// Cold path takes the whole slice.
+	let blocks: &[RawBlockData] = if start_height == 0 {
+		real_blocks
+	} else {
+		let i = real_blocks.partition_point(|b| b.number <= start_height);
+		&real_blocks[i..]
 	};
 
 	// 5. Replay with mid-replay wallet injection.
-	let fork_ctx = replay_blocks(fork_ctx, &blocks, &cached);
+	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached);
 
-	// 6. Save updated cache.
+	// 6. Save updated cache. `blocks.last()` is sound here because
+	// step 4 already excluded the dust-warp synthetic (`number = 0`)
+	// from `blocks`; the last entry is the real chain head, and
+	// pointer lookup beats an O(n) `max_by_key` on long replays.
 	if let Some(final_block) = blocks.last() {
 		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage).await;
+	}
+
+	// 7. Apply the dust-warp synthetic block (in-memory only, post-save).
+	//
+	// Intentionally runs *after* `try_save_cache_v2`: applying the
+	// synthetic overwrites `latest_block_context` with wall-clock-now,
+	// and persisting that under the real-head height would surface as a
+	// silent warp-leak on later `dust_warp = false` runs against the
+	// same `ledger_state_db`. Doing it here keeps the warp in-memory
+	// only — the saved snapshot stays clean. Downstream callers in
+	// this run (`register_dust_address`, batch builders) read the
+	// warped tblock as expected.
+	//
+	// Mirrors `replay_blocks_{7,8}`'s contract: `apply_block_*` only
+	// updates the ledger context (and `latest_block_context`); the
+	// per-wallet dust TTL advance lives in `update_dust_from_block`,
+	// which `replay_blocks_{7,8}` always calls for the last replayed
+	// block (see their final stanzas). Without this second call the
+	// warp would advance the *ledger's* clock but leave wallets' dust
+	// nullifier windows pinned at the real-head block's tblock, so
+	// transaction builders would read a warped `latest_block_context`
+	// while wallet dust availability still reflects real-head time.
+	// The synthetic has no transactions, so we don't need a matching
+	// `update_dust_from_events` — `apply_block_*` returns an empty
+	// event vec on a tx-less block.
+	//
+	// Handle both Ledger7 and Ledger8 variants: a pre-fork chain
+	// produces a `Ledger7` context out of step 5, and the raw/no-cache
+	// path replays the synthetic block inline in that case, so the
+	// cached path must do the same to preserve dust-warp semantics on
+	// pre-Ledger8 sources.
+	if let Some(synthetic) = synthetic_dust_warp {
+		match &fork_ctx {
+			ForkAwareLedgerContext::Ledger8(ctx8) => {
+				let _events = apply_block_8(ctx8, synthetic);
+				ctx8.update_dust_from_block(&block_context_from_raw_8(synthetic));
+			},
+			ForkAwareLedgerContext::Ledger7(ctx7) => {
+				let _events = apply_block_7(ctx7, synthetic);
+				ctx7.update_dust_from_block(&block_context_from_raw_7(synthetic));
+			},
+		}
 	}
 
 	fork_ctx
@@ -1059,8 +1186,7 @@ pub fn build_fork_aware_context_raw(
 		ForkAwareLedgerContext::new_from_wallet_seeds(initial_version, network_id, wallet_seeds);
 	log::debug!("[perf] new_from_wallet_seeds (raw) took {:?}", t.elapsed());
 
-	let blocks: Vec<_> = received_tx.blocks.iter().collect();
-	replay_blocks(ctx, &blocks, &[])
+	replay_blocks(ctx, &received_tx.blocks, &[])
 }
 
 /// Build a fork-aware context from source transactions, returning a ledger 8 context.

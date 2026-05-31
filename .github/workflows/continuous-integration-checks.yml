@@ -9,8 +9,7 @@ on:
   push:
     branches: ["main"]
 # no top level default permissions for security reasons
-permissions:
-  contents: read
+permissions: {}
 concurrency:
   group: ${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
   cancel-in-progress: true
@@ -18,6 +17,9 @@ jobs:
   run:
     name: Fomatting and Linting
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     env:
       FORCE_COLOR: 1
     steps:
@@ -26,46 +28,41 @@ jobs:
         with:
           submodules: true
 
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - name: Merge Conflict Finder
+        if: steps.guard.outputs.hit != 'true'
         uses: olivernybroe/action-conflict-finder@78f7add155e0bf97e9c71cb0383ef5691f72868c # v4.0
 
       - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      - name: Check for existing images
-        id: check_images
-        run: |
-          content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          tag="${version}-dev-${content_hash}-amd64"
-          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${tag}" > /dev/null 2>&1 && echo true || echo false)
-          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${version}-${content_hash}-amd64" > /dev/null 2>&1 && echo true || echo false)
-          if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
-            echo "skip_check=true" >> "$GITHUB_OUTPUT"
-            echo "Images already exist, skipping format/lint check"
-          else
-            echo "skip_check=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        if: steps.check_images.outputs.skip_check != 'true'
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Free disk space
-        if: steps.check_images.outputs.skip_check != 'true'
+        if: steps.guard.outputs.hit != 'true'
         run: scripts/free-disk-space.sh
 
       - name: Run build
-        if: steps.check_images.outputs.skip_check != 'true'
+        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly --ci +check
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   feature-unification:
     name: Feature Unification Check
@@ -80,40 +77,34 @@ jobs:
         with:
           submodules: true
 
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
       - name: Login to GHCR
+        if: steps.guard.outputs.hit != 'true'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      - name: Check for existing images
-        id: check_images
-        run: |
-          content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
-          version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          tag="${version}-dev-${content_hash}-amd64"
-          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${tag}" > /dev/null 2>&1 && echo true || echo false)
-          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${version}-${content_hash}-amd64" > /dev/null 2>&1 && echo true || echo false)
-          if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
-            echo "skip_check=true" >> "$GITHUB_OUTPUT"
-            echo "Images already exist, skipping feature unification check"
-          else
-            echo "skip_check=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        if: steps.check_images.outputs.skip_check != 'true'
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Free disk space
-        if: steps.check_images.outputs.skip_check != 'true'
+        if: steps.guard.outputs.hit != 'true'
         run: scripts/free-disk-space.sh
 
       - name: Run feature unification check
-        if: steps.check_images.outputs.skip_check != 'true'
+        if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly --ci +check-feature-unification
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

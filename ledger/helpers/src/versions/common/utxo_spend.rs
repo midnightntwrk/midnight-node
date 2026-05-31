@@ -15,6 +15,7 @@ use super::{
 	DB, IntentHash, LedgerContext, SigningKey, Sp, UnshieldedTokenType, Utxo, UtxoId, UtxoSpend,
 	Wallet, WalletSeed,
 };
+use crate::CoinSelectionStrategy;
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -34,6 +35,8 @@ pub enum UtxoSelectionError {
 	NoMatchingUtxo { min_value: u128, token_type: UnshieldedTokenType, seed: WalletSeed },
 	#[error("pinned UTXO not found: {0:?}")]
 	PinnedUtxoNotFound(Box<PinnedUtxoNotFound>),
+	#[error("arithmetic overflow in UTXO selection")]
+	ArithmeticOverflow,
 }
 
 pub struct UtxoSpendInfo<O> {
@@ -74,7 +77,7 @@ impl UtxoSpendInfo<WalletSeed> {
 				.ok_or(UtxoSelectionError::NoMatchingUtxo {
 					min_value: self.value,
 					token_type: self.token_type,
-					seed: self.owner,
+					seed: self.owner.clone(),
 				})
 				.map(|utxo| utxo.0.clone())
 		})
@@ -87,9 +90,10 @@ impl UtxoSpendInfo<WalletSeed> {
 		seed: WalletSeed,
 		required_value: u128,
 		token_type: UnshieldedTokenType,
+		strategy: CoinSelectionStrategy,
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed, |wallet| {
+			context.with_wallet_from_seed(seed.clone(), |wallet| {
 				let owner = wallet.unshielded.signing_key().verifying_key();
 				let matching_inputs = ledger_state
 					.utxo
@@ -100,17 +104,17 @@ impl UtxoSpendInfo<WalletSeed> {
 					})
 					.map(|utxo| UtxoSpendInfo {
 						value: utxo.0.value,
-						owner: seed,
+						owner: seed.clone(),
 						token_type: utxo.0.type_,
 						intent_hash: Some(utxo.0.intent_hash),
 						output_number: Some(utxo.0.output_no),
 					})
 					.collect();
-				Self::select_inputs(matching_inputs, required_value).ok_or(
+				Self::select_inputs(matching_inputs, required_value, strategy).ok_or(
 					UtxoSelectionError::InsufficientBalance {
 						required: required_value,
 						token_type,
-						seed,
+						seed: seed.clone(),
 					},
 				)
 			})
@@ -129,7 +133,7 @@ impl UtxoSpendInfo<WalletSeed> {
 		utxo_ids: &[UtxoId],
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
 		context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed, |wallet| {
+			context.with_wallet_from_seed(seed.clone(), |wallet| {
 				let owner = wallet.unshielded.signing_key().verifying_key();
 				let mut selected: Vec<UtxoSpendInfo<WalletSeed>> =
 					Vec::with_capacity(utxo_ids.len());
@@ -150,13 +154,13 @@ impl UtxoSpendInfo<WalletSeed> {
 								intent_hash,
 								output_no: output_number,
 								token_type,
-								seed,
+								seed: seed.clone(),
 							}))
 						})?;
 					total = total.saturating_add(utxo.0.value);
 					selected.push(UtxoSpendInfo {
 						value: utxo.0.value,
-						owner: seed,
+						owner: seed.clone(),
 						token_type: utxo.0.type_,
 						intent_hash: Some(utxo.0.intent_hash),
 						output_number: Some(utxo.0.output_no),
@@ -166,7 +170,7 @@ impl UtxoSpendInfo<WalletSeed> {
 					UtxoSelectionError::InsufficientBalance {
 						required: required_value,
 						token_type,
-						seed,
+						seed: seed.clone(),
 					},
 				)?;
 				Ok((selected, change))
@@ -174,22 +178,23 @@ impl UtxoSpendInfo<WalletSeed> {
 		})
 	}
 
-	/// From given `inputs` it select coins of at least `required`.
+	/// From given `inputs` select coins totaling at least `required`, ordered by `strategy`.
 	/// Returns selected coins and change.
 	fn select_inputs<O>(
 		mut inputs: Vec<UtxoSpendInfo<O>>,
 		required: u128,
+		strategy: CoinSelectionStrategy,
 	) -> Option<(Vec<UtxoSpendInfo<O>>, u128)> {
+		inputs.sort_by_key(|input| input.value);
+		if matches!(strategy, CoinSelectionStrategy::LargestFirst) {
+			inputs.reverse();
+		}
+
 		let mut total = 0u128;
-		let mut selected = vec![];
-		while !inputs.is_empty() {
-			let idx = inputs
-				.iter()
-				.position(|qi| qi.value + total > required)
-				.unwrap_or(inputs.len() - 1);
-			let utxo = inputs.swap_remove(idx);
-			total += utxo.value;
-			selected.push(utxo);
+		let mut selected = Vec::with_capacity(inputs.len());
+		for input in inputs {
+			total = total.checked_add(input.value)?;
+			selected.push(input);
 			if let Some(change) = total.checked_sub(required) {
 				return Some((selected, change));
 			}
@@ -200,7 +205,7 @@ impl UtxoSpendInfo<WalletSeed> {
 
 impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
 	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoSpend {
-		context.with_wallet_from_seed(self.owner, |wallet| {
+		context.with_wallet_from_seed(self.owner.clone(), |wallet| {
 			let owner = wallet.unshielded.signing_key().verifying_key();
 			// If self identifies an UTXO then use it, otherwise try to find best matching UTXO in the wallet.
 			match (self.intent_hash, self.output_number) {
@@ -227,8 +232,118 @@ impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
 	}
 
 	fn signing_key(&self, context: Arc<LedgerContext<D>>) -> SigningKey {
-		context.with_wallet_from_seed(self.owner, |wallet| wallet.unshielded.signing_key().clone())
+		context.with_wallet_from_seed(self.owner.clone(), |wallet| {
+			wallet.unshielded.signing_key().clone()
+		})
 	}
 }
 
 // TODO: impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<VerifyingKey>
+
+#[cfg(test)]
+mod tests {
+	use super::super::HashOutput;
+	use super::*;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::Short([0u8; 16])
+	}
+
+	fn test_token_type() -> UnshieldedTokenType {
+		UnshieldedTokenType(HashOutput([0u8; 32]))
+	}
+
+	fn make_utxo(value: u128) -> UtxoSpendInfo<WalletSeed> {
+		UtxoSpendInfo {
+			value,
+			owner: test_seed(),
+			token_type: test_token_type(),
+			intent_hash: None,
+			output_number: None,
+		}
+	}
+
+	#[test]
+	fn select_inputs_exact_match() {
+		let inputs = vec![make_utxo(100)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 0);
+	}
+
+	#[test]
+	fn select_inputs_change_produced() {
+		let inputs = vec![make_utxo(150)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 50);
+	}
+
+	#[test]
+	fn select_inputs_accumulation_overflow_returns_none() {
+		let half_plus_one = u128::MAX / 2 + 1;
+		let inputs = vec![make_utxo(half_plus_one), make_utxo(half_plus_one)];
+		let result =
+			UtxoSpendInfo::select_inputs(inputs, u128::MAX, CoinSelectionStrategy::LargestFirst);
+		assert!(result.is_none(), "accumulation overflow should return None");
+	}
+
+	#[test]
+	fn select_inputs_overflow_with_remaining_inputs_returns_none() {
+		// After two inputs the accumulator overflows; the remaining input must not
+		// cause a panic, and the call must return None.
+		let large = u128::MAX / 2 + 1;
+		let inputs = vec![make_utxo(large), make_utxo(large), make_utxo(large)];
+		let result =
+			UtxoSpendInfo::select_inputs(inputs, u128::MAX, CoinSelectionStrategy::LargestFirst);
+		assert!(result.is_none());
+	}
+
+	#[test]
+	fn select_inputs_multiple_sum_to_required() {
+		let inputs = vec![make_utxo(60), make_utxo(40)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 2);
+		assert_eq!(change, 0);
+	}
+
+	#[test]
+	fn select_inputs_zero_required() {
+		let inputs = vec![make_utxo(50)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 0, CoinSelectionStrategy::LargestFirst);
+		let (selected, change) = result.expect("zero required should select first input");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(change, 50);
+	}
+
+	#[test]
+	fn select_inputs_insufficient_returns_none() {
+		let inputs = vec![make_utxo(30), make_utxo(20)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 100, CoinSelectionStrategy::LargestFirst);
+		assert!(result.is_none(), "insufficient inputs should return None");
+	}
+
+	#[test]
+	fn select_inputs_largest_first_minimizes_count() {
+		let inputs = vec![make_utxo(10), make_utxo(20), make_utxo(100)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 25, CoinSelectionStrategy::LargestFirst);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 1);
+		assert_eq!(selected[0].value, 100);
+		assert_eq!(change, 75);
+	}
+
+	#[test]
+	fn select_inputs_smallest_first_consolidates_dust() {
+		let inputs = vec![make_utxo(10), make_utxo(20), make_utxo(100)];
+		let result = UtxoSpendInfo::select_inputs(inputs, 25, CoinSelectionStrategy::SmallestFirst);
+		let (selected, change) = result.expect("should select inputs");
+		assert_eq!(selected.len(), 2);
+		assert_eq!(selected[0].value, 10);
+		assert_eq!(selected[1].value, 20);
+		assert_eq!(change, 5);
+	}
+}

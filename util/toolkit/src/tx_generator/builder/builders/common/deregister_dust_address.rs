@@ -83,14 +83,14 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 		);
 
 		let inputs = context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed, |wallet| {
+			context.with_wallet_from_seed(seed.clone(), |wallet| {
 				wallet
 					.unshielded_utxos(ledger_state)
 					.iter()
 					.filter(|utxo| utxo.type_ == NIGHT)
 					.map(|utxo| UtxoSpendInfo {
 						value: utxo.value,
-						owner: seed,
+						owner: seed.clone(),
 						token_type: NIGHT,
 						intent_hash: Some(utxo.intent_hash),
 						output_number: Some(utxo.output_no),
@@ -104,7 +104,7 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 			.map(|input| {
 				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
 					value: input.value,
-					owner: input.owner,
+					owner: input.owner.clone(),
 					token_type: input.token_type,
 				});
 				output
@@ -139,7 +139,7 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 		tx_info.add_intent(Segment::Fallible.into(), boxed_intent);
 
 		// Deregistration: pass dust_address: None instead of Some(dust_address)
-		context.with_wallet_from_seed(seed, |wallet| {
+		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			tx_info.add_dust_registration(DustRegistrationBuilder {
 				signing_key: wallet.unshielded.signing_key().clone(),
 				dust_address: None,

@@ -60,6 +60,10 @@ pub async fn bulk_pull(
 	cfg: &CNightAddresses,
 	start: &CardanoPosition,
 	end: &CardanoPosition,
+	// Per-query SQL row limit (over-fetch bound). The consensus inherent path
+	// passes the runtime-supplied `utxo_overestimate`; the background cache
+	// refresh passes `LARGE_LIMIT` to pull a whole multi-block window.
+	limit: usize,
 ) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
 	let ds = MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0);
 
@@ -96,7 +100,7 @@ pub async fn bulk_pull(
 	let paged = crate::db::PagedQuery {
 		start,
 		end,
-		limit: LARGE_LIMIT,
+		limit,
 		offset: 0,
 		low_bound: low_bounds,
 		high_bound: high_bounds,
@@ -374,7 +378,9 @@ async fn refresh_window(
 	);
 	let t0 = std::time::Instant::now();
 	let (start, end) = whole_block_range(from_block, target_end);
-	let extension = bulk_pull(pool, cfg, &start, &end).await?;
+	// Warming the cache means pulling a whole multi-block window, so the per-query
+	// limit is the wide `LARGE_LIMIT` rather than the per-block over-fetch bound.
+	let extension = bulk_pull(pool, cfg, &start, &end, LARGE_LIMIT).await?;
 	{
 		let mut events_guard =
 			all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
@@ -434,6 +440,7 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
+		utxo_overestimate: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Same-tip cache: if `current_tip` hasn't advanced, the Cardano window
 		// hasn't grown. Reuse the previous result directly (exact match) or
@@ -518,7 +525,13 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 				);
 				return self
 					.db_fallback
-					.get_utxos_up_to_capacity(config, start_position, current_tip, tx_capacity)
+					.get_utxos_up_to_capacity(
+						config,
+						start_position,
+						current_tip,
+						tx_capacity,
+						utxo_overestimate,
+					)
 					.await;
 			}
 		} else {
@@ -526,7 +539,13 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 			// we wait for the first refresh to complete.
 			return self
 				.db_fallback
-				.get_utxos_up_to_capacity(config, start_position, current_tip, tx_capacity)
+				.get_utxos_up_to_capacity(
+					config,
+					start_position,
+					current_tip,
+					tx_capacity,
+					utxo_overestimate,
+				)
 				.await;
 		}
 

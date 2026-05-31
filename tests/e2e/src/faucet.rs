@@ -73,7 +73,7 @@ impl FaucetManager {
                 Some(u)
             }
             None => {
-                println!(
+                tracing::info!(
                     "No eligible UTXO found with {} lovelace. Creating new one...",
                     expected_lovelace
                 );

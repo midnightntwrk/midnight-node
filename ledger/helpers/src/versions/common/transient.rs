@@ -38,7 +38,7 @@ impl<D: DB + Clone> BuildTransient<D> for TransientInfo<WalletSeed, WalletSeed> 
 		context: Arc<LedgerContext<D>>,
 	) -> Transient<ProofPreimage, D> {
 		let inputs = vec![];
-		let outputs: Vec<Box<dyn BuildOutput<D>>> = vec![Box::new(self.output)];
+		let outputs: Vec<Box<dyn BuildOutput<D>>> = vec![Box::new(self.output.clone())];
 		let transients = vec![];
 
 		let mut offer_arg = OfferInfo { inputs, outputs, transients };
@@ -47,8 +47,8 @@ impl<D: DB + Clone> BuildTransient<D> for TransientInfo<WalletSeed, WalletSeed> 
 			.expect("offer build failed: arithmetic overflow");
 
 		context.with_wallets_from_seeds(
-			self.input.origin,
-			self.output.destination,
+			self.input.origin.clone(),
+			self.output.destination.clone(),
 			|_origin_wallet, destination_wallet| {
 				// Apply offer to `destination` to be able to spend later
 				let secret_keys = &destination_wallet.shielded.secret_keys();

@@ -45,6 +45,16 @@ runs:
         version: v0.8.16
         use-cache: false
 
+    # Match the tls_enabled: false setting the other self-hosted earthly
+    # jobs apply (run / test-toolkit). Without this, this action's earthly
+    # invocation has a different settings hash than the one already running
+    # on the host, and earthly's reuse-or-recycle logic SIGTERMs the existing
+    # buildkitd — taking down any concurrent earthly build on the same host.
+    - name: Disable earthly TLS (self-hosted runner has no certs)
+      shell: bash
+      run: |
+        echo "    tls_enabled: false" >> .earthly/config.yml
+
     - name: Docker Login
       uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
       with:
@@ -57,15 +67,9 @@ runs:
       with:
         tool: just
 
-    - name: Checkout midnight-reserve-contracts
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-      with:
-        repository: midnightntwrk/midnight-reserve-contracts
-        ref: c38439f6bae88252917bbf4f9797b7701ee78ee9
-        token: ${{ inputs.ghcr-password }}
-        path: midnight-reserve-contracts
-
     - name: Set contracts path
+      # midnight-reserve-contracts is a submodule of this repo, checked out by the caller's
+      # actions/checkout (with submodules: true). Pinning lives in .gitmodules, not here.
       run: echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${GITHUB_WORKSPACE}/midnight-reserve-contracts" >> "$GITHUB_ENV"
       shell: bash
 
@@ -80,6 +84,25 @@ runs:
       run: npm install -g npm@11.11.0
       shell: bash
 
+    # The local-env stack uses fixed container_names and publishes fixed host
+    # ports (validators 30333-30337 / 9933-9944 / 9615-9619, plus 32000, 30000,
+    # 8088, 4222). On a shared self-hosted host a container left by a cancelled
+    # or crashed prior run keeps a name/port bound, so the fresh stack fails with
+    # "port is already allocated" or a name conflict. The job's concurrency group
+    # only serialises this job against itself, not against leftovers. Tear the
+    # whole compose project down by label so every leftover service is reclaimed
+    # regardless of which name/port it holds — rather than a hand-maintained port
+    # list, which drifts as the compose file changes.
+    - name: Reclaim leftover local-env stack (self-hosted shared host)
+      shell: bash
+      run: |
+        docker compose -p local-env down --remove-orphans --volumes 2>/dev/null || true
+        leftovers=$(docker ps -aq --filter "label=com.docker.compose.project=local-env" || true)
+        if [ -n "$leftovers" ]; then
+          echo "Force-removing leftover local-env containers: $leftovers"
+          docker rm -f $leftovers || true
+        fi
+
     - name: Deploy local environment
       run: |
         echo "🔍 Debug: Checking input values..."
@@ -89,6 +112,11 @@ runs:
         echo "WALLET_INDEXER_IMAGE: ${WALLET_INDEXER_IMAGE}"
 
         echo "🚀 Running Earthly command..."
+        # Source .envrc so EARTHLY_CONFIG is set (self-hosted vs default switch).
+        # Without this, earthly falls back to ~/.earthly/config.yml which has a
+        # different settings hash than the other self-hosted jobs and recycles
+        # the shared earthly-buildkitd container, cancelling concurrent builds.
+        . ./.envrc
         earthly +start-local-env-with-indexer-ci \
           --NODE_IMAGE="${NODE_IMAGE}" \
           --INDEXER_API_IMAGE="${INDEXER_API_IMAGE}" \
@@ -101,6 +129,15 @@ runs:
         CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
 
+    # Fails fast if any validator (including unified-storage nodes 4 and 5)
+    # is stuck or panicking — GRANDPA needs 2/3 quorum, so a non-finalizing
+    # validator stalls the network and per-node finality probing surfaces
+    # the regression deterministically.
+    - name: Verify all validators reach finality
+      working-directory: local-environment
+      run: npm run verify-finality:local-env -- --target-block 1 --timeout 300
+      shell: bash
+
 #    - name: Run Indexer E2E Tests
 #      uses: ./.github/actions/reusable-e2e-tests
 #      with:
@@ -109,7 +146,9 @@ runs:
 
     - name: e2e tests
       id: e2e-tests
-      run: earthly +local-env-e2e
+      # Source .envrc so EARTHLY_CONFIG matches other self-hosted jobs (see
+      # comment on the earlier earthly invocation in this action for why).
+      run: . ./.envrc && earthly +local-env-e2e
       shell: bash
 
     - name: toolkit-multi-dest-e2e

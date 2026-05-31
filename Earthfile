@@ -1,5 +1,19 @@
 VERSION 0.8
 
+# Scopes the cargo build directory (`/target`) so PRs running on the same
+# self-hosted runner host don't share `.rmeta` / `.rlib` artifacts via a
+# stable auto-generated cache id. Without scoping, an in-flight branch
+# that's changed a pallet's trait surface can leak its build into the
+# next PR's job and cause spurious E0046 trait/impl mismatches.
+#
+# Default is constant so local invocations share one cache. CI must
+# override this with a per-branch value (passed via `--build-arg
+# CACHE_KEY=<sanitized PR head ref>`). The Earthly builtin
+# EARTHLY_GIT_BRANCH is NOT a reliable source here because actions/checkout
+# leaves the workspace on the PR merge commit in detached-HEAD state, so
+# the builtin resolves to the literal string `HEAD` across every PR.
+ARG --global CACHE_KEY=local
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -180,7 +194,8 @@ rebuild-sqlx:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -767,7 +782,8 @@ planner:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
     RUN cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
@@ -844,7 +860,8 @@ test:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # Test
     RUN mkdir /test-artifacts
@@ -858,8 +875,14 @@ test:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
     # - partner-chains-cardano-offchain are: 1) flaky, 2) long running, 3) test in partner-chains repo, 4) cover functionality used to e2e test partner-chains (non-production)
+    # DOCKERHUB_USER/TOKEN default to empty so local builds and fork PRs (where secrets
+    # aren't exposed) still work — at the cost of unauthenticated pull rate limits.
     WITH DOCKER
-        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
+        RUN --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN= \
+            if [ -n "$DOCKERHUB_TOKEN" ]; then \
+              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            fi && \
+            MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
             --exclude partner-chains-cardano-offchain \
             -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
@@ -881,7 +904,8 @@ test-pallet-fixtures:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
     # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
@@ -907,7 +931,8 @@ build-test-toolkit:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
     RUN microdnf -y install tar gzip xz docker && \
@@ -1038,7 +1063,7 @@ build:
 build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests partner-chains .
+    ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
     ARG NATIVEARCH
 
@@ -1062,14 +1087,14 @@ subwasm:
 # This ensures reproducible builds across different environments
 # See: https://github.com/paritytech/srtool
 #
-# Note: srtool uses its own pinned Rust version (currently 1.88.0) for deterministic builds.
+# Note: srtool uses its own pinned Rust version (currently 1.93.0) for deterministic builds.
 # The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
 # reproducibility - srtool's environment is fixed and verified.
 srtool-build:
     # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_VERSION=0.18.3
-    # srtool 1.88.0 uses Rust 1.88.0 - this is intentional for determinism
-    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+    ARG SRTOOL_VERSION=0.18.4
+    # srtool 1.93.0 uses Rust 1.93.0 - this is intentional for determinism
+    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
 
     # srtool expects source code in /build
     WORKDIR /build
@@ -1098,8 +1123,8 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    ARG SRTOOL_VERSION=0.18.3
-    FROM paritytech/srtool:1.88.0-${SRTOOL_VERSION}
+    ARG SRTOOL_VERSION=0.18.4
+    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
@@ -1131,7 +1156,7 @@ node-image:
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
-    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
+    ENV GIT_CONTENT_HASH_SHORT="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
@@ -1451,9 +1476,11 @@ local-env-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
+    RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
@@ -1526,6 +1553,14 @@ start-local-env-with-indexer-ci:
     ARG WALLET_INDEXER_IMAGE
     WORKDIR local-environment
     RUN npm ci
+    # Tear down any stack left over from a previous run before starting a fresh
+    # one. Without this, named volumes (local-env_midnight-node-N-data, etc.)
+    # persist on shared CI hosts (e.g. self-hosted runners) and the new
+    # run boots validators with stale db state from the prior run — which
+    # breaks chain-indexer with "unsupported protocol version" when the
+    # genesis/runtime expectations disagree. The non-CI sibling target
+    # `+start-local-env-with-indexer` does this same down already.
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
     RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
@@ -1555,6 +1590,84 @@ extract-toolkit-artifacts:
     FROM ${TOOLKIT_IMAGE}
     USER root
     SAVE ARTIFACT /midnight-node-toolkit AS LOCAL artifacts-$NATIVEARCH/midnight-node-toolkit
+
+# sync-mainnet-1000-snapshot generates a minimal cexplorer snapshot from a
+# cardano-db-sync postgres reachable via SOURCE_DSN. The snapshot is saved as
+# an artifact under static/sync-test/ so it can be reused by +sync-mainnet-1000
+# and consumed by CI without re-running the (heavy, db-sync-dependent) build.
+#
+# Usage:
+#   earthly +sync-mainnet-1000-snapshot --SOURCE_DSN=postgres://user:pass@host:5432/cexplorer
+sync-mainnet-1000-snapshot:
+    ARG SOURCE_DSN
+    ARG MIN_BLOCK_NO=13164005
+    ARG MAX_BLOCK_NO=13174340
+    ARG MIN_EPOCH=617
+    # postgres:17.4-alpine matches the loader image used by run-sync.sh and
+    # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
+    FROM postgres:17.4-alpine
+    RUN apk add --no-cache bash xz
+    WORKDIR /work
+    COPY scripts/sync-test/build-snapshot.sh ./
+    RUN --no-cache \
+        SOURCE_DSN="$SOURCE_DSN" \
+        MIN_BLOCK_NO=$MIN_BLOCK_NO \
+        MAX_BLOCK_NO=$MAX_BLOCK_NO \
+        MIN_EPOCH=$MIN_EPOCH \
+        OUTPUT=/work/snapshot.sql.xz \
+        bash ./build-snapshot.sh
+    SAVE ARTIFACT /work/snapshot.sql.xz snapshot.sql.xz AS LOCAL static/sync-test/snapshot.sql.xz
+
+# sync-mainnet-1000 runs a fresh midnight-node against a self-contained
+# postgres preloaded with a pre-built cardano-db-sync snapshot, and verifies
+# the node syncs the first 1000 blocks of Midnight Mainnet.
+#
+# The snapshot is NOT rebuilt here -- run +sync-mainnet-1000-snapshot first
+# (or fetch the artifact from a CI workflow) to populate
+# static/sync-test/snapshot.sql.xz.
+#
+# Requires:
+#   - static/sync-test/snapshot.sql.xz present locally
+#   - docker available locally (the target uses WITH DOCKER)
+#
+# Usage:
+#   earthly -P +sync-mainnet-1000
+sync-mainnet-1000:
+    LOCALLY
+    # NODE_IMAGE may be either an earthly target reference (default `+node-image`,
+    # which is built and tagged locally as $NODE_IMAGE_TAG before running) or a
+    # docker image reference (e.g. `ghcr.io/midnight-ntwrk/midnight-node:tag`),
+    # which is pre-pulled by buildkit (so private-registry creds work) and used
+    # directly. The latter lets CI run the sync test against an already-built
+    # image without re-running +node-image.
+    ARG NODE_IMAGE=+node-image
+    ARG NODE_IMAGE_TAG=localhost/midnight-node:sync-test
+    ARG SYNC_UNTIL=1000
+    ARG SYNC_TIMEOUT_SECS=1800
+    # PRINT_LOGS=1 dumps the node and postgres container logs to stderr after
+    # the run finishes (success or failure). Useful for local debugging.
+    ARG PRINT_LOGS=0
+    IF echo "$NODE_IMAGE" | grep -q '^+'
+        WITH DOCKER --load $NODE_IMAGE_TAG=$NODE_IMAGE
+            RUN NODE_IMAGE=$NODE_IMAGE_TAG \
+                SNAPSHOT=static/sync-test/snapshot.sql.xz \
+                CFG_PRESET=mainnet \
+                SYNC_UNTIL=$SYNC_UNTIL \
+                SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+                PRINT_LOGS=$PRINT_LOGS \
+                ./scripts/sync-test/run-sync.sh
+        END
+    ELSE
+        WITH DOCKER --pull $NODE_IMAGE
+            RUN NODE_IMAGE=$NODE_IMAGE \
+                SNAPSHOT=static/sync-test/snapshot.sql.xz \
+                CFG_PRESET=mainnet \
+                SYNC_UNTIL=$SYNC_UNTIL \
+                SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+                PRINT_LOGS=$PRINT_LOGS \
+                ./scripts/sync-test/run-sync.sh
+        END
+    END
 
 #images Build all the images
 images:

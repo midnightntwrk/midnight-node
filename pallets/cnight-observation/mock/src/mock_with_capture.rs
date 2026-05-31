@@ -18,6 +18,7 @@ use frame_support::sp_runtime::{
 	traits::{BlakeTwo256, Get, IdentityLookup},
 };
 use frame_support::traits::{ConstU16, ConstU32, ConstU64};
+use frame_support::weights::RuntimeDbWeight;
 use frame_support::*;
 use midnight_primitives::MidnightSystemTransactionExecutor;
 use sidechain_domain::*;
@@ -97,11 +98,22 @@ impl Get<BlockReward> for LedgerBlockReward {
 	}
 }
 
+parameter_types! {
+	/// DbWeight for the mock runtime. Defaults to representative non-zero
+	/// values so tests that drive `WeightMeter` (e.g. MBM cursor handoff,
+	/// `InsufficientWeight`) see the same per-step cost the migration sees.
+	/// Tests can override via `MockDbWeight::set(...)`.
+	pub static MockDbWeight: RuntimeDbWeight = RuntimeDbWeight {
+		read: 25_000_000,
+		write: 100_000_000,
+	};
+}
+
 impl frame_system::Config for Test {
 	type BaseCallFilter = frame_support::traits::Everything;
 	type BlockWeights = ();
 	type BlockLength = ();
-	type DbWeight = ();
+	type DbWeight = MockDbWeight;
 	type RuntimeOrigin = RuntimeOrigin;
 	type RuntimeCall = RuntimeCall;
 	type Hash = H256;
