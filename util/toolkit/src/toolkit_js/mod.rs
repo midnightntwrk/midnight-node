@@ -21,6 +21,14 @@ pub struct ToolkitJs {
 	/// location of the toolkit-js.
 	#[arg(long = "toolkit-js-path", env = "TOOLKIT_JS_PATH")]
 	pub path: String,
+
+	/// version of compactc
+	#[arg(
+        long = "compact-c-version",
+        env = "COMPACTC_VERSION",
+        value_parser = cli::semver_decode
+    )]
+	pub compactc_version: semver::Version,
 }
 
 /// Adds some protection against accidentally passing relative types to toolkit-js
@@ -227,8 +235,6 @@ impl ToolkitJs {
 			"deploy",
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--output",
@@ -238,6 +244,11 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
+		#[allow(clippy::unwrap_in_result)]
+		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
+
 		let mut signing_key = args
 			.authority_seed
 			.map(|s| {
@@ -285,8 +296,6 @@ impl ToolkitJs {
 			"circuit",
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
@@ -302,6 +311,10 @@ impl ToolkitJs {
 			"--input-ledger-params",
 			&input_ledger_parameters,
 		];
+		#[allow(clippy::unwrap_in_result)]
+		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
 			cmd_args.extend_from_slice(&["--input-zswap", &input_zswap_state]);
@@ -340,8 +353,6 @@ impl ToolkitJs {
 			command.name(),
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
@@ -349,6 +360,11 @@ impl ToolkitJs {
 			"--output",
 			&output_intent,
 		];
+		#[allow(clippy::unwrap_in_result)]
+		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
+
 		if let Some(ref signing) = args.signing {
 			cmd_args.extend_from_slice(&["--signing", signing]);
 		}

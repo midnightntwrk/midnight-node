@@ -7947,6 +7947,7 @@ dependencies = [
  "rayon",
  "redb",
  "scale-info",
+ "semver 1.0.28",
  "serde",
  "serde_bytes",
  "serde_json",
