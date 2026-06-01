@@ -72,61 +72,32 @@ impl SingleTxBuilder {
 	) -> Self {
 		use super::type_convert::*;
 
-		let local_destinations: Vec<WalletAddress> =
-			args.destination_address.iter().map(convert_wallet_address).collect();
+		// CLI shape selection. Two shapes are accepted; mixing is a usage error.
+		//   (A) --output triples (address+amount+token bundled per flag)
+		//   (B) --destination-address + parallel --*-amount / --*-token-type lists
+		let any_legacy_amount = !args.shielded_amount.is_empty()
+			|| !args.unshielded_amount.is_empty()
+			|| !args.shielded_token_type.is_empty()
+			|| !args.unshielded_token_type.is_empty()
+			|| !args.destination_address.is_empty();
 
-		// Convert amount/token vecs to version-local types.
-		let shielded_amounts: Vec<u128> = args.shielded_amount.clone();
-		let unshielded_amounts: Vec<u128> = args.unshielded_amount.clone();
-		let shielded_token_types: Vec<ShieldedTokenType> = args
-			.shielded_token_type
-			.iter()
-			.copied()
-			.map(convert_shielded_token_type)
-			.collect();
-		let unshielded_token_types: Vec<UnshieldedTokenType> = args
-			.unshielded_token_type
-			.iter()
-			.copied()
-			.map(convert_unshielded_token_type)
-			.collect();
-
-		// Classify each destination address as shielded or unshielded, preserving
-		// command-line order on each side. Per-output amounts and token types are
-		// later assigned by the order in which destinations of each kind appeared.
-		let mut shielded_wallets: Vec<ShieldedWallet<DefaultDB>> = Vec::new();
-		let mut unshielded_wallets: Vec<UnshieldedWallet> = Vec::new();
-		for (idx, addr) in local_destinations.iter().enumerate() {
-			if let Ok(sw) = <ShieldedWallet<DefaultDB>>::try_from(addr) {
-				shielded_wallets.push(sw);
-			} else if let Ok(uw) = UnshieldedWallet::try_from(addr) {
-				unshielded_wallets.push(uw);
-			} else {
+		let (shielded_outputs, unshielded_outputs) = if !args.outputs.is_empty() {
+			if any_legacy_amount {
 				log::error!(
-					"destination address at position {} does not parse as shielded or unshielded: {:?}",
-					idx,
-					addr
+					"--output cannot be combined with --destination-address / --shielded-amount / --shielded-token-type / --unshielded-amount / --unshielded-token-type; pick one CLI shape"
 				);
-				panic!("destination_address parse error");
+				panic!("mixed CLI shapes");
 			}
-		}
-
-		// Resolve amounts/tokens against the destination count on each side, with
-		// broadcast (single value) or per-destination alignment.
-		let shielded_outputs = resolve_outputs(
-			"shielded",
-			&shielded_wallets,
-			&shielded_amounts,
-			&shielded_token_types,
-			|wallet, amount, token_type| ShieldedOutputSpec { wallet, amount, token_type },
-		);
-		let unshielded_outputs = resolve_outputs(
-			"unshielded",
-			&unshielded_wallets,
-			&unshielded_amounts,
-			&unshielded_token_types,
-			|wallet, amount, token_type| UnshieldedOutputSpec { wallet, amount, token_type },
-		);
+			resolve_outputs_from_triples(&args.outputs)
+		} else {
+			if args.destination_address.is_empty() {
+				log::error!(
+					"single-tx requires at least one destination: pass --output addr=...,amount=...[,token=...] or --destination-address <ADDRESS>"
+				);
+				panic!("no destinations provided");
+			}
+			resolve_outputs_from_legacy(&args)
+		};
 
 		Self {
 			context,
@@ -149,6 +120,120 @@ impl SingleTxBuilder {
 	}
 
 	pub fn build() {}
+}
+
+/// Resolve outputs from the parallel-vec CLI shape (`--destination-address`
+/// plus per-side `--*-amount` / `--*-token-type` flags).
+fn resolve_outputs_from_legacy(
+	args: &SingleTxArgs,
+) -> (Vec<ShieldedOutputSpec<DefaultDB>>, Vec<UnshieldedOutputSpec>) {
+	use super::type_convert::*;
+
+	let local_destinations: Vec<WalletAddress> =
+		args.destination_address.iter().map(convert_wallet_address).collect();
+
+	let shielded_amounts: Vec<u128> = args.shielded_amount.clone();
+	let unshielded_amounts: Vec<u128> = args.unshielded_amount.clone();
+	let shielded_token_types: Vec<ShieldedTokenType> = args
+		.shielded_token_type
+		.iter()
+		.copied()
+		.map(convert_shielded_token_type)
+		.collect();
+	let unshielded_token_types: Vec<UnshieldedTokenType> = args
+		.unshielded_token_type
+		.iter()
+		.copied()
+		.map(convert_unshielded_token_type)
+		.collect();
+
+	let mut shielded_wallets: Vec<ShieldedWallet<DefaultDB>> = Vec::new();
+	let mut unshielded_wallets: Vec<UnshieldedWallet> = Vec::new();
+	for (idx, addr) in local_destinations.iter().enumerate() {
+		if let Ok(sw) = <ShieldedWallet<DefaultDB>>::try_from(addr) {
+			shielded_wallets.push(sw);
+		} else if let Ok(uw) = UnshieldedWallet::try_from(addr) {
+			unshielded_wallets.push(uw);
+		} else {
+			log::error!(
+				"destination address at position {} does not parse as shielded or unshielded: {:?}",
+				idx,
+				addr
+			);
+			panic!("destination_address parse error");
+		}
+	}
+
+	let shielded_outputs = resolve_outputs(
+		"shielded",
+		&shielded_wallets,
+		&shielded_amounts,
+		&shielded_token_types,
+		|wallet, amount, token_type| ShieldedOutputSpec { wallet, amount, token_type },
+	);
+	let unshielded_outputs = resolve_outputs(
+		"unshielded",
+		&unshielded_wallets,
+		&unshielded_amounts,
+		&unshielded_token_types,
+		|wallet, amount, token_type| UnshieldedOutputSpec { wallet, amount, token_type },
+	);
+
+	(shielded_outputs, unshielded_outputs)
+}
+
+/// Resolve outputs from the bundled-triple CLI shape (`--output addr=...,
+/// amount=...[,token=...]`). The address HRP picks shielded vs unshielded;
+/// an omitted token defaults to the all-zeros token type.
+fn resolve_outputs_from_triples(
+	triples: &[crate::cli_parsers::OutputArg],
+) -> (Vec<ShieldedOutputSpec<DefaultDB>>, Vec<UnshieldedOutputSpec>) {
+	use super::type_convert::*;
+
+	let mut shielded_outputs: Vec<ShieldedOutputSpec<DefaultDB>> = Vec::new();
+	let mut unshielded_outputs: Vec<UnshieldedOutputSpec> = Vec::new();
+
+	for (idx, triple) in triples.iter().enumerate() {
+		let local_addr = convert_wallet_address(&triple.address);
+		if let Ok(sw) = <ShieldedWallet<DefaultDB>>::try_from(&local_addr) {
+			let token_type = match triple.token_type {
+				Some(bytes) => {
+					convert_shielded_token_type(midnight_node_ledger_helpers::ShieldedTokenType(
+						midnight_node_ledger_helpers::HashOutput(bytes),
+					))
+				},
+				None => ShieldedTokenType::default(),
+			};
+			shielded_outputs.push(ShieldedOutputSpec {
+				wallet: sw,
+				amount: triple.amount,
+				token_type,
+			});
+		} else if let Ok(uw) = UnshieldedWallet::try_from(&local_addr) {
+			let token_type = match triple.token_type {
+				Some(bytes) => convert_unshielded_token_type(
+					midnight_node_ledger_helpers::UnshieldedTokenType(
+						midnight_node_ledger_helpers::HashOutput(bytes),
+					),
+				),
+				None => UnshieldedTokenType::default(),
+			};
+			unshielded_outputs.push(UnshieldedOutputSpec {
+				wallet: uw,
+				amount: triple.amount,
+				token_type,
+			});
+		} else {
+			log::error!(
+				"--output at position {} has an address that does not parse as shielded or unshielded: {:?}",
+				idx,
+				triple.address
+			);
+			panic!("--output address parse error");
+		}
+	}
+
+	(shielded_outputs, unshielded_outputs)
 }
 
 /// Pair per-destination wallets with their amount and token type, supporting

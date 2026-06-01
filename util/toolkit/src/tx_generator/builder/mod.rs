@@ -225,6 +225,18 @@ pub struct BatchesArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct SingleTxArgs {
+	/// Per-destination output spec. Repeatable. Bundles the address, amount,
+	/// and (optional) token type for one destination in a single argument.
+	///
+	/// Format:
+	///   `addr=<bech32_address>,amount=<u128>[,token=<32-byte-hex>]`
+	///
+	/// The address HRP picks the side (shielded vs unshielded). If `token`
+	/// is omitted, it defaults to the all-zeros token type. Cannot be mixed
+	/// with `--destination-address` / `--*-amount` / `--*-token-type` in the
+	/// same invocation.
+	#[arg(long = "output", value_parser = cli::output_arg_decode)]
+	pub outputs: Vec<cli::OutputArg>,
 	/// Amount(s) to send to shielded destinations.
 	///
 	/// Provide once to broadcast the same amount to every shielded destination,
@@ -259,8 +271,10 @@ pub struct SingleTxArgs {
 	/// Funding seed for transaction. If not set, uses source_seed
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	pub funding_seed: Option<WalletSeed>,
-	/// Destination address, both shielded and unshielded
-	#[arg(long, required = true)]
+	/// Destination address, both shielded and unshielded. Used together with
+	/// `--*-amount` / `--*-token-type` flags. Either this or `--output` must
+	/// be provided, but not both.
+	#[arg(long)]
 	pub destination_address: Vec<WalletAddress>,
 	/// Pin specific wallet UTXOs as inputs to the unshielded transfer. Format:
 	/// <intent_hash_hex>#<output_no>, e.g. abc123…#0. Repeatable. When set, the
@@ -395,36 +409,42 @@ pub enum Builder {
 Send a single transaction with one-or-many outputs across shielded and/or \
 unshielded destinations, optionally mixing multiple token types in one tx.
 
-Each --destination-address is classified automatically as shielded or \
-unshielded by its HRP. Amounts and token types are taken from the matching \
-side (--shielded-amount / --shielded-token-type or --unshielded-amount / \
---unshielded-token-type).
+Two CLI shapes are supported. Pick one per invocation; mixing them is rejected:
 
-Per-side broadcast vs per-destination semantics:
-  * Provide the amount/token flag once     -> broadcast to every destination on that side.
-  * Provide it once per destination        -> aligned by command-line order of the destinations on that side.
-  * Omit --*-token-type                    -> defaults to the all-zeros token (NIGHT) for every destination on that side.
+  (A) --output (recommended): one flag per destination, bundling the triple
+      (address, amount, token type) in a single argument.
+        --output addr=<bech32>,amount=<u128>[,token=<32-byte-hex>]
+      Each occurrence is one tx output. The address HRP picks the side
+      (shielded vs unshielded). `token` is optional and defaults to the
+      all-zeros token type (NIGHT).
+
+  (B) --destination-address + per-side --*-amount / --*-token-type: each
+      side accepts parallel lists. Provide a flag once on a side to broadcast
+      it to every destination on that side, or once per destination on that
+      side to align by command-line order. Omit --*-token-type to default to
+      the all-zeros token type.
 
 Examples:
 
-  # One shielded + one unshielded destination, different token types (mixed-token tx):
+  # (A) Mixed-token tx with one unshielded NIGHT output and one shielded output:
   midnight-node-toolkit generate-txs single-tx \\
     --source-seed <SEED> \\
-    --destination-address mn_addr1... \\
-    --unshielded-amount 410000000 \\
-    --unshielded-token-type 0000...0000 \\
-    --destination-address mn_shield-addr1... \\
-    --shielded-amount 41 \\
-    --shielded-token-type 0000...0001
+    --output addr=mn_addr1...,amount=410000000,token=0000...0000 \\
+    --output addr=mn_shield-addr1...,amount=41,token=0000...0001
 
-  # Two unshielded destinations, same token type and amount (broadcast):
+  # (A) Token omitted -> defaults to all-zeros:
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --output addr=mn_addr1...,amount=100
+
+  # (B) Two unshielded destinations, same token type and amount (broadcast):
   midnight-node-toolkit generate-txs single-tx \\
     --source-seed <SEED> \\
     --unshielded-amount 100 \\
     --destination-address mn_addr1...A \\
     --destination-address mn_addr1...B
 
-  # Two unshielded destinations, different amounts and token types (per-destination):
+  # (B) Two unshielded destinations, different amounts and token types (per-destination):
   midnight-node-toolkit generate-txs single-tx \\
     --source-seed <SEED> \\
     --destination-address mn_addr1...A \\
@@ -436,7 +456,7 @@ Examples:
 
 Notes:
   * --input-utxo is only supported when exactly one unshielded token type is used.
-  * Mismatched flag counts (e.g. 3 destinations on a side but 2 amounts) are rejected with a clear error.
+  * In shape (B), mismatched flag counts (e.g. 3 destinations on a side but 2 amounts) are rejected with a clear error.
 ")]
 	SingleTx(SingleTxArgs),
 	/// Register a DUST address for the wallet

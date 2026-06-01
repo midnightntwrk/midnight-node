@@ -133,6 +133,7 @@ mod tests {
 	// TODO: There should be expected transactions here, not just an OK state.
 	// We also need to define reaonsable errors
 	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
+		outputs: vec![],
 		shielded_amount: vec![0],
 		shielded_token_type: vec![t_token()],
 		unshielded_amount: vec![100],
