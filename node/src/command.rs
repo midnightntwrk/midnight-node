@@ -15,7 +15,7 @@
 
 use crate::{
 	cfg::{Cfg, midnight_cfg::StorageSeparation},
-	cli::{self, Cli, RunMidnight, Subcommand},
+	cli::{Cli, RunMidnight, Subcommand},
 	filtering_pool::TxFilterConfig,
 	genesis::{
 		creation::{
@@ -35,10 +35,10 @@ use crate::{
 			verify_reserve_auth_script,
 		},
 	},
+	reference_hardware::MIDNIGHT_REFERENCE_HARDWARE,
 	service::{self, StorageInit},
 };
 use clap::Parser;
-use frame_benchmarking_cli::SUBSTRATE_REFERENCE_HARDWARE;
 use midnight_node_runtime::Block;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityAddresses;
@@ -46,7 +46,11 @@ use sc_cli::{CliConfiguration, LoggerBuilder, RunCmd, SubstrateCli};
 use sc_keystore::LocalKeystore;
 use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
-use sp_core::{ByteArray, Pair, offchain::KeyTypeId};
+use sp_core::{
+	ByteArray, Pair,
+	crypto::key_types::{AURA as AURA_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE},
+	offchain::KeyTypeId,
+};
 use sp_keystore::KeystorePtr;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -223,9 +227,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
-		keystore
-			.insert(KeyTypeId(*b"aura"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("AURA pubkey: {}", &keypair.public())
 	}
 
@@ -238,9 +240,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
-		keystore
-			.insert(KeyTypeId(*b"gran"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+		keystore.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("GRANDPA pubkey: {}", &keypair.public())
 	}
 
@@ -277,7 +277,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			.then(|| {
 				config.database.path().map(|database_path| {
 					let _ = std::fs::create_dir_all(database_path);
-					sc_sysinfo::gather_hwbench(Some(database_path), &SUBSTRATE_REFERENCE_HARDWARE)
+					sc_sysinfo::gather_hwbench(Some(database_path), &MIDNIGHT_REFERENCE_HARDWARE)
 				})
 			})
 			.flatten();
@@ -407,11 +407,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
-			partner_chains_node_commands::run::<_, _, _, _, cli::MidnightBlockProducerMetadata, _, _>(
-				&cfg,
-				make_dependencies,
-				cmd.clone(),
-			)
+			partner_chains_node_commands::run::<_, _, _, _, _>(&cfg, make_dependencies, cmd.clone())
 		},
 		Subcommand::BuildSpec(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
@@ -604,7 +600,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Machine(cmd) => {
-						cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone())
+						cmd.run(&config, MIDNIGHT_REFERENCE_HARDWARE.clone())
 					},
 				}
 			})

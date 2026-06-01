@@ -34,10 +34,12 @@ type: Task
 
 # QA checklist
  - [ ] Deployed and burned in for 24h in qanet?
- - [ ] SPO env was also ok?
- - [ ] Approved by change process? (attach link to approved jira release here)
- - [ ] Do docs need updates?
- - [ ] Can it sync from genesis to testnet to at least 7000+ blocks? `sync-with-testnet.sh`
+ - [ ] Sync Test Completed?
+ - [ ] Try-Runtime tests run against preview/pre-prod/mainnet?
+ - [ ] Test against Forked/preview/pre-prod/mainnet [Eg This ticket](https://github.com/midnightntwrk/midnight-node/issues/1520#issuecomment-4461534758)
+ - [ ] Final Release Notes Reviewed
+ - [ ] Regression Test Results Link provided to Release Team
+ - [ ] New Feature Test Results Link provided to Release Team
 
 # Rollout checklist
 

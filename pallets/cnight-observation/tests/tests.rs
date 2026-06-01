@@ -26,8 +26,9 @@ use midnight_node_ledger_helpers::{
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, INHERENT_IDENTIFIER,
-	InherentError, MidnightObservationTokenMovement, TimestampUnixMillis,
+	CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNightAddresses, CardanoPosition, CardanoRewardAddressBytes,
+	DustPublicKeyBytes, INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement,
+	TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -1694,4 +1695,48 @@ fn is_inherent_required_with_malformed_data_returns_error() {
 		let result = CNightObservation::is_inherent_required(&malformed);
 		assert_eq!(result, Err(InherentError::DecodeFailed));
 	});
+}
+
+// One representative regression guard for the operator-facing panic shape in
+// `BuildGenesisConfig::build`. The four call sites use a byte-identical format
+// string differing only in the dotted field path and the destination bound;
+// `cnight_policy_id` is not exercised because its source type `[u8; 28]` makes
+// the panic at that site unreachable from chain-spec deserialization.
+#[test]
+fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_long() {
+	let over_length = "a".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize + 1);
+	let genesis = pallet_cnight_observation::GenesisConfig::<Test> {
+		config: pallet_cnight_observation::config::CNightGenesis {
+			addresses: CNightAddresses {
+				mapping_validator_address: over_length,
+				auth_token_asset_name: String::new(),
+				cnight_policy_id: [0u8; 28],
+				cnight_asset_name: String::new(),
+			},
+			..Default::default()
+		},
+		_marker: Default::default(),
+	};
+
+	let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+		sp_io::TestExternalities::default().execute_with(|| {
+			genesis.build();
+		});
+	}))
+	.expect_err("genesis build must panic on over-length mapping_validator_address");
+
+	let msg = payload
+		.downcast_ref::<String>()
+		.cloned()
+		.or_else(|| payload.downcast_ref::<&'static str>().map(|s| s.to_string()))
+		.expect("panic payload should be String or &'static str");
+
+	assert!(
+		msg.contains("cNightObservation.config.addresses.mapping_validator_address"),
+		"panic must name the chain-spec field path; got: {msg}"
+	);
+	assert!(
+		msg.contains(&format!("maximum {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
+		"panic must name the destination bound; got: {msg}"
+	);
 }
