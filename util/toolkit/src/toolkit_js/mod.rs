@@ -15,6 +15,7 @@ pub use encoded_zswap_local_state::{EncodedOutput, EncodedZswapLocalState};
 use crate::cli_parsers as cli;
 
 const BUILD_DIST: &str = "dist/bin.js";
+const DEFAULT_COMPACTC_VERSION: &str = include_str!("../../../../COMPACTC_VERSION");
 
 #[derive(Args, Debug)]
 pub struct ToolkitJs {
@@ -26,6 +27,7 @@ pub struct ToolkitJs {
 	#[arg(
         long = "compact-c-version",
         env = "COMPACTC_VERSION",
+        default_value = DEFAULT_COMPACTC_VERSION,
         value_parser = cli::semver_decode
     )]
 	pub compactc_version: semver::Version,
