@@ -134,7 +134,10 @@ impl ToolkitTestHelper {
 	}
 
 	fn toolkit_js(&self) -> ToolkitJs {
-		ToolkitJs { path: path_to_string(&self.toolkit_js_path) }
+		ToolkitJs {
+			path: path_to_string(&self.toolkit_js_path),
+			compactc_version: semver::Version::parse(&Self::compactc_version()).unwrap(),
+		}
 	}
 
 	fn source_from_url(&self) -> Source {
