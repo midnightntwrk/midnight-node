@@ -16,10 +16,11 @@ concurrency:
 jobs:
   run:
     name: Run tests
-    # Pull requests execute checked-out repository code (.envrc/Earthly), so use
-    # ephemeral GitHub-hosted runners for PRs and reserve persistent self-hosted
-    # runners for trusted merge-queue/push events.
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted","tier:large"]') }}
+    # External fork pull requests execute checked-out repository code
+    # (.envrc/Earthly), so use ephemeral GitHub-hosted runners for those PRs
+    # and reserve persistent self-hosted runners for trusted internal PR,
+    # merge-queue, and push events.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","tier:large"]') }}
     permissions:
       contents: read
       packages: write

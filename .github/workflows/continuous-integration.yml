@@ -31,11 +31,11 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    # Pull requests execute checked-out repository code (for example .envrc and
-    # Earthly targets), so keep them on ephemeral GitHub-hosted runners. Use the
-    # persistent self-hosted runner pool only for trusted merge queue and manual
-    # builds.
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted","tier:large"]') }}
+    # External fork pull requests execute checked-out repository code (for
+    # example .envrc and Earthly targets), so keep them on ephemeral
+    # GitHub-hosted runners. Use the persistent self-hosted runner pool for
+    # trusted internal PR, merge queue, and manual builds.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","tier:large"]') }}
     env:
       FORCE_COLOR: 1
     outputs:
@@ -550,7 +550,7 @@ jobs:
       actions: write
     name: Test Toolkit
     needs: [run]
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted","tier:large"]') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","tier:large"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -836,7 +836,7 @@ jobs:
       packages: read
     name: Mainnet Sync (1000 blocks)
     needs: [run]
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted","tier:medium"]') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","tier:medium"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
@@ -1111,7 +1111,7 @@ jobs:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [run, build-indexer-images]
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted","tier:medium"]') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","tier:medium"]') }}
     # The local-env stack (kupo, ogmios, db-sync, indexers, postgres, nats,
     # cardano-node, ...) binds fixed ports on 0.0.0.0 — 1442, 1337, 8088,
     # 4222, 5432, 30000, 32000 — so concurrent jobs on the same self-hosted
