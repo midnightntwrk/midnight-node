@@ -914,9 +914,8 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 pub struct MidnightMinBridgeAmount;
 impl pallet_c2m_bridge::pallet::MinBridgeAmountProvider for MidnightMinBridgeAmount {
 	fn get_c_to_m_bridge_min_amount()
-	-> Result<pallet_c2m_bridge::Stars, midnight_node_ledger::types::active_version::LedgerApiError>
-	{
-		Ok(pallet_c2m_bridge::Stars::from(Midnight::get_c_to_m_bridge_min_amount()?))
+	-> Result<u128, midnight_node_ledger::types::active_version::LedgerApiError> {
+		Midnight::get_c_to_m_bridge_min_amount()
 	}
 }
 
@@ -1609,6 +1608,12 @@ impl_runtime_apis! {
 				slot: ScSlotNumber(*pallet_aura::CurrentSlot::<Runtime>::get()),
 				slots_per_epoch: Sidechain::slots_per_epoch().0,
 			}
+		}
+	}
+
+	impl midnight_primitives_session_info::SessionInfoApi<Block> for Runtime {
+		fn current_session_index() -> u32 {
+			Session::current_index()
 		}
 	}
 

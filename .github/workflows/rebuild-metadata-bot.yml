@@ -14,7 +14,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request && contains(github.event.comment.body, '/bot rebuild-metadata'))
-    runs-on: ubuntu-latest-8-core-x64
+    runs-on: [self-hosted, "tier:medium"]
     permissions:
       contents: write
       pull-requests: write

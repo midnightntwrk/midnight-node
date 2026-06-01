@@ -99,7 +99,7 @@ impl CardanoClient {
     fn create_wallet() -> Wallet {
         let mnemonic = Mnemonic::new(MnemonicType::Words24, Language::English);
         let phrase = mnemonic.phrase().to_string();
-        println!("Generated mnemonic phrase: {}", phrase);
+        tracing::info!("Generated mnemonic phrase: {}", phrase);
         Wallet::new_mnemonic(&phrase).expect("Failed to create a wallet")
     }
 
@@ -107,10 +107,10 @@ impl CardanoClient {
         let delegated_payment_address = wallet
             .get_change_address(whisky::AddressType::Payment)
             .expect("Failed to get change address");
-        println!("Payment address: {}", delegated_payment_address);
+        tracing::info!("Payment address: {}", delegated_payment_address);
 
         let payment_public_key_hash = wallet.account.as_ref().unwrap().public_key.hash().to_hex();
-        println!("Payment public key hash: {}", payment_public_key_hash);
+        tracing::info!("Payment public key hash: {}", payment_public_key_hash);
 
         let stake_cred = wallet.addresses.base_address.as_ref().unwrap().stake_cred();
 
@@ -119,8 +119,8 @@ impl CardanoClient {
             .to_bech32(None)
             .unwrap();
 
-        println!("Reward (stake) address: {}", reward_address);
-        println!(
+        tracing::info!("Reward (stake) address: {}", reward_address);
+        tracing::info!(
             "Stake public key hash: {}",
             stake_cred.to_keyhash().unwrap().to_hex()
         );
@@ -171,7 +171,7 @@ impl CardanoClient {
             Ok(response) => hex::encode(response.transaction.id),
             Err(e) => panic!("Failed to send assets: {:?}", e),
         };
-        println!("Funded wallet with transaction id: {}", tx_id_hex);
+        tracing::info!("Funded wallet with transaction id: {}", tx_id_hex);
         self.find_utxo_by_tx_id(tx_out_addr, tx_id_hex).await
     }
 
@@ -185,7 +185,7 @@ impl CardanoClient {
                     .to_address()
                     .to_bech32(None)
                     .unwrap();
-                println!("Derived enterprise address: {}", address_bech32);
+                tracing::info!("Derived enterprise address: {}", address_bech32);
                 address_bech32
             }
         }
@@ -355,9 +355,9 @@ impl CardanoClient {
         let network = Network::Custom(self.constants.cost_model.clone());
         let mapping_validator_cbor = config::mapping_validator_cbor_double_encoding();
         let register_asset_tx_vector = Self::build_asset_vector(register_tx);
-        println!("Register tx assets: {:?}", register_asset_tx_vector);
+        tracing::info!("Register tx assets: {:?}", register_asset_tx_vector);
         let script_hash = whisky::get_script_hash(&mapping_validator_cbor, LanguageVersion::V2);
-        println!("Mapping validator script hash: {:?}", script_hash);
+        tracing::info!("Mapping validator script hash: {:?}", script_hash);
 
         let mut tx_builder = TxBuilder::new_core();
         tx_builder
@@ -569,9 +569,10 @@ impl CardanoClient {
         assets: Vec<Asset>,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let payment_addr = self.address_as_bech32();
-        println!(
+        tracing::info!(
             "Sending assets from {} to address: {}",
-            payment_addr, tx_out_addr
+            payment_addr,
+            tx_out_addr
         );
 
         let input_tx_hash = hex::encode(tx_in.transaction.id);
@@ -683,9 +684,11 @@ impl CardanoClient {
             _ => panic!("Unexpected response type"),
         };
         let start_slot = tip.slot;
-        println!(
+        tracing::info!(
             "Current slot is {}. Waiting for {} more slots (limit {} checks)...",
-            start_slot, SLOTS_NUMBER, LIMIT
+            start_slot,
+            SLOTS_NUMBER,
+            LIMIT
         );
 
         let target = start_slot
@@ -703,7 +706,7 @@ impl CardanoClient {
             };
 
             if tip.slot > last_slot {
-                println!("Slot advanced: {} -> {}", last_slot, tip.slot);
+                tracing::info!("Slot advanced: {} -> {}", last_slot, tip.slot);
                 last_slot = tip.slot;
 
                 if last_slot >= target {
@@ -729,9 +732,9 @@ impl CardanoClient {
         };
         let still_unspent = utxos.iter().any(|u| hex::encode(u.transaction.id) == tx_id);
         if still_unspent {
-            println!("UTXO {} is still unspent after 3 slots.", tx_id);
+            tracing::info!("UTXO {} is still unspent after 3 slots.", tx_id);
         } else {
-            println!("UTXO {} was spent within 3 slots.", tx_id);
+            tracing::info!("UTXO {} was spent within 3 slots.", tx_id);
         }
         still_unspent
     }
@@ -791,24 +794,24 @@ impl CardanoClient {
         let calculated_hash = whisky::get_script_hash(script_cbor, LanguageVersion::V3);
         if let Ok(hash) = calculated_hash {
             if hash != policy_id {
-                println!("WARNING: Script hash mismatch!");
-                println!("  Expected (policy_id): {}", policy_id);
-                println!("  Calculated from script: {}", hash);
-                println!("  This transaction may fail validation!");
+                tracing::info!("WARNING: Script hash mismatch!");
+                tracing::info!("  Expected (policy_id): {}", policy_id);
+                tracing::info!("  Calculated from script: {}", hash);
+                tracing::info!("  This transaction may fail validation!");
             }
         }
 
-        println!("Deploying governance contract");
-        println!("  Script address: {}", script_address);
-        println!("  Policy ID: {}", policy_id);
-        println!("  Total signers: {}", members.len());
-        println!(
+        tracing::info!("Deploying governance contract");
+        tracing::info!("  Script address: {}", script_address);
+        tracing::info!("  Policy ID: {}", policy_id);
+        tracing::info!("  Total signers: {}", members.len());
+        tracing::info!(
             "  One-shot UTXO: {}#{}",
             hex::encode(one_shot_utxo.transaction.id),
             one_shot_utxo.index
         );
-        println!("  Datum: {}", serde_json::to_string_pretty(&datum).unwrap());
-        println!(
+        tracing::info!("  Datum: {}", serde_json::to_string_pretty(&datum).unwrap());
+        tracing::info!(
             "  Redeemer: {}",
             serde_json::to_string_pretty(&redeemer).unwrap()
         );
@@ -874,7 +877,7 @@ impl CardanoClient {
             })
             .unwrap();
 
-        println!("✓ Transaction Built Successfully");
+        tracing::info!("✓ Transaction Built Successfully");
 
         let signed_tx_hex = tx_builder.tx_hex();
 
@@ -941,16 +944,16 @@ impl CardanoClient {
         let datum = build_federated_ops_datum(&fedops_candidates);
         let redeemer = build_federated_ops_redeemer(&fedops_candidates);
 
-        println!("Deploying federated operators contract");
-        println!("  Script address: {}", script_address);
-        println!("  Policy ID: {}", policy_id);
-        println!("  Candidates: {}", fedops_candidates.len());
-        println!(
+        tracing::info!("Deploying federated operators contract");
+        tracing::info!("  Script address: {}", script_address);
+        tracing::info!("  Policy ID: {}", policy_id);
+        tracing::info!("  Candidates: {}", fedops_candidates.len());
+        tracing::info!(
             "  One-shot UTXO: {}#{}",
             hex::encode(one_shot_utxo.transaction.id),
             one_shot_utxo.index
         );
-        println!("  Datum: {}", serde_json::to_string_pretty(&datum).unwrap());
+        tracing::info!("  Datum: {}", serde_json::to_string_pretty(&datum).unwrap());
 
         let send_assets = vec![
             Asset::new_from_str("lovelace", "2000000"),
@@ -1007,7 +1010,7 @@ impl CardanoClient {
             })
             .unwrap();
 
-        println!("✓ Transaction Built Successfully");
+        tracing::info!("✓ Transaction Built Successfully");
 
         let signed_tx_hex = tx_builder.tx_hex();
         let tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode hex string");
