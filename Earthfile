@@ -212,8 +212,12 @@ rebuild-redemption-skeleton:
 rebuild-genesis-state:
     ARG NETWORK
     ARG GENERATE_TEST_TXS=false
-    # ledger-9 migration WIP: toolkit-js still emits intent[v6] (ledger-8).
-    # Disabled by default until util/toolkit-js gets a v9 variant.
+    # LEDGER9-TOOLKIT-JS: toolkit-js v8 / compact-js 2.5.1 still emits
+    # `midnight:intent[v6]` (ledger-8), which the ledger-9 Rust `send-intent`
+    # path rejects. Disabled by default until `util/toolkit-js/v9/` lands with
+    # a compact-js whose intent serializer targets `intent[v7]`. Grep for
+    # `LEDGER9-TOOLKIT-JS` to find the matching `#[ignore]`s in
+    # `util/toolkit/src/commands/generate_intent.rs`.
     ARG GENERATE_JS_TEST_TXS=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037

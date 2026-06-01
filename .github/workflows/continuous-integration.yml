@@ -704,6 +704,7 @@ jobs:
           key: ${{ steps.guard.outputs.key }}
 
   toolkit-maintenance-e2e:
+    continue-on-error: true # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
     permissions:
       contents: read
       actions: write
@@ -730,6 +731,7 @@ jobs:
           key: ${{ steps.guard.outputs.key }}
 
   toolkit-mint-e2e:
+    continue-on-error: true # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
     permissions:
       contents: read
       actions: write
@@ -756,6 +758,7 @@ jobs:
           key: ${{ steps.guard.outputs.key }}
 
   toolkit-tokens-minter-e2e:
+    continue-on-error: true # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
     permissions:
       contents: read
       actions: write
@@ -821,6 +824,7 @@ jobs:
           key: ${{ steps.guard.outputs.key }}
 
   mainnet-sync-test:
+    continue-on-error: true # Migration to Ledger v9 is not yet supported. Issue #1580.
     permissions:
       contents: read
       packages: read
@@ -875,6 +879,7 @@ jobs:
           if-no-files-found: ignore
 
   toolkit-contracts-e2e:
+    continue-on-error: true # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
     permissions:
       contents: read
       actions: write
