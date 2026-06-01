@@ -418,6 +418,7 @@ impl ToolkitJs {
 		}
 
 		let output = std::process::Command::new(cmd)
+			.env("COMPACTC_VERSION", self.compactc_version.to_string())
 			.current_dir(&self.path)
 			.args(args)
 			.output()

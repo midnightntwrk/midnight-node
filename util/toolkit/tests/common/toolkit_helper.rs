@@ -219,7 +219,7 @@ impl ToolkitTestHelper {
 			.arg("run-compactc")
 			.arg(&source_file)
 			.arg(&cached_out)
-			.env("COMPACTC_VERSION", &compactc_version.to_string())
+			.env("COMPACTC_VERSION", compactc_version.to_string())
 			.current_dir(&self.toolkit_js_path)
 			.output()
 			.await?;
