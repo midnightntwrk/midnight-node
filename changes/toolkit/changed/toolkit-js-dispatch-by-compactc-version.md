@@ -17,4 +17,7 @@ Renamed the workspaces and switched the dispatcher accordingly:
   Accepts either `<major>.<minor>` or the full `<major>.<minor>.<patch>` form
   shared with the rest of the toolchain.
 
-PR:
+Updated the toolkit-js tests to support executing against every supported
+compactc version, and added a maintenance guide to the toolkit-js README.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/1555
