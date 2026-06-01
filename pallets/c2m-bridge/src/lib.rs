@@ -15,6 +15,15 @@
 //!
 //! This pallet implements the [`pallet_partner_chains_bridge::TransferHandler`] trait
 //! with Midnight-specific logic.
+//!
+//! A bridge transfer is an inherent that produces a system transaction, not a
+//! standalone transaction type. The handler validates an observed Cardano
+//! transfer against the approved-transfers list and applies the resulting ledger
+//! system transaction through the
+//! [`MidnightSystemTransactionExecutor`](midnight_primitives::MidnightSystemTransactionExecutor)
+//! seam, so the net effect on the ledger arrives as a system transaction. Each
+//! handled transfer also emits a bridge [`Event`] for correlation with the
+//! Cardano-side movement.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 

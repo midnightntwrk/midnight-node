@@ -11,6 +11,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! # Midnight node primitives
+//!
+//! Shared types and traits that define the boundary between the Midnight node
+//! and the Midnight ledger.
+//!
+//! The node frames, validates, weighs, and routes transactions; the ledger
+//! decodes and interprets the opaque payload carried by a ledger transaction.
+//! Everything in this crate sits on the node side of that boundary.
+//!
+//! The crate exposes:
+//!
+//! - The [`TransactionType`] and [`TransactionTypeV2`] classification
+//!   vocabulary, published to off-node consumers through runtime metadata.
+//! - The [`MidnightSystemTransactionExecutor`] seam, by which other pallets
+//!   apply a serialized system transaction to the ledger.
+//! - The [`LedgerStateProviderMut`] and [`LedgerBlockContextProvider`] seams
+//!   for reading and mutating ledger state.
+//! - The [`bridge`] module's [`BridgeRecipient`] type, used by the bridge
+//!   inherent and the Cardano-to-Midnight bridge pallet.
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
@@ -40,24 +60,77 @@ pub trait LedgerBlockContextProvider {
 	fn get_block_context() -> BlockContext;
 }
 
+/// Seam by which a pallet applies a serialized system transaction to the ledger.
+///
+/// `pallet-midnight-system` implements this trait so that other pallets — notably
+/// the Cardano-to-Midnight bridge — can apply a system transaction through the
+/// privileged ledger path without depending on the system pallet directly. A
+/// bridge transfer uses this seam to turn an observed Cardano transfer into a
+/// system transaction.
+///
+/// The argument is the opaque, serialized ledger system transaction; the node
+/// passes it to the ledger and does not interpret its contents.
 pub trait MidnightSystemTransactionExecutor {
-	/// Execute a Midnight System Transaction and return a SCALE-compatible result
+	/// Apply a serialized system transaction and return its ledger transaction hash.
+	///
+	/// # Errors
+	///
+	/// Returns a [`DispatchError`] if the ledger rejects the system transaction
+	/// (for example, a deserialization or transaction error surfaced through the
+	/// ledger API).
 	fn execute_system_transaction(
 		serialized_system_transaction: Vec<u8>,
 	) -> Result<Hash, DispatchError>;
 }
 
+/// Classification vocabulary for a decoded transaction, consumed off-node.
+///
+/// This enumeration is a published vocabulary, exposed to off-node consumers
+/// (indexers, the toolkit, and downstream tooling) through runtime metadata. It
+/// labels a decoded transaction; it is **not** an in-node dispatch mechanism.
+/// The node never matches on these variants to decide how to process a
+/// transaction — dispatch happens through the FRAME pallet [`Call`] enums and
+/// inherents. The variants exist so a downstream decoder can classify a
+/// transaction without re-implementing the dispatch logic.
+///
+/// [`TransactionTypeV2`] supersedes this type: where this version carries an
+/// `Option<Tx>` (the decoded ledger transaction if decoding succeeded), the V2
+/// vocabulary carries a `Result<Tx, LedgerApiError>` so a consumer can see why a
+/// payload failed to decode.
+///
+/// [`Call`]: https://docs.rs/frame-support/latest/frame_support/pallet_macros/attr.call.html
 #[derive(Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
 pub enum TransactionType {
+	/// A ledger-carrying transaction: the opaque ledger payload and, if it
+	/// decoded, the decoded ledger transaction.
 	MidnightTx(Vec<u8>, Option<Tx>),
+	/// The block timestamp, surfaced as a first-class transaction value.
 	TimestampTx(u64),
+	/// A transaction the classifier does not recognize (for example, a future
+	/// or unknown variant).
 	UnknownTx,
 }
 
+/// Current classification vocabulary for a decoded transaction, consumed off-node.
+///
+/// Like [`TransactionType`], this enumeration is a published vocabulary exposed
+/// to off-node consumers through runtime metadata to label a decoded
+/// transaction. It is **not** an in-node dispatch mechanism — the node never
+/// matches on these variants; dispatch happens through the FRAME pallet `Call`
+/// enums and inherents.
+///
+/// This version supersedes [`TransactionType`] by carrying the ledger decode
+/// `Result` rather than an `Option`, so a consumer can observe a decode failure
+/// ([`LedgerApiError`]) instead of only the absence of a decoded transaction.
 #[derive(Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
 pub enum TransactionTypeV2 {
+	/// A ledger-carrying transaction: the opaque ledger payload and the result
+	/// of decoding it.
 	MidnightTx(Vec<u8>, Result<Tx, LedgerApiError>),
+	/// The block timestamp, surfaced as a first-class transaction value.
 	TimestampTx(u64),
+	/// A transaction the classifier does not recognize (for example, a future
+	/// or unknown variant).
 	UnknownTx,
 }
 
@@ -87,7 +160,14 @@ pub mod bridge {
 		TooLong,
 	}
 
-	/// Recipient type used by the bridge pallet and inherent data provider.
+	/// A Midnight recipient address carried by a bridge transfer.
+	///
+	/// The bridge pallet and the bridge inherent data provider use this type to
+	/// name the beneficiary of a Cardano-to-Midnight transfer. The address is
+	/// bounded to [`BRIDGE_RECIPIENT_MAX_BYTES`] bytes so the recipient encoded
+	/// in the bridge datum has a fixed maximum size and a predictable encoded
+	/// length; an address exceeding the bound is rejected with
+	/// [`BridgeRecipientError::TooLong`].
 	#[derive(
 		Clone,
 		PartialEq,

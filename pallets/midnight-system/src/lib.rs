@@ -1,3 +1,25 @@
+//! # Midnight system transaction pallet
+//!
+//! Applies privileged system transactions to the Midnight ledger.
+//!
+//! A system transaction is a node-owned, non-ledger transaction category: it
+//! changes ledger state through a privileged, audited channel rather than
+//! through the user transaction pool. Two entry points reach the ledger:
+//!
+//! - [`Pallet::send_mn_system_transaction`] — a root-origin extrinsic, gated by
+//!   a governance allow-check, that governance uses to apply a system
+//!   transaction directly.
+//! - The [`MidnightSystemTransactionExecutor`] implementation — the seam by
+//!   which other pallets (notably the Cardano-to-Midnight bridge) apply a
+//!   serialized system transaction.
+//!
+//! Both paths emit a [`SystemTransactionApplied`] event so an indexer can
+//! correlate the effect on the ledger with the originating call. The serialized
+//! system transaction is opaque to the node; the ledger decodes and interprets
+//! it.
+//!
+//! [`MidnightSystemTransactionExecutor`]: midnight_primitives::MidnightSystemTransactionExecutor
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
@@ -31,9 +53,16 @@ pub mod pallet {
 		SystemTransactionApplied(SystemTransactionApplied),
 	}
 
+	/// Emitted when a system transaction is applied to the ledger.
+	///
+	/// Both [`Pallet::send_mn_system_transaction`] and the
+	/// `MidnightSystemTransactionExecutor` seam deposit this event so an indexer
+	/// can correlate the ledger effect with the originating call.
 	#[derive(Clone, Debug, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct SystemTransactionApplied {
+		/// Ledger transaction hash of the applied system transaction.
 		pub hash: Hash,
+		/// The serialized system transaction that was applied, opaque to the node.
 		pub serialized_system_transaction: Vec<u8>,
 	}
 
@@ -115,6 +144,22 @@ pub mod pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
+		/// Apply a system transaction to the ledger.
+		///
+		/// `midnight_system_tx` is the opaque, serialized ledger system
+		/// transaction. The call requires root origin and is gated by the
+		/// ledger's governance allow-check, so only the system transactions
+		/// governance is permitted to run reach the ledger. On success it applies
+		/// the transaction through the ledger system-transaction path and emits a
+		/// [`SystemTransactionApplied`] event.
+		///
+		/// # Errors
+		///
+		/// Returns [`Error::SystemTransactionNotAllowedForGovernance`] if the
+		/// governance allow-check rejects the transaction, or one of the
+		/// ledger-derived error variants (mirrored from the ledger API) if the
+		/// ledger fails to apply it. The dispatch also fails if the origin is not
+		/// root.
 		#[pallet::call_index(0)]
 		#[pallet::weight((ConfigurableSystemTxWeight::<T>::get(), DispatchClass::Operational))]
 		pub fn send_mn_system_transaction(

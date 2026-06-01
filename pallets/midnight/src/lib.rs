@@ -11,13 +11,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! # Midnight pallet
+//!
+//! Owns the ledger-carrying transaction envelope and validates it before the
+//! ledger applies it.
+//!
+//! [`Pallet::send_mn_transaction`] is the primary dispatchable: it carries a
+//! ledger transaction as an opaque byte vector, validated through the ledger
+//! API and applied to ledger state. The node frames, validates, weighs, and
+//! routes the transaction; the ledger decodes and interprets the opaque
+//! payload. This pallet sits on the node side of that boundary and does not
+//! inspect the payload's contents.
+//!
+//! The crate also re-exports the [`TransactionType`] and [`TransactionTypeV2`]
+//! classification vocabulary (defined in `midnight-primitives`), which off-node
+//! consumers read through runtime metadata to label a decoded transaction.
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
 
-/// Edit this file to define custom logic or remove it if it is not needed.
-/// Learn more about FRAME and the core library of Substrate FRAME pallets:
-/// <https://docs.substrate.io/reference/frame-pallets/>
 // Re-export pallet items so that they can be accessed from the crate namespace.
 pub use pallet::*;
 
@@ -362,12 +375,29 @@ pub mod pallet {
 		}
 	}
 
-	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
-	// These functions materialize as "extrinsics", which are often compared to transactions.
-	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
-	//todo example of custom transaction type (extrinsic) transaction has to be signed to call it
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
+		/// Apply a ledger transaction to ledger state.
+		///
+		/// `midnight_tx` is the opaque, serialized ledger transaction. The call
+		/// is unsigned and submitted through the transaction pool; the pallet's
+		/// `ValidateUnsigned` implementation gates it through the ledger API
+		/// before dispatch. On apply, the pallet hands the payload to the ledger
+		/// and emits the resulting ledger events (contract call, deploy,
+		/// maintain, claimed rewards, unshielded token movements, and an
+		/// applied-transaction marker).
+		///
+		/// This is the node-owned envelope for a ledger transaction: the node
+		/// frames, validates, weighs, and routes the transaction, while the
+		/// ledger decodes and interprets the `midnight_tx` payload. The node does
+		/// not inspect the payload's contents.
+		///
+		/// # Errors
+		///
+		/// Returns one of the ledger-derived [`Error`] variants if the ledger
+		/// rejects the transaction. Validity failures surfaced during pool
+		/// validation map to `InvalidTransaction` codes rather than a dispatch
+		/// error.
 		#[pallet::call_index(0)]
 		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
