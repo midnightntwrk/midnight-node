@@ -13,14 +13,15 @@
 
 //! Contract maintenance module.
 
-use async_trait::async_trait;
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use super::super::{
-	ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
-	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, LedgerContext,
-	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, Signature, SigningKey,
-	SingleUpdate, StdRng, maintenance_verifying_key, transaction_signature,
+	BuilderContext, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
+	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, MaintenanceUpdate,
+	PedersenRandomness, ProofPreimageMarker, Signature, SigningKey, SingleUpdate, StdRng,
+	maintenance_verifying_key, transaction_signature,
 };
 use super::BuildContractAction;
 
@@ -44,11 +45,11 @@ pub struct MaintenanceUpdateInfo {
 }
 
 #[async_trait]
-impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for MaintenanceUpdateInfo {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
-		_context: Arc<LedgerContext<D>>,
+		_context: Arc<C>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let updates = self
