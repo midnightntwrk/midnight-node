@@ -71,10 +71,16 @@ lazy_static! {
 	);
 }
 
+/// Wraps LedgerState and Wallet structs, providing a convient API for constructing state from
+/// transactions, and for building transactions from the constructed state.
+///
+/// Note: Mutexes must be aquired in the order of definition here.
+/// Where this matters is the `with_ledger_state` and `with_wallet_from_seed` methods; the ledger
+/// state lock MUST be aquired before other locks.
 pub struct LedgerContext<D: DB + Clone> {
 	pub ledger_state: Mutex<Sp<LedgerState<D>, D>>,
-	pub latest_block_context: Mutex<Option<BlockContext>>,
 	pub wallets: Mutex<HashMap<WalletSeed, Wallet<D>>>,
+	pub latest_block_context: Mutex<Option<BlockContext>>,
 	pub resolver: MutexTokio<&'static Resolver>,
 }
 
