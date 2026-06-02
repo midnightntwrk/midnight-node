@@ -16,7 +16,11 @@ concurrency:
 jobs:
   run:
     name: Run tests
-    runs-on: [self-hosted, "tier:large"]
+    # External fork pull requests execute checked-out repository code
+    # (.envrc/Earthly), so use ephemeral GitHub-hosted runners for those PRs
+    # and reserve persistent self-hosted runners for trusted internal PR,
+    # merge-queue, and push events.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","tier:large"]') }}
     permissions:
       contents: read
       packages: write
@@ -42,6 +46,12 @@ jobs:
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
         run: scripts/free-disk-space.sh
+
+      - name: Isolate docker config
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR (for remote cache)
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
@@ -111,6 +121,10 @@ jobs:
         with:
           name: Lcov Coverage Report
           path: test-artifacts/tests.lcov
+
+      - name: Remove isolated docker auth
+        if: ${{ always() && env.DOCKER_CONFIG != '' }}
+        run: rm -rf "$DOCKER_CONFIG"
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
