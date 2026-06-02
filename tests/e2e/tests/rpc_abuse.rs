@@ -179,11 +179,15 @@ async fn replay_attack_rejected_via_rpc() {
     tracing::info!("✓ Replay transaction rejected with: {}", error_msg);
 
     // Verify the error indicates an invalid transaction
-    // Accept various error types: replay protection, already deployed, or generic invalid
+    // Accept various error types: replay protection, already deployed, or generic invalid.
+    // "banned" covers the Substrate txpool ban: once the first submission is found
+    // invalid its hash is temporarily banned, so the replay is rejected with
+    // "Transaction is temporarily banned" — still a valid replay rejection.
     assert!(
         error_msg.to_lowercase().contains("invalid")
             || error_msg.to_lowercase().contains("replay")
             || error_msg.to_lowercase().contains("already")
+            || error_msg.to_lowercase().contains("banned")
             || error_msg.contains("1010"), // Substrate InvalidTransaction code
         "Expected InvalidTransaction or replay-related error, got: {}",
         error_msg

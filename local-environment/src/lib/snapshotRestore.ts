@@ -107,6 +107,14 @@ export async function restoreSnapshot(
   }
 }
 
+export function discoverComposeDataMounts(composeFile: string): string[] {
+  const resolvedCompose = path.resolve(composeFile);
+  const composeDir = path.dirname(resolvedCompose);
+  const dataRoot = path.resolve(composeDir, "data");
+
+  return discoverDataMounts(resolvedCompose, dataRoot);
+}
+
 function ensureBinary(bin: string, hint: string, env: NodeJS.ProcessEnv) {
   const check = spawnSync(bin, ["--version"], { stdio: "ignore", env });
   if (check.status !== 0) {

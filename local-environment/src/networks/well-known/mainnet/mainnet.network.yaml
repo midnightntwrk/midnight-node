@@ -1,13 +1,13 @@
 x-common-variables: &common-variables
-  CFG_PRESET: "preview"
+  CFG_PRESET: "mainnet"
   SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
-  CARDANO_SECURITY_PARAMETER: 432
+  CARDANO_SECURITY_PARAMETER: 2160
   CARDANO_ACTIVE_SLOTS_COEFF: 0.05
   BLOCK_STABILITY_MARGIN: 10
-  MC__FIRST_EPOCH_TIMESTAMP_MILLIS: 1666656000000
-  MC__FIRST_EPOCH_NUMBER: 0
-  MC__EPOCH_DURATION_MILLIS: 86400000
-  MC__FIRST_SLOT_NUMBER: 0
+  MC__FIRST_EPOCH_TIMESTAMP_MILLIS: 1596059091000
+  MC__FIRST_EPOCH_NUMBER: 208
+  MC__EPOCH_DURATION_MILLIS: 432000000
+  MC__FIRST_SLOT_NUMBER: 4492800
   MC__SLOT_DURATION_MILLIS: 1000
 
 x-node-common: &node-common
@@ -73,7 +73,7 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000002
         --validator
-        --port 30334 
+        --port 30334
         --rpc-port 9944
         --base-path=/data
         --unsafe-rpc-external
@@ -253,8 +253,8 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000007
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30339
         --rpc-port 9944
         --public-addr /dns4/node6/tcp/30339
@@ -290,8 +290,8 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000008
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30340
         --rpc-port 9944
         --public-addr /dns4/node7/tcp/30340
@@ -328,8 +328,8 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000009
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30341
         --rpc-port 9944
         --public-addr /dns4/node8/tcp/30341
@@ -366,8 +366,8 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000010
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30342
         --rpc-port 9944
         --public-addr /dns4/node9/tcp/30342
@@ -404,8 +404,8 @@ services:
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000011
         --validator
-        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
-        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp 
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --port 30343
         --rpc-port 9944
         --public-addr /dns4/node10/tcp/30343
