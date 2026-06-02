@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Ledger-8-only mappings for variants that don't exist in ledger 7. Each
-//! helper handles only the variants we know are ledger-8-specific and returns
+//! Ledger-9-only mappings for variants that don't exist in ledgers 7 and 8. Each
+//! helper handles only the variants we know are ledger-9-specific and returns
 //! `Err` for anything else, so the shared common conversion can fall back to
 //! its `UnknownError + log` arm rather than misclassifying future additions.
 
