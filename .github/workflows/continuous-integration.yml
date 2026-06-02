@@ -99,7 +99,12 @@ jobs:
       # images that resolve to docker.io. With --push, earthly tries to write
       # inline cache back to the midnightntwrk Docker Hub namespace and fails
       # auth without this login.
+      # Non-fatal: the +images push targets ghcr.io only (authed by the GHCR
+      # login above) and the docker.io base images are public, so the build
+      # still pulls + pushes without these creds. Dependabot runs don't have
+      # the DOCKERHUB_* secrets, so this step would otherwise hard-fail there.
       - name: Login to Docker Hub
+        continue-on-error: true
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
@@ -577,8 +582,12 @@ jobs:
       # Earthfile FROMs midnightntwrk/midnight-node-ci and other docker.io
       # images; earthly pushes inline cache back to those repos under --push,
       # which needs Docker Hub auth.
+      # Non-fatal: pushes target ghcr.io and the docker.io base images are
+      # public, so the build proceeds without these creds (e.g. Dependabot runs,
+      # which don't have the DOCKERHUB_* secrets).
       - name: Login to Docker Hub
         if: steps.guard.outputs.hit != 'true'
+        continue-on-error: true
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
