@@ -19,10 +19,8 @@ use super::ledger_helpers_local::{
 	TransactionWithContext, UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError,
 	WalletAddress,
 };
-use super::single_tx::{
-	MAX_GUARANTEED_OUTPUTS, ShieldedOutputSpec, UnshieldedOutputSpec, build_shielded_offer,
-	build_unshielded_intents,
-};
+use super::output_spec::{ShieldedOutputSpec, UnshieldedOutputSpec};
+use super::single_tx::{MAX_GUARANTEED_OUTPUTS, build_shielded_offer, build_unshielded_intents};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
 
