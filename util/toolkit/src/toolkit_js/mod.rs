@@ -25,7 +25,7 @@ pub struct ToolkitJs {
 
 	/// version of compactc
 	#[arg(
-        long = "compact-c-version",
+        long = "compactc-version",
         env = "COMPACTC_VERSION",
         default_value = DEFAULT_COMPACTC_VERSION,
         value_parser = cli::semver_decode
