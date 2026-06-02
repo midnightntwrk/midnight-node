@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+# no top level default permissions for security reasons
+permissions:
+  contents: read
+
 jobs:
   build_node:
     name: Build Node against latest
@@ -17,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
 
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:

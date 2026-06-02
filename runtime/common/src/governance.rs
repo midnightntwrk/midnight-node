@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -62,6 +62,14 @@ where
 		for who in outgoing {
 			frame_system::Pallet::<T>::dec_sufficients(who);
 		}
+	}
+
+	fn set_prime(prime: Option<T::AccountId>) {
+		<P as ChangeMembers<T::AccountId>>::set_prime(prime);
+	}
+
+	fn get_prime() -> Option<T::AccountId> {
+		<P as ChangeMembers<T::AccountId>>::get_prime()
 	}
 }
 

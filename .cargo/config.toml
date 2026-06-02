@@ -9,7 +9,7 @@ timeout = 60
 protocol = "sparse"
 
 [profile.release]
-debug = true
+debug = 1
 
 [alias]
 test-e2e-local = "test --test e2e_tests --no-default-features --features local -- --test-threads=1 --nocapture"

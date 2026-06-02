@@ -5,23 +5,36 @@ on:
   pull_request:
     branches: ["**"]
 
+# no top level default permissions for security reasons
+permissions: {}
+
 jobs:
   run:
     name: Check PR job
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout node repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
 
       - name: Check if node image tag was incremented
+        env:
+          GHCR_SECRET: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
         run: |
-          export NODE_CRATE_VERSION=$(cat ./node/Cargo.toml | grep version | head -1 | awk -F'"' '{print $2}')
+          NODE_CRATE_VERSION=$(cat ./node/Cargo.toml | grep version | head -1 | awk -F'"' '{print $2}')
+          export NODE_CRATE_VERSION
           echo "NODE_CRATE_VERSION=$NODE_CRATE_VERSION" >> "$GITHUB_ENV"
-          export GHCR_TOKEN=$(echo ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }} | base64)
-          export TAGS_RESPONSE=$(curl -H "Authorization: Bearer $GHCR_TOKEN" https://ghcr.io/v2/midnight-ntwrk/midnight-node/tags/list)
+          GHCR_TOKEN=$(echo "$GHCR_SECRET" | base64)
+          export GHCR_TOKEN
+          TAGS_RESPONSE=$(curl -H "Authorization: Bearer $GHCR_TOKEN" https://ghcr.io/v2/midnight-ntwrk/midnight-node/tags/list)
+          export TAGS_RESPONSE
 
           # Check list of tags to see if any existing tags have the node crate version
-          if $(echo "$TAGS_RESPONSE" | jq --arg node_crate_version "$NODE_CRATE_VERSION"  '.tags | contains([$node_crate_version])'); then
+          if echo "$TAGS_RESPONSE" | jq --arg node_crate_version "$NODE_CRATE_VERSION" -e '.tags | contains([$node_crate_version])' > /dev/null; then
               echo "VERSION_EXISTS=true"
           else
               echo "VERSION_EXISTS=false"
@@ -29,7 +42,7 @@ jobs:
 
       - name: Comment On PR with Node Version Bump Reminder
         if: env.VERSION_EXISTS == 'true'
-        uses: thollander/actions-comment-pull-request@e2c37e53a7d2227b61585343765f73a9ca57eda9 # v3.0.0
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
         id: bump-node-version
         with:
           message: |

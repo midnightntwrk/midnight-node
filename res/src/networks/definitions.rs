@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,12 +13,13 @@
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
+use midnight_primitives_reserve_observation::ReserveConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 
 use super::{
-	InitialAuthorityData, MainChainScripts, MidnightNetwork, PermissionedCandidatesConfig,
-	RegisteredCandidatesAddresses,
+	C2MBridgeConfig, InitialAuthorityData, MainChainScripts, MessageConfig, MidnightNetwork,
+	PermissionedCandidatesConfig, RegisteredCandidatesAddresses,
 };
 
 pub struct UndeployedNetwork;
@@ -69,6 +70,21 @@ impl MidnightNetwork for UndeployedNetwork {
 		serde_json::from_str(&config_str).unwrap()
 	}
 
+	fn reserve_config(&self) -> ReserveConfig {
+		let config_str = String::from_utf8_lossy(include_bytes!("../../dev/reserve-config.json"));
+		serde_json::from_str(&config_str).unwrap()
+	}
+
+	fn message_config(&self) -> Option<MessageConfig> {
+		None
+	}
+
+	fn c2m_bridge_config(&self) -> C2MBridgeConfig {
+		let config_str =
+			String::from_utf8_lossy(include_bytes!("../../dev/c2m-bridge-config.json"));
+		serde_json::from_str(&config_str).unwrap()
+	}
+
 	fn genesis_utxo(&self) -> &str {
 		"c684d0f7f5fb537d4996032a01a55511f3029cda9bcfc9a76b68e7b12d5a461a#6"
 	}
@@ -104,6 +120,9 @@ pub struct CustomNetwork {
 	pub federated_authority_config: FederatedAuthorityObservationConfig,
 	pub system_parameters_config: SystemParametersConfig,
 	pub ics_config: IcsConfig,
+	pub reserve_config: ReserveConfig,
+	pub message_config: Option<MessageConfig>,
+	pub c2m_bridge_config: C2MBridgeConfig,
 }
 impl MidnightNetwork for CustomNetwork {
 	fn name(&self) -> &str {
@@ -146,11 +165,23 @@ impl MidnightNetwork for CustomNetwork {
 		self.ics_config.clone()
 	}
 
+	fn reserve_config(&self) -> ReserveConfig {
+		self.reserve_config.clone()
+	}
+
+	fn message_config(&self) -> Option<MessageConfig> {
+		self.message_config.clone()
+	}
+
 	fn main_chain_scripts(&self) -> MainChainScripts {
 		self.main_chain_scripts.clone()
 	}
 
 	fn genesis_utxo(&self) -> &str {
 		&self.genesis_utxo
+	}
+
+	fn c2m_bridge_config(&self) -> C2MBridgeConfig {
+		self.c2m_bridge_config.clone()
 	}
 }

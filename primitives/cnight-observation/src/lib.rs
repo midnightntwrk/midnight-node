@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -33,6 +33,12 @@ use sqlx::types::chrono::{DateTime, Utc};
 /// = 9 + 1 + 98 = 108
 pub const CARDANO_BECH32_ADDRESS_MAX_LENGTH: u32 = 108;
 pub const CARDANO_REWARD_ADDRESS_LENGTH: usize = 29;
+
+/// Cardano native-asset policy ID length in bytes (fixed-width per Cardano protocol).
+pub const CNIGHT_POLICY_ID_LENGTH: u32 = 28;
+
+/// Cardano native-asset name maximum length in bytes.
+pub const CARDANO_ASSET_NAME_MAX_LENGTH: u32 = 32;
 
 #[derive(
 	Encode,
@@ -217,6 +223,8 @@ pub enum InherentError {
 	Missing,
 	#[cfg_attr(feature = "std", error("Other unexpected inherent error"))]
 	Other,
+	#[cfg_attr(feature = "std", error("Inherent data decode failed"))]
+	DecodeFailed,
 }
 
 impl sp_inherents::IsFatalError for InherentError {
@@ -331,7 +339,7 @@ pub struct ObservedUtxoHeader {
 	pub utxo_index: UtxoIndexInTx,
 }
 impl ObservedUtxoHeader {
-	fn is_spend(&self) -> bool {
+	fn is_create(&self) -> bool {
 		self.tx_hash == self.utxo_tx_hash
 	}
 }
@@ -370,10 +378,10 @@ impl PartialOrd for ObservedUtxoHeader {
 			Some(core::cmp::Ordering::Equal) => {},
 			ord => return ord,
 		}
-		if self.is_spend() && !other.is_spend() {
+		if self.is_create() && !other.is_create() {
 			return Some(core::cmp::Ordering::Less);
 		}
-		if !self.is_spend() && other.is_spend() {
+		if !self.is_create() && other.is_create() {
 			return Some(core::cmp::Ordering::Greater);
 		}
 		// We need an ordering which is consistent between validators,
@@ -388,6 +396,11 @@ impl PartialOrd for ObservedUtxoHeader {
 }
 
 decl_runtime_apis! {
+	// v2 marks the consensus-affecting reduction of the cNight db-sync over-fetch
+	// factor from 64x to 4x. Node binaries gate the multiplier on this version so
+	// the change only takes effect at the runtime upgrade boundary; mixing old and
+	// new binaries against the same runtime version stays consensus-equivalent.
+	#[api_version(2)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums
 		fn get_mapping_validator_address() -> Vec<u8>;
@@ -401,6 +414,9 @@ decl_runtime_apis! {
 
 		fn get_cardano_block_window_size() -> u32;
 
+		// Despite the historic name, this returns the per-block *transaction* capacity
+		// (`pallet_cnight_observation::CardanoTxCapacityPerBlock`), not a UTXO count.
+		// Callers must multiply by the per-tx UTXO over-fetch factor to get a row limit.
 		fn get_utxo_capacity_per_block() -> u32;
 	}
 }

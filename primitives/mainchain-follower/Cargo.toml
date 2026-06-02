@@ -25,7 +25,8 @@ derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
 scale-info.workspace = true
 log.workspace = true
-rand = { version = "0.9.1", default-features = false }
+prometheus-endpoint = { workspace = true, optional = true }
+rand.workspace = true
 itertools = { workspace = true, optional = true }
 authority-selection-inherents = { workspace = true, features = ["std"], optional = true }
 partner-chains-plutus-data = { workspace = true, optional = true }
@@ -58,6 +59,7 @@ std = [
     "db-sync-sqlx",
     "log/std",
     "partner-chains-db-sync-data-sources",
+    "prometheus-endpoint",
     "rand/std",
     "rand/thread_rng",
     "itertools",

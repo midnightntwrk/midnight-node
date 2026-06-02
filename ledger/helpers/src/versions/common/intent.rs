@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,10 +12,10 @@
 // limitations under the License.
 
 use super::{
-	Array, BuildContractAction, ContractAction, ContractEffects, DB, DUST_EXPECTED_FILES,
-	DustResolver, FetchMode, Intent, KeyLocation, LedgerContext, MidnightDataProvider, OutputMode,
-	PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker, ProvingKeyMaterial, Resolver,
-	Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	Array, BuildContractAction, ContractAction, ContractAddress, ContractEffects, DB,
+	DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, LedgerContext,
+	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker,
+	ProvingKeyMaterial, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
 };
 use async_trait::async_trait;
 use rand::{CryptoRng, Rng};
@@ -106,18 +106,29 @@ impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
 	}
 }
 
+#[derive(Clone)]
 pub struct IntentCustom<D: DB + Clone> {
 	pub intent: IntentOf<D>,
 	pub resolver: &'static Resolver,
 }
 
 impl<D: DB + Clone> IntentCustom<D> {
+	/// Maximum file size for intent files (64 MB)
+	const MAX_INTENT_FILE_SIZE: u64 = 64 * 1024 * 1024;
+
 	pub fn new_from_file(
 		path: impl AsRef<Path>,
 		resolver: &'static Resolver,
 	) -> Result<Self, std::io::Error> {
+		let metadata = std::fs::metadata(path.as_ref())?;
+		if metadata.len() > Self::MAX_INTENT_FILE_SIZE {
+			return Err(std::io::Error::new(
+				std::io::ErrorKind::InvalidData,
+				format!("intent file exceeds maximum size of {} bytes", Self::MAX_INTENT_FILE_SIZE),
+			));
+		}
 		let bytes = std::fs::read(path)?;
-		let intent: IntentOf<D> = deserialize(bytes.as_slice()).expect("failed to deserialize");
+		let intent: IntentOf<D> = deserialize(bytes.as_slice())?;
 		Ok(Self { intent, resolver })
 	}
 
@@ -143,20 +154,28 @@ impl<D: DB + Clone> IntentCustom<D> {
 		Self { intent, resolver }
 	}
 
-	pub fn find_effects(&self) -> (Option<ContractEffects<D>>, Option<ContractEffects<D>>) {
-		let mut guaranteed_effects: Option<ContractEffects<D>> = None;
-		let mut fallible_effects: Option<ContractEffects<D>> = None;
+	pub fn find_effects(&self) -> (Vec<ContractEffects<D>>, Vec<ContractEffects<D>>) {
+		let mut guaranteed_effects = vec![];
+		let mut fallible_effects = vec![];
 		for action in self.intent.actions.iter() {
 			if let ContractAction::Call(ref c) = *action.clone() {
 				if let Some(ref t) = c.guaranteed_transcript {
-					guaranteed_effects = Some(t.effects.clone());
+					guaranteed_effects.push(t.effects.clone());
 				}
 				if let Some(ref t) = c.fallible_transcript {
-					fallible_effects = Some(t.effects.clone());
+					fallible_effects.push(t.effects.clone());
 				}
 			}
 		}
 		(guaranteed_effects, fallible_effects)
+	}
+
+	pub fn find_contract_address(&self) -> Option<ContractAddress> {
+		self.intent.actions.iter().find_map(|action| match *action {
+			ContractAction::Call(ref c) => Some(c.address),
+			ContractAction::Maintain(ref c) => Some(c.address),
+			_ => None,
+		})
 	}
 
 	pub fn get_resolver(artifact_dirs: &[String]) -> Result<Resolver, std::io::Error> {
@@ -176,15 +195,15 @@ impl<D: DB + Clone> IntentCustom<D> {
 							let path = format!("{parent_dir}/{dir}/{loc}.{ext}");
 							match std::fs::read(&path) {
 								Err(e) if e.kind() == io::ErrorKind::NotFound => {
-									println!("Resolver: missing key at path {path}");
+									log::debug!("Resolver: missing key at path {path}");
 									continue;
 								},
 								Err(e) => {
-									println!("Resolver: error reading key at path {path}: {e}");
+									log::error!("Resolver: error reading key at path {path}: {e}");
 									return Err(e);
 								},
 								Ok(v) => {
-									println!("Resolver: found key at path {path}");
+									log::debug!("Resolver: found key at path {path}");
 									return Ok(Some(v));
 								},
 							}
@@ -192,19 +211,19 @@ impl<D: DB + Clone> IntentCustom<D> {
 						Ok(None)
 					};
 					let Some(prover_key) = read_file("keys", "prover")? else {
-						println!("WARN: prover key not created");
+						log::warn!("prover key not created");
 						return Ok(None);
 					};
 					let Some(verifier_key) = read_file("keys", "verifier")? else {
-						println!("WARN: verifier key not created");
+						log::warn!("verifier key not created");
 						return Ok(None);
 					};
 					let Some(ir_source) = read_file("zkir", "bzkir")? else {
-						println!("WARN:  ir source not created");
+						log::warn!("IR source not created");
 						return Ok(None);
 					};
 
-					println!("Creating Proving Key Material...");
+					log::info!("Creating Proving Key Material...");
 
 					Ok(Some(ProvingKeyMaterial { prover_key, verifier_key, ir_source }))
 				};
@@ -224,11 +243,10 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
 		context: Arc<LedgerContext<D>>,
 		_segment_id: SegmentId,
 	) -> IntentOf<D> {
-		println!("Updating the resolver...");
+		log::debug!("Updating the resolver...");
 		context.update_resolver(self.resolver).await;
 		let mut intent = self.intent.clone();
 		intent.ttl = ttl;
-		println!("custom intent: {intent:#?}");
 		intent
 	}
 }

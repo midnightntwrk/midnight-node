@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # This file is part of midnight-node.
-# Copyright (C) 2025 Midnight Foundation
+# Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
@@ -48,8 +48,18 @@ SEED_3="0000000000000000000000000000000000000000000000000000000000000003"
 TIMEOUT_SECONDS=300
 NUM_WALLETS=3  # One wallet per funding seed to avoid DUST conflicts
 
-# Create temp directory for transaction files
-tempdir=$(mktemp -d 2>/dev/null || mktemp -d -t 'multidest')
+# Create temp directory for transaction files.
+#
+# The tempdir is bind-mounted (`docker run -v "$tempdir:/out"`) into the
+# toolkit container so it can write `tx_*.mn` files the host script then
+# reads back. On a self-hosted runner whose systemd unit has PrivateTmp=true,
+# `/tmp` is a per-service namespace that the host's
+# dockerd can't see — the bind mount silently fails to a hidden empty dir
+# and `find tempdir -name 'tx_*.mn'` returns nothing. Use $RUNNER_TEMP if
+# set (GHA exposes it; it lives under /var/lib/actions-runner/N/_temp which
+# is outside PrivateTmp). Fall back to /tmp for local dev where PrivateTmp
+# isn't a factor.
+tempdir=$(mktemp -d -p "${RUNNER_TEMP:-/tmp}" 2>/dev/null || mktemp -d -t 'multidest')
 echo "Using temp directory: $tempdir"
 
 cleanup() {
@@ -175,8 +185,7 @@ for i in $(seq $START_WALLET $END_WALLET); do
         --unshielded-amount 100 \
         --destination-address "$DEST_ADDR_01" \
         -s "$NODE_1" \
-        --dest-file "$(out_path "tx_${i}.mn")" \
-        --to-bytes
+        --dest-file "$(out_path "tx_${i}.mn")"
 done
 
 echo "Generated $(find "$tempdir" -name 'tx_*.mn' 2>/dev/null | wc -l) transaction files"
@@ -213,7 +222,6 @@ else
 fi
 
 echo "Step 5: Verify transactions were processed"
-sleep 10
 ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 120
 
 echo "Toolkit Multi-Destination URL E2E Test completed successfully"

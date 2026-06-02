@@ -1,0 +1,69 @@
+name: Tree Cache Guard
+description: Skip job if root tree hash has already passed this check
+
+inputs:
+  check-name:
+    description: Identifier for this check (defaults to job name)
+    required: false
+    default: ${{ github.job }}
+  matrix-key:
+    description: Extra key suffix for matrix jobs
+    required: false
+    default: ''
+
+outputs:
+  hit:
+    description: Whether the cache was hit (true/false)
+    value: ${{ steps.check.outputs.hit }}
+  tree:
+    description: Root tree hash of HEAD
+    value: ${{ steps.check.outputs.tree }}
+  key:
+    description: Cache key used for lookup and save
+    value: ${{ steps.check.outputs.key }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      run: |
+        tree=$(git rev-parse "HEAD^{tree}")
+        echo "tree=${tree}" >> "$GITHUB_OUTPUT"
+
+        # If the workflow was triggered from a different branch, the workflow
+        # file may differ from what's in HEAD — skip caching so we always run.
+        if [[ "$WORKFLOW_SHA" != "$COMMIT_SHA" ]]; then
+          echo "::notice::workflow_sha differs from sha — workflow may be overridden, skipping cache"
+          echo "hit=false" >> "$GITHUB_OUTPUT"
+          echo "key=no-cache-workflow-override" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        workflow="${WORKFLOW_NAME// /-}"
+        job="${CHECK_NAME// /-}"
+        arch="${RUNNER_ARCH// /-}"
+        os="${ImageOS:-unknown}"
+        check="${workflow}-${job}-${arch}-${os}"
+        if [[ -n "$MATRIX_KEY" ]]; then
+          matrix="${MATRIX_KEY// /-}"
+          check="${check}-${matrix}"
+        fi
+        key="passed-${check}-${tree}"
+
+        echo "key=${key}" >> "$GITHUB_OUTPUT"
+
+        result=$(gh cache list \
+          --repo "$GITHUB_REPOSITORY" \
+          --key  "${key}" \
+          --json id --jq 'length')
+        [[ $result -gt 0 ]] && echo "hit=true" >> "$GITHUB_OUTPUT" \
+                             || echo "hit=false" >> "$GITHUB_OUTPUT"
+      env:
+        GH_TOKEN: ${{ github.token }}
+        WORKFLOW_SHA: ${{ github.workflow_sha }}
+        COMMIT_SHA: ${{ github.sha }}
+        CHECK_NAME: ${{ inputs.check-name }}
+        MATRIX_KEY: ${{ inputs.matrix-key }}
+        RUNNER_ARCH: ${{ runner.arch }}
+        WORKFLOW_NAME: ${{ github.workflow }}

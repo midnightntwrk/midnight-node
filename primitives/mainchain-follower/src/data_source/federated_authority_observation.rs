@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,26 +11,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FederatedAuthorityObservationDataSource, db::get_governance_body_utxo};
+use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
+use crate::{
+	FederatedAuthorityObservationDataSource,
+	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
+};
 use cardano_serialization_lib::PlutusData;
 use derive_new::new;
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
 	FederatedAuthorityObservationConfig, GovernanceAuthorityDatumR0, GovernanceAuthorityDatums,
 };
-use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, PolicyId};
 pub use sqlx::PgPool;
 
 #[derive(new)]
 pub struct FederatedAuthorityObservationDataSourceImpl {
 	pub pool: PgPool,
-	pub metrics_opt: Option<McFollowerMetrics>,
+	pub metrics_opt: Option<MidnightDataSourceMetrics>,
 	#[allow(dead_code)]
 	cache_size: u16,
 }
 
-#[async_trait::async_trait]
+observed_async_trait!(
 impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceImpl {
 	async fn get_federated_authority_data(
 		&self,
@@ -38,7 +41,9 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
 		// Get block number from hash
+		let _block_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_block_by_hash");
 		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone()).await?;
+		drop(_block_timer);
 
 		let block_number = match block {
 			Some(b) => b.block_number.0,
@@ -48,6 +53,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		};
 
 		// Query council UTXO
+		let _council_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_council_utxo");
 		let council_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.council.address,
@@ -55,6 +61,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			block_number,
 		)
 		.await?;
+		drop(_council_timer);
 
 		let council_authorities: AuthoritiesData = match council_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
@@ -80,6 +87,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		};
 
 		// Query technical committee UTXO
+		let _techcomm_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_technical_committee_utxo");
 		let technical_committee_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.technical_committee.address,
@@ -87,6 +95,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			block_number,
 		)
 		.await?;
+		drop(_techcomm_timer);
 
 		let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
@@ -118,6 +127,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		})
 	}
 }
+);
 
 impl FederatedAuthorityObservationDataSourceImpl {
 	/// Decode PlutusData containing governance body members

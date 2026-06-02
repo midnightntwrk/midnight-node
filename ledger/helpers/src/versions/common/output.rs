@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ impl<D: DB + Clone> BuildOutput<D> for OutputInfo<ContractAddress> {
 
 impl<D: DB + Clone> BuildOutput<D> for OutputInfo<WalletSeed> {
 	fn build(&self, rng: &mut StdRng, context: Arc<LedgerContext<D>>) -> Output<ProofPreimage, D> {
-		context.with_wallet_from_seed(self.destination, |wallet| {
+		context.with_wallet_from_seed(self.destination.clone(), |wallet| {
 			let coin_info = self.coin_info(rng);
 
 			wallet.shielded.state = wallet

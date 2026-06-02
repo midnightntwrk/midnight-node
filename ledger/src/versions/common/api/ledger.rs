@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,11 +13,9 @@
 
 use super::{
 	base_crypto_local, helpers_local, ledger_storage_local, midnight_serialize_local,
-	mn_ledger_local, onchain_runtime_local, transient_crypto_local, zswap_local,
+	mn_ledger_local, transient_crypto_local, zswap_local,
 };
-use base_crypto_local::{
-	cost_model::SyntheticCost, hash::HashOutput as HashOutputLedger, time::Timestamp,
-};
+use base_crypto_local::{cost_model::SyntheticCost, time::Timestamp};
 use derive_where::derive_where;
 use ledger_storage_local::{
 	self as storage, Storable,
@@ -33,23 +31,21 @@ use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
 	structure::{LedgerParameters, LedgerState, SignatureKind},
 };
-use onchain_runtime_local::context::BlockContext as LedgerBlockContext;
-use std::{borrow::Borrow, collections::HashMap};
+use std::{borrow::Borrow, collections::BTreeMap};
 use transient_crypto_local::merkle_tree::MerkleTreeDigest;
 use zswap_local::ledger::State as ZswapLedgerState;
 
 use super::{
+	super::super::BlockContext,
 	Api, ContractAddress, ContractState, DeserializableError, LOG_TARGET, SerializableError,
 	SystemTransaction, Transaction, TransactionInvalid, UserAddress, ZswapState,
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
 
-use crate::common::types::BlockContext;
-
 #[derive(Debug)]
 pub enum AppliedStage<D: DB> {
 	AllApplied,
-	PartialSuccess(HashMap<u16, Result<(), TransactionInvalid<D>>>),
+	PartialSuccess(BTreeMap<u16, Result<(), TransactionInvalid<D>>>),
 }
 
 #[derive(Debug, Storable)]
@@ -129,23 +125,21 @@ impl<D: DB> Ledger<D> {
 		self.state.index(contract_address)
 	}
 
-	pub(crate) fn apply_transaction<S: SignatureKind<D>>(
+	/// Applies a pre-verified transaction to the ledger.
+	///
+	/// This is used when a `VerifiedTransaction` has been cached from a prior
+	/// validation step, avoiding redundant ZK proof verification.
+	pub(crate) fn apply_verified_transaction<S: SignatureKind<D>>(
 		sp: Sp<Self, D>,
 		api: &Api,
 		tx: &Transaction<S, D>,
+		verified_tx: &mn_ledger_local::structure::VerifiedTransaction<D>,
 		ctx: &TransactionContext<D>,
 	) -> Result<(Sp<Self, D>, AppliedStage<D>), LedgerApiError> {
 		let tx_cost =
 			tx.0.cost(&sp.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
-		let valid_tx =
-			tx.0.well_formed(
-				&ctx.ref_state,
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				ctx.block_context.tblock,
-			)
-			.map_err(|e| LedgerApiError::Transaction(TransactionError::Malformed(e.into())))?;
-		let (next_state, result) = sp.state.apply(&valid_tx, ctx);
+		let (next_state, result) = sp.state.apply(verified_tx, ctx);
 		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
 		let new_sp = default_storage::<D>()
 			.arena
@@ -160,7 +154,7 @@ impl<D: DB> Ledger<D> {
 					tx.identifiers().map(|i| api.tagged_serialize(&i)).collect::<Vec<_>>(),
 					segments
 				);
-				Ok((new_sp, AppliedStage::PartialSuccess(segments)))
+				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect())))
 			},
 			TransactionResult::Failure(reason) => {
 				log::warn!(target: LOG_TARGET, "Error applying Transaction: {reason:?}");
@@ -192,68 +186,6 @@ impl<D: DB> Ledger<D> {
 		Ok(new_sp)
 	}
 
-	pub(crate) fn validate_transaction<S: SignatureKind<D>>(
-		&self,
-		tx: &Transaction<S, D>,
-		block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
-		tx.validate(self, block_context)
-	}
-
-	/// Validates that the guaranteed part of a transaction will succeed.
-	///
-	/// This performs a dry-run of the transaction application to detect failures
-	/// that would occur during the guaranteed phase. Unlike `apply_transaction`,
-	/// this function does NOT persist any state changes - the result is discarded.
-	///
-	/// This is used by `pre_dispatch` to reject transactions whose guaranteed part
-	/// would fail, preventing attackers from filling blocks with transactions that
-	/// consume blockspace without paying fees.
-	///
-	/// # Returns
-	/// - `Ok(())` if the guaranteed part would succeed (fees would be paid)
-	/// - `Err(LedgerApiError)` if the guaranteed part would fail
-	pub(crate) fn validate_guaranteed_execution<S: SignatureKind<D>>(
-		sp: Sp<Self, D>,
-		tx: &Transaction<S, D>,
-		block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
-		// Convert Transaction to VerifiedTransaction via well_formed().
-		// NOTE: This validation is also performed by validate_unsigned() before pre_dispatch
-		// calls this function. However, we must call it again here because apply() requires
-		// a VerifiedTransaction type, and the earlier validation discards that result.
-		// This is a type-system constraint, not redundant logic.
-		let ctx = sp.get_transaction_context(block_context.clone());
-		let valid_tx =
-			tx.0.well_formed(
-				&ctx.ref_state,
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				ctx.block_context.tblock,
-			)
-			.map_err(|e| LedgerApiError::Transaction(TransactionError::Malformed(e.into())))?;
-
-		// Perform a dry-run of the transaction application.
-		// We call apply() but do NOT persist the resulting state.
-		// This allows us to detect TransactionResult::Failure without
-		// modifying the ledger state.
-		let (_next_state, result) = sp.state.apply(&valid_tx, &ctx);
-
-		match result {
-			TransactionResult::Success(_) | TransactionResult::PartialSuccess(_, _) => {
-				// Success or PartialSuccess means guaranteed part succeeded.
-				// PartialSuccess indicates fallible part failed, but fees were still paid.
-				Ok(())
-			},
-			TransactionResult::Failure(reason) => {
-				log::warn!(
-					target: LOG_TARGET,
-					"Pre-dispatch validation failed: guaranteed part would fail: {reason:?}"
-				);
-				Err(LedgerApiError::Transaction(TransactionError::Invalid(reason.into())))
-			},
-		}
-	}
-
 	pub(crate) fn apply_system_tx(
 		sp: Sp<Self, D>,
 		tx: &SystemTransaction,
@@ -281,21 +213,15 @@ impl<D: DB> Ledger<D> {
 	pub(crate) fn get_transaction_context(
 		&self,
 		block_context: BlockContext,
-	) -> TransactionContext<D> {
-		let block_hash: [u8; 32] = block_context
-			.parent_block_hash
-			.try_into()
-			.expect("Runtime is using `sp_core:H256` which is 32 bytes");
-
-		TransactionContext {
+	) -> Result<TransactionContext<D>, LedgerApiError> {
+		Ok(TransactionContext {
 			ref_state: self.state.clone(),
-			block_context: LedgerBlockContext {
-				tblock: Timestamp::from_secs(block_context.tblock),
-				tblock_err: block_context.tblock_err,
-				parent_block_hash: HashOutputLedger(block_hash),
-			},
+			block_context: block_context.try_into().map_err(|e| {
+				log::error!(target: LOG_TARGET, "failed to convert block_context: {}", hex::encode(e));
+				LedgerApiError::GetTransactionContextError
+			})?,
 			whitelist: None,
-		}
+		})
 	}
 }
 
@@ -308,9 +234,7 @@ impl<D: DB> Borrow<LedgerState<D>> for Ledger<D> {
 // grcov-excl-start
 #[cfg(test)]
 mod tests {
-	use super::super::super::super::{
-		CRATE_NAME, helpers_local::extract_info_from_tx_with_context,
-	};
+	use super::super::super::super::{CRATE_NAME, helpers_local::extract_tx_with_context};
 	use super::super::Api;
 	use super::*;
 	use base_crypto_local::signatures::Signature;
@@ -340,12 +264,26 @@ mod tests {
 		bytes: &[u8],
 		block_context: &BlockContext,
 	) {
-		let tx = api.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes);
-		assert!(tx.is_ok(), "Can't deserialize transaction: {}", tx.unwrap_err());
-		let tx_ctx = ledger.get_transaction_context(block_context.clone());
+		let tx = api
+			.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes)
+			.expect("failed to deserialize tx");
+		let tx_ctx = ledger.get_transaction_context(block_context.clone()).unwrap();
+		let verified_tx =
+			tx.0.well_formed(
+				&tx_ctx.ref_state,
+				mn_ledger_local::verify::WellFormedStrictness::default(),
+				tx_ctx.block_context.tblock,
+			)
+			.unwrap_or_else(|err| panic!("Transaction not well-formed: {err:?}"));
 		let (mut new_ledger_state, _applied_stage) =
-			Ledger::<DefaultDB>::apply_transaction(ledger.clone(), api, &tx.unwrap(), &tx_ctx)
-				.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
+			Ledger::<DefaultDB>::apply_verified_transaction(
+				ledger.clone(),
+				api,
+				&tx,
+				&verified_tx,
+				&tx_ctx,
+			)
+			.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
 
 		new_ledger_state =
 			Ledger::<DefaultDB>::post_block_update(new_ledger_state, block_context.clone())
@@ -368,7 +306,6 @@ mod tests {
 	}
 
 	#[test]
-	#[ignore = "Test fixtures need regeneration after ledger 6.2 update - requires midnight-js update"]
 	fn should_apply_transaction() {
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
@@ -376,12 +313,11 @@ mod tests {
 		}
 		let api = Api::new();
 		let mut ledger = prepare_ledger();
-		let (serialized_tx, block_context) = extract_info_from_tx_with_context(DEPLOY_TX);
+		let (serialized_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
 		assert_apply_transaction(&api, &mut ledger, &serialized_tx, &block_context.into());
 	}
 
 	#[test]
-	#[ignore = "Test fixtures need regeneration after ledger 6.2 update - requires midnight-js update"]
 	fn should_get_contract_state() {
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
@@ -390,11 +326,11 @@ mod tests {
 		let api = Api::new();
 		let mut ledger = prepare_ledger();
 
-		let (deploy_tx, deploy_tx_block_context) = extract_info_from_tx_with_context(DEPLOY_TX);
-		let (store_tx, store_tx_block_context) = extract_info_from_tx_with_context(STORE_TX);
-		let (check_tx, check_tx_block_context) = extract_info_from_tx_with_context(CHECK_TX);
+		let (deploy_tx, deploy_tx_block_context) = extract_tx_with_context(DEPLOY_TX);
+		let (store_tx, store_tx_block_context) = extract_tx_with_context(STORE_TX);
+		let (check_tx, check_tx_block_context) = extract_tx_with_context(CHECK_TX);
 		let (maintenance_tx, maintenance_tx_block_context) =
-			extract_info_from_tx_with_context(MAINTENANCE_TX);
+			extract_tx_with_context(MAINTENANCE_TX);
 
 		assert_apply_transaction(&api, &mut ledger, &deploy_tx, &deploy_tx_block_context.into());
 		assert_apply_transaction(&api, &mut ledger, &store_tx, &store_tx_block_context.into());

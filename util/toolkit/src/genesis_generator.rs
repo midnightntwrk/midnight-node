@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,19 +12,23 @@
 // limitations under the License.
 
 use crate::{
-	ProofType, SeedableRng, SignatureType, Spin, StdRng,
+	SeedableRng, Spin, StdRng,
 	cli_parsers::{self as cli},
 	remote_prover::RemoteProofServer,
 	t_token,
 };
-use midnight_node_ledger_helpers::{Transaction as MNLedgerTransaction, *};
-use std::collections::HashMap;
+use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
+use midnight_node_ledger_helpers::{
+	Transaction as MNLedgerTransaction, fork::raw_block_data::RawTransaction, *,
+};
+
 use thiserror::Error;
 
 // Re-export ICS types from the primitives crate
 pub use midnight_primitives_ics_observation::{IcsAsset, IcsConfig, IcsUtxo};
+pub use midnight_primitives_reserve_observation::ReserveConfig;
 
-pub const MINT_AMOUNT: u128 = 500_000_000_000_000;
+pub const MINT_AMOUNT: u128 = 50_000_000_000_000;
 pub const GENESIS_NONCE_SEED: &str =
 	"0000000000000000000000000000000000000000000000000000000000000037";
 
@@ -51,6 +55,10 @@ pub enum GenesisGeneratorError<D: DB> {
 	FeeCalculationError(#[from] FeeCalculationError),
 	#[error("Failure applying block: {0:?}")]
 	BlockLimitExceeded(#[from] BlockLimitExceeded),
+	#[error("Error serializing transaction: {0}")]
+	SerializationError(#[from] std::io::Error),
+	#[error("Missing verifying key for wallet")]
+	MissingVerifyingKey,
 }
 
 /// Common arguments for funding wallets (shielded, unshielded, dust)
@@ -94,7 +102,7 @@ pub struct FundingArgs {
 
 pub struct GenesisGenerator {
 	pub state: LedgerState<DefaultDB>,
-	pub txs: Vec<TransactionWithContext<SignatureType, ProofType, DefaultDB>>,
+	pub txs: SerializedTxBatches,
 	fullness: SyntheticCost,
 }
 
@@ -113,10 +121,35 @@ impl GenesisGenerator {
 		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
 		ics_config: Option<IcsConfig>,
+		reserve_config: Option<ReserveConfig>,
 		ledger_parameters: Option<LedgerParameters>,
+		genesis_timestamp: Option<u64>,
 	) -> Result<Self> {
-		let state = LedgerState::new(network_id);
-		let mut me = Self { state, txs: vec![], fullness: SyntheticCost::ZERO };
+		let treasury = ics_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+		let reserve_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
+		// When reserve is zero (no config or empty config), assign all remaining supply
+		// to the reserve pool so dev/test networks have funds for faucet wallet distribution.
+		let reserve_pool = if reserve_pool == 0 { MAX_SUPPLY - treasury } else { reserve_pool };
+
+		let locked_pool = MAX_SUPPLY - reserve_pool - treasury;
+
+		// If custom ledger parameters are provided, apply them first
+		let original_parameters =
+			if let Some(params) = ledger_parameters { params } else { INITIAL_PARAMETERS };
+
+		let state = LedgerState::with_genesis_settings(
+			network_id,
+			original_parameters.clone(),
+			locked_pool,
+			reserve_pool,
+			treasury,
+		)
+		.map_err(SystemTransactionError::from)?;
+		let mut me = Self {
+			state,
+			txs: SerializedTxBatches { batches: vec![vec![]] },
+			fullness: SyntheticCost::ZERO,
+		};
 		me.init(
 			seed,
 			network_id,
@@ -124,8 +157,8 @@ impl GenesisGenerator {
 			&funding,
 			seeds,
 			cnight_system_tx,
-			ics_config,
-			ledger_parameters,
+			original_parameters,
+			genesis_timestamp,
 		)
 		.await?;
 		Ok(me)
@@ -140,8 +173,8 @@ impl GenesisGenerator {
 		funding: &FundingArgs,
 		seeds: Option<&[WalletSeed]>,
 		cnight_system_tx: Option<SystemTransaction>,
-		ics_config: Option<IcsConfig>,
-		ledger_parameters: Option<LedgerParameters>,
+		original_parameters: LedgerParameters,
+		genesis_timestamp: Option<u64>,
 	) -> Result<(), GenesisGeneratorError<DefaultDB>> {
 		let wallets: Vec<Wallet<DefaultDB>> = seeds
 			.map(|s| s.iter().cloned().map(|seed| Wallet::default(seed, &self.state)).collect())
@@ -150,24 +183,13 @@ impl GenesisGenerator {
 		// Source of randomness
 		let mut rng = StdRng::from_seed(seed);
 
+		let beginning = genesis_timestamp.map(Timestamp::from_secs).unwrap_or(BEGINNING);
 		let genesis_block_context = BlockContext {
-			tblock: BEGINNING,
+			tblock: beginning,
 			tblock_err: 30,
 			parent_block_hash: HashOutput::default(),
+			last_block_time: beginning,
 		};
-
-		// If custom ledger parameters are provided, apply them first
-		let original_parameters = if let Some(params) = ledger_parameters {
-			self.set_parameters(params.clone(), &genesis_block_context)?;
-			params
-		} else {
-			(*self.state.parameters).clone()
-		};
-
-		// Fund treasury (if configured)
-		if let Some(ref config) = ics_config {
-			self.fund_treasury(config, &genesis_block_context)?;
-		}
 
 		// Only fund faucet wallets if seeds were provided
 		if !wallets.is_empty() {
@@ -200,7 +222,7 @@ impl GenesisGenerator {
 
 		if let Some(system_tx) = cnight_system_tx {
 			self.apply_system_tx(system_tx.clone(), &genesis_block_context)?;
-			println!("cNight System Tx applied: {:?}", system_tx);
+			log::info!("cNight System Tx applied: {:?}", system_tx);
 		}
 
 		let block_limits = self.state.parameters.limits.block_limits;
@@ -234,7 +256,12 @@ impl GenesisGenerator {
 		// And now reward it to each wallet.
 		let mut night_distribution_instructions = vec![];
 		for wallet in wallets.iter() {
-			let target_address = wallet.unshielded.verifying_key.clone().unwrap().into();
+			let target_address = wallet
+				.unshielded
+				.verifying_key
+				.clone()
+				.ok_or(GenesisGeneratorError::MissingVerifyingKey)?
+				.into();
 			for _ in 0..funding.unshielded_num_funding_outputs {
 				night_distribution_instructions.push(OutputInstructionUnshielded {
 					amount: funding.unshielded_mint_amount,
@@ -256,37 +283,6 @@ impl GenesisGenerator {
 	) -> Result<()> {
 		let sys_tx_params = SystemTransaction::OverwriteParameters(parameters);
 		self.apply_system_tx(sys_tx_params, block_context)
-	}
-
-	/// Fund the treasury from observed ICS contract deposits.
-	///
-	/// This uses a two-step process:
-	/// 1. DistributeReserve: Move tokens from reserve_pool to block_reward_pool
-	/// 2. PayBlockRewardsToTreasury: Move tokens from block_reward_pool to treasury
-	///
-	/// This sequence is required because the ledger doesn't support direct
-	/// reserve -> treasury transfers.
-	fn fund_treasury(&mut self, config: &IcsConfig, block_context: &BlockContext) -> Result<()> {
-		let amount = config.treasury_amount();
-
-		if amount == 0 {
-			// Nothing to fund
-			return Ok(());
-		}
-
-		println!("Funding treasury with {} Night from ICS observations", amount);
-
-		// Step 1: Move from reserve_pool to block_reward_pool
-		let distribute_tx = SystemTransaction::DistributeReserve(amount);
-		self.apply_system_tx(distribute_tx, block_context)?;
-
-		// Step 2: Move from block_reward_pool to treasury
-		let treasury_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
-		self.apply_system_tx(treasury_tx, block_context)?;
-
-		println!("Treasury funded successfully.");
-
-		Ok(())
 	}
 
 	fn claim_rewards(
@@ -343,7 +339,7 @@ impl GenesisGenerator {
 	) -> Result<()> {
 		// Generate Shielded Offer
 		let guaranteed_shielded_offer = Self::shielded_offer(&wallets, network, &funding, rng);
-		let fallible_coins = HashMap::new();
+		let fallible_coins = HashMapStorage::new();
 
 		// Generate Unshielded Offer
 		let guaranteed_unshielded_offer = Self::unshielded_offer(&wallets, network, funding);
@@ -382,7 +378,7 @@ impl GenesisGenerator {
 		proof_server: Option<String>,
 		intents: IntentsMap,
 		guaranteed_shielded_offer: Option<ShieldedOffer>,
-		fallible_coins: HashMap<u16, ShieldedOffer>,
+		fallible_coins: HashMapStorage<u16, ShieldedOffer, DefaultDB>,
 		rng: StdRng,
 	) -> Transaction {
 		let spin = Spin::new("proving genesis transaction...");
@@ -465,7 +461,7 @@ impl GenesisGenerator {
 				outputs.push(out);
 			}
 
-			println!(
+			log::info!(
 				"generated {} outputs for wallet {:?}",
 				shielded_num_funding_outputs + shielded_alt_token_types.len(),
 				wallet.address(network).to_bech32(),
@@ -521,7 +517,7 @@ impl GenesisGenerator {
 				outputs.push(out);
 			}
 
-			println!(
+			log::info!(
 				"generated {} outputs for wallet {:?}",
 				unshielded_alt_token_types.len(),
 				wallet.address(network).to_bech32(),
@@ -593,9 +589,12 @@ impl GenesisGenerator {
 		match result {
 			TransactionResult::Success(_) => {
 				self.state = state;
-				self.txs.push(TransactionWithContext {
-					tx: SerdeTransaction::Midnight(tx),
-					block_context: tx_context.block_context,
+				let tx_hash = tx.transaction_hash().0.0;
+				let raw_tx = RawTransaction::Midnight(serialize(&tx)?);
+				self.txs.batches[0].push(SerializedTx {
+					tx: raw_tx,
+					context: block_context.clone(),
+					tx_hash,
 				});
 				Ok(())
 			},
@@ -614,9 +613,12 @@ impl GenesisGenerator {
 		self.fullness = self.fullness + tx.cost(&self.state.parameters);
 		let (state, _) = self.state.apply_system_tx(&tx, block_context.tblock)?;
 		self.state = state;
-		self.txs.push(TransactionWithContext {
-			tx: SerdeTransaction::System(tx),
-			block_context: block_context.clone(),
+		let tx_hash = tx.transaction_hash().0.0;
+		let raw_tx = RawTransaction::System(serialize(&tx)?);
+		self.txs.batches[0].push(SerializedTx {
+			tx: raw_tx,
+			context: block_context.clone(),
+			tx_hash,
 		});
 		Ok(())
 	}
@@ -639,12 +641,10 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 mod test {
 	use super::*;
 	use midnight_primitives_ics_observation::PolicyId;
-	use std::str::FromStr;
+	use std::{collections::HashMap, str::FromStr};
 
 	#[tokio::test]
 	async fn test_genesis_with_ics_config() {
-		const TREASURY_AMOUNT: u128 = 1_000_000_000_000; // 1 trillion
-
 		let funding = FundingArgs {
 			shielded_mint_amount: 0,
 			shielded_num_funding_outputs: 0,
@@ -664,7 +664,7 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
-		// Create ICS config with UTxOs that sum to TREASURY_AMOUNT
+		// ICS config determines the treasury pool amount.
 		let ics_config = IcsConfig {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
@@ -679,10 +679,9 @@ mod test {
 				IcsUtxo { tx_hash: "abc123".to_string(), output_index: 0, amount: 600_000_000_000 },
 				IcsUtxo { tx_hash: "def456".to_string(), output_index: 1, amount: 400_000_000_000 },
 			],
-			total_amount: TREASURY_AMOUNT,
+			total_amount: 1_000_000_000_000,
 		};
 
-		// Validate config before using
 		ics_config.validate().expect("ICS config should be valid");
 
 		let genesis = GenesisGenerator::new(
@@ -693,18 +692,86 @@ mod test {
 			Some(&seeds),
 			None,
 			Some(ics_config),
+			None, // no reserve config
 			None, // no custom ledger parameters
+			None, // use default genesis timestamp
 		)
 		.await
 		.unwrap();
 
-		// Verify treasury was funded with the expected amount
+		// Treasury should contain the ICS config's total_amount
 		let night_token_type = TokenType::Unshielded(NIGHT);
 		let treasury_balance = genesis.state.treasury.get(&night_token_type).copied().unwrap_or(0);
 		assert_eq!(
-			treasury_balance, TREASURY_AMOUNT,
-			"Treasury should contain {} NIGHT, but has {}",
-			TREASURY_AMOUNT, treasury_balance
+			treasury_balance, 1_000_000_000_000,
+			"Treasury should contain 1000000000000 NIGHT, but has {}",
+			treasury_balance
+		);
+	}
+
+	#[tokio::test]
+	async fn test_genesis_with_reserve_config() {
+		let funding = FundingArgs {
+			shielded_mint_amount: 0,
+			shielded_num_funding_outputs: 0,
+			shielded_alt_token_types: vec![],
+			unshielded_mint_amount: 0,
+			unshielded_num_funding_outputs: 0,
+			unshielded_alt_token_types: vec![],
+		};
+
+		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
+		let network_id = "undeployed";
+
+		// Reserve config determines the reserve pool amount.
+		let reserve_config = ReserveConfig {
+			reserve_validator_address: "addr_test1qz_reserve".to_string(),
+			asset: midnight_primitives_reserve_observation::ReserveAsset {
+				policy_id: midnight_primitives_reserve_observation::PolicyId([0u8; 28]),
+				asset_name: "NIGHT".to_string(),
+			},
+			utxos: vec![
+				midnight_primitives_reserve_observation::ReserveUtxo {
+					tx_hash: "abc123".to_string(),
+					output_index: 0,
+					amount: 3_000_000_000_000,
+				},
+				midnight_primitives_reserve_observation::ReserveUtxo {
+					tx_hash: "def456".to_string(),
+					output_index: 1,
+					amount: 2_000_000_000_000,
+				},
+			],
+			total_amount: 5_000_000_000_000,
+		};
+
+		reserve_config.validate().expect("Reserve config should be valid");
+
+		let genesis = GenesisGenerator::new(
+			seed,
+			network_id,
+			None,
+			funding,
+			None, // no wallets — keeps pool accounting simple
+			None,
+			None,
+			Some(reserve_config),
+			None,
+			None, // use default genesis timestamp
+		)
+		.await
+		.unwrap();
+
+		// Pools should reflect the actual config values passed
+		let expected_reserve: u128 = 5_000_000_000_000;
+		let expected_locked = MAX_SUPPLY - expected_reserve; // no ICS config, so treasury = 0
+		assert_eq!(
+			genesis.state.locked_pool, expected_locked,
+			"locked_pool should be MAX_SUPPLY minus reserve"
+		);
+		assert_eq!(
+			genesis.state.reserve_pool, expected_reserve,
+			"reserve_pool should equal reserve config total_amount"
 		);
 	}
 
@@ -740,13 +807,15 @@ mod test {
 			None,
 			None,
 			None,
+			None,
+			None, // use default genesis timestamp
 		)
 		.await
 		.unwrap();
 
 		let wallets = seeds
 			.iter()
-			.map(|seed| Wallet::default(*seed, &genesis.state))
+			.map(|seed| Wallet::default(seed.clone(), &genesis.state))
 			.collect::<Vec<_>>();
 
 		let state = genesis.state;

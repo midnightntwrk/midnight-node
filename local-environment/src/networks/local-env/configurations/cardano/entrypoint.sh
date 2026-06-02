@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # This file is part of midnight-node.
-# Copyright (C) 2025 Midnight Foundation
+# Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
@@ -15,10 +15,103 @@
 
 set -euxo pipefail
 
+# Function to start cardano-node and wait for the socket to be available
+start_node() {
+  echo "Current time is now: $(date +"%H:%M:%S.%3N"). Starting node..."
+
+  cardano-node run \
+    --topology /shared/node-1-topology.json \
+    --database-path /data/db \
+    --socket-path /data/node.socket \
+    --host-addr 0.0.0.0 \
+    --port 32000 \
+    --config /shared/node-1-config.json \
+    --shelley-kes-key /keys/kes.skey \
+    --shelley-vrf-key /keys/vrf.skey \
+    --shelley-operational-certificate /keys/node.cert \
+    > /data/node.log 2>&1 &
+  NODE_PID=$!
+
+  set +x
+  echo "Waiting for node.socket..."
+
+  for i in {1..60}; do
+    if [ -S /data/node.socket ]; then
+      echo "Node socket is available."
+      break
+    fi
+
+    if ! kill -0 $NODE_PID 2>/dev/null; then
+      echo "cardano-node process has exited unexpectedly. Dumping logs:"
+      cat /data/node.log
+      exit 1
+    fi
+
+    sleep 1
+  done
+
+  if [ ! -S /data/node.socket ]; then
+    echo "Timed out waiting for /data/node.socket"
+    cat /data/node.log
+    exit 1
+  fi
+
+  set -x
+}
+
+# Regenerate config files from base templates.
+# Copies genesis files, recomputes their hashes, and substitutes them into config files.
+# This allows config/genesis changes to be picked up on restart without a full re-init.
+regenerate_configs() {
+  cp /shared/conway/genesis.conway.json.base /shared/conway/genesis.conway.json
+  cp /shared/shelley/genesis.alonzo.json.base /shared/shelley/genesis.alonzo.json
+
+  byron_hash=$(/bin/cardano-cli byron genesis print-genesis-hash --genesis-json /shared/byron/genesis.json)
+  shelley_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/shelley/genesis.json)
+  alonzo_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/shelley/genesis.alonzo.json)
+  conway_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/conway/genesis.conway.json)
+
+  echo "Genesis hashes: byron=$byron_hash shelley=$shelley_hash alonzo=$alonzo_hash conway=$conway_hash"
+
+  /busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/node-1-config.json.base > /shared/node-1-config.json.base.byron
+  /busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/db-sync-config.json.base > /shared/db-sync-config.json.base.byron
+  /busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/node-1-config.json.base.byron > /shared/node-1-config.base.shelley
+  /busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/db-sync-config.json.base.byron > /shared/db-sync-config.base.shelley
+  /busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/node-1-config.base.shelley > /shared/node-1-config.json.base.conway
+  /busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/db-sync-config.base.shelley > /shared/db-sync-config.json.base.conway
+  /busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/node-1-config.json.base.conway > /shared/node-1-config.json
+  /busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/db-sync-config.json.base.conway > /shared/db-sync-config.json
+}
+
+# If /shared/cardano.ready exists from a previous run, skip prep work and just start the node.
+# This is useful for testing cardano-node image upgrades without re-running genesis setup.
+if [ -f /shared/cardano.ready ]; then
+  echo "/shared/cardano.ready found. Skipping prep work, starting node with existing config..."
+  chmod 600 /keys/*
+  rm -f /data/node.socket
+
+  # Regenerate config files from base templates, recomputing genesis hashes
+  regenerate_configs
+
+  start_node
+  echo "Cardano node restarted with existing chain data."
+  echo "Note: cardano-node logs are written to /data/node.log, not stdout."
+  echo "  To view: docker exec cardano-node-1 tail -f /data/node.log"
+  wait
+  exit 0
+fi
+
 chmod 600 /keys/*
 chmod +x /busybox
 chmod 777 /shared
 chmod 777 /runtime-values
+
+# Clean any existing runtime values to ensure fresh start
+if [[ -d "/runtime-values" ]]; then
+    echo "Removing existing runtime-values directory..."
+    rm -rf /runtime-values/*
+    echo "✓ runtime-values directory cleaned"
+fi
 
 # Removed: this caused permissions errors on host when running tests locally
 # chown -R $(id -u):$(id -g) /shared /runtime-values /keys /data
@@ -48,27 +141,7 @@ mc_slot_length=$(extract_value "slotLength")
 mc_security_param=$(extract_value "securityParam")
 mc_active_slots_coeff=$(extract_value "activeSlotsCoeff")
 
-cp /shared/conway/genesis.conway.json.base /shared/conway/genesis.conway.json
-cp /shared/shelley/genesis.alonzo.json.base /shared/shelley/genesis.alonzo.json
-echo "Created /shared/conway/genesis.conway.json and /shared/shelley/genesis.alonzo.json"
-
-byron_hash=$(/bin/cardano-cli byron genesis print-genesis-hash --genesis-json /shared/byron/genesis.json)
-shelley_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/shelley/genesis.json)
-alonzo_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/shelley/genesis.alonzo.json)
-conway_hash=$(/bin/cardano-cli latest genesis hash --genesis /shared/conway/genesis.conway.json)
-
-/busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/node-1-config.json.base > /shared/node-1-config.json.base.byron
-/busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/db-sync-config.json.base > /shared/db-sync-config.json.base.byron
-/busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/node-1-config.json.base.byron > /shared/node-1-config.base.shelley
-/busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/db-sync-config.json.base.byron > /shared/db-sync-config.base.shelley
-/busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/node-1-config.base.shelley > /shared/node-1-config.json.base.conway
-/busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/db-sync-config.base.shelley > /shared/db-sync-config.json.base.conway
-/busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/node-1-config.json.base.conway > /shared/node-1-config.json
-/busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/db-sync-config.json.base.conway > /shared/db-sync-config.json
-
-echo "Updated ByronGenesisHash value in config files to: $byron_hash"
-echo "Updated ShelleyGenesisHash value in config files to: $shelley_hash"
-echo "Updated ConwayGenesisHash value in config files to: $conway_hash"
+regenerate_configs
 
 MC_ENV_FILE="/tmp/mc.env"
 touch "$MC_ENV_FILE"
@@ -98,50 +171,12 @@ add_env_var "MC__FIRST_EPOCH_NUMBER" "0"
 add_env_var "MC__EPOCH_DURATION_MILLIS" "$epoch_duration_millis"
 add_env_var "MC__FIRST_SLOT_NUMBER" "0"
 add_env_var "MC__SLOT_DURATION_MILLIS" "$slot_duration_millis"
-add_env_var "ALLOW_NON_SSL" true
 
 cp "$MC_ENV_FILE" /shared/mc.env
 cp "$MC_ENV_FILE" /runtime-values/mc.env
 echo "Created /shared/mc.env with mainchain env-vars"
 
-echo "Current time is now: $(date +"%H:%M:%S.%3N"). Starting node..."
-
-cardano-node run \
-  --topology /shared/node-1-topology.json \
-  --database-path /data/db \
-  --socket-path /data/node.socket \
-  --host-addr 0.0.0.0 \
-  --port 32000 \
-  --config /shared/node-1-config.json \
-  --shelley-kes-key /keys/kes.skey \
-  --shelley-vrf-key /keys/vrf.skey \
-  --shelley-operational-certificate /keys/node.cert \
-  > /data/node.log 2>&1 &
-NODE_PID=$!
-
-set +x
-echo "Waiting for node.socket..."
-
-for i in {1..60}; do
-  if [ -S /data/node.socket ]; then
-    echo "Node socket is available."
-    break
-  fi
-
-  if ! kill -0 $NODE_PID 2>/dev/null; then
-    echo "cardano-node process has exited unexpectedly. Dumping logs:"
-    cat /data/node.log
-    exit 1
-  fi
-
-  sleep 1
-done
-
-if [ ! -S /data/node.socket ]; then
-  echo "Timed out waiting for /data/node.socket"
-  cat /data/node.log
-  exit 1
-fi
+start_node
 
 # Wait for genesis time to arrive and node to be ready before submitting transactions
 target_time=$(cat /shared/cardano.start)
@@ -179,7 +214,7 @@ echo "Genesis address: $genesis_address"
 # Retry loop for genesis UTXO query (node needs time to process genesis)
 for i in {1..30}; do
   echo "Querying genesis UTXO (attempt $i/30)..."
-  cardano-cli latest query utxo --testnet-magic 42 --address "${genesis_address}" > /tmp/genesis_utxo.txt
+  cardano-cli latest query utxo --output-text --testnet-magic 42 --address "${genesis_address}" > /tmp/genesis_utxo.txt
   
   # Check if we got any UTXOs (more than just header lines)
   utxo_count=$(cat /tmp/genesis_utxo.txt | /busybox awk 'NR>2 { count++ } END { print count+0 }')
@@ -295,253 +330,14 @@ cardano-cli latest query utxo --testnet-magic 42 --address "${eve_address}" | /b
 echo "UTXO details for Eve saved in /shared/eve.utxo."
 cat /shared/eve.utxo
 
-echo "Querying and saving the first UTXO details for new address to /shared/genesis.utxo:"
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk 'NR>2 { print $1 "#" $2; exit }' > /shared/genesis.utxo
-cat /shared/genesis.utxo > /runtime-values/genesis.utxo
-
-cat /shared/genesis.utxo
-
-# ============================================================================
-# CREATE ONE-SHOT UTXOs FOR GOVERNANCE CONTRACTS
-# ============================================================================
-echo ""
-echo "========================================="
-echo "Creating One-Shot UTxOs for Governance"
-echo "========================================="
-
-# These UTxOs will be used as one-shot inputs for governance contract minting
-# to ensure each governance NFT can only be minted once
-
-# Get available UTxOs for new_address (we'll use different ones for each one-shot)
-echo "Querying available UTxOs at $new_address..."
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" > /tmp/available_utxos.txt
-cat /tmp/available_utxos.txt
-
-# Extract third UTXO for council one-shot (skip first line header, skip second line dashes, get fifth line)
-council_input=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==5 { print $1 "#" $2 }')
-council_input_amount=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==5 { print $3 }')
-
-# Extract fourth UTXO for techauth one-shot (skip first line header, skip second line dashes, get sixth line)
-techauth_input=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==6 { print $1 "#" $2 }')
-techauth_input_amount=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==6 { print $3 }')
-
-# Extract fifth UTXO for federated-ops one-shot (skip first line header, skip second line dashes, get seventh line)
-federatedops_input=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==7 { print $1 "#" $2 }')
-federatedops_input_amount=$(cat /tmp/available_utxos.txt | /busybox awk 'NR==7 { print $3 }')
-
-echo ""
-echo "Creating Council One-Shot UTxO..."
-echo "  Input: $council_input"
-echo "  Input Amount: $council_input_amount lovelace"
-
-# Council one-shot transaction
-# We create a single output with 10 ADA (enough for later use as one-shot)
-council_oneshot_amount=10000000
-council_fee=200000
-council_change=$((council_input_amount - council_oneshot_amount - council_fee))
-
-cardano-cli latest transaction build-raw \
-  --tx-in $council_input \
-  --tx-out "$new_address+$council_oneshot_amount" \
-  --tx-out "$new_address+$council_change" \
-  --fee $council_fee \
-  --out-file /data/council-oneshot.raw
-
-cardano-cli latest transaction sign \
-  --tx-body-file /data/council-oneshot.raw \
-  --signing-key-file /keys/funded_address.skey \
-  --testnet-magic 42 \
-  --out-file /data/council-oneshot.signed
-
-echo "Submitting council one-shot transaction..."
-cardano-cli latest transaction submit \
-  --tx-file /data/council-oneshot.signed \
-  --testnet-magic 42
-
-echo "Waiting 5 seconds for council one-shot transaction to confirm..."
-sleep 5
-
-# Query and save the council one-shot UTxO reference
-echo "Querying council one-shot UTxO..."
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk -v amount="$council_oneshot_amount" '$3 == amount { print $1 "#" $2; exit }' > /shared/council.oneshot.utxo
-
-council_oneshot_ref=$(cat /shared/council.oneshot.utxo)
-council_oneshot_hash=$(echo $council_oneshot_ref | cut -d'#' -f1)
-council_oneshot_index=$(echo $council_oneshot_ref | cut -d'#' -f2)
-
-echo "✓ Council One-Shot UTxO Created:"
-echo "  Reference: $council_oneshot_ref"
-echo "  TX Hash:   $council_oneshot_hash"
-echo "  TX Index:  $council_oneshot_index"
-
-# Save to files for contract compilation
-echo "$council_oneshot_hash" > /shared/council_oneshot_hash.txt
-echo "$council_oneshot_index" > /shared/council_oneshot_index.txt
-cp /shared/council.oneshot.utxo /runtime-values/council.oneshot.utxo
-cp /shared/council_oneshot_hash.txt /runtime-values/council_oneshot_hash.txt
-cp /shared/council_oneshot_index.txt /runtime-values/council_oneshot_index.txt
-
-# Extract fourth UTXO for tech auth one-shot
-echo ""
-echo "Creating Technical Authority One-Shot UTxO..."
-echo "  Input: $techauth_input"
-echo "  Input Amount: $techauth_input_amount lovelace"
-
-# Tech auth one-shot transaction
-techauth_oneshot_amount=15000000
-techauth_fee=200000
-techauth_change=$((techauth_input_amount - techauth_oneshot_amount - techauth_fee))
-
-cardano-cli latest transaction build-raw \
-  --tx-in $techauth_input \
-  --tx-out "$new_address+$techauth_oneshot_amount" \
-  --tx-out "$new_address+$techauth_change" \
-  --fee $techauth_fee \
-  --out-file /data/techauth-oneshot.raw
-
-cardano-cli latest transaction sign \
-  --tx-body-file /data/techauth-oneshot.raw \
-  --signing-key-file /keys/funded_address.skey \
-  --testnet-magic 42 \
-  --out-file /data/techauth-oneshot.signed
-
-echo "Submitting tech auth one-shot transaction..."
-cardano-cli latest transaction submit \
-  --tx-file /data/techauth-oneshot.signed \
-  --testnet-magic 42
-
-echo "Waiting 5 seconds for tech auth one-shot transaction to confirm..."
-sleep 5
-
-# Query and save the tech auth one-shot UTxO reference
-echo "Querying tech auth one-shot UTxO..."
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk -v amount="$techauth_oneshot_amount" '$3 == amount && !seen[$1"#"$2]++ { print $1 "#" $2; exit }' > /shared/techauth.oneshot.utxo
-
-techauth_oneshot_ref=$(cat /shared/techauth.oneshot.utxo)
-techauth_oneshot_hash=$(echo $techauth_oneshot_ref | cut -d'#' -f1)
-techauth_oneshot_index=$(echo $techauth_oneshot_ref | cut -d'#' -f2)
-
-echo "✓ Technical Authority One-Shot UTxO Created:"
-echo "  Reference: $techauth_oneshot_ref"
-echo "  TX Hash:   $techauth_oneshot_hash"
-echo "  TX Index:  $techauth_oneshot_index"
-
-# Save to files for contract compilation
-echo "$techauth_oneshot_hash" > /shared/techauth_oneshot_hash.txt
-echo "$techauth_oneshot_index" > /shared/techauth_oneshot_index.txt
-cp /shared/techauth.oneshot.utxo /runtime-values/techauth.oneshot.utxo
-cp /shared/techauth_oneshot_hash.txt /runtime-values/techauth_oneshot_hash.txt
-cp /shared/techauth_oneshot_index.txt /runtime-values/techauth_oneshot_index.txt
-
-#
-# Create Federated Operators One-Shot UTxO
-#
-echo ""
-echo "Creating Federated Operators One-Shot UTxO..."
-echo "  Input: $federatedops_input"
-echo "  Input Amount: $federatedops_input_amount lovelace"
-
-# Federated Ops one-shot transaction
-# Note: Using 12 ADA (different from council's 10 ADA and techauth's 15 ADA)
-# to ensure unique amount matching when querying one-shot UTxOs
-federatedops_oneshot_amount=12000000
-federatedops_fee=200000
-federatedops_change=$((federatedops_input_amount - federatedops_oneshot_amount - federatedops_fee))
-
-cardano-cli latest transaction build-raw \
-  --tx-in $federatedops_input \
-  --tx-out "$new_address+$federatedops_oneshot_amount" \
-  --tx-out "$new_address+$federatedops_change" \
-  --fee $federatedops_fee \
-  --out-file /data/federatedops-oneshot.raw
-
-cardano-cli latest transaction sign \
-  --tx-body-file /data/federatedops-oneshot.raw \
-  --signing-key-file /keys/funded_address.skey \
-  --testnet-magic 42 \
-  --out-file /data/federatedops-oneshot.signed
-
-echo "Submitting federated ops one-shot transaction..."
-cardano-cli latest transaction submit \
-  --tx-file /data/federatedops-oneshot.signed \
-  --testnet-magic 42
-
-echo "Waiting 5 seconds for federated ops one-shot transaction to confirm..."
-sleep 5
-
-# Query and save the federated ops one-shot UTxO reference
-echo "Querying federated ops one-shot UTxO..."
-cardano-cli latest query utxo --testnet-magic 42 --address "${new_address}" | /busybox awk -v amount="$federatedops_oneshot_amount" '$3 == amount && !seen[$1"#"$2]++ { print $1 "#" $2; exit }' > /shared/federatedops.oneshot.utxo
-
-federatedops_oneshot_ref=$(cat /shared/federatedops.oneshot.utxo)
-federatedops_oneshot_hash=$(echo $federatedops_oneshot_ref | cut -d'#' -f1)
-federatedops_oneshot_index=$(echo $federatedops_oneshot_ref | cut -d'#' -f2)
-
-echo "✓ Federated Operators One-Shot UTxO Created:"
-echo "  Reference: $federatedops_oneshot_ref"
-echo "  TX Hash:   $federatedops_oneshot_hash"
-echo "  TX Index:  $federatedops_oneshot_index"
-
-# Save to files for contract compilation
-echo "$federatedops_oneshot_hash" > /shared/federatedops_oneshot_hash.txt
-echo "$federatedops_oneshot_index" > /shared/federatedops_oneshot_index.txt
-cp /shared/federatedops.oneshot.utxo /runtime-values/federatedops.oneshot.utxo
-cp /shared/federatedops_oneshot_hash.txt /runtime-values/federatedops_oneshot_hash.txt
-cp /shared/federatedops_oneshot_index.txt /runtime-values/federatedops_oneshot_index.txt
 
 echo "Fixing permissions for generated files..."
-chown $(id -u):$(id -g) \
-  /runtime-values/genesis.utxo \
-  /runtime-values/mc.env \
-  /shared/genesis.utxo \
-  /shared/council.oneshot.utxo \
-  /shared/council_oneshot_hash.txt \
-  /shared/council_oneshot_index.txt \
-  /shared/techauth.oneshot.utxo \
-  /shared/techauth_oneshot_hash.txt \
-  /shared/techauth_oneshot_index.txt \
-  /shared/federatedops.oneshot.utxo \
-  /shared/federatedops_oneshot_hash.txt \
-  /shared/federatedops_oneshot_index.txt \
-  /runtime-values/council.oneshot.utxo \
-  /runtime-values/council_oneshot_hash.txt \
-  /runtime-values/council_oneshot_index.txt \
-  /runtime-values/techauth.oneshot.utxo \
-  /runtime-values/techauth_oneshot_hash.txt \
-  /runtime-values/techauth_oneshot_index.txt \
-  /runtime-values/federatedops.oneshot.utxo \
-  /runtime-values/federatedops_oneshot_hash.txt \
-  /runtime-values/federatedops_oneshot_index.txt
+chown $(id -u):$(id -g) /runtime-values/mc.env
+chmod u+rw /runtime-values/mc.env
 
-chmod u+rw \
-  /runtime-values/genesis.utxo \
-  /runtime-values/mc.env \
-  /shared/genesis.utxo \
-  /shared/council.oneshot.utxo \
-  /shared/council_oneshot_hash.txt \
-  /shared/council_oneshot_index.txt \
-  /shared/techauth.oneshot.utxo \
-  /shared/techauth_oneshot_hash.txt \
-  /shared/techauth_oneshot_index.txt \
-  /shared/federatedops.oneshot.utxo \
-  /shared/federatedops_oneshot_hash.txt \
-  /shared/federatedops_oneshot_index.txt \
-  /runtime-values/council.oneshot.utxo \
-  /runtime-values/council_oneshot_hash.txt \
-  /runtime-values/council_oneshot_index.txt \
-  /runtime-values/techauth.oneshot.utxo \
-  /runtime-values/techauth_oneshot_hash.txt \
-  /runtime-values/techauth_oneshot_index.txt \
-  /runtime-values/federatedops.oneshot.utxo \
-  /runtime-values/federatedops_oneshot_hash.txt \
-  /runtime-values/federatedops_oneshot_index.txt
-
-if [ -f "/shared/genesis.utxo" ]; then
 touch /shared/cardano.ready
-else
-echo "Genesis UTXO file not found. Exiting..."
-exit 1
-fi
-echo "Cardano chain is ready. Starting DB-Sync..."
+echo "Cardano chain is ready."
+echo "Note: cardano-node logs are written to /data/node.log, not stdout."
+echo "  To view: docker exec cardano-node-1 tail -f /data/node.log"
 
 wait

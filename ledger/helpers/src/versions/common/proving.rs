@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ impl<D: DB + Clone> ProofProvider<D> for LocalProofServer {
 		resolver: &Resolver,
 		cost_model: &CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D> {
-		println!("Ensuring zswap key material is available...");
+		log::info!("Ensuring zswap key material is available...");
 		{
 			let ks =
 				futures::future::join_all((10..=15).map(|k| resolver.zswap_resolver.0.fetch_k(k)));

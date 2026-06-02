@@ -1,0 +1,16 @@
+{
+  "bootnodes": [
+  ],
+  "chain_parameters": {
+    "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
+  },
+  "cardano": {
+    "security_parameter": 2160,
+    "active_slots_coeff": 0.05,
+    "first_epoch_number": 208,
+    "first_slot_number": 4492800,
+    "epoch_duration_millis": 432000000,
+    "first_epoch_timestamp_millis": 1596059091000,
+    "slot_duration_millis": 1000
+  }
+}

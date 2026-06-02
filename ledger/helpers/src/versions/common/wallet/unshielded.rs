@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,9 +12,10 @@
 // limitations under the License.
 
 use super::super::{
-	DerivationPath, DeriveSeed, HRP_CONSTANT, HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash,
-	IntoWalletAddress, Role, SigningKey, UserAddress, VerifyingKey, WalletAddress, WalletSeed,
-	deserialize_untagged, serialize_untagged,
+	ArenaKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable, HRP_CONSTANT,
+	HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash, IntoWalletAddress, Loader, Role,
+	Serializable, SigningKey, Storable, Tagged, UserAddress, VerifyingKey, WalletAddress,
+	WalletSeed, deserialize_untagged, serialize_untagged,
 };
 use hex::FromHexError;
 use std::num::ParseIntError;
@@ -30,7 +31,7 @@ impl core::fmt::Display for UtxoId {
 		write!(
 			f,
 			"{}#{}",
-			hex::encode(serialize_untagged(&self.intent_hash).unwrap()),
+			hex::encode(serialize_untagged(&self.intent_hash).map_err(|_| std::fmt::Error)?),
 			self.output_number
 		)
 	}
@@ -64,11 +65,23 @@ impl std::str::FromStr for UtxoId {
 	}
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Storable, Serializable)]
+#[tag = "unshielded-wallet"]
+#[storable(base)]
 pub struct UnshieldedWallet {
 	pub user_address: UserAddress,
 	pub verifying_key: Option<VerifyingKey>,
 	signing_key: Option<SigningKey>,
+}
+
+impl std::fmt::Debug for UnshieldedWallet {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("UnshieldedWallet")
+			.field("user_address", &self.user_address)
+			.field("verifying_key", &self.verifying_key)
+			.field("signing_key", &"REDACTED")
+			.finish()
+	}
 }
 
 impl DeriveSeed for UnshieldedWallet {}
@@ -107,10 +120,13 @@ impl UnshieldedWallet {
 		Self::from_seed(derived_seed)
 	}
 
-	pub fn from_path(root_seed: WalletSeed, path: &DerivationPath) -> Self {
+	pub fn from_path(
+		root_seed: WalletSeed,
+		path: &DerivationPath,
+	) -> Result<Self, DerivationPathError> {
+		path.validate_role(&[Role::UnshieldedExternal, Role::UnshieldedInternal])?;
 		let derived_seed = Self::derive_seed(root_seed, path);
-
-		Self::from_seed(derived_seed)
+		Ok(Self::from_seed(derived_seed))
 	}
 
 	#[cfg(feature = "can-panic")]

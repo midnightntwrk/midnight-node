@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ pub use sidechain_domain::PolicyId;
 pub struct IcsAsset {
 	/// The policy ID of the cNIGHT token
 	pub policy_id: PolicyId,
-	/// The asset name of the cNIGHT token (hex string without 0x prefix, usually empty)
+	/// The asset name of the cNIGHT token (human-readable, e.g. "NIGHT" or empty)
 	pub asset_name: String,
 }
 

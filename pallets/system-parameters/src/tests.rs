@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,10 +13,16 @@
 
 //! Tests for system-parameters pallet
 
-use crate::{Error, Event, mock::*};
+use crate::{
+	Error, Event,
+	mock::*,
+	pallet::{DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES, DEFAULT_TERMS_AND_CONDITIONS_URL},
+};
 use frame_support::{assert_noop, assert_ok};
 use sidechain_domain::DParameter;
 use sp_core::H256;
+
+const DEFAULT_TERMS_AND_CONDITIONS_HASH: H256 = H256(DEFAULT_TERMS_AND_CONDITIONS_HASH_BYTES);
 
 #[test]
 fn update_terms_and_conditions_works_with_root() {
@@ -127,7 +133,12 @@ fn genesis_config_initializes_terms_and_conditions() {
 fn genesis_config_initializes_d_parameter() {
 	let d_param = DParameter::new(15, 10);
 
-	new_test_ext_with_genesis(None, None, Some(d_param.clone())).execute_with(|| {
+	new_test_ext_with_genesis(
+		Some(DEFAULT_TERMS_AND_CONDITIONS_HASH),
+		Some(DEFAULT_TERMS_AND_CONDITIONS_URL.to_string()),
+		Some(d_param.clone()),
+	)
+	.execute_with(|| {
 		let stored = SystemParameters::get_d_parameter();
 		assert_eq!(stored.num_permissioned_candidates, 15);
 		assert_eq!(stored.num_registered_candidates, 10);
@@ -234,5 +245,32 @@ fn get_d_parameter_helper_works() {
 		let stored = SystemParameters::get_d_parameter();
 		assert_eq!(stored.num_permissioned_candidates, 7);
 		assert_eq!(stored.num_registered_candidates, 4);
+	});
+}
+
+#[test]
+#[should_panic(expected = "Genesis terms and conditions URL must be set")]
+fn genesis_panics_with_hash_only() {
+	let hash = H256::from_low_u64_be(123);
+	// Providing hash without URL should panic during genesis build
+	new_test_ext_with_genesis(Some(hash), None, None);
+}
+
+#[test]
+#[should_panic(expected = "Genesis terms and conditions hash must be set")]
+fn genesis_panics_with_url_only() {
+	let url = "https://example.com/terms".to_string();
+	// Providing URL without hash should panic during genesis build
+	new_test_ext_with_genesis(None, Some(url), None);
+}
+
+#[test]
+fn genesis_succeeds_with_terms_and_conditions_without_d_parameter() {
+	let hash = H256::from_low_u64_be(123);
+	let url = "https://example.com/terms".to_string();
+	new_test_ext_with_genesis(Some(hash), Some(url.clone()), None).execute_with(|| {
+		let stored = SystemParameters::terms_and_conditions().expect("Should have terms");
+		assert_eq!(stored.hash, hash);
+		assert_eq!(stored.url.to_vec(), url.as_bytes().to_vec());
 	});
 }

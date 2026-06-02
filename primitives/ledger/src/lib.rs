@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,12 +12,17 @@
 // limitations under the License.
 
 use prometheus_endpoint::{
-	self as prometheus, HistogramOpts, HistogramVec, PrometheusError, Registry,
+	self as prometheus, CounterVec, GaugeVec, HistogramOpts, HistogramVec, Opts, PrometheusError,
+	Registry, U64,
 };
 use std::{
 	path::PathBuf,
 	sync::{Arc, Mutex},
 };
+
+// Number of columns used by Polkadot in the underlying parity-db. Use this value for column offset
+// when initializing the ledger parity-db backend.
+pub const NUM_COLUMNS_POLKADOT: u8 = 13;
 
 const LOG_TARGET: &str = "ledger::primitives";
 /// Ledger metrics exposed through Prometheus
@@ -35,6 +40,12 @@ pub struct LedgerMetrics {
 	pub storage_fetch_time: HistogramVec,
 	/// Storage flush time
 	pub storage_flush_time: HistogramVec,
+	/// Transaction validation cache hits (labeled by cache_type: "strict" or "soft")
+	pub tx_validation_cache_hits: CounterVec<U64>,
+	/// Transaction validation cache misses
+	pub tx_validation_cache_misses: CounterVec<U64>,
+	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
+	pub tx_validation_cache_size: GaugeVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -149,6 +160,36 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			tx_validation_cache_hits: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_tx_validation_cache_hits_total",
+						"Transaction validation cache hits",
+					),
+					&["cache_type"],
+				)?,
+				registry,
+			)?,
+			tx_validation_cache_misses: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_tx_validation_cache_misses_total",
+						"Transaction validation cache misses",
+					),
+					&[],
+				)?,
+				registry,
+			)?,
+			tx_validation_cache_size: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_tx_validation_cache_size",
+						"Current number of entries in transaction validation cache",
+					),
+					&["cache_type"],
+				)?,
+				registry,
+			)?,
 		})
 	}
 }
@@ -215,28 +256,56 @@ impl LedgerMetricsExt {
 			m.storage_flush_time.with_label_values(&[label]).observe(time);
 		});
 	}
+
+	pub fn inc_tx_validation_cache_hit(&mut self, cache_type: &str) {
+		self.observe(|m| {
+			m.tx_validation_cache_hits.with_label_values(&[cache_type]).inc();
+		});
+	}
+
+	pub fn inc_tx_validation_cache_miss(&mut self) {
+		self.observe(|m| {
+			m.tx_validation_cache_misses.with_label_values(&[]).inc();
+		});
+	}
+
+	pub fn set_tx_validation_cache_size(&mut self, cache_type: &str, size: u64) {
+		self.observe(|m| {
+			m.tx_validation_cache_size.with_label_values(&[cache_type]).set(size);
+		});
+	}
 }
 
+#[derive(Clone)]
+pub enum LedgerStorageDb {
+	UnifiedDb(Arc<parity_db::Db>),
+	SeparateDb(PathBuf),
+}
 /// Ledger Storage info to be sent to host functions
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct LedgerStorage {
-	pub db_path: PathBuf,
+	pub db: LedgerStorageDb,
 	pub cache_size: usize,
 }
 
 impl LedgerStorage {
-	pub fn new(db_path: PathBuf, cache_size: usize) -> Self {
-		Self { db_path, cache_size }
+	pub fn new_existing(db: Arc<parity_db::Db>, cache_size: usize) -> Self {
+		Self { db: LedgerStorageDb::UnifiedDb(db), cache_size }
+	}
+
+	pub fn new_separate(db_path: PathBuf, cache_size: usize) -> Self {
+		Self { db: LedgerStorageDb::SeparateDb(db_path), cache_size }
 	}
 }
 
 sp_externalities::decl_extension! {
 	/// The `LedgerStorageExt`` extension to set default `Storage` in case of a Ledger's hard-fork.
-	#[derive(Debug)]
 	pub struct LedgerStorageExt(LedgerStorage);
 }
 
 impl LedgerStorageExt {
+	pub const COLUMN_OFFSET: u8 = NUM_COLUMNS_POLKADOT;
+
 	pub fn new(storage: LedgerStorage) -> Self {
 		LedgerStorageExt(storage)
 	}

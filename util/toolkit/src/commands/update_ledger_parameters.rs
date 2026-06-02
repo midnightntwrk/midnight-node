@@ -1,5 +1,5 @@
 use clap::Args;
-use subxt::{OnlineClient, SubstrateConfig, dynamic, tx::Payload};
+use subxt::{OnlineClient, SubstrateConfig, dynamic};
 use thiserror::Error;
 
 use crate::commands::root_call::{self, RootCallArgs};
@@ -14,8 +14,14 @@ use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 pub enum LedgerParametersError {
 	#[error("Subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
-	#[error("Subxt core error: {0}")]
-	SubxtCoreError(#[from] subxt::ext::subxt_core::Error),
+	#[error("online client error: {0}")]
+	OnlineClientError(#[from] subxt::error::OnlineClientError),
+	#[error("online client at block error: {0}")]
+	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
+	#[error("runtime api error: {0}")]
+	RuntimeApiError(#[from] subxt::error::RuntimeApiError),
+	#[error("extrinsic error: {0}")]
+	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
 	#[error("serialization error: {0}")]
 	SerializationError(std::io::Error),
 	#[error("Parameters update failed: Missing code updated event")]
@@ -128,16 +134,21 @@ pub struct UpdateLedgerParametersArgs {
 	parameters: Option<String>,
 
 	/// Council member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, required = true)]
+	#[arg(short, long, required_unless_present = "print_system_tx_hex")]
 	council_members: Vec<String>,
 
 	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, required = true)]
+	#[arg(short, long, required_unless_present = "print_system_tx_hex")]
 	technical_committee_members: Vec<String>,
 
 	/// RPC URL for sending the update.
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
 	rpc_url: String,
+
+	/// Print the serialized ledger `SystemTransaction` as a hex string and exit
+	/// without submitting the root call. Useful for offline review or signing flows.
+	#[arg(long)]
+	print_system_tx_hex: bool,
 
 	#[command(flatten)]
 	params: UpdateableParams,
@@ -154,10 +165,11 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 				.map_err(|e| LedgerParametersError::DecodeLedgerParameters(Box::new(e)))?
 		},
 		None => {
-			let call = mn_meta::apis().midnight_runtime_api().get_ledger_parameters();
-			api.runtime_api()
-				.at_latest()
+			let call =
+				mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_ledger_parameters();
+			api.at_current_block()
 				.await?
+				.runtime_apis()
 				.call(call)
 				.await?
 				.expect("not possible to retrieve ledger parameters from RPC server")
@@ -260,19 +272,23 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		..base
 	};
 
-	println!("Ledger params loaded: {:#?}", parameters);
+	log::info!("Ledger params loaded: {:#?}", parameters);
 
-	println!("Executing ledger parameters update via federated authority.");
+	log::info!("Executing ledger parameters update via federated authority.");
 
 	// Step 1: Create the send system transaction call
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());
-	let send_system_tx_call = dynamic::tx(
-		"MidnightSystem",
-		"send_mn_system_transaction",
-		vec![serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?],
-	);
-	let send_system_tx_call_value =
-		send_system_tx_call.clone().encode_call_data(&api.metadata())?;
+	let serialized_system_tx =
+		serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?;
+
+	if args.print_system_tx_hex {
+		println!("0x{}", hex::encode(&serialized_system_tx));
+		return Ok(());
+	}
+
+	let send_system_tx_call =
+		dynamic::tx("MidnightSystem", "send_mn_system_transaction", vec![serialized_system_tx]);
+	let send_system_tx_call_value = api.tx().await?.call_data(&send_system_tx_call)?;
 
 	root_call::execute(RootCallArgs {
 		rpc_url: args.rpc_url,

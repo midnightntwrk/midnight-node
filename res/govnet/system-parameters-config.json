@@ -1,11 +1,10 @@
 {
-  "terms_and_conditions": {
-    "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-    "url": "https://midnight.network/terms-and-conditions"
-  },
-  "d_parameter": {
-    "num_permissioned_candidates": 6,
-    "num_registered_candidates": 0
-  },
-  "num_permissioned_candidates": 6
+    "terms_and_conditions": {
+        "hash": "0xca85ed77bce68288e55300f006ccd5cce5d4940dc39fc41173a9c2ecd1eb616e",
+        "url": "https://www.midnight.gd/global-terms-txt"
+    },
+    "d_parameter": {
+        "num_permissioned_candidates": 6,
+        "num_registered_candidates": 0
+    }
 }

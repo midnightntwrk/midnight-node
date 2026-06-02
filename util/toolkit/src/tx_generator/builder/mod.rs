@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,24 +12,29 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use builders::{
-	BatchesBuilder, ClaimRewardsBuilder, ContractCallBuilder, ContractDeployBuilder,
-	ContractMaintenanceBuilder, CustomContractBuilder, DoNothingBuilder, ReplaceInitialTxBuilder,
-	single_tx::SingleTxBuilder,
-};
+use builders::{DoNothingBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand};
+pub use midnight_node_ledger_helpers::CoinSelectionStrategy;
+use midnight_node_ledger_helpers::fork::{
+	fork_aware_context::{
+		ForkAwareLedgerContext, apply_block_7, apply_block_8, block_context_from_raw_7,
+		block_context_from_raw_8, fork_context_7_to_8,
+	},
+	raw_block_data::{LedgerVersion, RawBlockData},
+};
 use midnight_node_ledger_helpers::*;
-use std::{path::PathBuf, sync::Arc};
+use serde::Deserialize;
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use crate::{
-	ProofType, SignatureType, cli_parsers as cli,
-	fetcher::{fetch_storage::WalletStateCaching, wallet_state_cache},
-	serde_def::{
-		DeserializedTransactionsWithContext, DeserializedTransactionsWithContextBatch,
-		SourceTransactions,
+	cli_parsers as cli,
+	fetcher::{
+		fetch_storage::WalletStateCaching, wallet_state_cache,
+		wallet_state_cache::CachedWalletState,
 	},
-	tx_generator::builder::builders::RegisterDustAddressBuilder,
+	serde_def::SourceTransactions,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use subxt::utils::H256;
 
 pub mod builders;
@@ -212,6 +217,10 @@ pub struct BatchesArgs {
 	/// Enable Shielded transfers in batches
 	#[arg(long)]
 	pub enable_shielded: bool,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
 }
 
 // TODO: TokenIDs for shielded and unshielded
@@ -246,23 +255,30 @@ pub struct SingleTxArgs {
 	/// Destination address, both shielded and unshielded
 	#[arg(long, required = true)]
 	pub destination_address: Vec<WalletAddress>,
+	/// Pin specific wallet UTXOs as inputs to the unshielded transfer. Format:
+	/// <intent_hash_hex>#<output_no>, e.g. abc123…#0. Repeatable. When set, the
+	/// toolkit skips its built-in coin selection and uses exactly these UTXOs;
+	/// their summed value must be >= --unshielded-amount * destinations.
+	#[arg(long = "input-utxo", value_parser = cli::utxo_id_decode)]
+	pub input_utxos: Vec<UtxoId>,
 	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
 	pub rng_seed: Option<[u8; 32]>,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
 }
 #[derive(Args, Clone, Debug)]
 pub struct RegisterDustAddressArgs {
 	/// Seed for source wallet
 	#[arg(long)]
 	pub wallet_seed: String,
-	/// Seed for funding wallet
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
+	/// Seed for funding wallet. If not provided, uses retroactive DUST from NIGHT UTXOs.
+	#[arg(long)]
+	pub funding_seed: Option<String>,
 	#[arg(
 		long,
 		value_parser = cli::wallet_address,
@@ -273,6 +289,76 @@ pub struct RegisterDustAddressArgs {
         value_parser = cli::hex_str_decode::<[u8; 32]>,
     )]
 	pub rng_seed: Option<[u8; 32]>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct DeregisterDustAddressArgs {
+	/// Seed for the wallet to deregister
+	#[arg(long)]
+	pub wallet_seed: String,
+	/// Seed for funding wallet
+	#[arg(
+		long,
+		default_value = FUNDING_SEED
+	)]
+	pub funding_seed: String,
+	/// RNG seed for deterministic transaction generation (32 bytes hex)
+	#[arg(
+        long,
+        value_parser = cli::hex_str_decode::<[u8; 32]>,
+    )]
+	pub rng_seed: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct TransferSpec {
+	pub source_seed: String,
+	pub destination_address: String,
+	pub unshielded_amount: Option<u128>,
+	pub unshielded_token_type: Option<String>,
+	pub shielded_amount: Option<u128>,
+	pub shielded_token_type: Option<String>,
+	pub funding_seed: Option<String>,
+	pub rng_seed: Option<String>,
+}
+
+#[derive(Args, Clone, Debug)]
+#[group(required = true, multiple = false)]
+pub struct TransferArgs {
+	/// Path to JSON file with transfer specifications
+	#[arg(long)]
+	pub transfers_file: Option<String>,
+	/// Transfer specifications, provided as in-line JSON
+	#[arg(long, value_parser = cli::serde_json_decode::<Vec<TransferSpec>>)]
+	pub transfers: Option<Vec<TransferSpec>>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct BatchSingleTxArgs {
+	#[command(flatten)]
+	pub transfers: TransferArgs,
+	/// Number of concurrent tx generation tasks (default: available CPUs)
+	#[arg(long)]
+	pub concurrency: Option<usize>,
+	/// Strategy for ordering candidate coins/UTXOs during input selection.
+	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
+	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
+	pub coin_selection: CoinSelectionStrategy,
+}
+
+impl BatchSingleTxArgs {
+	pub fn get_transfer_specs(&self) -> Vec<TransferSpec> {
+		if let Some(ref transfers_file) = self.transfers.transfers_file {
+			let file_content = std::fs::read_to_string(&transfers_file).unwrap_or_else(|e| {
+				panic!("failed to read transfers file '{}': {}", transfers_file, e)
+			});
+			serde_json::from_str(&file_content)
+				.unwrap_or_else(|e| panic!("failed to parse transfers JSON: {}", e))
+		} else {
+			// unwrap() is safe here - must be Some(_) if transfers_file is None
+			self.transfers.transfers.clone().unwrap()
+		}
+	}
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -295,10 +381,40 @@ pub enum Builder {
 	ClaimRewards(ClaimRewardsArgs),
 	/// Send single transaction with one-or-many outputs
 	SingleTx(SingleTxArgs),
+	/// Register a DUST address for the wallet
 	RegisterDustAddress(RegisterDustAddressArgs),
+	/// Deregister (unlink) a DUST address for the wallet
+	DeregisterDustAddress(DeregisterDustAddressArgs),
+	/// Build multiple single-output txs from a JSON transfer spec file (one process, shared context)
+	BatchSingleTx(BatchSingleTxArgs),
 	/// Send is a no-op here (source is sent directly to destination)
 	Send,
-	Migrate,
+}
+
+/// Configuration for how proofs should be generated.
+#[derive(Clone, Debug)]
+pub enum ProverConfig {
+	Local,
+	Remote(String),
+}
+
+/// Error when constructing a versioned builder.
+#[derive(Debug, thiserror::Error)]
+pub enum BuilderConstructionError {
+	#[error("remote prover is not supported for ledger 7")]
+	RemoteProverNotSupportedForLedger7,
+	#[error("{0} builder is not supported for ledger 7")]
+	NotSupportedForLedger7(&'static str),
+	#[error("chain has not reached any known ledger version")]
+	NoContext,
+	#[error("internal error: version mismatch in fork context")]
+	VersionMismatch,
+}
+
+impl From<BuilderConstructionError> for DynamicError {
+	fn from(e: BuilderConstructionError) -> Self {
+		Self { error: Box::new(e) }
+	}
 }
 
 pub struct DynamicTransactionBuilder<T: BuildTxs + Send + Sync> {
@@ -331,46 +447,252 @@ impl std::fmt::Display for DynamicError {
 	}
 }
 
+impl From<ContextNotLedger8Error> for DynamicError {
+	fn from(e: ContextNotLedger8Error) -> Self {
+		Self { error: Box::new(e) }
+	}
+}
+
 #[async_trait]
 impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 	type Error = DynamicError;
 
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error> {
-		let x = self.builder.build_txs_from(received_tx, prover_arc).await;
-
-		x.map_err(|e| DynamicError { error: Box::new(e) })
+		received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
+		self.builder
+			.build_txs_from(received_tx)
+			.await
+			.map_err(|e| DynamicError { error: Box::new(e) })
 	}
 }
 
 impl Builder {
-	pub fn to_builder(self, dry_run: bool) -> Box<dyn BuildTxs<Error = DynamicError>> {
+	/// Extract wallet seeds needed by this builder configuration, without constructing
+	/// the full builder (which requires context/prover). Returns empty for pass-through builders.
+	pub fn relevant_wallet_seeds(&self) -> Result<Vec<WalletSeed>, &'static str> {
+		match self {
+			Builder::Batches(args) => {
+				compute_batches_seeds(&args.funding_seed, args.num_txs_per_batch, args.num_batches)
+			},
+			Builder::ContractSimple(call) => {
+				let seed_str = match call {
+					ContractCall::Deploy(args) => &args.funding_seed,
+					ContractCall::Call(args) => &args.funding_seed,
+					ContractCall::Maintenance(args) => &args.funding_seed,
+				};
+				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(seed_str)])
+			},
+			Builder::ContractCustom(args) => {
+				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
+			},
+			Builder::ClaimRewards(args) => {
+				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
+			},
+			Builder::SingleTx(args) => {
+				let mut seeds = vec![args.source_seed.clone()];
+				seeds.extend(args.funding_seed.iter().cloned());
+				Ok(seeds)
+			},
+			Builder::RegisterDustAddress(args) => {
+				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
+				if let Some(ref funding_seed) = args.funding_seed {
+					Ok(vec![seed, Wallet::<DefaultDB>::wallet_seed_decode(funding_seed)])
+				} else {
+					Ok(vec![seed])
+				}
+			},
+			Builder::DeregisterDustAddress(args) => {
+				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
+				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
+				Ok(vec![seed, funding_seed])
+			},
+			Builder::BatchSingleTx(args) => {
+				let specs = args.get_transfer_specs();
+				let mut seen = HashSet::new();
+				let mut seeds = Vec::new();
+				for spec in &specs {
+					if seen.insert(spec.source_seed.clone()) {
+						seeds.push(Wallet::<DefaultDB>::wallet_seed_decode(&spec.source_seed));
+					}
+					if let Some(ref fs) = spec.funding_seed {
+						if seen.insert(fs.clone()) {
+							seeds.push(Wallet::<DefaultDB>::wallet_seed_decode(fs));
+						}
+					}
+				}
+				Ok(seeds)
+			},
+			Builder::Send => Ok(vec![]),
+		}
+	}
+
+	/// Construct a versioned builder for the appropriate ledger version.
+	///
+	/// Dispatches on `fork_ctx.version()`:
+	/// - Ledger8 → builds with ledger_8 types
+	/// - Ledger7 → builds with ledger_7 types (errors if remote prover requested)
+	/// - None (pass-through builders) → defaults to ledger_8
+	pub fn to_versioned_builder(
+		self,
+		fork_ctx: Option<ForkAwareLedgerContext>,
+		prover_config: &ProverConfig,
+		_dry_run: bool,
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
+		match fork_ctx {
+			Some(ctx) => {
+				let self_clone = self.clone();
+				ctx.dispatch(
+					|context| {
+						if matches!(prover_config, ProverConfig::Remote(_)) {
+							return Err(
+								BuilderConstructionError::RemoteProverNotSupportedForLedger7,
+							);
+						}
+						let prover: Arc<
+							dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
+									midnight_node_ledger_helpers::ledger_7::DefaultDB,
+								>,
+						> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
+						self_clone.to_builder_v7(Arc::new(context), prover)
+					},
+					|context| {
+						let prover = Self::make_prover(prover_config);
+						Ok(self.to_builder_v8(Arc::new(context), prover))
+					},
+				)
+			},
+			None => {
+				// Pass-through builder (Send) doesn't need context
+				Ok(self.to_builder_passthrough())
+			},
+		}
+	}
+
+	fn make_prover(config: &ProverConfig) -> Arc<dyn ProofProvider<DefaultDB>> {
+		match config {
+			ProverConfig::Local => Arc::new(LocalProofServer::new()),
+			ProverConfig::Remote(url) => {
+				Arc::new(crate::remote_prover::RemoteProofServer::new(url.clone()))
+			},
+		}
+	}
+
+	fn to_builder_v8(
+		self,
+		context: Arc<LedgerContext<DefaultDB>>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Box<dyn BuildTxs<Error = DynamicError>> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
 		) -> Box<dyn BuildTxs<Error = DynamicError>> {
 			Box::new(DynamicTransactionBuilder { builder })
 		}
 
-		if dry_run {
-			println!("Dry-run: Builder type: {:?}", &self);
+		use builders::ledger_8 as v8;
+
+		match self {
+			Builder::Batches(args) => constr(v8::BatchesBuilder::new(args, context, prover)),
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => {
+					constr(v8::ContractDeployBuilder::new(args, context, prover))
+				},
+				ContractCall::Call(args) => {
+					constr(v8::ContractCallBuilder::new(args, context, prover))
+				},
+				ContractCall::Maintenance(args) => {
+					constr(v8::ContractMaintenanceBuilder::new(args, context, prover))
+				},
+			},
+			Builder::ContractCustom(args) => {
+				constr(v8::CustomContractBuilder::new(args, context, prover))
+			},
+			Builder::ClaimRewards(args) => {
+				constr(v8::ClaimRewardsBuilder::new(args, context, prover))
+			},
+			Builder::SingleTx(args) => {
+				constr(v8::single_tx::SingleTxBuilder::new(args, context, prover))
+			},
+			Builder::RegisterDustAddress(args) => {
+				constr(v8::RegisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::DeregisterDustAddress(args) => {
+				constr(v8::DeregisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::BatchSingleTx(args) => {
+				constr(v8::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
+			},
+			Builder::Send => constr(v8::DoNothingBuilder::new()),
+		}
+	}
+
+	fn to_builder_v7(
+		self,
+		context: Arc<
+			midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
+				midnight_node_ledger_helpers::ledger_7::DefaultDB,
+			>,
+		>,
+		prover: Arc<
+			dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
+					midnight_node_ledger_helpers::ledger_7::DefaultDB,
+				>,
+		>,
+	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
+		fn constr(
+			builder: impl BuildTxs + Send + Sync + 'static,
+		) -> Box<dyn BuildTxs<Error = DynamicError>> {
+			Box::new(DynamicTransactionBuilder { builder })
+		}
+
+		use builders::ledger_7 as v7;
+
+		Ok(match self {
+			Builder::Batches(args) => constr(v7::BatchesBuilder::new(args, context, prover)),
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => {
+					constr(v7::ContractDeployBuilder::new(args, context, prover))
+				},
+				ContractCall::Call(args) => {
+					constr(v7::ContractCallBuilder::new(args, context, prover))
+				},
+				ContractCall::Maintenance(args) => {
+					constr(v7::ContractMaintenanceBuilder::new(args, context, prover))
+				},
+			},
+			Builder::ContractCustom(args) => {
+				constr(v7::CustomContractBuilder::new(args, context, prover))
+			},
+			Builder::BatchSingleTx(_) => {
+				return Err(BuilderConstructionError::NotSupportedForLedger7("batch-single-tx"));
+			},
+			Builder::ClaimRewards(args) => {
+				constr(v7::ClaimRewardsBuilder::new(args, context, prover))
+			},
+			Builder::SingleTx(args) => {
+				constr(v7::single_tx::SingleTxBuilder::new(args, context, prover))
+			},
+			Builder::RegisterDustAddress(args) => {
+				constr(v7::RegisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::DeregisterDustAddress(args) => {
+				constr(v7::DeregisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::Send => constr(DoNothingBuilder::new()),
+		})
+	}
+
+	fn to_builder_passthrough(self) -> Box<dyn BuildTxs<Error = DynamicError>> {
+		fn constr(
+			builder: impl BuildTxs + Send + Sync + 'static,
+		) -> Box<dyn BuildTxs<Error = DynamicError>> {
+			Box::new(DynamicTransactionBuilder { builder })
 		}
 
 		match self {
-			Builder::Batches(args) => constr(BatchesBuilder::new(args)),
-			Builder::ContractSimple(call) => match call {
-				ContractCall::Deploy(args) => constr(ContractDeployBuilder::new(args)),
-				ContractCall::Call(args) => constr(ContractCallBuilder::new(args)),
-				ContractCall::Maintenance(args) => constr(ContractMaintenanceBuilder::new(args)),
-			},
-			Builder::ContractCustom(args) => constr(CustomContractBuilder::new(args)),
-			Builder::ClaimRewards(args) => constr(ClaimRewardsBuilder::new(args)),
-			Builder::SingleTx(args) => constr(SingleTxBuilder::new(args)),
-			Builder::RegisterDustAddress(args) => constr(RegisterDustAddressBuilder::new(args)),
 			Builder::Send => constr(DoNothingBuilder::new()),
-			Builder::Migrate => constr(ReplaceInitialTxBuilder::new()),
+			other => panic!("builder {:?} requires context but none was provided", other),
 		}
 	}
 }
@@ -378,205 +700,504 @@ impl Builder {
 #[async_trait]
 pub trait BuildTxs {
 	type Error: std::error::Error + Send + Sync + 'static;
+
+	/// Build transactions from source data.
+	/// Context and prover are stored in the builder itself.
 	async fn build_txs_from(
 		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, Self::Error>;
+		received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error>;
 }
 
-/// An extension to help build transactions
-pub trait BuildTxsExt {
-	fn funding_seed(&self) -> WalletSeed;
+/// One-liner replacement for the repeated `Instant::now()` / `elapsed()` pattern.
+macro_rules! timed {
+	($label:expr, $expr:expr) => {{
+		let __t = std::time::Instant::now();
+		let __result = $expr;
+		log::debug!("[perf] {} took {:?}", $label, __t.elapsed());
+		__result
+	}};
+}
 
-	fn rng_seed(&self) -> Option<[u8; 32]>;
+/// Load per-wallet cache entries and partition into uncached seeds and cached (seed, state) pairs.
+/// Cached pairs are sorted by block height for two-pointer replay.
+async fn load_and_partition_cache(
+	wallet_seeds: &[WalletSeed],
+	chain_id: H256,
+	storage: &dyn WalletStateCaching,
+) -> (Vec<WalletSeed>, Vec<(WalletSeed, CachedWalletState)>) {
+	let seed_hashes: Vec<H256> = wallet_seeds.iter().map(wallet_state_cache::hash_seed).collect();
+	let raw_cached = timed!(
+		"storage.get_wallet_states",
+		storage.get_wallet_states(chain_id, &seed_hashes).await
+	);
 
-	/// Returns a tuple of an Arc<LedgerContext> and the StandardTransactionInfo
-	fn context_and_tx_info(
-		&self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>) {
-		// - Calculate the funding `WalletSeed` (can be more than one)
-		let input_wallets_seeds = vec![self.funding_seed()];
-
-		// Get the network id from the initial TX
-		let network_id = received_tx.network();
-
-		// initialize `LedgerContext` with the wallets
-		let context = LedgerContext::new_from_wallet_seeds(network_id, &input_wallets_seeds);
-
-		// update the context applying all existing previous txs queried from source (either genesis or live network)
-		for block in received_tx.blocks {
-			context.update_from_block(block.transactions, block.context, block.state_root.clone());
+	let mut uncached_seeds: Vec<WalletSeed> = Vec::new();
+	let mut cached: Vec<(WalletSeed, CachedWalletState)> = Vec::new();
+	for (seed, cached_state) in wallet_seeds.iter().zip(raw_cached) {
+		match cached_state {
+			Some(state) => cached.push((seed.clone(), state)),
+			None => uncached_seeds.push(seed.clone()),
 		}
+	}
+	cached.sort_by_key(|(_, ws)| ws.block_height);
 
-		let context_arc = Arc::new(context);
+	(uncached_seeds, cached)
+}
 
-		// - Transaction info
-		let tx_info = StandardTrasactionInfo::new_from_context(
-			context_arc.clone(),
-			prover_arc.clone(),
-			self.rng_seed(),
-		);
-
-		(context_arc, tx_info)
+/// Inject a batch of cached wallets into a ledger context. Panics on failure (corrupted cache).
+fn inject_cached_wallets(
+	ctx: &LedgerContext<DefaultDB>,
+	wallets: &[(WalletSeed, CachedWalletState)],
+	ledger_state: &LedgerState<DefaultDB>,
+	at_height: u64,
+) {
+	for (seed, state) in wallets {
+		wallet_state_cache::inject_wallet_from_cache(ctx, state, seed, ledger_state)
+			.unwrap_or_else(|e| {
+				panic!(
+					"failed to inject wallet at height {}: {} — clear caches and retry",
+					at_height, e
+				)
+			});
 	}
 }
 
-/// Build context with optional wallet state caching.
-///
-/// This function wraps the standard context building with cache support:
-/// 1. If cache exists and is valid, restore from cache
-/// 2. Only replay blocks since the cache checkpoint
-/// 3. Save updated cache after processing
-///
-/// # Arguments
-///
-/// * `wallet_seeds` - The wallet seeds to initialize/restore
-/// * `received_tx` - The source transactions (blocks) from the network
-/// * `prover_arc` - The proof provider
-/// * `rng_seed` - Optional RNG seed
-/// * `chain_id` - The chain identity (block 1 hash)
-/// * `cache_storage` - The wallet state caching backend
-///
-/// # Returns
-///
-/// A tuple of (context_arc, tx_info, blocks_cached) where blocks_cached indicates
-/// how many blocks were skipped due to cache (0 if no cache hit).
-pub async fn build_context_with_cache<C: WalletStateCaching>(
-	wallet_seeds: Vec<WalletSeed>,
-	received_tx: SourceTransactions<SignatureType, ProofType>,
-	prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-	rng_seed: Option<[u8; 32]>,
+/// Create the initial fork-aware context, either cold (genesis) or warm (snapshot restore).
+async fn initialize_context(
+	received_tx: &SourceTransactions,
+	uncached_seeds: &[WalletSeed],
+	start_height: u64,
+	storage: &dyn WalletStateCaching,
 	chain_id: H256,
-	cache_storage: Option<&C>,
-) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>, u64) {
-	let network_id = received_tx.network().to_string();
-	let total_blocks = received_tx.blocks.len() as u64;
-
-	// Compute wallet ID for cache lookup
-	let wallet_id = compute_wallet_id_for_seeds(&wallet_seeds, &network_id);
-
-	// Try to restore from cache if storage is provided
-	let (context, start_block) = if let Some(storage) = cache_storage {
-		if let Some(cache) = storage.get_wallet_state(chain_id, wallet_id).await {
-			match wallet_state_cache::restore_context_from_cache(&cache, &wallet_seeds, chain_id) {
-				Ok((ctx, height)) => {
-					log::info!("Restored wallet state from cache at block {}", height);
-					(ctx, height + 1)
-				},
-				Err(e) => {
-					log::warn!("Failed to restore from cache: {}, starting fresh", e);
-					let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-					(ctx, 0u64)
-				},
-			}
-		} else {
-			let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-			(ctx, 0u64)
-		}
+) -> ForkAwareLedgerContext {
+	if start_height == 0 {
+		timed!(
+			"new_from_wallet_seeds (cold)",
+			ForkAwareLedgerContext::new_from_wallet_seeds(
+				received_tx.ledger_version(),
+				&received_tx.network_id,
+				uncached_seeds,
+			)
+		)
 	} else {
-		let ctx = LedgerContext::new_from_wallet_seeds(&network_id, &wallet_seeds);
-		(ctx, 0u64)
+		let snapshot = timed!(
+			"storage.get_ledger_snapshot",
+			storage.get_ledger_snapshot(chain_id, start_height).await
+		)
+		.unwrap_or_else(|| {
+			panic!("ledger snapshot missing at height {} — clear caches and retry", start_height)
+		});
+
+		let (ctx, _, _) = timed!(
+			"restore_context_from_ledger_snapshot",
+			wallet_state_cache::restore_context_from_ledger_snapshot(&snapshot)
+		)
+		.unwrap_or_else(|e| {
+			panic!(
+				"failed to restore ledger snapshot at height {}: {} — clear caches and retry",
+				start_height, e
+			)
+		});
+
+		ForkAwareLedgerContext::Ledger8(ctx)
+	}
+}
+
+type Db7 = midnight_node_ledger_helpers::ledger_7::DefaultDB;
+type Db8 = midnight_node_ledger_helpers::ledger_8::DefaultDB;
+
+const DUST_BATCH_SIZE: usize = 1000;
+
+/// Interval between info-level "replay progress: …" log lines emitted from
+/// `replay_blocks_{7,8}`. Fine-grained per-batch progress remains at
+/// `log::debug!`; this throttle is what users see by default during a
+/// multi-hour replay so it doesn't look like the process has hung.
+const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn replay_blocks_7(
+	ctx: &midnight_node_ledger_helpers::ledger_7::context::LedgerContext<Db7>,
+	blocks_sorted_by_height: &[RawBlockData],
+) {
+	let mut events: Vec<midnight_node_ledger_helpers::ledger_7::Event<Db7>> = Vec::new();
+	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
+
+	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
+		events.extend(apply_block_7(ctx, block));
+
+		let is_last = i + 1 == total;
+		if events.len() >= DUST_BATCH_SIZE || is_last {
+			ctx.update_dust_from_events(events.as_slice());
+			events.clear();
+			log::debug!("[perf] replay_blocks_7 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// Heartbeat lives outside the flush branch so a long stretch of
+		// blocks with no dust events still gets a "still alive" signal.
+		// Inside the flush branch this would only fire on `DUST_BATCH_SIZE`
+		// or `is_last`, which on sparse chains can be far apart.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log::info!(
+				"replay progress: {}/{} blocks ({:.1}%)",
+				i + 1,
+				total,
+				(i + 1) as f64 / total as f64 * 100.0,
+			);
+			last_info_at = std::time::Instant::now();
+		}
+	}
+
+	if let Some(block) = blocks_sorted_by_height.last() {
+		ctx.update_dust_from_block(&block_context_from_raw_7(block));
+	}
+}
+
+fn replay_blocks_8(
+	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
+	blocks_sorted_by_height: &[RawBlockData],
+	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
+) {
+	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
+	let mut remaining = wallets_sorted_by_height;
+	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
+
+	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
+		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
+		if n > 0 {
+			let (to_inject, rest) = remaining.split_at(n);
+			if !events.is_empty() {
+				ctx.update_dust_from_events(events.as_slice());
+				events.clear();
+			}
+			let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
+			inject_cached_wallets(ctx, to_inject, &ls, block.number);
+			remaining = rest;
+		}
+
+		events.extend(apply_block_8(ctx, block));
+
+		let is_last = i + 1 == total;
+		if events.len() >= DUST_BATCH_SIZE || is_last {
+			ctx.update_dust_from_events(events.as_slice());
+			events.clear();
+			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// See note in `replay_blocks_7`: heartbeat must be evaluated every
+		// iteration, not gated on the event-flush condition, so sparse
+		// chains still get a "still alive" signal at the 30 s cadence.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log::info!(
+				"replay progress: {}/{} blocks ({:.1}%)",
+				i + 1,
+				total,
+				(i + 1) as f64 / total as f64 * 100.0,
+			);
+			last_info_at = std::time::Instant::now();
+		}
+	}
+
+	// Inject remaining wallets at the last replayed block height.
+	// This handles the case where some wallets are cached at the tip with no new blocks.
+	if !remaining.is_empty() {
+		let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
+		let height = blocks_sorted_by_height.last().map(|b| b.number).unwrap_or(0);
+		inject_cached_wallets(ctx, remaining, &ls, height);
+	}
+
+	if let Some(block) = blocks_sorted_by_height.last() {
+		ctx.update_dust_from_block(&block_context_from_raw_8(block));
+	}
+}
+
+/// Replays blocks across a potential Ledger7→Ledger8 fork boundary,
+/// injecting cached wallets at their saved height.
+pub(crate) fn replay_blocks(
+	fork_ctx: ForkAwareLedgerContext,
+	blocks: &[RawBlockData],
+	cached: &[(WalletSeed, CachedWalletState)],
+) -> ForkAwareLedgerContext {
+	if !blocks.is_empty() && !cached.is_empty() {
+		log::info!(
+			"Replaying {} blocks after cache checkpoint ({}..)",
+			blocks.len(),
+			blocks.first().map(|b| b.number).unwrap_or(0)
+		);
+	}
+
+	let t_replay = std::time::Instant::now();
+
+	let fork_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger7);
+	let (l7_blocks, l8_blocks) = blocks.split_at(fork_idx);
+
+	let result = match fork_ctx {
+		ForkAwareLedgerContext::Ledger7(ctx7) => {
+			replay_blocks_7(&ctx7, l7_blocks);
+			if l8_blocks.is_empty() {
+				assert!(cached.is_empty(), "cached wallets with no Ledger8 blocks");
+				ForkAwareLedgerContext::Ledger7(ctx7)
+			} else {
+				let ctx8 = fork_context_7_to_8(ctx7).expect("fork failed");
+				replay_blocks_8(&ctx8, l8_blocks, cached);
+				ForkAwareLedgerContext::Ledger8(ctx8)
+			}
+		},
+		ForkAwareLedgerContext::Ledger8(ctx8) => {
+			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger8 context");
+			replay_blocks_8(&ctx8, l8_blocks, cached);
+			ForkAwareLedgerContext::Ledger8(ctx8)
+		},
 	};
 
-	// Replay only blocks since start_block
-	let blocks_to_replay: Vec<_> =
-		received_tx.blocks.into_iter().filter(|b| b.number >= start_block).collect();
+	log::debug!("[perf] block replay: {} blocks in {:?}", blocks.len(), t_replay.elapsed());
+	result
+}
 
-	let blocks_replayed = blocks_to_replay.len() as u64;
+/// Build a fork-aware context with per-wallet state caching.
+///
+/// Uses deduplicated ledger snapshots (one per block height) and per-wallet cache
+/// entries (one per seed). Wallets at different cached heights are caught up via
+/// single-pass replay with mid-replay injection (two-pointer merge).
+///
+/// Caching is skipped when no deterministic chain ID can be derived (e.g. file-loaded
+/// datasets with no block #1), to avoid cross-dataset cache collisions.
+pub async fn build_fork_aware_context_cached(
+	wallet_seeds: &[WalletSeed],
+	received_tx: &SourceTransactions,
+	cache_storage: Option<&dyn WalletStateCaching>,
+) -> ForkAwareLedgerContext {
+	if wallet_seeds.is_empty() {
+		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+	}
+	let Some(chain_id) = received_tx.chain_id() else {
+		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+	};
+	let Some(storage) = cache_storage else {
+		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+	};
 
-	if blocks_replayed > 0 {
-		log::info!(
-			"Replaying {} blocks (from {} to {})",
-			blocks_replayed,
-			start_block,
-			start_block + blocks_replayed - 1
-		);
+	// 1. Load cache and partition wallets.
+	let (uncached_seeds, cached) = load_and_partition_cache(wallet_seeds, chain_id, storage).await;
+
+	// 2. Compute start height.
+	let start_height = if !uncached_seeds.is_empty() {
+		0
+	} else {
+		cached.first().map(|c| c.1.block_height).unwrap_or(0)
+	};
+
+	// 3. Initialize context (cold genesis or warm snapshot restore).
+	let fork_ctx =
+		initialize_context(received_tx, &uncached_seeds, start_height, storage, chain_id).await;
+
+	// 4. Determine blocks to replay.
+	//
+	// Exclude any dust-warp synthetic block from the replay set so the
+	// persisted snapshot (step 6) captures the real-head `BlockContext`
+	// rather than wall-clock-now. `from_blocks(_, dust_warp = true, _)`
+	// appends a synthetic timestamp-only block via
+	// `RawBlockData::new_from_timestamp(...)` which hard-codes
+	// `number = 0`. If that block is replayed before save, the snapshot's
+	// `latest_block_context.tblock` becomes the warp timestamp but the
+	// snapshot is keyed at the real chain height; a later run on the
+	// same `ledger_state_db` with `dust_warp = false` would then restore
+	// the warped context and downstream callers (`register_dust_address`,
+	// batch builders) would read warp time even though warping is off.
+	//
+	// The synthetic is always pushed last by `from_blocks`, so we
+	// detect it as last-block-number=0 alongside at least one block
+	// with number>0 (guards against legitimate fixture-loaded sources
+	// where every block has number=0 — those won't pass the chain_id
+	// check anyway, but we double-guard for clarity). We apply it
+	// explicitly *after* save as step 7 so the in-memory context for
+	// this run reflects the warp.
+	let synthetic_dust_warp = received_tx
+		.blocks
+		.last()
+		.filter(|last| last.number == 0 && received_tx.blocks.iter().any(|b| b.number > 0));
+	let real_blocks: &[RawBlockData] = if synthetic_dust_warp.is_some() {
+		&received_tx.blocks[..received_tx.blocks.len() - 1]
+	} else {
+		&received_tx.blocks[..]
+	};
+	// Warm path uses `partition_point` (O(log n) binary search) rather
+	// than a linear `.filter()` — `real_blocks` is sorted by `b.number`
+	// ascending (the rest of `replay_blocks_*` already relies on this).
+	// Cold path takes the whole slice.
+	let blocks: &[RawBlockData] = if start_height == 0 {
+		real_blocks
+	} else {
+		let i = real_blocks.partition_point(|b| b.number <= start_height);
+		&real_blocks[i..]
+	};
+
+	// 5. Replay with mid-replay wallet injection.
+	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached);
+
+	// 6. Save updated cache. `blocks.last()` is sound here because
+	// step 4 already excluded the dust-warp synthetic (`number = 0`)
+	// from `blocks`; the last entry is the real chain head, and
+	// pointer lookup beats an O(n) `max_by_key` on long replays.
+	if let Some(final_block) = blocks.last() {
+		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage).await;
 	}
 
-	for block in blocks_to_replay {
-		context.update_from_block(block.transactions, block.context, block.state_root.clone());
-	}
-
-	// Save updated cache if storage is provided and blocks were replayed
-	if let Some(storage) = cache_storage {
-		if blocks_replayed > 0 || start_block == 0 {
-			let final_height = start_block + blocks_replayed.saturating_sub(1);
-			save_context_to_cache(&context, chain_id, wallet_id, final_height, storage).await;
+	// 7. Apply the dust-warp synthetic block (in-memory only, post-save).
+	//
+	// Intentionally runs *after* `try_save_cache_v2`: applying the
+	// synthetic overwrites `latest_block_context` with wall-clock-now,
+	// and persisting that under the real-head height would surface as a
+	// silent warp-leak on later `dust_warp = false` runs against the
+	// same `ledger_state_db`. Doing it here keeps the warp in-memory
+	// only — the saved snapshot stays clean. Downstream callers in
+	// this run (`register_dust_address`, batch builders) read the
+	// warped tblock as expected.
+	//
+	// Mirrors `replay_blocks_{7,8}`'s contract: `apply_block_*` only
+	// updates the ledger context (and `latest_block_context`); the
+	// per-wallet dust TTL advance lives in `update_dust_from_block`,
+	// which `replay_blocks_{7,8}` always calls for the last replayed
+	// block (see their final stanzas). Without this second call the
+	// warp would advance the *ledger's* clock but leave wallets' dust
+	// nullifier windows pinned at the real-head block's tblock, so
+	// transaction builders would read a warped `latest_block_context`
+	// while wallet dust availability still reflects real-head time.
+	// The synthetic has no transactions, so we don't need a matching
+	// `update_dust_from_events` — `apply_block_*` returns an empty
+	// event vec on a tx-less block.
+	//
+	// Handle both Ledger7 and Ledger8 variants: a pre-fork chain
+	// produces a `Ledger7` context out of step 5, and the raw/no-cache
+	// path replays the synthetic block inline in that case, so the
+	// cached path must do the same to preserve dust-warp semantics on
+	// pre-Ledger8 sources.
+	if let Some(synthetic) = synthetic_dust_warp {
+		match &fork_ctx {
+			ForkAwareLedgerContext::Ledger8(ctx8) => {
+				let _events = apply_block_8(ctx8, synthetic);
+				ctx8.update_dust_from_block(&block_context_from_raw_8(synthetic));
+			},
+			ForkAwareLedgerContext::Ledger7(ctx7) => {
+				let _events = apply_block_7(ctx7, synthetic);
+				ctx7.update_dust_from_block(&block_context_from_raw_7(synthetic));
+			},
 		}
 	}
 
-	let context_arc = Arc::new(context);
-	let tx_info =
-		StandardTrasactionInfo::new_from_context(context_arc.clone(), prover_arc.clone(), rng_seed);
-
-	let blocks_cached = total_blocks.saturating_sub(blocks_replayed);
-	(context_arc, tx_info, blocks_cached)
+	fork_ctx
 }
 
-/// Compute a wallet identity from seeds.
-fn compute_wallet_id_for_seeds(seeds: &[WalletSeed], network_id: &str) -> H256 {
-	use sha2::{Digest, Sha256};
-
-	let mut hasher = Sha256::new();
-	hasher.update(network_id.as_bytes());
-	for seed in seeds {
-		hasher.update(seed.as_bytes());
-	}
-	H256::from_slice(&hasher.finalize())
-}
-
-/// Save context state to cache.
-async fn save_context_to_cache<C: WalletStateCaching>(
-	context: &LedgerContext<DefaultDB>,
+/// Save per-wallet cache from a `ForkAwareLedgerContext` if it holds a ledger 8 context.
+async fn try_save_cache_v2(
+	fork_ctx: &ForkAwareLedgerContext,
+	wallet_seeds: &[WalletSeed],
 	chain_id: H256,
-	wallet_id: H256,
 	block_height: u64,
-	storage: &C,
+	storage: &dyn WalletStateCaching,
 ) {
-	let cache = match wallet_state_cache::create_cache_from_context(
-		context,
-		chain_id,
-		wallet_id,
-		block_height,
-	) {
-		Ok(c) => c,
-		Err(e) => {
-			log::warn!("Failed to create cache: {}", e);
+	let ctx = match fork_ctx {
+		ForkAwareLedgerContext::Ledger8(ctx) => ctx,
+		ForkAwareLedgerContext::Ledger7(_) => {
+			log::debug!("Skipping cache save: context is still on ledger 7");
 			return;
 		},
 	};
 
-	storage.set_wallet_state(chain_id, wallet_id, cache).await;
-	log::info!("Saved wallet state cache at block {}", block_height);
-}
+	// Save ledger snapshot
+	let t = std::time::Instant::now();
+	let snapshot = match wallet_state_cache::create_ledger_snapshot(ctx, block_height) {
+		Ok(s) => s,
+		Err(e) => {
+			log::warn!("Failed to create ledger snapshot: {}", e);
+			return;
+		},
+	};
+	log::debug!("[perf] create_ledger_snapshot took {:?}", t.elapsed());
 
-/// Create Intent Info
-pub trait CreateIntentInfo {
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>>;
-}
+	let t = std::time::Instant::now();
+	storage.set_ledger_snapshot(chain_id, snapshot).await;
+	log::debug!("[perf] storage.set_ledger_snapshot took {:?}", t.elapsed());
 
-/// A trait to save a Contract (serialized`Intent` Structure) into a file
-#[async_trait]
-pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
-	async fn generate_intent_file(
-		&mut self,
-		received_tx: SourceTransactions<SignatureType, ProofType>,
-		prover_arc: Arc<dyn ProofProvider<DefaultDB>>,
-		// the directory where to save the file
-		dir: &str,
-		// partial name of the file
-		partial_name: &str,
-	) {
-		println!("Generate intent file...");
-		let (_, mut tx_info) = self.context_and_tx_info(received_tx, prover_arc);
+	// Save individual wallet snapshots
+	let t = std::time::Instant::now();
+	let wallet_snapshots: Vec<_> = wallet_seeds
+		.iter()
+		.filter_map(|seed| {
+			match wallet_state_cache::create_wallet_snapshot(ctx, seed, block_height) {
+				Ok(ws) => Some(ws),
+				Err(e) => {
+					log::warn!("Failed to create wallet snapshot: {}", e);
+					None
+				},
+			}
+		})
+		.collect();
+	log::debug!(
+		"[perf] create wallet snapshots: {} wallets in {:?}",
+		wallet_snapshots.len(),
+		t.elapsed()
+	);
 
-		let intent_info = self.create_intent_info();
-
-		tx_info.add_intent(1, intent_info);
-
-		tx_info.save_intents_to_file(dir, partial_name).await;
+	if !wallet_snapshots.is_empty() {
+		let t = std::time::Instant::now();
+		storage.set_wallet_states(chain_id, &wallet_snapshots).await;
+		log::debug!("[perf] storage.set_wallet_states took {:?}", t.elapsed());
 	}
+
+	// GC: keep heights referenced by all cached wallets (cross-process safe)
+	let t = std::time::Instant::now();
+	let mut keep_heights = storage.get_all_cached_wallet_heights(chain_id).await;
+	log::debug!("[perf] storage.get_all_cached_wallet_heights took {:?}", t.elapsed());
+	if !keep_heights.contains(&block_height) {
+		keep_heights.push(block_height);
+	}
+	let t = std::time::Instant::now();
+	storage.gc_ledger_snapshots(chain_id, &keep_heights).await;
+	log::debug!("[perf] storage.gc_ledger_snapshots took {:?}", t.elapsed());
+
+	log::info!(
+		"Saved per-wallet cache at block {} ({} wallets, 1 ledger snapshot)",
+		block_height,
+		wallet_snapshots.len()
+	);
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("chain has not reached ledger 8 (final version: {0:?})")]
+pub struct ContextNotLedger8Error(pub LedgerVersion);
+
+/// Build a fork-aware context from source transactions, returning the raw
+/// `ForkAwareLedgerContext` without extracting a specific version.
+pub fn build_fork_aware_context_raw(
+	received_tx: &SourceTransactions,
+	wallet_seeds: &[WalletSeed],
+) -> ForkAwareLedgerContext {
+	let network_id = &received_tx.network_id;
+	let initial_version = received_tx
+		.blocks
+		.first()
+		.map(|b| b.ledger_version())
+		.unwrap_or(LedgerVersion::Ledger8);
+
+	let t = std::time::Instant::now();
+	let ctx =
+		ForkAwareLedgerContext::new_from_wallet_seeds(initial_version, network_id, wallet_seeds);
+	log::debug!("[perf] new_from_wallet_seeds (raw) took {:?}", t.elapsed());
+
+	replay_blocks(ctx, &received_tx.blocks, &[])
+}
+
+/// Build a fork-aware context from source transactions, returning a ledger 8 context.
+///
+/// This handles chains that may have forked from ledger 7 to ledger 8 by using
+/// `ForkAwareLedgerContext` to process blocks across version boundaries.
+pub fn build_fork_aware_context(
+	received_tx: &SourceTransactions,
+	wallet_seeds: &[WalletSeed],
+) -> Result<LedgerContext<DefaultDB>, ContextNotLedger8Error> {
+	let ctx = build_fork_aware_context_raw(received_tx, wallet_seeds);
+	let final_version = ctx.version();
+	ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))
 }

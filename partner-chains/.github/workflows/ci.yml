@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.94.0"
+  SCCACHE_GHA_ENABLED: true
+  RUSTC_WRAPPER: sccache
+
+jobs:
+
+### Build and test workflow ###############################################################################################################
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: protobuf-compiler libssl-dev pkg-config libclang-dev patchelf
+
+      - name: Install toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Build
+        run: cargo build --locked --release
+
+      - name: Prepare binary for docker
+        run: |
+          cp target/release/partner-chains-demo-node .
+          patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 partner-chains-demo-node
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push docker image
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}/partner-chains-node
+          docker build -f dev/ci/Dockerfile -t ${IMAGE}:${{ github.sha }} .
+          docker tag ${IMAGE}:${{ github.sha }} ${IMAGE}:latest
+          docker push ${IMAGE}:${{ github.sha }}
+          docker push ${IMAGE}:latest
+
+      - name: Upload partner-chains-node artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner-chains-node-artifact
+          path: ./partner-chains-demo-node
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: protobuf-compiler libssl-dev pkg-config libclang-dev
+
+      - name: Install toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-features --locked
+
+      - name: Test
+        run: cargo test --workspace --all-features --locked --exclude partner-chains-cardano-offchain --exclude partner-chains-demo-node
+
+  local-env:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        markers: [smoke, rpc, reserve, governed_map, delegator_rewards, ariadne, wizards]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy and test against local environment
+        uses: ./.github/actions/tests/local-environment-tests
+        with:
+          tag: CI
+          image: ghcr.io/${{ github.repository }}/partner-chains-node:${{ github.sha }}
+          sha: ${{ github.sha }}
+          markers: ${{ matrix.markers }}
+        env:
+          TEST_ENVIRONMENT: local
+
+  documentation-tests:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Run Documentation Tests
+        uses: ./.github/actions/tests/doc-tests
+
+  checks-complete:
+    if: ${{ always() }}
+    needs: [
+      build,
+      test,
+      local-env,
+      documentation-tests
+    ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if any needed job failed
+        run: |
+          if [[ "${{ needs.build.result }}" != "success" ||
+                "${{ needs.test.result }}" != "success" ||
+                "${{ needs.local-env.result }}" != "success" ||
+                "${{ needs.documentation-tests.result }}" != "success" ]]; then
+            echo "One or more needed jobs failed."
+            exit 1
+          else
+            echo "All needed jobs passed."
+          fi

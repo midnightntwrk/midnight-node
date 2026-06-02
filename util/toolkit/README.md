@@ -2,6 +2,8 @@
 
 CLI tool for interacting with the Midnight blockchain. Supports transaction generation, wallet management, contract deployment, and testing.
 
+For background, scope, users, and roadmap, see the [Toolkit PRD](./PRD.md).
+
 ---
 
 ## 🚀 **Quick Start: See Usage Examples**
@@ -14,38 +16,38 @@ CLI tool for interacting with the Midnight blockchain. Supports transaction gene
 **Recommended:** Use `latest-main` for backwards compatibility and latest bugfixes:
 ```bash
 docker pull midnightntwrk/midnight-node-toolkit:latest-main
+# or, install from source:
+cargo install --locked --git https://github.com/midnightntwrk/midnight-node midnight-node-toolkit
 ```
 
 For guaranteed compatibility with a specific node version, use matching tags:
 ```bash
-# Example: both toolkit and node at version 0.18.0-rc.7
-docker pull midnightntwrk/midnight-node-toolkit:0.18.0-rc.7
-docker pull midnightntwrk/midnight-node:0.18.0-rc.7
+# Example: both toolkit and node at version 0.22.0
+docker pull midnightntwrk/midnight-node-toolkit:0.22.0
+docker pull midnightntwrk/midnight-node:0.22.0
+# or, install from source
+cargo install --locked --git https://github.com/midnightntwrk/midnight-node --tag node-0.22.0 midnight-node-toolkit
 ```
 
 ---
 
 ## Implementation Status
 
-| Feature | Progress |
-|----------------------------------------------------------------------|----------|
-| Send Shielded + Unshielded tokens                                    | ✅       |
-| Sync with local and remote networks                                  | ✅       |
-| DUST fee calculation                                                 | ✅       |
-| Execute compiled contracts                                           | ✅       |
-| Pre-generate and send 100s of transactions (performance testing)     | ✅       |
-| Support for node runtime forks                                       | ✅       |
-| Fetch and print wallet state and DUST balance                        | ✅       |
-| Builds Node genesis                                                  | ✅       |
-| Unit + integration tests                                             | ✅       |
-| Shielded + Unshielded tokens sending between contract calls          | ✅       |
-| Contract Maintenance - updating authority + verifier keys            | ✅       |
-| Execute calls via governance (root-call)                             | ✅       |
-| DUST registration command                                            | 🚧       |
-| Contracts receiving Shielded + Unshielded tokens from user           | 🚧       |
-| Support for Ledger forks                                             | ⏳       |
-| Fallible Contracts                                                   | ⏳       |
-| Composable Contracts                                                 | ⏳       |
+| Feature                                                                         | Progress |
+|---------------------------------------------------------------------------------|----------|
+| User: Send Shielded + Unshielded tokens                                         | ✅       |
+| User: DUST registration command                                                 | ✅       |
+| Query: Sync with local and remote networks                                      | ✅       |
+| Query: Fetch and print wallet state and DUST balance                            | ✅       |
+| Query: Support for chains with mutiple Runtime and Ledger versions              | ✅       |
+| Genesis: Build genesis Ledger state                                             | ✅       |
+| Governance: Execute runtime upgrades                                            | ✅       |
+| Governance: Update ledger parameters                                            | ✅       |
+| Performance Testing: Pre-generate and send 100s of transactions                 | ✅       |
+| Contracts: Shielded + Unshielded token transfer between contracts and users     | ✅       |
+| Contracts: Maintenance - updating authority + verifier keys                     | ✅       |
+| Contracts: Fallible Contracts                                                   | ✅       |
+| Contracts: Composable Contracts                                                 | ⏳       |
 
 ---
 
@@ -81,7 +83,7 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
   - `--src-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
 
 - **`Destination`**: Specifies where the generated transactions will be sent (either a file or a chain). Use:
-  - `--dest-file <file_path>` (use `--to-bytes` to specify whether to save in JSON or bytes)
+  - `--dest-file <file_path>`
   - `--dest-url <chain_url>` (defaults to `ws://127.0.0.1:9944`)
     - Supports multiple urls:
       - `--dest-url="ws://127.0.0.1:9944" --dest-url="ws://127.0.0.1:9933" --dest-url="ws://127.0.0.1:9922"`
@@ -92,7 +94,6 @@ midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> <PROVER_ARG> batches <
 - **`Builder`**: Specifies how transactions are built. There are six builder subcommands:
   - `send`: Pass-through mode for sending transactions from a JSON file (`DoNothingBuilder`)
   - `single-tx`: Send a single transaction funded by a single wallet to N destination wallets (supports shielded and unshielded) (`SingleTxBuilder`)
-  - `migrate`: Migrates transactions between chains (`ReplaceInitialTxBuilder`)
   - `batches`: Generates ZSwap & Unshielded Utxos transaction batches (`BatcherBuilder`)
   - `claim-mint`: Builds claim mint transactions (`ClaimMintBuilder`)
   - `contract-simple deploy`: Builds contract deployment transactions (`ContractDeployBuilder`)
@@ -107,6 +108,17 @@ This enables four combinations of querying and sending transactions:
 - **Chain to Chain:** Read from a chain, build new transactions, and send to a chain.
 
 Use the `-h` flag for full usage information.
+
+#### Coin selection strategy
+
+`single-tx`, `batches`, and `batch-single-tx` accept `--coin-selection <largest-first|smallest-first>` to control how candidate coins/UTXOs are ordered when more than one input is needed:
+
+- `largest-first` (default) — minimizes the number of inputs.
+- `smallest-first` — consolidates dust by spending the smallest coins/UTXOs first.
+
+```shell
+midnight-node-toolkit generate-txs <SRC_ARGS> <DEST_ARGS> single-tx --coin-selection smallest-first <BUILDER_ARGS>
+```
 
 **NOTE 1**
 Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGenerator` reads and send `TransactionWithContext` instead of `Transaction`. The reason is now it is necessary to know the `BlockContext` a transaction is valid.
@@ -125,11 +137,11 @@ The toolkit implements a caching mechanism to avoid fetching the entire chain ea
 - Query from chain, generate, and send to chain:
 ```console
 $ midnight-node-toolkit generate-txs --dry-run batches -n 1 -b 2
-Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
-Dry-run: Destination rate: 1.0 TPS
-Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false })
-Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from url: "ws://127.0.0.1:9944"[..]
+[..]Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"][..]
+[..]Dry-run: Destination rate: 1.0 TPS[..]
+[..]Dry-run: Builder type: Batches(BatchesArgs { funding_seed: "0000000000000000000000000000000000000000000000000000000000000001", num_txs_per_batch: 1, num_batches: 2, concurrency: None, rng_seed: None, coin_amount: 100, shielded_token_type: ShieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), initial_unshielded_intent_value: 10000, unshielded_token_type: UnshieldedTokenType(0000000000000000000000000000000000000000000000000000000000000000), enable_shielded: false, coin_selection: LargestFirst })[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 - Query from file, generate, and send to file:
@@ -140,10 +152,12 @@ $ midnight-node-toolkit generate-txs --dry-run --dest-file txs.json batches -n 5
 - Query from file and send to chain with rate control:
 ```console
 $ midnight-node-toolkit generate-txs --dry-run -r 2 --src-file txs.json --dest-url ws://127.0.0.1:9944 send
-...
-Dry-run: Destination rate: 2.0 TPS
-Dry-run: Builder type: Send
-...
+[..]Dry-run: Source transactions from file(s): ["txs.json"][..]
+[..]Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"][..]
+[..]Dry-run: Destination rate: 2.0 TPS[..]
+[..]Dry-run: Builder type: Send[..]
+[..]Dry-run: local prover (no proof server)[..]
+
 ```
 
 #### Send a single transaction
@@ -170,11 +184,11 @@ $ midnight-node-toolkit generate-txs --dry-run
 $ midnight-node-toolkit generate-txs --dry-run
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
-Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"]
-Dry-run: Destination rate: 1.0 TPS
-Dry-run: Builder type: ContractSimple(Deploy[..]
-Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from url: "ws://127.0.0.1:9944"[..]
+[..]Dry-run: Destination RPC(s): ["ws://127.0.0.1:9944"][..]
+[..]Dry-run: Destination rate: 1.0 TPS[..]
+[..]Dry-run: Builder type: ContractSimple(Deploy[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 - Query from chain, generate, and send to bytes file:
@@ -182,28 +196,24 @@ Dry-run: local prover (no proof server)
 $ midnight-node-toolkit generate-txs --dry-run
 >   --src-file res/genesis/genesis_tx_undeployed.mn
 >   --dest-file deploy.mn
->   --to-bytes
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
-Dry-run: Source transactions from file(s): ["res/genesis/genesis_tx_undeployed.mn"]
-Dry-run: Destination file: "deploy.mn"
-Dry-run: Destination file-format: bytes
-Dry-run: Builder type: ContractSimple(Deploy[..]
-Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from file(s): ["res/genesis/genesis_tx_undeployed.mn"][..]
+[..]Dry-run: Destination file: "deploy.mn"[..]
+[..]Dry-run: Builder type: ContractSimple(Deploy[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 - Query from file, generate, and send to bytes file:
 ```console
 $ midnight-node-toolkit generate-txs --dry-run
 >   --dest-file deploy.mn
->   --to-bytes
 >   contract-simple deploy
 >   --rng-seed '0000000000000000000000000000000000000000000000000000000000000037'
-Dry-run: Source transactions from url: "ws://127.0.0.1:9944"
-Dry-run: Destination file: "deploy.mn"
-Dry-run: Destination file-format: bytes
-Dry-run: Builder type: ContractSimple(Deploy[..]
-Dry-run: local prover (no proof server)
+[..]Dry-run: Source transactions from url: "ws://127.0.0.1:9944"[..]
+[..]Dry-run: Destination file: "deploy.mn"[..]
+[..]Dry-run: Builder type: ContractSimple(Deploy[..]
+[..]Dry-run: local prover (no proof server)[..]
 
 ```
 - Query fom chain, generate, and save as a serialized intent file:
@@ -227,10 +237,10 @@ $ midnight-node-toolkit generate-intent deploy
 >    --output-zswap-state out/zswap.json \
 >    --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
 >    0
-Executing generate-intent
-Executing deploy command
-Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json", "0"]...
-written: out/intent.bin, out/private_state.json, out/zswap.json
+[..]Executing generate-intent[..]
+[..]Executing deploy command
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["deploy", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/private_state.json", "--output-zswap", "[CWD]/out/zswap.json", "0"]...
+[..]written: out/intent.bin, out/private_state.json, out/zswap.json
 
 ```
 
@@ -305,9 +315,9 @@ $ midnight-node-toolkit generate-intent deploy --dry-run
 >    --output-intent "/out/deploy.bin"
 >    --output-private-state "/out/initial_private_state.json"
 >    --output-zswap-state "/out/out.json"
-Executing generate-intent
-Dry-run: toolkit-js path: "../toolkit-js/"
-Dry-run: generate deploy intent: DeployArgs[..]
+[..]Executing generate-intent[..]
+[..]Dry-run: toolkit-js path: "../toolkit-js/"[..]
+[..]Dry-run: generate deploy intent: DeployArgs[..]
 ...
 ```
 
@@ -316,7 +326,6 @@ Dry-run: generate deploy intent: DeployArgs[..]
 $ midnight-node-toolkit send-intent --dry-run
 >   --intent-file "/out/deploy.bin"
 >   --compiled-contract-dir contract/counter/out
->   --to-bytes
 >   --dest-file "/out/deploy_tx.mn"
 ...
 ```
@@ -333,8 +342,7 @@ $ midnight-node-toolkit send-intent --dry-run
 $ midnight-node-toolkit send-intent --dry-run
 >   --intent-file "out/mint_intent.bin"
 >   --intent-file "out/recieveAndSend_intent.bin"
->   --compiled-contract-dir ../toolkit-js/test/ut_contract/out
->   --to-bytes
+>   --compiled-contract-dir ../toolkit-js/test/minter_contract/out
 >   --dest-file "/out/mint_tx.mn"
 ...
 ```
@@ -366,18 +374,66 @@ $ midnight-node-toolkit generate-intent circuit
 >   --input-private-state ./test-data/contract/counter/initial_state.json
 >   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 >   --output-intent out/intent.bin
+>   --output-onchain-state out/onchain_state.mn
 >   --output-private-state out/ps_state.json
 >   --output-zswap-state out/zswap_state.json
+>   --output-result out/result.json
 >   increment
-Executing generate-intent
-Executing circuit command
-Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
+[..]Executing generate-intent[..]
+[..]Executing circuit command
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--input-ps", "[CWD]/test-data/contract/counter/initial_state.json", "--output", "[CWD]/out/intent.bin", "--output-ps", "[CWD]/out/ps_state.json", "--output-zswap", "[CWD]/out/zswap_state.json", "--output-oc", "[CWD]/out/onchain_state.mn", "--output-result", "[CWD]/out/result.json", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment"]...
 toolkit-js> []
-written: out/intent.bin, out/ps_state.json, out/zswap_state.json
+[..]written: out/intent.bin, out/ps_state.json, out/zswap_state.json
 
 ```
 
 To send it, see "Generate and send a tx from an intent" above
+
+- Generate batched circuit call intents (multiple calls in one transaction)
+
+When batching multiple circuit calls into a single transaction, each call's output state must be chained as the next call's input. Without chaining, subsequent calls would operate on stale state and the transaction would fail.
+
+```ignore-compact-0.27
+# Call 1: first circuit call — outputs on-chain and private state for chaining
+$ midnight-node-toolkit generate-intent circuit
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state ./contract_state.mn
+>   --input-private-state ./initial_state.json
+>   --contract-address <CONTRACT_ADDRESS>
+>   --output-intent out/intent_1.bin
+>   --output-onchain-state out/onchain_state_1.mn
+>   --output-private-state out/private_state_1.json
+>   --output-zswap-state out/zswap_1.json
+>   increment
+```
+```ignore-compact-0.27
+# Call 2: uses call 1's outputs as inputs
+$ midnight-node-toolkit generate-intent circuit
+>   -c ../toolkit-js/test/contract/contract.config.ts
+>   --toolkit-js-path ../toolkit-js/
+>   --coin-public aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98
+>   --input-onchain-state out/onchain_state_1.mn
+>   --input-private-state out/private_state_1.json
+>   --contract-address <CONTRACT_ADDRESS>
+>   --output-intent out/intent_2.bin
+>   --output-onchain-state out/onchain_state_2.mn
+>   --output-private-state out/private_state_2.json
+>   --output-zswap-state out/zswap_2.json
+>   increment
+```
+```ignore-compact-0.27
+# Combine both intents into a single transaction
+$ midnight-node-toolkit send-intent
+>   --intent-file out/intent_1.bin
+>   --intent-file out/intent_2.bin
+>   --compiled-contract-dir contract/counter/out
+```
+
+The key state files to chain between calls:
+- `--output-onchain-state` from call N becomes `--input-onchain-state` for call N+1
+- `--output-private-state` from call N becomes `--input-private-state` for call N+1
 
 - Generate a contract maintenance intent
 ```ignore-compact-0.27
@@ -390,10 +446,10 @@ $ midnight-node-toolkit generate-intent maintain-contract
 >   --output-intent out/intent.bin
 >   --signing 0000000000000000000000000000000000000000000000000000000000000001
 >   0000000000000000000000000000000000000000000000000000000000000002
-Executing generate-intent
-Executing maintain command
-Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "contract", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "0000000000000000000000000000000000000000000000000000000000000002"]...
-written: out/intent.bin
+[..]Executing generate-intent[..]
+[..]Executing maintain command
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "contract", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "0000000000000000000000000000000000000000000000000000000000000002"]...
+[..]written: out/intent.bin
 
 ```
 
@@ -411,10 +467,10 @@ $ midnight-node-toolkit generate-intent maintain-circuit
 >   --signing 0000000000000000000000000000000000000000000000000000000000000001
 >   increment
 >   ./test-data/contract/counter/keys/increment.verifier
-Executing generate-intent
-Executing maintain command
-Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment", "[CWD]/test-data/contract/counter/keys/increment.verifier"]...
-written: out/intent.bin
+[..]Executing generate-intent[..]
+[..]Executing maintain command
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment", "[CWD]/test-data/contract/counter/keys/increment.verifier"]...
+[..]written: out/intent.bin
 
 ```
 
@@ -453,11 +509,24 @@ midnight-node-toolkit \
     generate-txs \
     --src-files "res/genesis/genesis_block_undeployed.mn" \
     --dest-file "register.mn" \
-    --to-bytes \
     register-dust-address \
     --wallet-seed "0000000000000000000000000000000000000000000000000000000000000000" \
     --funding-seed "0000000000000000000000000000000000000000000000000000000000000001" \
     --destination-dust "mn_dust-addr_undeployed1v36hxapdv9jxgun9wde4ka33t5a88l624n9ms7rs86fzez44mge2xjw20ddxuz3tp9g2c6xx5038x3c6nnqc6y"
+```
+
+### Deregister DUST Address
+
+- Deregister (unlink) a wallet's DUST address mapping. This is useful when migrating to a new DUST address, cleaning up test registrations, or revoking access before rotating wallet keys.
+
+```bash
+midnight-node-toolkit \
+    generate-txs \
+    --src-url "wss://rpc.qanet.dev.midnight.network" \
+    --dest-url "wss://rpc.qanet.dev.midnight.network" \
+    deregister-dust-address \
+    --wallet-seed "0000000000000000000000000000000000000000000000000000000000000000" \
+    --funding-seed "0000000000000000000000000000000000000000000000000000000000000001"
 ```
 
 ---
@@ -492,29 +561,37 @@ The `ledger-parameters-config.json` file should contain a JSON representation of
 ---
 
 ### Show Transaction
-Show deserialized result of a single transaction. Two options:
-- Tx saved as hex string
-- Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
+Show the structure of a saved transaction. Works with files containing multiple txs
 ```console
 $ midnight-node-toolkit show-transaction
->   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_no_context.mn
-
-Tx StandardTransaction {
+>   --src-file ../../res/test-tx-deserialize/serialized_tx.mn
 ...
+
 ```
 
----
+### Show Block
+Inspect a block's metadata and deserialized transactions. Reads from the fetch cache first, falling back to a live node RPC on cache miss.
 
-### Show Transaction With Context
-Show deserialized result of a single transaction with its context. Two options:
-- Tx saved as hex string
-- Tx saved as bytes: use `--from-bytes` flag if the tx is saved in a file as bytes
 ```console
-$ midnight-node-toolkit show-transaction --with-context
->   --from-bytes --src-file ../../res/test-tx-deserialize/serialized_tx_with_context.mn
-
-Tx TransactionWithContext {
+$ midnight-node-toolkit show-block --dry-run --src-url ws://localhost:9944 --block-number 1
 ...
+
+```
+
+Use `--json` for machine-readable output, or `--fetch-only-cached` to skip the node and read only from cache:
+
+```console
+$ midnight-node-toolkit show-block --dry-run --src-url ws://localhost:9944 --block-number 1 --json --fetch-only-cached
+...
+
+```
+
+Use `--src-file` to inspect a genesis or serialized block file without a running node:
+
+```console
+$ midnight-node-toolkit show-block --dry-run --src-file res/genesis/genesis_block_undeployed.mn
+...
+
 ```
 
 ### Show Ledger Parameters
@@ -543,6 +620,24 @@ Update parameters based on a serialized value:
 ```ignore
 $ midnight-node-toolkit update-ledger-parameters --parameters=0x... -t //Alice -t //Bob -c //Dave -c //Eve --c-to-m-bridge-min-amount 2000
 ```
+
+#### Print Serialized System Transaction
+Pass `--print-system-tx-hex` to build the `SystemTransaction::OverwriteParameters` payload, print
+it as a `0x`-prefixed hex string, and exit without submitting any extrinsic. Council and Technical
+Committee keys are not required in this mode.
+
+```ignore
+$ midnight-node-toolkit update-ledger-parameters --c-to-m-bridge-min-amount 2000 --print-system-tx-hex
+0x...
+```
+
+This is useful for testing governance flows manually through the Polkadot-JS Apps UI: take the
+printed hex and paste it as the `mn_system_transaction` argument to
+`midnightSystem.sendMnSystemTransaction(...)` from the **Developer → Extrinsics** tab, then drive
+the federated motion through Council and Technical Committee votes from the UI.
+
+If `--parameters` is not supplied the command still connects to `--rpc-url` to fetch the current
+ledger parameters as the base.
 
 ### Root Call (Execute Call via Governance)
 Execute an arbitrary runtime call with Root origin through the federated authority governance mechanism using proper governance (Council + Technical Committee approval).
@@ -583,6 +678,31 @@ The command will:
 7. Close the TC proposal
 8. Close the federated motion to execute the call with Root origin
 
+### Runtime Upgrade
+Perform a runtime upgrade through the federated authority governance mechanism. This reads a WASM runtime file, authorizes the upgrade via governance (Council + Technical Committee), and then applies it.
+
+```bash
+midnight-node-toolkit runtime-upgrade \
+    --wasm-file /path/to/midnight_node_runtime.compact.compressed.wasm \
+    -c <COUNCIL_KEY_1> -c <COUNCIL_KEY_2> \
+    -t <TC_KEY_1> -t <TC_KEY_2> \
+    --rpc-url ws://localhost:9944 \
+    --signer-key //Alice
+```
+
+Parameters:
+- `--wasm-file`: Path to the runtime WASM file
+- `-c`: Council member private keys (32-byte sr25519 seeds or `//Name` dev keys). At least 2 required.
+- `-t`: Technical Committee member private keys. At least 2 required.
+- `--rpc-url`: RPC URL of the node (defaults to `ws://localhost:9944`, can also be set via `RPC_URL` env var)
+- `--signer-key`: Signer key for the apply step, any funded account (defaults to `//Alice`)
+
+The command will:
+1. Compute the blake2-256 hash of the WASM code
+2. Build a `System::authorize_upgrade` call and execute it through governance (same flow as `root-call`)
+3. Submit `System::apply_authorized_upgrade` with the full WASM code
+4. Verify the `System::CodeUpdated` event to confirm the upgrade succeeded
+
 ---
 
 ### Show Wallet (JSON output)
@@ -596,12 +716,12 @@ $ midnight-node-toolkit show-wallet
   },
   "utxos": [
     {
-      "id": "44ed5696585e54353b54d47a0730d5b32bd1f74b18595c4f0cd373deab765a3a#0",
-      "initial_nonce": "80c59b4df73750d6bebc547b23789dff9ebe2537c068ebe0a1e008c6a08d26c9",
-      "value": 500000000000000,
+      "id": "01c5ad3ff58d687dfe27fc779726188adfe777de5efa8f938a014d7fd7045c59#0",
+      "initial_nonce": "f5e761a22c22f362f1e62435c303c3f6210d93cde80f4ada80465002a172ecc9",
+      "value": 50000000000000,
       "user_address": "bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b",
       "token_type": "0000000000000000000000000000000000000000000000000000000000000000",
-      "intent_hash": "44ed5696585e54353b54d47a0730d5b32bd1f74b18595c4f0cd373deab765a3a",
+      "intent_hash": "01c5ad3ff58d687dfe27fc779726188adfe777de5efa8f938a014d7fd7045c59",
       "output_number": 0
     },
 ...
@@ -610,10 +730,10 @@ $ midnight-node-toolkit show-wallet
     {
       "initial_value": 0,
       "dust_public": "73ff4aaccbb878703e922c8ab5da32a349ca7b5a6e0a2b0950ac68c6a3e273471a",
-      "nonce": "73532e6df7512310fd192fb8ad04c56cf865b2e4ad748267983dcb034b70e04464",
+      "nonce": "73171d7cd802d682ff676a912f381f40169764f3c1c9c5f08714ae47539ed6ef1c",
       "seq": 0,
       "ctime": 1754395200,
-      "backing_night": "80c59b4df73750d6bebc547b23789dff9ebe2537c068ebe0a1e008c6a08d26c9",
+      "backing_night": "47efc37cb1f6e9840820529e664a26ef73faae932466aaf94cb523c2df577051",
       "mt_index": 3
     },
 ...
@@ -639,8 +759,8 @@ $ midnight-node-toolkit dust-balance
   "source": {
 ...
   },
-  "total": 12500000000000000000000000,
-  "capacity": 12500000000000000000000000
+  "total": 1250000000000000000000000,
+  "capacity": 1250000000000000000000000
 }
 
 ```

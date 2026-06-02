@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 
 use midnight_primitives_federated_authority_observation::FederatedAuthorityObservationConfig;
 use midnight_primitives_ics_observation::IcsConfig;
+use midnight_primitives_reserve_observation::ReserveConfig;
 use midnight_primitives_system_parameters::SystemParametersConfig;
 use pallet_cnight_observation::config::CNightGenesis;
 use {
@@ -29,9 +30,11 @@ where
 	D: Deserializer<'de>,
 {
 	let s = <String as serde::Deserialize>::deserialize(deserializer)?;
-	let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).expect("hex decode failed");
-	let bytes = CryptoBytes::from_raw(bytes.try_into().expect("slice to array failed"));
-	Ok(bytes)
+	let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).map_err(serde::de::Error::custom)?;
+	let arr: [u8; N] = bytes.try_into().map_err(|v: Vec<u8>| {
+		serde::de::Error::custom(format!("expected {N} bytes, got {}", v.len()))
+	})?;
+	Ok(CryptoBytes::from_raw(arr))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +105,12 @@ pub struct MainChainScripts {
 	pub permissioned_candidates_policy_id: String,
 }
 
+/// Config loaded from `message-config.json`
+#[derive(Clone, Debug, Deserialize)]
+pub struct MessageConfig {
+	pub message: String,
+}
+
 /// Config loaded from `registered-candidates-addresses.json`
 #[derive(Clone, Debug, Deserialize)]
 pub struct RegisteredCandidatesAddresses {
@@ -114,6 +123,13 @@ pub struct PermissionedCandidatesConfig {
 	pub permissioned_candidates_policy_id: String,
 	#[serde(default)]
 	pub initial_permissioned_candidates: Vec<InitialAuthorityData>,
+}
+
+/// Config loaded from `c2m-bridge-config.json`
+#[derive(Clone, Debug, Deserialize)]
+pub struct C2MBridgeConfig {
+	pub initial_data_checkpoint: Option<String>,
+	pub subminimal_transfers_flush_threshold: u64,
 }
 
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
@@ -176,6 +192,9 @@ pub trait MidnightNetwork {
 	fn system_parameters_config(&self) -> SystemParametersConfig;
 	fn cnight_genesis(&self) -> CNightGenesis;
 	fn ics_config(&self) -> IcsConfig;
+	fn reserve_config(&self) -> ReserveConfig;
+	fn message_config(&self) -> Option<MessageConfig>;
+	fn c2m_bridge_config(&self) -> C2MBridgeConfig;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)

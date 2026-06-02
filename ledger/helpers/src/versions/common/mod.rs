@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub use super::make_block_context;
 pub use super::{
 	base_crypto::{
 		cost_model::{
@@ -25,7 +26,7 @@ pub use super::{
 	},
 	coin_structure::{
 		coin::{
-			Info as CoinInfo, NIGHT, Nonce, PublicAddress, PublicKey as CoinPublicKey,
+			Info as CoinInfo, NIGHT, Nonce, Nullifier, PublicAddress, PublicKey as CoinPublicKey,
 			QualifiedInfo, ShieldedTokenType, TokenType, UnshieldedTokenType, UserAddress,
 		},
 		contract::ContractAddress,
@@ -59,7 +60,7 @@ pub use super::{
 			BindingKind, CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind,
 			ClaimRewardsTransaction, ContractAction, ContractDeploy, ContractOperationVersion,
 			ContractOperationVersionedVerifierKey, FEE_TOKEN, INITIAL_PARAMETERS, Intent,
-			IntentHash, LedgerParameters, LedgerState, MaintenanceUpdate,
+			IntentHash, LedgerParameters, LedgerState, MAX_SUPPLY, MaintenanceUpdate,
 			OutputInstructionUnshielded, PedersenDowngradeable, ProofKind, ProofMarker,
 			ProofPreimageMarker, SignatureKind, SingleUpdate, StandardTransaction,
 			SystemTransaction, Transaction, TransactionCostModel, TransactionHash, UnshieldedOffer,
@@ -111,6 +112,8 @@ pub use rand::{
 
 // Module declarations with can-panic feature
 #[cfg(feature = "can-panic")]
+pub mod block_data;
+#[cfg(feature = "can-panic")]
 pub mod context;
 #[cfg(feature = "can-panic")]
 pub mod contract;
@@ -118,6 +121,8 @@ pub mod contract;
 mod input;
 #[cfg(feature = "can-panic")]
 mod intent;
+#[cfg(feature = "can-panic")]
+mod network_id;
 #[cfg(feature = "can-panic")]
 mod offer;
 #[cfg(feature = "can-panic")]
@@ -142,12 +147,27 @@ pub mod types;
 // Re-exports with can-panic feature
 #[cfg(feature = "can-panic")]
 pub use {
-	context::*, contract::*, input::*, intent::*, offer::*, output::*, proving::*, transaction::*,
-	transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
+	context::*, contract::*, input::*, intent::*, network_id::*, offer::*, output::*, proving::*,
+	transaction::*, transient::*, unshielded_offer::*, utxo_output::*, utxo_spend::*, wallet::*,
 };
 
 // Re-exports without can-panic feature
 pub use types::*;
+
+/// Compatibility trait: L7 `apply` returns `WalletState<D>`, L8 returns `Result<WalletState<D>, _>`.
+pub trait IntoWalletState<D: DB + Clone> {
+	fn into_wallet_state(self) -> WalletState<D>;
+}
+impl<D: DB + Clone> IntoWalletState<D> for WalletState<D> {
+	fn into_wallet_state(self) -> WalletState<D> {
+		self
+	}
+}
+impl<D: DB + Clone, E: std::fmt::Debug> IntoWalletState<D> for Result<WalletState<D>, E> {
+	fn into_wallet_state(self) -> WalletState<D> {
+		self.expect("wallet state apply failed")
+	}
+}
 
 /// Serializes a mn_ledger::serialize-able type into bytes
 pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io::Error> {
@@ -158,7 +178,7 @@ pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io
 }
 
 /// Deserializes a mn_ledger::serialize-able type from bytes
-pub fn deserialize_untagged<T: Deserializable + Tagged>(
+pub fn deserialize_untagged<T: Deserializable>(
 	mut bytes: impl std::io::Read,
 ) -> Result<T, std::io::Error> {
 	let val: T = T::deserialize(&mut bytes, 0)?;
@@ -243,21 +263,6 @@ pub fn token_type_decode(input: &str) -> TokenType {
 	let tt_bytes: [u8; 32] = bytes.try_into().expect("Token size should be 32 bytes");
 
 	TokenType::Shielded(ShieldedTokenType(HashOutput(tt_bytes)))
-}
-
-#[cfg(feature = "can-panic")]
-pub fn extract_info_from_tx_with_context(bytes: &[u8]) -> (Vec<u8>, BlockContext) {
-	let tx_with_context: TransactionWithContext<Signature, ProofMarker, DefaultDB> =
-		deserialize(bytes)
-			.unwrap_or_else(|err| panic!("Can't deserialize `TransactionWithContext: {err}"));
-	let SerdeTransaction::Midnight(tx) = tx_with_context.tx else {
-		panic!("expected test to run against midnight transaction");
-	};
-	let block_context = tx_with_context.block_context;
-	let serialized_tx =
-		serialize(&tx).unwrap_or_else(|err| panic!("Can't serialize `Transaction`: {err}"));
-
-	(serialized_tx, block_context)
 }
 
 #[cfg(test)]

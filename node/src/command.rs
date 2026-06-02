@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -14,18 +14,31 @@
 #![allow(clippy::result_large_err)]
 
 use crate::{
-	cfg::Cfg,
-	cli::{self, Cli, Subcommand},
-	cnight_genesis::generate_cnight_genesis,
-	federated_authority_genesis::generate_federated_authority_genesis,
-	ics_genesis::{IcsAddresses, generate_ics_genesis},
-	permissioned_candidates_genesis::{
-		PcChainConfig, PermissionedCandidatesAddresses, generate_permissioned_candidates_genesis,
+	cfg::{Cfg, midnight_cfg::StorageSeparation},
+	cli::{Cli, RunMidnight, Subcommand},
+	filtering_pool::TxFilterConfig,
+	genesis::{
+		creation::{
+			cnight_genesis::generate_cnight_genesis,
+			federated_authority_genesis::generate_federated_authority_genesis,
+			ics_genesis::{IcsAddresses, generate_ics_genesis},
+			permissioned_candidates_genesis::{
+				PcChainConfig, PermissionedCandidatesAddresses,
+				generate_permissioned_candidates_genesis,
+			},
+			reserve_genesis::{ReserveAddresses, generate_reserve_genesis},
+		},
+		verification::{
+			verify_auth_script_common, verify_federated_authority_auth_script,
+			verify_genesis_message, verify_genesis_timestamp, verify_ics_auth_script,
+			verify_ledger_state_genesis, verify_permissioned_candidates_auth_script,
+			verify_reserve_auth_script,
+		},
 	},
+	reference_hardware::MIDNIGHT_REFERENCE_HARDWARE,
 	service::{self, StorageInit},
 };
 use clap::Parser;
-use midnight_node_res::networks::MidnightNetwork as _;
 use midnight_node_runtime::Block;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityAddresses;
@@ -33,7 +46,11 @@ use sc_cli::{CliConfiguration, LoggerBuilder, RunCmd, SubstrateCli};
 use sc_keystore::LocalKeystore;
 use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
-use sp_core::{ByteArray, Pair, offchain::KeyTypeId};
+use sp_core::{
+	ByteArray, Pair,
+	crypto::key_types::{AURA as AURA_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE},
+	offchain::KeyTypeId,
+};
 use sp_keystore::KeystorePtr;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -48,6 +65,20 @@ pub(crate) fn safe_exit(code: i32) -> ! {
 	let _ = std::io::stdout().lock().flush();
 	let _ = std::io::stderr().lock().flush();
 	std::process::exit(code)
+}
+
+/// Refuse to run chain-affecting operations when the binary was built with
+/// `--features runtime-benchmarks`. The benchmarking runtime relaxes origin
+/// checks and exposes helper extrinsics, so it must never be used against a
+/// real chain. The `benchmark` subcommand bypasses this guard.
+fn bail_if_runtime_benchmarks(context: &str) {
+	if cfg!(feature = "runtime-benchmarks") {
+		eprintln!(
+			"error: this binary was built with `--features runtime-benchmarks` and must not be used for {context}. \
+			 Rebuild without that feature, or use the `benchmark` subcommand."
+		);
+		safe_exit(1);
+	}
 }
 
 /// Parse and run command line arguments
@@ -111,8 +142,47 @@ fn get_cfg(validate: bool) -> sc_cli::Result<Cfg> {
 	Ok(cfg)
 }
 
+const MAX_GENESIS_STATE_BYTES: usize = 256 * 1024 * 1024; // 256 MiB
+
+fn decode_genesis_state(
+	properties: &serde_json::Map<String, serde_json::Value>,
+) -> sc_cli::Result<Vec<u8>> {
+	let genesis_value = properties.get("genesis_state").ok_or_else(|| {
+		sc_cli::Error::Input("chain spec properties missing required 'genesis_state' key".into())
+	})?;
+
+	let genesis_state_hex = genesis_value
+		.as_str()
+		.ok_or_else(|| sc_cli::Error::Input("'genesis_state' property must be a string".into()))?;
+
+	let genesis_state = hex::decode(genesis_state_hex)
+		.map_err(|e| sc_cli::Error::Input(format!("'genesis_state' contains invalid hex: {e}")))?;
+
+	if genesis_state.len() > MAX_GENESIS_STATE_BYTES {
+		return Err(sc_cli::Error::Input(format!(
+			"genesis state size ({} bytes) exceeds maximum allowed ({} bytes)",
+			genesis_state.len(),
+			MAX_GENESIS_STATE_BYTES,
+		)));
+	}
+
+	Ok(genesis_state)
+}
+
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
-	let run_cmd: RunCmd = cfg.substrate_cfg.clone().try_into()?;
+	bail_if_runtime_benchmarks("running a node");
+	let run_cmd: RunCmd = cfg
+		.substrate_cfg
+		.clone()
+		.into_run_cmd(&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?)?;
+	let run_midnight = RunMidnight::try_parse_from(cfg.substrate_cfg.clone().argv())
+		.map_err(|e| sc_cli::Error::Input(format!("invalid node run arguments: {e}")))?;
+	let tx_filter_config = if run_midnight.filter_deploy_txs {
+		TxFilterConfig::enabled()
+	} else {
+		TxFilterConfig::disabled()
+	};
+
 	if cfg.midnight_cfg.wipe_chain_state
 		&& let Some(base_path) = run_cmd.base_path()?
 	{
@@ -130,10 +200,14 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	let config_dir = base_path.config_dir(chain_spec.id());
 
 	let properties = chain_spec.properties();
-	let genesis_state_hex = properties.get("genesis_state").unwrap().as_str().unwrap();
-	let genesis_state = hex::decode(genesis_state_hex).unwrap();
-	let storage_config =
-		StorageInit { genesis_state, cache_size: cfg.midnight_cfg.storage_cache_size };
+	let genesis_state = decode_genesis_state(&properties)?;
+	let ledger_db_path = base_path.path().join("ledger_storage");
+	let storage_config = StorageInit {
+		separation: cfg.midnight_cfg.storage_separation,
+		db_path: ledger_db_path,
+		genesis_state,
+		cache_size: cfg.midnight_cfg.storage_cache_size,
+	};
 
 	let keystore: KeystorePtr = {
 		let res = run_cmd.keystore_params().unwrap().keystore_config(&config_dir)?;
@@ -153,9 +227,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
-		keystore
-			.insert(KeyTypeId(*b"aura"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("AURA pubkey: {}", &keypair.public())
 	}
 
@@ -168,9 +240,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
-		keystore
-			.insert(KeyTypeId(*b"gran"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+		keystore.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("GRANDPA pubkey: {}", &keypair.public())
 	}
 
@@ -189,16 +259,28 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		log::info!("CROSS_CHAIN pubkey: {}", &keypair.public())
 	}
 
-	runner.run_node_until_exit(|config| async move {
-		let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
+	// Hold the database backend handle outside the tokio runtime so we can
+	// explicitly drop it after all async tasks have finished.  Without this,
+	// the backend's Arc may be leaked inside aborted tokio tasks during
+	// shutdown, preventing parity-db's Drop impl (which drains the WAL
+	// pipeline) from ever running.  The result is silent chain-state
+	// truncation on the next startup — see the PR description for details.
+	let backend_handle: std::sync::Arc<
+		std::sync::Mutex<Option<std::sync::Arc<service::FullBackend>>>,
+	> = std::sync::Arc::new(std::sync::Mutex::new(None));
+	let backend_handle_inner = backend_handle.clone();
 
-		// TODO: Add metrics
-		let data_sources =
-			crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-				cfg.midnight_cfg.clone(),
-				None,
-			)
-			.await?;
+	let run_result = runner.run_node_until_exit(|config| async move {
+		let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
+		let midnight_cfg = cfg.midnight_cfg.clone();
+		let hwbench = (!run_midnight.no_hardware_benchmarks)
+			.then(|| {
+				config.database.path().map(|database_path| {
+					let _ = std::fs::create_dir_all(database_path);
+					sc_sysinfo::gather_hwbench(Some(database_path), &MIDNIGHT_REFERENCE_HARDWARE)
+				})
+			})
+			.flatten();
 
 		// Build Prometheus push config if endpoint is configured
 		log::debug!(
@@ -224,17 +306,36 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			});
 
 		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
-		service::new_full::<sc_network::NetworkWorker<_, _>>(
+		let (task_manager, backend) = service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
 			epoch_config,
-			data_sources,
+			midnight_cfg,
 			cfg.storage_monitor_params_cfg.into(),
+			cfg.memory_monitor_cfg.into(),
 			storage_config,
 			metrics_push_config,
+			hwbench,
+			tx_filter_config,
+			run_midnight.rpc_max_finality_subscriptions,
 		)
 		.await
-		.map_err(sc_cli::Error::Service)
-	})
+		.map_err(sc_cli::Error::Service)?;
+
+		// Stash the backend handle so it outlives the tokio runtime.
+		*backend_handle_inner.lock().expect("backend mutex poisoned") = Some(backend);
+
+		Ok(task_manager)
+	});
+
+	// Explicitly flush and release the chain-state database.
+	// This ensures parity-db's Drop impl runs (joining its background I/O
+	// threads and draining the WAL) even if async tasks leaked Arc clones.
+	drop(backend_handle.lock().expect("backend mutex poisoned").take());
+
+	// Explicitly release global ledger storage on shutdown.
+	midnight_node_ledger::drop_all_default_storage();
+
+	run_result
 }
 
 /// Returns the CFG_PRESET from environment, defaulting to "dev"
@@ -247,35 +348,66 @@ fn get_res_preset_dir() -> std::path::PathBuf {
 	std::path::PathBuf::from("res").join(get_cfg_preset())
 }
 
+/// Extracts and hex-decodes the `genesis_state` value from chain spec properties.
+fn genesis_state_from_properties(
+	properties: &serde_json::Map<String, serde_json::Value>,
+) -> sc_cli::Result<Vec<u8>> {
+	let hex_str = properties
+		.get("genesis_state")
+		.ok_or_else(|| sc_cli::Error::Input("chain spec missing 'genesis_state' property".into()))?
+		.as_str()
+		.ok_or_else(|| sc_cli::Error::Input("'genesis_state' property is not a string".into()))?;
+	hex::decode(hex_str)
+		.map_err(|e| sc_cli::Error::Input(format!("invalid hex in 'genesis_state': {e}")))
+}
+
+/// Returns the genesis state from a chain spec's properties.
+fn genesis_state_from_chain_spec(
+	chain_spec: &dyn sc_service::ChainSpec,
+) -> sc_cli::Result<Vec<u8>> {
+	genesis_state_from_properties(&chain_spec.properties())
+}
+
+/// Builds a `StorageInit` from the chain spec's genesis state.
+fn storage_init_from_chain_spec(
+	config: &sc_service::Configuration,
+	cache_size: usize,
+	separation: StorageSeparation,
+) -> sc_cli::Result<StorageInit> {
+	let db_path = config.base_path.path().join("ledger_storage");
+	Ok(StorageInit {
+		separation,
+		cache_size,
+		genesis_state: genesis_state_from_chain_spec(&*config.chain_spec)?,
+		db_path,
+	})
+}
+
 fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 	let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
-
-	let storage_config = StorageInit {
-		genesis_state: midnight_node_res::networks::UndeployedNetwork.genesis_state().to_vec(),
-		cache_size: cfg.midnight_cfg.storage_cache_size,
-	};
+	let cache_size = cfg.midnight_cfg.storage_cache_size;
+	let separation = cfg.midnight_cfg.storage_separation;
+	let tx_filter_config = TxFilterConfig::disabled();
 
 	match subcommand {
 		Subcommand::Key(ref cmd) => cmd.run(&cfg),
 		Subcommand::PartnerChains(cmd) => {
+			bail_if_runtime_benchmarks("the partner-chains subcommand");
 			let midnight_cfg = cfg.midnight_cfg.clone();
 			let make_dependencies = |config: sc_service::Configuration| {
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						midnight_cfg,
-						None,
-					),
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)
+					.map_err(|e| e.to_string())?;
+				let PartialComponents { client, task_manager, other, .. } = service::new_partial(
+					&config,
+					epoch_config,
+					midnight_cfg,
+					storage_config,
+					tx_filter_config,
 				)?;
-				let PartialComponents { client, task_manager, other, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
-			partner_chains_node_commands::run::<_, _, _, _, cli::MidnightBlockProducerMetadata, _, _>(
-				&cfg,
-				make_dependencies,
-				cmd.clone(),
-			)
+			partner_chains_node_commands::run::<_, _, _, _, _>(&cfg, make_dependencies, cmd.clone())
 		},
 		Subcommand::BuildSpec(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
@@ -284,56 +416,60 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::CheckBlock(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
-				)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
 				let PartialComponents { client, task_manager, import_queue, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
+					service::new_partial(
+						&config,
+						epoch_config,
+						cfg.midnight_cfg.clone(),
+						storage_config,
+						tx_filter_config,
+					)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
 		Subcommand::ExportBlocks(ref cmd) => {
+			bail_if_runtime_benchmarks("exporting blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
+				let PartialComponents { client, task_manager, .. } = service::new_partial(
+					&config,
+					epoch_config,
+					cfg.midnight_cfg.clone(),
+					storage_config,
+					tx_filter_config,
 				)?;
-				let PartialComponents { client, task_manager, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.database), task_manager))
 			})
 		},
 		Subcommand::ExportState(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
+				let PartialComponents { client, task_manager, .. } = service::new_partial(
+					&config,
+					epoch_config,
+					cfg.midnight_cfg.clone(),
+					storage_config,
+					tx_filter_config,
 				)?;
-				let PartialComponents { client, task_manager, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				Ok((cmd.run(client, config.chain_spec), task_manager))
 			})
 		},
 		Subcommand::ImportBlocks(ref cmd) => {
+			bail_if_runtime_benchmarks("importing blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
-				)?;
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
 				let PartialComponents { client, task_manager, import_queue, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
+					service::new_partial(
+						&config,
+						epoch_config,
+						cfg.midnight_cfg.clone(),
+						storage_config,
+						tx_filter_config,
+					)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
 		},
@@ -342,16 +478,17 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			runner.sync_run(|config| cmd.run(config.database))
 		},
 		Subcommand::Revert(ref cmd) => {
+			bail_if_runtime_benchmarks("reverting blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
-				let data_sources = config.tokio_handle.block_on(
-					crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-						cfg.midnight_cfg.clone(),
-						None,
-					),
+				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
+				let PartialComponents { client, task_manager, backend, .. } = service::new_partial(
+					&config,
+					epoch_config,
+					cfg.midnight_cfg.clone(),
+					storage_config,
+					tx_filter_config,
 				)?;
-				let PartialComponents { client, task_manager, backend, .. } =
-					service::new_partial(&config, epoch_config, data_sources, storage_config)?;
 				let aux_revert = Box::new(|client, _, blocks| {
 					sc_consensus_grandpa::revert(client, blocks)?;
 					Ok(())
@@ -374,25 +511,24 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 								"Runtime benchmarking wasn't enabled when building the node. \
 							You can enable it with `--features runtime-benchmarks`."
 									.into(),
-							)
+							);
 						}
 
-						cmd.run_with_spec::<HashingFor<Block>, service::HostFunctions>(Some(config.chain_spec))
+						cmd.run_with_spec::<HashingFor<Block>, service::HostFunctions>(Some(
+							config.chain_spec,
+						))
 					},
 					BenchmarkCmd::Block(cmd) => {
-                        let data_sources = config.tokio_handle.block_on(
-                            crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-                                cfg.midnight_cfg.clone(),
-                                None,
-                            ),
-                        )?;
-						// ensure that we keep the task manager alive
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size, separation)?;
+
 						let partial = service::new_partial(
-                            &config,
-                            epoch_config,
-                            data_sources,
-                            storage_config,
-                        )?;
+							&config,
+							epoch_config,
+							cfg.midnight_cfg.clone(),
+							storage_config,
+							tx_filter_config,
+						)?;
 
 						cmd.run(partial.client)
 					},
@@ -403,39 +539,32 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					),
 					#[cfg(feature = "runtime-benchmarks")]
 					BenchmarkCmd::Storage(cmd) => {
-						// ensure that we keep the task manager alive
-                        let data_sources = config.tokio_handle.block_on(
-                            crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-                                cfg.midnight_cfg.clone(),
-                                None,
-                            ),
-                        )?;
-						// ensure that we keep the task manager alive
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size, separation)?;
+
 						let partial = service::new_partial(
-                            &config,
-                            epoch_config,
-                            data_sources,
-                            storage_config,
-                        )?;
+							&config,
+							epoch_config,
+							cfg.midnight_cfg.clone(),
+							storage_config,
+							tx_filter_config,
+						)?;
 						let db = partial.backend.expose_db();
 						let storage = partial.backend.expose_storage();
 
 						cmd.run(config, partial.client, db, storage, None)
 					},
 					BenchmarkCmd::Overhead(cmd) => {
-                        let data_sources = config.tokio_handle.block_on(
-                            crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-                                cfg.midnight_cfg.clone(),
-                                None,
-                            ),
-                        )?;
-						// ensure that we keep the task manager alive
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size, separation)?;
+
 						let partial = service::new_partial(
-                            &config,
-                            epoch_config,
-                            data_sources,
-                            storage_config,
-                        )?;
+							&config,
+							epoch_config,
+							cfg.midnight_cfg.clone(),
+							storage_config,
+							tx_filter_config,
+						)?;
 						let ext_builder = RemarkBuilder::new(partial.client.clone());
 
 						cmd.run(
@@ -448,23 +577,20 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Extrinsic(cmd) => {
-						// ensure that we keep the task manager alive
-                        let data_sources = config.tokio_handle.block_on(
-                            crate::main_chain_follower::create_cached_main_chain_follower_data_sources(
-                                cfg.midnight_cfg.clone(),
-                                None,
-                            ),
-                        )?;
+						let storage_config =
+							storage_init_from_chain_spec(&config, cache_size, separation)?;
+
 						let partial = service::new_partial(
-                            &config,
-                            epoch_config,
-                            data_sources,
-                            storage_config,
-                        )?;
+							&config,
+							epoch_config,
+							cfg.midnight_cfg.clone(),
+							storage_config,
+							tx_filter_config,
+						)?;
 						// Register the *Remark* and *TKA* builders.
-						let ext_factory = ExtrinsicFactory(vec![
-							Box::new(RemarkBuilder::new(partial.client.clone())),
-						]);
+						let ext_factory = ExtrinsicFactory(vec![Box::new(RemarkBuilder::new(
+							partial.client.clone(),
+						))]);
 
 						cmd.run(
 							partial.client,
@@ -473,8 +599,9 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							&ext_factory,
 						)
 					},
-					BenchmarkCmd::Machine(cmd) =>
-						cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone()),
+					BenchmarkCmd::Machine(cmd) => {
+						cmd.run(&config, MIDNIGHT_REFERENCE_HARDWARE.clone())
+					},
 				}
 			})
 		},
@@ -548,6 +675,41 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					.await
 					.map_err(|e| {
 						sc_cli::Error::Input(format!("ICS genesis generation failed: {e}"))
+					})?;
+
+				Ok(())
+			})
+		},
+		Subcommand::GenerateReserveGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let reserve_addresses = cmd
+				.reserve_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
+			let output = cmd.output.clone().unwrap_or_else(|| res_dir.join("reserve-config.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let reserve_addresses_str = std::fs::read_to_string(&reserve_addresses)?;
+				let addresses: ReserveAddresses = serde_json::from_str(&reserve_addresses_str)
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"failed to read reserve addresses file as json: {e:?}"
+						))
+					})?;
+				generate_reserve_genesis(addresses, &pool, cmd.cardano_tip.clone(), &output)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!("Reserve genesis generation failed: {e}"))
 					})?;
 
 				Ok(())
@@ -859,9 +1021,603 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					))
 				})?;
 
+				// 4. Generate reserve genesis
+				log::info!("Generating reserve genesis config...");
+				let reserve_addresses = cmd
+					.reserve_addresses
+					.clone()
+					.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
+				let reserve_output = cmd
+					.reserve_output
+					.clone()
+					.unwrap_or_else(|| res_dir.join("reserve-config.json"));
+
+				let reserve_pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let reserve_addresses_str = std::fs::read_to_string(&reserve_addresses)?;
+				let reserve_addresses_parsed: ReserveAddresses =
+					serde_json::from_str(&reserve_addresses_str).map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"failed to read reserve addresses file as json: {e:?}"
+						))
+					})?;
+
+				generate_reserve_genesis(
+					reserve_addresses_parsed,
+					&reserve_pool,
+					cmd.cardano_tip.clone(),
+					&reserve_output,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("reserve genesis generation failed: {e}"))
+				})?;
+
 				log::info!("All genesis config files generated successfully!");
 				Ok(())
 			})
 		},
+		Subcommand::VerifyLedgerStateGenesis(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Parse genesis timestamp from cardano-tip.json
+			let genesis_timestamp: u64 = {
+				let path = cmd.cardano_tip_config.as_ref().ok_or_else(|| {
+					sc_cli::Error::Input(
+						"--cardano-tip-config is required for genesis timestamp verification"
+							.to_string(),
+					)
+				})?;
+				use crate::genesis::CardanoTipConfig;
+				let json_str = std::fs::read_to_string(path).map_err(|e| {
+					sc_cli::Error::Input(format!(
+						"Failed to read cardano-tip config {:?}: {}",
+						path, e
+					))
+				})?;
+				let config: CardanoTipConfig = serde_json::from_str(&json_str).map_err(|e| {
+					sc_cli::Error::Input(format!("Failed to parse cardano-tip config: {}", e))
+				})?;
+				config.timestamp.parse::<u64>().map_err(|e| {
+					sc_cli::Error::Input(format!("Invalid timestamp in cardano-tip config: {}", e))
+				})?
+			};
+
+			let result = verify_ledger_state_genesis::verify_ledger_state_genesis(
+				&cmd.chain_spec,
+				cmd.cnight_config.as_deref(),
+				cmd.ledger_parameters_config.as_deref(),
+				cmd.network.as_deref(),
+				genesis_timestamp,
+			)
+			.map_err(|e| sc_cli::Error::Input(format!("Genesis verification failed: {e}")))?;
+
+			result.print_summary();
+
+			if result.all_passed() {
+				Ok(())
+			} else {
+				Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+			}
+		},
+		Subcommand::VerifyCardanoTipFinalized(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let pc_config_path =
+				cmd.pc_config.clone().unwrap_or_else(|| res_dir.join("pc-chain-config.json"));
+
+			// Load security_parameter from pc-chain-config.json
+			let pc_config_content = std::fs::read_to_string(&pc_config_path).map_err(|e| {
+				sc_cli::Error::Input(format!("Failed to read {}: {}", pc_config_path.display(), e))
+			})?;
+			let pc_config: PcChainConfig =
+				serde_json::from_str(&pc_config_content).map_err(|e| {
+					sc_cli::Error::Input(format!(
+						"Failed to parse {}: {}",
+						pc_config_path.display(),
+						e
+					))
+				})?;
+			let security_parameter = pc_config.cardano.security_parameter;
+			log::info!(
+				"Using security_parameter={} from {}",
+				security_parameter,
+				pc_config_path.display()
+			);
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				// Get the block number for the provided tip
+				let tip_block_number =
+					verify_auth_script_common::get_block_number(&pool, &cmd.cardano_tip)
+						.await
+						.map_err(|e| {
+							sc_cli::Error::Input(format!(
+								"Failed to get block number for tip {}: {}",
+								cmd.cardano_tip, e
+							))
+						})?;
+
+				// Get the latest block number from db-sync
+				let latest_block_number: (i32,) = sqlx::query_as(
+					r#"
+					SELECT block_no
+					FROM block
+					WHERE block_no IS NOT NULL
+					ORDER BY block_no DESC
+					LIMIT 1
+					"#,
+				)
+				.fetch_one(&pool)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Failed to get latest block number: {}", e))
+				})?;
+
+				let confirmations = latest_block_number.0 as u32 - tip_block_number;
+				let is_finalized = confirmations >= security_parameter;
+
+				println!("\n=== Cardano Tip Finalization Check ===\n");
+				println!("Cardano tip:          {}", cmd.cardano_tip);
+				println!("Tip block number:     {}", tip_block_number);
+				println!("Latest block number:  {}", latest_block_number.0);
+				println!("Confirmations:        {}", confirmations);
+				println!("Security parameter:   {}", security_parameter);
+				println!();
+
+				if is_finalized {
+					println!(
+						"RESULT: FINALIZED (confirmations {} >= security_parameter {})",
+						confirmations, security_parameter
+					);
+					Ok(())
+				} else {
+					println!(
+						"RESULT: NOT FINALIZED (confirmations {} < security_parameter {})",
+						confirmations, security_parameter
+					);
+					Err(sc_cli::Error::Input(format!(
+						"Block is not finalized: {} confirmations < {} security_parameter",
+						confirmations, security_parameter
+					)))
+				}
+			})
+		},
+		Subcommand::VerifyAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let federated_authority_addresses = cmd
+				.federated_authority_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("federated-authority-addresses.json"));
+			let ics_addresses =
+				cmd.ics_addresses.clone().unwrap_or_else(|| res_dir.join("ics-addresses.json"));
+			let permissioned_candidates_addresses = cmd
+				.permissioned_candidates_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("permissioned-candidates-addresses.json"));
+			let reserve_addresses = cmd
+				.reserve_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let mut all_passed = true;
+
+				// 1. Verify Federated Authority
+				let fa_result =
+					verify_federated_authority_auth_script::verify_federated_authority_auth_script(
+						&federated_authority_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Federated authority auth script verification failed: {e}"
+						))
+					})?;
+				fa_result.print_summary();
+				if !fa_result.all_passed() {
+					all_passed = false;
+				}
+
+				// 2. Verify ICS
+				let ics_result = verify_ics_auth_script::verify_ics_auth_script(
+					&ics_addresses,
+					Some(&authorization_addresses),
+					&pool,
+					&cmd.cardano_tip,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("ICS auth script verification failed: {e}"))
+				})?;
+				ics_result.print_summary();
+				if !ics_result.all_passed() {
+					all_passed = false;
+				}
+
+				// 3. Verify Permissioned Candidates
+				let pc_result =
+					verify_permissioned_candidates_auth_script::verify_permissioned_candidates_auth_script(
+						&permissioned_candidates_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Permissioned candidates auth script verification failed: {e}"
+						))
+					})?;
+				pc_result.print_summary();
+				if !pc_result.all_passed() {
+					all_passed = false;
+				}
+
+				// 4. Verify Reserve
+				let reserve_result = verify_reserve_auth_script::verify_reserve_auth_script(
+					&reserve_addresses,
+					Some(&authorization_addresses),
+					&pool,
+					&cmd.cardano_tip,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Reserve auth script verification failed: {e}"))
+				})?;
+				reserve_result.print_summary();
+				if !reserve_result.all_passed() {
+					all_passed = false;
+				}
+
+				println!("\n=== Overall Auth Script Verification ===\n");
+				if all_passed {
+					println!("RESULT: ALL CHECKS PASSED");
+					Ok(())
+				} else {
+					println!("RESULT: SOME CHECKS FAILED");
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyFederatedAuthorityAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let federated_authority_addresses = cmd
+				.federated_authority_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("federated-authority-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result =
+					verify_federated_authority_auth_script::verify_federated_authority_auth_script(
+						&federated_authority_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Federated authority auth script verification failed: {e}"
+						))
+					})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyIcsAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let ics_addresses =
+				cmd.ics_addresses.clone().unwrap_or_else(|| res_dir.join("ics-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result = verify_ics_auth_script::verify_ics_auth_script(
+					&ics_addresses,
+					Some(&authorization_addresses),
+					&pool,
+					&cmd.cardano_tip,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("ICS auth script verification failed: {e}"))
+				})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyPermissionedCandidatesAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let permissioned_candidates_addresses = cmd
+				.permissioned_candidates_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("permissioned-candidates-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result =
+					verify_permissioned_candidates_auth_script::verify_permissioned_candidates_auth_script(
+						&permissioned_candidates_addresses,
+						Some(&authorization_addresses),
+						&pool,
+						&cmd.cardano_tip,
+					)
+					.await
+					.map_err(|e| {
+						sc_cli::Error::Input(format!(
+							"Permissioned candidates auth script verification failed: {e}"
+						))
+					})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyReserveAuthScript(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default paths based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let reserve_addresses = cmd
+				.reserve_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
+			let authorization_addresses = cmd
+				.authorization_addresses
+				.clone()
+				.unwrap_or_else(|| res_dir.join("authorization-addresses.json"));
+
+			// Init tokio runtime
+			let tokio_handle = sc_cli::build_runtime()?;
+			tokio_handle.block_on(async {
+				let pool =
+					crate::main_chain_follower::create_ics_genesis_pool(cfg.midnight_cfg.clone())
+						.await?;
+
+				let result = verify_reserve_auth_script::verify_reserve_auth_script(
+					&reserve_addresses,
+					Some(&authorization_addresses),
+					&pool,
+					&cmd.cardano_tip,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Reserve auth script verification failed: {e}"))
+				})?;
+
+				result.print_summary();
+
+				if result.all_passed() {
+					Ok(())
+				} else {
+					Err(sc_cli::Error::Input("Some verification checks failed".to_string()))
+				}
+			})
+		},
+		Subcommand::VerifyGenesisMessage(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default message-config path based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let message_config = cmd
+				.message_config
+				.clone()
+				.unwrap_or_else(|| res_dir.join("message-config.json"));
+
+			let result =
+				verify_genesis_message::verify_genesis_message(&cmd.chain_spec, &message_config)
+					.map_err(|e| {
+						sc_cli::Error::Input(format!("Genesis message verification failed: {e}"))
+					})?;
+
+			result.print_summary();
+
+			if result.all_passed() {
+				Ok(())
+			} else {
+				Err(sc_cli::Error::Input("Genesis message verification failed".to_string()))
+			}
+		},
+		Subcommand::VerifyGenesisTimestamp(ref cmd) => {
+			// Init logging
+			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;
+
+			// Resolve default cardano-tip-config path based on CFG_PRESET
+			let res_dir = get_res_preset_dir();
+			let cardano_tip_config = cmd
+				.cardano_tip_config
+				.clone()
+				.unwrap_or_else(|| res_dir.join("cardano-tip.json"));
+
+			let result = verify_genesis_timestamp::verify_genesis_timestamp(
+				&cmd.chain_spec,
+				&cardano_tip_config,
+			)
+			.map_err(|e| {
+				sc_cli::Error::Input(format!("Genesis timestamp verification failed: {e}"))
+			})?;
+
+			result.print_summary();
+
+			if result.all_passed() {
+				Ok(())
+			} else {
+				Err(sc_cli::Error::Input("Genesis timestamp verification failed".to_string()))
+			}
+		},
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Compares two genesis blobs by blake2_256 hash; returns an error on mismatch.
+	fn verify_genesis_consistency(
+		chain_spec_genesis: &[u8],
+		compiled_genesis: &[u8],
+	) -> sc_cli::Result<()> {
+		let spec_hash = sp_core::hashing::blake2_256(chain_spec_genesis);
+		let compiled_hash = sp_core::hashing::blake2_256(compiled_genesis);
+		if spec_hash != compiled_hash {
+			return Err(sc_cli::Error::Input(format!(
+				"genesis state mismatch: chain spec genesis hash {} differs from compiled default {}",
+				hex::encode(spec_hash),
+				hex::encode(compiled_hash),
+			)));
+		}
+		Ok(())
+	}
+
+	fn make_properties(
+		entries: Vec<(&str, serde_json::Value)>,
+	) -> serde_json::Map<String, serde_json::Value> {
+		entries.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+	}
+
+	#[test]
+	fn decode_genesis_state_valid_hex() {
+		let data = vec![0xde, 0xad, 0xbe, 0xef];
+		let props =
+			make_properties(vec![("genesis_state", serde_json::Value::String(hex::encode(&data)))]);
+		let result = decode_genesis_state(&props).expect("should decode valid hex");
+		assert_eq!(result, data);
+	}
+
+	#[test]
+	fn decode_genesis_state_empty_hex() {
+		let props =
+			make_properties(vec![("genesis_state", serde_json::Value::String(String::new()))]);
+		let result = decode_genesis_state(&props).expect("should decode empty hex");
+		assert!(result.is_empty());
+	}
+
+	#[test]
+	fn decode_genesis_state_missing_key() {
+		let props = make_properties(vec![]);
+		let err = decode_genesis_state(&props).unwrap_err();
+		let msg = err.to_string();
+		assert!(msg.contains("missing required 'genesis_state' key"), "unexpected error: {msg}",);
+	}
+
+	#[test]
+	fn decode_genesis_state_non_string_value() {
+		let props = make_properties(vec![("genesis_state", serde_json::json!(12345))]);
+		let err = decode_genesis_state(&props).unwrap_err();
+		let msg = err.to_string();
+		assert!(msg.contains("must be a string"), "unexpected error: {msg}",);
+	}
+
+	#[test]
+	fn decode_genesis_state_invalid_hex() {
+		let props = make_properties(vec![(
+			"genesis_state",
+			serde_json::Value::String("not_valid_hex!".into()),
+		)]);
+		let err = decode_genesis_state(&props).unwrap_err();
+		let msg = err.to_string();
+		assert!(msg.contains("invalid hex"), "unexpected error: {msg}",);
+	}
+
+	#[test]
+	fn verify_genesis_consistency_matching() {
+		let data = vec![0x01, 0x02, 0x03];
+		assert!(verify_genesis_consistency(&data, &data).is_ok());
+	}
+
+	#[test]
+	fn verify_genesis_consistency_mismatch() {
+		let a = vec![0x01, 0x02];
+		let b = vec![0x03, 0x04];
+		let err = verify_genesis_consistency(&a, &b).unwrap_err();
+		let msg = err.to_string();
+		assert!(msg.contains("mismatch"), "expected 'mismatch' in error: {msg}",);
 	}
 }

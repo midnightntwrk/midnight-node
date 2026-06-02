@@ -9,12 +9,12 @@ use serde::Serialize;
 pub struct ShowAddressArgs {
 	/// Target network
 	#[arg(long)]
-	network: String,
+	pub network: String,
 	/// Wallet seed
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	seed: WalletSeed,
+	pub seed: WalletSeed,
 	#[command(flatten)]
-	specific_address: SpecificAddressTypeArgs,
+	pub specific_address: SpecificAddressTypeArgs,
 }
 
 #[derive(Args, Clone, Default)]
@@ -22,25 +22,31 @@ pub struct ShowAddressArgs {
 pub struct SpecificAddressTypeArgs {
 	/// Shielded only
 	#[arg(long)]
-	shielded: bool,
+	pub shielded: bool,
 	/// Unshielded only
 	#[arg(long)]
-	unshielded: bool,
+	pub unshielded: bool,
 	/// Dust only
 	#[arg(long)]
-	dust: bool,
+	pub dust: bool,
 	/// DustPublic only
 	#[arg(long)]
-	dust_public: bool,
+	pub dust_public: bool,
 	/// CoinPublic only
 	#[arg(long)]
-	coin_public: bool,
-	/// CoinPublic untagged only
+	pub coin_public: bool,
+	/// CoinPublic tagged only
 	#[arg(long)]
-	coin_public_tagged: bool,
-	/// Unshielded User Address only (use for contract interations)
+	pub coin_public_tagged: bool,
+	/// Verifying key only
 	#[arg(long)]
-	unshielded_user_address_untagged: bool,
+	pub verifying_key: bool,
+	/// User Address only
+	#[arg(long, conflicts_with = "unshielded_user_address_untagged")]
+	pub user_address: bool,
+	/// User Address only (deprecated, use --user-address)
+	#[arg(long, conflicts_with = "user_address")]
+	pub unshielded_user_address_untagged: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,6 +58,8 @@ pub struct Addresses {
 	dust_public: String,
 	coin_public: String,
 	coin_public_tagged: String,
+	verifying_key: String,
+	user_address: String,
 	unshielded_user_address_untagged: String,
 }
 
@@ -62,9 +70,9 @@ pub enum ShowAddress {
 }
 
 pub fn execute(args: ShowAddressArgs) -> ShowAddress {
-	let shielded_wallet = ShieldedWallet::<DefaultDB>::default(args.seed);
-	let unshielded_wallet = UnshieldedWallet::default(args.seed);
-	let dust_wallet = DustWallet::<DefaultDB>::default(args.seed, None);
+	let shielded_wallet = ShieldedWallet::<DefaultDB>::default(args.seed.clone());
+	let unshielded_wallet = UnshieldedWallet::default(args.seed.clone());
+	let dust_wallet = DustWallet::<DefaultDB>::default(args.seed.clone(), None);
 
 	let all = Addresses {
 		shielded: shielded_wallet.address(&args.network).to_bech32(),
@@ -75,8 +83,15 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		coin_public_tagged: serialize(&shielded_wallet.coin_public_key)
 			.expect("failed to serialize CoinPublicKey")
 			.encode_hex(),
+		verifying_key: serialize_untagged(&unshielded_wallet.verifying_key.unwrap())
+			.expect("failed to serialize VerifyingKey")
+			.encode_hex(),
+		user_address: unshielded_wallet.user_address.0.0.encode_hex(),
 		unshielded_user_address_untagged: unshielded_wallet.user_address.0.0.encode_hex(),
 	};
+	if args.specific_address.unshielded_user_address_untagged {
+		log::warn!("--unshielded-user-address-untagged is deprecated. Use --user-address instead");
+	}
 
 	// https://github.com/clap-rs/clap/issues/2621
 	if args.specific_address.shielded {
@@ -91,7 +106,11 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		ShowAddress::SingleAddress(all.coin_public)
 	} else if args.specific_address.coin_public_tagged {
 		ShowAddress::SingleAddress(all.coin_public_tagged)
-	} else if args.specific_address.unshielded_user_address_untagged {
+	} else if args.specific_address.verifying_key {
+		ShowAddress::SingleAddress(all.verifying_key)
+	} else if args.specific_address.unshielded_user_address_untagged
+		|| args.specific_address.user_address
+	{
 		ShowAddress::SingleAddress(all.unshielded_user_address_untagged)
 	} else {
 		ShowAddress::Addresses(all)

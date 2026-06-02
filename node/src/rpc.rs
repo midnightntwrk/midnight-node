@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ use sc_client_api::{BlockBackend, BlockchainEvents};
 use sc_consensus_grandpa::{
 	FinalityProofProvider, GrandpaJustificationStream, SharedAuthoritySet, SharedVoterState,
 };
-use sc_consensus_grandpa_rpc::{Grandpa, GrandpaApiServer};
+use sc_consensus_grandpa_rpc::GrandpaApiServer;
 use sc_rpc::SubscriptionTaskExecutor;
 use sc_transaction_pool_api::TransactionPool;
 use sidechain_domain::ScEpochNumber;
@@ -51,9 +51,20 @@ use pallet_system_parameters_rpc::{SystemParametersRpc, SystemParametersRpcApiSe
 use sc_consensus_beefy::communication::notification::{
 	BeefyBestBlockStream, BeefyVersionedFinalityProofStream,
 };
+use sc_network::service::traits::NetworkPeers;
 pub use sc_rpc_api::DenyUnsafe;
+use sc_utils::mpsc::TracingUnboundedSender;
 use sp_consensus_beefy::AuthorityIdBound;
 use std::sync::Arc;
+
+use futures::StreamExt;
+use parity_scale_codec::Encode;
+use sc_rpc::utils::{BoundedVecDeque, PendingSubscription};
+use sc_utils::notification::{NotificationStream, TracingKeyStr};
+
+use crate::subscription_bounds::SubscriptionTracker;
+
+use crate::peer_info_rpc::{PeerInfoApiServer, PeerInfoRpc};
 
 /// Extra dependencies for GRANDPA
 pub struct GrandpaDeps<B> {
@@ -97,6 +108,12 @@ pub struct FullDeps<C, P, B, T, AuthorityId: AuthorityIdBound> {
 	pub main_chain_epoch_config: MainchainEpochConfig,
 	/// Backend used by the node.
 	pub backend: Arc<B>,
+	/// Network service for peer reputation queries.
+	pub network: Arc<dyn NetworkPeers + Send + Sync>,
+	/// Channel for system RPC requests (used to query connected peers).
+	pub system_rpc_tx: TracingUnboundedSender<sc_rpc::system::Request<Block>>,
+	/// Shared tracker for finality subscription limits.
+	pub subscription_tracker: SubscriptionTracker,
 }
 
 /// Instantiate all full RPC extensions.
@@ -146,6 +163,9 @@ where
 		time_source,
 		main_chain_epoch_config,
 		backend,
+		network,
+		system_rpc_tx,
+		subscription_tracker,
 	} = deps;
 
 	module.merge(System::new(client.clone(), pool).into_rpc())?;
@@ -166,20 +186,27 @@ where
 		subscription_executor,
 		finality_provider,
 	} = grandpa;
-	module.merge(
-		Grandpa::new(
-			subscription_executor,
-			shared_authority_set.clone(),
-			shared_voter_state,
-			justification_stream,
-			finality_provider,
-		)
-		.into_rpc(),
+
+	// GRANDPA: register non-subscription methods via the upstream handler,
+	// then add a bounded subscription method with limit enforcement.
+	let grandpa_handler = sc_consensus_grandpa_rpc::Grandpa::new(
+		subscription_executor.clone(),
+		shared_authority_set.clone(),
+		shared_voter_state,
+		justification_stream.clone(),
+		finality_provider,
+	);
+	module.merge(grandpa_handler.into_rpc())?;
+	register_bounded_finality_subscription(
+		&mut module,
+		"grandpa_subscribeJustifications",
+		"grandpa_justifications",
+		"grandpa_unsubscribeJustifications",
+		subscription_tracker.clone(),
+		subscription_executor,
+		justification_stream,
 	)?;
 
-	// Making synchronous calls in light client freezes the browser currently,
-	// more context: https://github.com/paritytech/substrate/pull/3480
-	// These RPCs should use an asynchronous caller instead.
 	module.merge(
 		Mmr::new(
 			client.clone(),
@@ -189,15 +216,24 @@ where
 		)
 		.into_rpc(),
 	)?;
+
 	let BeefyDeps { beefy_finality_proof_stream, beefy_best_block_stream, subscription_executor } =
 		beefy;
-	module.merge(
-		Beefy::<Block, AuthorityId>::new(
-			beefy_finality_proof_stream,
-			beefy_best_block_stream,
-			subscription_executor,
-		)?
-		.into_rpc(),
+
+	let beefy_handler = Beefy::<Block, AuthorityId>::new(
+		beefy_finality_proof_stream.clone(),
+		beefy_best_block_stream,
+		subscription_executor.clone(),
+	)?;
+	module.merge(beefy_handler.into_rpc())?;
+	register_bounded_finality_subscription(
+		&mut module,
+		"beefy_subscribeJustifications",
+		"beefy_justifications",
+		"beefy_unsubscribeJustifications",
+		subscription_tracker,
+		subscription_executor,
+		beefy_finality_proof_stream,
 	)?;
 
 	let session_validator_query = Arc::new(SessionValidatorManagementQuery::new(
@@ -208,11 +244,64 @@ where
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
 	module.merge(Midnight::new(client.clone()).into_rpc())?;
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
+	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;
 
-	// Extend this RPC with a custom API by using the following syntax.
-	// `YourRpcStruct` should have a reference to a client, which is needed
-	// to call into the runtime.
-	// `module.merge(YourRpcTrait::into_rpc(YourRpcStruct::new(ReferenceToClient, ...)))?;`
+	let custom_method_names: Vec<&str> = module.method_names().collect();
+	let openrpc_doc = crate::openrpc::build_openrpc_document(&custom_method_names);
+
+	module.register_method("rpc.discover", move |_, _, _| openrpc_doc.clone())?;
 
 	Ok(module)
+}
+
+/// Replace an upstream subscription method (already merged) with a bounded variant
+/// that enforces the global finality subscription limit via [`SubscriptionTracker`].
+fn register_bounded_finality_subscription<
+	T: Encode + Clone + Send + Sync + 'static,
+	TK: TracingKeyStr + Clone + Send + Sync + 'static,
+>(
+	module: &mut RpcModule<()>,
+	subscribe_method: &'static str,
+	notification_method: &'static str,
+	unsubscribe_method: &'static str,
+	tracker: SubscriptionTracker,
+	executor: SubscriptionTaskExecutor,
+	stream: NotificationStream<T, TK>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	module.remove_method(subscribe_method);
+	module.remove_method(unsubscribe_method);
+	module.register_subscription(
+		subscribe_method,
+		notification_method,
+		unsubscribe_method,
+		move |_params, pending, _ctx, _extensions| {
+			let tracker = tracker.clone();
+			let stream = stream.clone();
+			let executor = executor.clone();
+			async move {
+				let guard = match tracker.try_acquire() {
+					Some(g) => g,
+					None => {
+						pending
+							.reject(jsonrpsee::types::ErrorObject::owned(
+								-32000i32,
+								"Finality subscription limit reached",
+								None::<()>,
+							))
+							.await;
+						return;
+					},
+				};
+				let rx = stream.subscribe(100_000);
+				let mapped = rx.map(|item: T| sp_core::Bytes::from(item.encode()));
+				sc_rpc::utils::spawn_subscription_task(&executor, async move {
+					let _guard = guard;
+					PendingSubscription::from(pending)
+						.pipe_from_stream(mapped, BoundedVecDeque::default())
+						.await;
+				});
+			}
+		},
+	)?;
+	Ok(())
 }

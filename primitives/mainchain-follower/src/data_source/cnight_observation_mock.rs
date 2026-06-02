@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ use midnight_primitives_cnight_observation::{
 };
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use sidechain_domain::{McBlockHash, McTxHash};
 
 pub struct CNightObservationDataSourceMock;
@@ -83,7 +83,8 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		_config: &CNightAddresses,
 		start: &CardanoPosition,
 		_current_tip: McBlockHash,
-		_capacity: usize,
+		_tx_capacity: usize,
+		_utxo_overestimate: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		let mut end = start.clone();
 		end.block_number += 1;

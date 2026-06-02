@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -20,9 +20,8 @@ use crate::{
 use assert_matches::assert_matches;
 use frame_support::{assert_err, assert_ok, pallet_prelude::Weight, traits::OnFinalize};
 use frame_system::RawOrigin;
-use midnight_node_ledger::types::{
-	BlockContext,
-	active_version::{DeserializationError, LedgerApiError, MalformedError, TransactionError},
+use midnight_node_ledger::types::active_version::{
+	BlockContext, DeserializationError, LedgerApiError, MalformedError, TransactionError,
 };
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
@@ -38,7 +37,7 @@ use test_log::test;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::init_storage_paritydb(
+	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -60,7 +59,7 @@ fn process_block(block_number: u64, block_context: BlockContext) {
 fn test_send_mn_transaction() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
 		init_ledger_state(block_context.into());
 
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx));
@@ -94,7 +93,7 @@ fn test_send_mn_transaction_malformed_tx() {
 fn test_send_mn_transaction_invalid_tx() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(STORE_TX);
 		init_ledger_state(block_context.into());
 
 		let error: sp_runtime::DispatchError = Error::<Test>::Transaction(
@@ -112,13 +111,13 @@ fn test_send_mn_transaction_invalid_tx() {
 fn test_get_contract_state() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx_deploy, block_context_deploy) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
 		let (tx_store, block_context_store) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(STORE_TX);
 		let (tx_check, block_context_check) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(CHECK_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(CHECK_TX);
 		let (tx_maintenance, block_context_maintenance) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(MAINTENANCE_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(MAINTENANCE_TX);
 
 		init_ledger_state(block_context_deploy.into());
 
@@ -141,9 +140,34 @@ fn test_get_contract_state() {
 }
 
 #[test]
+fn test_get_contract_state_not_present() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		// A random address that hasn't been deployed
+		let addr = hex::decode(CONTRACT_ADDR).expect("Address should be a valid hex code");
+
+		let result = mock::Midnight::get_contract_state(&addr);
+		assert_eq!(result, Err(LedgerApiError::ContractNotPresent));
+	})
+}
+
+#[test]
+fn test_get_unclaimed_amount_beneficiary_not_found() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		// A 32-byte address that has never had any unclaimed rewards in the genesis state
+		let addr = [0u8; 32];
+		let result = mock::Midnight::get_unclaimed_amount(&addr);
+		assert_eq!(result, Err(LedgerApiError::BeneficiaryNotFound));
+	})
+}
+
+#[test]
 fn test_validation_works() {
 	let (tx, block_context) =
-		midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
 
 	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 	mock::new_test_ext().execute_with(|| {
@@ -179,7 +203,7 @@ fn test_validation_fails() {
 #[test]
 fn test_pre_dispatch_accepts_valid_transaction() {
 	let (tx, block_context) =
-		midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
 
 	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 	mock::new_test_ext().execute_with(|| {
@@ -196,7 +220,7 @@ fn test_pre_dispatch_rejects_contract_not_present() {
 	// This tests the DDoS mitigation: transactions that would fail the guaranteed
 	// part are rejected at pre_dispatch time, before consuming blockspace.
 	let (tx, block_context) =
-		midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(STORE_TX);
 
 	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
 	mock::new_test_ext().execute_with(|| {
@@ -236,9 +260,9 @@ fn test_pre_dispatch_rejects_replay_attack() {
 	mock::new_test_ext().execute_with(|| {
 		// Set up ledger state and deploy contract
 		let (deploy_tx, block_context_deploy) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
 		let (store_tx, block_context_store) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(STORE_TX);
 
 		init_ledger_state(block_context_deploy.into());
 
@@ -268,7 +292,7 @@ fn test_pre_dispatch_rejects_replay_attack() {
 fn test_pre_dispatch_validation_does_not_modify_state() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -298,7 +322,7 @@ fn test_pre_dispatch_validation_does_not_modify_state_on_failure() {
 	mock::new_test_ext().execute_with(|| {
 		// STORE_TX will fail (no contract deployed) but should not modify state
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(STORE_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(STORE_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -341,11 +365,10 @@ fn sets_extra_transaction_size_weight() {
 }
 
 #[test]
-#[ignore = "TODO COST MODEL - fix when new Ledger's cost model is available"]
 fn test_get_mn_transaction_fee() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(DEPLOY_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -372,7 +395,7 @@ fn test_get_ledger_parameters() {
 fn test_send_zswap_tx() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(ZSWAP_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(ZSWAP_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -385,7 +408,7 @@ fn test_send_zswap_tx() {
 fn test_get_zswap_state_root() {
 	mock::new_test_ext().execute_with(|| {
 		let (tx, block_context) =
-			midnight_node_ledger_helpers::extract_info_from_tx_with_context(ZSWAP_TX);
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(ZSWAP_TX);
 
 		init_ledger_state(block_context.into());
 
@@ -398,6 +421,30 @@ fn test_get_zswap_state_root() {
 		let new_root = mock::Midnight::get_zswap_state_root().unwrap();
 
 		assert_ne!(new_root, root);
+	});
+}
+
+#[test]
+fn test_get_ledger_state_root() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let root = mock::Midnight::get_ledger_state_root();
+
+		assert_ok!(&root);
+		assert!(!root.unwrap().is_empty());
+	});
+}
+
+#[test]
+fn test_get_ledger_state_root_differs_from_zswap_state_root() {
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(BlockContext::default());
+
+		let ledger_root = mock::Midnight::get_ledger_state_root().unwrap();
+		let zswap_root = mock::Midnight::get_zswap_state_root().unwrap();
+
+		assert_ne!(ledger_root, zswap_root);
 	});
 }
 

@@ -22,6 +22,8 @@ The runtime upgrade process follows these steps:
 
 ---
 
+> **Note**: The order of Council and Technical Committee proposals (Steps 2 and 3) is not relevant. They can be done in parallel.
+
 ## Step 1: Get the Code Hash
 
 Before starting the governance process, you need the code hash of the new runtime WASM.
@@ -190,8 +192,9 @@ With both bodies having approved, anyone can now close the federated motion to e
 
 Go to **Developer > Extrinsics** and submit:
 
-- **extrinsic**: `federatedAuthority` > `motionClose(motionHash)`
+- **extrinsic**: `federatedAuthority` > `motionClose(motionHash, proposalWeightBound)`
 - **motionHash**: The motion hash from the storage query
+- **proposalWeightBound**: Weight estimate for the dispatched call (e.g., `refTime: 1000000000`, `proofSize: 1000000`)
 
 ![Federated authority motion close extrinsic](assets/extrinsic-federated-auth-motion-close.png)
 

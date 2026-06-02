@@ -7,9 +7,6 @@ inputs:
   node-image:
     description: "The full node image name (with tag)"
     required: false
-  upgrader-image:
-    description: "Optional: the upgrader image (if needed)"
-    required: false
   toolkit-image:
     description: "Optional: the toolkit image (if needed)"
     required: false
@@ -37,16 +34,16 @@ runs:
 
         case "${{ inputs.just-command }}" in
           indexer-api-e2e)
-            just ${{ inputs.just-command }}
+            just "${{ inputs.just-command }}"
             ;;
           startup-dev-e2e | startup-qanet-e2e)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}"
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}"
             ;;
-          node-e2e | toolkit-e2e | toolkit-update-ledger-parameters-e2e | toolkit-maintenance-e2e | toolkit-mint-e2e | toolkit-ut-e2e | toolkit-multi-dest-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
+          toolkit-e2e | toolkit-update-ledger-parameters-e2e | toolkit-maintenance-e2e | toolkit-mint-e2e | toolkit-tokens-minter-e2e | toolkit-multi-dest-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
             ;;
           *)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.upgrader-image }}"
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}"
             ;;
         esac
       shell: bash

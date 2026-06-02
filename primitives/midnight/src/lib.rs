@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -17,11 +17,13 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use hex_literal::hex;
-use midnight_node_ledger::types::{BlockContext, Hash, Tx, active_version::LedgerApiError};
+use midnight_node_ledger::types::{
+	Hash, Tx,
+	active_version::{BlockContext, LedgerApiError},
+};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
-use sp_runtime::RuntimeDebug;
 
 pub type LedgerMutFn<E> = fn(Vec<u8>) -> Result<Vec<u8>, E>;
 /// Trait to allow pallets to mutate the Ledger state
@@ -79,7 +81,7 @@ pub mod bridge {
 	}
 
 	/// Error type returned when bridge recipient bytes cannot be converted.
-	#[derive(Clone, Copy, PartialEq, Eq, RuntimeDebug)]
+	#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 	pub enum BridgeRecipientError {
 		/// The encoded recipient exceeds the configured byte limit.
 		TooLong,
@@ -95,7 +97,7 @@ pub mod bridge {
 		DecodeWithMemTracking,
 		MaxEncodedLen,
 		TypeInfo,
-		RuntimeDebug,
+		Debug,
 		Default,
 	)]
 	#[scale_info(skip_type_params(BridgeRecipientMaxLen))]

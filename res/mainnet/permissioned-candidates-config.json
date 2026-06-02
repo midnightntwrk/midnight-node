@@ -1,0 +1,65 @@
+{
+  "permissioned_candidates_policy_id": "0x2c322542e32817f26a75bc49eaaf3ce831b62dafe4040e2f296e339a",
+  "initial_permissioned_candidates": [
+    {
+      "aura_pub_key": "0x0ab04fd165acd8df55e6695a68bbaa2dcb2f768ee5625420bb012ef11ee5f737",
+      "grandpa_pub_key": "0x794084b91735c1cbeb2a75e8e09abbb21433d71aa37e966d04702f21949f9ca5",
+      "sidechain_pub_key": "0x03d55a64edd5c294265bbe46051b47e8bd0d0299bf18b14345ca53e5bac6f53cbd",
+      "beefy_pub_key": "0x03d55a64edd5c294265bbe46051b47e8bd0d0299bf18b14345ca53e5bac6f53cbd"
+    },
+    {
+      "aura_pub_key": "0x78fe1f9d48ff2f3561f62e13b0c8aa41b7570ac046e4e35d9692d5ba87dbf452",
+      "grandpa_pub_key": "0x5c6c16299ac3f0f9063fee4ec0ba6ac677aea36c13dcb7815fd87724b82cb3f6",
+      "sidechain_pub_key": "0x0302873e08924b80c6d43314bd69e3a4ff25d645f87e8bded6cfe2f318ec299c37",
+      "beefy_pub_key": "0x0302873e08924b80c6d43314bd69e3a4ff25d645f87e8bded6cfe2f318ec299c37"
+    },
+    {
+      "aura_pub_key": "0x506135964b135adfdbea434003172d620732731efd4e33f3eca73c785ebd5d0a",
+      "grandpa_pub_key": "0x366a577abd0e3f0d4230cad84cd7669870d2dd531dad81b9231f7ad3f2b75aa8",
+      "sidechain_pub_key": "0x021a620667273158c5ce5e030fb2598acc8d11b306abe6105d12defcd4ca997324",
+      "beefy_pub_key": "0x021a620667273158c5ce5e030fb2598acc8d11b306abe6105d12defcd4ca997324"
+    },
+    {
+      "aura_pub_key": "0x22004d700d62df213b2edc6d05bca2d1cb5de88c9f12058de94f164a13bb0b2b",
+      "grandpa_pub_key": "0x38b6c38be64b7679316e80382fb01fa856c94bf979de233a7aaabfca4489293f",
+      "sidechain_pub_key": "0x03c11695bf19bcfe043f3539bb61502134293ec325b065cb13f7dad56ffd24b929",
+      "beefy_pub_key": "0x03c11695bf19bcfe043f3539bb61502134293ec325b065cb13f7dad56ffd24b929"
+    },
+    {
+      "aura_pub_key": "0xfaed36e0e8910990c42b865abe3ad33ca91958f589717956654d93a124556d12",
+      "grandpa_pub_key": "0x01e389e9ac23e585a43485029f89112544c76f397683fddbf37e5e1e30cce32f",
+      "sidechain_pub_key": "0x03deafaa8e0286bcc0f637f0bd82486578d97f6e691fee856e1bdc92d8b003cebd",
+      "beefy_pub_key": "0x03deafaa8e0286bcc0f637f0bd82486578d97f6e691fee856e1bdc92d8b003cebd"
+    },
+    {
+      "aura_pub_key": "0x8a7abbefa181f46dada06b8e6faea4d2b3bb693c0f3bb0a07e57ba7cb138415b",
+      "grandpa_pub_key": "0xab44c485474457eb2cec355b60a9352c3ce39fd422deb885f1e5fd92dca04842",
+      "sidechain_pub_key": "0x0263a7c11e3f720b86ff52cfb68de9217259cd2781414526b6291afb097344b743",
+      "beefy_pub_key": "0x0263a7c11e3f720b86ff52cfb68de9217259cd2781414526b6291afb097344b743"
+    },
+    {
+      "aura_pub_key": "0x2a55fc6597761cc9a4869c6a92d50d21bc85f03c4a93bb07279225bad12aac63",
+      "grandpa_pub_key": "0xc34944dcec3c142b0d91bebdcaa3299a523ffd1a7d3f512ce2784398c9f4a64d",
+      "sidechain_pub_key": "0x0262527e47b08356aa8314ca6aa38ed18a28ee7d4a87e69446f8d89c0bfc4cd6e9",
+      "beefy_pub_key": "0x0262527e47b08356aa8314ca6aa38ed18a28ee7d4a87e69446f8d89c0bfc4cd6e9"
+    },
+    {
+      "aura_pub_key": "0xbc0bcf2d14d13073f5117b4ff63e71d4db2cfb939637b0fb394fa26e369f142c",
+      "grandpa_pub_key": "0x1a2548519519879d0185ab5ea3c6a1b3675e9ec7f0f30ea858b7723102579a8d",
+      "sidechain_pub_key": "0x03882e9305e46b270d0f68314fef20a8df3d16d83338fa12dacb5df43a60e14043",
+      "beefy_pub_key": "0x03882e9305e46b270d0f68314fef20a8df3d16d83338fa12dacb5df43a60e14043"
+    },
+    {
+      "aura_pub_key": "0xfcbfa8c3d767d8ccbf41c7ac666c802363545f2f620854744ba86ed89ba87925",
+      "grandpa_pub_key": "0x0f708bf4ff76ccee2ab2ddc6d7f7b9fd481a2aba724b6a37c43adefe321df824",
+      "sidechain_pub_key": "0x039fff087435982cd547adbb9ff8c7ced547dbade96c12d25976f86f3c8fcadeb9",
+      "beefy_pub_key": "0x039fff087435982cd547adbb9ff8c7ced547dbade96c12d25976f86f3c8fcadeb9"
+    },
+    {
+      "aura_pub_key": "0x34b084864869ce00e9f31fb0fd0d2dbe17fd98b97d9a91c2508a895cdba5592f",
+      "grandpa_pub_key": "0x27c5f1d94ffe4e559915e1ca0eaceb7d0d98954938f8ed438be33d48d7f978b7",
+      "sidechain_pub_key": "0x032e7c919e71a7a9aaffe1d251a647a056ebbd2b53eb84ebba676da4a62c82abc6",
+      "beefy_pub_key": "0x032e7c919e71a7a9aaffe1d251a647a056ebbd2b53eb84ebba676da4a62c82abc6"
+    }
+  ]
+}
