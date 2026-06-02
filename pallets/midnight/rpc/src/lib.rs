@@ -40,6 +40,11 @@ pub const MAX_STATE_QUERIES: usize = 100;
 /// TODO: Re-use a constant from midnight-ledger once there is a depth limit
 /// for nested `StateValue`.
 pub const MAX_PATH_DEPTH: usize = 16;
+/// Per-key byte budget. A serialized `AlignedValue` for any reasonable index,
+/// map key, or merkle position fits well under this; the cap exists so a
+/// single accepted request cannot allocate megabytes per key before the
+/// deserializer rejects it.
+pub const MAX_KEY_BYTES: usize = 4 * 1024;
 
 /// Midnight core RPC API.
 ///
@@ -441,17 +446,33 @@ where
 		let dehexed_address = hex::decode(&contract_address)
 			.map_err(|_| StateRpcError::BadContractAddress(contract_address))?;
 
-		// Extract raw bytes from each StorageKey and enforce depth bound.
-		// StorageKey handles hex decoding at the serde layer.
-		let paths: Vec<Vec<Vec<u8>>> = queries
-			.iter()
-			.map(|q| {
-				if q.path.len() > MAX_PATH_DEPTH {
-					return Err(StateRpcError::PathTooDeep(q.path.len()));
-				}
-				Ok(q.path.iter().map(|key| key.0.clone()).collect())
-			})
-			.collect::<Result<Vec<_>, StateRpcError>>()?;
+		// Per-query input validation: depth and key size are reported as
+		// `RpcStateQueryResult.error` so a single bad query does not abort
+		// the whole batch. `local_errors[i]` carries the validation outcome
+		// for `queries[i]`; only well-formed queries are forwarded to the
+		// bridge (and we re-zip results back in by index below).
+		let mut local_errors: Vec<Option<String>> = Vec::with_capacity(queries.len());
+		let mut forwarded_indices: Vec<usize> = Vec::with_capacity(queries.len());
+		let mut forwarded_paths: Vec<Vec<Vec<u8>>> = Vec::with_capacity(queries.len());
+		for (i, q) in queries.iter().enumerate() {
+			if q.path.len() > MAX_PATH_DEPTH {
+				local_errors.push(Some(format!(
+					"path too deep: {} steps exceeds the maximum of {MAX_PATH_DEPTH}",
+					q.path.len()
+				)));
+				continue;
+			}
+			if let Some(oversize) = q.path.iter().find(|k| k.0.len() > MAX_KEY_BYTES) {
+				local_errors.push(Some(format!(
+					"path key too large: {} bytes exceeds the maximum of {MAX_KEY_BYTES}",
+					oversize.0.len()
+				)));
+				continue;
+			}
+			local_errors.push(None);
+			forwarded_indices.push(i);
+			forwarded_paths.push(q.path.iter().map(|key| key.0.clone()).collect());
+		}
 
 		let api = self.client.runtime_api();
 		let at = at.unwrap_or_else(|| self.client.info().best_hash);
@@ -465,27 +486,34 @@ where
 		// Read the state key via the runtime API, then call the bridge directly.
 		// This avoids going through WASM for each query — the bridge navigates
 		// the contract state lazily in ParityDB (O(log n) per query).
-		let state_key = api
-			.get_state_key(at)
-			.map_err(|_| StateRpcError::UnableToGetContractState)?;
+		let state_key =
+			api.get_state_key(at).map_err(|_| StateRpcError::UnableToGetContractState)?;
 
-		let results = query_contract_state(&state_key, &dehexed_address, &paths)
-			.map_err(|_| StateRpcError::UnableToGetContractState)?;
+		let bridge_results = query_contract_state(&state_key, &dehexed_address, &forwarded_paths)
+			.map_err(|e| match e {
+			LedgerApiError::ContractNotPresent => StateRpcError::ContractNotPresent,
+			_ => StateRpcError::UnableToGetContractState,
+		})?;
 
-		Ok(results
+		// Stitch bridge results back into the original query order, carrying
+		// the per-query validation errors through.
+		let mut bridge_iter = bridge_results.into_iter();
+		Ok(queries
 			.into_iter()
-			.zip(queries.iter())
-			.map(|(result, query)| {
-				match result {
-					Ok(value) => RpcStateQueryResult {
-						query: query.clone(),
-						value: value.map(hex::encode),
-						error: None,
+			.zip(local_errors.into_iter())
+			.map(|(query, local_err)| {
+				if let Some(error) = local_err {
+					return RpcStateQueryResult { query, value: None, error: Some(error) };
+				}
+				match bridge_iter.next() {
+					Some(Ok(value)) => {
+						RpcStateQueryResult { query, value: Some(hex::encode(value)), error: None }
 					},
-					Err(msg) => RpcStateQueryResult {
-						query: query.clone(),
+					Some(Err(msg)) => RpcStateQueryResult { query, value: None, error: Some(msg) },
+					None => RpcStateQueryResult {
+						query,
 						value: None,
-						error: Some(msg),
+						error: Some("internal: bridge produced fewer results than queries".into()),
 					},
 				}
 			})

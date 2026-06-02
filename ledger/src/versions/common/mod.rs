@@ -703,21 +703,21 @@ where
 
 	/// Query specific fields in a contract's state tree.
 	///
-	/// Returns one result per path, in the same order as the input.
+	/// Returns one result per input path, in the same order. A per-query
+	/// `Err` is a recoverable navigation failure (out-of-bounds, malformed
+	/// key, etc.); the outer `LedgerApiError` is reserved for whole-request
+	/// failures (address malformed, contract absent, ledger unreadable).
 	pub fn query_contract_state(
 		state_key: &[u8],
 		contract_address: &[u8],
 		paths: &[Vec<Vec<u8>>],
-	) -> Result<Vec<Result<Option<Vec<u8>>, String>>, LedgerApiError> {
+	) -> Result<Vec<Result<Vec<u8>, String>>, LedgerApiError> {
 		let api = api::new();
 		let addr = api.deserialize::<ContractAddress>(contract_address)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		// TODO: Use a dedicated ContractNotPresent error once PR #916 is merged.
-		// https://github.com/midnightntwrk/midnight-node/pull/916
-		let contract_state = ledger
-			.get_contract_state(addr)
-			.ok_or(LedgerApiError::NoLedgerState)?;
+		let contract_state =
+			ledger.get_contract_state(addr).ok_or(LedgerApiError::ContractNotPresent)?;
 
 		let root = contract_state.data.get_ref().clone();
 		Ok(paths.iter().map(|path| resolve_state_path(&root, path)).collect())
@@ -1191,7 +1191,10 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 ///
 /// Each element in `path` is a serialized `AlignedValue` key, interpreted
 /// based on the current `StateValue` variant (array index, map key, or
-/// merkle tree position), mirroring the VM's `idx` instruction.
+/// merkle tree position), mirroring the VM's `idx` instruction. Map and
+/// merkle-tree misses surface as a serialized `StateValue::Null`, matching
+/// VM semantics; out-of-bounds array indices are recoverable per-query
+/// errors.
 ///
 /// O(log n) — only the nodes along the path are loaded from storage.
 ///
@@ -1202,54 +1205,109 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 fn resolve_state_path<D: DB>(
 	root: &onchain_runtime_local::state::StateValue<D>,
 	path: &[Vec<u8>],
-) -> Result<Option<Vec<u8>>, String> {
+) -> Result<Vec<u8>, String> {
 	use base_crypto_local::fab::{AlignedValue, Value};
 	use onchain_runtime_local::state::StateValue;
 
+	// An empty path would return the entire serialized contract state — that
+	// defeats the lazy-access contract this RPC advertises (`O(log n)` per
+	// query). Reject explicitly rather than letting it through.
+	if path.is_empty() {
+		return Err("path cannot be empty; provide at least one step".into());
+	}
+
+	let serialize_value = |v: &StateValue<D>| -> Result<Vec<u8>, String> {
+		let size = midnight_serialize_local::tagged_serialized_size(v);
+		let mut buf = Vec::with_capacity(size);
+		midnight_serialize_local::tagged_serialize(v, &mut buf)
+			.map_err(|e| format!("failed to serialize result: {e}"))?;
+		Ok(buf)
+	};
+
 	let mut current = root.clone();
 	for key_bytes in path {
-		let key: AlignedValue = midnight_serialize_local::Deserializable::deserialize(
-			&mut key_bytes.as_slice(), 0,
-		).map_err(|e| format!("failed to deserialize key: {e}"))?;
+		// Deserializable::deserialize advances the slice as it reads; check
+		// that the input is fully consumed so the wire format is canonical
+		// (two byte sequences with trailing junk must not silently resolve
+		// to the same AlignedValue).
+		let mut reader: &[u8] = key_bytes.as_slice();
+		let key: AlignedValue =
+			midnight_serialize_local::Deserializable::deserialize(&mut reader, 0)
+				.map_err(|e| format!("failed to deserialize key: {e}"))?;
+		if !reader.is_empty() {
+			return Err(format!(
+				"path key has {} trailing byte(s) after a valid AlignedValue",
+				reader.len()
+			));
+		}
 
 		current = match &current {
 			StateValue::Array(arr) => {
-				let i: u8 = (&**AsRef::<Value>::as_ref(&key)).try_into()
+				// Accept any AlignedValue integer width up to u64 and
+				// range-check against the array length; the previous
+				// `try_into::<u8>` rejected legitimate u16/u32/u64 widths.
+				let i: u64 = (&**AsRef::<Value>::as_ref(&key))
+					.try_into()
 					.map_err(|e| format!("invalid array index: {e}"))?;
-				arr.get(i as usize).cloned()
-					.ok_or_else(|| format!("array index {i} out of bounds"))?
-			}
+				let idx: usize =
+					i.try_into().map_err(|_| format!("array index {i} does not fit in usize"))?;
+				arr.get(idx).cloned().ok_or_else(|| format!("array index {i} out of bounds"))?
+			},
 			StateValue::Map(map) => match map.get(&key) {
 				Some(sp) => (*sp).clone(),
-				None => return Ok(None),
+				// VM `idx` substitutes Null for a map miss; return the same
+				// over the wire so clients see a single canonical sentinel
+				// instead of an ambiguous `value: None, error: None`.
+				None => return serialize_value(&StateValue::Null),
 			},
 			StateValue::BoundedMerkleTree(tree) => {
-				let pos: u64 = (&**AsRef::<Value>::as_ref(&key)).try_into()
+				let pos: u64 = (&**AsRef::<Value>::as_ref(&key))
+					.try_into()
 					.map_err(|e| format!("invalid merkle tree position: {e}"))?;
-				let max_leaves = 1u64 << tree.height() as u64;
+				// `1u64 << tree.height()` overflows once height >= 64 (panic
+				// in debug, silent wrap in release). Guard with checked_shl.
+				let max_leaves = 1u64.checked_shl(tree.height() as u32).ok_or_else(|| {
+					format!(
+						"merkle tree height {} exceeds the addressable u64 range",
+						tree.height()
+					)
+				})?;
 				if pos >= max_leaves {
 					return Err(format!("tree position {pos} out of range (max {max_leaves})"));
 				}
-				match tree.index(pos) {
-					Some((hash, ())) => StateValue::Cell(
-						ledger_storage_local::arena::Sp::new(hash.into()),
-					),
-					None => return Ok(None),
+				// `MerkleTreeNode::index` panics if any node along the
+				// traversal is `Collapsed { .. }`; treat that as a recoverable
+				// per-query error so a public RPC caller can't crash the
+				// worker thread.
+				let leaf =
+					std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tree.index(pos)))
+						.map_err(|_| {
+							"merkle tree position falls in a collapsed portion of the tree"
+								.to_string()
+						})?;
+				match leaf {
+					Some((hash, ())) => {
+						StateValue::Cell(ledger_storage_local::arena::Sp::new(hash.into()))
+					},
+					// Empty BMT leaf mirrors the VM-style "no value" → Null.
+					None => return serialize_value(&StateValue::Null),
 				}
-			}
+			},
 			_ => return Err("only array, map, and merkle tree can be indexed".into()),
 		};
 	}
 
-	if matches!(&current, StateValue::Map(_) | StateValue::BoundedMerkleTree(_)) {
+	// Refuse to serialize a non-leaf collection: Array/Map/BoundedMerkleTree
+	// can each be arbitrarily large, and walking the whole subtree breaks
+	// the documented `O(log n)` cost. Force callers to drill in further.
+	if matches!(
+		&current,
+		StateValue::Array(_) | StateValue::Map(_) | StateValue::BoundedMerkleTree(_)
+	) {
 		return Err("path resolves to a collection; provide a deeper path".into());
 	}
 
-	let size = midnight_serialize_local::tagged_serialized_size(&current);
-	let mut buf = Vec::with_capacity(size);
-	midnight_serialize_local::tagged_serialize(&current, &mut buf)
-		.map_err(|e| format!("failed to serialize result: {e}"))?;
-	Ok(Some(buf))
+	serialize_value(&current)
 }
 
 #[cfg(test)]

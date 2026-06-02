@@ -640,8 +640,6 @@ impl MidnightClient {
         Err("Transaction progress ended without confirmation".into())
     }
 
-    // ========== Contract State Query Methods ==========
-
     /// Get the state of a contract by its address at the best block.
     pub async fn get_contract_state(
         &self,
@@ -674,19 +672,44 @@ impl MidnightClient {
         Ok(response)
     }
 
-    /// Query specific fields from a contract's state tree via `midnight_queryContractState`.
+    /// Query specific fields from a contract's state tree at the best block
+    /// via `midnight_queryContractState`.
     pub async fn query_contract_state(
         &self,
         contract_address: &str,
         queries: Vec<RpcStateQuery>,
     ) -> Result<Vec<RpcStateQueryResult>, Box<dyn std::error::Error>> {
-        let results: Vec<RpcStateQueryResult> = self
-            .rpc_client
-            .request(
-                "midnight_queryContractState",
-                rpc_params![contract_address, queries],
-            )
-            .await?;
+        self.query_contract_state_at(contract_address, queries, None)
+            .await
+    }
+
+    /// Query specific fields from a contract's state tree, optionally at a
+    /// specific block hash. Mirrors `get_contract_state_at` for the lazy
+    /// path-navigation RPC.
+    pub async fn query_contract_state_at(
+        &self,
+        contract_address: &str,
+        queries: Vec<RpcStateQuery>,
+        at: Option<H256>,
+    ) -> Result<Vec<RpcStateQueryResult>, Box<dyn std::error::Error>> {
+        let results: Vec<RpcStateQueryResult> = match at {
+            Some(hash) => {
+                self.rpc_client
+                    .request(
+                        "midnight_queryContractState",
+                        rpc_params![contract_address, queries, hash],
+                    )
+                    .await?
+            }
+            None => {
+                self.rpc_client
+                    .request(
+                        "midnight_queryContractState",
+                        rpc_params![contract_address, queries],
+                    )
+                    .await?
+            }
+        };
         Ok(results)
     }
 }
