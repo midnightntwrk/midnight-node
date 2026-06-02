@@ -497,9 +497,12 @@ rebuild-genesis-state-perfnet:
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
-    BUILD +rebuild-genesis-state-perfnet
-    BUILD +rebuild-genesis-state-govnet
-    BUILD +rebuild-genesis-state-qanet
+    # Perfnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-perfnet
+    # Govnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-govnet
+    # QANet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-qanet
     # Preview is not meant to be reset
     #BUILD +rebuild-genesis-state-preview
     # Preprod is not meant to be reset
@@ -554,9 +557,12 @@ rebuild-chainspec:
 # Use DETERMINISTIC=true for reproducible srtool builds (slower but verifiable)
 rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=devnet
-    BUILD +rebuild-chainspec --NETWORK=govnet
-    BUILD +rebuild-chainspec --NETWORK=qanet
-    BUILD +rebuild-chainspec --NETWORK=perfnet
+    # Govnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=govnet
+    # QANet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=qanet
+    # Perfnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=perfnet
     # Preview is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preview
     # Preprod is not meant to be reset
