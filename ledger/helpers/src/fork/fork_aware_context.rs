@@ -130,7 +130,7 @@ impl ForkAwareLedgerContext {
 		}
 	}
 
-	// Extract the inner Ledger8 context, consuming self.
+	// Extract the inner Ledger9 context, consuming self.
 	///
 	/// Returns `None` if the context is still before Ledger9.
 	pub fn into_ledger9(self) -> Option<crate::ledger_9::context::LedgerContext<Db9>> {
