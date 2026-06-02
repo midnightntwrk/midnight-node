@@ -233,7 +233,7 @@ const ICS_POOL_CFG: DbPoolCfg =
 /// the cNIGHT addresses we query db-sync for. Falls back to the per-call
 /// db-backed source otherwise; sync is significantly slower in that case.
 async fn build_cnight_observation_data_source(
-	cnight_observation_window_size: Option<u32>,
+	cnight_observation_window_size: u32,
 	cnight_genesis_path: Option<String>,
 	cnight_observation_pool: Pool<Postgres>,
 	db_sync_block_data_source_config: &DbSyncBlockDataSourceConfig,
@@ -242,9 +242,7 @@ async fn build_cnight_observation_data_source(
 	Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
 	Box<dyn Error + Send + Sync + 'static>,
 > {
-	use midnight_primitives_mainchain_follower::data_source::{
-		BulkCachedCNightObservationDataSource, DEFAULT_WINDOW_SIZE,
-	};
+	use midnight_primitives_mainchain_follower::data_source::BulkCachedCNightObservationDataSource;
 
 	match cnight_genesis_path {
 		Some(path) => {
@@ -261,7 +259,7 @@ async fn build_cnight_observation_data_source(
 			// `next` (inclusive of the boundary event).
 			let next_pos: u32 = cnight_genesis.next_cardano_position.block_number;
 			let init_horizon = next_pos.saturating_sub(1);
-			let window_size: u32 = cnight_observation_window_size.unwrap_or(DEFAULT_WINDOW_SIZE);
+			let window_size: u32 = cnight_observation_window_size;
 
 			// Empty initial cache so the node starts up immediately. The
 			// first follower call will see `tip_pos > horizon`, delegate

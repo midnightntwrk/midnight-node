@@ -26,6 +26,13 @@ pub enum StorageSeparation {
 	Unified,
 }
 
+/// Default for `cnight_observation_window_size` when not present in config.
+/// Applied by serde on deserialization (the path that builds a live config);
+/// the derived `Default` is only used by a key-enumeration test helper.
+fn default_cnight_observation_window_size() -> u32 {
+	midnight_primitives_mainchain_follower::data_source::DEFAULT_WINDOW_SIZE
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
 /// Parameters specific to Midnight
@@ -92,7 +99,8 @@ pub struct MidnightCfg {
 	/// Bigger = fewer cache misses during sync but more memory; smaller =
 	/// less memory but more db-fallback calls. Defaults to
 	/// `DEFAULT_WINDOW_SIZE` (100k) when unset.
-	pub cnight_observation_window_size: Option<u32>,
+	#[serde(default = "default_cnight_observation_window_size")]
+	pub cnight_observation_window_size: u32,
 
 	/// Size of ledger storage cache (number of nodes)
 	pub storage_cache_size: usize,
