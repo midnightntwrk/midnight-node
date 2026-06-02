@@ -21,7 +21,7 @@ permissions: {}
 jobs:
   publish-amd64:
     name: AMD Build and Publish
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: [self-hosted, "tier:large"]
     outputs:
       IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
     env:
@@ -45,13 +45,13 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -72,7 +72,7 @@ jobs:
           config: ./midnight-node-ci/.github/season.yml
 
       - name: Install just
-        uses: taiki-e/install-action@94a7388bec5d4c8dd93e3ebf09e0ff448f3f6f4d #v2.68.35
+        uses: taiki-e/install-action@3235f8901fd37ffed0052b276cec25a362fb82e9 #v2.77.7
         with:
           tool: just
 
@@ -109,7 +109,7 @@ jobs:
             --TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
 
       - name: Free disk space
-        if: steps.check-images.outputs.images_exist != 'true'
+        if: steps.check-images.outputs.images_exist != 'true' && runner.environment != 'self-hosted'
         run: |
           git fetch origin "$GITHUB_REF" --depth=1
           git checkout FETCH_HEAD -- "scripts/free-disk-space.sh"
@@ -124,7 +124,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          # We don't use --ci as we want artifacts to be saved 
+          # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
@@ -152,7 +152,7 @@ jobs:
           subject-digest: ${{ steps.digests.outputs.toolkit }}
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  #v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  #v7.0.1
         if: success() || failure()
         with:
           name: midnight-node-amd64
@@ -238,7 +238,7 @@ jobs:
             "SHA256SUMS-${PLATFORM}"
 
       - name: Archive release notes
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-notes
           path: RELEASE_NOTES.md
@@ -267,7 +267,7 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
 
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -342,7 +342,7 @@ jobs:
 
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  #v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  #v7.0.1
         if: success() || failure()
         with:
           name: midnight-node-arm64
@@ -480,14 +480,14 @@ jobs:
       attestations: write  # Required for GitHub native attestations
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}

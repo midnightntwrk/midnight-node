@@ -13,7 +13,7 @@
 
 use crate::data_source::candidates_data_source::observed_async_trait;
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
-use crate::db::{MultiAssetCache, get_deregistrations, get_registrations};
+use crate::db::{MultiAssetCache, PagedQuery, get_deregistrations, get_registrations};
 use crate::{
 	CreateData, DeregistrationData, MidnightCNightObservationDataSource, ObservedUtxo,
 	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
@@ -110,6 +110,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
+		utxo_overestimate: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		let cnight_asset_name = config.cnight_asset_name.as_bytes();
 
@@ -158,17 +159,50 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(current_tip))?
 			.into();
 		drop(_block_timer);
+
+		let (low_bounds, high_bounds) = tokio::try_join!(
+			async {
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_low_bounds");
+				crate::db::get_low_bounds(&self.pool, start_position.block_number.into())
+					.await
+					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+			},
+			async {
+				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_high_bounds");
+				crate::db::get_high_bounds(&self.pool, end.block_number.into())
+					.await
+					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
+			},
+			)?;
+		let low_bounds = low_bounds.expect("Start position contains block hash that exists in database");
+		let high_bounds = high_bounds.expect("End position contains block hash that exists in database");
 		// Increment the end position to tx_index + 1 of the current mainchain position
 		let end = end.increment();
+		log::debug!("Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}", low_bounds, high_bounds, start_position, end);
 
-		// The "capacity" argument is capacity in terms of TRANSACTIONS,
-		// but the various sql queries below want a capacity in terms of UTXOs.
-		// Use a generous overestimate of how many UTXOs each TX _may_ have.
-		let utxo_capacity = tx_capacity * 64;
+		// `tx_capacity` is the number of complete cardano transactions to include in the
+		// inherent. Each tx may contribute multiple UTXO rows across the four queries
+		// below (registrations / deregistrations / asset creates / asset spends), so the
+		// per-query row limit (`utxo_overestimate`) must be large enough that the largest
+		// single tx fits within it; otherwise the truncation step would emit a partial tx
+		// and validators with different limits would disagree on the inherent payload.
+		//
+		// The over-fetch quantity is therefore consensus-affecting and is supplied by the
+		// caller (the inherent data provider) from the runtime, so it can only change at
+		// a runtime upgrade boundary.
 
 		// Call db methods to get UTXOs (offset + limit) until we reach our capacity
 		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
 		// ^ We may not have to do the above if the queries are fast enough
+
+		let paged = PagedQuery {
+			start: start_position,
+			end: &end,
+			limit: utxo_overestimate,
+			offset: 0,
+			low_bound: low_bounds,
+			high_bound: high_bounds,
+		};
 
 		let (registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos) = tokio::try_join!(
 			async {
@@ -178,10 +212,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 						cardano_network,
 						ident,
 						&config.mapping_validator_address,
-						start_position,
-						&end,
-						utxo_capacity,
-						0,
+						&paged,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
@@ -193,10 +224,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 				self.get_deregistration_utxos(
 					cardano_network,
 					&config.mapping_validator_address,
-					start_position,
-					&end,
-					utxo_capacity,
-					0,
+					&paged,
 				)
 				.await
 				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
@@ -207,10 +235,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					Some(ident) => self.get_asset_create_utxos(
 						cardano_network,
 						ident,
-						start_position,
-						&end,
-						utxo_capacity,
-						0,
+						&paged,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
@@ -223,10 +248,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					Some(ident) => self.get_asset_spend_utxos(
 						cardano_network,
 						ident,
-						start_position,
-						&end,
-						utxo_capacity,
-						0,
+						&paged,
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
@@ -249,7 +271,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		utxos.sort();
 
 		// Truncate UTXOs but include full transactions
-		let mut truncated_utxos = Vec::with_capacity(utxo_capacity);
+		let mut truncated_utxos = Vec::with_capacity(utxo_overestimate);
 		let mut num_txs = 0;
 		let mut cur_tx: Option<CardanoPosition> = None;
 		for utxo in utxos {
@@ -326,20 +348,14 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok((credential, dust_address))
 	}
 
-	#[allow(clippy::too_many_arguments)]
 	async fn get_registration_utxos(
 		&self,
 		cardano_network: u8,
 		auth_token_ident: i64,
 		address: &str,
-		start: &CardanoPosition,
-		end: &CardanoPosition,
-		limit: usize,
-		offset: usize,
+		query: &PagedQuery<'_>,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows =
-			get_registrations(&self.pool, address, auth_token_ident, start, end, limit, offset)
-				.await?;
+		let rows = get_registrations(&self.pool, address, auth_token_ident, query).await?;
 
 		let mut utxos = Vec::new();
 
@@ -390,12 +406,9 @@ impl MidnightCNightObservationDataSourceImpl {
 		&self,
 		cardano_network: u8,
 		address: &str,
-		start: &CardanoPosition,
-		end: &CardanoPosition,
-		limit: usize,
-		offset: usize,
+		query: &PagedQuery<'_>,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = get_deregistrations(&self.pool, address, start, end, limit, offset).await?;
+		let rows = get_deregistrations(&self.pool, address, query).await?;
 
 		let mut utxos = Vec::new();
 
@@ -442,18 +455,13 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok(utxos)
 	}
 
-	#[allow(clippy::too_many_arguments)]
 	async fn get_asset_create_utxos(
 		&self,
 		cardano_network: u8,
 		ident: i64,
-		start: &CardanoPosition,
-		end: &CardanoPosition,
-		limit: usize,
-		offset: usize,
+		query: &PagedQuery<'_>,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows =
-			crate::db::get_asset_creates(&self.pool, ident, start, end, limit, offset).await?;
+		let rows = crate::db::get_asset_creates(&self.pool, ident, query).await?;
 
 		let mut utxos = Vec::new();
 
@@ -481,7 +489,8 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
-				log::debug!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				// Non-base addresses (enterprise, pointer, reward) carry no stake
+				// credential so they can't be mapped to a reward address — skip silently.
 				continue;
 			};
 			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
@@ -503,18 +512,13 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok(utxos)
 	}
 
-	#[allow(clippy::too_many_arguments)]
 	async fn get_asset_spend_utxos(
 		&self,
 		cardano_network: u8,
 		ident: i64,
-		start: &CardanoPosition,
-		end: &CardanoPosition,
-		limit: usize,
-		offset: usize,
+		query: &PagedQuery<'_>,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows =
-			crate::db::get_asset_spends(&self.pool, ident, start, end, limit, offset).await?;
+		let rows = crate::db::get_asset_spends(&self.pool, ident, query).await?;
 
 		let mut utxos = Vec::new();
 
@@ -542,7 +546,8 @@ impl MidnightCNightObservationDataSourceImpl {
 			};
 
 			let Some(base_address) = BaseAddress::from_address(&cardano_address) else {
-				log::debug!("Cardano Address {:?} has no delegation part", &row.holder_address);
+				// Non-base addresses (enterprise, pointer, reward) carry no stake
+				// credential so they can't be mapped to a reward address — skip silently.
 				continue;
 			};
 			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());

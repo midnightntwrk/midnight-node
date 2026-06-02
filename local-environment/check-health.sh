@@ -13,11 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This script returns a zero exit code if it finds a running midnight network at the given address. It works by checking the current block number.
+# This script returns a zero exit code if it finds a running midnight network
+# at the given address. By default it checks the head block number. Pass
+# --finalized to check the finalized block number instead, which gates on
+# GRANDPA voting (i.e. fails if some validators are stuck or panicking).
 
 timeout=360  # Default 6 minutes
 address="http://localhost:9933"  # Default address
 target_block="1"  # Default to block 1
+mode="head"  # Default: check head block; "finalized" checks finalized block
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -45,20 +49,41 @@ while [[ $# -gt 0 ]]; do
             target_block="$2"
             shift 2
             ;;
+        -f|--finalized)
+            mode="finalized"
+            shift 1
+            ;;
         *)
-            echo "Usage: $0 [-t|--timeout SECONDS] [-u|--url URL] [-b|--block NUMBER]"
+            echo "Usage: $0 [-t|--timeout SECONDS] [-u|--url URL] [-b|--block NUMBER] [-f|--finalized]"
             exit 1
             ;;
     esac
 done
 
+rpc() {
+    curl -s -X POST "$address" \
+        -H "Content-Type: application/json" \
+        -d "$1" \
+        2>/dev/null
+}
+
 start_time=$(date +%s)
 
 while true; do
-    result=$(curl -s -X POST "$address" \
-        -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","id":1,"method":"chain_getHeader","params":[]}' \
-        2>/dev/null | jq -r '.result.number' 2>/dev/null)
+    if [[ "$mode" == "finalized" ]]; then
+        # Resolve the finalized head hash, then fetch its header to get the block number.
+        finalized_hash=$(rpc '{"jsonrpc":"2.0","id":1,"method":"chain_getFinalizedHead","params":[]}' \
+            | jq -r '.result' 2>/dev/null)
+        if [[ -n "$finalized_hash" && "$finalized_hash" != "null" ]]; then
+            result=$(rpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"chain_getHeader\",\"params\":[\"${finalized_hash}\"]}" \
+                | jq -r '.result.number' 2>/dev/null)
+        else
+            result=""
+        fi
+    else
+        result=$(rpc '{"jsonrpc":"2.0","id":1,"method":"chain_getHeader","params":[]}' \
+            | jq -r '.result.number' 2>/dev/null)
+    fi
 
     if [[ -n "$result" && "$result" != "null" ]]; then
         # Convert hex to decimal for comparison
@@ -69,11 +94,11 @@ while true; do
 
     # Check timeout
     if (( $(date +%s) - start_time > timeout )); then
-        echo "Timeout after ${timeout}s"
+        echo "Timeout after ${timeout}s waiting for ${mode} block >= ${target_block} at ${address}"
         exit 1
     fi
 
     sleep 1
 done
 
-echo "Block: $result"
+echo "${mode^} block: $result"

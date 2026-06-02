@@ -28,7 +28,7 @@ jobs:
       contents: read
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  #v4.0.0
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  #v4.1.0
         if: >
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.fork == false
@@ -83,11 +83,11 @@ jobs:
             echo "Changes file for PR $PR_NUMBER found: $FILENAME"
           fi
 
-      - name: Check changes files for JIRA links
-        if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-jira') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
+      - name: Check changes files for GitHub issue links
+        if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-jira') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-issue') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           FILENAME=$(grep -R 'changes' -e "pull/$PR_NUMBER" | head -1 | cut -d':' -f1)
-          echo "Checking if $FILENAME contains a link to a JIRA ticket - fail if it does not"
-          if [ ! -z "$FILENAME" ]; then grep -q "atlassian\.net" "$FILENAME"; fi
+          echo "Checking if $FILENAME contains a link to a GitHub issue - fail if it does not"
+          if [ ! -z "$FILENAME" ]; then grep -qiE "github\.com/[^ ]+/issues/[0-9]+|(fixes|closes|resolves):?[[:space:]]+([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)?#[0-9]+" "$FILENAME"; fi

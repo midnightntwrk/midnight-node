@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-toolkit"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 license-file.workspace = true
 
@@ -36,7 +36,7 @@ log = { workspace = true, features = ["kv_std"] }
 async-trait = "0.1.89"
 toml.workspace = true
 tracing.workspace = true
-tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-subscriber.workspace = true
 tempfile.workspace = true
 parity-scale-codec = { workspace = true }
 scale-info.workspace = true
@@ -50,11 +50,17 @@ zstd = "0.13"
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
 strum.workspace = true
 rayon.workspace = true
+ogmios-client = { workspace = true, features = ["jsonrpsee-client"] }
+whisky.workspace = true
+sidechain-domain.workspace = true
+zeroize.workspace = true
+stacker.workspace = true
+semver.workspace = true
 
 [dev-dependencies]
 test-case = "3.3.1"
 hex-literal.workspace = true
-trycmd = "0.15.10"
+trycmd = "1.2.0"
 testcontainers.workspace = true
 serde_yaml = "0.9"
 shellexpand = "3"

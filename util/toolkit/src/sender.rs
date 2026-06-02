@@ -11,8 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use backoff::ExponentialBackoff;
 use midnight_node_ledger_helpers::{fork::raw_block_data::RawTransaction, *};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
+use parity_scale_codec::Encode;
 use std::{
 	sync::{
 		Arc,
@@ -21,9 +23,10 @@ use std::{
 	time::Duration,
 };
 use subxt::{
-	OnlineClient,
-	ext::{codec::Encode, subxt_core::config::Hash},
-	tx::{TxInBlock, TxProgress},
+	client::OnlineClientAtBlockImpl,
+	config::Hash,
+	error::{BackendError, ExtrinsicError, RpcError},
+	tx::{TransactionInBlock, TransactionProgress, TransactionStatus},
 };
 use thiserror::Error;
 
@@ -41,16 +44,56 @@ pub struct SendBatchError {
 
 #[derive(Debug, Error)]
 pub enum SenderError {
-	#[error("failed to reach best block")]
-	FailedToReachBestBlock,
-	#[error("failed to finalize")]
+	#[error(
+		"tx did not reach a best block within timeout (last seen status: {last_status}). \
+		 The node accepted the extrinsic but it was never included — common causes: \
+		 runtime rejected the tx during block-building (check the node's logs for \
+		 `InvalidTransaction`/`UnknownTransaction`), fee/weight too high, or the tx pool \
+		 evicted it. A synced node with finalized blocks does not imply the tx is valid."
+	)]
+	FailedToReachBestBlock { last_status: String },
+	#[error("tx reached best block but was not finalized within timeout")]
 	FailedToFinalize,
+	#[error("runtime reported tx invalid: {message}")]
+	InvalidTransaction { message: String },
+	#[error("tx was dropped from the pool: {message}")]
+	DroppedTransaction { message: String },
+	#[error("tx subscription returned error status: {message}")]
+	TransactionError { message: String },
 	#[error("failed sending to {url}: {source}")]
 	SendToUrlError {
 		url: String,
 		#[source]
 		source: subxt::Error,
 	},
+}
+
+impl SenderError {
+	fn is_retryable(&self) -> bool {
+		let SenderError::SendToUrlError { source, .. } = self else {
+			return false;
+		};
+
+		// Reconnection in progress — always retryable.
+		if source.is_disconnected_will_reconnect() {
+			return true;
+		}
+
+		// Transport errors from transaction submission (e.g., HTTP 429 rate limiting).
+		if let subxt::Error::ExtrinsicError(ExtrinsicError::ErrorSubmittingTransaction(
+			BackendError::Rpc(RpcError::ClientError(subxt::rpcs::Error::Client(_))),
+		)) = source
+		{
+			return true;
+		}
+
+		// Direct RPC client errors (e.g., from .tx().await).
+		if let subxt::Error::OtherRpcClientError(subxt::rpcs::Error::Client(_)) = source {
+			return true;
+		}
+
+		false
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -84,7 +127,10 @@ pub struct ClientHandle {
 
 struct Progress {
 	url: String,
-	tx_progress: TxProgress<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>,
+	tx_progress: TransactionProgress<
+		MidnightNodeClientConfig,
+		OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
+	>,
 }
 
 pub struct Sender {
@@ -121,7 +167,23 @@ impl Sender {
 	}
 
 	pub async fn send_tx(&self, tx: &SerializedTx) -> Result<(), SenderError> {
-		let (tx_hash_string, tx_progress) = self.send_tx_no_wait(tx).await?;
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(Duration::from_secs(60)),
+			..ExponentialBackoff::default()
+		};
+
+		let (tx_hash_string, tx_progress) = backoff::future::retry(backoff, || async {
+			self.send_tx_no_wait(tx).await.map_err(|e| {
+				if e.is_retryable() {
+					log::warn!("retryable error sending tx, will retry: {e}");
+					backoff::Error::transient(e)
+				} else {
+					backoff::Error::permanent(e)
+				}
+			})
+		})
+		.await?;
+
 		if self.watch_progress {
 			self.send_and_log(&tx_hash_string, tx_progress).await?;
 		}
@@ -179,6 +241,11 @@ impl Sender {
 					.client
 					.api
 					.tx()
+					.await
+					.map_err(|e| SenderError::SendToUrlError {
+						url: client.url.clone(),
+						source: e.into(),
+					})?
 					.create_unsigned(&mn_tx)
 					.expect("failed to create unsigned extrinsic")
 			},
@@ -189,6 +256,11 @@ impl Sender {
 					.client
 					.api
 					.tx()
+					.await
+					.map_err(|e| SenderError::SendToUrlError {
+						url: client.url.clone(),
+						source: e.into(),
+					})?
 					.create_unsigned(&mn_tx)
 					.expect("failed to create unsigned extrinsic")
 			},
@@ -221,17 +293,47 @@ impl Sender {
 		mut progress: Progress,
 	) -> (
 		Progress,
-		Option<TxInBlock<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>>,
+		Result<
+			TransactionInBlock<
+				MidnightNodeClientConfig,
+				OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
+			>,
+			SenderError,
+		>,
 	) {
 		const BEST_BLOCK_TIMEOUT: Duration = Duration::from_secs(30);
 
+		let mut last_status: &'static str = "<none>";
 		let wait_future = async {
 			while let Some(prog) = progress.tx_progress.next().await {
-				if let Ok(subxt::tx::TxStatus::InBestBlock(info)) = prog {
-					return Some(info);
+				match prog {
+					Ok(TransactionStatus::InBestBlock(info)) => return Ok(info),
+					Ok(TransactionStatus::Invalid { message }) => {
+						return Err(SenderError::InvalidTransaction { message });
+					},
+					Ok(TransactionStatus::Dropped { message }) => {
+						return Err(SenderError::DroppedTransaction { message });
+					},
+					Ok(TransactionStatus::Error { message }) => {
+						return Err(SenderError::TransactionError { message });
+					},
+					Ok(status) => {
+						last_status = match status {
+							TransactionStatus::Validated => "Validated",
+							TransactionStatus::Broadcasted => "Broadcasted",
+							TransactionStatus::NoLongerInBestBlock => "NoLongerInBestBlock",
+							TransactionStatus::InFinalizedBlock(_) => "InFinalizedBlock",
+							_ => "Unknown",
+						};
+					},
+					Err(e) => {
+						return Err(SenderError::TransactionError { message: e.to_string() });
+					},
 				}
 			}
-			None
+			Err(SenderError::FailedToReachBestBlock {
+				last_status: format!("{last_status} (stream ended)"),
+			})
 		};
 
 		match tokio::time::timeout(BEST_BLOCK_TIMEOUT, wait_future).await {
@@ -242,20 +344,31 @@ impl Sender {
 					"Timeout waiting for best block after {} seconds",
 					BEST_BLOCK_TIMEOUT.as_secs()
 				);
-				(progress, None)
+				let err = SenderError::FailedToReachBestBlock {
+					last_status: format!(
+						"{last_status} (no terminal status after {}s)",
+						BEST_BLOCK_TIMEOUT.as_secs()
+					),
+				};
+				(progress, Err(err))
 			},
 		}
 	}
 
 	async fn wait_for_finalized(
 		mut progress: Progress,
-	) -> Option<TxInBlock<MidnightNodeClientConfig, OnlineClient<MidnightNodeClientConfig>>> {
+	) -> Option<
+		TransactionInBlock<
+			MidnightNodeClientConfig,
+			OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
+		>,
+	> {
 		const FINALIZED_TIMEOUT: Duration = Duration::from_secs(60);
 
 		let url = progress.url.clone();
 		let wait_future = async {
 			while let Some(prog) = progress.tx_progress.next().await {
-				if let Ok(subxt::tx::TxStatus::InFinalizedBlock(info)) = prog {
+				if let Ok(TransactionStatus::InFinalizedBlock(info)) = prog {
 					return Some(info);
 				}
 			}
@@ -277,17 +390,26 @@ impl Sender {
 
 	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) -> Result<(), SenderError> {
 		let url = tx.url.clone();
-		let (progress, best_block) = Self::wait_for_best_block(tx).await;
-		if best_block.is_none() {
-			log::info!(
-				url = &url,
-				extrinsic_hash = &tx_hashes.extrinsic_hash,
-				midnight_tx_hash = &tx_hashes.midnight_tx_hash;
-				"FAILED_TO_REACH_BEST_BLOCK"
-			);
-			return Err(SenderError::FailedToReachBestBlock);
-		}
-		let best_block = best_block.unwrap();
+		let (progress, best_block_result) = Self::wait_for_best_block(tx).await;
+		let best_block = match best_block_result {
+			Ok(info) => info,
+			Err(err) => {
+				let tag = match &err {
+					SenderError::InvalidTransaction { .. } => "INVALID_TRANSACTION",
+					SenderError::DroppedTransaction { .. } => "DROPPED_TRANSACTION",
+					SenderError::TransactionError { .. } => "TRANSACTION_ERROR",
+					_ => "FAILED_TO_REACH_BEST_BLOCK",
+				};
+				log::info!(
+					url = &url,
+					extrinsic_hash = &tx_hashes.extrinsic_hash,
+					midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+					reason = err.to_string().as_str();
+					"{tag}"
+				);
+				return Err(err);
+			},
+		};
 		log::info!(
 			url = &url,
 			extrinsic_hash = &tx_hashes.extrinsic_hash,

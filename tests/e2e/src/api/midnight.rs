@@ -3,20 +3,21 @@ use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{DefaultDB, DustWallet, WalletSeed, serialize_untagged};
-use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::types::utxo_owners::UtxoOwners;
+use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::utxo_owners::Output as UtxoOwners;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives::bridge::BridgeRecipient;
+use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::BridgeTransferV1;
 use midnight_node_metadata::midnight_metadata_latest::federated_authority_observation::events::{CouncilMembersReset, TechnicalCommitteeMembersReset};
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives_cnight_observation::ObservedUtxo;
 use midnight_node_metadata::midnight_metadata_latest::{
 	self as mn_meta,
-	c_night_observation::{self}
-	,
+	c_night_observation::{self},
+	bridge::{self},
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use subxt::backend::rpc::RpcClient;
-use subxt::blocks::ExtrinsicEvents;
-use subxt::ext::subxt_rpcs::rpc_params;
-use subxt::tx::TxProgress;
+use subxt::extrinsics::ExtrinsicEvents;
+use subxt::rpcs::{RpcClient, rpc_params};
+use subxt::tx::TransactionProgress;
 use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
@@ -58,7 +59,7 @@ pub struct AriadneParametersResponse {
     pub candidate_registrations: serde_json::Value,
 }
 
-pub use pallet_midnight_rpc::{RpcStateQuery, RpcStateQueryResult};
+pub use pallet_midnight_rpc::{RpcStateQuery, RpcStateQueryResult, StorageKey};
 
 pub struct MidnightClient {
     pub online_client: OnlineClient<SubstrateConfig>,
@@ -82,7 +83,7 @@ impl MidnightClient {
 
     pub fn new_seed() -> WalletSeed {
         let seed_bytes: [u8; 32] = rand::random();
-        println!("Midnight seed: {}", hex::encode(seed_bytes));
+        tracing::info!("Midnight seed: {}", hex::encode(seed_bytes));
         WalletSeed::from(seed_bytes)
     }
 
@@ -94,7 +95,7 @@ impl MidnightClient {
             dust_bytes.push(0);
         }
         let dust_public_hex = dust_bytes.encode_hex::<String>();
-        println!("Dust public key hex: {}", dust_public_hex);
+        tracing::info!("Dust public key hex: {}", dust_public_hex);
         dust_public_hex
     }
 
@@ -102,23 +103,24 @@ impl MidnightClient {
         &self,
         tx_id: &[u8],
     ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
-        println!(
+        tracing::info!(
             "Subscribing for cNIGHT observation extrinsic with tx_id: 0x{}",
             hex::encode(tx_id)
         );
-        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
 
         let inner = async {
             while let Some(block_result) = blocks_sub.next().await {
                 let block = block_result?;
 
                 let block_number = block.header().number;
-                println!("Finalized block #{}", block_number);
+                tracing::info!("Finalized block #{}", block_number);
 
-                let extrinsic = block.extrinsics().await?;
+                let block_ref = block.at().await?;
+                let extrinsic = block_ref.extrinsics().fetch().await?;
 
-                for ext in extrinsic.iter() {
-                    let Ok(decoded) = ext.as_root_extrinsic::<mn_meta::Call>() else {
+                for ext in extrinsic.iter().filter_map(Result::ok) {
+                    let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
                         continue;
                     };
 
@@ -126,7 +128,7 @@ impl MidnightClient {
                         continue;
                     };
 
-                    println!(
+                    tracing::info!(
                         "  NativeTokenObservation::process_tokens called with {} UTXOs",
                         utxos.len()
                     );
@@ -136,7 +138,7 @@ impl MidnightClient {
                     }
 
                     if utxos.iter().any(|u| u.header.tx_hash.0 == tx_id) {
-                        println!(
+                        tracing::info!(
                             "*** Found UTXO with matching registration tx hash: 0x{} ***",
                             hex::encode(tx_id)
                         );
@@ -145,7 +147,7 @@ impl MidnightClient {
                     } else {
                         for u in utxos {
                             let seen = u.header.tx_hash.0;
-                            println!(
+                            tracing::info!(
                                 "Tx hash 0x{} does not match expected registration tx hash 0x{}",
                                 hex::encode(seen),
                                 hex::encode(tx_id)
@@ -160,6 +162,50 @@ impl MidnightClient {
         timeout(Duration::from_secs(60), inner)
             .await
             .unwrap_or_else(|_| Err("Timeout waiting for registration event".into()))
+    }
+
+    pub async fn subscribe_to_c2n_bridge_transfers(
+        &self,
+    ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
+        tracing::info!("Subscribing for C-to-N transfer extrinsic",);
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
+
+        let inner = async {
+            while let Some(block_result) = blocks_sub.next().await {
+                let block = block_result?;
+
+                let block_number = block.header().number;
+                tracing::info!("Finalized block #{}", block_number);
+
+                let block_ref = block.at().await?;
+                let extrinsic = block_ref.extrinsics().fetch().await?;
+
+                for ext in extrinsic.iter().filter_map(Result::ok) {
+                    let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
+                        continue;
+                    };
+
+                    let Some(transfers) = MidnightClient::extract_bridge_calls(&decoded) else {
+                        continue;
+                    };
+
+                    tracing::info!(
+                        "  BridgeHandler::handle_transfers called with {} transfers",
+                        transfers.len()
+                    );
+
+                    if !transfers.is_empty() {
+                        let events = ext.events().await?;
+                        return Ok(events);
+                    }
+                }
+            }
+            Err("Did not find bridge extrinsics".into())
+        };
+
+        timeout(Duration::from_secs(60), inner)
+            .await
+            .unwrap_or_else(|_| Err("Timeout waiting for bridge exrinsics".into()))
     }
 
     pub fn calculate_nonce(prefix: &[u8], tx_hash: [u8; 32], tx_index: u16) -> String {
@@ -186,22 +232,33 @@ impl MidnightClient {
         }
     }
 
+    fn extract_bridge_calls(
+        call: &mn_meta::Call,
+    ) -> Option<&Vec<BridgeTransferV1<BridgeRecipient>>> {
+        match call {
+            mn_meta::Call::Bridge(bridge::Call::handle_transfers { transfers, .. }) => {
+                Some(&transfers.0)
+            }
+            _ => None,
+        }
+    }
+
     pub async fn query_night_utxo_owners(
         &self,
         utxo: String,
     ) -> Result<Option<UtxoOwners>, Box<dyn std::error::Error>> {
         let nonce = hex::decode(&utxo).unwrap();
-        let storage_address = mn_meta::storage()
-            .c_night_observation()
-            .utxo_owners(H256(nonce.try_into().unwrap()));
+        let storage_address = mn_meta::storage().c_night_observation().utxo_owners();
 
         let owners = self
             .online_client
-            .storage()
-            .at_latest()
+            .at_current_block()
             .await?
-            .fetch(&storage_address)
-            .await?;
+            .storage()
+            .try_fetch(storage_address, (H256(nonce.try_into().unwrap()),))
+            .await?
+            .map(|v| v.decode())
+            .transpose()?;
 
         Ok(owners)
     }
@@ -219,11 +276,11 @@ impl MidnightClient {
             if current_value.as_ref().map(|v| v.0.0.clone())
                 != initial_value.as_ref().map(|v| v.0.0.clone())
             {
-                println!("UtxoOwners storage changed: {:?}", current_value);
+                tracing::info!("UtxoOwners storage changed: {:?}", current_value);
                 return Ok(current_value);
             }
             if start.elapsed() > Duration::from_secs(timeout_secs) {
-                println!("Timeout reached without change");
+                tracing::info!("Timeout reached without change");
                 return Ok(current_value);
             }
             sleep(Duration::from_millis(poll_interval_ms)).await;
@@ -233,7 +290,7 @@ impl MidnightClient {
     pub async fn subscribe_to_federated_authority_events(
         &self,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Checking for federated authority observation events");
+        tracing::info!("Checking for federated authority observation events");
 
         // Track which events we've found
         let mut found_council_reset = false;
@@ -241,12 +298,12 @@ impl MidnightClient {
 
         // Helper to check events in a block
         let check_block_events = |events: subxt::events::Events<SubstrateConfig>,
-                                  block_number: u32,
+                                  block_number: u64,
                                   found_council: &mut bool,
                                   found_tech: &mut bool| {
             // Check for CouncilMembersReset event
             if let Some(event) = events.find::<CouncilMembersReset>().flatten().next() {
-                println!(
+                tracing::info!(
                     "✓ Found CouncilMembersReset event in block #{} with {} members",
                     block_number,
                     event.members.len()
@@ -260,7 +317,7 @@ impl MidnightClient {
                 .flatten()
                 .next()
             {
-                println!(
+                tracing::info!(
                     "✓ Found TechnicalCommitteeMembersReset event in block #{} with {} members",
                     block_number,
                     event.members.len()
@@ -271,19 +328,10 @@ impl MidnightClient {
 
         // First, check historical finalized blocks for the events
         // The events may have been emitted before we started listening
-        let finalized_hash = self
-            .online_client
-            .backend()
-            .latest_finalized_block_ref()
-            .await?;
-        let finalized_block = self
-            .online_client
-            .blocks()
-            .at(finalized_hash.hash())
-            .await?;
-        let current_finalized = finalized_block.header().number;
+        let finalized_at = self.online_client.at_current_block().await?;
+        let current_finalized = finalized_at.block_number();
 
-        println!(
+        tracing::info!(
             "Checking historical blocks 1 to {} for federated authority events...",
             current_finalized
         );
@@ -297,8 +345,8 @@ impl MidnightClient {
                 .request("chain_getBlockHash", rpc_params![block_num])
                 .await?;
 
-            let block = self.online_client.blocks().at(block_hash).await?;
-            let events = block.events().await?;
+            let at_block = self.online_client.at_block(block_hash).await?;
+            let events = at_block.events().fetch().await?;
 
             check_block_events(
                 events,
@@ -308,27 +356,29 @@ impl MidnightClient {
             );
 
             if found_council_reset && found_tech_committee_reset {
-                println!("✓ Both federated authority events found in historical blocks");
+                tracing::info!("✓ Both federated authority events found in historical blocks");
                 return Ok(());
             }
         }
 
-        println!(
+        tracing::info!(
             "Events not found in historical blocks. Council: {}, TechCommittee: {}",
-            found_council_reset, found_tech_committee_reset
+            found_council_reset,
+            found_tech_committee_reset
         );
 
         // If not found in history, subscribe to new finalized blocks
-        println!("Subscribing to new finalized blocks for remaining events...");
-        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+        tracing::info!("Subscribing to new finalized blocks for remaining events...");
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
 
         let result = timeout(Duration::from_secs(120), async {
             while let Some(block) = blocks_sub.next().await {
                 let block = block?;
                 let block_number = block.header().number;
-                println!("Checking block #{block_number} for federated authority events");
+                tracing::info!("Checking block #{block_number} for federated authority events");
 
-                let events = block.events().await?;
+                let block_ref = block.at().await?;
+                let events = block_ref.events().fetch().await?;
 
                 check_block_events(
                     events,
@@ -375,8 +425,11 @@ impl MidnightClient {
 
     /// Get the current best block hash from the node.
     pub async fn get_best_block_hash(&self) -> Result<H256, Box<dyn std::error::Error>> {
-        let block = self.online_client.blocks().at_latest().await?;
-        Ok(block.hash())
+        let hash: H256 = self
+            .rpc_client
+            .request("chain_getBlockHash", rpc_params![])
+            .await?;
+        Ok(hash)
     }
 
     /// Get block hash at a specific block height/number.
@@ -394,12 +447,12 @@ impl MidnightClient {
 
     /// Wait for a new finalized block and return its hash.
     pub async fn wait_for_next_finalized_block(&self) -> Result<H256, Box<dyn std::error::Error>> {
-        let mut blocks_sub = self.online_client.blocks().subscribe_finalized().await?;
+        let mut blocks_sub = self.online_client.stream_blocks().await?;
 
         let result = timeout(Duration::from_secs(30), async {
             if let Some(block_result) = blocks_sub.next().await {
                 let block = block_result?;
-                println!("New finalized block #{}", block.header().number);
+                tracing::info!("New finalized block #{}", block.header().number);
                 return Ok(block.hash());
             }
             Err("No block received".into())
@@ -475,13 +528,15 @@ impl MidnightClient {
 
         loop {
             let status = self.get_sidechain_status().await?;
-            println!(
+            tracing::info!(
                 "Current epoch: {}, slot: {}, target: {}",
-                status.epoch, status.slot, target_epoch
+                status.epoch,
+                status.slot,
+                target_epoch
             );
 
             if status.epoch >= target_epoch {
-                println!("✓ Reached target epoch {}", status.epoch);
+                tracing::info!("✓ Reached target epoch {}", status.epoch);
                 return Ok(status.epoch);
             }
 
@@ -505,10 +560,16 @@ impl MidnightClient {
     pub async fn submit_midnight_tx(
         &self,
         tx_bytes: Vec<u8>,
-    ) -> Result<TxProgress<SubstrateConfig, OnlineClient<SubstrateConfig>>, subxt::Error> {
+    ) -> Result<
+        TransactionProgress<
+            SubstrateConfig,
+            subxt::client::OnlineClientAtBlockImpl<SubstrateConfig>,
+        >,
+        Box<dyn std::error::Error>,
+    > {
         let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_bytes);
-        let unsigned_extrinsic = self.online_client.tx().create_unsigned(&mn_tx)?;
-        unsigned_extrinsic.submit_and_watch().await
+        let unsigned_extrinsic = self.online_client.tx().await?.create_unsigned(&mn_tx)?;
+        Ok(unsigned_extrinsic.submit_and_watch().await?)
     }
 
     /// Submit a Midnight transaction expecting it to be rejected at pre_dispatch.
@@ -518,10 +579,15 @@ impl MidnightClient {
         &self,
         tx_bytes: Vec<u8>,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        println!("Submitting transaction expecting rejection...");
-        match self.submit_midnight_tx(tx_bytes).await {
+        tracing::info!("Submitting transaction expecting rejection...");
+        match self
+            .submit_midnight_tx(tx_bytes)
+            .await?
+            .wait_for_finalized_success()
+            .await
+        {
             Err(e) => {
-                println!("Transaction rejected as expected: {}", e);
+                tracing::info!("Transaction rejected as expected: {}", e);
                 Ok(e.to_string())
             }
             Ok(_) => Err(
@@ -537,33 +603,33 @@ impl MidnightClient {
         &self,
         tx_bytes: Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Submitting transaction expecting success...");
+        tracing::info!("Submitting transaction expecting success...");
         let mut progress = self.submit_midnight_tx(tx_bytes).await?;
 
         // Wait for inclusion in block
         while let Some(status) = progress.next().await {
             match status? {
-                subxt::tx::TxStatus::InBestBlock(block_info) => {
-                    println!(
+                subxt::tx::TransactionStatus::InBestBlock(block_info) => {
+                    tracing::info!(
                         "Transaction included in best block: {:?}",
                         block_info.block_hash()
                     );
                     return Ok(());
                 }
-                subxt::tx::TxStatus::InFinalizedBlock(block_info) => {
-                    println!(
+                subxt::tx::TransactionStatus::InFinalizedBlock(block_info) => {
+                    tracing::info!(
                         "Transaction finalized in block: {:?}",
                         block_info.block_hash()
                     );
                     return Ok(());
                 }
-                subxt::tx::TxStatus::Error { message } => {
+                subxt::tx::TransactionStatus::Error { message } => {
                     return Err(format!("Transaction error: {}", message).into());
                 }
-                subxt::tx::TxStatus::Invalid { message } => {
+                subxt::tx::TransactionStatus::Invalid { message } => {
                     return Err(format!("Transaction invalid: {}", message).into());
                 }
-                subxt::tx::TxStatus::Dropped { message } => {
+                subxt::tx::TransactionStatus::Dropped { message } => {
                     return Err(format!("Transaction dropped: {}", message).into());
                 }
                 _ => {
@@ -575,6 +641,38 @@ impl MidnightClient {
     }
 
     // ========== Contract State Query Methods ==========
+
+    /// Get the state of a contract by its address at the best block.
+    pub async fn get_contract_state(
+        &self,
+        contract_address: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        self.get_contract_state_at(contract_address, None).await
+    }
+
+    /// Get the state of a contract by its address, optionally at a specific block hash.
+    pub async fn get_contract_state_at(
+        &self,
+        contract_address: &str,
+        at: Option<H256>,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let response: String = match at {
+            Some(hash) => {
+                self.rpc_client
+                    .request(
+                        "midnight_contractState",
+                        rpc_params![contract_address, hash],
+                    )
+                    .await?
+            }
+            None => {
+                self.rpc_client
+                    .request("midnight_contractState", rpc_params![contract_address])
+                    .await?
+            }
+        };
+        Ok(response)
+    }
 
     /// Query specific fields from a contract's state tree via `midnight_queryContractState`.
     pub async fn query_contract_state(

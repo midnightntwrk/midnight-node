@@ -17,20 +17,23 @@ import { spawn } from "child_process";
 
 export interface DockerComposeOptions {
   composeFile: string;
+  /** Additional compose files layered on top via repeated `-f`. Order matters: later files override earlier. */
+  extraComposeFiles?: string[];
   env: Record<string, string>;
   profiles?: string[];
   detach?: boolean;
 }
 
+function fileArgs(options: DockerComposeOptions): string[] {
+  const args = ["-f", options.composeFile];
+  for (const extra of options.extraComposeFiles ?? []) {
+    args.push("-f", extra);
+  }
+  return args;
+}
+
 export function stopDockerCompose(options: DockerComposeOptions) {
-  const args = [
-    "-f",
-    options.composeFile,
-    "down",
-    "--volumes",
-    "--timeout",
-    "0",
-  ];
+  const args = [...fileArgs(options), "down", "--volumes", "--timeout", "0"];
 
   if (options.profiles) {
     for (const profile of options.profiles) {
@@ -52,8 +55,8 @@ export function stopDockerCompose(options: DockerComposeOptions) {
   });
 }
 
-export function runDockerCompose(options: DockerComposeOptions) {
-  const args = ["-f", options.composeFile, "up", "--build"];
+export function runDockerCompose(options: DockerComposeOptions): Promise<void> {
+  const args = [...fileArgs(options), "up", "--build"];
   if (options.detach) {
     args.push("--detach");
   }
@@ -64,15 +67,19 @@ export function runDockerCompose(options: DockerComposeOptions) {
   }
   args.unshift("compose");
 
-  const docker = spawn("docker", args, {
-    stdio: "inherit",
-    env: options.env,
-  });
+  return new Promise((resolve, reject) => {
+    const docker = spawn("docker", args, {
+      stdio: "inherit",
+      env: options.env,
+    });
 
-  docker.on("exit", (code) => {
-    if (code !== 0) {
-      console.error(`❌ docker-compose exited with code ${code}`);
-      process.exit(code ?? 1);
-    }
+    docker.on("error", reject);
+    docker.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`docker compose up exited with code ${code}`));
+    });
   });
 }

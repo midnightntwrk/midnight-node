@@ -8,18 +8,29 @@ use hex::ToHex;
 use midnight_node_ledger_helpers::{
 	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
 };
+use zeroize::Zeroize;
 pub(crate) mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutput, EncodedZswapLocalState};
 
 use crate::cli_parsers as cli;
 
 const BUILD_DIST: &str = "dist/bin.js";
+const DEFAULT_COMPACTC_VERSION: &str = include_str!("../../../../COMPACTC_VERSION");
 
 #[derive(Args, Debug)]
 pub struct ToolkitJs {
 	/// location of the toolkit-js.
 	#[arg(long = "toolkit-js-path", env = "TOOLKIT_JS_PATH")]
 	pub path: String,
+
+	/// version of compactc
+	#[arg(
+        long = "compactc-version",
+        env = "COMPACTC_VERSION",
+        default_value = DEFAULT_COMPACTC_VERSION,
+        value_parser = cli::semver_decode
+    )]
+	pub compactc_version: semver::Version,
 }
 
 /// Adds some protection against accidentally passing relative types to toolkit-js
@@ -61,71 +72,71 @@ pub enum Command {
 pub struct CircuitArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	config: RelativePath,
+	pub config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
 	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
-	contract_address: ContractAddress,
+	pub contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
-	network: String,
+	pub network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
 	/// Input file containing the current on-chain circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	input_onchain_state: RelativePath,
+	pub input_onchain_state: RelativePath,
 	/// Input file containing the private circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	input_private_state: RelativePath,
+	pub input_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' is stored.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	pub input_zswap_state: Option<RelativePath>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_intent: RelativePath,
+	pub output_intent: RelativePath,
 	/// The output file of the on-chain (public) state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_onchain_state: Option<RelativePath>,
+	pub output_onchain_state: Option<RelativePath>,
 	/// The output file of the private state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_private_state: RelativePath,
+	pub output_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_zswap_state: RelativePath,
+	pub output_zswap_state: RelativePath,
 	/// A file path of where the invoked circuit result data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_result: Option<RelativePath>,
+	pub output_result: Option<RelativePath>,
 	/// Name of the circuit to invoke
-	circuit_id: String,
+	pub circuit_id: String,
 	/// Arguments to pass to the circuit
-	call_args: Vec<String>,
+	pub call_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
 pub struct DeployArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	config: RelativePath,
+	pub config: RelativePath,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
-	network: String,
+	pub network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
 	/// Contract maintenance authority seed.
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	authority_seed: Option<WalletSeed>,
+	pub authority_seed: Option<WalletSeed>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_intent: RelativePath,
+	pub output_intent: RelativePath,
 	/// The output file of the private state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_private_state: RelativePath,
+	pub output_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_zswap_state: RelativePath,
+	pub output_zswap_state: RelativePath,
 	/// Arguments to pass to the contract constructor
-	constructor_args: Vec<String>,
+	pub constructor_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -226,8 +237,6 @@ impl ToolkitJs {
 			"deploy",
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--output",
@@ -237,20 +246,29 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		let signing_key = args
+		#[allow(clippy::unwrap_in_result)]
+		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
+
+		let mut signing_key = args
 			.authority_seed
 			.map(|s| {
-				serialize_untagged(UnshieldedWallet::default(s).signing_key())
-					.map(|bytes| bytes.encode_hex::<String>())
+				let mut bytes = serialize_untagged(UnshieldedWallet::default(s).signing_key())
+					.map_err(ToolkitJsError::ExecutionError)?;
+				let hex = bytes.encode_hex::<String>();
+				bytes.zeroize();
+				Ok::<String, ToolkitJsError>(hex)
 			})
-			.transpose()
-			.map_err(ToolkitJsError::ExecutionError)?;
+			.transpose()?;
 		if let Some(ref key) = signing_key {
 			cmd_args.extend_from_slice(&["--signing", key]);
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
-		self.execute_js(&cmd_args)?;
+		let result = self.execute_js(&cmd_args);
+		signing_key.as_mut().map(|s| s.zeroize());
+		result?;
 		log::info!(
 			"written: {}, {}, {}",
 			args.output_intent,
@@ -280,8 +298,6 @@ impl ToolkitJs {
 			"circuit",
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
@@ -297,6 +313,10 @@ impl ToolkitJs {
 			"--input-ledger-params",
 			&input_ledger_parameters,
 		];
+		#[allow(clippy::unwrap_in_result)]
+		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
 			cmd_args.extend_from_slice(&["--input-zswap", &input_zswap_state]);
@@ -335,8 +355,6 @@ impl ToolkitJs {
 			command.name(),
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
@@ -344,12 +362,17 @@ impl ToolkitJs {
 			"--output",
 			&output_intent,
 		];
+		#[allow(clippy::unwrap_in_result)]
+		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
+
 		if let Some(ref signing) = args.signing {
 			cmd_args.extend_from_slice(&["--signing", signing]);
 		}
 		// Add positional args
 		cmd_args.push(&contract_address_str);
-		let new_authority = match command {
+		let mut new_authority = match &command {
 			MaintainCommand::Contract(MaintainContractArgs { new_authority, .. }) => {
 				Some(new_authority.as_bytes().encode_hex::<String>())
 			},
@@ -364,7 +387,9 @@ impl ToolkitJs {
 				cmd_args.push(&vk_path);
 			}
 		}
-		self.execute_js(&cmd_args)?;
+		let result = self.execute_js(&cmd_args);
+		new_authority.as_mut().map(|s| s.zeroize());
+		result?;
 		log::info!("written: {}", args.output_intent);
 		Ok(())
 	}
@@ -393,6 +418,7 @@ impl ToolkitJs {
 		}
 
 		let output = std::process::Command::new(cmd)
+			.env("COMPACTC_VERSION", self.compactc_version.to_string())
 			.current_dir(&self.path)
 			.args(args)
 			.output()

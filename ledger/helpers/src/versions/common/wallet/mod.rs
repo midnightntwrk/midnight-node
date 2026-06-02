@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::super::{
-	DB, LedgerState, Storable, Utxo, WalletSeed,
+	DB, IntoWalletState, LedgerState, Storable, Utxo, WalletSeed,
 	mn_ledger::{error::EventReplayError, events::Event},
 	onchain_runtime::context::BlockContext,
 	zswap::Offer,
@@ -38,9 +38,9 @@ pub struct Wallet<D: DB + Clone> {
 
 impl<D: DB + Clone> Wallet<D> {
 	pub fn default(root_seed: WalletSeed, ledger_state: &LedgerState<D>) -> Self {
-		let shielded = ShieldedWallet::default(root_seed);
-		let unshielded = UnshieldedWallet::default(root_seed);
-		let dust = DustWallet::default(root_seed, Some(&ledger_state.parameters));
+		let shielded = ShieldedWallet::default(root_seed.clone());
+		let unshielded = UnshieldedWallet::default(root_seed.clone());
+		let dust = DustWallet::default(root_seed.clone(), Some(&ledger_state.parameters));
 
 		Self { root_seed: Some(root_seed), shielded, unshielded, dust }
 	}
@@ -48,7 +48,8 @@ impl<D: DB + Clone> Wallet<D> {
 	pub fn update_state_from_offers<P: Storable<D>>(&mut self, offers: &[Offer<P, D>]) {
 		let secret_keys = self.shielded.secret_keys().clone();
 		for offer in offers {
-			self.shielded.state = self.shielded.state.apply(&secret_keys, offer);
+			self.shielded.state =
+				self.shielded.state.apply(&secret_keys, offer).into_wallet_state();
 		}
 
 		// // TODO UNSHIELDED

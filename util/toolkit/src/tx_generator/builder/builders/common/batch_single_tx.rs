@@ -14,9 +14,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::ledger_helpers_local::{
-	DefaultDB, FromContext as _, LedgerContext, ProofProvider, ShieldedCoinSelectionError,
-	ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo, TransactionWithContext,
-	UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError, WalletAddress,
+	BuilderContext, CoinSelectionStrategy, DefaultDB, FromContext as _, ProofProvider,
+	ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo,
+	TransactionWithContext, UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError,
+	WalletAddress,
 };
 use super::single_tx::{MAX_GUARANTEED_OUTPUTS, build_shielded_offer, build_unshielded_intents};
 use async_trait::async_trait;
@@ -37,31 +38,34 @@ enum BatchTransferError {
 	ProvingFailed(String),
 }
 
-pub struct BatchSingleTxBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct BatchSingleTxBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	transfers: Vec<TransferSpec>,
 	concurrency: usize,
+	coin_selection: CoinSelectionStrategy,
 }
 
-impl BatchSingleTxBuilder {
+impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 	pub fn new(
 		args: BatchSingleTxArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		let coin_selection = args.coin_selection;
 		let transfers = args.get_transfer_specs();
 		let concurrency = args
 			.concurrency
 			.unwrap_or_else(|| std::thread::available_parallelism().unwrap().into());
 
-		Self { context, prover, transfers, concurrency }
+		Self { context, prover, transfers, concurrency, coin_selection }
 	}
 
 	async fn build_single_transfer(
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 		spec: &TransferSpec,
+		coin_selection: CoinSelectionStrategy,
 	) -> Result<
 		TransactionWithContext<
 			super::ledger_helpers_local::Signature,
@@ -78,7 +82,7 @@ impl BatchSingleTxBuilder {
 			.funding_seed
 			.as_ref()
 			.map(|s| convert_wallet_seed(s.parse().expect("invalid funding_seed hex")))
-			.unwrap_or(source_seed);
+			.unwrap_or(source_seed.clone());
 
 		let rng_seed: Option<[u8; 32]> = spec.rng_seed.as_ref().map(|s| {
 			let bytes = hex::decode(s).expect("invalid rng_seed hex");
@@ -104,11 +108,14 @@ impl BatchSingleTxBuilder {
 
 			let intents = build_unshielded_intents(
 				context.clone(),
-				source_seed,
+				source_seed.clone(),
 				vec![dest_wallet],
 				amount,
 				token_type,
-			)?;
+				&[],
+				coin_selection,
+			)
+			.await?;
 			tx_info.set_intents(intents);
 		}
 
@@ -120,8 +127,14 @@ impl BatchSingleTxBuilder {
 			let dest_wallet: ShieldedWallet<DefaultDB> =
 				(&dest_address).try_into().expect("destination is not a valid shielded address");
 
-			let offer =
-				build_shielded_offer(context, source_seed, vec![dest_wallet], amount, token_type)?;
+			let offer = build_shielded_offer(
+				context,
+				source_seed,
+				vec![dest_wallet],
+				amount,
+				token_type,
+				coin_selection,
+			)?;
 
 			if offer.outputs.len() > MAX_GUARANTEED_OUTPUTS {
 				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
@@ -163,7 +176,7 @@ fn parse_hash_output(hex_str: Option<&str>) -> midnight_node_ledger_helpers::Has
 }
 
 #[async_trait]
-impl BuildTxs for BatchSingleTxBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 	type Error = BatchSingleTxError;
 
 	async fn build_txs_from(
@@ -186,18 +199,20 @@ impl BuildTxs for BatchSingleTxBuilder {
 				let context = self.context.clone();
 				let prover = self.prover.clone();
 				let spec = spec.clone();
+				let coin_selection = self.coin_selection;
 				async move {
-					let result = Self::build_single_transfer(context, prover, &spec).await.map(
-						|tx_with_ctx| {
-							let serialized = super::tx_serialization::build_single(tx_with_ctx);
-							serialized
-								.batches
-								.into_iter()
-								.next()
-								.and_then(|b| b.into_iter().next())
-								.expect("build_single should produce exactly one tx")
-						},
-					);
+					let result =
+						Self::build_single_transfer(context, prover, &spec, coin_selection)
+							.await
+							.map(|tx_with_ctx| {
+								let serialized = super::tx_serialization::build_single(tx_with_ctx);
+								serialized
+									.batches
+									.into_iter()
+									.next()
+									.and_then(|b| b.into_iter().next())
+									.expect("build_single should produce exactly one tx")
+							});
 					result
 				}
 			})
