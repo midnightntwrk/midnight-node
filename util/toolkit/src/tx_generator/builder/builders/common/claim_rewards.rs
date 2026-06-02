@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use std::{convert::Infallible, sync::Arc};
 
 use super::ledger_helpers_local::{
-	ClaimMintInfo, DefaultDB, FromContext, LedgerContext, ProofProvider, RewardsInfo,
+	BuilderContext, ClaimMintInfo, DefaultDB, FromContext, ProofProvider, RewardsInfo,
 	TransactionWithContext, Wallet,
 };
 
@@ -25,18 +25,18 @@ use crate::{
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
-pub struct ClaimRewardsBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct ClaimRewardsBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
 	rng_seed: Option<[u8; 32]>,
 	amount: u128,
 }
 
-impl ClaimRewardsBuilder {
+impl<C: BuilderContext<DefaultDB>> ClaimRewardsBuilder<C> {
 	pub fn new(
 		args: ClaimRewardsArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		Self {
@@ -50,7 +50,7 @@ impl ClaimRewardsBuilder {
 }
 
 #[async_trait]
-impl BuildTxs for ClaimRewardsBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for ClaimRewardsBuilder<C> {
 	type Error = Infallible;
 
 	async fn build_txs_from(

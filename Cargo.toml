@@ -330,6 +330,7 @@ quote = "1.0"
 rand_chacha = { version = "0.10.0", default-features = false }
 raw-scripts = { git = "https://github.com/input-output-hk/partner-chains-smart-contracts.git", tag = "v8.1.0" }
 secp256k1 = { version = "0.30.0", default-features = false }
+semver = "1.0.28"
 selection = { path = "partner-chains/toolkit/committee-selection/selection", default-features = false }
 testcontainers = { version = "0.27" }
 time = { version = "0.3.47", default-features = false }
