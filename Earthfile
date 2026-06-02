@@ -1474,12 +1474,21 @@ testnet-sync-e2e:
 # local-env-e2e executes any tests that depend on a running local-env
 local-env-e2e:
     FROM +prep
+    # Host ports of the local-env stack this test connects to (via 172.17.0.1).
+    # On the shared self-hosted host each runner slot publishes them on
+    # slot-specific ports; the caller passes them through so the e2e config
+    # (tests/e2e/src/config.rs, local-ci feature) targets the right stack.
+    # Defaults reproduce the legacy single-tenant ports.
+    ARG E2E_NODE_RPC_PORT=9933
+    ARG E2E_OGMIOS_PORT=1337
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
+    ENV E2E_NODE_RPC_PORT=$E2E_NODE_RPC_PORT
+    ENV E2E_OGMIOS_PORT=$E2E_OGMIOS_PORT
     RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
@@ -1551,6 +1560,11 @@ start-local-env-with-indexer-ci:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
+    # Per-runner slot (1..N) selects a disjoint host-port block + compose project
+    # name so concurrent jobs on the same self-hosted host don't collide. 0 (the
+    # default) keeps the legacy single-tenant layout. The orchestrator derives
+    # every port/name from this single value (local-environment/src/lib/ports.ts).
+    ARG LOCALENV_RUNNER_SLOT=0
     WORKDIR local-environment
     RUN npm ci
     # Tear down any stack left over from a previous run before starting a fresh
@@ -1560,8 +1574,8 @@ start-local-env-with-indexer-ci:
     # breaks chain-indexer with "unsupported protocol version" when the
     # genesis/runtime expectations disagree. The non-CI sibling target
     # `+start-local-env-with-indexer` does this same down already.
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN LOCALENV_RUNNER_SLOT=$LOCALENV_RUNNER_SLOT ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
+    RUN LOCALENV_RUNNER_SLOT=$LOCALENV_RUNNER_SLOT ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
 stop-local-env:
