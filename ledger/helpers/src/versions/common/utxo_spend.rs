@@ -12,10 +12,11 @@
 // limitations under the License.
 
 use super::{
-	DB, IntentHash, LedgerContext, SigningKey, Sp, UnshieldedTokenType, Utxo, UtxoId, UtxoSpend,
-	Wallet, WalletSeed,
+	BuilderContext, DB, IntentHash, SigningKey, UnshieldedTokenType, Utxo, UtxoId, UtxoSpend,
+	WalletSeed,
 };
 use crate::CoinSelectionStrategy;
+use async_trait::async_trait;
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -47,135 +48,113 @@ pub struct UtxoSpendInfo<O> {
 	pub output_number: Option<u32>,
 }
 
-pub trait BuildUtxoSpend<D: DB + Clone>: Send + Sync {
-	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoSpend;
-	fn signing_key(&self, context: Arc<LedgerContext<D>>) -> SigningKey;
+#[async_trait]
+pub trait BuildUtxoSpend<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
+	async fn build(&self, context: Arc<C>) -> UtxoSpend;
+	fn signing_key(&self, context: Arc<C>) -> SigningKey;
 }
 
 impl UtxoSpendInfo<WalletSeed> {
-	fn min_match_utxo<D: DB + Clone>(
+	async fn min_match_utxo<D: DB + Clone, C: BuilderContext<D>>(
 		&self,
-		context: Arc<LedgerContext<D>>,
-		wallet: &Wallet<D>,
-	) -> Result<Sp<Utxo, D>, UtxoSelectionError> {
-		context.with_ledger_state(|ledger_state| {
-			let owner = wallet.unshielded.signing_key().verifying_key();
+		context: Arc<C>,
+	) -> Result<Utxo, UtxoSelectionError> {
+		let utxos = context.unshielded_utxos(self.owner.clone()).await;
 
-			ledger_state
-				.utxo
-				.utxos
-				.iter()
-				.filter(|utxo| {
-					utxo.0.type_ == self.token_type
-						&& utxo.0.value >= self.value
-						&& utxo.0.owner == owner.clone().into()
-						&& self.intent_hash.is_none_or(|h| utxo.0.intent_hash == h)
-						&& self.output_number.is_none_or(|o| utxo.0.output_no == o)
-				})
-				.sorted_by_key(|utxo| utxo.0.value)
-				.next()
-				.ok_or(UtxoSelectionError::NoMatchingUtxo {
-					min_value: self.value,
-					token_type: self.token_type,
-					seed: self.owner.clone(),
-				})
-				.map(|utxo| utxo.0.clone())
-		})
+		utxos
+			.into_iter()
+			.map(|(utxo, _ctime)| utxo)
+			.filter(|utxo| {
+				utxo.type_ == self.token_type
+					&& utxo.value >= self.value
+					&& self.intent_hash.is_none_or(|h| utxo.intent_hash == h)
+					&& self.output_number.is_none_or(|o| utxo.output_no == o)
+			})
+			.sorted_by_key(|utxo| utxo.value)
+			.next()
+			.ok_or(UtxoSelectionError::NoMatchingUtxo {
+				min_value: self.value,
+				token_type: self.token_type,
+				seed: self.owner.clone(),
+			})
 	}
 
 	/// Returns a vector of UtxoSpendInfo matching Utxos selected from the wallet to cover required_value
 	/// of a token_type from the wallet specified by seed and remaining value of change.
-	pub fn utxos_to_cover_value<D: DB + Clone>(
-		context: Arc<LedgerContext<D>>,
+	pub async fn utxos_to_cover_value<D: DB + Clone, C: BuilderContext<D>>(
+		context: Arc<C>,
 		seed: WalletSeed,
 		required_value: u128,
 		token_type: UnshieldedTokenType,
 		strategy: CoinSelectionStrategy,
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
-		context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed.clone(), |wallet| {
-				let owner = wallet.unshielded.signing_key().verifying_key();
-				let matching_inputs = ledger_state
-					.utxo
-					.utxos
-					.iter()
-					.filter(|utxo| {
-						utxo.0.type_ == token_type && utxo.0.owner == owner.clone().into()
-					})
-					.map(|utxo| UtxoSpendInfo {
-						value: utxo.0.value,
-						owner: seed.clone(),
-						token_type: utxo.0.type_,
-						intent_hash: Some(utxo.0.intent_hash),
-						output_number: Some(utxo.0.output_no),
-					})
-					.collect();
-				Self::select_inputs(matching_inputs, required_value, strategy).ok_or(
-					UtxoSelectionError::InsufficientBalance {
-						required: required_value,
-						token_type,
-						seed: seed.clone(),
-					},
-				)
+		let utxos = context.unshielded_utxos(seed.clone()).await;
+		let matching_inputs = utxos
+			.into_iter()
+			.map(|(utxo, _ctime)| utxo)
+			.filter(|utxo| utxo.type_ == token_type)
+			.map(|utxo| UtxoSpendInfo {
+				value: utxo.value,
+				owner: seed.clone(),
+				token_type: utxo.type_,
+				intent_hash: Some(utxo.intent_hash),
+				output_number: Some(utxo.output_no),
 			})
-		})
+			.collect();
+		Self::select_inputs(matching_inputs, required_value, strategy).ok_or(
+			UtxoSelectionError::InsufficientBalance { required: required_value, token_type, seed },
+		)
 	}
 
 	/// Look up a specific set of UTXOs (by intent_hash + output_no) belonging to `seed`
 	/// and `token_type`, and return them as `UtxoSpendInfo` together with the change
 	/// (sum - required). Errors if any requested UTXO is missing from the wallet or
 	/// if the pinned sum is below `required_value`.
-	pub fn utxos_by_ids<D: DB + Clone>(
-		context: Arc<LedgerContext<D>>,
+	pub async fn utxos_by_ids<D: DB + Clone, C: BuilderContext<D>>(
+		context: Arc<C>,
 		seed: WalletSeed,
 		required_value: u128,
 		token_type: UnshieldedTokenType,
 		utxo_ids: &[UtxoId],
 	) -> Result<(Vec<UtxoSpendInfo<WalletSeed>>, u128), UtxoSelectionError> {
-		context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed.clone(), |wallet| {
-				let owner = wallet.unshielded.signing_key().verifying_key();
-				let mut selected: Vec<UtxoSpendInfo<WalletSeed>> =
-					Vec::with_capacity(utxo_ids.len());
-				let mut total: u128 = 0;
-				for &UtxoId { intent_hash, output_number } in utxo_ids {
-					let utxo = ledger_state
-						.utxo
-						.utxos
-						.iter()
-						.find(|utxo| {
-							utxo.0.intent_hash == intent_hash
-								&& utxo.0.output_no == output_number
-								&& utxo.0.type_ == token_type
-								&& utxo.0.owner == owner.clone().into()
-						})
-						.ok_or_else(|| {
-							UtxoSelectionError::PinnedUtxoNotFound(Box::new(PinnedUtxoNotFound {
-								intent_hash,
-								output_no: output_number,
-								token_type,
-								seed: seed.clone(),
-							}))
-						})?;
-					total = total.saturating_add(utxo.0.value);
-					selected.push(UtxoSpendInfo {
-						value: utxo.0.value,
-						owner: seed.clone(),
-						token_type: utxo.0.type_,
-						intent_hash: Some(utxo.0.intent_hash),
-						output_number: Some(utxo.0.output_no),
-					});
-				}
-				let change = total.checked_sub(required_value).ok_or(
-					UtxoSelectionError::InsufficientBalance {
-						required: required_value,
+		let utxos = context.unshielded_utxos(seed.clone()).await;
+		let mut selected: Vec<UtxoSpendInfo<WalletSeed>> = Vec::with_capacity(utxo_ids.len());
+		let mut total: u128 = 0;
+		for &UtxoId { intent_hash, output_number } in utxo_ids {
+			let utxo = utxos
+				.iter()
+				.map(|(utxo, _ctime)| utxo)
+				.find(|utxo| {
+					utxo.intent_hash == intent_hash
+						&& utxo.output_no == output_number
+						&& utxo.type_ == token_type
+				})
+				.ok_or_else(|| {
+					UtxoSelectionError::PinnedUtxoNotFound(Box::new(PinnedUtxoNotFound {
+						intent_hash,
+						output_no: output_number,
 						token_type,
 						seed: seed.clone(),
-					},
-				)?;
-				Ok((selected, change))
-			})
-		})
+					}))
+				})?;
+			total = total.saturating_add(utxo.value);
+			selected.push(UtxoSpendInfo {
+				value: utxo.value,
+				owner: seed.clone(),
+				token_type: utxo.type_,
+				intent_hash: Some(utxo.intent_hash),
+				output_number: Some(utxo.output_no),
+			});
+		}
+		let change =
+			total
+				.checked_sub(required_value)
+				.ok_or(UtxoSelectionError::InsufficientBalance {
+					required: required_value,
+					token_type,
+					seed: seed.clone(),
+				})?;
+		Ok((selected, change))
 	}
 
 	/// From given `inputs` select coins totaling at least `required`, ordered by `strategy`.
@@ -203,35 +182,35 @@ impl UtxoSpendInfo<WalletSeed> {
 	}
 }
 
-impl<D: DB + Clone> BuildUtxoSpend<D> for UtxoSpendInfo<WalletSeed> {
-	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoSpend {
-		context.with_wallet_from_seed(self.owner.clone(), |wallet| {
-			let owner = wallet.unshielded.signing_key().verifying_key();
-			// If self identifies an UTXO then use it, otherwise try to find best matching UTXO in the wallet.
-			match (self.intent_hash, self.output_number) {
-				(Some(intent_hash), Some(output_no)) => UtxoSpend {
-					value: self.value,
+#[async_trait]
+impl<D: DB + Clone, C: BuilderContext<D>> BuildUtxoSpend<D, C> for UtxoSpendInfo<WalletSeed> {
+	async fn build(&self, context: Arc<C>) -> UtxoSpend {
+		let owner = context.with_wallet_from_seed(self.owner.clone(), |wallet| {
+			wallet.unshielded.signing_key().verifying_key()
+		});
+		// If self identifies an UTXO then use it, otherwise find the best matching UTXO.
+		match (self.intent_hash, self.output_number) {
+			(Some(intent_hash), Some(output_no)) => UtxoSpend {
+				value: self.value,
+				owner,
+				type_: self.token_type,
+				intent_hash,
+				output_no,
+			},
+			_ => {
+				let utxo = self.min_match_utxo(context.clone()).await.expect("UTXO lookup failed");
+				UtxoSpend {
+					value: utxo.value,
 					owner,
-					type_: self.token_type,
-					intent_hash,
-					output_no,
-				},
-				_ => {
-					let utxo =
-						self.min_match_utxo(context.clone(), wallet).expect("UTXO lookup failed");
-					UtxoSpend {
-						value: utxo.value,
-						owner,
-						type_: utxo.type_,
-						intent_hash: utxo.intent_hash,
-						output_no: utxo.output_no,
-					}
-				},
-			}
-		})
+					type_: utxo.type_,
+					intent_hash: utxo.intent_hash,
+					output_no: utxo.output_no,
+				}
+			},
+		}
 	}
 
-	fn signing_key(&self, context: Arc<LedgerContext<D>>) -> SigningKey {
+	fn signing_key(&self, context: Arc<C>) -> SigningKey {
 		context.with_wallet_from_seed(self.owner.clone(), |wallet| {
 			wallet.unshielded.signing_key().clone()
 		})

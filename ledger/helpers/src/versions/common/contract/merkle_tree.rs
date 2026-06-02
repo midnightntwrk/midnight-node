@@ -15,11 +15,11 @@
 
 use async_trait::async_trait;
 use lazy_static::lazy_static;
-use std::{any::Any, borrow::Cow, sync::Arc};
+use std::{any::Any, borrow::Cow};
 
 use super::super::{
 	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
-	LedgerContext, Op, Resolver, ResultModeGather, ResultModeVerify, Sp, StdRng, Transcripts,
+	LedgerParameters, Op, Resolver, ResultModeGather, ResultModeVerify, Sp, StdRng, Transcripts,
 	ValueReprAlignedValue,
 };
 use super::{
@@ -108,78 +108,65 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 		key: &str,
 		input: &Box<dyn Any + Send + Sync>,
 		address: &ContractAddress,
-		context: Arc<LedgerContext<D>>,
+		contract_state: &ContractState<D>,
+		parameters: &LedgerParameters,
 	) -> (AlignedValue, Vec<AlignedValue>, Vec<Transcripts<D>>) {
-		context.with_ledger_state(|ledger_state| {
-			let contract_state = ledger_state
-				.index(*address)
-				.unwrap_or_else(|| panic!("Contract with address {:?} does not exist", *address));
+		let input = *input.downcast_ref::<u32>().expect("Contract Call input should exist");
 
-			let input = *input.downcast_ref::<u32>().expect("Contract Call input should exist");
+		match key {
+			"store" => {
+				let context = QueryContext::new(contract_state.data.clone(), *address);
+				let program = HistoricMerkleTree_insert!([key!(0u8)], false, 10, u32, input);
+				let pre_transcript =
+					PreTranscript { context, program: program.to_vec(), comm_comm: None };
+				let transcripts = partition_transcripts(&[pre_transcript], parameters)
+					.expect("Transcript arguments should be valid");
 
-			match key {
-				"store" => {
-					let context = QueryContext::new(contract_state.data, *address);
-					let program = HistoricMerkleTree_insert!([key!(0u8)], false, 10, u32, input);
-					let pre_transcript =
-						PreTranscript { context, program: program.to_vec(), comm_comm: None };
-					let transcripts =
-						partition_transcripts(&[pre_transcript], &ledger_state.parameters)
-							.expect("Transcript arguments should be valid");
+				let merkle_path = vec![];
 
-					let merkle_path = vec![];
-
-					(input.into(), merkle_path, transcripts)
-				},
-				"check" => {
-					let path = match &contract_state.data.get_ref() {
-						StateValue::Array(arr) => match &arr.get(0) {
-							Some(StateValue::Array(arr)) => match &arr.get(0) {
-								Some(StateValue::BoundedMerkleTree(tree)) => tree
-									.find_path_for_leaf(input)
-									.expect("Path not found for leaf in MerkleTree contract"),
-								_ => panic!(),
-							},
+				(input.into(), merkle_path, transcripts)
+			},
+			"check" => {
+				let path = match &contract_state.data.get_ref() {
+					StateValue::Array(arr) => match &arr.get(0) {
+						Some(StateValue::Array(arr)) => match &arr.get(0) {
+							Some(StateValue::BoundedMerkleTree(tree)) => tree
+								.find_path_for_leaf(input)
+								.expect("Path not found for leaf in MerkleTree contract"),
 							_ => panic!(),
 						},
 						_ => panic!(),
-					};
-					let context = QueryContext::new(contract_state.data, *address);
-					let program = Self::program_with_results(
-						&HistoricMerkleTree_check_root!([key!(0u8)], false, 10, u32, path.root()),
-						&[true.into()],
-					);
-					let pre_transcript = PreTranscript { context, program, comm_comm: None };
-					let transcripts =
-						partition_transcripts(&[pre_transcript], &ledger_state.parameters)
-							.expect("Transcript arguments should be valid");
+					},
+					_ => panic!(),
+				};
+				let context = QueryContext::new(contract_state.data.clone(), *address);
+				let program = Self::program_with_results(
+					&HistoricMerkleTree_check_root!([key!(0u8)], false, 10, u32, path.root()),
+					&[true.into()],
+				);
+				let pre_transcript = PreTranscript { context, program, comm_comm: None };
+				let transcripts = partition_transcripts(&[pre_transcript], parameters)
+					.expect("Transcript arguments should be valid");
 
-					let private_outputs = vec![path.into()];
+				let private_outputs = vec![path.into()];
 
-					(input.into(), private_outputs, transcripts)
-				},
-				_ => panic!("Key doesn't exist for Merkle Tree Contract"),
-			}
-		})
+				(input.into(), private_outputs, transcripts)
+			},
+			_ => panic!("Key doesn't exist for Merkle Tree Contract"),
+		}
 	}
 
 	fn operation(
 		&self,
 		key: &str,
-		address: &ContractAddress,
-		context: Arc<LedgerContext<D>>,
+		_address: &ContractAddress,
+		contract_state: &ContractState<D>,
 	) -> Sp<ContractOperation, D> {
-		context.with_ledger_state(|ledger_state| {
-			let contract_state = ledger_state
-				.index(*address)
-				.unwrap_or_else(|| panic!("Contract with address {:?} does not exist", *address));
-
-			contract_state
-				.operations
-				.get(&EntryPointBuf(key.as_bytes().to_vec()))
-				.expect("Contract Operation argments should be valid")
-				.clone()
-		})
+		contract_state
+			.operations
+			.get(&EntryPointBuf(key.as_bytes().to_vec()))
+			.expect("Contract Operation argments should be valid")
+			.clone()
 	}
 
 	fn program_with_results(
@@ -198,15 +185,16 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 		key: &'static str,
 		input: &Box<dyn Any + Send + Sync>,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		contract_state: &ContractState<D>,
+		parameters: &LedgerParameters,
 	) -> ContractCallPrototype<D> {
 		let (input, private_transcript_outputs, transcripts) =
-			self.transcript(key, input, address, context.clone());
+			self.transcript(key, input, address, contract_state, parameters);
 
 		ContractCallPrototype {
 			address: *address,
 			entry_point: key.as_bytes().into(),
-			op: (*self.operation(key, address, context)).clone(),
+			op: (*self.operation(key, address, contract_state)).clone(),
 			guaranteed_public_transcript: transcripts[0].0.clone(),
 			fallible_public_transcript: transcripts[0].1.clone(),
 			private_transcript_outputs,

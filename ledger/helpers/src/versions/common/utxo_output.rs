@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{DB, LedgerContext, UnshieldedTokenType, UnshieldedWallet, UtxoOutput, WalletSeed};
+use super::{BuilderContext, DB, UnshieldedTokenType, UnshieldedWallet, UtxoOutput, WalletSeed};
 use std::sync::Arc;
 
 pub struct UtxoOutputInfo<O> {
@@ -20,12 +20,12 @@ pub struct UtxoOutputInfo<O> {
 	pub token_type: UnshieldedTokenType,
 }
 
-pub trait BuildUtxoOutput<D: DB + Clone>: Send + Sync {
-	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoOutput;
+pub trait BuildUtxoOutput<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
+	fn build(&self, context: Arc<C>) -> UtxoOutput;
 }
 
-impl<D: DB + Clone> BuildUtxoOutput<D> for UtxoOutputInfo<WalletSeed> {
-	fn build(&self, context: Arc<LedgerContext<D>>) -> UtxoOutput {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildUtxoOutput<D, C> for UtxoOutputInfo<WalletSeed> {
+	fn build(&self, context: Arc<C>) -> UtxoOutput {
 		context.with_wallet_from_seed(self.owner.clone(), |wallet| UtxoOutput {
 			value: self.value,
 			owner: wallet.unshielded.signing_key().verifying_key().into(),
@@ -34,8 +34,10 @@ impl<D: DB + Clone> BuildUtxoOutput<D> for UtxoOutputInfo<WalletSeed> {
 	}
 }
 
-impl<D: DB + Clone> BuildUtxoOutput<D> for UtxoOutputInfo<UnshieldedWallet> {
-	fn build(&self, _context: Arc<LedgerContext<D>>) -> UtxoOutput {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildUtxoOutput<D, C>
+	for UtxoOutputInfo<UnshieldedWallet>
+{
+	fn build(&self, _context: Arc<C>) -> UtxoOutput {
 		UtxoOutput { value: self.value, owner: self.owner.user_address, type_: self.token_type }
 	}
 }
