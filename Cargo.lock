@@ -8201,6 +8201,7 @@ dependencies = [
  "rand 0.10.0",
  "scale-info",
  "serde",
+ "serde_json",
  "sidechain-domain",
  "sp-api",
  "sp-blockchain",

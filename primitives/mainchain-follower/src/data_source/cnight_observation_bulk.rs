@@ -241,8 +241,10 @@ pub struct BulkCachedCNightObservationDataSource {
 	stability_margin: u32,
 	/// Cardano blocks to keep in the sliding window.
 	window_size: u32,
-	/// Single-flight gate for sliding-window refreshes.
-	refresh_in_flight: Arc<Mutex<bool>>,
+	/// Single-flight gate for sliding-window refreshes. The owned lock guard is
+	/// held by the in-flight refresh task; `try_lock_owned` failing means a
+	/// refresh is already running, so a new trigger is a no-op.
+	refresh_in_flight: Arc<tokio::sync::Mutex<()>>,
 	#[allow(dead_code)]
 	metrics_opt: Option<MidnightDataSourceMetrics>,
 }
@@ -273,7 +275,7 @@ impl BulkCachedCNightObservationDataSource {
 			cnight_addresses,
 			stability_margin,
 			window_size,
-			refresh_in_flight: Arc::new(Mutex::new(false)),
+			refresh_in_flight: Arc::new(tokio::sync::Mutex::new(())),
 			metrics_opt,
 		}
 	}
@@ -281,16 +283,11 @@ impl BulkCachedCNightObservationDataSource {
 	/// Trigger an async sliding-window refresh if not already in flight.
 	/// Returns immediately. Single-flight: concurrent triggers are no-ops.
 	fn maybe_kick_refresh(&self, target_end: u32) {
-		{
-			let mut g = match self.refresh_in_flight.lock() {
-				Ok(g) => g,
-				Err(_) => return,
-			};
-			if *g {
-				return;
-			}
-			*g = true;
-		}
+		// Single-flight: if a refresh already holds the gate, do nothing. The
+		// guard is moved into the spawned task and released on completion.
+		let Ok(guard) = self.refresh_in_flight.clone().try_lock_owned() else {
+			return;
+		};
 
 		let pool = self.pool.clone();
 		let cfg = self.cnight_addresses.clone();
@@ -298,10 +295,12 @@ impl BulkCachedCNightObservationDataSource {
 		let last_observation = Arc::clone(&self.last_observation);
 		let snapshot_start_block = Arc::clone(&self.snapshot_start_block);
 		let snapshot_end_block = Arc::clone(&self.snapshot_end_block);
-		let in_flight = Arc::clone(&self.refresh_in_flight);
 		let window_size = self.window_size;
 
 		tokio::spawn(async move {
+			// Hold the gate for the lifetime of the refresh; dropped (unlocked)
+			// when this task ends.
+			let _guard = guard;
 			if let Err(e) = refresh_window(
 				&pool,
 				&cfg,
@@ -318,9 +317,6 @@ impl BulkCachedCNightObservationDataSource {
 					target: "cnight::sliding-window",
 					"refresh failed (ignored, db_fallback continues to serve): {e}"
 				);
-			}
-			if let Ok(mut g) = in_flight.lock() {
-				*g = false;
 			}
 		});
 	}

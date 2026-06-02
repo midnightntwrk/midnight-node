@@ -4,8 +4,8 @@
 Replace the per-query db-sync round-trip path for cNIGHT observation data
 with a startup bulk read into memory. The four observation queries
 (registrations, deregistrations, asset creates, asset spends) are now
-issued once across `[0, current_cardano_tip]` (~2 M events, ~40 s on
-mainnet) and held in a single sorted in-memory vector served via
+issued once across `[0, highest stable Cardano block]` (~2 M events, ~40 s
+on mainnet) and held in a single sorted in-memory vector served via
 `partition_point` slicing. A single-flight async sliding-window refresh
 extends the cache as the chain advances, falling back to the live
 db-backed source for any query past the current horizon.
