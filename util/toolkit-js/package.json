@@ -12,13 +12,14 @@
   },
   "workspaces": [
     ".",
-    "v*"
+    "compact-*"
   ],
   "scripts": {
     "build": "npm run build:variants && tsc && chmod +x dist/bin.js",
-    "build:variants": "turbo run build --filter='@midnight-ntwrk/node-toolkit-v*'",
+    "build:variants": "turbo run build --filter='@midnight-ntwrk/node-toolkit-compact-*'",
     "start": "dist/bin.js",
-    "test": "npm run build-compact && vitest run",
+    "test": "npm run build:variants && npm run build-compact && vitest run",
+    "test:compat": "./scripts/test-all-compactc.sh",
     "build-compact": "(shx --negate test -d ./test/contract/managed && npm run compact || true)",
     "compact": "fetch-compactc && npm run compact-counter && npm run compact-mint && npm run compact-tokens-minter",
     "compact-counter": "run-compactc ./test/contract/counter.compact ./test/contract/managed/counter",
@@ -26,8 +27,9 @@
     "compact-mint": "run-compactc ./mint/mint.compact ./mint/out"
   },
   "dependencies": {
-    "@midnight-ntwrk/node-toolkit-v7": "^0.1.0",
-    "@midnight-ntwrk/node-toolkit-v8": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.29": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.30": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.31": "^0.1.0",
     "effect": "^3.21.0"
   },
   "devDependencies": {

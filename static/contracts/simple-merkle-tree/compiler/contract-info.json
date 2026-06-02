@@ -1,7 +1,7 @@
 {
-  "compiler-version": "0.30.0",
-  "language-version": "0.22.0",
-  "runtime-version": "0.15.0",
+  "compiler-version": "0.31.0",
+  "language-version": "0.23.0",
+  "runtime-version": "0.16.0",
   "circuits": [
     {
       "name": "store",
@@ -104,5 +104,18 @@
     }
   ],
   "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "tree",
+      "index": 0,
+      "exported": false,
+      "storage": "HistoricMerkleTree",
+      "depth": 10,
+      "type": {
+        "type-name": "Uint",
+        "maxval": 4294967295
+      }
+    }
   ]
 }
