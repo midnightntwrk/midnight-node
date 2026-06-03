@@ -306,12 +306,10 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			});
 
 		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
-		let cnight_genesis_path = cfg.chain_spec_cfg.chainspec_cnight_genesis.clone();
 		let (task_manager, backend) = service::new_full::<sc_network::NetworkWorker<_, _>>(
 			config,
 			epoch_config,
 			midnight_cfg,
-			cnight_genesis_path,
 			cfg.storage_monitor_params_cfg.into(),
 			cfg.memory_monitor_cfg.into(),
 			storage_config,
@@ -396,7 +394,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 		Subcommand::PartnerChains(cmd) => {
 			bail_if_runtime_benchmarks("the partner-chains subcommand");
 			let midnight_cfg = cfg.midnight_cfg.clone();
-			let cnight_genesis_path = cfg.chain_spec_cfg.chainspec_cnight_genesis.clone();
 			let make_dependencies = |config: sc_service::Configuration| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)
 					.map_err(|e| e.to_string())?;
@@ -404,7 +401,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					&config,
 					epoch_config,
 					midnight_cfg,
-					cnight_genesis_path,
 					storage_config,
 					tx_filter_config,
 				)?;
@@ -426,7 +422,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						&config,
 						epoch_config,
 						cfg.midnight_cfg.clone(),
-						cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 						storage_config,
 						tx_filter_config,
 					)?;
@@ -442,7 +437,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					&config,
 					epoch_config,
 					cfg.midnight_cfg.clone(),
-					cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 					storage_config,
 					tx_filter_config,
 				)?;
@@ -457,7 +451,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					&config,
 					epoch_config,
 					cfg.midnight_cfg.clone(),
-					cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 					storage_config,
 					tx_filter_config,
 				)?;
@@ -474,7 +467,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						&config,
 						epoch_config,
 						cfg.midnight_cfg.clone(),
-						cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 						storage_config,
 						tx_filter_config,
 					)?;
@@ -494,7 +486,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					&config,
 					epoch_config,
 					cfg.midnight_cfg.clone(),
-					cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 					storage_config,
 					tx_filter_config,
 				)?;
@@ -535,7 +526,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							&config,
 							epoch_config,
 							cfg.midnight_cfg.clone(),
-							cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 							storage_config,
 							tx_filter_config,
 						)?;
@@ -556,7 +546,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							&config,
 							epoch_config,
 							cfg.midnight_cfg.clone(),
-							cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 							storage_config,
 							tx_filter_config,
 						)?;
@@ -573,7 +562,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							&config,
 							epoch_config,
 							cfg.midnight_cfg.clone(),
-							cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 							storage_config,
 							tx_filter_config,
 						)?;
@@ -596,7 +584,6 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							&config,
 							epoch_config,
 							cfg.midnight_cfg.clone(),
-							cfg.chain_spec_cfg.chainspec_cnight_genesis.clone(),
 							storage_config,
 							tx_filter_config,
 						)?;

@@ -39,11 +39,13 @@ use std::{
 	time::{Duration as StdDuration, Instant},
 };
 
+use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition};
 use midnight_primitives_mainchain_follower::{
 	CNightObservationDataSourceMock, FederatedAuthorityObservationDataSource,
 	FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
 	MidnightCNightObservationDataSource, MidnightCNightObservationDataSourceImpl,
 };
+use parity_scale_codec::Decode;
 
 // TODO: Decide if it should be experimental
 // #[cfg(feature = "experimental")]
@@ -67,7 +69,7 @@ pub struct DbPoolCfg {
 
 pub(crate) async fn create_cached_main_chain_follower_data_sources(
 	cfg: MidnightCfg,
-	cnight_genesis_path: Option<String>,
+	cnight_follower_genesis: Option<(CNightAddresses, CardanoPosition)>,
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> std::result::Result<DataSources, ServiceError> {
@@ -81,13 +83,18 @@ pub(crate) async fn create_cached_main_chain_follower_data_sources(
 
 		Ok(mock)
 	} else {
-		create_cached_data_sources(cfg, cnight_genesis_path, mc_metrics_opt, midnight_metrics_opt)
-			.await
-			.map_err(|err| {
-				ServiceError::Application(
-					format!("Failed to create db-sync main chain follower: {err}").into(),
-				)
-			})
+		create_cached_data_sources(
+			cfg,
+			cnight_follower_genesis,
+			mc_metrics_opt,
+			midnight_metrics_opt,
+		)
+		.await
+		.map_err(|err| {
+			ServiceError::Application(
+				format!("Failed to create db-sync main chain follower: {err}").into(),
+			)
+		})
 	}
 }
 
@@ -226,15 +233,60 @@ const BRIDGE_POOL_CFG: DbPoolCfg =
 const ICS_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 
+/// Recover the cNIGHT addresses + `next_cardano_position` the follower needs
+/// directly from the chainspec's genesis storage.
+///
+/// The `cnight-observation` pallet's `genesis_build` writes these into storage
+/// (`MainChainMappingValidatorAddress`, `CNightIdentifier`,
+/// `MainChainAuthTokenAssetName`, `NextCardanoPosition`), so the values are
+/// always present in any chainspec — built-from-config or raw — without needing
+/// the separate cnight-genesis file. `BoundedVec<u8>` shares `Vec<u8>`'s SCALE
+/// encoding, and the string fields are stored as their UTF-8 bytes, so this
+/// reconstructs the exact `CNightAddresses` that built the spec.
+pub fn cnight_follower_genesis_from_storage(
+	genesis_storage: &sp_core::storage::Storage,
+) -> Option<(CNightAddresses, CardanoPosition)> {
+	let storage_value_key = |item: &[u8]| {
+		let mut key = sp_core::twox_128(b"CNightObservation").to_vec();
+		key.extend_from_slice(&sp_core::twox_128(item));
+		key
+	};
+	let raw = |item: &[u8]| genesis_storage.top.get(&storage_value_key(item));
+
+	let mapping_validator_address = String::from_utf8(
+		Vec::<u8>::decode(&mut &raw(b"MainChainMappingValidatorAddress")?[..]).ok()?,
+	)
+	.ok()?;
+	let auth_token_asset_name =
+		String::from_utf8(Vec::<u8>::decode(&mut &raw(b"MainChainAuthTokenAssetName")?[..]).ok()?)
+			.ok()?;
+	let (policy_bytes, asset_bytes) =
+		<(Vec<u8>, Vec<u8>)>::decode(&mut &raw(b"CNightIdentifier")?[..]).ok()?;
+	let cnight_policy_id: [u8; 28] = policy_bytes.try_into().ok()?;
+	let cnight_asset_name = String::from_utf8(asset_bytes).ok()?;
+	let next_cardano_position =
+		CardanoPosition::decode(&mut &raw(b"NextCardanoPosition")?[..]).ok()?;
+
+	Some((
+		CNightAddresses {
+			mapping_validator_address,
+			auth_token_asset_name,
+			cnight_policy_id,
+			cnight_asset_name,
+		},
+		next_cardano_position,
+	))
+}
+
 /// Build the cNIGHT-observation data source.
 ///
 /// Uses `BulkCachedCNightObservationDataSource` (in-memory sliding window) when
-/// `chainspec_cnight_genesis` is configured — the path is needed to resolve
-/// the cNIGHT addresses we query db-sync for. Falls back to the per-call
+/// the cNIGHT genesis (addresses + next position) could be resolved — needed to
+/// resolve the cNIGHT addresses we query db-sync for. Falls back to the per-call
 /// db-backed source otherwise; sync is significantly slower in that case.
 async fn build_cnight_observation_data_source(
 	cnight_observation_window_size: u32,
-	cnight_genesis_path: Option<String>,
+	cnight_follower_genesis: Option<(CNightAddresses, CardanoPosition)>,
 	cnight_observation_pool: Pool<Postgres>,
 	db_sync_block_data_source_config: &DbSyncBlockDataSourceConfig,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
@@ -244,20 +296,13 @@ async fn build_cnight_observation_data_source(
 > {
 	use midnight_primitives_mainchain_follower::data_source::BulkCachedCNightObservationDataSource;
 
-	match cnight_genesis_path {
-		Some(path) => {
-			let cnight_genesis_str = std::fs::read_to_string(&path)
-				.map_err(|e| format!("failed to read chainspec_cnight_genesis ({path}): {e}"))?;
-			let cnight_genesis: pallet_cnight_observation::config::CNightGenesis =
-				serde_json::from_str(&cnight_genesis_str).map_err(|e| {
-					format!("failed to parse chainspec_cnight_genesis ({path}): {e}")
-				})?;
-			let cnight_addresses = cnight_genesis.addresses;
+	match cnight_follower_genesis {
+		Some((cnight_addresses, next_cardano_position)) => {
 			// Anchor the cache at the cardano position the runtime
 			// observes from. Setting snapshot_end = next - 1 makes the
 			// first refresh's `from_block = old_end + 1` land exactly on
 			// `next` (inclusive of the boundary event).
-			let next_pos: u32 = cnight_genesis.next_cardano_position.block_number;
+			let next_pos: u32 = next_cardano_position.block_number;
 			let init_horizon = next_pos.saturating_sub(1);
 			let window_size: u32 = cnight_observation_window_size;
 
@@ -291,9 +336,8 @@ async fn build_cnight_observation_data_source(
 		},
 		None => {
 			log::warn!(
-				"cNIGHT observation: chainspec_cnight_genesis not set — falling back to per-call db-sync queries. \
-				Sync will be significantly slower. \
-				Set `CHAINSPEC_CNIGHT_GENESIS=/path/to/cnight-config.json` (or `chainspec_cnight_genesis = \"…\"` in the toml) to enable the in-memory bulk-read.",
+				"cNIGHT observation: no cNIGHT genesis found in the chainspec (or cnight-genesis file) \
+				— falling back to per-call db-sync queries. Sync will be significantly slower.",
 			);
 			Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(
 				cnight_observation_pool,
@@ -315,7 +359,7 @@ fn warn_deprecated_allow_non_ssl(cfg: &MidnightCfg) {
 
 pub async fn create_cached_data_sources(
 	cfg: MidnightCfg,
-	cnight_genesis_path: Option<String>,
+	cnight_follower_genesis: Option<(CNightAddresses, CardanoPosition)>,
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
@@ -411,7 +455,7 @@ pub async fn create_cached_data_sources(
 			})?;
 	let cnight_observation = build_cnight_observation_data_source(
 		cfg.cnight_observation_window_size,
-		cnight_genesis_path,
+		cnight_follower_genesis,
 		cnight_observation_pool,
 		&db_sync_block_data_source_config,
 		midnight_metrics_opt.clone(),
