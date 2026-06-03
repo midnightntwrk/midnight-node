@@ -599,22 +599,11 @@ node-ci-image-single-platform:
     ARG NATIVEARCH
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
-    # Install curl for rust installation
-    RUN microdnf -y install curl-minimal ca-certificates && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Read Rust version from rust-toolchain.toml (single source of truth)
-    COPY rust-toolchain.toml .
-    ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
-
-    # Install rust with minimal profile + only the components we need
-    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
-    ENV PATH="/root/.cargo/bin:${PATH}"
-    RUN rustup component add clippy rustfmt
-
     # Install build dependencies
     RUN microdnf -y update && \
         microdnf -y install \
+        ca-certificates \
+        curl-minimal \
         gcc \
         gcc-c++ \
         make \
@@ -631,13 +620,24 @@ node-ci-image-single-platform:
         tar \
         gzip \
         docker \
-        jq && \
+        jq \
+        nodejs \
+        npm && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
         # libc6-dev-arm64-cross \
         # gcc-x86-64-linux-gnu \
         # crossbuild-essential-amd64 \
         # libc6-amd64-cross
+
+    # Read Rust version from rust-toolchain.toml (single source of truth)
+    COPY rust-toolchain.toml .
+    ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+
+    # Install rust with minimal profile + only the components we need
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
+    ENV PATH="/root/.cargo/bin:${PATH}"
+    RUN rustup component add clippy rustfmt
 
     RUN rustup target add wasm32v1-none # aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
     RUN rustup component add rust-src rustfmt clippy llvm-tools-preview
@@ -673,6 +673,16 @@ node-ci-image-single-platform:
         tar -xzf gh.tar.gz && \
         mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
         rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
+
+    # Docker compose-v2 plugin — needed by the +local-env-ci WITH DOCKER targets, whose
+    # `docker compose` calls run against earthly's injected docker CLI (which has no
+    # bundled plugin). uname -m (x86_64/aarch64) matches the release asset suffix directly.
+    # renovate: datasource=github-releases packageName=docker/compose
+    ARG COMPOSE_VERSION=v2.31.0
+    RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
+        curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
+          -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
     # Download compactc compiler from public midnightntwrk/compact releases
     COPY COMPACTC_VERSION .
@@ -712,8 +722,8 @@ prep-no-copy:
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
-    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
+    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    # FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
     # ca-certificates and curl-minimal already present in the CI base image
 
