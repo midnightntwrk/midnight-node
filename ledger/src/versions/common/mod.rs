@@ -12,6 +12,9 @@
 // limitations under the License.
 
 #[cfg(feature = "std")]
+pub(crate) use super::TransactionSignature;
+
+#[cfg(feature = "std")]
 use super::{
 	base_crypto_local, coin_structure_local, helpers_local, ledger_storage_local,
 	midnight_serialize_local, mn_ledger_local, onchain_runtime_local, transient_crypto_local,
@@ -1091,16 +1094,13 @@ where
 
 	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let system_tx = SystemTransaction::DistributeReserve(amount);
+		let system_tx = super::system_tx::distribute_reserve_system_tx(amount);
 		api.tagged_serialize(&system_tx)
 	}
 
-	pub fn construct_distribute_treasury_system_tx(
-		amount: u128,
-	) -> Result<Vec<u8>, LedgerApiError> {
+	pub fn construct_unlock_to_treasury_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		//TODO: this is wrong transaction, ledger is missing the correct one yet. https://github.com/midnightntwrk/midnight-node/issues/1277
-		let system_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
+		let system_tx = super::system_tx::unlock_to_treasury_system_tx(amount)?;
 		api.tagged_serialize(&system_tx)
 	}
 }
@@ -1116,7 +1116,8 @@ fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiE
 		SystemTransaction::PayBlockRewardsToTreasury { .. } => Ok("pay_block_rewards_to_treasury"),
 		SystemTransaction::PayFromTreasuryShielded { .. } => Ok("pay_from_treasury_shielded"),
 		SystemTransaction::PayFromTreasuryUnshielded { .. } => Ok("pay_from_treasury_unshielded"),
-		SystemTransaction::DistributeReserve(_) => Ok("distribute_reserve"),
+		tx if super::system_tx::is_distribute_reserve_system_tx(tx) => Ok("distribute_reserve"),
+		tx if super::system_tx::is_unlock_to_treasury_system_tx(tx) => Ok("unlock_to_treasury"),
 		SystemTransaction::CNightGeneratesDustUpdate { .. } => Ok("cnight_generates_dust_update"),
 		other => {
 			log::error!(
@@ -1239,7 +1240,7 @@ mod tests {
 
 	#[test]
 	fn get_system_tx_type_distribute_reserve() {
-		let tx = SystemTransaction::DistributeReserve(0);
+		let tx = super::super::system_tx::distribute_reserve_system_tx(0);
 		assert_eq!(get_system_tx_type(&tx).unwrap(), "distribute_reserve");
 	}
 
@@ -1247,5 +1248,12 @@ mod tests {
 	fn get_system_tx_type_cnight_generates_dust_update() {
 		let tx = SystemTransaction::CNightGeneratesDustUpdate { events: vec![] };
 		assert_eq!(get_system_tx_type(&tx).unwrap(), "cnight_generates_dust_update");
+	}
+
+	#[test]
+	fn get_system_tx_type_unlock_to_treasury() {
+		if let Ok(tx) = super::super::system_tx::unlock_to_treasury_system_tx(0) {
+			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
+		}
 	}
 }

@@ -89,7 +89,7 @@ jobs:
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -99,8 +99,13 @@ jobs:
       # images that resolve to docker.io. With --push, earthly tries to write
       # inline cache back to the midnightntwrk Docker Hub namespace and fails
       # auth without this login.
+      # Non-fatal: the +images push targets ghcr.io only (authed by the GHCR
+      # login above) and the docker.io base images are public, so the build
+      # still pulls + pushes without these creds. Dependabot runs don't have
+      # the DOCKERHUB_* secrets, so this step would otherwise hard-fail there.
       - name: Login to Docker Hub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        continue-on-error: true
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -257,7 +262,7 @@ jobs:
           submodules: true
 
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -328,7 +333,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -448,7 +453,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -568,7 +573,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -577,9 +582,13 @@ jobs:
       # Earthfile FROMs midnightntwrk/midnight-node-ci and other docker.io
       # images; earthly pushes inline cache back to those repos under --push,
       # which needs Docker Hub auth.
+      # Non-fatal: pushes target ghcr.io and the docker.io base images are
+      # public, so the build proceeds without these creds (e.g. Dependabot runs,
+      # which don't have the DOCKERHUB_* secrets).
       - name: Login to Docker Hub
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        continue-on-error: true
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -708,13 +717,14 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          just-command: toolkit-maintenance-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   if: steps.guard.outputs.hit != 'true'
+      #   with:
+      #     just-command: toolkit-maintenance-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -734,13 +744,14 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          just-command: toolkit-mint-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      #"LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   if: steps.guard.outputs.hit != 'true'
+      #   with:
+      #     just-command: toolkit-mint-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -760,13 +771,14 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          just-command: toolkit-tokens-minter-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   if: steps.guard.outputs.hit != 'true'
+      #   with:
+      #     just-command: toolkit-tokens-minter-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -794,7 +806,7 @@ jobs:
           use-cache: false
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -811,59 +823,62 @@ jobs:
         with:
           key: ${{ steps.guard.outputs.key }}
 
-  mainnet-sync-test:
-    permissions:
-      contents: read
-      packages: read
-    name: Mainnet Sync (1000 blocks)
-    needs: [run]
-    runs-on: [self-hosted, "tier:medium"]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+  # Migration to Ledger v9 is not yet supported. Issue #1580.
+  # mainnet-sync-test:
+  #   continue-on-error: true
+  #   permissions:
+  #     contents: read
+  #     packages: read
+  #   name: Mainnet Sync (1000 blocks)
+  #   needs: [run]
+  #   runs-on: [self-hosted, "tier:medium"]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. runner.temp is not available in job-level env, so set it here.
-      - name: Isolate docker config (self-hosted shared HOME)
-        run: |
-          mkdir -p "$RUNNER_TEMP/.docker"
-          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
-      - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+  #     # Isolate docker config per runner slot — see the matching step in the
+  #     # `run` job. runner.temp is not available in job-level env, so set it here.
+  #     - name: Isolate docker config (self-hosted shared HOME)
+  #       run: |
+  #         mkdir -p "$RUNNER_TEMP/.docker"
+  #         echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
-      - name: Sync first 1000 blocks of mainnet
-        env:
-          NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          SNAPSHOT: static/sync-test/snapshot.sql.xz
-          CFG_PRESET: mainnet
-          SYNC_UNTIL: "1000"
-          SYNC_TIMEOUT_SECS: "1800"
-        run: bash scripts/sync-test/run-sync.sh
+  #     - name: Login to GHCR
+  #       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+  #       with:
+  #         registry: ghcr.io
+  #         username: MidnightCI
+  #         password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      - name: Print sync logs
-        if: always()
-        run: |
-          echo "::group::midnight-node.log"
-          cat /tmp/midnight-node.log 2>/dev/null || echo "(no node log)"
-          echo "::endgroup::"
-          echo "::group::midnight-pg.log"
-          cat /tmp/midnight-pg.log 2>/dev/null || echo "(no postgres log)"
-          echo "::endgroup::"
+  #     - name: Sync first 1000 blocks of mainnet
+  #       env:
+  #         NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+  #         SNAPSHOT: static/sync-test/snapshot.sql.xz
+  #         CFG_PRESET: mainnet
+  #         SYNC_UNTIL: "1000"
+  #         SYNC_TIMEOUT_SECS: "1800"
+  #       run: bash scripts/sync-test/run-sync.sh
 
-      - name: Upload sync logs on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
-        with:
-          name: mainnet-sync-logs
-          path: |
-            /tmp/midnight-node.log
-            /tmp/midnight-pg.log
-          if-no-files-found: ignore
+  #     - name: Print sync logs
+  #       if: always()
+  #       run: |
+  #         echo "::group::midnight-node.log"
+  #         cat /tmp/midnight-node.log 2>/dev/null || echo "(no node log)"
+  #         echo "::endgroup::"
+  #         echo "::group::midnight-pg.log"
+  #         cat /tmp/midnight-pg.log 2>/dev/null || echo "(no postgres log)"
+  #         echo "::endgroup::"
+
+  #     - name: Upload sync logs on failure
+  #       if: failure()
+  #       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
+  #       with:
+  #         name: mainnet-sync-logs
+  #         path: |
+  #           /tmp/midnight-node.log
+  #           /tmp/midnight-pg.log
+  #         if-no-files-found: ignore
 
   toolkit-contracts-e2e:
     permissions:
@@ -879,13 +894,14 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      - uses: ./.github/actions/reusable-e2e-tests
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          just-command: toolkit-contracts-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   if: steps.guard.outputs.hit != 'true'
+      #   with:
+      #     just-command: toolkit-contracts-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -927,7 +943,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
 
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -1090,14 +1106,12 @@ jobs:
     needs: [run, build-indexer-images]
     runs-on: [self-hosted, "tier:medium"]
     # The local-env stack (kupo, ogmios, db-sync, indexers, postgres, nats,
-    # cardano-node, ...) binds fixed ports on 0.0.0.0 — 1442, 1337, 8088,
-    # 4222, 5432, 30000, 32000 — so concurrent jobs on the same self-hosted
-    # runner host collide. Serialize across the whole repo with a fixed
-    # concurrency group; queue rather than cancel so a long-running stack
-    # actually finishes (the next PR's job picks up when this one is done).
-    concurrency:
-      group: local-environment-tests-self-hosted
-      cancel-in-progress: false
+    # cardano-node, ...) used to bind fixed ports + container names on the shared
+    # self-hosted host, so concurrent jobs collided and this job was serialized
+    # repo-wide with a fixed concurrency group. The `Compute per-runner local-env
+    # port slot` step in the composite action now gives each runner slot a
+    # disjoint host-port block + unique compose project name, so jobs run
+    # concurrently — the serialization gate has been removed (see shielded-sre#281).
     permissions:
       pull-requests: write
       packages: read

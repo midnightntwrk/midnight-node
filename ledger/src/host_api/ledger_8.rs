@@ -429,17 +429,6 @@ pub trait Ledger8Bridge {
 		}
 	}
 
-	fn construct_distribute_treasury_system_tx(
-		&mut self,
-		amount: PassFatPointerAndDecode<u128>,
-	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::construct_distribute_treasury_system_tx(amount)
-		} else {
-			Bridge::<Signature, DbSeparate>::construct_distribute_treasury_system_tx(amount)
-		}
-	}
-
 	/// Ensures the correct ledger storage is initialized for this runtime version.
 	/// Handles rollback: if new version's storage is initialized but we need this version's storage,
 	/// drops new version's storage and initializes normal storage.
