@@ -720,7 +720,7 @@ impl CardanoClient {
 
     pub async fn mint_tokens(
         &self,
-        amount: i32,
+        amount: u64,
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let policy_id = config::cnight_token_policy_id();
@@ -1633,4 +1633,160 @@ impl CardanoClient {
             )),
         }
     }
+    /// Build and sign — but do not submit — a Cardano bridge transfer that
+    /// sends cNight to the ICS validator address with metadata identifying the
+    /// target Midnight address. Pair with `submit_tx` to publish.
+    pub async fn make_bridge_transfer(
+        &self,
+        cnight_utxo: &OgmiosUtxo,
+        payment_utxo: &OgmiosUtxo,
+        ics_address: &str,
+        amount: u64,
+        recipient: BridgeTransferRecipient,
+    ) -> Result<SignedBridgeTransaction, OgmiosClientError> {
+        const BRIDGE_METADATUM_LABEL: u64 = 6_500_973;
+        let policy_id = config::cnight_token_policy_id();
+        let network = Network::Custom(self.constants.cost_model.clone());
+        let payment_addr = self.address_as_bech32();
+
+        let estimated_fee_and_required_change = 250_000 + 1_500_000;
+        let send_assets = vec![
+            Asset::new_from_str(
+                "lovelace",
+                &(cnight_utxo.value.lovelace + payment_utxo.value.lovelace
+                    - estimated_fee_and_required_change)
+                    .to_string(),
+            ),
+            Asset::new_from_str(&policy_id, &amount.to_string()),
+        ];
+
+        let mut unsigned_tx_hex = TxBuilder::new_core()
+            .network(network)
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(cnight_utxo.transaction.id),
+                cnight_utxo.index.into(),
+                &Self::build_asset_vector(cnight_utxo),
+                &payment_addr,
+            )
+            .tx_in(
+                &hex::encode(payment_utxo.transaction.id),
+                payment_utxo.index.into(),
+                &Self::build_asset_vector(payment_utxo),
+                &payment_addr,
+            )
+            .tx_in_collateral(
+                &hex::encode(payment_utxo.transaction.id),
+                payment_utxo.index.into(),
+                &Self::build_asset_vector(payment_utxo),
+                &payment_addr,
+            )
+            .tx_out(ics_address, &send_assets)
+            .tx_out_inline_datum_value(&WData::JSON(
+                serde_json::json!({"constructor": 0, "fields": []}).to_string(),
+            ))
+            .metadata_value(
+                &BRIDGE_METADATUM_LABEL.to_string(),
+                BRIDGE_ADDRESS_METADATUM_PLACEHOLDER_JSON,
+            )
+            .change_address(&payment_addr)
+            .complete_sync(None)
+            .unwrap()
+            .tx_hex();
+
+        if let BridgeTransferRecipient::Address(address) = &recipient {
+            unsigned_tx_hex = replace_with_bytes_metadatum(
+                &unsigned_tx_hex,
+                BRIDGE_METADATUM_LABEL,
+                address.as_slice(),
+            )
+            .expect("Failed to swap placeholder for bytes metadatum on bridge transfer tx");
+        }
+
+        let signed_tx_hex = self
+            .wallet
+            .sign_tx(&unsigned_tx_hex)
+            .expect("Failed to sign bridge transfer tx");
+        // Compute the Cardano tx id from the signed body. Using `FixedTransaction`
+        // preserves the original CBOR byte ordering, so the hash matches what
+        // the node will report when the tx lands.
+        let fixed_tx = whisky::csl::FixedTransaction::from_hex(&signed_tx_hex)
+            .expect("Failed to parse signed bridge transfer as FixedTransaction");
+        let tx_id: [u8; 32] = fixed_tx
+            .transaction_hash()
+            .to_bytes()
+            .try_into()
+            .expect("Cardano tx hash must be 32 bytes");
+        let signed_tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode signed tx hex");
+        Ok(SignedBridgeTransaction {
+            tx_id,
+            signed_tx_bytes,
+        })
+    }
+
+    /// Submit an already built and signed Cardano transaction (CBOR bytes) via Ogmios.
+    pub async fn submit_tx(
+        &self,
+        signed_tx_bytes: Vec<u8>,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let request = OgmiosRequest::SubmitTx {
+            tx_bytes: signed_tx_bytes,
+        };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+}
+
+/// A Cardano transaction that has been built and signed but not yet submitted
+/// to the network. Carries both the wire bytes (for `submit_tx`) and the tx hash.
+pub struct SignedBridgeTransaction {
+    /// 32-byte Cardano tx id (blake2b-256 of the transaction body).
+    pub tx_id: [u8; 32],
+    /// CBOR-encoded signed transaction, ready to hand to Ogmios.
+    pub signed_tx_bytes: Vec<u8>,
+}
+
+pub enum BridgeTransferRecipient {
+    Address([u8; 32]),
+    /// For testing handling of transfers with invalid recipient
+    Invalid,
+}
+
+/// Whiskey can't encode bytes metadatum. This value is put as metadatum item,
+/// to allow proper fee calculation. Later CSL code replaces this placeholder.
+const BRIDGE_ADDRESS_METADATUM_PLACEHOLDER_JSON: &str = "\"placeholderplaceholderplaceholde\"";
+
+/// Replace metadatum item with bytes metadatum using pure CSL.
+fn replace_with_bytes_metadatum(
+    unsigned_tx_hex: &str,
+    label: u64,
+    bytes: &[u8],
+) -> Result<String, whisky::csl::JsError> {
+    use whisky::csl;
+
+    let bytes_metadatum = csl::TransactionMetadatum::new_bytes(bytes.to_vec())?;
+    let mut list = csl::MetadataList::new();
+    list.add(&bytes_metadatum);
+    let list_metadatum = csl::TransactionMetadatum::new_list(&list);
+
+    let mut metadata = csl::GeneralTransactionMetadata::new();
+    metadata.insert(&csl::BigNum::from(label), &list_metadatum);
+
+    let mut aux_data = csl::AuxiliaryData::new();
+    aux_data.set_metadata(&metadata);
+    let aux_hash = csl::hash_auxiliary_data(&aux_data);
+
+    let tx = csl::Transaction::from_hex(unsigned_tx_hex)?;
+    let mut body = tx.body();
+    body.set_auxiliary_data_hash(&aux_hash);
+
+    let new_tx = csl::Transaction::new(&body, &tx.witness_set(), Some(aux_data));
+    Ok(new_tx.to_hex())
 }
