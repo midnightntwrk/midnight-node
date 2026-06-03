@@ -1,6 +1,6 @@
 services:
   cardano-node-1:
-    container_name: cardano-node-1
+    container_name: cardano-node-1${LOCALENV_NAME_SUFFIX:-}
     image: ${CARDANO_IMAGE}
     platform: linux/amd64
     healthcheck:
@@ -41,10 +41,10 @@ services:
       - CARDANO_NODE_SOCKET_PATH=/data/node.socket
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
-      - "32000:32000"
+      - "${CARDANO_NODE_HOST_PORT:-32000}:32000"
 
   cardano-node-socat:
-    container_name: cardano-node-1-socat
+    container_name: cardano-node-1-socat${LOCALENV_NAME_SUFFIX:-}
     image: alpine/socat@sha256:78b3a1f99ca8f9179c9dbbdcd09d9ceee4c5fa8349847a42cfa3d0c279be8022
     command: TCP-LISTEN:30000,fork,reuseaddr, UNIX-CONNECT:/data/node.socket
     depends_on:
@@ -52,10 +52,10 @@ services:
     volumes:
       - cardano-node-1-data:/data
     ports:
-      - "30000:30000"
+      - "${CARDANO_SOCAT_HOST_PORT:-30000}:30000"
 
   contract-compiler:
-    container_name: contract-compiler
+    container_name: contract-compiler${LOCALENV_NAME_SUFFIX:-}
     platform: ${ARCHITECTURE}
     build:
       context: ./configurations/contract-compiler
@@ -76,7 +76,7 @@ services:
       - ALL
 
   kupo:
-    container_name: kupo
+    container_name: kupo${LOCALENV_NAME_SUFFIX:-}
     image: ${KUPO_IMAGE}
     depends_on:
       cardano-node-1:
@@ -95,10 +95,10 @@ services:
       - cardano-node-1-data:/node-ipc
       - ./configurations/busybox:/busybox
     ports:
-      - "${KUPO_PORT}:${KUPO_PORT}"
+      - "${KUPO_HOST_PORT:-1442}:${KUPO_PORT}"
 
   ogmios:
-    container_name: ogmios
+    container_name: ogmios${LOCALENV_NAME_SUFFIX:-}
     image: ${OGMIOS_IMAGE}
     platform: linux/amd64
     depends_on:
@@ -119,7 +119,7 @@ services:
       - cardano-node-1-data:/node-ipc
       - ./configurations/busybox:/busybox
     ports:
-      - "${OGMIOS_PORT}:${OGMIOS_PORT}"
+      - "${OGMIOS_HOST_PORT:-1337}:${OGMIOS_PORT}"
     healthcheck:
       test: "busybox wget -O - http://localhost:${OGMIOS_PORT}/health"
     deploy:
@@ -129,7 +129,7 @@ services:
           memory: ${MEM_OGMIOS:-}
 
   db-sync:
-    container_name: db-sync
+    container_name: db-sync${LOCALENV_NAME_SUFFIX:-}
     image: ${DBSYNC_IMAGE}
     platform: linux/amd64
     depends_on:
@@ -163,7 +163,7 @@ services:
           memory: ${MEM_DBSYNC:-}
 
   postgres:
-    container_name: postgres
+    container_name: postgres${LOCALENV_NAME_SUFFIX:-}
     image: ${POSTGRES_IMAGE}
     platform: ${ARCHITECTURE}
     command: >
@@ -187,7 +187,7 @@ services:
       - PGDATA=/pgdata
       - POSTGRES_MULTIPLE_DATABASES=cexplorer,qa_demo
     ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+      - "${POSTGRES_HOST_PORT:-5432}:${POSTGRES_PORT}"
     entrypoint: ["/bin/bash", "/usr/local/bin/custom-entrypoint.sh"]
     volumes:
       - ./configurations/postgres/entrypoint.sh:/usr/local/bin/custom-entrypoint.sh
@@ -200,7 +200,7 @@ services:
 
   chain-indexer:
     profiles: ["withindexer"]
-    container_name: chain-indexer
+    container_name: chain-indexer${LOCALENV_NAME_SUFFIX:-}
     platform: ${ARCHITECTURE}
     depends_on:
       postgres-indexer:
@@ -229,7 +229,7 @@ services:
 
   wallet-indexer:
     profiles: ["withindexer"]
-    container_name: wallet-indexer
+    container_name: wallet-indexer${LOCALENV_NAME_SUFFIX:-}
     platform: ${ARCHITECTURE}
     depends_on:
       postgres-indexer:
@@ -255,7 +255,7 @@ services:
 
   indexer-api:
     profiles: ["withindexer"]
-    container_name: indexer-api
+    container_name: indexer-api${LOCALENV_NAME_SUFFIX:-}
     platform: ${ARCHITECTURE}
     depends_on:
       postgres-indexer:
@@ -265,7 +265,7 @@ services:
     image: ${INDEXER_API_IMAGE}
     restart: "no"
     ports:
-      - "8088:8088"
+      - "${INDEXER_API_HOST_PORT:-8088}:8088"
     environment:
       RUST_LOG: "indexer_api=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
       APP__INFRA__SECRET: "${APP__INFRA__SECRET}"
@@ -286,7 +286,7 @@ services:
 
   postgres-indexer:
     profiles: ["withindexer"]
-    container_name: postgres-indexer
+    container_name: postgres-indexer${LOCALENV_NAME_SUFFIX:-}
     platform: linux/amd64
     image: "postgres:17.1-alpine@sha256:0d9624535618a135c5453258fd629f4963390338b11aaffb92292c12df3a6c17"
     restart: "always"
@@ -306,20 +306,20 @@ services:
 
   nats:
     profiles: ["withindexer"]
-    container_name: nats
+    container_name: nats${LOCALENV_NAME_SUFFIX:-}
     image: "nats:2.11.8@sha256:e7ecc3cf81f4ccada9d24f8466d157ff472c20a12a5f8dddaeb26d71e7b42ee1"
     restart: "always"
     command:
       ["--user", "indexer", "--pass", "${APP__INFRA__PUB_SUB__PASSWORD}", "-js"]
     ports:
-      - "4222:4222"
+      - "${NATS_HOST_PORT:-4222}:4222"
     volumes:
       - nats-data:/tmp/nats
     security_opt:
       - no-new-privileges:true
 
   midnight-node-1:
-    container_name: midnight-node-1
+    container_name: midnight-node-1${LOCALENV_NAME_SUFFIX:-}
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
@@ -338,9 +338,9 @@ services:
       io.midnight.role: validator
       io.midnight.rpc-port: "9933"
     ports:
-      - "30333:30333"
-      - "9933:9933"
-      - "9615:9615"
+      - "${MN1_P2P_HOST_PORT:-30333}:30333"
+      - "${MN1_RPC_HOST_PORT:-9933}:9933"
+      - "${MN1_PROM_HOST_PORT:-9615}:9615"
     restart: always
     deploy:
       resources:
@@ -349,7 +349,7 @@ services:
           memory: ${MEM_MIDNIGHT_NODE:-}
 
   midnight-node-2:
-    container_name: midnight-node-2
+    container_name: midnight-node-2${LOCALENV_NAME_SUFFIX:-}
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
@@ -368,9 +368,9 @@ services:
       io.midnight.role: validator
       io.midnight.rpc-port: "9934"
     ports:
-      - "30334:30334"
-      - "9934:9934"
-      - "9616:9616"
+      - "${MN2_P2P_HOST_PORT:-30334}:30334"
+      - "${MN2_RPC_HOST_PORT:-9934}:9934"
+      - "${MN2_PROM_HOST_PORT:-9616}:9616"
     restart: always
     deploy:
       resources:
@@ -379,7 +379,7 @@ services:
           memory: ${MEM_MIDNIGHT_NODE:-}
 
   midnight-node-3:
-    container_name: midnight-node-3
+    container_name: midnight-node-3${LOCALENV_NAME_SUFFIX:-}
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
@@ -398,9 +398,9 @@ services:
       io.midnight.role: validator
       io.midnight.rpc-port: "9935"
     ports:
-      - "30335:30335"
-      - "9935:9935"
-      - "9617:9617"
+      - "${MN3_P2P_HOST_PORT:-30335}:30335"
+      - "${MN3_RPC_HOST_PORT:-9935}:9935"
+      - "${MN3_PROM_HOST_PORT:-9617}:9617"
     restart: always
     deploy:
       resources:
@@ -409,7 +409,7 @@ services:
           memory: ${MEM_MIDNIGHT_NODE:-}
 
   midnight-node-4:
-    container_name: midnight-node-4
+    container_name: midnight-node-4${LOCALENV_NAME_SUFFIX:-}
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
@@ -430,9 +430,9 @@ services:
       io.midnight.role: validator
       io.midnight.rpc-port: "9936"
     ports:
-      - "30336:30336"
-      - "9936:9936"
-      - "9618:9618"
+      - "${MN4_P2P_HOST_PORT:-30336}:30336"
+      - "${MN4_RPC_HOST_PORT:-9936}:9936"
+      - "${MN4_PROM_HOST_PORT:-9618}:9618"
     restart: always
     deploy:
       resources:
@@ -441,7 +441,7 @@ services:
           memory: ${MEM_MIDNIGHT_NODE:-}
 
   midnight-node-5:
-    container_name: midnight-node-5
+    container_name: midnight-node-5${LOCALENV_NAME_SUFFIX:-}
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
@@ -462,9 +462,9 @@ services:
       io.midnight.role: validator
       io.midnight.rpc-port: "9944"
     ports:
-      - "30337:30337"
-      - "9944:9944"
-      - "9619:9619"
+      - "${MN5_P2P_HOST_PORT:-30337}:30337"
+      - "${MN5_RPC_HOST_PORT:-9944}:9944"
+      - "${MN5_PROM_HOST_PORT:-9619}:9619"
     restart: always
     deploy:
       resources:
@@ -473,7 +473,7 @@ services:
           memory: ${MEM_MIDNIGHT_NODE:-}
 
   midnight-setup:
-    container_name: midnight-setup
+    container_name: midnight-setup${LOCALENV_NAME_SUFFIX:-}
     image: ${MIDNIGHT_NODE_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:

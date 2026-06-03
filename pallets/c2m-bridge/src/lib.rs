@@ -280,7 +280,7 @@ pub mod pallet {
 			let count = count.saturating_add(1);
 			if sum > config.subminimal_transfers_flush_threshold {
 				Self::execute_serialized_tx(
-					LedgerApi::construct_distribute_treasury_system_tx(sum.into()),
+					LedgerApi::construct_unlock_to_treasury_system_tx(sum.into()),
 					|midnight_tx_hash| Event::SubminimalFlushTransfer {
 						amount: sum,
 						count,
@@ -308,7 +308,7 @@ pub mod pallet {
 
 		fn handle_invalid_transfer(mc_tx_hash: McTxHash, amount: u64) {
 			Self::execute_serialized_tx(
-				LedgerApi::construct_distribute_treasury_system_tx(amount.into()),
+				LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
 				|midnight_tx_hash| Event::InvalidTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Invalid' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
 			);
@@ -329,7 +329,7 @@ pub mod pallet {
 				None => {
 					// Not pre-approved by governance — redirect funds to the Treasury.
 					Self::execute_serialized_tx(
-						LedgerApi::construct_distribute_treasury_system_tx(amount.into()),
+						LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
 						|midnight_tx_hash| Event::UnapprovedTransfer {
 							mc_tx_hash,
 							amount,

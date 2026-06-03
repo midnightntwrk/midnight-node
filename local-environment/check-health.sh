@@ -19,7 +19,7 @@
 # GRANDPA voting (i.e. fails if some validators are stuck or panicking).
 
 timeout=360  # Default 6 minutes
-address="http://localhost:9933"  # Default address
+address="http://localhost:${MN1_RPC_HOST_PORT:-9933}"  # Default address (per-runner host port; falls back to legacy 9933)
 target_block="1"  # Default to block 1
 mode="head"  # Default: check head block; "finalized" checks finalized block
 
