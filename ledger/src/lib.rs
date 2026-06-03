@@ -107,47 +107,7 @@ pub mod types {
 /// These bypass the host function / WASM boundary and call the bridge natively.
 #[cfg(feature = "std")]
 pub mod rpc {
-	use super::*;
-
-	use midnight_primitives_ledger::LedgerStorageExt;
-
-	type Signature = base_crypto::signatures::Signature;
-	// Storage type when the node is booted with separate-DB ledger storage.
-	type DbSeparate = latest::ledger_storage_local::db::ParityDb;
-	// Storage type when the node is booted with unified-DB ledger storage.
-	// Must match the type registered in `host_api/ledger_8.rs` so the
-	// `default_storage::<D>()` lookup finds the right `Storage<D>`.
-	type DbUnified = latest::ledger_storage_local::db::ParityDb<
-		sha2::Sha256,
-		latest::ledger_storage_local::db::paritydb::OwnedDb,
-		{ LedgerStorageExt::COLUMN_OFFSET },
-	>;
-
-	/// Query specific fields in a contract's state tree.
-	///
-	/// Navigates the state tree lazily in ParityDB — O(log n) per query.
-	///
-	/// Detects whether unified-DB or separate-DB storage was registered at
-	/// startup via `try_get_default_storage::<D>()` and dispatches the
-	/// `Bridge<_, D>` call accordingly. The host_api makes the same choice
-	/// via `is_unified()` on substrate Externalities; this is the RPC-side
-	/// equivalent that works outside a runtime call.
-	pub fn query_contract_state(
-		state_key: &[u8],
-		contract_address: &[u8],
-		paths: &[Vec<base_crypto::fab::AlignedValue>],
-	) -> Result<Vec<Result<Vec<u8>, String>>, types::active_version::LedgerApiError> {
-		use latest::{Bridge, ledger_storage_local::storage::try_get_default_storage};
-		if try_get_default_storage::<DbUnified>().is_some() {
-			Bridge::<Signature, DbUnified>::query_contract_state(state_key, contract_address, paths)
-		} else {
-			Bridge::<Signature, DbSeparate>::query_contract_state(
-				state_key,
-				contract_address,
-				paths,
-			)
-		}
-	}
+	pub use super::latest::query_contract_state_dispatch as query_contract_state;
 }
 
 #[cfg(test)]
