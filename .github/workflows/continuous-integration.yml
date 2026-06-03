@@ -1105,13 +1105,12 @@ jobs:
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [run, build-indexer-images]
     runs-on: [self-hosted, "tier:medium"]
-    # The local-env stack (kupo, ogmios, db-sync, indexers, postgres, nats,
-    # cardano-node, ...) used to bind fixed ports + container names on the shared
-    # self-hosted host, so concurrent jobs collided and this job was serialized
-    # repo-wide with a fixed concurrency group. The `Compute per-runner local-env
-    # port slot` step in the composite action now gives each runner slot a
-    # disjoint host-port block + unique compose project name, so jobs run
-    # concurrently — the serialization gate has been removed (see shielded-sre#281).
+    # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
+    # (+local-env-ci), which gives each invocation its own network namespace. The stack
+    # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
+    # so concurrent PRs on the same self-hosted host can't collide — the repo-wide
+    # `local-environment-tests-self-hosted` serialization is gone. Concurrency is now
+    # RAM-bounded (the shared buildkit/RAM pool), which earthly queues, not hard-serialized.
     permissions:
       pull-requests: write
       packages: read
@@ -1127,9 +1126,10 @@ jobs:
         uses: ./.github/actions/tree-cache-guard
 
       # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. The concurrency group only serializes this job against itself;
-      # other self-hosted jobs on the same host can still clobber the shared
-      # ~/.docker. Inherited by the composite action's docker login and pulls.
+      # `run` job. Now that this job runs concurrently (no serialization), per-slot
+      # isolation matters MORE: multiple instances log into GHCR at once and would
+      # otherwise clobber the shared ~/.docker. Inherited by the composite action's
+      # docker login and earthly --pull.
       - name: Isolate docker config (self-hosted shared HOME)
         if: steps.guard.outputs.hit != 'true'
         run: |
