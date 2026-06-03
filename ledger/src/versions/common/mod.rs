@@ -1186,6 +1186,16 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 	max_fp.into_atomic_units(max_weight as u128).min(max_weight as u128) as u64
 }
 
+/// Maximum number of steps in a single path. Caps unbounded traversal
+/// before reaching the deserialize/navigation work.
+const MAX_PATH_DEPTH: usize = 16;
+
+/// Maximum byte length of a single path key. A serialized `AlignedValue`
+/// for any reasonable index, map key, or merkle position fits well under
+/// this; the cap exists so a single accepted batch cannot allocate
+/// megabytes per key before the deserializer rejects it.
+const MAX_KEY_BYTES: usize = 4 * 1024;
+
 /// Navigate a contract's state tree along a single path and return the
 /// serialized leaf value.
 ///
@@ -1193,8 +1203,8 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 /// based on the current `StateValue` variant (array index, map key, or
 /// merkle tree position), mirroring the VM's `idx` instruction. Map and
 /// merkle-tree misses surface as a serialized `StateValue::Null`, matching
-/// VM semantics; out-of-bounds array indices are recoverable per-query
-/// errors.
+/// VM semantics; out-of-bounds array indices and depth/size violations are
+/// recoverable per-query errors.
 ///
 /// O(log n) — only the nodes along the path are loaded from storage.
 ///
@@ -1215,6 +1225,12 @@ fn resolve_state_path<D: DB>(
 	if path.is_empty() {
 		return Err("path cannot be empty; provide at least one step".into());
 	}
+	if path.len() > MAX_PATH_DEPTH {
+		return Err(format!(
+			"path too deep: {} steps exceeds the maximum of {MAX_PATH_DEPTH}",
+			path.len()
+		));
+	}
 
 	let serialize_value = |v: &StateValue<D>| -> Result<Vec<u8>, String> {
 		let size = midnight_serialize_local::tagged_serialized_size(v);
@@ -1226,6 +1242,12 @@ fn resolve_state_path<D: DB>(
 
 	let mut current = root.clone();
 	for key_bytes in path {
+		if key_bytes.len() > MAX_KEY_BYTES {
+			return Err(format!(
+				"path key too large: {} bytes exceeds the maximum of {MAX_KEY_BYTES}",
+				key_bytes.len()
+			));
+		}
 		// Deserializable::deserialize advances the slice as it reads; check
 		// that the input is fully consumed so the wire format is canonical
 		// (two byte sequences with trailing junk must not silently resolve

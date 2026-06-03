@@ -37,14 +37,6 @@ use std::sync::Arc;
 pub const API_VERSIONS: [u32; 1] = [2];
 /// TODO: Consider making this a CLI argument so RPC providers can customize it.
 pub const MAX_STATE_QUERIES: usize = 100;
-/// TODO: Re-use a constant from midnight-ledger once there is a depth limit
-/// for nested `StateValue`.
-pub const MAX_PATH_DEPTH: usize = 16;
-/// Per-key byte budget. A serialized `AlignedValue` for any reasonable index,
-/// map key, or merkle position fits well under this; the cap exists so a
-/// single accepted request cannot allocate megabytes per key before the
-/// deserializer rejects it.
-pub const MAX_KEY_BYTES: usize = 4 * 1024;
 
 /// Midnight core RPC API.
 ///
@@ -115,7 +107,6 @@ pub enum StateRpcError {
 	UnableToGetZSwapStateRoot,
 	UnableToGetLedgerStateRoot,
 	TooManyQueries { max: usize, got: usize },
-	PathTooDeep(usize),
 }
 
 #[derive(Debug)]
@@ -186,9 +177,6 @@ impl Display for StateRpcError {
 			},
 			StateRpcError::TooManyQueries { max, got } => {
 				write!(f, "Too many queries: got {got}, maximum is {max}")
-			},
-			StateRpcError::PathTooDeep(got) => {
-				write!(f, "Path too deep: {got} steps exceeds the maximum of {MAX_PATH_DEPTH}")
 			},
 		}
 	}
@@ -446,34 +434,6 @@ where
 		let dehexed_address = hex::decode(&contract_address)
 			.map_err(|_| StateRpcError::BadContractAddress(contract_address))?;
 
-		// Per-query input validation: depth and key size are reported as
-		// `RpcStateQueryResult.error` so a single bad query does not abort
-		// the whole batch. `local_errors[i]` carries the validation outcome
-		// for `queries[i]`; only well-formed queries are forwarded to the
-		// bridge (and we re-zip results back in by index below).
-		let mut local_errors: Vec<Option<String>> = Vec::with_capacity(queries.len());
-		let mut forwarded_indices: Vec<usize> = Vec::with_capacity(queries.len());
-		let mut forwarded_paths: Vec<Vec<Vec<u8>>> = Vec::with_capacity(queries.len());
-		for (i, q) in queries.iter().enumerate() {
-			if q.path.len() > MAX_PATH_DEPTH {
-				local_errors.push(Some(format!(
-					"path too deep: {} steps exceeds the maximum of {MAX_PATH_DEPTH}",
-					q.path.len()
-				)));
-				continue;
-			}
-			if let Some(oversize) = q.path.iter().find(|k| k.0.len() > MAX_KEY_BYTES) {
-				local_errors.push(Some(format!(
-					"path key too large: {} bytes exceeds the maximum of {MAX_KEY_BYTES}",
-					oversize.0.len()
-				)));
-				continue;
-			}
-			local_errors.push(None);
-			forwarded_indices.push(i);
-			forwarded_paths.push(q.path.iter().map(|key| key.0.clone()).collect());
-		}
-
 		let api = self.client.runtime_api();
 		let at = at.unwrap_or_else(|| self.client.info().best_hash);
 
@@ -489,33 +449,28 @@ where
 		let state_key =
 			api.get_state_key(at).map_err(|_| StateRpcError::UnableToGetContractState)?;
 
-		let bridge_results = query_contract_state(&state_key, &dehexed_address, &forwarded_paths)
-			.map_err(|e| match e {
-			LedgerApiError::ContractNotPresent => StateRpcError::ContractNotPresent,
-			_ => StateRpcError::UnableToGetContractState,
-		})?;
+		// The bridge enforces per-path depth and key-size limits and surfaces
+		// any per-query failures (out-of-bounds, malformed key, etc.) inline
+		// in its `Result<Vec<u8>, String>` slot, so the RPC layer can do a
+		// straight 1:1 zip back to `RpcStateQueryResult`.
+		let paths: Vec<Vec<Vec<u8>>> = queries
+			.iter()
+			.map(|q| q.path.iter().map(|key| key.0.clone()).collect())
+			.collect();
+		let bridge_results =
+			query_contract_state(&state_key, &dehexed_address, &paths).map_err(|e| match e {
+				LedgerApiError::ContractNotPresent => StateRpcError::ContractNotPresent,
+				_ => StateRpcError::UnableToGetContractState,
+			})?;
 
-		// Stitch bridge results back into the original query order, carrying
-		// the per-query validation errors through.
-		let mut bridge_iter = bridge_results.into_iter();
 		Ok(queries
 			.into_iter()
-			.zip(local_errors.into_iter())
-			.map(|(query, local_err)| {
-				if let Some(error) = local_err {
-					return RpcStateQueryResult { query, value: None, error: Some(error) };
-				}
-				match bridge_iter.next() {
-					Some(Ok(value)) => {
-						RpcStateQueryResult { query, value: Some(hex::encode(value)), error: None }
-					},
-					Some(Err(msg)) => RpcStateQueryResult { query, value: None, error: Some(msg) },
-					None => RpcStateQueryResult {
-						query,
-						value: None,
-						error: Some("internal: bridge produced fewer results than queries".into()),
-					},
-				}
+			.zip(bridge_results.into_iter())
+			.map(|(query, result)| match result {
+				Ok(value) => {
+					RpcStateQueryResult { query, value: Some(hex::encode(value)), error: None }
+				},
+				Err(msg) => RpcStateQueryResult { query, value: None, error: Some(msg) },
 			})
 			.collect())
 	}
