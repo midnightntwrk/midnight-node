@@ -177,10 +177,6 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// A Cardano Wallet address was sent, but was longer than expected
 		MaxCardanoAddrLengthExceeded,
-		/// A cNIGHT identifier component (policy id or asset name) exceeded its bound
-		CardanoIdentifierLengthExceeded,
-		/// A cNIGHT policy id was not exactly `CNIGHT_POLICY_ID_LENGTH` bytes long
-		InvalidCNightPolicyIdLength,
 		/// A Cardano asset name contained non-ASCII bytes
 		NonAsciiAssetName,
 		/// Only one inherent is allowed per block
@@ -791,24 +787,15 @@ pub mod pallet {
 			asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
-			// A Cardano policy id is a blake2b-224 hash, i.e. exactly
-			// CNIGHT_POLICY_ID_LENGTH bytes. The BoundedVec below only enforces the
-			// upper bound, so reject anything shorter here to avoid storing a
-			// malformed identifier.
-			ensure!(
-				policy_id.len() == CNIGHT_POLICY_ID_LENGTH as usize,
-				Error::<T>::InvalidCNightPolicyIdLength
-			);
-			let bounded_policy_id: BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>> =
-				policy_id.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
 			// Genesis validates asset names as ASCII-only strings, and block authors
 			// convert this value to a `String` when building the cNIGHT observation
 			// inherent. Enforce the same constraint here so a root call cannot store
 			// bytes that would make inherent-data creation fail.
 			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
-			let bounded_asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
-				asset_name.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
-			CNightIdentifier::<T>::set((bounded_policy_id, bounded_asset_name));
+			// Infallible: the array length equals the BoundedVec bound.
+			let bounded_policy_id: BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>> =
+				BoundedVec::truncate_from(policy_id.to_vec());
+			CNightIdentifier::<T>::set((bounded_policy_id, asset_name));
 
 			Ok(())
 		}
@@ -829,9 +816,7 @@ pub mod pallet {
 			// Enforce the same constraint here so a root call cannot store bytes that
 			// would make inherent-data creation fail.
 			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
-			MainChainAuthTokenAssetName::<T>::set(
-				asset_name.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?,
-			);
+			MainChainAuthTokenAssetName::<T>::set(asset_name);
 
 			Ok(())
 		}

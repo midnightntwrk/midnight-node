@@ -108,26 +108,28 @@ mod benchmarks {
 	/// Benchmark `set_cnight_identifier` with maximum-sized inputs.
 	#[benchmark]
 	fn set_cnight_identifier() {
-		let policy_id = alloc::vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize];
-		let asset_name = alloc::vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize];
+		let policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
+			BoundedVec::truncate_from(alloc::vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize]);
 
 		#[extrinsic_call]
-		set_cnight_identifier(RawOrigin::Root, policy_id.clone(), asset_name.clone());
+		set_cnight_identifier(RawOrigin::Root, policy_id, asset_name.clone());
 
 		let (got_pid, got_name) = CNightIdentifier::<T>::get();
-		assert_eq!(got_pid.to_vec(), policy_id);
-		assert_eq!(got_name.to_vec(), asset_name);
+		assert_eq!(got_pid.to_vec(), policy_id.to_vec());
+		assert_eq!(got_name, asset_name);
 	}
 
 	/// Benchmark `set_auth_token_asset_name` with a maximum-sized asset name.
 	#[benchmark]
 	fn set_auth_token_asset_name() {
-		let asset_name = alloc::vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize];
+		let asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
+			BoundedVec::truncate_from(alloc::vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize]);
 
 		#[extrinsic_call]
 		set_auth_token_asset_name(RawOrigin::Root, asset_name.clone());
 
-		assert_eq!(MainChainAuthTokenAssetName::<T>::get().to_vec(), asset_name);
+		assert_eq!(MainChainAuthTokenAssetName::<T>::get(), asset_name);
 	}
 
 	// Benchmark smoke tests run via the runtime crate (not the pallet crate),

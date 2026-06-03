@@ -1741,34 +1741,44 @@ fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_lon
 	);
 }
 
+type BoundedAssetName = BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>;
+
+fn bounded_asset_name(bytes: &[u8]) -> BoundedAssetName {
+	BoundedAssetName::try_from(bytes.to_vec()).expect("asset name fits the bound")
+}
+
+// Oversized policy ids and asset names are unrepresentable in the call
+// arguments (`[u8; CNIGHT_POLICY_ID_LENGTH]` and a `BoundedVec`), so they are
+// rejected at decode time and need no dispatch-level tests.
+
 #[test]
 fn set_cnight_identifier_works() {
 	new_test_ext().execute_with(|| {
-		let policy_id = vec![0xAB; CNIGHT_POLICY_ID_LENGTH as usize];
-		let asset_name = b"staging-cnight".to_vec();
+		let policy_id = [0xAB; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = bounded_asset_name(b"staging-cnight");
 
 		assert_ok!(CNightObservation::set_cnight_identifier(
 			RawOrigin::Root.into(),
-			policy_id.clone(),
+			policy_id,
 			asset_name.clone(),
 		));
 
 		let (got_pid, got_name) = pallet_cnight_observation::CNightIdentifier::<Test>::get();
-		assert_eq!(got_pid.to_vec(), policy_id);
-		assert_eq!(got_name.to_vec(), asset_name);
+		assert_eq!(got_pid.to_vec(), policy_id.to_vec());
+		assert_eq!(got_name, asset_name);
 	});
 }
 
 #[test]
 fn set_cnight_identifier_requires_root() {
 	new_test_ext().execute_with(|| {
-		let policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize];
-		let asset_name = b"x".to_vec();
+		let policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = bounded_asset_name(b"x");
 
 		assert_noop!(
 			CNightObservation::set_cnight_identifier(
 				RawOrigin::Signed(1).into(),
-				policy_id.clone(),
+				policy_id,
 				asset_name.clone(),
 			),
 			sp_runtime::DispatchError::BadOrigin,
@@ -1781,60 +1791,13 @@ fn set_cnight_identifier_requires_root() {
 }
 
 #[test]
-fn set_cnight_identifier_rejects_oversized_input() {
-	new_test_ext().execute_with(|| {
-		// An oversized policy id is rejected by the exact-length check before the
-		// BoundedVec conversion is reached.
-		let oversized_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize + 1];
-		let valid_asset_name = b"x".to_vec();
-		assert_noop!(
-			CNightObservation::set_cnight_identifier(
-				RawOrigin::Root.into(),
-				oversized_policy_id,
-				valid_asset_name,
-			),
-			pallet_cnight_observation::Error::<Test>::InvalidCNightPolicyIdLength,
-		);
-
-		let valid_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize];
-		let oversized_asset_name = vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize + 1];
-		assert_noop!(
-			CNightObservation::set_cnight_identifier(
-				RawOrigin::Root.into(),
-				valid_policy_id,
-				oversized_asset_name,
-			),
-			pallet_cnight_observation::Error::<Test>::CardanoIdentifierLengthExceeded,
-		);
-	});
-}
-
-#[test]
-fn set_cnight_identifier_rejects_short_policy_id() {
-	new_test_ext().execute_with(|| {
-		// A policy id shorter than the exact length fits the BoundedVec bound but
-		// is not a valid Cardano policy id, so it must be rejected.
-		let short_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize - 1];
-		let valid_asset_name = b"x".to_vec();
-		assert_noop!(
-			CNightObservation::set_cnight_identifier(
-				RawOrigin::Root.into(),
-				short_policy_id,
-				valid_asset_name,
-			),
-			pallet_cnight_observation::Error::<Test>::InvalidCNightPolicyIdLength,
-		);
-	});
-}
-
-#[test]
 fn set_cnight_identifier_rejects_non_ascii_asset_name() {
 	new_test_ext().execute_with(|| {
 		// Genesis validates asset names as ASCII-only strings and block authors
 		// convert them to `String` when building the inherent, so non-ASCII (and
 		// in particular non-UTF-8) bytes must be rejected.
-		let valid_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize];
-		let non_utf8_asset_name = vec![0xFF, 0xFE];
+		let valid_policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let non_utf8_asset_name = bounded_asset_name(&[0xFF, 0xFE]);
 		assert_noop!(
 			CNightObservation::set_cnight_identifier(
 				RawOrigin::Root.into(),
@@ -1849,7 +1812,7 @@ fn set_cnight_identifier_rejects_non_ascii_asset_name() {
 #[test]
 fn set_auth_token_asset_name_works() {
 	new_test_ext().execute_with(|| {
-		let asset_name = b"staging-auth-token".to_vec();
+		let asset_name = bounded_asset_name(b"staging-auth-token");
 
 		assert_ok!(CNightObservation::set_auth_token_asset_name(
 			RawOrigin::Root.into(),
@@ -1857,7 +1820,7 @@ fn set_auth_token_asset_name_works() {
 		));
 
 		assert_eq!(
-			pallet_cnight_observation::MainChainAuthTokenAssetName::<Test>::get().to_vec(),
+			pallet_cnight_observation::MainChainAuthTokenAssetName::<Test>::get(),
 			asset_name,
 		);
 	});
@@ -1866,7 +1829,7 @@ fn set_auth_token_asset_name_works() {
 #[test]
 fn set_auth_token_asset_name_requires_root() {
 	new_test_ext().execute_with(|| {
-		let asset_name = b"x".to_vec();
+		let asset_name = bounded_asset_name(b"x");
 
 		assert_noop!(
 			CNightObservation::set_auth_token_asset_name(
@@ -1883,23 +1846,12 @@ fn set_auth_token_asset_name_requires_root() {
 }
 
 #[test]
-fn set_auth_token_asset_name_rejects_oversized_input() {
-	new_test_ext().execute_with(|| {
-		let oversized = vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize + 1];
-		assert_noop!(
-			CNightObservation::set_auth_token_asset_name(RawOrigin::Root.into(), oversized),
-			pallet_cnight_observation::Error::<Test>::CardanoIdentifierLengthExceeded,
-		);
-	});
-}
-
-#[test]
 fn set_auth_token_asset_name_rejects_non_ascii_input() {
 	new_test_ext().execute_with(|| {
 		// Genesis validates this field as an ASCII-only string and block authors
 		// convert it to `String` when building the inherent, so non-ASCII (and in
 		// particular non-UTF-8) bytes must be rejected.
-		let non_utf8 = vec![0xFF, 0xFE];
+		let non_utf8 = bounded_asset_name(&[0xFF, 0xFE]);
 		assert_noop!(
 			CNightObservation::set_auth_token_asset_name(RawOrigin::Root.into(), non_utf8),
 			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,

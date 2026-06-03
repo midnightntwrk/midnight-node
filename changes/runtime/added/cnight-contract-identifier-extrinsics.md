@@ -9,9 +9,11 @@ Add two Root-only extrinsics to `pallet-cnight-observation`:
   auth token used by the mapping validator on Cardano.
 
 These let an ephemeral fork redirect cNIGHT observation to the STAGING track
-of a contract for upgradeability testing, without changing genesis. Both
-reject inputs that exceed their `BoundedVec` bounds with a new
-`CardanoIdentifierLengthExceeded` error.
+of a contract for upgradeability testing, without changing genesis. Argument
+lengths are enforced at decode time (`policy_id` is a fixed 28-byte array,
+asset names are `BoundedVec`s), and asset names must be ASCII — non-ASCII
+bytes are rejected with a new `NonAsciiAssetName` error so a root call cannot
+store values that would break inherent creation for block authors.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1602
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1561
