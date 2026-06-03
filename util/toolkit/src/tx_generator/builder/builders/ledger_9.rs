@@ -16,8 +16,9 @@
 #[path = "common"]
 #[allow(clippy::duplicate_mod)]
 pub mod inner {
-	pub use midnight_node_ledger_helpers::ledger_7 as ledger_helpers_local;
+	pub use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
 
+	pub mod batch_single_tx;
 	mod batches;
 	mod build_txs_ext;
 	mod claim_rewards;
@@ -33,6 +34,7 @@ pub mod inner {
 	mod tx_serialization;
 	pub mod type_convert;
 
+	pub use batch_single_tx::*;
 	pub use batches::*;
 	pub use build_txs_ext::*;
 	pub use claim_rewards::*;
@@ -47,17 +49,14 @@ pub mod inner {
 pub use inner::*;
 
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
-use midnight_node_ledger_helpers::ledger_7::{
+use midnight_node_ledger_helpers::ledger_9::{
 	DefaultDB, ProofMarker, Signature, TransactionWithContext,
 };
 
 pub fn serialize_tx(
 	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 ) -> SerializedTx {
-	let context =
-		midnight_node_ledger_helpers::fork::fork_7_to_8::block_context_7_to_8(&tx.block_context);
-	let context = midnight_node_ledger_helpers::fork::fork_8_to_9::block_context_8_to_9(&context);
 	let raw_tx = transactions::from_serde_tx(&tx.tx);
 	let tx_hash = tx.tx.transaction_hash().0.0;
-	SerializedTx { tx: raw_tx, context, tx_hash }
+	SerializedTx { tx: raw_tx, context: tx.block_context.clone(), tx_hash }
 }

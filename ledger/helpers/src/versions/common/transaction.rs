@@ -20,7 +20,7 @@ use super::{
 	ProofMarker, ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen,
 	SeedableRng, Segment, SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp,
 	SplittableRng, StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, WalletSeed,
-	serialize,
+	serialize, signature_verifying_key, transaction_signature,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -67,13 +67,13 @@ impl DustRegistrationBuilder {
 	) -> DustRegistration<Signature, D> {
 		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
 		let signature = self.signing_key.sign(rng, &data_to_sign);
-		let night_key = self.signing_key.verifying_key();
+		let night_key = signature_verifying_key(self.signing_key.verifying_key());
 
 		DustRegistration {
 			night_key,
 			dust_address: self.dust_address.map(|address| Sp::new(address)),
 			allow_fee_payment: self.allow_fee_payment,
-			signature: Some(Sp::new(signature)),
+			signature: Some(Sp::new(transaction_signature(signature))),
 		}
 	}
 }
@@ -485,7 +485,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 			let unsigned_claim_mint: ClaimRewardsTransaction<(), D> = ClaimRewardsTransaction {
 				network_id: network_id.clone(),
 				value: self.coin.value,
-				owner: wallet.unshielded.signing_key().verifying_key(),
+				owner: signature_verifying_key(wallet.unshielded.signing_key().verifying_key()),
 				nonce,
 				signature: (),
 				kind: ClaimKind::Reward,
@@ -493,13 +493,12 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 
 			let data_to_sign = unsigned_claim_mint.data_to_sign();
 			let signature = wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
-
 			ClaimRewardsTransaction {
 				network_id: network_id.clone(),
 				value: self.coin.value,
-				owner: wallet.unshielded.signing_key().verifying_key(),
+				owner: signature_verifying_key(wallet.unshielded.signing_key().verifying_key()),
 				nonce,
-				signature,
+				signature: transaction_signature(signature),
 				kind: ClaimKind::Reward,
 			}
 		});

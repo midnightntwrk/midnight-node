@@ -22,6 +22,9 @@ onchain-runtime-ledger-8 = { workspace = true }
 ledger-storage-ledger-8 = { workspace = true }
 zswap-ledger-8 = { workspace = true }
 
+mn-ledger-9 = { workspace = true, features = ["proving", "test-utilities"] }
+onchain-runtime-ledger-9 = { workspace = true }
+zswap-ledger-9 = { workspace = true }
 
 rand = { version = "0.8.4", features = ["small_rng", "getrandom"] }
 rayon.workspace = true
@@ -49,4 +52,4 @@ default = []
 can-panic = []
 erase-proof = []
 test-utils = []
-fixed-point-custom-serde = ["mn-ledger/fixed-point-custom-serde", "mn-ledger-8/fixed-point-custom-serde"]
+fixed-point-custom-serde = ["mn-ledger/fixed-point-custom-serde", "mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
