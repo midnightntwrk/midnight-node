@@ -84,24 +84,77 @@ runs:
       run: npm install -g npm@11.11.0
       shell: bash
 
-    # The local-env stack uses fixed container_names and publishes fixed host
-    # ports (validators 30333-30337 / 9933-9944 / 9615-9619, plus 32000, 30000,
-    # 8088, 4222). On a shared self-hosted host a container left by a cancelled
-    # or crashed prior run keeps a name/port bound, so the fresh stack fails with
-    # "port is already allocated" or a name conflict. The job's concurrency group
-    # only serialises this job against itself, not against leftovers. Tear the
-    # whole compose project down by label so every leftover service is reclaimed
-    # regardless of which name/port it holds — rather than a hand-maintained port
-    # list, which drifts as the compose file changes.
-    - name: Reclaim leftover local-env stack (self-hosted shared host)
+    # Per-runner port isolation. The shared self-hosted host runs up to 8 runner
+    # slots against one Docker daemon; the local-env stack publishes ~22 fixed
+    # host ports and uses fixed container names, so concurrent jobs collide. Give
+    # each slot a disjoint host-port block + a unique compose project name and
+    # container-name suffix, derived from the runner slot. The bring-up's own
+    # slot-aware `npm run stop:local-env` reclaims this slot's prior leftovers, so
+    # no separate cross-job teardown is needed.
+    #
+    # This is the bash mirror of local-environment/src/lib/ports.ts — the
+    # PORT_SPEC order and the BASE/BLOCK constants MUST stay in lockstep with it.
+    # Exports MN*_RPC_HOST_PORT etc. so later host steps (verify-finality,
+    # toolkit, e2e build-args) target this slot's ports.
+    - name: Compute per-runner local-env port slot
       shell: bash
       run: |
-        docker compose -p local-env down --remove-orphans --volumes 2>/dev/null || true
-        leftovers=$(docker ps -aq --filter "label=com.docker.compose.project=local-env" || true)
-        if [ -n "$leftovers" ]; then
-          echo "Force-removing leftover local-env containers: $leftovers"
-          docker rm -f $leftovers || true
+        slot=0
+        if [[ "${RUNNER_NAME:-}" =~ -runner-([0-9]+)$ ]]; then
+          # Force base 10: a zero-padded match like "08"/"09" would otherwise be
+          # read as an (invalid) octal literal by the arithmetic below and abort
+          # the step with "value too great for base".
+          slot=$((10#${BASH_REMATCH[1]}))
         fi
+        echo "Runner '${RUNNER_NAME:-unknown}' -> local-env slot $slot"
+
+        BASE=21000
+        BLOCK=64
+        # envVar:legacyPort, in fixed offset order (append-only).
+        specs=(
+          "CARDANO_NODE_HOST_PORT:32000"
+          "CARDANO_SOCAT_HOST_PORT:30000"
+          "KUPO_HOST_PORT:1442"
+          "OGMIOS_HOST_PORT:1337"
+          "POSTGRES_HOST_PORT:5432"
+          "INDEXER_API_HOST_PORT:8088"
+          "NATS_HOST_PORT:4222"
+          "MN1_P2P_HOST_PORT:30333"
+          "MN1_RPC_HOST_PORT:9933"
+          "MN1_PROM_HOST_PORT:9615"
+          "MN2_P2P_HOST_PORT:30334"
+          "MN2_RPC_HOST_PORT:9934"
+          "MN2_PROM_HOST_PORT:9616"
+          "MN3_P2P_HOST_PORT:30335"
+          "MN3_RPC_HOST_PORT:9935"
+          "MN3_PROM_HOST_PORT:9617"
+          "MN4_P2P_HOST_PORT:30336"
+          "MN4_RPC_HOST_PORT:9936"
+          "MN4_PROM_HOST_PORT:9618"
+          "MN5_P2P_HOST_PORT:30337"
+          "MN5_RPC_HOST_PORT:9944"
+          "MN5_PROM_HOST_PORT:9619"
+        )
+        i=0
+        for s in "${specs[@]}"; do
+          var="${s%%:*}"
+          legacy="${s##*:}"
+          if [ "$slot" -ge 1 ]; then
+            port=$((BASE + (slot - 1) * BLOCK + i))
+          else
+            port="$legacy"
+          fi
+          echo "${var}=${port}" >> "$GITHUB_ENV"
+          i=$((i + 1))
+        done
+        if [ "$slot" -ge 1 ]; then
+          echo "COMPOSE_PROJECT_NAME=local-env-r${slot}" >> "$GITHUB_ENV"
+          echo "LOCALENV_NAME_SUFFIX=-r${slot}" >> "$GITHUB_ENV"
+        else
+          echo "COMPOSE_PROJECT_NAME=local-env" >> "$GITHUB_ENV"
+          echo "LOCALENV_NAME_SUFFIX=" >> "$GITHUB_ENV"
+        fi
+        echo "LOCALENV_RUNNER_SLOT=${slot}" >> "$GITHUB_ENV"
 
     - name: Deploy local environment
       run: |
@@ -121,7 +174,8 @@ runs:
           --NODE_IMAGE="${NODE_IMAGE}" \
           --INDEXER_API_IMAGE="${INDEXER_API_IMAGE}" \
           --CHAIN_INDEXER_IMAGE="${CHAIN_INDEXER_IMAGE}" \
-          --WALLET_INDEXER_IMAGE="${WALLET_INDEXER_IMAGE}"
+          --WALLET_INDEXER_IMAGE="${WALLET_INDEXER_IMAGE}" \
+          --LOCALENV_RUNNER_SLOT="${LOCALENV_RUNNER_SLOT:-0}"
       shell: bash
       env:
         NODE_IMAGE: ${{ inputs.image }}
@@ -148,7 +202,13 @@ runs:
       id: e2e-tests
       # Source .envrc so EARTHLY_CONFIG matches other self-hosted jobs (see
       # comment on the earlier earthly invocation in this action for why).
-      run: . ./.envrc && earthly +local-env-e2e
+      # Pass this slot's node/ogmios host ports through to the e2e container
+      # (it reaches the host stack via 172.17.0.1:<port>).
+      run: |
+        . ./.envrc
+        earthly +local-env-e2e \
+          --E2E_NODE_RPC_PORT="${MN1_RPC_HOST_PORT:-9933}" \
+          --E2E_OGMIOS_PORT="${OGMIOS_HOST_PORT:-1337}"
       shell: bash
 
     - name: toolkit-multi-dest-e2e
