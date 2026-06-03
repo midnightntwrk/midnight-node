@@ -704,13 +704,13 @@ where
 	/// Query specific fields in a contract's state tree.
 	///
 	/// Returns one result per input path, in the same order. A per-query
-	/// `Err` is a recoverable navigation failure (out-of-bounds, malformed
-	/// key, etc.); the outer `LedgerApiError` is reserved for whole-request
-	/// failures (address malformed, contract absent, ledger unreadable).
+	/// `Err` is a recoverable navigation failure (out-of-bounds, etc.); the
+	/// outer `LedgerApiError` is reserved for whole-request failures
+	/// (address malformed, contract absent, ledger unreadable).
 	pub fn query_contract_state(
 		state_key: &[u8],
 		contract_address: &[u8],
-		paths: &[Vec<Vec<u8>>],
+		paths: &[Vec<base_crypto_local::fab::AlignedValue>],
 	) -> Result<Vec<Result<Vec<u8>, String>>, LedgerApiError> {
 		let api = api::new();
 		let addr = api.deserialize::<ContractAddress>(contract_address)?;
@@ -1187,36 +1187,30 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 }
 
 /// Maximum number of steps in a single path. Caps unbounded traversal
-/// before reaching the deserialize/navigation work.
+/// before reaching the navigation work.
 const MAX_PATH_DEPTH: usize = 16;
 
-/// Maximum byte length of a single path key. A serialized `AlignedValue`
-/// for any reasonable index, map key, or merkle position fits well under
-/// this; the cap exists so a single accepted batch cannot allocate
-/// megabytes per key before the deserializer rejects it.
-const MAX_KEY_BYTES: usize = 4 * 1024;
-
 /// Navigate a contract's state tree along a single path and return the
-/// serialized leaf value.
+/// tagged-serialized leaf value.
 ///
-/// Each element in `path` is a serialized `AlignedValue` key, interpreted
-/// based on the current `StateValue` variant (array index, map key, or
-/// merkle tree position), mirroring the VM's `idx` instruction. Map and
-/// merkle-tree misses surface as a serialized `StateValue::Null`, matching
-/// VM semantics; out-of-bounds array indices and depth/size violations are
+/// Each element in `path` is an `AlignedValue` key, interpreted based on the
+/// current `StateValue` variant (array index, map key, or merkle tree
+/// position), mirroring the VM's `idx` instruction. Map and merkle-tree
+/// misses surface as a serialized `StateValue::Null`, matching VM
+/// semantics; out-of-bounds array indices and depth violations are
 /// recoverable per-query errors.
 ///
 /// O(log n) — only the nodes along the path are loaded from storage.
 ///
-/// TODO: This could be simplified by moving the key deserialization, navigation,
-/// and leaf serialization logic to `midnight-ledger` (onchain-state) where
-/// it belongs.
+/// TODO: This could be simplified by moving the navigation and leaf
+/// serialization logic to `midnight-ledger` (onchain-state) where it
+/// belongs.
 #[cfg(feature = "std")]
 fn resolve_state_path<D: DB>(
 	root: &onchain_runtime_local::state::StateValue<D>,
-	path: &[Vec<u8>],
+	path: &[base_crypto_local::fab::AlignedValue],
 ) -> Result<Vec<u8>, String> {
-	use base_crypto_local::fab::{AlignedValue, Value};
+	use base_crypto_local::fab::Value;
 	use onchain_runtime_local::state::StateValue;
 
 	// An empty path would return the entire serialized contract state — that
@@ -1241,41 +1235,20 @@ fn resolve_state_path<D: DB>(
 	};
 
 	let mut current = root.clone();
-	for key_bytes in path {
-		if key_bytes.len() > MAX_KEY_BYTES {
-			return Err(format!(
-				"path key too large: {} bytes exceeds the maximum of {MAX_KEY_BYTES}",
-				key_bytes.len()
-			));
-		}
-		// Deserializable::deserialize advances the slice as it reads; check
-		// that the input is fully consumed so the wire format is canonical
-		// (two byte sequences with trailing junk must not silently resolve
-		// to the same AlignedValue).
-		let mut reader: &[u8] = key_bytes.as_slice();
-		let key: AlignedValue =
-			midnight_serialize_local::Deserializable::deserialize(&mut reader, 0)
-				.map_err(|e| format!("failed to deserialize key: {e}"))?;
-		if !reader.is_empty() {
-			return Err(format!(
-				"path key has {} trailing byte(s) after a valid AlignedValue",
-				reader.len()
-			));
-		}
-
+	for key in path {
 		current = match &current {
 			StateValue::Array(arr) => {
 				// Accept any AlignedValue integer width up to u64 and
 				// range-check against the array length; the previous
 				// `try_into::<u8>` rejected legitimate u16/u32/u64 widths.
-				let i: u64 = (&**AsRef::<Value>::as_ref(&key))
+				let i: u64 = (&**AsRef::<Value>::as_ref(key))
 					.try_into()
 					.map_err(|e| format!("invalid array index: {e}"))?;
 				let idx: usize =
 					i.try_into().map_err(|_| format!("array index {i} does not fit in usize"))?;
 				arr.get(idx).cloned().ok_or_else(|| format!("array index {i} out of bounds"))?
 			},
-			StateValue::Map(map) => match map.get(&key) {
+			StateValue::Map(map) => match map.get(key) {
 				Some(sp) => (*sp).clone(),
 				// VM `idx` substitutes Null for a map miss; return the same
 				// over the wire so clients see a single canonical sentinel
@@ -1283,7 +1256,7 @@ fn resolve_state_path<D: DB>(
 				None => return serialize_value(&StateValue::Null),
 			},
 			StateValue::BoundedMerkleTree(tree) => {
-				let pos: u64 = (&**AsRef::<Value>::as_ref(&key))
+				let pos: u64 = (&**AsRef::<Value>::as_ref(key))
 					.try_into()
 					.map_err(|e| format!("invalid merkle tree position: {e}"))?;
 				// `1u64 << tree.height()` overflows once height >= 64 (panic

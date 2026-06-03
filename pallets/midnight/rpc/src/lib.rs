@@ -25,10 +25,10 @@ use midnight_node_ledger::rpc::query_contract_state;
 use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
 use sc_client_api::{BlockBackend, BlockchainEvents};
 
-// Re-exported so e2e tests and other downstream callers can construct
-// `RpcStateQuery { path: vec![StorageKey(...)] }` without a direct
-// `sc-client-api` / `sp-storage` dependency.
-pub use sc_client_api::StorageKey;
+// Re-exported so downstream callers (typed clients, e2e tests) can construct
+// `PathKey(AlignedValue::from(...))` without a direct `base-crypto` dependency.
+pub use base_crypto::fab::AlignedValue;
+use midnight_serialize::{tagged_deserialize, tagged_serialize, tagged_serialized_size};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
@@ -37,6 +37,12 @@ use std::sync::Arc;
 pub const API_VERSIONS: [u32; 1] = [2];
 /// TODO: Consider making this a CLI argument so RPC providers can customize it.
 pub const MAX_STATE_QUERIES: usize = 100;
+
+/// Maximum byte length of a single serialized path key on the wire.
+/// Enforced inside `PathKey::deserialize` before the tagged-deserialize
+/// step, so a single accepted request can't allocate megabytes per key
+/// before the deserializer rejects it.
+const MAX_KEY_BYTES: usize = 4 * 1024;
 
 /// Midnight core RPC API.
 ///
@@ -228,13 +234,58 @@ impl From<StateRpcError> for ErrorObjectOwned {
 
 /// A query into a contract's state tree.
 ///
-/// Each element in `path` is a serialized `AlignedValue` (0x-prefixed hex
-/// over the wire via `StorageKey`'s serde impl). Interpreted as array index,
-/// map key, or merkle tree position depending on the `StateValue` variant at
-/// each level.
+/// Each element in `path` is a [`PathKey`] (a typed `AlignedValue`
+/// transported as a 0x-prefixed hex string of its tagged binary form).
+/// Interpreted as array index, map key, or merkle tree position depending
+/// on the `StateValue` variant at each level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcStateQuery {
-	pub path: Vec<StorageKey>,
+	pub path: Vec<PathKey>,
+}
+
+/// A typed `AlignedValue` for use in [`RpcStateQuery`]'s `path`.
+///
+/// Wire format: 0x-prefixed hex of the tagged-serialized `AlignedValue`
+/// (the tag carries the type/version so a future ledger upgrade that
+/// changes the untagged byte layout fails cleanly instead of silently
+/// mis-decoding). The Rust type holds the deserialized `AlignedValue`
+/// directly, so call sites don't repeat the bytes ↔ value conversion.
+#[derive(Debug, Clone)]
+pub struct PathKey(pub AlignedValue);
+
+impl Serialize for PathKey {
+	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		let mut buf = Vec::with_capacity(tagged_serialized_size(&self.0));
+		tagged_serialize(&self.0, &mut buf).map_err(serde::ser::Error::custom)?;
+		format!("0x{}", hex::encode(&buf)).serialize(serializer)
+	}
+}
+
+impl<'de> Deserialize<'de> for PathKey {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		let s = String::deserialize(deserializer)?;
+		let hex_str = s
+			.strip_prefix("0x")
+			.ok_or_else(|| serde::de::Error::custom("path key must be 0x-prefixed hex"))?;
+		if hex_str.len() > MAX_KEY_BYTES * 2 {
+			return Err(serde::de::Error::custom(format!(
+				"path key too large: {} hex chars exceeds the maximum of {}",
+				hex_str.len(),
+				MAX_KEY_BYTES * 2
+			)));
+		}
+		let bytes = hex::decode(hex_str).map_err(serde::de::Error::custom)?;
+		let mut reader: &[u8] = &bytes;
+		let value: AlignedValue =
+			tagged_deserialize(&mut reader).map_err(serde::de::Error::custom)?;
+		if !reader.is_empty() {
+			return Err(serde::de::Error::custom(format!(
+				"path key has {} trailing byte(s) after a valid tagged AlignedValue",
+				reader.len()
+			)));
+		}
+		Ok(PathKey(value))
+	}
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -449,11 +500,12 @@ where
 		let state_key =
 			api.get_state_key(at).map_err(|_| StateRpcError::UnableToGetContractState)?;
 
-		// The bridge enforces per-path depth and key-size limits and surfaces
-		// any per-query failures (out-of-bounds, malformed key, etc.) inline
-		// in its `Result<Vec<u8>, String>` slot, so the RPC layer can do a
-		// straight 1:1 zip back to `RpcStateQueryResult`.
-		let paths: Vec<Vec<Vec<u8>>> = queries
+		// The bridge enforces per-path depth and surfaces any per-query
+		// navigation failures (out-of-bounds, etc.) inline in its
+		// `Result<Vec<u8>, String>` slot, so the RPC layer can do a straight
+		// 1:1 zip back to `RpcStateQueryResult`. Key-size and wire-format
+		// validation already happened in `PathKey::deserialize`.
+		let paths: Vec<Vec<AlignedValue>> = queries
 			.iter()
 			.map(|q| q.path.iter().map(|key| key.0.clone()).collect())
 			.collect();

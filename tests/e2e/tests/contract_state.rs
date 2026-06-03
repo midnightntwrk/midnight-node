@@ -1,7 +1,6 @@
-use midnight_node_e2e::api::midnight::{MidnightClient, RpcStateQuery, StorageKey};
+use midnight_node_e2e::api::midnight::{AlignedValue, MidnightClient, PathKey, RpcStateQuery};
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
-use midnight_node_ledger_helpers::{base_crypto::fab::AlignedValue, serialize_untagged};
 use midnight_node_toolkit::tx_generator::source::FetchCacheConfig;
 use tokio::time::{Duration, sleep, timeout};
 
@@ -247,8 +246,8 @@ async fn query_contract_state_returns_expected_value() {
     //   Array(1) [ Array(3) [ MerkleTree(10), Cell(0u64), Map{...} ] ]
     //
     // Query path [0][1] to reach the counter Cell initialized to 0.
-    let key_0 = StorageKey(serialize_untagged(&AlignedValue::from(0u8)).unwrap());
-    let key_1 = StorageKey(serialize_untagged(&AlignedValue::from(1u8)).unwrap());
+    let key_0 = PathKey(AlignedValue::from(0u8));
+    let key_1 = PathKey(AlignedValue::from(1u8));
 
     let results = client
         .query_contract_state(
@@ -295,11 +294,18 @@ async fn query_contract_state_batch_processes_all_queries() {
     let contract_address =
         String::from_utf8(CONTRACT_ADDR.to_vec()).expect("CONTRACT_ADDR should be valid UTF-8");
 
-    let key = |v: u8| StorageKey(serialize_untagged(&AlignedValue::from(v)).unwrap());
+    let key = |v: u8| PathKey(AlignedValue::from(v));
 
     // The test contract's map at [0][2] has one entry with key "820140c20141"
     // (a compound AlignedValue: boolean(true) + field(0)) and value Null.
-    let map_key = StorageKey(hex::decode("820140c20141").unwrap());
+    // Reconstruct the AlignedValue from the hand-crafted untagged bytes; the
+    // PathKey wrapper handles the tagged-hex wire encoding on serialize.
+    let map_key = {
+        use midnight_node_ledger_helpers::midnight_serialize::Deserializable;
+        let bytes = hex::decode("820140c20141").unwrap();
+        let mut reader: &[u8] = &bytes;
+        PathKey(AlignedValue::deserialize(&mut reader, 0).expect("compound AlignedValue"))
+    };
 
     let results = client
         .query_contract_state(
@@ -356,9 +362,7 @@ async fn query_contract_state_nonexistent_contract() {
         .query_contract_state(
             &fake_address,
             vec![RpcStateQuery {
-                path: vec![StorageKey(
-                    serialize_untagged(&AlignedValue::from(0u8)).unwrap(),
-                )],
+                path: vec![PathKey(AlignedValue::from(0u8))],
             }],
         )
         .await

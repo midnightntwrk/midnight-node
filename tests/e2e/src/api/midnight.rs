@@ -59,7 +59,7 @@ pub struct AriadneParametersResponse {
     pub candidate_registrations: serde_json::Value,
 }
 
-pub use pallet_midnight_rpc::{RpcStateQuery, RpcStateQueryResult, StorageKey};
+pub use pallet_midnight_rpc::{AlignedValue, PathKey, RpcStateQuery, RpcStateQueryResult};
 
 pub struct MidnightClient {
     pub online_client: OnlineClient<SubstrateConfig>,

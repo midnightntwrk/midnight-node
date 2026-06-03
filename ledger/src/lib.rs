@@ -115,7 +115,7 @@ pub mod rpc {
 	pub fn query_contract_state(
 		state_key: &[u8],
 		contract_address: &[u8],
-		paths: &[Vec<Vec<u8>>],
+		paths: &[Vec<base_crypto::fab::AlignedValue>],
 	) -> Result<Vec<Result<Vec<u8>, String>>, types::active_version::LedgerApiError> {
 		use latest::{Bridge, ledger_storage_local};
 		type Signature = base_crypto::signatures::Signature;
