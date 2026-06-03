@@ -703,86 +703,86 @@ jobs:
         with:
           key: ${{ steps.guard.outputs.key }}
 
-  # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
-  # toolkit-maintenance-e2e:
-  #   permissions:
-  #     contents: read
-  #     actions: write
-  #   name: Toolkit Maintenance E2E
-  #   needs: [run]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-  #       with:
-  #         submodules: true
-  #     - id: guard
-  #       uses: ./.github/actions/tree-cache-guard
-  #     - uses: ./.github/actions/reusable-e2e-tests
-  #       if: steps.guard.outputs.hit != 'true'
-  #       with:
-  #         just-command: toolkit-maintenance-e2e
-  #         node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-  #         toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-  #         ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-  #     - uses: ./.github/actions/tree-cache-guard/save
-  #       if: steps.guard.outputs.hit != 'true'
-  #       with:
-  #         key: ${{ steps.guard.outputs.key }}
+  toolkit-maintenance-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Maintenance E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   if: steps.guard.outputs.hit != 'true'
+      #   with:
+      #     just-command: toolkit-maintenance-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
-  # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
-  # toolkit-mint-e2e:
-  #   permissions:
-  #     contents: read
-  #     actions: write
-  #   name: Toolkit Mint E2E
-  #   needs: [run]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-  #       with:
-  #         submodules: true
-  #     - id: guard
-  #       uses: ./.github/actions/tree-cache-guard
-  #     - uses: ./.github/actions/reusable-e2e-tests
-  #       if: steps.guard.outputs.hit != 'true'
-  #       with:
-  #         just-command: toolkit-mint-e2e
-  #         node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-  #         toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-  #         ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-  #     - uses: ./.github/actions/tree-cache-guard/save
-  #       if: steps.guard.outputs.hit != 'true'
-  #       with:
-  #         key: ${{ steps.guard.outputs.key }}
+  toolkit-mint-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Mint E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      #"LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   if: steps.guard.outputs.hit != 'true'
+      #   with:
+      #     just-command: toolkit-mint-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
-  # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
-  # toolkit-tokens-minter-e2e:
-  #   permissions:
-  #     contents: read
-  #     actions: write
-  #   name: Toolkit Unshielded Token E2E
-  #   needs: [run]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-  #       with:
-  #         submodules: true
-  #     - id: guard
-  #       uses: ./.github/actions/tree-cache-guard
-  #     - uses: ./.github/actions/reusable-e2e-tests
-  #       if: steps.guard.outputs.hit != 'true'
-  #       with:
-  #         just-command: toolkit-tokens-minter-e2e
-  #         node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-  #         toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-  #         ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-  #     - uses: ./.github/actions/tree-cache-guard/save
-  #       if: steps.guard.outputs.hit != 'true'
-  #       with:
-  #         key: ${{ steps.guard.outputs.key }}
+  toolkit-tokens-minter-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Unshielded Token E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   if: steps.guard.outputs.hit != 'true'
+      #   with:
+      #     just-command: toolkit-tokens-minter-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   metadata-check:
     permissions:
@@ -879,32 +879,32 @@ jobs:
   #           /tmp/midnight-pg.log
   #         if-no-files-found: ignore
 
-  # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
-  # toolkit-contracts-e2e:
-  #   permissions:
-  #     contents: read
-  #     actions: write
-  #   name: Toolkit Contracts E2E
-  #   needs: [run]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
-  #       with:
-  #         submodules: true
-  #     - id: guard
-  #       uses: ./.github/actions/tree-cache-guard
-  #     - uses: ./.github/actions/reusable-e2e-tests
-  #       if: steps.guard.outputs.hit != 'true'
-  #       with:
-  #         just-command: toolkit-contracts-e2e
-  #         node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-  #         toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-  #         ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
-  #     - uses: ./.github/actions/tree-cache-guard/save
-  #       if: steps.guard.outputs.hit != 'true'
-  #       with:
-  #         key: ${{ steps.guard.outputs.key }}
+  toolkit-contracts-e2e:
+    permissions:
+      contents: read
+      actions: write
+    name: Toolkit Contracts E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
+        with:
+          submodules: true
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
+      # - uses: ./.github/actions/reusable-e2e-tests
+      #   if: steps.guard.outputs.hit != 'true'
+      #   with:
+      #     just-command: toolkit-contracts-e2e
+      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}
 
   startup-dev-e2e:
     permissions:
