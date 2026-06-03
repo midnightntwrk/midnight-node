@@ -42,7 +42,12 @@ pub const MAX_STATE_QUERIES: usize = 100;
 /// Enforced inside `PathKey::deserialize` before the tagged-deserialize
 /// step, so a single accepted request can't allocate megabytes per key
 /// before the deserializer rejects it.
-const MAX_KEY_BYTES: usize = 4 * 1024;
+///
+/// Sized against the VM's `eq_valid_input` cap (64 untagged bytes per
+/// AlignedValue) plus tag overhead, with headroom for compound map keys
+/// (e.g. a struct of a few primitive fields). Worst-case per-request
+/// input bytes: `MAX_STATE_QUERIES * MAX_PATH_DEPTH * MAX_KEY_BYTES`.
+const MAX_KEY_BYTES: usize = 512;
 
 /// Midnight core RPC API.
 ///
