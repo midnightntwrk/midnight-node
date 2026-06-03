@@ -127,21 +127,18 @@ pub mod rpc {
 	///
 	/// Navigates the state tree lazily in ParityDB — O(log n) per query.
 	///
-	/// `unified` MUST match the storage mode the node was booted with.
-	/// `Bridge<_, D>::query_contract_state` resolves the active storage by
-	/// `TypeId<D>`; passing a `D` that wasn't registered at startup panics
-	/// inside `default_storage::<D>()`. The host_api dispatches on the
-	/// substrate `Externalities` extension; the RPC layer (which runs
-	/// outside the runtime) gets the same signal plumbed through node
-	/// startup.
+	/// Detects whether unified-DB or separate-DB storage was registered at
+	/// startup via `try_get_default_storage::<D>()` and dispatches the
+	/// `Bridge<_, D>` call accordingly. The host_api makes the same choice
+	/// via `is_unified()` on substrate Externalities; this is the RPC-side
+	/// equivalent that works outside a runtime call.
 	pub fn query_contract_state(
-		unified: bool,
 		state_key: &[u8],
 		contract_address: &[u8],
 		paths: &[Vec<base_crypto::fab::AlignedValue>],
 	) -> Result<Vec<Result<Vec<u8>, String>>, types::active_version::LedgerApiError> {
-		use latest::Bridge;
-		if unified {
+		use latest::{Bridge, ledger_storage_local::storage::try_get_default_storage};
+		if try_get_default_storage::<DbUnified>().is_some() {
 			Bridge::<Signature, DbUnified>::query_contract_state(state_key, contract_address, paths)
 		} else {
 			Bridge::<Signature, DbSeparate>::query_contract_state(

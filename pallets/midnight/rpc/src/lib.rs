@@ -335,18 +335,13 @@ pub struct RpcBlock<Header> {
 pub struct Midnight<C, Block> {
 	/// Shared reference to the client.
 	client: Arc<C>,
-	/// Whether the node was booted with unified-DB ledger storage. Required
-	/// by `midnight_queryContractState` to dispatch the bridge call to the
-	/// correct `Storage<D>` registered at startup; passing the wrong value
-	/// panics in `default_storage::<D>()`.
-	ledger_db_unified: bool,
 	//todo do I need this one?
 	_marker: std::marker::PhantomData<Block>,
 }
 
 impl<C, Block> Midnight<C, Block> {
-	pub fn new(client: Arc<C>, ledger_db_unified: bool) -> Self {
-		Self { client, ledger_db_unified, _marker: Default::default() }
+	pub fn new(client: Arc<C>) -> Self {
+		Self { client, _marker: Default::default() }
 	}
 }
 
@@ -511,11 +506,10 @@ where
 			.map(|q| q.path.iter().map(|key| key.0.clone()).collect())
 			.collect();
 		let bridge_results =
-			query_contract_state(self.ledger_db_unified, &state_key, &dehexed_address, &paths)
-				.map_err(|e| match e {
-					LedgerApiError::ContractNotPresent => StateRpcError::ContractNotPresent,
-					_ => StateRpcError::UnableToGetContractState,
-				})?;
+			query_contract_state(&state_key, &dehexed_address, &paths).map_err(|e| match e {
+				LedgerApiError::ContractNotPresent => StateRpcError::ContractNotPresent,
+				_ => StateRpcError::UnableToGetContractState,
+			})?;
 
 		Ok(queries
 			.into_iter()

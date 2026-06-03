@@ -240,11 +240,6 @@ type MidnightService = sc_service::PartialComponents<
 		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
 		Option<Telemetry>,
 		DataSources,
-		// Whether the node was booted with unified-DB ledger storage. Threaded
-		// through to the RPC layer so `midnight_queryContractState` dispatches
-		// `Bridge<_, D>::query_contract_state` against the `Storage<D>` that
-		// was actually registered at startup.
-		bool,
 	),
 >;
 
@@ -304,12 +299,6 @@ pub fn new_partial(
 
 	let (parity_db_instance, ledger_storage_db, require_create) =
 		open_paritydb(&db_path, &storage_config)?;
-	// Captured early because `ledger_storage_db` is moved into `LedgerStorage`
-	// below; the RPC layer needs this to dispatch `midnight_queryContractState`
-	// to the correct `Bridge<_, D>` (the storage `D` that was registered with
-	// `set_default_storage` at startup).
-	let ledger_db_unified =
-		matches!(ledger_storage_db, midnight_primitives_ledger::LedgerStorageDb::UnifiedDb(_));
 	db_config.source = create_database_source(parity_db_instance, require_create)?;
 	let backend = sc_service::new_db_backend(db_config)?;
 
@@ -465,7 +454,6 @@ pub fn new_partial(
 			beefy_rpc_links,
 			telemetry,
 			data_sources,
-			ledger_db_unified,
 		),
 	};
 
@@ -506,7 +494,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				beefy_rpc_links,
 				mut telemetry,
 				data_sources,
-				ledger_db_unified,
 			),
 	} = new_partial_components;
 
@@ -662,7 +649,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				network: network_for_rpc.clone(),
 				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
 				subscription_tracker: subscription_tracker.clone(),
-				ledger_db_unified,
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		}
