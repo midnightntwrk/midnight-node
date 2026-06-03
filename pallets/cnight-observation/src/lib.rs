@@ -787,8 +787,8 @@ pub mod pallet {
 		#[pallet::weight((T::WeightInfo::set_cnight_identifier(), DispatchClass::Normal))]
 		pub fn set_cnight_identifier(
 			origin: OriginFor<T>,
-			policy_id: Vec<u8>,
-			asset_name: Vec<u8>,
+			policy_id: [u8; CNIGHT_POLICY_ID_LENGTH as usize],
+			asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
 			// A Cardano policy id is a blake2b-224 hash, i.e. exactly
