@@ -82,10 +82,16 @@ zkir = { version = "^2.1.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
 # coin-structure, transient-crypto and zkir share versions with L7 so reuse those entries.
-mn-ledger-8 = { version = "=8.1.0-rc.1", package = "midnight-ledger" }
+mn-ledger-8 = { version = "=8.1.0", package = "midnight-ledger" }
 ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db"] }
 onchain-runtime-ledger-8 = { version = "=3.1.0", package = "midnight-onchain-runtime" }
-zswap-ledger-8 = { version = "=8.1.0-rc.1", package = "midnight-zswap" }
+zswap-ledger-8 = { version = "=8.1.0", package = "midnight-zswap" }
+
+# Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
+# coin-structure, transient-crypto, storage, and zkir share versions with L8 so reuse those entries.
+mn-ledger-9 = { version = "=0.1.0", package = "midnight-ledger-v9" }
+onchain-runtime-ledger-9 = { version = "=4.0.0", package = "midnight-onchain-runtime" }
+zswap-ledger-9 = { version = "=9.0.0", package = "midnight-zswap" }
 
 # Storage core v2 layout
 midnight-storage-core = { version = "1.2.0", features = ["layout-v2", "gc-v1"] }
@@ -428,12 +434,14 @@ zeroize = { opt-level = 3 }
 [patch.crates-io]
 yamux = { git = "https://github.com/midnightntwrk/rust-yamux", branch = "yamux-v0.12.2" }
 parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "master" }
-midnight-ledger           = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-8.1.0-rc.1" }
-midnight-zswap            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-8.1.0-rc.1" }
+midnight-ledger-v9        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.0.1.0-alpha.1" }
+midnight-zswap            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-9.0.0-alpha.1" }
+midnight-coin-structure   = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "coin-structure-2.1.0-alpha.1" }
+midnight-base-crypto      = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-1.1.0-alpha.1" }
 midnight-transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.1.0-rc.1" }
-midnight-onchain-vm       = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-vm-3.1.0-rc.1" }
-midnight-onchain-state    = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-state-3.1.0-rc.1" }
-midnight-onchain-runtime  = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-runtime-3.1.0-rc.1" }
+midnight-onchain-vm       = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-vm-4.0.0-alpha.1" }
+midnight-onchain-state    = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-state-4.0.0-alpha.1" }
+midnight-onchain-runtime  = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-runtime-4.0.0-alpha.1" }
 midnight-serialize        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.1.0-rc.1" }
 midnight-storage-core     = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.2.0-rc.3" }
 

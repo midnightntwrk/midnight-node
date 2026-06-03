@@ -21,6 +21,9 @@ onchain-runtime-ledger-8 = { workspace = true, optional = true }
 ledger-storage-ledger-8 = { workspace = true, optional = true }
 zswap-ledger-8 = { workspace = true, optional = true }
 
+mn-ledger-9 = { workspace = true, features = ["proving"], optional = true }
+onchain-runtime-ledger-9 = { workspace = true, optional = true }
+zswap-ledger-9 = { workspace = true, optional = true }
 
 sp-runtime-interface.workspace = true
 sp-runtime.workspace = true
@@ -79,6 +82,9 @@ std = [
     "onchain-runtime-ledger-8",
     "ledger-storage-ledger-8",
     "zswap-ledger-8",
+    "mn-ledger-9",
+    "onchain-runtime-ledger-9",
+    "zswap-ledger-9",
     "sha2",
     "toml",
     "midnight-node-ledger-helpers",

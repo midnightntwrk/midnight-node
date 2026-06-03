@@ -20,7 +20,7 @@ use std::{any::Any, borrow::Cow};
 use super::super::{
 	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
 	LedgerParameters, Op, Resolver, ResultModeGather, ResultModeVerify, Sp, StdRng, Transcripts,
-	ValueReprAlignedValue,
+	ValueReprAlignedValue, maintenance_verifying_key,
 };
 use super::{
 	ChargedState, Contract, ContractMaintenanceAuthority, ContractState, EntryPointBuf,
@@ -89,7 +89,7 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 				.insert(b"store"[..].into(), store_op.clone())
 				.insert(b"check"[..].into(), check_op.clone()),
 			maintenance_authority: ContractMaintenanceAuthority {
-				committee: commitee.to_vec(),
+				committee: commitee.iter().cloned().map(maintenance_verifying_key).collect(),
 				threshold: commitee_threshold,
 				counter: 0,
 			},
