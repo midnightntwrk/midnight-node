@@ -1127,33 +1127,6 @@ where
 	}
 }
 
-/// Dispatching wrapper around `Bridge::<S, D>::query_contract_state` that probes
-/// the registered ledger storage and picks the matching `D`. Mirrors the
-/// `is_unified()` branch in `host_api/ledger_8.rs` but works from outside a
-/// runtime call. RPC-side entry point for `midnight_queryContractState`.
-#[cfg(feature = "std")]
-pub fn query_contract_state_dispatch(
-	state_key: &[u8],
-	contract_address: &[u8],
-	paths: &[Vec<base_crypto_local::fab::AlignedValue>],
-) -> Result<Vec<Result<Vec<u8>, String>>, LedgerApiError> {
-	use ledger_storage_local::storage::try_get_default_storage;
-
-	type Signature = base_crypto_local::signatures::Signature;
-	type DbSeparate = ledger_storage_local::db::ParityDb;
-	type DbUnified = ledger_storage_local::db::ParityDb<
-		sha2::Sha256,
-		ledger_storage_local::db::paritydb::OwnedDb,
-		{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
-	>;
-
-	if try_get_default_storage::<DbUnified>().is_some() {
-		Bridge::<Signature, DbUnified>::query_contract_state(state_key, contract_address, paths)
-	} else {
-		Bridge::<Signature, DbSeparate>::query_contract_state(state_key, contract_address, paths)
-	}
-}
-
 #[cfg(feature = "std")]
 fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiError> {
 	match tx {

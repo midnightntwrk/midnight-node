@@ -107,7 +107,21 @@ pub mod types {
 /// These bypass the host function / WASM boundary and call the bridge natively.
 #[cfg(feature = "std")]
 pub mod rpc {
-	pub use super::latest::query_contract_state_dispatch as query_contract_state;
+	use super::*;
+
+	/// Query specific fields in a contract's state tree.
+	///
+	/// Navigates the state tree lazily in ParityDB — O(log n) per query.
+	pub fn query_contract_state(
+		state_key: &[u8],
+		contract_address: &[u8],
+		paths: &[Vec<base_crypto::fab::AlignedValue>],
+	) -> Result<Vec<Result<Vec<u8>, String>>, types::active_version::LedgerApiError> {
+		use latest::{Bridge, ledger_storage_local};
+		type Signature = base_crypto::signatures::Signature;
+		type Database = ledger_storage_local::db::ParityDb;
+		Bridge::<Signature, Database>::query_contract_state(state_key, contract_address, paths)
+	}
 }
 
 #[cfg(test)]
