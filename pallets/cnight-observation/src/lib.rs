@@ -821,7 +821,7 @@ pub mod pallet {
 		#[pallet::weight((T::WeightInfo::set_auth_token_asset_name(), DispatchClass::Normal))]
 		pub fn set_auth_token_asset_name(
 			origin: OriginFor<T>,
-			asset_name: Vec<u8>,
+			asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
 			// Genesis validates this field as an ASCII-only string, and block authors
