@@ -1250,10 +1250,10 @@ fn resolve_state_path<D: DB>(
 			},
 			StateValue::Map(map) => match map.get(key) {
 				Some(sp) => (*sp).clone(),
-				// VM `idx` substitutes Null for a map miss; return the same
-				// over the wire so clients see a single canonical sentinel
-				// instead of an ambiguous `value: None, error: None`.
-				None => return serialize_value(&StateValue::Null),
+				// VM `idx` substitutes Null for a map miss and continues the
+				// path against Null; any remaining step on Null then yields a
+				// clear "step cannot be indexed" error from the `_` arm below.
+				None => StateValue::Null,
 			},
 			StateValue::BoundedMerkleTree(tree) => {
 				let pos: u64 = (&**AsRef::<Value>::as_ref(key))
@@ -1271,21 +1271,28 @@ fn resolve_state_path<D: DB>(
 					return Err(format!("tree position {pos} out of range (max {max_leaves})"));
 				}
 				// `MerkleTreeNode::index` panics if any node along the
-				// traversal is `Collapsed { .. }`; treat that as a recoverable
-				// per-query error so a public RPC caller can't crash the
-				// worker thread.
+				// traversal is `Collapsed { .. }` (the documented case in
+				// transient-crypto). Guard so a public RPC caller cannot
+				// crash the worker thread. Other panics are theoretically
+				// possible (allocator failure, integer overflow on a
+				// corrupted node) but extremely unlikely; report all of
+				// them honestly as "navigation panicked".
 				let leaf =
 					std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tree.index(pos)))
 						.map_err(|_| {
-							"merkle tree position falls in a collapsed portion of the tree"
-								.to_string()
+							format!(
+								"merkle tree navigation panicked at position {pos} \
+								 (likely a collapsed sub-tree)"
+							)
 						})?;
 				match leaf {
 					Some((hash, ())) => {
 						StateValue::Cell(ledger_storage_local::arena::Sp::new(hash.into()))
 					},
-					// Empty BMT leaf mirrors the VM-style "no value" → Null.
-					None => return serialize_value(&StateValue::Null),
+					// Empty BMT leaf mirrors the VM-style "no value" → Null
+					// and continues the path; any subsequent step on Null
+					// errors via the `_` arm below.
+					None => StateValue::Null,
 				}
 			},
 			_ => return Err("only array, map, and merkle tree can be indexed".into()),

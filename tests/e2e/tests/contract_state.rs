@@ -357,6 +357,7 @@ async fn query_contract_state_nonexistent_contract() {
     let settings = Settings::default();
     let client = MidnightClient::new(settings.node_client).await;
 
+    // 32-byte (64-hex-char) zero address: well-formed but no contract deployed.
     let fake_address = "00".repeat(32);
     let err = client
         .query_contract_state(

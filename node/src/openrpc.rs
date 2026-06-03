@@ -598,8 +598,8 @@ fn build_component_schemas() -> Value {
 					"type": "array",
 					"items": {
 						"type": "string",
-						"pattern": "^0x[0-9a-fA-F]*$",
-						"description": "0x-prefixed hex of tagged-serialized AlignedValue"
+						"pattern": "^0x([0-9a-fA-F]{2})+$",
+						"description": "0x-prefixed hex of tagged-serialized AlignedValue (even length, at least one byte)"
 					}
 				}
 			},

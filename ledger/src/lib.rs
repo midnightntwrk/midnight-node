@@ -109,18 +109,47 @@ pub mod types {
 pub mod rpc {
 	use super::*;
 
+	use midnight_primitives_ledger::LedgerStorageExt;
+
+	type Signature = base_crypto::signatures::Signature;
+	// Storage type when the node is booted with separate-DB ledger storage.
+	type DbSeparate = latest::ledger_storage_local::db::ParityDb;
+	// Storage type when the node is booted with unified-DB ledger storage.
+	// Must match the type registered in `host_api/ledger_8.rs` so the
+	// `default_storage::<D>()` lookup finds the right `Storage<D>`.
+	type DbUnified = latest::ledger_storage_local::db::ParityDb<
+		sha2::Sha256,
+		latest::ledger_storage_local::db::paritydb::OwnedDb,
+		{ LedgerStorageExt::COLUMN_OFFSET },
+	>;
+
 	/// Query specific fields in a contract's state tree.
 	///
 	/// Navigates the state tree lazily in ParityDB — O(log n) per query.
+	///
+	/// `unified` MUST match the storage mode the node was booted with.
+	/// `Bridge<_, D>::query_contract_state` resolves the active storage by
+	/// `TypeId<D>`; passing a `D` that wasn't registered at startup panics
+	/// inside `default_storage::<D>()`. The host_api dispatches on the
+	/// substrate `Externalities` extension; the RPC layer (which runs
+	/// outside the runtime) gets the same signal plumbed through node
+	/// startup.
 	pub fn query_contract_state(
+		unified: bool,
 		state_key: &[u8],
 		contract_address: &[u8],
 		paths: &[Vec<base_crypto::fab::AlignedValue>],
 	) -> Result<Vec<Result<Vec<u8>, String>>, types::active_version::LedgerApiError> {
-		use latest::{Bridge, ledger_storage_local};
-		type Signature = base_crypto::signatures::Signature;
-		type Database = ledger_storage_local::db::ParityDb;
-		Bridge::<Signature, Database>::query_contract_state(state_key, contract_address, paths)
+		use latest::Bridge;
+		if unified {
+			Bridge::<Signature, DbUnified>::query_contract_state(state_key, contract_address, paths)
+		} else {
+			Bridge::<Signature, DbSeparate>::query_contract_state(
+				state_key,
+				contract_address,
+				paths,
+			)
+		}
 	}
 }
 
