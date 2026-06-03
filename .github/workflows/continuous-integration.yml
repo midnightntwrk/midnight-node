@@ -43,7 +43,7 @@ jobs:
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@142b58a743f3cc8e1c133bffc8e905751f52f18b
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -250,7 +250,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@142b58a743f3cc8e1c133bffc8e905751f52f18b
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -403,7 +403,7 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@142b58a743f3cc8e1c133bffc8e905751f52f18b
         if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
@@ -444,7 +444,7 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@142b58a743f3cc8e1c133bffc8e905751f52f18b
         if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
@@ -505,7 +505,7 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@142b58a743f3cc8e1c133bffc8e905751f52f18b
         if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
@@ -556,7 +556,7 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@142b58a743f3cc8e1c133bffc8e905751f52f18b
         if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
@@ -798,7 +798,7 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@142b58a743f3cc8e1c133bffc8e905751f52f18b
         if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
