@@ -181,6 +181,8 @@ pub mod pallet {
 		CardanoIdentifierLengthExceeded,
 		/// A cNIGHT policy id was not exactly `CNIGHT_POLICY_ID_LENGTH` bytes long
 		InvalidCNightPolicyIdLength,
+		/// A Cardano asset name contained non-ASCII bytes
+		NonAsciiAssetName,
 		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
 		/// Next Cardano position does not advance beyond current position
@@ -799,6 +801,11 @@ pub mod pallet {
 			);
 			let bounded_policy_id: BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>> =
 				policy_id.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
+			// Genesis validates asset names as ASCII-only strings, and block authors
+			// convert this value to a `String` when building the cNIGHT observation
+			// inherent. Enforce the same constraint here so a root call cannot store
+			// bytes that would make inherent-data creation fail.
+			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
 			let bounded_asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
 				asset_name.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?;
 			CNightIdentifier::<T>::set((bounded_policy_id, bounded_asset_name));
@@ -817,6 +824,11 @@ pub mod pallet {
 			asset_name: Vec<u8>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
+			// Genesis validates this field as an ASCII-only string, and block authors
+			// convert it to a `String` when building the cNIGHT observation inherent.
+			// Enforce the same constraint here so a root call cannot store bytes that
+			// would make inherent-data creation fail.
+			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
 			MainChainAuthTokenAssetName::<T>::set(
 				asset_name.try_into().map_err(|_| Error::<T>::CardanoIdentifierLengthExceeded)?,
 			);

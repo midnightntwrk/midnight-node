@@ -1828,6 +1828,25 @@ fn set_cnight_identifier_rejects_short_policy_id() {
 }
 
 #[test]
+fn set_cnight_identifier_rejects_non_ascii_asset_name() {
+	new_test_ext().execute_with(|| {
+		// Genesis validates asset names as ASCII-only strings and block authors
+		// convert them to `String` when building the inherent, so non-ASCII (and
+		// in particular non-UTF-8) bytes must be rejected.
+		let valid_policy_id = vec![0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let non_utf8_asset_name = vec![0xFF, 0xFE];
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Root.into(),
+				valid_policy_id,
+				non_utf8_asset_name,
+			),
+			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,
+		);
+	});
+}
+
+#[test]
 fn set_auth_token_asset_name_works() {
 	new_test_ext().execute_with(|| {
 		let asset_name = b"staging-auth-token".to_vec();
@@ -1870,6 +1889,20 @@ fn set_auth_token_asset_name_rejects_oversized_input() {
 		assert_noop!(
 			CNightObservation::set_auth_token_asset_name(RawOrigin::Root.into(), oversized),
 			pallet_cnight_observation::Error::<Test>::CardanoIdentifierLengthExceeded,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_rejects_non_ascii_input() {
+	new_test_ext().execute_with(|| {
+		// Genesis validates this field as an ASCII-only string and block authors
+		// convert it to `String` when building the inherent, so non-ASCII (and in
+		// particular non-UTF-8) bytes must be rejected.
+		let non_utf8 = vec![0xFF, 0xFE];
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::Root.into(), non_utf8),
+			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,
 		);
 	});
 }
