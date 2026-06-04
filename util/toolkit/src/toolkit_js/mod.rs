@@ -106,6 +106,14 @@ pub struct CircuitArgs {
 	/// A file path of where the invoked circuit result data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	pub output_result: Option<RelativePath>,
+	/// Input directory of ledger-serialized contract-state files, each named by its contract
+	/// address, used to resolve the targets of cross-contract calls made by the circuit.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	pub input_contract_states_dir: Option<RelativePath>,
+	/// Output directory into which the updated ledger state of each cross-contract callee is
+	/// written, each file named by its contract address.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	pub output_contract_states_dir: Option<RelativePath>,
 	/// Name of the circuit to invoke
 	pub circuit_id: String,
 	/// Arguments to pass to the circuit
@@ -328,6 +336,17 @@ impl ToolkitJs {
 		let output_result = args.output_result.map(|s| s.absolute());
 		if let Some(ref output_result) = output_result {
 			cmd_args.extend_from_slice(&["--output-result", &output_result]);
+		}
+		// Cross-contract call support: supply callee states in, and collect updated callee
+		// states out. Mirrors the --contract-states-dir / --output-contract-states-dir options
+		// of compact-js-command's `circuit` command.
+		let input_contract_states_dir = args.input_contract_states_dir.map(|s| s.absolute());
+		if let Some(ref input_contract_states_dir) = input_contract_states_dir {
+			cmd_args.extend_from_slice(&["--contract-states-dir", &input_contract_states_dir]);
+		}
+		let output_contract_states_dir = args.output_contract_states_dir.map(|s| s.absolute());
+		if let Some(ref output_contract_states_dir) = output_contract_states_dir {
+			cmd_args.extend_from_slice(&["--output-contract-states-dir", &output_contract_states_dir]);
 		}
 		// Add positional args
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);

@@ -6,6 +6,7 @@ license-file.workspace = true
 
 [dependencies]
 hex.workspace = true
+sha2.workspace = true
 
 mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
 base-crypto = { workspace = true }
@@ -46,6 +47,9 @@ subxt-signer.workspace = true
 serde_json.workspace = true
 serde_bytes = "0.11"
 zeroize = { workspace = true }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [features]
 default = []
