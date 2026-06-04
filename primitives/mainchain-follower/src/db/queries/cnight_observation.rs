@@ -446,3 +446,23 @@ FROM
 	.fetch_optional(pool)
 	.await
 }
+
+/// Highest `block_no` present in db-sync that does not exceed `upper`, or `None`
+/// if no such block exists. Used to clamp the cNIGHT sliding-window refresh
+/// target to a block that actually exists: db-sync's `block` table can be
+/// sparse (gaps in `block_no`) or simply not synced past `upper`, and
+/// [`get_high_bounds`] returns `None` for an absent block — which would abort
+/// the refresh and leave the cache permanently empty.
+pub async fn get_highest_block_le(
+	pool: &Pool<Postgres>,
+	upper: u32,
+) -> Result<Option<u32>, SqlxError> {
+	// Cast to bigint so we decode INT8 regardless of the db-sync `block_no`
+	// column width (it is INT4 on current schemas).
+	let max: Option<i64> =
+		sqlx::query_scalar("SELECT max(block_no)::bigint FROM block WHERE block_no <= $1")
+			.bind(upper as i32)
+			.fetch_one(pool)
+			.await?;
+	Ok(max.map(|n| n as u32))
+}
