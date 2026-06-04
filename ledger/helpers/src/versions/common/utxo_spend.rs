@@ -13,7 +13,7 @@
 
 use super::{
 	BuilderContext, DB, IntentHash, SigningKey, UnshieldedTokenType, Utxo, UtxoId, UtxoSpend,
-	WalletSeed,
+	WalletSeed, signature_verifying_key,
 };
 use crate::CoinSelectionStrategy;
 use async_trait::async_trait;
@@ -186,7 +186,7 @@ impl UtxoSpendInfo<WalletSeed> {
 impl<D: DB + Clone, C: BuilderContext<D>> BuildUtxoSpend<D, C> for UtxoSpendInfo<WalletSeed> {
 	async fn build(&self, context: Arc<C>) -> UtxoSpend {
 		let owner = context.with_wallet_from_seed(self.owner.clone(), |wallet| {
-			wallet.unshielded.signing_key().verifying_key()
+			signature_verifying_key(wallet.unshielded.signing_key().verifying_key())
 		});
 		// If self identifies an UTXO then use it, otherwise find the best matching UTXO.
 		match (self.intent_hash, self.output_number) {

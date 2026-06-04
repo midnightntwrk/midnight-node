@@ -17,7 +17,7 @@ use super::ledger_helpers_local::{
 	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo,
 	MaintenanceUpdateInfo, OfferInfo, ProofProvider, SigningKey, TransactionWithContext,
 	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed, deserialize,
-	serialize_untagged,
+	maintenance_verifying_key, serialize_untagged,
 };
 use async_trait::async_trait;
 use std::{path::PathBuf, sync::Arc};
@@ -178,7 +178,12 @@ fn check_committee(
 	provided_committee: &[VerifyingKey],
 	authority: &ContractMaintenanceAuthority,
 ) -> Result<(), ContractMaintenanceBuilderError> {
-	if !provided_committee.iter().all(|c| authority.committee.contains(&c)) {
+	if !provided_committee
+		.iter()
+		.cloned()
+		.map(maintenance_verifying_key)
+		.all(|c| authority.committee.contains(&c))
+	{
 		let provided_committee_display: Vec<String> = provided_committee
 			.iter()
 			.map(|v| hex::encode(serialize_untagged(&v).unwrap()))
@@ -232,14 +237,15 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 
 		let funding_signing_key =
 			UnshieldedWallet::default(self.funding_seed()).signing_key().clone();
-		if !committee_verifying_keys.contains(&funding_signing_key.verifying_key())
+		let funding_verifying_key = funding_signing_key.verifying_key();
+		if !committee_verifying_keys.contains(&funding_verifying_key)
 			&& contract_state
 				.maintenance_authority
 				.committee
-				.contains(&funding_signing_key.verifying_key())
+				.contains(&maintenance_verifying_key(funding_verifying_key.clone()))
 		{
 			committee.push(funding_signing_key.clone());
-			committee_verifying_keys.push(funding_signing_key.verifying_key());
+			committee_verifying_keys.push(funding_verifying_key);
 		}
 
 		check_committee(&committee_verifying_keys, &contract_state.maintenance_authority)?;
