@@ -216,9 +216,10 @@ struct LastObservation {
 /// built once at startup, with an async sliding-window refresh and a live
 /// db-backed fallback for queries past the current horizon.
 pub struct BulkCachedCNightObservationDataSource {
-	/// Sorted events. `RwLock<Arc<...>>` lets the refresh task swap in an
-	/// extended vec without blocking concurrent readers.
-	all_events: Arc<std::sync::RwLock<Arc<Vec<ObservedUtxo>>>>,
+	/// Sorted events. Readers take the read lock for the (cheap) slice+copy of
+	/// their window; the refresh task takes the write lock briefly to mutate
+	/// the vec in place (trim the front, append the extension).
+	all_events: Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
 	/// Used exclusively for `get_block_by_hash` — a single indexed lookup
 	/// per call when the block is not yet in `block_position_cache`.
 	pool: PgPool,
@@ -267,7 +268,7 @@ impl BulkCachedCNightObservationDataSource {
 		// Caller is responsible for bulk-pulling that range; we just record
 		// the bookkeeping.
 		Self {
-			all_events: Arc::new(std::sync::RwLock::new(Arc::new(events))),
+			all_events: Arc::new(std::sync::RwLock::new(events)),
 			pool,
 			block_position_cache: Arc::new(Mutex::new(HashMap::new())),
 			last_observation: Arc::new(Mutex::new(None)),
@@ -334,13 +335,24 @@ impl BulkCachedCNightObservationDataSource {
 async fn refresh_window(
 	pool: &PgPool,
 	cfg: &CNightAddresses,
-	all_events: &Arc<std::sync::RwLock<Arc<Vec<ObservedUtxo>>>>,
+	all_events: &Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
 	last_observation: &Arc<Mutex<Option<LastObservation>>>,
 	snapshot_start_block: &Arc<std::sync::RwLock<Option<u32>>>,
 	snapshot_end_block: &Arc<std::sync::RwLock<Option<u32>>>,
 	target_end: u32,
 	window_size: u32,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	// Clamp the target down to the highest block that actually exists at or
+	// below it. The caller's `target_end` reaches ahead of the follower, so
+	// against a db-sync only caught up to the real Cardano tip (or a sparse
+	// test snapshot with gaps in `block_no`) that exact block may not exist —
+	// and `get_high_bounds` returns None for an absent block, which would abort
+	// the refresh and leave the cache permanently empty.
+	let target_end = match crate::db::get_highest_block_le(pool, target_end).await? {
+		Some(highest) => highest,
+		None => return Ok(()), // no block at or below the target yet
+	};
+
 	let old_end = snapshot_end_block
 		.read()
 		.map_err(|e| format!("snapshot_end_block read poisoned: {e}"))?
@@ -383,8 +395,7 @@ async fn refresh_window(
 	{
 		let mut events_guard =
 			all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
-		let new_vec = slide_events(&events_guard, extension, new_window_start);
-		*events_guard = Arc::new(new_vec);
+		slide_events(&mut events_guard, extension, new_window_start);
 	}
 	*snapshot_start_block
 		.write()
@@ -400,23 +411,20 @@ async fn refresh_window(
 	Ok(())
 }
 
-/// Build a fresh sorted vec covering `[new_window_start, ...]`: take retained
-/// events from `existing` (those at or after `new_window_start`), then append
-/// `extension` (events strictly after the existing end). Pure helper for unit
-/// testing.
+/// Slide the in-memory window forward, in place: drop events before
+/// `new_window_start`, then append `extension` (events strictly after the
+/// existing end). Mutates `existing` to avoid allocating a fresh vec.
 fn slide_events(
-	existing: &[ObservedUtxo],
+	existing: &mut Vec<ObservedUtxo>,
 	extension: Vec<ObservedUtxo>,
 	new_window_start: u32,
-) -> Vec<ObservedUtxo> {
+) {
 	// `existing` is sorted ascending by tx_position.block_number, so a
 	// partition_point gives the first retained index in O(log n).
 	let trim_at =
 		existing.partition_point(|u| u.header.tx_position.block_number < new_window_start);
-	let mut out: Vec<ObservedUtxo> = Vec::with_capacity(existing.len() - trim_at + extension.len());
-	out.extend_from_slice(&existing[trim_at..]);
-	out.extend(extension);
-	out
+	existing.drain(..trim_at);
+	existing.extend(extension);
 }
 
 /// From a sorted vec, return the slice `[a..b)` covering events whose
@@ -533,15 +541,13 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 		}
 
 		let end = tip_pos.increment();
-		// Snapshot the current Arc<Vec> so a concurrent refresh that swaps in
-		// a new Arc doesn't disturb our local clone.
-		let events_snapshot: Arc<Vec<ObservedUtxo>> = self
-			.all_events
-			.read()
-			.map(|g| Arc::clone(&g))
-			.unwrap_or_else(|_| Arc::new(Vec::new()));
-		let window: Vec<ObservedUtxo> =
-			slice_range(&events_snapshot, start_position, &end).to_vec();
+		// Hold the read lock only for the (cheap) slice+copy of our window.
+		// Readers share the lock, so they don't block each other; a concurrent
+		// refresh's write lock waits for this copy to finish.
+		let window: Vec<ObservedUtxo> = match self.all_events.read() {
+			Ok(guard) => slice_range(&guard, start_position, &end).to_vec(),
+			Err(_) => Vec::new(),
+		};
 		let (result, _full_window) =
 			truncate_to_tx_capacity(window, tx_capacity, start_position, end);
 
@@ -622,40 +628,40 @@ mod tests {
 	fn slide_events_trims_front_and_appends_back() {
 		// Existing window covers blocks [10..30); slide to new_start=15
 		// while appending blocks [30..35).
-		let existing: Vec<_> = (10..30).map(|n| utxo(n, 0)).collect();
+		let mut existing: Vec<_> = (10..30).map(|n| utxo(n, 0)).collect();
 		let extension: Vec<_> = (30..35).map(|n| utxo(n, 0)).collect();
-		let result = slide_events(&existing, extension, 15);
+		slide_events(&mut existing, extension, 15);
 		let block_numbers: Vec<u32> =
-			result.iter().map(|u| u.header.tx_position.block_number).collect();
+			existing.iter().map(|u| u.header.tx_position.block_number).collect();
 		assert_eq!(block_numbers, (15..35).collect::<Vec<_>>());
 	}
 
 	#[test]
 	fn slide_events_no_trim_when_start_below_existing() {
-		let existing: Vec<_> = (10..15).map(|n| utxo(n, 0)).collect();
+		let mut existing: Vec<_> = (10..15).map(|n| utxo(n, 0)).collect();
 		let extension: Vec<_> = (15..18).map(|n| utxo(n, 0)).collect();
-		let result = slide_events(&existing, extension, 5);
-		assert_eq!(result.len(), 8);
-		assert_eq!(result[0].header.tx_position.block_number, 10);
+		slide_events(&mut existing, extension, 5);
+		assert_eq!(existing.len(), 8);
+		assert_eq!(existing[0].header.tx_position.block_number, 10);
 	}
 
 	#[test]
 	fn slide_events_full_trim_when_start_above_existing() {
-		let existing: Vec<_> = (10..15).map(|n| utxo(n, 0)).collect();
+		let mut existing: Vec<_> = (10..15).map(|n| utxo(n, 0)).collect();
 		let extension: Vec<_> = (20..25).map(|n| utxo(n, 0)).collect();
-		let result = slide_events(&existing, extension, 100);
+		slide_events(&mut existing, extension, 100);
 		// Everything from `existing` is dropped; only extension survives.
 		let block_numbers: Vec<u32> =
-			result.iter().map(|u| u.header.tx_position.block_number).collect();
+			existing.iter().map(|u| u.header.tx_position.block_number).collect();
 		assert_eq!(block_numbers, vec![20, 21, 22, 23, 24]);
 	}
 
 	#[test]
 	fn slide_events_empty_extension_just_trims() {
-		let existing: Vec<_> = (10..20).map(|n| utxo(n, 0)).collect();
-		let result = slide_events(&existing, vec![], 14);
+		let mut existing: Vec<_> = (10..20).map(|n| utxo(n, 0)).collect();
+		slide_events(&mut existing, vec![], 14);
 		let block_numbers: Vec<u32> =
-			result.iter().map(|u| u.header.tx_position.block_number).collect();
+			existing.iter().map(|u| u.header.tx_position.block_number).collect();
 		assert_eq!(block_numbers, (14..20).collect::<Vec<_>>());
 	}
 }
