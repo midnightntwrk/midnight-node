@@ -8444,7 +8444,6 @@ dependencies = [
  "authority-selection-inherents",
  "cardano-serialization-lib",
  "db-sync-sqlx",
- "derive-new",
  "figment",
  "itertools 0.14.0",
  "log",

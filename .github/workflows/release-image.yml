@@ -572,6 +572,11 @@ jobs:
   archive-changes:
     needs: [validate-inputs, prepare-release, finalize-release]
     if: ${{ !cancelled() && !failure() }}
+    # Caps the called workflow's GITHUB_TOKEN — archive-and-bump opens a PR
+    # with a signed commit, so it needs contents + pull-requests write.
+    permissions:
+      contents: write
+      pull-requests: write
     uses: ./.github/workflows/archive-changes.yml
     with:
       ref: ${{ inputs.ref }}
