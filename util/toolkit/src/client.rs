@@ -24,7 +24,7 @@ use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
 use subxt::{
 	Config, OnlineClient,
 	config::substrate::{BlakeTwo256, SubstrateExtrinsicParams, SubstrateHeader},
-	rpcs::{LegacyRpcMethods, RpcClient},
+	rpcs::{LegacyRpcMethods, RpcClient, rpc_params},
 };
 use thiserror::Error;
 
@@ -142,6 +142,15 @@ impl MidnightNodeClient {
 	pub async fn get_best_height(&self) -> Result<u64, ClientError> {
 		let header = self.rpc.chain_get_header(None).await?.ok_or(ClientError::NoBestHeader)?;
 		Ok(header.number)
+	}
+
+	pub async fn validate_transaction(&self, tx_bytes: &[u8]) -> Result<String, ClientError> {
+		let tx_hex = hex::encode(tx_bytes);
+		let result: String = self
+			.rpc_client
+			.request("midnight_validateTransaction", rpc_params![tx_hex])
+			.await?;
+		Ok(result)
 	}
 
 	pub async fn get_ledger_parameters(&self) -> Result<LedgerParameters, ClientError> {

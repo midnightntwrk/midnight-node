@@ -125,11 +125,14 @@ pub mod ledger_9 {
 pub use ledger_9 as latest;
 
 #[cfg(feature = "std")]
+pub mod native_api;
+
 /// Drops all versioned default ledger storages.
 ///
 /// Intended to be called from the embedding application shutdown path (for
 /// example after Tokio/node shutdown completes) to ensure DB-backed storage is
 /// released deterministically.
+#[cfg(feature = "std")]
 pub fn drop_all_default_storage() {
 	ledger_7::storage::drop_default_storage_if_exists();
 	ledger_8::storage::drop_default_storage_if_exists();

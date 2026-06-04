@@ -45,7 +45,7 @@ use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use time_source::TimeSource;
 
 use pallet_midnight::MidnightRuntimeApi;
-use pallet_midnight_rpc::{Midnight, MidnightApiServer};
+use pallet_midnight_rpc::{Midnight, MidnightApiServer, ValidateRateLimitConfig};
 use pallet_system_parameters::SystemParametersApi;
 use pallet_system_parameters_rpc::{SystemParametersRpc, SystemParametersRpcApiServer};
 use sc_consensus_beefy::communication::notification::{
@@ -112,6 +112,8 @@ pub struct FullDeps<C, P, B, T, AuthorityId: AuthorityIdBound> {
 	pub network: Arc<dyn NetworkPeers + Send + Sync>,
 	/// Channel for system RPC requests (used to query connected peers).
 	pub system_rpc_tx: TracingUnboundedSender<sc_rpc::system::Request<Block>>,
+	/// Rate limit config for midnight_validateTransaction
+	pub validate_rate_limit_config: ValidateRateLimitConfig,
 	/// Shared tracker for finality subscription limits.
 	pub subscription_tracker: SubscriptionTracker,
 }
@@ -165,6 +167,7 @@ where
 		backend,
 		network,
 		system_rpc_tx,
+		validate_rate_limit_config,
 		subscription_tracker,
 	} = deps;
 
@@ -242,7 +245,7 @@ where
 	));
 
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
-	module.merge(Midnight::new(client.clone()).into_rpc())?;
+	module.merge(Midnight::new(client.clone(), validate_rate_limit_config).into_rpc())?;
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
 	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;
 

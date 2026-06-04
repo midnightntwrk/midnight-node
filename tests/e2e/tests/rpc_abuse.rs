@@ -195,3 +195,119 @@ async fn replay_attack_rejected_via_rpc() {
 
     tracing::info!("✓ PR367-TC-0003-02 E2E PASSED: Replay attack rejected, no blockspace consumed");
 }
+
+// ============================================================================
+// midnight_validateTransaction RPC
+//
+// Exercises the read-only validation endpoint added alongside the txpool
+// DDoS work above. The RPC takes hex tx bytes and returns either the tx_hash
+// (success) or one of three JSON-RPC errors: -32602 bad hex, -32001 validation
+// failure with structured `data.{error_code, reason, details}`, or -32005
+// rate-limited (per-tx cooldown or global). Defaults: 50 calls/sec global,
+// 30s per-tx cooldown (`res/cfg/default.toml:52-55`).
+// ============================================================================
+
+/// Bad hex must be rejected before the rate-limit bucket is touched, so this
+/// test is safe to run unfettered: it cannot pollute the per-tx cooldown for
+/// any other test.
+#[e2e_test]
+async fn validate_transaction_rejects_invalid_hex() {
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    let err = client
+        .validate_transaction("zz_not_hex")
+        .await
+        .expect_err("expected -32602 for invalid hex, got Ok");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("-32602") || msg.to_lowercase().contains("invalid hex"),
+        "expected invalid-hex error, got: {msg}"
+    );
+}
+
+/// STORE_TX references a contract that has not been deployed when this test
+/// runs (pre-deploy gated). validate_transaction must surface the underlying
+/// ContractNotPresent rather than succeeding or returning a generic error.
+#[e2e_test]
+async fn validate_transaction_pre_deploy_store_returns_not_present() {
+    let _pre_deploy_guard = PreDeployGuard::new();
+    use midnight_node_ledger_helpers::extract_tx_with_context;
+    use midnight_node_res::undeployed::transactions::STORE_TX;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    // STORE_TX is a `SerializedTx` JSON bundle (tx_bytes + block_context), not raw tx
+    // bytes. The RPC's `tagged_deserialize` rejects the JSON wrapper as
+    // `Deserialization(Transaction)` before validation can fire, so we must unwrap it
+    // first to actually exercise the ContractNotPresent path.
+    let (tx_bytes, _block_context) = extract_tx_with_context(STORE_TX);
+    let tx_hex = hex::encode(&tx_bytes);
+    let result = client.validate_transaction(&tx_hex).await;
+
+    let err = result.expect_err("expected validation failure for STORE_TX without DEPLOY_TX");
+    // subxt's `UserError` Display impl renders only `{message} ({code})`, dropping the
+    // structured `data` field. Pull `data` out separately so the ContractNotPresent details
+    // we attach in the RPC are actually visible to the assertions.
+    let subxt::rpcs::Error::User(user_err) = &err else {
+        panic!("expected JSON-RPC user error, got: {err}");
+    };
+    let data = user_err
+        .data
+        .as_ref()
+        .map(|d| d.get().to_string())
+        .unwrap_or_default();
+    let msg = format!("{user_err} data={data}");
+    assert_eq!(
+        user_err.code, -32001,
+        "expected -32001 validation failure, got: {msg}"
+    );
+    assert!(
+        data.to_lowercase().contains("contractnotpresent")
+            || data.to_lowercase().contains("contract is not present")
+            || data.to_lowercase().contains("not present"),
+        "expected ContractNotPresent in error details, got: {msg}"
+    );
+}
+
+/// Two back-to-back validations of the same tx hex must trip the per-tx
+/// cooldown bucket. Uses freshly-randomized bytes so the bucket key
+/// (blake2_256 of the bytes) cannot collide with any other test's tx.
+#[e2e_test]
+async fn validate_transaction_per_tx_rate_limit_blocks_replay() {
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client).await;
+
+    // Random ~100 bytes: valid hex (passes the hex-decode gate before the
+    // limiter), invalid tx structure (validation will reject it on the merits).
+    let junk: [u8; 100] = rand::random();
+    let tx_hex = hex::encode(junk);
+
+    let first = client.validate_transaction(&tx_hex).await;
+    assert!(
+        first.is_err(),
+        "random bytes must not validate; got Ok({:?})",
+        first.ok()
+    );
+    let first_msg = first.unwrap_err().to_string();
+    assert!(
+        !first_msg.contains("-32005"),
+        "first call should fail on validation, not rate limit: {first_msg}"
+    );
+
+    let second = client
+        .validate_transaction(&tx_hex)
+        .await
+        .expect_err("second call with same hex must be rate-limited");
+    let second_msg = second.to_string();
+    assert!(
+        second_msg.contains("-32005") || second_msg.to_lowercase().contains("rate limit"),
+        "expected -32005 per-tx rate limit, got: {second_msg}"
+    );
+    assert!(
+        second_msg.to_lowercase().contains("per-transaction")
+            || second_msg.to_lowercase().contains("cooldown"),
+        "expected per-transaction cooldown message, got: {second_msg}"
+    );
+}

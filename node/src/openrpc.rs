@@ -28,6 +28,7 @@ pub(crate) const CUSTOM_METHOD_NAMES: &[&str] = &[
 	"midnight_ledgerStateRoot",
 	"midnight_apiVersions",
 	"midnight_ledgerVersion",
+	"midnight_validateTransaction",
 	"systemParameters_getTermsAndConditions",
 	"systemParameters_getDParameter",
 	"systemParameters_getAriadneParameters",
@@ -220,6 +221,29 @@ fn build_custom_method(name: &str) -> Option<Value> {
 			)],
 			result("version", "Ledger version string", json!({"type": "string"})),
 			&[error_ref("BlockRpcError")],
+		),
+		"midnight_validateTransaction" => method_entry(
+			name,
+			"Validates a transaction without submitting it to the transaction pool.",
+			"Runs a hex-encoded transaction through the ledger's verbose validation against the state at `at` (or the best block) and returns its hash on success. Read-only: nothing is added to the txpool. Rate limited per-call and per-transaction.",
+			&[
+				param("tx_hex", "Hex-encoded serialized transaction", json!({"type": "string"})),
+				param_optional(
+					"at",
+					"Block hash to validate against (defaults to best block)",
+					schema_ref("BlockHash"),
+				),
+			],
+			result(
+				"tx_hash",
+				"0x-prefixed hex-encoded transaction hash",
+				json!({"type": "string", "pattern": "^0x[0-9a-fA-F]+$"}),
+			),
+			&[
+				error_ref("ValidateTransactionFailed"),
+				error_ref("ValidateTransactionRateLimited"),
+				error_ref("ValidateTransactionUnsupported"),
+			],
 		),
 
 		// -- SystemParametersRpcApi --
@@ -703,6 +727,33 @@ fn build_error_components() -> Value {
 			"data": {
 				"description": "Custom error from partner-chains sidechain RPC"
 			}
+		},
+		"ValidateTransactionFailed": {
+			"code": -32001,
+			"message": "Transaction validation failed",
+			"data": {
+				"description": "Structured ledger validation failure",
+				"type": "object",
+				"properties": {
+					"error_code": { "type": "integer", "description": "Ledger error discriminant" },
+					"reason": { "type": "string", "description": "Short failure reason" },
+					"details": { "type": "string", "description": "Detailed failure description" }
+				}
+			}
+		},
+		"ValidateTransactionRateLimited": {
+			"code": -32005,
+			"message": "Rate limit exceeded",
+			"data": {
+				"description": "Rejected by the global call-rate quota or the per-transaction cooldown"
+			}
+		},
+		"ValidateTransactionUnsupported": {
+			"code": -32601,
+			"message": "Method not supported",
+			"data": {
+				"description": "The node's runtime predates MidnightRuntimeApi v6 and does not expose the validation context"
+			}
 		}
 	})
 }
@@ -793,7 +844,7 @@ mod tests {
 	}
 
 	#[test]
-	fn all_sixteen_custom_methods_present() {
+	fn all_custom_methods_present() {
 		let doc = build_openrpc_document(&all_custom_method_names());
 		let methods = doc["methods"].as_array().unwrap();
 
@@ -926,8 +977,8 @@ mod tests {
 	fn ci_custom_method_count_drift_detection() {
 		assert_eq!(
 			CUSTOM_METHOD_NAMES.len(),
-			16,
-			"CUSTOM_METHOD_NAMES has {} entries but 16 are expected. \
+			17,
+			"CUSTOM_METHOD_NAMES has {} entries but 17 are expected. \
 			 If you added or removed a custom RPC method, update CUSTOM_METHOD_NAMES \
 			 and the OpenRPC metadata in build_custom_method().",
 			CUSTOM_METHOD_NAMES.len()

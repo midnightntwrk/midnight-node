@@ -638,6 +638,17 @@ impl MidnightClient {
         Err("Transaction progress ended without confirmation".into())
     }
 
+    /// Call `midnight_validateTransaction` with a hex-encoded transaction.
+    ///
+    /// Returns the tx_hash string on success, or a `subxt::rpcs::Error` whose
+    /// `to_string()` contains the JSON-RPC error code (`-32602` bad hex,
+    /// `-32001` validation failure, `-32005` rate limited).
+    pub async fn validate_transaction(&self, tx_hex: &str) -> Result<String, subxt::rpcs::Error> {
+        self.rpc_client
+            .request("midnight_validateTransaction", rpc_params![tx_hex])
+            .await
+    }
+
     /// Get the state of a contract by its address at the best block.
     pub async fn get_contract_state(
         &self,

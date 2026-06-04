@@ -233,6 +233,26 @@ impl Sender {
 		let midnight_tx_hash = TransactionHash(HashOutput(tx.tx_hash));
 		tracing::debug!(url = client.url, "send_tx_no_wait: computed hash");
 
+		if let RawTransaction::Midnight(tx_bytes) = &tx.tx {
+			match client.client.validate_transaction(tx_bytes).await {
+				Ok(hash) => {
+					log::info!(
+						url = client.url,
+						midnight_tx_hash = TxHashes::format_midnight_tx_hash(&midnight_tx_hash),
+						validated_hash = hash.as_str();
+						"VALIDATED"
+					);
+				},
+				Err(e) => {
+					log::error!(
+						url = client.url,
+						midnight_tx_hash = TxHashes::format_midnight_tx_hash(&midnight_tx_hash);
+						"Validation failed: {e}"
+					);
+				},
+			}
+		}
+
 		let unsigned_extrinsic = match &tx.tx {
 			RawTransaction::Midnight(tx) => {
 				let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx.clone());

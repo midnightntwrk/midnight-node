@@ -47,7 +47,9 @@ pub mod pallet {
 	use frame_support::dispatch::GetDispatchInfo;
 	use frame_support::{ensure, pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
-	use midnight_primitives::LedgerBlockContextProvider;
+	use midnight_primitives::{
+		LedgerBlockContextProvider, MAX_TIMESTAMP_DRIFT_SECS, ValidationContext,
+	};
 	use scale_info::prelude::{string::String, vec::Vec};
 	use sidechain_domain::byte_string::BoundedString;
 
@@ -86,13 +88,12 @@ pub mod pallet {
 			let now_ms = <pallet_timestamp::Pallet<T>>::get();
 
 			let now_s = now_ms / <T as pallet_timestamp::Config>::Moment::from(1_000u32);
-			let drift_s = 30; // (from private const MAX_TIMESTAMP_DRIFT_MILLIS in substrate/frame/timestamp/src/lib.rs)
 
 			let last_block_time = ParentTimestamp::<T>::get();
 
 			BlockContext {
 				tblock: now_s.unique_saturated_into(),
-				tblock_err: drift_s as u32,
+				tblock_err: MAX_TIMESTAMP_DRIFT_SECS,
 				parent_block_hash: parent_hash.as_ref().to_vec(),
 				last_block_time,
 			}
@@ -623,6 +624,17 @@ pub mod pallet {
 		pub fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			let state_key = StateKey::<T>::get();
 			LedgerApi::get_ledger_state_root(&state_key)
+		}
+
+		pub fn get_validation_context() -> ValidationContext {
+			ValidationContext {
+				state_key: StateKey::<T>::get(),
+				block_context: Self::get_block_context(),
+				spec_version: <frame_system::Pallet<T>>::runtime_version().spec_version,
+				max_block_weight: <T as frame_system::Config>::BlockWeights::get()
+					.max_block
+					.ref_time(),
+			}
 		}
 
 		// Helper for the weight macro

@@ -117,6 +117,12 @@ pub struct MidnightCfg {
 	/// Job name label to include with pushed metrics.
 	/// Default: "midnight-node"
 	pub prometheus_push_job_name: Option<String>,
+
+	/// Global rate limit for midnight_validateTransaction RPC (calls/sec)
+	pub rpc_validate_rate_limit: u32,
+
+	/// Per-transaction cooldown for midnight_validateTransaction RPC (seconds)
+	pub rpc_validate_per_tx_cooldown: u64,
 }
 
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {
