@@ -225,7 +225,7 @@ async fn contract_state_distinguishes_historical_and_current_blocks() {
 /// initialised to `0u64` — and assert the deserialised value matches.
 #[e2e_test]
 async fn query_contract_state_returns_expected_value() {
-    use midnight_node_ledger_helpers::{DefaultDB, StateValue, deserialize};
+    use midnight_node_ledger_helpers::{DefaultDB, StateValue, deserialize_untagged};
     use midnight_node_res::undeployed::transactions::{CONTRACT_ADDR, DEPLOY_TX};
 
     let _deploy_guard = wait_before_deploying().await;
@@ -268,7 +268,7 @@ async fn query_contract_state_returns_expected_value() {
         .expect("field [0][1] should exist");
     let value_bytes = hex::decode(value_hex).expect("invalid hex in value");
     let state_value: StateValue<DefaultDB> =
-        deserialize(&mut &value_bytes[..]).expect("failed to deserialize StateValue");
+        deserialize_untagged(&mut &value_bytes[..]).expect("failed to deserialize StateValue");
 
     let expected = StateValue::<DefaultDB>::from(0u64);
     assert_eq!(state_value, expected);
@@ -279,7 +279,7 @@ async fn query_contract_state_returns_expected_value() {
 /// out-of-bounds error ([0][99]).
 #[e2e_test]
 async fn query_contract_state_batch_processes_all_queries() {
-    use midnight_node_ledger_helpers::{DefaultDB, StateValue, deserialize};
+    use midnight_node_ledger_helpers::{DefaultDB, StateValue, deserialize_untagged};
     use midnight_node_res::undeployed::transactions::{CONTRACT_ADDR, DEPLOY_TX};
 
     let _deploy_guard = wait_before_deploying().await;
@@ -330,13 +330,13 @@ async fn query_contract_state_batch_processes_all_queries() {
     // [0][1]: counter Cell initialized to 0
     assert_eq!(results[0].error, None);
     let value_bytes = hex::decode(results[0].value.as_ref().unwrap()).unwrap();
-    let cell: StateValue<DefaultDB> = deserialize(&mut &value_bytes[..]).unwrap();
+    let cell: StateValue<DefaultDB> = deserialize_untagged(&mut &value_bytes[..]).unwrap();
     assert_eq!(cell, StateValue::from(0u64));
 
     // [0][2][map_key]: map hit → Null
     assert_eq!(results[1].error, None);
     let value_bytes = hex::decode(results[1].value.as_ref().unwrap()).unwrap();
-    let map_value: StateValue<DefaultDB> = deserialize(&mut &value_bytes[..]).unwrap();
+    let map_value: StateValue<DefaultDB> = deserialize_untagged(&mut &value_bytes[..]).unwrap();
     assert_eq!(map_value, StateValue::Null);
 
     // [0][99]: array out of bounds → error

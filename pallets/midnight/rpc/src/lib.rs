@@ -28,7 +28,6 @@ use sc_client_api::{BlockBackend, BlockchainEvents};
 // Re-exported so downstream callers (typed clients, e2e tests) can construct
 // `PathKey(AlignedValue::from(...))` without a direct `base-crypto` dependency.
 pub use base_crypto::fab::AlignedValue;
-use midnight_serialize::{tagged_deserialize, tagged_serialize, tagged_serialized_size};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
@@ -39,14 +38,14 @@ pub const API_VERSIONS: [u32; 1] = [2];
 pub const MAX_STATE_QUERIES: usize = 100;
 
 /// Maximum byte length of a single serialized path key on the wire.
-/// Enforced inside `PathKey::deserialize` before the tagged-deserialize
+/// Enforced inside `PathKey::deserialize` before the untagged deserialize
 /// step, so a single accepted request can't allocate megabytes per key
 /// before the deserializer rejects it.
 ///
 /// Sized against the VM's `eq_valid_input` cap (64 untagged bytes per
-/// AlignedValue) plus tag overhead, with headroom for compound map keys
-/// (e.g. a struct of a few primitive fields). Worst-case per-request
-/// input bytes: `MAX_STATE_QUERIES * MAX_PATH_DEPTH * MAX_KEY_BYTES`.
+/// AlignedValue), with headroom for compound map keys (e.g. a struct of a
+/// few primitive fields). Worst-case per-request input bytes:
+/// `MAX_STATE_QUERIES * MAX_PATH_DEPTH * MAX_KEY_BYTES`.
 const MAX_KEY_BYTES: usize = 512;
 
 /// Midnight core RPC API.
@@ -260,8 +259,10 @@ pub struct PathKey(pub AlignedValue);
 
 impl Serialize for PathKey {
 	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-		let mut buf = Vec::with_capacity(tagged_serialized_size(&self.0));
-		tagged_serialize(&self.0, &mut buf).map_err(serde::ser::Error::custom)?;
+		let mut buf =
+			Vec::with_capacity(midnight_serialize::Serializable::serialized_size(&self.0));
+		midnight_serialize::Serializable::serialize(&self.0, &mut buf)
+			.map_err(serde::ser::Error::custom)?;
 		format!("0x{}", hex::encode(&buf)).serialize(serializer)
 	}
 }
@@ -280,11 +281,18 @@ impl<'de> Deserialize<'de> for PathKey {
 			)));
 		}
 		let bytes = hex::decode(hex_str).map_err(serde::de::Error::custom)?;
-		// `tagged_deserialize` enforces full consumption of the reader
-		// (`ensure_consumed = true` in its impl), so trailing-bytes are
-		// already rejected at this call site.
-		let value: AlignedValue =
-			tagged_deserialize(&bytes[..]).map_err(serde::de::Error::custom)?;
+		// Untagged deserialize does not enforce full consumption, so we
+		// check the reader is empty after the AlignedValue to keep the
+		// wire format canonical (no trailing junk).
+		let mut reader: &[u8] = &bytes;
+		let value: AlignedValue = midnight_serialize::Deserializable::deserialize(&mut reader, 0)
+			.map_err(serde::de::Error::custom)?;
+		if !reader.is_empty() {
+			return Err(serde::de::Error::custom(format!(
+				"path key has {} trailing byte(s) after a valid AlignedValue",
+				reader.len()
+			)));
+		}
 		Ok(PathKey(value))
 	}
 }

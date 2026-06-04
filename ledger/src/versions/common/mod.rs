@@ -1227,9 +1227,9 @@ fn resolve_state_path<D: DB>(
 	}
 
 	let serialize_value = |v: &StateValue<D>| -> Result<Vec<u8>, String> {
-		let size = midnight_serialize_local::tagged_serialized_size(v);
-		let mut buf = Vec::with_capacity(size);
-		midnight_serialize_local::tagged_serialize(v, &mut buf)
+		use midnight_serialize_local::Serializable;
+		let mut buf = Vec::with_capacity(Serializable::serialized_size(v));
+		Serializable::serialize(v, &mut buf)
 			.map_err(|e| format!("failed to serialize result: {e}"))?;
 		Ok(buf)
 	};
