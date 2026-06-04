@@ -23,7 +23,9 @@
 //! start instead of carrying multi-MB binaries in the repo.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
-use crate::data_source::cnight_observation::MidnightCNightObservationDataSourceImpl;
+use crate::data_source::cnight_observation::{
+	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl,
+};
 use crate::data_source::metrics::MidnightDataSourceMetrics;
 use crate::{MidnightCNightObservationDataSource, ObservedUtxo};
 use cardano_serialization_lib::{Address, EnterpriseAddress};
@@ -48,6 +50,27 @@ pub const DEFAULT_WINDOW_SIZE: u32 = 100_000;
 /// forward.
 const REFRESH_THRESHOLD: u32 = 10_000;
 
+/// Errors that can arise while bulk-pulling cNIGHT observation events.
+#[derive(thiserror::Error, Debug)]
+pub enum BulkPullError {
+	#[error("invalid mapping validator address: {0}")]
+	InvalidMappingValidatorAddress(String),
+	#[error("failed to extract network id from mapping validator address: {0}")]
+	NetworkId(String),
+	#[error("mapping validator address is not an EnterpriseAddress")]
+	NotEnterpriseAddress,
+	#[error("mapping validator address has no script hash")]
+	MissingScriptHash,
+	#[error("get_low_bounds({0}) returned None")]
+	MissingLowBounds(u32),
+	#[error("get_high_bounds({0}) returned None")]
+	MissingHighBounds(u32),
+	#[error(transparent)]
+	Db(#[from] sqlx::Error),
+	#[error(transparent)]
+	Observation(#[from] MidnightCNightObservationDataSourceError),
+}
+
 /// Pull every cnight observation event in `[start, end]` (inclusive) and
 /// return them sorted ascending by `tx_position`.
 ///
@@ -64,18 +87,19 @@ pub async fn bulk_pull(
 	// passes the runtime-supplied `utxo_overestimate`; the background cache
 	// refresh passes `LARGE_LIMIT` to pull a whole multi-block window.
 	limit: usize,
-) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<ObservedUtxo>, BulkPullError> {
 	let data_source = MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0);
 
 	let mapping_validator_address = Address::from_bech32(&cfg.mapping_validator_address)
-		.map_err(|e| format!("invalid mapping validator address: {e}"))?;
-	let cardano_network =
-		mapping_validator_address.network_id().map_err(|e| format!("network_id: {e}"))?;
+		.map_err(|e| BulkPullError::InvalidMappingValidatorAddress(e.to_string()))?;
+	let cardano_network = mapping_validator_address
+		.network_id()
+		.map_err(|e| BulkPullError::NetworkId(e.to_string()))?;
 	let mapping_validator_policy_id = EnterpriseAddress::from_address(&mapping_validator_address)
-		.ok_or("mapping validator address is not EnterpriseAddress")?
+		.ok_or(BulkPullError::NotEnterpriseAddress)?
 		.payment_cred()
 		.to_scripthash()
-		.ok_or("mapping validator address has no script hash")?;
+		.ok_or(BulkPullError::MissingScriptHash)?;
 
 	// One-shot id lookups: there's no caching benefit within a single pull, so
 	// query directly instead of allocating a throwaway `MultiAssetCache`.
@@ -96,10 +120,8 @@ pub async fn bulk_pull(
 		crate::db::get_low_bounds(pool, start.block_number.into()),
 		crate::db::get_high_bounds(pool, end.block_number.into()),
 	)?;
-	let low_bounds = low_bounds
-		.ok_or_else(|| format!("get_low_bounds({}) returned None", start.block_number))?;
-	let high_bounds = high_bounds
-		.ok_or_else(|| format!("get_high_bounds({}) returned None", end.block_number))?;
+	let low_bounds = low_bounds.ok_or(BulkPullError::MissingLowBounds(start.block_number))?;
+	let high_bounds = high_bounds.ok_or(BulkPullError::MissingHighBounds(end.block_number))?;
 
 	let paged = crate::db::PagedQuery {
 		start,
