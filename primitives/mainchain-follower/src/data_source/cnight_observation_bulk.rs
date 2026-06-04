@@ -25,7 +25,6 @@
 use crate::data_source::candidates_data_source::observed_async_trait;
 use crate::data_source::cnight_observation::MidnightCNightObservationDataSourceImpl;
 use crate::data_source::metrics::MidnightDataSourceMetrics;
-use crate::db::MultiAssetCache;
 use crate::{MidnightCNightObservationDataSource, ObservedUtxo};
 use cardano_serialization_lib::{Address, EnterpriseAddress};
 use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
@@ -54,7 +53,8 @@ const REFRESH_THRESHOLD: u32 = 10_000;
 ///
 /// Both endpoints are full `CardanoPosition`s so the per-call data source can
 /// pass exact `(block_number, tx_index_in_block)` boundaries while the bulk
-/// /sliding-window paths can pass whole-block ranges via `whole_block_range`.
+/// /sliding-window paths can pass whole-block ranges via
+/// `CardanoPosition::{min,max}_for_block`.
 pub async fn bulk_pull(
 	pool: &PgPool,
 	cfg: &CNightAddresses,
@@ -65,7 +65,7 @@ pub async fn bulk_pull(
 	// refresh passes `LARGE_LIMIT` to pull a whole multi-block window.
 	limit: usize,
 ) -> Result<Vec<ObservedUtxo>, Box<dyn std::error::Error + Send + Sync>> {
-	let ds = MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0);
+	let data_source = MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0);
 
 	let mapping_validator_address = Address::from_bech32(&cfg.mapping_validator_address)
 		.map_err(|e| format!("invalid mapping validator address: {e}"))?;
@@ -77,16 +77,20 @@ pub async fn bulk_pull(
 		.to_scripthash()
 		.ok_or("mapping validator address has no script hash")?;
 
-	let asset_cache = MultiAssetCache::new(pool.clone());
-	let auth_token_ident = asset_cache
-		.resolve_ident(
-			&mapping_validator_policy_id.to_bytes(),
-			cfg.auth_token_asset_name.as_bytes(),
-		)
-		.await?;
-	let cnight_ident = asset_cache
-		.resolve_ident(&cfg.cnight_policy_id, cfg.cnight_asset_name.as_bytes())
-		.await?;
+	// One-shot id lookups: there's no caching benefit within a single pull, so
+	// query directly instead of allocating a throwaway `MultiAssetCache`.
+	let auth_token_ident = crate::db::resolve_multi_asset_id(
+		pool,
+		&mapping_validator_policy_id.to_bytes(),
+		cfg.auth_token_asset_name.as_bytes(),
+	)
+	.await?;
+	let cnight_ident = crate::db::resolve_multi_asset_id(
+		pool,
+		&cfg.cnight_policy_id,
+		cfg.cnight_asset_name.as_bytes(),
+	)
+	.await?;
 
 	let (low_bounds, high_bounds) = tokio::try_join!(
 		crate::db::get_low_bounds(pool, start.block_number.into()),
@@ -109,22 +113,22 @@ pub async fn bulk_pull(
 	let mut all = Vec::new();
 	let mut counts = (0usize, 0usize, 0usize, 0usize);
 	if let Some(ident) = auth_token_ident {
-		let v = ds
+		let v = data_source
 			.get_registration_utxos(cardano_network, ident, &cfg.mapping_validator_address, &paged)
 			.await?;
 		counts.0 = v.len();
 		all.extend(v);
 	}
-	let v = ds
+	let v = data_source
 		.get_deregistration_utxos(cardano_network, &cfg.mapping_validator_address, &paged)
 		.await?;
 	counts.1 = v.len();
 	all.extend(v);
 	if let Some(ident) = cnight_ident {
-		let v = ds.get_asset_create_utxos(cardano_network, ident, &paged).await?;
+		let v = data_source.get_asset_create_utxos(cardano_network, ident, &paged).await?;
 		counts.2 = v.len();
 		all.extend(v);
-		let v = ds.get_asset_spend_utxos(cardano_network, ident, &paged).await?;
+		let v = data_source.get_asset_spend_utxos(cardano_network, ident, &paged).await?;
 		counts.3 = v.len();
 		all.extend(v);
 	}
@@ -137,26 +141,6 @@ pub async fn bulk_pull(
 		counts.0, counts.1, counts.2, counts.3, auth_token_ident, cnight_ident,
 	);
 	Ok(all)
-}
-
-/// Build a `[from_block, to_block]` whole-block `CardanoPosition` range,
-/// suitable for `bulk_pull`. The `to` endpoint uses `i32::MAX as u32` so the
-/// SQL bind path's `as i32` cast doesn't underflow to `-1`.
-pub fn whole_block_range(from_block: u32, to_block: u32) -> (CardanoPosition, CardanoPosition) {
-	let max_tx_index = u32::try_from(i32::MAX).expect("i32::MAX is non-negative");
-	let start = CardanoPosition {
-		block_hash: McBlockHash([0u8; 32]),
-		block_number: from_block,
-		block_timestamp: Default::default(),
-		tx_index_in_block: 0,
-	};
-	let end = CardanoPosition {
-		block_hash: McBlockHash([0u8; 32]),
-		block_number: to_block,
-		block_timestamp: Default::default(),
-		tx_index_in_block: max_tx_index,
-	};
-	(start, end)
 }
 
 /// Truncate a sorted, unique-position event list to at most `tx_capacity`
@@ -204,10 +188,6 @@ struct LastObservation {
 	start_position: CardanoPosition,
 	current_tip: McBlockHash,
 	result: ObservedUtxos,
-	/// True iff the previous call returned all data up to the requested `end`
-	/// (i.e. not truncated by `tx_capacity`). Only full-window results can be
-	/// sliced when `start_position` advances.
-	full_window: bool,
 }
 
 /// A `MidnightCNightObservationDataSource` backed by an in-memory event vector
@@ -373,7 +353,8 @@ async fn refresh_window(
 		"refresh kicked off: extending to {target_end} (was end={old_end}); trim behind {new_window_start}"
 	);
 	let t0 = std::time::Instant::now();
-	let (start, end) = whole_block_range(from_block, target_end);
+	let (start, end) =
+		(CardanoPosition::min_for_block(from_block), CardanoPosition::max_for_block(target_end));
 	// Warming the cache means pulling a whole multi-block window, so the per-query
 	// limit is the wide `LARGE_LIMIT` rather than the per-block over-fetch bound.
 	let extension = bulk_pull(pool, cfg, &start, &end, LARGE_LIMIT).await?;
@@ -438,33 +419,17 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 		tx_capacity: usize,
 		utxo_overestimate: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
-		// Same-tip cache: if `current_tip` hasn't advanced, the Cardano window
-		// hasn't grown. Reuse the previous result directly (exact match) or
-		// filter it to `>= start_position` (advanced within a full window —
-		// only safe when the prior call wasn't truncated).
+		// Same-tip cache: if `current_tip` and `start_position` are both
+		// unchanged, the Cardano window hasn't grown, so reuse the previous
+		// result directly. (A `start_position` that advanced under the same tip
+		// falls through to a recompute — the pallet consumes inherent data
+		// all-or-nothing, so the previous-start case is the one that recurs.)
 		if let Ok(guard) = self.last_observation.lock()
 			&& let Some(last) = guard.as_ref()
 			&& last.current_tip == current_tip
+			&& last.start_position == *start_position
 		{
-			if last.start_position == *start_position {
-				return Ok(last.result.clone());
-			} else if last.full_window
-				&& *start_position >= last.start_position
-				&& *start_position <= last.result.end
-			{
-				let filtered: Vec<_> = last
-					.result
-					.utxos
-					.iter()
-					.filter(|u| u.header.tx_position >= *start_position)
-					.cloned()
-					.collect();
-				return Ok(ObservedUtxos {
-					start: start_position.clone(),
-					end: last.result.end.clone(),
-					utxos: filtered,
-				});
-			}
+			return Ok(last.result.clone());
 		}
 
 		// Resolve `current_tip` (cardano block hash) → CardanoPosition.
@@ -500,24 +465,24 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 		// mc-hash digest — not real-time. So during catchup it advances with
 		// the midnight chain, making a sliding window viable: the cache only
 		// needs to track `tip_pos`, not the live cardano tip.
-		let horizon_opt = self.snapshot_end_block.read().ok().and_then(|g| *g);
+		let snapshot_end_opt = self.snapshot_end_block.read().ok().and_then(|g| *g);
 		let snapshot_start_opt = self.snapshot_start_block.read().ok().and_then(|g| *g);
-		if let Some(horizon) = horizon_opt {
-			// Refresh proactively when tip_pos is closing on horizon.
-			if tip_pos.block_number.saturating_add(REFRESH_THRESHOLD) >= horizon {
+		if let Some(snapshot_end_block) = snapshot_end_opt {
+			// Refresh proactively when tip_pos is closing on the snapshot end.
+			if tip_pos.block_number.saturating_add(REFRESH_THRESHOLD) >= snapshot_end_block {
 				let target_end = tip_pos
 					.block_number
 					.saturating_add(REFRESH_THRESHOLD)
 					.saturating_add(self.stability_margin);
 				self.maybe_kick_refresh(target_end);
 			}
-			let tip_past_horizon = tip_pos.block_number > horizon;
+			let tip_past_snapshot_end = tip_pos.block_number > snapshot_end_block;
 			let start_below_snapshot_start = snapshot_start_opt
 				.is_some_and(|ss| start_position.block_number < ss);
-			if tip_past_horizon || start_below_snapshot_start {
+			if tip_past_snapshot_end || start_below_snapshot_start {
 				log::debug!(
 					"cNIGHT observation: query [{} .. {}] outside cache window [{:?} .. {}], delegating to DB",
-					start_position.block_number, tip_pos.block_number, snapshot_start_opt, horizon,
+					start_position.block_number, tip_pos.block_number, snapshot_start_opt, snapshot_end_block,
 				);
 				return self
 					.db_fallback
@@ -531,7 +496,7 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 					.await;
 			}
 		} else {
-			// No horizon yet — cache hasn't been populated. Delegate while
+			// No snapshot end yet — cache hasn't been populated. Delegate while
 			// we wait for the first refresh to complete.
 			return self
 				.db_fallback
@@ -555,7 +520,7 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 			.unwrap_or_else(|_| Arc::new(Vec::new()));
 		let window: Vec<ObservedUtxo> =
 			slice_range(&events_snapshot, start_position, &end).to_vec();
-		let (result, full_window) =
+		let (result, _full_window) =
 			truncate_to_tx_capacity(window, tx_capacity, start_position, end);
 
 		if let Ok(mut guard) = self.last_observation.lock() {
@@ -563,7 +528,6 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 				start_position: start_position.clone(),
 				current_tip: current_tip.clone(),
 				result: result.clone(),
-				full_window,
 			});
 		}
 

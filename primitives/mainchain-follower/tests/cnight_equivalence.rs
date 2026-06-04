@@ -31,8 +31,7 @@
 //! ```
 //!
 //! Optional overrides:
-//! - `CNIGHT_EQUIV_ADDRESSES`        path to a cnight-addresses.json
-//!                                   (default: `res/qanet/cnight-addresses.json`)
+//! - `CNIGHT_EQUIV_ADDRESSES` path to a cnight-addresses.json (default: `res/qanet/cnight-addresses.json`)
 //! - `CNIGHT_EQUIV_FROM_BLOCK`       first Cardano block_no (default: 0)
 //! - `CNIGHT_EQUIV_TO_BLOCK`         last Cardano block_no (default: max in db)
 //! - `CNIGHT_EQUIV_TX_CAPACITY`      whole-tx capacity per call (default: 200)
