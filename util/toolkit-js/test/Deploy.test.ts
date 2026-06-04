@@ -2,39 +2,59 @@ import { Effect, Layer } from 'effect';
 import { Command } from '@effect/cli';
 import { NodeContext } from '@effect/platform-node';
 import { describe, it, expect } from 'vitest';
-import { ConfigCompiler, deployCommand } from '@midnight-ntwrk/compact-js-command/effect';
 import { resolve } from 'node:path';
+import { rm, stat } from 'node:fs/promises';
 
 const COUNTER_CONFIG_FILEPATH = resolve(import.meta.dirname, 'contract/contract.config.ts');
-const COUNTER_OUTPUT_FILEPATH = resolve(import.meta.dirname, 'intent.bin');
-const COUNTER_OUTPUT_PS_FILEPATH = resolve(import.meta.dirname, 'output-ps.json');
 
-const testLayer = Layer.mergeAll(
-  ConfigCompiler.layer.pipe(
-    Layer.provideMerge(NodeContext.layer)
-  )
-);
+// The variant exercised by this run, selected by COMPACTC_VERSION and pinned by the resolution hook
+// installed in `test/setup-compactc-resolver.ts`. Run the suite once per supported version (see the
+// `test:compat` npm script) to cover them all.
+const version = process.env.RESOLVED_COMPACTC_VERSION ?? 'default';
+const COUNTER_OUTPUT_FILEPATH = resolve(import.meta.dirname, `intent-${version}.bin`);
+const COUNTER_OUTPUT_PS_FILEPATH = resolve(import.meta.dirname, `output-ps-${version}.json`);
+const COUNTER_OUTPUT_ZSWAP_FILEPATH = resolve(import.meta.dirname, `zswap-${version}.json`);
 
-describe('Deploy Command', () => {
-  // Skip until we figure out how to test in the context of v7 or v8 toolkit. Currently the imports
-  // in this module will use the earlier versions of Compact.js (not the latest).
-  it.skip('should run to success', async () => {
+describe(`Deploy Command (compact ${version})`, () => {
+  it('should run to success', async () => {
+    // Dynamically import so the import resolves through the version-dispatch hook (rather than the
+    // package npm happened to hoist), matching how the CLI resolves these at runtime.
+    const { ConfigCompiler, deployCommand } = await import('@midnight-ntwrk/compact-js-command/effect');
+
+    const testLayer = Layer.mergeAll(
+      ConfigCompiler.layer.pipe(Layer.provideMerge(NodeContext.layer))
+    );
+
+    // Clean any output left over from a previous run so the existence assertion is meaningful.
+    await rm(COUNTER_OUTPUT_FILEPATH, { force: true });
+    await rm(COUNTER_OUTPUT_PS_FILEPATH, { force: true });
+    await rm(COUNTER_OUTPUT_ZSWAP_FILEPATH, { force: true });
+
     await Effect.gen(function*() {
       // Make a command line instance from the 'deploy' command...
       const cli = Command.run(deployCommand, { name: 'deploy', version: '0.0.0' });
 
-      // ...and then execute it. We'll use the '-c' option to provide a path to a configuration file, and the
-      // '-o' to provide a path to where we want the serialized Intent to be written.
+      // ...and then execute it. We'll use the '-c' option to provide a path to a configuration file, and
+      // the '-o' to provide a path to where we want the serialized Intent to be written.
       yield* cli([
         'node', 'deploy.ts',
         '-c', COUNTER_CONFIG_FILEPATH,
         '-o', COUNTER_OUTPUT_FILEPATH,
         '--output-ps', COUNTER_OUTPUT_PS_FILEPATH,
-        '0' // The contract constructor receives the initial value of the counter as an argument, so we pass '0' here.
+        // Route the generated ZswapLocalState to a per-version path too; it otherwise defaults to a
+        // 'zswap.json' written in the working directory.
+        '--output-zswap', COUNTER_OUTPUT_ZSWAP_FILEPATH,
+        '0' // The contract constructor receives the initial value of the counter as an argument.
       ]);
     }).pipe(
       Effect.provide(testLayer),
       Effect.runPromise
     );
+
+    // The command should have written non-empty serialized files to disk.
+    for (const outfileFile of [COUNTER_OUTPUT_FILEPATH, COUNTER_OUTPUT_PS_FILEPATH, COUNTER_OUTPUT_ZSWAP_FILEPATH]) {
+      const fileStat = await stat(outfileFile);
+      expect(fileStat.size).toBeGreaterThan(0);
+    }
   });
 });

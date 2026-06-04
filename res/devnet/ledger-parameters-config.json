@@ -177,5 +177,6 @@
   "cost_dimension_min_ratio": 4611686018427387904,
   "price_adjustment_a_parameter": 1844674407370955161600,
   "cardano_to_midnight_bridge_fee_basis_points": 500,
-  "c_to_m_bridge_min_amount": 1000
+  "c_to_m_bridge_min_amount": 1000,
+  "min_block_price": 10.0
 }

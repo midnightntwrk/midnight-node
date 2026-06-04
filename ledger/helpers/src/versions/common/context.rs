@@ -12,13 +12,14 @@
 // limitations under the License.
 
 use super::{
-	ArenaKey, BlockContext, DB, DUST_EXPECTED_FILES, DustResolver, Event, FetchMode, LedgerState,
-	Loader, MidnightDataProvider, Offer, OutputMode, PUBLIC_PARAMS, ProofKind,
-	PureGeneratorPedersen, Resolver, SerdeTransaction, SignatureKind, Sp, Storable, SyntheticCost,
-	Tagged, Timestamp, Transaction, TransactionContext, TransactionResult, Utxo,
-	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness,
-	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
+	ArenaKey, BindingKind, BlockContext, ContractAddress, ContractState, DB, DUST_EXPECTED_FILES,
+	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, Loader, MidnightDataProvider,
+	Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen,
+	Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged,
+	Timestamp, Transaction, TransactionContext, TransactionResult, Utxo, VerifiedTransaction,
+	Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState, clamp_and_normalize,
+	compute_overall_fullness, default_storage, deserialize, mn_ledger_serialize as serialize,
+	mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
 use hex::encode as hex_encode;
@@ -30,6 +31,10 @@ use std::{
 };
 use thiserror::Error;
 use tokio::sync::Mutex as MutexTokio;
+
+pub mod builder_context;
+pub mod indexer_context;
+pub use builder_context::BuilderContext;
 
 #[derive(Debug, Error)]
 pub enum LedgerContextError {
@@ -526,6 +531,95 @@ impl<D: DB + Clone> LedgerContext<D> {
 			block_context,
 			whitelist: None,
 		})
+	}
+}
+
+#[async_trait::async_trait]
+impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
+	fn with_wallet_from_seed<F, R>(&self, seed: WalletSeed, f: F) -> R
+	where
+		F: FnOnce(&mut Wallet<D>) -> R,
+	{
+		self.with_wallet_from_seed(seed, f)
+	}
+
+	fn with_wallets_from_seeds<F, R>(
+		&self,
+		origin_seed: WalletSeed,
+		destination_seed: WalletSeed,
+		f: F,
+	) -> R
+	where
+		F: FnOnce(&mut Wallet<D>, &mut Wallet<D>) -> R,
+	{
+		self.with_wallets_from_seeds(origin_seed, destination_seed, f)
+	}
+
+	async fn latest_block_context(&self) -> BlockContext {
+		self.latest_block_context()
+	}
+
+	async fn ledger_parameters(&self) -> LedgerParameters {
+		self.with_ledger_state(|ledger_state| (*ledger_state.parameters).clone())
+	}
+
+	async fn network_id(&self) -> String {
+		self.with_ledger_state(|ledger_state| ledger_state.network_id.clone())
+	}
+
+	async fn unshielded_utxos(&self, seed: WalletSeed) -> Vec<(Utxo, Timestamp)> {
+		self.with_ledger_state(|ledger_state| {
+			self.with_wallet_from_seed(seed, |wallet| {
+				wallet
+					.unshielded_utxos(ledger_state)
+					.into_iter()
+					.map(|utxo| {
+						let ctime = ledger_state
+							.utxo
+							.utxos
+							.get(&utxo)
+							.expect("utxo is from this ledger state")
+							.ctime;
+						(utxo, ctime)
+					})
+					.collect::<Vec<_>>()
+			})
+		})
+	}
+
+	async fn zswap_state(&self) -> ZswapChainState<D> {
+		self.with_ledger_state(|ledger_state| (*ledger_state.zswap).clone())
+	}
+
+	async fn contract_state(&self, address: ContractAddress) -> Option<ContractState<D>> {
+		self.with_ledger_state(|ledger_state| ledger_state.index(address))
+	}
+
+	async fn resolver(&self) -> &'static Resolver {
+		*self.resolver.lock().await
+	}
+
+	async fn update_resolver(&self, resolver: &'static Resolver) {
+		self.update_resolver(resolver).await
+	}
+
+	fn well_formed<S, P, B>(
+		&self,
+		tx: &Transaction<S, P, B, D>,
+		now: Timestamp,
+	) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>>
+	where
+		S: SignatureKind<D>,
+		P: ProofKind<D> + Storable<D>,
+		B: Storable<D> + Serializable + PedersenDowngradeable<D> + BindingKind<S, P, D> + Tagged,
+	{
+		let ref_state = self
+			.ledger_state
+			.lock()
+			.map_err(|_| "ledger state lock was poisoned".to_string())?
+			.clone();
+		tx.well_formed(&*ref_state, WellFormedStrictness::default(), now)?;
+		Ok(())
 	}
 }
 

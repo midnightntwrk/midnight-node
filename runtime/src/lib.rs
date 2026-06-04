@@ -278,10 +278,10 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 001_000_000,
+	spec_version: 002_000_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 3,
+	transaction_version: 4,
 	system_version: 1,
 };
 
@@ -914,9 +914,8 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 pub struct MidnightMinBridgeAmount;
 impl pallet_c2m_bridge::pallet::MinBridgeAmountProvider for MidnightMinBridgeAmount {
 	fn get_c_to_m_bridge_min_amount()
-	-> Result<pallet_c2m_bridge::Stars, midnight_node_ledger::types::active_version::LedgerApiError>
-	{
-		Ok(pallet_c2m_bridge::Stars::from(Midnight::get_c_to_m_bridge_min_amount()?))
+	-> Result<u128, midnight_node_ledger::types::active_version::LedgerApiError> {
+		Midnight::get_c_to_m_bridge_min_amount()
 	}
 }
 
