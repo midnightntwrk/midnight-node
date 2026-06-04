@@ -599,9 +599,12 @@ node-ci-image-single-platform:
     ARG NATIVEARCH
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
-    # Install build dependencies
-    RUN microdnf -y update && \
-        microdnf -y install \
+    # Install build dependencies. No `microdnf update`: AL2023 locks $releasever to the
+    # snapshot baked into the FROM digest above (system-release(releasever)), so these
+    # installs already resolve to pinned package versions — update would be a no-op.
+    # Security patches land by bumping the @sha256 digest (renovate datasource=docker),
+    # deliberate and reviewable, like every other pin in this file.
+    RUN microdnf -y install \
         ca-certificates \
         curl-minimal \
         gcc \
@@ -620,9 +623,7 @@ node-ci-image-single-platform:
         tar \
         gzip \
         docker \
-        jq \
-        nodejs \
-        npm && \
+        jq && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
         # libc6-dev-arm64-cross \
@@ -674,6 +675,18 @@ node-ci-image-single-platform:
         mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
         rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
 
+    # Node.js + npm — pinned official binaries, NOT AL2023's microdnf nodejs (which is
+    # v18 and lacks the File API undici needs). +local-env-ci runs `npm ci`/`npm run`
+    # straight off this base image, so the version baked here is the one it uses.
+    # renovate: datasource=node-version packageName=node
+    ARG NODE_VERSION=22.22.0
+    RUN ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
+
     # Docker compose-v2 plugin — needed by the +local-env-ci WITH DOCKER targets, whose
     # `docker compose` calls run against earthly's injected docker CLI (which has no
     # bundled plugin). uname -m (x86_64/aarch64) matches the release asset suffix directly.
@@ -703,7 +716,8 @@ node-ci-image-single-platform:
     ENV CARGO_TERM_COLOR=always
 
     # SAVE IMAGE under the rust version.
-    # We rebuild the image weekly to apply security patches.
+    # Security patches land when the FROM @sha256 digest above is bumped (renovate);
+    # a rebuild on the same digest reproduces identical packages by design.
     ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
     LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
@@ -722,8 +736,8 @@ prep-no-copy:
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
-    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    # FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
+    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
     # ca-certificates and curl-minimal already present in the CI base image
 
