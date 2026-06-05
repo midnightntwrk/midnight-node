@@ -252,21 +252,45 @@ pub struct BulkCachedCNightObservationDataSource {
 	metrics_opt: Option<MidnightDataSourceMetrics>,
 }
 
+/// Configuration and dependencies for [`BulkCachedCNightObservationDataSource::new`].
+///
+/// The initial `events` are passed to `new` separately (they're bulk data, not
+/// configuration); everything the cache needs to bootstrap and run its
+/// sliding-window refresh lives here.
+pub struct BulkCacheConfig {
+	/// Cardano block range the initial events cover: `[window_start_block, window_end_block]`.
+	pub window_start_block: u32,
+	pub window_end_block: u32,
+	/// Cardano blocks to keep in the sliding window.
+	pub window_size: u32,
+	/// Cardano blocks to leave un-fetched past the requested target (re-org
+	/// safety). Equals `cardano_security_parameter + block_stability_margin`.
+	pub stability_margin: u32,
+	/// db-sync connection used by the refresh and per-call block lookups.
+	pub pool: PgPool,
+	/// Live source consulted for queries past the cached window.
+	pub db_fallback: Arc<MidnightCNightObservationDataSourceImpl>,
+	/// cNIGHT addresses the refresh re-runs the observation queries against.
+	pub cnight_addresses: CNightAddresses,
+	pub metrics_opt: Option<MidnightDataSourceMetrics>,
+}
+
 impl BulkCachedCNightObservationDataSource {
-	pub fn new(
-		events: Vec<ObservedUtxo>,
-		window_start_block: u32,
-		window_end_block: u32,
-		window_size: u32,
-		pool: PgPool,
-		db_fallback: Arc<MidnightCNightObservationDataSourceImpl>,
-		cnight_addresses: CNightAddresses,
-		stability_margin: u32,
-		metrics_opt: Option<MidnightDataSourceMetrics>,
-	) -> Self {
-		// Initial window covers `[window_start_block, window_end_block]`.
-		// Caller is responsible for bulk-pulling that range; we just record
-		// the bookkeeping.
+	/// Build a cache seeded with `events` covering
+	/// `[config.window_start_block, config.window_end_block]`. The caller is
+	/// responsible for having bulk-pulled that range; we just record the
+	/// bookkeeping.
+	pub fn new(events: Vec<ObservedUtxo>, config: BulkCacheConfig) -> Self {
+		let BulkCacheConfig {
+			window_start_block,
+			window_end_block,
+			window_size,
+			stability_margin,
+			pool,
+			db_fallback,
+			cnight_addresses,
+			metrics_opt,
+		} = config;
 		Self {
 			all_events: Arc::new(std::sync::RwLock::new(events)),
 			pool,
@@ -292,32 +316,24 @@ impl BulkCachedCNightObservationDataSource {
 			return;
 		};
 
-		let pool = self.pool.clone();
-		let cfg = self.cnight_addresses.clone();
-		let all_events = Arc::clone(&self.all_events);
-		let last_observation = Arc::clone(&self.last_observation);
-		let snapshot_start_block = Arc::clone(&self.snapshot_start_block);
-		let snapshot_end_block = Arc::clone(&self.snapshot_end_block);
-		let window_size = self.window_size;
-		let stability_margin = self.stability_margin;
+		// Snapshot the shared state the refresh needs (cheap — mostly `Arc`s) so
+		// it can run in the spawned task independent of `&self`.
+		let ctx = RefreshContext {
+			pool: self.pool.clone(),
+			cnight_addresses: self.cnight_addresses.clone(),
+			all_events: Arc::clone(&self.all_events),
+			last_observation: Arc::clone(&self.last_observation),
+			snapshot_start_block: Arc::clone(&self.snapshot_start_block),
+			snapshot_end_block: Arc::clone(&self.snapshot_end_block),
+			window_size: self.window_size,
+			stability_margin: self.stability_margin,
+		};
 
 		tokio::spawn(async move {
 			// Hold the gate for the lifetime of the refresh; dropped (unlocked)
 			// when this task ends.
 			let _guard = guard;
-			if let Err(e) = refresh_window(
-				&pool,
-				&cfg,
-				&all_events,
-				&last_observation,
-				&snapshot_start_block,
-				&snapshot_end_block,
-				target_end,
-				window_size,
-				stability_margin,
-			)
-			.await
-			{
+			if let Err(e) = ctx.refresh(target_end).await {
 				log::warn!(
 					target: "cnight::sliding-window",
 					"refresh failed (ignored, db_fallback continues to serve): {e}"
@@ -327,90 +343,112 @@ impl BulkCachedCNightObservationDataSource {
 	}
 }
 
-/// Extend the cache forward to `target_end`, pulling events in `(old_end,
-/// target_end]`. Trim happens *behind the follower*, not behind the tip —
-/// dropping events older than `last_observation.start_position - window_size`
-/// is safe (the follower will never re-read that far back), but trimming
-/// behind `target_end - window_size` would drop events the runtime still
-/// needs during catchup, breaking consensus. New events sort strictly after
-/// every retained event, so no global re-sort is needed.
-async fn refresh_window(
-	pool: &PgPool,
-	cfg: &CNightAddresses,
-	all_events: &Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
-	last_observation: &Arc<Mutex<Option<LastObservation>>>,
-	snapshot_start_block: &Arc<std::sync::RwLock<Option<u32>>>,
-	snapshot_end_block: &Arc<std::sync::RwLock<Option<u32>>>,
-	target_end: u32,
+/// Shared state a sliding-window refresh operates on. Built in
+/// `maybe_kick_refresh` by cloning the relevant fields out of the data source
+/// (cheap — mostly `Arc`s) so the refresh can run in a spawned task.
+struct RefreshContext {
+	pool: PgPool,
+	cnight_addresses: CNightAddresses,
+	all_events: Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
+	last_observation: Arc<Mutex<Option<LastObservation>>>,
+	snapshot_start_block: Arc<std::sync::RwLock<Option<u32>>>,
+	snapshot_end_block: Arc<std::sync::RwLock<Option<u32>>>,
 	window_size: u32,
 	stability_margin: u32,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	// Clamp refreshes to the highest stable db-sync block at or below the
-	// requested target. This keeps proactive lookahead from caching
-	// rollback-prone Cardano blocks while still tolerating sparse snapshots or
-	// a db-sync instance that has not reached the exact requested block.
-	let target_end =
-		match crate::db::get_highest_stable_block_le(pool, target_end, stability_margin).await? {
+}
+
+impl RefreshContext {
+	/// Extend the cache forward to `target_end`, pulling events in `(old_end,
+	/// target_end]`. Trim happens *behind the follower*, not behind the tip —
+	/// dropping events older than `last_observation.start_position - window_size`
+	/// is safe (the follower will never re-read that far back), but trimming
+	/// behind `target_end - window_size` would drop events the runtime still
+	/// needs during catchup, breaking consensus. New events sort strictly after
+	/// every retained event, so no global re-sort is needed.
+	async fn refresh(
+		&self,
+		target_end: u32,
+	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		// Clamp refreshes to the highest stable db-sync block at or below the
+		// requested target. This keeps proactive lookahead from caching
+		// rollback-prone Cardano blocks while still tolerating sparse snapshots or
+		// a db-sync instance that has not reached the exact requested block.
+		let target_end = match crate::db::get_highest_stable_block_le(
+			&self.pool,
+			target_end,
+			self.stability_margin,
+		)
+		.await?
+		{
 			Some(highest) => highest,
 			None => return Ok(()), // no stable block at or below the target yet
 		};
 
-	let old_end = snapshot_end_block
-		.read()
-		.map_err(|e| format!("snapshot_end_block read poisoned: {e}"))?
-		.unwrap_or(0);
-	if target_end <= old_end {
-		return Ok(());
+		let old_end = self
+			.snapshot_end_block
+			.read()
+			.map_err(|e| format!("snapshot_end_block read poisoned: {e}"))?
+			.unwrap_or(0);
+		if target_end <= old_end {
+			return Ok(());
+		}
+		let from_block = old_end.saturating_add(1);
+		// Anchor the trim point on the follower's last-seen position. During
+		// catchup the follower can be hundreds of thousands of blocks behind tip
+		// and still needs that history, so trimming behind `target_end - W`
+		// would silently drop required events.
+		//
+		// On the first refresh we may not have seen a follower call yet
+		// (everything has gone to db_fallback while waiting for this very
+		// fetch), so fall back to the existing `snapshot_start` — never move it
+		// backward, otherwise we'd lie about coverage.
+		let existing_start = self
+			.snapshot_start_block
+			.read()
+			.map_err(|e| format!("snapshot_start_block read poisoned: {e}"))?
+			.unwrap_or(from_block);
+		let new_window_start = match self
+			.last_observation
+			.lock()
+			.ok()
+			.and_then(|g| g.as_ref().map(|last| last.start_position.block_number))
+		{
+			Some(anchor) => existing_start.max(anchor.saturating_sub(self.window_size)),
+			None => existing_start,
+		};
+		log::info!(
+			target: "cnight::sliding-window",
+			"refresh kicked off: extending to {target_end} (was end={old_end}); trim behind {new_window_start}"
+		);
+		let t0 = std::time::Instant::now();
+		let (start, end) = (
+			CardanoPosition::min_for_block(from_block),
+			CardanoPosition::max_for_block(target_end),
+		);
+		// Warming the cache means pulling a whole multi-block window, so the per-query
+		// limit is the wide `LARGE_LIMIT` rather than the per-block over-fetch bound.
+		let extension =
+			bulk_pull(&self.pool, &self.cnight_addresses, &start, &end, LARGE_LIMIT).await?;
+		{
+			let mut events_guard =
+				self.all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
+			slide_events(&mut events_guard, extension, new_window_start);
+		}
+		*self
+			.snapshot_start_block
+			.write()
+			.map_err(|e| format!("snapshot_start_block write poisoned: {e}"))? = Some(new_window_start);
+		*self
+			.snapshot_end_block
+			.write()
+			.map_err(|e| format!("snapshot_end_block write poisoned: {e}"))? = Some(target_end);
+		log::info!(
+			target: "cnight::sliding-window",
+			"refresh done: window now [{new_window_start}, {target_end}] (took {:?})",
+			t0.elapsed()
+		);
+		Ok(())
 	}
-	let from_block = old_end.saturating_add(1);
-	// Anchor the trim point on the follower's last-seen position. During
-	// catchup the follower can be hundreds of thousands of blocks behind tip
-	// and still needs that history, so trimming behind `target_end - W`
-	// would silently drop required events.
-	//
-	// On the first refresh we may not have seen a follower call yet
-	// (everything has gone to db_fallback while waiting for this very
-	// fetch), so fall back to the existing `snapshot_start` — never move it
-	// backward, otherwise we'd lie about coverage.
-	let existing_start = snapshot_start_block
-		.read()
-		.map_err(|e| format!("snapshot_start_block read poisoned: {e}"))?
-		.unwrap_or(from_block);
-	let new_window_start = match last_observation
-		.lock()
-		.ok()
-		.and_then(|g| g.as_ref().map(|last| last.start_position.block_number))
-	{
-		Some(anchor) => existing_start.max(anchor.saturating_sub(window_size)),
-		None => existing_start,
-	};
-	log::info!(
-		target: "cnight::sliding-window",
-		"refresh kicked off: extending to {target_end} (was end={old_end}); trim behind {new_window_start}"
-	);
-	let t0 = std::time::Instant::now();
-	let (start, end) =
-		(CardanoPosition::min_for_block(from_block), CardanoPosition::max_for_block(target_end));
-	// Warming the cache means pulling a whole multi-block window, so the per-query
-	// limit is the wide `LARGE_LIMIT` rather than the per-block over-fetch bound.
-	let extension = bulk_pull(pool, cfg, &start, &end, LARGE_LIMIT).await?;
-	{
-		let mut events_guard =
-			all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
-		slide_events(&mut events_guard, extension, new_window_start);
-	}
-	*snapshot_start_block
-		.write()
-		.map_err(|e| format!("snapshot_start_block write poisoned: {e}"))? = Some(new_window_start);
-	*snapshot_end_block
-		.write()
-		.map_err(|e| format!("snapshot_end_block write poisoned: {e}"))? = Some(target_end);
-	log::info!(
-		target: "cnight::sliding-window",
-		"refresh done: window now [{new_window_start}, {target_end}] (took {:?})",
-		t0.elapsed()
-	);
-	Ok(())
 }
 
 /// Slide the in-memory window forward, in place: drop events before

@@ -294,7 +294,9 @@ async fn build_cnight_observation_data_source(
 	Arc<dyn MidnightCNightObservationDataSource + Send + Sync>,
 	Box<dyn Error + Send + Sync + 'static>,
 > {
-	use midnight_primitives_mainchain_follower::data_source::BulkCachedCNightObservationDataSource;
+	use midnight_primitives_mainchain_follower::data_source::{
+		BulkCacheConfig, BulkCachedCNightObservationDataSource,
+	};
 
 	match cnight_follower_genesis {
 		Some((cnight_addresses, next_cardano_position)) => {
@@ -324,14 +326,16 @@ async fn build_cnight_observation_data_source(
 			));
 			Ok(Arc::new(BulkCachedCNightObservationDataSource::new(
 				Vec::new(),
-				init_horizon,
-				init_horizon,
-				window_size,
-				cnight_observation_pool,
-				db_fallback,
-				cnight_addresses,
-				stability_margin,
-				midnight_metrics_opt,
+				BulkCacheConfig {
+					window_start_block: init_horizon,
+					window_end_block: init_horizon,
+					window_size,
+					stability_margin,
+					pool: cnight_observation_pool,
+					db_fallback,
+					cnight_addresses,
+					metrics_opt: midnight_metrics_opt,
+				},
 			)))
 		},
 		None => {
