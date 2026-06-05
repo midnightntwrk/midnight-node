@@ -1623,7 +1623,7 @@ local-env-ci:
     RUN test -n "$NODE_IMAGE" && test -n "$TOOLKIT_IMAGE" && test -n "$INDEXER_API_IMAGE" \
           && test -n "$CHAIN_INDEXER_IMAGE" && test -n "$WALLET_INDEXER_IMAGE" || { \
         echo "+local-env-ci needs all five image refs, e.g.:"; \
-        echo "  earth -P +local-env-ci \\"; \
+        echo "  earthly -P +local-env-ci \\"; \
         echo "    --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag> \\"; \
         echo "    --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag> \\"; \
         echo "    --INDEXER_API_IMAGE=ghcr.io/midnight-ntwrk/indexer-api:<tag> \\"; \
@@ -1740,7 +1740,7 @@ local-env-full-ci-localimg:
 # +local-env-full-ci-localimg (loads pre-saved tarballs; needs the images built + saved
 # first), this builds the node + toolkit (earthly `--load`, like +start-local-env-latest)
 # and the 3 indexer images (docker build of the submodule, in-sandbox), all under fixed
-# :local tags, then runs the full integration suite. Just: `earth -P +local-env-oneshot`.
+# :local tags, then runs the full integration suite. Just: `earthly -P +local-env-oneshot`.
 # First run is long (node + toolkit + indexer + CI-image builds); earthly caches node/
 # toolkit/CI-image after (the in-sandbox indexer builds re-run each time — ephemeral DinD).
 local-env-oneshot:
