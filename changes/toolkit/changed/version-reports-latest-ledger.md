@@ -9,5 +9,5 @@ reports the ledger generation of the `latest` ledger module (currently
 `midnight-node-ledger-helpers` so the value tracks the `latest` alias and stays
 correct as new ledger generations are added.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1649
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1641
