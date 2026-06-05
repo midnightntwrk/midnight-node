@@ -35,6 +35,9 @@ pub mod ledger_7 {
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
+
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 7;
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
 		onchain_runtime, transient_crypto, zkir, zswap,
@@ -83,6 +86,9 @@ pub mod ledger_8 {
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
+
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 8;
 	pub use {
 		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
 		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
@@ -133,6 +139,9 @@ pub mod ledger_9 {
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_9 as extract_tx_with_context;
+
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 9;
 	pub use {
 		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
 		mn_ledger_9 as mn_ledger, onchain_runtime_ledger_9 as onchain_runtime, transient_crypto,

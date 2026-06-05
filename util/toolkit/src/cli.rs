@@ -24,7 +24,6 @@ use crate::commands::{
 };
 use crate::utils;
 use clap::{Parser, Subcommand};
-use midnight_node_ledger_helpers::find_dependency_version;
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -230,8 +229,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::Version => {
 			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
-			let ledger_version =
-				find_dependency_version("mn-ledger").expect("missing ledger version");
+			let ledger_version = midnight_node_ledger_helpers::latest::LEDGER_VERSION;
 			let compactc_version = include_str!("../../../COMPACTC_VERSION").trim();
 
 			println!(
