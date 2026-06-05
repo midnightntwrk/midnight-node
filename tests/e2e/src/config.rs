@@ -56,16 +56,8 @@ impl Settings {
                     #[cfg(feature = "local")]
                     base_url: "ws://127.0.0.1:9933".into(),
 
-                    // On the self-hosted CI host each runner slot publishes the
-                    // node RPC on a slot-specific host port (see
-                    // local-environment per-runner port isolation). The
-                    // bring-up passes it through as E2E_NODE_RPC_PORT; default
-                    // to the legacy 9933 for slot 0 / local runs.
                     #[cfg(feature = "local-ci")]
-                    base_url: format!(
-                        "ws://172.17.0.1:{}",
-                        std::env::var("E2E_NODE_RPC_PORT").unwrap_or_else(|_| "9933".to_string())
-                    ),
+                    base_url: "ws://172.17.0.1:9933".into(),
 
                     #[cfg(feature = "qanet")]
                     base_url: "wss://rpc.qanet.dev.midnight.network".into(),
@@ -74,10 +66,7 @@ impl Settings {
                     #[cfg(any(feature = "local", feature = "local-dev"))]
                     base_url: "ws://127.0.0.1:1337".into(),
                     #[cfg(feature = "local-ci")]
-                    base_url: format!(
-                        "ws://172.17.0.1:{}",
-                        std::env::var("E2E_OGMIOS_PORT").unwrap_or_else(|_| "1337".to_string())
-                    ),
+                    base_url: "ws://172.17.0.1:1337".into(),
                     #[cfg(feature = "qanet")]
                     base_url: "wss://ogmios.qanet.dev.midnight.network".into(),
                     timeout_seconds: 180,

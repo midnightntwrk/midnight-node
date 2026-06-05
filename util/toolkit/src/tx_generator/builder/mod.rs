@@ -224,42 +224,65 @@ pub struct BatchesArgs {
 	pub coin_selection: CoinSelectionStrategy,
 }
 
-// TODO: TokenIDs for shielded and unshielded
 #[derive(Args, Clone, Debug)]
 pub struct SingleTxArgs {
-	/// Amount to send to each shielded wallet
+	/// Per-destination output spec. Repeatable. Bundles the address, amount,
+	/// and (optional) token type for one destination in a single argument.
+	///
+	/// Format:
+	///   `addr=<bech32_address>,amount=<u128>[,token=<32-byte-hex>]`
+	///
+	/// The address HRP picks the side (shielded vs unshielded). If `token`
+	/// is omitted, it defaults to the all-zeros token type. Cannot be mixed
+	/// with `--destination-address` / `--*-amount` / `--*-token-type` in the
+	/// same invocation.
+	#[arg(long = "output", value_parser = cli::output_arg_decode)]
+	pub outputs: Vec<cli::OutputArg>,
+	/// Amount(s) to send to shielded destinations.
+	///
+	/// Provide once to broadcast the same amount to every shielded destination,
+	/// or repeat once per shielded destination (in the order they appear in
+	/// `--destination-address`) for per-destination amounts.
 	#[arg(long)]
-	pub shielded_amount: Option<u128>,
-	/// Type of shielded token to send
+	pub shielded_amount: Vec<u128>,
+	/// Token type(s) for shielded destinations.
+	///
+	/// Same broadcast / per-destination semantics as `--shielded-amount`. If
+	/// omitted, defaults to the all-zeros token type and broadcasts to every
+	/// shielded destination.
 	#[arg(
 		long,
 		value_parser = cli::token_decode::<ShieldedTokenType>,
-		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
 	)]
-	pub shielded_token_type: ShieldedTokenType,
-	/// Amount to send to each unshielded wallet
+	pub shielded_token_type: Vec<ShieldedTokenType>,
+	/// Amount(s) to send to unshielded destinations. Same broadcast /
+	/// per-destination semantics as `--shielded-amount`.
 	#[arg(long)]
-	pub unshielded_amount: Option<u128>,
-	/// Type of unshielded token to send
+	pub unshielded_amount: Vec<u128>,
+	/// Token type(s) for unshielded destinations. Same broadcast /
+	/// per-destination semantics as `--shielded-token-type`.
 	#[arg(
 		long,
 		value_parser = cli::token_decode::<UnshieldedTokenType>,
-		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
 	)]
-	pub unshielded_token_type: UnshieldedTokenType,
+	pub unshielded_token_type: Vec<UnshieldedTokenType>,
 	/// Seed for source wallet
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	pub source_seed: WalletSeed,
 	/// Funding seed for transaction. If not set, uses source_seed
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	pub funding_seed: Option<WalletSeed>,
-	/// Destination address, both shielded and unshielded
-	#[arg(long, required = true)]
+	/// Destination address, both shielded and unshielded. Used together with
+	/// `--*-amount` / `--*-token-type` flags. Either this or `--output` must
+	/// be provided, but not both.
+	#[arg(long)]
 	pub destination_address: Vec<WalletAddress>,
 	/// Pin specific wallet UTXOs as inputs to the unshielded transfer. Format:
 	/// <intent_hash_hex>#<output_no>, e.g. abc123…#0. Repeatable. When set, the
 	/// toolkit skips its built-in coin selection and uses exactly these UTXOs;
-	/// their summed value must be >= --unshielded-amount * destinations.
+	/// their summed value must be >= the total of `--unshielded-amount` across
+	/// destinations of the same token type. Only valid when exactly one
+	/// unshielded token type is used.
 	#[arg(long = "input-utxo", value_parser = cli::utxo_id_decode)]
 	pub input_utxos: Vec<UtxoId>,
 	#[arg(
@@ -380,7 +403,62 @@ pub enum Builder {
 	ContractCustom(CustomContractArgs),
 	/// Claim rewards
 	ClaimRewards(ClaimRewardsArgs),
-	/// Send single transaction with one-or-many outputs
+	/// Send a single transaction with one-or-many outputs across shielded
+	/// and/or unshielded destinations, optionally mixing multiple token types
+	/// in one tx.
+	#[clap(long_about = "\
+Send a single transaction with one-or-many outputs across shielded and/or \
+unshielded destinations, optionally mixing multiple token types in one tx.
+
+Two CLI shapes are supported. Pick one per invocation; mixing them is rejected:
+
+  (A) --output (recommended): one flag per destination, bundling the triple
+      (address, amount, token type) in a single argument.
+        --output addr=<bech32>,amount=<u128>[,token=<32-byte-hex>]
+      Each occurrence is one tx output. The address HRP picks the side
+      (shielded vs unshielded). `token` is optional and defaults to the
+      all-zeros token type (NIGHT).
+
+  (B) --destination-address + per-side --*-amount / --*-token-type: each
+      side accepts parallel lists. Provide a flag once on a side to broadcast
+      it to every destination on that side, or once per destination on that
+      side to align by command-line order. Omit --*-token-type to default to
+      the all-zeros token type.
+
+Examples:
+
+  # (A) Mixed-token tx with one unshielded NIGHT output and one shielded output:
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --output addr=mn_addr1...,amount=410000000,token=0000...0000 \\
+    --output addr=mn_shield-addr1...,amount=41,token=0000...0001
+
+  # (A) Token omitted -> defaults to all-zeros:
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --output addr=mn_addr1...,amount=100
+
+  # (B) Two unshielded destinations, same token type and amount (broadcast):
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --unshielded-amount 100 \\
+    --destination-address mn_addr1...A \\
+    --destination-address mn_addr1...B
+
+  # (B) Two unshielded destinations, different amounts and token types (per-destination):
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --destination-address mn_addr1...A \\
+    --unshielded-amount 100 \\
+    --unshielded-token-type 0000...0000 \\
+    --destination-address mn_addr1...B \\
+    --unshielded-amount 250 \\
+    --unshielded-token-type 0000...0001
+
+Notes:
+  * --input-utxo is only supported when exactly one unshielded token type is used.
+  * In shape (B), mismatched flag counts (e.g. 3 destinations on a side but 2 amounts) are rejected with a clear error.
+")]
 	SingleTx(SingleTxArgs),
 	/// Register a DUST address for the wallet
 	RegisterDustAddress(RegisterDustAddressArgs),

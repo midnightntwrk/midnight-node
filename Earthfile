@@ -599,22 +599,14 @@ node-ci-image-single-platform:
     ARG NATIVEARCH
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
-    # Install curl for rust installation
-    RUN microdnf -y install curl-minimal ca-certificates && \
-        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Read Rust version from rust-toolchain.toml (single source of truth)
-    COPY rust-toolchain.toml .
-    ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
-
-    # Install rust with minimal profile + only the components we need
-    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
-    ENV PATH="/root/.cargo/bin:${PATH}"
-    RUN rustup component add clippy rustfmt
-
-    # Install build dependencies
-    RUN microdnf -y update && \
-        microdnf -y install \
+    # Install build dependencies. No `microdnf update`: AL2023 locks $releasever to the
+    # snapshot baked into the FROM digest above (system-release(releasever)), so these
+    # installs already resolve to pinned package versions — update would be a no-op.
+    # Security patches land by bumping the @sha256 digest (renovate datasource=docker),
+    # deliberate and reviewable, like every other pin in this file.
+    RUN microdnf -y install \
+        ca-certificates \
+        curl-minimal \
         gcc \
         gcc-c++ \
         make \
@@ -630,6 +622,7 @@ node-ci-image-single-platform:
         patch \
         tar \
         gzip \
+        xz \
         docker \
         jq && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
@@ -638,6 +631,15 @@ node-ci-image-single-platform:
         # gcc-x86-64-linux-gnu \
         # crossbuild-essential-amd64 \
         # libc6-amd64-cross
+
+    # Read Rust version from rust-toolchain.toml (single source of truth)
+    COPY rust-toolchain.toml .
+    ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+
+    # Install rust with minimal profile + only the components we need
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
+    ENV PATH="/root/.cargo/bin:${PATH}"
+    RUN rustup component add clippy rustfmt
 
     RUN rustup target add wasm32v1-none # aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
     RUN rustup component add rust-src rustfmt clippy llvm-tools-preview
@@ -674,6 +676,28 @@ node-ci-image-single-platform:
         mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
         rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
 
+    # Node.js + npm — pinned official binaries, NOT AL2023's microdnf nodejs (which is
+    # v18 and lacks the File API undici needs). +local-env-ci runs `npm ci`/`npm run`
+    # straight off this base image, so the version baked here is the one it uses.
+    # renovate: datasource=node-version packageName=node
+    ARG NODE_VERSION=22.22.0
+    RUN ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
+
+    # Docker compose-v2 plugin — needed by the +local-env-ci WITH DOCKER targets, whose
+    # `docker compose` calls run against earthly's injected docker CLI (which has no
+    # bundled plugin). uname -m (x86_64/aarch64) matches the release asset suffix directly.
+    # renovate: datasource=github-releases packageName=docker/compose
+    ARG COMPOSE_VERSION=v2.31.0
+    RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
+        curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
+          -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
     # Download compactc compiler from public midnightntwrk/compact releases
     COPY COMPACTC_VERSION .
     RUN set -e && \
@@ -693,7 +717,8 @@ node-ci-image-single-platform:
     ENV CARGO_TERM_COLOR=always
 
     # SAVE IMAGE under the rust version.
-    # We rebuild the image weekly to apply security patches.
+    # Security patches land when the FROM @sha256 digest above is bumped (renovate);
+    # a rebuild on the same digest reproduces identical packages by design.
     ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
     LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
@@ -1487,21 +1512,12 @@ testnet-sync-e2e:
 # local-env-e2e executes any tests that depend on a running local-env
 local-env-e2e:
     FROM +prep
-    # Host ports of the local-env stack this test connects to (via 172.17.0.1).
-    # On the shared self-hosted host each runner slot publishes them on
-    # slot-specific ports; the caller passes them through so the e2e config
-    # (tests/e2e/src/config.rs, local-ci feature) targets the right stack.
-    # Defaults reproduce the legacy single-tenant ports.
-    ARG E2E_NODE_RPC_PORT=9933
-    ARG E2E_OGMIOS_PORT=1337
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
-    ENV E2E_NODE_RPC_PORT=$E2E_NODE_RPC_PORT
-    ENV E2E_OGMIOS_PORT=$E2E_OGMIOS_PORT
     RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
@@ -1573,11 +1589,6 @@ start-local-env-with-indexer-ci:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
-    # Per-runner slot (1..N) selects a disjoint host-port block + compose project
-    # name so concurrent jobs on the same self-hosted host don't collide. 0 (the
-    # default) keeps the legacy single-tenant layout. The orchestrator derives
-    # every port/name from this single value (local-environment/src/lib/ports.ts).
-    ARG LOCALENV_RUNNER_SLOT=0
     WORKDIR local-environment
     RUN npm ci
     # Tear down any stack left over from a previous run before starting a fresh
@@ -1587,8 +1598,202 @@ start-local-env-with-indexer-ci:
     # breaks chain-indexer with "unsupported protocol version" when the
     # genesis/runtime expectations disagree. The non-CI sibling target
     # `+start-local-env-with-indexer` does this same down already.
-    RUN LOCALENV_RUNNER_SLOT=$LOCALENV_RUNNER_SLOT ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
-    RUN LOCALENV_RUNNER_SLOT=$LOCALENV_RUNNER_SLOT ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+
+
+# Runs the integration tests (stack → verify-finality → e2e → toolkit) in one RUN
+# inside earthly's nested dockerd, so each job gets its own netns and the
+# local-environment-tests job can drop the repo-wide host-port serialization. FROM +prep
+# for the in-place e2e `cargo test` (node/npm + the docker compose-v2 plugin ship in +prep);
+# the COPYs + MIDNIGHT_RESERVE_CONTRACTS_PATH + ARCHITECTURE=linux/$USERARCH below replicate
+# what the host LOCALLY path gets from .envrc/worktree (each was a real bring-up failure when
+# missing). Locally proven via the save→load twin +local-env-full-ci-localimg; this
+# registry-`--pull` form first runs in CI.
+local-env-ci:
+    FROM +prep
+    ARG NODE_IMAGE
+    ARG INDEXER_API_IMAGE
+    ARG CHAIN_INDEXER_IMAGE
+    ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
+    ARG USERARCH
+    # Fail early + kindly if any image ref is empty — otherwise `WITH DOCKER --pull` below
+    # gets an empty arg and dies with the opaque "invalid reference format".
+    RUN test -n "$NODE_IMAGE" && test -n "$TOOLKIT_IMAGE" && test -n "$INDEXER_API_IMAGE" \
+          && test -n "$CHAIN_INDEXER_IMAGE" && test -n "$WALLET_INDEXER_IMAGE" || { \
+        echo "+local-env-ci needs all five image refs, e.g.:"; \
+        echo "  earthly -P +local-env-ci \\"; \
+        echo "    --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag> \\"; \
+        echo "    --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag> \\"; \
+        echo "    --INDEXER_API_IMAGE=ghcr.io/midnight-ntwrk/indexer-api:<tag> \\"; \
+        echo "    --CHAIN_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/chain-indexer:<tag> \\"; \
+        echo "    --WALLET_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/wallet-indexer:<tag>"; \
+        echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
+        exit 1; }
+    # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
+    # WITH DOCKER `docker compose` calls need the plugin; earthly injects only the CLI).
+    COPY --dir local-environment .
+    COPY --dir midnight-reserve-contracts .
+    COPY --dir scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
+    # indexer/toolkit images into the authless DinD daemon. Public deps (cardano-node,
+    # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD.
+    WITH DOCKER \
+            --pull $NODE_IMAGE \
+            --pull $INDEXER_API_IMAGE \
+            --pull $CHAIN_INDEXER_IMAGE \
+            --pull $WALLET_INDEXER_IMAGE \
+            --pull $TOOLKIT_IMAGE
+        RUN ROOT="$PWD" && \
+            cd local-environment && \
+            npm ci && \
+            ( ARCHITECTURE=linux/$USERARCH \
+              MIDNIGHT_RESERVE_CONTRACTS_PATH="$ROOT/midnight-reserve-contracts" \
+              MIDNIGHT_NODE_IMAGE=$NODE_IMAGE \
+              INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE \
+              INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
+              INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
+              npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
+              if [ $rc -ne 0 ]; then \
+                echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
+                echo "--- midnight-setup ---" ; docker logs midnight-setup 2>&1 | tail -80 ; \
+                echo "--- contract-compiler ---" ; docker logs contract-compiler 2>&1 | tail -30 ; \
+                exit $rc ; \
+              fi ) && \
+            npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== e2e suite ===" && \
+            ( cd "$ROOT/tests/e2e" && \
+              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+            echo "=== toolkit multi-dest E2E ===" && \
+            cd "$ROOT" && \
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
+            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE"
+    END
+
+
+# local-env-full-ci-localimg: run the full integration tests (stack → verify-finality →
+# e2e → toolkit, one nested-dockerd RUN) with NO registry permissions. It injects the
+# node/indexer/toolkit images from local tarballs (docker save → load) instead of pulling
+# them from GHCR, so anyone without registry access — external contributors, a fresh
+# checkout, an air-gapped box — can reproduce the CI run end-to-end locally. It's the
+# permissionless twin of +local-env-ci (identical surface; that one --pulls in CI).
+# Build the tarballs first, e.g.:
+#   docker save <node> <chain-indexer> <wallet-indexer> <indexer-api> -o local-env-images.tar
+#   docker save <toolkit> -o toolkit-image.tar
+local-env-full-ci-localimg:
+    FROM +prep
+    ARG NODE_IMAGE
+    ARG INDEXER_API_IMAGE
+    ARG CHAIN_INDEXER_IMAGE
+    ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
+    ARG USERARCH
+    # node/npm + the docker compose-v2 plugin both ship in the +prep base image.
+    # +prep carries res/+tests/ but not local-environment/, scripts/, the submodule, or static/.
+    COPY --dir local-environment .
+    COPY --dir midnight-reserve-contracts .
+    COPY --dir scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    # Pre-build the e2e binary as a cacheable layer (same flags as the run below).
+    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    COPY local-env-images.tar .
+    COPY toolkit-image.tar .
+    WITH DOCKER
+        RUN docker load -i local-env-images.tar && \
+            docker load -i toolkit-image.tar && \
+            ROOT="$PWD" && \
+            cd local-environment && \
+            npm ci && \
+            ( ARCHITECTURE=linux/$USERARCH \
+              MIDNIGHT_RESERVE_CONTRACTS_PATH="$ROOT/midnight-reserve-contracts" \
+              MIDNIGHT_NODE_IMAGE=$NODE_IMAGE \
+              INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE \
+              INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
+              INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
+              npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
+              if [ $rc -ne 0 ]; then \
+                echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
+                echo "--- midnight-setup ---" ; docker logs midnight-setup 2>&1 | tail -80 ; \
+                echo "--- contract-compiler ---" ; docker logs contract-compiler 2>&1 | tail -30 ; \
+                exit $rc ; \
+              fi ) && \
+            npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== e2e suite ===" && \
+            ( cd "$ROOT/tests/e2e" && \
+              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+            echo "=== toolkit multi-dest E2E ===" && \
+            cd "$ROOT" && \
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
+            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE"
+    END
+
+
+# local-env-oneshot: ZERO-ARG, permissionless, build-everything-and-run-everything. Unlike
+# +local-env-ci (--pulls published images; needs GHCR creds + tags) and
+# +local-env-full-ci-localimg (loads pre-saved tarballs; needs the images built + saved
+# first), this builds the node + toolkit (earthly `--load`, like +start-local-env-latest)
+# and the 3 indexer images (docker build of the submodule, in-sandbox), all under fixed
+# :local tags, then runs the full integration suite. Just: `earthly -P +local-env-oneshot`.
+# First run is long (node + toolkit + indexer + CI-image builds); earthly caches node/
+# toolkit/CI-image after (the in-sandbox indexer builds re-run each time — ephemeral DinD).
+local-env-oneshot:
+    FROM +prep
+    ARG USERARCH
+    COPY --dir local-environment midnight-reserve-contracts scripts indexer .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    # Fail fast + kindly if the submodules aren't checked out: COPY of an empty submodule
+    # silently yields an empty dir, which would otherwise blow up later as "could not find
+    # indexer/...". Checked before the ~5-min e2e compile below. (CI always has them via
+    # checkout submodules:true; locally: git submodule update --init --recursive.)
+    RUN test -f indexer/indexer-api/Dockerfile && test -f midnight-reserve-contracts/aiken.toml || { \
+        echo "Submodules not checked out — indexer/ and/or midnight-reserve-contracts/ are empty."; \
+        echo "Run:  git submodule update --init --recursive"; \
+        exit 1; }
+    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    # --load builds the node + toolkit images and loads them into the nested daemon under
+    # fixed :local tags (no registry). The 3 indexer images are built in-sandbox below.
+    WITH DOCKER \
+            --load ghcr.io/midnight-ntwrk/midnight-node:local=+node-image \
+            --load ghcr.io/midnight-ntwrk/midnight-node-toolkit:local=+toolkit-image
+        RUN ROOT="$PWD" && \
+            IRV=$(grep '^channel' indexer/rust-toolchain.toml | sed -r 's/.*"(.*)".*/\1/') && \
+            for pkg in indexer-api chain-indexer wallet-indexer; do \
+              docker build --build-arg RUST_VERSION="$IRV" --build-arg PROFILE=dev \
+                -t "midnightntwrk/$pkg:local" -f "indexer/$pkg/Dockerfile" indexer ; \
+            done && \
+            cd local-environment && \
+            npm ci && \
+            ( ARCHITECTURE=linux/$USERARCH \
+              MIDNIGHT_RESERVE_CONTRACTS_PATH="$ROOT/midnight-reserve-contracts" \
+              MIDNIGHT_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:local \
+              INDEXER_CHAIN_IMAGE=midnightntwrk/chain-indexer:local \
+              INDEXER_WALLET_IMAGE=midnightntwrk/wallet-indexer:local \
+              INDEXER_API_IMAGE=midnightntwrk/indexer-api:local \
+              npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
+              if [ $rc -ne 0 ]; then \
+                echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
+                echo "--- midnight-setup ---" ; docker logs midnight-setup 2>&1 | tail -80 ; \
+                echo "--- contract-compiler ---" ; docker logs contract-compiler 2>&1 | tail -30 ; \
+                exit $rc ; \
+              fi ) && \
+            npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== e2e suite ===" && \
+            ( cd "$ROOT/tests/e2e" && \
+              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+            echo "=== toolkit multi-dest E2E ===" && \
+            cd "$ROOT" && \
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
+            bash scripts/tests/toolkit-multi-dest-e2e.sh ghcr.io/midnight-ntwrk/midnight-node-toolkit:local
+    END
 
 
 stop-local-env:
