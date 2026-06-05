@@ -42,4 +42,5 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly -P --ci --platform=linux/amd64 +node-image
+          # No --ci/--strict: +node-image -> +build -> +build-prepare -> +cache-probe (LOCALLY).
+          . ./.envrc && earthly -P --platform=linux/amd64 +node-image

@@ -529,7 +529,8 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly -P --strict \
+          # No --strict: +test-pallet-fixtures -> +build-prepare -> +cache-probe (LOCALLY).
+          . ./.envrc && earthly -P \
             +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save

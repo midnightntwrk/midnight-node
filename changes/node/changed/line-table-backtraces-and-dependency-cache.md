@@ -24,5 +24,5 @@ pallet-fixture tests share the `build` image. The previously test-only
 `target-cpu=native` flag was removed: non-portable codegen under a fixed
 fingerprint is unsound once artifacts are shared across machines.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1645
 Issue:

@@ -94,7 +94,7 @@ jobs:
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-            --strict $PUSH_FLAG \
+            $PUSH_FLAG \
             --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test \
             +test --CACHE_KEY="$CACHE_KEY"
 
