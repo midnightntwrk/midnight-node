@@ -299,6 +299,7 @@ impl BulkCachedCNightObservationDataSource {
 		let snapshot_start_block = Arc::clone(&self.snapshot_start_block);
 		let snapshot_end_block = Arc::clone(&self.snapshot_end_block);
 		let window_size = self.window_size;
+		let stability_margin = self.stability_margin;
 
 		tokio::spawn(async move {
 			// Hold the gate for the lifetime of the refresh; dropped (unlocked)
@@ -313,6 +314,7 @@ impl BulkCachedCNightObservationDataSource {
 				&snapshot_end_block,
 				target_end,
 				window_size,
+				stability_margin,
 			)
 			.await
 			{
@@ -341,17 +343,17 @@ async fn refresh_window(
 	snapshot_end_block: &Arc<std::sync::RwLock<Option<u32>>>,
 	target_end: u32,
 	window_size: u32,
+	stability_margin: u32,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	// Clamp the target down to the highest block that actually exists at or
-	// below it. The caller's `target_end` reaches ahead of the follower, so
-	// against a db-sync only caught up to the real Cardano tip (or a sparse
-	// test snapshot with gaps in `block_no`) that exact block may not exist —
-	// and `get_high_bounds` returns None for an absent block, which would abort
-	// the refresh and leave the cache permanently empty.
-	let target_end = match crate::db::get_highest_block_le(pool, target_end).await? {
-		Some(highest) => highest,
-		None => return Ok(()), // no block at or below the target yet
-	};
+	// Clamp refreshes to the highest stable db-sync block at or below the
+	// requested target. This keeps proactive lookahead from caching
+	// rollback-prone Cardano blocks while still tolerating sparse snapshots or
+	// a db-sync instance that has not reached the exact requested block.
+	let target_end =
+		match crate::db::get_highest_stable_block_le(pool, target_end, stability_margin).await? {
+			Some(highest) => highest,
+			None => return Ok(()), // no stable block at or below the target yet
+		};
 
 	let old_end = snapshot_end_block
 		.read()
@@ -494,7 +496,9 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 		// Note `tip_pos` is the cardano tip from the *importing block's*
 		// mc-hash digest — not real-time. So during catchup it advances with
 		// the midnight chain, making a sliding window viable: the cache only
-		// needs to track `tip_pos`, not the live cardano tip.
+		// serves through `tip_pos`. Refresh is separately clamped to the latest
+		// stable db-sync block so proactive lookahead does not cache unstable
+		// Cardano data.
 		let snapshot_end_opt = self.snapshot_end_block.read().ok().and_then(|g| *g);
 		let snapshot_start_opt = self.snapshot_start_block.read().ok().and_then(|g| *g);
 		if let Some(snapshot_end_block) = snapshot_end_opt {
