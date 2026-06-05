@@ -50,7 +50,7 @@ use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::data_source::{
-	BulkCachedCNightObservationDataSource, DEFAULT_WINDOW_SIZE,
+	BulkCacheConfig, BulkCachedCNightObservationDataSource, DEFAULT_WINDOW_SIZE,
 	MidnightCNightObservationDataSourceImpl, bulk_pull,
 };
 use midnight_primitives_mainchain_follower::inherent_provider::MidnightCNightObservationDataSource;
@@ -159,14 +159,16 @@ async fn bulk_source_matches_standard_over_block_range() {
 	let db_fallback = Arc::new(MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0));
 	let bulk = BulkCachedCNightObservationDataSource::new(
 		events,
-		window_from,
-		window_to,
-		DEFAULT_WINDOW_SIZE,
-		pool.clone(),
-		db_fallback,
-		addresses.clone(),
-		0, // stability_margin — irrelevant for a pre-populated, static window
-		None,
+		BulkCacheConfig {
+			window_start_block: window_from,
+			window_end_block: window_to,
+			window_size: DEFAULT_WINDOW_SIZE,
+			stability_margin: 0, // irrelevant for a pre-populated, static window
+			pool: pool.clone(),
+			db_fallback,
+			cnight_addresses: addresses.clone(),
+			metrics_opt: None,
+		},
 	);
 
 	// Compare both sources over many (start, tip) queries within the window.
