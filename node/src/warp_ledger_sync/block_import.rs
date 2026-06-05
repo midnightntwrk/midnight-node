@@ -65,7 +65,14 @@ where
 	}
 
 	async fn import_block(&self, block: BlockImportParams<B>) -> Result<ImportResult, Self::Error> {
-		if self.gate.ledger_recovery_in_progress() {
+		// `with_state()` is true only for the state-sync target block, whose state is *imported*
+		// (`StateAction::ApplyChanges(StorageChanges::Import)`) — no runtime execution, so no arena
+		// access. That import MUST be allowed even while recovery is pending: state sync has to
+		// complete before the monitor can recover the arena (gating it would deadlock —
+		// state-sync waits on import, import waits on `ledger_verified`, which waits on recovery,
+		// which waits on state-sync). Only blocks that *execute* against the arena (post-warp
+		// blocks N+1…, `with_state() == false`) are held until recovery is verified.
+		if !block.with_state() && self.gate.ledger_recovery_in_progress() {
 			log::debug!(
 				target: LOG_TARGET,
 				"Holding block import until the warp-recovered ledger arena is verified"
