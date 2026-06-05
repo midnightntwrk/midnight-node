@@ -1,0 +1,83 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! In-process round-trip test for the warp ledger-sync core (M1), with no networking:
+//! init a real arena from genesis → serialize the `Ledger`-rooted snapshot (server, M1.2) → page it
+//! through the transport chunker + reassembler (M1.1) → import + verify against the on-chain
+//! `StateKey` (client/import, M1.3/M1.4). Also asserts the security property: a tampered blob is
+//! rejected (`RootMismatch`), never imported.
+//!
+//! Run isolated (it touches the process-global `default_storage` singleton):
+//! `cargo test -p midnight-node ledger_snapshot_roundtrip`.
+
+use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+
+use super::protocol::{ChunkAssembler, build_response};
+
+/// Page `blob` end-to-end the way the client would, with a deliberately small chunk size to force
+/// multiple ranges, and return the reassembled bytes.
+fn page_and_reassemble(blob: &[u8], chunk: u32) -> Vec<u8> {
+	let mut assembler = ChunkAssembler::new(blob.len() as u64);
+	loop {
+		let response = build_response(blob, assembler.next_offset(), chunk);
+		if response.bytes.is_empty() {
+			break;
+		}
+		assembler.accept(response.offset, &response.bytes).expect("contiguous chunk");
+	}
+	assembler.into_blob().expect("complete blob")
+}
+
+#[test]
+fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
+	let dir = tempfile::tempdir().expect("tempdir");
+	let genesis_state = UndeployedNetwork.genesis_state().to_vec();
+
+	// Initialize the arena from genesis in Separate mode. This sets the process-global
+	// `default_storage`, persists the genesis ledger, and returns the on-chain `StateKey` bytes
+	// (the tagged `TypedArenaKey<Ledger>`) — exactly what `pallet_midnight::StateKey` would hold.
+	let state_key = midnight_node_ledger::ledger_9::storage::init_storage_paritydb_separate(
+		dir.path(),
+		&genesis_state,
+		1024,
+	);
+	assert!(!state_key.is_empty(), "genesis init must produce a StateKey");
+
+	// Server side (M1.2): serialize the `Ledger`-rooted snapshot at that StateKey.
+	let blob = midnight_node_ledger::serialize_ledger_snapshot(false, &state_key)
+		.expect("serialize ledger snapshot");
+	assert!(blob.len() > state_key.len(), "snapshot blob should carry the arena, not just the key");
+
+	// Transport (M1.1): page into 4 KiB ranges and reassemble; must be byte-identical.
+	let reassembled = page_and_reassemble(&blob, 4096);
+	assert_eq!(reassembled, blob, "reassembled blob must be byte-identical to the server's");
+
+	// Client/import (M1.3 + M1.4): verify root == StateKey and persist. Idempotent against the
+	// already-initialized arena (content-addressed; genesis nodes dedup).
+	midnight_node_ledger::import_verified_ledger_snapshot(false, &reassembled, &state_key)
+		.expect("verified import of a faithful snapshot should succeed");
+
+	// Security property: tamper a byte well past the tag prefix (in the node-data region). The
+	// native multi-pass deserializer / root check must reject it — never a successful import.
+	let mut tampered = blob.clone();
+	let idx = tampered.len() / 2;
+	tampered[idx] ^= 0xFF;
+	let result =
+		midnight_node_ledger::import_verified_ledger_snapshot(false, &tampered, &state_key);
+	assert!(
+		result.is_err(),
+		"a tampered snapshot must fail verification and not be imported, got {result:?}"
+	);
+}

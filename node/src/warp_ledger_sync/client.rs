@@ -1,0 +1,181 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! M1.3 — Ledger-sync client driver + verification.
+//!
+//! After warp + state-sync complete (target block N captured by the monitor, M2.1), this drives the
+//! client side of the protocol: read the on-chain `StateKey` at N (from the warp-recovered trie),
+//! fetch the `Ledger`-rooted arena blob in byte ranges from peers, then hand the assembled blob to
+//! [`midnight_node_ledger::import_verified_ledger_snapshot`], which verifies its root against the
+//! `StateKey` and persists it on success.
+//!
+//! Verification + persistence live in the ledger crate (next to the arena); this module is pure
+//! network orchestration. No peer is trusted: a bad blob fails the root check and is discarded.
+
+use std::{marker::PhantomData, sync::Arc};
+
+use parity_scale_codec::{Decode, Encode};
+use sc_client_api::{Backend, StorageProvider};
+use sc_network::{
+	IfDisconnected, NetworkRequest, PeerId, ProtocolName, request_responses::RequestFailure,
+};
+use sp_runtime::traits::Block as BlockT;
+
+use super::{
+	LOG_TARGET,
+	protocol::{ChunkAssembler, LedgerSyncRequest, LedgerSyncResponse, MAX_LEDGER_SYNC_CHUNK},
+	read_state_key,
+};
+
+/// Drives ledger-arena recovery against peers over the ledger-sync request/response protocol.
+///
+/// `Network` is `?Sized` so the node's `Arc<dyn NetworkService>` handle (which has `NetworkRequest`
+/// as a supertrait) can be passed directly.
+pub struct LedgerSyncClient<B: BlockT, Client, BE, Network: ?Sized> {
+	client: Arc<Client>,
+	network: Arc<Network>,
+	protocol_name: ProtocolName,
+	/// Whether the local arena uses the unified ParityDb layout (forwarded to the importer).
+	unified: bool,
+	_phantom: PhantomData<(B, BE)>,
+}
+
+impl<B, Client, BE, Network> LedgerSyncClient<B, Client, BE, Network>
+where
+	B: BlockT,
+	BE: Backend<B> + 'static,
+	Client: StorageProvider<B, BE> + Send + Sync + 'static,
+	Network: NetworkRequest + Send + Sync + ?Sized + 'static,
+{
+	pub fn new(
+		client: Arc<Client>,
+		network: Arc<Network>,
+		protocol_name: ProtocolName,
+		unified: bool,
+	) -> Self {
+		Self { client, network, protocol_name, unified, _phantom: PhantomData }
+	}
+
+	/// Recover, verify, and import the ledger arena at `target` (the captured warp target N) by
+	/// trying `peers` in order. Returns `Ok` as soon as one peer yields a complete blob that
+	/// verifies against the on-chain `StateKey` and imports; otherwise [`ClientError::AllPeersFailed`].
+	///
+	/// The caller must hold the authoring/import gate while this runs (single-writer arena, M2.2).
+	pub async fn recover(&self, target: B::Hash, peers: &[PeerId]) -> Result<(), ClientError> {
+		let state_key = read_state_key::<B, Client, BE>(&self.client, target)?
+			.ok_or(ClientError::NoStateKey)?;
+
+		if peers.is_empty() {
+			return Err(ClientError::NoPeers);
+		}
+
+		for &peer in peers {
+			let blob = match self.fetch_blob_from(peer, target).await {
+				Ok(blob) => blob,
+				Err(e) => {
+					log::debug!(target: LOG_TARGET, "ledger fetch from {peer} failed: {e}; trying next peer");
+					continue;
+				},
+			};
+
+			// Verification happens inside the importer (root must equal `state_key`); a verify
+			// failure means the peer served bad data — discard and try the next one.
+			// M4.1: a reputation report on the peer belongs here.
+			match midnight_node_ledger::import_verified_ledger_snapshot(
+				self.unified,
+				&blob,
+				&state_key,
+			) {
+				Ok(()) => {
+					log::info!(
+						target: LOG_TARGET,
+						"Recovered + verified ledger arena at {target:?} from {peer} ({} bytes)",
+						blob.len()
+					);
+					return Ok(());
+				},
+				Err(e) => {
+					log::warn!(target: LOG_TARGET, "ledger import from {peer} failed: {e}; trying next peer");
+				},
+			}
+		}
+
+		Err(ClientError::AllPeersFailed)
+	}
+
+	/// Fetch the full blob from a single peer by paging contiguous byte ranges in order.
+	///
+	/// (Parallel / multi-peer range fetch is a permitted optimization — spec ODD-3 — deferred; the
+	/// `ChunkAssembler` already supports resume by `next_offset`.)
+	async fn fetch_blob_from(&self, peer: PeerId, target: B::Hash) -> Result<Vec<u8>, ClientError> {
+		// First range establishes `total_len`.
+		let first = self.request_range(peer, target, 0).await?;
+		let mut assembler = ChunkAssembler::new(first.total_len);
+		assembler.accept(first.offset, &first.bytes)?;
+
+		while !assembler.is_complete() {
+			let next = self.request_range(peer, target, assembler.next_offset()).await?;
+			if next.bytes.is_empty() {
+				// Server returned an empty range before completion: treat as a truncated transfer.
+				// `into_blob` below will surface `Incomplete`.
+				break;
+			}
+			assembler.accept(next.offset, &next.bytes)?;
+		}
+
+		Ok(assembler.into_blob()?)
+	}
+
+	async fn request_range(
+		&self,
+		peer: PeerId,
+		target: B::Hash,
+		offset: u64,
+	) -> Result<LedgerSyncResponse, ClientError> {
+		let request =
+			LedgerSyncRequest { target_hash: target, offset, max_len: MAX_LEDGER_SYNC_CHUNK };
+		let (bytes, _protocol) = self
+			.network
+			.request(
+				peer,
+				self.protocol_name.clone(),
+				request.encode(),
+				None,
+				IfDisconnected::ImmediateError,
+			)
+			.await?;
+		Ok(LedgerSyncResponse::decode(&mut &bytes[..])?)
+	}
+}
+
+/// Failure modes of [`LedgerSyncClient::recover`]. All are non-fatal: the monitor leaves the
+/// authoring gate closed and retries.
+#[derive(Debug, thiserror::Error)]
+pub enum ClientError {
+	#[error("no StateKey present at the target block")]
+	NoStateKey,
+	#[error("no peers available to recover the ledger from")]
+	NoPeers,
+	#[error("blockchain error: {0}")]
+	Client(#[from] sp_blockchain::Error),
+	#[error("network request failed: {0:?}")]
+	Request(#[from] RequestFailure),
+	#[error("failed to decode response: {0}")]
+	Decode(#[from] parity_scale_codec::Error),
+	#[error("chunk assembly failed: {0}")]
+	Assemble(#[from] super::protocol::AssembleError),
+	#[error("all peers failed to provide a verifiable snapshot")]
+	AllPeersFailed,
+}

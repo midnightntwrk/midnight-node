@@ -136,6 +136,109 @@ pub fn drop_all_default_storage() {
 	ledger_9::storage::drop_default_storage_if_exists();
 }
 
+#[cfg(feature = "std")]
+/// Serialize the ledger arena snapshot at `state_key` into the canonical, `Ledger`-rooted warp
+/// transfer blob (trustless warp ledger-sync, M1.2 server side).
+///
+/// `unified` selects the ParityDb instantiation, matching the operator's `storage_separation`
+/// config: the two modes register `default_storage` under different `D` type ids (separate = column
+/// offset 0; unified = offset `NUM_COLUMNS_POLKADOT`, sharing substrate's parity-db). The blob bytes
+/// are identical across modes.
+///
+/// Uses the latest ledger version (`ledger_9`): warp-sync targets are near the chain tip, where the
+/// active ledger version is the latest. (Assumption — deferred: a node warp-syncing to a block
+/// governed by an *older* ledger version would need per-version dispatch here; not reachable today
+/// since warp always targets the tip.)
+pub fn serialize_ledger_snapshot(
+	unified: bool,
+	state_key: &[u8],
+) -> Result<Vec<u8>, ledger_9::api::LedgerApiError> {
+	type Sig = ledger_9::TransactionSignature;
+	type DbSeparate = ledger_9::ledger_storage_local::db::ParityDb;
+	type DbUnified = ledger_9::ledger_storage_local::db::ParityDb<
+		sha2::Sha256,
+		ledger_9::ledger_storage_local::db::paritydb::OwnedDb,
+		{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
+	>;
+
+	if unified {
+		ledger_9::Bridge::<Sig, DbUnified>::serialize_ledger_snapshot(state_key)
+	} else {
+		ledger_9::Bridge::<Sig, DbSeparate>::serialize_ledger_snapshot(state_key)
+	}
+}
+
+/// Failure modes of [`import_verified_ledger_snapshot`]. All are non-fatal to the chain: the caller
+/// discards the data, reports the peer, and retries from another (warp spec M4.1).
+#[cfg(feature = "std")]
+#[derive(Debug)]
+pub enum SnapshotImportError {
+	/// The on-chain `StateKey` bytes failed to decode to a `TypedArenaKey<Ledger>` (the inner
+	/// `LedgerApiError` is version-specific, so it is rendered to a string here).
+	StateKeyDecode(String),
+	/// The transferred blob failed the arena's native (multi-pass, untrusted-safe) deserialization
+	/// — malformed, truncated, or internally inconsistent node graph.
+	Deserialize(std::io::Error),
+	/// The blob deserialized cleanly but its recomputed root key does **not** equal the on-chain
+	/// `StateKey`: the peer served a different (or tampered) ledger. **Never persisted.**
+	RootMismatch,
+}
+
+#[cfg(feature = "std")]
+impl core::fmt::Display for SnapshotImportError {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			SnapshotImportError::StateKeyDecode(e) => {
+				write!(f, "failed to decode on-chain StateKey: {e}")
+			},
+			SnapshotImportError::Deserialize(e) => {
+				write!(f, "failed to deserialize ledger snapshot: {e}")
+			},
+			SnapshotImportError::RootMismatch => {
+				write!(f, "ledger snapshot root key does not match on-chain StateKey")
+			},
+		}
+	}
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for SnapshotImportError {}
+
+#[cfg(feature = "std")]
+/// Verify a `Ledger`-rooted warp snapshot `blob` against the on-chain `expected_state_key` and, on
+/// success, persist it into the already-open arena backend so `get_lazy(StateKey)` resolves (warp
+/// ledger-sync M1.3 verification + M1.4 import). `unified` selects the DB instantiation, as in
+/// [`serialize_ledger_snapshot`]. Uses the latest ledger version (`ledger_9`) — same near-tip
+/// assumption noted there.
+///
+/// The caller must hold the authoring/import gate (the arena is single-writer) — see
+/// `warp-ledger-sync-m1.4a-spike.md`.
+pub fn import_verified_ledger_snapshot(
+	unified: bool,
+	blob: &[u8],
+	expected_state_key: &[u8],
+) -> Result<(), SnapshotImportError> {
+	type Sig = ledger_9::TransactionSignature;
+	type DbSeparate = ledger_9::ledger_storage_local::db::ParityDb;
+	type DbUnified = ledger_9::ledger_storage_local::db::ParityDb<
+		sha2::Sha256,
+		ledger_9::ledger_storage_local::db::paritydb::OwnedDb,
+		{ midnight_primitives_ledger::LedgerStorageExt::COLUMN_OFFSET },
+	>;
+
+	if unified {
+		ledger_9::Bridge::<Sig, DbUnified>::import_verified_ledger_snapshot(
+			blob,
+			expected_state_key,
+		)
+	} else {
+		ledger_9::Bridge::<Sig, DbSeparate>::import_verified_ledger_snapshot(
+			blob,
+			expected_state_key,
+		)
+	}
+}
+
 mod common;
 
 pub mod types {

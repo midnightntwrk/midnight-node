@@ -242,6 +242,9 @@ type MidnightService = sc_service::PartialComponents<
 		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
 		Option<Telemetry>,
 		DataSources,
+		// Shared warp ledger-sync recovery gate (gates block import + authoring until the arena is
+		// recovered). Created in `new_partial` so it can wrap the import queue's block import.
+		Arc<crate::warp_ledger_sync::oracle::RecoveryGate>,
 	),
 >;
 
@@ -320,9 +323,16 @@ pub fn new_partial(
 		.build_storage()
 		.map_err(sp_blockchain::Error::Storage)?;
 
+	// Commit the genesis trie state only when NOT warp/fast syncing. With `--sync warp`,
+	// `no_genesis()` is true, so we skip the commit — leaving `finalized_state == None` so substrate
+	// will actually engage warp sync (it refuses warp on a DB that already has a finalized state).
+	// This mirrors stock substrate (`sc_service::builder`'s `!config.no_genesis()`); hardcoding
+	// `true` here previously meant warp sync silently fell back to full sync. Full-sync behavior is
+	// unchanged (`no_genesis()` is false → commit). The ledger arena genesis init in `open_paritydb`
+	// is independent and still runs, so `default_storage` is set for post-warp recovery.
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
 		genesis_storage,
-		true,
+		!config.no_genesis(),
 		backend.clone(),
 		executor.clone(),
 		genesis_extrinsics?,
@@ -413,6 +423,15 @@ pub fn new_partial(
 	let time_source = Arc::new(SystemTimeSource);
 	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
 
+	// Warp ledger-sync recovery gate, shared by the import queue (below), the authoring oracle, and
+	// the recovery monitor (both in `new_full`). Wrapping the import queue's block import here holds
+	// post-warp block imports until the arena is recovered + verified.
+	let recovery_gate = crate::warp_ledger_sync::oracle::RecoveryGate::new();
+	let gated_block_import = crate::warp_ledger_sync::block_import::GatedBlockImport::new(
+		grandpa_block_import.clone(),
+		recovery_gate.clone(),
+	);
+
 	let import_queue = partner_chains_aura_import_queue::import_queue::<
 		AuraPair,
 		_,
@@ -422,7 +441,7 @@ pub fn new_partial(
 		_,
 		McHashInherentDigest,
 	>(ImportQueueParams {
-		block_import: grandpa_block_import.clone(),
+		block_import: gated_block_import,
 		justification_import: Some(Box::new(grandpa_block_import.clone())),
 		client: client.clone(),
 		create_inherent_data_providers: VerifierCIDP::new(
@@ -456,6 +475,7 @@ pub fn new_partial(
 			beefy_rpc_links,
 			telemetry,
 			data_sources,
+			recovery_gate,
 		),
 	};
 
@@ -477,6 +497,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	max_finality_subscriptions: u32,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
+	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
+	// warp ledger-sync server/importer dispatch to.
+	let warp_ledger_unified = matches!(storage_config.separation, StorageSeparation::Unified);
 	let new_partial_components =
 		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
 
@@ -496,6 +519,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				beefy_rpc_links,
 				mut telemetry,
 				data_sources,
+				warp_ledger_recovery_gate,
 			),
 	} = new_partial_components;
 
@@ -541,6 +565,27 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	net_config.add_notification_protocol(beefy_notification_config);
 	net_config.add_request_response_protocol(beefy_req_resp_cfg);
 
+	// Warp ledger-sync (M2.3): register the request/response protocol that serves / recovers the
+	// Midnight ledger arena after warp+state-sync. The server handler is spawned after the network
+	// is built; `ledger_sync_protocol_name` is reused by the client driver in the monitor.
+	let ledger_sync_protocol_name: sc_network::ProtocolName =
+		crate::warp_ledger_sync::protocol::ledger_sync_protocol_name(
+			genesis_hash,
+			config.chain_spec.fork_id(),
+		)
+		.into();
+	let (ledger_sync_handler, ledger_sync_cfg) =
+		crate::warp_ledger_sync::server::LedgerSyncRequestHandler::<Block, FullClient, FullBackend>::new::<
+			Network,
+		>(
+			genesis_hash,
+			config.chain_spec.fork_id(),
+			client.clone(),
+			warp_ledger_unified,
+			config.network.default_peers_set_num_full as usize,
+		);
+	net_config.add_request_response_protocol(ledger_sync_cfg);
+
 	let warp_sync = Arc::new(sc_consensus_grandpa::warp_proof::NetworkProvider::new(
 		backend.clone(),
 		grandpa_link.shared_authority_set().clone(),
@@ -564,6 +609,37 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 
 	// Capture peer_id before network is moved
 	let peer_id = network.local_peer_id().to_base58();
+
+	// Warp ledger-sync (M2.3): `warp_ledger_recovery_gate` (threaded from `new_partial`, where it
+	// also gates the import queue) is shared with the monitor (which flips its flags) and the
+	// authoring SyncOracle (which reads them).
+
+	// Serve ledger snapshots to warp-syncing peers.
+	task_manager.spawn_handle().spawn(
+		"midnight-ledger-sync-server",
+		Some("midnight-ledger-sync"),
+		ledger_sync_handler.run(),
+	);
+	// Drive recovery on this node after warp completes (no-op on full sync). Needed by any
+	// warp-synced node — authority or not — to repopulate the arena, so it is spawned regardless.
+	task_manager.spawn_handle().spawn(
+		"midnight-ledger-sync-monitor",
+		Some("midnight-ledger-sync"),
+		// `BE` and `Network` only appear in bounds, so they must be named explicitly.
+		crate::warp_ledger_sync::monitor::run_recovery_monitor::<
+			Block,
+			FullClient,
+			FullBackend,
+			dyn sc_network::service::traits::NetworkService,
+		>(
+			client.clone(),
+			sync_service.clone(),
+			network.clone(),
+			warp_ledger_recovery_gate.clone(),
+			ledger_sync_protocol_name.clone(),
+			warp_ledger_unified,
+		),
+	);
 
 	if config.offchain_worker.enabled {
 		task_manager.spawn_handle().spawn(
@@ -742,7 +818,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			force_authoring,
 			backoff_authoring_blocks,
 			keystore: keystore_container.keystore(),
-			sync_oracle: sync_service.clone(),
+			// Wrapping oracle (M2.2): keeps AURA from authoring until the warp-recovered ledger is
+			// verified; a no-op passthrough on full sync.
+			sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
+				sync_service.clone(),
+				warp_ledger_recovery_gate.clone(),
+			),
 			justification_sync_link: sync_service.clone(),
 			block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
 			max_block_proposal_slot_portion: None,
