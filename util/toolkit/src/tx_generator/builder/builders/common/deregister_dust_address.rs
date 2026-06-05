@@ -14,9 +14,10 @@
 use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 
 use super::ledger_helpers_local::{
-	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, FromContext,
-	IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
-	TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
+	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB,
+	DustRegistrationBuilder, FromContext, IntentInfo, NIGHT, ProofProvider, Segment,
+	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
+	UtxoSpendInfo, Wallet,
 };
 use async_trait::async_trait;
 
@@ -37,18 +38,18 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 /// - Migrating to a new DUST address
 /// - Cleaning up test registrations
 /// - Revoking access before rotating wallet keys
-pub struct DeregisterDustAddressBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct DeregisterDustAddressBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	seed: String,
 	rng_seed: Option<[u8; 32]>,
 	funding_seed: String,
 }
 
-impl DeregisterDustAddressBuilder {
+impl<C: BuilderContext<DefaultDB>> DeregisterDustAddressBuilder<C> {
 	pub fn new(
 		args: DeregisterDustAddressArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		Self {
@@ -62,7 +63,7 @@ impl DeregisterDustAddressBuilder {
 }
 
 #[async_trait]
-impl BuildTxs for DeregisterDustAddressBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> {
 	type Error = Infallible;
 
 	async fn build_txs_from(
@@ -82,27 +83,25 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 			self.rng_seed,
 		);
 
-		let inputs = context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed.clone(), |wallet| {
-				wallet
-					.unshielded_utxos(ledger_state)
-					.iter()
-					.filter(|utxo| utxo.type_ == NIGHT)
-					.map(|utxo| UtxoSpendInfo {
-						value: utxo.value,
-						owner: seed.clone(),
-						token_type: NIGHT,
-						intent_hash: Some(utxo.intent_hash),
-						output_number: Some(utxo.output_no),
-					})
-					.collect::<Vec<_>>()
+		let inputs: Vec<UtxoSpendInfo<_>> = context
+			.unshielded_utxos(seed.clone())
+			.await
+			.into_iter()
+			.map(|(utxo, _ctime)| utxo)
+			.filter(|utxo| utxo.type_ == NIGHT)
+			.map(|utxo| UtxoSpendInfo {
+				value: utxo.value,
+				owner: seed.clone(),
+				token_type: NIGHT,
+				intent_hash: Some(utxo.intent_hash),
+				output_number: Some(utxo.output_no),
 			})
-		});
+			.collect();
 
-		let mut outputs: VecDeque<Box<dyn BuildUtxoOutput<DefaultDB>>> = inputs
+		let mut outputs: VecDeque<Box<dyn BuildUtxoOutput<DefaultDB, C>>> = inputs
 			.iter()
 			.map(|input| {
-				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
+				let output: Box<dyn BuildUtxoOutput<DefaultDB, C>> = Box::new(UtxoOutputInfo {
 					value: input.value,
 					owner: input.owner.clone(),
 					token_type: input.token_type,
@@ -111,10 +110,10 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 			})
 			.collect();
 
-		let mut inputs: VecDeque<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
+		let mut inputs: VecDeque<Box<dyn BuildUtxoSpend<DefaultDB, C>>> = inputs
 			.into_iter()
 			.map(|input| {
-				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
+				let input: Box<dyn BuildUtxoSpend<DefaultDB, C>> = Box::new(input);
 				input
 			})
 			.collect();
@@ -135,7 +134,7 @@ impl BuildTxs for DeregisterDustAddressBuilder {
 			actions: vec![],
 		};
 
-		let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
+		let boxed_intent: Box<dyn BuildIntent<DefaultDB, C>> = Box::new(intent_info);
 		tx_info.add_intent(Segment::Fallible.into(), boxed_intent);
 
 		// Deregistration: pass dust_address: None instead of Some(dust_address)

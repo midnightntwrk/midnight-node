@@ -11,11 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
 use std::{marker::PhantomData, sync::Arc};
 
+use async_trait::async_trait;
+
 use super::super::{
-	BuildContractAction, Contract, DB, Intent, LedgerContext, PedersenRandomness,
+	BuildContractAction, BuilderContext, Contract, DB, Intent, PedersenRandomness,
 	ProofPreimageMarker, Signature, StdRng, VerifyingKey,
 };
 
@@ -27,11 +28,13 @@ pub struct ContractDeployInfo<C: Contract<D>, D: DB + Clone> {
 }
 
 #[async_trait]
-impl<C: Contract<D>, D: DB + Clone> BuildContractAction<D> for ContractDeployInfo<C, D> {
+impl<C: Contract<D>, D: DB + Clone, BC: BuilderContext<D>> BuildContractAction<D, BC>
+	for ContractDeployInfo<C, D>
+{
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<BC>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let resolver = self.type_.resolver();

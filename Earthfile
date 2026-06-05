@@ -1,5 +1,19 @@
 VERSION 0.8
 
+# Scopes the cargo build directory (`/target`) so PRs running on the same
+# self-hosted runner host don't share `.rmeta` / `.rlib` artifacts via a
+# stable auto-generated cache id. Without scoping, an in-flight branch
+# that's changed a pallet's trait surface can leak its build into the
+# next PR's job and cause spurious E0046 trait/impl mismatches.
+#
+# Default is constant so local invocations share one cache. CI must
+# override this with a per-branch value (passed via `--build-arg
+# CACHE_KEY=<sanitized PR head ref>`). The Earthly builtin
+# EARTHLY_GIT_BRANCH is NOT a reliable source here because actions/checkout
+# leaves the workspace on the PR merge commit in detached-HEAD state, so
+# the builtin resolves to the literal string `HEAD` across every PR.
+ARG --global CACHE_KEY=local
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -180,7 +194,8 @@ rebuild-sqlx:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -197,6 +212,13 @@ rebuild-redemption-skeleton:
 rebuild-genesis-state:
     ARG NETWORK
     ARG GENERATE_TEST_TXS=false
+    # LEDGER9-TOOLKIT-JS: toolkit-js v8 / compact-js 2.5.1 still emits
+    # `midnight:intent[v6]` (ledger-8), which the ledger-9 Rust `send-intent`
+    # path rejects. Disabled by default until `util/toolkit-js/v9/` lands with
+    # a compact-js whose intent serializer targets `intent[v7]`. Grep for
+    # `LEDGER9-TOOLKIT-JS` to find the matching `#[ignore]`s in
+    # `util/toolkit/src/commands/generate_intent.rs`.
+    ARG GENERATE_JS_TEST_TXS=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     # Override with a pre-built registry image to skip rebuilding (e.g. in CI)
@@ -355,7 +377,7 @@ rebuild-genesis-state:
         ; fi
 
     RUN mkdir -p /res/test-data/contract/counter \
-        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+        && if [ "$GENERATE_JS_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
                     /midnight-node-toolkit \
@@ -386,7 +408,7 @@ rebuild-genesis-state:
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
     RUN mkdir -p /res/test-data/contract/mint \
-        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
+        && if [ "$GENERATE_JS_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
                     /midnight-node-toolkit \
@@ -475,9 +497,12 @@ rebuild-genesis-state-perfnet:
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-devnet
-    BUILD +rebuild-genesis-state-perfnet
-    BUILD +rebuild-genesis-state-govnet
-    BUILD +rebuild-genesis-state-qanet
+    # Perfnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-perfnet
+    # Govnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-govnet
+    # QANet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-qanet
     # Preview is not meant to be reset
     #BUILD +rebuild-genesis-state-preview
     # Preprod is not meant to be reset
@@ -518,7 +543,7 @@ rebuild-chainspec:
 
     # create abridge chain-spec that is diff tools and github friendly:
     RUN cat res/$NETWORK/chain-spec.json | \
-      jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.observed_utxos = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.mappings = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.utxo_owners = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
+      jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.observed_utxos = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.mappings = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.utxo_owners = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.system_tx = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
 
     RUN /midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
 
@@ -532,9 +557,12 @@ rebuild-chainspec:
 # Use DETERMINISTIC=true for reproducible srtool builds (slower but verifiable)
 rebuild-all-chainspecs:
     BUILD +rebuild-chainspec --NETWORK=devnet
-    BUILD +rebuild-chainspec --NETWORK=govnet
-    BUILD +rebuild-chainspec --NETWORK=qanet
-    BUILD +rebuild-chainspec --NETWORK=perfnet
+    # Govnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=govnet
+    # QANet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=qanet
+    # Perfnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=perfnet
     # Preview is not meant to be reset
     #BUILD +rebuild-chainspec --NETWORK=preview
     # Preprod is not meant to be reset
@@ -767,7 +795,8 @@ planner:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
     RUN cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
@@ -844,7 +873,8 @@ test:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # Test
     RUN mkdir /test-artifacts
@@ -887,7 +917,8 @@ test-pallet-fixtures:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
     # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
@@ -913,7 +944,8 @@ build-test-toolkit:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
     RUN microdnf -y install tar gzip xz docker && \
@@ -1455,12 +1487,21 @@ testnet-sync-e2e:
 # local-env-e2e executes any tests that depend on a running local-env
 local-env-e2e:
     FROM +prep
+    # Host ports of the local-env stack this test connects to (via 172.17.0.1).
+    # On the shared self-hosted host each runner slot publishes them on
+    # slot-specific ports; the caller passes them through so the e2e config
+    # (tests/e2e/src/config.rs, local-ci feature) targets the right stack.
+    # Defaults reproduce the legacy single-tenant ports.
+    ARG E2E_NODE_RPC_PORT=9933
+    ARG E2E_OGMIOS_PORT=1337
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
     ENV RUSTFLAGS="-C debuginfo=1"
+    ENV E2E_NODE_RPC_PORT=$E2E_NODE_RPC_PORT
+    ENV E2E_OGMIOS_PORT=$E2E_OGMIOS_PORT
     RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
@@ -1532,6 +1573,11 @@ start-local-env-with-indexer-ci:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
+    # Per-runner slot (1..N) selects a disjoint host-port block + compose project
+    # name so concurrent jobs on the same self-hosted host don't collide. 0 (the
+    # default) keeps the legacy single-tenant layout. The orchestrator derives
+    # every port/name from this single value (local-environment/src/lib/ports.ts).
+    ARG LOCALENV_RUNNER_SLOT=0
     WORKDIR local-environment
     RUN npm ci
     # Tear down any stack left over from a previous run before starting a fresh
@@ -1541,8 +1587,8 @@ start-local-env-with-indexer-ci:
     # breaks chain-indexer with "unsupported protocol version" when the
     # genesis/runtime expectations disagree. The non-CI sibling target
     # `+start-local-env-with-indexer` does this same down already.
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN LOCALENV_RUNNER_SLOT=$LOCALENV_RUNNER_SLOT ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
+    RUN LOCALENV_RUNNER_SLOT=$LOCALENV_RUNNER_SLOT ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
 stop-local-env:

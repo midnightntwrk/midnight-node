@@ -34,7 +34,10 @@ interface ProposalInfo {
   proposalIndex: number;
 }
 
-const CLOSE_WEIGHT = { refTime: new BN(10_000_000_000), proofSize: new BN(65_536) };
+const CLOSE_WEIGHT = {
+  refTime: new BN(10_000_000_000),
+  proofSize: new BN(65_536),
+};
 
 export async function federatedRuntimeUpgrade(
   namespace: string,
@@ -88,7 +91,14 @@ export async function federatedRuntimeUpgrade(
       techCommitteeMemberCount,
     );
 
-    const authorizeUpgradeCall = api.tx.system.authorizeUpgrade(wasm.hash);
+    const authorizeUpgradeCall = opts.allowSameVersion
+      ? api.tx.system.authorizeUpgradeWithoutChecks(wasm.hash)
+      : api.tx.system.authorizeUpgrade(wasm.hash);
+    if (opts.allowSameVersion) {
+      console.log(
+        "Using system.authorizeUpgradeWithoutChecks (--allow-same-version): spec_version check bypassed.",
+      );
+    }
     const federatedApproveCall = api.tx.federatedAuthority.motionApprove(
       authorizeUpgradeCall.method,
     );
@@ -105,12 +115,7 @@ export async function federatedRuntimeUpgrade(
       councilMembers[0],
       councilApprovalThreshold,
     );
-    await voteCollectiveMotion(
-      api,
-      "council",
-      councilProposal,
-      councilMembers,
-    );
+    await voteCollectiveMotion(api, "council", councilProposal, councilMembers);
     await closeCollectiveProposal(
       api,
       "council",
@@ -145,8 +150,9 @@ export async function federatedRuntimeUpgrade(
     );
 
     console.log("Closing federated motion to execute authorize_upgrade...");
+    const motionCloseWeight = api.createType("WeightV2", CLOSE_WEIGHT);
     await signAndWait(
-      api.tx.federatedAuthority.motionClose(motionHash),
+      api.tx.federatedAuthority.motionClose(motionHash, motionCloseWeight),
       motionExecutor,
       "federatedAuthority.motionClose",
     );
@@ -189,13 +195,13 @@ async function proposeCollectiveMotion(
   const extrinsic =
     collective === "council"
       ? api.tx.council.propose(approvalThreshold, call, lengthBound)
-      : api.tx.technicalCommittee.propose(
-          approvalThreshold,
-          call,
-          lengthBound,
-        );
+      : api.tx.technicalCommittee.propose(approvalThreshold, call, lengthBound);
 
-  const result = await signAndWait(extrinsic, proposer, `${collective}.propose`);
+  const result = await signAndWait(
+    extrinsic,
+    proposer,
+    `${collective}.propose`,
+  );
   return extractProposalInfo(result, collective);
 }
 
@@ -261,10 +267,12 @@ function extractProposalInfo(
   result: ISubmittableResult,
   collective: Collective,
 ): ProposalInfo {
-  const targetSection = collective === "council" ? "council" : "technicalcommittee";
+  const targetSection =
+    collective === "council" ? "council" : "technicalcommittee";
   const proposed = result.events.find(
     ({ event }) =>
-      event.section.toLowerCase() === targetSection && event.method === "Proposed",
+      event.section.toLowerCase() === targetSection &&
+      event.method === "Proposed",
   );
 
   if (!proposed) {
@@ -289,7 +297,10 @@ async function getCollectiveMembersCount(
   return (members.toJSON() as unknown[]).length;
 }
 
-function computeTwoThirdsThreshold(totalMembers: number, label: string): number {
+function computeTwoThirdsThreshold(
+  totalMembers: number,
+  label: string,
+): number {
   if (totalMembers <= 0) {
     throw new Error(
       `${label} has no on-chain members; cannot compute approval threshold.`,

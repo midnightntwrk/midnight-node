@@ -243,6 +243,17 @@ pub fn utxo_id_decode(input: &str) -> Result<UtxoId, clap::Error> {
 	})
 }
 
+pub fn semver_decode(input: &str) -> Result<semver::Version, clap::Error> {
+	semver::Version::parse(input.trim()).map_err(|error| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("invalid semver: {}", error)),
+		);
+		err
+	})
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;

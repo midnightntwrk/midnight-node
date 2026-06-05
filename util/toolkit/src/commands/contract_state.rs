@@ -55,6 +55,12 @@ pub async fn execute(
 				args.contract_address,
 			)
 		},
+		|ctx| {
+			crate::commands::fork::ledger_9::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)
+		},
 	)?;
 
 	if let Some(dest_file) = &args.dest_file {
