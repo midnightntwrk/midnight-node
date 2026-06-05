@@ -367,6 +367,18 @@ sp-weights = { default-features = false, git = "https://github.com/paritytech/po
 
 [profile.release]
 panic = "unwind"
+# file:line in backtraces for our own crates (node, toolkit, pallets, tests),
+# without the size/cost of full (=2) debug info. Single source of truth: identical
+# across every release consumer, so they share the cooked-dependency cache image.
+debug = "line-tables-only"
+
+# ...but NOT for dependencies. The substrate/polkadot-sdk dep graph dominates debug
+# size (~1 GB of .debug_str type-names alone); we rarely need file:line inside it.
+# Stripping debug from deps keeps the node binary and the cooked-deps cache image
+# lean while preserving line numbers in the frames we actually debug. Final binaries
+# additionally get their debug sections zlib-compressed post-link (Earthfile +build).
+[profile.release.package."*"]
+debug = 0
 
 [profile.production]
 inherits = "release"

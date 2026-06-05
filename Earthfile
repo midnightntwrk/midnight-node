@@ -14,6 +14,14 @@ VERSION 0.8
 # the builtin resolves to the literal string `HEAD` across every PR.
 ARG --global CACHE_KEY=local
 
+# Content-addressed cache of cooked Rust dependencies (cargo-chef). The deps image
+# is named by hash(recipe.json · arch · rust-version · flavor); a cache miss cooks
+# locally (+cook-<flavor>), a hit is pulled. Pushing to the shared registry is OFF
+# by default so untrusted (PR) builds can't poison the cache — only trusted CI runs
+# on `main` flip ALLOW_CACHE_PUSH=true. See +cook-build / +build-prepare.
+ARG --global DEPS_CACHE_REPO=ghcr.io/midnight-ntwrk/midnight-node-deps
+ARG --global ALLOW_CACHE_PUSH=false
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -140,7 +148,7 @@ subxt:
 # build-node-only builds only the midnight-node binary
 build-node-only:
     FROM +build-prepare
-    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    COPY --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
     ARG NATIVEARCH
@@ -148,7 +156,8 @@ build-node-only:
     RUN cargo auditable build -p midnight-node --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
-        && mv /target/release/midnight-node /artifacts-$NATIVEARCH
+        && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
+        && objcopy --compress-debug-sections=zlib "/artifacts-$NATIVEARCH/midnight-node"
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH
 
@@ -715,6 +724,24 @@ prep-no-copy:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
     FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
+    # Inherited by every target built FROM +prep-no-copy (prep, build-prepare,
+    # check-rust-prepare, test, …) so all cargo invocations share these settings:
+    #   - verbose output (equivalent to -v, and propagates into nested cargo builds
+    #     driven by nextest/auditable/chef that a per-line -v would miss)
+    #   - RUSTC_BOOTSTRAP=1 unlocks unstable cargo features on the stable toolchain
+    #   - checksum-freshness: decide out-of-date by file hash, not mtime (unstable;
+    #     requires the bootstrap above). Earthly's COPY (without --keep-ts) pins every
+    #     file to a fixed constant mtime (2020-04-16T12:00:00Z) for reproducible layers,
+    #     which defeats cargo's default mtime freshness check: re-copied content with the
+    #     same constant mtime would be seen as unchanged. Hashing the bytes avoids that.
+    ENV CARGO_TERM_VERBOSE=true
+    ENV RUSTC_BOOTSTRAP=1
+    ENV CARGO_UNSTABLE_CHECKSUM_FRESHNESS=true
+    # Off everywhere: incremental artifacts are large and embed host-specific
+    # absolute paths, which bloat and poison the cross-machine cooked-deps cache.
+    # (Release is already non-incremental; this also covers the dev/check flavor.)
+    ENV CARGO_INCREMENTAL=0
+
     # ca-certificates and curl-minimal already present in the CI base image
 
     RUN cargo --version
@@ -724,7 +751,7 @@ prep-no-copy:
 
 prep:
     FROM +prep-no-copy
-    COPY --keep-ts --dir \
+    COPY --dir \
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
@@ -800,21 +827,41 @@ planner:
     RUN cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
-check-rust-prepare:
-    # NOTE: This just uses recipe.json - no src files!
+# cook-check pre-compiles deps for the check (clippy) flavor. Cooks the superset —
+# clippy, all-targets (dev-deps), and the rb+try-runtime features check-rust lints —
+# so check-rust fully reuses it and check-feature-unification rides on top, recompiling
+# only its --no-dev-deps/default-features delta.
+cook-check:
     FROM +prep-no-copy
-    # COPY +planner/recipe.json /recipe.json
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    COPY +planner/recipe.json /recipe.json
+    RUN cargo chef cook --clippy --workspace --all-targets --features runtime-benchmarks,try-runtime --recipe-path /recipe.json
+    ARG DEPS_TAG
+    IF [ "$ALLOW_CACHE_PUSH" = "true" ]
+        SAVE IMAGE --push $DEPS_CACHE_REPO:$DEPS_TAG
+    END
 
-    # Build dependencies - this is the caching Docker layer!
-    # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
+check-rust-prepare:
+    # Resolve the check dependency cache (pull or cook), mirroring +build-prepare.
+    FROM +prep-no-copy
+    COPY +planner/recipe.json /recipe.json
+    COPY rust-toolchain.toml /rust-toolchain.toml
+    ARG NATIVEARCH
+    ARG RUST_VERSION=$(grep '^channel' /rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+    ARG RECIPE_HASH=$(sha256sum /recipe.json | cut -c1-16)
+    ARG DEPS_TAG=${RUST_VERSION}-${NATIVEARCH}-check-${RECIPE_HASH}
+    COPY (+cache-probe/hit.txt --DEPS_TAG=$DEPS_TAG) /deps-hit.txt
+    ARG DEPS_HIT=$(cat /deps-hit.txt)
+    IF [ "$DEPS_HIT" = "true" ]
+        FROM $DEPS_CACHE_REPO:$DEPS_TAG
+    ELSE
+        FROM +cook-check --DEPS_TAG=$DEPS_TAG
+    END
 
 check-rust:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    COPY --keep-ts --dir \
+    COPY --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
@@ -835,7 +882,7 @@ check-feature-unification:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    COPY --keep-ts --dir \
+    COPY --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
@@ -870,16 +917,21 @@ check:
 # Core tests - excludes Midnight Node Toolkit (requires Node Toolkit (JS) npm packages from midnight-js)
 test:
     ARG NATIVEARCH
-    FROM +prep
+    # Consume the release deps cache (cooked once, shared with +build). No CACHE /target
+    # mount here: it would shadow the cooked /target baked into the build image.
+    FROM +build-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    COPY --dir Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     # Test
     RUN mkdir /test-artifacts
-    # Note: debug and opt-level=1 OOM the linker (>24GB) due to large test binaries
-    ENV RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1"
+    # No RUSTFLAGS override: release profile (opt-3) inherited — keeps test binaries
+    # small enough to link (debug/opt-1 OOM'd the linker at >24GB), and debuginfo is
+    # line-tables via [profile.release] in Cargo.toml. target-cpu=native is gone (it
+    # made artifacts non-portable across the machines now sharing this image).
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -914,23 +966,24 @@ test:
 # These tests do NOT require toolkit-js
 test-pallet-fixtures:
     ARG NATIVEARCH
-    FROM +prep
+    # Unified with +test onto the release deps cache. Previously a separate debug build
+    # (for speed); now it rides the shared image, so release costs nothing extra here.
+    FROM +build-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    COPY --dir Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
-    # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
     ENV SKIP_WASM_BUILD=1
-    ENV RUSTFLAGS="-C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Run pallet-midnight fixture tests in debug mode (compiles much faster)
+    # --release so the fingerprints match +test/+build and reuse the shared deps.
     WITH DOCKER
-        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
+        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --locked \
             -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
     END
     # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
@@ -968,7 +1021,9 @@ build-test-toolkit:
     # Test
     RUN mkdir /test-artifacts-toolkit
     # Compile the tests to go as fast as possible on this machine:
-    ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
+    # target-cpu=native removed: non-portable codegen under a fixed fingerprint is
+    # unsound once build artifacts are shared across machines.
+    ENV RUSTFLAGS="-C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -1023,23 +1078,61 @@ test-toolkit:
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
 
-build-prepare:
-    # NOTE: This just uses recipe.json - no src files!
-    FROM +prep-no-copy
-    # TODO: re-enable when chef is improved.
-    # COPY +planner/recipe.json /recipe.json
-    # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+# cache-probe (LOCALLY): does the named deps image already exist in the registry?
+# Runs on the host so it uses host docker + registry creds. Emits hit.txt
+# ("true"/"false"). Generic over flavor — the caller passes the full DEPS_TAG.
+# Not logged in / no creds → inspect fails → "false" → the caller cooks locally.
+cache-probe:
+    LOCALLY
+    ARG DEPS_TAG
+    RUN docker manifest inspect "$DEPS_CACHE_REPO:$DEPS_TAG" >/dev/null 2>&1 \
+        && echo true  > "/tmp/deps-hit-$DEPS_TAG" \
+        || echo false > "/tmp/deps-hit-$DEPS_TAG"
+    SAVE ARTIFACT "/tmp/deps-hit-$DEPS_TAG" hit.txt
 
-    ARG EARTHLY_GIT_SHORT_HASH
-    ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
-    ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
+# cook-build pre-compiles every third-party dependency for the release (build)
+# flavor into a content-addressed image. The codegen env here is baked into the
+# image, so both the pull and the cook path expose identical CC/CXX to the
+# downstream workspace build. Consumed by +build-prepare on a cache miss.
+cook-build:
+    FROM +prep-no-copy
     ENV CC=clang
     ENV CXX=clang++
+    ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
+    COPY +planner/recipe.json /recipe.json
+    # Deps inherit [profile.release] (opt-3, line-tables) from chef's reconstructed
+    # skeleton — matching what +build compiles the workspace crates with, so cargo
+    # reuses them instead of rebuilding.
+    RUN cargo chef cook --release --recipe-path /recipe.json
+    ARG DEPS_TAG
+    IF [ "$ALLOW_CACHE_PUSH" = "true" ]
+        SAVE IMAGE --push $DEPS_CACHE_REPO:$DEPS_TAG
+    END
 
-    # Build dependencies - this is the caching Docker layer!
-    # TODO: re-enable when chef is improved.
-    # RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
+build-prepare:
+    # Resolve the release dependency cache: pull the pre-cooked image if it exists,
+    # else cook it locally (+cook-build). The cook is the expensive layer; this
+    # shares it across machines/CI runs. recipe.json + rust-toolchain.toml are used
+    # only to compute the tag — discarded when we re-FROM the chosen base below.
+    FROM +prep-no-copy
+    COPY +planner/recipe.json /recipe.json
+    COPY rust-toolchain.toml /rust-toolchain.toml
+    ARG NATIVEARCH
+    ARG RUST_VERSION=$(grep '^channel' /rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+    ARG RECIPE_HASH=$(sha256sum /recipe.json | cut -c1-16)
+    ARG DEPS_TAG=${RUST_VERSION}-${NATIVEARCH}-build-${RECIPE_HASH}
+    COPY (+cache-probe/hit.txt --DEPS_TAG=$DEPS_TAG) /deps-hit.txt
+    ARG DEPS_HIT=$(cat /deps-hit.txt)
+    IF [ "$DEPS_HIT" = "true" ]
+        FROM $DEPS_CACHE_REPO:$DEPS_TAG
+    ELSE
+        FROM +cook-build --DEPS_TAG=$DEPS_TAG
+    END
+
+    # Per-commit, affects only the node crate's build script — kept out of the cook
+    # so it doesn't bust the deps cache every commit.
+    ARG EARTHLY_GIT_SHORT_HASH
+    ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
 
 # build creates production ready binaries
 build:
@@ -1047,7 +1140,7 @@ build:
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
-    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    COPY --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
 
     ARG NATIVEARCH
@@ -1071,11 +1164,18 @@ build:
         && mv /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
 
+    # zlib-compress the (our-code-only) line-tables debug in the shipped ELF binaries:
+    # ~1/3 the size, file:line backtraces preserved (verified — runtime panic traces
+    # resolve from SHF_COMPRESSED sections). Post-link file op, no build-cache impact.
+    RUN for b in midnight-node midnight-node-toolkit aiken-deployer; do \
+            objcopy --compress-debug-sections=zlib "/artifacts-$NATIVEARCH/$b"; \
+        done
+
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-benchmarks:
     FROM +build-prepare
-    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    COPY --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
     ARG NATIVEARCH
@@ -1085,7 +1185,8 @@ build-benchmarks:
         cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
-        && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
+        && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks \
+        && objcopy --compress-debug-sections=zlib "/artifacts-$NATIVEARCH/midnight-node-benchmarks"
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts-benchmarks
 
@@ -1494,7 +1595,7 @@ local-env-e2e:
     # Defaults reproduce the legacy single-tenant ports.
     ARG E2E_NODE_RPC_PORT=9933
     ARG E2E_OGMIOS_PORT=1337
-    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    COPY --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
