@@ -1,9 +1,11 @@
 name: fork-network
 
-# Stand up a locally-forked midnight network from a snapshot, with validator
-# keys and on-chain authority storage replaced by mock-authorities'
-# deterministic set, and the node's built-in mock main chain follower serving
-# all Cardano-derived data. No Cardano db-sync, no secrets, no external infra.
+# Fork a well-known midnight network from a snapshot, then roll the validators
+# from $node_image to $new_node_image using the local-environment image-upgrade
+# command. Validator keys + on-chain authority storage are replaced by
+# mock-authorities' deterministic set, and each node's built-in mock main chain
+# follower serves all Cardano-derived data. No Cardano db-sync, no secrets,
+# no external infra.
 
 on:
   workflow_dispatch:
@@ -16,13 +18,15 @@ on:
         options:
           - devnet
           - qanet
-          - govnet
       mock_authorities_tag:
         description: "mock-authorities image tag"
         required: true
-        default: "0f347c5"
+        default: "ead27ed"
       node_image:
-        description: "midnight-node image (must be compatible with the snapshot's runtime)"
+        description: "midnight-node image to fork from (must match the snapshot's runtime host fns)"
+        required: true
+      new_node_image:
+        description: "midnight-node image to roll the validators to"
         required: true
 
 permissions:
@@ -36,6 +40,7 @@ concurrency:
 env:
   NETWORK: ${{ inputs.network }}
   NODE_IMAGE: ${{ inputs.node_image }}
+  NEW_NODE_IMAGE: ${{ inputs.new_node_image }}
   MOCK_AUTHORITIES_IMAGE: ghcr.io/shieldedtech/mock-authorities:${{ inputs.mock_authorities_tag }}
   SNAPSHOT_INDEX_URL: https://dg39snjayoq3t.cloudfront.net/index.json
   SNAPSHOT_BASE_URL: https://dg39snjayoq3t.cloudfront.net
@@ -44,7 +49,7 @@ jobs:
   fork:
     # 600 GB SSD — sized for qanet (latest snapshot is ~58 GiB unpacked per
     # validator copy; the smaller org runners can't hold all 12 copies).
-    # Devnet/govnet would fit on smaller runners but the cost delta is small
+    # Devnet would fit on a smaller runner but the cost delta is small
     # and using one runner keeps the workflow simple.
     runs-on: [self-hosted, "tier:large"]
     timeout-minutes: 45
@@ -73,6 +78,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+
       # `act` injects ACT=true; on local runs we skip the login and rely on
       # the pull-or-inspect fallback below to hit cached images.
       - name: Login to GHCR
@@ -83,54 +93,16 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      # Resolve per-network knobs once and expose them to subsequent steps.
-      # The latest snapshot URL is picked from the backup system's manifest.
-      - name: Compute network config
+      - name: Install local-environment deps
+        working-directory: local-environment
+        run: npm install
+
+      # The local-environment tool takes a fully-qualified snapshot URI, so we
+      # resolve the latest snapshot for $NETWORK from the backup system's
+      # manifest here.
+      - name: Resolve latest snapshot URL
         id: cfg
         run: |
-          # Per-network static config:
-          # - chain_id            : on-disk paritydb chain folder name
-          # - dir                 : repo dir holding the network's compose + res
-          # - compose             : base compose file (relative to dir)
-          # - num_vals            : how many validators to materialize
-          #                         (mock-authorities --num-validators)
-          # - validator_services  : compose services that map ./data/node-N:/data
-          # - extra_services      : non-validator services that still need
-          #                         fork-mode env (e.g. qanet's boot-node)
-          case "$NETWORK" in
-            devnet)
-              chain_id="midnight_devnet"
-              dir="local-environment/src/networks/well-known/devnet"
-              compose="devnet.network.yaml"
-              num_vals=6
-              validator_services="node1 node2 node3 node4 node5 node6"
-              extra_services=""
-              ;;
-            qanet)
-              chain_id="midnight_qanet"
-              dir="local-environment/src/networks/well-known/qanet"
-              compose="qanet.network.yaml"
-              num_vals=12
-              validator_services="node1 node2 node3 node4 node5 node6 node7 node8 node9 node10 node11 node12"
-              extra_services="boot-node"
-              ;;
-            govnet)
-              chain_id="midnight_govnet"
-              dir="local-environment/src/networks/well-known/govnet"
-              compose="govnet.network.yaml"
-              num_vals=5
-              validator_services="node1 node2 node3 node4 node5"
-              extra_services=""
-              ;;
-            *)
-              echo "Unsupported network: $NETWORK" >&2
-              exit 1
-              ;;
-          esac
-
-          # Pick the highest-timestamp snapshot for this network across all
-          # source hosts. The S3 path is rewritten to the CloudFront URL we
-          # actually have public access to.
           tmp=$(mktemp)
           curl -fsSL "$SNAPSHOT_INDEX_URL" -o "$tmp"
           archive=$(jq -r --arg net "$NETWORK" '
@@ -149,17 +121,8 @@ jobs:
           fi
           snapshot_url="$SNAPSHOT_BASE_URL/$archive"
           echo "Selected snapshot: $snapshot_url"
-
-          {
-            echo "chain_id=$chain_id"
-            echo "dir=$dir"
-            echo "compose=$compose"
-            echo "num_vals=$num_vals"
-            echo "validator_services=$validator_services"
-            echo "extra_services=$extra_services"
-            echo "snapshot_url=$snapshot_url"
-            echo "mock_file=${NETWORK}-mock.json"
-          } >> "$GITHUB_OUTPUT"
+          echo "snapshot_url=$snapshot_url" >> "$GITHUB_OUTPUT"
+          echo "network_dir=local-environment/src/networks/well-known/$NETWORK" >> "$GITHUB_OUTPUT"
 
       - name: Pull images
         run: |
@@ -167,135 +130,21 @@ jobs:
           # images (e.g. act) without a remote push.
           docker pull "$MOCK_AUTHORITIES_IMAGE" || docker image inspect "$MOCK_AUTHORITIES_IMAGE" >/dev/null
           docker pull "$NODE_IMAGE" || docker image inspect "$NODE_IMAGE" >/dev/null
+          docker pull "$NEW_NODE_IMAGE" || docker image inspect "$NEW_NODE_IMAGE" >/dev/null
 
-      - name: Download snapshot
+      # local-environment image-upgrade does:
+      #   1. Restore snapshot into per-validator data dirs (HTTP)
+      #   2. Run mock-authorities convert against the restored data
+      #   3. Generate the mock-mode compose override
+      #   4. `docker compose -f base -f override up -d` at $NODE_IMAGE
+      #   5. Roll each validator service from $NODE_IMAGE → $NEW_NODE_IMAGE
+      #      with `up -d --no-deps --force-recreate`, gated on health
+      - name: Run image-upgrade
+        working-directory: local-environment
         env:
           SNAPSHOT_URL: ${{ steps.cfg.outputs.snapshot_url }}
         run: |
-          curl -fL --retry 3 --retry-delay 5 -o /tmp/snapshot.tar "$SNAPSHOT_URL"
-          ls -lh /tmp/snapshot.tar
-
-      # Restore the snapshot into one data dir per service that mounts ./data/X
-      # in the compose file. Disk usage scales linearly with validator count;
-      # the 600 GB runner above is sized for qanet's 12 validators × ~58 GiB.
-      - name: Restore snapshot into each node folder
-        env:
-          DIR: ${{ steps.cfg.outputs.dir }}
-          VALIDATORS: ${{ steps.cfg.outputs.validator_services }}
-          EXTRAS: ${{ steps.cfg.outputs.extra_services }}
-        run: |
-          cd "$DIR"
-          for svc in $VALIDATORS $EXTRAS; do
-            # Compose volumes use ./data/<svc-or-suffix>:/data — match that.
-            case "$svc" in
-              boot-node) data_dir="data/boot-node" ;;
-              node*)     data_dir="data/node-${svc#node}" ;;
-              *)         data_dir="data/$svc" ;;
-            esac
-            mkdir -p "$data_dir"
-            # Snapshot tar has a single top-level `node/` dir; strip it so
-            # paths become $data_dir/chains/<chain-id>/...
-            tar -xf /tmp/snapshot.tar -C "$data_dir" --strip-components=1
-          done
-          # mock-authorities and the node both run as a non-root appuser
-          # in-container and open parity-db O_RDWR; make the extracted tree
-          # writable regardless of what uid the container runs as.
-          chmod -R a+rwX data
-          df -h .
-
-      - name: Run mock-authorities convert
-        env:
-          DIR: ${{ steps.cfg.outputs.dir }}
-          CHAIN_ID: ${{ steps.cfg.outputs.chain_id }}
-          NUM_VALS: ${{ steps.cfg.outputs.num_vals }}
-        run: |
-          cd "$DIR"
-          # Same uid-mismatch issue as the data mount: the mock-authorities
-          # container runs as a non-root appuser and writes
-          # mock-registrations.json + seeds/ here.
-          mkdir -p mocked-config
-          chmod a+rwX mocked-config
-          docker run --rm \
-            -v "$PWD/data:/data" \
-            -v "$PWD/mocked-config:/out" \
-            "$MOCK_AUTHORITIES_IMAGE" \
-            convert \
-              --data-dir /data \
-              --chain-id "$CHAIN_ID" \
-              --num-validators "$NUM_VALS" \
-              --output-dir /out
-          test -f mocked-config/mock-registrations.json
-          ls mocked-config/seeds
-
-      - name: Place mock registrations where the node expects them
-        env:
-          DIR: ${{ steps.cfg.outputs.dir }}
-          MOCK_FILE: ${{ steps.cfg.outputs.mock_file }}
-        run: |
-          cd "$DIR"
-          mkdir -p res/mock-bridge-data
-          cp mocked-config/mock-registrations.json "res/mock-bridge-data/$MOCK_FILE"
-
-      - name: Generate mock-mode compose override
-        env:
-          DIR: ${{ steps.cfg.outputs.dir }}
-          MOCK_FILE: ${{ steps.cfg.outputs.mock_file }}
-          VALIDATORS: ${{ steps.cfg.outputs.validator_services }}
-          EXTRAS: ${{ steps.cfg.outputs.extra_services }}
-        run: |
-          cd "$DIR"
-          override="${NETWORK}.mock.override.yaml"
-          # Heredocs break the outer YAML block-scalar indent (body lines dedent
-          # below the step's run: | indent and terminate the scalar early), so
-          # we emit each line with echo.
-          {
-            echo "services:"
-            i=0
-            for svc in $VALIDATORS; do
-              echo "  $svc:"
-              echo "    environment:"
-              echo "      USE_MAIN_CHAIN_FOLLOWER_MOCK: \"true\""
-              echo "      MOCK_REGISTRATIONS_FILE: \"/res/mock-bridge-data/$MOCK_FILE\""
-              echo "      AURA_SEED_FILE: /seeds/aura.seed"
-              echo "      GRANDPA_SEED_FILE: /seeds/grandpa.seed"
-              echo "      CROSS_CHAIN_SEED_FILE: /seeds/cross_chain.seed"
-              echo "      SEED_PHRASE: \"\""
-              echo "      DB_SYNC_POSTGRES_CONNECTION_STRING: \"\""
-              echo "    volumes:"
-              echo "      - ./mocked-config/seeds/validator-${i}:/seeds"
-              # The base compose's x-node-common anchor mount ./res:/res is
-              # overridden by each service's own volumes list. Overlay just
-              # the mock json into the image's baked-in /res so we keep
-              # chain-spec and the other res files intact.
-              echo "      - ./res/mock-bridge-data/$MOCK_FILE:/res/mock-bridge-data/$MOCK_FILE:ro"
-              i=$((i+1))
-            done
-            for svc in $EXTRAS; do
-              # Non-validators (e.g. qanet's boot-node) don't sign anything but
-              # still need the mock follower flipped on so they don't try to
-              # reach a Cardano db-sync that isn't running.
-              echo "  $svc:"
-              echo "    environment:"
-              echo "      USE_MAIN_CHAIN_FOLLOWER_MOCK: \"true\""
-              echo "      MOCK_REGISTRATIONS_FILE: \"/res/mock-bridge-data/$MOCK_FILE\""
-              echo "      DB_SYNC_POSTGRES_CONNECTION_STRING: \"\""
-              echo "    volumes:"
-              echo "      - ./res/mock-bridge-data/$MOCK_FILE:/res/mock-bridge-data/$MOCK_FILE:ro"
-            done
-          } > "$override"
-          cat "$override"
-
-      - name: Start the forked network
-        env:
-          DIR: ${{ steps.cfg.outputs.dir }}
-          COMPOSE: ${{ steps.cfg.outputs.compose }}
-        run: |
-          cd "$DIR"
-          docker compose \
-            -f "$COMPOSE" \
-            -f "${NETWORK}.mock.override.yaml" \
-            up -d
-          docker compose -f "$COMPOSE" ps
+          npm run "image-upgrade:${NETWORK}" -- --from-snapshot "$SNAPSHOT_URL"
 
       - name: Wait for block + finality progression
         timeout-minutes: 15
@@ -353,14 +202,17 @@ jobs:
       - name: Dump compose logs
         if: always()
         env:
-          DIR: ${{ steps.cfg.outputs.dir }}
-          COMPOSE: ${{ steps.cfg.outputs.compose }}
+          NETWORK_DIR: ${{ steps.cfg.outputs.network_dir }}
         run: |
-          cd "$DIR"
+          cd "$NETWORK_DIR"
           mkdir -p /tmp/forked-network-logs
-          docker compose -f "$COMPOSE" logs --no-color \
+          override_arg=()
+          if [ -f "${NETWORK}.mock.override.yaml" ]; then
+            override_arg=(-f "${NETWORK}.mock.override.yaml")
+          fi
+          docker compose -f "${NETWORK}.network.yaml" "${override_arg[@]}" logs --no-color \
             > /tmp/forked-network-logs/compose.log || true
-          docker compose -f "$COMPOSE" ps \
+          docker compose -f "${NETWORK}.network.yaml" "${override_arg[@]}" ps \
             > /tmp/forked-network-logs/ps.txt || true
           df -h / > /tmp/forked-network-logs/disk.txt || true
 
@@ -375,8 +227,11 @@ jobs:
       - name: Tear down
         if: always()
         env:
-          DIR: ${{ steps.cfg.outputs.dir }}
-          COMPOSE: ${{ steps.cfg.outputs.compose }}
+          NETWORK_DIR: ${{ steps.cfg.outputs.network_dir }}
         run: |
-          cd "$DIR"
-          docker compose -f "$COMPOSE" down -v || true
+          cd "$NETWORK_DIR"
+          override_arg=()
+          if [ -f "${NETWORK}.mock.override.yaml" ]; then
+            override_arg=(-f "${NETWORK}.mock.override.yaml")
+          fi
+          docker compose -f "${NETWORK}.network.yaml" "${override_arg[@]}" down -v || true
