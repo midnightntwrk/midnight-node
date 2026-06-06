@@ -1,0 +1,100 @@
+name: Seed deps cache
+
+# One-shot workflow_dispatch to force-cook and push the cargo-chef deps image
+# to ghcr.io/midnightntwrk/midnight-node-deps. Run this once after the
+# cook-build target or Cargo.toml changes so subsequent CI pulls the image
+# from the registry instead of cooking locally.
+#
+# Why --no-cache: earthly silently skips SAVE IMAGE --push when it considers
+# the target cached (even if buildkit layers re-ran). --no-cache forces
+# earthly's own target-level cache bypass, ensuring the push fires.
+
+on:
+  workflow_dispatch:
+
+# no top-level permissions
+permissions:
+  contents: read
+
+jobs:
+  seed-arm64:
+    name: Cook and push deps (arm64)
+    runs-on: ubuntu-latest-8-core-arm64
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Cook and push deps
+        env:
+          EARTHLY_REMOTE_CACHE: ""
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
+        run: |
+          mkdir -p "$HOME/.cargo"
+          printf '[net]\ngit-fetch-with-cli = true\n' >> "$HOME/.cargo/config"
+          . ./.envrc
+          earthly --no-cache --push +cook-build
+
+  seed-amd64:
+    name: Cook and push deps (amd64)
+    runs-on: [self-hosted, "tier:large"]
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+
+      - name: Isolate docker config (self-hosted shared HOME)
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Cook and push deps
+        env:
+          TMPDIR: ${{ runner.temp }}
+          EARTHLY_REMOTE_CACHE: ""
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
+        run: |
+          mkdir -p "$HOME/.cargo"
+          printf '[net]\ngit-fetch-with-cli = true\n' >> "$HOME/.cargo/config"
+          . ./.envrc
+          earthly --no-cache --push +cook-build
