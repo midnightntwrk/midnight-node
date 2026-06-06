@@ -1127,6 +1127,12 @@ build-prepare:
     IF [ "$DEPS_HIT" = "true" ]
         FROM $DEPS_CACHE_REPO:$DEPS_TAG
     ELSE
+        # BUILD (not just FROM) so +cook-build's `SAVE IMAGE --push` actually fires.
+        # Earthly only emits SAVE IMAGE for a target reached via BUILD / as an output,
+        # never for one used solely as a FROM base — so without this the cooked deps
+        # image was never published. Pushes only under `earthly --push` (i.e. +images),
+        # so PR check/test jobs still cook-without-publishing.
+        BUILD +cook-build --DEPS_TAG=$DEPS_TAG
         FROM +cook-build --DEPS_TAG=$DEPS_TAG
     END
 
