@@ -19,8 +19,12 @@ ARG --global CACHE_KEY=local
 # locally (+cook-<flavor>), a hit is pulled. Pushing to the shared registry is OFF
 # by default so untrusted (PR) builds can't poison the cache — only trusted CI runs
 # on `main` flip ALLOW_CACHE_PUSH=true. See +cook-build / +build-prepare.
-ARG --global DEPS_CACHE_REPO=ghcr.io/midnight-ntwrk/midnight-node-deps
-ARG --global ALLOW_CACHE_PUSH=false
+ARG --global DEPS_CACHE_REPO=ghcr.io/midnightntwrk/midnight-node-deps
+# TODO(before-merge): flip ALLOW_CACHE_PUSH back to false. Temporarily true on
+# this PR to populate the (newly-correct midnightntwrk) deps cache so we can
+# verify pull-on-hit works. Leaving it true on main would let untrusted PR
+# builds poison the shared cache.
+ARG --global ALLOW_CACHE_PUSH=true
 
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
@@ -938,8 +942,10 @@ test:
 
     # Run all tests EXCEPT:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
-    # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
     # - partner-chains-cardano-offchain are: 1) flaky, 2) long running, 3) test in partner-chains repo, 4) cover functionality used to e2e test partner-chains (non-production)
+    # The pallet-midnight fixture tests (test_get_contract_state / test_send_mn_transaction
+    # / test_validation_works) run here too — they share this exact release build, so a
+    # separate job just paid for a second cold compile of the same artifacts.
     # DOCKERHUB_USER/TOKEN default to empty so local builds and fork PRs (where secrets
     # aren't exposed) still work — at the cost of unauthenticated pull rate limits.
     WITH DOCKER
@@ -949,8 +955,7 @@ test:
             fi && \
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
-            --exclude partner-chains-cardano-offchain \
-            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+            --exclude partner-chains-cardano-offchain
     END
 
     # RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
@@ -961,35 +966,6 @@ test:
 
     # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
     # SAVE ARTIFACT --if-exists ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
-
-# Pallet fixture tests - runs pallet-midnight tests that depend on regenerated .mn fixtures
-# These tests do NOT require toolkit-js
-test-pallet-fixtures:
-    ARG NATIVEARCH
-    # Unified with +test onto the release deps cache. Previously a separate debug build
-    # (for speed); now it rides the shared image, so release costs nothing extra here.
-    FROM +build-prepare
-    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    COPY --dir Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
-        ledger LICENSE node pallets primitives README.md res runtime \
-        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-
-    # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
-    ENV SKIP_WASM_BUILD=1
-    COPY .envrc ./bin/.envrc
-    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
-    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
-
-    # --release so the fingerprints match +test/+build and reuse the shared deps.
-    WITH DOCKER
-        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --locked \
-            -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
-    END
-    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
-    # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
-
-    # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
 build-test-toolkit:
