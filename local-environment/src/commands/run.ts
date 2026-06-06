@@ -23,7 +23,6 @@ import {
 } from "../lib/localEnv";
 import { assertWellKnownNamespace, RunOptions } from "../lib/types";
 import { runDockerCompose } from "../lib/docker";
-import { currentLayout, layoutEnv } from "../lib/ports";
 import {
   discoverComposeDataMounts,
   restoreSnapshot,
@@ -222,19 +221,6 @@ async function runLocalEnvironment(runOptions: RunOptions) {
     ...env,
     ...cleanEnv(process.env),
   };
-
-  // Apply per-runner port isolation. Computed from LOCALENV_RUNNER_SLOT and
-  // merged last so the derived host ports, compose project name, and
-  // container-name suffix win over anything inherited. Slot 0 reproduces the
-  // legacy single-tenant layout exactly.
-  const layout = currentLayout();
-  env = { ...env, ...layoutEnv(layout) };
-  if (layout.slot > 0) {
-    console.log(
-      `🔢 Runner slot ${layout.slot}: compose project '${layout.projectName}', ` +
-        `node-1 RPC on host port ${layout.hostPorts.MN1_RPC_HOST_PORT}`,
-    );
-  }
 
   const missing = requiredImageVars.filter((key) => !env[key]);
   if (missing.length > 0) {

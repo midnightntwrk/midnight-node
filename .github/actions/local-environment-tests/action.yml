@@ -37,200 +37,51 @@ outputs: {}
 runs:
   using: "composite"
   steps:
-    - name: Install jq
-      uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
-
     - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
       with:
         version: v0.8.16
         use-cache: false
 
-    # Match the tls_enabled: false setting the other self-hosted earthly
-    # jobs apply (run / test-toolkit). Without this, this action's earthly
-    # invocation has a different settings hash than the one already running
-    # on the host, and earthly's reuse-or-recycle logic SIGTERMs the existing
-    # buildkitd — taking down any concurrent earthly build on the same host.
+    # Match the tls_enabled: false setting the other self-hosted earthly jobs apply
+    # (run / test-toolkit). Without this, this action's earthly invocation has a
+    # different settings hash than the one already running on the host, and earthly's
+    # reuse-or-recycle logic SIGTERMs the existing buildkitd — taking down any
+    # concurrent earthly build on the same host. Still required after the WITH DOCKER
+    # flip: it governs the *outer* earthly/buildkitd, which we deliberately keep shared.
     - name: Disable earthly TLS (self-hosted runner has no certs)
       shell: bash
       run: |
         echo "    tls_enabled: false" >> .earthly/config.yml
 
+    # GHCR auth for earthly's `--pull` of the private node / indexer / toolkit images
+    # into the nested DinD daemon (writes to the per-slot DOCKER_CONFIG the caller set).
     - name: Docker Login
-      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  #v4.2.0
       with:
         registry: ghcr.io
         username: MidnightCI
         password: ${{ inputs.ghcr-password }}
 
-    - name: Install just
-      uses: taiki-e/install-action@c0dee14250395ae6b1754a99f67c1d693138b102  #v2.58.30
-      with:
-        tool: just
-
-    - name: Set contracts path
-      # midnight-reserve-contracts is a submodule of this repo, checked out by the caller's
-      # actions/checkout (with submodules: true). Pinning lives in .gitmodules, not here.
-      run: echo "MIDNIGHT_RESERVE_CONTRACTS_PATH=${GITHUB_WORKSPACE}/midnight-reserve-contracts" >> "$GITHUB_ENV"
-      shell: bash
-
-    - name: Setup Node.js
-      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  #v6.3.0
-      with:
-        # Keep in sync with NODE_VERSION in Earthfile audit-npm target
-        node-version: '22'
-
-    - name: Upgrade npm
-      # Keep in sync with npm version in Earthfile audit-npm target
-      run: npm install -g npm@11.11.0
-      shell: bash
-
-    # Per-runner port isolation. The shared self-hosted host runs up to 8 runner
-    # slots against one Docker daemon; the local-env stack publishes ~22 fixed
-    # host ports and uses fixed container names, so concurrent jobs collide. Give
-    # each slot a disjoint host-port block + a unique compose project name and
-    # container-name suffix, derived from the runner slot. The bring-up's own
-    # slot-aware `npm run stop:local-env` reclaims this slot's prior leftovers, so
-    # no separate cross-job teardown is needed.
-    #
-    # This is the bash mirror of local-environment/src/lib/ports.ts — the
-    # PORT_SPEC order and the BASE/BLOCK constants MUST stay in lockstep with it.
-    # Exports MN*_RPC_HOST_PORT etc. so later host steps (verify-finality,
-    # toolkit, e2e build-args) target this slot's ports.
-    - name: Compute per-runner local-env port slot
-      shell: bash
-      run: |
-        slot=0
-        if [[ "${RUNNER_NAME:-}" =~ -runner-([0-9]+)$ ]]; then
-          # Force base 10: a zero-padded match like "08"/"09" would otherwise be
-          # read as an (invalid) octal literal by the arithmetic below and abort
-          # the step with "value too great for base".
-          slot=$((10#${BASH_REMATCH[1]}))
-        fi
-        echo "Runner '${RUNNER_NAME:-unknown}' -> local-env slot $slot"
-
-        BASE=21000
-        BLOCK=64
-        # envVar:legacyPort, in fixed offset order (append-only).
-        specs=(
-          "CARDANO_NODE_HOST_PORT:32000"
-          "CARDANO_SOCAT_HOST_PORT:30000"
-          "KUPO_HOST_PORT:1442"
-          "OGMIOS_HOST_PORT:1337"
-          "POSTGRES_HOST_PORT:5432"
-          "INDEXER_API_HOST_PORT:8088"
-          "NATS_HOST_PORT:4222"
-          "MN1_P2P_HOST_PORT:30333"
-          "MN1_RPC_HOST_PORT:9933"
-          "MN1_PROM_HOST_PORT:9615"
-          "MN2_P2P_HOST_PORT:30334"
-          "MN2_RPC_HOST_PORT:9934"
-          "MN2_PROM_HOST_PORT:9616"
-          "MN3_P2P_HOST_PORT:30335"
-          "MN3_RPC_HOST_PORT:9935"
-          "MN3_PROM_HOST_PORT:9617"
-          "MN4_P2P_HOST_PORT:30336"
-          "MN4_RPC_HOST_PORT:9936"
-          "MN4_PROM_HOST_PORT:9618"
-          "MN5_P2P_HOST_PORT:30337"
-          "MN5_RPC_HOST_PORT:9944"
-          "MN5_PROM_HOST_PORT:9619"
-        )
-        i=0
-        for s in "${specs[@]}"; do
-          var="${s%%:*}"
-          legacy="${s##*:}"
-          if [ "$slot" -ge 1 ]; then
-            port=$((BASE + (slot - 1) * BLOCK + i))
-          else
-            port="$legacy"
-          fi
-          echo "${var}=${port}" >> "$GITHUB_ENV"
-          i=$((i + 1))
-        done
-        if [ "$slot" -ge 1 ]; then
-          echo "COMPOSE_PROJECT_NAME=local-env-r${slot}" >> "$GITHUB_ENV"
-          echo "LOCALENV_NAME_SUFFIX=-r${slot}" >> "$GITHUB_ENV"
-        else
-          echo "COMPOSE_PROJECT_NAME=local-env" >> "$GITHUB_ENV"
-          echo "LOCALENV_NAME_SUFFIX=" >> "$GITHUB_ENV"
-        fi
-        echo "LOCALENV_RUNNER_SLOT=${slot}" >> "$GITHUB_ENV"
-
-    - name: Deploy local environment
-      run: |
-        echo "🔍 Debug: Checking input values..."
-        echo "NODE_IMAGE: ${NODE_IMAGE}"
-        echo "INDEXER_API_IMAGE: ${INDEXER_API_IMAGE}"
-        echo "CHAIN_INDEXER_IMAGE: ${CHAIN_INDEXER_IMAGE}"
-        echo "WALLET_INDEXER_IMAGE: ${WALLET_INDEXER_IMAGE}"
-
-        echo "🚀 Running Earthly command..."
-        # Source .envrc so EARTHLY_CONFIG is set (self-hosted vs default switch).
-        # Without this, earthly falls back to ~/.earthly/config.yml which has a
-        # different settings hash than the other self-hosted jobs and recycles
-        # the shared earthly-buildkitd container, cancelling concurrent builds.
-        . ./.envrc
-        earthly +start-local-env-with-indexer-ci \
-          --NODE_IMAGE="${NODE_IMAGE}" \
-          --INDEXER_API_IMAGE="${INDEXER_API_IMAGE}" \
-          --CHAIN_INDEXER_IMAGE="${CHAIN_INDEXER_IMAGE}" \
-          --WALLET_INDEXER_IMAGE="${WALLET_INDEXER_IMAGE}" \
-          --LOCALENV_RUNNER_SLOT="${LOCALENV_RUNNER_SLOT:-0}"
+    # The WHOLE premerge surface — stack bring-up → verify-finality → e2e suite →
+    # toolkit multi-dest E2E — now runs INSIDE earthly's nested dockerd (+local-env-ci,
+    # needs `-P`). The nested daemon is ephemeral and per-invocation, so there are no
+    # leftover host containers to reclaim and no fixed host ports to collide on — which
+    # is why the caller drops the repo-wide concurrency group. No host-side node/just/npm
+    # setup is needed (it all lives inside the target). Source .envrc so EARTHLY_CONFIG
+    # matches the other self-hosted jobs (else earthly recycles the shared buildkitd).
+    - name: Deploy + test against local environment (nested dockerd)
       shell: bash
       env:
         NODE_IMAGE: ${{ inputs.image }}
+        TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
         INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}
         CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
-
-    # Fails fast if any validator (including unified-storage nodes 4 and 5)
-    # is stuck or panicking — GRANDPA needs 2/3 quorum, so a non-finalizing
-    # validator stalls the network and per-node finality probing surfaces
-    # the regression deterministically.
-    - name: Verify all validators reach finality
-      working-directory: local-environment
-      run: npm run verify-finality:local-env -- --target-block 1 --timeout 300
-      shell: bash
-
-#    - name: Run Indexer E2E Tests
-#      uses: ./.github/actions/reusable-e2e-tests
-#      with:
-#        just-command: indexer-api-e2e
-#        ghcr-password: ${{ inputs.ghcr-password }}
-
-    - name: e2e tests
-      id: e2e-tests
-      # Source .envrc so EARTHLY_CONFIG matches other self-hosted jobs (see
-      # comment on the earlier earthly invocation in this action for why).
-      # Pass this slot's node/ogmios host ports through to the e2e container
-      # (it reaches the host stack via 172.17.0.1:<port>).
       run: |
         . ./.envrc
-        earthly +local-env-e2e \
-          --E2E_NODE_RPC_PORT="${MN1_RPC_HOST_PORT:-9933}" \
-          --E2E_OGMIOS_PORT="${OGMIOS_HOST_PORT:-1337}"
-      shell: bash
-
-    - name: toolkit-multi-dest-e2e
-      id: toolkit-multi-dest-e2e
-      env:
-        TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
-      run: just toolkit-multi-dest-e2e "$TOOLKIT_IMAGE"
-      shell: bash
-
-    - name: Collect Docker logs
-      if: ${{ failure() }}
-      run: |
-        mkdir -p local-environment-logs-initial
-        docker ps -a --format '{{.Names}}' | while read -r line; do
-          echo "======= Collecting logs for container $line ======="
-          docker logs "$line" 2>&1 | tee "local-environment-logs-initial/$line.log" || true
-        done
-      shell: bash
-
-    - name: Upload Docker logs artifact
-      if: ${{ always() }}
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
-      with:
-        name: local-environment-logs-initial
-        path: local-environment-logs-initial/
+        earthly -P +local-env-ci \
+          --NODE_IMAGE="$NODE_IMAGE" \
+          --TOOLKIT_IMAGE="$TOOLKIT_IMAGE" \
+          --INDEXER_API_IMAGE="$INDEXER_API_IMAGE" \
+          --CHAIN_INDEXER_IMAGE="$CHAIN_INDEXER_IMAGE" \
+          --WALLET_INDEXER_IMAGE="$WALLET_INDEXER_IMAGE"
