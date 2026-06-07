@@ -22,24 +22,32 @@
 //! arena — hitting `NoLedgerState`, and worse, racing the recovery writer (the arena is
 //! single-writer; see `warp-ledger-sync-m1.4a-spike.md`).
 //!
-//! [`GatedBlockImport`] wraps the import queue's block import and **holds** `import_block` while
-//! [`RecoveryGate::ledger_recovery_in_progress`] is true, so no block executes against the arena
-//! until recovery is verified. On a full sync the gate is never armed, so this is a pure
-//! passthrough. Recovery does not depend on block import (it fetches over a side protocol from
-//! already-connected peers), so holding the import worker cannot deadlock recovery.
-
-use std::{sync::Arc, time::Duration};
+//! [`GatedBlockImport`] wraps the import queue's block import and, while
+//! [`RecoveryGate::ledger_recovery_in_progress`] is true, **rejects** the import of blocks that
+//! would execute against the arena, with a transient [`ConsensusError::ClientImport`] error so the
+//! sync engine re-requests them once recovery completes.
+//!
+//! Two things are critical and were learned the hard way:
+//! 1. **Reject, don't block.** The import queue has a single worker; an `import_block` that *awaits*
+//!    until recovery would occupy that worker and starve the state-sync target-block import below,
+//!    deadlocking warp (state sync waits on the worker ← held by the gated block ← waits on
+//!    recovery ← waits on state sync). Returning an error frees the worker immediately.
+//! 2. **Never gate the state-sync target block.** `with_state()` is true only for that block (its
+//!    state is *imported*, not executed — no arena access), and state sync must import it *before*
+//!    the monitor can recover the arena. Gating it would deadlock for the same reason.
+//!
+//! On a full sync the gate is never armed, so this is a pure passthrough.
 
 use sc_consensus::{BlockCheckParams, BlockImport, BlockImportParams, ImportResult};
+use sp_consensus::Error as ConsensusError;
 use sp_runtime::traits::Block as BlockT;
 
-use super::{LOG_TARGET, oracle::RecoveryGate};
+use std::sync::Arc;
 
-/// How often to re-check the gate while holding a block import.
-const POLL_INTERVAL: Duration = Duration::from_millis(200);
+use super::oracle::RecoveryGate;
 
-/// Wraps an inner [`BlockImport`], deferring `import_block` until the warp-recovered ledger arena is
-/// verified (see module docs).
+/// Wraps an inner [`BlockImport`], rejecting `import_block` for arena-executing blocks until the
+/// warp-recovered ledger arena is verified (see module docs).
 #[derive(Clone)]
 pub struct GatedBlockImport<Inner> {
 	inner: Inner,
@@ -56,31 +64,27 @@ impl<Inner> GatedBlockImport<Inner> {
 impl<B, Inner> BlockImport<B> for GatedBlockImport<Inner>
 where
 	B: BlockT,
-	Inner: BlockImport<B> + Send + Sync,
+	Inner: BlockImport<B, Error = ConsensusError> + Send + Sync,
 {
-	type Error = Inner::Error;
+	type Error = ConsensusError;
 
 	async fn check_block(&self, block: BlockCheckParams<B>) -> Result<ImportResult, Self::Error> {
 		self.inner.check_block(block).await
 	}
 
 	async fn import_block(&self, block: BlockImportParams<B>) -> Result<ImportResult, Self::Error> {
-		// `with_state()` is true only for the state-sync target block, whose state is *imported*
-		// (`StateAction::ApplyChanges(StorageChanges::Import)`) — no runtime execution, so no arena
-		// access. That import MUST be allowed even while recovery is pending: state sync has to
-		// complete before the monitor can recover the arena (gating it would deadlock —
-		// state-sync waits on import, import waits on `ledger_verified`, which waits on recovery,
-		// which waits on state-sync). Only blocks that *execute* against the arena (post-warp
-		// blocks N+1…, `with_state() == false`) are held until recovery is verified.
+		// Defer only execution-bearing blocks (post-warp blocks). The state-sync target block carries
+		// imported state (`with_state()` true, no runtime execution) and must always be let through —
+		// recovery can't even start until state sync imports it.
 		if !block.with_state() && self.gate.ledger_recovery_in_progress() {
-			log::debug!(
-				target: LOG_TARGET,
-				"Holding block import until the warp-recovered ledger arena is verified"
-			);
-			while self.gate.ledger_recovery_in_progress() {
-				tokio::time::sleep(POLL_INTERVAL).await;
-			}
-			log::debug!(target: LOG_TARGET, "Ledger arena verified; resuming block import");
+			// Return MissingState (not an Err): the ledger arena this block needs to execute isn't
+			// recovered yet. substrate treats MissingState as "obsolete, not bad" — it does NOT drop
+			// the peer and does NOT restart sync, and the block is re-requested by normal sync once
+			// recovery completes. Returning an Err instead maps to `BlockImportError::Other`, which
+			// triggers `chain_sync.restart()` on every deferred block (a restart-storm that churns
+			// peers); awaiting would instead block the single import-queue worker and deadlock the
+			// state-sync target import. MissingState avoids both.
+			return Ok(ImportResult::MissingState);
 		}
 		self.inner.import_block(block).await
 	}
