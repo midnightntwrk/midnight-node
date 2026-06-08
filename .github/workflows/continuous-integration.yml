@@ -1151,6 +1151,22 @@ jobs:
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      # Defensive host-side teardown. The premerge stack runs inside earthly's
+      # nested dockerd (+local-env-ci) and is normally ephemeral, but if a
+      # change or an interrupted run ever leaves a host-side local-env stack for
+      # THIS runner slot, remove it so leaked stacks can't accumulate and fill
+      # the shared self-hosted host's disk (jobs then fail at "Set up job" with
+      # "No space left on device"). Scoped to this slot's compose project
+      # (local-env-r<slot>), so it can never touch the other runners sharing the
+      # host. RUNNER_SLOT is set per slot in the runner's .env; RUNNER_NAME
+      # (e.g. fsn1-runner-01-runner-4) is the fallback.
+      - name: Tear down this slot's local-env stack (defensive)
+        if: always()
+        shell: bash
+        run: |
+          proj="local-env-r${RUNNER_SLOT:-${RUNNER_NAME##*-}}"
+          docker compose -p "$proj" down --volumes --remove-orphans --timeout 20 || true
+
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
