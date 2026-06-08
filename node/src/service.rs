@@ -19,7 +19,9 @@ use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	cfg::midnight_cfg::MidnightCfg,
 	extensions::ExtensionsFactory,
-	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
+	inherent_data::{
+		CreateInherentDataConfig, ProposalCIDP, SlotBlockReferenceTimestamp, VerifierCIDP,
+	},
 	main_chain_follower::DataSources,
 	metrics_push::{MetricsPushConfig, run_metrics_push_task},
 	rpc::{BeefyDeps, GrandpaDeps},
@@ -242,6 +244,7 @@ type MidnightService = sc_service::PartialComponents<
 		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
 		Option<Telemetry>,
 		DataSources,
+		SlotBlockReferenceTimestamp,
 	),
 >;
 
@@ -418,6 +421,8 @@ pub fn new_partial(
 		.map_err(sp_blockchain::Error::from)?;
 
 	let time_source = Arc::new(SystemTimeSource);
+	let block_announce_reference_timestamp =
+		SlotBlockReferenceTimestamp(sc_slot_config.slot_duration);
 	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
 
 	let import_queue = partner_chains_aura_import_queue::import_queue::<
@@ -463,6 +468,7 @@ pub fn new_partial(
 			beefy_rpc_links,
 			telemetry,
 			data_sources,
+			block_announce_reference_timestamp,
 		),
 	};
 
@@ -503,6 +509,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				beefy_rpc_links,
 				mut telemetry,
 				data_sources,
+				block_announce_reference_timestamp,
 			),
 	} = new_partial_components;
 
@@ -565,7 +572,10 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			spawn_essential_handle: task_manager.spawn_essential_handle(),
 			import_queue,
 			block_announce_validator_builder: Some(Box::new(move |_| {
-				Box::new(McHashBlockAnnounceValidator::new(block_announce_data_source))
+				Box::new(McHashBlockAnnounceValidator::new(
+					block_announce_data_source,
+					block_announce_reference_timestamp,
+				))
 			})),
 			warp_sync_config: Some(WarpSyncConfig::WithProvider(warp_sync)),
 			block_relay: None,

@@ -128,6 +128,44 @@ mod validation_tests {
 	}
 
 	#[tokio::test]
+	async fn propose_retries_when_no_stable_block_in_range_and_cardano_is_not_ok() {
+		let slot_duration = SlotDuration::from_millis(1000);
+		let data_source = ProposalTestDataSource { cardano_ok: false };
+
+		let err = McHashInherentDataProvider::new_proposal(
+			mock_header(McBlockHash([1; 32])),
+			&data_source,
+			Slot::from(1),
+			slot_duration,
+		)
+		.await
+		.unwrap_err();
+
+		assert_eq!(
+			err.to_string(),
+			StableBlockUnavailable(Timestamp::new(1000), "Main chain is not OK".into(),)
+				.to_string()
+		);
+	}
+
+	#[tokio::test]
+	async fn propose_fails_when_no_stable_block_in_range_and_cardano_is_ok() {
+		let slot_duration = SlotDuration::from_millis(1000);
+		let data_source = ProposalTestDataSource { cardano_ok: true };
+
+		let err = McHashInherentDataProvider::new_proposal(
+			mock_header(McBlockHash([1; 32])),
+			&data_source,
+			Slot::from(1),
+			slot_duration,
+		)
+		.await
+		.unwrap_err();
+
+		assert_eq!(err.to_string(), StableBlockNotFound(Timestamp::new(1000)).to_string());
+	}
+
+	#[tokio::test]
 	async fn propose_fails_if_parent_mc_state_cannot_be_found() {
 		let mc_block_hash = McBlockHash([2; 32]);
 		let parent_stable_block_hash = McBlockHash([3; 32]);
@@ -152,6 +190,50 @@ mod validation_tests {
 		.await
 		.unwrap_err();
 		assert_eq!(err.to_string(), StableBlockNotFoundByHash(mc_block_hash).to_string());
+	}
+
+	struct ProposalTestDataSource {
+		cardano_ok: bool,
+	}
+
+	#[async_trait::async_trait]
+	impl McHashDataSource for ProposalTestDataSource {
+		async fn get_latest_stable_block_for(
+			&self,
+			reference_timestamp: Timestamp,
+		) -> Result<LatestStableBlockForTimestamp, Box<dyn std::error::Error + Send + Sync>> {
+			Ok(LatestStableBlockForTimestamp::NoStableBlockInRange {
+				max_stable_block_number: McBlockNumber(0),
+				min_allowed_timestamp: Timestamp::new(0),
+				max_allowed_timestamp: Timestamp::new(0),
+				reference_timestamp,
+			})
+		}
+
+		async fn get_stable_block_for(
+			&self,
+			_hash: McBlockHash,
+			_reference_timestamp: Timestamp,
+		) -> Result<StableBlockForHash, Box<dyn std::error::Error + Send + Sync>> {
+			unreachable!()
+		}
+
+		async fn get_block_by_hash(
+			&self,
+			_hash: McBlockHash,
+		) -> Result<BlockByHash, Box<dyn std::error::Error + Send + Sync>> {
+			unreachable!()
+		}
+
+		async fn is_cardano_tip_fresh(
+			&self,
+		) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+			unreachable!()
+		}
+
+		async fn is_cardano_ok(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+			Ok(self.cardano_ok)
+		}
 	}
 
 	pub fn mock_header(mc_hash: McBlockHash) -> Header {
