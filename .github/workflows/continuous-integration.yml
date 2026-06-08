@@ -1151,22 +1151,11 @@ jobs:
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      # Defensive host-side teardown. The premerge stack runs inside earthly's
-      # nested dockerd (+local-env-ci) and is normally ephemeral, but if a
-      # change or an interrupted run ever leaves a host-side local-env stack for
-      # THIS runner slot, remove it so leaked stacks can't accumulate and fill
-      # the shared self-hosted host's disk (jobs then fail at "Set up job" with
-      # "No space left on device"). Scoped to this slot's compose project
-      # (local-env-r<slot>), so it can never touch the other runners sharing the
-      # host. RUNNER_SLOT is set per slot in the runner's .env; RUNNER_NAME
-      # (e.g. fsn1-runner-01-runner-4) is the fallback.
-      #
-      # Removal is by docker compose label rather than `docker compose down`:
-      # this step has no compose file on its cwd (the repo root), and we want a
-      # file-independent teardown that is guaranteed to drop both the containers
-      # (where the cardano chain data lives, in the writable layers) and the
-      # named volumes, identified purely by the project label. Force `rm -f`
-      # also avoids the graceful-SIGTERM stop hanging on cardano-node/db-sync.
+      # Defensive cleanup of an orphaned local-env stack for this runner slot, so
+      # leaked stacks can't accumulate and fill the shared self-hosted host disk.
+      # Scoped to this slot's compose project (local-env-r<slot>) so it never
+      # touches other runners on the host. RUNNER_SLOT comes from the runner .env;
+      # RUNNER_NAME (e.g. fsn1-runner-01-runner-4) is the fallback.
       - name: Tear down this slot's local-env stack (defensive)
         if: always()
         shell: bash
