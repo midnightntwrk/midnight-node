@@ -140,7 +140,7 @@ where
 			.ok_or(HandleError::NoStateKey)?;
 
 		let blob = midnight_node_ledger::serialize_ledger_snapshot(self.unified, &state_key)
-			.map_err(|e| HandleError::Serialize(format!("{e:?}")))?;
+			.map_err(HandleError::Serialize)?;
 		log::debug!(
 			target: LOG_TARGET,
 			"Serialized ledger snapshot for {target:?}: {} bytes",
