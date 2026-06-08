@@ -188,7 +188,9 @@ use std::{error::Error, ops::Deref};
 mod test;
 
 mod block_announce_validator;
+mod block_reference_timestamp;
 pub use block_announce_validator::McHashBlockAnnounceValidator;
+pub use block_reference_timestamp::{BlockReferenceTimestamp, SlotBasedBlockReferenceTimestamp};
 
 /// Inherent identifier under which the main chain block reference is provided
 ///
@@ -278,7 +280,7 @@ pub enum LatestStableBlockForTimestamp {
 		/// Why local Cardano data cannot support a final decision yet.
 		reason: LocalDataUnavailableReason,
 	},
-	/// Local Cardano observability is recent enough, but no stable block fits the timestamp range.
+	/// No stable block in the local Cardano view fits the timestamp range.
 	NoStableBlockInRange {
 		/// Highest stable Cardano block number considered for this lookup.
 		max_stable_block_number: McBlockNumber,
@@ -336,7 +338,7 @@ pub enum StableBlockForHash {
 /// Result of querying a Cardano block by hash without applying timestamp or stability checks.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BlockByHash {
-	/// The block was found.
+	/// The block was found in local Cardano observability.
 	Found(MainchainBlock),
 	/// Local Cardano observability could not perform the lookup.
 	LocalDataUnavailable {
@@ -447,13 +449,17 @@ pub trait McHashDataSource {
 		reference_timestamp: Timestamp,
 	) -> Result<StableBlockForHash, Box<dyn std::error::Error + Send + Sync>>;
 
-	/// Find block by hash.
+	/// Find a Cardano block by hash without applying stability or timestamp checks.
+	///
+	/// This answers only whether the hash is present in local Cardano observability.
+	///
 	/// # Arguments
 	/// * `hash` - the hash of the block
 	///
 	/// # Returns
-	/// * `Some(block)` - the block with given hash
-	/// * `None` - no block with the given hash was found
+	/// * [BlockByHash::Found] - the block exists locally
+	/// * [BlockByHash::NotFound] - the hash was not found locally
+	/// * [BlockByHash::LocalDataUnavailable] - local observability could not answer yet
 	async fn get_block_by_hash(
 		&self,
 		hash: McBlockHash,
@@ -467,10 +473,14 @@ pub trait McHashDataSource {
 	/// hints that local observability lags.
 	async fn is_cardano_tip_fresh(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
 
-	/// Checks whether our view of the main chain meets Praos chain-density requirements:
-	/// at least `active_slots_coeff / 3` of the latest `security_parameter` blocks must be
-	/// observed in the allowed time window. Unlike [Self::is_cardano_tip_fresh] this is
-	/// not a heuristic.
+	/// Checks whether our view of the main chain meets Praos chain-density requirements.
+	///
+	/// Over the latest `security_parameter` blocks, Praos requires chain density of at
+	/// least one third of the expected density. That requirement is enforced indirectly:
+	/// we look up the block `security_parameter` below tip and verify its timestamp
+	/// falls within the allowed time window relative to current wall-clock time.
+	///
+	/// Unlike [Self::is_cardano_tip_fresh], this is not a heuristic.
 	async fn is_cardano_ok(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>;
 }
 
@@ -496,11 +506,7 @@ impl McHashInherentDataProvider {
 	{
 		let slot_start_timestamp =
 			slot.timestamp(slot_duration).ok_or(McHashInherentError::SlotTooBig)?;
-		let mc_block = data_source
-			.get_latest_stable_block_for(slot_start_timestamp)
-			.await
-			.map_err(McHashInherentError::DataSourceError)?
-			.into_result(slot_start_timestamp)?;
+		let mc_block = latest_stable_block_for_proposal(data_source, slot_start_timestamp).await?;
 
 		match McHashInherentDigest::value_from_digest(&parent_header.digest().logs).ok() {
 			// If parent block references some MC state, it is illegal to propose older state
@@ -683,21 +689,39 @@ impl McHashInherentDataProvider {
 	}
 }
 
-trait LatestStableBlockForTimestampResultExt {
-	fn into_result(self, timestamp: Timestamp) -> Result<MainchainBlock, McHashInherentError>;
-}
-
-impl LatestStableBlockForTimestampResultExt for LatestStableBlockForTimestamp {
-	fn into_result(self, timestamp: Timestamp) -> Result<MainchainBlock, McHashInherentError> {
-		match self {
-			LatestStableBlockForTimestamp::Found(block) => Ok(block),
-			LatestStableBlockForTimestamp::LocalDataUnavailable { reason } => {
-				Err(McHashInherentError::StableBlockUnavailable(timestamp, reason.to_string()))
-			},
-			LatestStableBlockForTimestamp::NoStableBlockInRange { .. } => {
-				Err(StableBlockNotFound(timestamp))
-			},
-		}
+async fn latest_stable_block_for_proposal(
+	data_source: &(dyn McHashDataSource + Send + Sync),
+	slot_start_timestamp: Timestamp,
+) -> Result<MainchainBlock, McHashInherentError> {
+	match data_source
+		.get_latest_stable_block_for(slot_start_timestamp)
+		.await
+		.map_err(McHashInherentError::DataSourceError)?
+	{
+		LatestStableBlockForTimestamp::Found(block) => Ok(block),
+		LatestStableBlockForTimestamp::LocalDataUnavailable { reason } => Err(
+			McHashInherentError::StableBlockUnavailable(slot_start_timestamp, reason.to_string()),
+		),
+		LatestStableBlockForTimestamp::NoStableBlockInRange { .. } => {
+			if data_source
+				.is_cardano_ok()
+				.await
+				.map_err(McHashInherentError::DataSourceError)?
+			{
+				log::info!(
+					"No stable Cardano block in range for proposal timestamp {slot_start_timestamp:?} while Cardano is OK."
+				);
+				Err(StableBlockNotFound(slot_start_timestamp))
+			} else {
+				log::error!(
+					"No stable Cardano block in range for proposal timestamp {slot_start_timestamp:?} while local Cardano view is not OK."
+				);
+				Err(McHashInherentError::StableBlockUnavailable(
+					slot_start_timestamp,
+					"Main chain is not OK".into(),
+				))
+			}
+		},
 	}
 }
 

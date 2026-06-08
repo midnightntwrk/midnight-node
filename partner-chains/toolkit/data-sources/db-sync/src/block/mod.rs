@@ -131,9 +131,12 @@ impl BlockDataSourceImpl {
 		Ok(is_block_time_valid)
 	}
 
-	/// Tests if our Cardano view matches Praos chain-density requirements: at least one
-	/// block must exist in the latest `security_parameter` blocks within the allowed
-	/// time window relative to current wall-clock time.
+	/// Checks whether our Cardano view meets Praos chain-density requirements.
+	///
+	/// Over the latest `security_parameter` blocks, Praos requires chain density of at
+	/// least one third of the expected density. That requirement is enforced indirectly:
+	/// we look up the block `security_parameter` below tip and verify its timestamp
+	/// falls within the allowed time window relative to current wall-clock time.
 	///
 	/// Unlike [Self::is_cardano_tip_fresh], this is not a heuristic.
 	pub async fn is_cardano_ok(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
@@ -149,6 +152,11 @@ impl BlockDataSourceImpl {
 	/// Returns the latest _stable_ Cardano block from the Db-Sync database that is within
 	/// acceptable bounds from `reference_timestamp`, accounting for the additional stability
 	/// offset configured by [block_stability_margin][Self::block_stability_margin].
+	///
+	/// When no block fits the timestamp window, this returns [LatestStableBlockForTimestamp::NoStableBlockInRange]
+	/// rather than inferring local db-sync lag from tip age. The tip-age heuristic
+	/// ([Self::is_local_cardano_tip_recent]) is reserved for hash lookups during verification,
+	/// where another signal already suggests observability may be incomplete.
 	pub async fn get_latest_stable_block_for(
 		&self,
 		reference_timestamp: Timestamp,
@@ -176,19 +184,6 @@ impl BlockDataSourceImpl {
 		let block = self.get_latest_block(stable, reference_timestamp).await?;
 		Ok(match block {
 			Some(block) => LatestStableBlockForTimestamp::Found(block.into()),
-			None if !self.is_local_cardano_tip_recent(&latest, reference_timestamp) => {
-				LatestStableBlockForTimestamp::LocalDataUnavailable {
-					reason: LocalDataUnavailableReason::LocalTipTooOld {
-						latest_block: latest.into(),
-						max_allowed_timestamp: Self::db_timestamp_to_sp_timestamp(
-							self.max_allowed_block_time(reference_timestamp),
-						),
-						reference_timestamp: Self::db_timestamp_to_sp_timestamp(
-							reference_timestamp,
-						),
-					},
-				}
-			},
 			None => LatestStableBlockForTimestamp::NoStableBlockInRange {
 				max_stable_block_number: McBlockNumber(stable.0),
 				min_allowed_timestamp: Self::db_timestamp_to_sp_timestamp(
@@ -213,7 +208,11 @@ impl BlockDataSourceImpl {
 		self.get_stable_block_by_hash(hash, reference_timestamp).await
 	}
 
-	/// Finds a block by its `hash` and returns its info
+	/// Finds a block by its `hash` and returns its info.
+	///
+	/// Unlike [Self::get_stable_block_for], this does not check whether the block is stable or
+	/// whether its timestamp falls within the allowable window for a Partner Chain reference.
+	/// Callers that need import-time MC reference validation must use `get_stable_block_for`.
 	pub async fn get_block_by_hash(
 		&self,
 		hash: McBlockHash,
@@ -603,9 +602,6 @@ impl BlockDataSourceImpl {
 			});
 		}
 		if !is_time_valid {
-			if !is_local_tip_recent {
-				return Err(StableBlockByHashError::LocalTipTooOld { latest_block });
-			}
 			return Err(StableBlockByHashError::TimestampOutOfRange {
 				hash,
 				block_time: block.time,

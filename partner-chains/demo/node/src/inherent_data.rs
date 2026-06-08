@@ -11,7 +11,9 @@ use partner_chains_demo_runtime::{
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
-use sidechain_mc_hash::{McHashDataSource, McHashInherentDataProvider as McHashIDP};
+use sidechain_mc_hash::{
+	BlockReferenceTimestamp, McHashDataSource, McHashInherentDataProvider as McHashIDP,
+};
 use sidechain_slots::ScSlotConfig;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
@@ -173,6 +175,19 @@ where
 		.await?;
 
 		Ok((timestamp, ariadne_data_provider, bridge))
+	}
+}
+
+/// Derives MC hash reference timestamps from the block header predigest slot.
+#[derive(Clone, Copy)]
+pub struct SlotBlockReferenceTimestamp(pub SlotDuration);
+
+impl BlockReferenceTimestamp<<Block as BlockT>::Header> for SlotBlockReferenceTimestamp {
+	fn reference_timestamp(&self, header: &<Block as BlockT>::Header) -> Option<Timestamp> {
+		slot_from_predigest(header)
+			.ok()
+			.flatten()
+			.and_then(|slot| slot.timestamp(self.0))
 	}
 }
 

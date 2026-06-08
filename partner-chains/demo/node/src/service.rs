@@ -1,7 +1,9 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
 use crate::data_sources::DataSources;
-use crate::inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP};
+use crate::inherent_data::{
+	CreateInherentDataConfig, ProposalCIDP, SlotBlockReferenceTimestamp, VerifierCIDP,
+};
 use crate::rpc::GrandpaDeps;
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use partner_chains_db_sync_data_sources::McFollowerMetrics;
@@ -93,6 +95,7 @@ pub fn new_partial(
 			Option<Telemetry>,
 			DataSources,
 			Option<McFollowerMetrics>,
+			SlotBlockReferenceTimestamp,
 		),
 	>,
 	ServiceError,
@@ -158,6 +161,8 @@ pub fn new_partial(
 	let time_source = Arc::new(SystemTimeSource);
 	let epoch_config = MainchainEpochConfig::read_from_env()
 		.map_err(|err| ServiceError::Application(err.into()))?;
+	let block_announce_reference_timestamp =
+		SlotBlockReferenceTimestamp(sc_slot_config.slot_duration);
 	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
 
 	let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
@@ -214,7 +219,14 @@ pub fn new_partial(
 		keystore_container,
 		select_chain,
 		transaction_pool,
-		other: (grandpa_block_import, grandpa_link, telemetry, data_sources, mc_follower_metrics),
+		other: (
+			grandpa_block_import,
+			grandpa_link,
+			telemetry,
+			data_sources,
+			mc_follower_metrics,
+			block_announce_reference_timestamp,
+		),
 	})
 }
 
@@ -246,7 +258,15 @@ pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as 
 		keystore_container,
 		select_chain,
 		transaction_pool,
-		other: (block_import, grandpa_link, mut telemetry, data_sources, _),
+		other:
+			(
+				block_import,
+				grandpa_link,
+				mut telemetry,
+				data_sources,
+				_,
+				block_announce_reference_timestamp,
+			),
 	} = new_partial(&config)?;
 
 	let metrics = Network::register_notification_metrics(config.prometheus_registry());
@@ -285,7 +305,10 @@ pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as 
 			spawn_essential_handle: task_manager.spawn_essential_handle(),
 			import_queue,
 			block_announce_validator_builder: Some(Box::new(move |_| {
-				Box::new(McHashBlockAnnounceValidator::new(block_announce_data_source))
+				Box::new(McHashBlockAnnounceValidator::new(
+					block_announce_data_source,
+					block_announce_reference_timestamp,
+				))
 			})),
 			warp_sync_config: Some(WarpSyncConfig::WithProvider(warp_sync)),
 			block_relay: None,

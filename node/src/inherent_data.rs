@@ -32,9 +32,8 @@ use midnight_primitives_federated_authority_observation::FederatedAuthorityObser
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
-use sidechain_mc_hash::McHashDataSource;
 use sidechain_mc_hash::McHashInherentDataProvider as McHashIDP;
-use sidechain_mc_hash::McHashInherentError;
+use sidechain_mc_hash::{BlockReferenceTimestamp, McHashDataSource};
 use sidechain_slots::ScSlotConfig;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
@@ -355,6 +354,19 @@ where
 		})?;
 
 		Ok((timestamp, ariadne_data_provider, cnight_observation, federated_authority, bridge))
+	}
+}
+
+/// Derives MC hash reference timestamps from the block header predigest slot.
+#[derive(Clone, Copy)]
+pub struct SlotBlockReferenceTimestamp(pub SlotDuration);
+
+impl BlockReferenceTimestamp<<Block as BlockT>::Header> for SlotBlockReferenceTimestamp {
+	fn reference_timestamp(&self, header: &<Block as BlockT>::Header) -> Option<Timestamp> {
+		slot_from_predigest(header)
+			.ok()
+			.flatten()
+			.and_then(|slot| slot.timestamp(self.0))
 	}
 }
 

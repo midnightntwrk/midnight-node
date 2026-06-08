@@ -7,9 +7,7 @@ use sidechain_domain::mainchain_epoch::{
 	Duration, MainchainEpochConfig, Timestamp as MainchainEpochTimestamp,
 };
 use sidechain_domain::{McBlockHash, McBlockNumber, McEpochNumber, McSlotNumber};
-use sidechain_mc_hash::{
-	LatestStableBlockForTimestamp, LocalDataUnavailableReason, StableBlockForHash,
-};
+use sidechain_mc_hash::{LatestStableBlockForTimestamp, StableBlockForHash};
 use sp_timestamp::Timestamp;
 use sqlx::PgPool;
 use std::str::FromStr;
@@ -202,14 +200,15 @@ async fn test_get_latest_stable_block_with_stability_margin(pool: PgPool) {
 		.unwrap();
 	assert_eq!(
 		block,
-		LatestStableBlockForTimestamp::LocalDataUnavailable {
-			reason: LocalDataUnavailableReason::LocalTipTooOld {
-				latest_block: block_5(),
-				max_allowed_timestamp: Timestamp::new(
-					ts_too_high_for_block_2 - min_slot_boundary_as_seconds * 1000
-				),
-				reference_timestamp: Timestamp::new(ts_too_high_for_block_2),
-			},
+		LatestStableBlockForTimestamp::NoStableBlockInRange {
+			max_stable_block_number: McBlockNumber(2),
+			min_allowed_timestamp: Timestamp::new(
+				ts_too_high_for_block_2 - max_slot_boundary_as_seconds * 1000
+			),
+			max_allowed_timestamp: Timestamp::new(
+				ts_too_high_for_block_2 - min_slot_boundary_as_seconds * 1000
+			),
+			reference_timestamp: Timestamp::new(ts_too_high_for_block_2),
 		}
 	);
 }
