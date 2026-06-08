@@ -1106,6 +1106,19 @@ cook-build:
         SAVE IMAGE --push $DEPS_CACHE_REPO:$DEPS_TAG
     END
 
+# seed-deps computes DEPS_TAG and force-pushes the build-flavor cook image.
+# Used by the seed-deps-cache workflow_dispatch; not part of normal CI.
+# earthly --no-cache --push +seed-deps --ALLOW_CACHE_PUSH=true
+seed-deps:
+    FROM +prep-no-copy
+    COPY +planner/recipe.json /recipe.json
+    COPY rust-toolchain.toml /rust-toolchain.toml
+    ARG NATIVEARCH
+    ARG RUST_VERSION=$(grep '^channel' /rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+    ARG RECIPE_HASH=$(sha256sum /recipe.json | cut -c1-16)
+    ARG DEPS_TAG=${RUST_VERSION}-${NATIVEARCH}-build-${RECIPE_HASH}
+    BUILD +cook-build --DEPS_TAG=$DEPS_TAG
+
 build-prepare:
     # Resolve the release dependency cache: pull the pre-cooked image if it exists,
     # else cook it locally (+cook-build). The cook is the expensive layer; this

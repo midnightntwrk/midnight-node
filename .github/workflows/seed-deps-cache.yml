@@ -53,7 +53,7 @@ jobs:
           mkdir -p "$HOME/.cargo"
           printf '[net]\ngit-fetch-with-cli = true\n' >> "$HOME/.cargo/config"
           . ./.envrc
-          earthly --no-cache --push +cook-build --ALLOW_CACHE_PUSH=true
+          earthly --no-cache --push +seed-deps --ALLOW_CACHE_PUSH=true
 
   seed-amd64:
     name: Cook and push deps (amd64)
@@ -97,4 +97,4 @@ jobs:
           mkdir -p "$HOME/.cargo"
           printf '[net]\ngit-fetch-with-cli = true\n' >> "$HOME/.cargo/config"
           . ./.envrc
-          earthly --no-cache --push +cook-build --ALLOW_CACHE_PUSH=true
+          earthly --no-cache --push +seed-deps --ALLOW_CACHE_PUSH=true
