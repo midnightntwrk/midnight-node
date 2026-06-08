@@ -22,7 +22,7 @@ pub mod ledger_9;
 /// node that drops or renames one of these methods can no longer instantiate those deployed
 /// runtimes — which is exactly what happened in #1604 (it removed
 /// `construct_distribute_treasury_system_tx` and silently made the ledger_9 build unable to boot any
-/// existing ledger_8 network; see `ledger8-hostfn-compat-PROGRESS.md`).
+/// existing ledger_8 network).
 ///
 /// This golden test fails loudly if the frozen interface's method set changes, forcing a conscious,
 /// reviewed decision. **New** host functions must be added to the newest (`ledger_9`) interface only;
@@ -80,7 +80,7 @@ mod frozen_interface_guard {
 			got, expected,
 			"\n`Ledger8Bridge` is a FROZEN host interface: deployed ledger_8 runtimes import these \
 			 exact symbols and a node that lacks one cannot instantiate them (this breaks the \
-			 ledger_8 -> ledger_9 upgrade — see ledger8-hostfn-compat-PROGRESS.md). If you are ADDING \
+			 ledger_8 -> ledger_9 upgrade). If you are ADDING \
 			 a host function, add it to the newest (ledger_9) interface instead. If you genuinely \
 			 must change the frozen set, update this golden list in the same reviewed commit."
 		);

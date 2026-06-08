@@ -429,7 +429,7 @@ pub trait Ledger8Bridge {
 		}
 	}
 
-	// Restored for backwards-compatibility (removed by #1604; see `ledger8-hostfn-compat-PROGRESS.md`).
+	// Restored for backwards-compatibility (removed by #1604).
 	// The deployed ledger_8 runtime imports this symbol
 	// (`ext_ledger_8_bridge_construct_distribute_treasury_system_tx_version_1`); removing it from this
 	// frozen interface meant our ledger_9 binary could not instantiate the ledger_8 runtime, blocking
