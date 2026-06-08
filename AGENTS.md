@@ -89,6 +89,19 @@ CFG_PRESET=dev ./target/release/midnight-node
 ```
 Ports: P2P 30333, RPC 9944
 
+**Compiling contracts locally (compactc):** The Compact compiler source is vendored
+as the `compact/` git submodule (pinned to the 0.31.0 release commit). Build it once
+with nix and expose it to toolkit-js:
+```bash
+git submodule update --init compact
+just compactc   # builds compactc, writes the COMPACT_HOME wrapper
+```
+`.envrc` then exports `COMPACT_HOME`, so `cd util/toolkit-js && npm run compact` uses
+the locally built compiler instead of downloading the prebuilt binary. Re-run
+`just compactc` after bumping the submodule. First build compiles `zkir` from source
+unless you have nix `trusted-users` access to the IOG cache (`cache.iog.io`). CI is
+unaffected and still downloads the prebuilt binary.
+
 **Debugging ledger issues:** Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.
 
 **Recommended tools:**

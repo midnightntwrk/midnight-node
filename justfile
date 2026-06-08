@@ -1,6 +1,11 @@
 # Justfile for Midnight Node
 # This Justfile is used to define tasks for building, testing, and running the Midnight Node.
 
+# Build compactc from the `compact/` submodule and expose it to toolkit-js via
+# COMPACT_HOME (run once, and after bumping the submodule).
+compactc:
+  @scripts/build-compactc.sh
+
 toolkit-update-ledger-parameters-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-update-ledger-parameters-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Update Ledger Parameters E2E test completed successfully."
