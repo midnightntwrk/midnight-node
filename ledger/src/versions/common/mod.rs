@@ -1180,6 +1180,18 @@ where
 		let system_tx = super::system_tx::unlock_to_treasury_system_tx(amount)?;
 		api.tagged_serialize(&system_tx)
 	}
+
+	// Restored for ledger_8 host-interface backwards-compatibility (see
+	// `ledger8-hostfn-compat-PROGRESS.md`). Removed by #1604 "Ledger9 with no migration", which broke
+	// instantiation of the deployed ledger_8 runtime (it still imports
+	// `ext_ledger_8_bridge_construct_distribute_treasury_system_tx_version_1`). Kept byte-identical to
+	// the pre-#1604 implementation so the ledger_8 compilation reproduces the exact same system tx.
+	// Only the `Ledger8Bridge` host trait calls this; it is dead (but valid) for the other versions.
+	pub fn construct_distribute_treasury_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let system_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
+		api.tagged_serialize(&system_tx)
+	}
 }
 
 #[cfg(feature = "std")]

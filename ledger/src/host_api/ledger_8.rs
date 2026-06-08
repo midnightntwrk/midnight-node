@@ -429,6 +429,22 @@ pub trait Ledger8Bridge {
 		}
 	}
 
+	// Restored for backwards-compatibility (removed by #1604; see `ledger8-hostfn-compat-PROGRESS.md`).
+	// The deployed ledger_8 runtime imports this symbol
+	// (`ext_ledger_8_bridge_construct_distribute_treasury_system_tx_version_1`); removing it from this
+	// frozen interface meant our ledger_9 binary could not instantiate the ledger_8 runtime, blocking
+	// the ledger_8 -> ledger_9 upgrade. Restored verbatim to regenerate the exact same symbol.
+	fn construct_distribute_treasury_system_tx(
+		&mut self,
+		amount: PassFatPointerAndDecode<u128>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::construct_distribute_treasury_system_tx(amount)
+		} else {
+			Bridge::<Signature, DbSeparate>::construct_distribute_treasury_system_tx(amount)
+		}
+	}
+
 	/// Ensures the correct ledger storage is initialized for this runtime version.
 	/// Handles rollback: if new version's storage is initialized but we need this version's storage,
 	/// drops new version's storage and initializes normal storage.
