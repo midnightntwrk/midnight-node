@@ -37,7 +37,7 @@ mod frozen_interface_guard {
 	fn trait_method_names(src: &str) -> BTreeSet<String> {
 		src.lines()
 			.filter_map(|line| line.strip_prefix("\tfn "))
-			.filter_map(|rest| rest.split(|c: char| c == '(' || c == '<' || c == ' ').next())
+			.filter_map(|rest| rest.split(['(', '<', ' ']).next())
 			.filter(|name| !name.is_empty())
 			.map(|name| name.to_string())
 			.collect()
