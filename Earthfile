@@ -20,11 +20,7 @@ ARG --global CACHE_KEY=local
 # by default so untrusted (PR) builds can't poison the cache — only trusted CI runs
 # on `main` flip ALLOW_CACHE_PUSH=true. See +cook-build / +build-prepare.
 ARG --global DEPS_CACHE_REPO=ghcr.io/midnightntwrk/midnight-node-deps
-# TODO(before-merge): flip ALLOW_CACHE_PUSH back to false. Temporarily true on
-# this PR to populate the (newly-correct midnightntwrk) deps cache so we can
-# verify pull-on-hit works. Leaving it true on main would let untrusted PR
-# builds poison the shared cache.
-ARG --global ALLOW_CACHE_PUSH=true
+ARG --global ALLOW_CACHE_PUSH=false
 
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
