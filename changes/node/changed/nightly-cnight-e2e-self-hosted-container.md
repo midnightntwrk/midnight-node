@@ -33,5 +33,11 @@ node + runtime wasm, a heavier dep set than this job). Apt caches are
 cleared after install so the ~4 h cargo build has disk headroom on
 the runner.
 
+A final `if: always()` step chowns the workspace back to the runner
+user before the job exits. Without it, host-mode workflows landing on
+the same self-hosted runner afterwards would fail to clean up the
+root-owned `target/` and checkout artefacts the container leaves
+behind.
+
 PR: https://github.com/midnightntwrk/midnight-node/pull/1658
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1655

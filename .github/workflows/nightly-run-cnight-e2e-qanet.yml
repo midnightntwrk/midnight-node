@@ -100,6 +100,19 @@ jobs:
         run: |
           cargo test --release --test e2e_tests --no-default-features --features "$E2E_FEATURE" -- cnight::observation:: --no-capture --test-threads 16
 
+      # `container:` runs as root, so the bind-mounted workspace (and
+      # target/) end up UID 0. Host-mode workflows on this self-hosted
+      # runner pool (see continuous-integration.yml, main.yml) then can't
+      # rm/replace these files during their own checkout. Chown back to
+      # whoever owns the workspace's parent directory — that's the runner
+      # user, by definition. `if: always()` so cancelled/failed jobs
+      # don't poison the runner either.
+      - name: Restore workspace ownership for next runner job
+        if: always()
+        shell: bash
+        run: |
+          chown -R --reference="$(dirname "$GITHUB_WORKSPACE")" "$GITHUB_WORKSPACE"
+
       - name: Notify Slack
         if: always()
         env:
