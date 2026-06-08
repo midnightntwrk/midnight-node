@@ -1160,12 +1160,22 @@ jobs:
       # (local-env-r<slot>), so it can never touch the other runners sharing the
       # host. RUNNER_SLOT is set per slot in the runner's .env; RUNNER_NAME
       # (e.g. fsn1-runner-01-runner-4) is the fallback.
+      #
+      # Removal is by docker compose label rather than `docker compose down`:
+      # this step has no compose file on its cwd (the repo root), and we want a
+      # file-independent teardown that is guaranteed to drop both the containers
+      # (where the cardano chain data lives, in the writable layers) and the
+      # named volumes, identified purely by the project label. Force `rm -f`
+      # also avoids the graceful-SIGTERM stop hanging on cardano-node/db-sync.
       - name: Tear down this slot's local-env stack (defensive)
         if: always()
         shell: bash
         run: |
           proj="local-env-r${RUNNER_SLOT:-${RUNNER_NAME##*-}}"
-          docker compose -p "$proj" down --volumes --remove-orphans --timeout 20 || true
+          docker ps -aq --filter "label=com.docker.compose.project=${proj}" \
+            | xargs -r docker rm -f || true
+          docker volume ls -q --filter "label=com.docker.compose.project=${proj}" \
+            | xargs -r docker volume rm -f || true
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
