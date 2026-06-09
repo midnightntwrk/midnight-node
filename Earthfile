@@ -698,20 +698,10 @@ node-ci-image-single-platform:
           -o /usr/local/lib/docker/cli-plugins/docker-compose && \
         chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-    # Download compactc compiler from public midnightntwrk/compact releases
+    # COMPACTC_VERSION is baked into the CI image tag below. compactc itself is
+    # built from the `compact/` submodule via the +compactc-bundle target (not
+    # downloaded here anymore).
     COPY COMPACTC_VERSION .
-    RUN set -e && \
-        ARCH=$(uname -m) && \
-        if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
-        VERSION=$(cat COMPACTC_VERSION) && \
-        ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip" && \
-        URL="https://github.com/midnightntwrk/compact/releases/download/compactc-v${VERSION}/${ASSET}" && \
-        mkdir -p /compactc-bin && \
-        echo "Downloading compactc: ${URL}" && \
-        curl -fsSL "${URL}" -o /tmp/compactc.zip && \
-        unzip /tmp/compactc.zip -d /compactc-bin && \
-        chmod +x /compactc-bin/compactc && \
-        rm /tmp/compactc.zip
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
@@ -745,8 +735,6 @@ prep-no-copy:
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
 
-    SAVE ARTIFACT /compactc-bin
-
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
@@ -762,6 +750,38 @@ prep:
     #   --target x86_64-unknown-linux-gnu \
     #   --target wasm32v1-none
     SAVE IMAGE --cache-hint
+
+# Builds compactc from the `compact/` submodule via nix (reusing
+# scripts/build-compactc.sh) and emits a self-contained COMPACT_HOME directory
+# (compactc + version-locked zkir/zkir-v3 + wrapper). This replaces the
+# prebuilt-binary download. Running nix inside the build keeps the Chez/Scheme
+# toolchain hidden; the IOG binary cache provides zkir prebuilt so it is not
+# compiled from source.
+compactc-bundle:
+    # TODO: pin to a digest/tag once first green CI confirms it works.
+    FROM nixos/nix:latest
+    # Append (don't clobber) so the base image's defaults (incl. cache.nixos.org)
+    # survive. `extra-` merges onto those defaults. sandbox=false because buildkit/
+    # podman containers usually lack the user namespaces nix's sandbox needs.
+    RUN mkdir -p /etc/nix && { \
+        echo "extra-experimental-features = nix-command flakes"; \
+        echo "sandbox = false"; \
+        echo "extra-substituters = https://cache.iog.io"; \
+        echo "extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="; \
+      } >> /etc/nix/nix.conf
+    COPY compact /work/compact
+    COPY scripts/build-compactc.sh /work/scripts/build-compactc.sh
+    WORKDIR /work
+    # path: ref because the COPY'd submodule has no `.git` in the build context.
+    RUN COMPACTC_FLAKE_REF=path:/work/compact ./scripts/build-compactc.sh
+    # Dereference the nix store output into a self-contained bundle.
+    RUN store="$(readlink -f .compact-home/result)" && \
+        mkdir -p /compact-home/bin /compact-home/lib && \
+        cp -L "$store"/bin/* /compact-home/bin/ && \
+        cp -L "$store"/lib/* /compact-home/lib/ && \
+        printf '#!/usr/bin/env bash\nexport PATH=/compact-home/lib:$PATH\nexec /compact-home/bin/compactc.bin "$@"\n' > /compact-home/compactc && \
+        chmod +x /compact-home/compactc
+    SAVE ARTIFACT /compact-home
 
 # Prepares Node Toolkit (JS) in time for testing
 toolkit-js-prep:
@@ -784,16 +804,23 @@ toolkit-js-prep:
     COPY util/toolkit-js toolkit-js
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
-    ENV COMPACT_REPO=midnightntwrk/compact
-    ENV COMPACT_TAG_PREFIX=compactc-v
+
+    # compactc is built from the `compact/` submodule and exposed via COMPACT_HOME,
+    # so `fetch-compactc` skips the download and `run-compactc` uses the
+    # source-built compiler.
+    COPY +compactc-bundle/compact-home /compact-home
+    ENV COMPACT_HOME=/compact-home
+    # Fail loudly if the pinned submodule's compiler does not match COMPACTC_VERSION
+    # (also the portability check: this is the first run of the bundle outside nix).
+    RUN got="$(/compact-home/compactc --version)" && \
+        test "$got" = "$COMPACTC_VERSION" || \
+        { echo "compactc $got != COMPACTC_VERSION $COMPACTC_VERSION — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
 
     WORKDIR /toolkit-js
     RUN npm ci
     RUN npm run build
-    # Compile compact contracts (fetch-compactc downloads compactc via COMPACTC_VERSION)
-    # GITHUB_TOKEN is passed as an Earthly secret in CI to avoid GitHub API rate limits.
-    # Defaulting to empty allows local builds without the secret (at risk of rate-limiting).
-    RUN --secret GITHUB_TOKEN= npm run compact
+    # Compile compact contracts using the submodule-built compactc (via COMPACT_HOME).
+    RUN npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
@@ -1000,6 +1027,10 @@ build-test-toolkit:
 
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
+    # compactc (from the compact submodule) — contract integration tests compile
+    # contracts at runtime via `run-compactc`, which uses COMPACT_HOME.
+    COPY +compactc-bundle/compact-home /compact-home
+    ENV COMPACT_HOME=/compact-home
 
     # Run Midnight Node Toolkit package tests only (requires toolkit-js)
     COPY scripts/test-toolkit.sh /test-toolkit.sh
@@ -1281,6 +1312,10 @@ toolkit-image:
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
         COPY +toolkit-js-prep/toolkit-js /toolkit-js
+        # compactc for run-compactc invocations from this image (e.g. genesis
+        # compiling simple-merkle-tree.compact).
+        COPY +compactc-bundle/compact-home /compact-home
+        ENV COMPACT_HOME=/compact-home
     ELSE
         RUN mkdir -p /toolkit-js
     END

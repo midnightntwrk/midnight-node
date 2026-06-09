@@ -47,10 +47,15 @@ fi
 home="${repo_root}/.compact-home"
 mkdir -p "$home"
 
+# Flake reference for the compact build. Defaults to the local submodule as a
+# git working tree (picks up uncommitted edits). The Earthly CI target copies
+# the submodule files without `.git`, so it overrides this with `path:/work/compact`.
+flake_ref="${COMPACTC_FLAKE_REF:-git+file://${repo_root}/compact}"
+
 # --out-link registers an indirect gcroot, so the built compiler survives
 # `nix-collect-garbage` and the wrapper keeps pointing at a live store path.
-echo "Building compactc from ./compact (first build can be slow)..."
-nix build --out-link "$home/result" "git+file://${repo_root}/compact#compactc-binary"
+echo "Building compactc from ${flake_ref} (first build can be slow)..."
+nix build --out-link "$home/result" "${flake_ref}#compactc-binary"
 
 cat > "$home/compactc" <<EOF
 #!/usr/bin/env bash

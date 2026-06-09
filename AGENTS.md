@@ -99,8 +99,14 @@ just compactc   # builds compactc, writes the COMPACT_HOME wrapper
 `.envrc` then exports `COMPACT_HOME`, so `cd util/toolkit-js && npm run compact` uses
 the locally built compiler instead of downloading the prebuilt binary. Re-run
 `just compactc` after bumping the submodule. First build compiles `zkir` from source
-unless you have nix `trusted-users` access to the IOG cache (`cache.iog.io`). CI is
-unaffected and still downloads the prebuilt binary.
+unless you have nix `trusted-users` access to the IOG cache (`cache.iog.io`).
+
+CI builds compactc from the same submodule: the `+compactc-bundle` Earthly target runs
+`scripts/build-compactc.sh` inside a `nixos/nix` image (IOG cache enabled) and emits a
+`COMPACT_HOME` bundle that `toolkit-js-prep`, the toolkit image, and `build-test-toolkit`
+consume. The prebuilt-binary download is gone. `COMPACTC_VERSION` must match the pinned
+submodule's compiler version — `toolkit-js-prep` asserts this and fails the build if they
+diverge, so bump both together.
 
 **Debugging ledger issues:** Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.
 

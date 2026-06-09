@@ -16,6 +16,12 @@ Note: the upstream tag `compactc-v0.31.0` is mislabelled (its commit already car
 compiler version `0.31.101`), so the submodule is pinned to the actual `0.31.0`
 release commit `b5675ec` instead of the tag.
 
-CI is unchanged and continues to download the prebuilt zip (`COMPACT_HOME` unset).
+CI builds compactc from the submodule too: the `+compactc-bundle` Earthly target runs
+`scripts/build-compactc.sh` inside a `nixos/nix` image (IOG cache enabled, sandbox off)
+and emits a self-contained `COMPACT_HOME` bundle consumed by `toolkit-js-prep`, the
+toolkit image, and `build-test-toolkit`. The prebuilt-binary download (and the dead
+`/compactc-bin` CI artifact) are removed. `toolkit-js-prep` asserts the built compiler's
+version equals `COMPACTC_VERSION`, so a submodule bump without a `COMPACTC_VERSION` bump
+fails loudly.
 
-PR: <link>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1662

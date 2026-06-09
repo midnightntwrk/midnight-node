@@ -120,17 +120,35 @@ impl ToolkitTestHelper {
 				"node_modules/@midnight-ntwrk/node-toolkit-compact-{}.{}",
 				compactc_version.major, compactc_version.minor
 			)),
-			self.toolkit_js_path.join(format!(
-				"node_modules/@midnight-ntwrk/midnight-js-compact/managed/{compactc_version}"
-			)),
 		];
 
 		if let Some(missing) = required_paths.iter().find(|path| !path.exists()) {
 			eprintln!(
 				"Skipping contract integration tests: missing {}\n\
-                 Setup: cd util/toolkit-js && npm install && npm run build && \
-                 npx fetch-compactc --version={compactc_version}",
+                 Setup: cd util/toolkit-js && npm install && npm run build",
 				missing.display()
+			);
+			return false;
+		}
+
+		// `run-compactc` needs a compiler. Either COMPACT_HOME points at one built
+		// from the `compact/` submodule (`just compactc`), or the legacy
+		// `fetch-compactc` download populated midnight-js-compact/managed/<version>.
+		let compactc_home_ready = std::env::var_os("COMPACT_HOME")
+			.map(|home| Path::new(&home).join("compactc").exists())
+			.unwrap_or(false);
+		let downloaded_ready = self
+			.toolkit_js_path
+			.join(format!(
+				"node_modules/@midnight-ntwrk/midnight-js-compact/managed/{compactc_version}"
+			))
+			.exists();
+
+		if !compactc_home_ready && !downloaded_ready {
+			eprintln!(
+				"Skipping contract integration tests: compactc unavailable.\n\
+                 Setup: build it from the compact submodule (`just compactc`, sets COMPACT_HOME),\n\
+                 or: cd util/toolkit-js && npx fetch-compactc --version={compactc_version}"
 			);
 			return false;
 		}
