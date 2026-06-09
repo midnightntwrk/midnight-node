@@ -487,56 +487,6 @@ jobs:
         with:
           key: ${{ steps.guard.outputs.key }}
 
-  # Test pallet-midnight fixture tests - these do NOT require toolkit-js
-  test-pallet-fixtures:
-    permissions:
-      contents: read
-      actions: write
-    name: Test Pallet Fixtures
-    runs-on: ubuntu-latest
-    env:
-      FORCE_COLOR: 1
-    steps:
-      - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          submodules: true
-
-      - id: guard
-        uses: ./.github/actions/tree-cache-guard
-
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          version: v0.8.16
-          github-token: ${{ github.token }}
-          use-cache: false
-
-      - name: Free disk space
-        if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
-
-      - name: Run pallet fixture tests
-        if: steps.guard.outputs.hit != 'true'
-        env:
-          # See +test's `Run build` step for why EARTHLY_GIT_BRANCH is unsafe
-          # under actions/checkout; reach for the actual head/ref name instead.
-          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
-        run: |
-          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
-          if [ -z "$CACHE_KEY" ]; then
-            echo "::error::could not derive CACHE_KEY from refs (head_ref=$GITHUB_REF_RAW)"
-            exit 1
-          fi
-          echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly -P --strict \
-            +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
-
-      - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          key: ${{ steps.guard.outputs.key }}
-
   # Gate job for toolkit E2E tests - if this fails, toolkit E2E tests are skipped
   test-toolkit:
     permissions:

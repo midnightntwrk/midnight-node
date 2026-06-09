@@ -57,7 +57,11 @@ jobs:
       - name: Run build
         if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earthly --ci +check
+          # No --ci/--strict: +check -> +check-rust-prepare -> +cache-probe uses
+          # LOCALLY (host registry probe), which strict mode forbids. The probe is
+          # a read-only existence check that falls back to cooking on miss, so
+          # build reproducibility is unaffected.
+          . ./.envrc && earthly +check
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -102,7 +106,8 @@ jobs:
       - name: Run feature unification check
         if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earthly --ci +check-feature-unification
+          # No --ci/--strict: reaches +cache-probe (LOCALLY) via +check-rust-prepare.
+          . ./.envrc && earthly +check-feature-unification
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
