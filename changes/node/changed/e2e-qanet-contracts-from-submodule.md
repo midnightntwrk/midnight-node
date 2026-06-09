@@ -23,5 +23,5 @@ from the compiled validator script (same pattern as
 has no `cNIGHT Generates Dust` entry. Both features compute the same
 values they did before.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1666
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1609
