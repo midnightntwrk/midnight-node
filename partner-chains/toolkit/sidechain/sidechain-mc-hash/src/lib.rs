@@ -15,7 +15,7 @@
 //!
 //! # Prerequisites
 //!
-//! This feature uses the [InherentDigest] mechanism from [sp_partner_chains_consensus_aura] crate for storing inherent
+//! This feature uses the [InherentDigest] mechanism from [sc_partner_chains_consensus] crate for storing inherent
 //! data in the block header. Your node must use the [PartnerChainsProposer] defined by that crate for this feature to work.
 //!
 //! # Adding to the node
@@ -149,7 +149,7 @@
 //! ```rust
 //! use sidechain_mc_hash::McHashInherentDigest;
 //! use sp_consensus::Environment;
-//! use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
+//! use sc_partner_chains_consensus::PartnerChainsProposerFactory;
 //! use sp_runtime::traits::Block as BlockT;
 //!
 //! fn new_full<Block: BlockT, ProposerFactory: Environment<Block>>(
@@ -165,8 +165,8 @@
 //! }
 //! ```
 //!
-//! [PartnerChainsProposer]: sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposer
-//! [PartnerChainsProposerFactory]: sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory
+//! [PartnerChainsProposer]: sc_partner_chains_consensus::PartnerChainsProposer
+//! [PartnerChainsProposerFactory]: sc_partner_chains_consensus::PartnerChainsProposerFactory
 
 #![warn(missing_docs)]
 use crate::McHashInherentError::StableBlockNotFound;
@@ -175,7 +175,7 @@ use sidechain_domain::{byte_string::ByteString, *};
 use sp_blockchain::HeaderBackend;
 use sp_consensus_slots::{Slot, SlotDuration};
 use sp_inherents::{InherentData, InherentDataProvider, InherentIdentifier};
-use sp_partner_chains_consensus_aura::inherent_digest::InherentDigest;
+use sc_partner_chains_consensus::InherentDigest;
 use sp_runtime::{
 	DigestItem,
 	traits::{Block as BlockT, Header as HeaderT, Zero},

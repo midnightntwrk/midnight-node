@@ -7956,7 +7956,7 @@ dependencies = [
  "sc-keystore",
  "sc-network",
  "sc-offchain",
- "sc-partner-chains-consensus-aura",
+ "sc-partner-chains-consensus",
  "sc-rpc",
  "sc-rpc-api",
  "sc-service",
@@ -7991,7 +7991,6 @@ dependencies = [
  "sp-keystore",
  "sp-mmr-primitives",
  "sp-partner-chains-bridge",
- "sp-partner-chains-consensus-aura",
  "sp-runtime",
  "sp-session-validator-management",
  "sp-session-validator-management-query",
@@ -11246,7 +11245,7 @@ dependencies = [
  "sc-consensus-grandpa-rpc",
  "sc-executor",
  "sc-network",
- "sc-partner-chains-consensus-aura",
+ "sc-partner-chains-consensus",
  "sc-rpc",
  "sc-service",
  "sc-telemetry",
@@ -11264,7 +11263,6 @@ dependencies = [
  "sp-inherents",
  "sp-io",
  "sp-partner-chains-bridge",
- "sp-partner-chains-consensus-aura",
  "sp-runtime",
  "sp-session-validator-management",
  "sp-session-validator-management-query",
@@ -14631,39 +14629,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "sc-partner-chains-consensus-aura"
+name = "sc-partner-chains-consensus"
 version = "1.8.1"
 dependencies = [
  "async-trait",
  "futures",
  "log",
  "parity-scale-codec",
- "parking_lot 0.12.5",
  "sc-block-builder",
  "sc-client-api",
  "sc-consensus",
  "sc-consensus-aura",
- "sc-consensus-slots",
- "sc-keystore",
+ "sc-consensus-babe",
+ "sc-consensus-epochs",
  "sc-network-test",
- "sc-telemetry",
+ "sc-transaction-pool-api",
  "sp-api",
- "sp-application-crypto",
  "sp-block-builder",
  "sp-blockchain",
  "sp-consensus",
  "sp-consensus-aura",
+ "sp-consensus-babe",
  "sp-consensus-slots",
- "sp-core",
  "sp-inherents",
- "sp-keyring",
  "sp-keystore",
- "sp-partner-chains-consensus-aura",
  "sp-runtime",
  "sp-timestamp",
  "sp-tracing",
  "substrate-test-runtime-client",
- "tempfile",
  "tokio",
 ]
 
@@ -15974,12 +15967,12 @@ dependencies = [
  "async-trait",
  "derive-new",
  "log",
+ "sc-partner-chains-consensus",
  "sidechain-domain",
  "sp-blockchain",
  "sp-consensus",
  "sp-consensus-slots",
  "sp-inherents",
- "sp-partner-chains-consensus-aura",
  "sp-runtime",
  "sp-timestamp",
  "thiserror 2.0.18",
@@ -16943,18 +16936,6 @@ dependencies = [
  "sp-inherents",
  "sp-runtime",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "sp-partner-chains-consensus-aura"
-version = "1.8.1"
-dependencies = [
- "futures",
- "sp-blockchain",
- "sp-consensus",
- "sp-consensus-slots",
- "sp-inherents",
- "sp-runtime",
 ]
 
 [[package]]

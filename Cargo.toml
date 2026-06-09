@@ -34,6 +34,7 @@ members = [
     "partner-chains/demo/node",
     "partner-chains/toolkit/committee-selection/selection-simulator",
     "partner-chains/toolkit/data-sources/cli",
+    "partner-chains/toolkit/consensus",
 ]
 [workspace.package]
 license-file = "LICENSE"
@@ -167,8 +168,7 @@ sp-session-validator-management = { default-features = false, path = "partner-ch
 sp-session-validator-management-query = { default-features = false, path = "partner-chains/toolkit/committee-selection/query" }
 time-source = { default-features = false, path = "partner-chains/toolkit/utils/time-source" }
 pallet-partner-chains-session = { default-features = false, path = "partner-chains/substrate-extensions/partner-chains-session", features = ["pallet-session-compat"] }
-sp-partner-chains-consensus-aura = { default-features = false, path = "partner-chains/substrate-extensions/aura/primitives" }
-sc-partner-chains-consensus-aura = { default-features = false, path = "partner-chains/substrate-extensions/aura/consensus" }
+sc-partner-chains-consensus = { path = "partner-chains/toolkit/consensus" }
 # Substrate dependencies
 
 binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
@@ -215,6 +215,7 @@ sp-io = { default-features = false, git = "https://github.com/paritytech/polkado
 sp-block-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-blockchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+sp-consensus-babe = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus-grandpa = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus-slots = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
@@ -246,7 +247,9 @@ sc-network = { default-features = false, git = "https://github.com/paritytech/po
 sc-executor = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-grandpa = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+sc-consensus-babe = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+sc-consensus-epochs = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-slots = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-client-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }

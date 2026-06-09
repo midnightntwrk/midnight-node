@@ -7,8 +7,15 @@ This changelog is based on [Keep A Changelog](https://keepachangelog.com/en/1.1.
 ## Changed
 
 * Updated polkadot-sdk dependency to polkadot-stable2603.
+* Replaced forked consensus crates with consensus-agnostic `sc-partner-chains-consensus`.
+  It runs the Partner Chains inherent check at block import (`PartnerChainsBlockImport`
+  with `PartnerChainsBodyRestore`, e.g. for BABE) or in the import-queue verifier
+  (`PartnerChainsVerifier`, e.g. for Aura), and injects the `mcsh` digest at proposal time
+  via `PartnerChainsProposerFactory`.
 
 ## Removed
+
+* `sc-partner-chains-consensus-aura` and `sp-partner-chains-consensus-aura`.
 
 ## Fixed
 

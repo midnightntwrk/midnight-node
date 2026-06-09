@@ -124,8 +124,7 @@ pallet-sidechain-rpc.workspace = true
 sidechain-slots.workspace = true
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-mc-hash = { workspace = true, features = ["mock"] }
-sp-partner-chains-consensus-aura.workspace = true
-sc-partner-chains-consensus-aura.workspace = true
+sc-partner-chains-consensus.workspace = true
 sp-session-validator-management-query.workspace = true
 partner-chains-node-commands.workspace = true
 partner-chains-cli.workspace = true
