@@ -83,6 +83,27 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Verify build definition matches the protected default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          # SECURITY: a later step authenticates to a registry on this self-hosted runner.
+          # earthly evaluates the PR's Earthfile ON THE HOST (LOCALLY blocks, host-side
+          # EARTHLY_CONFIG), so an untrusted build definition must not be run here. Require the
+          # Earthfile/.earthly to byte-match the protected default branch — NOT the PR's own base
+          # ref, which the (write-access) author controls and could point at a tampered branch.
+          # Abort here, BEFORE that authentication step runs.
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          if ! git diff --quiet "origin/$DEFAULT_BRANCH" HEAD -- Earthfile .earthly; then
+            echo "::error::Earthfile/.earthly differ from origin/$DEFAULT_BRANCH; refusing to run an untrusted build definition on the self-hosted runner."
+            echo "Changed files under guarded paths:"
+            git diff --name-only "origin/$DEFAULT_BRANCH" HEAD -- Earthfile .earthly
+            echo "If the change is legitimate, get the Earthfile change reviewed and merged to $DEFAULT_BRANCH, rebase this PR, then re-run the bot."
+            exit 1
+          fi
+          echo "Build definition matches origin/$DEFAULT_BRANCH — safe to proceed."
+
       - name: Setup Earthly
         uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:

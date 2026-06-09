@@ -33,7 +33,9 @@ jobs:
       contents: read
     # TEST PR — points at the new self-hosted runner pool to validate end-to-end
     # build performance. Revert before merge.
-    runs-on: [self-hosted, "tier:large"]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     env:
       FORCE_COLOR: 1
     outputs:
@@ -74,16 +76,13 @@ jobs:
           echo "--- updated .earthly/config.yml ---"
           cat .earthly/config.yml
 
-      # Self-hosted runners share a persistent HOME (/opt/actions-runner) across
-      # every runner slot on the host, making ~/.docker/config.json shared
-      # mutable state. Concurrent jobs' `docker login` (read-modify-write) race
-      # and clobber each other's registry entries — e.g. a Docker Hub login
-      # wiping the ghcr.io entry — leaving the build's push with no GHCR creds
-      # (anonymous token -> 403). Pin DOCKER_CONFIG to the per-slot runner temp
-      # dir so each job gets an isolated docker config that docker/login-action
-      # writes to and earthly reads from (earthly honors DOCKER_CONFIG). Set via
-      # $GITHUB_ENV in a step because runner.temp is unavailable in job-level env.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Pin DOCKER_CONFIG to a per-job temp dir so concurrent jobs get isolated
+      # docker auth and can't clobber each other's registry logins mid-build
+      # (which would otherwise drop a registry credential and 403 the push).
+      # docker/login-action writes here and earthly reads it (earthly honors
+      # DOCKER_CONFIG). Set via $GITHUB_ENV because runner.temp is unavailable
+      # in job-level env.
+      - name: Isolate docker config
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
@@ -544,7 +543,9 @@ jobs:
       actions: write
     name: Test Toolkit
     needs: [run]
-    runs-on: [self-hosted, "tier:large"]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     env:
       FORCE_COLOR: 1
     steps:
@@ -563,9 +564,9 @@ jobs:
           github-token: ${{ github.token }}
           use-cache: false
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. runner.temp is not available in job-level env, so set it here.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Isolate docker config per job — see the matching step in the `run` job.
+      # runner.temp is not available in job-level env, so set it here.
+      - name: Isolate docker config
         if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
@@ -624,9 +625,9 @@ jobs:
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
           # +test-toolkit pulls in +build-test-toolkit's `target-${CACHE_KEY}`
-          # cache mount. Pass the PR ref so it's scoped per-branch on this
-          # shared self-hosted runner — see +test's `Run build` step for the
-          # full rationale and why EARTHLY_GIT_BRANCH is unsafe here.
+          # cache mount. Pass the PR ref so the cache is scoped per-branch — see
+          # +test's `Run build` step for the full rationale and why
+          # EARTHLY_GIT_BRANCH is unsafe here.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
@@ -1104,7 +1105,9 @@ jobs:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
     needs: [run, build-indexer-images]
-    runs-on: [self-hosted, "tier:medium"]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
     # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
     # (+local-env-ci), which gives each invocation its own network namespace. The stack
     # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
@@ -1125,12 +1128,11 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. Now that this job runs concurrently (no serialization), per-slot
-      # isolation matters MORE: multiple instances log into GHCR at once and would
-      # otherwise clobber the shared ~/.docker. Inherited by the composite action's
-      # docker login and earthly --pull.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Isolate docker config per job — see the matching step in the `run` job.
+      # This job runs concurrently, so per-job isolation matters: multiple
+      # instances log in at once and would otherwise clobber each other's docker
+      # auth. Inherited by the composite action's docker login and earthly --pull.
+      - name: Isolate docker config
         if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
@@ -1151,12 +1153,11 @@ jobs:
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      # Defensive cleanup of an orphaned local-env stack for this runner slot, so
-      # leaked stacks can't accumulate and fill the shared self-hosted host disk.
-      # Scoped to this slot's compose project (local-env-r<slot>) so it never
-      # touches other runners on the host. RUNNER_SLOT comes from the runner .env;
-      # RUNNER_NAME (e.g. fsn1-runner-01-runner-4) is the fallback.
-      - name: Tear down this slot's local-env stack (defensive)
+      # Defensive cleanup of an orphaned local-env stack for this job, so leaked
+      # stacks can't accumulate and fill the host disk. Scoped to this job's own
+      # compose project so it never touches other jobs on the host. The project
+      # name derives from runner-provided env (with RUNNER_NAME as fallback).
+      - name: Tear down this job's local-env stack (defensive)
         if: always()
         shell: bash
         run: |
