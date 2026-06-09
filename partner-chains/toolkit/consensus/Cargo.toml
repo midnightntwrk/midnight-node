@@ -1,0 +1,38 @@
+[package]
+name = "sp-partner-chains-consensus"
+version = "1.8.1"
+description = "Partner Chains consensus primitives: inherent digest, block proposal, and inherent checking at block import or in the import-queue verifier"
+authors.workspace = true
+homepage.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+repository.workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+futures.workspace = true
+log.workspace = true
+sc-consensus = { workspace = true, default-features = true }
+sp-api = { workspace = true, default-features = true }
+sp-block-builder = { workspace = true, default-features = true }
+sp-consensus.workspace = true
+sp-consensus-slots = { workspace = true, default-features = true }
+sp-inherents = { workspace = true, default-features = true }
+sp-runtime = { workspace = true, default-features = true }
+
+[dev-dependencies]
+parity-scale-codec = { workspace = true, default-features = true }
+sc-network-test = { workspace = true }
+sp-blockchain = { workspace = true }
+sp-tracing = { workspace = true, default-features = true }
+substrate-test-runtime-client = { workspace = true }
+tokio.workspace = true
+
+[lib]
+doctest = false

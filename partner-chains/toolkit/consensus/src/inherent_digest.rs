@@ -1,4 +1,3 @@
-#[cfg(feature = "std")]
 /// Defines parts of inherent data that should be included in header digest
 pub trait InherentDigest {
 	/// Rust type of the inherent digest value
@@ -15,7 +14,6 @@ pub trait InherentDigest {
 	) -> Result<Self::Value, Box<dyn std::error::Error + Send + Sync>>;
 }
 
-#[cfg(feature = "std")]
 impl InherentDigest for () {
 	type Value = ();
 

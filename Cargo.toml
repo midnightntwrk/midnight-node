@@ -34,6 +34,7 @@ members = [
     "partner-chains/demo/node",
     "partner-chains/toolkit/committee-selection/selection-simulator",
     "partner-chains/toolkit/data-sources/cli",
+    "partner-chains/toolkit/consensus",
 ]
 [workspace.package]
 license-file = "LICENSE"
@@ -159,8 +160,7 @@ sp-session-validator-management = { default-features = false, path = "partner-ch
 sp-session-validator-management-query = { default-features = false, path = "partner-chains/toolkit/committee-selection/query" }
 time-source = { default-features = false, path = "partner-chains/toolkit/utils/time-source" }
 pallet-partner-chains-session = { default-features = false, path = "partner-chains/substrate-extensions/partner-chains-session", features = ["pallet-session-compat"] }
-sp-partner-chains-consensus-aura = { default-features = false, path = "partner-chains/substrate-extensions/aura/primitives" }
-sc-partner-chains-consensus-aura = { default-features = false, path = "partner-chains/substrate-extensions/aura/consensus" }
+sp-partner-chains-consensus = { path = "partner-chains/toolkit/consensus" }
 # Substrate dependencies
 
 binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2603" }
