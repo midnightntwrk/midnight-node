@@ -1151,6 +1151,21 @@ jobs:
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
+      # Defensive cleanup of an orphaned local-env stack for this runner slot, so
+      # leaked stacks can't accumulate and fill the shared self-hosted host disk.
+      # Scoped to this slot's compose project (local-env-r<slot>) so it never
+      # touches other runners on the host. RUNNER_SLOT comes from the runner .env;
+      # RUNNER_NAME (e.g. fsn1-runner-01-runner-4) is the fallback.
+      - name: Tear down this slot's local-env stack (defensive)
+        if: always()
+        shell: bash
+        run: |
+          proj="local-env-r${RUNNER_SLOT:-${RUNNER_NAME##*-}}"
+          docker ps -aq --filter "label=com.docker.compose.project=${proj}" \
+            | xargs -r docker rm -f || true
+          docker volume ls -q --filter "label=com.docker.compose.project=${proj}" \
+            | xargs -r docker volume rm -f || true
+
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:

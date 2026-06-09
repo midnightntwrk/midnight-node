@@ -20,6 +20,15 @@ jobs:
     # Hetzner self-hosted; its static IP is on the toolkit-cache NLB
     # allowlist. ubuntu-latest cannot reach the shared cache.
     runs-on: [self-hosted, "tier:large"]
+    # Run inside a container so test deps are apt-installed as root.
+    # The self-hosted runner user is not a passwordless sudoer and has
+    # no tty, so `sudo apt-get` fails with "a terminal is required to
+    # read the password". The Rust version below is duplicated from
+    # rust-toolchain.toml and must be bumped by hand on toolchain
+    # upgrades — #1661 tracks replacing this with a baked CI image
+    # that closes the drift.
+    container:
+      image: rust:1.95-trixie
     timeout-minutes: 360
 
     steps:
@@ -34,16 +43,30 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 #v1
-        with:
-          toolchain: stable
-
-      - name: Install system dependencies (protoc, postgresql-client)
+      # Running as root inside the container, so no sudo.
+      # `rust:1.95-trixie` already ships gcc/make/git/libssl-dev/libpq-dev/
+      # libsqlite3-dev, so we only add what's missing for this crate:
+      #   - protobuf-compiler: prost/scale-codec build scripts.
+      #   - postgresql-client: psql smoke test against toolkit-cache.
+      #   - pkg-config:        for -sys crates to discover system libs.
+      # No clang/libclang — the e2e test binary doesn't pull rocksdb or
+      # any other bindgen-using crate (subxt + sqlx + redb only). The
+      # Earthfile installs clang because it builds the full node +
+      # runtime wasm, a much heavier dep set than we need here.
+      # Clear apt caches afterwards so the cargo test build has disk
+      # headroom on this runner — target/ grows several GB during the
+      # release compile (~8 min) that precedes the multi-hour Cardano
+      # stability waits.
+      - name: Install system dependencies
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler postgresql-client
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            protobuf-compiler \
+            postgresql-client \
+            pkg-config
+          rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
           protoc --version
 
       # Fail fast (~1 s) if the shared toolkit cache is unreachable,
@@ -79,6 +102,19 @@ jobs:
           E2E_FEATURE: ${{ steps.vars.outputs.env }}
         run: |
           cargo test --release --test e2e_tests --no-default-features --features "$E2E_FEATURE" -- cnight::observation:: --no-capture --test-threads 16
+
+      # `container:` runs as root, so the bind-mounted workspace (and
+      # target/) end up UID 0. Host-mode workflows on this self-hosted
+      # runner pool (see continuous-integration.yml, main.yml) then can't
+      # rm/replace these files during their own checkout. Chown back to
+      # whoever owns the workspace's parent directory — that's the runner
+      # user, by definition. `if: always()` so cancelled/failed jobs
+      # don't poison the runner either.
+      - name: Restore workspace ownership for next runner job
+        if: always()
+        shell: bash
+        run: |
+          chown -R --reference="$(dirname "$GITHUB_WORKSPACE")" "$GITHUB_WORKSPACE"
 
       - name: Notify Slack
         if: always()
