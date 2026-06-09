@@ -354,10 +354,7 @@ pub(crate) struct CreateInherentDataConfig {
 
 impl CreateInherentDataConfig {
 	/// Builds the inherent-data configuration, enforcing the sidechain↔mainchain timing coherence
-	/// invariant (I5) that config-time validation structurally cannot see: it needs the sidechain
-	/// slot configuration, which is only available here at service construction. This is the single
-	/// construction choke point — the only constructor — so no call site can produce an unchecked
-	/// configuration. (Formerly the unenforced ETCM-4079 divisibility note on `sc_slot_config`.)
+	/// invariant (I5) that config-time validation structurally cannot see.
 	pub fn new(
 		mc_epoch_config: MainchainEpochConfig,
 		sc_slot_config: ScSlotConfig,
