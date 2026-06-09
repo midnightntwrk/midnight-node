@@ -12,7 +12,8 @@
 // limitations under the License.
 
 use crate::cfg::midnight_cfg::invariants::{
-	ConsensusConfigCoherenceError, check_sidechain_mainchain_coherence,
+	ConsensusConfigCoherenceError, MainchainEpochConfigError, check_mainchain_epoch_invariants,
+	check_sidechain_mainchain_coherence,
 };
 use async_trait::async_trait;
 use authority_selection_inherents::CommitteeMember;
@@ -364,14 +365,66 @@ impl std::fmt::Debug for CreateInherentDataConfig {
 	}
 }
 
+/// A timing-configuration coherence failure detected while building [`CreateInherentDataConfig`].
+///
+/// The constructor is on every path that builds the consensus input — including the subcommand
+/// paths that load the configuration with validation disabled — so it enforces both the
+/// self-contained mainchain invariants (`I1`–`I4`) and the sidechain↔mainchain cross-field
+/// invariant (`I5`). This enum unifies the two underlying error types so the constructor reports a
+/// single error regardless of which family of invariant was violated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InherentConfigError {
+	/// A self-contained mainchain timing invariant (`I1`–`I4`) was violated.
+	MainchainEpoch(MainchainEpochConfigError),
+	/// The sidechain↔mainchain cross-field coherence invariant (`I5`) was violated.
+	Coherence(ConsensusConfigCoherenceError),
+}
+
+impl core::fmt::Display for InherentConfigError {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			Self::MainchainEpoch(e) => e.fmt(f),
+			Self::Coherence(e) => e.fmt(f),
+		}
+	}
+}
+
+impl std::error::Error for InherentConfigError {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match self {
+			Self::MainchainEpoch(e) => Some(e),
+			Self::Coherence(e) => Some(e),
+		}
+	}
+}
+
+impl From<MainchainEpochConfigError> for InherentConfigError {
+	fn from(e: MainchainEpochConfigError) -> Self {
+		Self::MainchainEpoch(e)
+	}
+}
+
+impl From<ConsensusConfigCoherenceError> for InherentConfigError {
+	fn from(e: ConsensusConfigCoherenceError) -> Self {
+		Self::Coherence(e)
+	}
+}
+
 impl CreateInherentDataConfig {
-	/// Builds the inherent-data configuration, enforcing the sidechain↔mainchain timing coherence
-	/// invariant (I5) that config-time validation structurally cannot see.
+	/// Builds the inherent-data configuration, enforcing the mainchain timing invariants.
+	///
+	/// The self-contained mainchain invariants (`I1`–`I4`) are checked first so the most fundamental
+	/// coherence failure is reported before the cross-field check; the sidechain↔mainchain coherence
+	/// invariant (`I5`) is checked second because it additionally needs the sidechain slot
+	/// configuration. Running both here makes the constructor a uniform backstop on every path that
+	/// builds the consensus input, including the subcommand paths that load the configuration with
+	/// validation disabled.
 	pub fn new(
 		mc_epoch_config: MainchainEpochConfig,
 		sc_slot_config: ScSlotConfig,
 		time_source: Arc<dyn TimeSource + Send + Sync + 'static>,
-	) -> Result<Self, ConsensusConfigCoherenceError> {
+	) -> Result<Self, InherentConfigError> {
+		check_mainchain_epoch_invariants(&mc_epoch_config)?;
 		check_sidechain_mainchain_coherence(&mc_epoch_config, &sc_slot_config)?;
 		Ok(Self { mc_epoch_config, sc_slot_config, time_source })
 	}
@@ -439,6 +492,45 @@ mod tests {
 			Arc::new(SystemTimeSource),
 		);
 		assert!(result.is_err());
+	}
+
+	#[test]
+	fn new_rejects_zero_mc_slot_duration_i2() {
+		// A zero mainchain slot duration violates I2. The I5 coherence check never inspects the
+		// mainchain slot duration, so before the constructor enforced I1–I4 this slipped through.
+		let err = CreateInherentDataConfig::new(
+			mc_config(432_000_000, 0),
+			sc_config(60, 6000),
+			Arc::new(SystemTimeSource),
+		)
+		.expect_err("zero mainchain slot duration must be rejected");
+		assert_eq!(
+			err,
+			InherentConfigError::MainchainEpoch(MainchainEpochConfigError::SlotDurationZero)
+		);
+	}
+
+	#[test]
+	fn new_rejects_non_divisible_mc_epoch_slot_pair_i4() {
+		// 10_000 ms epoch is not an exact multiple of a 3000 ms slot (I4). Both values are nonzero
+		// and the epoch is at least 1000 ms, so I1–I3 pass. The sidechain epoch here is
+		// 1 * 10_000 = 10_000 ms, which divides the mainchain epoch evenly, so the I5 coherence
+		// relation would not have caught this — the I4 mainchain check is what rejects it.
+		let err = CreateInherentDataConfig::new(
+			mc_config(10_000, 3000),
+			sc_config(1, 10_000),
+			Arc::new(SystemTimeSource),
+		)
+		.expect_err("non-divisible mainchain epoch/slot pair must be rejected");
+		assert_eq!(
+			err,
+			InherentConfigError::MainchainEpoch(
+				MainchainEpochConfigError::EpochNotDivisibleBySlot {
+					epoch_duration_millis: 10_000,
+					slot_duration_millis: 3000,
+				}
+			)
+		);
 	}
 
 	#[test]
