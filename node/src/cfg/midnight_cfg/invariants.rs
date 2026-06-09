@@ -175,7 +175,7 @@ pub fn check_mainchain_epoch_invariants(
 		});
 	}
 	// I4 — slot_duration is a non-zero divisor here (guaranteed by I2 above).
-	if epoch_duration_millis % slot_duration_millis != 0 {
+	if !epoch_duration_millis.is_multiple_of(slot_duration_millis) {
 		return Err(MainchainEpochConfigError::EpochNotDivisibleBySlot {
 			epoch_duration_millis,
 			slot_duration_millis,

@@ -352,6 +352,18 @@ pub(crate) struct CreateInherentDataConfig {
 	pub time_source: Arc<dyn TimeSource + Send + Sync + 'static>,
 }
 
+impl std::fmt::Debug for CreateInherentDataConfig {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		// `time_source` is a trait object without a `Debug` bound, so it is rendered as an opaque
+		// placeholder rather than its contents.
+		f.debug_struct("CreateInherentDataConfig")
+			.field("mc_epoch_config", &self.mc_epoch_config)
+			.field("sc_slot_config", &self.sc_slot_config)
+			.field("time_source", &"<dyn TimeSource>")
+			.finish()
+	}
+}
+
 impl CreateInherentDataConfig {
 	/// Builds the inherent-data configuration, enforcing the sidechain↔mainchain timing coherence
 	/// invariant (I5) that config-time validation structurally cannot see.
