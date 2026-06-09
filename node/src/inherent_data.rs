@@ -11,6 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::cfg::midnight_cfg::invariants::{
+	ConsensusConfigCoherenceError, check_sidechain_mainchain_coherence,
+};
 use async_trait::async_trait;
 use authority_selection_inherents::CommitteeMember;
 use authority_selection_inherents::{
@@ -342,15 +345,28 @@ pub fn slot_from_predigest(
 	}
 }
 
-#[derive(new, Clone)]
+#[derive(Clone)]
 pub(crate) struct CreateInherentDataConfig {
 	pub mc_epoch_config: MainchainEpochConfig,
-	// TODO ETCM-4079 make sure that this struct can be instantiated only if sidechain epoch duration is divisible by slot_duration
 	pub sc_slot_config: ScSlotConfig,
 	pub time_source: Arc<dyn TimeSource + Send + Sync + 'static>,
 }
 
 impl CreateInherentDataConfig {
+	/// Builds the inherent-data configuration, enforcing the sidechain↔mainchain timing coherence
+	/// invariant (I5) that config-time validation structurally cannot see: it needs the sidechain
+	/// slot configuration, which is only available here at service construction. This is the single
+	/// construction choke point — the only constructor — so no call site can produce an unchecked
+	/// configuration. (Formerly the unenforced ETCM-4079 divisibility note on `sc_slot_config`.)
+	pub fn new(
+		mc_epoch_config: MainchainEpochConfig,
+		sc_slot_config: ScSlotConfig,
+		time_source: Arc<dyn TimeSource + Send + Sync + 'static>,
+	) -> Result<Self, ConsensusConfigCoherenceError> {
+		check_sidechain_mainchain_coherence(&mc_epoch_config, &sc_slot_config)?;
+		Ok(Self { mc_epoch_config, sc_slot_config, time_source })
+	}
+
 	pub fn slot_duration(&self) -> SlotDuration {
 		self.sc_slot_config.slot_duration
 	}
@@ -368,4 +384,67 @@ fn timestamp_and_slot_cidp(
 		slot_duration,
 	);
 	(slot, timestamp)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use sidechain_slots::SlotsPerEpoch;
+	use sp_core::offchain::{Duration, Timestamp as OffchainTimestamp};
+	use time_source::SystemTimeSource;
+
+	fn mc_config(epoch_duration_millis: u64, slot_duration_millis: u64) -> MainchainEpochConfig {
+		MainchainEpochConfig {
+			epoch_duration_millis: Duration::from_millis(epoch_duration_millis),
+			slot_duration_millis: Duration::from_millis(slot_duration_millis),
+			first_epoch_timestamp_millis: OffchainTimestamp::from_unix_millis(1_596_059_091_000),
+			first_epoch_number: 208,
+			first_slot_number: 4_492_800,
+		}
+	}
+
+	fn sc_config(slots_per_epoch: u32, slot_duration_millis: u64) -> ScSlotConfig {
+		ScSlotConfig {
+			slots_per_epoch: SlotsPerEpoch(slots_per_epoch),
+			slot_duration: SlotDuration::from_millis(slot_duration_millis),
+		}
+	}
+
+	#[test]
+	fn new_accepts_coherent_pair() {
+		// Mainchain epoch 432_000_000 ms; sidechain epoch 60 * 6000 = 360_000 ms; divides evenly.
+		let cfg = CreateInherentDataConfig::new(
+			mc_config(432_000_000, 1000),
+			sc_config(60, 6000),
+			Arc::new(SystemTimeSource),
+		);
+		assert!(cfg.is_ok());
+	}
+
+	#[test]
+	fn new_rejects_incoherent_pair() {
+		// Sidechain epoch 60 * 7000 = 420_000 ms does not divide the mainchain epoch.
+		let result = CreateInherentDataConfig::new(
+			mc_config(432_000_000, 1000),
+			sc_config(60, 7000),
+			Arc::new(SystemTimeSource),
+		);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn coherence_error_is_convertible_to_service_error() {
+		// Mirrors the propagation at the service.rs construction sites: the coherence error maps
+		// to a sc_service::error::Error carrying the operator-facing message.
+		let err = CreateInherentDataConfig::new(
+			mc_config(432_000_000, 1000),
+			sc_config(60, 7000),
+			Arc::new(SystemTimeSource),
+		)
+		.expect_err("incoherent pair must be rejected");
+
+		let service_error =
+			sc_service::Error::Other(format!("incoherent consensus timing configuration: {err}"));
+		assert!(service_error.to_string().contains("incoherent consensus timing configuration"));
+	}
 }
