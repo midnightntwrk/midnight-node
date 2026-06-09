@@ -25,3 +25,4 @@ version equals `COMPACTC_VERSION`, so a submodule bump without a `COMPACTC_VERSI
 fails loudly.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1662
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1647
