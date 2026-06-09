@@ -23,9 +23,10 @@ jobs:
     # Run inside a container so test deps are apt-installed as root.
     # The self-hosted runner user is not a passwordless sudoer and has
     # no tty, so `sudo apt-get` fails with "a terminal is required to
-    # read the password". The image pins Rust 1.95 to match
-    # rust-toolchain.toml (single source of truth, mirrored by the
-    # Earthfile's build-prepare stage).
+    # read the password". The Rust version below is duplicated from
+    # rust-toolchain.toml and must be bumped by hand on toolchain
+    # upgrades — #1661 tracks replacing this with a baked CI image
+    # that closes the drift.
     container:
       image: rust:1.95-trixie
     timeout-minutes: 360
@@ -52,8 +53,10 @@ jobs:
       # any other bindgen-using crate (subxt + sqlx + redb only). The
       # Earthfile installs clang because it builds the full node +
       # runtime wasm, a much heavier dep set than we need here.
-      # Clear apt caches afterwards so the ~4 h cargo build has disk
-      # headroom on this runner.
+      # Clear apt caches afterwards so the cargo test build has disk
+      # headroom on this runner — target/ grows several GB during the
+      # release compile (~8 min) that precedes the multi-hour Cardano
+      # stability waits.
       - name: Install system dependencies
         shell: bash
         run: |

@@ -30,8 +30,9 @@ the e2e test binary depends on `subxt` + `sqlx` + `redb` only, none of
 which pull `rocksdb` or any other `bindgen`-using crate, so libclang
 is not needed (the Earthfile installs it because it builds the full
 node + runtime wasm, a heavier dep set than this job). Apt caches are
-cleared after install so the ~4 h cargo build has disk headroom on
-the runner.
+cleared after install so the cargo test build has disk headroom on
+the runner — `target/` grows several GB during the release compile
+(~8 min) that precedes the multi-hour Cardano stability waits.
 
 A final `if: always()` step chowns the workspace back to the runner
 user before the job exits. Without it, host-mode workflows landing on
