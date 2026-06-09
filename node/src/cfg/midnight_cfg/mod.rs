@@ -154,7 +154,7 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 	Ok(())
 }
 
-/// Validates the self-contained mainchain timing invariants (I1–I4) at config-parse time, so an
+/// Validates the self-contained mainchain timing invariants (I1–I4, I6) at config-parse time, so an
 /// internally-incoherent mainchain config fails as a `CfgError` before any service or runtime
 /// construction. The cross-field sidechain↔mainchain invariant (I5) is not checked here: it needs
 /// the sidechain slot configuration, which is only available at service construction.
@@ -238,6 +238,16 @@ mod tests {
 		let mut cfg = good_cfg();
 		cfg.mc_epoch_duration_millis = 10_000;
 		cfg.mc_slot_duration_millis = 3000;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_non_1000ms_slot_duration() {
+		// epoch 432_000_000 ms is an exact multiple of a 2000 ms slot, so this passes the I4
+		// divisibility check yet is rejected by I6 because the vendored upstream `slots_per_epoch`
+		// hardcodes a 1000 ms slot.
+		let mut cfg = good_cfg();
+		cfg.mc_slot_duration_millis = 2000;
 		assert!(mainchain_epoch_invariants(&cfg).is_err());
 	}
 

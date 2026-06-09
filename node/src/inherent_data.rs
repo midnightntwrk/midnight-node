@@ -534,6 +534,26 @@ mod tests {
 	}
 
 	#[test]
+	fn new_rejects_non_1000ms_mc_slot_duration_i6() {
+		// 432_000_000 ms epoch is an exact multiple of a 2000 ms slot, so I1–I4 pass, and the
+		// sidechain epoch 60 * 6000 = 360_000 ms divides the mainchain epoch so I5 passes too. Only
+		// the I6 guard — enforced through the shared check_mainchain_epoch_invariants on this
+		// construction path — rejects the non-1000 ms mainchain slot duration.
+		let err = CreateInherentDataConfig::new(
+			mc_config(432_000_000, 2000),
+			sc_config(60, 6000),
+			Arc::new(SystemTimeSource),
+		)
+		.expect_err("non-1000ms mainchain slot duration must be rejected");
+		assert_eq!(
+			err,
+			InherentConfigError::MainchainEpoch(
+				MainchainEpochConfigError::UnsupportedSlotDuration { slot_duration_millis: 2000 }
+			)
+		);
+	}
+
+	#[test]
 	fn coherence_error_is_convertible_to_service_error() {
 		// Mirrors the propagation at the service.rs construction sites: the coherence error maps
 		// to a sc_service::error::Error carrying the operator-facing message.

@@ -21,8 +21,8 @@
 //! epoch/slot boundaries for the same wall-clock time. These guards reject such a configuration
 //! before it reaches consensus.
 //!
-//! The self-contained invariants (`I1`–`I4`) are properties of the mainchain values alone and are
-//! checked by [`check_mainchain_epoch_invariants`]. The sidechain↔mainchain cross-field invariant
+//! The self-contained invariants (`I1`–`I4`, `I6`) are properties of the mainchain values alone and
+//! are checked by [`check_mainchain_epoch_invariants`]. The sidechain↔mainchain cross-field invariant
 //! (`I5`) additionally needs the sidechain slot configuration, which is only available at service
 //! construction; it is checked by [`check_sidechain_mainchain_coherence`].
 
@@ -72,6 +72,17 @@ pub enum MainchainEpochConfigError {
 		/// The configured `mc__slot_duration_millis`.
 		slot_duration_millis: u64,
 	},
+	/// `I6`: `mc__slot_duration_millis` is not exactly `1000`.
+	///
+	/// Upstream `slots_per_epoch` derives the slot count from `epoch_duration_millis / 1000`, a
+	/// hardcoded 1000 ms slot, while `timestamp_to_mainchain_slot_number` divides by the configured
+	/// `slot_duration_millis`. For any slot duration other than 1000 ms these two derivations
+	/// disagree on epoch/slot boundaries with no panic and no error, so `1000` is the only mainchain
+	/// slot duration coherent with the vendored upstream math.
+	UnsupportedSlotDuration {
+		/// The configured `mc__slot_duration_millis`.
+		slot_duration_millis: u64,
+	},
 }
 
 impl core::fmt::Display for MainchainEpochConfigError {
@@ -95,6 +106,10 @@ impl core::fmt::Display for MainchainEpochConfigError {
 					"mc__epoch_duration_millis ({epoch_duration_millis}) must be an exact multiple of mc__slot_duration_millis ({slot_duration_millis}); a non-divisible pair makes mainchain epoch and slot boundaries round inconsistently between nodes"
 				)
 			},
+			Self::UnsupportedSlotDuration { slot_duration_millis } => write!(
+				f,
+				"mc__slot_duration_millis ({slot_duration_millis}) must be exactly 1000; the mainchain slot/epoch derivation assumes a 1000 ms slot, so any other value makes mainchain epoch and slot boundaries derive inconsistently"
+			),
 		}
 	}
 }
@@ -147,12 +162,12 @@ impl core::fmt::Display for ConsensusConfigCoherenceError {
 
 impl std::error::Error for ConsensusConfigCoherenceError {}
 
-/// Validates the self-contained mainchain timing invariants (`I1`–`I4`) on `config`.
+/// Validates the self-contained mainchain timing invariants (`I1`–`I4`, `I6`) on `config`.
 ///
 /// Expressed against [`MainchainEpochConfig`] — the same type the consensus code consumes — so the
 /// guard sits on the consensus input rather than on ad-hoc decomposed fields. The first violated
-/// invariant is returned; invariants are checked in the order `I1`, `I2`, `I3`, `I4` so the most
-/// fundamental coherence failure (a zero divisor) is reported first.
+/// invariant is returned; invariants are checked in the order `I1`, `I2`, `I3`, `I4`, `I6` so the
+/// most fundamental coherence failure (a zero divisor) is reported first.
 pub fn check_mainchain_epoch_invariants(
 	config: &MainchainEpochConfig,
 ) -> Result<(), MainchainEpochConfigError> {
@@ -180,6 +195,20 @@ pub fn check_mainchain_epoch_invariants(
 			epoch_duration_millis,
 			slot_duration_millis,
 		});
+	}
+	// I6 — the upstream `MainchainEpochConfig::slots_per_epoch()` derives the slot count from a
+	// hardcoded `epoch_duration_millis / 1000` (a 1000 ms slot), whereas
+	// `timestamp_to_mainchain_slot_number` divides by the configured `slot_duration_millis`. For any
+	// value other than 1000 ms these derivations disagree, so 1000 ms is the only mainchain slot
+	// duration coherent with the vendored partner-chains math. Revisit (and relax to honour the
+	// configured slot duration) if the partner-chains dependency is upgraded to a version whose
+	// `slots_per_epoch` divides by the configured slot duration rather than a hardcoded 1000.
+	//
+	// Checked after I4 so the I4 non-divisibility property remains reachable (and testable) for slot
+	// durations other than 1000; I4 with the slot pinned to 1000 additionally guarantees the epoch is
+	// a whole number of seconds, matching the exact `epoch / 1000` upstream truncation.
+	if slot_duration_millis != 1000 {
+		return Err(MainchainEpochConfigError::UnsupportedSlotDuration { slot_duration_millis });
 	}
 
 	Ok(())
@@ -293,6 +322,19 @@ mod tests {
 				epoch_duration_millis: 10_000,
 				slot_duration_millis: 3000,
 			})
+		);
+	}
+
+	#[test]
+	fn rejects_non_1000ms_slot_duration_i6() {
+		// epoch 432_000_000 ms is an exact multiple of a 2000 ms slot (432_000_000 % 2000 == 0), so
+		// this pair satisfies the I4 divisibility check, yet the vendored upstream `slots_per_epoch`
+		// hardcodes `/ 1000`. The I6 guard rejects the non-1000 ms slot duration that I4 alone admits.
+		let mut cfg = good_mc_config();
+		cfg.slot_duration_millis = Duration::from_millis(2000);
+		assert_eq!(
+			check_mainchain_epoch_invariants(&cfg),
+			Err(MainchainEpochConfigError::UnsupportedSlotDuration { slot_duration_millis: 2000 })
 		);
 	}
 
