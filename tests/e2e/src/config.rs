@@ -4,23 +4,25 @@ use whisky::{LanguageVersion, Network as CardanoNetwork};
 
 // Default location of the contract-info and plutus blueprint files.
 // `local-*` features read what local-env's docker stack writes to disk;
-// `qanet` reads the snapshot of actually-deployed contracts pinned via the
-// `midnight-reserve-contracts` submodule — so the qanet suite has no dependency
-// on local-env ever having been brought up on the host. Both can be overridden
-// via `RUNTIME_VALUES_DIR`, which keeps the historic single-dir layout
-// (contracts-info.json + plutus-local.json) for ad-hoc use.
+// every other network feature reads the snapshot of actually-deployed
+// contracts pinned via the `midnight-reserve-contracts` submodule — so the
+// non-local-env suite has no dependency on local-env ever having been brought
+// up on the host. Both can be overridden via `RUNTIME_VALUES_DIR`, which keeps
+// the historic single-dir layout (contracts-info.json + plutus-local.json)
+// for ad-hoc use.
 fn contracts_info_path() -> String {
     if let Ok(dir) = std::env::var("RUNTIME_VALUES_DIR") {
         return format!("{dir}/contracts-info.json");
     }
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    #[cfg(feature = "qanet")]
-    let p = format!(
-        "{manifest_dir}/../../midnight-reserve-contracts/deployments/qanet/contract-info.json"
-    );
-    #[cfg(not(feature = "qanet"))]
+    #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
     let p = format!(
         "{manifest_dir}/../../local-environment/src/networks/local-env/runtime-values/contracts-info.json"
+    );
+    #[cfg(not(any(feature = "local", feature = "local-dev", feature = "local-ci")))]
+    let p = format!(
+        "{manifest_dir}/../../midnight-reserve-contracts/deployments/{}/contract-info.json",
+        submodule_network()
     );
     p
 }
@@ -30,15 +32,24 @@ fn plutus_path() -> String {
         return format!("{dir}/plutus-local.json");
     }
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    #[cfg(feature = "qanet")]
-    let p = format!(
-        "{manifest_dir}/../../midnight-reserve-contracts/deployed-scripts/qanet/plutus.json"
-    );
-    #[cfg(not(feature = "qanet"))]
+    #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
     let p = format!(
         "{manifest_dir}/../../local-environment/src/networks/local-env/runtime-values/plutus-local.json"
     );
+    #[cfg(not(any(feature = "local", feature = "local-dev", feature = "local-ci")))]
+    let p = format!(
+        "{manifest_dir}/../../midnight-reserve-contracts/deployed-scripts/{}/plutus.json",
+        submodule_network()
+    );
     p
+}
+
+#[cfg(not(any(feature = "local", feature = "local-dev", feature = "local-ci")))]
+fn submodule_network() -> &'static str {
+    #[cfg(feature = "qanet")]
+    {
+        "qanet"
+    }
 }
 
 fn read_contracts_info_entry(name: &str) -> serde_json::Value {
