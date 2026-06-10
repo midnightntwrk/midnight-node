@@ -58,8 +58,22 @@ impl SubstrateCfg {
 	pub fn into_run_cmd(self, safe_read_opts: &SafeReadOpts) -> sc_cli::Result<RunCmd> {
 		let default_run_cmd = RunCmd::parse_from(&["midnight-node".to_string()]);
 
-		let argv: Vec<String> =
-			self.argv().into_iter().filter(|e| e != "--filter-deploy-txs").collect();
+		// Strip midnight-only flags (parsed separately via `RunMidnight`) before handing
+		// argv to substrate's strict RunCmd parser, which errors on unknown arguments.
+		let mut argv: Vec<String> = Vec::new();
+		let mut skip_value = false;
+		for e in self.argv() {
+			if skip_value {
+				skip_value = false;
+				continue;
+			}
+			match e.as_str() {
+				"--filter-deploy-txs" => {}
+				"--warp-sync-grandpa-hard-fork" => skip_value = true,
+				s if s.starts_with("--warp-sync-grandpa-hard-fork=") => {}
+				_ => argv.push(e),
+			}
+		}
 
 		let mut run_cmd = RunCmd::parse_from(argv);
 		if run_cmd.shared_params.base_path.is_none() && self.base_path.is_some() {

@@ -182,6 +182,14 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	} else {
 		TxFilterConfig::disabled()
 	};
+	let grandpa_warp_sync_hard_forks = run_midnight
+		.warp_sync_grandpa_hard_fork
+		.as_deref()
+		.map(service::parse_grandpa_warp_sync_hard_fork)
+		.transpose()
+		.map_err(|e| sc_cli::Error::Input(format!("invalid --warp-sync-grandpa-hard-fork: {e}")))?
+		.into_iter()
+		.collect::<Vec<_>>();
 
 	if cfg.midnight_cfg.wipe_chain_state
 		&& let Some(base_path) = run_cmd.base_path()?
@@ -317,6 +325,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			hwbench,
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
+			grandpa_warp_sync_hard_forks,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)?;

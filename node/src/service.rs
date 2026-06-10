@@ -482,6 +482,40 @@ pub fn new_partial(
 	Ok(partial_components)
 }
 
+/// Parse a `--warp-sync-grandpa-hard-fork` value
+/// (`<block_hash>:<block_number>:<set_id>:<authorities_scale_hex>`) into the
+/// [`sc_consensus_grandpa::AuthoritySetHardFork`] handed to the warp-sync proof verifier.
+pub fn parse_grandpa_warp_sync_hard_fork(
+	s: &str,
+) -> Result<sc_consensus_grandpa::AuthoritySetHardFork<Block>, String> {
+	let parts: Vec<&str> = s.split(':').collect();
+	let [hash, number, set_id, authorities] = parts.as_slice() else {
+		return Err(format!(
+			"expected <block_hash>:<block_number>:<set_id>:<authorities_scale_hex>, got {} part(s)",
+			parts.len()
+		));
+	};
+	let hash: sp_core::H256 = hash
+		.trim_start_matches("0x")
+		.parse()
+		.map_err(|e| format!("invalid block hash: {e}"))?;
+	let number: u32 = number.parse().map_err(|e| format!("invalid block number: {e}"))?;
+	let set_id: u64 = set_id.parse().map_err(|e| format!("invalid set id: {e}"))?;
+	let authorities = hex::decode(authorities.trim_start_matches("0x"))
+		.map_err(|e| format!("invalid authorities hex: {e}"))?;
+	let authorities = sp_consensus_grandpa::AuthorityList::decode(&mut &authorities[..])
+		.map_err(|e| format!("invalid SCALE AuthorityList: {e}"))?;
+	if authorities.is_empty() {
+		return Err("authority list must not be empty".into());
+	}
+	Ok(sc_consensus_grandpa::AuthoritySetHardFork {
+		set_id,
+		block: (hash, number),
+		authorities,
+		last_finalized: None,
+	})
+}
+
 /// Builds a new service for a full client.
 #[allow(clippy::too_many_arguments)]
 pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
@@ -495,6 +529,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	hwbench: Option<sc_sysinfo::HwBench>,
 	tx_filter_config: TxFilterConfig,
 	max_finality_subscriptions: u32,
+	grandpa_warp_sync_hard_forks: Vec<sc_consensus_grandpa::AuthoritySetHardFork<Block>>,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
@@ -589,7 +624,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let warp_sync = Arc::new(sc_consensus_grandpa::warp_proof::NetworkProvider::new(
 		backend.clone(),
 		grandpa_link.shared_authority_set().clone(),
-		Vec::default(),
+		grandpa_warp_sync_hard_forks,
 	));
 
 	let (network, system_rpc_tx, tx_handler_controller, sync_service) =

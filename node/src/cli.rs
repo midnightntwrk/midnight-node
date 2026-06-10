@@ -46,6 +46,19 @@ pub struct RunMidnight {
 	/// Connections that exceed this limit will have their subscription requests rejected.
 	#[arg(long, default_value_t = 512)]
 	pub rpc_max_finality_subscriptions: u32,
+
+	/// GRANDPA warp-sync authority-set hard fork, as
+	/// `<block_hash>:<block_number>:<set_id>:<authorities_scale_hex>`.
+	///
+	/// While warp syncing, when the proof fragment for the given block is reached, adopt the
+	/// given set id and SCALE-encoded `AuthorityList` instead of verifying that fragment's
+	/// justification. Required to warp-sync onto a chain whose authority set was force-rotated
+	/// outside a finalized handoff — e.g. a restored local-environment fork driven by mock
+	/// authorities — where no justification by the previous set can exist. Only affects
+	/// `--sync warp`; the trust root for the named block is this CLI value, so only pass
+	/// values you obtained from a node you trust.
+	#[arg(long)]
+	pub warp_sync_grandpa_hard_fork: Option<String>,
 }
 
 #[derive(Debug, clap::Parser)]
