@@ -13,8 +13,8 @@
 
 //! # Midnight node primitives
 //!
-//! Shared types and traits that define the boundary between the Midnight node
-//! and the Midnight ledger.
+//! Shared types and traits that define the boundary between the Midnight node,
+//! the runtime, and the Midnight ledger.
 //!
 //! The node frames, validates, weighs, and routes transactions; the ledger
 //! decodes and interprets the opaque payload carried by a ledger transaction.
