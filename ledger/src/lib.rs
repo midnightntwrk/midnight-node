@@ -192,6 +192,24 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 	}
 }
 
+/// Whether the local ledger arena holds the ledger state `state_key` points to (the `Ledger` root
+/// node is readable). Cheap — a single arena root lookup, no DAG traversal.
+///
+/// Used by warp ledger-sync's recovery monitor to decide whether arena recovery is needed at all:
+/// a node restarted *after* a completed recovery (or a normally full-synced node) already has the
+/// state and must not re-fetch or re-gate; a node restarted *mid*-recovery does not, and must.
+/// Returns `false` for an unsupported/undecodable `StateKey` (recovery will then verify against it
+/// and fail loudly rather than silently skipping).
+#[cfg(feature = "std")]
+pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
+	match ledger_state_tag_version(state_key) {
+		Some(16) => bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok(),
+		Some(13) => bridge_arena_call!(ledger_8, unified, get_ledger_state_root(state_key)).is_ok(),
+		Some(5) => bridge_arena_call!(ledger_7, unified, get_ledger_state_root(state_key)).is_ok(),
+		_ => false,
+	}
+}
+
 /// Failure modes of [`import_verified_ledger_snapshot`]. All are non-fatal to the chain: the caller
 /// discards the data, reports the peer, and retries from another.
 #[cfg(feature = "std")]

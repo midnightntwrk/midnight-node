@@ -64,6 +64,14 @@ impl RecoveryGate {
 		self.recovery_pending.load(Ordering::Acquire)
 			&& !self.ledger_verified.load(Ordering::Acquire)
 	}
+
+	/// Wait until recovery is no longer in progress (poll-based; recovery takes seconds-to-minutes,
+	/// so a sub-second poll adds no meaningful latency and keeps the gate free of async machinery).
+	pub async fn wait_until_released(&self) {
+		while self.ledger_recovery_in_progress() {
+			tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+		}
+	}
 }
 
 /// Wraps the node's inner [`SyncOracle`] (the `SyncingService`) so AURA reports "still syncing"

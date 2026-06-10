@@ -430,6 +430,7 @@ pub fn new_partial(
 	let gated_block_import = crate::warp_ledger_sync::block_import::GatedBlockImport::new(
 		grandpa_block_import.clone(),
 		recovery_gate.clone(),
+		backend.clone(),
 	);
 
 	let import_queue = partner_chains_aura_import_queue::import_queue::<
