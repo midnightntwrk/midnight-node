@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! M2.1 — Warp-completion monitor & target capture.
+//! Warp-completion monitor & target capture.
 //!
 //! Spawned for the lifetime of the node. On a **full sync** the warp path is never observed and the
 //! task exits without ever arming the gate. On a **warp sync** it arms the gate, waits for warp +
@@ -27,7 +27,7 @@ use sc_network::{NetworkPeers, NetworkRequest, NetworkStatusProvider, PeerId, Pr
 use sc_network_sync::SyncingService;
 use sp_blockchain::HeaderBackend;
 use sp_consensus::SyncOracle;
-use sp_runtime::traits::Block as BlockT;
+use sp_runtime::traits::{Block as BlockT, NumberFor};
 
 use super::{LOG_TARGET, client::LedgerSyncClient, oracle::RecoveryGate};
 
@@ -52,6 +52,61 @@ pub async fn run_recovery_monitor<B, Client, BE, Network>(
 	Client: HeaderBackend<B> + StorageProvider<B, BE> + Send + Sync + 'static,
 	Network: NetworkRequest + NetworkStatusProvider + NetworkPeers + Send + Sync + ?Sized + 'static,
 {
+	// 0. Restart / already-synced fast path. If the DB already holds a finalized state at boot,
+	//    this is not a fresh warp: it is either a normally-synced node or a *restart* of a
+	//    previously warp-synced one. Recovery is then needed exactly when the local arena is
+	//    missing the ledger state behind the on-chain `StateKey` at the finalized block (e.g. the
+	//    node was killed mid-recovery). Deciding by the arena — not by sync status — also avoids a
+	//    trap: `chain_sync` reports an active *gap* (block-history) sync as `warp_sync:
+	//    Some(DownloadingBlocks)`, so a status-based check re-detects "warp" and needlessly re-gates
+	//    + re-downloads the arena on every restart until the gap is filled.
+	if let Some((finalized_hash, finalized_number)) = client.info().finalized_state {
+		match super::read_state_key::<B, Client, BE>(&client, finalized_hash) {
+			Ok(Some(state_key)) => {
+				if midnight_node_ledger::has_ledger_state(unified, &state_key) {
+					log::debug!(
+						target: LOG_TARGET,
+						"Ledger arena already holds the state at finalized #{finalized_number}; no warp recovery needed"
+					);
+					return;
+				}
+				log::info!(
+					target: LOG_TARGET,
+					"Ledger arena is missing the state at finalized #{finalized_number} \
+					 (restart during an incomplete warp recovery?); recovering (authoring + import gated)"
+				);
+				gate.arm();
+				recover_and_release(
+					client,
+					sync_service,
+					network,
+					gate,
+					protocol_name,
+					unified,
+					finalized_hash,
+					finalized_number,
+				)
+				.await;
+				return;
+			},
+			Ok(None) => {
+				log::debug!(
+					target: LOG_TARGET,
+					"No pallet StateKey at finalized #{finalized_number}; ledger recovery not applicable"
+				);
+				return;
+			},
+			Err(e) => {
+				// Can't read the trie at the finalized block — fall through to the warp-detection
+				// loop rather than guessing.
+				log::warn!(
+					target: LOG_TARGET,
+					"Failed to read StateKey at finalized #{finalized_number}: {e}; falling back to warp detection"
+				);
+			},
+		}
+	}
+
 	// 1. Detect the warp path and wait for warp + state-sync to finish. We check status *before*
 	//    sleeping so we observe `warp_sync == Some(..)` early (it stays `Some` throughout the
 	//    multi-second warp), and arm the gate the moment warp is seen — so AURA is gated through the
@@ -93,12 +148,45 @@ pub async fn run_recovery_monitor<B, Client, BE, Network>(
 
 		tokio::time::sleep(POLL_INTERVAL).await;
 	};
+
+	recover_and_release(
+		client,
+		sync_service,
+		network,
+		gate,
+		protocol_name,
+		unified,
+		target_hash,
+		target_number,
+	)
+	.await;
+}
+
+/// Recover + verify + import the arena at the given target (retrying across the current peer set
+/// until one succeeds), then release the gate. Shared by the fresh-warp path and the
+/// restarted-mid-recovery path.
+#[allow(clippy::too_many_arguments)]
+async fn recover_and_release<B, Client, BE, Network>(
+	client: Arc<Client>,
+	sync_service: Arc<SyncingService<B>>,
+	network: Arc<Network>,
+	gate: Arc<RecoveryGate>,
+	protocol_name: ProtocolName,
+	unified: bool,
+	target_hash: B::Hash,
+	target_number: NumberFor<B>,
+) where
+	B: BlockT,
+	BE: Backend<B> + 'static,
+	Client: HeaderBackend<B> + StorageProvider<B, BE> + Send + Sync + 'static,
+	Network: NetworkRequest + NetworkStatusProvider + NetworkPeers + Send + Sync + ?Sized + 'static,
+{
 	log::info!(
 		target: LOG_TARGET,
 		"Recovering ledger arena at warp target #{target_number} ({target_hash:?})"
 	);
 
-	// 3. Recover + verify + import, retrying across the current peer set until one succeeds.
+	// Recover + verify + import, retrying across the current peer set until one succeeds.
 	let driver = LedgerSyncClient::new(client, network.clone(), protocol_name, unified);
 	loop {
 		let peers = recovery_candidate_peers(&*network, &sync_service).await;
@@ -111,7 +199,9 @@ pub async fn run_recovery_monitor<B, Client, BE, Network>(
 		}
 	}
 
-	// 4. Release the gate: opens both the authoring oracle and the block-import gate.
+	// Release the gate: opens both the authoring oracle and the block-import gate. Any block
+	// batches deferred (errored) by the gate during recovery are re-requested by the sync
+	// restart-retry loop and import cleanly from here on (see `block_import.rs` module docs).
 	gate.mark_ledger_verified();
 	log::info!(target: LOG_TARGET, "Ledger arena recovered + verified; authoring + import gate released");
 }

@@ -13,13 +13,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! M1.2 — Ledger-sync server handler.
+//! Ledger-sync server handler.
 //!
 //! Answers [`LedgerSyncRequest`]s from warp-syncing peers by serializing this (fully synced) node's
 //! `Ledger`-rooted arena snapshot at the requested finalized block and serving the requested byte
 //! range. Patterned on substrate's `state_request_handler.rs`.
 //!
-//! Verification is the *client's* job (M1.3): the server is untrusted, so it performs no crypto —
+//! Verification is the *client's* job: the server is untrusted, so it performs no crypto —
 //! it only serves bytes whose recomputed root the client checks against the on-chain `StateKey`.
 
 use std::{marker::PhantomData, sync::Arc, time::Duration};

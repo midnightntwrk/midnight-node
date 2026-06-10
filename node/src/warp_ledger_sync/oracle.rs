@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! M2.2 — recovery gate + wrapping [`SyncOracle`].
+//! Recovery gate + wrapping [`SyncOracle`].
 //!
 //! The shared [`RecoveryGate`] is the single source of truth for "is the warp-recovered ledger
 //! arena ready yet". It gates two things until recovery is verified:
@@ -63,6 +63,14 @@ impl RecoveryGate {
 	pub fn ledger_recovery_in_progress(&self) -> bool {
 		self.recovery_pending.load(Ordering::Acquire)
 			&& !self.ledger_verified.load(Ordering::Acquire)
+	}
+
+	/// Wait until recovery is no longer in progress (poll-based; recovery takes seconds-to-minutes,
+	/// so a sub-second poll adds no meaningful latency and keeps the gate free of async machinery).
+	pub async fn wait_until_released(&self) {
+		while self.ledger_recovery_in_progress() {
+			tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+		}
 	}
 }
 

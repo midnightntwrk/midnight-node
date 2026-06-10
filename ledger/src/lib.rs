@@ -171,7 +171,7 @@ macro_rules! bridge_arena_call {
 }
 
 /// Serialize the ledger arena snapshot at `state_key` into the canonical, `Ledger`-rooted warp
-/// transfer blob (trustless warp ledger-sync, M1.2 server side). `unified` selects the ParityDb
+/// transfer blob (trustless warp ledger-sync, server side). `unified` selects the ParityDb
 /// instantiation (separate = column offset 0; unified = offset `NUM_COLUMNS_POLKADOT`); the blob is
 /// identical across modes.
 ///
@@ -192,8 +192,26 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 	}
 }
 
+/// Whether the local ledger arena holds the ledger state `state_key` points to (the `Ledger` root
+/// node is readable). Cheap — a single arena root lookup, no DAG traversal.
+///
+/// Used by warp ledger-sync's recovery monitor to decide whether arena recovery is needed at all:
+/// a node restarted *after* a completed recovery (or a normally full-synced node) already has the
+/// state and must not re-fetch or re-gate; a node restarted *mid*-recovery does not, and must.
+/// Returns `false` for an unsupported/undecodable `StateKey` (recovery will then verify against it
+/// and fail loudly rather than silently skipping).
+#[cfg(feature = "std")]
+pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
+	match ledger_state_tag_version(state_key) {
+		Some(16) => bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok(),
+		Some(13) => bridge_arena_call!(ledger_8, unified, get_ledger_state_root(state_key)).is_ok(),
+		Some(5) => bridge_arena_call!(ledger_7, unified, get_ledger_state_root(state_key)).is_ok(),
+		_ => false,
+	}
+}
+
 /// Failure modes of [`import_verified_ledger_snapshot`]. All are non-fatal to the chain: the caller
-/// discards the data, reports the peer, and retries from another (warp spec M4.1).
+/// discards the data, reports the peer, and retries from another.
 #[cfg(feature = "std")]
 #[derive(Debug)]
 pub enum SnapshotImportError {
@@ -231,12 +249,11 @@ impl std::error::Error for SnapshotImportError {}
 #[cfg(feature = "std")]
 /// Verify a `Ledger`-rooted warp snapshot `blob` against the on-chain `expected_state_key` and, on
 /// success, persist it into the already-open arena backend so `get_lazy(StateKey)` resolves (warp
-/// ledger-sync M1.3 verification + M1.4 import). `unified` selects the DB instantiation, as in
-/// [`serialize_ledger_snapshot`]. Uses the latest ledger version (`ledger_9`) — same near-tip
-/// assumption noted there.
+/// ledger-sync verification + import). `unified` selects the DB instantiation, and dispatch on the
+/// `StateKey`'s `ledger-state[vNN]` tag picks the ledger module, as in
+/// [`serialize_ledger_snapshot`].
 ///
-/// The caller must hold the authoring/import gate (the arena is single-writer) — see
-/// `warp-ledger-sync-m1.4a-spike.md`.
+/// The caller must hold the authoring/import gate (the arena is single-writer).
 pub fn import_verified_ledger_snapshot(
 	unified: bool,
 	blob: &[u8],
@@ -246,13 +263,25 @@ pub fn import_verified_ledger_snapshot(
 	// `SnapshotImportError` for every version, so no error mapping is needed).
 	match ledger_state_tag_version(expected_state_key) {
 		Some(16) => {
-			bridge_arena_call!(ledger_9, unified, import_verified_ledger_snapshot(blob, expected_state_key))
+			bridge_arena_call!(
+				ledger_9,
+				unified,
+				import_verified_ledger_snapshot(blob, expected_state_key)
+			)
 		},
 		Some(13) => {
-			bridge_arena_call!(ledger_8, unified, import_verified_ledger_snapshot(blob, expected_state_key))
+			bridge_arena_call!(
+				ledger_8,
+				unified,
+				import_verified_ledger_snapshot(blob, expected_state_key)
+			)
 		},
 		Some(5) => {
-			bridge_arena_call!(ledger_7, unified, import_verified_ledger_snapshot(blob, expected_state_key))
+			bridge_arena_call!(
+				ledger_7,
+				unified,
+				import_verified_ledger_snapshot(blob, expected_state_key)
+			)
 		},
 		other => Err(SnapshotImportError::StateKeyDecode(format!(
 			"unsupported ledger-state version {other:?} in StateKey"

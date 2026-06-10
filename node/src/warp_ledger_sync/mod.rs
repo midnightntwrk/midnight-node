@@ -22,7 +22,7 @@
 //! side request/response protocol that recovers the arena after warp+state-sync completes, with
 //! full cryptographic verification against the `StateKey` the trie already recovered.
 //!
-//! See `warp-ledger-sync-spec.md` for the full design. Module map:
+//! Module map:
 //! - [`protocol`] — wire message types, codec, protocol naming, range serving + reassembly.
 //! - [`server`] — serves the `Ledger`-rooted arena blob at a finalized target block as byte ranges.
 //! - [`client`] — fetches the blob from peers and hands it to the ledger crate for verification +
@@ -30,7 +30,7 @@
 //!   `midnight_node_ledger::import_verified_ledger_snapshot`, which reuses the arena's **native**
 //!   multi-pass deserializer (`Arena::deserialize_sp`) for untrusted input rather than a bespoke
 //!   re-hash, then asserts the recomputed root equals `StateKey` before persisting in-process
-//!   (`alloc`/`persist`/`flush`, no restart — see `warp-ledger-sync-m1.4a-spike.md`).
+//!   (`alloc`/`persist`/`flush`, no restart).
 //! - [`monitor`] — detects warp completion, captures the target block, drives [`client`], releases
 //!   the gate. [`oracle`] keeps AURA from authoring until recovery is verified.
 

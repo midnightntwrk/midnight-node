@@ -123,6 +123,7 @@ jobs:
         env:
           STRATEGY: ${{ steps.parse.outputs.strategy }}
           BASE_BRANCH: ${{ steps.pr.outputs.base }}
+          PR_REF: ${{ steps.pr.outputs.ref }}
         run: |
           set +e  # Don't exit on error
 
@@ -193,7 +194,7 @@ jobs:
           git commit -m "chore: merge $BASE_BRANCH and resolve metadata conflicts ($strategy_desc)"
 
           # Push the merge commit
-          git push origin "HEAD:refs/heads/${{ steps.pr.outputs.ref }}"
+          git push origin "HEAD:refs/heads/${PR_REF}"
 
           echo "RESULT=resolved" >> "$GITHUB_ENV"
           # Replace newlines with comma-space for display

@@ -53,6 +53,7 @@ COUNCIL_POLICY_ID=$(jq -r '.[] | select(.name == "Council Forever") | .scriptHas
 COUNCIL_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Council Forever") | .address' $CONTRACT_INFO)
 TECHAUTH_POLICY_ID=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .scriptHash' $CONTRACT_INFO)
 TECHAUTH_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .address' $CONTRACT_INFO)
+CNIGHT_MAPPING_VALIDATOR_ADDRESS=$(jq -r '.[] | select(.name == "cNIGHT Generates Dust") | .address' $CONTRACT_INFO)
 export PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.[] | select(.name == "Federated Ops Forever") | .scriptHash' $CONTRACT_INFO)
 export GENESIS_UTXO="0000000000000000000000000000000000000000000000000000000000000000#0"
 
@@ -120,7 +121,10 @@ cat /tmp/registered-candidates-addresses.json
 
 
 echo "Creating cnight-config.json..."
-jq '.observed_utxos.end = .observed_utxos.start
+echo "  cNIGHT mapping validator address: $CNIGHT_MAPPING_VALIDATOR_ADDRESS"
+jq --arg mapping_addr "$CNIGHT_MAPPING_VALIDATOR_ADDRESS" \
+  '.addresses.mapping_validator_address = $mapping_addr
+  | .observed_utxos.end = .observed_utxos.start
   | .observed_utxos.utxos = []
   | .mappings = {}
   | .utxo_owners = {}
