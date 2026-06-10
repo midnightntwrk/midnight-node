@@ -468,4 +468,37 @@ pub trait Ledger9Bridge {
 		}
 		true
 	}
+
+	/// Initialize a process-wide temporary ledger ParityDb seeded with the
+	/// undeployed-network genesis state.
+	///
+	/// Seeding with the undeployed genesis state is required because the
+	/// chain-spec's `StateKey<T>` is derived from that exact byte payload;
+	/// any other seed would produce a different arena root and host calls
+	/// like `get_c_to_m_bridge_min_amount` would not resolve.
+	///
+	/// `init_storage_paritydb_separate` internally calls the storage-core's
+	/// once-set `set_default_storage`, so subsequent calls across benchmark
+	/// iterations are effectively no-ops; we still gate with a `OnceLock`
+	/// to avoid the re-alloc + parity-db lock churn that would otherwise
+	/// happen each iteration.
+	#[cfg(feature = "runtime-benchmarks")]
+	fn register_benchmark_ledger_storage(&mut self) {
+		// Can't use `midnight-node-res` dependency, because it transitively depends
+		// on this crate (via `pallet-cnight-observation`).
+		const GENESIS_STATE_UNDEPLOYED: &[u8] =
+			include_bytes!("../../../res/genesis/genesis_state_undeployed.mn");
+		use std::sync::OnceLock;
+		static INIT: OnceLock<()> = OnceLock::new();
+		INIT.get_or_init(|| {
+			let mut dir = std::env::temp_dir();
+			dir.push(format!("midnight-bench-ledger-{}", std::process::id()));
+			let _ = std::fs::create_dir_all(&dir);
+			let _state_key = crate::ledger_9::storage::init_storage_paritydb_separate(
+				dir,
+				GENESIS_STATE_UNDEPLOYED,
+				10_000,
+			);
+		});
+	}
 }
