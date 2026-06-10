@@ -287,6 +287,8 @@ mod test {
 			"../../res/dev/cnight-config.json",
 			"--ics-config",
 			"../../res/dev/ics-config.json",
+			"--reserve-config",
+			"../../res/dev/reserve-config.json",
 			"--ledger-parameters-config",
 			"../../res/dev/ledger-parameters-config.json",
 		];

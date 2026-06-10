@@ -125,11 +125,15 @@ impl GenesisGenerator {
 		ledger_parameters: Option<LedgerParameters>,
 		genesis_timestamp: Option<u64>,
 	) -> Result<Self> {
-		let treasury = ics_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
-		let reserve_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or(0);
-		// When reserve is zero (no config or empty config), assign all remaining supply
-		// to the reserve pool so dev/test networks have funds for faucet wallet distribution.
-		let reserve_pool = if reserve_pool == 0 { MAX_SUPPLY - treasury } else { reserve_pool };
+		let treasury = ics_config.as_ref().map(|c| c.total_amount).unwrap_or_else(|| {
+			log::warn!("Genesis 'treasury pool' is empty. System may not be fully functional!");
+			0
+		});
+		let reserve_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or_else(|| {
+			// In case of testnet it likely means that faucet will have not funds.
+			log::warn!("Genesis 'reserve pool' is empty. System may not be fully functional!");
+			0
+		});
 
 		let locked_pool = MAX_SUPPLY - reserve_pool - treasury;
 
@@ -657,12 +661,6 @@ mod test {
 		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
 		let network_id = "undeployed";
 		let proof_server = None;
-		let seeds = [
-			"0000000000000000000000000000000000000000000000000000000000000001",
-			"0000000000000000000000000000000000000000000000000000000000000002",
-		]
-		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
-		.to_vec();
 
 		// ICS config determines the treasury pool amount.
 		let ics_config = IcsConfig {
@@ -689,7 +687,7 @@ mod test {
 			network_id,
 			proof_server,
 			funding,
-			Some(&seeds),
+			None,
 			None,
 			Some(ics_config),
 			None, // no reserve config
@@ -715,14 +713,18 @@ mod test {
 			shielded_mint_amount: 0,
 			shielded_num_funding_outputs: 0,
 			shielded_alt_token_types: vec![],
-			unshielded_mint_amount: 0,
-			unshielded_num_funding_outputs: 0,
+			unshielded_mint_amount: MINT_AMOUNT,
+			unshielded_num_funding_outputs: 1,
 			unshielded_alt_token_types: vec![],
 		};
 
 		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
 		let network_id = "undeployed";
+		let seeds = ["0000000000000000000000000000000000000000000000000000000000000001"]
+			.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
+			.to_vec();
 
+		let reserve_config_amount = 5_000_000_000_000_000;
 		// Reserve config determines the reserve pool amount.
 		let reserve_config = ReserveConfig {
 			reserve_validator_address: "addr_test1qz_reserve".to_string(),
@@ -734,15 +736,15 @@ mod test {
 				midnight_primitives_reserve_observation::ReserveUtxo {
 					tx_hash: "abc123".to_string(),
 					output_index: 0,
-					amount: 3_000_000_000_000,
+					amount: 3_000_000_000_000_000,
 				},
 				midnight_primitives_reserve_observation::ReserveUtxo {
 					tx_hash: "def456".to_string(),
 					output_index: 1,
-					amount: 2_000_000_000_000,
+					amount: 2_000_000_000_000_000,
 				},
 			],
-			total_amount: 5_000_000_000_000,
+			total_amount: reserve_config_amount,
 		};
 
 		reserve_config.validate().expect("Reserve config should be valid");
@@ -752,7 +754,7 @@ mod test {
 			network_id,
 			None,
 			funding,
-			None, // no wallets — keeps pool accounting simple
+			Some(&seeds),
 			None,
 			None,
 			Some(reserve_config),
@@ -762,16 +764,16 @@ mod test {
 		.await
 		.unwrap();
 
-		// Pools should reflect the actual config values passed
-		let expected_reserve: u128 = 5_000_000_000_000;
-		let expected_locked = MAX_SUPPLY - expected_reserve; // no ICS config, so treasury = 0
+		// Pools should reflect the actual config value minus amount taken for funded seeds.
+		let expected_reserve: u128 = reserve_config_amount - MINT_AMOUNT;
+		let expected_locked = MAX_SUPPLY - reserve_config_amount; // no ICS config, so treasury = 0
 		assert_eq!(
 			genesis.state.locked_pool, expected_locked,
 			"locked_pool should be MAX_SUPPLY minus reserve"
 		);
 		assert_eq!(
 			genesis.state.reserve_pool, expected_reserve,
-			"reserve_pool should equal reserve config total_amount"
+			"reserve_pool should equal reserve config total_amount minus funded seeds"
 		);
 	}
 
@@ -798,6 +800,20 @@ mod test {
 		.map(|seed| WalletSeed::try_from_hex_str(seed).unwrap())
 		.to_vec();
 
+		let reserve_config = ReserveConfig {
+			reserve_validator_address: "addr_test1qz_reserve".to_string(),
+			asset: midnight_primitives_reserve_observation::ReserveAsset {
+				policy_id: midnight_primitives_reserve_observation::PolicyId([0u8; 28]),
+				asset_name: "NIGHT".to_string(),
+			},
+			utxos: vec![midnight_primitives_reserve_observation::ReserveUtxo {
+				tx_hash: "def456".to_string(),
+				output_index: 1,
+				amount: 1_000_000_000_000_000,
+			}],
+			total_amount: 1_000_000_000_000_000, // 4 * 5 * MINT_AMOUNT
+		};
+
 		let genesis = GenesisGenerator::new(
 			seed,
 			network_id,
@@ -806,7 +822,7 @@ mod test {
 			Some(&seeds),
 			None,
 			None,
-			None,
+			Some(reserve_config), // required to fund seeds
 			None,
 			None, // use default genesis timestamp
 		)
