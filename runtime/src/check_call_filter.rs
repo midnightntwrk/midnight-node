@@ -16,6 +16,8 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 			call,
 			RuntimeCall::Council(_)
 				| RuntimeCall::TechnicalCommittee(_)
+				| RuntimeCall::CouncilProposerCancel(_)
+				| RuntimeCall::TechnicalCommitteeProposerCancel(_)
 				| RuntimeCall::FederatedAuthority(
 					pallet_federated_authority::Call::motion_close { .. }
 				) | RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })
@@ -56,4 +58,21 @@ impl TransactionExtension<RuntimeCall> for CheckCallFilter {
 	}
 
 	impl_tx_ext_default!(RuntimeCall; weight prepare);
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use sp_core::H256;
+
+	#[test]
+	fn proposer_cancel_calls_pass_the_filter() {
+		let proposal_hash = H256::repeat_byte(1);
+		assert!(CallFilter::contains(&RuntimeCall::CouncilProposerCancel(
+			pallet_collective_proposer_cancel::Call::cancel_proposal { proposal_hash }
+		)));
+		assert!(CallFilter::contains(&RuntimeCall::TechnicalCommitteeProposerCancel(
+			pallet_collective_proposer_cancel::Call::cancel_proposal { proposal_hash }
+		)));
+	}
 }

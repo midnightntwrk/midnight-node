@@ -188,6 +188,7 @@ runtime-benchmarks = [
     "pallet-membership/runtime-benchmarks",
     "pallet-collective/runtime-benchmarks",
     "pallet-collective-proposer-cancel/runtime-benchmarks",
+    "runtime-common/runtime-benchmarks",
     "sp-runtime/runtime-benchmarks",
     "pallet-federated-authority/runtime-benchmarks",
     "pallet-federated-authority-observation/runtime-benchmarks",
