@@ -11,16 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bulk-read cNIGHT observation data source.
+//! Sliding-window cNIGHT observation data source.
 //!
-//! At startup, run the four observation queries against db-sync across
-//! `[0, current_cardano_tip]` and hold the result in memory. Bulk observation
-//! queries thereafter come from the in-memory cache; a sliding-window refresh
-//! extends the cache as the chain advances. Queries past the current horizon
-//! delegate to a live db-backed source so the node keeps importing.
-//!
-//! Trade vs. an on-disk snapshot file: pay ~2 min of postgres work per node
-//! start instead of carrying multi-MB binaries in the repo.
+//! Holds a contiguous window of observation events in memory, sorted by
+//! Cardano position. The cache starts empty: the first inherent query after
+//! startup is served by the live db-backed source and kicks off a background
+//! refresh anchored at the runtime's latest processed Cardano position — so a
+//! node restarting after a full sync pulls only the window it needs, not
+//! `[genesis, tip]`. Single-flight refreshes slide the window forward as the
+//! chain advances (trimming behind the follower, extending toward the stable
+//! tip). Queries outside the cached window delegate to the live source so the
+//! node keeps importing.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
 use crate::data_source::cnight_observation::{
@@ -309,7 +310,10 @@ impl BulkCachedCNightObservationDataSource {
 
 	/// Trigger an async sliding-window refresh if not already in flight.
 	/// Returns immediately. Single-flight: concurrent triggers are no-ops.
-	fn maybe_kick_refresh(&self, target_end: u32) {
+	/// `follower_anchor` is the runtime's latest processed Cardano block (the
+	/// query's `start_position`) — the refresh restarts the window there when
+	/// the cache has fallen behind it (see [`plan_refresh`]).
+	fn maybe_kick_refresh(&self, follower_anchor: u32, target_end: u32) {
 		// Single-flight: if a refresh already holds the gate, do nothing. The
 		// guard is moved into the spawned task and released on completion.
 		let Ok(guard) = self.refresh_in_flight.clone().try_lock_owned() else {
@@ -333,7 +337,7 @@ impl BulkCachedCNightObservationDataSource {
 			// Hold the gate for the lifetime of the refresh; dropped (unlocked)
 			// when this task ends.
 			let _guard = guard;
-			if let Err(e) = ctx.refresh(target_end).await {
+			if let Err(e) = ctx.refresh(follower_anchor, target_end).await {
 				log::warn!(
 					target: "cnight::sliding-window",
 					"refresh failed (ignored, db_fallback continues to serve): {e}"
@@ -359,14 +363,13 @@ struct RefreshContext {
 
 impl RefreshContext {
 	/// Extend the cache forward to `target_end`, pulling events in `(old_end,
-	/// target_end]`. Trim happens *behind the follower*, not behind the tip —
-	/// dropping events older than `last_observation.start_position - window_size`
-	/// is safe (the follower will never re-read that far back), but trimming
-	/// behind `target_end - window_size` would drop events the runtime still
-	/// needs during catchup, breaking consensus. New events sort strictly after
-	/// every retained event, so no global re-sort is needed.
+	/// target_end]` — or, when the follower has moved past the window
+	/// entirely, restart the window at `follower_anchor` (see
+	/// [`plan_refresh`]). New events sort strictly after every retained
+	/// event, so no global re-sort is needed.
 	async fn refresh(
 		&self,
+		follower_anchor: u32,
 		target_end: u32,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		// Clamp refreshes to the highest stable db-sync block at or below the
@@ -392,33 +395,26 @@ impl RefreshContext {
 		if target_end <= old_end {
 			return Ok(());
 		}
-		let from_block = old_end.saturating_add(1);
-		// Anchor the trim point on the follower's last-seen position. During
-		// catchup the follower can be hundreds of thousands of blocks behind tip
-		// and still needs that history, so trimming behind `target_end - W`
-		// would silently drop required events.
-		//
-		// On the first refresh we may not have seen a follower call yet
-		// (everything has gone to db_fallback while waiting for this very
-		// fetch), so fall back to the existing `snapshot_start` — never move it
-		// backward, otherwise we'd lie about coverage.
 		let existing_start = self
 			.snapshot_start_block
 			.read()
 			.map_err(|e| format!("snapshot_start_block read poisoned: {e}"))?
-			.unwrap_or(from_block);
-		let new_window_start = match self
+			.unwrap_or_else(|| old_end.saturating_add(1));
+		let trim_anchor = self
 			.last_observation
 			.lock()
 			.ok()
-			.and_then(|g| g.as_ref().map(|last| last.start_position.block_number))
-		{
-			Some(anchor) => existing_start.max(anchor.saturating_sub(self.window_size)),
-			None => existing_start,
-		};
+			.and_then(|g| g.as_ref().map(|last| last.start_position.block_number));
+		let (from_block, new_window_start) =
+			plan_refresh(old_end, follower_anchor, existing_start, trim_anchor, self.window_size);
+		// The stable clamp above can land below a jumped-forward `from_block`
+		// when db-sync lags; nothing useful to pull yet.
+		if target_end < from_block {
+			return Ok(());
+		}
 		log::info!(
 			target: "cnight::sliding-window",
-			"refresh kicked off: extending to {target_end} (was end={old_end}); trim behind {new_window_start}"
+			"refresh kicked off: pulling [{from_block}, {target_end}] (was end={old_end}); trim behind {new_window_start}"
 		);
 		let t0 = std::time::Instant::now();
 		let (start, end) = (
@@ -449,6 +445,45 @@ impl RefreshContext {
 		);
 		Ok(())
 	}
+}
+
+/// Decide a refresh's pull start and new window start:
+/// `(from_block, new_window_start)`.
+///
+/// Contiguous case (`follower_anchor <= old_end + 1`): extend from
+/// `old_end + 1`. The trim point is anchored on the follower's last-seen
+/// position, keeping `window_size` blocks behind it — during catchup the
+/// follower can be hundreds of thousands of blocks behind tip and still
+/// needs that history, so trimming behind `target_end - window_size` would
+/// silently drop required events. With no follower call observed yet
+/// (`trim_anchor` is `None`), keep the existing start — never move it
+/// backward, otherwise we'd lie about coverage.
+///
+/// Jump case (`follower_anchor > old_end + 1`): the runtime has already
+/// processed past the window's end, so extending contiguously would re-pull
+/// history nobody needs — e.g. a node restarting after a full sync, where
+/// the window is still anchored at the genesis observation position.
+/// Restart the window at the follower's position instead; queries older than
+/// that (competing forks) are served by `db_fallback`. The window start must
+/// equal the pull start here: retaining the old (pre-gap) events while
+/// claiming coverage from an older `new_window_start` would leave a hole in
+/// `(old_end, follower_anchor)` that cache reads would silently miss.
+fn plan_refresh(
+	old_end: u32,
+	follower_anchor: u32,
+	existing_start: u32,
+	trim_anchor: Option<u32>,
+	window_size: u32,
+) -> (u32, u32) {
+	let contiguous_from = old_end.saturating_add(1);
+	if follower_anchor > contiguous_from {
+		return (follower_anchor, follower_anchor);
+	}
+	let new_window_start = match trim_anchor {
+		Some(anchor) => existing_start.max(anchor.saturating_sub(window_size)),
+		None => existing_start,
+	};
+	(contiguous_from, new_window_start)
 }
 
 /// Slide the in-memory window forward, in place: drop events before
@@ -546,7 +581,7 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 					.block_number
 					.saturating_add(REFRESH_THRESHOLD)
 					.saturating_add(self.stability_margin);
-				self.maybe_kick_refresh(target_end);
+				self.maybe_kick_refresh(start_position.block_number, target_end);
 			}
 			let tip_past_snapshot_end = tip_pos.block_number > snapshot_end_block;
 			let start_below_snapshot_start = snapshot_start_opt
@@ -696,6 +731,45 @@ mod tests {
 		let block_numbers: Vec<u32> =
 			existing.iter().map(|u| u.header.tx_position.block_number).collect();
 		assert_eq!(block_numbers, vec![20, 21, 22, 23, 24]);
+	}
+
+	#[test]
+	fn plan_refresh_contiguous_extends_and_trims_behind_follower() {
+		// Window ends at 100, follower at 90: extend from 101, keep
+		// window_size=30 blocks behind the follower.
+		let (from, start) = plan_refresh(100, 90, 50, Some(90), 30);
+		assert_eq!((from, start), (101, 60));
+	}
+
+	#[test]
+	fn plan_refresh_contiguous_never_moves_start_backward() {
+		// Existing start (80) is already ahead of follower - window_size (60).
+		let (from, start) = plan_refresh(100, 90, 80, Some(90), 30);
+		assert_eq!((from, start), (101, 80));
+	}
+
+	#[test]
+	fn plan_refresh_contiguous_keeps_start_without_trim_anchor() {
+		// follower_anchor == old_end + 1 is still contiguous, not a jump.
+		let (from, start) = plan_refresh(100, 101, 50, None, 30);
+		assert_eq!((from, start), (101, 50));
+	}
+
+	#[test]
+	fn plan_refresh_jumps_forward_when_follower_past_window() {
+		// Restart after a full sync: window still anchored at genesis
+		// (old_end=99) while the runtime has processed up to block 570_000.
+		// Pull and window both restart at the follower, not at genesis.
+		let (from, start) = plan_refresh(99, 570_000, 0, None, 100_000);
+		assert_eq!((from, start), (570_000, 570_000));
+	}
+
+	#[test]
+	fn plan_refresh_jump_ignores_stale_trim_anchor() {
+		// A stale last_observation must not pull the window start back
+		// behind the jump target (which would claim coverage over a gap).
+		let (from, start) = plan_refresh(99, 570_000, 0, Some(50), 100_000);
+		assert_eq!((from, start), (570_000, 570_000));
 	}
 
 	#[test]

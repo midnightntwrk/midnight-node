@@ -300,10 +300,13 @@ async fn build_cnight_observation_data_source(
 
 	match cnight_follower_genesis {
 		Some((cnight_addresses, next_cardano_position)) => {
-			// Anchor the cache at the cardano position the runtime
-			// observes from. Setting snapshot_end = next - 1 makes the
-			// first refresh's `from_block = old_end + 1` land exactly on
-			// `next` (inclusive of the boundary event).
+			// Anchor the cache at the genesis observation position. On a
+			// fresh sync, snapshot_end = next - 1 makes the first refresh's
+			// `from_block = old_end + 1` land exactly on `next` (inclusive of
+			// the boundary event). On a node restarting already (partially)
+			// synced, the first refresh instead jumps the window forward to
+			// the runtime's actual position (`plan_refresh`), so genesis
+			// history is not re-pulled.
 			let next_pos: u32 = next_cardano_position.block_number;
 			let init_horizon = next_pos.saturating_sub(1);
 			let window_size: u32 = cnight_observation_window_size;
