@@ -138,7 +138,7 @@ pub fn drop_all_default_storage() {
 
 #[cfg(feature = "std")]
 /// Serialize the ledger arena snapshot at `state_key` into the canonical, `Ledger`-rooted warp
-/// transfer blob (trustless warp ledger-sync, M1.2 server side).
+/// transfer blob (trustless warp ledger-sync, server side).
 ///
 /// `unified` selects the ParityDb instantiation, matching the operator's `storage_separation`
 /// config: the two modes register `default_storage` under different `D` type ids (separate = column
@@ -169,7 +169,7 @@ pub fn serialize_ledger_snapshot(
 }
 
 /// Failure modes of [`import_verified_ledger_snapshot`]. All are non-fatal to the chain: the caller
-/// discards the data, reports the peer, and retries from another (warp spec M4.1).
+/// discards the data, reports the peer, and retries from another.
 #[cfg(feature = "std")]
 #[derive(Debug)]
 pub enum SnapshotImportError {
@@ -207,12 +207,11 @@ impl std::error::Error for SnapshotImportError {}
 #[cfg(feature = "std")]
 /// Verify a `Ledger`-rooted warp snapshot `blob` against the on-chain `expected_state_key` and, on
 /// success, persist it into the already-open arena backend so `get_lazy(StateKey)` resolves (warp
-/// ledger-sync M1.3 verification + M1.4 import). `unified` selects the DB instantiation, as in
+/// ledger-sync verification + import). `unified` selects the DB instantiation, as in
 /// [`serialize_ledger_snapshot`]. Uses the latest ledger version (`ledger_9`) — same near-tip
 /// assumption noted there.
 ///
-/// The caller must hold the authoring/import gate (the arena is single-writer) — see
-/// `warp-ledger-sync-m1.4a-spike.md`.
+/// The caller must hold the authoring/import gate (the arena is single-writer).
 pub fn import_verified_ledger_snapshot(
 	unified: bool,
 	blob: &[u8],

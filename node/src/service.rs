@@ -565,7 +565,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	net_config.add_notification_protocol(beefy_notification_config);
 	net_config.add_request_response_protocol(beefy_req_resp_cfg);
 
-	// Warp ledger-sync (M2.3): register the request/response protocol that serves / recovers the
+	// Warp ledger-sync: register the request/response protocol that serves / recovers the
 	// Midnight ledger arena after warp+state-sync. The server handler is spawned after the network
 	// is built; `ledger_sync_protocol_name` is reused by the client driver in the monitor.
 	let ledger_sync_protocol_name: sc_network::ProtocolName =
@@ -610,7 +610,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// Capture peer_id before network is moved
 	let peer_id = network.local_peer_id().to_base58();
 
-	// Warp ledger-sync (M2.3): `warp_ledger_recovery_gate` (threaded from `new_partial`, where it
+	// Warp ledger-sync: `warp_ledger_recovery_gate` (threaded from `new_partial`, where it
 	// also gates the import queue) is shared with the monitor (which flips its flags) and the
 	// authoring SyncOracle (which reads them).
 
@@ -818,7 +818,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			force_authoring,
 			backoff_authoring_blocks,
 			keystore: keystore_container.keystore(),
-			// Wrapping oracle (M2.2): keeps AURA from authoring until the warp-recovered ledger is
+			// Wrapping oracle: keeps AURA from authoring until the warp-recovered ledger is
 			// verified; a no-op passthrough on full sync.
 			sync_oracle: crate::warp_ledger_sync::oracle::MidnightSyncOracle::new(
 				sync_service.clone(),

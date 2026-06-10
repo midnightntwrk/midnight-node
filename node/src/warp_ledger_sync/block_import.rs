@@ -20,7 +20,7 @@
 //! authoring [`SyncOracle`](super::oracle::MidnightSyncOracle) alone is not enough: the sync engine
 //! would still import announced post-warp blocks, each of which executes the runtime against the
 //! arena — hitting `NoLedgerState`, and worse, racing the recovery writer (the arena is
-//! single-writer; see `warp-ledger-sync-m1.4a-spike.md`).
+//! single-writer).
 //!
 //! [`GatedBlockImport`] wraps the import queue's block import and, while
 //! [`RecoveryGate::ledger_recovery_in_progress`] is true, **rejects** the import of blocks that

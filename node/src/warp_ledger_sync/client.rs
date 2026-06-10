@@ -13,9 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! M1.3 — Ledger-sync client driver + verification.
+//! Ledger-sync client driver + verification.
 //!
-//! After warp + state-sync complete (target block N captured by the monitor, M2.1), this drives the
+//! After warp + state-sync complete (target block N captured by the monitor), this drives the
 //! client side of the protocol: read the on-chain `StateKey` at N (from the warp-recovered trie),
 //! fetch the `Ledger`-rooted arena blob in byte ranges from peers, then hand the assembled blob to
 //! [`midnight_node_ledger::import_verified_ledger_snapshot`], which verifies its root against the
@@ -72,7 +72,7 @@ where
 	/// trying `peers` in order. Returns `Ok` as soon as one peer yields a complete blob that
 	/// verifies against the on-chain `StateKey` and imports; otherwise [`ClientError::AllPeersFailed`].
 	///
-	/// The caller must hold the authoring/import gate while this runs (single-writer arena, M2.2).
+	/// The caller must hold the authoring/import gate while this runs (single-writer arena).
 	pub async fn recover(&self, target: B::Hash, peers: &[PeerId]) -> Result<(), ClientError> {
 		let state_key = read_state_key::<B, Client, BE>(&self.client, target)?
 			.ok_or(ClientError::NoStateKey)?;
@@ -92,7 +92,7 @@ where
 
 			// Verification happens inside the importer (root must equal `state_key`); a verify
 			// failure means the peer served bad data — discard and try the next one.
-			// M4.1: a reputation report on the peer belongs here.
+			// A reputation report on the peer belongs here (deferred).
 			match midnight_node_ledger::import_verified_ledger_snapshot(
 				self.unified,
 				&blob,

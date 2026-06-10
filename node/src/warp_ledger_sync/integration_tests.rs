@@ -13,10 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! In-process round-trip test for the warp ledger-sync core (M1), with no networking:
-//! init a real arena from genesis → serialize the `Ledger`-rooted snapshot (server, M1.2) → page it
-//! through the transport chunker + reassembler (M1.1) → import + verify against the on-chain
-//! `StateKey` (client/import, M1.3/M1.4). Also asserts the security property: a tampered blob is
+//! In-process round-trip test for the warp ledger-sync core, with no networking:
+//! init a real arena from genesis → serialize the `Ledger`-rooted snapshot (server) → page it
+//! through the transport chunker + reassembler → import + verify against the on-chain
+//! `StateKey` (client/import). Also asserts the security property: a tampered blob is
 //! rejected (`RootMismatch`), never imported.
 //!
 //! Run isolated (it touches the process-global `default_storage` singleton):
@@ -55,16 +55,16 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	);
 	assert!(!state_key.is_empty(), "genesis init must produce a StateKey");
 
-	// Server side (M1.2): serialize the `Ledger`-rooted snapshot at that StateKey.
+	// Server side: serialize the `Ledger`-rooted snapshot at that StateKey.
 	let blob = midnight_node_ledger::serialize_ledger_snapshot(false, &state_key)
 		.expect("serialize ledger snapshot");
 	assert!(blob.len() > state_key.len(), "snapshot blob should carry the arena, not just the key");
 
-	// Transport (M1.1): page into 4 KiB ranges and reassemble; must be byte-identical.
+	// Transport: page into 4 KiB ranges and reassemble; must be byte-identical.
 	let reassembled = page_and_reassemble(&blob, 4096);
 	assert_eq!(reassembled, blob, "reassembled blob must be byte-identical to the server's");
 
-	// Client/import (M1.3 + M1.4): verify root == StateKey and persist. Idempotent against the
+	// Client/import: verify root == StateKey and persist. Idempotent against the
 	// already-initialized arena (content-addressed; genesis nodes dedup).
 	midnight_node_ledger::import_verified_ledger_snapshot(false, &reassembled, &state_key)
 		.expect("verified import of a faithful snapshot should succeed");

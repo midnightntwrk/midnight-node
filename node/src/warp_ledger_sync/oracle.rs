@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! M2.2 — recovery gate + wrapping [`SyncOracle`].
+//! Recovery gate + wrapping [`SyncOracle`].
 //!
 //! The shared [`RecoveryGate`] is the single source of truth for "is the warp-recovered ledger
 //! arena ready yet". It gates two things until recovery is verified:

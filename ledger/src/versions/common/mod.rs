@@ -737,7 +737,7 @@ where
 	/// at `Ledger` (the `Sp` from `get_ledger` is an `Sp<Ledger>`) rather than `LedgerState` — see
 	/// `warp-ledger-sync-spec.md` ODD-1. Because the blob is rooted at `Ledger`, its recomputed
 	/// content-address root key equals the on-chain `pallet_midnight::StateKey`, which is exactly
-	/// what the client verifies against (M1.3). The tag prefix is **derived**
+	/// what the client verifies against. The tag prefix is **derived**
 	/// (`GLOBAL_TAG ‖ <Ledger as Tagged>::tag()`), never hardcoded (spec §8 format-lockstep).
 	pub fn serialize_ledger_snapshot(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
 		use ledger_storage_local::arena::TopoSortedNodes;
@@ -771,11 +771,10 @@ where
 	/// malicious or faulty peer can at worst cause a rejected import (→ peer report + retry by the
 	/// caller), never state corruption.
 	///
-	/// Persists + flushes into the live `default_storage` so `get_lazy(StateKey)` resolves. The
-	/// lifecycle (in-process, no restart, same `alloc`/`persist`/`flush` path live block execution
-	/// uses) was validated in `warp-ledger-sync-m1.4a-spike.md`. The caller (warp client driver,
-	/// M1.3) MUST hold the authoring/import gate so no block executes against the arena concurrently
-	/// — the arena is single-writer.
+	/// Persists + flushes into the live `default_storage` so `get_lazy(StateKey)` resolves —
+	/// in-process, no restart, via the same `alloc`/`persist`/`flush` path live block execution
+	/// uses. The caller (warp client driver) MUST hold the authoring/import gate so no block
+	/// executes against the arena concurrently — the arena is single-writer.
 	pub fn import_verified_ledger_snapshot(
 		blob: &[u8],
 		expected_state_key: &[u8],

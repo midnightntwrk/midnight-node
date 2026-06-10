@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! M2.1 — Warp-completion monitor & target capture.
+//! Warp-completion monitor & target capture.
 //!
 //! Spawned for the lifetime of the node. On a **full sync** the warp path is never observed and the
 //! task exits without ever arming the gate. On a **warp sync** it arms the gate, waits for warp +

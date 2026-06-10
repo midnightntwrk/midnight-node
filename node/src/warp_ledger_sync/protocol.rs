@@ -13,8 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! M1.1 — Ledger-sync protocol message types, codec, naming, and the pure range-serving /
-//! reassembly logic shared by the server (M1.2) and client (M1.3).
+//! Ledger-sync protocol message types, codec, naming, and the pure range-serving /
+//! reassembly logic shared by the server and client.
 //!
 //! The transferred payload is the canonical, `Ledger`-rooted arena blob (derived tag prefix ‖
 //! `TopoSortedNodes` of the `Ledger` DAG — see spec ODD-1). Transport pages it by **byte offset**
@@ -34,8 +34,8 @@ pub const MAX_LEDGER_SYNC_CHUNK: u32 = 1024 * 1024;
 
 /// Request a contiguous byte range of the `Ledger`-rooted arena blob at `target_hash`.
 ///
-/// `target_hash` must be a finalized block whose state-sync target the server can serve (M1.2
-/// rejects non-finalized / unknown blocks). `offset`/`max_len` page the blob; `max_len` is clamped
+/// `target_hash` must be a finalized block whose state-sync target the server can serve (the
+/// server rejects non-finalized / unknown blocks). `offset`/`max_len` page the blob; `max_len` is clamped
 /// server-side to [`MAX_LEDGER_SYNC_CHUNK`].
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct LedgerSyncRequest<Hash> {
@@ -79,7 +79,7 @@ pub fn clamp_max_len(requested: u32) -> u32 {
 	requested.min(MAX_LEDGER_SYNC_CHUNK)
 }
 
-/// Build a response chunk for `[offset, offset + clamp(max_len))` of `blob` (server side, M1.2).
+/// Build a response chunk for `[offset, offset + clamp(max_len))` of `blob` (server side).
 ///
 /// Clamps `max_len`, never reads past the end of the blob, and yields an empty chunk if `offset`
 /// is at or past the end (which signals completion to the client).
@@ -93,7 +93,7 @@ pub fn build_response(blob: &[u8], offset: u64, max_len: u32) -> LedgerSyncRespo
 	LedgerSyncResponse { total_len, offset, bytes: blob[start..end].to_vec() }
 }
 
-/// Errors from reassembling response chunks into the full blob (client side, M1.3).
+/// Errors from reassembling response chunks into the full blob (client side).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AssembleError {
 	/// A chunk did not start where the previous one ended. Chunks must be fed in order; parallel
@@ -130,8 +130,8 @@ pub enum AssembleError {
 /// In-order contiguous assembly is sufficient and simplest: a chunk is accepted only if its
 /// `offset` equals the bytes received so far. Parallel / multi-peer fetches are allowed (spec
 /// ODD-3) but the client must reorder chunks by `offset` before feeding them here. The assembled
-/// blob is verified against the on-chain `StateKey` by M1.3 — this type does no crypto, only
-/// transport-level reassembly.
+/// blob is verified against the on-chain `StateKey` by the client driver — this type does no
+/// crypto, only transport-level reassembly.
 #[derive(Debug)]
 pub struct ChunkAssembler {
 	total_len: u64,
