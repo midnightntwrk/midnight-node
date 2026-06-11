@@ -68,15 +68,9 @@ pub enum UtxoActionType {
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
 
-/// Runtime acceptance envelope: upper bound on the UTXO-to-TX ratio that
-/// `process_tokens` and the worst-case weight will accept per inherent.
-///
-/// This is intentionally *wider* than the IDP's actual fetch factor (which the
-/// node binary picks per `CNightObservationApi` version — 4x at v2+, 64x at v1).
-/// The runtime must keep accepting the legacy 64x envelope so that v1 binaries
-/// pairing with a v2 runtime during the upgrade window can still have their
-/// inherents verified. Do not lower this to match the IDP fetch factor.
-pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
+/// Acceptance envelope for `process_tokens` and worst-case weight. Defined in
+/// the primitives crate so the IDP and runtime share one value (see there).
+pub use midnight_primitives_cnight_observation::UTXO_PER_TX_OVERESTIMATE;
 
 /// Upper bound on UTXO count per block, used for worst-case weight declaration.
 pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER_TX_OVERESTIMATE;

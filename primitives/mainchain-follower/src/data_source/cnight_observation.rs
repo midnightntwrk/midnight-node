@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
-use crate::data_source::cnight_observation_bulk::{bulk_pull, truncate_to_tx_capacity};
+use crate::data_source::cnight_observation_bulk::{LARGE_LIMIT, bulk_pull, truncate_to_tx_capacity};
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
 use crate::db::{PagedQuery, get_deregistrations, get_registrations};
 use crate::{
@@ -107,7 +107,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
-		utxo_overestimate: usize,
+		max_utxos: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Resolve current_tip -> CardanoPosition. This must preserve the historic
 		// replay semantics: query through the block's Cardano tip and only then
@@ -121,18 +121,12 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		drop(_block_timer);
 		let end = end.increment();
 
-		// The over-fetch bound is consensus-affecting and runtime-supplied, so it
-		// must flow into the SQL row limit (see `bulk_pull`) rather than a fixed
-		// client-side constant.
-		let utxos =
-			bulk_pull(&self.pool, config, start_position, &end, utxo_overestimate).await?;
-		let (result, _full_window) = truncate_to_tx_capacity(
-			utxos,
-			tx_capacity,
-			start_position,
-			end,
-		);
-		Ok(result)
+		// Fetch the COMPLETE range, then truncate to the envelope — same contract
+		// the cache satisfies, so both derive identical inherents. `complete`
+		// gates advancing the cursor to the tip.
+		let (utxos, complete) =
+			bulk_pull(&self.pool, config, start_position, &end, LARGE_LIMIT).await?;
+		Ok(truncate_to_tx_capacity(utxos, tx_capacity, max_utxos, complete, start_position, end))
 	}
 }
 );

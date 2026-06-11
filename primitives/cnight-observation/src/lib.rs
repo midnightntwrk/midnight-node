@@ -40,6 +40,12 @@ pub const CNIGHT_POLICY_ID_LENGTH: u32 = 28;
 /// Cardano native-asset name maximum length in bytes.
 pub const CARDANO_ASSET_NAME_MAX_LENGTH: u32 = 32;
 
+/// UTXO acceptance envelope per block, as a multiple of tx capacity. Shared by
+/// the runtime (`process_tokens` bound) and the node IDP (inherent truncation
+/// cap); they must use one value or nodes disagree, hence this lives here rather
+/// than in the pallet.
+pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
+
 #[derive(
 	Encode,
 	Decode,
@@ -421,10 +427,9 @@ impl PartialOrd for ObservedUtxoHeader {
 }
 
 decl_runtime_apis! {
-	// v2 marks the consensus-affecting reduction of the cNight db-sync over-fetch
-	// factor from 64x to 4x. Node binaries gate the multiplier on this version so
-	// the change only takes effect at the runtime upgrade boundary; mixing old and
-	// new binaries against the same runtime version stays consensus-equivalent.
+	// v2 once gated a node-side db-sync over-fetch multiplier; the node now
+	// fetches the whole range instead, so nothing is gated on it. Retained for
+	// compatibility.
 	#[api_version(2)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums

@@ -16,7 +16,7 @@
 use crate::{MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo};
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
-	TimestampUnixMillis,
+	TimestampUnixMillis, UTXO_PER_TX_OVERESTIMATE,
 };
 use parity_scale_codec::Decode;
 use sidechain_domain::McBlockHash;
@@ -100,17 +100,11 @@ impl MidnightCNightObservationInherentDataProvider {
 		let mapping_validator_address =
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
 		let tx_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
-
-		// The over-fetch quantity used when querying db-sync is consensus-affecting:
-		// validators must agree on it to produce identical inherents. The reduction
-		// from 64x to 4x is therefore gated on the on-chain `CNightObservationApi`
-		// version: v2+ runtimes use the new factor, older runtimes keep the legacy
-		// 64x used by node binaries that shipped against v1.
-		let api_version = api
-			.api_version::<dyn CNightObservationApi<Block>>(parent_hash)?
-			.ok_or(IDPCreationError::CNightObservationApiUnavailable)?;
-		let overestimate_factor: u32 = if api_version >= 2 { 4 } else { 64 };
-		let utxo_overestimate = tx_capacity.saturating_mul(overestimate_factor);
+		// UTXO acceptance envelope, derived here at the runtime-API boundary (where
+		// on-chain `tx_capacity` is read) and passed down — the db data source
+		// stays decoupled from runtime tokenomics. Matches the runtime's
+		// `process_tokens` bound so node and chain agree on what an inherent may hold.
+		let max_utxos = tx_capacity.saturating_mul(UTXO_PER_TX_OVERESTIMATE) as usize;
 
 		let (cnight_policy_id, cnight_asset_name) = api.get_cnight_token_identifier(parent_hash)?;
 		let auth_token_asset_name: String = api
@@ -136,7 +130,7 @@ impl MidnightCNightObservationInherentDataProvider {
 				&cardano_position_start,
 				mc_hash,
 				tx_capacity as usize,
-				utxo_overestimate as usize,
+				max_utxos,
 			)
 			.await
 			.map_err(IDPCreationError::DataSourceError)?;

@@ -2,7 +2,7 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
-	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
+	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis, UTXO_PER_TX_OVERESTIMATE,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
@@ -22,9 +22,8 @@ use serde_json;
 use tokio::{fs::File, io::AsyncWriteExt};
 
 const TX_CAPACITY: usize = 1000;
-// Genesis is one-shot and not consensus-validated, so we use a generous over-fetch
-// factor to ensure we never split a transaction across a paged query.
-const UTXO_OVERESTIMATE: usize = TX_CAPACITY * 64;
+// Genesis is one-shot, but the data source applies the same envelope as consensus.
+const MAX_UTXOS: usize = TX_CAPACITY * UTXO_PER_TX_OVERESTIMATE as usize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CNightGenesisError {
@@ -111,7 +110,7 @@ pub async fn generate_cnight_genesis(
 				&current_position,
 				cardano_tip.clone(),
 				TX_CAPACITY,
-				UTXO_OVERESTIMATE,
+				MAX_UTXOS,
 			)
 			.await
 			.map_err(CNightGenesisError::UtxoQueryError)?;
