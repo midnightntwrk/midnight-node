@@ -490,13 +490,3 @@ fn block_4() -> MainchainBlock {
 		timestamp: 1650561570, // 2022-04-25T17:19:30Z
 	}
 }
-
-fn block_5() -> MainchainBlock {
-	MainchainBlock {
-		number: McBlockNumber(5),
-		hash: McBlockHash(hex!("EBEED7FB0067F14D6F6436C7F7DEDB27CE3CEB4D2D18FF249D43B22D86FAE3F1")),
-		epoch: McEpochNumber(193),
-		slot: McSlotNumber(193500),
-		timestamp: 1650562570, // 2022-04-21T17:36:10Z
-	}
-}
