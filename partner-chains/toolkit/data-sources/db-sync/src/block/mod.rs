@@ -34,8 +34,6 @@ enum StableBlockByHashError {
 	BlockNotFound { hash: McBlockHash },
 	#[error("Latest block info was unavailable while checking block hash {0}.")]
 	LatestBlockUnavailable(McBlockHash),
-	#[error("Local Cardano tip {latest_block:?} is too old to classify the referenced hash.")]
-	LocalTipTooOld { latest_block: Block },
 	#[error(
 		"Block with hash {hash} is not stable yet: block {block_no} requires latest block >= {required_latest_block_no}, but latest block is {latest_block_no}."
 	)]
@@ -461,10 +459,41 @@ impl BlockDataSourceImpl {
 				},
 				Err(err) => {
 					warn!("Get stable block by hash failed: {err}");
-					Ok(self.classify_stable_block_error(err, reference_timestamp))
+					let latest_block =
+						db_model::get_latest_block_info(&self.pool).await.ok().flatten();
+					Ok(self.classify_stable_block_lookup_error(
+						err,
+						latest_block,
+						reference_timestamp,
+					))
 				},
 			}
 		}
+	}
+
+	fn classify_stable_block_lookup_error(
+		&self,
+		err: StableBlockByHashError,
+		latest_block: Option<Block>,
+		reference_timestamp: NaiveDateTime,
+	) -> StableBlockForHash {
+		if let Some(latest_block) = latest_block {
+			let is_ambiguous = matches!(
+				err,
+				StableBlockByHashError::BlockNotFound { .. }
+					| StableBlockByHashError::NotStableYet { .. }
+			);
+			if is_ambiguous && !self.is_local_cardano_tip_recent(&latest_block, reference_timestamp)
+			{
+				let max_allowed_timestamp = self.max_allowed_block_time(reference_timestamp);
+				return self.local_tip_too_old(
+					latest_block,
+					max_allowed_timestamp,
+					reference_timestamp,
+				);
+			}
+		}
+		self.classify_stable_block_error(err, reference_timestamp)
 	}
 
 	fn classify_stable_block_error(
@@ -472,15 +501,11 @@ impl BlockDataSourceImpl {
 		err: StableBlockByHashError,
 		reference_timestamp: NaiveDateTime,
 	) -> StableBlockForHash {
-		let max_allowed_timestamp = self.max_allowed_block_time(reference_timestamp);
 		match err {
 			StableBlockByHashError::LatestBlockUnavailable(_hash) => {
 				StableBlockForHash::LocalDataUnavailable {
 					reason: LocalDataUnavailableReason::LatestBlockUnavailable,
 				}
-			},
-			StableBlockByHashError::LocalTipTooOld { latest_block } => {
-				self.local_tip_too_old(latest_block, max_allowed_timestamp, reference_timestamp)
 			},
 			StableBlockByHashError::BlockNotFound { hash } => {
 				StableBlockForHash::BlockNotFound { hash }
@@ -570,16 +595,11 @@ impl BlockDataSourceImpl {
 			return Err(StableBlockByHashError::LatestBlockUnavailable(hash));
 		};
 		self.observe_latest_cardano_block_metrics(&latest_block);
-		let is_local_tip_recent =
-			self.is_local_cardano_tip_recent(&latest_block, reference_timestamp);
 
 		let block = db_model::get_block_by_hash(&self.pool, hash.clone()).await.map_err(|err| {
 			StableBlockByHashError::Database { hash: hash.clone(), error: format!("{err:?}") }
 		})?;
 		let Some(block) = block else {
-			if !is_local_tip_recent {
-				return Err(StableBlockByHashError::LocalTipTooOld { latest_block });
-			}
 			return Err(StableBlockByHashError::BlockNotFound { hash });
 		};
 		self.observe_referenced_cardano_block_metrics(&block);
@@ -591,9 +611,6 @@ impl BlockDataSourceImpl {
 		let is_time_valid = self.is_stable_block_time_valid(&block, reference_timestamp);
 
 		if !is_stable {
-			if !is_local_tip_recent {
-				return Err(StableBlockByHashError::LocalTipTooOld { latest_block });
-			}
 			return Err(StableBlockByHashError::NotStableYet {
 				hash,
 				block_no: block.block_no.0,
