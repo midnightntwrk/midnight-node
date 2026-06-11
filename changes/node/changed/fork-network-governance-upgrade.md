@@ -16,3 +16,6 @@ the on-chain `:code` is byte-identical to it. The default
 `mock_authorities_tag` is bumped to `368fd98`, the first published build
 that rewrites Council/Technical Committee membership onto the
 deterministic dev-keyring accounts the workflow signs with.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/1676
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1468
