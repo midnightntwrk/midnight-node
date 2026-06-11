@@ -82,6 +82,9 @@ pub struct GenerateGenesisArgs {
 	/// Output directory
 	#[arg(long, short = 'o', default_value = "out")]
 	out_dir: String,
+	/// Allow genesis to have empty pools
+	#[arg(long, default_value = "false")]
+	allow_empty_pools: bool,
 }
 
 pub async fn execute(
@@ -200,6 +203,7 @@ pub async fn execute(
 		reserve_config,
 		ledger_parameters,
 		genesis_timestamp,
+		args.allow_empty_pools,
 	)
 	.await?;
 
