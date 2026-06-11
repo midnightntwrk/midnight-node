@@ -4,9 +4,6 @@ on:
   schedule:
     # Runs every night at 00:00 UTC against the default branch.
     - cron: "0 0 * * *"
-  # Manual dispatch lets you pick any branch from the GitHub UI's
-  # "Use workflow from" dropdown (defaults to the default branch).
-  workflow_dispatch:
 
 permissions:
   contents: read
