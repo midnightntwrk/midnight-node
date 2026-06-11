@@ -160,17 +160,7 @@ impl BlockDataSourceImpl {
 		reference_timestamp: Timestamp,
 	) -> Result<LatestStableBlockForTimestamp, Box<dyn std::error::Error + Send + Sync>> {
 		let reference_timestamp = BlockDataSourceImpl::timestamp_to_db_type(reference_timestamp)?;
-		let latest = match db_model::get_latest_block_info(&self.pool).await {
-			Ok(latest) => latest,
-			Err(err) => {
-				return Ok(LatestStableBlockForTimestamp::LocalDataUnavailable {
-					reason: LocalDataUnavailableReason::DatabaseError {
-						context: "querying latest Cardano block".into(),
-						error: format!("{err:?}"),
-					},
-				});
-			},
-		};
+		let latest = db_model::get_latest_block_info(&self.pool).await?;
 		let Some(latest) = latest else {
 			return Ok(LatestStableBlockForTimestamp::LocalDataUnavailable {
 				reason: LocalDataUnavailableReason::LatestBlockUnavailable,
