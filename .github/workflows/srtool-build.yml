@@ -62,6 +62,16 @@ jobs:
         run: |
           . ./.envrc && earthly +srtool-build
 
+      - name: Validate runtime tag release
+        if: inputs.runtime-tag-release != ''
+        env:
+          RTAG: ${{ inputs.runtime-tag-release }}
+        run: |
+          if [[ ! "$RTAG" =~ ^[0-9A-Za-z._-]+$ ]]; then
+            echo "::error::runtime-tag-release may only contain letters, numbers, dots, underscores, and hyphens"
+            exit 1
+          fi
+
       - name: Rename WASM assets with version
         if: inputs.runtime-tag-release != ''
         env:
@@ -97,12 +107,16 @@ jobs:
 
       - name: Generate checksums
         if: inputs.release-tag != ''
+        env:
+          WASM_FILE: ${{ steps.wasm-names.outputs.wasm }}
+          COMPACT_WASM_FILE: ${{ steps.wasm-names.outputs.compact }}
+          COMPRESSED_WASM_FILE: ${{ steps.wasm-names.outputs.compressed }}
         run: |
           cd artifacts/srtool || exit 1
           {
-            sha256sum "${{ steps.wasm-names.outputs.wasm }}"
-            sha256sum "${{ steps.wasm-names.outputs.compact }}"
-            sha256sum "${{ steps.wasm-names.outputs.compressed }}"
+            sha256sum "$WASM_FILE"
+            sha256sum "$COMPACT_WASM_FILE"
+            sha256sum "$COMPRESSED_WASM_FILE"
           } >> SHA256SUMS-srtool
 
           echo "Generated checksums:"
@@ -131,12 +145,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.release-tag }}
+          WASM_FILE: ${{ steps.wasm-names.outputs.wasm }}
+          COMPACT_WASM_FILE: ${{ steps.wasm-names.outputs.compact }}
+          COMPRESSED_WASM_FILE: ${{ steps.wasm-names.outputs.compressed }}
         run: |
           cd artifacts/srtool || exit 1
           echo "Uploading srtool artifacts to release: $RELEASE_TAG"
           gh release upload --clobber --repo "$GITHUB_REPOSITORY" "$RELEASE_TAG" \
-            "${{ steps.wasm-names.outputs.wasm }}" \
-            "${{ steps.wasm-names.outputs.compact }}" \
-            "${{ steps.wasm-names.outputs.compressed }}" \
+            "$WASM_FILE" \
+            "$COMPACT_WASM_FILE" \
+            "$COMPRESSED_WASM_FILE" \
             srtool-digest.json \
             SHA256SUMS-srtool
