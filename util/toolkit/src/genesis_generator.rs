@@ -140,13 +140,13 @@ impl GenesisGenerator {
 		}
 
 		let reserve_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or_else(|| {
-			// In case of testnet it likely means that faucet will have not funds.
+			// In case of testnet it likely means that faucet will have no funds.
 			log::warn!("Genesis 'reserve pool' is empty. System may not be fully functional!");
 			0
 		});
 		if reserve_pool == 0 && !allow_empty_pools {
 			log::error!(
-				"Treasury pool is empty. Run with --allow-empty-pools to allow such configuration"
+				"Reserve pool is empty. Run with --allow-empty-pools to allow such configuration"
 			);
 			return Err(GenesisGeneratorError::EmptyPool("Reserve".to_string()));
 		}
