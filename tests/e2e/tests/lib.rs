@@ -350,6 +350,7 @@ pub(crate) fn fetch_concurrency() -> usize {
 }
 
 // -------- TEST MODULES --------
+mod c2m_bridge;
 mod cnight;
 mod contract_state;
 mod governance;
