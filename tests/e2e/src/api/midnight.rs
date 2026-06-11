@@ -9,6 +9,7 @@ use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_pr
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::BridgeTransferV1;
 use midnight_node_metadata::midnight_metadata_latest::federated_authority_observation::events::{CouncilMembersReset, TechnicalCommitteeMembersReset};
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives_cnight_observation::ObservedUtxo;
+use midnight_node_metadata::midnight_metadata_latest::midnight_system::events::SystemTransactionApplied;
 use midnight_node_metadata::midnight_metadata_latest::{
 	self as mn_meta,
 	c_night_observation::{self},
@@ -58,6 +59,17 @@ pub struct AriadneParametersResponse {
     pub permissioned_candidates: Option<Vec<serde_json::Value>>,
     /// Map of candidate registrations
     pub candidate_registrations: serde_json::Value,
+}
+
+/// C-to-M bridge data from all `Bridge::handle_transfers` calls of one block.
+#[derive(Debug)]
+pub struct C2MBridgePalletCalls {
+    /// `C2MBridge` pallet specific events emitted in the block.
+    pub c2m_bridge_events: Vec<mn_meta::c2m_bridge::Event>,
+    /// Transfers passed as argument to the `Bridge::handle_transfers` calls.
+    pub transfers: Vec<BridgeTransferV1<BridgeRecipient>>,
+    /// `MidnightSystem::SystemTransactionApplied` events emitted in the block. Potentially other than C2M bridge as well.
+    pub system_transactions_applied: Vec<SystemTransactionApplied>,
 }
 
 pub struct MidnightClient {
@@ -145,11 +157,7 @@ impl MidnightClient {
         let cardano_start = CardanoClient::current_block_height(ogmios_settings)
             .await
             .ok_or("wait_for_block_spacing: failed to read initial Cardano tip")?;
-        let midnight_start = midnight_client
-            .online_client()
-            .at_current_block()
-            .await?
-            .block_number();
+        let midnight_start = midnight_client.get_finalized_block_number().await?;
         tracing::info!(
             "wait_for_block_spacing: waiting for {cardano_blocks} cardano + {midnight_blocks} midnight \
              blocks past (cardano #{cardano_start}, midnight #{midnight_start})"
@@ -160,8 +168,8 @@ impl MidnightClient {
                 Some(h) => h,
                 None => continue,
             };
-            let midnight_now = match midnight_client.online_client().at_current_block().await {
-                Ok(b) => b.block_number(),
+            let midnight_now = match midnight_client.get_finalized_block_number().await {
+                Ok(b) => b,
                 Err(_) => continue,
             };
             let cardano_delta = cardano_now.saturating_sub(cardano_start);
@@ -282,11 +290,7 @@ impl MidnightClient {
                 // the next iteration. The outer `tokio::time::timeout`
                 // bounds the total wait.
                 let probe = async {
-                    let head_num = self
-                        .online_client()
-                        .at_current_block()
-                        .await?
-                        .block_number();
+                    let head_num = self.get_finalized_block_number().await?;
                     let watermark = self.read_next_cardano_position_at(head_num).await?;
                     Ok::<_, Box<dyn std::error::Error>>((head_num, watermark))
                 }
@@ -618,42 +622,71 @@ impl MidnightClient {
         Ok(collected)
     }
 
-    pub async fn subscribe_to_c2n_bridge_transfers(
+    /// Latest GRANDPA-finalized block number.
+    pub async fn get_finalized_block_number(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        Ok(self
+            .online_client()
+            .at_current_block()
+            .await?
+            .block_number())
+    }
+
+    /// Subscribe to the bridge handler extrinsic, skipping any block at or before `min_block_number`.
+    pub async fn subscribe_to_c2m_bridge_transfers(
         &self,
         timeout_duration: Duration,
-    ) -> Result<ExtrinsicEvents<SubstrateConfig>, Box<dyn std::error::Error>> {
-        tracing::info!("Subscribing for C-to-N transfer extrinsic",);
+        min_block_number: u64,
+    ) -> Result<C2MBridgePalletCalls, Box<dyn std::error::Error>> {
+        tracing::info!("Subscribing for C-to-M transfer extrinsic");
         let mut blocks_sub = self.online_client().stream_blocks().await?;
 
         let inner = async {
             while let Some(block_result) = blocks_sub.next().await {
                 let block = block_result?;
-
-                let block_number = block.header().number;
-                tracing::info!("Finalized block #{}", block_number);
-
+                let block_number = block.number();
+                if block_number <= min_block_number {
+                    tracing::debug!("Skipping block {block_number} not after {min_block_number}");
+                    continue;
+                }
+                tracing::info!("Streamed block {}", block_number);
                 let block_ref = block.at().await?;
-                let extrinsic = block_ref.extrinsics().fetch().await?;
+                let extrinsics = block_ref.extrinsics().fetch().await?;
 
-                for ext in extrinsic.iter().filter_map(Result::ok) {
-                    let Ok(decoded) = ext.decode_call_data_as::<mn_meta::Call>() else {
-                        continue;
-                    };
+                let transfers: Vec<BridgeTransferV1<BridgeRecipient>> = extrinsics
+                    .iter()
+                    .filter_map(|res| {
+                        res.ok()
+                            .and_then(|ext| ext.decode_call_data_as::<mn_meta::Call>().ok())
+                            .and_then(MidnightClient::extract_bridge_calls)
+                    })
+                    .flatten()
+                    .collect();
+                if transfers.is_empty() {
+                    continue;
+                }
 
-                    let Some(transfers) = MidnightClient::extract_bridge_calls(&decoded) else {
-                        continue;
-                    };
+                let block_events = block_ref.events().fetch().await?;
 
-                    tracing::info!(
-                        "  BridgeHandler::handle_transfers called with {} transfers",
-                        transfers.len()
-                    );
-
-                    if !transfers.is_empty() {
-                        let events = ext.events().await?;
-                        return Ok(events);
+                let mut c2m_bridge_events = Vec::new();
+                for ev in block_events.iter().filter_map(Result::ok) {
+                    if let Ok(mn_meta::Event::C2MBridge(inner)) = ev.decode_as::<mn_meta::Event>() {
+                        c2m_bridge_events.push(inner);
                     }
                 }
+
+                let mut system_transactions_applied = Vec::new();
+                for ev in block_events.iter().filter_map(Result::ok) {
+                    if let Some(Ok(sta)) = ev.decode_fields_as::<SystemTransactionApplied>() {
+                        system_transactions_applied.push(sta);
+                    }
+                }
+
+                let result = C2MBridgePalletCalls {
+                    c2m_bridge_events,
+                    transfers,
+                    system_transactions_applied,
+                };
+                return Ok(result);
             }
             Err("Did not find bridge extrinsics".into())
         };
@@ -687,12 +720,10 @@ impl MidnightClient {
         }
     }
 
-    fn extract_bridge_calls(
-        call: &mn_meta::Call,
-    ) -> Option<&Vec<BridgeTransferV1<BridgeRecipient>>> {
+    fn extract_bridge_calls(call: mn_meta::Call) -> Option<Vec<BridgeTransferV1<BridgeRecipient>>> {
         match call {
             mn_meta::Call::Bridge(bridge::Call::handle_transfers { transfers, .. }) => {
-                Some(&transfers.0)
+                Some(transfers.0)
             }
             _ => None,
         }
@@ -716,6 +747,26 @@ impl MidnightClient {
             .transpose()?;
 
         Ok(owners)
+    }
+
+    pub async fn ics_validator_address(&self) -> Result<String, Box<dyn std::error::Error>> {
+        let addr = mn_meta::storage()
+            .bridge()
+            .main_chain_scripts_configuration();
+
+        let scripts = self
+            .online_client()
+            .at_current_block()
+            .await?
+            .storage()
+            .try_fetch(addr, ())
+            .await?
+            .map(|v| v.decode())
+            .transpose()?
+            .ok_or("Bridge::MainChainScriptsConfiguration is not set in storage")?;
+
+        let bytes = scripts.illiquid_circulation_supply_validator_address.0.0;
+        Ok(String::from_utf8(bytes)?)
     }
 
     pub async fn subscribe_to_federated_authority_events(
@@ -981,6 +1032,12 @@ impl MidnightClient {
 
             sleep(poll_interval).await;
         }
+    }
+
+    /// Node WebSocket URL — useful for callers (e.g. governance flows running
+    /// in dev-dependencies) that need to open their own client to the same node.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     // ========== Midnight Transaction Submission Methods ==========
