@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-runtime"
-version = "0.2.3"
+version = "2.0.0"
 description = "A fresh FRAME-based Substrate node, ready for hacking."
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 edition = "2024"
@@ -84,6 +84,7 @@ pallet-throttle.workspace = true
 pallet-version.workspace = true
 midnight-primitives-beefy.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
+midnight-primitives-session-info.workspace = true
 pallet-c2m-bridge.workspace = true
 pallet-cnight-observation.workspace = true
 midnight-primitives-cnight-observation.workspace = true
@@ -168,6 +169,7 @@ std = [
     "midnight-primitives/std",
     "midnight-primitives-beefy/std",
     "midnight-primitives-cnight-observation/std",
+    "midnight-primitives-session-info/std",
     "runtime-common/std"
 ]
 runtime-benchmarks = [
@@ -179,8 +181,12 @@ runtime-benchmarks = [
     "pallet-grandpa/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
     "pallet-cnight-observation/runtime-benchmarks",
+    "pallet-c2m-bridge/runtime-benchmarks",
+    "midnight-node-ledger/runtime-benchmarks",
     # TODO: Enable native-token-mgmt benchmarks when available
     "pallet-partner-chains-bridge/runtime-benchmarks",
+    "pallet-mmr/runtime-benchmarks",
+    "pallet-preimage/runtime-benchmarks",
     "pallet-scheduler/runtime-benchmarks",
     "pallet-timestamp/runtime-benchmarks",
     "pallet-tx-pause/runtime-benchmarks",
@@ -216,6 +222,7 @@ try-runtime = [
     "pallet-collective/try-runtime",
     "pallet-collective-proposer-cancel/try-runtime",
     "pallet-throttle/try-runtime",
+    "pallet-cnight-observation/try-runtime",
 ]
 experimental = []
 

@@ -26,8 +26,9 @@ use midnight_node_ledger_helpers::{
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, INHERENT_IDENTIFIER,
-	MidnightObservationTokenMovement, TimestampUnixMillis,
+	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -38,7 +39,7 @@ use pallet_cnight_observation_mock::mock::{
 	self, CNightObservation, RuntimeCall, RuntimeEvent, System, Test, new_test_ext,
 };
 use rand::prelude::*;
-use sidechain_domain::{McBlockHash, McTxHash};
+use sidechain_domain::{McBlockHash, McTxHash, UtxoId};
 use test_log::test;
 
 fn create_inherent(
@@ -352,10 +353,8 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		let stored: Vec<DustPublicKeyBytes> = Mappings::<Test>::get(cardano_reward_address)
-			.into_iter()
-			.map(|r| r.dust_public_key)
-			.collect();
+		let stored: Vec<DustPublicKeyBytes> =
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect();
 
 		assert_eq!(stored, vec![dust_public_key]);
 
@@ -583,8 +582,7 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key: dust_public_key.clone(),
-					utxo_tx_hash: reg_header.utxo_tx_hash,
-					utxo_index: reg_header.utxo_index.0,
+					utxo_id: UtxoId::new(reg_header.utxo_tx_hash.0, reg_header.utxo_index.0),
 				};
 
 				assert_eq!(m, &expected);
@@ -652,8 +650,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key: dust_public_key.clone(),
-					utxo_tx_hash: reg_header.utxo_tx_hash,
-					utxo_index: reg_header.utxo_index.0,
+					utxo_id: UtxoId::new(reg_header.utxo_tx_hash.0, reg_header.utxo_index.0),
 				};
 
 				assert_eq!(m, &expected);
@@ -1302,9 +1299,8 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 
 		// Verify registration succeeded — proves handle_create reached event construction,
 		// not the early "No valid dust registration" bail-out
-		assert_eq!(
-			Mappings::<Test>::get(cardano_addr).len(),
-			1,
+		assert!(
+			CNightObservation::is_registered(&cardano_addr),
 			"Registration must succeed so handle_create reaches event construction"
 		);
 
@@ -1545,6 +1541,89 @@ fn position_guard_works_with_utxos_present() {
 	});
 }
 
+/// While the v0 -> v1 MBM is still draining, `process_tokens` must short-circuit:
+/// reading only v1 mid-migration would silently corrupt registration state for any
+/// reward address whose v0 row hasn't been moved yet (e.g. a deregistration would
+/// no-op here and then re-appear as live once the migration completes).
+///
+/// This test forces `on_chain_storage_version` back to 0 to simulate a block where
+/// the MBM is mid-flight, then asserts that an inherent carrying real UTXOs:
+/// - leaves `NextCardanoPosition` unchanged,
+/// - writes nothing to `Mapping`,
+/// - emits no pallet events.
+/// After flipping the version to 1 (migration complete), the same call processes
+/// normally and updates state.
+#[test]
+fn process_tokens_skips_during_mbm_then_resumes() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// Simulate mid-MBM: storage version still at 0.
+		StorageVersion::new(0).put::<CNightObservation>();
+
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+		let utxos = vec![ObservedUtxo {
+			header: test_header(10, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key: dust_public_key.clone(),
+			}),
+		}];
+
+		let position_before = NextCardanoPosition::<Test>::get();
+
+		let inherent = create_inherent(utxos.clone(), test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(
+			NextCardanoPosition::<Test>::get(),
+			position_before,
+			"NextCardanoPosition must not advance during MBM",
+		);
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
+			0,
+			"no Mapping rows must be written during MBM",
+		);
+		assert!(
+			!any_event(|e| matches!(
+				e,
+				RuntimeEvent::CNightObservation(_) | RuntimeEvent::MidnightSystem(_),
+			)),
+			"no pallet events must be emitted during MBM",
+		);
+
+		// Duplicate-inherent guard still holds during MBM: the gate runs after the
+		// `InherentExecutedThisBlock` check, so a second dispatch in the same block
+		// is rejected as before.
+		let dup = Call::process_tokens {
+			utxos: utxos.clone(),
+			next_cardano_position: test_position(10, 1),
+		};
+		assert_noop!(
+			RuntimeCall::CNightObservation(dup).dispatch(RawOrigin::None.into()),
+			Error::<Test>::InherentAlreadyExecuted,
+		);
+
+		advance_block_and_reset_events();
+
+		// Migration completes: storage version flips to 1; the next inherent
+		// processes the same UTXOs normally.
+		StorageVersion::new(1).put::<CNightObservation>();
+
+		let inherent = create_inherent(utxos, test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(NextCardanoPosition::<Test>::get(), test_position(10, 1));
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect::<Vec<_>>(),
+			vec![dust_public_key],
+		);
+	});
+}
+
 #[test]
 fn position_guards_hold_across_multiple_advances() {
 	new_test_ext().execute_with(|| {
@@ -1577,6 +1656,205 @@ fn position_guards_hold_across_multiple_advances() {
 		assert_noop!(
 			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
 			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+fn create_malformed_inherent() -> InherentData {
+	let mut inherent_data = InherentData::new();
+	inherent_data
+		.put_data(INHERENT_IDENTIFIER, &vec![0xFF_u8, 0xFE, 0xFD])
+		.expect("inherent data insertion should not fail");
+	inherent_data
+}
+
+#[test]
+fn create_inherent_with_malformed_data_returns_none() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let result = CNightObservation::create_inherent(&malformed);
+		assert!(result.is_none(), "create_inherent should return None on malformed data");
+	});
+}
+
+#[test]
+fn check_inherent_with_malformed_data_returns_error() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(1, 0) };
+		let result = CNightObservation::check_inherent(&call, &malformed);
+		assert_eq!(result, Err(InherentError::DecodeFailed));
+	});
+}
+
+#[test]
+fn is_inherent_required_with_malformed_data_returns_error() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let result = CNightObservation::is_inherent_required(&malformed);
+		assert_eq!(result, Err(InherentError::DecodeFailed));
+	});
+}
+
+// One representative regression guard for the operator-facing panic shape in
+// `BuildGenesisConfig::build`. The four call sites use a byte-identical format
+// string differing only in the dotted field path and the destination bound;
+// `cnight_policy_id` is not exercised because its source type `[u8; 28]` makes
+// the panic at that site unreachable from chain-spec deserialization.
+#[test]
+fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_long() {
+	let over_length = "a".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize + 1);
+	let genesis = pallet_cnight_observation::GenesisConfig::<Test> {
+		config: pallet_cnight_observation::config::CNightGenesis {
+			addresses: CNightAddresses {
+				mapping_validator_address: over_length,
+				auth_token_asset_name: String::new(),
+				cnight_policy_id: [0u8; 28],
+				cnight_asset_name: String::new(),
+			},
+			..Default::default()
+		},
+		_marker: Default::default(),
+	};
+
+	let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+		sp_io::TestExternalities::default().execute_with(|| {
+			genesis.build();
+		});
+	}))
+	.expect_err("genesis build must panic on over-length mapping_validator_address");
+
+	let msg = payload
+		.downcast_ref::<String>()
+		.cloned()
+		.or_else(|| payload.downcast_ref::<&'static str>().map(|s| s.to_string()))
+		.expect("panic payload should be String or &'static str");
+
+	assert!(
+		msg.contains("cNightObservation.config.addresses.mapping_validator_address"),
+		"panic must name the chain-spec field path; got: {msg}"
+	);
+	assert!(
+		msg.contains(&format!("maximum {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
+		"panic must name the destination bound; got: {msg}"
+	);
+}
+
+type BoundedAssetName = BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>;
+
+fn bounded_asset_name(bytes: &[u8]) -> BoundedAssetName {
+	BoundedAssetName::try_from(bytes.to_vec()).expect("asset name fits the bound")
+}
+
+// Oversized policy ids and asset names are unrepresentable in the call
+// arguments (`[u8; CNIGHT_POLICY_ID_LENGTH]` and a `BoundedVec`), so they are
+// rejected at decode time and need no dispatch-level tests.
+
+#[test]
+fn set_cnight_identifier_works() {
+	new_test_ext().execute_with(|| {
+		let policy_id = [0xAB; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = bounded_asset_name(b"staging-cnight");
+
+		assert_ok!(CNightObservation::set_cnight_identifier(
+			RawOrigin::Root.into(),
+			policy_id,
+			asset_name.clone(),
+		));
+
+		let (got_pid, got_name) = pallet_cnight_observation::CNightIdentifier::<Test>::get();
+		assert_eq!(got_pid.to_vec(), policy_id.to_vec());
+		assert_eq!(got_name, asset_name);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_requires_root() {
+	new_test_ext().execute_with(|| {
+		let policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = bounded_asset_name(b"x");
+
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Signed(1).into(),
+				policy_id,
+				asset_name.clone(),
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(RawOrigin::None.into(), policy_id, asset_name,),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_rejects_non_ascii_asset_name() {
+	new_test_ext().execute_with(|| {
+		// Genesis validates asset names as ASCII-only strings and block authors
+		// convert them to `String` when building the inherent, so non-ASCII (and
+		// in particular non-UTF-8) bytes must be rejected.
+		let valid_policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let non_utf8_asset_name = bounded_asset_name(&[0xFF, 0xFE]);
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Root.into(),
+				valid_policy_id,
+				non_utf8_asset_name,
+			),
+			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_works() {
+	new_test_ext().execute_with(|| {
+		let asset_name = bounded_asset_name(b"staging-auth-token");
+
+		assert_ok!(CNightObservation::set_auth_token_asset_name(
+			RawOrigin::Root.into(),
+			asset_name.clone(),
+		));
+
+		assert_eq!(
+			pallet_cnight_observation::MainChainAuthTokenAssetName::<Test>::get(),
+			asset_name,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_requires_root() {
+	new_test_ext().execute_with(|| {
+		let asset_name = bounded_asset_name(b"x");
+
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(
+				RawOrigin::Signed(1).into(),
+				asset_name.clone(),
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::None.into(), asset_name),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_rejects_non_ascii_input() {
+	new_test_ext().execute_with(|| {
+		// Genesis validates this field as an ASCII-only string and block authors
+		// convert it to `String` when building the inherent, so non-ASCII (and in
+		// particular non-UTF-8) bytes must be rejected.
+		let non_utf8 = bounded_asset_name(&[0xFF, 0xFE]);
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::Root.into(), non_utf8),
+			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,
 		);
 	});
 }

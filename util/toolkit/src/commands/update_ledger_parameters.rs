@@ -134,16 +134,21 @@ pub struct UpdateLedgerParametersArgs {
 	parameters: Option<String>,
 
 	/// Council member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, long, required = true)]
+	#[arg(short, long, required_unless_present = "print_system_tx_hex")]
 	council_members: Vec<String>,
 
 	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, long, required = true)]
+	#[arg(short, long, required_unless_present = "print_system_tx_hex")]
 	technical_committee_members: Vec<String>,
 
 	/// RPC URL for sending the update.
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
 	rpc_url: String,
+
+	/// Print the serialized ledger `SystemTransaction` as a hex string and exit
+	/// without submitting the root call. Useful for offline review or signing flows.
+	#[arg(long)]
+	print_system_tx_hex: bool,
 
 	#[command(flatten)]
 	params: UpdateableParams,
@@ -273,11 +278,16 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	// Step 1: Create the send system transaction call
 	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());
-	let send_system_tx_call = dynamic::tx(
-		"MidnightSystem",
-		"send_mn_system_transaction",
-		vec![serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?],
-	);
+	let serialized_system_tx =
+		serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?;
+
+	if args.print_system_tx_hex {
+		println!("0x{}", hex::encode(&serialized_system_tx));
+		return Ok(());
+	}
+
+	let send_system_tx_call =
+		dynamic::tx("MidnightSystem", "send_mn_system_transaction", vec![serialized_system_tx]);
 	let send_system_tx_call_value = api.tx().await?.call_data(&send_system_tx_call)?;
 
 	root_call::execute(RootCallArgs {

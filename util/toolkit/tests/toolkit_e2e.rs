@@ -19,6 +19,7 @@ use clap::Parser;
 use common::{
 	test_image,
 	toolkit_helper::{CircuitCall, ToolkitTestHelper},
+	wait_for_node::wait_for_finalized_block,
 };
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
@@ -54,11 +55,14 @@ async fn node_ws_url() -> &'static str {
 
 			let port =
 				container.get_host_port_ipv4(9944).await.expect("failed to get node RPC port");
+			let ws_url = format!("ws://127.0.0.1:{port}");
 
-			// Wait for at least 2 blocks to be produced (6s block time).
-			tokio::time::sleep(Duration::from_secs(20)).await;
+			// Wait for finality. The toolkit CLI calls get_block_one_hash on
+			// transaction-generating commands, which fails with OnlyGenesisFinalized
+			// until finalized height >= 1.
+			wait_for_finalized_block(&ws_url, 1, Duration::from_secs(60)).await;
 
-			SharedNode { _container: container, ws_url: format!("ws://127.0.0.1:{port}") }
+			SharedNode { _container: container, ws_url }
 		})
 		.await
 		.ws_url
@@ -386,6 +390,7 @@ async fn contract_ops() {
 /// message using the secret key as a private witness, then asserts the key does
 /// not appear anywhere in the serialized transactions.
 #[tokio::test]
+#[ignore = "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"]
 async fn bboard_private_witness_not_leaked() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);

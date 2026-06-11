@@ -56,7 +56,7 @@ pub enum ChainSpecInitError {
 	Missing(String),
 	ParseError(String),
 	Serialization(String),
-	GenesisStateError(midnight_node_ledger::ledger_8::storage::GetRootError),
+	GenesisStateError(midnight_node_ledger::ledger_9::storage::GetRootError),
 }
 
 impl fmt::Display for ChainSpecInitError {
@@ -268,7 +268,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: genesis.network_id(),
-			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
+			genesis_state_key: midnight_node_ledger::ledger_9::storage::get_root(
 				genesis.genesis_state(),
 				Some(&genesis.network_id()),
 			)
@@ -357,6 +357,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		bridge: {
 			let ics_config = genesis.ics_config();
+			let reserve_config = genesis.reserve_config();
 			let bridge_config = genesis.c2m_bridge_config();
 			BridgeConfig {
 				main_chain_scripts: if ics_config
@@ -372,6 +373,10 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 							&ics_config.illiquid_circulation_supply_validator_address,
 						)
 						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
+						reserve_validator_address: MainchainAddress::from_str(
+							&reserve_config.reserve_validator_address,
+						)
+						.expect("Failed to decode reserve_validator_address"),
 					})
 				},
 				initial_checkpoint: bridge_config.initial_data_checkpoint.map(|s| {

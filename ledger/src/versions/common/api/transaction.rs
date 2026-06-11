@@ -405,11 +405,12 @@ pub enum Operation {
 #[cfg(test)]
 mod tests {
 	use super::super::super::{
-		super::{CRATE_NAME, helpers_local::extract_tx_with_context},
+		super::{
+			CRATE_NAME, TransactionSignature as Signature, helpers_local::extract_tx_with_context,
+		},
 		BlockContext, api,
 	};
 	use super::*;
-	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;

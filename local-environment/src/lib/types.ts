@@ -15,6 +15,12 @@
 export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
+  /**
+   * Snapshot URI (http:// or https://) to fork the well-known network from.
+   * Required on the first bring-up of a well-known network; later runs can
+   * omit it to reuse existing restored data plus generated mock-authorities
+   * output.
+   */
   fromSnapshot?: string;
 }
 
@@ -54,25 +60,31 @@ export interface FederatedRuntimeUpgradeOptions
   techCommitteeUris: string[];
   /** URI used to close the federated motion and apply the authorized upgrade */
   motionExecutorUri: string;
+  /**
+   * Use `system.authorizeUpgradeWithoutChecks` instead of `system.authorizeUpgrade`,
+   * skipping the runtime-side `SpecVersionNeedsToIncrease` check. Intended for
+   * local rehearsals where the candidate wasm shares a spec_version with the
+   * running runtime; production upgrades should leave this off so the check
+   * still catches real version-bump regressions.
+   */
+  allowSameVersion?: boolean;
 }
 
-export interface SnapshotOptions {
-  /** name of the bootnode statefulset to snapshot */
-  bootnodeStatefulSet?: string;
-  /** optional pvc name override */
-  pvcName?: string;
-  /** s3 uri that receives the archive */
-  s3Uri?: string;
-  /** container image used to perform the snapshot */
-  snapshotImage?: string;
-  /** timeout window in minutes */
-  timeoutMinutes?: number;
-}
+/**
+ * Options for the two-phase `full-upgrade` command: image rollout followed by
+ * governance runtime upgrade. Inherits both option sets; there are no field
+ * conflicts because both ImageUpgradeOptions and FederatedRuntimeUpgradeOptions
+ * extend RunOptions.
+ */
+export interface FullUpgradeOptions
+  extends ImageUpgradeOptions,
+    FederatedRuntimeUpgradeOptions {}
 
 export const WELL_KNOWN_NAMESPACES = [
   "devnet",
-  "govnet",
   "preview",
+  "preprod",
+  "mainnet",
   "qanet",
   "testnet-02",
 ] as const;
@@ -82,6 +94,8 @@ export function assertWellKnownNamespace(
   ns: string,
 ): asserts ns is WellKnownNamespace {
   if (!WELL_KNOWN_NAMESPACES.includes(ns as WellKnownNamespace)) {
-    throw new Error(`Unknown namespace '${ns}'. Expected one of ${WELL_KNOWN_NAMESPACES.join(", ")}`);
+    throw new Error(
+      `Unknown namespace '${ns}'. Expected one of ${WELL_KNOWN_NAMESPACES.join(", ")}`,
+    );
   }
 }

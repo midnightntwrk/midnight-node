@@ -63,23 +63,35 @@ pub async fn execute(
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
 	if let Some(seed) = args.seed {
-		let fork_ctx =
-			build_fork_aware_context_cached(&[seed], &source_blocks, wallet_cache.as_deref()).await;
+		let fork_ctx = build_fork_aware_context_cached(
+			&[seed.clone()],
+			&source_blocks,
+			wallet_cache.as_deref(),
+		)
+		.await;
 
 		Ok(fork_ctx.dispatch(
 			|ctx| {
 				let seed_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed);
+					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed.clone());
 				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
 					&ctx, seed_v7, args.debug,
 				);
 				fork_wallet_result_v7(result)
 			},
 			|ctx| {
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(seed.clone());
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
-					&ctx, seed, args.debug,
+					&ctx, seed_v8, args.debug,
 				);
 				fork_wallet_result_v8(result)
+			},
+			|ctx| {
+				let result = crate::commands::fork::ledger_9::show_wallet::show_wallet_from_seed(
+					&ctx, seed.clone(), args.debug,
+				);
+				fork_wallet_result_v9(result)
 			},
 		))
 	} else {
@@ -104,12 +116,32 @@ pub async fn execute(
 				fork_wallet_result_v7(result)
 			},
 			|ctx| {
+				let addr_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_address(
+					&address_clone,
+				);
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_address(
-					&ctx, address,
+					&ctx, addr_v8,
 				);
 				fork_wallet_result_v8(result)
 			},
+			|ctx| {
+				let result = crate::commands::fork::ledger_9::show_wallet::show_wallet_from_address(
+					&ctx, address,
+				);
+				fork_wallet_result_v9(result)
+			},
 		))
+	}
+}
+
+fn fork_wallet_result_v9(
+	result: crate::commands::fork::ledger_9::show_wallet::ShowWalletResult,
+) -> ShowWalletResult {
+	use crate::commands::fork::ledger_9::show_wallet::ShowWalletResult as R;
+	match result {
+		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
+		R::Json(j) => ShowWalletResult::Json(j),
 	}
 }
 

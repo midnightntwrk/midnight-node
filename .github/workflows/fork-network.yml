@@ -1,0 +1,237 @@
+name: fork-network
+
+# Fork a well-known midnight network from a snapshot, then roll the validators
+# from $node_image to $new_node_image using the local-environment image-upgrade
+# command. Validator keys + on-chain authority storage are replaced by
+# mock-authorities' deterministic set, and each node's built-in mock main chain
+# follower serves all Cardano-derived data. No Cardano db-sync, no secrets,
+# no external infra.
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Well-known network to fork"
+        required: true
+        type: choice
+        default: devnet
+        options:
+          - devnet
+          - qanet
+      mock_authorities_tag:
+        description: "mock-authorities image tag"
+        required: true
+        default: "ead27ed"
+      node_image:
+        description: "midnight-node image to fork from (must match the snapshot's runtime host fns)"
+        required: true
+      new_node_image:
+        description: "midnight-node image to roll the validators to"
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: fork-network-${{ inputs.network }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NETWORK: ${{ inputs.network }}
+  NODE_IMAGE: ${{ inputs.node_image }}
+  NEW_NODE_IMAGE: ${{ inputs.new_node_image }}
+  MOCK_AUTHORITIES_IMAGE: ghcr.io/shieldedtech/mock-authorities:${{ inputs.mock_authorities_tag }}
+  SNAPSHOT_INDEX_URL: https://dg39snjayoq3t.cloudfront.net/index.json
+  SNAPSHOT_BASE_URL: https://dg39snjayoq3t.cloudfront.net
+
+jobs:
+  fork:
+    # 600 GB SSD — sized for qanet (latest snapshot is ~58 GiB unpacked per
+    # validator copy; the smaller org runners can't hold all 12 copies).
+    # Devnet would fit on a smaller runner but the cost delta is small
+    # and using one runner keeps the workflow simple.
+    runs-on: [self-hosted, "tier:large"]
+    timeout-minutes: 45
+
+    steps:
+      # `act` shares the host docker socket, so this step's
+      # `docker image prune --all --force` would nuke the developer's local
+      # image cache (including the locally-cached mock-authorities image we
+      # rely on as the pull fallback). Skip it on act runs.
+      # Also skip on self-hosted — the action's targets (e.g. /usr/share/swift,
+      # android SDK) aren't on our self-hosted runner.
+      - name: Free disk space
+        if: env.ACT != 'true' && runner.environment != 'self-hosted'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
+      - name: Disk space after cleanup
+        run: df -h /
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+
+      # `act` injects ACT=true; on local runs we skip the login and rely on
+      # the pull-or-inspect fallback below to hit cached images.
+      - name: Login to GHCR
+        if: ${{ env.ACT != 'true' }}
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Install local-environment deps
+        working-directory: local-environment
+        run: npm install
+
+      # The local-environment tool takes a fully-qualified snapshot URI, so we
+      # resolve the latest snapshot for $NETWORK from the backup system's
+      # manifest here.
+      - name: Resolve latest snapshot URL
+        id: cfg
+        run: |
+          tmp=$(mktemp)
+          curl -fsSL "$SNAPSHOT_INDEX_URL" -o "$tmp"
+          archive=$(jq -r --arg net "$NETWORK" '
+            .[$net]
+            | to_entries
+            | map(.value[])
+            | sort_by(.timestamp)
+            | reverse
+            | .[0]
+            | .s3_path
+            | sub("^s3://[^/]+/"; "")
+          ' "$tmp")
+          if [ -z "$archive" ] || [ "$archive" = "null" ]; then
+            echo "No snapshots found in index for network: $NETWORK" >&2
+            exit 1
+          fi
+          snapshot_url="$SNAPSHOT_BASE_URL/$archive"
+          echo "Selected snapshot: $snapshot_url"
+          echo "snapshot_url=$snapshot_url" >> "$GITHUB_OUTPUT"
+          echo "network_dir=local-environment/src/networks/well-known/$NETWORK" >> "$GITHUB_OUTPUT"
+
+      - name: Pull images
+        run: |
+          # Fall back to a local copy if pull fails — lets us test locally-built
+          # images (e.g. act) without a remote push.
+          docker pull "$MOCK_AUTHORITIES_IMAGE" || docker image inspect "$MOCK_AUTHORITIES_IMAGE" >/dev/null
+          docker pull "$NODE_IMAGE" || docker image inspect "$NODE_IMAGE" >/dev/null
+          docker pull "$NEW_NODE_IMAGE" || docker image inspect "$NEW_NODE_IMAGE" >/dev/null
+
+      # local-environment image-upgrade does:
+      #   1. Restore snapshot into per-validator data dirs (HTTP)
+      #   2. Run mock-authorities convert against the restored data
+      #   3. Generate the mock-mode compose override
+      #   4. `docker compose -f base -f override up -d` at $NODE_IMAGE
+      #   5. Roll each validator service from $NODE_IMAGE → $NEW_NODE_IMAGE
+      #      with `up -d --no-deps --force-recreate`, gated on health
+      - name: Run image-upgrade
+        working-directory: local-environment
+        env:
+          SNAPSHOT_URL: ${{ steps.cfg.outputs.snapshot_url }}
+        run: |
+          npm run "image-upgrade:${NETWORK}" -- --from-snapshot "$SNAPSHOT_URL"
+
+      - name: Wait for block + finality progression
+        timeout-minutes: 15
+        env:
+          RPC_URL: "http://localhost:9950"
+          REQUIRED_BLOCKS: "5"
+        run: |
+          get_tip() {
+            curl -sf -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"chain_getHeader","params":[]}' \
+              "$RPC_URL" \
+              | jq -r '.result.number // empty'
+          }
+          get_final() {
+            curl -sf -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"chain_getFinalizedHead","params":[]}' \
+              "$RPC_URL" \
+              | jq -r '.result // empty'
+          }
+
+          echo "Waiting for RPC to come up..."
+          for _ in $(seq 1 60); do
+            if tip_hex=$(get_tip) && [ -n "$tip_hex" ]; then
+              echo "RPC up. Starting tip: $tip_hex"
+              break
+            fi
+            sleep 5
+          done
+          [ -n "$tip_hex" ] || { echo "RPC never came up"; exit 1; }
+
+          start_tip=$((16#${tip_hex#0x}))
+          start_final=$(get_final)
+          echo "Starting block: $start_tip, finalized head: $start_final"
+
+          deadline=$((SECONDS + 720))
+          while [ $SECONDS -lt $deadline ]; do
+            cur_hex=$(get_tip || true)
+            cur_final=$(get_final || true)
+            if [ -n "$cur_hex" ]; then
+              cur_tip=$((16#${cur_hex#0x}))
+              advanced=$((cur_tip - start_tip))
+              final_changed="no"
+              [ -n "$cur_final" ] && [ "$cur_final" != "$start_final" ] && final_changed="yes"
+              echo "tip=$cur_tip (+$advanced) finalized=$cur_final changed=$final_changed"
+              if [ $advanced -ge $REQUIRED_BLOCKS ] && [ "$final_changed" = "yes" ]; then
+                echo "Chain is producing and finalizing blocks."
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "Chain failed to advance $REQUIRED_BLOCKS blocks with finality change in time"
+          exit 1
+
+      - name: Dump compose logs
+        if: always()
+        env:
+          NETWORK_DIR: ${{ steps.cfg.outputs.network_dir }}
+        run: |
+          cd "$NETWORK_DIR"
+          mkdir -p /tmp/forked-network-logs
+          override_arg=()
+          if [ -f "${NETWORK}.mock.override.yaml" ]; then
+            override_arg=(-f "${NETWORK}.mock.override.yaml")
+          fi
+          docker compose -f "${NETWORK}.network.yaml" "${override_arg[@]}" logs --no-color \
+            > /tmp/forked-network-logs/compose.log || true
+          docker compose -f "${NETWORK}.network.yaml" "${override_arg[@]}" ps \
+            > /tmp/forked-network-logs/ps.txt || true
+          df -h / > /tmp/forked-network-logs/disk.txt || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: forked-${{ inputs.network }}-logs
+          path: /tmp/forked-network-logs/
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        env:
+          NETWORK_DIR: ${{ steps.cfg.outputs.network_dir }}
+        run: |
+          cd "$NETWORK_DIR"
+          override_arg=()
+          if [ -f "${NETWORK}.mock.override.yaml" ]; then
+            override_arg=(-f "${NETWORK}.mock.override.yaml")
+          fi
+          docker compose -f "${NETWORK}.network.yaml" "${override_arg[@]}" down -v || true

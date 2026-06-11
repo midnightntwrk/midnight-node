@@ -24,8 +24,8 @@ use alloc::vec::Vec;
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis,
-	UtxoIndexInTx,
+	CARDANO_ASSET_NAME_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH, CardanoPosition,
+	CardanoRewardAddressBytes, DustPublicKeyBytes, TimestampUnixMillis, UtxoIndexInTx,
 };
 use midnight_primitives_mainchain_follower::{
 	ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData,
@@ -67,6 +67,18 @@ fn generate_registration_utxos(count: u32) -> Vec<ObservedUtxo> {
 		.collect()
 }
 
+fn reset_benchmark_state<T: Config>() {
+	let _ = Mapping::<T>::clear(u32::MAX, None);
+	let _ = UtxoOwners::<T>::clear(u32::MAX, None);
+	InherentExecutedThisBlock::<T>::kill();
+	NextCardanoPosition::<T>::set(CardanoPosition {
+		block_hash: McBlockHash([0u8; 32]),
+		block_number: 1,
+		block_timestamp: TimestampUnixMillis(20_000),
+		tx_index_in_block: 0,
+	});
+}
+
 #[benchmarks]
 mod benchmarks {
 	use super::*;
@@ -76,6 +88,8 @@ mod benchmarks {
 	/// Component `n`: number of observed UTXOs (0..MAX_UTXO_COUNT).
 	#[benchmark]
 	fn process_tokens(n: Linear<0, MAX_UTXO_COUNT>) {
+		reset_benchmark_state::<T>();
+
 		let utxos = generate_registration_utxos(n);
 
 		let next_position = CardanoPosition {
@@ -89,6 +103,33 @@ mod benchmarks {
 		process_tokens(RawOrigin::None, utxos, next_position);
 
 		assert_eq!(NextCardanoPosition::<T>::get().block_number, 2);
+	}
+
+	/// Benchmark `set_cnight_identifier` with maximum-sized inputs.
+	#[benchmark]
+	fn set_cnight_identifier() {
+		let policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
+			BoundedVec::truncate_from(alloc::vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize]);
+
+		#[extrinsic_call]
+		set_cnight_identifier(RawOrigin::Root, policy_id, asset_name.clone());
+
+		let (got_pid, got_name) = CNightIdentifier::<T>::get();
+		assert_eq!(got_pid.to_vec(), policy_id.to_vec());
+		assert_eq!(got_name, asset_name);
+	}
+
+	/// Benchmark `set_auth_token_asset_name` with a maximum-sized asset name.
+	#[benchmark]
+	fn set_auth_token_asset_name() {
+		let asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>> =
+			BoundedVec::truncate_from(alloc::vec![0u8; CARDANO_ASSET_NAME_MAX_LENGTH as usize]);
+
+		#[extrinsic_call]
+		set_auth_token_asset_name(RawOrigin::Root, asset_name.clone());
+
+		assert_eq!(MainChainAuthTokenAssetName::<T>::get(), asset_name);
 	}
 
 	// Benchmark smoke tests run via the runtime crate (not the pallet crate),

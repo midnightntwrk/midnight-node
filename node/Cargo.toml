@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "1.0.0"
+version = "2.0.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -80,6 +80,7 @@ substrate-frame-rpc-system.workspace = true
 # These dependencies are used for runtime benchmarking
 frame-benchmarking = {workspace = true, optional = true}
 frame-benchmarking-cli = {workspace = true, default-features = true }
+pallet-staking = { workspace = true, features = ["std"], optional = true }
 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
@@ -95,6 +96,7 @@ midnight-primitives-system-parameters = { workspace = true, default-features = t
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
+midnight-primitives-session-info = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
 pallet-system-parameters = { workspace = true, default-features = true }
@@ -175,7 +177,10 @@ runtime-benchmarks = [
 ]
 # Enable features that allow the runtime to be tried and debugged. Name might be subject to change
 # in the near future.
-try-runtime = ["midnight-node-runtime/try-runtime"]
+try-runtime = [
+    "midnight-node-runtime/try-runtime",
+    "pallet-staking/try-runtime",
+]
 experimental = [
     #"sp-block-rewards",
 ]

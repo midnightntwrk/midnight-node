@@ -72,8 +72,6 @@ frame-benchmarking = { workspace = true, optional = true }
 frame-system-benchmarking = { workspace = true, optional = true }
 
 # Local Dependencies
-sp-block-production-log = { workspace = true }
-pallet-block-production-log = { workspace = true }
 sp-sidechain = { workspace = true }
 pallet-sidechain = { workspace = true }
 pallet-session-validator-management = { workspace = true, features = [
@@ -82,15 +80,6 @@ pallet-session-validator-management = { workspace = true, features = [
 sp-session-validator-management = { workspace = true, features = ["serde"] }
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-slots = { workspace = true }
-pallet-address-associations = { workspace = true }
-pallet-block-producer-metadata = { workspace = true }
-sp-block-producer-metadata = { workspace = true }
-pallet-block-participation = { workspace = true }
-sp-block-participation = { workspace = true }
-pallet-governed-map = { workspace = true }
-sp-governed-map = { workspace = true }
-sp-block-producer-fees = { workspace = true }
-pallet-block-producer-fees = { workspace = true }
 pallet-partner-chains-bridge = { workspace = true }
 sp-partner-chains-bridge = { workspace = true }
 
@@ -126,8 +115,6 @@ std = [
 	"frame-try-runtime/std",
 	"pallet-aura/std",
 	"pallet-balances/std",
-	"pallet-block-producer-fees/std",
-	"pallet-block-production-log/std",
 	"pallet-grandpa/std",
 	"pallet-sudo/std",
 	"pallet-partner-chains-session/std",
@@ -135,12 +122,8 @@ std = [
 	"pallet-timestamp/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
 	"pallet-transaction-payment/std",
-	"pallet-address-associations/std",
-	"pallet-block-producer-metadata/std",
-	"sp-block-producer-metadata/std",
 	"sp-api/std",
 	"sp-block-builder/std",
-	"sp-block-producer-fees/std",
 	"sp-consensus-aura/std",
 	"sp-consensus-grandpa/std",
 	"sp-consensus-slots/std",
@@ -162,11 +145,6 @@ std = [
 	"sidechain-slots/std",
 	"sidechain-domain/std",
 	"sp-inherents/std",
-	"sp-block-production-log/std",
-	"pallet-block-participation/std",
-	"sp-block-participation/std",
-	"pallet-governed-map/std",
-	"sp-governed-map/std",
 	"pallet-partner-chains-bridge/std",
 	"sp-partner-chains-bridge/std",
 ]
@@ -181,12 +159,6 @@ runtime-benchmarks = [
 	"pallet-sudo/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
-	"pallet-block-production-log/runtime-benchmarks",
-	"pallet-address-associations/runtime-benchmarks",
-	"pallet-block-producer-fees/runtime-benchmarks",
-	"pallet-block-producer-metadata/runtime-benchmarks",
-	"pallet-block-participation/runtime-benchmarks",
-	"pallet-governed-map/runtime-benchmarks",
 	"pallet-partner-chains-bridge/runtime-benchmarks",
 	"pallet-session-validator-management/runtime-benchmarks",
 ]

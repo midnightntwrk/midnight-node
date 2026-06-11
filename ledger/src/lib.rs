@@ -46,7 +46,19 @@ pub mod ledger_7 {
 	mod block_context;
 	pub use block_context::*;
 
+	#[allow(clippy::duplicate_mod)]
+	#[path = "error_ext/ledger_7.rs"]
+	mod error_ext;
+
+	#[path = "system_tx/ledger_7.rs"]
+	mod system_tx;
+
+	#[path = "guaranteed_validation/ledger_7.rs"]
+	mod guaranteed_validation;
+
 	pub const CRATE_NAME: &str = "mn-ledger";
+	#[cfg(feature = "std")]
+	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
@@ -68,13 +80,58 @@ pub mod ledger_8 {
 	mod block_context;
 	pub use block_context::*;
 
+	#[path = "error_ext/ledger_8.rs"]
+	mod error_ext;
+
+	#[path = "system_tx/ledger_8.rs"]
+	mod system_tx;
+
+	#[path = "guaranteed_validation/ledger_8.rs"]
+	mod guaranteed_validation;
+
 	pub const CRATE_NAME: &str = "mn-ledger-8";
+	#[cfg(feature = "std")]
+	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
 }
 
-pub use ledger_8 as latest;
+#[path = "versions"]
+pub mod ledger_9 {
+	#[cfg(feature = "std")]
+	pub(crate) use {
+		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
+		ledger_storage_ledger_8 as ledger_storage_local,
+		midnight_node_ledger_helpers::ledger_9 as helpers_local,
+		midnight_serialize as midnight_serialize_local, mn_ledger_9 as mn_ledger_local,
+		onchain_runtime_ledger_9 as onchain_runtime_local,
+		transient_crypto as transient_crypto_local, zswap_ledger_9 as zswap_local,
+	};
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "block_context/post_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
+
+	#[path = "error_ext/ledger_9.rs"]
+	mod error_ext;
+
+	#[path = "system_tx/ledger_9.rs"]
+	mod system_tx;
+
+	#[path = "guaranteed_validation/ledger_9.rs"]
+	mod guaranteed_validation;
+
+	pub const CRATE_NAME: &str = "mn-ledger-9";
+	#[cfg(feature = "std")]
+	pub(crate) type TransactionSignature = mn_ledger_local::structure::Signature;
+	#[allow(clippy::duplicate_mod)]
+	mod common;
+	pub use common::*;
+}
+
+pub use ledger_9 as latest;
 
 #[cfg(feature = "std")]
 /// Drops all versioned default ledger storages.
@@ -85,6 +142,7 @@ pub use ledger_8 as latest;
 pub fn drop_all_default_storage() {
 	ledger_7::storage::drop_default_storage_if_exists();
 	ledger_8::storage::drop_default_storage_if_exists();
+	ledger_9::storage::drop_default_storage_if_exists();
 }
 
 mod common;
@@ -92,7 +150,7 @@ mod common;
 pub mod types {
 	pub use super::common::types::*;
 
-	pub use super::host_api::ledger_8::ledger_8_bridge as active_ledger_bridge;
+	pub use super::host_api::ledger_9::ledger_9_bridge as active_ledger_bridge;
 	pub use super::latest::types as active_version;
 }
 

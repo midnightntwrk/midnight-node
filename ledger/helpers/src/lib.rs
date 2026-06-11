@@ -16,8 +16,23 @@ mod utils;
 pub use utils::find_dependency_version;
 pub mod extract_tx_with_context;
 
+/// Strategy for ordering candidate coins/UTXOs during input selection.
+///
+/// Defined at the crate root (not inside the version-specific `common` module) so that
+/// `ledger_7` and `ledger_8` see the same type, allowing it to flow through the toolkit's
+/// version-dispatched builders unchanged.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CoinSelectionStrategy {
+	/// Use the largest coins/UTXOs first. Minimizes the number of inputs.
+	#[default]
+	LargestFirst,
+	/// Use the smallest coins/UTXOs first. Consolidates dust.
+	SmallestFirst,
+}
+
 #[path = "versions"]
 pub mod ledger_7 {
+	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
 	pub use {
@@ -32,10 +47,40 @@ pub mod ledger_7 {
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
+
+	pub use base_crypto::signatures::{
+		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
+		VerifyingKey as SignatureVerifyingKey,
+	};
+
+	pub fn signature_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		key
+	}
+
+	pub fn transaction_signing_key(
+		key: &base_crypto::signatures::SigningKey,
+	) -> TransactionSigningKey {
+		key.clone()
+	}
+
+	pub fn transaction_signature(
+		signature: base_crypto::signatures::Signature,
+	) -> TransactionSignature {
+		signature
+	}
+
+	pub fn maintenance_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		key
+	}
 }
 
 #[path = "versions"]
 pub mod ledger_8 {
+	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
 	pub use {
@@ -52,9 +97,89 @@ pub mod ledger_8 {
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
+
+	pub use base_crypto::signatures::{
+		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
+		VerifyingKey as SignatureVerifyingKey,
+	};
+
+	pub fn signature_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		key
+	}
+
+	pub fn transaction_signing_key(
+		key: &base_crypto::signatures::SigningKey,
+	) -> TransactionSigningKey {
+		key.clone()
+	}
+
+	pub fn transaction_signature(
+		signature: base_crypto::signatures::Signature,
+	) -> TransactionSignature {
+		signature
+	}
+
+	pub fn maintenance_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		key
+	}
 }
 
-pub use ledger_8 as latest;
+#[path = "versions"]
+pub mod ledger_9 {
+	pub use super::CoinSelectionStrategy;
+	#[cfg(feature = "can-panic")]
+	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_9 as extract_tx_with_context;
+	pub use {
+		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
+		mn_ledger_9 as mn_ledger, onchain_runtime_ledger_9 as onchain_runtime, transient_crypto,
+		zkir, zswap_ledger_9 as zswap,
+	};
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "block_context/post_ledger_8.rs"]
+	mod block_context;
+	pub use block_context::*;
+
+	#[allow(clippy::duplicate_mod)]
+	mod common;
+	pub use common::*;
+
+	pub use mn_ledger::structure::{
+		Signature as TransactionSignature, SignatureVerifyingKey,
+		SigningKey as TransactionSigningKey,
+	};
+	pub use onchain_runtime::state::ContractMaintenanceVerifyingKey;
+
+	pub fn signature_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		SignatureVerifyingKey::Schnorr(key)
+	}
+
+	pub fn transaction_signing_key(
+		key: &base_crypto::signatures::SigningKey,
+	) -> TransactionSigningKey {
+		TransactionSigningKey::Schnorr(key.clone())
+	}
+
+	pub fn transaction_signature(
+		signature: base_crypto::signatures::Signature,
+	) -> TransactionSignature {
+		TransactionSignature::Schnorr(signature)
+	}
+
+	pub fn maintenance_verifying_key(
+		key: base_crypto::signatures::VerifyingKey,
+	) -> ContractMaintenanceVerifyingKey {
+		ContractMaintenanceVerifyingKey::Schnorr(key)
+	}
+}
+
+pub use ledger_9 as latest;
 
 pub mod fork;
 

@@ -510,17 +510,21 @@ impl InherentDigest for McHashInherentDigest {
 	fn value_from_digest(
 		digest: &[DigestItem],
 	) -> Result<Self::Value, Box<dyn Error + Send + Sync>> {
+		let mut found: Option<Self::Value> = None;
 		for item in digest {
 			if let DigestItem::PreRuntime(id, data) = item {
 				if *id == MC_HASH_DIGEST_ID {
+					if found.is_some() {
+						return Err("Multiple main chain block hashes in digest".into());
+					}
 					let data = data.clone().try_into().map_err(|_| {
 						format!("Invalid MC hash referenced by block author in digest: {:?}\nMC hash must be exactly 32 bytes long.", ByteString(data.to_vec()))
 					})?;
-					return Ok(McBlockHash(data));
+					found = Some(McBlockHash(data));
 				}
 			}
 		}
-		Err("Main chain block hash missing from digest".into())
+		found.ok_or_else(|| "Main chain block hash missing from digest".into())
 	}
 }
 

@@ -11,18 +11,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_primitives_ledger::LedgerStorageExt;
+
 use super::LOG_TARGET;
 use super::ledger_storage_local::{
-	db::ParityDb,
+	db::{ParityDb, paritydb::OwnedDb},
 	storage::{try_get_default_storage, unsafe_drop_default_storage},
 };
 
+// Storage may be registered under either of two `ParityDb` instantiations
+// depending on the operator's `storage_separation` config: the default
+// (column offset 0) for `Separate`, or column offset = NUM_COLUMNS_POLKADOT
+// for `Unified`. Drop whichever exists.
+type DbSeparate = ParityDb;
+type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
+
 pub fn drop_default_storage_if_exists() {
-	if try_get_default_storage::<ParityDb>().is_some() {
-		unsafe_drop_default_storage::<ParityDb>();
+	if try_get_default_storage::<DbSeparate>().is_some() {
+		unsafe_drop_default_storage::<DbSeparate>();
 		log::info!(
 			target: LOG_TARGET,
-			"Dropped HF storage after rollback"
+			"Dropped HF storage after rollback (separate)"
+		);
+	}
+	if try_get_default_storage::<DbUnified>().is_some() {
+		unsafe_drop_default_storage::<DbUnified>();
+		log::info!(
+			target: LOG_TARGET,
+			"Dropped HF storage after rollback (unified)"
 		);
 	}
 }
@@ -106,7 +122,6 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
-	use super::base_crypto_local::signatures::Signature;
 	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
 
 	let res = set_default_storage(|| {
@@ -120,7 +135,7 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
+	alloc_with_initial_state::<super::TransactionSignature, ParityDb>(genesis_state)
 }
 
 #[cfg(feature = "std")]
@@ -141,7 +156,6 @@ pub fn init_storage_paritydb_unified<
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
-	use super::base_crypto_local::signatures::Signature;
 	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
 
 	let res = set_default_storage(|| {
@@ -152,5 +166,7 @@ pub fn init_storage_paritydb_unified<
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	alloc_with_initial_state::<Signature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(genesis_state)
+	alloc_with_initial_state::<super::TransactionSignature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(
+		genesis_state,
+	)
 }

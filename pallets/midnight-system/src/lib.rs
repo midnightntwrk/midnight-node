@@ -15,7 +15,10 @@ pub mod pallet {
 
 	use alloc::vec::Vec;
 	use midnight_node_ledger::types::{
-		Hash, active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
+		Hash, active_ledger_bridge as LedgerApi,
+		active_version::{
+			DeserializationError, LedgerApiError, SerializationError, TransactionError,
+		},
 	};
 
 	use super::*;
@@ -34,17 +37,61 @@ pub mod pallet {
 		pub serialized_system_transaction: Vec<u8>,
 	}
 
+	// Ledger errors mirrored from `LedgerApiError`. Flattened (rather than wrapped)
+	// so the encoding fits within `MAX_MODULE_ERROR_ENCODED_SIZE`.
 	#[pallet::error]
 	pub enum Error<T> {
-		#[codec(index = 0)]
-		LedgerApiError(LedgerApiError),
 		#[codec(index = 1)]
 		SystemTransactionNotAllowedForGovernance,
+		#[codec(index = 2)]
+		Deserialization(DeserializationError),
+		#[codec(index = 3)]
+		Serialization(SerializationError),
+		#[codec(index = 4)]
+		Transaction(TransactionError),
+		#[codec(index = 5)]
+		LedgerCacheError,
+		#[codec(index = 6)]
+		NoLedgerState,
+		#[codec(index = 7)]
+		LedgerStateScaleDecodingError,
+		#[codec(index = 8)]
+		ContractCallCostError,
+		#[codec(index = 9)]
+		BlockLimitExceededError,
+		#[codec(index = 10)]
+		FeeCalculationError,
+		#[codec(index = 11)]
+		HostApiError,
+		#[codec(index = 12)]
+		GetTransactionContextError,
+		#[codec(index = 13)]
+		ContractNotPresent,
+		#[codec(index = 14)]
+		BeneficiaryNotFound,
 	}
 
 	impl<T: Config> From<LedgerApiError> for Error<T> {
 		fn from(value: LedgerApiError) -> Self {
-			Error::<T>::LedgerApiError(value)
+			match value {
+				LedgerApiError::Deserialization(e) => Error::<T>::Deserialization(e),
+				LedgerApiError::Serialization(e) => Error::<T>::Serialization(e),
+				LedgerApiError::Transaction(e) => Error::<T>::Transaction(e),
+				LedgerApiError::LedgerCacheError => Error::<T>::LedgerCacheError,
+				LedgerApiError::NoLedgerState => Error::<T>::NoLedgerState,
+				LedgerApiError::LedgerStateScaleDecodingError => {
+					Error::<T>::LedgerStateScaleDecodingError
+				},
+				LedgerApiError::ContractCallCostError => Error::<T>::ContractCallCostError,
+				LedgerApiError::BlockLimitExceededError => Error::<T>::BlockLimitExceededError,
+				LedgerApiError::FeeCalculationError => Error::<T>::FeeCalculationError,
+				LedgerApiError::HostApiError => Error::<T>::HostApiError,
+				LedgerApiError::GetTransactionContextError => {
+					Error::<T>::GetTransactionContextError
+				},
+				LedgerApiError::ContractNotPresent => Error::<T>::ContractNotPresent,
+				LedgerApiError::BeneficiaryNotFound => Error::<T>::BeneficiaryNotFound,
+			}
 		}
 	}
 

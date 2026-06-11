@@ -55,3 +55,44 @@ impl<D: DB + Clone> ProofProvider<D> for RemoteProofServer {
 		.unwrap_or_else(|err| panic!("Failed to prove via remote proof server: {:?}", err))
 	}
 }
+
+#[async_trait]
+impl<D: DB + Clone> midnight_node_ledger_helpers::ledger_8::ProofProvider<D> for RemoteProofServer {
+	async fn prove(
+		&self,
+		tx: midnight_node_ledger_helpers::ledger_8::Transaction<
+			midnight_node_ledger_helpers::ledger_8::Signature,
+			midnight_node_ledger_helpers::ledger_8::ProofPreimageMarker,
+			midnight_node_ledger_helpers::ledger_8::PedersenRandomness,
+			D,
+		>,
+		_rng: StdRng,
+		resolver: &midnight_node_ledger_helpers::ledger_8::Resolver,
+		cost_model: &midnight_node_ledger_helpers::ledger_8::CostModel,
+	) -> midnight_node_ledger_helpers::ledger_8::Transaction<
+		midnight_node_ledger_helpers::ledger_8::Signature,
+		midnight_node_ledger_helpers::ledger_8::ProofMarker,
+		midnight_node_ledger_helpers::ledger_8::PedersenRandomness,
+		D,
+	> {
+		log::info!("Proof server URL: {}", self.url);
+
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(PROOF_SERVER_TIMEOUT),
+			..ExponentialBackoff::default()
+		};
+
+		retry(backoff, || async {
+			let provider = midnight_node_ledger_helpers::ledger_8::ProofServerProvider {
+				base_url: self.url.clone().into(),
+				resolver,
+			};
+			tx.prove(provider, cost_model).await.map_err(|e| {
+				log::warn!("proof server proving failed, retrying: {e}");
+				backoff::Error::transient(e)
+			})
+		})
+		.await
+		.unwrap_or_else(|err| panic!("Failed to prove via remote proof server: {:?}", err))
+	}
+}

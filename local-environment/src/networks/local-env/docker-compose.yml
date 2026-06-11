@@ -2,7 +2,7 @@ services:
   cardano-node-1:
     container_name: cardano-node-1
     image: ${CARDANO_IMAGE}
-    platform: linux/amd64
+    platform: ${ARCHITECTURE}
     healthcheck:
       test: "test -e /data/node.socket"
       interval: 20s
@@ -100,7 +100,7 @@ services:
   ogmios:
     container_name: ogmios
     image: ${OGMIOS_IMAGE}
-    platform: linux/amd64
+    platform: ${ARCHITECTURE}
     depends_on:
       cardano-node-1:
         condition: service_healthy
@@ -131,6 +131,10 @@ services:
   db-sync:
     container_name: db-sync
     image: ${DBSYNC_IMAGE}
+    # The ONLY hardcoded-amd64 service: cardano-db-sync publishes a single-arch
+    # (amd64) image, so on arm64 hosts it runs under emulation. Every other service
+    # is multi-arch and uses ${ARCHITECTURE} to run native. Drop this pin if/when
+    # db-sync ships an arm64 image.
     platform: linux/amd64
     depends_on:
       cardano-node-1:
@@ -166,7 +170,14 @@ services:
     container_name: postgres
     image: ${POSTGRES_IMAGE}
     platform: ${ARCHITECTURE}
-    command: postgres -c maintenance_work_mem=256MB -p ${POSTGRES_PORT} -c max_connections=120
+    command: >
+      postgres
+      -c maintenance_work_mem=256MB
+      -c ssl=on
+      -c ssl_cert_file=/etc/ssl/postgres/server.crt
+      -c ssl_key_file=/etc/ssl/postgres/server.key
+      -c max_connections=120
+      -p ${POSTGRES_PORT}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -181,6 +192,7 @@ services:
       - POSTGRES_MULTIPLE_DATABASES=cexplorer,qa_demo
     ports:
       - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    entrypoint: ["/bin/bash", "/usr/local/bin/custom-entrypoint.sh"]
     volumes:
       - ./configurations/postgres/entrypoint.sh:/usr/local/bin/custom-entrypoint.sh
       - ./configurations/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh
@@ -279,7 +291,7 @@ services:
   postgres-indexer:
     profiles: ["withindexer"]
     container_name: postgres-indexer
-    platform: linux/amd64
+    platform: ${ARCHITECTURE}
     image: "postgres:17.1-alpine@sha256:0d9624535618a135c5453258fd629f4963390338b11aaffb92292c12df3a6c17"
     restart: "always"
     volumes:
@@ -326,6 +338,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9933"
     ports:
       - "30333:30333"
       - "9933:9933"
@@ -353,6 +368,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9934"
     ports:
       - "30334:30334"
       - "9934:9934"
@@ -380,6 +398,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9935"
     ports:
       - "30335:30335"
       - "9935:9935"
@@ -409,6 +430,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9936"
     ports:
       - "30336:30336"
       - "9936:9936"
@@ -438,6 +462,9 @@ services:
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
     ports:
       - "30337:30337"
       - "9944:9944"

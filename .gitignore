@@ -98,3 +98,7 @@ util/toolkit-js/result.json
 
 # AGENTS.local.md - locally-defined rules for AI agents
 AGENTS.local.md
+
+# Local-only image bundle for +local-env-ci-localimg (docker save → load); never commit
+local-env-images.tar
+toolkit-image.tar

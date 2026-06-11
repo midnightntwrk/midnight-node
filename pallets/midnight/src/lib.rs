@@ -28,6 +28,8 @@ pub use midnight_primitives::{
 	LedgerMutFn, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
 };
 
+pub use midnight_node_ledger::types::active_version::LedgerApiError;
+
 #[cfg(test)]
 mod mock;
 
@@ -286,6 +288,8 @@ pub mod pallet {
 		GetTransactionContextError,
 		#[codec(index = 13)]
 		ContractNotPresent,
+		#[codec(index = 14)]
+		BeneficiaryNotFound,
 	}
 	// grcov-excl-stop
 
@@ -308,6 +312,7 @@ pub mod pallet {
 					Error::<T>::GetTransactionContextError
 				},
 				LedgerApiError::ContractNotPresent => Error::<T>::ContractNotPresent,
+				LedgerApiError::BeneficiaryNotFound => Error::<T>::BeneficiaryNotFound,
 			}
 		}
 	}
@@ -596,6 +601,11 @@ pub mod pallet {
 		pub fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError> {
 			let state_key = StateKey::<T>::get();
 			LedgerApi::get_ledger_parameters(&state_key)
+		}
+
+		pub fn get_c_to_m_bridge_min_amount() -> Result<u128, LedgerApiError> {
+			let state_key = StateKey::<T>::get();
+			LedgerApi::get_c_to_m_bridge_min_amount(&state_key)
 		}
 
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
