@@ -276,9 +276,22 @@ pub fn new_partial(
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 	let midnight_metrics =
 		MidnightDataSourceMetrics::register_warn_errors(config.prometheus_registry());
+	// Build the genesis storage once (reused for the genesis block builder below)
+	// and recover the cNIGHT follower genesis from it — the cnight-observation
+	// pallet genesis is baked into every chainspec, so the separate cnight-genesis
+	// file is only a fallback.
+	let genesis_storage = config
+		.chain_spec
+		.as_storage_builder()
+		.build_storage()
+		.map_err(sp_blockchain::Error::Storage)?;
+	let cnight_follower_genesis =
+		crate::main_chain_follower::cnight_follower_genesis_from_storage(&genesis_storage);
+
 	let data_sources = tokio::task::block_in_place(|| {
 		config.tokio_handle.block_on(create_cached_main_chain_follower_data_sources(
 			midnight_cfg.clone(),
+			cnight_follower_genesis,
 			mc_follower_metrics.clone(),
 			midnight_metrics.clone(),
 		))
@@ -316,12 +329,6 @@ pub fn new_partial(
 			.as_array()
 			.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?,
 	);
-
-	let genesis_storage = config
-		.chain_spec
-		.as_storage_builder()
-		.build_storage()
-		.map_err(sp_blockchain::Error::Storage)?;
 
 	// Commit the genesis trie state only when NOT warp/fast syncing. With `--sync warp`,
 	// `no_genesis()` is true, so we skip the commit — leaving `finalized_state == None` so substrate
