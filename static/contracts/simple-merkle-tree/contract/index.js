@@ -1,5 +1,5 @@
 import * as __compactRuntime from '@midnight-ntwrk/compact-runtime';
-__compactRuntime.checkRuntimeVersion('0.13.0-alpha.0');
+__compactRuntime.checkRuntimeVersion('0.16.0');
 
 const _descriptor_0 = new __compactRuntime.CompactTypeUnsignedInteger(4294967295n, 4);
 
@@ -23,6 +23,8 @@ const _descriptor_2 = new _MerkleTreeDigest_0();
 
 const _descriptor_3 = __compactRuntime.CompactTypeBoolean;
 
+const _descriptor_4 = new __compactRuntime.CompactTypeBytes(32);
+
 class _MerkleTreePathEntry_0 {
   alignment() {
     return _descriptor_2.alignment().concat(_descriptor_3.alignment());
@@ -38,28 +40,26 @@ class _MerkleTreePathEntry_0 {
   }
 }
 
-const _descriptor_4 = new _MerkleTreePathEntry_0();
+const _descriptor_5 = new _MerkleTreePathEntry_0();
 
-const _descriptor_5 = new __compactRuntime.CompactTypeVector(10, _descriptor_4);
+const _descriptor_6 = new __compactRuntime.CompactTypeVector(10, _descriptor_5);
 
 class _MerkleTreePath_0 {
   alignment() {
-    return _descriptor_0.alignment().concat(_descriptor_5.alignment());
+    return _descriptor_0.alignment().concat(_descriptor_6.alignment());
   }
   fromValue(value_0) {
     return {
       leaf: _descriptor_0.fromValue(value_0),
-      path: _descriptor_5.fromValue(value_0)
+      path: _descriptor_6.fromValue(value_0)
     }
   }
   toValue(value_0) {
-    return _descriptor_0.toValue(value_0.leaf).concat(_descriptor_5.toValue(value_0.path));
+    return _descriptor_0.toValue(value_0.leaf).concat(_descriptor_6.toValue(value_0.path));
   }
 }
 
-const _descriptor_6 = new _MerkleTreePath_0();
-
-const _descriptor_7 = new __compactRuntime.CompactTypeBytes(32);
+const _descriptor_7 = new _MerkleTreePath_0();
 
 const _descriptor_8 = new __compactRuntime.CompactTypeVector(2, _descriptor_1);
 
@@ -86,17 +86,17 @@ const _descriptor_11 = new __compactRuntime.CompactTypeUnsignedInteger(184467440
 
 class _Either_0 {
   alignment() {
-    return _descriptor_3.alignment().concat(_descriptor_7.alignment().concat(_descriptor_7.alignment()));
+    return _descriptor_3.alignment().concat(_descriptor_4.alignment().concat(_descriptor_4.alignment()));
   }
   fromValue(value_0) {
     return {
       is_left: _descriptor_3.fromValue(value_0),
-      left: _descriptor_7.fromValue(value_0),
-      right: _descriptor_7.fromValue(value_0)
+      left: _descriptor_4.fromValue(value_0),
+      right: _descriptor_4.fromValue(value_0)
     }
   }
   toValue(value_0) {
-    return _descriptor_3.toValue(value_0.is_left).concat(_descriptor_7.toValue(value_0.left).concat(_descriptor_7.toValue(value_0.right)));
+    return _descriptor_3.toValue(value_0.is_left).concat(_descriptor_4.toValue(value_0.left).concat(_descriptor_4.toValue(value_0.right)));
   }
 }
 
@@ -106,15 +106,15 @@ const _descriptor_13 = new __compactRuntime.CompactTypeUnsignedInteger(340282366
 
 class _ContractAddress_0 {
   alignment() {
-    return _descriptor_7.alignment();
+    return _descriptor_4.alignment();
   }
   fromValue(value_0) {
     return {
-      bytes: _descriptor_7.fromValue(value_0)
+      bytes: _descriptor_4.fromValue(value_0)
     }
   }
   toValue(value_0) {
-    return _descriptor_7.toValue(value_0.bytes);
+    return _descriptor_4.toValue(value_0.bytes);
   }
 }
 
@@ -210,6 +210,10 @@ export class Contract {
       store: this.circuits.store,
       check: this.circuits.check
     };
+    this.provableCircuits = {
+      store: this.circuits.store,
+      check: this.circuits.check
+    };
   }
   initialState(...args_0) {
     if (args_0.length !== 1) {
@@ -274,24 +278,12 @@ export class Contract {
                                                  value: __compactRuntime.StateValue.newNull().encode() } },
                                        { ins: { cached: true, n: 2 } },
                                        { ins: { cached: false, n: 1 } }]);
-    state_0.data = context.currentQueryContext.state;
+    state_0.data = new __compactRuntime.ChargedState(context.currentQueryContext.state.state);
     return {
       currentContractState: state_0,
       currentPrivateState: context.currentPrivateState,
       currentZswapLocalState: context.currentZswapLocalState
     }
-  }
-  _transientHash_0(value_0) {
-    const result_0 = __compactRuntime.transientHash(_descriptor_8, value_0);
-    return result_0;
-  }
-  _persistentHash_0(value_0) {
-    const result_0 = __compactRuntime.persistentHash(_descriptor_10, value_0);
-    return result_0;
-  }
-  _degradeToTransient_0(x_0) {
-    const result_0 = __compactRuntime.degradeToTransient(x_0);
-    return result_0;
   }
   _merkleTreePathRoot_0(path_0) {
     return { field:
@@ -310,6 +302,18 @@ export class Contract {
                     recursiveDigest_0;
     return this._transientHash_0([left_0, right_0]);
   }
+  _transientHash_0(value_0) {
+    const result_0 = __compactRuntime.transientHash(_descriptor_8, value_0);
+    return result_0;
+  }
+  _persistentHash_0(value_0) {
+    const result_0 = __compactRuntime.persistentHash(_descriptor_10, value_0);
+    return result_0;
+  }
+  _degradeToTransient_0(x_0) {
+    const result_0 = __compactRuntime.degradeToTransient(x_0);
+    return result_0;
+  }
   _find_0(context, partialProofData, content_0) {
     const witnessContext_0 = __compactRuntime.createWitnessContext(ledger(context.currentQueryContext.state), context.currentPrivateState, context.currentQueryContext.address);
     const [nextPrivateState_0, result_0] = this.witnesses.find(witnessContext_0,
@@ -323,8 +327,8 @@ export class Contract {
                                  result_0)
     }
     partialProofData.privateTranscriptOutputs.push({
-      value: _descriptor_6.toValue(result_0),
-      alignment: _descriptor_6.alignment()
+      value: _descriptor_7.toValue(result_0),
+      alignment: _descriptor_7.alignment()
     });
     return result_0;
   }

@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::{
-	BuildOutput, CoinInfo, DB, InputInfo, IntoWalletState, LedgerContext, OfferInfo, OutputInfo,
+	BuildOutput, BuilderContext, CoinInfo, DB, InputInfo, IntoWalletState, OfferInfo, OutputInfo,
 	ProofPreimage, Segment, StdRng, Transient, WalletSeed,
 };
 use std::sync::Arc;
@@ -23,22 +23,16 @@ pub struct TransientInfo<O, D> {
 	pub output: OutputInfo<D>,
 }
 
-pub trait BuildTransient<D: DB + Clone>: Send + Sync {
-	fn build(
-		&self,
-		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
-	) -> Transient<ProofPreimage, D>;
+pub trait BuildTransient<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
+	fn build(&self, rng: &mut StdRng, context: Arc<C>) -> Transient<ProofPreimage, D>;
 }
 
-impl<D: DB + Clone> BuildTransient<D> for TransientInfo<WalletSeed, WalletSeed> {
-	fn build(
-		&self,
-		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
-	) -> Transient<ProofPreimage, D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildTransient<D, C>
+	for TransientInfo<WalletSeed, WalletSeed>
+{
+	fn build(&self, rng: &mut StdRng, context: Arc<C>) -> Transient<ProofPreimage, D> {
 		let inputs = vec![];
-		let outputs: Vec<Box<dyn BuildOutput<D>>> = vec![Box::new(self.output.clone())];
+		let outputs: Vec<Box<dyn BuildOutput<D, C>>> = vec![Box::new(self.output.clone())];
 		let transients = vec![];
 
 		let mut offer_arg = OfferInfo { inputs, outputs, transients };

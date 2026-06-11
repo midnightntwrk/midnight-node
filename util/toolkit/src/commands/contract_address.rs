@@ -57,10 +57,15 @@ pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError
 		return Err(ContractAddressError::TransactionIsSystemTransaction);
 	};
 
-	// Try ledger_8 first, fall back to ledger_7
-	let both = crate::commands::fork::ledger_8::contract_address::extract_contract_address(
+	// Try ledger_9 first, fall back to ledger_8, then ledger_7
+	let both = crate::commands::fork::ledger_9::contract_address::extract_contract_address(
 		tx_bytes.as_slice(),
 	)
+	.or_else(|_| {
+		crate::commands::fork::ledger_8::contract_address::extract_contract_address(
+			tx_bytes.as_slice(),
+		)
+	})
 	.or_else(|_| {
 		crate::commands::fork::ledger_7::contract_address::extract_contract_address(
 			tx_bytes.as_slice(),

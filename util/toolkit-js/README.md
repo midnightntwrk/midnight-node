@@ -1,5 +1,7 @@
 # Toolkit (JS)
 
+For docs on maintaining this code, see [Maintenance](#Maintenance).
+
 ## Usage
 
 The toolkit provides commands for executing `compactc` compiled contracts. It requires a configuration file, written
@@ -214,3 +216,67 @@ The name of the circuit to maintain.
 - `verifier_key_path`  
 **Optional** A path to the verifier key to insert or update for the circuit identified by `circuit_id`. If not
 present, the `circuit_id` is removed from the contract state.
+
+# Maintenance
+
+## Supporting multiple `compactc` versions
+
+A given `compactc` release emits contract code that expects a matching `@midnight-ntwrk/compact-js*` line (and,
+transitively, a matching `@midnight-ntwrk/compact-runtime`). To let one toolkit drive contracts compiled by
+different `compactc` versions, each supported version has its own sibling workspace that pins that line:
+
+```
+compact-0.29/   → @midnight-ntwrk/compact-js* 2.4.3
+compact-0.30/   → @midnight-ntwrk/compact-js* 2.5.0
+compact-0.31/   → @midnight-ntwrk/compact-js* 2.5.1
+```
+
+The root package depends on every variant (`@midnight-ntwrk/node-toolkit-compact-<major>.<minor>`). At runtime,
+`src/compactc-resolver.ts` reads `COMPACTC_VERSION`, picks the matching variant, and installs a module-resolution
+hook that redirects **every** `@midnight-ntwrk/compact-js*` / `@midnight-ntwrk/compact-runtime` import — including
+the transitive ones reached while a `contract.config.ts` is loaded — to that variant's pinned copy. `src/bin.ts`
+(the CLI) and `test/setup-compactc-resolver.ts` (the tests) both use this single resolver, so tests exercise the
+same dispatch as production.
+
+`COMPACTC_VERSION` accepts either `<major>.<minor>` or the full `<major>.<minor>.<patch>` form; dispatch is on
+`<major>.<minor>` only, since `compact-js` is patch-stable within a minor line.
+
+### Adding support for a new `compactc` version
+
+1. **Create the variant workspace.** Copy an existing one, e.g. `cp -r compact-0.31 compact-<major>.<minor>`.
+   In its `package.json`:
+   - set `"name"` to `@midnight-ntwrk/node-toolkit-compact-<major>.<minor>`;
+   - pin `@midnight-ntwrk/compact-js`, `@midnight-ntwrk/compact-js-command`, and `@midnight-ntwrk/compact-js-node`
+     to the line that targets the new `compactc`;
+   - align the `@effect/*` versions (`@effect/cli`, `@effect/platform-node`) with what that `compact-js` line
+     expects — they have shifted between releases.
+
+   The variant's `src/index.ts` rarely needs changes; it just re-exports the commands assembled from its pinned
+   `compact-js-command`.
+
+2. **Register the version** in `src/compactc-resolver.ts`: add it to `SUPPORTED_COMPACTC_VERSIONS`, and update
+   `DEFAULT_COMPACTC_VERSION` if it should become the default.
+
+3. **Depend on the variant** from the root `package.json` `dependencies`
+   (`"@midnight-ntwrk/node-toolkit-compact-<major>.<minor>": "^0.1.0"`). The `compact-*` workspaces glob picks it
+   up automatically.
+
+4. **Add the concrete patch version** to `DEFAULT_VERSIONS` in `scripts/test-all-compactc.sh`.
+
+5. **Install, build, and test:**
+   ```bash
+   npm install
+   npm run build          # builds every variant + the root dispatcher
+   npm run test:compat    # recompiles the test contract with each compactc and runs the suite per version
+   ```
+
+To drop an old version, reverse these steps: remove it from `SUPPORTED_COMPACTC_VERSIONS`, the root dependency,
+and the test script, then delete the `compact-<major>.<minor>/` workspace.
+
+> [!IMPORTANT]
+> The CLI option surface can change between `compactc`/`compact-js-command` versions. For example, the global
+> `--network` / `-n` option was removed in the 0.31 line (network is taken from the `config.network` field in
+> `contract.config.ts` instead). Because `effect/cli` absorbs an unrecognized flag and its value into the
+> trailing variadic arguments, passing a removed option produces a confusing error such as
+> `Invalid number of arguments. Expected 1 arguments, but got 9` rather than "unknown option". When a command
+> that worked under one version fails under another, check whether an option was added or removed.

@@ -39,10 +39,7 @@ use ogmios_client::{
 	query_ledger_state::*, query_network::QueryNetwork, transactions::Transactions,
 	types::OgmiosUtxo,
 };
-use partner_chains_plutus_data::{
-	bridge::{TOKEN_TRANSFER_METADATUM_KEY, transfer_to_reserve_metadatum},
-	reserve::ReserveRedeemer,
-};
+use partner_chains_plutus_data::reserve::ReserveRedeemer;
 use sidechain_domain::{McTxHash, UtxoId};
 use std::num::NonZero;
 
@@ -132,9 +129,6 @@ fn reserve_release_tx(
 
 	let left_in_reserve = reserve_balance.checked_sub(amount_to_transfer)
 		.ok_or_else(||anyhow!("Not enough funds in the reserve to transfer {amount_to_transfer} tokens (reserve balance: {reserve_balance})"))?;
-
-	tx_builder
-		.add_metadatum(&TOKEN_TRANSFER_METADATUM_KEY.into(), &transfer_to_reserve_metadatum());
 
 	// Additional reference scripts
 	tx_builder.add_script_reference_input(
