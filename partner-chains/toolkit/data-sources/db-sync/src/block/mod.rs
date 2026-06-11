@@ -212,17 +212,7 @@ impl BlockDataSourceImpl {
 		};
 		let block_opt = match from_cache {
 			Some(block) => Some(block),
-			None => match db_model::get_block_by_hash(&self.pool, hash.clone()).await {
-				Ok(block) => block,
-				Err(err) => {
-					return Ok(BlockByHash::LocalDataUnavailable {
-						reason: LocalDataUnavailableReason::DatabaseError {
-							context: format!("querying Cardano block {hash}"),
-							error: format!("{err:?}"),
-						},
-					});
-				},
-			},
+			None => db_model::get_block_by_hash(&self.pool, hash.clone()).await?,
 		};
 		Ok(block_opt
 			.map(|block| BlockByHash::Found(block.into()))
