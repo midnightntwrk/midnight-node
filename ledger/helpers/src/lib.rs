@@ -36,6 +36,8 @@ pub mod ledger_7 {
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
 
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 7;
 	/// Workspace dependency name of the ledger crate backing this module.
 	pub const CRATE_NAME: &str = "mn-ledger";
 	pub use {
@@ -87,6 +89,8 @@ pub mod ledger_8 {
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
 
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 8;
 	/// Workspace dependency name of the ledger crate backing this module.
 	pub const CRATE_NAME: &str = "mn-ledger-8";
 	pub use {
@@ -140,6 +144,8 @@ pub mod ledger_9 {
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_9 as extract_tx_with_context;
 
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 9;
 	/// Workspace dependency name of the ledger crate backing this module.
 	pub const CRATE_NAME: &str = "mn-ledger-9";
 	pub use {
