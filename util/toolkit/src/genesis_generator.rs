@@ -102,6 +102,7 @@ pub struct FundingArgs {
 	unshielded_alt_token_types: Vec<UnshieldedTokenType>,
 }
 
+#[derive(Debug)]
 pub struct GenesisGenerator {
 	pub state: LedgerState<DefaultDB>,
 	pub txs: SerializedTxBatches,
@@ -679,6 +680,7 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use assert_matches::assert_matches;
 	use midnight_primitives_ics_observation::PolicyId;
 	use std::{collections::HashMap, str::FromStr};
 
@@ -943,14 +945,10 @@ mod test {
 		)
 		.await;
 
-		match result {
-			Err(GenesisGeneratorError::InvalidPoolsAmounts(pool))
-				if pool.to_string() == "Reserve is empty" =>
-			{
-				()
-			},
-			_ => panic!("Expected InvalidPoolsAmounts(Reserve is empty) error"),
-		}
+		assert_matches!(
+			result,
+			Err(GenesisGeneratorError::InvalidPoolsAmounts(msg)) if msg.to_string() == "Reserve is empty"
+		);
 
 		let result = GenesisGenerator::new(
 			seed,
@@ -983,14 +981,10 @@ mod test {
 		)
 		.await;
 
-		match result {
-			Err(GenesisGeneratorError::InvalidPoolsAmounts(pool))
-				if pool.to_string() == "Treasury is empty" =>
-			{
-				()
-			},
-			_ => panic!("Expected InvalidPoolsAmounts(Treasury is empty) error"),
-		}
+		assert_matches!(
+			result,
+			Err(GenesisGeneratorError::InvalidPoolsAmounts(msg)) if msg.to_string() == "Treasury is empty"
+		);
 
 		let result = GenesisGenerator::new(
 			seed,
@@ -1024,14 +1018,10 @@ mod test {
 		)
 		.await;
 
-		match result {
-			Err(GenesisGeneratorError::InvalidPoolsAmounts(pool))
-				if pool.to_string() == "Locked is empty" =>
-			{
-				()
-			},
-			_ => panic!("Expected InvalidPoolsAmounts(Locked is empty) error"),
-		}
+		assert_matches!(
+			result,
+			Err(GenesisGeneratorError::InvalidPoolsAmounts(msg)) if msg.to_string() == "Locked is empty"
+		);
 
 		let result = GenesisGenerator::new(
 			seed,
@@ -1105,16 +1095,10 @@ mod test {
 		)
 		.await;
 
-		match result {
-			Err(GenesisGeneratorError::InvalidPoolsAmounts(msg))
-				if msg.to_string() == "Tresury and Reserve exceed MAX_SUPPLY" =>
-			{
-				()
-			},
-			_ => {
-				panic!("Expected InvalidPoolsAmounts(Tresury and Reserve exceed MAX_SUPPLY) error")
-			},
-		}
+		assert_matches!(
+			result,
+			Err(GenesisGeneratorError::InvalidPoolsAmounts(msg)) if msg.to_string() == "Tresury and Reserve exceed MAX_SUPPLY"
+		);
 	}
 
 	fn empty_funding_args() -> FundingArgs {
