@@ -59,8 +59,8 @@ pub enum GenesisGeneratorError<D: DB> {
 	SerializationError(#[from] std::io::Error),
 	#[error("Missing verifying key for wallet")]
 	MissingVerifyingKey,
-	#[error("Ledger {0} pool is empty")]
-	EmptyPool(String),
+	#[error("Ledger pools amounts are invalid: {0}")]
+	InvalidPoolsAmounts(String),
 }
 
 /// Common arguments for funding wallets (shielded, unshielded, dust)
@@ -136,7 +136,9 @@ impl GenesisGenerator {
 			log::error!(
 				"Treasury pool is empty. Run with --allow-empty-pools to allow such configuration"
 			);
-			return Err(GenesisGeneratorError::EmptyPool("Treasury".to_string()));
+			return Err(GenesisGeneratorError::InvalidPoolsAmounts(
+				"Treasury is empty".to_string(),
+			));
 		}
 
 		let reserve_pool = reserve_config.as_ref().map(|c| c.total_amount).unwrap_or_else(|| {
@@ -148,15 +150,26 @@ impl GenesisGenerator {
 			log::error!(
 				"Reserve pool is empty. Run with --allow-empty-pools to allow such configuration"
 			);
-			return Err(GenesisGeneratorError::EmptyPool("Reserve".to_string()));
+			return Err(GenesisGeneratorError::InvalidPoolsAmounts("Reserve is empty".to_string()));
 		}
 
-		let locked_pool = MAX_SUPPLY - reserve_pool - treasury;
+		let locked_pool = MAX_SUPPLY
+			.checked_sub(reserve_pool)
+			.and_then(|x| x.checked_sub(treasury))
+			.ok_or_else(|| {
+				log::error!(
+					"Treasury = {treasury} and Reserve = {reserve_pool} exceed MAX_SUPPLY = {MAX_SUPPLY}!"
+				);
+				GenesisGeneratorError::InvalidPoolsAmounts(
+					"Tresury and Reserve exceed MAX_SUPPLY".to_string(),
+				)
+			})?;
+
 		if locked_pool == 0 && !allow_empty_pools {
 			log::error!(
 				"Locked pool is empty. Run with --allow-empty-pools to allow such configuration"
 			);
-			return Err(GenesisGeneratorError::EmptyPool("Locked".to_string()));
+			return Err(GenesisGeneratorError::InvalidPoolsAmounts("Locked is empty".to_string()));
 		}
 
 		// If custom ledger parameters are provided, apply them first
@@ -931,8 +944,12 @@ mod test {
 		.await;
 
 		match result {
-			Err(GenesisGeneratorError::EmptyPool(pool)) if pool.to_string() == "Reserve" => (),
-			_ => panic!("Expected EmptyPool(Reserve) error"),
+			Err(GenesisGeneratorError::InvalidPoolsAmounts(pool))
+				if pool.to_string() == "Reserve is empty" =>
+			{
+				()
+			},
+			_ => panic!("Expected InvalidPoolsAmounts(Reserve is empty) error"),
 		}
 
 		let result = GenesisGenerator::new(
@@ -967,8 +984,12 @@ mod test {
 		.await;
 
 		match result {
-			Err(GenesisGeneratorError::EmptyPool(pool)) if pool.to_string() == "Treasury" => (),
-			_ => panic!("Expected EmptyPool(Treasury) error"),
+			Err(GenesisGeneratorError::InvalidPoolsAmounts(pool))
+				if pool.to_string() == "Treasury is empty" =>
+			{
+				()
+			},
+			_ => panic!("Expected InvalidPoolsAmounts(Treasury is empty) error"),
 		}
 
 		let result = GenesisGenerator::new(
@@ -1004,8 +1025,12 @@ mod test {
 		.await;
 
 		match result {
-			Err(GenesisGeneratorError::EmptyPool(pool)) if pool.to_string() == "Locked" => (),
-			_ => panic!("Expected EmptyPool(Locked) error"),
+			Err(GenesisGeneratorError::InvalidPoolsAmounts(pool))
+				if pool.to_string() == "Locked is empty" =>
+			{
+				()
+			},
+			_ => panic!("Expected InvalidPoolsAmounts(Locked is empty) error"),
 		}
 
 		let result = GenesisGenerator::new(
@@ -1023,6 +1048,73 @@ mod test {
 		)
 		.await;
 		assert!(result.is_ok())
+	}
+
+	#[tokio::test]
+	async fn do_not_allow_pools_to_exceed_max_supply() {
+		let funding = empty_funding_args();
+
+		let seed = hex::decode(GENESIS_NONCE_SEED).unwrap().try_into().unwrap();
+		let network_id = "undeployed";
+		let proof_server = None;
+
+		let reserve_config = ReserveConfig {
+			reserve_validator_address: "addr_test1qz_reserve".to_string(),
+			asset: midnight_primitives_reserve_observation::ReserveAsset {
+				policy_id: midnight_primitives_reserve_observation::PolicyId([0u8; 28]),
+				asset_name: "NIGHT".to_string(),
+			},
+			utxos: vec![midnight_primitives_reserve_observation::ReserveUtxo {
+				tx_hash: "def456".to_string(),
+				output_index: 1,
+				amount: MAX_SUPPLY as u64,
+			}],
+			total_amount: MAX_SUPPLY,
+		};
+		// ICS config determines the treasury pool amount.
+		let ics_config = IcsConfig {
+			illiquid_circulation_supply_validator_address:
+				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
+			asset: IcsAsset {
+				policy_id: PolicyId::from_str(
+					"d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
+				)
+				.expect("valid policy ID"),
+				asset_name: "".to_string(),
+			},
+			utxos: vec![IcsUtxo {
+				tx_hash: "abc123".to_string(),
+				output_index: 0,
+				amount: 1_000_000_000_000_000,
+			}],
+			total_amount: 10_000_000_000_000_000,
+		};
+
+		let result = GenesisGenerator::new(
+			seed,
+			network_id,
+			proof_server.clone(),
+			funding.clone(),
+			None,
+			None,
+			Some(ics_config),
+			Some(reserve_config),
+			None, // no custom ledger parameters
+			None, // use default genesis timestamp
+			false,
+		)
+		.await;
+
+		match result {
+			Err(GenesisGeneratorError::InvalidPoolsAmounts(msg))
+				if msg.to_string() == "Tresury and Reserve exceed MAX_SUPPLY" =>
+			{
+				()
+			},
+			_ => {
+				panic!("Expected InvalidPoolsAmounts(Tresury and Reserve exceed MAX_SUPPLY) error")
+			},
+		}
 	}
 
 	fn empty_funding_args() -> FundingArgs {
