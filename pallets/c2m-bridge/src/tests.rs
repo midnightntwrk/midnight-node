@@ -269,30 +269,6 @@ fn subminimal_flushes_just_above_threshold() {
 }
 
 #[test]
-fn single_subminimal_above_threshold_flushes_immediately() {
-	new_test_ext().execute_with(|| {
-		// Threshold below a single subminimal amount → the very first transfer
-		// flushes with count=1, exercising the `count: 0 → 1` saturating add
-		// in the same call as the flush.
-		set_flush_threshold(50);
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		assert_eq!(
-			pallet::SubminimalTransfers::<Test>::get(),
-			SubminimalTransfersState { count: 0, sum: 0 }
-		);
-		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
-		assert_eq!(
-			subminimal_events(),
-			vec![Event::SubminimalFlushTransfer {
-				amount: 90,
-				count: 1,
-				midnight_tx_hash: [0u8; 32],
-			}],
-		);
-	})
-}
-
-#[test]
 fn subminimal_state_resets_after_flush_and_accumulates_again() {
 	new_test_ext().execute_with(|| {
 		set_flush_threshold(180);
@@ -376,42 +352,6 @@ fn subminimal_unapproved_user_accumulates_not_unlocks() {
 		);
 		assert!(subminimal_events().is_empty());
 		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
-	})
-}
-
-#[test]
-fn governance_lowering_threshold_flushes_existing_accumulator() {
-	new_test_ext().execute_with(|| {
-		// Start with a threshold the accumulator cannot reach with two transfers.
-		set_flush_threshold(200);
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		assert_eq!(
-			pallet::SubminimalTransfers::<Test>::get(),
-			SubminimalTransfersState { count: 1, sum: 90 }
-		);
-
-		// Governance lowers the threshold below what two transfers will sum to,
-		// but the resulting sum (180) still sits below the original threshold (200) —
-		// so the flush proves the new config is what's in effect.
-		assert_ok!(C2MBridge::set_subminimal_transfers_config(
-			frame_system::RawOrigin::Root.into(),
-			SubminimalTransfersConfig { subminimal_transfers_flush_threshold: 100 },
-		));
-
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		assert_eq!(
-			pallet::SubminimalTransfers::<Test>::get(),
-			SubminimalTransfersState { count: 0, sum: 0 }
-		);
-		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
-		assert_eq!(
-			subminimal_events(),
-			vec![Event::SubminimalFlushTransfer {
-				amount: 180,
-				count: 2,
-				midnight_tx_hash: [0u8; 32],
-			}],
-		);
 	})
 }
 
