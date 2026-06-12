@@ -117,7 +117,7 @@ where
 
 	/// Fetch the full blob from a single peer by paging contiguous byte ranges in order.
 	///
-	/// (Parallel / multi-peer range fetch is a permitted optimization — spec ODD-3 — deferred; the
+	/// (Parallel / multi-peer range fetch is a possible future optimization; the
 	/// `ChunkAssembler` already supports resume by `next_offset`.)
 	async fn fetch_blob_from(&self, peer: PeerId, target: B::Hash) -> Result<Vec<u8>, ClientError> {
 		// First range establishes `total_len`.

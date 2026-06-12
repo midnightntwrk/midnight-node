@@ -17,10 +17,10 @@
 //! reassembly logic shared by the server and client.
 //!
 //! The transferred payload is the canonical, `Ledger`-rooted arena blob (derived tag prefix ‖
-//! `TopoSortedNodes` of the `Ledger` DAG — see spec ODD-1). Transport pages it by **byte offset**
-//! (not by semantic node): the server streams contiguous byte ranges and the client concatenates
-//! them in order before deserialize + verify. The children-precede-parents property is intrinsic
-//! to the serialized blob, so in-order byte concatenation preserves it automatically (ODD-3).
+//! `TopoSortedNodes` of the `Ledger` DAG). Transport pages it by **byte offset** (not by semantic
+//! node): the server streams contiguous byte ranges and the client concatenates them in order
+//! before deserialize + verify. The children-precede-parents property is intrinsic to the
+//! serialized blob, so in-order byte concatenation preserves it automatically.
 
 use parity_scale_codec::{Decode, Encode};
 
@@ -128,8 +128,8 @@ pub enum AssembleError {
 /// Reassembles ordered, contiguous response chunks into the full canonical blob.
 ///
 /// In-order contiguous assembly is sufficient and simplest: a chunk is accepted only if its
-/// `offset` equals the bytes received so far. Parallel / multi-peer fetches are allowed (spec
-/// ODD-3) but the client must reorder chunks by `offset` before feeding them here. The assembled
+/// `offset` equals the bytes received so far. Parallel / multi-peer fetches are allowed but the
+/// client must reorder chunks by `offset` before feeding them here. The assembled
 /// blob is verified against the on-chain `StateKey` by the client driver — this type does no
 /// crypto, only transport-level reassembly.
 #[derive(Debug)]

@@ -734,11 +734,11 @@ where
 	/// TopoSortedNodes(Ledger DAG)`.
 	///
 	/// Mirrors the single-pass technique of the toolkit's `serialize_ledger_state_fast`, but roots
-	/// at `Ledger` (the `Sp` from `get_ledger` is an `Sp<Ledger>`) rather than `LedgerState` — see
-	/// `warp-ledger-sync-spec.md` ODD-1. Because the blob is rooted at `Ledger`, its recomputed
-	/// content-address root key equals the on-chain `pallet_midnight::StateKey`, which is exactly
-	/// what the client verifies against. The tag prefix is **derived**
-	/// (`GLOBAL_TAG ‖ <Ledger as Tagged>::tag()`), never hardcoded (spec §8 format-lockstep).
+	/// at `Ledger` (the `Sp` from `get_ledger` is an `Sp<Ledger>`) rather than `LedgerState`.
+	/// Because the blob is rooted at `Ledger`, its recomputed content-address root key equals the
+	/// on-chain `pallet_midnight::StateKey`, which is exactly what the client verifies against. The
+	/// tag prefix is **derived** (`GLOBAL_TAG ‖ <Ledger as Tagged>::tag()`), never hardcoded, so it
+	/// stays in lockstep with the ledger serialization format.
 	pub fn serialize_ledger_snapshot(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
 		use ledger_storage_local::arena::TopoSortedNodes;
 		use midnight_serialize_local::{GLOBAL_TAG, Serializable};

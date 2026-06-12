@@ -129,7 +129,7 @@ where
 		}
 
 		// Only serve finalized blocks whose state we hold: an unknown hash or a block beyond our
-		// finalized number is rejected (the warp target is always finalized — spec §7).
+		// finalized number is rejected (the warp target is always finalized).
 		let header = self.client.header(target)?.ok_or(HandleError::UnknownBlock)?;
 		if *header.number() > self.client.info().finalized_number {
 			return Err(HandleError::NotFinalized);
