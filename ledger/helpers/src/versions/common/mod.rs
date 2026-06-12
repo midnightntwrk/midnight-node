@@ -174,6 +174,18 @@ impl<D: DB + Clone, E: std::fmt::Debug> IntoWalletState<D> for Result<WalletStat
 	}
 }
 
+/// Raw zkir bytes for circuit `name` (the `zkir/{name}.bzkir` the resolver
+/// loads as `ProvingKeyMaterial::ir_source`). Ledger 9+ stores these on-chain
+/// in the contract operation so deployed circuits can be re-proven/upgraded
+/// from chain state alone; pre-9 `contract_operation_new` ignores them.
+pub async fn ir_source(resolver: &Resolver, name: &'static str) -> Option<Vec<u8>> {
+	let material = resolver
+		.resolve_key(KeyLocation(std::borrow::Cow::Borrowed(name)))
+		.await
+		.ok()??;
+	Some(material.ir_source)
+}
+
 /// Serializes a mn_ledger::serialize-able type into bytes
 pub fn serialize_untagged<T: Serializable>(value: &T) -> Result<Vec<u8>, std::io::Error> {
 	let size = Serializable::serialized_size(value);

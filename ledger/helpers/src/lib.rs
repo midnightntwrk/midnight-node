@@ -58,8 +58,12 @@ pub mod ledger_7 {
 		VerifyingKey as SignatureVerifyingKey,
 	};
 
+	/// Builds a contract operation from a verifier key. `_ir_source` is accepted
+	/// for cross-version call-site compatibility but silently dropped: pre-ledger-9
+	/// contract operations have no on-chain IR slot.
 	pub fn contract_operation_new(
 		vk: Option<transient_crypto::proofs::VerifierKey>,
+		_ir_source: Option<Vec<u8>>,
 	) -> onchain_runtime::state::ContractOperation {
 		onchain_runtime::state::ContractOperation::new(vk)
 	}
@@ -119,8 +123,12 @@ pub mod ledger_8 {
 		VerifyingKey as SignatureVerifyingKey,
 	};
 
+	/// Builds a contract operation from a verifier key. `_ir_source` is accepted
+	/// for cross-version call-site compatibility but silently dropped: pre-ledger-9
+	/// contract operations have no on-chain IR slot.
 	pub fn contract_operation_new(
 		vk: Option<transient_crypto::proofs::VerifierKey>,
+		_ir_source: Option<Vec<u8>>,
 	) -> onchain_runtime::state::ContractOperation {
 		onchain_runtime::state::ContractOperation::new(vk)
 	}
@@ -179,10 +187,17 @@ pub mod ledger_9 {
 	};
 	pub use onchain_runtime::state::ContractMaintenanceVerifyingKey;
 
+	/// Builds a contract operation from a verifier key plus, from ledger 9 on,
+	/// the circuit's zkir. `ir_source` is stored on-chain alongside the verifier
+	/// key so the deployed contract's circuits can later be re-proven/upgraded
+	/// from chain state alone; it counts toward `max_contract_metadata_size`.
 	pub fn contract_operation_new(
 		vk: Option<transient_crypto::proofs::VerifierKey>,
+		ir_source: Option<Vec<u8>>,
 	) -> onchain_runtime::state::ContractOperation {
-		onchain_runtime::state::ContractOperation::new(vk, None)
+		let ir = ir_source
+			.map(|bytes| ledger_storage::arena::Sp::new(onchain_runtime::state::IrBuf(bytes)));
+		onchain_runtime::state::ContractOperation::new(vk, ir)
 	}
 
 	pub fn signature_verifying_key(
