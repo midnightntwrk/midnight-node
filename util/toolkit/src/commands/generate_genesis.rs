@@ -82,6 +82,9 @@ pub struct GenerateGenesisArgs {
 	/// Output directory
 	#[arg(long, short = 'o', default_value = "out")]
 	out_dir: String,
+	/// Allow genesis to have empty pools
+	#[arg(long, default_value = "false")]
+	allow_empty_pools: bool,
 }
 
 pub async fn execute(
@@ -200,6 +203,7 @@ pub async fn execute(
 		reserve_config,
 		ledger_parameters,
 		genesis_timestamp,
+		args.allow_empty_pools,
 	)
 	.await?;
 
@@ -287,6 +291,8 @@ mod test {
 			"../../res/dev/cnight-config.json",
 			"--ics-config",
 			"../../res/dev/ics-config.json",
+			"--reserve-config",
+			"../../res/dev/reserve-config.json",
 			"--ledger-parameters-config",
 			"../../res/dev/ledger-parameters-config.json",
 		];
