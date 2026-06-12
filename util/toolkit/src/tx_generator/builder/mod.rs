@@ -17,8 +17,9 @@ use clap::{Args, Subcommand};
 pub use midnight_node_ledger_helpers::CoinSelectionStrategy;
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
-		ForkAwareLedgerContext, apply_block_7, apply_block_8, block_context_from_raw_7,
-		block_context_from_raw_8, fork_context_7_to_8,
+		ForkAwareLedgerContext, apply_block_7, apply_block_8, apply_block_9,
+		block_context_from_raw_7, block_context_from_raw_8, block_context_from_raw_9,
+		fork_context_7_to_8,
 	},
 	raw_block_data::{LedgerVersion, RawBlockData},
 };
@@ -223,42 +224,65 @@ pub struct BatchesArgs {
 	pub coin_selection: CoinSelectionStrategy,
 }
 
-// TODO: TokenIDs for shielded and unshielded
 #[derive(Args, Clone, Debug)]
 pub struct SingleTxArgs {
-	/// Amount to send to each shielded wallet
+	/// Per-destination output spec. Repeatable. Bundles the address, amount,
+	/// and (optional) token type for one destination in a single argument.
+	///
+	/// Format:
+	///   `addr=<bech32_address>,amount=<u128>[,token=<32-byte-hex>]`
+	///
+	/// The address HRP picks the side (shielded vs unshielded). If `token`
+	/// is omitted, it defaults to the all-zeros token type. Cannot be mixed
+	/// with `--destination-address` / `--*-amount` / `--*-token-type` in the
+	/// same invocation.
+	#[arg(long = "output", value_parser = cli::output_arg_decode)]
+	pub outputs: Vec<cli::OutputArg>,
+	/// Amount(s) to send to shielded destinations.
+	///
+	/// Provide once to broadcast the same amount to every shielded destination,
+	/// or repeat once per shielded destination (in the order they appear in
+	/// `--destination-address`) for per-destination amounts.
 	#[arg(long)]
-	pub shielded_amount: Option<u128>,
-	/// Type of shielded token to send
+	pub shielded_amount: Vec<u128>,
+	/// Token type(s) for shielded destinations.
+	///
+	/// Same broadcast / per-destination semantics as `--shielded-amount`. If
+	/// omitted, defaults to the all-zeros token type and broadcasts to every
+	/// shielded destination.
 	#[arg(
 		long,
 		value_parser = cli::token_decode::<ShieldedTokenType>,
-		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
 	)]
-	pub shielded_token_type: ShieldedTokenType,
-	/// Amount to send to each unshielded wallet
+	pub shielded_token_type: Vec<ShieldedTokenType>,
+	/// Amount(s) to send to unshielded destinations. Same broadcast /
+	/// per-destination semantics as `--shielded-amount`.
 	#[arg(long)]
-	pub unshielded_amount: Option<u128>,
-	/// Type of unshielded token to send
+	pub unshielded_amount: Vec<u128>,
+	/// Token type(s) for unshielded destinations. Same broadcast /
+	/// per-destination semantics as `--shielded-token-type`.
 	#[arg(
 		long,
 		value_parser = cli::token_decode::<UnshieldedTokenType>,
-		default_value = "0000000000000000000000000000000000000000000000000000000000000000"
 	)]
-	pub unshielded_token_type: UnshieldedTokenType,
+	pub unshielded_token_type: Vec<UnshieldedTokenType>,
 	/// Seed for source wallet
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	pub source_seed: WalletSeed,
 	/// Funding seed for transaction. If not set, uses source_seed
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	pub funding_seed: Option<WalletSeed>,
-	/// Destination address, both shielded and unshielded
-	#[arg(long, required = true)]
+	/// Destination address, both shielded and unshielded. Used together with
+	/// `--*-amount` / `--*-token-type` flags. Either this or `--output` must
+	/// be provided, but not both.
+	#[arg(long)]
 	pub destination_address: Vec<WalletAddress>,
 	/// Pin specific wallet UTXOs as inputs to the unshielded transfer. Format:
 	/// <intent_hash_hex>#<output_no>, e.g. abc123…#0. Repeatable. When set, the
 	/// toolkit skips its built-in coin selection and uses exactly these UTXOs;
-	/// their summed value must be >= --unshielded-amount * destinations.
+	/// their summed value must be >= the total of `--unshielded-amount` across
+	/// destinations of the same token type. Only valid when exactly one
+	/// unshielded token type is used.
 	#[arg(long = "input-utxo", value_parser = cli::utxo_id_decode)]
 	pub input_utxos: Vec<UtxoId>,
 	#[arg(
@@ -379,7 +403,62 @@ pub enum Builder {
 	ContractCustom(CustomContractArgs),
 	/// Claim rewards
 	ClaimRewards(ClaimRewardsArgs),
-	/// Send single transaction with one-or-many outputs
+	/// Send a single transaction with one-or-many outputs across shielded
+	/// and/or unshielded destinations, optionally mixing multiple token types
+	/// in one tx.
+	#[clap(long_about = "\
+Send a single transaction with one-or-many outputs across shielded and/or \
+unshielded destinations, optionally mixing multiple token types in one tx.
+
+Two CLI shapes are supported. Pick one per invocation; mixing them is rejected:
+
+  (A) --output (recommended): one flag per destination, bundling the triple
+      (address, amount, token type) in a single argument.
+        --output addr=<bech32>,amount=<u128>[,token=<32-byte-hex>]
+      Each occurrence is one tx output. The address HRP picks the side
+      (shielded vs unshielded). `token` is optional and defaults to the
+      all-zeros token type (NIGHT).
+
+  (B) --destination-address + per-side --*-amount / --*-token-type: each
+      side accepts parallel lists. Provide a flag once on a side to broadcast
+      it to every destination on that side, or once per destination on that
+      side to align by command-line order. Omit --*-token-type to default to
+      the all-zeros token type.
+
+Examples:
+
+  # (A) Mixed-token tx with one unshielded NIGHT output and one shielded output:
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --output addr=mn_addr1...,amount=410000000,token=0000...0000 \\
+    --output addr=mn_shield-addr1...,amount=41,token=0000...0001
+
+  # (A) Token omitted -> defaults to all-zeros:
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --output addr=mn_addr1...,amount=100
+
+  # (B) Two unshielded destinations, same token type and amount (broadcast):
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --unshielded-amount 100 \\
+    --destination-address mn_addr1...A \\
+    --destination-address mn_addr1...B
+
+  # (B) Two unshielded destinations, different amounts and token types (per-destination):
+  midnight-node-toolkit generate-txs single-tx \\
+    --source-seed <SEED> \\
+    --destination-address mn_addr1...A \\
+    --unshielded-amount 100 \\
+    --unshielded-token-type 0000...0000 \\
+    --destination-address mn_addr1...B \\
+    --unshielded-amount 250 \\
+    --unshielded-token-type 0000...0001
+
+Notes:
+  * --input-utxo is only supported when exactly one unshielded token type is used.
+  * In shape (B), mismatched flag counts (e.g. 3 destinations on a side but 2 amounts) are rejected with a clear error.
+")]
 	SingleTx(SingleTxArgs),
 	/// Register a DUST address for the wallet
 	RegisterDustAddress(RegisterDustAddressArgs),
@@ -555,17 +634,38 @@ impl Builder {
 									midnight_node_ledger_helpers::ledger_7::DefaultDB,
 								>,
 						> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
-						self_clone.to_builder_v7(Arc::new(context), prover)
+						self_clone.clone().to_builder_v7(Arc::new(context), prover)
+					},
+					|context| {
+						let prover = Self::make_prover_v8(prover_config);
+						Ok(self_clone.clone().to_builder_v8(Arc::new(context), prover))
 					},
 					|context| {
 						let prover = Self::make_prover(prover_config);
-						Ok(self.to_builder_v8(Arc::new(context), prover))
+						Ok(self.to_builder_v9(Arc::new(context), prover))
 					},
 				)
 			},
 			None => {
 				// Pass-through builder (Send) doesn't need context
 				Ok(self.to_builder_passthrough())
+			},
+		}
+	}
+
+	fn make_prover_v8(
+		config: &ProverConfig,
+	) -> Arc<
+		dyn midnight_node_ledger_helpers::ledger_8::ProofProvider<
+				midnight_node_ledger_helpers::ledger_8::DefaultDB,
+			>,
+	> {
+		match config {
+			ProverConfig::Local => {
+				Arc::new(midnight_node_ledger_helpers::ledger_8::LocalProofServer::new())
+			},
+			ProverConfig::Remote(url) => {
+				Arc::new(crate::remote_prover::RemoteProofServer::new(url.clone()))
 			},
 		}
 	}
@@ -579,10 +679,66 @@ impl Builder {
 		}
 	}
 
-	fn to_builder_v8(
+	fn to_builder_v9(
 		self,
 		context: Arc<LedgerContext<DefaultDB>>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Box<dyn BuildTxs<Error = DynamicError>> {
+		fn constr(
+			builder: impl BuildTxs + Send + Sync + 'static,
+		) -> Box<dyn BuildTxs<Error = DynamicError>> {
+			Box::new(DynamicTransactionBuilder { builder })
+		}
+
+		use builders::ledger_9 as v9;
+
+		match self {
+			Builder::Batches(args) => constr(v9::BatchesBuilder::new(args, context, prover)),
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => {
+					constr(v9::ContractDeployBuilder::new(args, context, prover))
+				},
+				ContractCall::Call(args) => {
+					constr(v9::ContractCallBuilder::new(args, context, prover))
+				},
+				ContractCall::Maintenance(args) => {
+					constr(v9::ContractMaintenanceBuilder::new(args, context, prover))
+				},
+			},
+			Builder::ContractCustom(args) => {
+				constr(v9::CustomContractBuilder::new(args, context, prover))
+			},
+			Builder::ClaimRewards(args) => {
+				constr(v9::ClaimRewardsBuilder::new(args, context, prover))
+			},
+			Builder::SingleTx(args) => {
+				constr(v9::single_tx::SingleTxBuilder::new(args, context, prover))
+			},
+			Builder::RegisterDustAddress(args) => {
+				constr(v9::RegisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::DeregisterDustAddress(args) => {
+				constr(v9::DeregisterDustAddressBuilder::new(args, context, prover))
+			},
+			Builder::BatchSingleTx(args) => {
+				constr(v9::batch_single_tx::BatchSingleTxBuilder::new(args, context, prover))
+			},
+			Builder::Send => constr(v9::DoNothingBuilder::new()),
+		}
+	}
+
+	fn to_builder_v8(
+		self,
+		context: Arc<
+			midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
+				midnight_node_ledger_helpers::ledger_8::DefaultDB,
+			>,
+		>,
+		prover: Arc<
+			dyn midnight_node_ledger_helpers::ledger_8::ProofProvider<
+					midnight_node_ledger_helpers::ledger_8::DefaultDB,
+				>,
+		>,
 	) -> Box<dyn BuildTxs<Error = DynamicError>> {
 		fn constr(
 			builder: impl BuildTxs + Send + Sync + 'static,
@@ -800,12 +956,13 @@ async fn initialize_context(
 			)
 		});
 
-		ForkAwareLedgerContext::Ledger8(ctx)
+		ForkAwareLedgerContext::Ledger9(ctx)
 	}
 }
 
 type Db7 = midnight_node_ledger_helpers::ledger_7::DefaultDB;
 type Db8 = midnight_node_ledger_helpers::ledger_8::DefaultDB;
+type Db9 = midnight_node_ledger_helpers::ledger_9::DefaultDB;
 
 const DUST_BATCH_SIZE: usize = 1000;
 
@@ -856,9 +1013,33 @@ fn replay_blocks_7(
 fn replay_blocks_8(
 	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[RawBlockData],
-	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
+
+	let total = blocks_sorted_by_height.len();
+
+	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
+		events.extend(apply_block_8(ctx, block));
+
+		let is_last = i + 1 == total;
+		if events.len() >= DUST_BATCH_SIZE || is_last {
+			ctx.update_dust_from_events(events.as_slice());
+			events.clear();
+			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+		}
+	}
+
+	if let Some(block) = blocks_sorted_by_height.last() {
+		ctx.update_dust_from_block(&block_context_from_raw_8(block));
+	}
+}
+
+fn replay_blocks_9(
+	ctx: &midnight_node_ledger_helpers::ledger_9::context::LedgerContext<Db9>,
+	blocks_sorted_by_height: &[RawBlockData],
+	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
+) {
+	let mut events: Vec<midnight_node_ledger_helpers::ledger_9::Event<Db9>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
 	let mut last_info_at = std::time::Instant::now();
@@ -876,7 +1057,7 @@ fn replay_blocks_8(
 			remaining = rest;
 		}
 
-		events.extend(apply_block_8(ctx, block));
+		events.extend(apply_block_9(ctx, block));
 
 		let is_last = i + 1 == total;
 		if events.len() >= DUST_BATCH_SIZE || is_last {
@@ -908,11 +1089,11 @@ fn replay_blocks_8(
 	}
 
 	if let Some(block) = blocks_sorted_by_height.last() {
-		ctx.update_dust_from_block(&block_context_from_raw_8(block));
+		ctx.update_dust_from_block(&block_context_from_raw_9(block));
 	}
 }
 
-/// Replays blocks across a potential Ledger7→Ledger8 fork boundary,
+/// Replays blocks across a potential Ledger7→Ledger8->Ledger9 fork boundaries,
 /// injecting cached wallets at their saved height.
 pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
@@ -929,8 +1110,16 @@ pub(crate) fn replay_blocks(
 
 	let t_replay = std::time::Instant::now();
 
-	let fork_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger7);
-	let (l7_blocks, l8_blocks) = blocks.split_at(fork_idx);
+	let fork_7_to_8_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger7);
+	let (l7_blocks, l8_and_l9_blocks) = blocks.split_at(fork_7_to_8_idx);
+	let fork_8_to_9_idx =
+		l8_and_l9_blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger8);
+	let (l8_blocks, l9_blocks) = l8_and_l9_blocks.split_at(fork_8_to_9_idx);
+
+	assert!(
+		l9_blocks.is_empty() || (l7_blocks.is_empty() && l8_blocks.is_empty()),
+		"chain has Ledger9 blocks and eariler version blocks. This is not supported yet!"
+	);
 
 	let result = match fork_ctx {
 		ForkAwareLedgerContext::Ledger7(ctx7) => {
@@ -939,15 +1128,21 @@ pub(crate) fn replay_blocks(
 				assert!(cached.is_empty(), "cached wallets with no Ledger8 blocks");
 				ForkAwareLedgerContext::Ledger7(ctx7)
 			} else {
-				let ctx8 = fork_context_7_to_8(ctx7).expect("fork failed");
-				replay_blocks_8(&ctx8, l8_blocks, cached);
+				let ctx8 = fork_context_7_to_8(ctx7).expect("fork 7 to 8 failed");
+				replay_blocks_8(&ctx8, l8_blocks);
 				ForkAwareLedgerContext::Ledger8(ctx8)
 			}
 		},
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger8 context");
-			replay_blocks_8(&ctx8, l8_blocks, cached);
+			replay_blocks_8(&ctx8, l8_blocks);
 			ForkAwareLedgerContext::Ledger8(ctx8)
+		},
+		ForkAwareLedgerContext::Ledger9(ctx9) => {
+			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger9 context");
+			assert!(l8_blocks.is_empty(), "Ledger8 blocks with Ledger9 context");
+			replay_blocks_9(&ctx9, l9_blocks, cached);
+			ForkAwareLedgerContext::Ledger9(ctx9)
 		},
 	};
 
@@ -1075,6 +1270,10 @@ pub async fn build_fork_aware_context_cached(
 	// pre-Ledger8 sources.
 	if let Some(synthetic) = synthetic_dust_warp {
 		match &fork_ctx {
+			ForkAwareLedgerContext::Ledger9(ctx9) => {
+				let _events = apply_block_9(ctx9, synthetic);
+				ctx9.update_dust_from_block(&block_context_from_raw_9(synthetic));
+			},
 			ForkAwareLedgerContext::Ledger8(ctx8) => {
 				let _events = apply_block_8(ctx8, synthetic);
 				ctx8.update_dust_from_block(&block_context_from_raw_8(synthetic));
@@ -1089,7 +1288,7 @@ pub async fn build_fork_aware_context_cached(
 	fork_ctx
 }
 
-/// Save per-wallet cache from a `ForkAwareLedgerContext` if it holds a ledger 8 context.
+/// Save per-wallet cache from a `ForkAwareLedgerContext` if it holds a ledger 9 context.
 async fn try_save_cache_v2(
 	fork_ctx: &ForkAwareLedgerContext,
 	wallet_seeds: &[WalletSeed],
@@ -1098,7 +1297,11 @@ async fn try_save_cache_v2(
 	storage: &dyn WalletStateCaching,
 ) {
 	let ctx = match fork_ctx {
-		ForkAwareLedgerContext::Ledger8(ctx) => ctx,
+		ForkAwareLedgerContext::Ledger9(ctx) => ctx,
+		ForkAwareLedgerContext::Ledger8(_) => {
+			log::debug!("Skipping cache save: context is still on ledger 8");
+			return;
+		},
 		ForkAwareLedgerContext::Ledger7(_) => {
 			log::debug!("Skipping cache save: context is still on ledger 7");
 			return;
@@ -1168,6 +1371,10 @@ async fn try_save_cache_v2(
 #[error("chain has not reached ledger 8 (final version: {0:?})")]
 pub struct ContextNotLedger8Error(pub LedgerVersion);
 
+#[derive(Debug, thiserror::Error)]
+#[error("chain has not reached ledger 9 (final version: {0:?})")]
+pub struct ContextNotLedger9Error(pub LedgerVersion);
+
 /// Build a fork-aware context from source transactions, returning the raw
 /// `ForkAwareLedgerContext` without extracting a specific version.
 pub fn build_fork_aware_context_raw(
@@ -1179,7 +1386,7 @@ pub fn build_fork_aware_context_raw(
 		.blocks
 		.first()
 		.map(|b| b.ledger_version())
-		.unwrap_or(LedgerVersion::Ledger8);
+		.unwrap_or(LedgerVersion::Ledger9);
 
 	let t = std::time::Instant::now();
 	let ctx =
@@ -1189,15 +1396,15 @@ pub fn build_fork_aware_context_raw(
 	replay_blocks(ctx, &received_tx.blocks, &[])
 }
 
-/// Build a fork-aware context from source transactions, returning a ledger 8 context.
+/// Build a fork-aware context from source transactions, returning a ledger 9 context.
 ///
-/// This handles chains that may have forked from ledger 7 to ledger 8 by using
+/// This handles chains that may have forked to ledger 9 by using
 /// `ForkAwareLedgerContext` to process blocks across version boundaries.
 pub fn build_fork_aware_context(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
-) -> Result<LedgerContext<DefaultDB>, ContextNotLedger8Error> {
+) -> Result<LedgerContext<DefaultDB>, ContextNotLedger9Error> {
 	let ctx = build_fork_aware_context_raw(received_tx, wallet_seeds);
 	let final_version = ctx.version();
-	ctx.into_ledger8().ok_or(ContextNotLedger8Error(final_version))
+	ctx.into_ledger9().ok_or(ContextNotLedger9Error(final_version))
 }

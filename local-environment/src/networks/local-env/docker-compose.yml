@@ -2,7 +2,7 @@ services:
   cardano-node-1:
     container_name: cardano-node-1
     image: ${CARDANO_IMAGE}
-    platform: linux/amd64
+    platform: ${ARCHITECTURE}
     healthcheck:
       test: "test -e /data/node.socket"
       interval: 20s
@@ -100,7 +100,7 @@ services:
   ogmios:
     container_name: ogmios
     image: ${OGMIOS_IMAGE}
-    platform: linux/amd64
+    platform: ${ARCHITECTURE}
     depends_on:
       cardano-node-1:
         condition: service_healthy
@@ -131,6 +131,10 @@ services:
   db-sync:
     container_name: db-sync
     image: ${DBSYNC_IMAGE}
+    # The ONLY hardcoded-amd64 service: cardano-db-sync publishes a single-arch
+    # (amd64) image, so on arm64 hosts it runs under emulation. Every other service
+    # is multi-arch and uses ${ARCHITECTURE} to run native. Drop this pin if/when
+    # db-sync ships an arm64 image.
     platform: linux/amd64
     depends_on:
       cardano-node-1:
@@ -287,7 +291,7 @@ services:
   postgres-indexer:
     profiles: ["withindexer"]
     container_name: postgres-indexer
-    platform: linux/amd64
+    platform: ${ARCHITECTURE}
     image: "postgres:17.1-alpine@sha256:0d9624535618a135c5453258fd629f4963390338b11aaffb92292c12df3a6c17"
     restart: "always"
     volumes:

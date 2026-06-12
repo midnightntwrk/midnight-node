@@ -101,20 +101,25 @@ impl ToolkitTestHelper {
 		}
 	}
 
-	pub fn compactc_version() -> String {
-		std::env::var("COMPACTC_VERSION").unwrap_or_else(|_| {
+	pub fn compactc_version() -> semver::Version {
+		let version_str = std::env::var("COMPACTC_VERSION").unwrap_or_else(|_| {
 			let version_file = manifest_dir().join(COMPACTC_VERSION_FILE);
 			std::fs::read_to_string(&version_file)
 				.map(|s| s.trim().to_string())
 				.unwrap_or_else(|e| panic!("failed to read {}: {e}", version_file.display()))
-		})
+		});
+
+		semver::Version::parse(&version_str).unwrap()
 	}
 
 	pub fn prerequisites_ready(&self) -> bool {
 		let compactc_version = Self::compactc_version();
 		let required_paths = [
 			self.toolkit_js_path.join("dist/bin.js"),
-			self.toolkit_js_path.join("node_modules/@midnight-ntwrk/node-toolkit-v8"),
+			self.toolkit_js_path.join(format!(
+				"node_modules/@midnight-ntwrk/node-toolkit-compact-{}.{}",
+				compactc_version.major, compactc_version.minor
+			)),
 			self.toolkit_js_path.join(format!(
 				"node_modules/@midnight-ntwrk/midnight-js-compact/managed/{compactc_version}"
 			)),
@@ -134,7 +139,10 @@ impl ToolkitTestHelper {
 	}
 
 	fn toolkit_js(&self) -> ToolkitJs {
-		ToolkitJs { path: path_to_string(&self.toolkit_js_path) }
+		ToolkitJs {
+			path: path_to_string(&self.toolkit_js_path),
+			compactc_version: Self::compactc_version(),
+		}
 	}
 
 	fn source_from_url(&self) -> Source {
@@ -187,7 +195,7 @@ impl ToolkitTestHelper {
 		name: &str,
 	) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
 		let compactc_version = Self::compactc_version();
-		let cache_key = compile_cache_key(compact_source, &compactc_version);
+		let cache_key = compile_cache_key(compact_source, &compactc_version.to_string());
 		let cache_dir = std::env::temp_dir().join(COMPILE_CACHE_DIR).join(&cache_key);
 		let cached_out = cache_dir.join("out");
 
@@ -211,7 +219,7 @@ impl ToolkitTestHelper {
 			.arg("run-compactc")
 			.arg(&source_file)
 			.arg(&cached_out)
-			.env("COMPACTC_VERSION", &compactc_version)
+			.env("COMPACTC_VERSION", compactc_version.to_string())
 			.current_dir(&self.toolkit_js_path)
 			.output()
 			.await?;
