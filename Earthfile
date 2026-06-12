@@ -919,7 +919,9 @@ test:
     # even when the CLI supplies the secret. CI always passes both --secret flags
     # (empty on fork PRs → login skipped → anonymous, rate-limited). Local runs must
     # supply them too: `earthly +test --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN=`
-    # (CLI-side `=` means supplied-but-empty, which is fine).
+    # (CLI-side `=` means supplied-but-empty, which is fine). The trailing
+    # `rm -f /root/.docker/config.json` keeps the login token out of the RUN's final
+    # snapshot, which buildkit may export to the remote cache on success.
     WITH DOCKER
         RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ]; then \
@@ -928,7 +930,8 @@ test:
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
             --exclude partner-chains-cardano-offchain \
-            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))' && \
+            rm -f /root/.docker/config.json
     END
 
     # RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
@@ -1049,7 +1052,8 @@ test-toolkit:
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
                 $EXTRA_DOCKER_ENV \
-                test-toolkit:latest
+                test-toolkit:latest && \
+                rm -f /root/.docker/config.json
         END
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
@@ -1064,7 +1068,8 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-                test-toolkit:latest
+                test-toolkit:latest && \
+                rm -f /root/.docker/config.json
         END
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
@@ -1699,7 +1704,8 @@ local-env-ci:
             echo "=== toolkit multi-dest E2E ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE"
+            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE" && \
+            rm -f /root/.docker/config.json
     END
 
 
