@@ -1,0 +1,81 @@
+name: Feature Unification
+
+# Advisory check (not in the main ruleset's required status checks): verifies
+# each crate compiles without dev-deps via `cargo hack check --no-dev-deps`.
+# Feature-unification regressions are almost always introduced by manifest
+# changes, so this only runs on PRs that touch one, scoped to the
+# reverse-dependency closure of the changed crates. Deliberately not run on
+# main pushes or merge queues.
+
+on:
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "Earthfile"
+      - ".github/workflows/feature-unification.yml"
+
+# no top level default permissions for security reasons
+permissions: {}
+concurrency:
+  group: ${{ format('{0}-{1}', github.workflow, github.head_ref) }}
+  cancel-in-progress: true
+jobs:
+  feature-unification:
+    name: Feature Unification Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        with:
+          submodules: true
+          # The merge commit plus both parents, so HEAD^1 (the base) is
+          # available for the scope diff below.
+          fetch-depth: 2
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
+      # Only check the reverse-dependency closure of the crates the PR diff
+      # touches (see scripts/feature-unification-scope.sh).
+      - id: scope
+        if: steps.guard.outputs.hit != 'true'
+        env:
+          # Skip the rust-toolchain.toml pin: the runner's preinstalled
+          # stable is plenty for `cargo metadata` and saves a 1.95 download.
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          packages=$(git diff --name-only HEAD^1 HEAD | ./scripts/feature-unification-scope.sh)
+          echo "scope: ${packages:-<nothing to check>}"
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+
+      # No GHCR login: the build chain only pulls the public
+      # midnightntwrk/midnight-node-ci image from docker.io.
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        if: steps.guard.outputs.hit != 'true' && steps.scope.outputs.packages != ''
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      # Uncomment if disk space again becomes an issue.
+      # - name: Free disk space
+      #   if: steps.guard.outputs.hit != 'true' && steps.scope.outputs.packages != ''
+      #   run: scripts/free-disk-space.sh
+
+      - name: Run feature unification check
+        if: steps.guard.outputs.hit != 'true' && steps.scope.outputs.packages != ''
+        env:
+          PACKAGES: ${{ steps.scope.outputs.packages }}
+        run: |
+          . ./.envrc && earthly --ci +check-feature-unification --PACKAGES="$PACKAGES"
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

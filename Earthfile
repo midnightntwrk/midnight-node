@@ -856,6 +856,8 @@ check-rust:
 
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching issues where workspace feature unification masks missing dependencies.
+# The partner-chains demo crates are excluded: they are upstream examples, not
+# shipped artifacts, and cost ~5min of the serial check.
 check-feature-unification:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
@@ -867,8 +869,14 @@ check-feature-unification:
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    RUN cargo binstall --no-confirm cargo-hack
-    RUN cargo hack check --workspace --no-dev-deps
+    # Package scope: full workspace by default; PR builds pass the output of
+    # scripts/feature-unification-scope.sh (reverse-dependency closure of the
+    # crates touched by the diff) to skip re-checking unaffected crates.
+    ARG PACKAGES="--workspace --exclude partner-chains-demo-node --exclude partner-chains-demo-runtime"
+    # Pinned: an unpinned binstall here can drift from the version baked into
+    # the CI base image and change check behaviour between runs.
+    RUN cargo binstall --no-confirm --locked cargo-hack@0.6.45
+    RUN cargo hack check $PACKAGES --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
