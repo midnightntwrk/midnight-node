@@ -22,4 +22,16 @@ longer shares one crypto stack with ledgers 7/8:
 - Toolkit `Encoded*` conversions now have separate 2.x and 3.x impl sets.
 - The `midnight-storage-core` patch is dropped (1.2.0 is on crates.io).
 
-PR: <link to PR>
+rc.2 also bumps the ledger-state serialization tag (v16 → v17) and adds a
+`max_contract_metadata_size` ledger parameter, so build-time artifacts are
+regenerated:
+
+- `max_contract_metadata_size: 10485760` (upstream `INITIAL_LIMITS`) added to
+  every `res/*/ledger-parameters-config.json`.
+- Undeployed genesis state/block and all derived test fixtures rebuilt at v17
+  (`+rebuild-genesis-state-undeployed`).
+- Runtime metadata rebuilt (`+rebuild-metadata`).
+- Devnet genesis (also v16) still needs an AWS-side rebuild + chainspec before
+  the next devnet reset — deliberately not regenerated here (no seeds locally).
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/1692

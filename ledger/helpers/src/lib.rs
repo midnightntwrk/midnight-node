@@ -37,9 +37,10 @@ pub mod ledger_7 {
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
-		onchain_runtime, transient_crypto, zkir_old as zkir, zswap,
+		onchain_runtime, transient_crypto, zkir_2_1 as zkir, zswap,
 	};
 
+	// Vendored test-utilities shim — remove when L7/L8 are dropped.
 	#[allow(clippy::duplicate_mod)]
 	#[path = "test_utilities_compat.rs"]
 	pub mod test_utilities_local;
@@ -96,9 +97,10 @@ pub mod ledger_8 {
 	pub use {
 		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
 		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
-		zkir_old as zkir, zswap_ledger_8 as zswap,
+		zkir_2_1 as zkir, zswap_ledger_8 as zswap,
 	};
 
+	// Vendored test-utilities shim — remove when L7/L8 are dropped.
 	#[allow(clippy::duplicate_mod)]
 	#[path = "test_utilities_compat.rs"]
 	pub mod test_utilities_local;

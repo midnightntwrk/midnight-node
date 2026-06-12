@@ -19,6 +19,11 @@
 //! L7/L8 without `test-utilities` and supply these items ourselves, against the
 //! renamed 2.x-stack `zkir` crate (tag `crate-zkir-2.1.0`) that zkir 2.2.0 itself
 //! uses internally for backwards-compatible proving.
+//!
+//! Kept byte-close to upstream for easy re-diffing — don't restyle (e.g. the
+//! `println!`s are upstream's). Remove this file and both
+//! `#[path = "test_utilities_compat.rs"]` inclusions in `lib.rs` when L7/L8
+//! support is dropped.
 
 use super::{
 	base_crypto::data_provider::{self, MidnightDataProvider},

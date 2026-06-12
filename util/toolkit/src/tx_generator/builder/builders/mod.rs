@@ -31,92 +31,69 @@ use midnight_node_ledger_helpers::ledger_7::{
 	ShieldedTokenType as ShieldedTokenTypeV2,
 };
 use midnight_node_ledger_helpers::ledger_9::{
-	CoinInfo, CoinPublicKey, ContractAddress, Deserializable, HashOutput, Nonce, QualifiedInfo,
-	Recipient, Serializable, ShieldedTokenType,
+	CoinInfo, CoinPublicKey, ContractAddress, HashOutput, Nonce, QualifiedInfo, Recipient,
+	ShieldedTokenType,
 };
 
-impl From<&EncodedRecipient> for RecipientV2 {
-	fn from(value: &EncodedRecipient) -> Self {
-		if value.is_left {
-			let bytes = value.left.0.0.0;
-			RecipientV2::User(CoinPublicKeyV2(HashOutput(bytes)))
-		} else {
-			let mut serialized = Vec::new();
-			Serializable::serialize(&value.right.0, &mut serialized)
-				.expect("failed to serialize contract address");
-			let contract_address =
-				<ContractAddressV2 as Deserializable>::deserialize(&mut &serialized[..], 0)
-					.expect("failed to deserialize contract address");
-			RecipientV2::Contract(contract_address)
+// All these types are HashOutput newtypes with identical raw bytes in
+// coin-structure 2.x and 3.x (the same invariant type_convert.rs relies on),
+// so conversion is direct byte reconstruction.
+macro_rules! impl_encoded_zswap_conversions {
+	($Recipient:ident, $CoinPublicKey:ident, $ContractAddress:ident,
+	 $CoinInfo:ident, $Nonce:ident, $ShieldedTokenType:ident, $QualifiedInfo:ident) => {
+		impl From<&EncodedRecipient> for $Recipient {
+			fn from(value: &EncodedRecipient) -> Self {
+				if value.is_left {
+					$Recipient::User($CoinPublicKey(HashOutput(value.left.0.0.0)))
+				} else {
+					$Recipient::Contract($ContractAddress(HashOutput(value.right.0.0.0)))
+				}
+			}
 		}
-	}
-}
 
-impl From<&EncodedOutput> for CoinInfoV2 {
-	fn from(value: &EncodedOutput) -> Self {
-		CoinInfoV2 {
-			nonce: NonceV2(HashOutput(value.coin_info.nonce)),
-			type_: ShieldedTokenTypeV2(HashOutput(value.coin_info.color)),
-			value: value.coin_info.value,
+		impl From<&EncodedOutput> for $CoinInfo {
+			fn from(value: &EncodedOutput) -> Self {
+				$CoinInfo {
+					nonce: $Nonce(HashOutput(value.coin_info.nonce)),
+					type_: $ShieldedTokenType(HashOutput(value.coin_info.color)),
+					value: value.coin_info.value,
+				}
+			}
 		}
-	}
-}
 
-impl From<&EncodedQualifiedShieldedCoinInfo> for CoinInfoV2 {
-	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
-		CoinInfoV2 {
-			nonce: NonceV2(HashOutput(value.nonce)),
-			type_: ShieldedTokenTypeV2(HashOutput(value.color)),
-			value: value.value,
+		impl From<&EncodedQualifiedShieldedCoinInfo> for $CoinInfo {
+			fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
+				$CoinInfo {
+					nonce: $Nonce(HashOutput(value.nonce)),
+					type_: $ShieldedTokenType(HashOutput(value.color)),
+					value: value.value,
+				}
+			}
 		}
-	}
-}
 
-impl From<&EncodedQualifiedShieldedCoinInfo> for QualifiedInfoV2 {
-	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
-		CoinInfoV2::from(value).qualify(value.mt_index)
-	}
-}
-
-impl From<&EncodedRecipient> for Recipient {
-	fn from(value: &EncodedRecipient) -> Self {
-		if value.is_left {
-			let bytes = value.left.0.0.0;
-			Recipient::User(CoinPublicKey(HashOutput(bytes)))
-		} else {
-			let mut serialized = Vec::new();
-			Serializable::serialize(&value.right.0, &mut serialized)
-				.expect("failed to serialize contract address");
-			let contract_address =
-				<ContractAddress as Deserializable>::deserialize(&mut &serialized[..], 0)
-					.expect("failed to deserialize contract address");
-			Recipient::Contract(contract_address)
+		impl From<&EncodedQualifiedShieldedCoinInfo> for $QualifiedInfo {
+			fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
+				$CoinInfo::from(value).qualify(value.mt_index)
+			}
 		}
-	}
+	};
 }
 
-impl From<&EncodedOutput> for CoinInfo {
-	fn from(value: &EncodedOutput) -> Self {
-		CoinInfo {
-			nonce: Nonce(HashOutput(value.coin_info.nonce)),
-			type_: ShieldedTokenType(HashOutput(value.coin_info.color)),
-			value: value.coin_info.value,
-		}
-	}
-}
-
-impl From<&EncodedQualifiedShieldedCoinInfo> for CoinInfo {
-	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
-		CoinInfo {
-			nonce: Nonce(HashOutput(value.nonce)),
-			type_: ShieldedTokenType(HashOutput(value.color)),
-			value: value.value,
-		}
-	}
-}
-
-impl From<&EncodedQualifiedShieldedCoinInfo> for QualifiedInfo {
-	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
-		CoinInfo::from(value).qualify(value.mt_index)
-	}
-}
+impl_encoded_zswap_conversions!(
+	RecipientV2,
+	CoinPublicKeyV2,
+	ContractAddressV2,
+	CoinInfoV2,
+	NonceV2,
+	ShieldedTokenTypeV2,
+	QualifiedInfoV2
+);
+impl_encoded_zswap_conversions!(
+	Recipient,
+	CoinPublicKey,
+	ContractAddress,
+	CoinInfo,
+	Nonce,
+	ShieldedTokenType,
+	QualifiedInfo
+);

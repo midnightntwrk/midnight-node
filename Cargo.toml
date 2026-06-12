@@ -82,10 +82,10 @@ zkir = { version = "^2.1.0", package = "midnight-zkir" }
 # The 2.x-crypto-stack zkir, renamed upstream so it can coexist with midnight-zkir 2.2.0
 # (which is built against the 3.x stack and is the only midnight-zkir cargo will resolve).
 # Used by the L7/L8 helpers; zkir 2.2.0 itself depends on this same tag internally.
-zkir-old = { version = "=2.1.0", package = "zkir", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-zkir-2.1.0" }
+zkir-2-1 = { version = "=2.1.0", package = "zkir", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-zkir-2.1.0" }
 
 # Ledger 8 (compatible with layout-v2)
-# coin-structure, transient-crypto (2.x) and zkir-old share versions with L7 so reuse those entries.
+# coin-structure, transient-crypto (2.x) and zkir-2-1 share versions with L7 so reuse those entries.
 mn-ledger-8 = { version = "=8.1.0", package = "midnight-ledger" }
 ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db"] }
 onchain-runtime-ledger-8 = { version = "=3.1.0", package = "midnight-onchain-runtime" }
@@ -94,7 +94,7 @@ zswap-ledger-8 = { version = "=8.1.0", package = "midnight-zswap" }
 # Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
 # storage shares versions with L8 so reuses that entry. coin-structure and
 # transient-crypto went semver-major in L9 so get their own entries, and L9 is the
-# only user of the workspace `zkir` (midnight-zkir 2.2.0, 3.x stack) — L7/L8 use zkir-old.
+# only user of the workspace `zkir` (midnight-zkir 2.2.0, 3.x stack) — L7/L8 use zkir-2-1.
 mn-ledger-9 = { version = "=1.0.0", package = "midnight-ledger-v9" }
 onchain-runtime-ledger-9 = { version = "=4.0.0", package = "midnight-onchain-runtime" }
 zswap-ledger-9 = { version = "=9.0.0", package = "midnight-zswap" }
