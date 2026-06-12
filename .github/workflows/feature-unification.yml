@@ -13,7 +13,8 @@ on:
     paths:
       - "**/Cargo.toml"
       - "Cargo.lock"
-      - "Earthfile"
+      - "rust-toolchain.toml"
+      - "scripts/feature-unification-scope.sh"
       - ".github/workflows/feature-unification.yml"
 
 # no top level default permissions for security reasons
@@ -50,6 +51,10 @@ jobs:
           # stable is plenty for `cargo metadata` and saves a 1.95 download.
           RUSTUP_TOOLCHAIN: stable
         run: |
+          # Self-test the scoper, but only when this PR changes it.
+          if git diff --name-only HEAD^1 HEAD | grep -qx "scripts/feature-unification-scope.sh"; then
+            ./scripts/feature-unification-scope.sh --self-test
+          fi
           packages=$(git diff --name-only HEAD^1 HEAD | ./scripts/feature-unification-scope.sh)
           echo "scope: ${packages:-<nothing to check>}"
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
