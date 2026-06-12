@@ -19,6 +19,7 @@ sp-partner-chains-bridge.workspace = true
 pallet-partner-chains-bridge.workspace = true
 midnight-primitives.workspace = true
 midnight-node-ledger.workspace = true
+frame-benchmarking = { workspace = true, optional = true }
 
 [dev-dependencies]
 sp-io = { workspace = true }
@@ -38,6 +39,12 @@ std = [
     "pallet-partner-chains-bridge/std",
     "midnight-primitives/std",
     "midnight-node-ledger/std",
+    "frame-benchmarking?/std",
+]
+runtime-benchmarks = [
+    "frame-benchmarking/runtime-benchmarks",
+    "frame-system/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
 ]
 
 [package.metadata.cargo-shear]

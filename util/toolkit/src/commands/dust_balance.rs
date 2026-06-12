@@ -117,10 +117,21 @@ pub async fn execute_many(
 			seeds
 				.iter()
 				.map(|seed| {
-					crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, seed.clone())
+    				let seed_v8 = crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+    					seed.clone(),
+    				);
+					crate::commands::fork::ledger_8::dust_balance::dust_balance(&ctx, seed_v8)
 				})
 				.collect::<Result<Vec<_>, _>>()
 		},
+		|ctx| {
+		    seeds
+				.iter()
+				.map(|seed| {
+				    crate::commands::fork::ledger_9::dust_balance::dust_balance(&ctx, seed.clone())
+				})
+				.collect::<Result<Vec<_>, _>>()
+		}
 	)?;
 
 	Ok(seeds
@@ -379,7 +390,7 @@ mod tests {
 		// would be the real-head block's historic tblock instead of
 		// wall-clock-now.
 		match fork_ctx_2 {
-			ForkAwareLedgerContext::Ledger8(ctx) => {
+			ForkAwareLedgerContext::Ledger9(ctx) => {
 				let ctx_tblock = ctx.latest_block_context().tblock.to_secs();
 				assert!(
 					ctx_tblock >= test_start_secs,
@@ -388,8 +399,8 @@ mod tests {
 					 got {ctx_tblock}",
 				);
 			},
-			ForkAwareLedgerContext::Ledger7(_) => {
-				panic!("post-fork context should be on Ledger8 after replay")
+			ForkAwareLedgerContext::Ledger7(_) | ForkAwareLedgerContext::Ledger8(_) => {
+				panic!("post-fork context should be on Ledger9 after replay")
 			},
 		}
 

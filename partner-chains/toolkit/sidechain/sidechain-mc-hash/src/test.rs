@@ -26,6 +26,17 @@ mod inherent_digest_tests {
 
 		assert_eq!(result, McBlockHash([42; 32]))
 	}
+
+	#[tokio::test]
+	async fn value_from_digest_rejects_duplicate_mc_hash_entries() {
+		let first = DigestItem::PreRuntime(MC_HASH_DIGEST_ID, vec![7; 32]);
+		let second = DigestItem::PreRuntime(MC_HASH_DIGEST_ID, vec![8; 32]);
+
+		let err = McHashInherentDigest::value_from_digest(&[first, second])
+			.expect_err("duplicate MC hash digests must be rejected");
+
+		assert_eq!(err.to_string(), "Multiple main chain block hashes in digest");
+	}
 }
 
 mod validation_tests {
