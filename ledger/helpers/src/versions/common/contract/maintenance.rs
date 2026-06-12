@@ -13,14 +13,15 @@
 
 //! Contract maintenance module.
 
-use async_trait::async_trait;
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use super::super::{
-	ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
-	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, LedgerContext,
-	MaintenanceUpdate, PedersenRandomness, ProofPreimageMarker, Signature, SigningKey,
-	SingleUpdate, StdRng,
+	BuilderContext, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
+	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, MaintenanceUpdate,
+	PedersenRandomness, ProofPreimageMarker, Signature, SigningKey, SingleUpdate, StdRng,
+	maintenance_verifying_key, transaction_signature,
 };
 use super::BuildContractAction;
 
@@ -44,11 +45,11 @@ pub struct MaintenanceUpdateInfo {
 }
 
 #[async_trait]
-impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for MaintenanceUpdateInfo {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
-		_context: Arc<LedgerContext<D>>,
+		_context: Arc<C>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let updates = self
@@ -57,7 +58,11 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 			.map(|update| match update {
 				UpdateInfo::ReplaceAuthority(info) => {
 					SingleUpdate::ReplaceAuthority(ContractMaintenanceAuthority {
-						committee: info.new_committee.iter().map(|s| s.verifying_key()).collect(),
+						committee: info
+							.new_committee
+							.iter()
+							.map(|s| maintenance_verifying_key(s.verifying_key()))
+							.collect(),
 						threshold: info.threshold,
 						counter: info.counter,
 					})
@@ -77,7 +82,7 @@ impl<D: DB + Clone> BuildContractAction<D> for MaintenanceUpdateInfo {
 		let data_to_sign = update.data_to_sign();
 		for (idx, key) in self.committee.iter().enumerate() {
 			let signature = key.sign(rng, &data_to_sign);
-			update = update.add_signature(idx as u32, signature)
+			update = update.add_signature(idx as u32, transaction_signature(signature))
 		}
 
 		intent.add_maintenance_update(update)

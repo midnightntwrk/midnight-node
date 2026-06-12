@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-runtime"
-version = "0.2.3"
+version = "2.0.0"
 description = "A fresh FRAME-based Substrate node, ready for hacking."
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 edition = "2024"
@@ -179,6 +179,8 @@ runtime-benchmarks = [
     "pallet-grandpa/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
     "pallet-cnight-observation/runtime-benchmarks",
+    "pallet-c2m-bridge/runtime-benchmarks",
+    "midnight-node-ledger/runtime-benchmarks",
     # TODO: Enable native-token-mgmt benchmarks when available
     "pallet-partner-chains-bridge/runtime-benchmarks",
     "pallet-mmr/runtime-benchmarks",

@@ -1,5 +1,5 @@
 {
-  "name": "@midnight-ntwrk/node-toolkit-v7",
+  "name": "@midnight-ntwrk/node-toolkit-compact-0.31",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "description": "Interface gateway between Rust `midnight-node-toolkit` and TS `@midnight-ntwrk` packages",
@@ -17,14 +17,11 @@
     "dist"
   ],
   "dependencies": {
-    "@effect/platform-node": "^0.104.1",
-    "@effect/cli": "^0.73.2",
-    "@midnight-ntwrk/compact-js": "2.4.3",
-    "@midnight-ntwrk/compact-js-command": "2.4.3",
-    "@midnight-ntwrk/compact-js-node": "2.4.3",
-    "effect": "^3.21.0"
-  },
-  "overrides": {
+    "@effect/platform-node": "^0.105.0",
+    "@effect/cli": "^0.74.0",
+    "@midnight-ntwrk/compact-js": "2.5.1",
+    "@midnight-ntwrk/compact-js-command": "2.5.1",
+    "@midnight-ntwrk/compact-js-node": "2.5.1",
     "effect": "^3.21.0"
   }
 }
