@@ -11,10 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Conversions from crate-level (ledger_8) types to version-local types.
+//! Conversions from crate-level (ledger_9) types to version-local types.
 //!
-//! When compiled through `ledger_8.rs`, these are identity operations (same types).
-//! When compiled through `ledger_7.rs`, these convert through raw bytes/strings.
+//! When compiled through `ledger_9.rs`, these are identity operations (same types).
+//! When compiled through `ledger_7.rs`/`ledger_8.rs` (coin-structure 2.x), these
+//! convert through raw bytes/strings.
 
 use super::ledger_helpers_local::{
 	CoinPublicKey, ContractAddress, HashOutput, IntentHash, ShieldedTokenType, UnshieldedTokenType,

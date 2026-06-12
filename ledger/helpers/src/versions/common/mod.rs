@@ -13,8 +13,8 @@
 
 pub use super::make_block_context;
 pub use super::{
-	TransactionSignature as Signature, maintenance_verifying_key, signature_verifying_key,
-	transaction_signature, transaction_signing_key,
+	TransactionSignature as Signature, contract_operation_new, maintenance_verifying_key,
+	signature_verifying_key, transaction_signature, transaction_signing_key,
 };
 pub use super::{
 	base_crypto::{
@@ -70,7 +70,6 @@ pub use super::{
 			SystemTransaction, Transaction, TransactionCostModel, TransactionHash, UnshieldedOffer,
 			Utxo, UtxoOutput, UtxoSpend, VerifiedTransaction,
 		},
-		test_utilities::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver, verifier_key},
 		verify::WellFormedStrictness,
 	},
 	onchain_runtime::{
@@ -88,6 +87,7 @@ pub use super::{
 		},
 		transcript::Transcript,
 	},
+	test_utilities_local::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver, verifier_key},
 	transient_crypto::{
 		commitment::{Pedersen, PedersenRandomness, PureGeneratorPedersen},
 		curve::Fr,

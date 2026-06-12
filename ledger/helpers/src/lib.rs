@@ -37,8 +37,12 @@ pub mod ledger_7 {
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
-		onchain_runtime, transient_crypto, zkir, zswap,
+		onchain_runtime, transient_crypto, zkir_old as zkir, zswap,
 	};
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "test_utilities_compat.rs"]
+	pub mod test_utilities_local;
 
 	#[path = "block_context/pre_ledger_8.rs"]
 	mod block_context;
@@ -52,6 +56,12 @@ pub mod ledger_7 {
 		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
 		VerifyingKey as SignatureVerifyingKey,
 	};
+
+	pub fn contract_operation_new(
+		vk: Option<transient_crypto::proofs::VerifierKey>,
+	) -> onchain_runtime::state::ContractOperation {
+		onchain_runtime::state::ContractOperation::new(vk)
+	}
 
 	pub fn signature_verifying_key(
 		key: base_crypto::signatures::VerifyingKey,
@@ -86,8 +96,12 @@ pub mod ledger_8 {
 	pub use {
 		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
 		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
-		zkir, zswap_ledger_8 as zswap,
+		zkir_old as zkir, zswap_ledger_8 as zswap,
 	};
+
+	#[allow(clippy::duplicate_mod)]
+	#[path = "test_utilities_compat.rs"]
+	pub mod test_utilities_local;
 
 	#[allow(clippy::duplicate_mod)]
 	#[path = "block_context/post_ledger_8.rs"]
@@ -102,6 +116,12 @@ pub mod ledger_8 {
 		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
 		VerifyingKey as SignatureVerifyingKey,
 	};
+
+	pub fn contract_operation_new(
+		vk: Option<transient_crypto::proofs::VerifierKey>,
+	) -> onchain_runtime::state::ContractOperation {
+		onchain_runtime::state::ContractOperation::new(vk)
+	}
 
 	pub fn signature_verifying_key(
 		key: base_crypto::signatures::VerifyingKey,
@@ -134,10 +154,13 @@ pub mod ledger_9 {
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_9 as extract_tx_with_context;
 	pub use {
-		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
-		mn_ledger_9 as mn_ledger, onchain_runtime_ledger_9 as onchain_runtime, transient_crypto,
+		base_crypto, coin_structure_ledger_9 as coin_structure,
+		ledger_storage_ledger_8 as ledger_storage, midnight_serialize, mn_ledger_9 as mn_ledger,
+		onchain_runtime_ledger_9 as onchain_runtime, transient_crypto_ledger_9 as transient_crypto,
 		zkir, zswap_ledger_9 as zswap,
 	};
+
+	pub use mn_ledger::test_utilities as test_utilities_local;
 
 	#[allow(clippy::duplicate_mod)]
 	#[path = "block_context/post_ledger_8.rs"]
@@ -153,6 +176,12 @@ pub mod ledger_9 {
 		SigningKey as TransactionSigningKey,
 	};
 	pub use onchain_runtime::state::ContractMaintenanceVerifyingKey;
+
+	pub fn contract_operation_new(
+		vk: Option<transient_crypto::proofs::VerifierKey>,
+	) -> onchain_runtime::state::ContractOperation {
+		onchain_runtime::state::ContractOperation::new(vk, None)
+	}
 
 	pub fn signature_verifying_key(
 		key: base_crypto::signatures::VerifyingKey,

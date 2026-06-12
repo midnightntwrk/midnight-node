@@ -18,16 +18,65 @@ pub mod ledger_7;
 pub mod ledger_8;
 
 // Conversion impls for encoded zswap types to ledger types.
-// These live here (not in common/) because common/ is compiled twice
-// (once for ledger_7, once for ledger_8) and both versions now share
-// the same coin_structure types, which would cause E0119 conflicts.
+// These live here (not in common/) because common/ is compiled once per ledger
+// version, which would cause E0119 conflicts wherever versions share types.
+// Ledger 9 uses coin-structure 3.x; ledgers 7 and 8 share coin-structure 2.x,
+// so there are exactly two impl sets.
 use crate::toolkit_js::encoded_zswap_local_state::{
 	EncodedOutput, EncodedQualifiedShieldedCoinInfo, EncodedRecipient,
+};
+use midnight_node_ledger_helpers::ledger_7::{
+	CoinInfo as CoinInfoV2, CoinPublicKey as CoinPublicKeyV2, ContractAddress as ContractAddressV2,
+	Nonce as NonceV2, QualifiedInfo as QualifiedInfoV2, Recipient as RecipientV2,
+	ShieldedTokenType as ShieldedTokenTypeV2,
 };
 use midnight_node_ledger_helpers::ledger_9::{
 	CoinInfo, CoinPublicKey, ContractAddress, Deserializable, HashOutput, Nonce, QualifiedInfo,
 	Recipient, Serializable, ShieldedTokenType,
 };
+
+impl From<&EncodedRecipient> for RecipientV2 {
+	fn from(value: &EncodedRecipient) -> Self {
+		if value.is_left {
+			let bytes = value.left.0.0.0;
+			RecipientV2::User(CoinPublicKeyV2(HashOutput(bytes)))
+		} else {
+			let mut serialized = Vec::new();
+			Serializable::serialize(&value.right.0, &mut serialized)
+				.expect("failed to serialize contract address");
+			let contract_address =
+				<ContractAddressV2 as Deserializable>::deserialize(&mut &serialized[..], 0)
+					.expect("failed to deserialize contract address");
+			RecipientV2::Contract(contract_address)
+		}
+	}
+}
+
+impl From<&EncodedOutput> for CoinInfoV2 {
+	fn from(value: &EncodedOutput) -> Self {
+		CoinInfoV2 {
+			nonce: NonceV2(HashOutput(value.coin_info.nonce)),
+			type_: ShieldedTokenTypeV2(HashOutput(value.coin_info.color)),
+			value: value.coin_info.value,
+		}
+	}
+}
+
+impl From<&EncodedQualifiedShieldedCoinInfo> for CoinInfoV2 {
+	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
+		CoinInfoV2 {
+			nonce: NonceV2(HashOutput(value.nonce)),
+			type_: ShieldedTokenTypeV2(HashOutput(value.color)),
+			value: value.value,
+		}
+	}
+}
+
+impl From<&EncodedQualifiedShieldedCoinInfo> for QualifiedInfoV2 {
+	fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
+		CoinInfoV2::from(value).qualify(value.mt_index)
+	}
+}
 
 impl From<&EncodedRecipient> for Recipient {
 	fn from(value: &EncodedRecipient) -> Self {
