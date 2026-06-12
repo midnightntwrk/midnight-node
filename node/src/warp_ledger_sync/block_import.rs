@@ -123,7 +123,7 @@ where
 			StateAction::Execute => true,
 			StateAction::ExecuteIfPossible => {
 				let parent_hash = *block.header.parent_hash();
-				let parent_number = block.header.number().clone().saturating_sub(One::one());
+				let parent_number = (*block.header.number()).saturating_sub(One::one());
 				self.backend.have_state_at(parent_hash, parent_number)
 			},
 		}

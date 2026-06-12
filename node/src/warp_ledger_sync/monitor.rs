@@ -119,23 +119,22 @@ pub async fn run_recovery_monitor<B, Client, BE, Network>(
 	let (target_hash, target_number) = loop {
 		let status = sync_service.status().await.ok();
 
-		if let Some(status) = &status {
-			if status.warp_sync.is_some() && !saw_warp {
-				saw_warp = true;
-				gate.arm();
-				log::info!(
-					target: LOG_TARGET,
-					"Warp sync detected; ledger arena recovery armed (authoring gated until verified)"
-				);
-			}
+		if let Some(status) = &status
+			&& status.warp_sync.is_some()
+			&& !saw_warp
+		{
+			saw_warp = true;
+			gate.arm();
+			log::info!(
+				target: LOG_TARGET,
+				"Warp sync detected; ledger arena recovery armed (authoring gated until verified)"
+			);
 		}
 
 		if saw_warp {
 			let state_sync_done = status.as_ref().map(|s| s.state_sync.is_none()).unwrap_or(false);
-			if state_sync_done {
-				if let Some(target) = client.info().finalized_state {
-					break target;
-				}
+			if state_sync_done && let Some(target) = client.info().finalized_state {
+				break target;
 			}
 		} else {
 			// Full-sync path: once the node is no longer major-syncing, ledger recovery is never
@@ -233,10 +232,10 @@ where
 		peers.extend(reserved);
 	}
 	// Fallback: only if the network layer reported nothing usable.
-	if peers.is_empty() {
-		if let Ok(info) = sync_service.peers_info().await {
-			peers.extend(info.into_iter().map(|(peer, _)| peer));
-		}
+	if peers.is_empty()
+		&& let Ok(info) = sync_service.peers_info().await
+	{
+		peers.extend(info.into_iter().map(|(peer, _)| peer));
 	}
 
 	peers.into_iter().collect()

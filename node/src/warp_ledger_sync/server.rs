@@ -122,10 +122,10 @@ where
 	/// Return the serialized `Ledger`-rooted blob for `target`, building and memoizing it on a
 	/// cache miss. Rejects unknown or not-yet-finalized blocks.
 	fn blob_for(&mut self, target: B::Hash) -> Result<Arc<Vec<u8>>, HandleError> {
-		if let Some((cached, blob)) = &self.cache {
-			if *cached == target {
-				return Ok(blob.clone());
-			}
+		if let Some((cached, blob)) = &self.cache
+			&& *cached == target
+		{
+			return Ok(blob.clone());
 		}
 
 		// Only serve finalized blocks whose state we hold: an unknown hash or a block beyond our
