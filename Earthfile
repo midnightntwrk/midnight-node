@@ -703,6 +703,7 @@ node-ci-image-single-platform:
     #`fetch-compactc` skips the download and `run-compactc` uses the # source-built compiler.
     COPY +compactc-bundle/compact-home /compact-home
     ENV COMPACT_HOME=/compact-home
+    COPY COMPACTC_VERSION .
     ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     # Fail loudly if the pinned submodule's compiler does not match COMPACTC_VERSION
     # (also the portability check: this is the first run of the bundle outside nix).
