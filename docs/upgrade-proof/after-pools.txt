@@ -1,0 +1,6 @@
+specVersion = 1000001
+locked_pool    = 16799999999126012
+reserve_pool   = 5000000000873988
+treasury_NIGHT = 1200000000000000
+locked+reserve+treasury = 23000000000000000
+migration_gate = 0x01

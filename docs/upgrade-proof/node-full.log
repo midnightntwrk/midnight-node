@@ -1,0 +1,288 @@
+Warning: NODE_KEY passed as a CLI arg is not recommended. Use NODE_KEY_FILE env-var instead.
+It isn't safe to expose RPC publicly without a proxy server that filters available set of RPC methods.
+2026-06-15 03:00:52 Midnight Node    
+2026-06-15 03:00:52 ✌️  version 1.0.1-81dbf2ea    
+2026-06-15 03:00:52 ❤️  by Substrate DevHub <https://github.com/substrate-developer-hub>, 2017-2026    
+2026-06-15 03:00:52 📋 Chain specification: Midnight Preview (local rehearsal)    
+2026-06-15 03:00:52 🏷  Node name: Alice    
+2026-06-15 03:00:52 👤 Role: AUTHORITY    
+2026-06-15 03:00:52 💾 Database: ParityDb at /node/chain/chains/midnight_preview/paritydb/full    
+2026-06-15 03:00:52 Reading registrations from: res/mock-bridge-data/default-registrations.json    
+2026-06-15 03:00:52 Loaded 1 registration rotations    
+2026-06-15 03:00:52 Start session 0, epoch 0    
+2026-06-15 03:00:53 🔨 Initializing Genesis block/state (state: 0x0809…0929, header-hash: 0x4fe1…6414)    
+2026-06-15 03:00:53 Creating transaction pool txpool_type=ForkAware ready=Limit { count: 8192, total_bytes: 20971520 } future=Limit { count: 819, total_bytes: 2097152 }
+2026-06-15 03:00:53 👴 Loading GRANDPA authority set from genesis on what appears to be first startup.    
+2026-06-15 03:00:53 Using default protocol ID "sup" because none is configured in the chain specs    
+2026-06-15 03:00:53 🏷  Local node identity is: 12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp    
+2026-06-15 03:00:53 Running libp2p network backend    
+2026-06-15 03:00:53 local_peer_id=12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+2026-06-15 03:00:53 💻 Operating system: linux    
+2026-06-15 03:00:53 💻 CPU architecture: aarch64    
+2026-06-15 03:00:53 💻 Target environment: gnu    
+2026-06-15 03:00:53 💻 Memory: 37529MB    
+2026-06-15 03:00:53 💻 Kernel: 6.10.14-linuxkit    
+2026-06-15 03:00:53 💻 Linux distribution: Amazon Linux 2023.10.20260330    
+2026-06-15 03:00:53 💻 Virtual machine: no    
+2026-06-15 03:00:53 📦 Highest known block at #0    
+2026-06-15 03:00:53 〽️ Prometheus exporter started at [::]:9615    
+2026-06-15 03:00:53 Running JSON-RPC server: addr=0.0.0.0:9944,[::]:46819    
+2026-06-15 03:00:53 MemoryMonitorService: memory monitoring disabled (threshold=0)    
+2026-06-15 03:00:53 🥩 BEEFY gadget waiting for BEEFY pallet to become available...    
+2026-06-15 03:00:53 Failed to trigger bootstrap: No known peers.
+2026-06-15 03:00:54 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:00:54 🙌 Starting consensus session on top of parent 0x4fe17c5cf0752583c320c7d1fd5b7736ddd94aec70ca816bcec9d786c0a46414 (#0)    
+2026-06-15 03:00:54 ⏳ Initial epoch 989718 starting at block 1    
+2026-06-15 03:00:54 💼 Selected committee of 10 seats for epoch 989719 from 1 permissioned and 0 registered candidates    
+2026-06-15 03:00:54 💼 Storing committee of size 10 for epoch 989719, input data hash: 0xd520f67a34899fc1152765bd7d5219d23a027c97ddf2c735c98ebb14cf55d35a    
+2026-06-15 03:00:54 Post dispatch weight is greater than pre dispatch weight. Pre dispatch weight may underestimating the actual weight. Greater post dispatch weight components are ignored.
+					Pre dispatch weight: Weight { ref_time: 731859347, proof_size: 7968 },
+					Post dispatch weight: Weight { ref_time: 844708252, proof_size: 7994 }    
+2026-06-15 03:00:54 Post dispatch weight is greater than pre dispatch weight. Pre dispatch weight may underestimating the actual weight. Greater post dispatch weight components are ignored.
+					Pre dispatch weight: Weight { ref_time: 731859347, proof_size: 7968 },
+					Post dispatch weight: Weight { ref_time: 844708252, proof_size: 7994 }    
+2026-06-15 03:00:54 Post dispatch weight is greater than pre dispatch weight. Pre dispatch weight may underestimating the actual weight. Greater post dispatch weight components are ignored.
+					Pre dispatch weight: Weight { ref_time: 731859347, proof_size: 7968 },
+					Post dispatch weight: Weight { ref_time: 844708252, proof_size: 7994 }    
+2026-06-15 03:00:54 🎁 Prepared block for proposing at 1 (2 ms) hash: 0xf5bd2db637b1948ebf47e852b8e78b882737ccb66579a5d9348b5c46e8e60803; parent_hash: 0x4fe1…6414; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:00:54 🔖 Pre-sealed block for proposal at 1. Hash now 0xe7024a8a6c614292f2e2d73c61c4beeae516e9fc13de39e89f21beaa50cb347a, previously 0xf5bd2db637b1948ebf47e852b8e78b882737ccb66579a5d9348b5c46e8e60803.    
+2026-06-15 03:00:54 🏆 Imported #1 (0x4fe1…6414 → 0xe702…347a)    
+2026-06-15 03:00:58 💤 Idle (0 peers), best: #1 (0xe702…347a), finalized #0 (0x4fe1…6414), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:00 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:00 🙌 Starting consensus session on top of parent 0xe7024a8a6c614292f2e2d73c61c4beeae516e9fc13de39e89f21beaa50cb347a (#1)    
+2026-06-15 03:01:00 🎁 Prepared block for proposing at 2 (4 ms) hash: 0x01e3fc27fbb5f0de4d7629cac299eaa56ee9a0ccf0fcb15007840515ea27d329; parent_hash: 0xe702…347a; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:01:00 🔖 Pre-sealed block for proposal at 2. Hash now 0xa0d2819f04a795e6c1b8550b05be6a0c5f5c723f6c80b661c4988aeb54287b36, previously 0x01e3fc27fbb5f0de4d7629cac299eaa56ee9a0ccf0fcb15007840515ea27d329.    
+2026-06-15 03:01:00 🏆 Imported #2 (0xe702…347a → 0xa0d2…7b36)    
+2026-06-15 03:01:03 💤 Idle (0 peers), best: #2 (0xa0d2…7b36), finalized #0 (0x4fe1…6414), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:06 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:06 🙌 Starting consensus session on top of parent 0xa0d2819f04a795e6c1b8550b05be6a0c5f5c723f6c80b661c4988aeb54287b36 (#2)    
+2026-06-15 03:01:06 🎁 Prepared block for proposing at 3 (2 ms) hash: 0x1172555b2308b0f996b7ca046f18f31d15ca22eb6503512117189cca2a786c41; parent_hash: 0xa0d2…7b36; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:01:06 🔖 Pre-sealed block for proposal at 3. Hash now 0xbc55e42f91caaebb56824e3419358fcdb12515ed8288ad971475be02cbd12e1e, previously 0x1172555b2308b0f996b7ca046f18f31d15ca22eb6503512117189cca2a786c41.    
+2026-06-15 03:01:06 🏆 Imported #3 (0xa0d2…7b36 → 0xbc55…2e1e)    
+2026-06-15 03:01:07 🥩 BEEFY pallet available: block 1 beefy genesis 1    
+2026-06-15 03:01:07 🥩 Loading BEEFY voter state from genesis on what appears to be first startup. Starting voting rounds at block 1, genesis validator set ValidatorSet { validators: [Public(020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1 (KW39r9CJ...))], id: 0 }.    
+2026-06-15 03:01:07 🥩 run BEEFY worker, best grandpa: #1.    
+2026-06-15 03:01:08 💤 Idle (0 peers), best: #3 (0xbc55…2e1e), finalized #1 (0xe702…347a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:12 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:12 🙌 Starting consensus session on top of parent 0xbc55e42f91caaebb56824e3419358fcdb12515ed8288ad971475be02cbd12e1e (#3)    
+2026-06-15 03:01:12 🎁 Prepared block for proposing at 4 (2 ms) hash: 0xfc6eb6c60d59ca13ba02c29c2da46826ab38271eeb7df05281d9eaa3a18f23e2; parent_hash: 0xbc55…2e1e; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:01:12 🔖 Pre-sealed block for proposal at 4. Hash now 0xf84f41ab97fc38883f7247767fd9bbbc504c04a890d761eb9c7a04a50fe1d6ad, previously 0xfc6eb6c60d59ca13ba02c29c2da46826ab38271eeb7df05281d9eaa3a18f23e2.    
+2026-06-15 03:01:12 🏆 Imported #4 (0xbc55…2e1e → 0xf84f…d6ad)    
+2026-06-15 03:01:13 💤 Idle (0 peers), best: #4 (0xf84f…d6ad), finalized #1 (0xe702…347a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:18 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:18 🙌 Starting consensus session on top of parent 0xf84f41ab97fc38883f7247767fd9bbbc504c04a890d761eb9c7a04a50fe1d6ad (#4)    
+2026-06-15 03:01:18 🎁 Prepared block for proposing at 5 (3 ms) hash: 0x8adc44cf7c576ccd7c9e7e2ca034717105856d7420afa227fc43d8f37f5324c0; parent_hash: 0xf84f…d6ad; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:01:18 🔖 Pre-sealed block for proposal at 5. Hash now 0xbf745bc128c5937710eb66397a3848b6e5459df339087f413cc57fa0d541eeaa, previously 0x8adc44cf7c576ccd7c9e7e2ca034717105856d7420afa227fc43d8f37f5324c0.    
+2026-06-15 03:01:18 🏆 Imported #5 (0xf84f…d6ad → 0xbf74…eeaa)    
+2026-06-15 03:01:18 💤 Idle (0 peers), best: #5 (0xbf74…eeaa), finalized #2 (0xa0d2…7b36), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:23 💤 Idle (0 peers), best: #5 (0xbf74…eeaa), finalized #3 (0xbc55…2e1e), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:24 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:24 🙌 Starting consensus session on top of parent 0xbf745bc128c5937710eb66397a3848b6e5459df339087f413cc57fa0d541eeaa (#5)    
+2026-06-15 03:01:24 🎁 Prepared block for proposing at 6 (3 ms) hash: 0x5c430eb3ad1445ee0c6ffac1e38aa5daa98a99c573d5f2275e450f294947a1ee; parent_hash: 0xbf74…eeaa; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:01:24 🔖 Pre-sealed block for proposal at 6. Hash now 0xa3262e9d77b630146d61c55952f8b56e31f25961672d6bed6a50e09cf0cc367a, previously 0x5c430eb3ad1445ee0c6ffac1e38aa5daa98a99c573d5f2275e450f294947a1ee.    
+2026-06-15 03:01:24 🏆 Imported #6 (0xbf74…eeaa → 0xa326…367a)    
+2026-06-15 03:01:28 💤 Idle (0 peers), best: #6 (0xa326…367a), finalized #4 (0xf84f…d6ad), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:30 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:30 🙌 Starting consensus session on top of parent 0xa3262e9d77b630146d61c55952f8b56e31f25961672d6bed6a50e09cf0cc367a (#6)    
+2026-06-15 03:01:30 🎁 Prepared block for proposing at 7 (4 ms) hash: 0x6babb7f36527fa208db030e4e41813e6d0ffcb97ced335d39f660aebcb227199; parent_hash: 0xa326…367a; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:01:30 🔖 Pre-sealed block for proposal at 7. Hash now 0x0fde9049087b531f6d6e6ed780aab8ecb8a13ef322bdae31a272ee000d54ffaa, previously 0x6babb7f36527fa208db030e4e41813e6d0ffcb97ced335d39f660aebcb227199.    
+2026-06-15 03:01:30 🏆 Imported #7 (0xa326…367a → 0x0fde…ffaa)    
+2026-06-15 03:01:33 💤 Idle (0 peers), best: #7 (0x0fde…ffaa), finalized #5 (0xbf74…eeaa), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:36 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:36 🙌 Starting consensus session on top of parent 0x0fde9049087b531f6d6e6ed780aab8ecb8a13ef322bdae31a272ee000d54ffaa (#7)    
+2026-06-15 03:01:36 🎁 Prepared block for proposing at 8 (3 ms) hash: 0x96d0fb5e459eef90c881fe82a440e0cacbc3ee90547fbf065ebc423ffdf7ebba; parent_hash: 0x0fde…ffaa; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:01:36 🔖 Pre-sealed block for proposal at 8. Hash now 0x52af0e0619b7fa7049cd584427ae50c2881fb7e49db29932567e53f8d394115a, previously 0x96d0fb5e459eef90c881fe82a440e0cacbc3ee90547fbf065ebc423ffdf7ebba.    
+2026-06-15 03:01:36 🏆 Imported #8 (0x0fde…ffaa → 0x52af…115a)    
+2026-06-15 03:01:38 💤 Idle (0 peers), best: #8 (0x52af…115a), finalized #6 (0xa326…367a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:42 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:42 🙌 Starting consensus session on top of parent 0x52af0e0619b7fa7049cd584427ae50c2881fb7e49db29932567e53f8d394115a (#8)    
+2026-06-15 03:01:42 🎁 Prepared block for proposing at 9 (3 ms) hash: 0xe4b20b473c8a37e359f67b1a421763a8c1b5018fb6c9241e64af381def62eee7; parent_hash: 0x52af…115a; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:01:42 🔖 Pre-sealed block for proposal at 9. Hash now 0x613da1a5727e747e92fe76aaebc2acfc3fa11a677168040fa6dd71f2ba4de184, previously 0xe4b20b473c8a37e359f67b1a421763a8c1b5018fb6c9241e64af381def62eee7.    
+2026-06-15 03:01:42 🏆 Imported #9 (0x52af…115a → 0x613d…e184)    
+2026-06-15 03:01:43 💤 Idle (0 peers), best: #9 (0x613d…e184), finalized #6 (0xa326…367a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:48 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:48 🙌 Starting consensus session on top of parent 0x613da1a5727e747e92fe76aaebc2acfc3fa11a677168040fa6dd71f2ba4de184 (#9)    
+2026-06-15 03:01:48 🎁 Prepared block for proposing at 10 (3 ms) hash: 0x3a1255b3aea1a6b2f04acaa8e2e28808369decd7619068671aed997e52a844b5; parent_hash: 0x613d…e184; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:01:48 🔖 Pre-sealed block for proposal at 10. Hash now 0xb4116b1d4c052e2b0d940d845adfc17dea9714a17a1e0940456507a502f4734e, previously 0x3a1255b3aea1a6b2f04acaa8e2e28808369decd7619068671aed997e52a844b5.    
+2026-06-15 03:01:48 🏆 Imported #10 (0x613d…e184 → 0xb411…734e)    
+2026-06-15 03:01:48 💤 Idle (0 peers), best: #10 (0xb411…734e), finalized #7 (0x0fde…ffaa), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:53 💤 Idle (0 peers), best: #10 (0xb411…734e), finalized #8 (0x52af…115a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:54 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:01:54 🙌 Starting consensus session on top of parent 0xb4116b1d4c052e2b0d940d845adfc17dea9714a17a1e0940456507a502f4734e (#10)    
+2026-06-15 03:01:54 🎁 Prepared block for proposing at 11 (3 ms) hash: 0xbaf231f4eee1c1b33367d142373a355423a16c9e9b048c8f8eea9ada630507ed; parent_hash: 0xb411…734e; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:01:54 🔖 Pre-sealed block for proposal at 11. Hash now 0xf0db4139150931821e47f801bad0da9eab8e204b8ea4fdcb3ef68da2e48d89cf, previously 0xbaf231f4eee1c1b33367d142373a355423a16c9e9b048c8f8eea9ada630507ed.    
+2026-06-15 03:01:54 🏆 Imported #11 (0xb411…734e → 0xf0db…89cf)    
+2026-06-15 03:01:58 💤 Idle (0 peers), best: #11 (0xf0db…89cf), finalized #9 (0x613d…e184), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:00 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:00 🙌 Starting consensus session on top of parent 0xf0db4139150931821e47f801bad0da9eab8e204b8ea4fdcb3ef68da2e48d89cf (#11)    
+2026-06-15 03:02:00 🎁 Prepared block for proposing at 12 (3 ms) hash: 0x3bec861d5eb1c9ba09eede23e10a43aee9963143aff0973dd9df5b1227319e4d; parent_hash: 0xf0db…89cf; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:02:00 🔖 Pre-sealed block for proposal at 12. Hash now 0x5dce9b0e3953f8b854af4d0d8736f3ce6980276ff39be1d61d4a2b872dfd7817, previously 0x3bec861d5eb1c9ba09eede23e10a43aee9963143aff0973dd9df5b1227319e4d.    
+2026-06-15 03:02:00 🏆 Imported #12 (0xf0db…89cf → 0x5dce…7817)    
+2026-06-15 03:02:03 💤 Idle (0 peers), best: #12 (0x5dce…7817), finalized #10 (0xb411…734e), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:06 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:06 🙌 Starting consensus session on top of parent 0x5dce9b0e3953f8b854af4d0d8736f3ce6980276ff39be1d61d4a2b872dfd7817 (#12)    
+2026-06-15 03:02:06 🎁 Prepared block for proposing at 13 (4 ms) hash: 0x2dee44f2e0862989cc62d90ab6c418b3ac898f2aad2fdd6c1e0dccc86a14d75e; parent_hash: 0x5dce…7817; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:02:06 🔖 Pre-sealed block for proposal at 13. Hash now 0x129065f86515ee7ffdd7104c9733d19eafb9a8121c690af35e2cda69e339b294, previously 0x2dee44f2e0862989cc62d90ab6c418b3ac898f2aad2fdd6c1e0dccc86a14d75e.    
+2026-06-15 03:02:06 🏆 Imported #13 (0x5dce…7817 → 0x1290…b294)    
+2026-06-15 03:02:08 💤 Idle (0 peers), best: #13 (0x1290…b294), finalized #11 (0xf0db…89cf), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:12 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:12 🙌 Starting consensus session on top of parent 0x129065f86515ee7ffdd7104c9733d19eafb9a8121c690af35e2cda69e339b294 (#13)    
+2026-06-15 03:02:12 🎁 Prepared block for proposing at 14 (3 ms) hash: 0xcf87f338af7637519f9221eff371fb1be5a2013d8dfb68378e486fbe7dac3804; parent_hash: 0x1290…b294; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:02:12 🔖 Pre-sealed block for proposal at 14. Hash now 0x1eaf30472e32b1a0e7a54e799a2dd4525ffb95abcb83261b8c26a82778f735b8, previously 0xcf87f338af7637519f9221eff371fb1be5a2013d8dfb68378e486fbe7dac3804.    
+2026-06-15 03:02:12 🏆 Imported #14 (0x1290…b294 → 0x1eaf…35b8)    
+2026-06-15 03:02:13 💤 Idle (0 peers), best: #14 (0x1eaf…35b8), finalized #11 (0xf0db…89cf), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:18 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:18 🙌 Starting consensus session on top of parent 0x1eaf30472e32b1a0e7a54e799a2dd4525ffb95abcb83261b8c26a82778f735b8 (#14)    
+2026-06-15 03:02:18 🎁 Prepared block for proposing at 15 (3 ms) hash: 0x28a21009d4d585aa0922253c7ef4df84035ba168475ec56ea5093b7e3ad9f18c; parent_hash: 0x1eaf…35b8; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:02:18 🔖 Pre-sealed block for proposal at 15. Hash now 0x55960ca5423bda36629b88c02c1ca689b84908589b05bb3c0f5ce5e4ee014bf5, previously 0x28a21009d4d585aa0922253c7ef4df84035ba168475ec56ea5093b7e3ad9f18c.    
+2026-06-15 03:02:18 🏆 Imported #15 (0x1eaf…35b8 → 0x5596…4bf5)    
+2026-06-15 03:02:18 💤 Idle (0 peers), best: #15 (0x5596…4bf5), finalized #12 (0x5dce…7817), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:23 💤 Idle (0 peers), best: #15 (0x5596…4bf5), finalized #13 (0x1290…b294), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:24 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:24 🙌 Starting consensus session on top of parent 0x55960ca5423bda36629b88c02c1ca689b84908589b05bb3c0f5ce5e4ee014bf5 (#15)    
+2026-06-15 03:02:24 🎁 Prepared block for proposing at 16 (3 ms) hash: 0xb505b1f5b5c8dd33a5cb11dee15cd58e04749acdfedbf4221870ed8b8c5412a6; parent_hash: 0x5596…4bf5; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:02:24 🔖 Pre-sealed block for proposal at 16. Hash now 0xcda66cbb7c6f04cc92c60b735ffc3be82e7bcd798d08fa164c2da457844eb23b, previously 0xb505b1f5b5c8dd33a5cb11dee15cd58e04749acdfedbf4221870ed8b8c5412a6.    
+2026-06-15 03:02:24 🏆 Imported #16 (0x5596…4bf5 → 0xcda6…b23b)    
+2026-06-15 03:02:28 💤 Idle (0 peers), best: #16 (0xcda6…b23b), finalized #14 (0x1eaf…35b8), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:30 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:30 🙌 Starting consensus session on top of parent 0xcda66cbb7c6f04cc92c60b735ffc3be82e7bcd798d08fa164c2da457844eb23b (#16)    
+2026-06-15 03:02:30 🎁 Prepared block for proposing at 17 (4 ms) hash: 0xa6a8c661a98e4470c3186480d0c05a5f8904f1210c8c49b928f27207f2863d4e; parent_hash: 0xcda6…b23b; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:02:30 🔖 Pre-sealed block for proposal at 17. Hash now 0xeb958c52bf8d3d4376dccdd5968f069f4d0413f7d05bdf18e98eb424ac51b124, previously 0xa6a8c661a98e4470c3186480d0c05a5f8904f1210c8c49b928f27207f2863d4e.    
+2026-06-15 03:02:30 🏆 Imported #17 (0xcda6…b23b → 0xeb95…b124)    
+2026-06-15 03:02:33 💤 Idle (0 peers), best: #17 (0xeb95…b124), finalized #15 (0x5596…4bf5), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:36 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:36 🙌 Starting consensus session on top of parent 0xeb958c52bf8d3d4376dccdd5968f069f4d0413f7d05bdf18e98eb424ac51b124 (#17)    
+2026-06-15 03:02:36 🎁 Prepared block for proposing at 18 (3 ms) hash: 0xa55b2fd5589b7534970fd716740912c92581a28cfdf2e0d498b00b378e6b730b; parent_hash: 0xeb95…b124; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:02:36 🔖 Pre-sealed block for proposal at 18. Hash now 0x0c43ff03ad65ee264b533d11121046e15e06e4b0ae1280e4a37f80e885006325, previously 0xa55b2fd5589b7534970fd716740912c92581a28cfdf2e0d498b00b378e6b730b.    
+2026-06-15 03:02:36 🏆 Imported #18 (0xeb95…b124 → 0x0c43…6325)    
+2026-06-15 03:02:38 💤 Idle (0 peers), best: #18 (0x0c43…6325), finalized #16 (0xcda6…b23b), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:42 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:42 🙌 Starting consensus session on top of parent 0x0c43ff03ad65ee264b533d11121046e15e06e4b0ae1280e4a37f80e885006325 (#18)    
+2026-06-15 03:02:42 🎁 Prepared block for proposing at 19 (4 ms) hash: 0x15adf122086d2b2c10561e7d9ef3126d74a60d8aaa51015d7e028046f74df23e; parent_hash: 0x0c43…6325; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:02:42 🔖 Pre-sealed block for proposal at 19. Hash now 0x6dc68651784bcf292f650f9b60c56f6acc54c7ffed8f70bfcfecc2054303c55c, previously 0x15adf122086d2b2c10561e7d9ef3126d74a60d8aaa51015d7e028046f74df23e.    
+2026-06-15 03:02:42 🏆 Imported #19 (0x0c43…6325 → 0x6dc6…c55c)    
+2026-06-15 03:02:43 💤 Idle (0 peers), best: #19 (0x6dc6…c55c), finalized #17 (0xeb95…b124), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:48 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:48 🙌 Starting consensus session on top of parent 0x6dc68651784bcf292f650f9b60c56f6acc54c7ffed8f70bfcfecc2054303c55c (#19)    
+2026-06-15 03:02:48 🎁 Prepared block for proposing at 20 (5 ms) hash: 0xc4a35ffb0d4bd0085b7dd204ff89f77911dd5202cf988908ff6b1023148b9b02; parent_hash: 0x6dc6…c55c; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:02:48 🔖 Pre-sealed block for proposal at 20. Hash now 0x5880b9e698f4f8020ab08a54d234b397882025f44bbd50a9a19e933890e66a7b, previously 0xc4a35ffb0d4bd0085b7dd204ff89f77911dd5202cf988908ff6b1023148b9b02.    
+2026-06-15 03:02:48 🏆 Imported #20 (0x6dc6…c55c → 0x5880…6a7b)    
+2026-06-15 03:02:48 💤 Idle (0 peers), best: #20 (0x5880…6a7b), finalized #17 (0xeb95…b124), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:53 💤 Idle (0 peers), best: #20 (0x5880…6a7b), finalized #18 (0x0c43…6325), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:54 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:02:54 🙌 Starting consensus session on top of parent 0x5880b9e698f4f8020ab08a54d234b397882025f44bbd50a9a19e933890e66a7b (#20)    
+2026-06-15 03:02:54 🎁 Prepared block for proposing at 21 (6 ms) hash: 0x4a6b3ede15f67b0f321bd00bcb142c40dc9e959629b5695dc0a0dcba7310f48f; parent_hash: 0x5880…6a7b; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:02:54 🔖 Pre-sealed block for proposal at 21. Hash now 0xa933e7855076e70d1f83b0a7da1e9b0cbbe0dbda765950e1bbd8a4fec7343e8e, previously 0x4a6b3ede15f67b0f321bd00bcb142c40dc9e959629b5695dc0a0dcba7310f48f.    
+2026-06-15 03:02:54 🏆 Imported #21 (0x5880…6a7b → 0xa933…3e8e)    
+2026-06-15 03:02:58 💤 Idle (0 peers), best: #21 (0xa933…3e8e), finalized #19 (0x6dc6…c55c), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:00 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:00 🙌 Starting consensus session on top of parent 0xa933e7855076e70d1f83b0a7da1e9b0cbbe0dbda765950e1bbd8a4fec7343e8e (#21)    
+2026-06-15 03:03:00 🎁 Prepared block for proposing at 22 (4 ms) hash: 0x95181bd5b29ec546151a6f72163c36515cc0b09831b15d6c0fa4023ee2e11396; parent_hash: 0xa933…3e8e; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:03:00 🔖 Pre-sealed block for proposal at 22. Hash now 0x6fe54b728fd8f4f3bb9109e82a566b5c32169dd8c0349a6a7508665bd62ef825, previously 0x95181bd5b29ec546151a6f72163c36515cc0b09831b15d6c0fa4023ee2e11396.    
+2026-06-15 03:03:00 🏆 Imported #22 (0xa933…3e8e → 0x6fe5…f825)    
+2026-06-15 03:03:03 💤 Idle (0 peers), best: #22 (0x6fe5…f825), finalized #20 (0x5880…6a7b), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:06 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:06 🙌 Starting consensus session on top of parent 0x6fe54b728fd8f4f3bb9109e82a566b5c32169dd8c0349a6a7508665bd62ef825 (#22)    
+2026-06-15 03:03:06 🎁 Prepared block for proposing at 23 (4 ms) hash: 0x93cb02593e58f6b0b5c845e1cd70139aec0509d0d71f1f10e7e5cdf5fa53e99c; parent_hash: 0x6fe5…f825; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:03:06 🔖 Pre-sealed block for proposal at 23. Hash now 0xf79acf5a8aa1eccd9636833b01c6473fecb33afad3c57e11702d01cf8baacb97, previously 0x93cb02593e58f6b0b5c845e1cd70139aec0509d0d71f1f10e7e5cdf5fa53e99c.    
+2026-06-15 03:03:06 🏆 Imported #23 (0x6fe5…f825 → 0xf79a…cb97)    
+2026-06-15 03:03:08 💤 Idle (0 peers), best: #23 (0xf79a…cb97), finalized #21 (0xa933…3e8e), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:12 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:12 🙌 Starting consensus session on top of parent 0xf79acf5a8aa1eccd9636833b01c6473fecb33afad3c57e11702d01cf8baacb97 (#23)    
+2026-06-15 03:03:12 🎁 Prepared block for proposing at 24 (4 ms) hash: 0x8657852bc515a1ea79dd1d43da3c47765a595aabdae433a6f340505e5caec28b; parent_hash: 0xf79a…cb97; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:03:12 🔖 Pre-sealed block for proposal at 24. Hash now 0x0b2f33b991349c2847f8e825b32bfb0ceff23494cb8d9b18ecfe659680ec1526, previously 0x8657852bc515a1ea79dd1d43da3c47765a595aabdae433a6f340505e5caec28b.    
+2026-06-15 03:03:12 🏆 Imported #24 (0xf79a…cb97 → 0x0b2f…1526)    
+2026-06-15 03:03:13 💤 Idle (0 peers), best: #24 (0x0b2f…1526), finalized #21 (0xa933…3e8e), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:18 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:18 🙌 Starting consensus session on top of parent 0x0b2f33b991349c2847f8e825b32bfb0ceff23494cb8d9b18ecfe659680ec1526 (#24)    
+2026-06-15 03:03:18 🎁 Prepared block for proposing at 25 (4 ms) hash: 0x86fafeb6f1153d8874e031355edccd649aac69ded5de6184e486c6b3eaadc8b2; parent_hash: 0x0b2f…1526; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:03:18 🔖 Pre-sealed block for proposal at 25. Hash now 0x3d19c56f0bbe388b97f85fed3963128033efa4fef61c94354e2dc0f3893440dc, previously 0x86fafeb6f1153d8874e031355edccd649aac69ded5de6184e486c6b3eaadc8b2.    
+2026-06-15 03:03:18 🏆 Imported #25 (0x0b2f…1526 → 0x3d19…40dc)    
+2026-06-15 03:03:18 💤 Idle (0 peers), best: #25 (0x3d19…40dc), finalized #22 (0x6fe5…f825), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:23 💤 Idle (0 peers), best: #25 (0x3d19…40dc), finalized #23 (0xf79a…cb97), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:24 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:24 🙌 Starting consensus session on top of parent 0x3d19c56f0bbe388b97f85fed3963128033efa4fef61c94354e2dc0f3893440dc (#25)    
+2026-06-15 03:03:24 🎁 Prepared block for proposing at 26 (5 ms) hash: 0x08d87319603d1d0c0f72f3f9d2b0b4c89f4cc854073c88999d871e887403f1db; parent_hash: 0x3d19…40dc; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:03:24 🔖 Pre-sealed block for proposal at 26. Hash now 0xd11860d8054301cfe8eadc98fd701ca9832cfef4a463f3bd600790223d2d4891, previously 0x08d87319603d1d0c0f72f3f9d2b0b4c89f4cc854073c88999d871e887403f1db.    
+2026-06-15 03:03:24 🏆 Imported #26 (0x3d19…40dc → 0xd118…4891)    
+2026-06-15 03:03:28 💤 Idle (0 peers), best: #26 (0xd118…4891), finalized #24 (0x0b2f…1526), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:30 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:30 🙌 Starting consensus session on top of parent 0xd11860d8054301cfe8eadc98fd701ca9832cfef4a463f3bd600790223d2d4891 (#26)    
+2026-06-15 03:03:30 🎁 Prepared block for proposing at 27 (4 ms) hash: 0x0c72464a572494749787e363c7b9a9a8354dd5e88a2173b1b65c616a4deb521e; parent_hash: 0xd118…4891; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:03:30 🔖 Pre-sealed block for proposal at 27. Hash now 0x547ab630d18ffb7e512369da65ba034b7688842a3e5c18074b49679f176b1531, previously 0x0c72464a572494749787e363c7b9a9a8354dd5e88a2173b1b65c616a4deb521e.    
+2026-06-15 03:03:30 🏆 Imported #27 (0xd118…4891 → 0x547a…1531)    
+2026-06-15 03:03:33 💤 Idle (0 peers), best: #27 (0x547a…1531), finalized #25 (0x3d19…40dc), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:36 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:36 🙌 Starting consensus session on top of parent 0x547ab630d18ffb7e512369da65ba034b7688842a3e5c18074b49679f176b1531 (#27)    
+2026-06-15 03:03:36 🎁 Prepared block for proposing at 28 (4 ms) hash: 0x784374df4c42c3fa3d100ef2444178beea09e65e7faf268776ab450b344850ca; parent_hash: 0x547a…1531; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:03:36 🔖 Pre-sealed block for proposal at 28. Hash now 0x976a6999832933303e89ba67572c36e974d62d770d155b55b7097b5439dabd01, previously 0x784374df4c42c3fa3d100ef2444178beea09e65e7faf268776ab450b344850ca.    
+2026-06-15 03:03:36 🏆 Imported #28 (0x547a…1531 → 0x976a…bd01)    
+2026-06-15 03:03:38 💤 Idle (0 peers), best: #28 (0x976a…bd01), finalized #26 (0xd118…4891), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:42 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:42 🙌 Starting consensus session on top of parent 0x976a6999832933303e89ba67572c36e974d62d770d155b55b7097b5439dabd01 (#28)    
+2026-06-15 03:03:42 🎁 Prepared block for proposing at 29 (6 ms) hash: 0xbdfe49a5ba0bd960fae46ec476fb6c33f178f9660f741d5f5952a187bc73c850; parent_hash: 0x976a…bd01; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:03:42 🔖 Pre-sealed block for proposal at 29. Hash now 0x6846adea7a745b72fea37f7bee4263f7784a9cbfffd11c8f80e577364e671da7, previously 0xbdfe49a5ba0bd960fae46ec476fb6c33f178f9660f741d5f5952a187bc73c850.    
+2026-06-15 03:03:42 🏆 Imported #29 (0x976a…bd01 → 0x6846…1da7)    
+2026-06-15 03:03:43 💤 Idle (0 peers), best: #29 (0x6846…1da7), finalized #27 (0x547a…1531), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:48 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:48 🙌 Starting consensus session on top of parent 0x6846adea7a745b72fea37f7bee4263f7784a9cbfffd11c8f80e577364e671da7 (#29)    
+2026-06-15 03:03:48 🎁 Prepared block for proposing at 30 (4 ms) hash: 0xb20259da34a3e9c9e7cda493383d14aad0b9cb876607f0a3d811a2eb5388851d; parent_hash: 0x6846…1da7; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:03:48 🔖 Pre-sealed block for proposal at 30. Hash now 0x0fd1dcc8ba1a3e695b5705937879f82259341ac385a1488268a42cd5f3b0e091, previously 0xb20259da34a3e9c9e7cda493383d14aad0b9cb876607f0a3d811a2eb5388851d.    
+2026-06-15 03:03:48 🏆 Imported #30 (0x6846…1da7 → 0x0fd1…e091)    
+2026-06-15 03:03:48 💤 Idle (0 peers), best: #30 (0x0fd1…e091), finalized #27 (0x547a…1531), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:53 💤 Idle (0 peers), best: #30 (0x0fd1…e091), finalized #28 (0x976a…bd01), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:54 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:03:54 🙌 Starting consensus session on top of parent 0x0fd1dcc8ba1a3e695b5705937879f82259341ac385a1488268a42cd5f3b0e091 (#30)    
+2026-06-15 03:03:54 🎁 Prepared block for proposing at 31 (4 ms) hash: 0x9ca43a5cdd9062480f20f551c6514d114d94df6c4fb482fa37cf37f453fd1955; parent_hash: 0x0fd1…e091; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:03:54 🔖 Pre-sealed block for proposal at 31. Hash now 0x4cd742de8cf8c5b71c3cd4ac12d728867f6038732a6c6b17ddd917eac133958b, previously 0x9ca43a5cdd9062480f20f551c6514d114d94df6c4fb482fa37cf37f453fd1955.    
+2026-06-15 03:03:54 🏆 Imported #31 (0x0fd1…e091 → 0x4cd7…958b)    
+2026-06-15 03:03:58 💤 Idle (0 peers), best: #31 (0x4cd7…958b), finalized #29 (0x6846…1da7), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:00 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:04:00 🙌 Starting consensus session on top of parent 0x4cd742de8cf8c5b71c3cd4ac12d728867f6038732a6c6b17ddd917eac133958b (#31)    
+2026-06-15 03:04:00 🎁 Prepared block for proposing at 32 (4 ms) hash: 0x4d5e34671de4f601399c890c550f02647239f9c20670cc60b6f979f2d8f977df; parent_hash: 0x4cd7…958b; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:04:00 🔖 Pre-sealed block for proposal at 32. Hash now 0xf3472e2ca7dcba69472da63b284498aa8927f9891e26320dc75bafe2ce06c4dc, previously 0x4d5e34671de4f601399c890c550f02647239f9c20670cc60b6f979f2d8f977df.    
+2026-06-15 03:04:00 🏆 Imported #32 (0x4cd7…958b → 0xf347…c4dc)    
+2026-06-15 03:04:03 💤 Idle (0 peers), best: #32 (0xf347…c4dc), finalized #30 (0x0fd1…e091), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:06 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:04:06 🙌 Starting consensus session on top of parent 0xf3472e2ca7dcba69472da63b284498aa8927f9891e26320dc75bafe2ce06c4dc (#32)    
+2026-06-15 03:04:06 Post dispatch weight is greater than pre dispatch weight. Pre dispatch weight may underestimating the actual weight. Greater post dispatch weight components are ignored.
+					Pre dispatch weight: Weight { ref_time: 124225354000, proof_size: 75626 },
+					Post dispatch weight: Weight { ref_time: 2000392749000, proof_size: 18446744073709551615 }    
+2026-06-15 03:04:06 Post dispatch weight is greater than pre dispatch weight. Pre dispatch weight may underestimating the actual weight. Greater post dispatch weight components are ignored.
+					Pre dispatch weight: Weight { ref_time: 124225354000, proof_size: 75626 },
+					Post dispatch weight: Weight { ref_time: 2000392749000, proof_size: 18446744073709551615 }    
+2026-06-15 03:04:06 Post dispatch weight is greater than pre dispatch weight. Pre dispatch weight may underestimating the actual weight. Greater post dispatch weight components are ignored.
+					Pre dispatch weight: Weight { ref_time: 124225354000, proof_size: 75626 },
+					Post dispatch weight: Weight { ref_time: 2000392749000, proof_size: 18446744073709551615 }    
+2026-06-15 03:04:06 🎁 Prepared block for proposing at 33 (54 ms) hash: 0xf9491eb2b28e7bf400d21b36004eb805b094b0c3d94f2e0304a9c5abcb4b905f; parent_hash: 0xf347…c4dc; end: NoMoreTransactions; extrinsics_count: 4    
+2026-06-15 03:04:06 🔖 Pre-sealed block for proposal at 33. Hash now 0xb0898e0217c290868c289e3f146ccb9121e8698ef8bae801356e3a7588ff440c, previously 0xf9491eb2b28e7bf400d21b36004eb805b094b0c3d94f2e0304a9c5abcb4b905f.    
+2026-06-15 03:04:06 🏆 Imported #33 (0xf347…c4dc → 0xb089…440c)    
+2026-06-15 03:04:08 💤 Idle (0 peers), best: #33 (0xb089…440c), finalized #31 (0x4cd7…958b), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:12 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:04:12 🙌 Starting consensus session on top of parent 0xb0898e0217c290868c289e3f146ccb9121e8698ef8bae801356e3a7588ff440c (#33)    
+2026-06-15 03:04:12 🚚 Pallet "SessionCommitteeManagement" VersionedMigration migration 0->1 can be removed; on-chain is already at StorageVersion(1).    
+2026-06-15 03:04:12 construct_seed_pools_to_target_tx: locked 0->16799999999126012 (+16799999999126012), treasury_night 0->1200000000000000 (+1200000000000000)    
+2026-06-15 03:04:12 System transaction not individually labeled for metrics; bucketing as 'other_system_transaction': SeedPoolsFromReserve { to_locked: 16799999999126012, to_treasury: 1200000000000000 }    
+2026-06-15 03:04:12 ⚙️  Processing SystemTx SeedPoolsFromReserve { to_locked: 16799999999126012, to_treasury: 1200000000000000 }    
+2026-06-15 03:04:12 [privileged] seed pools from reserve to_locked=16799999999126012 to_treasury=1200000000000000 reserve_before=23000000000000000 locked_before=0
+2026-06-15 03:04:12 SeedPreviewLockedPool: applied SeedPoolsFromReserve gap to target (tx [168, 214, 146, 221, 0, 170, 34, 138, 186, 208, 23, 80, 0, 100, 92, 233, 112, 137, 118, 216, 213, 135, 131, 182, 8, 145, 62, 51, 244, 255, 11, 97])    
+2026-06-15 03:04:12 ⚠️ Aura declares internal migrations (which *might* execute). On-chain `StorageVersion(0)` vs in-code storage version `NoStorageVersionSet`    
+2026-06-15 03:04:12 ⚠️ Midnight declares internal migrations (which *might* execute). On-chain `StorageVersion(1)` vs in-code storage version `StorageVersion(1)`    
+2026-06-15 03:04:12 ⚠️ MultiBlockMigrations declares internal migrations (which *might* execute). On-chain `StorageVersion(0)` vs in-code storage version `StorageVersion(0)`    
+2026-06-15 03:04:12 🎁 Prepared block for proposing at 34 (5 ms) hash: 0xb8e1e416e8b29a560ae46993261e52b686c6f3b4e1bdcf527cf62a58228ef5f0; parent_hash: 0xb089…440c; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:04:12 🔖 Pre-sealed block for proposal at 34. Hash now 0x2045d6793adfc5dfcaa6ccb889d90f0dd4b510758f8bf9a2ffe020459d1a2421, previously 0xb8e1e416e8b29a560ae46993261e52b686c6f3b4e1bdcf527cf62a58228ef5f0.    
+2026-06-15 03:04:12 🏆 Imported #34 (0xb089…440c → 0x2045…2421)    
+2026-06-15 03:04:13 💤 Idle (0 peers), best: #34 (0x2045…2421), finalized #31 (0x4cd7…958b), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:18 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:04:18 🙌 Starting consensus session on top of parent 0x2045d6793adfc5dfcaa6ccb889d90f0dd4b510758f8bf9a2ffe020459d1a2421 (#34)    
+2026-06-15 03:04:18 🎁 Prepared block for proposing at 35 (4 ms) hash: 0x99313818d86fb36f42cdd8026d7c0ecdbcf14e480dd404486f467d33b45a5062; parent_hash: 0x2045…2421; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:04:18 🔖 Pre-sealed block for proposal at 35. Hash now 0xa39cf266708689ee0a6ac93575a13538bd18933b900bb1e554e52cd168f83ca8, previously 0x99313818d86fb36f42cdd8026d7c0ecdbcf14e480dd404486f467d33b45a5062.    
+2026-06-15 03:04:18 🏆 Imported #35 (0x2045…2421 → 0xa39c…3ca8)    
+2026-06-15 03:04:18 💤 Idle (0 peers), best: #35 (0xa39c…3ca8), finalized #32 (0xf347…c4dc), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:23 💤 Idle (0 peers), best: #35 (0xa39c…3ca8), finalized #33 (0xb089…440c), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:24 💤 Skipping token bridge transfer observation. Pallet not configured.    
+2026-06-15 03:04:24 🙌 Starting consensus session on top of parent 0xa39cf266708689ee0a6ac93575a13538bd18933b900bb1e554e52cd168f83ca8 (#35)    
+2026-06-15 03:04:24 🎁 Prepared block for proposing at 36 (2 ms) hash: 0x774eeeee98de4ef54601b6bd702b9c434d41906d8576b382e9a73cea9009be86; parent_hash: 0xa39c…3ca8; end: NoMoreTransactions; extrinsics_count: 3    
+2026-06-15 03:04:24 🔖 Pre-sealed block for proposal at 36. Hash now 0xbc424f701a278f357242e679c4e5b09f922a1e6df2e52a0c4fc831db694242bd, previously 0x774eeeee98de4ef54601b6bd702b9c434d41906d8576b382e9a73cea9009be86.    
+2026-06-15 03:04:24 🏆 Imported #36 (0xa39c…3ca8 → 0xbc42…42bd)    
+2026-06-15 03:04:28 💤 Idle (0 peers), best: #36 (0xbc42…42bd), finalized #34 (0x2045…2421), ⬇ 0 ⬆ 0    

@@ -1,0 +1,19 @@
+codeHash   = 0xaf037d155ffd17f2c18874b84cb6592745c07ec764bb41e611fd0ea43d54df6a
+motionHash = 0x7ec062978b51199fe727c13a0145abe68b9d7c8f4b907872c9822d976f0b83c1
+motion present in storage: true
+weightBound = {"refTime":1000000000,"proofSize":1000000}
+
+--- motionClose(motionHash, weightBound) ---
+motionClose inBlock 0xf3472e2ca7dcba69472da63b284498aa8927f9891e26320dc75bafe2ce06c4dc
+  evt: system.UpgradeAuthorized
+  evt: federatedAuthority.MotionDispatched
+  evt: federatedAuthority.MotionRemoved
+  evt: system.ExtrinsicSuccess
+
+--- applyAuthorizedUpgrade(wasm) ---
+2026-06-14 20:04:06        API/INIT: Runtime version updated to spec=1000001, tx=3
+apply inBlock 0xb0898e0217c290868c289e3f146ccb9121e8698ef8bae801356e3a7588ff440c => system.CodeUpdated: true
+  evt: system.CodeUpdated
+  evt: system.ExtrinsicSuccess
+
+DONE

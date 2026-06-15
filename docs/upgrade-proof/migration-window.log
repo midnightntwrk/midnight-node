@@ -1,0 +1,82 @@
+2026-06-15 03:00:54 🏆 Imported #1 (0x4fe1…6414 → 0xe702…347a)    
+2026-06-15 03:00:58 💤 Idle (0 peers), best: #1 (0xe702…347a), finalized #0 (0x4fe1…6414), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:00 🏆 Imported #2 (0xe702…347a → 0xa0d2…7b36)    
+2026-06-15 03:01:03 💤 Idle (0 peers), best: #2 (0xa0d2…7b36), finalized #0 (0x4fe1…6414), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:06 🏆 Imported #3 (0xa0d2…7b36 → 0xbc55…2e1e)    
+2026-06-15 03:01:08 💤 Idle (0 peers), best: #3 (0xbc55…2e1e), finalized #1 (0xe702…347a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:12 🏆 Imported #4 (0xbc55…2e1e → 0xf84f…d6ad)    
+2026-06-15 03:01:13 💤 Idle (0 peers), best: #4 (0xf84f…d6ad), finalized #1 (0xe702…347a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:18 🏆 Imported #5 (0xf84f…d6ad → 0xbf74…eeaa)    
+2026-06-15 03:01:18 💤 Idle (0 peers), best: #5 (0xbf74…eeaa), finalized #2 (0xa0d2…7b36), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:23 💤 Idle (0 peers), best: #5 (0xbf74…eeaa), finalized #3 (0xbc55…2e1e), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:24 🏆 Imported #6 (0xbf74…eeaa → 0xa326…367a)    
+2026-06-15 03:01:28 💤 Idle (0 peers), best: #6 (0xa326…367a), finalized #4 (0xf84f…d6ad), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:30 🏆 Imported #7 (0xa326…367a → 0x0fde…ffaa)    
+2026-06-15 03:01:33 💤 Idle (0 peers), best: #7 (0x0fde…ffaa), finalized #5 (0xbf74…eeaa), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:36 🏆 Imported #8 (0x0fde…ffaa → 0x52af…115a)    
+2026-06-15 03:01:38 💤 Idle (0 peers), best: #8 (0x52af…115a), finalized #6 (0xa326…367a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:42 🏆 Imported #9 (0x52af…115a → 0x613d…e184)    
+2026-06-15 03:01:43 💤 Idle (0 peers), best: #9 (0x613d…e184), finalized #6 (0xa326…367a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:48 🏆 Imported #10 (0x613d…e184 → 0xb411…734e)    
+2026-06-15 03:01:48 💤 Idle (0 peers), best: #10 (0xb411…734e), finalized #7 (0x0fde…ffaa), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:53 💤 Idle (0 peers), best: #10 (0xb411…734e), finalized #8 (0x52af…115a), ⬇ 0 ⬆ 0    
+2026-06-15 03:01:54 🏆 Imported #11 (0xb411…734e → 0xf0db…89cf)    
+2026-06-15 03:01:58 💤 Idle (0 peers), best: #11 (0xf0db…89cf), finalized #9 (0x613d…e184), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:00 🏆 Imported #12 (0xf0db…89cf → 0x5dce…7817)    
+2026-06-15 03:02:03 💤 Idle (0 peers), best: #12 (0x5dce…7817), finalized #10 (0xb411…734e), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:06 🏆 Imported #13 (0x5dce…7817 → 0x1290…b294)    
+2026-06-15 03:02:08 💤 Idle (0 peers), best: #13 (0x1290…b294), finalized #11 (0xf0db…89cf), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:12 🏆 Imported #14 (0x1290…b294 → 0x1eaf…35b8)    
+2026-06-15 03:02:13 💤 Idle (0 peers), best: #14 (0x1eaf…35b8), finalized #11 (0xf0db…89cf), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:18 🏆 Imported #15 (0x1eaf…35b8 → 0x5596…4bf5)    
+2026-06-15 03:02:18 💤 Idle (0 peers), best: #15 (0x5596…4bf5), finalized #12 (0x5dce…7817), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:23 💤 Idle (0 peers), best: #15 (0x5596…4bf5), finalized #13 (0x1290…b294), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:24 🏆 Imported #16 (0x5596…4bf5 → 0xcda6…b23b)    
+2026-06-15 03:02:28 💤 Idle (0 peers), best: #16 (0xcda6…b23b), finalized #14 (0x1eaf…35b8), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:30 🏆 Imported #17 (0xcda6…b23b → 0xeb95…b124)    
+2026-06-15 03:02:33 💤 Idle (0 peers), best: #17 (0xeb95…b124), finalized #15 (0x5596…4bf5), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:36 🏆 Imported #18 (0xeb95…b124 → 0x0c43…6325)    
+2026-06-15 03:02:38 💤 Idle (0 peers), best: #18 (0x0c43…6325), finalized #16 (0xcda6…b23b), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:42 🏆 Imported #19 (0x0c43…6325 → 0x6dc6…c55c)    
+2026-06-15 03:02:43 💤 Idle (0 peers), best: #19 (0x6dc6…c55c), finalized #17 (0xeb95…b124), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:48 🏆 Imported #20 (0x6dc6…c55c → 0x5880…6a7b)    
+2026-06-15 03:02:48 💤 Idle (0 peers), best: #20 (0x5880…6a7b), finalized #17 (0xeb95…b124), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:53 💤 Idle (0 peers), best: #20 (0x5880…6a7b), finalized #18 (0x0c43…6325), ⬇ 0 ⬆ 0    
+2026-06-15 03:02:54 🏆 Imported #21 (0x5880…6a7b → 0xa933…3e8e)    
+2026-06-15 03:02:58 💤 Idle (0 peers), best: #21 (0xa933…3e8e), finalized #19 (0x6dc6…c55c), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:00 🏆 Imported #22 (0xa933…3e8e → 0x6fe5…f825)    
+2026-06-15 03:03:03 💤 Idle (0 peers), best: #22 (0x6fe5…f825), finalized #20 (0x5880…6a7b), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:06 🏆 Imported #23 (0x6fe5…f825 → 0xf79a…cb97)    
+2026-06-15 03:03:08 💤 Idle (0 peers), best: #23 (0xf79a…cb97), finalized #21 (0xa933…3e8e), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:12 🏆 Imported #24 (0xf79a…cb97 → 0x0b2f…1526)    
+2026-06-15 03:03:13 💤 Idle (0 peers), best: #24 (0x0b2f…1526), finalized #21 (0xa933…3e8e), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:18 🏆 Imported #25 (0x0b2f…1526 → 0x3d19…40dc)    
+2026-06-15 03:03:18 💤 Idle (0 peers), best: #25 (0x3d19…40dc), finalized #22 (0x6fe5…f825), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:23 💤 Idle (0 peers), best: #25 (0x3d19…40dc), finalized #23 (0xf79a…cb97), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:24 🏆 Imported #26 (0x3d19…40dc → 0xd118…4891)    
+2026-06-15 03:03:28 💤 Idle (0 peers), best: #26 (0xd118…4891), finalized #24 (0x0b2f…1526), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:30 🏆 Imported #27 (0xd118…4891 → 0x547a…1531)    
+2026-06-15 03:03:33 💤 Idle (0 peers), best: #27 (0x547a…1531), finalized #25 (0x3d19…40dc), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:36 🏆 Imported #28 (0x547a…1531 → 0x976a…bd01)    
+2026-06-15 03:03:38 💤 Idle (0 peers), best: #28 (0x976a…bd01), finalized #26 (0xd118…4891), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:42 🏆 Imported #29 (0x976a…bd01 → 0x6846…1da7)    
+2026-06-15 03:03:43 💤 Idle (0 peers), best: #29 (0x6846…1da7), finalized #27 (0x547a…1531), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:48 🏆 Imported #30 (0x6846…1da7 → 0x0fd1…e091)    
+2026-06-15 03:03:48 💤 Idle (0 peers), best: #30 (0x0fd1…e091), finalized #27 (0x547a…1531), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:53 💤 Idle (0 peers), best: #30 (0x0fd1…e091), finalized #28 (0x976a…bd01), ⬇ 0 ⬆ 0    
+2026-06-15 03:03:54 🏆 Imported #31 (0x0fd1…e091 → 0x4cd7…958b)    
+2026-06-15 03:03:58 💤 Idle (0 peers), best: #31 (0x4cd7…958b), finalized #29 (0x6846…1da7), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:00 🏆 Imported #32 (0x4cd7…958b → 0xf347…c4dc)    
+2026-06-15 03:04:03 💤 Idle (0 peers), best: #32 (0xf347…c4dc), finalized #30 (0x0fd1…e091), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:06 🏆 Imported #33 (0xf347…c4dc → 0xb089…440c)    
+2026-06-15 03:04:08 💤 Idle (0 peers), best: #33 (0xb089…440c), finalized #31 (0x4cd7…958b), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:12 construct_seed_pools_to_target_tx: locked 0->16799999999126012 (+16799999999126012), treasury_night 0->1200000000000000 (+1200000000000000)    
+2026-06-15 03:04:12 [privileged] seed pools from reserve to_locked=16799999999126012 to_treasury=1200000000000000 reserve_before=23000000000000000 locked_before=0
+2026-06-15 03:04:12 SeedPreviewLockedPool: applied SeedPoolsFromReserve gap to target (tx [168, 214, 146, 221, 0, 170, 34, 138, 186, 208, 23, 80, 0, 100, 92, 233, 112, 137, 118, 216, 213, 135, 131, 182, 8, 145, 62, 51, 244, 255, 11, 97])    
+2026-06-15 03:04:12 🏆 Imported #34 (0xb089…440c → 0x2045…2421)    
+2026-06-15 03:04:13 💤 Idle (0 peers), best: #34 (0x2045…2421), finalized #31 (0x4cd7…958b), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:18 🏆 Imported #35 (0x2045…2421 → 0xa39c…3ca8)    
+2026-06-15 03:04:18 💤 Idle (0 peers), best: #35 (0xa39c…3ca8), finalized #32 (0xf347…c4dc), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:23 💤 Idle (0 peers), best: #35 (0xa39c…3ca8), finalized #33 (0xb089…440c), ⬇ 0 ⬆ 0    
+2026-06-15 03:04:24 🏆 Imported #36 (0xa39c…3ca8 → 0xbc42…42bd)    
+2026-06-15 03:04:28 💤 Idle (0 peers), best: #36 (0xbc42…42bd), finalized #34 (0x2045…2421), ⬇ 0 ⬆ 0    
