@@ -14,7 +14,7 @@ A practical guide for SDETs working on `midnight-node`.
 - A **Substrate-based** blockchain that operates as a **Cardano Partner Chain**.
 - Privacy-preserving: uses **zero-knowledge proofs** for shielded transactions.
 - Consensus: **AURA** (6 s block time) + **GRANDPA** (finality) + **BEEFY** (bridge security).
-- Talks to Cardano (mainchain) through the **partner-chains** framework and **db-sync** / **ogmios**.
+- Reads from Cardano (mainchain) via **db-sync** through the **partner-chains** follower — the node consumes Cardano data but never writes back.
 
 ### 1.2 Layout (the parts you'll touch most)
 
@@ -36,7 +36,7 @@ A practical guide for SDETs working on `midnight-node`.
 
 ```
        External                       Midnight node (one binary)
-   ─────────────────       ──────────────────────────────────────────
+   ─────────────────       ──────────────────────────────────────────────────────
 
    Tests / Toolkit ── 9944 (WS) ──►  RPC server
    (subxt, polkadot.js)                   │
@@ -45,22 +45,24 @@ A practical guide for SDETs working on `midnight-node`.
    Peer nodes      ── 30333     ──►  Tx pool / sync
                                           │
                                           ▼
-                                     Block author + importer
-                                     (AURA · GRANDPA · BEEFY)
-                                          │
-                                          ▼  executes each block against
-                                     ╔════════════════════════════════╗
-                                     ║   Runtime  (WASM, on-chain)    ║
-   Cardano         ── db-sync ──►    ║     • pallet-midnight          ║
-   (Preview /      ── ogmios  ──►    ║     • cnight-observation       ║
-    Preprod /                        ║     • federated-authority      ║
-    Mainnet)     Cardano follower    ║     • throttle, version, …     ║
-                 submits inherents ─►║                                ║
-                                     ╚════════════════════════════════╝
-                                          │
-                                          ▼
-                                     Storage (RocksDB) + events
+   Cardano    ── db-sync ──►  Cardano follower ── inherents ──►  Block author + importer
+   (Preview /                 (in-node service)                  (AURA · GRANDPA · BEEFY)
+    Preprod /                                                           │
+    Mainnet)                                                            ▼  executes each block against
+                                                                  ╔════════════════════════════════╗
+                                                                  ║   Runtime  (WASM, on-chain)    ║
+                                                                  ║     • pallet-midnight          ║
+                                                                  ║     • cnight-observation       ║
+                                                                  ║     • federated-authority      ║
+                                                                  ║     • throttle, version, …     ║
+                                                                  ╚════════════════════════════════╝
+                                                                        │
+                                                                        ▼
+                                                                  Storage (RocksDB) + events
 ```
+
+> **Note on ogmios.** The node itself doesn't use ogmios — it follows Cardano via db-sync only.
+> Ogmios is used by the **toolkit / cNIGHT-observation tests** to drive Cardano (see §3).
 
 Three things to take away from the diagram:
 
@@ -69,7 +71,7 @@ Three things to take away from the diagram:
    the piece a governance upgrade swaps; the surrounding Rust is the piece an
    `image-upgrade` swaps.
 2. **Three ways data gets in.** RPC (extrinsics from tests/wallets), P2P (blocks
-   from peers), and the Cardano follower (db-sync/ogmios → inherents). The first
+   from peers), and the Cardano follower (db-sync → follower → inherents). The first
    two land in the tx pool; the third is added by the block author itself.
 3. **Where tests plug in.** The whole e2e suite talks to the leftmost arrow (RPC,
    WS, port 9944 — or 9933 inside local-env). The cNIGHT observation tests
@@ -87,6 +89,11 @@ Three things to take away from the diagram:
   by the node. Bug fix → new WASM via governance, no operator action.
   *Example:* throttle pallet got a `MaxTxs` per-account cap + `AccountUsage` storage
   migration (#1060).
+- **Backward compatibility.** The node *hosts* the runtime, so it must be able to
+  execute **every past runtime version** — a re-syncing node re-executes historical
+  blocks against whatever runtime was on-chain at the time. Dropping support for an
+  old runtime breaks re-sync and finality verification, so node releases keep older
+  WASM execution paths alive.
 
 **Pallet** — a chunk of runtime logic with its own storage, callable functions,
 events, and errors. The runtime is just a list of pallets bolted together.
