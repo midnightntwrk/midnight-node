@@ -86,8 +86,8 @@ mod tests {
 		t_token,
 		tx_generator::{
 			builder::{
-				BatchSingleTxArgs, ClaimRewardsArgs, CoinSelectionStrategy, ContractCall,
-				ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
+				BatchSingleTxArgs, ClaimKindArg, ClaimRewardsArgs, CoinSelectionStrategy,
+				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
 			},
 			source::FetchCacheConfig,
 		},
@@ -161,7 +161,8 @@ mod tests {
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
 		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 		rng_seed:None,
-		amount: 500_000
+		amount: 500_000,
+		claim_kind: ClaimKindArg::Reward
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"claim-rewards-tx"
