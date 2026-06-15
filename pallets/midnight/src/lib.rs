@@ -612,6 +612,11 @@ pub mod pallet {
 			LedgerApi::get_ledger_state_root(&state_key)
 		}
 
+		pub fn night_pools() -> Result<(u128, u128, u128), LedgerApiError> {
+			let state_key = StateKey::<T>::get();
+			LedgerApi::get_night_pools(&state_key)
+		}
+
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
 			Self::get_transaction_cost(tx)

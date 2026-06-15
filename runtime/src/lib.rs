@@ -281,7 +281,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 001_000_000,
+	spec_version: 001_000_001, // bumped from 001_000_000 to enact SeedPreviewLockedPool on governance upgrade
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 3,
@@ -376,6 +376,8 @@ impl frame_system::Config for Runtime {
 	type SingleBlockMigrations = (
 		// Needed if chain is upgradeing from before PC 1.6
 		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
+		// One-shot empty-locked-pool correction (Preview #1674) — self-targeting, no-ops elsewhere.
+		migrations::SeedPreviewLockedPool,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -1230,6 +1232,9 @@ impl_runtime_apis! {
 		}
 		fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_ledger_state_root()
+		}
+		fn night_pools() -> Result<(u128, u128, u128), LedgerApiError> {
+			Midnight::night_pools()
 		}
 	}
 

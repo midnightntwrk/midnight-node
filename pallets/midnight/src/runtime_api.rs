@@ -18,7 +18,7 @@ use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use scale_info::prelude::string::String;
 
 sp_api::decl_runtime_apis! {
-	#[api_version(5)]
+	#[api_version(6)]
 	pub trait MidnightRuntimeApi {
 		#[changed_in(2)]
 		fn get_contract_state(contract_address: Vec<u8>) -> Vec<u8>;
@@ -40,5 +40,7 @@ sp_api::decl_runtime_apis! {
 		fn get_transaction_cost(transaction_bytes: Vec<u8>) -> Result<GasCost, LedgerApiError>;
 		fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError>;
 		fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError>;
+		/// Live NIGHT pools `(locked_pool, reserve_pool, treasury[NIGHT])` in STARS.
+		fn night_pools() -> Result<(u128, u128, u128), LedgerApiError>;
 	}
 }

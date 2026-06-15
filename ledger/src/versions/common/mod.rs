@@ -753,7 +753,10 @@ where
 		state.get_parameters()
 	}
 
-	fn get_ledger(api: &api::Api, state_key: &[u8]) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
+	pub(crate) fn get_ledger(
+		api: &api::Api,
+		state_key: &[u8],
+	) -> Result<Sp<Ledger<D>, D>, LedgerApiError> {
 		let key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
 		default_storage().arena.get_lazy(&key).map_err(|e| {
 			log::error!(target: LOG_TARGET, "Error loading Ledger State: {e:?}");
@@ -1086,14 +1089,20 @@ fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiE
 		SystemTransaction::PayFromTreasuryUnshielded { .. } => Ok("pay_from_treasury_unshielded"),
 		SystemTransaction::DistributeReserve(_) => Ok("distribute_reserve"),
 		SystemTransaction::CNightGeneratesDustUpdate { .. } => Ok("cnight_generates_dust_update"),
+		// This function is a Prometheus metrics labeler, NOT an authorization gate: governance
+		// gating lives in `is_governance_allowed_system_tx`, and per-tx validity (guards, supply
+		// invariant) is enforced by the ledger's own `apply_system_tx`. Returning `Err` for any
+		// variant not enumerated above therefore *bricks the apply path* for otherwise-valid
+		// privileged transactions. That is exactly what rejected the ledger-8-only
+		// `SeedPoolsFromReserve` (the empty-locked-pool correction) with a misleading
+		// `LedgerApiError`. Bucket unrecognised variants under a generic label and let the ledger
+		// be the authority on whether the tx applies.
 		other => {
-			log::error!(
+			log::warn!(
 				target: LOG_TARGET,
-				"Unsupported system transaction type: {other:?}"
+				"System transaction not individually labeled for metrics; bucketing as 'other_system_transaction': {other:?}"
 			);
-			Err(LedgerApiError::Transaction(types::TransactionError::SystemTransaction(
-				types::SystemTransactionError::UnknownError,
-			)))
+			Ok("other_system_transaction")
 		},
 	}
 }

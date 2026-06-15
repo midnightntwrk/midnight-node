@@ -261,6 +261,33 @@ pub trait Ledger8Bridge {
 		Bridge::<Signature, Database>::construct_distribute_treasury_system_tx(amount)
 	}
 
+	/// Build the supply-preserving `reserve -> locked/treasury` correction needed to bring the
+	/// live pools up to `target_locked` / `target_treasury`, returned as a tagged-serialized
+	/// `SystemTransaction::SeedPoolsFromReserve`.
+	///
+	/// Self-targeting by construction: it moves only the *gap* (`target - current`, saturating),
+	/// so it no-ops cleanly on networks already at or above target (returning an empty `Vec`).
+	/// This is the mechanism that makes `SeedPreviewLockedPool` safe to ship to every network —
+	/// only an under-funded network (Preview: locked 0) receives a non-empty move. The
+	/// `SeedPoolsFromReserve` variant exists only in ledger 8, so this is deliberately a
+	/// ledger-8-only host function (it cannot live in the version-shared `common` module).
+	fn construct_seed_pools_to_target_tx(
+		state_key: PassFatPointerAndRead<&[u8]>,
+		target_locked: PassFatPointerAndDecode<u128>,
+		target_treasury: PassFatPointerAndDecode<u128>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		build_seed_pools_to_target_tx(state_key, target_locked, target_treasury)
+	}
+
+	/// Read the live NIGHT pools `(locked_pool, reserve_pool, treasury[NIGHT])` from the ledger
+	/// state. Read-only; supports operational queries and direct verification of pool-rebalance
+	/// migrations (e.g. confirming `SeedPreviewLockedPool` moved Preview's locked pool to target).
+	fn get_night_pools(
+		state_key: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<(u128, u128, u128), LedgerApiError>> {
+		build_night_pools(state_key)
+	}
+
 	/// Ensures the correct ledger storage is initialized for this runtime version.
 	/// Handles rollback: if new version's storage is initialized but we need this version's storage,
 	/// drops new version's storage and initializes normal storage.
@@ -278,4 +305,62 @@ pub trait Ledger8Bridge {
 		Bridge::<Signature, Database>::set_default_storage(*self);
 		true
 	}
+}
+
+/// Host-side body for `Ledger8Bridge::construct_seed_pools_to_target_tx`. Lives here (the
+/// ledger-8-only module) rather than the version-shared `common` module because it references the
+/// `SeedPoolsFromReserve` variant, which exists only in ledger 8.
+#[cfg(feature = "std")]
+fn build_seed_pools_to_target_tx(
+	state_key: &[u8],
+	target_locked: u128,
+	target_treasury: u128,
+) -> Result<Vec<u8>, LedgerApiError> {
+	use crate::ledger_8::api::{self, SystemTransaction};
+	use crate::ledger_8::coin_structure_local::coin::{NIGHT, TokenType};
+
+	let api = api::new();
+	let ledger = Bridge::<Signature, Database>::get_ledger(&api, state_key)?;
+	let current_locked = ledger.state.locked_pool;
+	let current_treasury_night = ledger
+		.state
+		.treasury
+		.get(&TokenType::Unshielded(NIGHT))
+		.copied()
+		.unwrap_or(0);
+
+	// Move only the gap to the target (saturating), so already-healthy networks no-op cleanly.
+	let to_locked = target_locked.saturating_sub(current_locked);
+	let to_treasury = target_treasury.saturating_sub(current_treasury_night);
+	if to_locked == 0 && to_treasury == 0 {
+		log::info!(
+			target: "runtime::ledger",
+			"construct_seed_pools_to_target_tx: pools already at/above target (locked={current_locked}, treasury_night={current_treasury_night}); nothing to do"
+		);
+		return Ok(Vec::new());
+	}
+
+	log::info!(
+		target: "runtime::ledger",
+		"construct_seed_pools_to_target_tx: locked {current_locked}->{target_locked} (+{to_locked}), treasury_night {current_treasury_night}->{target_treasury} (+{to_treasury})"
+	);
+	let system_tx = SystemTransaction::SeedPoolsFromReserve { to_locked, to_treasury };
+	api.tagged_serialize(&system_tx)
+}
+
+/// Host-side body for `Ledger8Bridge::get_night_pools`: read-only `(locked, reserve, treasury[NIGHT])`.
+#[cfg(feature = "std")]
+fn build_night_pools(state_key: &[u8]) -> Result<(u128, u128, u128), LedgerApiError> {
+	use crate::ledger_8::api;
+	use crate::ledger_8::coin_structure_local::coin::{NIGHT, TokenType};
+
+	let api = api::new();
+	let ledger = Bridge::<Signature, Database>::get_ledger(&api, state_key)?;
+	let treasury_night = ledger
+		.state
+		.treasury
+		.get(&TokenType::Unshielded(NIGHT))
+		.copied()
+		.unwrap_or(0);
+	Ok((ledger.state.locked_pool, ledger.state.reserve_pool, treasury_night))
 }
