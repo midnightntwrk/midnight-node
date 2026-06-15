@@ -20,15 +20,19 @@
 
 extern crate alloc;
 
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
 #[cfg(test)]
 mod mock;
 mod runtime_api;
 #[cfg(test)]
 mod tests;
+pub mod weights;
 
 use frame_support::pallet_prelude::*;
 pub use pallet::*;
 pub use runtime_api::*;
+pub use weights::WeightInfo;
 
 /// Maximum number of approved mainchain transaction hashes that can be added in a single batch.
 pub const MAX_APPROVALS_PER_BATCH: u32 = 32;
@@ -70,6 +74,9 @@ pub mod pallet {
 
 		/// Origin for governance extrinsic calls.
 		type GovernanceOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+
+		/// Weight information for this pallet's extrinsics.
+		type WeightInfo: crate::weights::WeightInfo;
 	}
 
 	/// Provides access to the minimum bridge transfer amount from the Midnight ledger.
@@ -186,7 +193,7 @@ pub mod pallet {
 		///
 		/// Must be called via governance (e.g. `sudo` or council).
 		#[pallet::call_index(0)]
-		#[pallet::weight(T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::set_subminimal_transfers_config())]
 		pub fn set_subminimal_transfers_config(
 			origin: OriginFor<T>,
 			config: SubminimalTransfersConfig,
@@ -200,7 +207,7 @@ pub mod pallet {
 		///
 		/// Must be called via governance.
 		#[pallet::call_index(1)]
-		#[pallet::weight(T::DbWeight::get().writes(hashes.len() as u64))]
+		#[pallet::weight(<T as Config>::WeightInfo::add_approved_mc_tx_hashes(hashes.len() as u32))]
 		pub fn add_approved_mc_tx_hashes(
 			origin: OriginFor<T>,
 			hashes: BoundedVec<McTxHash, ConstU32<MAX_APPROVALS_PER_BATCH>>,

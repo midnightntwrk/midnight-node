@@ -8114,6 +8114,7 @@ dependencies = [
 name = "midnight-node-toolkit"
 version = "2.0.0"
 dependencies = [
+ "assert_matches",
  "async-channel 2.5.0",
  "async-trait",
  "backoff",
@@ -8456,6 +8457,7 @@ dependencies = [
  "rand 0.10.0",
  "scale-info",
  "serde",
+ "serde_json",
  "sidechain-domain",
  "sp-api",
  "sp-blockchain",
@@ -10044,6 +10046,7 @@ dependencies = [
 name = "pallet-c2m-bridge"
 version = "1.0.0"
 dependencies = [
+ "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
