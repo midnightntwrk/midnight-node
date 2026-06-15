@@ -698,10 +698,18 @@ node-ci-image-single-platform:
           -o /usr/local/lib/docker/cli-plugins/docker-compose && \
         chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-    # COMPACTC_VERSION is baked into the CI image tag below. compactc itself is
-    # built from the `compact/` submodule via the +compactc-bundle target (not
-    # downloaded here anymore).
-    COPY COMPACTC_VERSION .
+    # compactc is built from the `compact/` submodule and exposed via COMPACT_HOME,
+    # when COMPACT_HOME is set, toolkit-js scripts honour this:
+    #`fetch-compactc` skips the download and `run-compactc` uses the # source-built compiler.
+    COPY +compactc-bundle/compact-home /compact-home
+    ENV COMPACT_HOME=/compact-home
+    ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+    # Fail loudly if the pinned submodule's compiler does not match COMPACTC_VERSION
+    # (also the portability check: this is the first run of the bundle outside nix).
+    RUN got="$(/compact-home/compactc --version)" && \
+        test "$got" = "$COMPACTC_VERSION" || \
+        { echo "compactc $got != COMPACTC_VERSION $COMPACTC_VERSION — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
+
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
@@ -709,7 +717,6 @@ node-ci-image-single-platform:
     # SAVE IMAGE under the rust version.
     # Security patches land when the FROM @sha256 digest above is bumped (renovate);
     # a rebuild on the same digest reproduces identical packages by design.
-    ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
     LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
     LABEL org.opencontainers.image.title=node-ci
@@ -783,6 +790,45 @@ compactc-bundle:
         chmod +x /compact-home/compactc
     SAVE ARTIFACT /compact-home
 
+compactc-fetch:
+    ARG VERSION
+    # Note: compactc >=0.30.0 releases are on LFDT-Minokawa/compact (older versions were on midnightntwrk/compact)
+    # Tag format is "v<version>" (not "compactc-v<version>" as on the old repo)
+    ARG COMPACT_REPO=midnightntwrk/compact
+    ARG COMPACT_TAG_PREFIX=compactc-v
+    FROM alpine
+    RUN apk add --no-cache curl unzip
+    RUN set -e && \
+        ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
+        ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip" && \
+        URL="https://github.com/${COMPACT_REPO}/releases/download/${COMPACT_TAG_PREFIX}${VERSION}/${ASSET}" && \
+        mkdir -p /compact-home && \
+        echo "Downloading compactc: ${URL}" && \
+        curl -fsSL "${URL}" -o /tmp/compactc.zip && \
+        unzip /tmp/compactc.zip -d /compact-home && \
+        chmod +x /compact-home/compactc && \
+        rm /tmp/compactc.zip
+    SAVE ARTIFACT /compact-home
+
+# compactc-build-local builds and exports compactc to .compact-home
+compactc-build-local:
+    LOCALLY
+    COPY +compactc-bundle/compact-home .compact-home
+    # Fix path to artifacts from `/compact-home` to the cwd
+    RUN sed -i "s|/compact-home|${PWD}/.compact-home|g" .compact-home/compactc
+
+# compact-fetch-local fetches compactc releases - use arg inheritance to fetch other versions,
+# e.g:
+# earthly +compactc-fetch-local --VERSION=0.30.0-rc.1 --COMPACT_REPO=LFDT-Minokawa/compact --COMPACT_TAG_PREFIX=v
+compactc-fetch-local:
+    LOCALLY
+    COPY +compactc-fetch/compact-home .compact-home
+
+locally-test:
+    LOCALLY
+    RUN echo $PWD
+
 # Prepares Node Toolkit (JS) in time for testing
 toolkit-js-prep:
     FROM +prep-no-copy
@@ -804,17 +850,6 @@ toolkit-js-prep:
     COPY util/toolkit-js toolkit-js
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
-
-    # compactc is built from the `compact/` submodule and exposed via COMPACT_HOME,
-    # so `fetch-compactc` skips the download and `run-compactc` uses the
-    # source-built compiler.
-    COPY +compactc-bundle/compact-home /compact-home
-    ENV COMPACT_HOME=/compact-home
-    # Fail loudly if the pinned submodule's compiler does not match COMPACTC_VERSION
-    # (also the portability check: this is the first run of the bundle outside nix).
-    RUN got="$(/compact-home/compactc --version)" && \
-        test "$got" = "$COMPACTC_VERSION" || \
-        { echo "compactc $got != COMPACTC_VERSION $COMPACTC_VERSION — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
 
     WORKDIR /toolkit-js
     RUN npm ci
@@ -1027,10 +1062,6 @@ build-test-toolkit:
 
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
-    # compactc (from the compact submodule) — contract integration tests compile
-    # contracts at runtime via `run-compactc`, which uses COMPACT_HOME.
-    COPY +compactc-bundle/compact-home /compact-home
-    ENV COMPACT_HOME=/compact-home
 
     # Run Midnight Node Toolkit package tests only (requires toolkit-js)
     COPY scripts/test-toolkit.sh /test-toolkit.sh

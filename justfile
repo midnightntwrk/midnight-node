@@ -1,10 +1,17 @@
 # Justfile for Midnight Node
 # This Justfile is used to define tasks for building, testing, and running the Midnight Node.
 
-# Build compactc from the `compact/` submodule and expose it to toolkit-js via
+# Build or fetch compactc from the `compact/` submodule and expose it to toolkit-js via
 # COMPACT_HOME (run once, and after bumping the submodule).
-compactc:
-  @scripts/build-compactc.sh
+compactc version="" compact_repo="midnightntwrk/compact" compact_tag_prefix="compactc-v":
+  if test -z {{version}}; then \
+      earthly +compactc-build-local; \
+    else \
+      earthly +compactc-fetch-local \
+        --VERSION={{version}} \
+        --COMPACT_REPO={{compact_repo}} \
+        --COMPACT_TAG_PREFIX={{compact_tag_prefix}}; \
+    fi
 
 toolkit-update-ledger-parameters-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-update-ledger-parameters-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
