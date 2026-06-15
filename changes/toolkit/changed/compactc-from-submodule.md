@@ -18,9 +18,8 @@ release commit `b5675ec` instead of the tag.
 
 CI builds compactc from the submodule too: the `+compactc-bundle` Earthly target runs
 `scripts/build-compactc.sh` inside a `nixos/nix` image (IOG cache enabled, sandbox off)
-and emits a self-contained `COMPACT_HOME` bundle consumed by `toolkit-js-prep`, the
-toolkit image, and `build-test-toolkit`. The prebuilt-binary download (and the dead
-`/compactc-bin` CI artifact) are removed. `toolkit-js-prep` asserts the built compiler's
+and emits a self-contained `COMPACT_HOME` bundle consumed by  `+node-ci-image`, the
+toolkit image, and `build-test-toolkit`. The `+node-ci-image` asserts the built compiler's
 version equals `COMPACTC_VERSION`, so a submodule bump without a `COMPACTC_VERSION` bump
 fails loudly.
 
