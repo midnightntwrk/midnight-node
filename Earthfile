@@ -854,29 +854,63 @@ check-rust:
 
     ENV SKIP_WASM_BUILD=1
 
+# feature-unification-inputs is the entire host footprint of the scope step:
+# three text files the scoper reads, all derived from git history (which only
+# exists on the host, not in a container). HEAD^1 is the PR base on a
+# merge-commit checkout; override with --SCOPE_BASE_REF for local runs.
+feature-unification-inputs:
+    LOCALLY
+    ARG SCOPE_BASE_REF=HEAD^1
+    RUN mkdir -p .scope && \
+        git diff --name-only "$SCOPE_BASE_REF" HEAD > .scope/changed.txt && \
+        { git show "$SCOPE_BASE_REF:Cargo.lock" > .scope/base-lock.txt 2>/dev/null || : > .scope/base-lock.txt; } && \
+        { git diff "$SCOPE_BASE_REF" HEAD -- Cargo.toml > .scope/toml-diff.txt 2>/dev/null || : > .scope/toml-diff.txt; }
+    SAVE ARTIFACT .scope/changed.txt changed.txt
+    SAVE ARTIFACT .scope/base-lock.txt base-lock.txt
+    SAVE ARTIFACT .scope/toml-diff.txt toml-diff.txt
+
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching issues where workspace feature unification masks missing dependencies.
 # The partner-chains demo crates are excluded: they are upstream examples, not
 # shipped artifacts, and cost ~5min of the serial check.
+#
+# Scope is computed in-container by scripts/feature-unification-scope.ts (the
+# reverse-dependency closure of the crates the PR diff touches) so the only
+# host work is the git reads in +feature-unification-inputs. An empty scope
+# (nothing compile-relevant changed) skips the check entirely.
 check-feature-unification:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Scope tooling deps (smol-toml) in their own layer so workspace edits don't
+    # reinstall. node + npm are pinned in the CI base image.
+    COPY scripts/package.json scripts/package-lock.json scripts/
+    RUN cd scripts && npm ci --no-audit --no-fund
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
+    COPY scripts/feature-unification-scope.ts scripts/feature-unification-scope.ts
+    COPY +feature-unification-inputs/changed.txt \
+         +feature-unification-inputs/base-lock.txt \
+         +feature-unification-inputs/toml-diff.txt .scope/
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    # Package scope: full workspace by default; PR builds pass the output of
-    # scripts/feature-unification-scope.sh (reverse-dependency closure of the
-    # crates touched by the diff) to skip re-checking unaffected crates.
-    ARG PACKAGES="--workspace --exclude partner-chains-demo-node --exclude partner-chains-demo-runtime"
     # Pinned: an unpinned binstall here can drift from the version baked into
     # the CI base image and change check behaviour between runs.
-    RUN cargo binstall --no-confirm --locked cargo-hack@0.6.45
-    RUN cargo hack check $PACKAGES --no-dev-deps
+    # renovate: datasource=crate packageName=cargo-hack
+    ARG CARGO_HACK_VERSION=0.6.45
+    RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
+    # node is pinned in the CI base image; the scoper reads the git-derived
+    # inputs and emits the `-p` selection (empty => nothing to check).
+    RUN PACKAGES="$(node scripts/feature-unification-scope.ts \
+            .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
+        if [ -z "$PACKAGES" ]; then \
+            echo "feature-unification: nothing affected — skipping"; exit 0; \
+        fi && \
+        echo "feature-unification scope: $PACKAGES" && \
+        cargo hack check $PACKAGES --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:

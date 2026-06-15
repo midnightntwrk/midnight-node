@@ -14,7 +14,7 @@ on:
       - "**/Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
-      - "scripts/feature-unification-scope.sh"
+      - "scripts/feature-unification-scope.ts"
       - ".github/workflows/feature-unification.yml"
 
 # no top level default permissions for security reasons
@@ -42,27 +42,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      # Only check the reverse-dependency closure of the crates the PR diff
-      # touches (see scripts/feature-unification-scope.sh).
-      - id: scope
-        if: steps.guard.outputs.hit != 'true'
-        env:
-          # Skip the rust-toolchain.toml pin: the runner's preinstalled
-          # stable is plenty for `cargo metadata` and saves a 1.95 download.
-          RUSTUP_TOOLCHAIN: stable
-        run: |
-          # Self-test the scoper, but only when this PR changes it.
-          if git diff --name-only HEAD^1 HEAD | grep -qx "scripts/feature-unification-scope.sh"; then
-            ./scripts/feature-unification-scope.sh --self-test
-          fi
-          packages=$(git diff --name-only HEAD^1 HEAD | ./scripts/feature-unification-scope.sh)
-          echo "scope: ${packages:-<nothing to check>}"
-          echo "packages=$packages" >> "$GITHUB_OUTPUT"
-
       # No GHCR login: the build chain only pulls the public
       # midnightntwrk/midnight-node-ci image from docker.io.
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        if: steps.guard.outputs.hit != 'true' && steps.scope.outputs.packages != ''
+        if: steps.guard.outputs.hit != 'true'
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
@@ -70,15 +53,17 @@ jobs:
 
       # Uncomment if disk space again becomes an issue.
       # - name: Free disk space
-      #   if: steps.guard.outputs.hit != 'true' && steps.scope.outputs.packages != ''
+      #   if: steps.guard.outputs.hit != 'true'
       #   run: scripts/free-disk-space.sh
 
+      # Scope is computed inside the earthly target now (the
+      # +feature-unification-inputs LOCALLY target does the only git work, then
+      # scripts/feature-unification-scope.ts attributes the diff in-container).
+      # An empty scope skips the cargo-hack check from within the target.
       - name: Run feature unification check
-        if: steps.guard.outputs.hit != 'true' && steps.scope.outputs.packages != ''
-        env:
-          PACKAGES: ${{ steps.scope.outputs.packages }}
+        if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earthly --ci +check-feature-unification --PACKAGES="$PACKAGES"
+          . ./.envrc && earthly --ci +check-feature-unification
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

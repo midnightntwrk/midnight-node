@@ -1,0 +1,10 @@
+{
+  "name": "midnight-node-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Repo CI/dev scripts (TypeScript, run directly via node type-stripping).",
+  "dependencies": {
+    "smol-toml": "^1.6.1"
+  }
+}
