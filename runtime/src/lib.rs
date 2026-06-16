@@ -75,6 +75,8 @@ use sp_consensus_beefy::{
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_partner_chains_bridge::{BridgeDataCheckpoint, MainChainScripts as BridgeMainChainScripts};
+#[cfg(feature = "runtime-benchmarks")]
+use sp_partner_chains_bridge::{BridgeTransferV1, TransferRecipient};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
@@ -905,9 +907,50 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type Recipient = BridgeRecipient;
 	type TransferHandler = C2MBridge;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
-	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_partner_chains_bridge::WeightInfo<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
+	type BenchmarkHelper = MidnightBridgeBenchmarkHelper;
+}
+
+/// Registers a `LedgerStorageExt` on the current externalities (via a host fn)
+/// so the `C2MBridge` transfer handler can resolve `LedgerApi` calls during benchmark dispatch.
+#[cfg(feature = "runtime-benchmarks")]
+pub struct MidnightBridgeBenchmarkHelper;
+
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_partner_chains_bridge::benchmarking::BenchmarkHelper<Runtime>
+	for MidnightBridgeBenchmarkHelper
+{
+	fn transfers(
+		n: u32,
+	) -> BoundedVec<BridgeTransferV1<BridgeRecipient>, BridgeMaxTransfersPerBlock> {
+		midnight_node_ledger::types::active_ledger_bridge::register_benchmark_ledger_storage();
+		let _ = midnight_node_ledger::types::active_ledger_bridge::ensure_storage_initialized();
+		let transfers = (1..=n)
+			.map(|i| {
+				let bytes = i.to_le_bytes();
+				let mut buf = [0u8; 32];
+				buf[0..4].copy_from_slice(&bytes[0..4]);
+
+				let mc_tx_hash = sidechain_domain::McTxHash(buf);
+
+				pallet_c2m_bridge::ApprovedMcTxHashes::<Runtime>::insert(mc_tx_hash, ());
+
+				// UserTransfer is the most expensive (and common) case, so it is used for the benchmark
+				let recipient = TransferRecipient::Address {
+					recipient: BridgeRecipient(BoundedVec::truncate_from(buf.to_vec())),
+				};
+
+				BridgeTransferV1 { amount: 1000, mc_tx_hash, recipient }
+			})
+			.collect();
+
+		BoundedVec::truncate_from(transfers)
+	}
+
+	fn data_checkpoint() -> sp_partner_chains_bridge::BridgeDataCheckpoint {
+		<() as pallet_partner_chains_bridge::benchmarking::BenchmarkHelper<Runtime>>::data_checkpoint()
+	}
 }
 
 /// Provider for the minimum bridge transfer amount from the Midnight ledger.
@@ -924,6 +967,7 @@ impl pallet_c2m_bridge::Config for Runtime {
 	/// Provides access to the ledger's `c_to_m_bridge_min_amount` parameter.
 	type MinBridgeAmountProvider = MidnightMinBridgeAmount;
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
+	type WeightInfo = weights::pallet_c2m_bridge::WeightInfo<Runtime>;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -1201,6 +1245,8 @@ mod benches {
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
 		[pallet_system_parameters, SystemParameters]
 		[pallet_cnight_observation, CNightObservation]
+		[pallet_c2m_bridge, C2MBridge]
+		[pallet_partner_chains_bridge, Bridge]
 	);
 }
 

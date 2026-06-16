@@ -86,8 +86,8 @@ mod tests {
 		t_token,
 		tx_generator::{
 			builder::{
-				BatchSingleTxArgs, ClaimRewardsArgs, CoinSelectionStrategy, ContractCall,
-				ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
+				BatchSingleTxArgs, ClaimKindArg, ClaimRewardsArgs, CoinSelectionStrategy,
+				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
 			},
 			source::FetchCacheConfig,
 		},
@@ -133,10 +133,11 @@ mod tests {
 	// TODO: There should be expected transactions here, not just an OK state.
 	// We also need to define reaonsable errors
 	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
-		shielded_amount: Some(0),
-		shielded_token_type: t_token(),
-		unshielded_amount: Some(100),
-		unshielded_token_type: NIGHT,
+		outputs: vec![],
+		shielded_amount: vec![0],
+		shielded_token_type: vec![t_token()],
+		unshielded_amount: vec![100],
+		unshielded_token_type: vec![NIGHT],
 		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
 			.parse().unwrap(),
 		funding_seed: None,
@@ -160,7 +161,8 @@ mod tests {
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
 		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 		rng_seed:None,
-		amount: 500_000
+		amount: 500_000,
+		claim_kind: ClaimKindArg::Reward
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"claim-rewards-tx"

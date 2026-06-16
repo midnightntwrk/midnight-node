@@ -254,8 +254,9 @@ same dispatch as production.
    The variant's `src/index.ts` rarely needs changes; it just re-exports the commands assembled from its pinned
    `compact-js-command`.
 
-2. **Register the version** in `src/compactc-resolver.ts`: add it to `SUPPORTED_COMPACTC_VERSIONS`, and update
-   `DEFAULT_COMPACTC_VERSION` if it should become the default.
+2. **Register the version** in `src/compactc-resolver.ts`: add it to `SUPPORTED_COMPACTC_VERSIONS`. To make it
+   the pinned default, bump the root `COMPACTC_VERSION` file (and the `compact/` submodule) instead — there is no
+   default baked into the resolver.
 
 3. **Depend on the variant** from the root `package.json` `dependencies`
    (`"@midnight-ntwrk/node-toolkit-compact-<major>.<minor>": "^0.1.0"`). The `compact-*` workspaces glob picks it

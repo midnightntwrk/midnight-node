@@ -24,13 +24,14 @@ use ledger_storage_local::db::DB;
 use midnight_serialize_local::{Deserializable, Tagged};
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
-use coin_structure_local::coin::{UnshieldedTokenType, UserAddress};
+use coin_structure_local::coin::{NIGHT, UnshieldedTokenType, UserAddress};
 use ledger_storage_local::arena::Sp;
 use mn_ledger_local::{
 	error::MalformedTransaction,
 	structure::{
-		ClaimRewardsTransaction, ContractAction, IntentHash, ProofKind, ProofMarker, SignatureKind,
-		StandardTransaction, Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
+		ClaimRewardsTransaction, ContractAction, IntentHash, OutputInstructionUnshielded,
+		ProofKind, ProofMarker, SignatureKind, StandardTransaction, Transaction as Tx, Utxo,
+		UtxoOutput, UtxoSpend,
 	},
 };
 use std::borrow::Borrow;
@@ -312,7 +313,7 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 			}
 		};
 
-		let utxos = match &self.0 {
+		match &self.0 {
 			Tx::Standard(tx) => {
 				for segment_id in tx.segments() {
 					// Guaranteed phase
@@ -365,12 +366,30 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 						update_inputs(segment_id, inputs_info);
 					}
 				}
-				Some(UnshieldedUtxos { outputs, inputs })
+				UnshieldedUtxos { outputs, inputs }
 			},
-			_ => None,
-		};
-
-		utxos.unwrap_or_default()
+			Tx::ClaimRewards(claim) => {
+				let address = UserAddress::from(claim.owner.clone());
+				let address_bytes = address.0.0;
+				let intent_hash = OutputInstructionUnshielded {
+					amount: claim.value,
+					target_address: address,
+					nonce: claim.nonce,
+				}
+				.mk_intent_hash(NIGHT);
+				update_outputs(
+					0,
+					vec![UtxoInfo {
+						address: address_bytes,
+						token_type: NIGHT.0.0,
+						intent_hash: intent_hash.0.0,
+						value: claim.value,
+						output_no: 0,
+					}],
+				);
+				UnshieldedUtxos { outputs, inputs }
+			},
+		}
 	}
 
 	pub(crate) fn utxos_info_from_output(
@@ -579,6 +598,49 @@ mod tests {
 		assert_eq!(info.token_type, type_bytes);
 		assert_eq!(info.intent_hash, intent_hash);
 		assert_eq!(info.value, value);
+		assert_eq!(info.output_no, 0);
+	}
+
+	#[test]
+	fn unshielded_utxos_reports_claim_rewards_minted_utxo() {
+		use coin_structure_local::coin::Nonce;
+		use mn_ledger_local::structure::ClaimKind;
+
+		let value: u128 = 4_242;
+		let nonce = Nonce(HashOutput([7u8; PERSISTENT_HASH_BYTES]));
+
+		let claim = ClaimRewardsTransaction::<(), DefaultDB> {
+			network_id: "undeployed".to_string(),
+			value,
+			owner: Default::default(),
+			nonce,
+			signature: (),
+			kind: ClaimKind::CardanoBridge,
+		};
+
+		let address = UserAddress::from(claim.owner.clone());
+		let address_bytes = address.0.0;
+		let expected_intent_hash =
+			OutputInstructionUnshielded { amount: value, target_address: address, nonce }
+				.mk_intent_hash(NIGHT)
+				.0
+				.0;
+
+		let tx = Transaction::<(), DefaultDB>(Tx::ClaimRewards(claim));
+		let utxos = tx.unshielded_utxos();
+
+		assert!(utxos.inputs().is_empty(), "a claim spends no UTXO inputs");
+		let outputs = utxos.outputs();
+		assert_eq!(outputs.len(), 1, "a claim mints exactly one UTXO");
+
+		let info = &outputs[0];
+		assert_eq!(info.address, address_bytes, "minted UTXO owner must be the claimant");
+		assert_eq!(info.token_type, NIGHT.0.0, "minted UTXO must be NIGHT");
+		assert_eq!(
+			info.intent_hash, expected_intent_hash,
+			"intent hash must match claim_unshielded's"
+		);
+		assert_eq!(info.value, value, "minted UTXO value must equal the claimed amount");
 		assert_eq!(info.output_no, 0);
 	}
 }
