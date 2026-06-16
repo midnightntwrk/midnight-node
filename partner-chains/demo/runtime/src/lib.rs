@@ -308,6 +308,8 @@ impl pallet_session::Config for Runtime {
 	type SessionManager = PalletSessionSupport<Runtime>;
 	type SessionHandler = <SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = SessionKeys;
+	type Currency = Balances;
+	type KeyDeposit = ConstU128<0>;
 	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
 
 	type WeightInfo = pallet_session::weights::SubstrateWeight<Runtime>;

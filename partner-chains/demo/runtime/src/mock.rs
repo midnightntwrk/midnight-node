@@ -148,6 +148,8 @@ impl pallet_session::Config for Test {
 	type SessionManager = PalletSessionSupport<Test>;
 	type SessionHandler = <TestSessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = TestSessionKeys;
+	type Currency = Balances;
+	type KeyDeposit = ConstU128<0>;
 	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
 	type WeightInfo = pallet_session::weights::SubstrateWeight<Test>;
 }

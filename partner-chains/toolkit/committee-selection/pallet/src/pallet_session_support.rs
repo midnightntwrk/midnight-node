@@ -39,7 +39,8 @@ where
 
 	/// Rotates the committee in [crate::Pallet] and plans this new committee as upcoming validator-set.
 	/// Updates the session index of [`pallet_session`].
-	// Instead of Some((*).expect) we could just use (*). However, we rather panic in presence of important programming errors.
+	// Panic is intentional: session must not end without a defined committee — that's a programming error.
+	#[allow(clippy::unwrap_in_result)]
 	fn new_session(new_index: SessionIndex) -> Option<Vec<T::AccountId>> {
 		info!("PalletSessionSupport: new_session {new_index}");
 		let new_committee = crate::Pallet::<T>::rotate_committee_to_next_epoch().expect(
