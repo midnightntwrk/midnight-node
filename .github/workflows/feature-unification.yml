@@ -56,10 +56,20 @@ jobs:
       #   if: steps.guard.outputs.hit != 'true'
       #   run: scripts/free-disk-space.sh
 
-      # Scope is computed inside the earthly target now (the
-      # +feature-unification-inputs LOCALLY target does the only git work, then
-      # scripts/feature-unification-scope.ts attributes the diff in-container).
-      # An empty scope skips the cargo-hack check from within the target.
+      # The only git-coupled work: git history exists on the host, and `--ci`
+      # (strict) forbids LOCALLY inside the build, so the scope inputs are
+      # produced here and COPYed into the container. HEAD^1 is the PR base on a
+      # merge-commit checkout (fetch-depth: 2 above).
+      - name: Collect scope inputs
+        if: steps.guard.outputs.hit != 'true'
+        run: |
+          mkdir -p .scope
+          git diff --name-only HEAD^1 HEAD > .scope/changed.txt
+          git show HEAD^1:Cargo.lock > .scope/base-lock.txt 2>/dev/null || : > .scope/base-lock.txt
+          git diff HEAD^1 HEAD -- Cargo.toml > .scope/toml-diff.txt 2>/dev/null || : > .scope/toml-diff.txt
+
+      # scripts/feature-unification-scope.ts attributes the diff to crates
+      # in-container and skips the cargo-hack check when nothing is affected.
       - name: Run feature unification check
         if: steps.guard.outputs.hit != 'true'
         run: |

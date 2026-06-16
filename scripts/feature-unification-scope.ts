@@ -8,9 +8,9 @@
 //   <base-lock>      file: the base commit's Cargo.lock (empty if none)
 //   <toml-diff>      file: `git diff` of the root Cargo.toml (empty if untouched)
 //
-// All git access lives in the Earthfile's `feature-unification-inputs` LOCALLY
-// target, which produces these three files; this script is pure computation
-// over them plus `cargo metadata` and the head `Cargo.lock` (both read from the
+// All git access happens before the build (the CI workflow, or a few git
+// commands locally) and lands in .scope/; this script is pure computation over
+// those files plus `cargo metadata` and the head `Cargo.lock` (read from the
 // current workspace, i.e. inside the check container). Prints the package
 // selection args for `cargo hack check --no-dev-deps`:
 //
@@ -61,7 +61,10 @@ const IGNORE = [
 	/\.md$/,
 	/^LICENSE/,
 	/^Earthfile$/,
+	/^\.gitignore$/,
+	// the scoper's own files: changing them can't change whether crates compile
 	/^scripts\/feature-unification-scope\.ts$/,
+	/^scripts\/package(-lock)?\.json$/,
 ];
 
 interface LockPkg {

@@ -854,30 +854,21 @@ check-rust:
 
     ENV SKIP_WASM_BUILD=1
 
-# feature-unification-inputs is the entire host footprint of the scope step:
-# three text files the scoper reads, all derived from git history (which only
-# exists on the host, not in a container). HEAD^1 is the PR base on a
-# merge-commit checkout; override with --SCOPE_BASE_REF for local runs.
-feature-unification-inputs:
-    LOCALLY
-    ARG SCOPE_BASE_REF=HEAD^1
-    RUN mkdir -p .scope && \
-        git diff --name-only "$SCOPE_BASE_REF" HEAD > .scope/changed.txt && \
-        { git show "$SCOPE_BASE_REF:Cargo.lock" > .scope/base-lock.txt 2>/dev/null || : > .scope/base-lock.txt; } && \
-        { git diff "$SCOPE_BASE_REF" HEAD -- Cargo.toml > .scope/toml-diff.txt 2>/dev/null || : > .scope/toml-diff.txt; }
-    SAVE ARTIFACT .scope/changed.txt changed.txt
-    SAVE ARTIFACT .scope/base-lock.txt base-lock.txt
-    SAVE ARTIFACT .scope/toml-diff.txt toml-diff.txt
-
 # check-feature-unification verifies each crate compiles without dev-deps,
 # catching issues where workspace feature unification masks missing dependencies.
 # The partner-chains demo crates are excluded: they are upstream examples, not
 # shipped artifacts, and cost ~5min of the serial check.
 #
 # Scope is computed in-container by scripts/feature-unification-scope.ts (the
-# reverse-dependency closure of the crates the PR diff touches) so the only
-# host work is the git reads in +feature-unification-inputs. An empty scope
-# (nothing compile-relevant changed) skips the check entirely.
+# reverse-dependency closure of the crates the PR diff touches). It reads three
+# git-derived files from .scope/, which must exist before the build -- git
+# history only lives on the host, and `--ci` (strict) forbids LOCALLY. The CI
+# workflow writes them; for a local run, from the repo root:
+#   mkdir -p .scope
+#   git diff --name-only HEAD^1 HEAD   > .scope/changed.txt
+#   git show HEAD^1:Cargo.lock         > .scope/base-lock.txt
+#   git diff HEAD^1 HEAD -- Cargo.toml > .scope/toml-diff.txt
+# An empty scope (nothing compile-relevant changed) skips the check entirely.
 check-feature-unification:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
@@ -891,9 +882,8 @@ check-feature-unification:
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
     COPY scripts/feature-unification-scope.ts scripts/feature-unification-scope.ts
-    COPY +feature-unification-inputs/changed.txt \
-         +feature-unification-inputs/base-lock.txt \
-         +feature-unification-inputs/toml-diff.txt .scope/
+    # git-derived scope inputs, produced on the host before the build (see above)
+    COPY .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt .scope/
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
