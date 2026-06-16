@@ -883,6 +883,27 @@ toolkit-js-prep:
 # toolkit-js-prep-local saves Node Toolkit (JS) build artifacts
 toolkit-js-prep-local:
     FROM +toolkit-js-prep
+
+    # The inherited /compact-home wrapper hardcodes the in-image absolute path
+    # (/compact-home/...), which breaks once the artifact is exported to the
+    # host. Replace it with a relocatable wrapper that resolves its own
+    # directory at runtime. Single-quoted printf args keep $(...) / $thisdir /
+    # $PATH / $@ literal so they're evaluated when compactc runs, not now.
+    # Handles both bundle layouts: nix (bin/ + lib/) and fetched zip (flat).
+    RUN printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'thisdir="$(cd "$(dirname "$0")" && pwd -P)"' \
+        'if [ -x "$thisdir/bin/compactc.bin" ]; then' \
+        '  export PATH="$thisdir/lib:$PATH"' \
+        '  exec "$thisdir/bin/compactc.bin" "$@"' \
+        'else' \
+        '  export PATH="$thisdir:$PATH"' \
+        '  exec "$thisdir/compactc.bin" "$@"' \
+        'fi' \
+        > /compact-home/compactc && \
+        chmod +x /compact-home/compactc
+
+    SAVE ARTIFACT /compact-home AS LOCAL ./.compact-home
     SAVE ARTIFACT /toolkit-js/node_modules AS LOCAL ./util/toolkit-js/node_modules
     SAVE ARTIFACT /toolkit-js/dist AS LOCAL ./util/toolkit-js/dist
     SAVE ARTIFACT /toolkit-js/test/contract/managed/counter AS LOCAL ./util/toolkit-js/test/contract/managed/counter
