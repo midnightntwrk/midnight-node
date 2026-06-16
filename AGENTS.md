@@ -101,12 +101,24 @@ the locally built compiler instead of downloading the prebuilt binary. Re-run
 `just compactc` after bumping the submodule. First build compiles `zkir` from source
 unless you have nix `trusted-users` access to the IOG cache (`cache.iog.io`).
 
-CI builds compactc from the same submodule: the `+compactc-bundle` Earthly target runs
-`scripts/build-compactc.sh` inside a `nixos/nix` image (IOG cache enabled) and emits a
-`COMPACT_HOME` bundle that `toolkit-js-prep`, the toolkit image, and `build-test-toolkit`
-consume. The prebuilt-binary download is gone. `COMPACTC_VERSION` must match the pinned
-submodule's compiler version — `toolkit-js-prep` asserts this and fails the build if they
-diverge, so bump both together.
+`COMPACTC_VERSION` selects which compiler CI uses. Its format is
+`<compiler-version>-<12-char-tree-hash>` (e.g. `0.31.0-6587676a9bb2`), produced by
+`scripts/compact-submodule-version.sh` from the pinned `compact/` submodule (the compiler
+version comes from the submodule's `flake.nix`, the hash is `git rev-parse HEAD^{tree} | cut -c1-12`).
+Regenerate it after bumping the submodule: `scripts/compact-submodule-version.sh > COMPACTC_VERSION`.
+
+`+node-ci-image` decides build-vs-fetch by comparing `COMPACTC_VERSION` against the live
+submodule version (computed `LOCALLY`, since the COPY'd submodule has no `.git`):
+- **Match** (the tree-hash suffix agrees) → build from source via `+compactc-bundle`, which runs
+  `scripts/build-compactc.sh` inside a `nixos/nix` image (IOG cache enabled) and emits a
+  self-contained `COMPACT_HOME` bundle.
+- **No match** — i.e. `COMPACTC_VERSION` is a plain released version with no tree-hash suffix —
+  → fetch that version's prebuilt binary via `+compactc-fetch`.
+
+Either way the image then asserts the resulting `compactc --version` equals the
+`COMPACTC_VERSION` prefix (the compiler reports the bare semver, no hash), so a submodule bump
+without regenerating `COMPACTC_VERSION` fails loudly. The full hashed `COMPACTC_VERSION` is also
+used in the CI/toolkit image tags.
 
 **Debugging ledger issues:** Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.
 

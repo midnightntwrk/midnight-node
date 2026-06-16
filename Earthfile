@@ -596,6 +596,13 @@ node-ci-image:
     BUILD --platform=linux/amd64 +node-ci-image-single-platform
 
 node-ci-image-single-platform:
+    LOCALLY
+    # The compact submodule's version embeds its git tree hash, computable only
+    # where the submodule's .git exists — i.e. on the host, not inside the Earthly
+    # build context (the COPY'd submodule has no .git). Compute both here so the
+    # build-vs-fetch decision below can compare them.
+    LET COMPACT_SUBMODULE_VERSION = "$(scripts/compact-submodule-version.sh)"
+    LET COMPACTC_VERSION = "$(cat COMPACTC_VERSION)"
     ARG NATIVEARCH
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
@@ -698,18 +705,25 @@ node-ci-image-single-platform:
           -o /usr/local/lib/docker/cli-plugins/docker-compose && \
         chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-    # compactc is built from the `compact/` submodule and exposed via COMPACT_HOME,
-    # when COMPACT_HOME is set, toolkit-js scripts honour this:
-    #`fetch-compactc` skips the download and `run-compactc` uses the # source-built compiler.
-    COPY +compactc-bundle/compact-home /compact-home
+    # compactc is exposed via COMPACT_HOME; when it is set, toolkit-js scripts honour
+    # it: `fetch-compactc` skips the download and `run-compactc` uses this compiler.
+    # When COMPACTC_VERSION matches the pinned submodule (version + tree hash), build
+    # compactc from source; otherwise COMPACTC_VERSION names a released version (no
+    # tree-hash suffix) and we fetch the prebuilt binary for it.
+    IF [ "$COMPACT_SUBMODULE_VERSION" = "$COMPACTC_VERSION" ]
+        COPY +compactc-bundle/compact-home /compact-home
+    ELSE
+        COPY (+compactc-fetch --VERSION="$COMPACTC_VERSION")/compact-home /compact-home
+    END
     ENV COMPACT_HOME=/compact-home
-    COPY COMPACTC_VERSION .
-    ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
-    # Fail loudly if the pinned submodule's compiler does not match COMPACTC_VERSION
-    # (also the portability check: this is the first run of the bundle outside nix).
-    RUN got="$(/compact-home/compactc --version)" && \
-        test "$got" = "$COMPACTC_VERSION" || \
-        { echo "compactc $got != COMPACTC_VERSION $COMPACTC_VERSION — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
+    ENV COMPACTC_VERSION="$COMPACTC_VERSION"
+
+    # Portability + compiler-version check (runs for both source and fetched builds;
+    # also the first run of a source bundle outside nix): compactc --version reports
+    # the bare semver with no tree-hash suffix, so compare against the version prefix.
+    RUN got="$(/compact-home/compactc --version)" && want="${COMPACTC_VERSION%%-*}" && \
+        test "$got" = "$want" || \
+        { echo "compactc $got != COMPACTC_VERSION prefix $want — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
 
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
@@ -735,8 +749,8 @@ prep-no-copy:
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     # If you need to alter the CI image, here is where you can build it locally rather than
     # referring to the pre-built image:
-    # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
+    FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
+    # FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
     # ca-certificates and curl-minimal already present in the CI base image
 
