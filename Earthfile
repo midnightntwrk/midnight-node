@@ -791,8 +791,11 @@ prep:
 # toolchain hidden; the IOG binary cache provides zkir prebuilt so it is not
 # compiled from source.
 compactc-bundle:
-    # TODO: pin to a digest/tag once first green CI confirms it works.
-    FROM nixos/nix:latest
+    # Multi-arch index digest for nixos/nix:2.24.5 (linux/amd64 + linux/arm64).
+    # Pinning the index (not a per-arch manifest) lets +node-ci-image-single-platform
+    # build this target on both amd64 and arm64 CI runners. The arm64 child manifest
+    # is fb53f7a4116b… (unchanged from the previous pin); amd64 is c5ff76297bf9….
+    FROM nixos/nix@sha256:4ad79a0ab633944869a37921f096d35a3f2c7a0275d98b7bfa0cd3cba5a6b96e
     # Append (don't clobber) so the base image's defaults (incl. cache.nixos.org)
     # survive. `extra-` merges onto those defaults. sandbox=false because buildkit/
     # podman containers usually lack the user namespaces nix's sandbox needs.
@@ -821,7 +824,7 @@ compactc-fetch:
     # Note: compactc >=0.30.0 releases are on LFDT-Minokawa/compact (older versions were on midnightntwrk/compact)
     ARG COMPACT_REPO=LFDT-Minokawa/compact
     ARG COMPACT_TAG_PREFIX=compactc-v
-    FROM alpine
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl unzip
     RUN set -e && \
         ARCH=$(uname -m) && \
@@ -1676,7 +1679,7 @@ local-env-e2e:
 
 # compares chain parameters with testnet-02
 chain-params-check:
-    FROM alpine
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl jq
 
     COPY res/testnet-02/testnet-02.json ./
