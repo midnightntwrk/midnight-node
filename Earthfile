@@ -780,7 +780,11 @@ prep:
 # toolchain hidden; the IOG binary cache provides zkir prebuilt so it is not
 # compiled from source.
 compactc-bundle:
-    FROM nixos/nix@sha256:fb53f7a4116b4506d0761ec98cad19c3abea4feb9a9ed4f5dcea3d8400739f14
+    # Multi-arch index digest for nixos/nix:2.24.5 (linux/amd64 + linux/arm64).
+    # Pinning the index (not a per-arch manifest) lets +node-ci-image-single-platform
+    # build this target on both amd64 and arm64 CI runners. The arm64 child manifest
+    # is fb53f7a4116b… (unchanged from the previous pin); amd64 is c5ff76297bf9….
+    FROM nixos/nix@sha256:4ad79a0ab633944869a37921f096d35a3f2c7a0275d98b7bfa0cd3cba5a6b96e
     # Append (don't clobber) so the base image's defaults (incl. cache.nixos.org)
     # survive. `extra-` merges onto those defaults. sandbox=false because buildkit/
     # podman containers usually lack the user namespaces nix's sandbox needs.
