@@ -113,10 +113,15 @@ impl OnRuntimeUpgrade for SeedPreviewLockedPool {
 		Ok(pools.encode())
 	}
 
-	/// S6 — assert the migration's invariants against real state, without committing:
-	///  1. supply is conserved across the three pools (the core correctness guarantee);
-	///  2. locked is either untouched (no-op) or exactly at target — never partial, never overshoot;
-	///  3. movement is monotonic — reserve is the only source, so locked can't fall / reserve can't rise.
+	/// S6 — assert the migration did *exactly* the right thing for this network's pre-state, without
+	/// committing. The expected outcome is fully determined by the live pre-state, so we recompute it
+	/// and assert the post-state matches — rather than the looser "unchanged-or-at-target", which
+	/// would have let a Preview migration that silently failed to move (locked still 0) pass.
+	///  * supply is conserved across the three pools (always);
+	///  * already at/above target  → clean no-op, gate set;
+	///  * under-funded, reserve covers the gap (Preview) → locked **and** treasury reach target,
+	///    reserve drops by exactly the moved amount, gate set;
+	///  * under-funded, reserve short → fail-safe no-op, gate left UNSET (retryable).
 	#[cfg(feature = "try-runtime")]
 	fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
 		let (pre_locked, pre_reserve, pre_treasury): (u128, u128, u128) =
@@ -126,19 +131,52 @@ impl OnRuntimeUpgrade for SeedPreviewLockedPool {
 		let (post_locked, post_reserve, post_treasury) = LedgerApi::get_night_pools(&state_key)
 			.map_err(|_| "SeedPreviewLockedPool::post_upgrade: night_pools read failed")?;
 
+		// Supply is conserved regardless of which branch we took.
 		frame_support::ensure!(
 			pre_locked + pre_reserve + pre_treasury
 				== post_locked + post_reserve + post_treasury,
 			"SeedPreviewLockedPool: pool supply not conserved across the migration"
 		);
-		frame_support::ensure!(
-			post_locked == pre_locked || post_locked == TARGET_LOCKED,
-			"SeedPreviewLockedPool: locked_pool neither unchanged nor exactly at target"
-		);
-		frame_support::ensure!(
-			post_locked >= pre_locked && post_reserve <= pre_reserve,
-			"SeedPreviewLockedPool: non-monotonic pool movement"
-		);
+
+		// Recompute the gap the migration would have moved, from the captured pre-state.
+		let to_locked = TARGET_LOCKED.saturating_sub(pre_locked);
+		let to_treasury = TARGET_TREASURY.saturating_sub(pre_treasury);
+		let total = to_locked.saturating_add(to_treasury);
+		let gate = frame_support::storage::unhashed::get_or_default::<bool>(MIGRATION_DONE_KEY);
+		let unchanged = post_locked == pre_locked
+			&& post_treasury == pre_treasury
+			&& post_reserve == pre_reserve;
+
+		if total == 0 {
+			// Already at/above target (healthy networks): nothing should move, gate set.
+			frame_support::ensure!(unchanged, "SeedPreviewLockedPool: at-target network must no-op");
+			frame_support::ensure!(gate, "SeedPreviewLockedPool: gate must be set after no-op");
+		} else if pre_reserve >= total {
+			// Under-funded but reserve covers the gap (Preview): must reach targets exactly, gate set.
+			frame_support::ensure!(
+				post_locked == pre_locked + to_locked,
+				"SeedPreviewLockedPool: locked did not reach target on a fixable network"
+			);
+			frame_support::ensure!(
+				post_treasury == pre_treasury + to_treasury,
+				"SeedPreviewLockedPool: treasury did not reach target on a fixable network"
+			);
+			frame_support::ensure!(
+				post_reserve == pre_reserve - total,
+				"SeedPreviewLockedPool: reserve did not drop by exactly the moved amount"
+			);
+			frame_support::ensure!(gate, "SeedPreviewLockedPool: gate must be set after a move");
+		} else {
+			// Under-funded and reserve can't cover: fail-safe no-op, gate left unset for retry.
+			frame_support::ensure!(
+				unchanged,
+				"SeedPreviewLockedPool: reserve-short network must be left unchanged"
+			);
+			frame_support::ensure!(
+				!gate,
+				"SeedPreviewLockedPool: gate must remain unset when the move was rejected"
+			);
+		}
 		Ok(())
 	}
 }

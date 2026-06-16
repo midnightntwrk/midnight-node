@@ -628,6 +628,14 @@ pub mod pallet {
 			target_locked: u128,
 			target_treasury: u128,
 		) -> Result<bool, LedgerApiError> {
+			// Guarantee the ledger storage backend is initialized before we read/mutate it.
+			// It is set deterministically at node startup (`init_storage_paritydb` ->
+			// `set_default_storage`, before any block executes), so this is normally an idempotent
+			// no-op. But this helper is driven from a `SingleBlockMigration`, which runs before this
+			// pallet's own `on_runtime_upgrade` re-ensure; calling it here makes the migration's
+			// outcome independent of block/process history (consensus-critical) and also covers a
+			// hypothetical ledger-version-crossing upgrade.
+			LedgerApi::ensure_storage_initialized();
 			let state_key = StateKey::<T>::get();
 			let new_state_root =
 				LedgerApi::seed_pools_to_target(&state_key, target_locked, target_treasury)?;
