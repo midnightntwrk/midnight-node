@@ -780,8 +780,7 @@ prep:
 # toolchain hidden; the IOG binary cache provides zkir prebuilt so it is not
 # compiled from source.
 compactc-bundle:
-    # TODO: pin to a digest/tag once first green CI confirms it works.
-    FROM nixos/nix:latest
+    FROM nixos/nix@sha256:fb53f7a4116b4506d0761ec98cad19c3abea4feb9a9ed4f5dcea3d8400739f14
     # Append (don't clobber) so the base image's defaults (incl. cache.nixos.org)
     # survive. `extra-` merges onto those defaults. sandbox=false because buildkit/
     # podman containers usually lack the user namespaces nix's sandbox needs.
@@ -810,7 +809,7 @@ compactc-fetch:
     # Note: compactc >=0.30.0 releases are on LFDT-Minokawa/compact (older versions were on midnightntwrk/compact)
     ARG COMPACT_REPO=LFDT-Minokawa/compact
     ARG COMPACT_TAG_PREFIX=compactc-v
-    FROM alpine
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl unzip
     RUN set -e && \
         ARCH=$(uname -m) && \
@@ -1631,7 +1630,7 @@ local-env-e2e:
 
 # compares chain parameters with testnet-02
 chain-params-check:
-    FROM alpine
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl jq
 
     COPY res/testnet-02/testnet-02.json ./
