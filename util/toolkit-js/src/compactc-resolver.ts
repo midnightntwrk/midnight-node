@@ -17,20 +17,22 @@ import { sep } from 'node:path';
 /** A regular expression to match module resolution paths in error messages. */
 const ERROR_MODULE_REGEXP = /module '(?<path>.*)'$/;
 
-/** Currently supported `compactc` versions (in `<major>.<minor>` form). Each maps to a sibling
- * `compact-<major>.<minor>/` workspace pinning the matched `@midnight-ntwrk/compact-js` line. */
-export const SUPPORTED_COMPACTC_VERSIONS = ['0.29', '0.30', '0.31'] as const;
+/** Currently supported `compactc` versions (in full `<major>.<minor>.<patch>` form). Each maps to a sibling
+ * `compact-<major>.<minor>.<patch>/` workspace pinning the matched `@midnight-ntwrk/compact-js` line. */
+export const SUPPORTED_COMPACTC_VERSIONS = ['0.29.0', '0.30.0', '0.31.0'] as const;
 
 /**
- * Normalizes a raw `COMPACTC_VERSION` to the supported `<major>.<minor>` form used to select a variant
- * workspace, exiting the process with a helpful message if it is unset or unsupported.
+ * Normalizes a raw `COMPACTC_VERSION` to the supported `<major>.<minor>.<patch>` form used to select a
+ * variant workspace, exiting the process with a helpful message if it is unset or unsupported.
  *
  * There is deliberately no default: the version is pinned by the root `COMPACTC_VERSION` file (which CI and
  * the dev shell's `.envrc` both export), so a missing value means a misconfigured environment rather than a
  * value we should guess — guessing would silently mismatch the `COMPACT_HOME` compiler.
  *
- * Accepts either `<major>.<minor>` or `<major>.<minor>.<patch>` — `compact-js` is patch-stable, so we
- * dispatch on `<major>.<minor>` only.
+ * Dispatch is on the full `<major>.<minor>.<patch>` version: a `compactc` patch can ship a contract format
+ * that expects a different `@midnight-ntwrk/compact-js` patch, so each supported patch has its own variant
+ * workspace. The raw value may carry a trailing build/tree-hash suffix (e.g. `0.31.0-6587676a9bb2`, the form
+ * stored in the root `COMPACTC_VERSION` file); only the leading `<major>.<minor>.<patch>` is matched.
  */
 export const resolveCompactcVersion = (
   rawCompactcVersion: string | undefined = process.env.COMPACTC_VERSION
@@ -42,7 +44,9 @@ export const resolveCompactcVersion = (
     );
     process.exit(1);
   }
-  const compactcVersion = rawCompactcVersion.split('.').slice(0, 2).join('.');
+  // Take the leading `<major>.<minor>.<patch>`, dropping any `-<suffix>` (e.g. the tree-hash in
+  // `0.31.0-6587676a9bb2`) and any extra version components.
+  const compactcVersion = rawCompactcVersion.split('-')[0].split('.').slice(0, 3).join('.');
   if (!(SUPPORTED_COMPACTC_VERSIONS as readonly string[]).includes(compactcVersion)) {
     console.error(
       `Unsupported COMPACTC_VERSION: ${rawCompactcVersion} (expected one of ${SUPPORTED_COMPACTC_VERSIONS.join(', ')})`
@@ -52,7 +56,7 @@ export const resolveCompactcVersion = (
   return compactcVersion;
 };
 
-/** The variant workspace package name for a given supported `<major>.<minor>` version. */
+/** The variant workspace package name for a given supported `<major>.<minor>.<patch>` version. */
 export const toolkitPackageName = (compactcVersion: string): string =>
   `@midnight-ntwrk/node-toolkit-compact-${compactcVersion}`;
 
