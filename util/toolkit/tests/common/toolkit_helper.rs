@@ -166,14 +166,14 @@ impl ToolkitTestHelper {
 						);
 						return false;
 					}
-				}
+				},
 				other => {
 					eprintln!(
 						"Skipping contract integration tests: failed to query {} --version: {other:?}",
 						compactc.display()
 					);
 					return false;
-				}
+				},
 			}
 
 			return true;
