@@ -18,4 +18,5 @@ The reserve and ICS (treasury) pools are seeded with nominal genesis amounts
 dev/devnet networks; faucet wallets are funded from the reserve. (Ledger 9
 requires non-empty pools.)
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1707
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1705
