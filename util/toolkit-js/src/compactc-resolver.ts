@@ -20,18 +20,28 @@ const ERROR_MODULE_REGEXP = /module '(?<path>.*)'$/;
 /** Currently supported `compactc` versions (in `<major>.<minor>` form). Each maps to a sibling
  * `compact-<major>.<minor>/` workspace pinning the matched `@midnight-ntwrk/compact-js` line. */
 export const SUPPORTED_COMPACTC_VERSIONS = ['0.29', '0.30', '0.31'] as const;
-export const DEFAULT_COMPACTC_VERSION = '0.31';
 
 /**
- * Normalizes a raw `COMPACTC_VERSION` (or default) to the supported `<major>.<minor>` form used to select
- * a variant workspace, exiting the process with a helpful message if it isn't supported.
+ * Normalizes a raw `COMPACTC_VERSION` to the supported `<major>.<minor>` form used to select a variant
+ * workspace, exiting the process with a helpful message if it is unset or unsupported.
+ *
+ * There is deliberately no default: the version is pinned by the root `COMPACTC_VERSION` file (which CI and
+ * the dev shell's `.envrc` both export), so a missing value means a misconfigured environment rather than a
+ * value we should guess — guessing would silently mismatch the `COMPACT_HOME` compiler.
  *
  * Accepts either `<major>.<minor>` or `<major>.<minor>.<patch>` — `compact-js` is patch-stable, so we
  * dispatch on `<major>.<minor>` only.
  */
 export const resolveCompactcVersion = (
-  rawCompactcVersion: string = process.env.COMPACTC_VERSION ?? DEFAULT_COMPACTC_VERSION
+  rawCompactcVersion: string | undefined = process.env.COMPACTC_VERSION
 ): string => {
+  if (!rawCompactcVersion) {
+    console.error(
+      `COMPACTC_VERSION is not set (expected one of ${SUPPORTED_COMPACTC_VERSIONS.join(', ')}). ` +
+        'The dev shell exports it from the root COMPACTC_VERSION file; set it explicitly to target another version.'
+    );
+    process.exit(1);
+  }
   const compactcVersion = rawCompactcVersion.split('.').slice(0, 2).join('.');
   if (!(SUPPORTED_COMPACTC_VERSIONS as readonly string[]).includes(compactcVersion)) {
     console.error(

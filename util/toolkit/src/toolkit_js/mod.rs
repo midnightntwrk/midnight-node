@@ -216,6 +216,17 @@ pub enum ToolkitJsError {
 }
 
 impl ToolkitJs {
+	/// `true` if the pinned compactc predates 0.31.0 and therefore needs the
+	/// legacy `--network` flag passed to toolkit-js.
+	///
+	/// The comparison ignores any pre-release suffix on `compactc_version`, otherwise
+	/// semver matches doesn't behave as expected (0.30.0-<some-hash> < 0.31.0 is false!)
+	fn needs_legacy_network_flag(&self) -> bool {
+		let mut version = self.compactc_version.clone();
+		version.pre = semver::Prerelease::EMPTY;
+		semver::VersionReq::parse("<0.31.0").unwrap().matches(&version)
+	}
+
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
 		match cmd {
 			Command::Deploy(args) => self.execute_deploy(args),
@@ -246,8 +257,7 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		#[allow(clippy::unwrap_in_result)]
-		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+		if self.needs_legacy_network_flag() {
 			cmd_args.extend_from_slice(&["--network", &args.network]);
 		}
 
@@ -313,8 +323,7 @@ impl ToolkitJs {
 			"--input-ledger-params",
 			&input_ledger_parameters,
 		];
-		#[allow(clippy::unwrap_in_result)]
-		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+		if self.needs_legacy_network_flag() {
 			cmd_args.extend_from_slice(&["--network", &args.network]);
 		}
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
@@ -362,8 +371,7 @@ impl ToolkitJs {
 			"--output",
 			&output_intent,
 		];
-		#[allow(clippy::unwrap_in_result)]
-		if semver::VersionReq::parse("<0.31.0").unwrap().matches(&self.compactc_version) {
+		if self.needs_legacy_network_flag() {
 			cmd_args.extend_from_slice(&["--network", &args.network]);
 		}
 
