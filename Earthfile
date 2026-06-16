@@ -809,7 +809,7 @@ compactc-fetch:
     ARG VERSION
     # Note: compactc >=0.30.0 releases are on LFDT-Minokawa/compact (older versions were on midnightntwrk/compact)
     # Tag format is "v<version>" (not "compactc-v<version>" as on the old repo)
-    ARG COMPACT_REPO=midnightntwrk/compact
+    ARG COMPACT_REPO=LFDT-Minokawa/compact
     ARG COMPACT_TAG_PREFIX=compactc-v
     FROM alpine
     RUN apk add --no-cache curl unzip
