@@ -127,7 +127,7 @@ subxt:
 build-node-only:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay partner-chains vendored-mn-ledger-8 .
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
     ARG NATIVEARCH
 

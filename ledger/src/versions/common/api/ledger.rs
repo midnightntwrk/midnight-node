@@ -12,10 +12,11 @@
 // limitations under the License.
 
 use super::{
-	base_crypto_local, helpers_local, ledger_storage_local, midnight_serialize_local,
-	mn_ledger_local, transient_crypto_local, zswap_local,
+	base_crypto_local, coin_structure_local, helpers_local, ledger_storage_local,
+	midnight_serialize_local, mn_ledger_local, transient_crypto_local, zswap_local,
 };
 use base_crypto_local::{cost_model::SyntheticCost, time::Timestamp};
+use coin_structure_local::coin::{NIGHT, TokenType};
 use derive_where::derive_where;
 use ledger_storage_local::{
 	self as storage, Storable,
@@ -202,6 +203,56 @@ impl<D: DB> Ledger<D> {
 			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() }))
 	}
 
+	/// Move `to_locked + to_treasury` out of the reserve pool, crediting the locked pool and the
+	/// NIGHT treasury respectively — the exact, supply-preserving database effect needed to
+	/// correct an under-funded locked pool in place (Preview's #1674 condition), without a chain
+	/// reset and without a new ledger `SystemTransaction` variant.
+	///
+	/// This is a plain edit of three already-`pub` `LedgerState` fields rather than a privileged
+	/// transaction, so it requires only the stock `midnight-ledger`. It is safe by construction:
+	///
+	/// * **Supply-preserving** — the move only shuffles value *between* the three pools whose sum
+	///   the ledger's NIGHT invariant tracks, so that sum (and therefore the invariant) is
+	///   unchanged; no other state is touched.
+	/// * **Reserve-guarded** — it refuses (leaving state untouched) when the reserve cannot cover
+	///   the move, mirroring the ledger's own `IllegalReserveDistribution` guard.
+	/// * **Side-effect-free** — `block_fullness` (the per-block weight accumulator, reset each
+	///   block by `post_block_update`) is carried over verbatim.
+	///
+	/// `versions/common` is compiled once per ledger version; only the ledger-8 host fn
+	/// (`seed_pools_to_target`) calls this, so the ledger-7 monomorphization is unused.
+	#[allow(dead_code)]
+	pub(crate) fn seed_pools_from_reserve(
+		sp: Sp<Self, D>,
+		to_locked: u128,
+		to_treasury: u128,
+	) -> Result<Sp<Self, D>, LedgerApiError> {
+		let total = to_locked.saturating_add(to_treasury);
+		if total > sp.state.reserve_pool {
+			log::error!(
+				target: LOG_TARGET,
+				"seed_pools_from_reserve rejected: move {total} (locked {to_locked} + treasury {to_treasury}) exceeds reserve {}",
+				sp.state.reserve_pool
+			);
+			return Err(LedgerApiError::HostApiError);
+		}
+
+		let mut state = sp.state.clone();
+		state.reserve_pool -= total;
+		state.locked_pool = state.locked_pool.saturating_add(to_locked);
+		let night = state
+			.treasury
+			.get(&TokenType::Unshielded(NIGHT))
+			.copied()
+			.unwrap_or(0)
+			.saturating_add(to_treasury);
+		state.treasury = state.treasury.insert(TokenType::Unshielded(NIGHT), night);
+
+		Ok(default_storage::<D>()
+			.arena
+			.alloc(Ledger { state, block_fullness: sp.block_fullness.clone() }))
+	}
+
 	pub(crate) fn get_unclaimed_amount(&self, beneficiary: UserAddress) -> Option<&u128> {
 		self.state.unclaimed_block_rewards.get(&beneficiary)
 	}
@@ -350,6 +401,97 @@ mod tests {
 			state.is_some(),
 			"Contract state not found for address {}",
 			String::from_utf8_lossy(a)
+		);
+	}
+
+	/// `(locked_pool, reserve_pool, treasury[NIGHT])` for a ledger state.
+	fn pools(state: &LedgerState<DefaultDB>) -> (u128, u128, u128) {
+		let treasury_night =
+			state.treasury.get(&TokenType::Unshielded(NIGHT)).copied().unwrap_or(0);
+		(state.locked_pool, state.reserve_pool, treasury_night)
+	}
+
+	/// The reserve → locked/treasury move must apply exactly the requested amounts and conserve the
+	/// summed NIGHT supply across the three pools (the correctness guarantee that lets the migration
+	/// run without a new ledger SystemTransaction).
+	#[test]
+	fn seed_pools_from_reserve_moves_amounts_and_conserves_supply() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let ledger = prepare_ledger();
+		let (l0, r0, t0) = pools(&ledger.state);
+		assert!(r0 > 0, "undeployed genesis should have a non-empty reserve to move from");
+
+		let to_locked = r0 / 2;
+		let to_treasury = r0 / 4;
+		let moved = Ledger::<DefaultDB>::seed_pools_from_reserve(ledger, to_locked, to_treasury)
+			.expect("reserve covers the move");
+		let (l1, r1, t1) = pools(&moved.state);
+
+		assert_eq!(l1, l0 + to_locked, "locked += to_locked");
+		assert_eq!(t1, t0 + to_treasury, "treasury[NIGHT] += to_treasury");
+		assert_eq!(r1, r0 - (to_locked + to_treasury), "reserve -= (to_locked + to_treasury)");
+		assert_eq!(l0 + r0 + t0, l1 + r1 + t1, "three-pool NIGHT supply conserved");
+	}
+
+	/// The reserve guard mirrors the ledger's own `IllegalReserveDistribution`: a move larger than
+	/// the reserve is rejected, never silently saturated.
+	#[test]
+	fn seed_pools_from_reserve_rejects_when_reserve_insufficient() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let ledger = prepare_ledger();
+		let reserve = ledger.state.reserve_pool;
+		let res =
+			Ledger::<DefaultDB>::seed_pools_from_reserve(ledger, reserve.saturating_add(1), 0);
+		assert!(
+			matches!(res, Err(LedgerApiError::HostApiError)),
+			"a move exceeding the reserve must be rejected"
+		);
+	}
+
+	/// Headline equivalence test: on Preview's **real**, shipped genesis (`locked_pool == 0`,
+	/// reserve 23e15 — the #1674 defect), moving the gap to the healthy-testnet targets reproduces
+	/// the *exact* post-state recorded in `docs/upgrade-proof/after-pools.txt` — i.e. the identical
+	/// database effect the removed `SystemTransaction::SeedPoolsFromReserve` produced, now achieved
+	/// against the stock ledger.
+	#[test]
+	fn seed_pools_from_reserve_reaches_preview_target_from_zero_locked() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		const PREVIEW_GENESIS: &[u8] =
+			include_bytes!("../../../../../res/genesis/genesis_state_preview.mn");
+		// Targets must match `runtime/src/migrations.rs`.
+		const TARGET_LOCKED: u128 = 16_799_999_999_126_012;
+		const TARGET_TREASURY: u128 = 1_200_000_000_000_000;
+
+		let state: LedgerState<DefaultDB> =
+			tagged_deserialize(PREVIEW_GENESIS).expect("deserialize preview genesis");
+		let ledger = Sp::new(Ledger::new(state));
+		let (l0, r0, t0) = pools(&ledger.state);
+		assert_eq!(l0, 0, "preview genesis ships with locked_pool == 0 (#1674)");
+
+		// The migration moves only the gap to target.
+		let to_locked = TARGET_LOCKED.saturating_sub(l0);
+		let to_treasury = TARGET_TREASURY.saturating_sub(t0);
+		let moved = Ledger::<DefaultDB>::seed_pools_from_reserve(ledger, to_locked, to_treasury)
+			.expect("preview reserve covers the move");
+		let (l1, r1, t1) = pools(&moved.state);
+
+		assert_eq!(l1, TARGET_LOCKED, "locked reaches target");
+		assert_eq!(t1, TARGET_TREASURY, "treasury[NIGHT] reaches target");
+		assert_eq!(l0 + r0 + t0, l1 + r1 + t1, "supply conserved");
+		// Exact post-state from docs/upgrade-proof/after-pools.txt.
+		assert_eq!(
+			(l1, r1, t1),
+			(16_799_999_999_126_012, 5_000_000_000_873_988, 1_200_000_000_000_000),
+			"exact reproduction of the SeedPoolsFromReserve post-state"
 		);
 	}
 }

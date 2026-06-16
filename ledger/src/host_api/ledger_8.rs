@@ -261,22 +261,26 @@ pub trait Ledger8Bridge {
 		Bridge::<Signature, Database>::construct_distribute_treasury_system_tx(amount)
 	}
 
-	/// Build the supply-preserving `reserve -> locked/treasury` correction needed to bring the
-	/// live pools up to `target_locked` / `target_treasury`, returned as a tagged-serialized
-	/// `SystemTransaction::SeedPoolsFromReserve`.
+	/// Apply, directly to the ledger state, the supply-preserving `reserve -> locked/treasury`
+	/// correction needed to bring the live pools up to `target_locked` / `target_treasury`, and
+	/// return the resulting **state root** (an empty `Vec` means the pools were already at/above
+	/// target, so nothing moved).
 	///
 	/// Self-targeting by construction: it moves only the *gap* (`target - current`, saturating),
-	/// so it no-ops cleanly on networks already at or above target (returning an empty `Vec`).
-	/// This is the mechanism that makes `SeedPreviewLockedPool` safe to ship to every network —
-	/// only an under-funded network (Preview: locked 0) receives a non-empty move. The
-	/// `SeedPoolsFromReserve` variant exists only in ledger 8, so this is deliberately a
-	/// ledger-8-only host function (it cannot live in the version-shared `common` module).
-	fn construct_seed_pools_to_target_tx(
+	/// so it no-ops cleanly on networks already at or above target. This is what makes
+	/// `SeedPreviewLockedPool` safe to ship to every network — only an under-funded network
+	/// (Preview: locked 0) receives a non-empty move.
+	///
+	/// This replaces what would otherwise require a new `SystemTransaction` variant: it produces
+	/// the identical database effect against the **stock** ledger via
+	/// `Ledger::seed_pools_from_reserve`, so the node carries no `midnight-ledger` change. See
+	/// `runtime/src/migrations.rs::SeedPreviewLockedPool`.
+	fn seed_pools_to_target(
 		state_key: PassFatPointerAndRead<&[u8]>,
 		target_locked: PassFatPointerAndDecode<u128>,
 		target_treasury: PassFatPointerAndDecode<u128>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		build_seed_pools_to_target_tx(state_key, target_locked, target_treasury)
+		build_seed_pools_to_target(state_key, target_locked, target_treasury)
 	}
 
 	/// Read the live NIGHT pools `(locked_pool, reserve_pool, treasury[NIGHT])` from the ledger
@@ -307,21 +311,27 @@ pub trait Ledger8Bridge {
 	}
 }
 
-/// Host-side body for `Ledger8Bridge::construct_seed_pools_to_target_tx`. Lives here (the
-/// ledger-8-only module) rather than the version-shared `common` module because it references the
-/// `SeedPoolsFromReserve` variant, which exists only in ledger 8.
+/// Host-side body for `Ledger8Bridge::seed_pools_to_target`.
+///
+/// Reads the live pools, moves only the gap to the target (`target - current`, saturating)
+/// directly into the ledger state via `Ledger::seed_pools_from_reserve`, persists the result, and
+/// returns the new state root. Returns an empty `Vec` when nothing needs to move (already at/above
+/// target). The mutation + persist + re-key flow mirrors `apply_system_transaction`, but performs
+/// the pool move as a plain state edit rather than via a privileged transaction — so no new ledger
+/// `SystemTransaction` variant (and thus no `midnight-ledger` change) is required.
 #[cfg(feature = "std")]
-fn build_seed_pools_to_target_tx(
+fn build_seed_pools_to_target(
 	state_key: &[u8],
 	target_locked: u128,
 	target_treasury: u128,
 ) -> Result<Vec<u8>, LedgerApiError> {
-	use crate::ledger_8::api::{self, SystemTransaction};
+	use crate::ledger_8::api;
 	use crate::ledger_8::coin_structure_local::coin::{NIGHT, TokenType};
 
 	let api = api::new();
 	let ledger = Bridge::<Signature, Database>::get_ledger(&api, state_key)?;
 	let current_locked = ledger.state.locked_pool;
+	let current_reserve = ledger.state.reserve_pool;
 	let current_treasury_night = ledger
 		.state
 		.treasury
@@ -335,17 +345,22 @@ fn build_seed_pools_to_target_tx(
 	if to_locked == 0 && to_treasury == 0 {
 		log::info!(
 			target: "runtime::ledger",
-			"construct_seed_pools_to_target_tx: pools already at/above target (locked={current_locked}, treasury_night={current_treasury_night}); nothing to do"
+			"seed_pools_to_target: pools already at/above target (locked={current_locked}, treasury_night={current_treasury_night}); nothing to do"
 		);
 		return Ok(Vec::new());
 	}
 
 	log::info!(
 		target: "runtime::ledger",
-		"construct_seed_pools_to_target_tx: locked {current_locked}->{target_locked} (+{to_locked}), treasury_night {current_treasury_night}->{target_treasury} (+{to_treasury})"
+		"seed_pools_to_target: locked {current_locked}->{target_locked} (+{to_locked}), treasury_night {current_treasury_night}->{target_treasury} (+{to_treasury}), reserve_before={current_reserve}"
 	);
-	let system_tx = SystemTransaction::SeedPoolsFromReserve { to_locked, to_treasury };
-	api.tagged_serialize(&system_tx)
+
+	// Direct, supply-preserving state edit (reserve-guarded inside `seed_pools_from_reserve`).
+	let mut new_ledger = api::Ledger::seed_pools_from_reserve(ledger, to_locked, to_treasury)?;
+	let state_root = api.tagged_serialize(&new_ledger.as_typed_key())?;
+	// Only persist after the (fallible) re-key succeeded, matching `apply_system_transaction`.
+	new_ledger.persist();
+	Ok(state_root)
 }
 
 /// Host-side body for `Ledger8Bridge::get_night_pools`: read-only `(locked, reserve, treasury[NIGHT])`.

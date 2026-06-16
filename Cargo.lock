@@ -7566,6 +7566,8 @@ dependencies = [
 [[package]]
 name = "midnight-ledger"
 version = "8.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2182054f3a43ccabac514448fff2487437be293f517a01afc23905df701e8548"
 dependencies = [
  "anyhow",
  "derive-where",

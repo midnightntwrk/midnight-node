@@ -13,14 +13,14 @@
 
 //! Runtime migrations
 
-use crate::{MidnightSystem, Runtime};
+use crate::Runtime;
 use frame_support::traits::OnRuntimeUpgrade;
 // `Get` is brought in via the prelude where `DbWeight::get()` is resolved.
 use frame_support::weights::Weight;
-use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
-use midnight_primitives::MidnightSystemTransactionExecutor;
 #[cfg(feature = "try-runtime")]
 use alloc::vec::Vec;
+#[cfg(feature = "try-runtime")]
+use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
 #[cfg(feature = "try-runtime")]
 use parity_scale_codec::{Decode, Encode};
 
@@ -37,18 +37,24 @@ const MIGRATION_DONE_KEY: &[u8] = b":mn:seed_preview_locked_pool:v1:applied";
 /// One-shot, supply-preserving correction of an empty Locked pool (Preview's #1674 condition)
 /// without a chain reset.
 ///
-/// It reads the *live* ledger pools and applies a privileged `SystemTransaction::SeedPoolsFromReserve`
-/// that moves only the **gap** to the targets (`target - current`, saturating). This makes it
-/// genuinely self-targeting (design §10.3 S1): it **no-ops on networks already at/above target**
-/// (the healthy testnets) and moves the exact shortfall on an under-funded one (Preview:
-/// locked 0 → 16.8e15, treasury 0 → 1.2e15). Properties (design §10.3):
+/// It reads the *live* ledger pools and moves only the **gap** to the targets (`target - current`,
+/// saturating) out of the reserve pool, crediting the locked pool and the NIGHT treasury. The move
+/// is performed as a direct, supply-preserving edit of the ledger state
+/// (`pallet_midnight::seed_pools_to_target` → ledger host fn `seed_pools_to_target` →
+/// `Ledger::seed_pools_from_reserve`) rather than via a privileged system transaction — the
+/// **identical database effect** against the stock ledger, so the node carries **no
+/// `midnight-ledger` change**. Properties (design §10.3):
 ///
-/// * **S1** self-targeting — the gap is computed from live state by `construct_seed_pools_to_target_tx`.
-/// * **S2** applied *through* `apply_system_tx`, so the ledger enforces the supply invariant and the
-///   reserve guard; the runtime never hand-edits a pool field.
-/// * **S3** a run-once storage gate (`MIGRATION_DONE_KEY`) so it cannot re-apply across later upgrades.
-/// * **S5** fail-safe: on any error it logs and leaves the chain healthy (never panics / bricks),
-///   and leaves the gate unset so a future upgrade can retry.
+/// * **S1** self-targeting — the gap is computed from live state; it **no-ops on networks already
+///   at/above target** (healthy testnets) and moves the exact shortfall on an under-funded one
+///   (Preview: locked 0 → 16.8e15, treasury 0 → 1.2e15).
+/// * **S2** supply-preserving — only value *between* the three summed NIGHT pools is moved, so the
+///   ledger's NIGHT invariant (whose total is unchanged) still holds; the reserve guard lives in
+///   the ledger host fn (`to_locked + to_treasury <= reserve_pool`).
+/// * **S3** a run-once storage gate (`MIGRATION_DONE_KEY`) so it cannot re-apply across later
+///   upgrades.
+/// * **S5** fail-safe: on any error (e.g. insufficient reserve) it logs and leaves the chain
+///   healthy (never panics / bricks), and leaves the gate unset so a future upgrade can retry.
 pub struct SeedPreviewLockedPool;
 
 impl OnRuntimeUpgrade for SeedPreviewLockedPool {
@@ -61,54 +67,38 @@ impl OnRuntimeUpgrade for SeedPreviewLockedPool {
 			return db_weight.reads(1);
 		}
 
-		// S1 — compute the reserve->locked/treasury gap from the *live* pools and build the tx.
-		let state_key = pallet_midnight::StateKey::<Runtime>::get();
-		let tx_bytes = match LedgerApi::construct_seed_pools_to_target_tx(
-			&state_key,
+		// S1 + S2 — move only the live reserve->locked/treasury gap as a direct, supply-preserving
+		// state edit (reserve-guarded inside the ledger host fn). No system transaction is applied.
+		match pallet_midnight::Pallet::<Runtime>::seed_pools_to_target(
 			TARGET_LOCKED,
 			TARGET_TREASURY,
 		) {
-			Ok(bytes) => bytes,
-			Err(e) => {
-				// S5 — fail safe: leave the gate unset so a later upgrade can retry.
-				log::error!(
-					target: "runtime::migration",
-					"SeedPreviewLockedPool: could not construct correction, skipping (will retry): {e:?}"
-				);
-				return db_weight.reads_writes(2, 0);
-			},
-		};
-
-		if tx_bytes.is_empty() {
-			// Pools already at/above target (healthy networks): nothing to move. Mark done.
-			log::info!(
-				target: "runtime::migration",
-				"SeedPreviewLockedPool: pools already at/above target; no move needed"
-			);
-			frame_support::storage::unhashed::put(MIGRATION_DONE_KEY, &true);
-			return db_weight.reads_writes(2, 1);
-		}
-
-		// S2 — apply *through* the ledger so the supply invariant + reserve guard are enforced.
-		match <MidnightSystem as MidnightSystemTransactionExecutor>::execute_system_transaction(
-			tx_bytes,
-		) {
-			Ok(hash) => {
+			Ok(true) => {
 				log::info!(
 					target: "runtime::migration",
-					"SeedPreviewLockedPool: applied SeedPoolsFromReserve gap to target (tx {hash:?})"
+					"SeedPreviewLockedPool: moved reserve gap to target (locked->{TARGET_LOCKED}, treasury->{TARGET_TREASURY})"
 				);
 				frame_support::storage::unhashed::put(MIGRATION_DONE_KEY, &true);
 				db_weight.reads_writes(8, 8)
 			},
+			Ok(false) => {
+				// Pools already at/above target (healthy networks): nothing to move. Mark done.
+				log::info!(
+					target: "runtime::migration",
+					"SeedPreviewLockedPool: pools already at/above target; no move needed"
+				);
+				frame_support::storage::unhashed::put(MIGRATION_DONE_KEY, &true);
+				db_weight.reads_writes(2, 1)
+			},
 			Err(e) => {
-				// S5 — e.g. insufficient reserve on a network we did not intend to fix. Do NOT mark
-				// done; surface the error and leave the chain healthy (no panic, no brick).
+				// S5 — fail safe: e.g. insufficient reserve on a network we did not intend to fix.
+				// Do NOT mark done; surface the error and leave the chain healthy (no panic, no
+				// brick), so a later upgrade can retry.
 				log::error!(
 					target: "runtime::migration",
-					"SeedPreviewLockedPool: apply rejected, pools left unchanged (will retry): {e:?}"
+					"SeedPreviewLockedPool: correction not applied, pools left unchanged (will retry): {e:?}"
 				);
-				db_weight.reads_writes(8, 0)
+				db_weight.reads_writes(2, 0)
 			},
 		}
 	}

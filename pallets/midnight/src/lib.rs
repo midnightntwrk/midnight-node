@@ -617,6 +617,27 @@ pub mod pallet {
 			LedgerApi::get_night_pools(&state_key)
 		}
 
+		/// Apply the supply-preserving `reserve -> locked/treasury` correction needed to bring the
+		/// live pools up to the targets, in place, and update [`StateKey`]. Returns `true` when a
+		/// move was applied, `false` when the pools were already at/above target (a clean no-op,
+		/// `StateKey` left unchanged). An insufficient reserve surfaces as `Err` with `StateKey`
+		/// untouched (the guard lives in the host fn). Used by the `SeedPreviewLockedPool`
+		/// migration; replaces a privileged system transaction with a plain state edit so the node
+		/// needs no `midnight-ledger` change.
+		pub fn seed_pools_to_target(
+			target_locked: u128,
+			target_treasury: u128,
+		) -> Result<bool, LedgerApiError> {
+			let state_key = StateKey::<T>::get();
+			let new_state_root =
+				LedgerApi::seed_pools_to_target(&state_key, target_locked, target_treasury)?;
+			if new_state_root.is_empty() {
+				return Ok(false);
+			}
+			StateKey::<T>::put(new_state_root);
+			Ok(true)
+		}
+
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
 			Self::get_transaction_cost(tx)
