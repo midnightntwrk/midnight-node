@@ -875,6 +875,11 @@ toolkit-js-prep:
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
     SAVE ARTIFACT /toolkit-js
+    # Re-export the compactc bundle this image inherits from the CI base image
+    # (which selected build-vs-fetch per COMPACTC_VERSION). toolkit-image reuses
+    # this exact compiler — the one that just compiled the contracts above —
+    # rather than rebuilding from the submodule.
+    SAVE ARTIFACT /compact-home
 
 # toolkit-js-prep-local saves Node Toolkit (JS) build artifacts
 toolkit-js-prep-local:
@@ -1359,8 +1364,11 @@ toolkit-image:
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
         COPY +toolkit-js-prep/toolkit-js /toolkit-js
         # compactc for run-compactc invocations from this image (e.g. genesis
-        # compiling simple-merkle-tree.compact).
-        COPY +compactc-bundle/compact-home /compact-home
+        # compiling simple-merkle-tree.compact). Reuse the SAME compiler the CI
+        # image selected per COMPACTC_VERSION (built or fetched) and that compiled
+        # the contracts in +toolkit-js-prep — no rebuild, no risk of a divergent
+        # compactc version between the CI and toolkit images.
+        COPY +toolkit-js-prep/compact-home /compact-home
         ENV COMPACT_HOME=/compact-home
     ELSE
         RUN mkdir -p /toolkit-js
