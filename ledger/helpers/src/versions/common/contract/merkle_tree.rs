@@ -80,8 +80,14 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 		rng: &mut StdRng,
 	) -> ContractDeploy<D> {
 		let root = MerkleTree::<()>::blank(10).root();
-		let store_op = ContractOperation::new(verifier_key(self.resolver, "store").await);
-		let check_op = ContractOperation::new(verifier_key(self.resolver, "check").await);
+		let store_op = super::super::contract_operation_new(
+			verifier_key(self.resolver, "store").await,
+			super::super::ir_source(self.resolver, "store").await,
+		);
+		let check_op = super::super::contract_operation_new(
+			verifier_key(self.resolver, "check").await,
+			super::super::ir_source(self.resolver, "check").await,
+		);
 
 		let contract = ContractState {
 			data: ChargedState::new(stval!([[{MT(10) {}}, (0u64), {root => null}]])),

@@ -19,6 +19,14 @@ inputs:
   ghcr-password:
     description: "Password for Docker login to GHCR"
     required: true
+  dockerhub-username:
+    description: "Docker Hub username for authenticated public-image pulls (optional; empty = anonymous, rate-limited)"
+    required: false
+    default: ""
+  dockerhub-password:
+    description: "Docker Hub token for authenticated public-image pulls (optional; empty = anonymous, rate-limited)"
+    required: false
+    default: ""
   indexer-tag:
     description: "Indexer tag to use for the indexer image"
     required: true
@@ -62,6 +70,17 @@ runs:
         username: MidnightCI
         password: ${{ inputs.ghcr-password }}
 
+    # Docker Hub auth for the OUTER buildkit (docker.io FROM/base images). The
+    # in-DinD compose pulls are covered separately by the --secret pair below.
+    # Non-fatal: fork PRs have no Hub secrets and proceed anonymously.
+    - name: Docker Hub Login
+      if: inputs.dockerhub-password != ''
+      continue-on-error: true
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  #v4.2.0
+      with:
+        username: ${{ inputs.dockerhub-username }}
+        password: ${{ inputs.dockerhub-password }}
+
     # The WHOLE premerge surface — stack bring-up → verify-finality → e2e suite →
     # toolkit multi-dest E2E — now runs INSIDE earthly's nested dockerd (+local-env-ci,
     # needs `-P`). The nested daemon is ephemeral and per-invocation, so there are no
@@ -77,9 +96,14 @@ runs:
         INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}
         CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
+        DOCKERHUB_USER: ${{ inputs.dockerhub-username }}
+        DOCKERHUB_TOKEN: ${{ inputs.dockerhub-password }}
       run: |
         . ./.envrc
-        earthly -P +local-env-ci \
+        earthly -P \
+          --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
+          --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+          +local-env-ci \
           --NODE_IMAGE="$NODE_IMAGE" \
           --TOOLKIT_IMAGE="$TOOLKIT_IMAGE" \
           --INDEXER_API_IMAGE="$INDEXER_API_IMAGE" \

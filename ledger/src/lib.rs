@@ -101,12 +101,12 @@ pub mod ledger_8 {
 pub mod ledger_9 {
 	#[cfg(feature = "std")]
 	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
+		base_crypto as base_crypto_local, coin_structure_ledger_9 as coin_structure_local,
 		ledger_storage_ledger_8 as ledger_storage_local,
 		midnight_node_ledger_helpers::ledger_9 as helpers_local,
 		midnight_serialize as midnight_serialize_local, mn_ledger_9 as mn_ledger_local,
 		onchain_runtime_ledger_9 as onchain_runtime_local,
-		transient_crypto as transient_crypto_local, zswap_ledger_9 as zswap_local,
+		transient_crypto_ledger_9 as transient_crypto_local, zswap_ledger_9 as zswap_local,
 	};
 
 	#[allow(clippy::duplicate_mod)]

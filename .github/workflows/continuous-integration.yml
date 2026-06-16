@@ -611,6 +611,10 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          # Optional in-DinD Docker Hub login for +test-toolkit's testcontainers
+          # pulls (empty on fork PRs → anonymous, rate-limited).
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true.
           # Force earthly's tempdir to live under $RUNNER_TEMP which is
@@ -641,7 +645,10 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+            --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
+            --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+            -P --strict $PUSH_FLAG \
             --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
             +test-toolkit \
               --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${NODE_IMAGE_TAG}" \
@@ -1152,6 +1159,10 @@ jobs:
           sha: ${{ needs.run.outputs.sha }}
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          # Empty on fork PRs → the in-DinD docker login is skipped and public
+          # images (postgres, kupo, …) fall back to anonymous, rate-limited pulls.
+          dockerhub-username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       # Defensive cleanup of an orphaned local-env stack for this job, so leaked
       # stacks can't accumulate and fill the host disk. Scoped to this job's own
