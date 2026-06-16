@@ -3,12 +3,14 @@
 
 # Build or fetch compactc from the `compact/` submodule and expose it to toolkit-js via
 # COMPACT_HOME (run once, and after bumping the submodule).
-compactc version="" compact_repo="midnightntwrk/compact" compact_tag_prefix="compactc-v":
-  if test -z {{version}}; then \
+compactc compact_repo="midnightntwrk/compact" compact_tag_prefix="compactc-v":
+  COMPACTC_SUBMODULE_VERSION=$(bash scripts/compact-submodule-version.sh); \
+  COMPACTC_VERSION=$(cat COMPACTC_VERSION); \
+  if [ "$COMPACTC_VERSION" = "$COMPACTC_SUBMODULE_VERSION" ]; then \
       earthly +compactc-build-local; \
     else \
       earthly +compactc-fetch-local \
-        --VERSION={{version}} \
+        --VERSION="$COMPACTC_VERSION" \
         --COMPACT_REPO={{compact_repo}} \
         --COMPACT_TAG_PREFIX={{compact_tag_prefix}}; \
     fi
