@@ -1046,7 +1046,7 @@ jobs:
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@6ed6112eb9893c58dd600eebccdf6e77ab7bfa9c #v2.79.12
+        uses: taiki-e/install-action@0631aa6515c7d545823c67cfae7ef4fc7f490154 #v2.81.8
         with:
           tool: just
 
