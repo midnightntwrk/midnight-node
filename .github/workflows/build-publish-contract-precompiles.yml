@@ -33,7 +33,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       # Install Earthly
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@4ab8f231ae77f552ce4369a70c1e777c32f2bcf9
         with:
           version: v0.8.16
           github-token: ${{ github.token }}
