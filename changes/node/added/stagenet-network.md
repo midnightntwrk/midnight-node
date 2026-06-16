@@ -17,4 +17,5 @@ forward from genesis (the Cardano side starts unfunded). Reserve `total_amount`
 of 0 assigns the remaining supply to the reserve pool, which funds the faucet
 wallets.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1706
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1705
