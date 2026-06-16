@@ -243,6 +243,26 @@ pub fn utxo_id_decode(input: &str) -> Result<UtxoId, clap::Error> {
 	})
 }
 
+// `--output` value type and parsing live in a dedicated submodule that does
+// not depend on clap. The wrapper below adapts its error to `clap::Error` so
+// the parser can be used as a clap `value_parser`.
+pub mod output_arg;
+pub use output_arg::OutputArg;
+
+/// Clap `value_parser` adapter for `--output`. Delegates the actual parsing
+/// to [`output_arg::decode`] and converts its [`output_arg::DecodeError`]
+/// into a `clap::Error` for surface in the CLI.
+pub fn output_arg_decode(input: &str) -> Result<OutputArg, clap::Error> {
+	output_arg::decode(input).map_err(|error| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(error.to_string()),
+		);
+		err
+	})
+}
+
 pub fn semver_decode(input: &str) -> Result<semver::Version, clap::Error> {
 	semver::Version::parse(input.trim()).map_err(|error| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
@@ -344,6 +364,8 @@ mod tests {
 		let res = hex_ledger_untagged_decode::<HashOutput>(&"ab".repeat(30));
 		assert!(res.is_err(), "truncated input should be rejected");
 	}
+
+	// `--output` parser tests live in `cli_parsers::output_arg::tests`.
 
 	#[test]
 	fn hex_ledger_untagged_decode_rejects_invalid_hex() {

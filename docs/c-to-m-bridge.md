@@ -20,12 +20,34 @@ The Cardano-to-Midnight (C2M) bridge conceptually allows transferring NIGHT from
 - Invalid Transfers (a special case of `User Transfers`; does not apply to `Reserve Transfers`)
   - Beyond invalid amounts, a transfer can have invalid transaction metadata. The UI should help prevent such cases, but on Cardano nothing prevents the owner of cNIGHT from spending it in an arbitrary transaction.
   - Cardano transactions that lock user cNIGHT at the ICS but lack the expected metadata encoding the recipient address are credited to the Midnight Treasury.
-  - These are `Invalid Transactions`.
+  - These are `Invalid Transfers`.
 - Unapproved Transfers (a special case of `User Transfers`; does not apply to `Reserve Transfers`)
   - The bridge stores a list of approved Cardano transaction hashes; when a user transfer is detected, its source Cardano transaction hash is checked against this allow-list.
   - Transfers reflecting an unapproved Cardano transaction are credited to the Midnight Treasury.
   - This is a temporary solution that is planned to be removed.
   - These are `Unapproved Transfers`.
+
+## Operating the bridge
+
+C2M bridge is a part of the protocol of Midnight network. There has to be a consensus across nodes regarding observed Cardano events and their reflection in the Midnight chain.
+All configuration values that enable the bridge are read from ledger and needs to be set for the bridge to become active.
+
+The configuration values are:
+
+A) main chain (Cardano) scripts data (addresses)
+
+- native token policy id (`0x0691b2fecca1ac4f53cb6dfb00b7013e561d1f34403b957cbb5af1fa` for mainnet, it is policy of NIGHT token)
+- native token asset name (`NIGHT`/`0x4e49474854` for mainnet)
+- ICS Validator Address (`addr1wyczfpxfnf5hvp36mrn655ye4k2cwluvlez6phx8jx46k6s2ttdaq` for mainnet)
+- Reserve Validator Address (`addr1w950c5zxn5fhwlauvpy3ssk287q0qlwz6e2zc4gaj62vaxsy3s9p0` for mainnet)
+
+B) data checkpoint (for idempotency)
+
+- Cardano block number or Cardano Transaction Hash (both are valid pointers to Cardano ledger) after which observability will look for bridge transactions.
+  It depends on the point of Cardano history after which we want the transactions to be included.
+
+Both A) and B) are set with the same extrinsic called `setMainChainScripts` of the `bridge` pallet.
+This extrinsic has to be submitted by Midnight governance.
 
 ## Implementation details
 
@@ -45,7 +67,7 @@ The complete C2M bridge implementation is split between two pallets and their su
   - stores the accumulated amount
   - knows the threshold for a minimal valid user transfer and the threshold for flushing the accumulated amount
 - it hosts the approved transactions feature:
-  - allows addition of approved hashes
+  - allows addition of approved Cardano Transactions hashes
   - cleans up observed hashes
 - for each transfer it executes a Midnight Ledger operation (with the exception of subminimal transfers — many are required for one Midnight operation) and emits events for the indexer
 

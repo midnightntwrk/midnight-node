@@ -452,6 +452,7 @@ pub struct RewardsInfo {
 pub struct ClaimMintInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub context: Arc<C>,
 	pub coin: RewardsInfo,
+	pub kind: ClaimKind,
 	pub rng: StdRng,
 	pub prover: Arc<dyn ProofProvider<D>>,
 }
@@ -467,6 +468,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for ClaimMintInfo<D,
 		Self {
 			context,
 			coin: RewardsInfo { owner: WalletSeed::Short([0; 16]), value: 0 },
+			kind: ClaimKind::Reward,
 			rng,
 			prover,
 		}
@@ -476,6 +478,12 @@ impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for ClaimMintInfo<D,
 impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 	pub fn set_rewards(&mut self, rewards: RewardsInfo) {
 		self.coin = rewards;
+	}
+
+	/// Select which `ClaimKind` the built `ClaimRewardsTransaction` carries
+	/// (`Reward` for block rewards, `CardanoBridge` for c2m-bridged mNIGHT).
+	pub fn set_claim_kind(&mut self, kind: ClaimKind) {
+		self.kind = kind;
 	}
 
 	async fn build(&mut self) -> UnprovenTransaction<D> {
@@ -488,7 +496,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 				owner: signature_verifying_key(wallet.unshielded.signing_key().verifying_key()),
 				nonce,
 				signature: (),
-				kind: ClaimKind::Reward,
+				kind: self.kind,
 			};
 
 			let data_to_sign = unsigned_claim_mint.data_to_sign();
@@ -499,7 +507,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 				owner: signature_verifying_key(wallet.unshielded.signing_key().verifying_key()),
 				nonce,
 				signature: transaction_signature(signature),
-				kind: ClaimKind::Reward,
+				kind: self.kind,
 			}
 		});
 

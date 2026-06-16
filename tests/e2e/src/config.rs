@@ -1,37 +1,81 @@
-use whisky::csl::NetworkInfo as CardanoNetworkInfo;
+use std::time::Duration;
+use whisky::csl::{Credential, EnterpriseAddress, NetworkInfo as CardanoNetworkInfo, ScriptHash};
 use whisky::{LanguageVersion, Network as CardanoNetwork};
 
-fn runtime_values_dir() -> String {
-    std::env::var("RUNTIME_VALUES_DIR").unwrap_or_else(|_| {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        format!("{manifest_dir}/../../local-environment/src/networks/local-env/runtime-values")
-    })
+// Default location of the contract-info and plutus blueprint files.
+// `local-*` features read what local-env's docker stack writes to disk;
+// every other network feature reads the snapshot of actually-deployed
+// contracts pinned via the `midnight-reserve-contracts` submodule — so the
+// non-local-env suite has no dependency on local-env ever having been brought
+// up on the host. Both can be overridden via `RUNTIME_VALUES_DIR`, which keeps
+// the historic single-dir layout (contracts-info.json + plutus-local.json)
+// for ad-hoc use.
+fn contracts_info_path() -> String {
+    if let Ok(dir) = std::env::var("RUNTIME_VALUES_DIR") {
+        return format!("{dir}/contracts-info.json");
+    }
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
+    let p = format!(
+        "{manifest_dir}/../../local-environment/src/networks/local-env/runtime-values/contracts-info.json"
+    );
+    #[cfg(not(any(feature = "local", feature = "local-dev", feature = "local-ci")))]
+    let p = format!(
+        "{manifest_dir}/../../midnight-reserve-contracts/deployments/{}/contract-info.json",
+        submodule_network()
+    );
+    p
+}
+
+fn plutus_path() -> String {
+    if let Ok(dir) = std::env::var("RUNTIME_VALUES_DIR") {
+        return format!("{dir}/plutus-local.json");
+    }
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
+    let p = format!(
+        "{manifest_dir}/../../local-environment/src/networks/local-env/runtime-values/plutus-local.json"
+    );
+    #[cfg(not(any(feature = "local", feature = "local-dev", feature = "local-ci")))]
+    let p = format!(
+        "{manifest_dir}/../../midnight-reserve-contracts/deployed-scripts/{}/plutus.json",
+        submodule_network()
+    );
+    p
+}
+
+#[cfg(not(any(feature = "local", feature = "local-dev", feature = "local-ci")))]
+fn submodule_network() -> &'static str {
+    #[cfg(feature = "qanet")]
+    {
+        "qanet"
+    }
 }
 
 fn read_contracts_info_entry(name: &str) -> serde_json::Value {
-    let path = format!("{}/contracts-info.json", runtime_values_dir());
+    let path = contracts_info_path();
     let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read contracts-info.json at {path}: {e}"));
+        .unwrap_or_else(|e| panic!("Failed to read contract-info at {path}: {e}"));
     let entries: Vec<serde_json::Value> =
-        serde_json::from_str(&content).expect("Failed to parse contracts-info.json");
+        serde_json::from_str(&content).expect("Failed to parse contract-info json");
     entries
         .into_iter()
         .find(|entry| entry["name"].as_str() == Some(name))
-        .unwrap_or_else(|| panic!("{name} not found in contracts-info.json"))
+        .unwrap_or_else(|| panic!("{name} not found in {path}"))
 }
 
 fn read_plutus_compiled_code(title: &str) -> String {
-    let path = format!("{}/plutus-local.json", runtime_values_dir());
+    let path = plutus_path();
     let content = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read plutus-local.json at {path}: {e}"));
+        .unwrap_or_else(|e| panic!("Failed to read plutus blueprint at {path}: {e}"));
     let blueprint: serde_json::Value =
-        serde_json::from_str(&content).expect("Failed to parse plutus-local.json");
+        serde_json::from_str(&content).expect("Failed to parse plutus blueprint");
     blueprint["validators"]
         .as_array()
         .expect("validators should be an array")
         .iter()
         .find(|v| v["title"].as_str() == Some(title))
-        .unwrap_or_else(|| panic!("{title} not found in plutus-local.json"))["compiledCode"]
+        .unwrap_or_else(|| panic!("{title} not found in {path}"))["compiledCode"]
         .as_str()
         .expect("compiledCode should be a string")
         .to_string()
@@ -42,6 +86,10 @@ pub struct Settings {
     pub node_client: NodeClientSettings,
     pub ogmios_client: OgmiosClientSettings,
     pub constants: Constants,
+    /// Timeout for waiting for a Midnight observation event *after* the
+    /// underlying Cardano tx has reached stability. Generous on networks
+    /// with longer block production / follower epochs.
+    pub finality_timeout: Duration,
 }
 
 impl Settings {
@@ -56,34 +104,27 @@ impl Settings {
                     #[cfg(feature = "local")]
                     base_url: "ws://127.0.0.1:9933".into(),
 
-                    // On the self-hosted CI host each runner slot publishes the
-                    // node RPC on a slot-specific host port (see
-                    // local-environment per-runner port isolation). The
-                    // bring-up passes it through as E2E_NODE_RPC_PORT; default
-                    // to the legacy 9933 for slot 0 / local runs.
                     #[cfg(feature = "local-ci")]
-                    base_url: format!(
-                        "ws://172.17.0.1:{}",
-                        std::env::var("E2E_NODE_RPC_PORT").unwrap_or_else(|_| "9933".to_string())
-                    ),
+                    base_url: "ws://172.17.0.1:9933".into(),
 
                     #[cfg(feature = "qanet")]
-                    base_url: "wss://rpc.qanet.dev.midnight.network".into(),
+                    base_url: "wss://rpc.qanet.midnight.network".into(),
                 },
                 ogmios_client: OgmiosClientSettings {
                     #[cfg(any(feature = "local", feature = "local-dev"))]
                     base_url: "ws://127.0.0.1:1337".into(),
                     #[cfg(feature = "local-ci")]
-                    base_url: format!(
-                        "ws://172.17.0.1:{}",
-                        std::env::var("E2E_OGMIOS_PORT").unwrap_or_else(|_| "1337".to_string())
-                    ),
+                    base_url: "ws://172.17.0.1:1337".into(),
                     #[cfg(feature = "qanet")]
-                    base_url: "wss://ogmios.qanet.dev.midnight.network".into(),
+                    base_url: "wss://ogmios.devnet.midnight.network".into(),
                     timeout_seconds: 180,
                     network: CardanoNetwork::Preview,
                     network_info,
                 },
+                #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
+                finality_timeout: Duration::from_secs(60),
+                #[cfg(feature = "qanet")]
+                finality_timeout: Duration::from_secs(300),
                 constants: Constants {
                     payments: Payments {
                         funded_address:
@@ -189,19 +230,26 @@ pub struct Payments {
     pub funded_address_vkey_cbor: String,
 }
 pub fn mapping_validator_address() -> String {
-    let entry = read_contracts_info_entry("cNIGHT Generates Dust");
-    entry["address"]
-        .as_str()
-        .expect("address should be a string")
-        .to_string()
+    // Derive the bech32 enterprise address from the compiled validator script.
+    // The qanet contract-info snapshot does not carry a `cNIGHT Generates Dust`
+    // entry, but plutus.json does, and the script hash uniquely determines the
+    // address for any given Cardano network. Both supported features target
+    // Preview testnet, so the network id matches local-env's `bun cli info`
+    // output and the historical contracts-info.json `address` field.
+    let script_hash = ScriptHash::from_hex(&mapping_validator_policy_id())
+        .expect("Failed to decode mapping_validator script hash");
+    let cred = Credential::from_scripthash(&script_hash);
+    let network_id = CardanoNetworkInfo::testnet_preview().network_id();
+    EnterpriseAddress::new(network_id, &cred)
+        .to_address()
+        .to_bech32(None)
+        .expect("Failed to encode mapping_validator address")
 }
 
 pub fn mapping_validator_policy_id() -> String {
-    let entry = read_contracts_info_entry("cNIGHT Generates Dust");
-    entry["scriptHash"]
-        .as_str()
-        .expect("scriptHash should be a string")
-        .to_string()
+    let cbor_double_encoded = mapping_validator_cbor_double_encoding();
+    whisky::get_script_hash(&cbor_double_encoded, LanguageVersion::V3)
+        .expect("Error calculating mapping_validator_policy_id")
 }
 
 pub fn mapping_validator_cbor_double_encoding() -> String {

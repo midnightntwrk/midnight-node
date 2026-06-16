@@ -47,12 +47,7 @@ impl MultiAssetCache {
 			}
 		}
 
-		let id_opt: Option<i64> =
-			sqlx::query_scalar("SELECT id FROM multi_asset WHERE policy = $1 AND name = $2")
-				.bind(policy)
-				.bind(name)
-				.fetch_optional(&self.pool)
-				.await?;
+		let id_opt = resolve_multi_asset_id(&self.pool, policy, name).await?;
 
 		if let Some(id) = id_opt {
 			info!("Cached multi_asset.id = {} for policy/name pair", id);
@@ -62,4 +57,20 @@ impl MultiAssetCache {
 
 		Ok(id_opt)
 	}
+}
+
+/// Resolve `multi_asset.id` (db-sync surrogate key) for a `(policy, name)` pair
+/// with a single, uncached db-sync lookup. [`MultiAssetCache::resolve_ident`]
+/// wraps this with a process-lifetime cache; callers issuing a one-shot query
+/// (e.g. a bulk pull) can use this directly to avoid allocating a cache.
+pub async fn resolve_multi_asset_id(
+	pool: &Pool<Postgres>,
+	policy: &[u8],
+	name: &[u8],
+) -> Result<Option<i64>, sqlx::Error> {
+	sqlx::query_scalar("SELECT id FROM multi_asset WHERE policy = $1 AND name = $2")
+		.bind(policy)
+		.bind(name)
+		.fetch_optional(pool)
+		.await
 }
