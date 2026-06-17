@@ -179,6 +179,8 @@ runtime-benchmarks = [
     "pallet-grandpa/runtime-benchmarks",
     "pallet-midnight/runtime-benchmarks",
     "pallet-cnight-observation/runtime-benchmarks",
+    "pallet-c2m-bridge/runtime-benchmarks",
+    "midnight-node-ledger/runtime-benchmarks",
     # TODO: Enable native-token-mgmt benchmarks when available
     "pallet-partner-chains-bridge/runtime-benchmarks",
     "pallet-mmr/runtime-benchmarks",

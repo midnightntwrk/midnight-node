@@ -596,6 +596,13 @@ node-ci-image:
     BUILD --platform=linux/amd64 +node-ci-image-single-platform
 
 node-ci-image-single-platform:
+    LOCALLY
+    # The compact submodule's version embeds its git tree hash, computable only
+    # where the submodule's .git exists — i.e. on the host, not inside the Earthly
+    # build context (the COPY'd submodule has no .git). Compute both here so the
+    # build-vs-fetch decision below can compare them.
+    LET COMPACT_SUBMODULE_VERSION = "$(scripts/compact-submodule-version.sh)"
+    LET COMPACTC_VERSION = "$(cat COMPACTC_VERSION)"
     ARG NATIVEARCH
     FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
@@ -698,20 +705,26 @@ node-ci-image-single-platform:
           -o /usr/local/lib/docker/cli-plugins/docker-compose && \
         chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-    # Download compactc compiler from public midnightntwrk/compact releases
-    COPY COMPACTC_VERSION .
-    RUN set -e && \
-        ARCH=$(uname -m) && \
-        if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
-        VERSION=$(cat COMPACTC_VERSION) && \
-        ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip" && \
-        URL="https://github.com/midnightntwrk/compact/releases/download/compactc-v${VERSION}/${ASSET}" && \
-        mkdir -p /compactc-bin && \
-        echo "Downloading compactc: ${URL}" && \
-        curl -fsSL "${URL}" -o /tmp/compactc.zip && \
-        unzip /tmp/compactc.zip -d /compactc-bin && \
-        chmod +x /compactc-bin/compactc && \
-        rm /tmp/compactc.zip
+    # compactc is exposed via COMPACT_HOME; when it is set, toolkit-js scripts honour
+    # it: `fetch-compactc` skips the download and `run-compactc` uses this compiler.
+    # When COMPACTC_VERSION matches the pinned submodule (version + tree hash), build
+    # compactc from source; otherwise COMPACTC_VERSION names a released version (no
+    # tree-hash suffix) and we fetch the prebuilt binary for it.
+    IF [ "$COMPACT_SUBMODULE_VERSION" = "$COMPACTC_VERSION" ]
+        COPY +compactc-bundle/compact-home /compact-home
+    ELSE
+        COPY (+compactc-fetch --VERSION="$COMPACTC_VERSION")/compact-home /compact-home
+    END
+    ENV COMPACT_HOME=/compact-home
+    ENV COMPACTC_VERSION="$COMPACTC_VERSION"
+
+    # Portability + compiler-version check (runs for both source and fetched builds;
+    # also the first run of a source bundle outside nix): compactc --version reports
+    # the bare semver with no tree-hash suffix, so compare against the version prefix.
+    RUN got="$(/compact-home/compactc --version)" && want="${COMPACTC_VERSION%%-*}" && \
+        test "$got" = "$want" || \
+        { echo "compactc $got != COMPACTC_VERSION prefix $want — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
+
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
@@ -719,7 +732,6 @@ node-ci-image-single-platform:
     # SAVE IMAGE under the rust version.
     # Security patches land when the FROM @sha256 digest above is bumped (renovate);
     # a rebuild on the same digest reproduces identical packages by design.
-    ENV COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
     LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
     LABEL org.opencontainers.image.title=node-ci
@@ -745,8 +757,6 @@ prep-no-copy:
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
 
-    SAVE ARTIFACT /compactc-bin
-
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
@@ -762,6 +772,79 @@ prep:
     #   --target x86_64-unknown-linux-gnu \
     #   --target wasm32v1-none
     SAVE IMAGE --cache-hint
+
+# Builds compactc from the `compact/` submodule via nix (reusing
+# scripts/build-compactc.sh) and emits a self-contained COMPACT_HOME directory
+# (compactc + version-locked zkir/zkir-v3 + wrapper). This replaces the
+# prebuilt-binary download. Running nix inside the build keeps the Chez/Scheme
+# toolchain hidden; the IOG binary cache provides zkir prebuilt so it is not
+# compiled from source.
+compactc-bundle:
+    # Multi-arch index digest for nixos/nix:2.24.5 (linux/amd64 + linux/arm64).
+    # Pinning the index (not a per-arch manifest) lets +node-ci-image-single-platform
+    # build this target on both amd64 and arm64 CI runners. The arm64 child manifest
+    # is fb53f7a4116b… (unchanged from the previous pin); amd64 is c5ff76297bf9….
+    FROM nixos/nix@sha256:4ad79a0ab633944869a37921f096d35a3f2c7a0275d98b7bfa0cd3cba5a6b96e
+    # Append (don't clobber) so the base image's defaults (incl. cache.nixos.org)
+    # survive. `extra-` merges onto those defaults. sandbox=false because buildkit/
+    # podman containers usually lack the user namespaces nix's sandbox needs.
+    RUN mkdir -p /etc/nix && { \
+        echo "extra-experimental-features = nix-command flakes"; \
+        echo "sandbox = false"; \
+        echo "extra-substituters = https://cache.iog.io"; \
+        echo "extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="; \
+      } >> /etc/nix/nix.conf
+    COPY compact /work/compact
+    COPY scripts/build-compactc.sh /work/scripts/build-compactc.sh
+    WORKDIR /work
+    # path: ref because the COPY'd submodule has no `.git` in the build context.
+    RUN COMPACTC_FLAKE_REF=path:/work/compact ./scripts/build-compactc.sh
+    # Dereference the nix store output into a self-contained bundle.
+    RUN store="$(readlink -f .compact-home/result)" && \
+        mkdir -p /compact-home/bin /compact-home/lib && \
+        cp -L "$store"/bin/* /compact-home/bin/ && \
+        cp -L "$store"/lib/* /compact-home/lib/ && \
+        printf '#!/usr/bin/env bash\nexport PATH=/compact-home/lib:$PATH\nexec /compact-home/bin/compactc.bin "$@"\n' > /compact-home/compactc && \
+        chmod +x /compact-home/compactc
+    SAVE ARTIFACT /compact-home
+
+compactc-fetch:
+    ARG VERSION
+    # Note: compactc >=0.30.0 releases are on LFDT-Minokawa/compact (older versions were on midnightntwrk/compact)
+    ARG COMPACT_REPO=LFDT-Minokawa/compact
+    ARG COMPACT_TAG_PREFIX=compactc-v
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+    RUN apk add --no-cache curl unzip
+    RUN set -e && \
+        ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
+        ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip" && \
+        URL="https://github.com/${COMPACT_REPO}/releases/download/${COMPACT_TAG_PREFIX}${VERSION}/${ASSET}" && \
+        mkdir -p /compact-home && \
+        echo "Downloading compactc: ${URL}" && \
+        curl -fsSL "${URL}" -o /tmp/compactc.zip && \
+        unzip /tmp/compactc.zip -d /compact-home && \
+        chmod +x /compact-home/compactc && \
+        rm /tmp/compactc.zip
+    SAVE ARTIFACT /compact-home
+
+# compactc-build-local builds and exports compactc to .compact-home
+compactc-build-local:
+    LOCALLY
+    COPY +compactc-bundle/compact-home .compact-home
+    # Fix path to artifacts from `/compact-home` to the cwd
+    RUN sed -i "s|/compact-home|${PWD}/.compact-home|g" .compact-home/compactc
+
+# compact-fetch-local fetches compactc releases - use arg inheritance to fetch other versions,
+# e.g:
+# earthly +compactc-fetch-local --VERSION=0.30.0-rc.1 --COMPACT_REPO=LFDT-Minokawa/compact --COMPACT_TAG_PREFIX=v
+compactc-fetch-local:
+    LOCALLY
+    COPY +compactc-fetch/compact-home .compact-home
+
+locally-test:
+    LOCALLY
+    RUN echo $PWD
 
 # Prepares Node Toolkit (JS) in time for testing
 toolkit-js-prep:
@@ -784,24 +867,46 @@ toolkit-js-prep:
     COPY util/toolkit-js toolkit-js
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
-    ENV COMPACT_REPO=midnightntwrk/compact
-    ENV COMPACT_TAG_PREFIX=compactc-v
 
     WORKDIR /toolkit-js
     RUN npm ci
     RUN npm run build
-    # Compile compact contracts (fetch-compactc downloads compactc via COMPACTC_VERSION)
-    # GITHUB_TOKEN is passed as an Earthly secret in CI to avoid GitHub API rate limits.
-    # Defaulting to empty allows local builds without the secret (at risk of rate-limiting).
-    RUN --secret GITHUB_TOKEN= npm run compact
+    # Compile compact contracts using the submodule-built compactc (via COMPACT_HOME).
+    RUN npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
     SAVE ARTIFACT /toolkit-js
+    # Re-export the compactc bundle this image inherits from the CI base image
+    # (which selected build-vs-fetch per COMPACTC_VERSION). toolkit-image reuses
+    # this exact compiler — the one that just compiled the contracts above —
+    # rather than rebuilding from the submodule.
+    SAVE ARTIFACT /compact-home
 
 # toolkit-js-prep-local saves Node Toolkit (JS) build artifacts
 toolkit-js-prep-local:
     FROM +toolkit-js-prep
+
+    # The inherited /compact-home wrapper hardcodes the in-image absolute path
+    # (/compact-home/...), which breaks once the artifact is exported to the
+    # host. Replace it with a relocatable wrapper that resolves its own
+    # directory at runtime. Single-quoted printf args keep $(...) / $thisdir /
+    # $PATH / $@ literal so they're evaluated when compactc runs, not now.
+    # Handles both bundle layouts: nix (bin/ + lib/) and fetched zip (flat).
+    RUN printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'thisdir="$(cd "$(dirname "$0")" && pwd -P)"' \
+        'if [ -x "$thisdir/bin/compactc.bin" ]; then' \
+        '  export PATH="$thisdir/lib:$PATH"' \
+        '  exec "$thisdir/bin/compactc.bin" "$@"' \
+        'else' \
+        '  export PATH="$thisdir:$PATH"' \
+        '  exec "$thisdir/compactc.bin" "$@"' \
+        'fi' \
+        > /compact-home/compactc && \
+        chmod +x /compact-home/compactc
+
+    SAVE ARTIFACT /compact-home AS LOCAL ./.compact-home
     SAVE ARTIFACT /toolkit-js/node_modules AS LOCAL ./util/toolkit-js/node_modules
     SAVE ARTIFACT /toolkit-js/dist AS LOCAL ./util/toolkit-js/dist
     SAVE ARTIFACT /toolkit-js/test/contract/managed/counter AS LOCAL ./util/toolkit-js/test/contract/managed/counter
@@ -913,17 +1018,25 @@ test:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
     # - partner-chains-cardano-offchain are: 1) flaky, 2) long running, 3) test in partner-chains repo, 4) cover functionality used to e2e test partner-chains (non-production)
-    # DOCKERHUB_USER/TOKEN default to empty so local builds and fork PRs (where secrets
-    # aren't exposed) still work — at the cost of unauthenticated pull rate limits.
+    # Logs into Docker Hub INSIDE the nested dockerd (it inherits no host auth) so
+    # testcontainers pulls (postgres etc.) are authenticated. Bare `--secret NAME` is
+    # load-bearing: `--secret NAME=` binds an EMPTY secret-id and silently yields ""
+    # even when the CLI supplies the secret. CI always passes both --secret flags
+    # (empty on fork PRs → login skipped → anonymous, rate-limited). Local runs must
+    # supply them too: `earthly +test --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN=`
+    # (CLI-side `=` means supplied-but-empty, which is fine). The trailing
+    # `rm -f /root/.docker/config.json` keeps the login token out of the RUN's final
+    # snapshot, which buildkit may export to the remote cache on success.
     WITH DOCKER
-        RUN --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN= \
+        RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ]; then \
               echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
             fi && \
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
             --exclude partner-chains-cardano-offchain \
-            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))' && \
+            rm -f /root/.docker/config.json
     END
 
     # RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
@@ -1024,26 +1137,44 @@ test-toolkit:
     # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
     # pre-pull private GHCR images via Earthly's buildkit (which has auth).
     # Without NODE_IMAGE, testcontainers pulls the public default itself.
+    # The optional docker login (see +test for the --secret semantics) authenticates
+    # Docker Hub pulls made by testcontainers INSIDE test-toolkit:latest — hence the
+    # /root/.docker mount + DOCKER_CONFIG, which hand the daemon login to the test
+    # container's docker_credential lookup. Empty secrets → anonymous (fork PRs/local).
     IF [ -n "$NODE_IMAGE" ]
         WITH DOCKER \
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
-            RUN docker run \
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                if [ -n "$DOCKERHUB_TOKEN" ]; then \
+                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                fi && mkdir -p /root/.docker && \
+                docker run \
                 --network=host \
                 -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /root/.docker:/root/.docker \
+                -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
                 $EXTRA_DOCKER_ENV \
-                test-toolkit:latest
+                test-toolkit:latest && \
+                rm -f /root/.docker/config.json
         END
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-            RUN docker run \
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                if [ -n "$DOCKERHUB_TOKEN" ]; then \
+                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                fi && mkdir -p /root/.docker && \
+                docker run \
                 --network=host \
                 -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /root/.docker:/root/.docker \
+                -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-                test-toolkit:latest
+                test-toolkit:latest && \
+                rm -f /root/.docker/config.json
         END
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
@@ -1281,6 +1412,13 @@ toolkit-image:
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
         COPY +toolkit-js-prep/toolkit-js /toolkit-js
+        # compactc for run-compactc invocations from this image (e.g. genesis
+        # compiling simple-merkle-tree.compact). Reuse the SAME compiler the CI
+        # image selected per COMPACTC_VERSION (built or fetched) and that compiled
+        # the contracts in +toolkit-js-prep — no rebuild, no risk of a divergent
+        # compactc version between the CI and toolkit images.
+        COPY +toolkit-js-prep/compact-home /compact-home
+        ENV COMPACT_HOME=/compact-home
     ELSE
         RUN mkdir -p /toolkit-js
     END
@@ -1335,8 +1473,16 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN mkdir -p /scan_reports
-    RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
-      && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
+    # npm audit exits non-zero when it finds vulns at/above --audit-level. Capture the
+    # JSON (written to stdout regardless of exit code) and ALWAYS produce the SARIF before
+    # propagating the audit's exit code — otherwise a finding both fails the build AND
+    # skips the SARIF upload (the workflow uploads on success()||failure() but only if the
+    # file exists), leaving a red check with no report. Gate on high is preserved via the
+    # final `exit`.
+    RUN --no-cache \
+        npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json; AUDIT_RC=$?; \
+        npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; \
+        exit $AUDIT_RC
     SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-yarn:
@@ -1522,7 +1668,7 @@ local-env-e2e:
 
 # compares chain parameters with testnet-02
 chain-params-check:
-    FROM alpine
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl jq
 
     COPY res/testnet-02/testnet-02.json ./
@@ -1642,14 +1788,20 @@ local-env-ci:
     RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
     # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
     # indexer/toolkit images into the authless DinD daemon. Public deps (cardano-node,
-    # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD.
+    # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD —
+    # hence the optional docker login below (see +test for the --secret semantics);
+    # empty secrets → anonymous pulls (fork PRs/local), rate-limited but functional.
     WITH DOCKER \
             --pull $NODE_IMAGE \
             --pull $INDEXER_API_IMAGE \
             --pull $CHAIN_INDEXER_IMAGE \
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
-        RUN ROOT="$PWD" && \
+        RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            if [ -n "$DOCKERHUB_TOKEN" ]; then \
+              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            fi && \
+            ROOT="$PWD" && \
             cd local-environment && \
             npm ci && \
             ( ARCHITECTURE=linux/$USERARCH \
@@ -1672,7 +1824,8 @@ local-env-ci:
             echo "=== toolkit multi-dest E2E ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE"
+            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE" && \
+            rm -f /root/.docker/config.json
     END
 
 

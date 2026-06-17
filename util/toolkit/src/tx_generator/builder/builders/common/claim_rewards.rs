@@ -15,13 +15,13 @@ use async_trait::async_trait;
 use std::{convert::Infallible, sync::Arc};
 
 use super::ledger_helpers_local::{
-	BuilderContext, ClaimMintInfo, DefaultDB, FromContext, ProofProvider, RewardsInfo,
+	BuilderContext, ClaimKind, ClaimMintInfo, DefaultDB, FromContext, ProofProvider, RewardsInfo,
 	TransactionWithContext, Wallet,
 };
 
 use crate::{
 	serde_def::SourceTransactions,
-	tx_generator::builder::{BuildTxs, ClaimRewardsArgs},
+	tx_generator::builder::{BuildTxs, ClaimKindArg, ClaimRewardsArgs},
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
@@ -31,6 +31,7 @@ pub struct ClaimRewardsBuilder<C: BuilderContext<DefaultDB>> {
 	funding_seed: String,
 	rng_seed: Option<[u8; 32]>,
 	amount: u128,
+	claim_kind: ClaimKind,
 }
 
 impl<C: BuilderContext<DefaultDB>> ClaimRewardsBuilder<C> {
@@ -39,12 +40,18 @@ impl<C: BuilderContext<DefaultDB>> ClaimRewardsBuilder<C> {
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		// Map the CLI-facing arg onto this ledger version's `ClaimKind`.
+		let claim_kind = match args.claim_kind {
+			ClaimKindArg::Reward => ClaimKind::Reward,
+			ClaimKindArg::CardanoBridge => ClaimKind::CardanoBridge,
+		};
 		Self {
 			context,
 			prover,
 			funding_seed: args.funding_seed,
 			rng_seed: args.rng_seed,
 			amount: args.amount,
+			claim_kind,
 		}
 	}
 }
@@ -73,6 +80,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ClaimRewardsBuilder<C> {
 		let rewards = RewardsInfo { owner: funding_seed, value: self.amount };
 
 		tx_info.set_rewards(rewards);
+		tx_info.set_claim_kind(self.claim_kind);
 
 		#[cfg(not(feature = "erase-proof"))]
 		let tx = tx_info.prove().await;

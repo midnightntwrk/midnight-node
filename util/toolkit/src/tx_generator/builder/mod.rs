@@ -13,7 +13,7 @@
 
 use async_trait::async_trait;
 use builders::{DoNothingBuilder, compute_batches_seeds};
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 pub use midnight_node_ledger_helpers::CoinSelectionStrategy;
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
@@ -42,6 +42,19 @@ pub mod builders;
 
 pub const FUNDING_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
+/// Toolkit-local mirror of the ledger's `ClaimKind`, used so the CLI can expose a
+/// `--claim-kind` selector via clap's `ValueEnum` without depending on a specific
+/// ledger version's type. Each version builder converts this into its own `ClaimKind`.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[clap(rename_all = "kebab-case")]
+pub enum ClaimKindArg {
+	/// Claim block-production rewards (the historical default).
+	#[default]
+	Reward,
+	/// Claim mNIGHT bridged from Cardano via the protocol bridge.
+	CardanoBridge,
+}
+
 #[derive(Args, Clone, Debug)]
 pub struct ClaimRewardsArgs {
 	/// Seed for funding the transactions
@@ -58,6 +71,10 @@ pub struct ClaimRewardsArgs {
 	/// Amount for the claim mint
 	#[arg(long, short, default_value_t = 500_000)]
 	pub amount: u128,
+	/// Which kind of claim to issue: `reward` (block rewards) or
+	/// `cardano-bridge` (mNIGHT bridged from Cardano via the c2m protocol bridge).
+	#[arg(long, value_enum, default_value_t = ClaimKindArg::Reward)]
+	pub claim_kind: ClaimKindArg,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -401,7 +418,7 @@ pub enum Builder {
 	ContractSimple(ContractCall),
 	/// Construct txs from custom contract intents
 	ContractCustom(CustomContractArgs),
-	/// Claim rewards
+	/// Claim block rewards or tokens made claimable by the protocol bridge
 	ClaimRewards(ClaimRewardsArgs),
 	/// Send a single transaction with one-or-many outputs across shielded
 	/// and/or unshielded destinations, optionally mixing multiple token types
