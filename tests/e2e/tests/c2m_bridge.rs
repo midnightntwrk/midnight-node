@@ -5,16 +5,25 @@ use midnight_node_e2e::api::midnight::{C2MBridgePalletCalls, MidnightClient};
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 use midnight_node_ledger_helpers::{
-    ClaimKind, HashOutput, SystemTransaction, UserAddress, deserialize,
+    ClaimKind, HashOutput, SystemTransaction, UnshieldedWallet, UserAddress, WalletSeed,
+    deserialize, extract_tx_with_context,
 };
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::TransferRecipient;
+use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
+use midnight_node_toolkit::tx_generator::builder::{Builder, ClaimKindArg, ClaimRewardsArgs};
+use midnight_node_toolkit::tx_generator::destination::Destination;
+use midnight_node_toolkit::tx_generator::source::Source;
 use std::sync::LazyLock;
 use std::time::Duration;
 use subxt::dynamic::Value as DynValue;
 use tokio::sync::{Mutex as AsyncMutex, MutexGuard};
 
 use crate::global_faucet_manager;
+
+// Well-known local-env and dev wallet seed
+const CLAIM_FUNDING_SEED_HEX: &str =
+    "0000000000000000000000000000000000000000000000000000000000000001";
 
 // Tests in this module both mutate and read shared chain state,
 // so can't run in parallel.
@@ -37,8 +46,11 @@ const BRIDGE_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(120);
 async fn bridge_transfer_cnight_to_midnight_address() {
     let _serial = lock_c2m_bridge_serial().await;
 
+    let claim_seed = WalletSeed::try_from_hex_str(CLAIM_FUNDING_SEED_HEX).expect("seed parses");
+    let recipient_address: [u8; 32] = UnshieldedWallet::default(claim_seed).user_address.0.0;
+
     let (cardano_client, midnight_client, prepared) = setup_and_prepare_bridge_transfer(
-        BridgeTransferRecipient::Address(RECIPIENT_ADDRESS),
+        BridgeTransferRecipient::Address(recipient_address),
         BRIDGE_AMOUNT_STARS,
     )
     .await;
@@ -86,7 +98,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
         }
     };
     assert_eq!(
-        recipient_bytes, &RECIPIENT_ADDRESS,
+        recipient_bytes, &recipient_address,
         "BridgeTransferV1.recipient should carry the original 32-byte recipient"
     );
 
@@ -108,7 +120,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
     );
     assert_eq!(
         instr.target_address,
-        UserAddress(HashOutput(RECIPIENT_ADDRESS)),
+        UserAddress(HashOutput(recipient_address)),
         "DistributeNight should target the bridge recipient address"
     );
 
@@ -142,8 +154,116 @@ async fn bridge_transfer_cnight_to_midnight_address() {
     );
     assert_eq!(
         recipient.0.0.as_slice(),
-        &RECIPIENT_ADDRESS,
+        &recipient_address,
         "UserTransfer.recipient should carry the original 32-byte recipient"
+    );
+
+    // ----- Claim the bridged mNIGHT -----
+    let params = midnight_client
+        .get_ledger_parameters()
+        .await
+        .expect("Failed to read ledger parameters for bridge-fee computation");
+    let claimable = claimable_amount(
+        BRIDGE_AMOUNT_STARS as u128,
+        params.cardano_to_midnight_bridge_fee_basis_points,
+        params.c_to_m_bridge_min_amount,
+    );
+    assert!(
+        claimable > 0,
+        "post-fee claimable must be positive (amount={}, fee_bps={}, min={})",
+        BRIDGE_AMOUNT_STARS,
+        params.cardano_to_midnight_bridge_fee_basis_points,
+        params.c_to_m_bridge_min_amount,
+    );
+    tracing::info!(
+        claimable,
+        "claiming bridged mNIGHT via toolkit claim-rewards --claim-kind cardano-bridge"
+    );
+
+    // Build + prove a ClaimRewards(CardanoBridge) tx against the live chain,
+    // signed by the dev seed whose unshielded address is the bridge recipient.
+    // The toolkit's in-process local prover handles ZK proving (no external
+    // proof server); ZK params come from the cache configured in .envrc.
+    let url = midnight_client.base_url().to_string();
+    let tempdir = tempfile::tempdir().expect("create tempdir");
+    let claim_file = tempdir.path().join("bridge_claim.mn");
+    let claim_file_str = claim_file.to_string_lossy().to_string();
+    let claim_args = GenerateTxsArgs {
+        builder: Builder::ClaimRewards(ClaimRewardsArgs {
+            funding_seed: CLAIM_FUNDING_SEED_HEX.to_string(),
+            rng_seed: None,
+            amount: claimable,
+            claim_kind: ClaimKindArg::CardanoBridge,
+        }),
+        source: Source {
+            src_url: Some(url.clone()),
+            fetch_concurrency: crate::fetch_concurrency(),
+            fetch_compute_concurrency: None,
+            src_files: None,
+            dust_warp: false,
+            ignore_block_context: false,
+            fetch_only_cached: false,
+            fetch_cache: crate::fetch_cache_config(),
+            ledger_state_db: String::new(),
+        },
+        destination: Destination {
+            dest_urls: vec![],
+            rate: 1.0,
+            dest_file: Some(claim_file_str.clone()),
+            no_watch_progress: true,
+        },
+        proof_server: None,
+        dry_run: false,
+    };
+    generate_txs::execute(claim_args)
+        .await
+        .expect("generate-txs claim-rewards (cardano-bridge) failed");
+
+    // Submit the claim and require the apply_transaction extrinsic to *succeed*
+    // (not merely be included): `wait_for_finalized_success` checks the
+    // ExtrinsicSuccess event, confirming the ledger accepted the bridge claim. We
+    // keep the events to verify the recipient was actually credited.
+    //
+    // We assert via the claim's own `Midnight::UnshieldedTokens` event rather than
+    // reading a wallet balance: on a running node `Midnight::StateKey` is only a
+    // storage-key (a root pointer into the node's ledger DB), not the materialized
+    // `LedgerState`, so the balance can't be read in-process without replaying
+    // blocks. The `created` UTXO list on this event *is* the on-chain record of the
+    // balance credit, and asserting it also exercises the ledger fix that makes
+    // claim-minted UTXOs visible to the host API.
+    let claim_bytes = std::fs::read(&claim_file).expect("read generated claim tx file");
+    let (claim_tx_bytes, _block_context) = extract_tx_with_context(&claim_bytes);
+    let claim_events = midnight_client
+        .submit_midnight_tx(claim_tx_bytes)
+        .await
+        .expect("claim tx rejected by RPC at submission")
+        .wait_for_finalized_success()
+        .await
+        .expect("ClaimRewards(CardanoBridge) extrinsic should finalize successfully");
+
+    // Sum the NIGHT credited to the recipient by this claim and require it to equal
+    // the claimed amount (i.e. the recipient's balance increased by exactly that).
+    const NIGHT_TOKEN_TYPE: [u8; 32] = [0u8; 32];
+    let mut credited_to_recipient: u128 = 0;
+    for ev in claim_events.iter().filter_map(Result::ok) {
+        if let Ok(mn_meta::Event::Midnight(mn_meta::midnight::Event::UnshieldedTokens(details))) =
+            ev.decode_as::<mn_meta::Event>()
+        {
+            for utxo in details.created {
+                if utxo.address == recipient_address && utxo.token_type == NIGHT_TOKEN_TYPE {
+                    credited_to_recipient = credited_to_recipient.saturating_add(utxo.value);
+                }
+            }
+        }
+    }
+    assert_eq!(
+        credited_to_recipient, claimable,
+        "claim should credit the recipient a fresh NIGHT UTXO equal to the claimed bridged \
+         amount (balance increase {claimable}), but it was credited {credited_to_recipient}"
+    );
+    tracing::info!(
+        credited_to_recipient,
+        "bridged mNIGHT successfully claimed; recipient credited the claimed amount"
     );
 }
 
@@ -628,4 +748,19 @@ async fn read_subminimal_flush_threshold(
         None => 0,
     };
     Ok(threshold)
+}
+
+/// Mirror of the ledger's `basis_points_of` + bridge-fee split (see
+/// midnight-ledger `semantics.rs`): a Cardano-bridge transfer credits the
+/// recipient's claimable balance with `amount - fee`, where the fee is
+/// `fee_bps` basis points of `amount` (or the whole amount if it is below
+/// `min_amount`). Used to compute the exact amount the recipient can claim.
+fn claimable_amount(amount: u128, fee_bps: u32, min_amount: u128) -> u128 {
+    if amount < min_amount {
+        return 0;
+    }
+    let quotient = amount / 10_000;
+    let remainder = amount % 10_000;
+    let fee = quotient * fee_bps as u128 + (remainder * fee_bps as u128) / 10_000;
+    amount - fee
 }

@@ -62,25 +62,27 @@ jobs:
       # Run Earthly build with platform-specific flags
       - name: Run Earthly build for linux/${{ matrix.platform }}
         id: version
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
           # Force cargo to use CLI git instead of libgit2 (more robust in CI)
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --ci --platform=linux/${{ matrix.platform }} --push +node-ci-image-single-platform
+          . ./.envrc && earthly --platform="linux/$PLATFORM" --push +node-ci-image-single-platform
 
           RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
           COMPACTC_VERSION=$(cat COMPACTC_VERSION)
           VERSION="${RUST_VERSION}-${COMPACTC_VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          docker pull "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
+          docker pull "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${PLATFORM}"
 
           echo "Tag and push ${VERSION} images"
-          docker tag "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}" "midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
+          docker tag "ghcr.io/midnight-ntwrk/midnight-node-ci:${VERSION}-${PLATFORM}" "midnightntwrk/midnight-node-ci:${VERSION}-${PLATFORM}"
 
           echo "Push ${VERSION} images to Docker Hub"
-          docker push "midnightntwrk/midnight-node-ci:${VERSION}-${{ matrix.platform }}"
+          docker push "midnightntwrk/midnight-node-ci:${VERSION}-${PLATFORM}"
 
   publish_to_dockerhub:
     # needed so forks can run ci jobs

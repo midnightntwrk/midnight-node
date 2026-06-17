@@ -15,6 +15,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# In a dev shell `.envrc` exports COMPACT_HOME to the single submodule-built compiler, and
+# `run-compactc`/`fetch-compactc` honour COMPACT_HOME over COMPACTC_VERSION — so leaving it set would
+# pin every iteration below to that one compiler and silently defeat the whole compatibility suite.
+# Unset it so each iteration fetches and compiles with the COMPACTC_VERSION it actually requested.
+unset COMPACT_HOME
+
 # Concrete patch versions to fetch for each supported <major>.<minor> line (see SUPPORTED_COMPACTC_VERSIONS
 # in src/compactc-resolver.ts). Override by passing versions as arguments.
 DEFAULT_VERSIONS=("0.29.0" "0.30.0" "0.31.0")

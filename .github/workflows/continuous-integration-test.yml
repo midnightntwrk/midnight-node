@@ -16,7 +16,10 @@ concurrency:
 jobs:
   run:
     name: Run tests
-    runs-on: [self-hosted, "tier:large"]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    # (This job is also skipped on fork PRs by its step guards; the routing is belt-and-braces.)
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     permissions:
       contents: read
       packages: write

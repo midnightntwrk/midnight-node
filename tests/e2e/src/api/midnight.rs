@@ -3,7 +3,9 @@ use crate::config::{NodeClientSettings, OgmiosClientSettings};
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use hex::ToHex;
-use midnight_node_ledger_helpers::{DefaultDB, DustWallet, WalletSeed, serialize_untagged};
+use midnight_node_ledger_helpers::{
+    DefaultDB, DustWallet, LedgerParameters, WalletSeed, deserialize, serialize_untagged,
+};
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::utxo_owners::Output as UtxoOwners;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives::bridge::BridgeRecipient;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::BridgeTransferV1;
@@ -767,6 +769,24 @@ impl MidnightClient {
 
         let bytes = scripts.illiquid_circulation_supply_validator_address.0.0;
         Ok(String::from_utf8(bytes)?)
+    }
+
+    /// Read the active `LedgerParameters` via the `get_ledger_parameters` runtime API.
+    pub async fn get_ledger_parameters(
+        &self,
+    ) -> Result<LedgerParameters, Box<dyn std::error::Error>> {
+        let call = mn_meta::runtime_apis::RuntimeApi
+            .midnight_runtime_api()
+            .get_ledger_parameters();
+        let bytes = self
+            .online_client()
+            .at_current_block()
+            .await?
+            .runtime_apis()
+            .call(call)
+            .await?
+            .map_err(|e| format!("get_ledger_parameters runtime API returned error: {e:?}"))?;
+        Ok(deserialize(&mut &bytes[..])?)
     }
 
     pub async fn subscribe_to_federated_authority_events(
