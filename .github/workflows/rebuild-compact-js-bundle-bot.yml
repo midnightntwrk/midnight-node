@@ -112,7 +112,9 @@ jobs:
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-          earthly -P --secret MIDNIGHTCI_PACKAGES_READ="$MIDNIGHTCI_PACKAGES_READ" +compact-js-bundle
+          # `--secret NAME` (no value) reads the token from the environment, so it never appears on
+          # the command line or in Earthly's build log.
+          earthly -P --secret MIDNIGHTCI_PACKAGES_READ +compact-js-bundle
 
       - name: Commit and push changes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
