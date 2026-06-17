@@ -7,7 +7,7 @@ license-file.workspace = true
 [dependencies]
 hex.workspace = true
 
-mn-ledger = { workspace = true, features = ["proving", "test-utilities"] }
+mn-ledger = { workspace = true, features = ["proving"] }
 base-crypto = { workspace = true }
 coin-structure = { workspace = true }
 onchain-runtime = { workspace = true }
@@ -16,8 +16,11 @@ ledger-storage = { workspace = true }
 transient-crypto = { workspace = true }
 zswap = { workspace = true }
 zkir = { workspace = true }
+zkir-2-1 = { workspace = true }
+anyhow = { workspace = true }
+reqwest = { workspace = true }
 
-mn-ledger-8 = { workspace = true, features = ["proving", "test-utilities"] }
+mn-ledger-8 = { workspace = true, features = ["proving"] }
 onchain-runtime-ledger-8 = { workspace = true }
 ledger-storage-ledger-8 = { workspace = true }
 zswap-ledger-8 = { workspace = true }
@@ -25,6 +28,8 @@ zswap-ledger-8 = { workspace = true }
 mn-ledger-9 = { workspace = true, features = ["proving", "test-utilities"] }
 onchain-runtime-ledger-9 = { workspace = true }
 zswap-ledger-9 = { workspace = true }
+coin-structure-ledger-9 = { workspace = true }
+transient-crypto-ledger-9 = { workspace = true }
 
 rand = { version = "0.8.4", features = ["small_rng", "getrandom"] }
 rayon.workspace = true
