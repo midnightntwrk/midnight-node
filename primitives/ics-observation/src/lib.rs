@@ -26,15 +26,6 @@ use serde::{Deserialize, Serialize};
 // Re-export PolicyId so consumers don't need to depend on sidechain-domain directly
 pub use sidechain_domain::PolicyId;
 
-/// Asset identifier for cNIGHT tokens.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IcsAsset {
-	/// The policy ID of the cNIGHT token
-	pub policy_id: PolicyId,
-	/// The asset name of the cNIGHT token (human-readable, e.g. "NIGHT" or empty)
-	pub asset_name: String,
-}
-
 /// A single UTxO at the ICS address.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IcsUtxo {
@@ -54,8 +45,6 @@ pub struct IcsUtxo {
 pub struct IcsConfig {
 	/// The ICS validator address (bech32 format)
 	pub illiquid_circulation_supply_validator_address: String,
-	/// The cNIGHT asset identifier
-	pub asset: IcsAsset,
 	/// All UTxOs at the ICS address (for verification purposes)
 	pub utxos: Vec<IcsUtxo>,
 	/// Total amount of cNIGHT locked at the ICS address
@@ -108,8 +97,6 @@ impl IcsConfig {
 pub struct IcsAddresses {
 	/// The Cardano address of the ICS forever validator (bech32 format)
 	pub illiquid_circulation_supply_validator_address: String,
-	/// The cNIGHT asset identifier
-	pub asset: IcsAsset,
 }
 
 #[cfg(test)]
@@ -119,7 +106,6 @@ mod tests {
 	fn make_config(utxos: Vec<IcsUtxo>, total_amount: u128) -> IcsConfig {
 		IcsConfig {
 			illiquid_circulation_supply_validator_address: "addr_test1qz...".into(),
-			asset: IcsAsset { policy_id: PolicyId([0u8; 28]), asset_name: "NIGHT".into() },
 			utxos,
 			total_amount,
 		}

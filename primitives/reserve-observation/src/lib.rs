@@ -26,15 +26,6 @@ use serde::{Deserialize, Serialize};
 // Re-export PolicyId so consumers don't need to depend on sidechain-domain directly
 pub use sidechain_domain::PolicyId;
 
-/// Asset identifier for cNIGHT tokens locked in the reserve contract.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReserveAsset {
-	/// The policy ID of the cNIGHT token
-	pub policy_id: PolicyId,
-	/// The asset name of the cNIGHT token (human-readable, e.g. "NIGHT" or empty)
-	pub asset_name: String,
-}
-
 /// A single UTxO at the reserve contract address.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReserveUtxo {
@@ -54,8 +45,6 @@ pub struct ReserveUtxo {
 pub struct ReserveConfig {
 	/// The reserve validator address (bech32 format)
 	pub reserve_validator_address: String,
-	/// The cNIGHT asset identifier
-	pub asset: ReserveAsset,
 	/// All UTxOs at the reserve address (for verification purposes)
 	pub utxos: Vec<ReserveUtxo>,
 	/// Total amount of cNIGHT locked at the reserve address
@@ -111,8 +100,6 @@ impl ReserveConfig {
 pub struct ReserveAddresses {
 	/// The Cardano address of the reserve validator (bech32 format)
 	pub reserve_validator_address: String,
-	/// The cNIGHT asset identifier
-	pub asset: ReserveAsset,
 }
 
 #[cfg(test)]
@@ -122,7 +109,6 @@ mod tests {
 	fn make_config(utxos: Vec<ReserveUtxo>, total_amount: u128) -> ReserveConfig {
 		ReserveConfig {
 			reserve_validator_address: "addr_test1qz...".into(),
-			asset: ReserveAsset { policy_id: PolicyId([0u8; 28]), asset_name: "NIGHT".into() },
 			utxos,
 			total_amount,
 		}

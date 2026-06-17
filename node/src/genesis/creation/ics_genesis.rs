@@ -133,9 +133,14 @@ async fn query_ics_utxos(
 		.collect())
 }
 
-/// Generate ICS genesis configuration by querying Cardano db-sync
+/// Generate ICS genesis configuration by querying Cardano db-sync.
+///
+/// The cNIGHT token (`cnight_policy_id` / `cnight_asset_name`) is sourced from the single
+/// canonical cNIGHT definition in `cnight-addresses.json`, not duplicated in the ICS config.
 pub async fn generate_ics_genesis(
 	addresses: IcsAddresses,
+	cnight_policy_id: [u8; 28],
+	cnight_asset_name: &str,
 	pool: &PgPool,
 	cardano_tip: McBlockHash,
 	output_path: impl AsRef<Path>,
@@ -153,8 +158,8 @@ pub async fn generate_ics_genesis(
 		hex::encode(cardano_tip.0)
 	);
 
-	let policy_id_hex = hex::encode(addresses.asset.policy_id.0);
-	let asset_name_hex = hex::encode(&addresses.asset.asset_name);
+	let policy_id_hex = hex::encode(cnight_policy_id);
+	let asset_name_hex = hex::encode(cnight_asset_name.as_bytes());
 	let utxos = query_ics_utxos(
 		pool,
 		&addresses.illiquid_circulation_supply_validator_address,
@@ -171,7 +176,6 @@ pub async fn generate_ics_genesis(
 	let config = IcsConfig {
 		illiquid_circulation_supply_validator_address: addresses
 			.illiquid_circulation_supply_validator_address,
-		asset: addresses.asset,
 		utxos,
 		total_amount,
 	};

@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use clap::Args;
-use midnight_primitives_ics_observation::IcsConfig;
 use ogmios_client::{
 	jsonrpsee::client_for_url, query_ledger_state::QueryLedgerState, query_network::QueryNetwork,
 	transactions::Transactions, types::OgmiosUtxo,
@@ -38,9 +37,15 @@ pub struct BridgeTransferArgs {
 	#[arg(long)]
 	signing_key: PathBuf,
 
-	/// Path to the ICS configuration file (provides ICS address and cNight asset id).
+	/// cNIGHT asset id as `<policy_id_hex>.<asset_name>`, where policy id is 56 hex chars
+	/// (28 bytes) and the asset name is plain text (not hex), e.g. `d2db..af1.NIGHT` or
+	/// `d2db..af1.` for an empty asset name.
 	#[arg(long)]
-	ics_config: PathBuf,
+	cnight_asset_id: String,
+
+	/// Bech32 address of the ICS validator to send the bridged cNIGHT to.
+	#[arg(long)]
+	ics_validator_address: String,
 
 	/// Hex-encoded midnight UserAddress
 	#[arg(long, conflicts_with_all(["invalid"]))]
@@ -62,7 +67,8 @@ pub struct BridgeTransferArgs {
 pub async fn execute(
 	args: BridgeTransferArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let ics_config = load_ics_config(&args.ics_config)?;
+	let (cnight_policy_id, cnight_asset_name) = parse_cnight_asset_id(&args.cnight_asset_id)?;
+	let ics_validator_address = args.ics_validator_address.clone();
 	let payment_key = read_payment_key(&args.signing_key)?;
 	let recipient = parse_recipient_args(&args)?;
 	let client = client_for_url(&args.ogmios_url, Duration::from_secs(30))
@@ -76,7 +82,9 @@ pub async fn execute(
 	log::info!("Querying utxos of {payment_address_bech32}");
 	let payment_key_utxos = client.query_utxos(&[payment_address_bech32]).await?;
 	let tx = build_bridge_transfer_tx(
-		ics_config,
+		cnight_policy_id,
+		&cnight_asset_name,
+		&ics_validator_address,
 		args.amount,
 		recipient,
 		&protocol_parameters,
@@ -99,12 +107,26 @@ pub async fn execute(
 	Ok(())
 }
 
-fn load_ics_config(path: &Path) -> Result<IcsConfig, Box<dyn std::error::Error + Send + Sync>> {
-	let content = std::fs::read_to_string(path)
-		.map_err(|e| format!("Could not read ICS config at {}: {e}", path.display()))?;
-	let config: IcsConfig = serde_json::from_str(&content)
-		.map_err(|e| format!("Invalid ICS config JSON at {}: {e}", path.display()))?;
-	Ok(config)
+/// Parse a `--cnight-asset-id` of the form `<policy_id_hex>.<asset_name>` into the 28-byte
+/// policy id and the plain (non-hex) asset name. The asset name may be empty (`<hex>.`).
+fn parse_cnight_asset_id(
+	s: &str,
+) -> Result<([u8; 28], String), Box<dyn std::error::Error + Send + Sync>> {
+	let (policy_hex, asset_name) = s
+		.split_once('.')
+		.ok_or("--cnight-asset-id must be in the form <policy_id_hex>.<asset_name>")?;
+	if policy_hex.len() != 56 {
+		return Err(format!(
+			"cNIGHT policy id must be 56 hex chars (28 bytes), got {} chars",
+			policy_hex.len()
+		)
+		.into());
+	}
+	let policy_id: [u8; 28] = hex::decode(policy_hex)
+		.map_err(|e| format!("cNIGHT policy id is not valid hex: {e}"))?
+		.try_into()
+		.map_err(|_| "cNIGHT policy id must decode to exactly 28 bytes")?;
+	Ok((policy_id, asset_name.to_string()))
 }
 
 /// Parse a Cardano payment signing key file (JSON format with `type` and `cborHex` fields).
@@ -209,8 +231,11 @@ fn get_payment_key_address(
 	.to_address()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_bridge_transfer_tx(
-	ics_config: IcsConfig,
+	cnight_policy_id: [u8; 28],
+	cnight_asset_name: &str,
+	ics_validator_address: &str,
 	amount: u64,
 	recipient: Recipient,
 	protocol_parameters: &Protocol,
@@ -224,9 +249,8 @@ fn build_bridge_transfer_tx(
 	tx_builder
 		.add_metadatum(&BRIDGE_TRANSFER_METADATUM_KEY.into(), &build_metadata_item(recipient)?);
 
-	let ics_address =
-		Address::from_bech32(&ics_config.illiquid_circulation_supply_validator_address)
-			.map_err(|e| format!("Invalid ICS address in config: {e}"))?;
+	let ics_address = Address::from_bech32(ics_validator_address)
+		.map_err(|e| format!("Invalid --ics-validator-address: {e}"))?;
 
 	// Build output: send cNight tokens to ICS address with minimum ADA
 	let output_builder = TransactionOutputBuilder::new()
@@ -234,7 +258,7 @@ fn build_bridge_transfer_tx(
 		.next()
 		.map_err(|e| e.to_string())?;
 
-	let ma = build_cnight_multi_asset(&ics_config, amount)?;
+	let ma = build_cnight_multi_asset(cnight_policy_id, cnight_asset_name, amount)?;
 	let min_ada = calculate_min_ada(protocol_parameters, &output_builder, &ma)?;
 
 	let output = output_builder
@@ -277,15 +301,16 @@ fn build_metadata_item(
 }
 
 fn build_cnight_multi_asset(
-	ics_config: &IcsConfig,
+	cnight_policy_id: [u8; 28],
+	cnight_asset_name: &str,
 	amount: u64,
 ) -> Result<MultiAsset, Box<dyn std::error::Error + Send + Sync + 'static>> {
 	let mut ma = MultiAsset::new();
 	let mut assets = Assets::new();
-	let asset_name = AssetName::new(ics_config.asset.asset_name.as_bytes().to_vec())
-		.map_err(|e| e.to_string())?;
+	let asset_name =
+		AssetName::new(cnight_asset_name.as_bytes().to_vec()).map_err(|e| e.to_string())?;
 	assets.insert(&asset_name, &amount.into());
-	ma.insert(&ScriptHash::from(ics_config.asset.policy_id.0), &assets);
+	ma.insert(&ScriptHash::from(cnight_policy_id), &assets);
 	Ok(ma)
 }
 

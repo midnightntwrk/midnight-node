@@ -25,7 +25,7 @@ use midnight_node_ledger_helpers::{
 use thiserror::Error;
 
 // Re-export ICS types from the primitives crate
-pub use midnight_primitives_ics_observation::{IcsAsset, IcsConfig, IcsUtxo};
+pub use midnight_primitives_ics_observation::{IcsConfig, IcsUtxo};
 pub use midnight_primitives_reserve_observation::ReserveConfig;
 
 pub const MINT_AMOUNT: u128 = 50_000_000_000_000;
@@ -681,8 +681,7 @@ fn without_fees(params: &LedgerParameters) -> LedgerParameters {
 mod test {
 	use super::*;
 	use assert_matches::assert_matches;
-	use midnight_primitives_ics_observation::PolicyId;
-	use std::{collections::HashMap, str::FromStr};
+	use std::collections::HashMap;
 
 	#[tokio::test]
 	async fn test_genesis_with_ics_config() {
@@ -703,13 +702,6 @@ mod test {
 		let ics_config = IcsConfig {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
-			asset: IcsAsset {
-				policy_id: PolicyId::from_str(
-					"d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-				)
-				.expect("valid policy ID"),
-				asset_name: "".to_string(),
-			},
 			utxos: vec![
 				IcsUtxo { tx_hash: "abc123".to_string(), output_index: 0, amount: 600_000_000_000 },
 				IcsUtxo { tx_hash: "def456".to_string(), output_index: 1, amount: 400_000_000_000 },
@@ -766,10 +758,6 @@ mod test {
 		// Reserve config determines the reserve pool amount.
 		let reserve_config = ReserveConfig {
 			reserve_validator_address: "addr_test1qz_reserve".to_string(),
-			asset: midnight_primitives_reserve_observation::ReserveAsset {
-				policy_id: midnight_primitives_reserve_observation::PolicyId([0u8; 28]),
-				asset_name: "NIGHT".to_string(),
-			},
 			utxos: vec![
 				midnight_primitives_reserve_observation::ReserveUtxo {
 					tx_hash: "abc123".to_string(),
@@ -841,10 +829,6 @@ mod test {
 
 		let reserve_config = ReserveConfig {
 			reserve_validator_address: "addr_test1qz_reserve".to_string(),
-			asset: midnight_primitives_reserve_observation::ReserveAsset {
-				policy_id: midnight_primitives_reserve_observation::PolicyId([0u8; 28]),
-				asset_name: "NIGHT".to_string(),
-			},
 			utxos: vec![midnight_primitives_reserve_observation::ReserveUtxo {
 				tx_hash: "def456".to_string(),
 				output_index: 1,
@@ -900,10 +884,6 @@ mod test {
 
 		let reserve_config = ReserveConfig {
 			reserve_validator_address: "addr_test1qz_reserve".to_string(),
-			asset: midnight_primitives_reserve_observation::ReserveAsset {
-				policy_id: midnight_primitives_reserve_observation::PolicyId([0u8; 28]),
-				asset_name: "NIGHT".to_string(),
-			},
 			utxos: vec![midnight_primitives_reserve_observation::ReserveUtxo {
 				tx_hash: "def456".to_string(),
 				output_index: 1,
@@ -915,13 +895,6 @@ mod test {
 		let ics_config = IcsConfig {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
-			asset: IcsAsset {
-				policy_id: PolicyId::from_str(
-					"d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-				)
-				.expect("valid policy ID"),
-				asset_name: "".to_string(),
-			},
 			utxos: vec![IcsUtxo {
 				tx_hash: "abc123".to_string(),
 				output_index: 0,
@@ -1050,10 +1023,6 @@ mod test {
 
 		let reserve_config = ReserveConfig {
 			reserve_validator_address: "addr_test1qz_reserve".to_string(),
-			asset: midnight_primitives_reserve_observation::ReserveAsset {
-				policy_id: midnight_primitives_reserve_observation::PolicyId([0u8; 28]),
-				asset_name: "NIGHT".to_string(),
-			},
 			utxos: vec![midnight_primitives_reserve_observation::ReserveUtxo {
 				tx_hash: "def456".to_string(),
 				output_index: 1,
@@ -1065,13 +1034,6 @@ mod test {
 		let ics_config = IcsConfig {
 			illiquid_circulation_supply_validator_address:
 				"addr_test1wqgdspp2cnethukgvrve6wnue8adjjzz5ty9x3z4t5s8c8cnck7xz".to_string(),
-			asset: IcsAsset {
-				policy_id: PolicyId::from_str(
-					"d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-				)
-				.expect("valid policy ID"),
-				asset_name: "".to_string(),
-			},
 			utxos: vec![IcsUtxo {
 				tx_hash: "abc123".to_string(),
 				output_index: 0,

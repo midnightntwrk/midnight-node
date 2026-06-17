@@ -348,6 +348,20 @@ fn get_res_preset_dir() -> std::path::PathBuf {
 	std::path::PathBuf::from("res").join(get_cfg_preset())
 }
 
+/// Load the single canonical cNIGHT token definition (policy id + asset name) from
+/// `cnight-addresses.json`. The ICS and reserve genesis generators query Cardano db-sync
+/// for this token, so it is defined once here rather than duplicated in their own configs.
+fn load_cnight_asset(path: &std::path::Path) -> sc_cli::Result<([u8; 28], String)> {
+	let content = std::fs::read_to_string(path)?;
+	let addresses: CNightAddresses = serde_json::from_str(&content).map_err(|e| {
+		sc_cli::Error::Input(format!(
+			"failed to read cNight addresses file {} as json: {e:?}",
+			path.display()
+		))
+	})?;
+	Ok((addresses.cnight_policy_id, addresses.cnight_asset_name))
+}
+
 /// Extracts and hex-decodes the `genesis_state` value from chain spec properties.
 fn genesis_state_from_properties(
 	properties: &serde_json::Map<String, serde_json::Value>,
@@ -655,6 +669,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let res_dir = get_res_preset_dir();
 			let ics_addresses =
 				cmd.ics_addresses.clone().unwrap_or_else(|| res_dir.join("ics-addresses.json"));
+			let cnight_addresses = res_dir.join("cnight-addresses.json");
 			let output = cmd.output.clone().unwrap_or_else(|| res_dir.join("ics-config.json"));
 
 			// Init tokio runtime
@@ -671,11 +686,19 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							"failed to read ICS addresses file as json: {e:?}"
 						))
 					})?;
-				generate_ics_genesis(addresses, &pool, cmd.cardano_tip.clone(), &output)
-					.await
-					.map_err(|e| {
-						sc_cli::Error::Input(format!("ICS genesis generation failed: {e}"))
-					})?;
+				let cnight = load_cnight_asset(&cnight_addresses)?;
+				generate_ics_genesis(
+					addresses,
+					cnight.0,
+					&cnight.1,
+					&pool,
+					cmd.cardano_tip.clone(),
+					&output,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("ICS genesis generation failed: {e}"))
+				})?;
 
 				Ok(())
 			})
@@ -690,6 +713,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				.reserve_addresses
 				.clone()
 				.unwrap_or_else(|| res_dir.join("reserve-addresses.json"));
+			let cnight_addresses = res_dir.join("cnight-addresses.json");
 			let output = cmd.output.clone().unwrap_or_else(|| res_dir.join("reserve-config.json"));
 
 			// Init tokio runtime
@@ -706,11 +730,19 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							"failed to read reserve addresses file as json: {e:?}"
 						))
 					})?;
-				generate_reserve_genesis(addresses, &pool, cmd.cardano_tip.clone(), &output)
-					.await
-					.map_err(|e| {
-						sc_cli::Error::Input(format!("Reserve genesis generation failed: {e}"))
-					})?;
+				let cnight = load_cnight_asset(&cnight_addresses)?;
+				generate_reserve_genesis(
+					addresses,
+					cnight.0,
+					&cnight.1,
+					&pool,
+					cmd.cardano_tip.clone(),
+					&output,
+				)
+				.await
+				.map_err(|e| {
+					sc_cli::Error::Input(format!("Reserve genesis generation failed: {e}"))
+				})?;
 
 				Ok(())
 			})
@@ -1043,9 +1075,12 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							"failed to read reserve addresses file as json: {e:?}"
 						))
 					})?;
+				let cnight = load_cnight_asset(&res_dir.join("cnight-addresses.json"))?;
 
 				generate_reserve_genesis(
 					reserve_addresses_parsed,
+					cnight.0,
+					&cnight.1,
 					&reserve_pool,
 					cmd.cardano_tip.clone(),
 					&reserve_output,

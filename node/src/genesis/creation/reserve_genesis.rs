@@ -123,9 +123,14 @@ async fn query_reserve_utxos(
 		.collect())
 }
 
-/// Generate reserve genesis configuration by querying Cardano db-sync
+/// Generate reserve genesis configuration by querying Cardano db-sync.
+///
+/// The cNIGHT token (`cnight_policy_id` / `cnight_asset_name`) is sourced from the single
+/// canonical cNIGHT definition in `cnight-addresses.json`, not duplicated in the reserve config.
 pub async fn generate_reserve_genesis(
 	addresses: ReserveAddresses,
+	cnight_policy_id: [u8; 28],
+	cnight_asset_name: &str,
 	pool: &PgPool,
 	cardano_tip: McBlockHash,
 	output_path: impl AsRef<Path>,
@@ -142,8 +147,8 @@ pub async fn generate_reserve_genesis(
 		hex::encode(cardano_tip.0)
 	);
 
-	let policy_id_hex = hex::encode(addresses.asset.policy_id.0);
-	let asset_name_hex = hex::encode(&addresses.asset.asset_name);
+	let policy_id_hex = hex::encode(cnight_policy_id);
+	let asset_name_hex = hex::encode(cnight_asset_name.as_bytes());
 	let utxos = query_reserve_utxos(
 		pool,
 		&addresses.reserve_validator_address,
@@ -159,7 +164,6 @@ pub async fn generate_reserve_genesis(
 
 	let config = ReserveConfig {
 		reserve_validator_address: addresses.reserve_validator_address,
-		asset: addresses.asset,
 		utxos,
 		total_amount,
 	};

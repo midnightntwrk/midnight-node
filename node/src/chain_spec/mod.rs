@@ -29,7 +29,7 @@ use midnight_node_runtime::{
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::{AssetName, MainchainAddress, McTxHash};
+use sidechain_domain::{AssetName, MainchainAddress, McTxHash, PolicyId};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
@@ -359,6 +359,9 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			let ics_config = genesis.ics_config();
 			let reserve_config = genesis.reserve_config();
 			let bridge_config = genesis.c2m_bridge_config();
+			// The cNIGHT token (policy id + asset name) is defined once, in the cNight config;
+			// the bridge main-chain scripts reference it rather than a duplicate in the ICS config.
+			let cnight_addresses = genesis.cnight_genesis().addresses;
 			BridgeConfig {
 				main_chain_scripts: if ics_config
 					.illiquid_circulation_supply_validator_address
@@ -367,8 +370,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 					None
 				} else {
 					Some(BridgeMainChainScripts {
-						token_policy_id: ics_config.asset.policy_id,
-						token_asset_name: parse_asset_name(&ics_config.asset.asset_name),
+						token_policy_id: PolicyId(cnight_addresses.cnight_policy_id),
+						token_asset_name: parse_asset_name(&cnight_addresses.cnight_asset_name),
 						illiquid_circulation_supply_validator_address: MainchainAddress::from_str(
 							&ics_config.illiquid_circulation_supply_validator_address,
 						)
