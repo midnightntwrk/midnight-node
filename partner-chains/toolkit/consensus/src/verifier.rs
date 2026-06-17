@@ -1,13 +1,9 @@
-use crate::InherentDigest;
-use crate::inherent_check::check_partner_chains_inherents;
+use crate::{InherentDigest, VerificationContextSink};
 use sc_consensus::block_import::BlockImportParams;
 use sc_consensus::import_queue::Verifier;
-use sp_api::{ApiExt, ProvideRuntimeApi};
-use sp_block_builder::BlockBuilder as BlockBuilderApi;
 use sp_consensus_slots::Slot;
-use sp_inherents::CreateInherentDataProviders;
-use sp_runtime::traits::Block as BlockT;
-use std::{marker::PhantomData, sync::Arc};
+use sp_runtime::traits::{Block as BlockT, Header};
+use std::marker::PhantomData;
 
 /// Extracts the authoring slot from a block header's pre-runtime digests.
 ///
@@ -20,80 +16,74 @@ pub trait SlotExtractor<B: BlockT>: Send + Sync + 'static {
 
 /// Partner Chains verifier wrapper.
 ///
-/// Wraps an inner `Verifier` (e.g. the Aura verifier) and checks block inherents against
-/// inherent data recreated from Partner Chains data sources, parameterised by the block's
-/// slot and the value of its [`InherentDigest`] (e.g. the mainchain reference hash).
+/// Wraps an inner `Verifier` (e.g. the Aura verifier) and makes its inherent check aware of
+/// the Partner Chains inherents. It extracts the block's slot (via [`SlotExtractor`]) and its
+/// [`InherentDigest`] value (e.g. the mainchain reference hash) from the header, injects them
+/// into the shared [`CreateInherentDataProviders`](sp_inherents::CreateInherentDataProviders)
+/// via [`VerificationContextSink`], then delegates verification to the inner verifier.
 ///
-/// The block body is withheld from the inner verifier, so that consensus-specific checks
-/// (seal, equivocation) still run, but the inner verifier's own inherent check is skipped.
-/// That check would run against inherent data missing the Partner Chains inherents and
-/// reject any block containing them. This verifier performs the single, complete inherent
-/// check itself.
+/// The wrapped verifier recreates its inherent data through that same
+/// `CreateInherentDataProviders` — now parameterised by the block's slot and inherent digest —
+/// so its own inherent check reproduces the Partner Chains inherents and accepts the block,
+/// rather than rejecting its Partner Chains inherent extrinsics. This avoids reimplementing the
+/// inherent check here and keeps the inner verifier's other consensus checks (seal,
+/// equivocation, …) intact.
 ///
-/// This covers consensus stacks that check inherents in the import queue verifier, as
-/// Aura does. For stacks that check inherents during block import instead (e.g. BABE),
-/// use [`PartnerChainsBlockImport`](crate::PartnerChainsBlockImport) in addition.
+/// This covers consensus stacks that check inherents in the import queue verifier, as Aura
+/// does. For stacks that check inherents during block import instead (e.g. BABE), use
+/// [`PartnerChainsBlockImport`](crate::PartnerChainsBlockImport).
 ///
 /// Generic over:
 /// - `Inner`: the wrapped verifier (e.g. `AuraVerifier`)
-/// - `C`: the client (for runtime API calls)
-/// - `CIDP`: creates inherent data providers parameterised by `(Slot, ID::Value)`
+/// - `CIDP`: the shared inherent-data-provider factory the inner verifier also uses; must
+///   implement [`VerificationContextSink`] so this wrapper can parameterise it
 /// - `SE`: extracts the slot from the block header
 /// - `ID`: the [`InherentDigest`] carrying inherent data in the block header
-pub struct PartnerChainsVerifier<Inner, C, CIDP, B: BlockT, SE, ID> {
+pub struct PartnerChainsVerifier<Inner, CIDP, B: BlockT, SE, ID> {
 	inner: Inner,
-	client: Arc<C>,
 	create_inherent_data_providers: CIDP,
 	_phantom: PhantomData<fn() -> (B, SE, ID)>,
 }
 
-impl<Inner, C, CIDP, B: BlockT, SE, ID> PartnerChainsVerifier<Inner, C, CIDP, B, SE, ID> {
-	/// Creates a new verifier wrapping `inner`.
-	pub fn new(inner: Inner, client: Arc<C>, create_inherent_data_providers: CIDP) -> Self {
-		Self { inner, client, create_inherent_data_providers, _phantom: PhantomData }
+impl<Inner, CIDP, B: BlockT, SE, ID> PartnerChainsVerifier<Inner, CIDP, B, SE, ID> {
+	/// Creates a new verifier wrapping `inner`, sharing `create_inherent_data_providers` with it.
+	pub fn new(inner: Inner, create_inherent_data_providers: CIDP) -> Self {
+		Self { inner, create_inherent_data_providers, _phantom: PhantomData }
 	}
 }
 
 #[async_trait::async_trait]
-impl<Inner, C, CIDP, B, SE, ID> Verifier<B> for PartnerChainsVerifier<Inner, C, CIDP, B, SE, ID>
+impl<Inner, CIDP, B, SE, ID> Verifier<B> for PartnerChainsVerifier<Inner, CIDP, B, SE, ID>
 where
 	B: BlockT,
 	Inner: Verifier<B>,
-	C: ProvideRuntimeApi<B> + Send + Sync,
-	C::Api: BlockBuilderApi<B> + ApiExt<B>,
-	CIDP: CreateInherentDataProviders<B, (Slot, ID::Value)> + Send + Sync,
+	CIDP: VerificationContextSink<ID>,
 	SE: SlotExtractor<B>,
 	ID: InherentDigest + Send + Sync + 'static,
 {
 	async fn verify(
 		&self,
-		mut block: BlockImportParams<B>,
+		block: BlockImportParams<B>,
 	) -> Result<BlockImportParams<B>, String> {
 		// Skip checks that include execution, e.g. when importing only the state after warp sync.
 		if block.with_state() || block.state_action.skip_execution_checks() {
 			return self.inner.verify(block).await;
 		}
 
-		// Withhold the body from the inner verifier. All of its header-level consensus
-		// checks (e.g. for Aura: seal signature, slot author, slot-not-in-future,
-		// equivocation) run regardless of the body; the only body-gated logic is its
-		// inherent check, which would run against inherent data missing the Partner
-		// Chains inherents and reject any block containing them. The complete inherent
-		// check is performed below instead.
-		let body = block.body.take();
-		let mut block = self.inner.verify(block).await?;
-		block.body = body;
+		// Parameterise the shared inherent-data-provider factory with the slot and inherent
+		// digest of this block, so the inner verifier's inherent check recreates the Partner
+		// Chains inherents instead of rejecting them.
+		let slot = SE::extract_slot(&block.header)?;
+		let digest_value =
+			ID::value_from_digest(block.header.digest().logs()).map_err(|e| {
+				format!(
+					"Failed to retrieve inherent digest from header of block {:?}: {e}",
+					block.header.hash()
+				)
+			})?;
+		self.create_inherent_data_providers.set_verification_context(slot, digest_value);
 
-		check_partner_chains_inherents::<B, C, CIDP, SE, ID>(
-			&self.client,
-			&self.create_inherent_data_providers,
-			&block.header,
-			block.body.as_ref(),
-			block.post_hash(),
-		)
-		.await?;
-
-		Ok(block)
+		self.inner.verify(block).await
 	}
 }
 
@@ -102,13 +92,14 @@ mod tests {
 	use super::*;
 	use crate::test_support::*;
 	use sp_runtime::{DigestItem, OpaqueExtrinsic};
-	use std::sync::atomic::{AtomicBool, Ordering};
 
 	/// Post-digest the inner verifier stub leaves on verified blocks, standing in for
 	/// the consensus seal a real verifier (e.g. Aura) moves into the post-digests.
 	const INNER_VERIFIER_SEAL: &[u8] = b"inner-verifier-seal";
 
-	/// Stand-in for a consensus verifier (e.g. Aura).
+	/// Stand-in for a consensus verifier (e.g. Aura). Its inherent check is represented by
+	/// the shared CIDP: a real inner verifier recreates inherent data through it, so we treat
+	/// "the CIDP was parameterised" as the contract this wrapper must uphold.
 	struct InnerVerifier {
 		fail: bool,
 	}
@@ -127,26 +118,13 @@ mod tests {
 		}
 	}
 
-	type TestVerifier = PartnerChainsVerifier<
-		InnerVerifier,
-		TestClient,
-		TestCIDP,
-		Block,
-		TestSlotExtractor,
-		TestInherentDigest,
-	>;
+	type TestVerifier =
+		PartnerChainsVerifier<InnerVerifier, TestCIDP, Block, TestSlotExtractor, TestInherentDigest>;
 
-	fn test_verifier(
-		inner_fail: bool,
-		fail_inherent_check: bool,
-	) -> (TestVerifier, Arc<AtomicBool>) {
-		let (client, check_inherents_called) = test_client(fail_inherent_check);
-		let verifier = PartnerChainsVerifier::new(
-			InnerVerifier { fail: inner_fail },
-			client,
-			test_create_inherent_data_providers(),
-		);
-		(verifier, check_inherents_called)
+	fn test_verifier(inner_fail: bool) -> (TestVerifier, TestCIDP) {
+		let cidp = TestCIDP::default();
+		let verifier = PartnerChainsVerifier::new(InnerVerifier { fail: inner_fail }, cidp.clone());
+		(verifier, cidp)
 	}
 
 	fn has_inner_verifier_seal(block: &BlockImportParams<Block>) -> bool {
@@ -157,26 +135,24 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn accepts_block_passing_consensus_and_inherent_checks() {
-		let (verifier, check_inherents_called) = test_verifier(false, false);
+	async fn parameterises_cidp_then_delegates_with_body() {
+		let (verifier, cidp) = test_verifier(false);
 
 		let verified = verifier
 			.verify(block_import_params(Some(vec![])))
 			.await
 			.expect("verification succeeds");
 
-		// The consensus checks of the inner verifier ran and their outcome (e.g. the
-		// extracted seal) is passed on, together with the body, for import.
+		// The inner verifier ran (its seal is present) and received the full block body.
 		assert!(has_inner_verifier_seal(&verified));
 		assert_eq!(verified.body, Some(Vec::<OpaqueExtrinsic>::new()));
-		// The inherent check ran against inherent data recreated from the slot and
-		// inherent digest of the header (asserted in the test CIDP).
-		assert!(check_inherents_called.load(Ordering::SeqCst));
+		// The shared CIDP was parameterised with the slot and inherent digest of the header.
+		assert_eq!(cidp.taken_context(), Some((Slot::from(TEST_SLOT), TEST_DIGEST_VALUE)));
 	}
 
 	#[tokio::test]
-	async fn rejects_block_when_inner_verifier_rejects() {
-		let (verifier, check_inherents_called) = test_verifier(true, false);
+	async fn propagates_inner_verifier_rejection() {
+		let (verifier, _cidp) = test_verifier(true);
 
 		let error = match verifier.verify(block_import_params(Some(vec![]))).await {
 			Err(error) => error,
@@ -184,33 +160,20 @@ mod tests {
 		};
 
 		assert!(error.contains("rejected by the inner verifier"));
-		// A block failing consensus checks is rejected without the cost of recreating
-		// Partner Chains inherent data.
-		assert!(!check_inherents_called.load(Ordering::SeqCst));
 	}
 
 	#[tokio::test]
-	async fn rejects_block_when_inherent_check_fails() {
-		let (verifier, check_inherents_called) = test_verifier(false, true);
+	async fn skips_parameterisation_for_state_import() {
+		let (verifier, cidp) = test_verifier(false);
 
-		let error = match verifier.verify(block_import_params(Some(vec![]))).await {
-			Err(error) => error,
-			Ok(_) => panic!("verification should fail"),
-		};
+		let mut block = block_import_params(Some(vec![]));
+		// `Skip` makes `skip_execution_checks()` true, exercising the wrapper's early-return path.
+		block.state_action = sc_consensus::StateAction::Skip;
 
-		assert!(error.contains("Inherent check failed"));
-		assert!(check_inherents_called.load(Ordering::SeqCst));
-	}
+		let verified = verifier.verify(block).await.expect("verification succeeds");
 
-	#[tokio::test]
-	async fn skips_inherent_check_for_header_only_import() {
-		let (verifier, check_inherents_called) = test_verifier(false, false);
-
-		let verified =
-			verifier.verify(block_import_params(None)).await.expect("verification succeeds");
-
+		// Such imports delegate straight to the inner verifier without parameterising the CIDP.
 		assert!(has_inner_verifier_seal(&verified));
-		assert!(verified.body.is_none());
-		assert!(!check_inherents_called.load(Ordering::SeqCst));
+		assert_eq!(cidp.taken_context(), None);
 	}
 }

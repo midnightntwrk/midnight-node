@@ -11,7 +11,11 @@ use partner_chains_demo_runtime::{
 use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
-use sidechain_mc_hash::{McHashDataSource, McHashInherentDataProvider as McHashIDP};
+use sidechain_mc_hash::{
+	McHashDataSource, McHashInherentDataProvider as McHashIDP, McHashInherentDigest,
+};
+use sp_partner_chains_consensus::VerificationContextSink;
+use std::sync::Mutex;
 use sidechain_slots::ScSlotConfig;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
@@ -109,10 +113,26 @@ pub struct VerifierCIDP<T> {
 	mc_hash_data_source: Arc<dyn McHashDataSource + Send + Sync>,
 	authority_selection_data_source: Arc<dyn AuthoritySelectionDataSource + Send + Sync>,
 	bridge_data_source: Arc<dyn TokenBridgeDataSource<AccountId> + Send + Sync>,
+	/// Slot and mainchain reference hash of the block being verified/imported, injected by the
+	/// Partner Chains wrapper via [`VerificationContextSink`] right before it delegates.
+	#[new(default)]
+	verification_context: Arc<Mutex<Option<(Slot, McBlockHash)>>>,
+}
+
+impl<T> VerificationContextSink<McHashInherentDigest> for VerifierCIDP<T>
+where
+	T: Send + Sync,
+{
+	fn set_verification_context(&self, slot: Slot, mc_hash: McBlockHash) {
+		*self
+			.verification_context
+			.lock()
+			.expect("VerifierCIDP verification context mutex poisoned") = Some((slot, mc_hash));
+	}
 }
 
 #[async_trait]
-impl<T> CreateInherentDataProviders<Block, (Slot, McBlockHash)> for VerifierCIDP<T>
+impl<T> CreateInherentDataProviders<Block, ()> for VerifierCIDP<T>
 where
 	T: ProvideRuntimeApi<Block> + Send + Sync + HeaderBackend<Block>,
 	T::Api: SessionValidatorManagementApi<
@@ -123,23 +143,37 @@ where
 		>,
 	T::Api: TokenBridgeIDPRuntimeApi<Block>,
 {
+	// The full inherent set the inner Aura verifier recreates during its own inherent check.
 	type InherentDataProviders =
-		(TimestampIDP, AriadneIDP, TokenBridgeInherentDataProvider<AccountId>);
+		(AuraIDP, TimestampIDP, McHashIDP, AriadneIDP, TokenBridgeInherentDataProvider<AccountId>);
 
 	async fn create_inherent_data_providers(
 		&self,
 		parent_hash: <Block as BlockT>::Hash,
-		(verified_block_slot, mc_hash): (Slot, McBlockHash),
+		_extra_args: (),
 	) -> Result<Self::InherentDataProviders, Box<dyn Error + Send + Sync>> {
+		let (verified_block_slot, mc_hash) = self
+			.verification_context
+			.lock()
+			.expect("VerifierCIDP verification context mutex poisoned")
+			.clone()
+			.ok_or(
+				"VerifierCIDP: verification context (slot, mc_hash) was not set before \
+				 create_inherent_data_providers; the block must be verified/imported through \
+				 PartnerChainsVerifier or PartnerChainsBlockImport",
+			)?;
+
 		let Self {
 			config,
 			client,
 			mc_hash_data_source,
 			authority_selection_data_source,
 			bridge_data_source,
+			..
 		} = self;
 		let CreateInherentDataConfig { mc_epoch_config, sc_slot_config, time_source, .. } = config;
 
+		let slot = AuraIDP::new(verified_block_slot);
 		let timestamp = TimestampIDP::new(Timestamp::new(time_source.get_current_time_millis()));
 		let parent_header = client.expect_header(parent_hash)?;
 		let parent_slot = slot_from_predigest(&parent_header)?;
@@ -172,7 +206,7 @@ where
 		)
 		.await?;
 
-		Ok((timestamp, ariadne_data_provider, bridge))
+		Ok((slot, timestamp, mc_state_reference, ariadne_data_provider, bridge))
 	}
 }
 

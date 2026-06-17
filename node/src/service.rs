@@ -46,6 +46,7 @@ use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
+use sp_inherents::CreateInherentDataProviders;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
@@ -435,45 +436,44 @@ pub fn new_partial(
 	let time_source = Arc::new(SystemTimeSource);
 	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
 
-	let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
+	// Single inherent-data-provider factory shared between the inner Aura verifier and the
+	// PartnerChainsVerifier wrapper. The wrapper injects each block's (slot, mc_hash) into it
+	// (via VerificationContextSink) right before delegating, so the Aura verifier's own
+	// inherent check recreates the Partner Chains inherents through this same factory instead
+	// of rejecting them.
+	let verifier_cidp = Arc::new(VerifierCIDP::new(
+		inherent_config,
+		client.clone(),
+		data_sources.mc_hash.clone(),
+		data_sources.authority_selection.clone(),
+		data_sources.cnight_observation.clone(),
+		data_sources.federated_authority_observation.clone(),
+		data_sources.bridge.clone(),
+	));
 
-	let aura_verifier = sc_consensus_aura::build_verifier::<AuraPair, _, _, _>(
-		sc_consensus_aura::BuildVerifierParams {
-			client: client.clone(),
-			create_inherent_data_providers: move |_parent_hash, ()| async move {
-				let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
-				let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
-					*timestamp,
-					slot_duration,
-				);
-				Ok((slot, timestamp))
+	let aura_verifier = {
+		let cidp = verifier_cidp.clone();
+		sc_consensus_aura::build_verifier::<AuraPair, _, _, _>(
+			sc_consensus_aura::BuildVerifierParams {
+				client: client.clone(),
+				create_inherent_data_providers: move |parent_hash, ()| {
+					let cidp = cidp.clone();
+					async move { cidp.create_inherent_data_providers(parent_hash, ()).await }
+				},
+				check_for_equivocation: Default::default(),
+				telemetry: telemetry.as_ref().map(|x| x.handle()),
+				compatibility_mode: Default::default(),
 			},
-			check_for_equivocation: Default::default(),
-			telemetry: telemetry.as_ref().map(|x| x.handle()),
-			compatibility_mode: Default::default(),
-		},
-	);
+		)
+	};
 
 	let verifier = sp_partner_chains_consensus::PartnerChainsVerifier::<
 		_,
 		_,
-		_,
-		_,
+		Block,
 		AuraSlotExtractor,
 		McHashInherentDigest,
-	>::new(
-		aura_verifier,
-		client.clone(),
-		VerifierCIDP::new(
-			inherent_config,
-			client.clone(),
-			data_sources.mc_hash.clone(),
-			data_sources.authority_selection.clone(),
-			data_sources.cnight_observation.clone(),
-			data_sources.federated_authority_observation.clone(),
-			data_sources.bridge.clone(),
-		),
-	);
+	>::new(aura_verifier, verifier_cidp);
 
 	let import_queue = sc_consensus::import_queue::BasicQueue::new(
 		verifier,

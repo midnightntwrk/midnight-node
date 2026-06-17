@@ -30,6 +30,9 @@ use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
 use sidechain_mc_hash::McHashDataSource;
 use sidechain_mc_hash::McHashInherentDataProvider as McHashIDP;
+use sidechain_mc_hash::McHashInherentDigest;
+use sp_partner_chains_consensus::VerificationContextSink;
+use std::sync::Mutex;
 use sidechain_slots::ScSlotConfig;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
@@ -209,10 +212,30 @@ pub struct VerifierCIDP<T> {
 	federated_authority_observation_data_source:
 		Arc<dyn FederatedAuthorityObservationDataSource + Send + Sync>,
 	bridge_data_source: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
+	/// Slot and mainchain reference hash of the block currently being verified/imported,
+	/// injected by the Partner Chains wrappers (`PartnerChainsVerifier` /
+	/// `PartnerChainsBlockImport`) via [`VerificationContextSink`] immediately before they
+	/// delegate to the inner consensus gadget. Behind interior mutability because
+	/// `create_inherent_data_providers` takes `&self`; block verification/import is sequential,
+	/// so the value set for a block is the one its inherent-data creation reads.
+	#[new(default)]
+	verification_context: Arc<Mutex<Option<(Slot, McBlockHash)>>>,
+}
+
+impl<T> VerificationContextSink<McHashInherentDigest> for VerifierCIDP<T>
+where
+	T: Send + Sync,
+{
+	fn set_verification_context(&self, slot: Slot, mc_hash: McBlockHash) {
+		*self
+			.verification_context
+			.lock()
+			.expect("VerifierCIDP verification context mutex poisoned") = Some((slot, mc_hash));
+	}
 }
 
 #[async_trait]
-impl<T> CreateInherentDataProviders<Block, (Slot, McBlockHash)> for VerifierCIDP<T>
+impl<T> CreateInherentDataProviders<Block, ()> for VerifierCIDP<T>
 where
 	T: ProvideRuntimeApi<Block> + Send + Sync + HeaderBackend<Block> + 'static,
 	T::Api: SessionValidatorManagementApi<
@@ -225,8 +248,14 @@ where
 	T::Api: FederatedAuthorityObservationApi<Block>,
 	T::Api: TokenBridgeIDPRuntimeApi<Block>,
 {
+	// The full inherent set the inner consensus gadget (Aura/BABE) recreates during its own
+	// inherent check — the Partner Chains wrappers no longer perform the check themselves.
+	// The slot and mainchain reference hash come from the header (injected via
+	// `set_verification_context`), the rest from the Partner Chains data sources.
 	type InherentDataProviders = (
+		sp_consensus_aura::inherents::InherentDataProvider,
 		sp_timestamp::InherentDataProvider,
+		McHashIDP,
 		AriadneIDP,
 		MidnightCNightObservationInherentDataProvider,
 		FederatedAuthorityInherentDataProvider,
@@ -236,8 +265,21 @@ where
 	async fn create_inherent_data_providers(
 		&self,
 		parent_hash: <Block as BlockT>::Hash,
-		(verified_block_slot, mc_hash): (Slot, McBlockHash),
+		_extra_args: (),
 	) -> Result<Self::InherentDataProviders, Box<dyn Error + Send + Sync>> {
+		// Slot and mainchain reference hash of the block being verified/imported, injected by
+		// the wrapper immediately before this call (see `VerificationContextSink`).
+		let (verified_block_slot, mc_hash) = self
+			.verification_context
+			.lock()
+			.expect("VerifierCIDP verification context mutex poisoned")
+			.clone()
+			.ok_or(
+				"VerifierCIDP: verification context (slot, mc_hash) was not set before \
+				 create_inherent_data_providers; the block must be verified/imported through \
+				 PartnerChainsVerifier or PartnerChainsBlockImport",
+			)?;
+
 		let Self {
 			config,
 			client,
@@ -246,9 +288,12 @@ where
 			cnight_observation_data_source,
 			federated_authority_observation_data_source,
 			bridge_data_source,
+			..
 		} = self;
 
 		let CreateInherentDataConfig { mc_epoch_config, sc_slot_config, time_source, .. } = config;
+
+		let slot = sp_consensus_aura::inherents::InherentDataProvider::new(verified_block_slot);
 
 		let timestamp = sp_timestamp::InherentDataProvider::new(Timestamp::new(
 			time_source.get_current_time_millis(),
@@ -320,7 +365,15 @@ where
 			e
 		})?;
 
-		Ok((timestamp, ariadne_data_provider, cnight_observation, federated_authority, bridge))
+		Ok((
+			slot,
+			timestamp,
+			mc_state_reference,
+			ariadne_data_provider,
+			cnight_observation,
+			federated_authority,
+			bridge,
+		))
 	}
 }
 

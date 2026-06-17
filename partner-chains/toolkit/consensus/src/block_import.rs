@@ -1,62 +1,52 @@
-use crate::inherent_check::check_partner_chains_inherents;
-use crate::{InherentDigest, SlotExtractor};
+use crate::{InherentDigest, SlotExtractor, VerificationContextSink};
 use sc_consensus::block_import::{BlockCheckParams, BlockImport, BlockImportParams, ImportResult};
 use sp_consensus::Error as ConsensusError;
-use sp_consensus_slots::Slot;
-use sp_inherents::CreateInherentDataProviders;
-use sp_runtime::traits::Block as BlockT;
-use std::{marker::PhantomData, sync::Arc};
-
-/// Intermediate key under which [`PartnerChainsBlockImport`] stashes the block body
-/// for [`PartnerChainsBodyRestore`] to put back.
-const BODY_INTERMEDIATE_KEY: &[u8] = b"partner-chains/body";
+use sp_runtime::traits::{Block as BlockT, Header};
+use std::marker::PhantomData;
 
 /// Partner Chains block import wrapper, for consensus stacks that check inherents
-/// during block import rather than in the import queue verifier.
+/// during block import rather than in the import queue verifier (e.g. BABE).
 ///
-/// Some consensus block imports (e.g. `BabeBlockImport`) check the block's inherents
-/// with inherent data created from the parent hash only, which cannot include the
-/// Partner Chains inherents — any block containing them would be rejected. Analogously
-/// to [`PartnerChainsVerifier`](crate::PartnerChainsVerifier) on the verifier level,
-/// this wrapper performs the complete Partner Chains inherent check itself and
-/// withholds the block body from the wrapped import, so that the consensus logic
-/// (e.g. epoch changes, equivocation reporting) still runs while its body-gated
-/// inherent check is skipped.
+/// Makes the wrapped import's inherent check aware of the Partner Chains inherents. It
+/// extracts the block's slot (via [`SlotExtractor`]) and its [`InherentDigest`] value from the
+/// header, injects them into the shared
+/// [`CreateInherentDataProviders`](sp_inherents::CreateInherentDataProviders) via
+/// [`VerificationContextSink`], then delegates the import to the wrapped import.
 ///
-/// Since the imports below the consensus one need the body (the client executes and
-/// stores the block), the body is stashed as an import intermediate and must be
-/// restored by [`PartnerChainsBodyRestore`] placed directly beneath the consensus
-/// import. For BABE the import chain composes as:
+/// The wrapped import recreates its inherent data through that same
+/// `CreateInherentDataProviders` — now parameterised by the block's slot and inherent digest —
+/// so its own inherent check reproduces the Partner Chains inherents and accepts the block,
+/// while its other consensus logic (epoch changes, equivocation reporting, …) runs unchanged
+/// against the complete block.
 ///
-/// ```text
-/// PartnerChainsBlockImport<BabeBlockImport<PartnerChainsBodyRestore<GrandpaBlockImport<...>>>>
-/// ```
+/// Nodes whose consensus checks inherents in the verifier (e.g. Aura) do not need this wrapper:
+/// use [`PartnerChainsVerifier`](crate::PartnerChainsVerifier) alone.
 ///
-/// Nodes whose consensus checks inherents in the verifier (e.g. Aura) do not need
-/// this wrapper: use [`PartnerChainsVerifier`](crate::PartnerChainsVerifier) alone.
-pub struct PartnerChainsBlockImport<Inner, C, CIDP, B: BlockT, SE, ID> {
+/// Generic over:
+/// - `Inner`: the wrapped consensus block import (e.g. `BabeBlockImport`)
+/// - `CIDP`: the shared inherent-data-provider factory the inner import also uses; must
+///   implement [`VerificationContextSink`] so this wrapper can parameterise it
+/// - `SE`: extracts the slot from the block header
+/// - `ID`: the [`InherentDigest`] carrying inherent data in the block header
+pub struct PartnerChainsBlockImport<Inner, CIDP, B: BlockT, SE, ID> {
 	inner: Inner,
-	client: Arc<C>,
 	create_inherent_data_providers: CIDP,
 	_phantom: PhantomData<fn() -> (B, SE, ID)>,
 }
 
-impl<Inner, C, CIDP, B: BlockT, SE, ID> PartnerChainsBlockImport<Inner, C, CIDP, B, SE, ID> {
-	/// Creates a new block import wrapping `inner`.
-	pub fn new(inner: Inner, client: Arc<C>, create_inherent_data_providers: CIDP) -> Self {
-		Self { inner, client, create_inherent_data_providers, _phantom: PhantomData }
+impl<Inner, CIDP, B: BlockT, SE, ID> PartnerChainsBlockImport<Inner, CIDP, B, SE, ID> {
+	/// Creates a new block import wrapping `inner`, sharing `create_inherent_data_providers` with it.
+	pub fn new(inner: Inner, create_inherent_data_providers: CIDP) -> Self {
+		Self { inner, create_inherent_data_providers, _phantom: PhantomData }
 	}
 }
 
 #[async_trait::async_trait]
-impl<Inner, C, CIDP, B, SE, ID> BlockImport<B>
-	for PartnerChainsBlockImport<Inner, C, CIDP, B, SE, ID>
+impl<Inner, CIDP, B, SE, ID> BlockImport<B> for PartnerChainsBlockImport<Inner, CIDP, B, SE, ID>
 where
 	B: BlockT,
 	Inner: BlockImport<B, Error = ConsensusError> + Send + Sync,
-	C: sp_api::ProvideRuntimeApi<B> + Send + Sync,
-	C::Api: sp_block_builder::BlockBuilder<B> + sp_api::ApiExt<B>,
-	CIDP: CreateInherentDataProviders<B, (Slot, ID::Value)> + Send + Sync,
+	CIDP: VerificationContextSink<ID>,
 	SE: SlotExtractor<B>,
 	ID: InherentDigest + Send + Sync + 'static,
 {
@@ -68,70 +58,29 @@ where
 
 	async fn import_block(
 		&self,
-		mut block: BlockImportParams<B>,
+		block: BlockImportParams<B>,
 	) -> Result<ImportResult, Self::Error> {
 		// Skip checks that include execution, e.g. when importing only the state after warp sync.
 		if block.with_state() || block.state_action.skip_execution_checks() {
 			return self.inner.import_block(block).await;
 		}
 
-		check_partner_chains_inherents::<B, C, CIDP, SE, ID>(
-			&self.client,
-			&self.create_inherent_data_providers,
-			&block.header,
-			block.body.as_ref(),
-			block.post_hash(),
-		)
-		.await
-		.map_err(ConsensusError::ClientImport)?;
+		// Parameterise the shared inherent-data-provider factory with the slot and inherent
+		// digest of this block, so the inner import's inherent check recreates the Partner
+		// Chains inherents instead of rejecting them.
+		let slot =
+			SE::extract_slot(&block.header).map_err(|e| ConsensusError::Other(e.into()))?;
+		let digest_value = ID::value_from_digest(block.header.digest().logs()).map_err(|e| {
+			ConsensusError::Other(
+				format!(
+					"Failed to retrieve inherent digest from header of block {:?}: {e}",
+					block.header.hash()
+				)
+				.into(),
+			)
+		})?;
+		self.create_inherent_data_providers.set_verification_context(slot, digest_value);
 
-		// Withhold the body from the wrapped consensus import so its body-gated inherent
-		// check — which would run against inherent data missing the Partner Chains
-		// inherents — is skipped. PartnerChainsBodyRestore puts the body back beneath it.
-		if let Some(body) = block.body.take() {
-			block.insert_intermediate(BODY_INTERMEDIATE_KEY, body);
-		}
-
-		self.inner.import_block(block).await
-	}
-}
-
-/// Restores the block body stashed by [`PartnerChainsBlockImport`].
-///
-/// Must be placed in the block import chain directly beneath the consensus import
-/// wrapped by [`PartnerChainsBlockImport`], so that the imports below it (e.g. GRANDPA
-/// and the client) receive the complete block. See [`PartnerChainsBlockImport`].
-pub struct PartnerChainsBodyRestore<Inner, B: BlockT> {
-	inner: Inner,
-	_phantom: PhantomData<fn() -> B>,
-}
-
-impl<Inner, B: BlockT> PartnerChainsBodyRestore<Inner, B> {
-	/// Creates a new block import wrapping `inner`.
-	pub fn new(inner: Inner) -> Self {
-		Self { inner, _phantom: PhantomData }
-	}
-}
-
-#[async_trait::async_trait]
-impl<Inner, B> BlockImport<B> for PartnerChainsBodyRestore<Inner, B>
-where
-	B: BlockT,
-	Inner: BlockImport<B> + Send + Sync,
-{
-	type Error = Inner::Error;
-
-	async fn check_block(&self, block: BlockCheckParams<B>) -> Result<ImportResult, Self::Error> {
-		self.inner.check_block(block).await
-	}
-
-	async fn import_block(
-		&self,
-		mut block: BlockImportParams<B>,
-	) -> Result<ImportResult, Self::Error> {
-		if let Ok(body) = block.remove_intermediate::<Vec<B::Extrinsic>>(BODY_INTERMEDIATE_KEY) {
-			block.body = Some(body);
-		}
 		self.inner.import_block(block).await
 	}
 }
@@ -141,45 +90,18 @@ mod tests {
 	use super::*;
 	use crate::test_support::*;
 	use sc_consensus::block_import::ForkChoiceStrategy;
+	use sp_consensus_slots::Slot;
+	use std::sync::Arc;
 	use std::sync::Mutex;
-	use std::sync::atomic::{AtomicBool, Ordering};
 
-	/// Stand-in for a consensus block import (e.g. `BabeBlockImport`): records whether
-	/// it received the block body, as its inherent check is gated on its presence.
-	struct ConsensusImportStub<Inner> {
-		inner: Inner,
-		saw_body: Arc<AtomicBool>,
-	}
-
-	#[async_trait::async_trait]
-	impl<Inner: BlockImport<Block, Error = ConsensusError> + Send + Sync> BlockImport<Block>
-		for ConsensusImportStub<Inner>
-	{
-		type Error = ConsensusError;
-
-		async fn check_block(
-			&self,
-			block: BlockCheckParams<Block>,
-		) -> Result<ImportResult, Self::Error> {
-			self.inner.check_block(block).await
-		}
-
-		async fn import_block(
-			&self,
-			block: BlockImportParams<Block>,
-		) -> Result<ImportResult, Self::Error> {
-			self.saw_body.store(block.body.is_some(), Ordering::SeqCst);
-			self.inner.import_block(block).await
-		}
-	}
-
-	/// Innermost import (e.g. the client): records the body it received.
-	struct TerminalImport {
+	/// Innermost import (e.g. a consensus import): records the body it received.
+	struct InnerImport {
 		received_body: Arc<Mutex<Option<Option<Vec<<Block as BlockT>::Extrinsic>>>>>,
+		fail: bool,
 	}
 
 	#[async_trait::async_trait]
-	impl BlockImport<Block> for TerminalImport {
+	impl BlockImport<Block> for InnerImport {
 		type Error = ConsensusError;
 
 		async fn check_block(
@@ -193,41 +115,25 @@ mod tests {
 			&self,
 			block: BlockImportParams<Block>,
 		) -> Result<ImportResult, Self::Error> {
+			if self.fail {
+				return Err(ConsensusError::Other("rejected by the inner import".into()));
+			}
 			*self.received_body.lock().unwrap() = Some(block.body);
 			Ok(ImportResult::imported(false))
 		}
 	}
 
-	struct Sandwich {
-		import: PartnerChainsBlockImport<
-			ConsensusImportStub<PartnerChainsBodyRestore<TerminalImport, Block>>,
-			TestClient,
-			TestCIDP,
-			Block,
-			TestSlotExtractor,
-			TestInherentDigest,
-		>,
-		check_inherents_called: Arc<AtomicBool>,
-		consensus_saw_body: Arc<AtomicBool>,
-		terminal_received_body: Arc<Mutex<Option<Option<Vec<<Block as BlockT>::Extrinsic>>>>>,
-	}
+	type TestImport =
+		PartnerChainsBlockImport<InnerImport, TestCIDP, Block, TestSlotExtractor, TestInherentDigest>;
 
-	/// Composes the documented chain:
-	/// `PartnerChainsBlockImport<Consensus<PartnerChainsBodyRestore<Terminal>>>`.
-	fn sandwich(fail_inherent_check: bool) -> Sandwich {
-		let (client, check_inherents_called) = test_client(fail_inherent_check);
-		let consensus_saw_body = Arc::new(AtomicBool::new(false));
-		let terminal_received_body = Arc::new(Mutex::new(None));
-
-		let terminal = TerminalImport { received_body: terminal_received_body.clone() };
-		let consensus = ConsensusImportStub {
-			inner: PartnerChainsBodyRestore::new(terminal),
-			saw_body: consensus_saw_body.clone(),
-		};
-		let import =
-			PartnerChainsBlockImport::new(consensus, client, test_create_inherent_data_providers());
-
-		Sandwich { import, check_inherents_called, consensus_saw_body, terminal_received_body }
+	fn test_import(
+		inner_fail: bool,
+	) -> (TestImport, TestCIDP, Arc<Mutex<Option<Option<Vec<<Block as BlockT>::Extrinsic>>>>>) {
+		let received_body = Arc::new(Mutex::new(None));
+		let cidp = TestCIDP::default();
+		let inner = InnerImport { received_body: received_body.clone(), fail: inner_fail };
+		let import = PartnerChainsBlockImport::new(inner, cidp.clone());
+		(import, cidp, received_body)
 	}
 
 	fn importable(body: Option<Vec<<Block as BlockT>::Extrinsic>>) -> BlockImportParams<Block> {
@@ -237,41 +143,23 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn checks_inherents_and_delivers_body_to_imports_beneath_the_consensus_one() {
-		let sandwich = sandwich(false);
+	async fn parameterises_cidp_then_delegates_with_body() {
+		let (import, cidp, received_body) = test_import(false);
 
-		sandwich
-			.import
-			.import_block(importable(Some(vec![])))
-			.await
-			.expect("import succeeds");
+		import.import_block(importable(Some(vec![]))).await.expect("import succeeds");
 
-		assert!(sandwich.check_inherents_called.load(Ordering::SeqCst));
-		// The consensus import must not see the body (its inherent check is suppressed),
-		// while the import below the restore stage receives the complete block.
-		assert!(!sandwich.consensus_saw_body.load(Ordering::SeqCst));
-		assert_eq!(*sandwich.terminal_received_body.lock().unwrap(), Some(Some(vec![])));
+		// The CIDP was parameterised, and the inner import received the complete block.
+		assert_eq!(cidp.taken_context(), Some((Slot::from(TEST_SLOT), TEST_DIGEST_VALUE)));
+		assert_eq!(*received_body.lock().unwrap(), Some(Some(vec![])));
 	}
 
 	#[tokio::test]
-	async fn rejects_block_when_inherent_check_fails_without_importing() {
-		let sandwich = sandwich(true);
+	async fn propagates_inner_import_rejection() {
+		let (import, _cidp, received_body) = test_import(true);
 
-		let result = sandwich.import.import_block(importable(Some(vec![]))).await;
+		let result = import.import_block(importable(Some(vec![]))).await;
 
-		assert!(
-			matches!(result, Err(ConsensusError::ClientImport(e)) if e.contains("Inherent check failed"))
-		);
-		assert!(sandwich.terminal_received_body.lock().unwrap().is_none());
-	}
-
-	#[tokio::test]
-	async fn passes_header_only_import_through_without_inherent_check() {
-		let sandwich = sandwich(false);
-
-		sandwich.import.import_block(importable(None)).await.expect("import succeeds");
-
-		assert!(!sandwich.check_inherents_called.load(Ordering::SeqCst));
-		assert_eq!(*sandwich.terminal_received_body.lock().unwrap(), Some(None));
+		assert!(matches!(result, Err(ConsensusError::Other(e)) if e.to_string().contains("rejected by the inner import")));
+		assert!(received_body.lock().unwrap().is_none());
 	}
 }

@@ -14,13 +14,14 @@
 use parity_scale_codec::{Decode, Encode};
 use sc_consensus::{BoxJustificationImport, ForkChoiceStrategy};
 use sc_network_test::{
-	Block as TestBlock, BlockImportAdapter, PassThroughVerifier, Peer, PeersClient,
-	PeersFullClient, TestNetFactory,
+	Block as TestBlock, BlockImportAdapter, PassThroughVerifier, Peer, PeersClient, TestNetFactory,
 };
 use sp_consensus::BlockOrigin;
 use sp_consensus_slots::Slot;
-use sp_inherents::{CreateInherentDataProviders, InherentData, InherentIdentifier};
-use sp_partner_chains_consensus::{InherentDigest, PartnerChainsVerifier, SlotExtractor};
+use sp_inherents::{InherentData, InherentIdentifier};
+use sp_partner_chains_consensus::{
+	InherentDigest, PartnerChainsVerifier, SlotExtractor, VerificationContextSink,
+};
 use sp_runtime::generic::BlockId;
 use sp_runtime::traits::Block as BlockT;
 use sp_runtime::{Digest, DigestItem};
@@ -84,23 +85,14 @@ struct RecordingVerifierCIDP {
 	recorded: Arc<Mutex<Vec<(Slot, u64)>>>,
 }
 
-#[async_trait::async_trait]
-impl CreateInherentDataProviders<TestBlock, (Slot, u64)> for RecordingVerifierCIDP {
-	type InherentDataProviders = ();
-
-	async fn create_inherent_data_providers(
-		&self,
-		_parent: <TestBlock as BlockT>::Hash,
-		(slot, digest_value): (Slot, u64),
-	) -> Result<Self::InherentDataProviders, Box<dyn std::error::Error + Send + Sync>> {
-		self.recorded.lock().unwrap().push((slot, digest_value));
-		Ok(())
+impl VerificationContextSink<SlotInherentDigest> for RecordingVerifierCIDP {
+	fn set_verification_context(&self, slot: Slot, inherent_digest: u64) {
+		self.recorded.lock().unwrap().push((slot, inherent_digest));
 	}
 }
 
 type TestVerifier = PartnerChainsVerifier<
 	PassThroughVerifier,
-	PeersFullClient,
 	RecordingVerifierCIDP,
 	TestBlock,
 	TestSlotExtractor,
@@ -119,10 +111,9 @@ impl TestNetFactory for PartnerChainsTestNet {
 	type PeerData = ();
 	type BlockImport = PeersClient;
 
-	fn make_verifier(&self, client: PeersClient, _peer_data: &()) -> Self::Verifier {
+	fn make_verifier(&self, _client: PeersClient, _peer_data: &()) -> Self::Verifier {
 		PartnerChainsVerifier::new(
 			PassThroughVerifier::new(false),
-			client.as_client(),
 			RecordingVerifierCIDP { recorded: self.recorded.clone() },
 		)
 	}
