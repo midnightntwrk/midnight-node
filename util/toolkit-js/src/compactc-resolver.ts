@@ -19,7 +19,7 @@ const ERROR_MODULE_REGEXP = /module '(?<path>.*)'$/;
 
 /** Currently supported `compactc` versions (in full `<major>.<minor>.<patch>` form). Each maps to a sibling
  * `compact-<major>.<minor>.<patch>/` workspace pinning the matched `@midnight-ntwrk/compact-js` line. */
-export const SUPPORTED_COMPACTC_VERSIONS = ['0.29.0', '0.30.0', '0.31.0'] as const;
+export const SUPPORTED_COMPACTC_VERSIONS = ['0.29.0', '0.30.0', '0.31.0', '0.31.108'] as const;
 
 /**
  * Normalizes a raw `COMPACTC_VERSION` to the supported `<major>.<minor>.<patch>` form used to select a

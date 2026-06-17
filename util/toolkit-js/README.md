@@ -226,9 +226,10 @@ transitively, a matching `@midnight-ntwrk/compact-runtime`). To let one toolkit 
 different `compactc` versions, each supported version has its own sibling workspace that pins that line:
 
 ```
-compact-0.29.0/   → @midnight-ntwrk/compact-js* 2.4.3
-compact-0.30.0/   → @midnight-ntwrk/compact-js* 2.5.0
-compact-0.31.0/   → @midnight-ntwrk/compact-js* 2.5.1
+compact-0.29.0/     → @midnight-ntwrk/compact-js* 2.4.3   (public npm)
+compact-0.30.0/     → @midnight-ntwrk/compact-js* 2.5.0   (public npm)
+compact-0.31.0/     → @midnight-ntwrk/compact-js* 2.5.1   (public npm)
+compact-0.31.108/   → @midnight-ntwrk/compact-js* 2.5.3   (vendored .tgz, see below)
 ```
 
 The root package depends on every variant (`@midnight-ntwrk/node-toolkit-compact-<major>.<minor>.<patch>`). At
@@ -275,6 +276,46 @@ leading `<major>.<minor>.<patch>` is matched.
 
 To drop an old version, reverse these steps: remove it from `SUPPORTED_COMPACTC_VERSIONS`, the root dependency,
 and the test script, then delete the `compact-<major>.<minor>.<patch>/` workspace.
+
+### Variants that vendor an unpublished `compact-js` (e.g. `compact-0.31.108`)
+
+Some `compactc` lines pre-date the publication of their matching `@midnight-ntwrk/compact-js*` and
+`@midnight-ntwrk/compact-runtime` packages, so there is nothing on npm to pin. The `compact-0.31.108`
+variant (compact-js **2.5.3**, for ledger 9) handles this by **vendoring `npm pack` tarballs** referenced
+via `file:`:
+
+```
+compact-0.31.108/vendor/compact-js.tgz
+compact-0.31.108/vendor/compact-js-command.tgz
+compact-0.31.108/vendor/compact-js-node.tgz
+compact-0.31.108/vendor/compact-runtime.tgz
+compact-0.31.108/vendor/ledger-v9.tgz
+```
+
+npm installs a `file:*.tgz` by extracting it into a real hoisted `node_modules/` directory (not a symlink)
+and records `resolved` + an `integrity` sha512 in `package-lock.json`, so bare imports
+(`import * as __compactRuntime from '@midnight-ntwrk/compact-runtime'` in generated contracts) resolve and
+the integrity hashes become part of the provenance chain. `compact-runtime` and `ledger-v9` are declared as
+**direct** dependencies of the variant (not just transitively) so they hoist to the top level and satisfy
+`compact-js`'s ranges from the blobs rather than from the public registry. Everything else in the closure
+(`@effect/*`, `platform-js`, `wallet-sdk-address-format`, `onchain-runtime-v4`, …) resolves from public npm,
+so the consume path needs **no `.npmrc` and no token**.
+
+The blobs are **not committed by hand**. They are built in CI from the pinned `midnight-sdk` submodule
+(`scripts/build-compact-js-bundle.sh`, run by the `+compact-js-bundle` Earthly target) and committed back to
+the PR branch by the `rebuild-compact-js-bundle-bot` workflow as a verified `github-actions[bot]` commit.
+The GitHub Packages read token is needed **only inside that build** (to fetch `ledger-v9` and run the SDK's
+install) — never on the consume path. Trust chain: pinned submodule → CI build → bot-signed commit →
+lockfile integrity hashes.
+
+To regenerate the blobs (e.g. after re-pinning the `midnight-sdk` submodule), comment on the PR:
+
+```
+/bot rebuild-compact-js-bundle
+```
+
+then, once the bot has committed the blobs, regenerate the lockfile with `npm install` (records the new
+`file:` integrity hashes) and commit it.
 
 > [!IMPORTANT]
 > The CLI option surface can change between `compactc`/`compact-js-command` versions. For example, the global

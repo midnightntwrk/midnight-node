@@ -30,6 +30,7 @@
     "@midnight-ntwrk/node-toolkit-compact-0.29.0": "^0.1.0",
     "@midnight-ntwrk/node-toolkit-compact-0.30.0": "^0.1.0",
     "@midnight-ntwrk/node-toolkit-compact-0.31.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.31.108": "^0.1.0",
     "effect": "^3.21.0"
   },
   "devDependencies": {

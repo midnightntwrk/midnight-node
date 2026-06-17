@@ -825,6 +825,42 @@ compactc-fetch:
         rm /tmp/compactc.zip
     SAVE ARTIFACT /compact-home
 
+# Builds the five vendored `.tgz` blobs the `compact-0.31.108` toolkit-js variant consumes via
+# `file:` references (compact-js{,-command,-node} 2.5.3, the matching compact-runtime, and ledger-v9),
+# from the pinned `midnight-sdk` submodule. Mirrors +compactc-bundle: runs nix inside the build with
+# the IOG cache enabled so the runtime's zkir/onchain-runtime are fetched prebuilt rather than
+# compiled. The GitHub Packages read token is consumed ONLY here (ledger-v9 + the SDK's install) —
+# the consume path (`npm ci` in util/toolkit-js) needs no token. See
+# util/toolkit-js/compact-0.31.108/vendor/README.md and scripts/build-compact-js-bundle.sh.
+compact-js-bundle:
+    # TODO: pin to a digest/tag once first green CI confirms it works.
+    FROM nixos/nix:latest
+    # Append (don't clobber) so the base image's defaults (incl. cache.nixos.org) survive. sandbox=false
+    # because buildkit/podman containers usually lack the user namespaces nix's sandbox needs.
+    RUN mkdir -p /etc/nix && { \
+        echo "extra-experimental-features = nix-command flakes"; \
+        echo "sandbox = false"; \
+        echo "extra-substituters = https://cache.iog.io"; \
+        echo "extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="; \
+      } >> /etc/nix/nix.conf
+    # The midnight-sdk submodule (with its nested compact-submodule checked out recursively by the
+    # caller) and the build script. COPY brings the working-tree files; the COPY'd submodules have no
+    # `.git`, so the script's nix invocations use `path:` refs.
+    COPY midnight-sdk /work/midnight-sdk
+    COPY scripts/build-compact-js-bundle.sh /work/scripts/build-compact-js-bundle.sh
+    WORKDIR /work
+    # node/yarn/git aren't in the base nixos/nix image; provide them via `nix shell` for the build.
+    # The token is consumed only inside this RUN and never written into the produced tarballs.
+    RUN --secret MIDNIGHTCI_PACKAGES_READ= \
+        SDK_DIR=/work/midnight-sdk VENDOR_DIR=/work/vendor-out \
+        nix shell nixpkgs#nodejs_22 nixpkgs#yarn nixpkgs#git \
+          --command bash /work/scripts/build-compact-js-bundle.sh
+    SAVE ARTIFACT /work/vendor-out/compact-js.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-js.tgz
+    SAVE ARTIFACT /work/vendor-out/compact-js-command.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-js-command.tgz
+    SAVE ARTIFACT /work/vendor-out/compact-js-node.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-js-node.tgz
+    SAVE ARTIFACT /work/vendor-out/compact-runtime.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-runtime.tgz
+    SAVE ARTIFACT /work/vendor-out/ledger-v9.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/ledger-v9.tgz
+
 # compactc-build-local builds and exports compactc to .compact-home
 compactc-build-local:
     LOCALLY

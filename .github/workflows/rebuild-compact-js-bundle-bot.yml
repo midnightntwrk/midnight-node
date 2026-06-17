@@ -1,0 +1,211 @@
+name: Rebuild Compact-JS Bundle (Bot Action)
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to rebuild the compact-js bundle for'
+        required: true
+
+jobs:
+  rebuild-compact-js-bundle:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/bot rebuild-compact-js-bundle'))
+    runs-on: [self-hosted, "tier:medium"]
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check user permission
+        if: github.event_name == 'issue_comment'
+        id: check_permission
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const association = context.payload.comment.author_association;
+            if (!['MEMBER', 'OWNER'].includes(association)) {
+              core.setFailed(`User ${context.actor} is not an org member or owner (association: ${association})`);
+              return;
+            }
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor
+            });
+            const allowed = ['admin', 'write'].includes(permission.permission);
+            if (!allowed) {
+              core.setFailed(`User ${context.actor} does not have write permission`);
+            }
+
+      - name: Add reaction to comment
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            })
+
+      - name: Get PR branch
+        id: pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+        with:
+          script: |
+            const prNumber = context.eventName === 'workflow_dispatch'
+              ? process.env.PR_NUMBER
+              : context.issue.number;
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            if (pr.data.head.repo === null || pr.data.head.repo.fork) {
+              core.setFailed('Bot commands are not allowed on fork PRs for security reasons');
+              return;
+            }
+            // Defense-in-depth: refuse branch names outside the safe charset before they reach the
+            // checkout ref or the commit mutation (env-passing already prevents script injection).
+            const ref = pr.data.head.ref;
+            if (!/^[A-Za-z0-9._\/-]+$/.test(ref)) {
+              core.setFailed(`Refusing to operate on branch with unexpected characters: ${ref}`);
+              return;
+            }
+            core.setOutput('ref', pr.data.head.ref);
+            core.setOutput('sha', pr.data.head.sha);
+            core.setOutput('number', prNumber);
+
+      - name: Checkout PR branch
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          submodules: recursive
+          ref: ${{ steps.pr.outputs.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Earthly
+        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Run compact-js-bundle
+        env:
+          EARTHLY_CONFIG: .earthly/config.yml
+          MIDNIGHTCI_PACKAGES_READ: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+        run: |
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
+          earthly -P --secret MIDNIGHTCI_PACKAGES_READ="$MIDNIGHTCI_PACKAGES_READ" +compact-js-bundle
+
+      - name: Commit and push changes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        id: commit
+        env:
+          REPO: ${{ github.repository }}
+          PR_REF: ${{ steps.pr.outputs.ref }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+
+            // Check if there are changes
+            const status = execSync('git status --porcelain').toString();
+            if (!status.trim()) {
+              core.exportVariable('CHANGES_MADE', 'false');
+              console.log('No changes to commit');
+              return;
+            }
+
+            // Get changed vendored tarballs
+            const prefix = 'util/toolkit-js/compact-0.31.108/vendor/';
+            const changedFiles = status.split('\n')
+              .filter(line => line.trim())
+              .map(line => line.substring(3))
+              .filter(file => file.startsWith(prefix) && file.endsWith('.tgz'));
+
+            if (changedFiles.length === 0) {
+              core.exportVariable('CHANGES_MADE', 'false');
+              console.log('No vendored bundle changes to commit');
+              return;
+            }
+
+            // Prepare file additions (tarballs are binary; base64 handles them).
+            const additions = changedFiles.map(filePath => ({
+              path: filePath,
+              contents: fs.readFileSync(filePath).toString('base64')
+            }));
+
+            // Get current HEAD
+            const headOid = execSync('git rev-parse HEAD').toString().trim();
+
+            // Create commit via GraphQL API (produces a verified github-actions[bot] commit). DCO is
+            // enforced only by the local commit-msg hook, not server-side, but we add Signed-off-by
+            // in the body by convention.
+            const result = await github.graphql(`
+              mutation($input: CreateCommitOnBranchInput!) {
+                createCommitOnBranch(input: $input) {
+                  commit {
+                    oid
+                  }
+                }
+              }
+            `, {
+              input: {
+                branch: {
+                  repositoryNameWithOwner: process.env.REPO,
+                  branchName: process.env.PR_REF
+                },
+                message: {
+                  headline: 'chore: rebuild compact-js vendored bundle',
+                  body: 'Signed-off-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+                },
+                expectedHeadOid: headOid,
+                fileChanges: {
+                  additions: additions
+                }
+              }
+            });
+
+            console.log('Commit created:', result.createCommitOnBranch.commit.oid);
+            core.exportVariable('CHANGES_MADE', 'true');
+
+      - name: Post success comment
+        if: env.CHANGES_MADE == 'true'
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
+        with:
+          message: |
+            :white_check_mark: Compact-JS bundle rebuild complete! Vendored tarballs have been committed. Remember to regenerate `util/toolkit-js/package-lock.json` (`npm install`) and commit it.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post no-changes comment
+        if: env.CHANGES_MADE == 'false'
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
+        with:
+          message: |
+            :white_check_mark: Compact-JS bundle rebuild complete. No changes detected.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post failure comment
+        if: failure()
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
+        with:
+          message: |
+            :x: Compact-JS bundle rebuild failed. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+          pr-number: ${{ steps.pr.outputs.number }}

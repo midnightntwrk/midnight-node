@@ -1,0 +1,30 @@
+{
+  "name": "@midnight-ntwrk/node-toolkit-compact-0.31.108",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "description": "Interface gateway between Rust `midnight-node-toolkit` and TS `@midnight-ntwrk` packages",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@effect/platform": "^0.96.1",
+    "@effect/platform-node": "^0.106.0",
+    "@effect/cli": "^0.74.0",
+    "@midnight-ntwrk/compact-js": "file:vendor/compact-js.tgz",
+    "@midnight-ntwrk/compact-js-command": "file:vendor/compact-js-command.tgz",
+    "@midnight-ntwrk/compact-js-node": "file:vendor/compact-js-node.tgz",
+    "@midnight-ntwrk/compact-runtime": "file:vendor/compact-runtime.tgz",
+    "@midnight-ntwrk/ledger-v9": "file:vendor/ledger-v9.tgz",
+    "effect": "^3.20"
+  }
+}
