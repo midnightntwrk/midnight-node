@@ -89,6 +89,9 @@ generate-preprod-keys:
 generate-preprod-genesis-seeds:
     BUILD +generate-seeds --NETWORK=preprod --OUTPUT_FILE=preprod-genesis-seeds.json
 
+generate-stagenet-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=stagenet --OUTPUT_FILE=stagenet-genesis-seeds.json
+
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
     ARG DEV=false
@@ -492,6 +495,11 @@ rebuild-genesis-state-mainnet:
 rebuild-genesis-state-perfnet:
     BUILD +rebuild-genesis-state \
         --NETWORK=perfnet
+
+# rebuild-genesis-state-stagenet rebuilds the genesis ledger state for stagenet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-stagenet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=stagenet
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
