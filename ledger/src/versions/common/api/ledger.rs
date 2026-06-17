@@ -37,6 +37,7 @@ use zswap_local::ledger::State as ZswapLedgerState;
 
 use super::{
 	super::super::BlockContext,
+	super::super::post_block_update,
 	Api, ContractAddress, ContractState, DeserializableError, LOG_TARGET, SerializableError,
 	SystemTransaction, Transaction, TransactionInvalid, UserAddress, ZswapState,
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
@@ -139,8 +140,15 @@ impl<D: DB> Ledger<D> {
 		let tx_cost =
 			tx.0.cost(&sp.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
-		let (next_state, result) = sp.state.apply(verified_tx, ctx);
 		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
+		post_block_update::prevalidate_post_block_update(
+			&sp.state,
+			&next_block_fullness,
+			&sp.state.parameters.limits.block_limits,
+			"apply_verified_transaction",
+		)?;
+
+		let (next_state, result) = sp.state.apply(verified_tx, ctx);
 		let new_sp = default_storage::<D>()
 			.arena
 			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() });
@@ -192,11 +200,18 @@ impl<D: DB> Ledger<D> {
 		tblock: Timestamp,
 	) -> Result<Sp<Self, D>, LedgerApiError> {
 		let tx_cost = tx.cost(&sp.state.parameters);
+		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
+		post_block_update::prevalidate_post_block_update(
+			&sp.state,
+			&next_block_fullness,
+			&sp.state.parameters.limits.block_limits,
+			"apply_system_tx",
+		)?;
+
 		let (next_state, _) = sp.state.apply_system_tx(tx, tblock).map_err(|e| {
 			log::error!(target: LOG_TARGET, "Error applying System Transaction: {e:?}");
 			LedgerApiError::Transaction(TransactionError::SystemTransaction(e.into()))
 		})?;
-		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
 		Ok(default_storage::<D>()
 			.arena
 			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() }))

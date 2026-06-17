@@ -56,6 +56,9 @@ pub mod ledger_7 {
 	#[path = "guaranteed_validation/ledger_7.rs"]
 	mod guaranteed_validation;
 
+	#[path = "post_block_update/ledger_7.rs"]
+	mod post_block_update;
+
 	pub const CRATE_NAME: &str = "mn-ledger";
 	#[cfg(feature = "std")]
 	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
@@ -88,6 +91,9 @@ pub mod ledger_8 {
 
 	#[path = "guaranteed_validation/ledger_8.rs"]
 	mod guaranteed_validation;
+
+	#[path = "post_block_update/ledger_8.rs"]
+	mod post_block_update;
 
 	pub const CRATE_NAME: &str = "mn-ledger-8";
 	#[cfg(feature = "std")]
@@ -122,6 +128,9 @@ pub mod ledger_9 {
 
 	#[path = "guaranteed_validation/ledger_9.rs"]
 	mod guaranteed_validation;
+
+	#[path = "post_block_update/ledger_9.rs"]
+	mod post_block_update;
 
 	pub const CRATE_NAME: &str = "mn-ledger-9";
 	#[cfg(feature = "std")]
