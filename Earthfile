@@ -828,9 +828,10 @@ compactc-fetch:
 # Builds the five vendored `.tgz` blobs the `compact-0.31.108` toolkit-js variant consumes via
 # `file:` references (compact-js{,-command,-node} 2.5.3, the matching compact-runtime, and ledger-v9),
 # from the pinned `midnight-sdk` submodule. Mirrors +compactc-bundle: runs nix inside the build with
-# the IOG cache enabled so the runtime's zkir/onchain-runtime are fetched prebuilt rather than
-# compiled. The GitHub Packages read token is consumed ONLY here (ledger-v9 + the SDK's install) —
-# the consume path (`npm ci` in util/toolkit-js) needs no token. See
+# the IOG cache enabled. The runtime's zkir/onchain-runtime are built from source (cache.iog.io has no
+# prebuilt copies matching the pinned compact submodule), so the runtime build is CPU/network-heavy.
+# The GitHub Packages read token is consumed ONLY here (ledger-v9 + the SDK's install) — the consume
+# path (`npm ci` in util/toolkit-js) needs no token. See
 # util/toolkit-js/compact-0.31.108/vendor/README.md and scripts/build-compact-js-bundle.sh.
 compact-js-bundle:
     # TODO: pin to a digest/tag once first green CI confirms it works.
@@ -849,11 +850,21 @@ compact-js-bundle:
     COPY midnight-sdk /work/midnight-sdk
     COPY scripts/build-compact-js-bundle.sh /work/scripts/build-compact-js-bundle.sh
     WORKDIR /work
-    # node/yarn/git aren't in the base nixos/nix image; provide them via `nix shell` for the build.
-    # The token is consumed only inside this RUN and never written into the produced tarballs.
-    RUN --secret MIDNIGHTCI_PACKAGES_READ= \
+    # Buildkit cache mounts to speed up re-runs: nix's flake-input/tarball download cache, npm's cache
+    # (ledger-v9 pack), and yarn's per-project package cache. They persist across runs so re-runs skip
+    # already-fetched downloads. (Note: built nix store paths live in /nix, not these caches, so the
+    # from-source runtime compile is not cached here — see vendor/README.md for the local persistent
+    # /nix volume that does cache it.)
+    CACHE /root/.cache/nix
+    CACHE /root/.npm
+    CACHE /work/midnight-sdk/compact-js/.yarn/cache
+    # node/git aren't in the base nixos/nix image; provide them via `nix shell` (the outer `nix` stays
+    # on PATH for the script's nested `nix develop` runtime build). yarn comes from corepack (bundled
+    # with node), honouring the SDK's pinned yarn 4.10.3. The token is consumed only here and never
+    # written into the produced tarballs.
+    RUN --secret MIDNIGHTCI_PACKAGES_READ \
         SDK_DIR=/work/midnight-sdk VENDOR_DIR=/work/vendor-out \
-        nix shell nixpkgs#nodejs_22 nixpkgs#yarn nixpkgs#git \
+        nix shell nixpkgs#nodejs_22 nixpkgs#git \
           --command bash /work/scripts/build-compact-js-bundle.sh
     SAVE ARTIFACT /work/vendor-out/compact-js.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-js.tgz
     SAVE ARTIFACT /work/vendor-out/compact-js-command.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-js-command.tgz
