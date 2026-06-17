@@ -67,18 +67,36 @@ where
 	BE: Backend<B> + 'static,
 	Client: HeaderBackend<B> + StorageProvider<B, BE> + Send + Sync + 'static,
 {
-	/// Build the handler and the protocol config to register on `net_config` before
-	/// `build_network`. Spawn [`run`](Self::run) as a task.
+	/// Build the protocol config to register on `net_config` before `build_network`, plus — when
+	/// `serve` is true — the handler to spawn via [`run`](Self::run).
+	///
+	/// `serve` gates the **server** side only. Validators pass `serve = false`: serializing the
+	/// multi-million-node arena is this protocol's most CPU-expensive operation, and it must never
+	/// compete with a validator's authoring/finality duties (an easy remote DoS vector). A
+	/// non-serving node advertises no inbound queue, so the network routes no requests to it — but
+	/// the protocol is still registered, so the node can act as a warp-sync *client* and recover
+	/// its own arena. Returns `None` for the handler when not serving.
 	pub fn new<N: NetworkBackend<B, <B as BlockT>::Hash>>(
 		genesis_hash: B::Hash,
 		fork_id: Option<&str>,
 		client: Arc<Client>,
 		unified: bool,
 		num_peer_hint: usize,
-	) -> (Self, N::RequestResponseProtocolConfig) {
-		// Reserve one in-flight request slot per peer.
-		let capacity = std::cmp::max(num_peer_hint, 1);
-		let (tx, request_receiver) = async_channel::bounded(capacity);
+		serve: bool,
+	) -> (Option<Self>, N::RequestResponseProtocolConfig) {
+		// Only advertise an inbound queue (and build a handler) when this node serves. A `None`
+		// inbound queue means the network layer routes no requests to us; we can still *send*
+		// requests on the protocol as a warp-sync client.
+		let (inbound_queue, handler) = if serve {
+			// Reserve one in-flight request slot per peer.
+			let capacity = std::cmp::max(num_peer_hint, 1);
+			let (tx, request_receiver) = async_channel::bounded(capacity);
+			let handler =
+				Self { client, unified, request_receiver, cache: None, _phantom: PhantomData };
+			(Some(tx), Some(handler))
+		} else {
+			(None, None)
+		};
 
 		let config = N::request_response_config(
 			ledger_sync_protocol_name(genesis_hash, fork_id).into(),
@@ -86,10 +104,10 @@ where
 			MAX_REQUEST_SIZE,
 			MAX_RESPONSE_SIZE,
 			REQUEST_TIMEOUT,
-			Some(tx),
+			inbound_queue,
 		);
 
-		(Self { client, unified, request_receiver, cache: None, _phantom: PhantomData }, config)
+		(handler, config)
 	}
 
 	/// Run the request-handling loop until the inbound queue closes.

@@ -576,6 +576,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// Warp ledger-sync: register the request/response protocol that serves / recovers the
 	// Midnight ledger arena after warp+state-sync. The server handler is spawned after the network
 	// is built; `ledger_sync_protocol_name` is reused by the client driver in the monitor.
+	//
+	// Validators do not serve: arena serialization is the protocol's most CPU-expensive operation
+	// and must not compete with authoring/finality (a remote DoS vector). They still register the
+	// protocol as a client, so a fresh validator can warp-sync and recover its own arena.
+	let serve_ledger_sync = !config.role.is_authority();
 	let ledger_sync_protocol_name: sc_network::ProtocolName =
 		crate::warp_ledger_sync::protocol::ledger_sync_protocol_name(
 			genesis_hash,
@@ -591,6 +596,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			client.clone(),
 			warp_ledger_unified,
 			config.network.default_peers_set_num_full as usize,
+			serve_ledger_sync,
 		);
 	net_config.add_request_response_protocol(ledger_sync_cfg);
 
@@ -622,12 +628,15 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// also gates the import queue) is shared with the monitor (which flips its flags) and the
 	// authoring SyncOracle (which reads them).
 
-	// Serve ledger snapshots to warp-syncing peers.
-	task_manager.spawn_handle().spawn(
-		"midnight-ledger-sync-server",
-		Some("midnight-ledger-sync"),
-		ledger_sync_handler.run(),
-	);
+	// Serve ledger snapshots to warp-syncing peers (non-validators only; see above). On a
+	// validator `ledger_sync_handler` is `None` and no server task is spawned.
+	if let Some(ledger_sync_handler) = ledger_sync_handler {
+		task_manager.spawn_handle().spawn(
+			"midnight-ledger-sync-server",
+			Some("midnight-ledger-sync"),
+			ledger_sync_handler.run(),
+		);
+	}
 	// Drive recovery on this node after warp completes (no-op on full sync). Needed by any
 	// warp-synced node — authority or not — to repopulate the arena, so it is spawned regardless.
 	task_manager.spawn_handle().spawn(
