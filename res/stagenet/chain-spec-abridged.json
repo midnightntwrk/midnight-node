@@ -194,7 +194,7 @@
               "block_timestamp": 0,
               "tx_index_in_block": 0
             },
-            "system_tx": null
+            "system_tx": "<snipped>"
           },
           "marker": null
         },
@@ -273,7 +273,7 @@
         "bridge": {
           "mainChainScripts": {
             "token_policy_id": "0xd2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-            "token_asset_name": "0x4e49474854",
+            "token_asset_name": "0x",
             "illiquid_circulation_supply_validator_address": "addr_test1wrdnz6atrh86np0desq4rfm2vrhrdya6j9zu6n084m9c3eg4tr250",
             "reserve_validator_address": "addr_test1wpuq05f3vkyh9jkz6qjsqj6tzsvx7jadk48wktnev8tzkzqk8v6h3"
           },
