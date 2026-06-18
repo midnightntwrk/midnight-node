@@ -19,11 +19,11 @@
   "dependencies": {
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
-    "@effect/cli": "^0.74.0",
+    "@effect/cli": "^0.75.0",
     "@midnight-ntwrk/compact-js": "file:vendor/compact-js.tgz",
     "@midnight-ntwrk/compact-js-command": "file:vendor/compact-js-command.tgz",
     "@midnight-ntwrk/compact-js-node": "file:vendor/compact-js-node.tgz",
     "@midnight-ntwrk/compact-runtime": "file:vendor/compact-runtime.tgz",
-    "effect": "^3.20"
+    "effect": "^3.21.2"
   }
 }
