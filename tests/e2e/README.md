@@ -1,5 +1,9 @@
 # End to End Tests
 
+> For the broader "how to test the Midnight node" guide — test levels, user
+> flows, CI surface, release evidence — see
+> [`docs/tests/how-to-test-node.md`](../../docs/tests/how-to-test-node.md).
+
 These tests are not run by default when running `cargo test` in the workspace.
 
 To execute these tests in CI, run `cargo test --test e2e_tests`

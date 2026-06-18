@@ -346,7 +346,9 @@ across the fork.
 
 - Script: `local-environment/src/networks/local-env/hardfork-pv11.sh`
 - What it does, in order:
-  1. Registers a governance stake address, CC hot credentials, and a DRep.
+  1. Registers a governance stake address, **Constitutional Committee (CC) hot
+     credentials** — the hot signing key a CC member uses to cast votes, paired
+     with an offline cold key that authorises it — and a DRep.
   2. Delegates stake to the DRep and an SPO.
   3. Submits the hard-fork governance action.
   4. Votes yes from CC + SPO + DRep.
@@ -425,6 +427,10 @@ The rc.8 doc is the canonical template — clone it.
 
 ## 4. How to implement new tests
 
+> Operational reference for the e2e suite — pre-deploy gate, stability barrier,
+> toolkit cache, `indexer` feature, layout, logging — lives in
+> [`tests/e2e/README.md`](../../tests/e2e/README.md).
+
 ### 4.1 Decide where the test belongs
 
 ```
@@ -447,11 +453,16 @@ Each test:
 1. **Registers its seed** with `register_test_seed(seed)` immediately after generating
    a random `WalletSeed`. This is what enables the toolkit-cache warmup to batch.
 2. **Acquires a `PreDeployGuard`** for the body if it asserts pre-deploy behaviour.
-3. **Drives Cardano-side state** via `whisky` / `ogmios-client`.
-4. **Waits** on the Midnight side with `await_cnight_observations(tx_ids)` — this
-   subscribes to Midnight blocks until every requested Cardano tx_id has been
-   observed in a `process_tokens` extrinsic. Implicitly handles the stability barrier.
-5. **Asserts** against RPC state or the dust-balance toolkit output.
+3. **Drives chain state.** Either directly via subxt against Midnight RPC (for
+   contract / governance / RPC-abuse style tests), or via `whisky` / `ogmios-client`
+   against Cardano (for tests that depend on follower-inserted state, e.g. cNIGHT
+   observation).
+4. **Waits on the relevant assertion target** using the appropriate await helper.
+   For cNIGHT observation, that's `await_cnight_observations(tx_ids)` — it subscribes
+   to Midnight blocks until every requested Cardano tx_id has been observed in a
+   `process_tokens` extrinsic, implicitly handling the stability barrier. Other
+   surfaces have their own await helpers under `tests/e2e/src/api/`.
+5. **Asserts** against the relevant surface — RPC state, toolkit output, etc.
 
 Reference reads: `tests/e2e/tests/cnight/observation.rs` (`cnight_produces_dust` is
 the canonical example) and `tests/e2e/tests/lib.rs` (gates and global statics).
@@ -658,48 +669,6 @@ Comment on the PR to trigger:
 | Reproduce a Cardano sync issue locally                | `scripts/sync-test/{build-snapshot,run-sync}.sh`                   |
 | Verify a released binary or image                     | `scripts/verify-binary.sh`, `scripts/verify-image.sh`              |
 
-## Appendix B — Quick-glance e2e test inventory
-
-```
-tests/e2e/tests/
-├── cnight.rs                                       (1 fast cNIGHT test)
-│   └── alice_cannot_deregister_bob
-├── cnight/observation.rs                          (13 cNIGHT observation tests)
-│   ├── register_for_dust_production
-│   ├── register_2_cardano_same_dust_address_production
-│   ├── cnight_produces_dust
-│   ├── deregister_from_dust_production
-│   ├── removing_excessive_registrations
-│   ├── create_hundred_registrations               (local-* only)
-│   ├── register_twice_with_same_cardano_address
-│   ├── deregister_with_valid_cnight_utxo
-│   ├── deregister_first_mapping
-│   ├── produce_dust_from_tokens_owned_before_registration
-│   ├── stop_dust_producing_after_deregistration_and_rotation
-│   └── spend_cnight_producing_dust
-├── governance.rs                                  (6 governance tests)
-│   ├── verify_federated_ops_contract_deployment
-│   ├── query_d_parameter_at_historical_block
-│   ├── get_ariadne_parameters_returns_valid_structure
-│   ├── d_parameter_from_pallet_matches_config
-│   ├── permissioned_candidates_aiken_format
-│   └── authority_selection_uses_aiken_candidates
-├── governance/observation.rs                      (1 observation test)
-│   └── verify_governance_contracts_and_validate_membership_reset
-├── contract_state.rs                              (3 RPC tests)
-│   ├── contract_state_for_undeployed_address_returns_not_present
-│   ├── contract_state_rejects_unparseable_address
-│   └── contract_state_distinguishes_historical_and_current_blocks
-├── rpc_abuse.rs                                   (3 abuse / DoS tests)
-│   ├── ddos_attack_transaction_rejected_at_rpc
-│   ├── ddos_batch_attack_all_rejected
-│   └── replay_attack_rejected_via_rpc
-└── operational.rs                                 (#[ignore] — on-demand only)
-    ├── valid_deploy_transaction_succeeds_via_rpc
-    ├── consolidate_faucet
-    ├── dust_balance_smoke
-    └── dust_balance_smoke_many
-```
 
 ---
 
