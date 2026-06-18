@@ -5,13 +5,16 @@ use aiken_contracts_lib::{
     convert_cost_models,
 };
 use bip39::{Language, Mnemonic, MnemonicType};
-use ogmios_client::jsonrpsee::client_for_url;
+use ogmios_client::jsonrpsee::{OgmiosClients, client_for_url};
 use ogmios_client::query_ledger_state::{OgmiosTip, QueryLedgerState};
 use ogmios_client::query_network::{QueryNetwork, ShelleyGenesisConfigurationResponse};
 use ogmios_client::transactions::{SubmitTransactionResponse, Transactions};
 use ogmios_client::types::OgmiosUtxo;
 use ogmios_client::{OgmiosClient, OgmiosClientError, OgmiosParams};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex as TokioMutex;
 use tokio::time::sleep;
 use whisky::csl::{
     Address, Bip32PrivateKey, Credential, EnterpriseAddress, NetworkInfo, PrivateKey, RewardAddress,
@@ -51,6 +54,25 @@ fn retry_delay_for(e: &OgmiosClientError) -> Option<(Duration, &'static str)> {
 fn is_partial_params_error(e: &OgmiosClientError) -> bool {
     matches!(e, OgmiosClientError::ResponseError(s) if s.contains("missing field"))
 }
+
+/// Process-wide cache of ogmios clients keyed by base URL.
+///
+/// Every ogmios request used to build a brand-new `client_for_url` — a fresh
+/// WebSocket (`wss://`) connection plus its jsonrpsee background task — use it
+/// for a single query, then drop it. The cNIGHT observation nightly polls
+/// ogmios every ~2s across up to 16 concurrent faucet workers for hours; that
+/// churned thousands of short-lived connections. Under load the server-side
+/// idle-killer FIN'd them faster than the dropped clients tore them down,
+/// leaking sockets in `CLOSE-WAIT` and ballooning the test process's memory
+/// until the tokio runtime thrashed and the run hung well past its timeout.
+///
+/// jsonrpsee clients are built to be long-lived and to multiplex concurrent
+/// requests over one connection, so we build one per URL and share it behind
+/// an `Arc`. A client whose background task dies ("background task closed") is
+/// evicted by [`CardanoClient::invalidate_ogmios_client`] so the next request
+/// transparently rebuilds it.
+static OGMIOS_CLIENTS: LazyLock<TokioMutex<HashMap<String, Arc<OgmiosClients>>>> =
+    LazyLock::new(|| TokioMutex::new(HashMap::new()));
 
 #[derive(Debug)]
 pub enum GetUtxoError {
@@ -124,6 +146,32 @@ impl CardanoClient {
         }
     }
 
+    /// Return a shared ogmios client for `base_url`, building (and caching)
+    /// one on first use. The returned `Arc` can be used concurrently from
+    /// many tasks — jsonrpsee multiplexes requests over the single
+    /// connection. See [`OGMIOS_CLIENTS`] for why this replaced the old
+    /// connection-per-request pattern.
+    async fn shared_ogmios_client(
+        base_url: &str,
+        timeout: Duration,
+    ) -> Result<Arc<OgmiosClients>, String> {
+        let mut clients = OGMIOS_CLIENTS.lock().await;
+        if let Some(client) = clients.get(base_url) {
+            return Ok(Arc::clone(client));
+        }
+        let client = Arc::new(client_for_url(base_url, timeout).await?);
+        clients.insert(base_url.to_string(), Arc::clone(&client));
+        Ok(client)
+    }
+
+    /// Evict the cached client for `base_url` so the next request rebuilds it.
+    /// Called when a request fails with a transport-terminal error
+    /// ("background task closed"): jsonrpsee marks that client dead forever,
+    /// so reusing it would just fail every subsequent request.
+    async fn invalidate_ogmios_client(base_url: &str) {
+        OGMIOS_CLIENTS.lock().await.remove(base_url);
+    }
+
     async fn fetch_chain_params(
         config: &OgmiosClientSettings,
         constants: &Constants,
@@ -134,6 +182,9 @@ impl CardanoClient {
                 Ok(v) => return v,
                 Err(e) => match retry_delay_for(&e) {
                     Some((delay, label)) => {
+                        if label == "WS transient" {
+                            Self::invalidate_ogmios_client(&config.base_url).await;
+                        }
                         tracing::info!(
                             "ogmios protocol-params query: {} on attempt {}/{}; retry in {:?}",
                             label,
@@ -181,7 +232,7 @@ impl CardanoClient {
     async fn fetch_chain_params_once(
         config: &OgmiosClientSettings,
     ) -> Result<(Network, Protocol), OgmiosClientError> {
-        let client = client_for_url(
+        let client = Self::shared_ogmios_client(
             &config.base_url,
             Duration::from_secs(config.timeout_seconds),
         )
@@ -341,6 +392,9 @@ impl CardanoClient {
                 Ok(v) => return Ok(v),
                 Err(e) => match retry_delay_for(&e) {
                     Some((delay, label)) => {
+                        if label == "WS transient" {
+                            Self::invalidate_ogmios_client(&config.base_url).await;
+                        }
                         tracing::info!(
                             "ogmios request: {} on attempt {}/{}; retry in {:?}",
                             label,
@@ -362,7 +416,7 @@ impl CardanoClient {
         config: &OgmiosClientSettings,
         req: OgmiosRequest,
     ) -> Result<OgmiosResponse, OgmiosClientError> {
-        let client = client_for_url(
+        let client = Self::shared_ogmios_client(
             &config.base_url,
             Duration::from_secs(config.timeout_seconds),
         )
@@ -462,13 +516,13 @@ impl CardanoClient {
         const RETRY_DELAY: Duration = Duration::from_secs(2);
         for attempt in 1..=MAX_ATTEMPTS {
             let result = async {
-                let client = client_for_url(
+                let client = Self::shared_ogmios_client(
                     &ogmios_settings.base_url,
                     Duration::from_secs(ogmios_settings.timeout_seconds),
                 )
                 .await
                 .map_err(|e| format!("connect: {e}"))?;
-                Self::query_block_height(&client)
+                Self::query_block_height(&*client)
                     .await
                     .map_err(|e| format!("query: {e}"))
             }
@@ -476,6 +530,10 @@ impl CardanoClient {
             match result {
                 Ok(h) => return Some(h),
                 Err(e) => {
+                    // A failed request may have poisoned the shared client
+                    // (dead WS background task); evict it so the next attempt
+                    // rebuilds rather than reusing a connection stuck forever.
+                    Self::invalidate_ogmios_client(&ogmios_settings.base_url).await;
                     if attempt < MAX_ATTEMPTS {
                         tracing::warn!(
                             "current_block_height: attempt {attempt}/{MAX_ATTEMPTS} failed: {e}; \
