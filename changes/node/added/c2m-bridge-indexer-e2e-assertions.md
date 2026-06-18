@@ -33,4 +33,5 @@ item on shieldedtech/midnight-c-to-m-protocol-bridge#4 for five
 of the six bridge flows (reserve transfer remains gated on the
 Cardano Reserve Validator upgrade).
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1718
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1714
