@@ -1,6 +1,8 @@
 use midnight_node_e2e::api::cardano::{
     BridgeTransferRecipient, CardanoClient, SignedBridgeTransaction,
 };
+#[cfg(feature = "indexer")]
+use midnight_node_e2e::api::indexer::{BridgeEvent, BridgeEventVariant, IndexerClient};
 use midnight_node_e2e::api::midnight::{C2MBridgePalletCalls, MidnightClient};
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
@@ -41,6 +43,26 @@ const BRIDGE_AMOUNT_STARS: u64 = 49_000_000;
 /// Upper bound on how long the test waits for the bridge transfer to be observed
 /// by midnight and produce the user-transfer system tx.
 const BRIDGE_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Upper bound on how long the indexer-side assertions wait for the indexer to
+/// catch up to a finalized Midnight block. The indexer is typically a few
+/// hundred ms behind finalization on local-env; 60s is generous headroom.
+#[cfg(feature = "indexer")]
+const INDEXER_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Build a ready-to-use `IndexerClient`. Blocks until the indexer's `/ready`
+/// endpoint succeeds — fails fast with a clear error if the indexer isn't up
+/// rather than letting individual assertions time out mid-test.
+#[cfg(feature = "indexer")]
+async fn indexer_client_ready() -> IndexerClient {
+    let client = IndexerClient::from_env_or_default();
+    client
+        .await_ready(Duration::from_secs(30))
+        .await
+        .expect("indexer-api is not reachable; bring it up or unset --features indexer");
+    tracing::info!(indexer_url = client.graphql_url(), "indexer reachable");
+    client
+}
 
 #[e2e_test]
 async fn bridge_transfer_cnight_to_midnight_address() {
@@ -168,6 +190,76 @@ async fn bridge_transfer_cnight_to_midnight_address() {
         params.cardano_to_midnight_bridge_fee_basis_points,
         params.c_to_m_bridge_min_amount,
     );
+
+    // ----- Indexer: deposit-side surface -----
+    //
+    // Verify the indexer surfaces the just-finalized deposit before we issue the
+    // claim. Two assertions:
+    //   1. The `BridgeUserTransfer` row carries the right Cardano + Midnight tx
+    //      hashes and the right amount.
+    //   2. `bridgeBalance.balance == claimable` (post-fee). This pins the
+    //      semantics: `balance` is "still claimable now", NOT `deposited -
+    //      claimed`. A regression that switched `balance` back to the gross
+    //      pre-fee figure would surface here.
+    #[cfg(feature = "indexer")]
+    {
+        let indexer = indexer_client_ready().await;
+        let user_transfer = indexer
+            .await_bridge_event(
+                Some(&recipient_address),
+                Some(BridgeEventVariant::UserTransfer),
+                |ev| matches!(ev, BridgeEvent::UserTransfer { cardano_tx_hash, .. } if cardano_tx_hash == &bridge_tx),
+                INDEXER_OBSERVATION_TIMEOUT,
+            )
+            .await
+            .expect("indexer never surfaced a matching BridgeUserTransfer");
+        match user_transfer {
+            BridgeEvent::UserTransfer {
+                amount,
+                cardano_tx_hash,
+                midnight_tx_hash,
+                recipient: ev_recipient,
+                ..
+            } => {
+                assert_eq!(
+                    amount, BRIDGE_AMOUNT_STARS as u128,
+                    "indexer BridgeUserTransfer.amount should equal the bridged STAR amount"
+                );
+                assert_eq!(
+                    cardano_tx_hash, bridge_tx,
+                    "indexer BridgeUserTransfer.cardanoTxHash should equal the Cardano bridge tx id"
+                );
+                assert_ne!(
+                    midnight_tx_hash, [0u8; 32],
+                    "indexer BridgeUserTransfer.midnightTxHash should be non-zero (the handle_transfers tx)"
+                );
+                assert_eq!(
+                    ev_recipient, recipient_address,
+                    "indexer BridgeUserTransfer.recipient should equal the dev-seed-derived recipient"
+                );
+            }
+            other => panic!("expected BridgeUserTransfer, got {other:?}"),
+        }
+        let balance_before_claim = indexer
+            .await_bridge_balance_where(
+                &recipient_address,
+                |bb| {
+                    bb.deposited == BRIDGE_AMOUNT_STARS as u128
+                        && bb.claimed == 0
+                        && bb.balance == claimable
+                },
+                INDEXER_OBSERVATION_TIMEOUT,
+            )
+            .await
+            .expect(
+                "indexer bridgeBalance did not converge to expected pre-claim state \
+                 (deposited=gross, claimed=0, balance=claimable post-fee)",
+            );
+        tracing::info!(
+            ?balance_before_claim,
+            "indexer pre-claim bridgeBalance matches expected post-fee semantics"
+        );
+    }
     assert!(
         claimable > 0,
         "post-fee claimable must be positive (amount={}, fee_bps={}, min={})",
@@ -265,6 +357,62 @@ async fn bridge_transfer_cnight_to_midnight_address() {
         credited_to_recipient,
         "bridged mNIGHT successfully claimed; recipient credited the claimed amount"
     );
+
+    // ----- Indexer: claim-side surface -----
+    //
+    // Pin two things after the claim apply:
+    //   1. The `BridgeClaimTransaction` row is discoverable via `Block.transactions`
+    //      (the `Transaction` interface) with the right recipient and amount.
+    //   2. `bridgeBalance.claimed` advanced by exactly `claimable` and `balance`
+    //      dropped to 0 — i.e. the recipient has nothing left to claim.
+    #[cfg(feature = "indexer")]
+    {
+        let indexer = indexer_client_ready().await;
+        // We don't know the exact block the claim landed in (it post-dates
+        // `min_midnight_block` by an unknown number of blocks). Walk a window
+        // forward from there; on local-env the claim lands within ~5 blocks.
+        let claim = indexer
+            .await_bridge_claim_for_recipient(
+                &recipient_address,
+                min_midnight_block,
+                64,
+                INDEXER_OBSERVATION_TIMEOUT,
+            )
+            .await
+            .expect("indexer never surfaced a BridgeClaimTransaction for the recipient");
+        assert_eq!(
+            claim.amount, claimable,
+            "indexer BridgeClaimTransaction.amount should equal the claimed (post-fee) amount"
+        );
+        assert_eq!(
+            claim.recipient, recipient_address,
+            "indexer BridgeClaimTransaction.recipient should equal the dev-seed-derived recipient"
+        );
+        assert_eq!(
+            claim.night_credited_to_recipient, claimable,
+            "indexer BridgeClaimTransaction.unshieldedCreatedOutputs should credit the recipient \
+             a NIGHT UTXO equal to the claim amount"
+        );
+        let balance_after_claim = indexer
+            .await_bridge_balance_where(
+                &recipient_address,
+                |bb| bb.claimed == claimable && bb.balance == 0,
+                INDEXER_OBSERVATION_TIMEOUT,
+            )
+            .await
+            .expect(
+                "indexer bridgeBalance did not converge to post-claim state \
+                 (claimed=claimable, balance=0)",
+            );
+        assert_eq!(
+            balance_after_claim.deposited, BRIDGE_AMOUNT_STARS as u128,
+            "indexer bridgeBalance.deposited should remain at the gross deposit total post-claim"
+        );
+        tracing::info!(
+            ?balance_after_claim,
+            "indexer post-claim bridgeBalance drained as expected"
+        );
+    }
 }
 
 /// Bridge transfer whose Cardano-side metadatum is not valid Midnight address bytes.
@@ -358,6 +506,38 @@ async fn bridge_transfer_invalid_recipient_unlocks_to_treasury() {
         amount, BRIDGE_AMOUNT_STARS,
         "InvalidTransfer.amount should equal the STAR amount transferred"
     );
+
+    // ----- Indexer: BridgeInvalidTransfer row -----
+    #[cfg(feature = "indexer")]
+    {
+        let indexer = indexer_client_ready().await;
+        let event = indexer
+            .await_bridge_event(
+                None,
+                Some(BridgeEventVariant::InvalidTransfer),
+                |ev| matches!(ev, BridgeEvent::InvalidTransfer { cardano_tx_hash, .. } if cardano_tx_hash == &bridge_tx),
+                INDEXER_OBSERVATION_TIMEOUT,
+            )
+            .await
+            .expect("indexer never surfaced a matching BridgeInvalidTransfer");
+        match event {
+            BridgeEvent::InvalidTransfer {
+                amount,
+                cardano_tx_hash,
+                ..
+            } => {
+                assert_eq!(
+                    amount, BRIDGE_AMOUNT_STARS as u128,
+                    "indexer BridgeInvalidTransfer.amount should equal the bridged STAR amount"
+                );
+                assert_eq!(
+                    cardano_tx_hash, bridge_tx,
+                    "indexer BridgeInvalidTransfer.cardanoTxHash should match the Cardano bridge tx id"
+                );
+            }
+            other => panic!("expected BridgeInvalidTransfer, got {other:?}"),
+        }
+    }
 }
 
 /// Unapproved Cardano Tx is accounted as transfer to Midnight Trasury
@@ -459,6 +639,38 @@ async fn unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury() {
         amount, BRIDGE_AMOUNT_STARS,
         "InvalidTransfer.amount should equal the STAR amount transferred"
     );
+
+    // ----- Indexer: BridgeUnapprovedTransfer row -----
+    #[cfg(feature = "indexer")]
+    {
+        let indexer = indexer_client_ready().await;
+        let event = indexer
+            .await_bridge_event(
+                None,
+                Some(BridgeEventVariant::UnapprovedTransfer),
+                |ev| matches!(ev, BridgeEvent::UnapprovedTransfer { cardano_tx_hash, .. } if cardano_tx_hash == &bridge_tx),
+                INDEXER_OBSERVATION_TIMEOUT,
+            )
+            .await
+            .expect("indexer never surfaced a matching BridgeUnapprovedTransfer");
+        match event {
+            BridgeEvent::UnapprovedTransfer {
+                amount,
+                cardano_tx_hash,
+                ..
+            } => {
+                assert_eq!(
+                    amount, BRIDGE_AMOUNT_STARS as u128,
+                    "indexer BridgeUnapprovedTransfer.amount should equal the bridged STAR amount"
+                );
+                assert_eq!(
+                    cardano_tx_hash, bridge_tx,
+                    "indexer BridgeUnapprovedTransfer.cardanoTxHash should match the Cardano bridge tx id"
+                );
+            }
+            other => panic!("expected BridgeUnapprovedTransfer, got {other:?}"),
+        }
+    }
 }
 
 /// Subminimal-transfer accumulation: three transfers of 999 STARS each, all
@@ -583,6 +795,52 @@ async fn subminimal_transfers_accumulate_and_flush_on_threshold_breach() {
                 unlock_amount, EXPECTED_TOTAL_STARS,
                 "UnlockToTreasury amount should equal the total subminimal sum being flushed"
             );
+
+            // ----- Indexer: BridgeSubminimalFlushTransfer row -----
+            //
+            // SubminimalFlushTransfer carries no per-Cardano-tx identifier
+            // (the flush is the aggregate of N subminimal txs), so we match
+            // on the expected amount + count rather than a hash. Counter
+            // doesn't reset between tests today; if it ever did, a stricter
+            // blockHeight gate would be safer.
+            #[cfg(feature = "indexer")]
+            {
+                let indexer = indexer_client_ready().await;
+                let event = indexer
+                    .await_bridge_event(
+                        None,
+                        Some(BridgeEventVariant::SubminimalFlushTransfer),
+                        |ev| {
+                            matches!(
+                                ev,
+                                BridgeEvent::SubminimalFlushTransfer {
+                                    amount,
+                                    count,
+                                    ..
+                                } if *amount == EXPECTED_TOTAL_STARS && *count == 3
+                            )
+                        },
+                        INDEXER_OBSERVATION_TIMEOUT,
+                    )
+                    .await
+                    .expect(
+                        "indexer never surfaced a matching BridgeSubminimalFlushTransfer \
+                         (expected amount = sum of 3 subminimal transfers, count = 3)",
+                    );
+                match event {
+                    BridgeEvent::SubminimalFlushTransfer { amount, count, .. } => {
+                        assert_eq!(
+                            amount, EXPECTED_TOTAL_STARS,
+                            "indexer BridgeSubminimalFlushTransfer.amount should equal the flushed total"
+                        );
+                        assert_eq!(
+                            count, 3,
+                            "indexer BridgeSubminimalFlushTransfer.count should equal the number of accumulated transfers"
+                        );
+                    }
+                    other => panic!("expected BridgeSubminimalFlushTransfer, got {other:?}"),
+                }
+            }
         }
     }
 }
