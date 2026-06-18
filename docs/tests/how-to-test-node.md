@@ -388,23 +388,23 @@ just indexer-api-e2e                                       # not scheduled by CI
 
 ### 3.8 CI surface — when each test runs
 
-| Trigger                  | Workflow                                         | Tests it runs                                          |
-|--------------------------|--------------------------------------------------|--------------------------------------------------------|
-| PR / push to `main`      | `continuous-integration.yml`                     | Build, pallet fixtures, toolkit, chainspec validation, |
-|                          |                                                  | local-environment-tests (Earthly `+local-env-ci`):     |
-|                          |                                                  | stack bring-up → verify-finality → e2e suite           |
-|                          |                                                  | (`--features local`) → toolkit-multi-dest              |
-| PR / push to `main`      | `continuous-integration-test.yml`                | Earthly `+test` target                                 |
-| PR                       | `continuous-integration-checks.yml`              | Static checks, formatting, lints                       |
-| PR                       | `changes_check.yml`                              | Change-file presence (unless `skip-changes-check-*`)   |
-| Nightly (00:00 UTC) +    | `nightly-run-cnight-e2e-qanet.yml`               | cNIGHT observation suite vs **qanet** (`--features    |
-| `workflow_dispatch`      |                                                  | qanet`, `--test-threads 16`, `--release`)              |
-| Nightly                  | `nightly-build-check.yml`                        | Plain build / sanity                                   |
-| Comment `/bot …`         | `cargo-fmt-bot.yml`,                             | Triggered rebuilds for metadata / chainspec / fmt      |
-|                          | `rebuild-metadata-bot.yml`,                      |                                                        |
-|                          | `rebuild-chainspec-bot.yml`                      |                                                        |
-| Manual / release         | `release-image.yml`, `srtool-build.yml`,         | Publish images, reproducible wasm, sbom & security     |
-|                          | `sbom-scan-image.yml`, `security-audit-scan.yml` | scans                                                  |
+| Trigger                            | Workflow                                         | Tests it runs                                          |
+|------------------------------------|--------------------------------------------------|--------------------------------------------------------|
+| PR / merge queue / manual          | `continuous-integration.yml`                     | Build, pallet fixtures, toolkit, chainspec validation, |
+|                                    |                                                  | local-environment-tests (Earthly `+local-env-ci`):     |
+|                                    |                                                  | stack bring-up → verify-finality → e2e suite           |
+|                                    |                                                  | (`--features local`) → toolkit-multi-dest              |
+| PR / merge queue / push to `main`  | `continuous-integration-test.yml`                | Earthly `+test` target                                 |
+| PR / merge queue / push to `main`  | `continuous-integration-checks.yml`              | Static checks, formatting, lints                       |
+| PR                                 | `changes_check.yml`                              | Change-file presence (unless `skip-changes-check-*`)   |
+| Nightly (00:00 UTC) + manual       | `nightly-run-cnight-e2e-qanet.yml`               | cNIGHT observation suite vs **qanet** (`--features     |
+|                                    |                                                  | qanet`, `--test-threads 16`, `--release`)              |
+| Nightly + manual                   | `nightly-build-check.yml`                        | Plain build / sanity                                   |
+| Comment `/bot …`                   | `cargo-fmt-bot.yml`,                             | Triggered rebuilds for metadata / chainspec / fmt      |
+|                                    | `rebuild-metadata-bot.yml`,                      |                                                        |
+|                                    | `rebuild-chainspec-bot.yml`                      |                                                        |
+| Manual / release                   | `release-image.yml`, `srtool-build.yml`,         | Publish images, reproducible wasm, sbom & security     |
+|                                    | `sbom-scan-image.yml`, `security-audit-scan.yml` | scans                                                  |
 
 ### 3.9 Release process — testing evidence
 
