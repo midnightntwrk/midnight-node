@@ -1,35 +1,42 @@
 # Vendored dependency tarballs
 
 This directory holds the `npm pack` tarballs that the `compact-0.31.108` variant consumes via
-`file:` references in its `package.json`. They are **not committed by hand** — they are built from
-the pinned `midnight-sdk` submodule and committed back by the
-`rebuild-compact-js-bundle-bot` workflow (a verified `github-actions[bot]` commit).
-
-Expected blobs (stable filenames, regardless of the internal package versions):
+`file:` references in its `package.json`. They are the four `@midnight-ntwrk` packages in the
+compact-js 2.5.3 closure that are **only published to GitHub Packages** (a private registry);
+everything else in the closure resolves from **public npm**, so the consume path
+(`npm ci` in `util/toolkit-js`) needs no `.npmrc` and no token.
 
 | File | Source | Why vendored |
 |---|---|---|
-| `compact-js.tgz` | `midnight-sdk` packages (compact-js 2.5.3) | unpublished (pinned SDK commit) |
-| `compact-js-command.tgz` | `midnight-sdk` packages (compact-js 2.5.3) | unpublished (pinned SDK commit) |
-| `compact-js-node.tgz` | `midnight-sdk` packages (compact-js 2.5.3) | unpublished (pinned SDK commit) |
-| `compact-runtime.tgz` | `midnight-sdk/compact-submodule/runtime` (built via nix) | nowhere published for this era |
-| `ledger-v9.tgz` | `@midnight-ntwrk/ledger-v9@0.1.0-alpha.1` (GitHub Packages) | private registry |
+| `compact-js.tgz` | `@midnight-ntwrk/compact-js@2.5.3` | GitHub Packages only |
+| `compact-js-command.tgz` | `@midnight-ntwrk/compact-js-command@2.5.3` | GitHub Packages only |
+| `compact-js-node.tgz` | `@midnight-ntwrk/compact-js-node@2.5.3` | GitHub Packages only |
+| `compact-runtime.tgz` | `@midnight-ntwrk/compact-runtime@0.16.103-dev.<hash>` | GitHub Packages only |
 
-Everything else in the dependency closure resolves from public npm, so the consume path
-(`npm ci` in `util/toolkit-js`) needs no `.npmrc` and no token.
+Resolved from public npm (not vendored): `@midnightntwrk/ledger-v9@^1.0.0-rc.2`,
+`@midnightntwrk/onchain-runtime-v4`, `@midnight-ntwrk/platform-js@^2.2.4`,
+`@midnight-ntwrk/wallet-sdk-address-format@3.1.0`, `@midnight-ntwrk/ledger-v8@8.0.2`, and the
+`@effect/*` packages.
 
-## Regenerating
+## How these were produced
 
-Trigger the bot on the PR:
-
-```
-/bot rebuild-compact-js-bundle
-```
-
-or locally (requires nix + a GitHub Packages read token):
+The compact-js 2.5.3 packages aren't published with the `21f6e4d8` dep set, so the three
+`compact-js*` blobs are built from the pinned `midnight-sdk` submodule:
 
 ```
-earthly -P +compact-js-bundle --secret MIDNIGHTCI_PACKAGES_READ=<token>
+cd midnight-sdk/compact-js
+corepack yarn install          # needs a GitHub Packages read token for the @midnight-ntwrk scope
+corepack yarn build            # turbo run build (plain TS — no nix, no compact-submodule)
+# then `npm pack` each of compact-js/, compact-js-command/, compact-js-node/
 ```
 
-See `scripts/build-compact-js-bundle.sh` and the `+compact-js-bundle` target in `Earthfile`.
+`compact-runtime.tgz` is `npm pack`ed straight from GitHub Packages
+(`@midnight-ntwrk/compact-runtime@0.16.103-dev.<hash>`) — it is a published dev build, so it is **not**
+built from source. (Earlier SDK commits built it from the nested `compact-submodule` via nix; that is
+no longer needed.)
+
+> Note: the `Earthfile` `+compact-js-bundle` target, `scripts/build-compact-js-bundle.sh`, and the
+> `rebuild-compact-js-bundle-bot` workflow still describe the older nix/from-source flow and will be
+> reworked to this plain `npm pack` flow once the SDK dep set is finalized.
+
+The GitHub Packages read token is needed **only** to build/pack these blobs — never on the consume path.

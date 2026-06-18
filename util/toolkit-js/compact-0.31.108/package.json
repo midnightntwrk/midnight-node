@@ -24,7 +24,6 @@
     "@midnight-ntwrk/compact-js-command": "file:vendor/compact-js-command.tgz",
     "@midnight-ntwrk/compact-js-node": "file:vendor/compact-js-node.tgz",
     "@midnight-ntwrk/compact-runtime": "file:vendor/compact-runtime.tgz",
-    "@midnight-ntwrk/ledger-v9": "file:vendor/ledger-v9.tgz",
     "effect": "^3.20"
   }
 }
