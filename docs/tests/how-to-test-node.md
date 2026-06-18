@@ -2,9 +2,6 @@
 
 A practical guide for SDETs working on `midnight-node`.
 
-> Draft presentation, intended for an SDET audience already familiar with Substrate-flavoured
-> blockchains, Cardano basics, and Rust tooling.
-
 ---
 
 ## 1. Node — How it's connected and how it works
@@ -21,11 +18,12 @@ A practical guide for SDETs working on `midnight-node`.
 ```
 /node/         Main binary, CLI, RPC server
 /runtime/      Substrate runtime assembly
-/pallets/      Custom pallets — midnight, midnight-system, cnight-observation,
-               federated-authority, federated-authority-observation, version
+/pallets/      Custom pallets — e.g. midnight (core ledger), cnight-observation,
+               c2m-bridge, federated-authority. See `pallets/` for the full list.
 /primitives/   Shared runtime types/interfaces
 /ledger/       Midnight ledger types & state
-/res/cfg/      Per-network presets (dev / qanet / preview / preprod)
+/res/cfg/      Per-network presets (e.g. dev / qanet / preview / preprod —
+               see `res/cfg/` for the full set)
 /util/toolkit/ Transaction generator + replay tool (you'll use this in tests)
 /tests/e2e/    The Rust e2e suite — this is the main automation surface
 /scripts/      Shell helpers, smoke checks, sync tests, genesis tooling
@@ -53,8 +51,9 @@ A practical guide for SDETs working on `midnight-node`.
                                                                   ║   Runtime  (WASM, on-chain)    ║
                                                                   ║     • pallet-midnight          ║
                                                                   ║     • cnight-observation       ║
+                                                                  ║     • c2m-bridge               ║
                                                                   ║     • federated-authority      ║
-                                                                  ║     • throttle, version, …     ║
+                                                                  ║     • version, throttle, …     ║
                                                                   ╚════════════════════════════════╝
                                                                         │
                                                                         ▼
@@ -201,21 +200,27 @@ scripts under `scripts/`.
    - Rotate / spend cNIGHT tokens, stop production accordingly.
    - Tokens owned **before** registration still produce after registration.
    - DDoS-shaped scenarios (`removing_excessive_registrations`, `create_hundred_registrations`).
-3. **Governance** (`governance.rs`, `governance/observation.rs`)
+3. **Cardano → Midnight bridge** (`c2m_bridge.rs`)
+   - Transfer cNIGHT → Midnight recipient address (happy path, claim, post-fee balance).
+   - Invalid recipient unlocks to treasury.
+   - Unapproved Cardano tx unlocks to treasury.
+   - Subminimal transfers accumulate and flush on threshold breach.
+   - Opt-in indexer-side assertions (with `--features indexer`).
+4. **Governance** (`governance.rs`, `governance/observation.rs`)
    - Federated-ops contract deployment shape.
    - D-parameter at historical block heights, matches config.
    - Ariadne parameters structure.
    - Permissioned candidates (Aiken-format), authority selection.
    - Membership reset observed from mainchain.
-4. **Contract state RPC** (`contract_state.rs`)
+5. **Contract state RPC** (`contract_state.rs`)
    - Undeployed address ⇒ `ContractNotPresent`.
    - Unparseable address ⇒ explicit RPC error.
    - Historical vs. current block distinguish correctly.
-5. **RPC abuse / DoS surface** (`rpc_abuse.rs`)
+6. **RPC abuse / DoS surface** (`rpc_abuse.rs`)
    - DDoS-shaped tx rejected at RPC.
    - Batched DDoS — all rejected.
    - Replay attacks rejected.
-6. **Operational / on-demand** (`operational.rs`, `--ignored`)
+7. **Operational / on-demand** (`operational.rs`, `--ignored`)
    - `valid_deploy_transaction_succeeds_via_rpc`
    - `consolidate_faucet`
    - `dust_balance_smoke`, `dust_balance_smoke_many` (verifies toolkit-cache wiring)
@@ -273,6 +278,12 @@ suite talks to. **Always** pair `--features X` with `--no-default-features`.
 > Earthly-nested Docker respectively — you almost never need them; ignore unless
 > you're debugging the CI wiring.
 
+> **`indexer` (opt-in modifier).** Pair with `local` or `qanet`
+> (e.g. `--features local,indexer`) to run the `c2m_bridge::*` tests' GraphQL
+> assertions against a running indexer-api alongside the node-side checks. Off
+> by default; endpoint defaults to `http://127.0.0.1:8088/api/v3/graphql`
+> (override via `INDEXER_GRAPHQL_URL`). See `tests/e2e/README.md` for details.
+
 ### 3.3 Run the e2e suite — local stack (dev box workflow)
 
 ```bash
@@ -312,28 +323,17 @@ cargo test --release --test e2e_tests --no-default-features --features qanet \
 ### 3.5 Run against devnet / testnet-02 / preview / preprod (forked, locally)
 
 We **don't run the Rust e2e suite** automatically against these. We do support
-*forking* them locally for upgrade rehearsals (`local-environment/`):
+*forking* them locally via `local-environment/` for upgrade rehearsals:
 
-```bash
-cd local-environment
-# Fork preview from a snapshot, swap in mock authorities, run locally
-npm run run:preview -- --from-snapshot https://.../preview-latest.tar.zst
+- `npm run run:<network>` — fork from a snapshot with mocked authorities.
+- `npm run image-upgrade:<network>` — image-only upgrade rehearsal.
+- `npm run governance-runtime-upgrade:<network>` — governance runtime upgrade rehearsal.
+- `npm run full-upgrade:<network>` — image + governance, sequentially.
 
-# Rehearse an image-only upgrade
-NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:old \
-NEW_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:new \
-npm run image-upgrade:preview -- --from-snapshot https://.../preview-latest.tar.zst
-
-# Rehearse a governance runtime upgrade against the running fork
-npm run governance-runtime-upgrade:preview -- \
-  --wasm upgrade/midnight_node_runtime.compact.wasm \
-  --council-uris //Alice //Bob //Charlie \
-  --technical-uris //Dave //Eve //Ferdie \
-  --executor-uri //Alice
-
-# Full upgrade (image + governance, sequential)
-npm run full-upgrade:preview -- --from-snapshot ...
-```
+For the exact invocations — required env vars (`NODE_IMAGE`, `NEW_NODE_IMAGE`)
+and CLI options (`--wasm`, `--council-uris`, `--technical-uris`,
+`--executor-uri`, `--from-snapshot`) — see
+[`local-environment/README.md`](../../local-environment/README.md).
 
 Networks other than `dev` require AWS access to rebuild genesis — ping the node team.
 
@@ -365,23 +365,25 @@ across the fork.
 
 ### 3.7 The script-based smoke / toolkit e2e family
 
-All of these run in CI via `just` and live under `scripts/tests/`. They are
+These live under `scripts/tests/`, are driven via `just` targets, and are
 self-contained docker-compose flows — great for SDETs because they need only
-`docker` + `just` + the published images:
+`docker` + `just` + the published images. **Not all of them are wired into
+CI today** — some are temporarily disabled, others are manual / reusable-action
+only (annotated below):
 
 ```bash
 just toolkit-e2e <NODE_IMG> <TOOLKIT_IMG>
 just toolkit-update-ledger-parameters-e2e <NODE_IMG> <TOOLKIT_IMG>
-just toolkit-maintenance-e2e <NODE_IMG> <TOOLKIT_IMG>
-just toolkit-contracts-e2e <NODE_IMG> <TOOLKIT_IMG>
-just toolkit-mint-e2e <NODE_IMG> <TOOLKIT_IMG>
-just toolkit-tokens-minter-e2e [<NODE_IMG> <TOOLKIT_IMG>]
+just toolkit-maintenance-e2e <NODE_IMG> <TOOLKIT_IMG>      # CI-disabled (LEDGER9-TOOLKIT-JS)
+just toolkit-contracts-e2e <NODE_IMG> <TOOLKIT_IMG>        # CI-disabled (LEDGER9-TOOLKIT-JS)
+just toolkit-mint-e2e <NODE_IMG> <TOOLKIT_IMG>             # CI-disabled (LEDGER9-TOOLKIT-JS)
+just toolkit-tokens-minter-e2e [<NODE_IMG> <TOOLKIT_IMG>]  # CI-disabled (LEDGER9-TOOLKIT-JS)
 just toolkit-multi-dest-e2e <TOOLKIT_IMG>
 just startup-dev-e2e <NODE_IMG>
-just startup-qanet-e2e <NODE_IMG>
+just startup-qanet-e2e <NODE_IMG>                          # not scheduled by CI; manual / reusable-action only
 just genesis-wallets-undeployed-e2e <NODE_IMG> <TOOLKIT_IMG>
 just genesis-wallets-devnet-e2e <NODE_IMG> <TOOLKIT_IMG>
-just indexer-api-e2e
+just indexer-api-e2e                                       # not scheduled by CI; manual only
 ```
 
 ### 3.8 CI surface — when each test runs
@@ -464,21 +466,27 @@ Each test:
    surfaces have their own await helpers under `tests/e2e/src/api/`.
 5. **Asserts** against the relevant surface — RPC state, toolkit output, etc.
 
-Reference reads: `tests/e2e/tests/cnight/observation.rs` (`cnight_produces_dust` is
-the canonical example) and `tests/e2e/tests/lib.rs` (gates and global statics).
+Reference reads:
+- `tests/e2e/tests/cnight/observation.rs` (`cnight_produces_dust`) — canonical
+  Cardano-driven example.
+- `tests/e2e/tests/c2m_bridge.rs` (`bridge_transfer_cnight_to_midnight_address`)
+  — canonical bridge + opt-in `indexer`-feature example.
+- `tests/e2e/tests/lib.rs` — gates and global statics.
 
 ### 4.3 Add a new test to the suite — checklist
 
 - [ ] Place the `#[tokio::test]` fn in the right module under `tests/e2e/tests/`.
 - [ ] If pre-deploy assertion: take a `PreDeployGuard` for the body.
 - [ ] If it needs DUST: call `register_test_seed(seed)` right after generation.
-- [ ] Use the existing API helpers in `tests/e2e/src/api/` (`midnight.rs`, `cardano.rs`)
-      rather than building raw subxt calls — keeps logs and retries consistent.
+- [ ] Use the existing API helpers in `tests/e2e/src/api/` (`midnight.rs`,
+      `cardano.rs`, `indexer.rs`) rather than building raw subxt calls — keeps
+      logs and retries consistent.
 - [ ] Keep it feature-agnostic where possible. If something only makes sense locally,
       gate with `#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]`.
 - [ ] Run with `--features local` against `npm run run:local-env` to validate locally.
-- [ ] Open a PR; CI will run it via `+local-env-ci`. Nightly will pick it up on qanet
-      if it isn't `local-*`-gated.
+- [ ] Open a PR; CI will run it via `+local-env-ci`. The qanet nightly currently
+      filters to `cnight::observation::` only — tests outside that module need
+      `nightly-run-cnight-e2e-qanet.yml`'s filter expanded to get qanet coverage.
 
 ### 4.4 Adding a new shell-level e2e
 
@@ -532,7 +540,7 @@ the canonical example) and `tests/e2e/tests/lib.rs` (gates and global statics).
 
 | Variable                  | Purpose                                                                 |
 |---------------------------|-------------------------------------------------------------------------|
-| `CFG_PRESET`              | `dev` / `qanet` / `preview` / `preprod` — selects chainspec preset      |
+| `CFG_PRESET`              | Network preset name — selects chainspec preset (see `res/cfg/` for the full set) |
 | `E2E_LOG`                 | Override tracing filter for the e2e binary                              |
 | `E2E_FAUCET_WORKERS`      | Concurrent faucet workers (set to 16 in nightly to match test threads)  |
 | `E2E_FEATURE`             | Feature to compile e2e against (used by the nightly workflow)           |
@@ -603,6 +611,7 @@ Comment on the PR to trigger:
 - Submodules (see `.gitmodules`):
   - Indexer — https://github.com/midnightntwrk/midnight-indexer (mounted at `indexer/`)
   - Reserve contracts — https://github.com/midnightntwrk/midnight-reserve-contracts (mounted at `midnight-reserve-contracts/`)
+  - Compact compiler — https://github.com/LFDT-Minokawa/compact (mounted at `compact/`; pinned in `COMPACTC_VERSION`)
 
 **Videos** (Google Drive — internal)
 
@@ -672,4 +681,3 @@ Comment on the PR to trigger:
 
 ---
 
-*Draft v1 — please review and tell me what to expand, cut, or reshape.*

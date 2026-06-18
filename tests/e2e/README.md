@@ -284,6 +284,15 @@ cargo test-e2e-local governance::              # all governance
 `cargo test`'s positional filter is a substring match against the full test
 name (`module::fn_name`); the `::` suffix scopes the match to one module.
 
+## Adding a new test family
+
+When you introduce a new test module / user-flow group here (a new top-level
+`tests/<topic>.rs` covering a distinct chain interaction), also add a
+corresponding entry to **§2.2 "Main user flows we exercise"** in
+[`docs/tests/how-to-test-node.md`](../../docs/tests/how-to-test-node.md). That
+section is the SDET-facing inventory of what we actually exercise; keeping it
+current as new modules land prevents the guide from drifting back into staleness.
+
 ## Note on `cargo check`
 
 The `[[test]]` entry in `Cargo.toml` sets `test = false`, so `cargo check
