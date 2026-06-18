@@ -209,6 +209,46 @@ error if Postgres is down or the DB doesn't exist.
 > contexts). Pass the exact name to filter to one test, or
 > `--test-threads 1` to serialise.
 
+## Indexer-side assertions (`indexer` feature)
+
+The `c2m_bridge::*` tests double up as cross-checks against a running
+`indexer-api`. Opt in with the `indexer` cargo feature:
+
+```bash
+cargo test --test e2e_tests --no-default-features --features local,indexer \
+    c2m_bridge:: -- --test-threads=1 --nocapture
+```
+
+When the feature is on, each test runs the existing node-side checks and
+then asserts on the corresponding indexer GraphQL surface:
+
+| Test                                                            | Indexer surface(s) asserted                                       |
+|-----------------------------------------------------------------|-------------------------------------------------------------------|
+| `bridge_transfer_cnight_to_midnight_address`                    | `BridgeUserTransfer` row, `bridgeBalance` (pre/post claim), `BridgeClaimTransaction` row |
+| `bridge_transfer_invalid_recipient_unlocks_to_treasury`         | `BridgeInvalidTransfer` row                                       |
+| `unapproved_cardano_tx_makes_transfer_that_unlocks_to_treasury` | `BridgeUnapprovedTransfer` row                                    |
+| `subminimal_transfers_accumulate_and_flush_on_threshold_breach` | `BridgeSubminimalFlushTransfer` row (asserts `amount` + `count`)  |
+
+`bridgeBalance.balance` is asserted to be the **post-fee outstanding
+claimable** (not the gross `deposited - claimed`). A regression that
+flipped the semantics back to the pre-fee figure would fail the
+pre-claim assertion in `bridge_transfer_cnight_to_midnight_address`.
+
+The endpoint defaults to `http://127.0.0.1:8088/api/v3/graphql` (local-env's
+indexer-api). Override with:
+
+```bash
+INDEXER_GRAPHQL_URL=http://my-indexer:8088/api/v3/graphql \
+    cargo test --test e2e_tests --features local,indexer ...
+```
+
+Each test calls the indexer's `/ready` endpoint before running its
+assertions, so a missing/unreachable indexer fails fast with a clear
+error instead of timing out mid-test.
+
+Without the `indexer` feature, the suite behaves exactly as before:
+node-side assertions only, no indexer dependency, no extra HTTP traffic.
+
 ## Layout
 
 Tests are grouped by topic across module files under `tests/`:
