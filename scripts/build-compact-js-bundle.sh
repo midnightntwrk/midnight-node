@@ -13,33 +13,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Builds the five `npm pack` tarballs the `compact-0.31.108` toolkit-js variant consumes via
-# `file:` references (see util/toolkit-js/compact-0.31.108/vendor/README.md). They are built from
-# the pinned `midnight-sdk` submodule — compact-js 2.5.3 is unpublished, and the matching
-# `compact-runtime` (0.16.x, well past the 0.16.0 public-npm ceiling) is built from the SDK's nested
-# `compact-submodule/runtime` via nix (the build runs a Chez-Scheme step that wraps the onchain
-# runtime + zkir). `ledger-v9` is fetched from GitHub Packages (private).
+# Builds the four GitHub-Packages-only tarballs the `compact-0.31.108` toolkit-js variant consumes via
+# `file:` references (see util/toolkit-js/compact-0.31.108/vendor/README.md). They are produced from
+# the pinned `midnight-sdk` submodule:
 #
-#   compact-js.tgz          ── midnight-sdk/compact-js/compact-js          (compact-js 2.5.3)
-#   compact-js-command.tgz  ── midnight-sdk/compact-js/compact-js-command  (compact-js 2.5.3)
-#   compact-js-node.tgz     ── midnight-sdk/compact-js/compact-js-node     (compact-js 2.5.3)
-#   compact-runtime.tgz     ── midnight-sdk/compact-submodule/runtime      (built via nix)
-#   ledger-v9.tgz           ── @midnight-ntwrk/ledger-v9@0.1.0-alpha.1     (GitHub Packages)
+#   compact-js.tgz          ┐
+#   compact-js-command.tgz  ├─ built from midnight-sdk/compact-js (yarn install + the SDK's build-utils
+#   compact-js-node.tgz     ┘  `package` step) and packed from each package's processed `dist/`
+#   compact-runtime.tgz     ── `npm pack` of the published @midnight-ntwrk/compact-runtime@<version>
+#                              (the exact version compact-js depends on) from GitHub Packages
 #
-# Output filenames are stable (independent of the internal package versions) so the variant's
-# `file:vendor/<name>.tgz` references and the lockfile stay deterministic across re-pins.
+# IMPORTANT: pack the compact-js packages from their build-utils `dist/` output (the SDK's `package`
+# script does `cd dist && npm pack`), NOT a raw `npm pack` of the source dir — the source `package.json`
+# `exports` point at `./src/*.ts`, whose emitted `.d.ts` don't line up with `@effect/cli`'s `Command`
+# type in a consumer (a `[TypeId]` mismatch). The `dist/` layout matches the published packages.
 #
-# This is the build side only; it requires a GitHub Packages read token (for ledger-v9 and the SDK's
-# yarn install). The consume path (`npm ci` in util/toolkit-js) needs neither nix nor a token — the
-# blobs are self-contained and everything else resolves from public npm.
+# Everything else in the closure resolves from public npm and is NOT vendored: @midnightntwrk/ledger-v9,
+# @midnightntwrk/onchain-runtime-v4, @midnight-ntwrk/platform-js, @midnight-ntwrk/wallet-sdk-address-format,
+# @midnight-ntwrk/ledger-v8, and the @effect/* packages.
 #
-# Designed to run inside the `+compact-js-bundle` Earthly target (FROM nixos/nix, IOG cache enabled),
-# mirroring scripts/build-compactc.sh. The host needs only Earthly + Docker; nix/yarn live inside the
-# build. Env knobs:
-#   MIDNIGHTCI_PACKAGES_READ  GitHub Packages read token (required for ledger-v9 + SDK install)
-#   SDK_DIR                   path to the midnight-sdk checkout      (default: <repo>/midnight-sdk)
-#   VENDOR_DIR                where to write the five tarballs        (default: variant vendor/ dir)
-#   LEDGER_V9_VERSION         ledger-v9 version to pack               (default: 0.1.0-alpha.1)
+# No nix and no compact-submodule: at this SDK revision compact-runtime is a published dev build, not an
+# in-tree `file:` runtime. This needs only node (+ corepack) and a GitHub Packages read token. The
+# consume path (`npm ci` in util/toolkit-js) needs neither. Env knobs:
+#   MIDNIGHTCI_PACKAGES_READ  GitHub Packages read token (required: SDK install + compact-runtime pack)
+#   SDK_DIR                   path to the midnight-sdk checkout  (default: <repo>/midnight-sdk)
+#   VENDOR_DIR                where to write the four tarballs    (default: variant vendor/ dir)
 
 set -euo pipefail
 
@@ -48,49 +46,35 @@ cd "$repo_root"
 
 SDK_DIR="${SDK_DIR:-${repo_root}/midnight-sdk}"
 VENDOR_DIR="${VENDOR_DIR:-${repo_root}/util/toolkit-js/compact-0.31.108/vendor}"
-LEDGER_V9_VERSION="${LEDGER_V9_VERSION:-0.1.0-alpha.1}"
-
-# The compact-js packages share a yarn workspace rooted at midnight-sdk/compact-js/. They reference
-# the runtime as `file:../../compact-submodule/runtime` (i.e. compact-js/<pkg> → ../../ → SDK root).
 COMPACT_JS_ROOT="${SDK_DIR}/compact-js"
-RUNTIME_DIR="${SDK_DIR}/compact-submodule/runtime"
-# <stable-name>:<dir under midnight-sdk/compact-js>
-COMPACT_JS_PKGS=(
-  "compact-js:compact-js"
-  "compact-js-command:compact-js-command"
-  "compact-js-node:compact-js-node"
-)
+COMPACT_JS_PKGS=(compact-js compact-js-command compact-js-node)
 
 if [ ! -d "$COMPACT_JS_ROOT" ]; then
   echo "error: midnight-sdk compact-js workspace not found at ${COMPACT_JS_ROOT}." >&2
-  echo "       Run: git submodule update --init --recursive midnight-sdk" >&2
+  echo "       Run: git submodule update --init midnight-sdk" >&2
   exit 1
 fi
-if [ ! -d "$RUNTIME_DIR" ]; then
-  echo "error: compact runtime not found at ${RUNTIME_DIR}." >&2
-  echo "       The midnight-sdk nested 'compact-submodule' must be checked out (recursive)." >&2
-  exit 1
-fi
-for tool in nix node npm; do
+for tool in node npm; do
   command -v "$tool" >/dev/null 2>&1 || { echo "error: ${tool} is required." >&2; exit 1; }
 done
 
 mkdir -p "$VENDOR_DIR"
 
-# --- GitHub Packages auth for the @midnight-ntwrk scope (ledger-v9 + the SDK's yarn install) --------
+# --- GitHub Packages auth for the @midnight-ntwrk scope (SDK install + compact-runtime pack) ---------
 # Never bundled into the produced tarballs; used only during this build.
 if [ -z "${MIDNIGHTCI_PACKAGES_READ:-}" ]; then
-  echo "warning: MIDNIGHTCI_PACKAGES_READ is unset; ledger-v9 fetch and SDK install will likely fail." >&2
+  echo "warning: MIDNIGHTCI_PACKAGES_READ is unset; the SDK install and compact-runtime pack will fail." >&2
 fi
-# npm side (npm pack of ledger-v9):
+# npm side (compact-runtime pack):
 {
   echo "@midnight-ntwrk:registry=https://npm.pkg.github.com"
   echo "//npm.pkg.github.com/:_authToken=${MIDNIGHTCI_PACKAGES_READ:-}"
 } >> "${HOME}/.npmrc"
-# yarn side: the project .yarnrc.yml scopes @midnight-ntwrk to npm.pkg.github.com with npmAlwaysAuth
-# but carries no token. Append a top-level npmRegistries block (a new key — no conflict with the
-# existing npmScopes map) so yarn authenticates against that registry.
-if [ -n "${MIDNIGHTCI_PACKAGES_READ:-}" ]; then
+# yarn side: the project .yarnrc.yml scopes @midnight-ntwrk to npm.pkg.github.com with npmAlwaysAuth but
+# carries no token. Append a top-level npmRegistries block (a new key — no conflict with npmScopes).
+# Guard on `npmAuthToken` (present only after our append), NOT on `npm.pkg.github.com` — the SDK's
+# .yarnrc.yml already references that registry in npmScopes, so guarding on it would skip the token.
+if [ -n "${MIDNIGHTCI_PACKAGES_READ:-}" ] && ! grep -q npmAuthToken "${COMPACT_JS_ROOT}/.yarnrc.yml"; then
   cat >> "${COMPACT_JS_ROOT}/.yarnrc.yml" <<EOF
 
 npmRegistries:
@@ -104,63 +88,29 @@ fi
 # with node) honours both, so no system yarn is needed.
 corepack enable >/dev/null 2>&1 || true
 
-echo "==> yarn install in ${COMPACT_JS_ROOT}"
-( cd "$COMPACT_JS_ROOT" && corepack yarn install )
+echo "==> yarn install + package (build-utils) in ${COMPACT_JS_ROOT}"
+# `package` = `turbo run package`, which depends on `build` (build-esm + build-utils pack-v3) and then
+# runs each package's `package` script (`npm pack` from its processed dist/). Plain TS — no nix.
+(
+  cd "$COMPACT_JS_ROOT"
+  corepack yarn install
+  corepack yarn package
+)
 
-# Build the runtime via nix. The SDK's `build:submodule-runtime` script runs a bare `nix develop` on
-# compact-submodule, which nix treats as a git working tree — but the COPY'd submodule has no usable
-# `.git` in the build context, so that fails to resolve the submodule gitdir. Force a `path:` flake
-# ref (the same trick +compactc-bundle uses for compactc) so nix copies the directory contents and
-# ignores git. Needs nix on PATH (nixos/nix base image) + the IOG cache for zkir/onchain-runtime.
-echo "==> Building compact-runtime via nix (path: ref; first build can be slow)"
-nix develop "path:${SDK_DIR}/compact-submodule" --command bash -c "cd '${RUNTIME_DIR}' && yarn build"
-
-# Build the three compact-js packages (turbo). The runtime dist now exists for their file: dep.
-echo "==> Building compact-js packages (turbo) in ${COMPACT_JS_ROOT}"
-( cd "$COMPACT_JS_ROOT" && corepack yarn build )
-
-# pack_to <package-dir> <stable-name>: `npm pack` and move the produced tarball to a stable name.
-pack_to() {
-  local pkg_dir="$1" stable_name="$2" produced
-  produced="$(cd "$pkg_dir" && npm pack --silent --pack-destination "$VENDOR_DIR")"
-  mv -f "${VENDOR_DIR}/${produced}" "${VENDOR_DIR}/${stable_name}.tgz"
-  echo "packed ${pkg_dir} -> ${VENDOR_DIR}/${stable_name}.tgz"
-}
-
-# Concrete runtime version to pin the compact-js packages against (read from the built package.json).
-RUNTIME_VER="$(node -p "require('${RUNTIME_DIR}/package.json').version")"
-echo "compact-runtime version: ${RUNTIME_VER}"
-pack_to "$RUNTIME_DIR" "compact-runtime"
-
-# Before packing, rewrite each package's `@midnight-ntwrk/compact-runtime` dependency from the in-repo
-# `file:../../compact-submodule/runtime` link to the concrete built version, so the published tarball
-# declares a real version that our vendored compact-runtime.tgz (declared directly by the variant)
-# satisfies.
-rewrite_runtime_dep() {
-  node -e '
-    const fs = require("fs");
-    const [file, ver] = [process.argv[1], process.argv[2]];
-    const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
-    for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
-      if (pkg[field] && pkg[field]["@midnight-ntwrk/compact-runtime"]) {
-        pkg[field]["@midnight-ntwrk/compact-runtime"] = ver;
-      }
-    }
-    fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
-  ' "$1" "$2"
-}
-
-for entry in "${COMPACT_JS_PKGS[@]}"; do
-  stable="${entry%%:*}"
-  pkg_dir="${COMPACT_JS_ROOT}/${entry##*:}"
-  rewrite_runtime_dep "${pkg_dir}/package.json" "$RUNTIME_VER"
-  pack_to "$pkg_dir" "$stable"
+echo "==> Collecting the compact-js dist/ tarballs"
+for pkg in "${COMPACT_JS_PKGS[@]}"; do
+  produced="$(ls "${COMPACT_JS_ROOT}/${pkg}/dist/"*.tgz 2>/dev/null | head -n1)"
+  [ -n "$produced" ] || { echo "error: no dist/ tarball produced for ${pkg}" >&2; exit 1; }
+  cp -f "$produced" "${VENDOR_DIR}/${pkg}.tgz"
+  echo "  ${pkg}.tgz  <- ${produced#"${SDK_DIR}/"}"
 done
 
-echo "==> Packing ledger-v9@${LEDGER_V9_VERSION} from GitHub Packages"
-produced="$(npm pack "@midnight-ntwrk/ledger-v9@${LEDGER_V9_VERSION}" --silent --pack-destination "$VENDOR_DIR")"
-mv -f "${VENDOR_DIR}/${produced}" "${VENDOR_DIR}/ledger-v9.tgz"
-echo "packed @midnight-ntwrk/ledger-v9@${LEDGER_V9_VERSION} -> ${VENDOR_DIR}/ledger-v9.tgz"
+# compact-runtime: the published dev version compact-js depends on (read it, don't hardcode the hash).
+RUNTIME_VER="$(node -p "require('${COMPACT_JS_ROOT}/compact-js/package.json').dependencies['@midnight-ntwrk/compact-runtime']")"
+echo "==> Packing @midnight-ntwrk/compact-runtime@${RUNTIME_VER} from GitHub Packages"
+produced="$(npm pack "@midnight-ntwrk/compact-runtime@${RUNTIME_VER}" --silent --pack-destination "$VENDOR_DIR")"
+mv -f "${VENDOR_DIR}/${produced}" "${VENDOR_DIR}/compact-runtime.tgz"
+echo "  compact-runtime.tgz  <- ${produced}"
 
 echo ""
 echo "Done. Vendored tarballs in ${VENDOR_DIR}:"

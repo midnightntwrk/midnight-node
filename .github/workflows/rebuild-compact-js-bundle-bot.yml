@@ -85,7 +85,9 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          submodules: recursive
+          # Non-recursive: only the midnight-sdk compact-js source is needed; compact-runtime is a
+          # published package, so midnight-sdk's nested compact-submodule is not used by the build.
+          submodules: true
           ref: ${{ steps.pr.outputs.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0

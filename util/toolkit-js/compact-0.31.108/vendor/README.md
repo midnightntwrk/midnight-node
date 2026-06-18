@@ -20,23 +20,25 @@ Resolved from public npm (not vendored): `@midnightntwrk/ledger-v9@^1.0.0-rc.2`,
 
 ## How these were produced
 
-The compact-js 2.5.3 packages aren't published with the `21f6e4d8` dep set, so the three
-`compact-js*` blobs are built from the pinned `midnight-sdk` submodule:
+The compact-js 2.5.3 packages aren't published with this SDK revision's dep set, so the three
+`compact-js*` blobs are built from the pinned `midnight-sdk` submodule. Pack them via the SDK's own
+`package` step (build-utils), not a raw `npm pack` of the source dir — the source `package.json`
+`exports` point at `./src/*.ts`, whose `.d.ts` don't line up with `@effect/cli`'s `Command` type in a
+consumer (a `[TypeId]` mismatch). The `dist/` layout the `package` step emits matches the published
+packages:
 
 ```
 cd midnight-sdk/compact-js
 corepack yarn install          # needs a GitHub Packages read token for the @midnight-ntwrk scope
-corepack yarn build            # turbo run build (plain TS — no nix, no compact-submodule)
-# then `npm pack` each of compact-js/, compact-js-command/, compact-js-node/
+corepack yarn package          # turbo: build (build-esm + build-utils pack-v3) then npm pack from dist/
+# copy each of compact-js/dist/*.tgz, compact-js-command/dist/*.tgz, compact-js-node/dist/*.tgz here
 ```
 
 `compact-runtime.tgz` is `npm pack`ed straight from GitHub Packages
-(`@midnight-ntwrk/compact-runtime@0.16.103-dev.<hash>`) — it is a published dev build, so it is **not**
-built from source. (Earlier SDK commits built it from the nested `compact-submodule` via nix; that is
-no longer needed.)
+(`@midnight-ntwrk/compact-runtime@<version>`, the version compact-js depends on) — it is a published
+dev build, **not** built from source. (Plain TS throughout — no nix, no compact-submodule.)
 
-> Note: the `Earthfile` `+compact-js-bundle` target, `scripts/build-compact-js-bundle.sh`, and the
-> `rebuild-compact-js-bundle-bot` workflow still describe the older nix/from-source flow and will be
-> reworked to this plain `npm pack` flow once the SDK dep set is finalized.
-
-The GitHub Packages read token is needed **only** to build/pack these blobs — never on the consume path.
+This whole flow is automated by the `+compact-js-bundle` Earthly target
+(`scripts/build-compact-js-bundle.sh`) and the `rebuild-compact-js-bundle-bot` workflow
+(`/bot rebuild-compact-js-bundle`). The GitHub Packages read token is needed **only** to build/pack
+these blobs — never on the consume path.
