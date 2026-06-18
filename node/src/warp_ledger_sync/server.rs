@@ -16,8 +16,8 @@
 //! Ledger-sync server handler.
 //!
 //! Answers [`LedgerSyncRequest`]s from warp-syncing peers by serializing this (fully synced) node's
-//! `Ledger`-rooted arena snapshot at the requested finalized block and serving the requested byte
-//! range. Patterned on substrate's `state_request_handler.rs`.
+//! `Ledger`-rooted arena snapshot at the requested finalized block, Snappy-compressing it, and
+//! serving the requested compressed byte range. Patterned on substrate's `state_request_handler.rs`.
 //!
 //! Verification is the *client's* job: the server is untrusted, so it performs no crypto —
 //! it only serves bytes whose recomputed root the client checks against the on-chain `StateKey`.
@@ -36,7 +36,7 @@ use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 
 use super::{
 	LOG_TARGET,
-	protocol::{LedgerSyncRequest, build_response, ledger_sync_protocol_name},
+	protocol::{LedgerSyncRequest, build_response, compress_snapshot, ledger_sync_protocol_name},
 	read_state_key,
 };
 
@@ -56,9 +56,15 @@ pub struct LedgerSyncRequestHandler<B: BlockT, Client, BE> {
 	/// serializer dispatches to — see [`midnight_node_ledger::serialize_ledger_snapshot`]).
 	unified: bool,
 	request_receiver: async_channel::Receiver<IncomingRequest>,
-	/// `(target_block, serialized blob)` memo for the last block served.
-	cache: Option<(B::Hash, Arc<Vec<u8>>)>,
+	/// `(target_block, compressed serialized blob)` memo for the last block served.
+	cache: Option<(B::Hash, CachedSnapshot)>,
 	_phantom: PhantomData<BE>,
+}
+
+#[derive(Clone)]
+struct CachedSnapshot {
+	compressed_blob: Arc<Vec<u8>>,
+	raw_len: u64,
 }
 
 impl<B, Client, BE> LedgerSyncRequestHandler<B, Client, BE>
@@ -133,17 +139,18 @@ where
 
 	fn handle_request(&mut self, payload: &[u8]) -> Result<Vec<u8>, HandleError> {
 		let req = LedgerSyncRequest::<B::Hash>::decode(&mut &payload[..])?;
-		let blob = self.blob_for(req.target_hash)?;
-		Ok(build_response(&blob, req.offset, req.max_len).encode())
+		let snapshot = self.blob_for(req.target_hash)?;
+		Ok(build_response(&snapshot.compressed_blob, snapshot.raw_len, req.offset, req.max_len)
+			.encode())
 	}
 
-	/// Return the serialized `Ledger`-rooted blob for `target`, building and memoizing it on a
-	/// cache miss. Rejects unknown or not-yet-finalized blocks.
-	fn blob_for(&mut self, target: B::Hash) -> Result<Arc<Vec<u8>>, HandleError> {
-		if let Some((cached, blob)) = &self.cache
+	/// Return the compressed serialized `Ledger`-rooted blob for `target`, building and memoizing it
+	/// on a cache miss. Rejects unknown or not-yet-finalized blocks.
+	fn blob_for(&mut self, target: B::Hash) -> Result<CachedSnapshot, HandleError> {
+		if let Some((cached, snapshot)) = &self.cache
 			&& *cached == target
 		{
-			return Ok(blob.clone());
+			return Ok(snapshot.clone());
 		}
 
 		// Only serve finalized blocks whose state we hold: an unknown hash or a block beyond our
@@ -159,15 +166,18 @@ where
 
 		let blob = midnight_node_ledger::serialize_ledger_snapshot(self.unified, &state_key)
 			.map_err(HandleError::Serialize)?;
+		let raw_len = blob.len() as u64;
+		let compressed_blob = compress_snapshot(&blob).map_err(HandleError::Compress)?;
 		log::debug!(
 			target: LOG_TARGET,
-			"Serialized ledger snapshot for {target:?}: {} bytes",
-			blob.len()
+			"Serialized ledger snapshot for {target:?}: {} bytes raw, {} bytes compressed",
+			raw_len,
+			compressed_blob.len()
 		);
 
-		let blob = Arc::new(blob);
-		self.cache = Some((target, blob.clone()));
-		Ok(blob)
+		let snapshot = CachedSnapshot { compressed_blob: Arc::new(compressed_blob), raw_len };
+		self.cache = Some((target, snapshot.clone()));
+		Ok(snapshot)
 	}
 }
 
@@ -185,4 +195,6 @@ enum HandleError {
 	NoStateKey,
 	#[error("failed to serialize ledger snapshot: {0}")]
 	Serialize(String),
+	#[error("failed to compress ledger snapshot: {0}")]
+	Compress(snap::Error),
 }

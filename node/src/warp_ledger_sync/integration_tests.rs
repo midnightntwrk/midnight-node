@@ -14,43 +14,48 @@
 // limitations under the License.
 
 //! In-process round-trip test for the warp ledger-sync core, with no networking:
-//! init a real arena from genesis → serialize the `Ledger`-rooted snapshot (server) → page it
-//! through the transport chunker + reassembler → import + verify against the on-chain
+//! init a real arena from genesis → serialize the `Ledger`-rooted snapshot (server) → compress +
+//! page it through the transport chunker + reassembler → decompress → import + verify against the on-chain
 //! `StateKey` (client/import). Also asserts the security property: a tampered blob is
 //! rejected (`RootMismatch`), never imported.
 //!
 //! Run isolated (it touches the process-global `default_storage` singleton):
 //! `cargo test -p midnight-node ledger_snapshot_roundtrip`.
 
-use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+use super::protocol::{ChunkAssembler, build_response, compress_snapshot, decompress_snapshot};
 
-use super::protocol::{ChunkAssembler, build_response};
-
-/// Page `blob` end-to-end the way the client would, with a deliberately small chunk size to force
-/// multiple ranges, and return the reassembled bytes.
-fn page_and_reassemble(blob: &[u8], chunk: u32) -> Vec<u8> {
-	let mut assembler = ChunkAssembler::new(blob.len() as u64);
+/// Compress + page `blob` end-to-end the way the client would, with a deliberately small chunk size
+/// to force multiple ranges, and return the decompressed reassembled bytes.
+fn compress_page_reassemble_decompress(blob: &[u8], chunk: u32) -> Vec<u8> {
+	let compressed = compress_snapshot(blob).expect("compress snapshot");
+	let raw_total_len = blob.len() as u64;
+	let mut assembler = ChunkAssembler::new(compressed.len() as u64);
 	loop {
-		let response = build_response(blob, assembler.next_offset(), chunk);
+		let response = build_response(&compressed, raw_total_len, assembler.next_offset(), chunk);
+		assert_eq!(response.raw_total_len, raw_total_len);
+		assert_eq!(response.compressed_total_len, compressed.len() as u64);
 		if response.bytes.is_empty() {
 			break;
 		}
 		assembler.accept(response.offset, &response.bytes).expect("contiguous chunk");
 	}
-	assembler.into_blob().expect("complete blob")
+	let reassembled = assembler.into_blob().expect("complete compressed blob");
+	decompress_snapshot(&reassembled, raw_total_len).expect("decompress snapshot")
 }
 
 #[test]
 fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	let dir = tempfile::tempdir().expect("tempdir");
-	let genesis_state = UndeployedNetwork.genesis_state().to_vec();
+	// Use a bundled v13 fixture because the current warp snapshot dispatch table supports
+	// ledger-state v5/v13/v16; the local undeployed fixture is already v17.
+	let genesis_state = include_bytes!("../../../res/genesis/genesis_state_preview.mn");
 
 	// Initialize the arena from genesis in Separate mode. This sets the process-global
 	// `default_storage`, persists the genesis ledger, and returns the on-chain `StateKey` bytes
 	// (the tagged `TypedArenaKey<Ledger>`) — exactly what `pallet_midnight::StateKey` would hold.
-	let state_key = midnight_node_ledger::ledger_9::storage::init_storage_paritydb_separate(
+	let state_key = midnight_node_ledger::ledger_8::storage::init_storage_paritydb_separate(
 		dir.path(),
-		&genesis_state,
+		genesis_state,
 		1024,
 	);
 	assert!(!state_key.is_empty(), "genesis init must produce a StateKey");
@@ -60,8 +65,9 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 		.expect("serialize ledger snapshot");
 	assert!(blob.len() > state_key.len(), "snapshot blob should carry the arena, not just the key");
 
-	// Transport: page into 4 KiB ranges and reassemble; must be byte-identical.
-	let reassembled = page_and_reassemble(&blob, 4096);
+	// Transport: compress, page into 4 KiB ranges, reassemble, and decompress; must return the
+	// canonical blob byte-identically.
+	let reassembled = compress_page_reassemble_decompress(&blob, 4096);
 	assert_eq!(reassembled, blob, "reassembled blob must be byte-identical to the server's");
 
 	// Client/import: verify root == StateKey and persist. Idempotent against the

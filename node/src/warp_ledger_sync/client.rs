@@ -17,7 +17,8 @@
 //!
 //! After warp + state-sync complete (target block N captured by the monitor), this drives the
 //! client side of the protocol: read the on-chain `StateKey` at N (from the warp-recovered trie),
-//! fetch the `Ledger`-rooted arena blob in byte ranges from peers, then hand the assembled blob to
+//! fetch the Snappy-compressed `Ledger`-rooted arena blob in byte ranges from peers, decompress it
+//! to the canonical blob, then hand that blob to
 //! [`midnight_node_ledger::import_verified_ledger_snapshot`], which verifies its root against the
 //! `StateKey` and persists it on success.
 //!
@@ -35,7 +36,10 @@ use sp_runtime::traits::Block as BlockT;
 
 use super::{
 	LOG_TARGET,
-	protocol::{ChunkAssembler, LedgerSyncRequest, LedgerSyncResponse, MAX_LEDGER_SYNC_CHUNK},
+	protocol::{
+		ChunkAssembler, DecompressError, LedgerSyncRequest, LedgerSyncResponse,
+		MAX_LEDGER_SYNC_CHUNK, decompress_snapshot, validate_snapshot_lengths,
+	},
 	read_state_key,
 };
 
@@ -115,18 +119,27 @@ where
 		Err(ClientError::AllPeersFailed)
 	}
 
-	/// Fetch the full blob from a single peer by paging contiguous byte ranges in order.
+	/// Fetch the full compressed blob from a single peer by paging contiguous byte ranges in order,
+	/// then decompress it to the canonical `Ledger`-rooted blob.
 	///
 	/// (Parallel / multi-peer range fetch is a possible future optimization; the
 	/// `ChunkAssembler` already supports resume by `next_offset`.)
 	async fn fetch_blob_from(&self, peer: PeerId, target: B::Hash) -> Result<Vec<u8>, ClientError> {
-		// First range establishes `total_len`.
+		// First range establishes the compressed transfer length and expected raw size.
 		let first = self.request_range(peer, target, 0).await?;
-		let mut assembler = ChunkAssembler::new(first.total_len);
+		let compressed_total_len = first.compressed_total_len;
+		let raw_total_len = first.raw_total_len;
+		validate_snapshot_lengths(compressed_total_len, raw_total_len)?;
+		let mut assembler = ChunkAssembler::new(compressed_total_len);
 		assembler.accept(first.offset, &first.bytes)?;
 
 		while !assembler.is_complete() {
 			let next = self.request_range(peer, target, assembler.next_offset()).await?;
+			if next.compressed_total_len != compressed_total_len
+				|| next.raw_total_len != raw_total_len
+			{
+				return Err(ClientError::InconsistentResponse);
+			}
 			if next.bytes.is_empty() {
 				// Server returned an empty range before completion: treat as a truncated transfer.
 				// `into_blob` below will surface `Incomplete`.
@@ -135,7 +148,8 @@ where
 			assembler.accept(next.offset, &next.bytes)?;
 		}
 
-		Ok(assembler.into_blob()?)
+		let compressed = assembler.into_blob()?;
+		Ok(decompress_snapshot(&compressed, raw_total_len)?)
 	}
 
 	async fn request_range(
@@ -176,6 +190,10 @@ pub enum ClientError {
 	Decode(#[from] parity_scale_codec::Error),
 	#[error("chunk assembly failed: {0}")]
 	Assemble(#[from] super::protocol::AssembleError),
+	#[error("peer changed ledger-sync response metadata between chunks")]
+	InconsistentResponse,
+	#[error("failed to decompress ledger snapshot: {0}")]
+	Decompress(#[from] DecompressError),
 	#[error("all peers failed to provide a verifiable snapshot")]
 	AllPeersFailed,
 }

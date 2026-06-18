@@ -16,21 +16,31 @@
 //! Ledger-sync protocol message types, codec, naming, and the pure range-serving /
 //! reassembly logic shared by the server and client.
 //!
-//! The transferred payload is the canonical, `Ledger`-rooted arena blob (derived tag prefix ‖
-//! `TopoSortedNodes` of the `Ledger` DAG). Transport pages it by **byte offset** (not by semantic
-//! node): the server streams contiguous byte ranges and the client concatenates them in order
-//! before deserialize + verify. The children-precede-parents property is intrinsic to the
-//! serialized blob, so in-order byte concatenation preserves it automatically.
+//! The transferred payload is the Snappy-compressed canonical, `Ledger`-rooted arena blob (derived
+//! tag prefix ‖ `TopoSortedNodes` of the `Ledger` DAG). Transport pages the compressed stream by
+//! **byte offset** (not by semantic node): the server streams contiguous byte ranges and the client
+//! concatenates them in order, decompresses to the canonical blob, then deserialize + verifies. The
+//! children-precede-parents property is intrinsic to the decompressed blob.
 
 use parity_scale_codec::{Decode, Encode};
 
-/// Protocol name suffix; the full name is `/{genesis_hash}[/{fork_id}]/midnight-ledger-sync/1`.
-pub const PROTOCOL_NAME_SUFFIX: &str = "midnight-ledger-sync/1";
+/// Protocol name suffix; the full name is `/{genesis_hash}[/{fork_id}]/midnight-ledger-sync/2`.
+///
+/// Version 2 range-serves a Snappy-compressed ledger snapshot. Version 1 served raw canonical
+/// snapshot bytes.
+pub const PROTOCOL_NAME_SUFFIX: &str = "midnight-ledger-sync/2";
 
 /// Maximum number of bytes a single response chunk may carry. The server clamps a peer's
 /// requested `max_len` to this; the network layer's `max_response_size` must be ≥ this plus codec
 /// overhead. 1 MiB matches substrate's state-sync chunking.
 pub const MAX_LEDGER_SYNC_CHUNK: u32 = 1024 * 1024;
+
+/// Maximum decompressed ledger snapshot size accepted from a peer.
+///
+/// This is intentionally generous relative to current expected arena sizes, but it prevents a
+/// malicious peer from advertising a tiny compressed payload that expands into an unreasonable
+/// allocation before ledger-root verification can reject it.
+pub const MAX_LEDGER_SYNC_RAW_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Request a contiguous byte range of the `Ledger`-rooted arena blob at `target_hash`.
 ///
@@ -47,17 +57,21 @@ pub struct LedgerSyncRequest<Hash> {
 	pub max_len: u32,
 }
 
-/// A contiguous byte range of the canonical `Ledger`-rooted blob.
+/// A contiguous byte range of the Snappy-compressed canonical `Ledger`-rooted blob.
 ///
-/// `total_len` is the full blob size (lets the client learn the size up front and drive parallel /
-/// resumable range fetches); `offset`/`bytes` are this chunk.
+/// `compressed_total_len` is the full compressed stream size (lets the client learn the size up
+/// front and drive parallel / resumable range fetches); `raw_total_len` is the expected
+/// decompressed canonical blob size, used to bound and validate decompression; `offset`/`bytes` are
+/// this compressed chunk.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct LedgerSyncResponse {
-	/// Total length of the full canonical blob at the target block.
-	pub total_len: u64,
-	/// Byte offset of this chunk within the full blob.
+	/// Total length of the full compressed blob at the target block.
+	pub compressed_total_len: u64,
+	/// Expected total length after Snappy decompression.
+	pub raw_total_len: u64,
+	/// Byte offset of this chunk within the compressed blob.
 	pub offset: u64,
-	/// The chunk bytes: `blob[offset .. offset + bytes.len()]`.
+	/// The chunk bytes: `compressed_blob[offset .. offset + bytes.len()]`.
 	pub bytes: Vec<u8>,
 }
 
@@ -79,18 +93,107 @@ pub fn clamp_max_len(requested: u32) -> u32 {
 	requested.min(MAX_LEDGER_SYNC_CHUNK)
 }
 
-/// Build a response chunk for `[offset, offset + clamp(max_len))` of `blob` (server side).
+/// Snappy-compress a canonical snapshot blob for transport.
+pub fn compress_snapshot(blob: &[u8]) -> Result<Vec<u8>, snap::Error> {
+	snap::raw::Encoder::new().compress_vec(blob)
+}
+
+/// Decompress a complete Snappy-compressed snapshot blob after range reassembly.
+pub fn decompress_snapshot(
+	compressed: &[u8],
+	expected_raw_len: u64,
+) -> Result<Vec<u8>, DecompressError> {
+	validate_snapshot_lengths(compressed.len() as u64, expected_raw_len)?;
+	let advertised = snap::raw::decompress_len(compressed).map_err(DecompressError::Snap)? as u64;
+	if advertised != expected_raw_len {
+		return Err(DecompressError::LengthMismatch {
+			expected: expected_raw_len,
+			actual: advertised,
+		});
+	}
+	let bytes = snap::raw::Decoder::new()
+		.decompress_vec(compressed)
+		.map_err(DecompressError::Snap)?;
+	if bytes.len() as u64 != expected_raw_len {
+		return Err(DecompressError::LengthMismatch {
+			expected: expected_raw_len,
+			actual: bytes.len() as u64,
+		});
+	}
+	Ok(bytes)
+}
+
+/// Validate advertised compressed/raw snapshot lengths before allocating or downloading the full
+/// compressed stream.
+pub fn validate_snapshot_lengths(
+	compressed_total_len: u64,
+	raw_total_len: u64,
+) -> Result<(), DecompressError> {
+	if raw_total_len > MAX_LEDGER_SYNC_RAW_BYTES {
+		return Err(DecompressError::TooLarge { len: raw_total_len });
+	}
+	let max_compressed_len = snap::raw::max_compress_len(raw_total_len as usize) as u64;
+	if compressed_total_len > max_compressed_len {
+		return Err(DecompressError::CompressedTooLarge {
+			len: compressed_total_len,
+			max: max_compressed_len,
+		});
+	}
+	Ok(())
+}
+
+/// Errors from decompressing a complete compressed snapshot.
+#[derive(Debug, thiserror::Error)]
+pub enum DecompressError {
+	/// Peer advertised a decompressed length larger than this protocol accepts.
+	#[error("decompressed snapshot length {len} exceeds limit {MAX_LEDGER_SYNC_RAW_BYTES}")]
+	TooLarge {
+		/// Advertised decompressed size.
+		len: u64,
+	},
+	/// Peer advertised a compressed length larger than Snappy can emit for the raw length.
+	#[error("compressed snapshot length {len} exceeds snappy limit {max}")]
+	CompressedTooLarge {
+		/// Advertised compressed size.
+		len: u64,
+		/// Maximum possible Snappy raw compressed size for the advertised raw size.
+		max: u64,
+	},
+	/// The response metadata and Snappy stream header disagreed on decompressed length.
+	#[error("decompressed snapshot length mismatch: expected {expected}, got {actual}")]
+	LengthMismatch {
+		/// Expected decompressed size from response metadata.
+		expected: u64,
+		/// Actual decompressed size from the Snappy header/result.
+		actual: u64,
+	},
+	/// Snappy rejected the compressed stream.
+	#[error("snappy decompression failed: {0}")]
+	Snap(#[from] snap::Error),
+}
+
+/// Build a response chunk for `[offset, offset + clamp(max_len))` of `compressed_blob` (server side).
 ///
 /// Clamps `max_len`, never reads past the end of the blob, and yields an empty chunk if `offset`
 /// is at or past the end (which signals completion to the client).
-pub fn build_response(blob: &[u8], offset: u64, max_len: u32) -> LedgerSyncResponse {
-	let total_len = blob.len() as u64;
-	let start = offset.min(total_len);
-	let avail = total_len - start;
+pub fn build_response(
+	compressed_blob: &[u8],
+	raw_total_len: u64,
+	offset: u64,
+	max_len: u32,
+) -> LedgerSyncResponse {
+	let compressed_total_len = compressed_blob.len() as u64;
+	let start = offset.min(compressed_total_len);
+	let avail = compressed_total_len - start;
 	let len = (clamp_max_len(max_len) as u64).min(avail);
 	let start = start as usize;
 	let end = start + len as usize;
-	LedgerSyncResponse { total_len, offset, bytes: blob[start..end].to_vec() }
+	LedgerSyncResponse {
+		compressed_total_len,
+		raw_total_len,
+		offset,
+		bytes: compressed_blob[start..end].to_vec(),
+	}
 }
 
 /// Errors from reassembling response chunks into the full blob (client side).
@@ -105,7 +208,7 @@ pub enum AssembleError {
 		/// The offset the chunk actually carried.
 		got: u64,
 	},
-	/// A chunk would extend the blob past the advertised `total_len`.
+	/// A chunk would extend the blob past the advertised compressed `total_len`.
 	#[error("chunk overflows total_len {total}: offset {offset} + len {len}")]
 	Overflow {
 		/// Advertised total length of the blob.
@@ -125,13 +228,13 @@ pub enum AssembleError {
 	},
 }
 
-/// Reassembles ordered, contiguous response chunks into the full canonical blob.
+/// Reassembles ordered, contiguous response chunks into the full compressed blob.
 ///
 /// In-order contiguous assembly is sufficient and simplest: a chunk is accepted only if its
 /// `offset` equals the bytes received so far. Parallel / multi-peer fetches are allowed but the
 /// client must reorder chunks by `offset` before feeding them here. The assembled
-/// blob is verified against the on-chain `StateKey` by the client driver — this type does no
-/// crypto, only transport-level reassembly.
+/// decompressed blob is verified against the on-chain `StateKey` by the client driver — this type
+/// does no crypto, only transport-level reassembly.
 #[derive(Debug)]
 pub struct ChunkAssembler {
 	total_len: u64,
@@ -200,8 +303,12 @@ mod tests {
 		let decoded = LedgerSyncRequest::<H256>::decode(&mut &req.encode()[..]).unwrap();
 		assert_eq!(req, decoded);
 
-		let resp =
-			LedgerSyncResponse { total_len: 9_999, offset: 4096, bytes: vec![1, 2, 3, 4, 5] };
+		let resp = LedgerSyncResponse {
+			compressed_total_len: 9_999,
+			raw_total_len: 20_000,
+			offset: 4096,
+			bytes: vec![1, 2, 3, 4, 5],
+		};
 		let decoded = LedgerSyncResponse::decode(&mut &resp.encode()[..]).unwrap();
 		assert_eq!(resp, decoded);
 	}
@@ -212,11 +319,11 @@ mod tests {
 		let hex = hex::encode(genesis.as_ref());
 		assert_eq!(
 			ledger_sync_protocol_name(genesis, None),
-			format!("/{hex}/midnight-ledger-sync/1")
+			format!("/{hex}/midnight-ledger-sync/2")
 		);
 		assert_eq!(
 			ledger_sync_protocol_name(genesis, Some("forkz")),
-			format!("/{hex}/forkz/midnight-ledger-sync/1")
+			format!("/{hex}/forkz/midnight-ledger-sync/2")
 		);
 	}
 
@@ -230,22 +337,24 @@ mod tests {
 	#[test]
 	fn build_response_clamps_and_bounds() {
 		let blob: Vec<u8> = (0..=255u8).cycle().take(5000).collect();
+		let raw_total_len = 10_000;
 
 		// A normal interior range.
-		let r = build_response(&blob, 1000, 500);
-		assert_eq!(r.total_len, 5000);
+		let r = build_response(&blob, raw_total_len, 1000, 500);
+		assert_eq!(r.compressed_total_len, 5000);
+		assert_eq!(r.raw_total_len, raw_total_len);
 		assert_eq!(r.offset, 1000);
 		assert_eq!(r.bytes, &blob[1000..1500]);
 
 		// max_len past the end is truncated to the tail.
-		let r = build_response(&blob, 4800, 1000);
+		let r = build_response(&blob, raw_total_len, 4800, 1000);
 		assert_eq!(r.bytes, &blob[4800..5000]);
 
 		// offset at/past the end yields an empty chunk (completion signal).
-		let r = build_response(&blob, 5000, 100);
+		let r = build_response(&blob, raw_total_len, 5000, 100);
 		assert!(r.bytes.is_empty());
-		assert_eq!(r.total_len, 5000);
-		let r = build_response(&blob, 9999, 100);
+		assert_eq!(r.compressed_total_len, 5000);
+		let r = build_response(&blob, raw_total_len, 9999, 100);
 		assert!(r.bytes.is_empty());
 	}
 
@@ -257,7 +366,7 @@ mod tests {
 		// `next_offset`, fed into the assembler in order.
 		let mut asm = ChunkAssembler::new(blob.len() as u64);
 		loop {
-			let chunk = build_response(&blob, asm.next_offset(), 700);
+			let chunk = build_response(&blob, 10_000, asm.next_offset(), 700);
 			if chunk.bytes.is_empty() {
 				break;
 			}
@@ -289,5 +398,22 @@ mod tests {
 		);
 		asm.accept(0, &[0u8; 8]).unwrap();
 		assert_eq!(asm.into_blob(), Err(AssembleError::Incomplete { have: 8, total: 16 }));
+	}
+
+	#[test]
+	fn snapshot_compression_roundtrip() {
+		let raw: Vec<u8> = (0..=255u8).cycle().take(16_384).collect();
+		let compressed = compress_snapshot(&raw).expect("compress");
+		let decompressed = decompress_snapshot(&compressed, raw.len() as u64).expect("decompress");
+		assert_eq!(decompressed, raw);
+	}
+
+	#[test]
+	fn decompression_rejects_length_mismatch() {
+		let raw = vec![42u8; 128];
+		let compressed = compress_snapshot(&raw).expect("compress");
+		let err = decompress_snapshot(&compressed, raw.len() as u64 + 1)
+			.expect_err("wrong expected length must fail");
+		assert!(matches!(err, DecompressError::LengthMismatch { .. }));
 	}
 }
