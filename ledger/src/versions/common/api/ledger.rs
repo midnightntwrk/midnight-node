@@ -194,6 +194,34 @@ impl<D: DB> Ledger<D> {
 		Ok(new_sp)
 	}
 
+	/// Infallible counterpart to [`post_block_update`](Self::post_block_update): applies the
+	/// end-of-block ledger update without the block-limit check.
+	///
+	/// The limit check is performed per-transaction via
+	/// `post_block_update::prevalidate_post_block_update` (see [`apply_verified_transaction`] and
+	/// [`apply_system_tx`]), and the accumulated `block_fullness` is clamped to the block limits
+	/// here before being applied, so the underlying update cannot fail on block limits. Suitable
+	/// for `on_finalize`, which cannot propagate an error.
+	pub(crate) fn apply_post_block_update(sp: Sp<Self, D>, block_context: BlockContext) -> Sp<Self, D> {
+		let block_fullness: SyntheticCost = sp.block_fullness.clone().into();
+		let block_limits = sp.state.parameters.limits.block_limits;
+		let normalized_fullness = helpers_local::clamp_and_normalize(
+			&block_fullness,
+			&block_limits,
+			"apply_post_block_update",
+		);
+		let overall_fullness = compute_overall_fullness(&normalized_fullness);
+		let next_state = post_block_update::apply_post_block_update(
+			&sp.state,
+			Timestamp::from_secs(block_context.tblock),
+			normalized_fullness,
+			overall_fullness,
+		);
+		default_storage::<D>()
+			.arena
+			.alloc(Ledger { state: next_state, block_fullness: SyntheticCost::ZERO.into() })
+	}
+
 	pub(crate) fn apply_system_tx(
 		sp: Sp<Self, D>,
 		tx: &SystemTransaction,
