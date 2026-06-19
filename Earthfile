@@ -89,6 +89,9 @@ generate-preprod-keys:
 generate-preprod-genesis-seeds:
     BUILD +generate-seeds --NETWORK=preprod --OUTPUT_FILE=preprod-genesis-seeds.json
 
+generate-stagenet-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=stagenet --OUTPUT_FILE=stagenet-genesis-seeds.json
+
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
     ARG DEV=false
@@ -493,6 +496,11 @@ rebuild-genesis-state-perfnet:
     BUILD +rebuild-genesis-state \
         --NETWORK=perfnet
 
+# rebuild-genesis-state-stagenet rebuilds the genesis ledger state for stagenet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-stagenet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=stagenet
+
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
@@ -781,8 +789,11 @@ prep:
 # toolchain hidden; the IOG binary cache provides zkir prebuilt so it is not
 # compiled from source.
 compactc-bundle:
-    # TODO: pin to a digest/tag once first green CI confirms it works.
-    FROM nixos/nix:latest
+    # Multi-arch index digest for nixos/nix:2.24.5 (linux/amd64 + linux/arm64).
+    # Pinning the index (not a per-arch manifest) lets +node-ci-image-single-platform
+    # build this target on both amd64 and arm64 CI runners. The arm64 child manifest
+    # is fb53f7a4116b… (unchanged from the previous pin); amd64 is c5ff76297bf9….
+    FROM nixos/nix@sha256:4ad79a0ab633944869a37921f096d35a3f2c7a0275d98b7bfa0cd3cba5a6b96e
     # Append (don't clobber) so the base image's defaults (incl. cache.nixos.org)
     # survive. `extra-` merges onto those defaults. sandbox=false because buildkit/
     # podman containers usually lack the user namespaces nix's sandbox needs.
@@ -811,7 +822,7 @@ compactc-fetch:
     # Note: compactc >=0.30.0 releases are on LFDT-Minokawa/compact (older versions were on midnightntwrk/compact)
     ARG COMPACT_REPO=LFDT-Minokawa/compact
     ARG COMPACT_TAG_PREFIX=compactc-v
-    FROM alpine
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl unzip
     # The tag/asset names depend on the kind of release VERSION names:
     #   - a "dev build" published from an arbitrary commit carries that commit's full
@@ -1065,17 +1076,25 @@ test:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
     # - partner-chains-cardano-offchain are: 1) flaky, 2) long running, 3) test in partner-chains repo, 4) cover functionality used to e2e test partner-chains (non-production)
-    # DOCKERHUB_USER/TOKEN default to empty so local builds and fork PRs (where secrets
-    # aren't exposed) still work — at the cost of unauthenticated pull rate limits.
+    # Logs into Docker Hub INSIDE the nested dockerd (it inherits no host auth) so
+    # testcontainers pulls (postgres etc.) are authenticated. Bare `--secret NAME` is
+    # load-bearing: `--secret NAME=` binds an EMPTY secret-id and silently yields ""
+    # even when the CLI supplies the secret. CI always passes both --secret flags
+    # (empty on fork PRs → login skipped → anonymous, rate-limited). Local runs must
+    # supply them too: `earthly +test --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN=`
+    # (CLI-side `=` means supplied-but-empty, which is fine). The trailing
+    # `rm -f /root/.docker/config.json` keeps the login token out of the RUN's final
+    # snapshot, which buildkit may export to the remote cache on success.
     WITH DOCKER
-        RUN --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN= \
+        RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ]; then \
               echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
             fi && \
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
             --exclude partner-chains-cardano-offchain \
-            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))' && \
+            rm -f /root/.docker/config.json
     END
 
     # RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
@@ -1176,26 +1195,44 @@ test-toolkit:
     # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
     # pre-pull private GHCR images via Earthly's buildkit (which has auth).
     # Without NODE_IMAGE, testcontainers pulls the public default itself.
+    # The optional docker login (see +test for the --secret semantics) authenticates
+    # Docker Hub pulls made by testcontainers INSIDE test-toolkit:latest — hence the
+    # /root/.docker mount + DOCKER_CONFIG, which hand the daemon login to the test
+    # container's docker_credential lookup. Empty secrets → anonymous (fork PRs/local).
     IF [ -n "$NODE_IMAGE" ]
         WITH DOCKER \
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
-            RUN docker run \
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                if [ -n "$DOCKERHUB_TOKEN" ]; then \
+                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                fi && mkdir -p /root/.docker && \
+                docker run \
                 --network=host \
                 -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /root/.docker:/root/.docker \
+                -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
                 $EXTRA_DOCKER_ENV \
-                test-toolkit:latest
+                test-toolkit:latest && \
+                rm -f /root/.docker/config.json
         END
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
-            RUN docker run \
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                if [ -n "$DOCKERHUB_TOKEN" ]; then \
+                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                fi && mkdir -p /root/.docker && \
+                docker run \
                 --network=host \
                 -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /root/.docker:/root/.docker \
+                -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
-                test-toolkit:latest
+                test-toolkit:latest && \
+                rm -f /root/.docker/config.json
         END
     END
     SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
@@ -1494,8 +1531,16 @@ audit-npm:
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN mkdir -p /scan_reports
-    RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
-      && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
+    # npm audit exits non-zero when it finds vulns at/above --audit-level. Capture the
+    # JSON (written to stdout regardless of exit code) and ALWAYS produce the SARIF before
+    # propagating the audit's exit code — otherwise a finding both fails the build AND
+    # skips the SARIF upload (the workflow uploads on success()||failure() but only if the
+    # file exists), leaving a red check with no report. Gate on high is preserved via the
+    # final `exit`.
+    RUN --no-cache \
+        npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json; AUDIT_RC=$?; \
+        npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; \
+        exit $AUDIT_RC
     SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-yarn:
@@ -1681,7 +1726,7 @@ local-env-e2e:
 
 # compares chain parameters with testnet-02
 chain-params-check:
-    FROM alpine
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl jq
 
     COPY res/testnet-02/testnet-02.json ./
@@ -1801,14 +1846,20 @@ local-env-ci:
     RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
     # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
     # indexer/toolkit images into the authless DinD daemon. Public deps (cardano-node,
-    # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD.
+    # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD —
+    # hence the optional docker login below (see +test for the --secret semantics);
+    # empty secrets → anonymous pulls (fork PRs/local), rate-limited but functional.
     WITH DOCKER \
             --pull $NODE_IMAGE \
             --pull $INDEXER_API_IMAGE \
             --pull $CHAIN_INDEXER_IMAGE \
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
-        RUN ROOT="$PWD" && \
+        RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            if [ -n "$DOCKERHUB_TOKEN" ]; then \
+              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            fi && \
+            ROOT="$PWD" && \
             cd local-environment && \
             npm ci && \
             ( ARCHITECTURE=linux/$USERARCH \
@@ -1831,7 +1882,8 @@ local-env-ci:
             echo "=== toolkit multi-dest E2E ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE"
+            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE" && \
+            rm -f /root/.docker/config.json
     END
 
 
