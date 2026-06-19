@@ -249,8 +249,21 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 
 		progress.finish(format!("batch-single-tx: {} succeeded, {} failed", succeeded, failed));
 
+		// Emit every tx we managed to build, even on partial failure. Discarding the
+		// successful txs because a few transfers failed wastes the whole batch and starves
+		// downstream load appliers. Only treat a batch with zero successes as an error.
 		if failed > 0 {
-			return Err(BatchSingleTxError::PartialFailure { succeeded, failed });
+			if succeeded == 0 {
+				return Err(BatchSingleTxError::AllFailed { failed });
+			}
+			tracing::warn!(
+				succeeded = succeeded,
+				failed = failed,
+				"Partial batch: {} of {} transfers failed; emitting {} successful txs",
+				failed,
+				succeeded + failed,
+				succeeded
+			);
 		}
 
 		Ok(SerializedTxBatches { batches: vec![txs] })
@@ -259,6 +272,6 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BatchSingleTxError {
-	#[error("{failed} of {} transfers failed", succeeded + failed)]
-	PartialFailure { succeeded: usize, failed: usize },
+	#[error("all {failed} transfers failed")]
+	AllFailed { failed: usize },
 }
