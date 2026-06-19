@@ -120,7 +120,7 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 			let dir = &storage_config.db_path;
 			let cache = storage_config.cache_size;
 			match genesis_version {
-				Some(16) => {
+				Some(16 | 17) => {
 					midnight_node_ledger::ledger_9::storage::init_storage_paritydb_separate(
 						dir,
 						genesis_state,
@@ -148,7 +148,7 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 		StorageSeparation::Unified => {
 			let cache = storage_config.cache_size;
 			match genesis_version {
-				Some(16) => {
+				Some(16 | 17) => {
 					midnight_node_ledger::ledger_9::storage::init_storage_paritydb_unified::<
 						_,
 						NUM_COLUMNS_POLKADOT,
