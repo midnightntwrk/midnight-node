@@ -382,7 +382,7 @@ just toolkit-multi-dest-e2e <TOOLKIT_IMG>
 just startup-dev-e2e <NODE_IMG>
 just startup-qanet-e2e <NODE_IMG>                          # not scheduled by CI; manual / reusable-action only
 just genesis-wallets-undeployed-e2e <NODE_IMG> <TOOLKIT_IMG>
-just genesis-wallets-devnet-e2e <NODE_IMG> <TOOLKIT_IMG>
+just genesis-wallets-devnet-e2e <NODE_IMG> <TOOLKIT_IMG>   # not scheduled by CI; manual / reusable-action only
 just indexer-api-e2e                                       # not scheduled by CI; manual only
 ```
 
@@ -390,7 +390,7 @@ just indexer-api-e2e                                       # not scheduled by CI
 
 | Trigger                            | Workflow                                         | Tests it runs                                          |
 |------------------------------------|--------------------------------------------------|--------------------------------------------------------|
-| PR / merge queue / manual          | `continuous-integration.yml`                     | Build, pallet fixtures, toolkit, chainspec validation, |
+| PR / merge queue                   | `continuous-integration.yml`                     | Build, pallet fixtures, toolkit, chainspec validation, |
 |                                    |                                                  | local-environment-tests (Earthly `+local-env-ci`):     |
 |                                    |                                                  | stack bring-up → verify-finality → e2e suite           |
 |                                    |                                                  | (`--features local`) → toolkit-multi-dest              |
