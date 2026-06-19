@@ -83,7 +83,11 @@ pub trait Ledger8Bridge {
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::apply_post_block_update(*self, state_key, block_context)
 		} else {
-			Bridge::<Signature, DbSeparate>::apply_post_block_update(*self, state_key, block_context)
+			Bridge::<Signature, DbSeparate>::apply_post_block_update(
+				*self,
+				state_key,
+				block_context,
+			)
 		}
 	}
 
