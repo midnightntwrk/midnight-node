@@ -714,7 +714,7 @@ node-ci-image-single-platform:
     IF [ "$COMPACT_SUBMODULE_VERSION" = "$COMPACTC_VERSION" ]
         COPY +compactc-bundle/compact-home /compact-home
     ELSE
-        COPY (+compactc-fetch --VERSION="$COMPACTC_VERSION")/compact-home /compact-home
+        COPY (+compactc-fetch/compact-home --VERSION="$COMPACTC_VERSION") /compact-home
     END
     ENV COMPACT_HOME=/compact-home
     ENV COMPACTC_VERSION="$COMPACTC_VERSION"
