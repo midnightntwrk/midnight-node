@@ -12,7 +12,8 @@
 // limitations under the License.
 
 import { createRequire, registerHooks, type ResolveHookContext } from 'node:module';
-import { sep } from 'node:path';
+import { dirname, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** A regular expression to match module resolution paths in error messages. */
 const ERROR_MODULE_REGEXP = /module '(?<path>.*)'$/;
@@ -97,6 +98,35 @@ export const installCompactcResolver = (compactcVersion: string): string => {
       throw error;
     }
   };
+
+  // tsc/ts-node (used by compact-js-command's `ConfigCompiler` to type-check `contract.config.ts`) do NOT
+  // honour the runtime resolve hook below — they use their own module resolution. Left to defaults they
+  // pick up whichever `@midnight-ntwrk/compact-js` npm hoisted to the workspace root (a *different* variant),
+  // which types the contract against a mismatched `@midnight-ntwrk/compact-runtime` and collapses the
+  // generated `Witnesses` type to `never`. Pin ts-node's resolution to *this* variant's copies via
+  // `TS_NODE_COMPILER_OPTIONS.paths` (ts-node merges these into the discovered tsconfig). Resolved here,
+  // before the hook is registered, so these lookups can't re-enter it.
+  // Resolve via `<pkg>/package.json` (exported by both packages) rather than the bare specifier — the
+  // bare entry is ESM-only and not resolvable through `createRequire`'s CJS `resolve`.
+  const packageDir = (id: string): string => dirname(toolkitRequire.resolve(`${id}/package.json`));
+  try {
+    const tsPaths: Record<string, string[]> = {};
+    for (const id of ['@midnight-ntwrk/compact-js', '@midnight-ntwrk/compact-runtime']) {
+      const dir = packageDir(id);
+      tsPaths[id] = [dir];
+      tsPaths[`${id}/*`] = [`${dir}/*`];
+    }
+    const existing = process.env.TS_NODE_COMPILER_OPTIONS
+      ? JSON.parse(process.env.TS_NODE_COMPILER_OPTIONS)
+      : {};
+    process.env.TS_NODE_COMPILER_OPTIONS = JSON.stringify({
+      baseUrl: dirname(dirname(fileURLToPath(import.meta.url))),
+      ...existing,
+      paths: { ...(existing.paths ?? {}), ...tsPaths }
+    });
+  } catch {
+    // Best-effort: if a variant copy can't be located, leave resolution to ts-node's defaults.
+  }
 
   registerHooks({
     resolve(specifier: string, context: ResolveHookContext, next) {
