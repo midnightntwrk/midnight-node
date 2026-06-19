@@ -418,7 +418,11 @@ pub fn new_partial(
 		.map_err(sp_blockchain::Error::from)?;
 
 	let time_source = Arc::new(SystemTimeSource);
-	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
+	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source)
+		.map_err(|e| {
+			log::error!(target: "midnight", "Incoherent consensus timing configuration: {e}");
+			ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
+		})?;
 
 	let import_queue = partner_chains_aura_import_queue::import_queue::<
 		AuraPair,
@@ -716,7 +720,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);
 		let inherent_config =
-			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source);
+			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source)
+				.map_err(|e| {
+					log::error!(target: "midnight", "Incoherent consensus timing configuration: {e}");
+					ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
+				})?;
 
 		let aura = sc_partner_chains_consensus_aura::start_aura::<
 			AuraPair,
