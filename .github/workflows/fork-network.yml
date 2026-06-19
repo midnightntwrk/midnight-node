@@ -8,13 +8,13 @@ name: fork-network
 # all Cardano-derived data. No Cardano db-sync, no secrets, no external infra.
 #
 # upgrade_mode selects the rollout shape:
-#   image      - roll each validator container to $new_node_image (no runtime
-#                upgrade; the chain keeps the snapshot's runtime)
-#   governance - keep validators on $node_image and submit the new runtime
-#                wasm (extracted from $new_node_image) through the
-#                federated-authority governance flow
-#   full       - production-shaped rehearsal: image rollout first, then the
-#                governance runtime upgrade
+#   image   - roll each validator container to $new_node_image (no runtime
+#             upgrade; the chain keeps the snapshot's runtime)
+#   runtime - keep validators on $node_image and submit the new runtime
+#             wasm (extracted from $new_node_image) through the
+#             federated-authority governance flow
+#   full    - production-shaped rehearsal: image rollout first, then the
+#             runtime upgrade via governance
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ on:
           - devnet
           - qanet
       mock_authorities_tag:
-        description: "mock-authorities image tag (>= 368fd98 required for governance modes: older tags do not rewrite Council/Technical Committee membership)"
+        description: "mock-authorities image tag (>= 368fd98 required for the runtime and full upgrade modes: older tags do not rewrite Council/Technical Committee membership)"
         required: true
         default: "368fd98"
       node_image:
@@ -38,13 +38,13 @@ on:
         description: "midnight-node image to upgrade to (image rollout target and/or runtime wasm source, per upgrade_mode)"
         required: true
       upgrade_mode:
-        description: "Upgrade shape: roll the node image, submit a governance runtime upgrade, or both in sequence"
+        description: "Upgrade shape: roll the node image, submit a runtime upgrade via governance, or both in sequence"
         required: true
         type: choice
         default: image
         options:
           - image
-          - governance
+          - runtime
           - full
       allow_same_version:
         description: "Accept a runtime wasm that does not bump spec_version (uses authorizeUpgradeWithoutChecks; rehearsal-only escape hatch)"
@@ -215,8 +215,8 @@ jobs:
       #
       # node1's container RPC port 9944 is published on host port 9950 for
       # every well-known network compose file, hence the --rpc-url override.
-      - name: Run governance-runtime-upgrade
-        if: inputs.upgrade_mode == 'governance'
+      - name: Run runtime upgrade via governance
+        if: inputs.upgrade_mode == 'runtime'
         working-directory: local-environment
         env:
           SNAPSHOT_URL: ${{ steps.cfg.outputs.snapshot_url }}
