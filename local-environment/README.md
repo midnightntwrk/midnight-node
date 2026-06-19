@@ -65,8 +65,8 @@ directory.
 ```bash
 npm run governance-runtime-upgrade:preview -- \
   --wasm upgrade/midnight_node_runtime.compact.wasm \
-  --council-uris //Alice //Bob //Charlie \
-  --technical-uris //Dave //Eve //Ferdie \
+  --council-uris //Dave //Eve //Ferdie \
+  --technical-uris //Alice //Bob //Charlie \
   --executor-uri //Alice
 ```
 
@@ -79,8 +79,8 @@ NEW_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:new \
 npm run full-upgrade:preview -- \
   --from-snapshot https://example.com/snapshots/preview-latest.tar.zst \
   --wasm upgrade/midnight_node_runtime.compact.wasm \
-  --council-uris //Alice //Bob //Charlie \
-  --technical-uris //Dave //Eve //Ferdie \
+  --council-uris //Dave //Eve //Ferdie \
+  --technical-uris //Alice //Bob //Charlie \
   --executor-uri //Alice
 ```
 
