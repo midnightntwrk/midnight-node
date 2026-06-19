@@ -19,7 +19,10 @@
 #![cfg(feature = "std")]
 
 use super::{
-	base_crypto_local::cost_model::SyntheticCost,
+	base_crypto_local::{
+		cost_model::{FixedPoint, NormalizedCost, SyntheticCost},
+		time::Timestamp,
+	},
 	common::{LOG_TARGET, types::LedgerApiError},
 	helpers_local::compute_overall_fullness,
 	ledger_storage_local::db::DB,
@@ -43,4 +46,17 @@ pub fn prevalidate_post_block_update<D: DB>(
 	state
 		.prevalidate_post_block_update(normalized_fullness, overall_fullness)
 		.map_err(|_err: BlockLimitExceeded| LedgerApiError::BlockLimitExceededError)
+}
+
+/// Applies the end-of-block ledger update. Infallible on ledger 9: the only fallible step (the
+/// block-limit check) is factored out into [`prevalidate_post_block_update`], which runs after
+/// every transaction. The caller must pass fullness that has already been clamped to the block
+/// limits (see `clamp_and_normalize`).
+pub fn apply_post_block_update<D: DB>(
+	state: &LedgerState<D>,
+	tblock: Timestamp,
+	detailed_block_fullness: NormalizedCost,
+	overall_block_fullness: FixedPoint,
+) -> LedgerState<D> {
+	state.apply_post_block_update(tblock, detailed_block_fullness, overall_block_fullness)
 }

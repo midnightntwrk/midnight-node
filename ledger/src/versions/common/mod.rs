@@ -260,12 +260,11 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let mut ledger = Ledger::post_block_update(ledger, block_context).map_err(|e| {
+		let mut ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
 			);
-			LedgerApiError::NoLedgerState
 		})?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -288,6 +287,23 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
+		Ok(state_root)
+	}
+
+	/// The end-of-block ledger transition cannot fail on block limits (the limit check runs
+	/// per-transaction via prevalidation, and fullness is clamped before applying), so this is
+	/// suitable for `on_finalize`. Loading the ledger state and serializing the resulting key
+	/// remain fallible — those represent genuine bugs rather than block-content conditions.
+	pub fn apply_post_block_update(
+		mut _externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		block_context: BlockContext,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
+		ledger.persist();
 		Ok(state_root)
 	}
 

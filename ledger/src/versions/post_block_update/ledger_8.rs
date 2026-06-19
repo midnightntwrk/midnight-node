@@ -17,13 +17,37 @@
 
 #![cfg(feature = "std")]
 
-use super::{common::types::LedgerApiError, ledger_storage_local::db::DB};
+use super::{
+	base_crypto_local::{
+		cost_model::{FixedPoint, NormalizedCost},
+		time::Timestamp,
+	},
+	common::types::LedgerApiError,
+	ledger_storage_local::db::DB,
+	mn_ledger_local::structure::LedgerState,
+};
 
 pub fn prevalidate_post_block_update<D: DB>(
-	_state: &super::mn_ledger_local::structure::LedgerState<D>,
+	_state: &LedgerState<D>,
 	_block_fullness: &super::base_crypto_local::cost_model::SyntheticCost,
 	_block_limits: &super::base_crypto_local::cost_model::SyntheticCost,
 	_context: &str,
 ) -> Result<(), LedgerApiError> {
 	Ok(())
+}
+
+/// Applies the end-of-block ledger update. Ledger 8 exposes only the fallible combined
+/// `post_block_update`; the caller has already clamped fullness to the block limits, so its
+/// internal limit check cannot fail here.
+pub fn apply_post_block_update<D: DB>(
+	state: &LedgerState<D>,
+	tblock: Timestamp,
+	detailed_block_fullness: NormalizedCost,
+	overall_block_fullness: FixedPoint,
+) -> LedgerState<D> {
+	state
+		.post_block_update(tblock, detailed_block_fullness, overall_block_fullness)
+		.unwrap_or_else(|_| {
+			panic!("apply_post_block_update: post_block_update failed despite clamped fullness")
+		})
 }
