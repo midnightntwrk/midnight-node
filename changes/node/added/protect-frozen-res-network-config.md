@@ -3,4 +3,4 @@
 
 Freezes changes to genesis file directories of live, protected networks. 
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1732
