@@ -27,7 +27,7 @@ PROTECTED_RE='^res/(mainnet|qanet|preprod|preview)/'
 changed="$(git diff --name-only --no-renames "${BASE_REF}...HEAD" | grep -E "$PROTECTED_RE" || true)"
 
 if [ -n "$changed" ]; then
-  echo "::error::Frozen res/ network config changed. These files are deployed artifacts and must never be modified:"
+  echo "::error::Frozen res/ network config changed. These files are deployed artifacts and are only modifiable in rare cases:"
   echo "$changed" | sed 's/^/  - /'
   echo ""
   echo "If this change is genuinely required, it must be made deliberately and"
