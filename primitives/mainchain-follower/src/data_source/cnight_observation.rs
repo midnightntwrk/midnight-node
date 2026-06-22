@@ -12,15 +12,16 @@
 // limitations under the License.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
+use crate::data_source::cnight_observation_bulk::{bulk_pull, truncate_to_tx_capacity};
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
-use crate::db::{MultiAssetCache, PagedQuery, get_deregistrations, get_registrations};
+use crate::db::{PagedQuery, get_deregistrations, get_registrations};
 use crate::{
 	CreateData, DeregistrationData, MidnightCNightObservationDataSource, ObservedUtxo,
 	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
 };
 use cardano_serialization_lib::{
-	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, EnterpriseAddress,
-	PlutusData, RewardAddress, ScriptHash,
+	BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, PlutusData, RewardAddress,
+	ScriptHash,
 };
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
@@ -86,19 +87,15 @@ pub enum RegistrationDatumDecodeError {
 pub struct MidnightCNightObservationDataSourceImpl {
 	pub pool: PgPool,
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
-	#[allow(dead_code)]
-	cache_size: u16,
-	multi_asset_cache: MultiAssetCache,
 }
 
 impl MidnightCNightObservationDataSourceImpl {
 	pub fn new(
 		pool: PgPool,
 		metrics_opt: Option<MidnightDataSourceMetrics>,
-		cache_size: u16,
+		_cache_size: u16,
 	) -> Self {
-		let multi_asset_cache = MultiAssetCache::new(pool.clone());
-		Self { pool, metrics_opt, cache_size, multi_asset_cache }
+		Self { pool, metrics_opt }
 	}
 }
 
@@ -112,193 +109,30 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		tx_capacity: usize,
 		utxo_overestimate: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
-		let cnight_asset_name = config.cnight_asset_name.as_bytes();
-
-		let mapping_validator_address = Address::from_bech32(&config.mapping_validator_address)
-			.map_err(|e| {
-				MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
-					e.to_string(),
-				)
-			})?;
-
-		let cardano_network = mapping_validator_address.network_id().map_err(|_| {
-			MidnightCNightObservationDataSourceError::CardanoNetworkError(
-				config.mapping_validator_address.clone(),
-			)
-		})?;
-
-		let mapping_validator_policy_id =
-			EnterpriseAddress::from_address(&mapping_validator_address)
-				.ok_or(MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
-					"Not EnterpriseAddress".to_string(),
-				))?
-				.payment_cred()
-				.to_scripthash()
-				.ok_or(MidnightCNightObservationDataSourceError::MappingValidatorInvalidAddress(
-					"MappingValidator address does not contain a script hash".to_string(),
-				))?;
-
-		// Resolve multi_asset.id for auth token and cNight token (cached after first call)
-		let auth_token_ident = self
-			.multi_asset_cache
-			.resolve_ident(
-				&mapping_validator_policy_id.to_bytes(),
-				config.auth_token_asset_name.as_bytes(),
-			)
-			.await?;
-
-		let cnight_ident = self
-			.multi_asset_cache
-			.resolve_ident(&config.cnight_policy_id, cnight_asset_name)
-			.await?;
-
-		// Get end position from cardano block hash
+		// Resolve current_tip -> CardanoPosition. This must preserve the historic
+		// replay semantics: query through the block's Cardano tip and only then
+		// truncate by tx capacity. Clipping the SQL range earlier changes the
+		// inherent payload and breaks imports of already-authored blocks.
 		let _block_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_block_by_hash");
 		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
 			.await?
 			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(current_tip))?
 			.into();
 		drop(_block_timer);
-
-		let (low_bounds, high_bounds) = tokio::try_join!(
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_low_bounds");
-				crate::db::get_low_bounds(&self.pool, start_position.block_number.into())
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
-			},
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_high_bounds");
-				crate::db::get_high_bounds(&self.pool, end.block_number.into())
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
-			},
-			)?;
-		let low_bounds = low_bounds.expect("Start position contains block hash that exists in database");
-		let high_bounds = high_bounds.expect("End position contains block hash that exists in database");
-		// Increment the end position to tx_index + 1 of the current mainchain position
 		let end = end.increment();
-		log::debug!("Bounds:\n{:?}\n{:?}\nfor positions:\n{:?}\n{:?}", low_bounds, high_bounds, start_position, end);
 
-		// `tx_capacity` is the number of complete cardano transactions to include in the
-		// inherent. Each tx may contribute multiple UTXO rows across the four queries
-		// below (registrations / deregistrations / asset creates / asset spends), so the
-		// per-query row limit (`utxo_overestimate`) must be large enough that the largest
-		// single tx fits within it; otherwise the truncation step would emit a partial tx
-		// and validators with different limits would disagree on the inherent payload.
-		//
-		// The over-fetch quantity is therefore consensus-affecting and is supplied by the
-		// caller (the inherent data provider) from the runtime, so it can only change at
-		// a runtime upgrade boundary.
-
-		// Call db methods to get UTXOs (offset + limit) until we reach our capacity
-		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
-		// ^ We may not have to do the above if the queries are fast enough
-
-		let paged = PagedQuery {
-			start: start_position,
-			end: &end,
-			limit: utxo_overestimate,
-			offset: 0,
-			low_bound: low_bounds,
-			high_bound: high_bounds,
-		};
-
-		let (registration_utxos, deregistration_utxos, asset_create_utxos, asset_spend_utxos) = tokio::try_join!(
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_registrations");
-				match auth_token_ident {
-					Some(ident) => self.get_registration_utxos(
-						cardano_network,
-						ident,
-						&config.mapping_validator_address,
-						&paged,
-					)
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
-				}
-			},
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_deregistrations");
-				self.get_deregistration_utxos(
-					cardano_network,
-					&config.mapping_validator_address,
-					&paged,
-				)
-				.await
-				.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
-			},
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_asset_creates");
-				match cnight_ident {
-					Some(ident) => self.get_asset_create_utxos(
-						cardano_network,
-						ident,
-						&paged,
-					)
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
-				}
-			},
-			async {
-				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_asset_spends");
-				match cnight_ident {
-					Some(ident) => self.get_asset_spend_utxos(
-						cardano_network,
-						ident,
-						&paged,
-					)
-					.await
-					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
-				}
-			}
-		)?;
-
-		let mut utxos = Vec::with_capacity(
-			registration_utxos.len()
-				+ deregistration_utxos.len()
-				+ asset_create_utxos.len()
-				+ asset_spend_utxos.len(),
+		// The over-fetch bound is consensus-affecting and runtime-supplied, so it
+		// must flow into the SQL row limit (see `bulk_pull`) rather than a fixed
+		// client-side constant.
+		let utxos =
+			bulk_pull(&self.pool, config, start_position, &end, utxo_overestimate).await?;
+		let (result, _full_window) = truncate_to_tx_capacity(
+			utxos,
+			tx_capacity,
+			start_position,
+			end,
 		);
-		utxos.extend(registration_utxos);
-		utxos.extend(deregistration_utxos);
-		utxos.extend(asset_create_utxos);
-		utxos.extend(asset_spend_utxos);
-
-		utxos.sort();
-
-		// Truncate UTXOs but include full transactions
-		let mut truncated_utxos = Vec::with_capacity(utxo_overestimate);
-		let mut num_txs = 0;
-		let mut cur_tx: Option<CardanoPosition> = None;
-		for utxo in utxos {
-			if cur_tx.as_ref().is_none_or(|tx| tx < &utxo.header.tx_position) {
-				num_txs += 1;
-				cur_tx = Some(utxo.header.tx_position.clone());
-			}
-			if num_txs == tx_capacity {
-				break;
-			}
-			truncated_utxos.push(utxo);
-		}
-
-		if num_txs < tx_capacity {
-			// We couldn't find enough UTXOs in the range, which means we're up-to-date with the
-			// current_tip
-			Ok(ObservedUtxos { start: start_position.clone(), end, utxos: truncated_utxos })
-		} else {
-			Ok(ObservedUtxos {
-				start: start_position.clone(),
-				end: truncated_utxos
-					.last()
-					.map_or(start_position.clone(), |u| u.header.tx_position.clone())
-					.increment(),
-				utxos: truncated_utxos,
-			})
-		}
+		Ok(result)
 	}
 }
 );
@@ -348,7 +182,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok((credential, dust_address))
 	}
 
-	async fn get_registration_utxos(
+	pub async fn get_registration_utxos(
 		&self,
 		cardano_network: u8,
 		auth_token_ident: i64,
@@ -402,7 +236,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok(utxos)
 	}
 
-	async fn get_deregistration_utxos(
+	pub async fn get_deregistration_utxos(
 		&self,
 		cardano_network: u8,
 		address: &str,
@@ -455,7 +289,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok(utxos)
 	}
 
-	async fn get_asset_create_utxos(
+	pub async fn get_asset_create_utxos(
 		&self,
 		cardano_network: u8,
 		ident: i64,
@@ -512,7 +346,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		Ok(utxos)
 	}
 
-	async fn get_asset_spend_utxos(
+	pub async fn get_asset_spend_utxos(
 		&self,
 		cardano_network: u8,
 		ident: i64,

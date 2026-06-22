@@ -15,12 +15,22 @@ pub use encoded_zswap_local_state::{EncodedOutput, EncodedZswapLocalState};
 use crate::cli_parsers as cli;
 
 const BUILD_DIST: &str = "dist/bin.js";
+const DEFAULT_COMPACTC_VERSION: &str = include_str!("../../../../COMPACTC_VERSION");
 
 #[derive(Args, Debug)]
 pub struct ToolkitJs {
 	/// location of the toolkit-js.
 	#[arg(long = "toolkit-js-path", env = "TOOLKIT_JS_PATH")]
 	pub path: String,
+
+	/// version of compactc
+	#[arg(
+        long = "compactc-version",
+        env = "COMPACTC_VERSION",
+        default_value = DEFAULT_COMPACTC_VERSION,
+        value_parser = cli::semver_decode
+    )]
+	pub compactc_version: semver::Version,
 }
 
 /// Adds some protection against accidentally passing relative types to toolkit-js
@@ -206,6 +216,17 @@ pub enum ToolkitJsError {
 }
 
 impl ToolkitJs {
+	/// `true` if the pinned compactc predates 0.31.0 and therefore needs the
+	/// legacy `--network` flag passed to toolkit-js.
+	///
+	/// The comparison ignores any pre-release suffix on `compactc_version`, otherwise
+	/// semver matches doesn't behave as expected (0.30.0-<some-hash> < 0.31.0 is false!)
+	fn needs_legacy_network_flag(&self) -> bool {
+		let mut version = self.compactc_version.clone();
+		version.pre = semver::Prerelease::EMPTY;
+		semver::VersionReq::parse("<0.31.0").unwrap().matches(&version)
+	}
+
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
 		match cmd {
 			Command::Deploy(args) => self.execute_deploy(args),
@@ -227,8 +248,6 @@ impl ToolkitJs {
 			"deploy",
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--output",
@@ -238,6 +257,10 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
+		if self.needs_legacy_network_flag() {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
+
 		let mut signing_key = args
 			.authority_seed
 			.map(|s| {
@@ -285,8 +308,6 @@ impl ToolkitJs {
 			"circuit",
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
@@ -302,6 +323,9 @@ impl ToolkitJs {
 			"--input-ledger-params",
 			&input_ledger_parameters,
 		];
+		if self.needs_legacy_network_flag() {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
 			cmd_args.extend_from_slice(&["--input-zswap", &input_zswap_state]);
@@ -340,8 +364,6 @@ impl ToolkitJs {
 			command.name(),
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
@@ -349,6 +371,10 @@ impl ToolkitJs {
 			"--output",
 			&output_intent,
 		];
+		if self.needs_legacy_network_flag() {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
+
 		if let Some(ref signing) = args.signing {
 			cmd_args.extend_from_slice(&["--signing", signing]);
 		}
@@ -400,6 +426,7 @@ impl ToolkitJs {
 		}
 
 		let output = std::process::Command::new(cmd)
+			.env("COMPACTC_VERSION", self.compactc_version.to_string())
 			.current_dir(&self.path)
 			.args(args)
 			.output()

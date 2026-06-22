@@ -173,3 +173,61 @@ impl SourceTransactions {
 			.unwrap_or(LedgerVersion::default())
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Construct a minimal `RawBlockData` at a given height for tests.
+	fn block_at(number: u64) -> RawBlockData {
+		RawBlockData {
+			hash: [0u8; 32],
+			parent_hash: [0u8; 32],
+			number,
+			ledger_version: LedgerVersion::default(),
+			transactions: Vec::new(),
+			tblock_secs: number, // deterministic, non-zero past block 0
+			tblock_err: 30,
+			parent_block_hash: [0u8; 32],
+			last_block_time_secs: number.saturating_sub(1),
+			state_root: None,
+			state: None,
+		}
+	}
+
+	/// `from_blocks(_, dust_warp = true, _)` appends a synthetic
+	/// timestamp-only block with `number = 0` to the end of `blocks`. This
+	/// is the invariant that the cache-save logic in
+	/// `tx_generator::builder::build_fork_aware_context_cached` relies on:
+	/// it must compute the save height via `max_by_key(|b| b.number)`
+	/// rather than `blocks.last()`, otherwise the cache is tagged with
+	/// `block_height = 0` and subsequent runs panic on non-linear dust-tree
+	/// insertion when they reload the snapshot.
+	#[test]
+	fn from_blocks_with_dust_warp_appends_synthetic_block_at_number_zero() {
+		let real_blocks = vec![block_at(1), block_at(2), block_at(3)];
+		let src = SourceTransactions::from_blocks(
+			real_blocks.clone(),
+			/* dust_warp = */ true,
+			Some("test".to_string()),
+		);
+
+		assert_eq!(src.blocks.len(), real_blocks.len() + 1, "synthetic block appended");
+		assert_eq!(src.blocks.last().unwrap().number, 0, "synthetic block is at number = 0");
+
+		let max_by_number = src.blocks.iter().max_by_key(|b| b.number).expect("non-empty");
+		assert_eq!(
+			max_by_number.number, 3,
+			"max_by_number must pick the highest real block, not the synthetic"
+		);
+
+		// And without dust_warp, last() and max_by_number agree.
+		let src_no_warp = SourceTransactions::from_blocks(
+			real_blocks,
+			/* dust_warp = */ false,
+			Some("test".to_string()),
+		);
+		assert_eq!(src_no_warp.blocks.last().unwrap().number, 3);
+		assert_eq!(src_no_warp.blocks.iter().max_by_key(|b| b.number).unwrap().number, 3,);
+	}
+}

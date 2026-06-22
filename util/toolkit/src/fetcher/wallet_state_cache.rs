@@ -585,10 +585,9 @@ mod tests {
 
 		// Replay remaining blocks
 		use crate::tx_generator::builder::replay_blocks;
-		let fork_ctx = ForkAwareLedgerContext::Ledger8(restored);
-		let blocks: Vec<_> = second_half.iter().collect();
-		let fork_ctx = replay_blocks(fork_ctx, &blocks, &[]);
-		let incremental_context = fork_ctx.into_ledger8().expect("expected ledger 8 after replay");
+		let fork_ctx = ForkAwareLedgerContext::Ledger9(restored);
+		let fork_ctx = replay_blocks(fork_ctx, &second_half, &[]);
+		let incremental_context = fork_ctx.into_ledger9().expect("expected ledger 9 after replay");
 
 		// Compare ledger state
 		let full_bytes = {
