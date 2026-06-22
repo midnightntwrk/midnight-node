@@ -154,6 +154,129 @@ pub fn drop_all_default_storage() {
 	ledger_9::storage::drop_default_storage_if_exists();
 }
 
+/// Genesis bootstrap that dispatches on the ledger version embedded in the
+/// genesis state, instead of assuming the newest.
+///
+/// All ledger versions are compiled in, but a genesis blob is serialized with
+/// exactly one version's `LedgerState`, and its deserializer rejects any other
+/// version's tag. Hardcoding the latest (as each ledger bump historically did)
+/// makes the node unable to bootstrap a chain still on an older genesis — e.g.
+/// live mainnet, whose genesis is immutable. These wrappers read the blob's tag
+/// and route to the matching module. This is *not* state migration: each chain
+/// keeps running its own ledger version; we only stop forcing the newest at the
+/// genesis boundary.
+#[cfg(feature = "std")]
+pub mod genesis_version {
+	/// Ledger storage version a tagged genesis blob was produced with.
+	#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+	pub enum LedgerVersion {
+		/// ledger 7
+		V7,
+		/// ledger 8
+		V8,
+		/// ledger 9
+		V9,
+	}
+
+	/// Detect a genesis blob's ledger version by matching its leading tag
+	/// against each compiled-in module's own `LedgerState` tag. Newest first.
+	/// `None` if no known version matches (corrupt or future-version blob).
+	pub fn detect(genesis_state: &[u8]) -> Option<LedgerVersion> {
+		let head = &genesis_state[..genesis_state.len().min(64)];
+		let has = |tag: &str| head.windows(tag.len()).any(|w| w == tag.as_bytes());
+		if has(&super::ledger_9::storage::genesis_ledger_state_tag()) {
+			Some(LedgerVersion::V9)
+		} else if has(&super::ledger_8::storage::genesis_ledger_state_tag()) {
+			Some(LedgerVersion::V8)
+		} else if has(&super::ledger_7::storage::genesis_ledger_state_tag()) {
+			Some(LedgerVersion::V7)
+		} else {
+			None
+		}
+	}
+
+	fn unknown_version(genesis_state: &[u8]) -> String {
+		format!(
+			"unrecognised ledger genesis version tag in {}-byte genesis blob (known: {}, {}, {})",
+			genesis_state.len(),
+			super::ledger_9::storage::genesis_ledger_state_tag(),
+			super::ledger_8::storage::genesis_ledger_state_tag(),
+			super::ledger_7::storage::genesis_ledger_state_tag(),
+		)
+	}
+
+	/// Version-dispatched [`get_root`](super::ledger_9::storage::get_root).
+	pub fn get_root(genesis_state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, String> {
+		match detect(genesis_state) {
+			Some(LedgerVersion::V9) => super::ledger_9::storage::get_root(genesis_state, network_id)
+				.map_err(|e| e.to_string()),
+			Some(LedgerVersion::V8) => super::ledger_8::storage::get_root(genesis_state, network_id)
+				.map_err(|e| e.to_string()),
+			Some(LedgerVersion::V7) => super::ledger_7::storage::get_root(genesis_state, network_id)
+				.map_err(|e| e.to_string()),
+			None => Err(unknown_version(genesis_state)),
+		}
+	}
+
+	/// Version-dispatched separate-db genesis init.
+	pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
+		dir: P,
+		genesis_state: &[u8],
+		cache_size: usize,
+	) -> Vec<u8> {
+		match detect(genesis_state) {
+			Some(LedgerVersion::V9) => super::ledger_9::storage::init_storage_paritydb_separate(
+				dir,
+				genesis_state,
+				cache_size,
+			),
+			Some(LedgerVersion::V8) => super::ledger_8::storage::init_storage_paritydb_separate(
+				dir,
+				genesis_state,
+				cache_size,
+			),
+			Some(LedgerVersion::V7) => super::ledger_7::storage::init_storage_paritydb_separate(
+				dir,
+				genesis_state,
+				cache_size,
+			),
+			None => panic!("{}", unknown_version(genesis_state)),
+		}
+	}
+
+	/// Version-dispatched unified-db genesis init.
+	pub fn init_storage_paritydb_unified<
+		D: std::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+		const COLUMN_OFFSET: u8,
+	>(
+		db_instance: D,
+		genesis_state: &[u8],
+		cache_size: usize,
+	) -> Vec<u8> {
+		match detect(genesis_state) {
+			Some(LedgerVersion::V9) =>
+				super::ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+					db_instance,
+					genesis_state,
+					cache_size,
+				),
+			Some(LedgerVersion::V8) =>
+				super::ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+					db_instance,
+					genesis_state,
+					cache_size,
+				),
+			Some(LedgerVersion::V7) =>
+				super::ledger_7::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+					db_instance,
+					genesis_state,
+					cache_size,
+				),
+			None => panic!("{}", unknown_version(genesis_state)),
+		}
+	}
+}
+
 mod common;
 
 pub mod types {
