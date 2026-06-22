@@ -273,7 +273,7 @@
         "bridge": {
           "mainChainScripts": {
             "token_policy_id": "0xd2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-            "token_asset_name": "0x4e49474854",
+            "token_asset_name": "0x",
             "illiquid_circulation_supply_validator_address": "addr_test1wz6aagwglea26jq5w29ze4fycc2qjfkmmza8myl42a53t4ccuajjx",
             "reserve_validator_address": "addr_test1wqep9p66zyp39ze47rhwjaq98rcnyhqgr6x4h55e6kvpk7gnxzu2z"
           },
@@ -328,7 +328,7 @@
             "url": "https://www.midnight.gd/global-terms-txt"
           },
           "dParameter": {
-            "num_permissioned_candidates": 6,
+            "num_permissioned_candidates": 7,
             "num_registered_candidates": 0
           }
         }
