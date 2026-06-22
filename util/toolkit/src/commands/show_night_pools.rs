@@ -13,11 +13,11 @@
 
 //! Dump the NIGHT pools (Reserved / Locked / Unlocked) held in a network's `LedgerState`.
 
-use crate::TxGenerator;
 use crate::commands::fork::{ledger_7, ledger_8, ledger_9};
 use crate::source::Source;
 use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::create_file_wallet_cache;
+use crate::{TxGenerator, WalletSeed};
 
 use clap::Args;
 
@@ -58,7 +58,13 @@ pub async fn execute(
 	let source_txs = src.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
-	let fork_ctx = build_fork_aware_context_cached(&[], &source_txs, wallet_cache.as_deref()).await;
+	// We track no wallet, but an empty seed list makes `build_fork_aware_context_cached`
+	// skip the snapshot cache and replay from genesis every run, so we pass one throwaway
+	// seed to keep `--ledger-state-db` effective. The dummy wallet never affects the global
+	// pools we read, so an all-zero seed is safe despite the `Default` note on `WalletSeed`.
+	let cache_seed = [WalletSeed::Medium([0u8; 32])];
+	let fork_ctx =
+		build_fork_aware_context_cached(&cache_seed, &source_txs, wallet_cache.as_deref()).await;
 
 	let night_pools = fork_ctx.dispatch(
 		|ctx| ledger_7::night_pools::night_pools(&ctx),

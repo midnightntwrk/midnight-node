@@ -11,4 +11,5 @@ pools off the rebuilt `LedgerState`. The ledger version is detected from the rep
 blocks, so no version flag is needed. Reuses `--src-url` / `--fetch-cache` /
 `--ledger-state-db` from the shared `Source` args.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1726
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1725
