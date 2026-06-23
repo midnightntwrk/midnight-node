@@ -2,14 +2,14 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use frame_support::inherent::ProvideInherent;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
-	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis, UTXO_PER_TX_OVERESTIMATE,
+	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
 	ObservedUtxoData,
 };
 use pallet_cnight_observation::{
-	Mapping, NextCardanoPosition, UtxoOwners,
+	DEFAULT_UTXO_PER_TX_OVERESTIMATE, Mapping, NextCardanoPosition, UtxoOwners,
 	config::{CNightGenesis, MappingEntryGenesis, SystemTx},
 };
 use pallet_cnight_observation_mock::mock_with_capture as mock;
@@ -23,7 +23,8 @@ use tokio::{fs::File, io::AsyncWriteExt};
 
 const TX_CAPACITY: usize = 1000;
 // Genesis is one-shot, but the data source applies the same envelope as consensus.
-const MAX_UTXOS: usize = TX_CAPACITY * UTXO_PER_TX_OVERESTIMATE as usize;
+// Uses the default multiplier: genesis predates any on-chain `UtxoPerTxOverestimate`.
+const MAX_UTXOS: usize = TX_CAPACITY * DEFAULT_UTXO_PER_TX_OVERESTIMATE as usize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CNightGenesisError {

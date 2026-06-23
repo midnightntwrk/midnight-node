@@ -16,9 +16,19 @@ UTXO_PER_TX_OVERESTIMATE`). The cursor reaches the tip only on a proven-complete
 fetch; otherwise it stops at the last fully-observed tx. With no fetch-size input
 left, every node derives identical inherents.
 
-`UTXO_PER_TX_OVERESTIMATE` moves to `midnight-primitives-cnight-observation` as
-the single source shared by runtime and node. Byte-identical to the prior 64x
-path on benign history, so finalized blocks replay unchanged.
+The acceptance-envelope multiplier becomes runtime state, mirroring
+`CardanoTxCapacityPerBlock`: a `UtxoPerTxOverestimate` storage value (default
+`DEFAULT_UTXO_PER_TX_OVERESTIMATE = 64`, defined in
+`midnight-primitives-cnight-observation` so the node-side genesis tool and tests
+share one baseline) read by the node IDP via the new
+`CNightObservationApi::get_utxo_per_tx_overestimate` (API v3) at `parent_hash`.
+Both factors of the envelope (`tx_capacity * multiplier`) are now sourced from
+the runtime, so the author's truncation cap and the runtime's `process_tokens`
+bound stay identical across upgrades instead of relying on a constant compiled
+into both binaries. The node only reads it on the v2 derivation path, which is
+gated on a `spec_version` that ships in the same runtime as the v3 API, so a
+pre-v3 runtime is never queried for it. Default value is 64, byte-identical to
+the prior path on benign history, so finalized blocks replay unchanged.
 
 PR: <link to PR>
 Issue: <link to Github Issue, if applicable>

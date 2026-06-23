@@ -40,12 +40,6 @@ pub const CNIGHT_POLICY_ID_LENGTH: u32 = 28;
 /// Cardano native-asset name maximum length in bytes.
 pub const CARDANO_ASSET_NAME_MAX_LENGTH: u32 = 32;
 
-/// UTXO acceptance envelope per block, as a multiple of tx capacity. Shared by
-/// the runtime (`process_tokens` bound) and the node IDP (inherent truncation
-/// cap); they must use one value or nodes disagree, hence this lives here rather
-/// than in the pallet.
-pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
-
 #[derive(
 	Encode,
 	Decode,
@@ -430,7 +424,14 @@ decl_runtime_apis! {
 	// v2 once gated a node-side db-sync over-fetch multiplier; the node now
 	// fetches the whole range instead, so nothing is gated on it. Retained for
 	// compatibility.
-	#[api_version(2)]
+	//
+	// v3 adds `get_utxo_per_tx_overestimate`: the acceptance-envelope multiplier
+	// became runtime storage (mirroring `CardanoTxCapacityPerBlock`), so the node
+	// reads it at `parent_hash` instead of compiling in a constant. The node only
+	// calls it on the v2 derivation path, which is gated on a `spec_version` that
+	// ships in the same runtime as this API method — so a pre-v3 runtime is never
+	// asked for it.
+	#[api_version(3)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums
 		fn get_mapping_validator_address() -> Vec<u8>;
@@ -448,5 +449,13 @@ decl_runtime_apis! {
 		// (`pallet_cnight_observation::CardanoTxCapacityPerBlock`), not a UTXO count.
 		// Callers must multiply by the per-tx UTXO over-fetch factor to get a row limit.
 		fn get_utxo_capacity_per_block() -> u32;
+
+		/// Acceptance-envelope multiplier: the per-block UTXO bound enforced by
+		/// `process_tokens` is `get_utxo_capacity_per_block() *
+		/// get_utxo_per_tx_overestimate()`. Backed by the
+		/// `pallet_cnight_observation::UtxoPerTxOverestimate` storage value
+		/// (default `pallet_cnight_observation::DEFAULT_UTXO_PER_TX_OVERESTIMATE`).
+		#[api_version(3)]
+		fn get_utxo_per_tx_overestimate() -> u32;
 	}
 }

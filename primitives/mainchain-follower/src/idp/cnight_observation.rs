@@ -16,7 +16,7 @@
 use crate::{MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo};
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
-	TimestampUnixMillis, UTXO_PER_TX_OVERESTIMATE,
+	TimestampUnixMillis,
 };
 use parity_scale_codec::Decode;
 use sidechain_domain::McBlockHash;
@@ -115,11 +115,6 @@ impl MidnightCNightObservationInherentDataProvider {
 		let mapping_validator_address =
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
 		let tx_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
-		// UTXO acceptance envelope, derived here at the runtime-API boundary (where
-		// on-chain `tx_capacity` is read) and passed down — the db data source
-		// stays decoupled from runtime tokenomics. Matches the runtime's
-		// `process_tokens` bound so node and chain agree on what an inherent may hold.
-		let max_utxos = tx_capacity.saturating_mul(UTXO_PER_TX_OVERESTIMATE) as usize;
 
 		let (cnight_policy_id, cnight_asset_name) = api.get_cnight_token_identifier(parent_hash)?;
 		let auth_token_asset_name: String = api
@@ -151,6 +146,15 @@ impl MidnightCNightObservationInherentDataProvider {
 				.get_utxos_v1(&config, &cardano_position_start, mc_hash, tx_capacity as usize)
 				.await
 		} else {
+			// UTXO acceptance envelope = tx_capacity * multiplier, with *both* factors
+			// read from the runtime at `parent_hash` (same as `tx_capacity`), so the
+			// author's truncation cap always equals the runtime's `process_tokens`
+			// bound — across upgrades, not just within one build. `get_utxo_per_tx_overestimate`
+			// is a v3 `CNightObservationApi` method that ships in the same runtime as
+			// the v2 activation `spec_version`, so this branch only ever calls it
+			// against a runtime that has it.
+			let multiplier = api.get_utxo_per_tx_overestimate(parent_hash)?;
+			let max_utxos = tx_capacity.saturating_mul(multiplier) as usize;
 			data_source
 				.get_utxos_v2(
 					&config,

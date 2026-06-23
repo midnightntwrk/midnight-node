@@ -46,7 +46,7 @@
 use std::sync::Arc;
 
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, TimestampUnixMillis, UTXO_PER_TX_OVERESTIMATE,
+	CNightAddresses, CardanoPosition, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::data_source::{
 	BulkCacheConfig, BulkCachedCNightObservationDataSource, DEFAULT_WINDOW_SIZE,
@@ -113,9 +113,12 @@ async fn bulk_source_matches_standard_over_block_range() {
 	};
 	assert!(to_block > from_block, "empty block range [{from_block}, {to_block}]");
 
-	// Consensus knob — override to match the runtime config of the network.
+	// Consensus knobs — override to match the runtime config of the network.
+	// The multiplier mirrors `pallet_cnight_observation::DEFAULT_UTXO_PER_TX_OVERESTIMATE`;
+	// this crate sits below the pallet so the value is restated here rather than imported.
 	let tx_capacity: usize = env_parsed("CNIGHT_EQUIV_TX_CAPACITY").unwrap_or(200);
-	let max_utxos = tx_capacity * UTXO_PER_TX_OVERESTIMATE as usize;
+	let utxo_per_tx_overestimate: usize = env_parsed("CNIGHT_EQUIV_UTXO_PER_TX").unwrap_or(64);
+	let max_utxos = tx_capacity * utxo_per_tx_overestimate;
 
 	let rows = sqlx::query(
 		"SELECT block_no::bigint AS block_no, hash FROM block \
