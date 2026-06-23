@@ -1,11 +1,20 @@
 name: fork-network
 
-# Fork a well-known midnight network from a snapshot, then roll the validators
-# from $node_image to $new_node_image using the local-environment image-upgrade
-# command. Validator keys + on-chain authority storage are replaced by
-# mock-authorities' deterministic set, and each node's built-in mock main chain
-# follower serves all Cardano-derived data. No Cardano db-sync, no secrets,
-# no external infra.
+# Fork a well-known midnight network from a snapshot, then upgrade it from
+# $node_image to $new_node_image using the local-environment tooling.
+# Validator keys + on-chain authority storage (including Council and
+# Technical Committee membership) are replaced by mock-authorities'
+# deterministic set, and each node's built-in mock main chain follower serves
+# all Cardano-derived data. No Cardano db-sync, no secrets, no external infra.
+#
+# upgrade_mode selects the rollout shape:
+#   image   - roll each validator container to $new_node_image (no runtime
+#             upgrade; the chain keeps the snapshot's runtime)
+#   runtime - keep validators on $node_image and submit the new runtime
+#             wasm (extracted from $new_node_image) through the
+#             federated-authority governance flow
+#   full    - production-shaped rehearsal: image rollout first, then the
+#             runtime upgrade via governance
 
 on:
   workflow_dispatch:
@@ -19,15 +28,29 @@ on:
           - devnet
           - qanet
       mock_authorities_tag:
-        description: "mock-authorities image tag"
+        description: "mock-authorities image tag (>= 368fd98 required for the runtime and full upgrade modes: older tags do not rewrite Council/Technical Committee membership)"
         required: true
-        default: "ead27ed"
+        default: "368fd98"
       node_image:
         description: "midnight-node image to fork from (must match the snapshot's runtime host fns)"
         required: true
       new_node_image:
-        description: "midnight-node image to roll the validators to"
+        description: "midnight-node image to upgrade to (image rollout target and/or runtime wasm source, per upgrade_mode)"
         required: true
+      upgrade_mode:
+        description: "Upgrade shape: roll the node image, submit a runtime upgrade via governance, or both in sequence"
+        required: true
+        type: choice
+        default: image
+        options:
+          - image
+          - runtime
+          - full
+      allow_same_version:
+        description: "Accept a runtime wasm that does not bump spec_version (uses authorizeUpgradeWithoutChecks; rehearsal-only escape hatch)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,6 +64,8 @@ env:
   NETWORK: ${{ inputs.network }}
   NODE_IMAGE: ${{ inputs.node_image }}
   NEW_NODE_IMAGE: ${{ inputs.new_node_image }}
+  UPGRADE_MODE: ${{ inputs.upgrade_mode }}
+  ALLOW_SAME_VERSION: ${{ inputs.allow_same_version }}
   MOCK_AUTHORITIES_IMAGE: ghcr.io/shieldedtech/mock-authorities:${{ inputs.mock_authorities_tag }}
   SNAPSHOT_INDEX_URL: https://dg39snjayoq3t.cloudfront.net/index.json
   SNAPSHOT_BASE_URL: https://dg39snjayoq3t.cloudfront.net
@@ -132,6 +157,41 @@ jobs:
           docker pull "$NODE_IMAGE" || docker image inspect "$NODE_IMAGE" >/dev/null
           docker pull "$NEW_NODE_IMAGE" || docker image inspect "$NEW_NODE_IMAGE" >/dev/null
 
+      # The node image ships the runtime wasm it was built with under
+      # /artifacts-<arch>/ (see node-image in Earthfile). Copy it into
+      # local-environment/artifacts/, the only root the upgrade CLI's wasm
+      # path sandbox accepts, and prefer the compact.compressed blob — it is
+      # what production upgrades submit and keeps the extrinsic small.
+      - name: Extract runtime wasm from new node image
+        if: inputs.upgrade_mode != 'image'
+        id: wasm
+        run: |
+          cid=$(docker create "$NEW_NODE_IMAGE")
+          trap 'docker rm -f "$cid" >/dev/null' EXIT
+          mkdir -p local-environment/artifacts/upgrade
+          extracted=""
+          for arch in amd64 arm64; do
+            if docker cp "$cid:/artifacts-$arch/." local-environment/artifacts/upgrade/ 2>/dev/null; then
+              extracted="yes"
+              break
+            fi
+          done
+          if [ -z "$extracted" ]; then
+            echo "No /artifacts-<arch> directory found in $NEW_NODE_IMAGE" >&2
+            exit 1
+          fi
+          wasm=""
+          for pattern in '*.compact.compressed.wasm' '*.compact.wasm' '*.wasm'; do
+            wasm=$(find local-environment/artifacts/upgrade -maxdepth 1 -name "$pattern" | sort | head -1)
+            [ -n "$wasm" ] && break
+          done
+          if [ -z "$wasm" ]; then
+            echo "No runtime wasm found in $NEW_NODE_IMAGE" >&2
+            exit 1
+          fi
+          echo "Using runtime wasm: $wasm"
+          echo "wasm_rel=upgrade/$(basename "$wasm")" >> "$GITHUB_OUTPUT"
+
       # local-environment image-upgrade does:
       #   1. Restore snapshot into per-validator data dirs (HTTP)
       #   2. Run mock-authorities convert against the restored data
@@ -140,11 +200,60 @@ jobs:
       #   5. Roll each validator service from $NODE_IMAGE → $NEW_NODE_IMAGE
       #      with `up -d --no-deps --force-recreate`, gated on health
       - name: Run image-upgrade
+        if: inputs.upgrade_mode == 'image'
         working-directory: local-environment
         env:
           SNAPSHOT_URL: ${{ steps.cfg.outputs.snapshot_url }}
         run: |
           npm run "image-upgrade:${NETWORK}" -- --from-snapshot "$SNAPSHOT_URL"
+
+      # Governance signer URIs are fixed: mock-authorities convert rewrites
+      # Council membership to //Dave //Eve //Ferdie and Technical Committee
+      # membership to //Alice //Bob //Charlie (matching the mock federated
+      # authority observation source), so these dev-keyring URIs always meet
+      # the 2/3 approval threshold on a freshly converted fork.
+      #
+      # node1's container RPC port 9944 is published on host port 9950 for
+      # every well-known network compose file, hence the --rpc-url override.
+      - name: Run runtime upgrade via governance
+        if: inputs.upgrade_mode == 'runtime'
+        working-directory: local-environment
+        env:
+          SNAPSHOT_URL: ${{ steps.cfg.outputs.snapshot_url }}
+          WASM_REL: ${{ steps.wasm.outputs.wasm_rel }}
+        run: |
+          same_version_flag=()
+          if [ "$ALLOW_SAME_VERSION" = "true" ]; then
+            same_version_flag=(--allow-same-version)
+          fi
+          npm run "governance-runtime-upgrade:${NETWORK}" -- \
+            --from-snapshot "$SNAPSHOT_URL" \
+            --wasm "$WASM_REL" \
+            --rpc-url ws://localhost:9950 \
+            --council-uris //Dave //Eve //Ferdie \
+            --technical-uris //Alice //Bob //Charlie \
+            --executor-uri //Alice \
+            "${same_version_flag[@]}"
+
+      - name: Run full-upgrade
+        if: inputs.upgrade_mode == 'full'
+        working-directory: local-environment
+        env:
+          SNAPSHOT_URL: ${{ steps.cfg.outputs.snapshot_url }}
+          WASM_REL: ${{ steps.wasm.outputs.wasm_rel }}
+        run: |
+          same_version_flag=()
+          if [ "$ALLOW_SAME_VERSION" = "true" ]; then
+            same_version_flag=(--allow-same-version)
+          fi
+          npm run "full-upgrade:${NETWORK}" -- \
+            --from-snapshot "$SNAPSHOT_URL" \
+            --wasm "$WASM_REL" \
+            --rpc-url ws://localhost:9950 \
+            --council-uris //Dave //Eve //Ferdie \
+            --technical-uris //Alice //Bob //Charlie \
+            --executor-uri //Alice \
+            "${same_version_flag[@]}"
 
       - name: Wait for block + finality progression
         timeout-minutes: 15
@@ -198,6 +307,35 @@ jobs:
           done
           echo "Chain failed to advance $REQUIRED_BLOCKS blocks with finality change in time"
           exit 1
+
+      # Belt-and-braces on top of the upgrade tool's own CodeUpdated event
+      # check: assert the on-chain :code is byte-identical to the candidate
+      # wasm we extracted from $NEW_NODE_IMAGE. applyAuthorizedUpgrade stores
+      # the submitted blob verbatim, so a plain hex comparison suffices.
+      - name: Verify on-chain runtime matches candidate wasm
+        if: inputs.upgrade_mode != 'image'
+        env:
+          RPC_URL: "http://localhost:9950"
+          WASM_REL: ${{ steps.wasm.outputs.wasm_rel }}
+        run: |
+          wasm_file="local-environment/artifacts/$WASM_REL"
+          expected_hex=$(od -An -v -tx1 "$wasm_file" | tr -d ' \n')
+          onchain_hex=$(curl -sf -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"state_getStorage","params":["0x3a636f6465"]}' \
+            "$RPC_URL" | jq -r '.result // empty' | sed 's/^0x//' || true)
+          if [ -z "$onchain_hex" ]; then
+            echo "Could not read :code from $RPC_URL" >&2
+            exit 1
+          fi
+          if [ "$expected_hex" != "$onchain_hex" ]; then
+            echo "On-chain :code does not match the candidate runtime wasm ($wasm_file)" >&2
+            echo "candidate bytes: $(( ${#expected_hex} / 2 )), on-chain bytes: $(( ${#onchain_hex} / 2 ))" >&2
+            exit 1
+          fi
+          echo "On-chain :code matches $wasm_file ($(( ${#expected_hex} / 2 )) bytes)."
+          curl -sf -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"state_getRuntimeVersion","params":[]}' \
+            "$RPC_URL" | jq '{specName: .result.specName, specVersion: .result.specVersion}'
 
       - name: Dump compose logs
         if: always()
