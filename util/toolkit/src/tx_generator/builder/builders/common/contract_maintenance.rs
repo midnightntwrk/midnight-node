@@ -285,6 +285,10 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 			if existing_entrypoints.contains(&entrypoint) {
 				entrypoints_to_remove.push(entrypoint.clone());
 			}
+			// TODO(ledger-9-rc.3 dual-stack): rc.3's `ContractOperationVersionedVerifierKey::V3`
+			// takes a 2.x (`transient_crypto_old`) VerifierKey, not the 3.x one deserialized above.
+			// Needs the old verifier-key type plumbed through the ledger_9 helpers (same dual-stack
+			// work as the non-Send L9 proving blocker). Staged pending that resolution.
 			entrypoints_to_insert
 				.push((entrypoint, ContractOperationVersionedVerifierKey::V3(key)));
 		}

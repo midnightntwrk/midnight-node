@@ -87,7 +87,7 @@ pub use super::{
 		},
 		transcript::Transcript,
 	},
-	test_utilities_local::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver, verifier_key},
+	test_utilities_local::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver},
 	transient_crypto::{
 		commitment::{Pedersen, PedersenRandomness, PureGeneratorPedersen},
 		curve::Fr,
@@ -184,6 +184,16 @@ pub async fn ir_source(resolver: &Resolver, name: &'static str) -> Option<Vec<u8
 		.await
 		.ok()??;
 	Some(material.ir_source)
+}
+
+/// Resolves a circuit's verifier key by name. Ledger 9.1 (rc.3) dropped this from
+/// upstream `test_utilities`; provided here so it works across all ledger versions.
+pub async fn verifier_key(resolver: &Resolver, name: &'static str) -> Option<VerifierKey> {
+	let material = resolver
+		.resolve_key(KeyLocation(std::borrow::Cow::Borrowed(name)))
+		.await
+		.ok()??;
+	mn_ledger_serialize::tagged_deserialize(&mut &material.verifier_key[..]).ok()
 }
 
 /// Serializes a mn_ledger::serialize-able type into bytes

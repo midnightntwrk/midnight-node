@@ -42,7 +42,7 @@ pub mod ledger_7 {
 	pub const CRATE_NAME: &str = "mn-ledger";
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
-		onchain_runtime, transient_crypto, zkir_2_1 as zkir, zswap,
+		onchain_runtime, transient_crypto, zkir, zswap,
 	};
 
 	// Vendored test-utilities shim for v8.
@@ -111,7 +111,7 @@ pub mod ledger_8 {
 	pub use {
 		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
 		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
-		zkir_2_1 as zkir, zswap_ledger_8 as zswap,
+		zkir, zswap_ledger_8 as zswap,
 	};
 
 	// Vendored test-utilities shim for v8.

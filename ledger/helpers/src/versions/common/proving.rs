@@ -20,6 +20,14 @@ use super::{
 };
 use async_trait::async_trait;
 
+// TODO(ledger-9-rc.3 dual-stack): L9 proving is currently non-Send. midnight-zkir 2.2.0's
+// `LocalProvingProvider` routes L9 through the 2.x (`transient_crypto_old`) `ProvingProvider`,
+// whose `Resolver::resolve_key` is a bare async-fn-in-trait (no Send), so the future built by
+// `LocalProofServer::prove` below can't satisfy this trait's default `Send` box. We can't relax
+// to `#[async_trait(?Send)]` either: the toolkit `tokio::task::spawn`s proving (tx_generator
+// batches.rs / claim_rewards.rs), which genuinely needs `Send`. ledger-v9's own 3.x `Resolver`
+// is Send-clean; only the embedded 2.x stack is non-Send. Resolution needs either an upstream
+// `Send` bound on transient-crypto-old's `Resolver`, or a node-side Send-bridging resolver wrapper.
 #[async_trait]
 pub trait ProofProvider<D: DB + Clone>: Send + Sync {
 	async fn prove(
