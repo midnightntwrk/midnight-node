@@ -693,6 +693,47 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 
 		Ok(result)
 	}
+
+	async fn get_utxos_v1(
+		&self,
+		config: &CNightAddresses,
+		start_position: &CardanoPosition,
+		current_tip: McBlockHash,
+		tx_capacity: usize,
+	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+		// v1 had no cache: derive directly against the pool so the inherent is
+		// byte-identical to mainnet history regardless of this cache's state.
+		crate::data_source::cnight_observation_v1::derive_inherent_v1(
+			&self.pool,
+			config,
+			start_position,
+			current_tip,
+			tx_capacity,
+		)
+		.await
+	}
+
+	async fn get_utxos_v2(
+		&self,
+		config: &CNightAddresses,
+		start_position: &CardanoPosition,
+		current_tip: McBlockHash,
+		tx_capacity: usize,
+		max_utxos: usize,
+	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+		// SKETCH: derive directly against the pool. The sliding-window cache can
+		// later serve whole blocks into `select_one_block` as a pure-perf layer
+		// without changing this output.
+		crate::data_source::cnight_observation_v2::derive_inherent_v2(
+			&self.pool,
+			config,
+			start_position,
+			current_tip,
+			tx_capacity,
+			max_utxos,
+		)
+		.await
+	}
 }
 );
 

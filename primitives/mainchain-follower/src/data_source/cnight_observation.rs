@@ -146,6 +146,42 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 			bulk_pull(&self.pool, config, start_position, &end, max_utxos.saturating_add(1)).await?;
 		Ok(truncate_to_tx_capacity(utxos, tx_capacity, max_utxos, complete, start_position, end))
 	}
+
+	async fn get_utxos_v1(
+		&self,
+		config: &CNightAddresses,
+		start_position: &CardanoPosition,
+		current_tip: McBlockHash,
+		tx_capacity: usize,
+	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+		crate::data_source::cnight_observation_v1::derive_inherent_v1(
+			&self.pool,
+			config,
+			start_position,
+			current_tip,
+			tx_capacity,
+		)
+		.await
+	}
+
+	async fn get_utxos_v2(
+		&self,
+		config: &CNightAddresses,
+		start_position: &CardanoPosition,
+		current_tip: McBlockHash,
+		tx_capacity: usize,
+		max_utxos: usize,
+	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+		crate::data_source::cnight_observation_v2::derive_inherent_v2(
+			&self.pool,
+			config,
+			start_position,
+			current_tip,
+			tx_capacity,
+			max_utxos,
+		)
+		.await
+	}
 }
 );
 
