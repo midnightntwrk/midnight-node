@@ -455,29 +455,23 @@ impl McHashInherentDataProvider {
 				},
 			};
 
-		let Some(parent_slot) = parent_slot else {
+		if parent_slot.is_none() {
 			// genesis block doesn't contain MC reference
 			return Ok(Self::from(mc_state_reference_block));
-		};
+		}
 
 		let parent_mc_hash = McHashInherentDigest::value_from_digest(&parent_header.digest().logs)
 			.map_err(|err| McHashInherentError::DigestError(err.to_string()))?;
-		let parent_timestamp =
-			parent_slot.timestamp(slot_duration).ok_or(McHashInherentError::SlotTooBig)?;
 
-		let parent_mc_state_reference_block =
-			match classify_block_hash(parent_mc_hash.clone(), parent_timestamp, block_source)
-				.await?
-			{
-				BlockHashClassification::Stable(info) => info,
-				BlockHashClassification::AwaitingCardano | BlockHashClassification::Invalid => {
-					// Something out-of-assumptions happened: we can't find main chain block info of the block we have already accepted
-					// during verification of the previous substrate block.
-					panic!(
-						"Parent block MC Hash is not found and stable when current block MC Hash is stable."
-					);
-				},
-			};
+		let parent_mc_state_reference_block = block_source
+			.get_block_by_hash(parent_mc_hash.clone())
+			.await
+			.map_err(McHashInherentError::DataSourceError)?
+			// Something out-of-assumptions happened: we can't find main chain block info of the block we have already accepted
+			// during verification of the previous substrate block.
+			.expect(
+				"Parent block MC Hash is not found and stable when current block MC Hash is stable.",
+			);
 
 		if mc_state_reference_block.number < parent_mc_state_reference_block.number {
 			Err(McHashInherentError::McStateReferenceRegressed(
