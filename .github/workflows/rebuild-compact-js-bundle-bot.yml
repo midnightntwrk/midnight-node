@@ -138,7 +138,7 @@ jobs:
             }
 
             // Get changed vendored tarballs
-            const prefix = 'util/toolkit-js/compact-0.31.108/vendor/';
+            const prefix = 'util/toolkit-js/compact-0.31.110/vendor/';
             const changedFiles = status.split('\n')
               .filter(line => line.trim())
               .map(line => line.substring(3))

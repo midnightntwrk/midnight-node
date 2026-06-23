@@ -229,7 +229,7 @@ different `compactc` versions, each supported version has its own sibling worksp
 compact-0.29.0/     → @midnight-ntwrk/compact-js* 2.4.3   (public npm)
 compact-0.30.0/     → @midnight-ntwrk/compact-js* 2.5.0   (public npm)
 compact-0.31.0/     → @midnight-ntwrk/compact-js* 2.5.1   (public npm)
-compact-0.31.108/   → @midnight-ntwrk/compact-js* 2.5.3   (vendored .tgz, see below)
+compact-0.31.110/   → @midnight-ntwrk/compact-js* 2.5.3   (vendored .tgz, see below)
 ```
 
 The root package depends on every variant (`@midnight-ntwrk/node-toolkit-compact-<major>.<minor>.<patch>`). At
@@ -277,19 +277,19 @@ leading `<major>.<minor>.<patch>` is matched.
 To drop an old version, reverse these steps: remove it from `SUPPORTED_COMPACTC_VERSIONS`, the root dependency,
 and the test script, then delete the `compact-<major>.<minor>.<patch>/` workspace.
 
-### Variants that vendor an unpublished `compact-js` (e.g. `compact-0.31.108`)
+### Variants that vendor an unpublished `compact-js` (e.g. `compact-0.31.110`)
 
 Some `compactc` lines pre-date the publication of their matching `@midnight-ntwrk/compact-js*` and
-`@midnight-ntwrk/compact-runtime` packages, so there is nothing on npm to pin. The `compact-0.31.108`
+`@midnight-ntwrk/compact-runtime` packages, so there is nothing on npm to pin. The `compact-0.31.110`
 variant (compact-js **2.5.3**, for ledger 9) handles this by **vendoring `npm pack` tarballs** referenced
 via `file:`:
 
 ```
-compact-0.31.108/vendor/compact-js.tgz
-compact-0.31.108/vendor/compact-js-command.tgz
-compact-0.31.108/vendor/compact-js-node.tgz
-compact-0.31.108/vendor/compact-runtime.tgz
-compact-0.31.108/vendor/ledger-v9.tgz
+compact-0.31.110/vendor/compact-js.tgz
+compact-0.31.110/vendor/compact-js-command.tgz
+compact-0.31.110/vendor/compact-js-node.tgz
+compact-0.31.110/vendor/compact-runtime.tgz
+compact-0.31.110/vendor/ledger-v9.tgz
 ```
 
 npm installs a `file:*.tgz` by extracting it into a real hoisted `node_modules/` directory (not a symlink)

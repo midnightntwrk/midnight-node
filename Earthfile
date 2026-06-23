@@ -845,14 +845,14 @@ compactc-fetch:
         rm /tmp/compactc.zip
     SAVE ARTIFACT /compact-home
 
-# Builds the four vendored `.tgz` blobs the `compact-0.31.108` toolkit-js variant consumes via `file:`
+# Builds the four vendored `.tgz` blobs the `compact-0.31.110` toolkit-js variant consumes via `file:`
 # references (compact-js{,-command,-node} 2.5.3 + the matching compact-runtime), from the pinned
 # `midnight-sdk` submodule. Pure JS: `yarn install` + the SDK's build-utils `package` step build and
 # pack the three compact-js packages, and compact-runtime is `npm pack`ed straight from GitHub Packages
 # (it is a published dev build — no nix, no compact-submodule runtime build). ledger-v9 + everything
 # else resolves from public npm. The GitHub Packages read token is consumed ONLY here (SDK install +
 # compact-runtime pack) — the consume path (`npm ci` in util/toolkit-js) needs no token. See
-# util/toolkit-js/compact-0.31.108/vendor/README.md and scripts/build-compact-js-bundle.sh.
+# util/toolkit-js/compact-0.31.110/vendor/README.md and scripts/build-compact-js-bundle.sh.
 compact-js-bundle:
     # TODO: pin to a digest once first green CI confirms it works.
     FROM node:22-bookworm
@@ -874,10 +874,10 @@ compact-js-bundle:
     RUN --secret MIDNIGHTCI_PACKAGES_READ \
         SDK_DIR=/work/midnight-sdk VENDOR_DIR=/work/vendor-out \
         bash /work/scripts/build-compact-js-bundle.sh
-    SAVE ARTIFACT /work/vendor-out/compact-js.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-js.tgz
-    SAVE ARTIFACT /work/vendor-out/compact-js-command.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-js-command.tgz
-    SAVE ARTIFACT /work/vendor-out/compact-js-node.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-js-node.tgz
-    SAVE ARTIFACT /work/vendor-out/compact-runtime.tgz AS LOCAL util/toolkit-js/compact-0.31.108/vendor/compact-runtime.tgz
+    SAVE ARTIFACT /work/vendor-out/compact-js.tgz AS LOCAL util/toolkit-js/compact-0.31.110/vendor/compact-js.tgz
+    SAVE ARTIFACT /work/vendor-out/compact-js-command.tgz AS LOCAL util/toolkit-js/compact-0.31.110/vendor/compact-js-command.tgz
+    SAVE ARTIFACT /work/vendor-out/compact-js-node.tgz AS LOCAL util/toolkit-js/compact-0.31.110/vendor/compact-js-node.tgz
+    SAVE ARTIFACT /work/vendor-out/compact-runtime.tgz AS LOCAL util/toolkit-js/compact-0.31.110/vendor/compact-runtime.tgz
 
 # compactc-build-local builds and exports compactc to .compact-home
 compactc-build-local:

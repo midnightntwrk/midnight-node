@@ -28,7 +28,7 @@ earthly doc                               # List all available targets
 - `/bot rebuild-metadata` - Rebuild runtime metadata
 - `/bot rebuild-chainspec <network1> <network2>` - Rebuild chainspecs for specified networks
 - `/bot cargo-fmt` - Run cargo fmt
-- `/bot rebuild-compact-js-bundle` - Rebuild the vendored `compact-js` tarballs for the `compact-0.31.108` toolkit-js variant (see `util/toolkit-js/README.md`)
+- `/bot rebuild-compact-js-bundle` - Rebuild the vendored `compact-js` tarballs for the `compact-0.31.110` toolkit-js variant (see `util/toolkit-js/README.md`)
 
 **E2E tests (just):**
 ```bash
@@ -107,7 +107,7 @@ unless you have nix `trusted-users` access to the IOG cache (`cache.iog.io`).
   `compact/` submodule, produced by `scripts/compact-submodule-version.sh` (the compiler
   version comes from the submodule's `flake.nix`, the hash is `git rev-parse HEAD^{tree} | cut -c1-12`).
   Regenerate it after bumping the submodule: `scripts/compact-submodule-version.sh > COMPACTC_VERSION`.
-- `<compiler-version>-<40-char-commit-sha>` (e.g. `0.31.108-73ebfbbff78118e77a83fdc99dca352db0020869`)
+- `<compiler-version>-<40-char-commit-sha>` (e.g. `0.31.110-3a289c2e7811d2868e7810bd5a5f1f0b7055995f`)
   — a public **dev build** published from an arbitrary `compact` commit. Set this by hand to pin a
   dev build without touching the submodule.
 - a plain or pre-release version (e.g. `0.31.108`, `0.30.0-rc.1`) — a conventional release.

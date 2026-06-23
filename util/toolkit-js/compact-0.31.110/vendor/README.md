@@ -1,6 +1,6 @@
 # Vendored dependency tarballs
 
-This directory holds the `npm pack` tarballs that the `compact-0.31.108` variant consumes via
+This directory holds the `npm pack` tarballs that the `compact-0.31.110` variant consumes via
 `file:` references in its `package.json`. They are the four `@midnight-ntwrk` packages in the
 compact-js 2.5.3 closure that are **only published to GitHub Packages** (a private registry);
 everything else in the closure resolves from **public npm**, so the consume path
