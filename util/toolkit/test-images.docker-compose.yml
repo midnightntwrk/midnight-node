@@ -15,6 +15,11 @@ services:
     depends_on:
       guard:
         condition: service_completed_successfully
+  indexer-standalone:
+    image: ${INDEXER_STANDALONE_IMAGE:-midnightntwrk/indexer-standalone:latest}
+    depends_on:
+      guard:
+        condition: service_completed_successfully
   midnight-node-fork-from:
     image: ${FORK_FROM_NODE_IMAGE:-midnightntwrk/midnight-node:0.21.0}
     depends_on:

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+#[cfg(feature = "indexer-client")]
+use crate::commands::fork::ledger_9::serde_convert::{qualified_dust_output_to_ser, utxo_to_ser};
 use crate::source::Source;
 use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::create_file_wallet_cache;
@@ -9,6 +11,10 @@ use crate::{
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
+#[cfg(feature = "indexer-client")]
+use hex::ToHex as _;
+#[cfg(feature = "indexer-client")]
+use midnight_node_ledger_helpers::{BuilderContext, DefaultDB, IndexerContext, serialize_untagged};
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -41,11 +47,31 @@ pub struct ShowWalletArgs {
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
 	dry_run: bool,
+	/// Reconstruct wallet state from a Midnight indexer (`api/v4` base URL, e.g.
+	/// `http://127.0.0.1:8088/api/v4`) instead of replaying every block from the node.
+	/// Requires `--seed`. Latest ledger version (v9) only.
+	#[arg(long, env = "MN_INDEXER_URL")]
+	indexer_url: Option<String>,
+	/// Network id used to derive the viewing key / address for the indexer path.
+	#[arg(long, default_value = "undeployed")]
+	network: String,
 }
 
 pub async fn execute(
 	args: ShowWalletArgs,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	if let Some(indexer_url) = args.indexer_url.clone() {
+		#[cfg(feature = "indexer-client")]
+		return execute_indexer(args, &indexer_url).await;
+		#[cfg(not(feature = "indexer-client"))]
+		{
+			let _ = indexer_url;
+			return Err("this toolkit was built without the `indexer-client` feature; \
+			            rebuild with it enabled to use --indexer-url"
+				.into());
+		}
+	}
+
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
@@ -135,6 +161,70 @@ pub async fn execute(
 	}
 }
 
+/// Indexer-backed `show-wallet`: reconstruct wallet state from the indexer's GraphQL API rather
+/// than replaying blocks. Latest ledger version (v9 / [`DefaultDB`]) only; produces the same
+/// [`WalletInfoJson`] as the replay path. See issue #1186.
+#[cfg(feature = "indexer-client")]
+async fn execute_indexer(
+	args: ShowWalletArgs,
+	indexer_url: &str,
+) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
+	let Some(seed) = args.seed.clone() else {
+		return Err("indexer-backed show-wallet requires --seed \
+		            (the --address path needs local ledger state)"
+			.into());
+	};
+
+	if args.dry_run {
+		log::info!("Dry-run: indexer show-wallet for seed {seed:?} via {indexer_url}");
+		return Ok(ShowWalletResult::DryRun(()));
+	}
+
+	let ctx = IndexerContext::<DefaultDB>::new(indexer_url, args.network.clone())?;
+	ctx.init_wallets(std::slice::from_ref(&seed)).await?;
+
+	// Shielded coins + dust come straight off the synced wallet; unshielded UTXOs come from the
+	// unshielded subscription reconciliation. This mirrors `fork::common::show_wallet`.
+	let (coins, dust_utxos, debug_str) = ctx.with_wallet_from_seed(seed.clone(), |wallet| {
+		let coins = wallet
+			.shielded
+			.state
+			.coins
+			.iter()
+			.map(|(k, v)| {
+				(
+					serialize_untagged(&k).unwrap().encode_hex(),
+					QualifiedInfoSer {
+						nonce: serialize_untagged(&v.nonce).unwrap().encode_hex(),
+						token_type: serialize_untagged(&v.type_).unwrap().encode_hex(),
+						value: v.value,
+						mt_index: v.mt_index,
+					},
+				)
+			})
+			.collect::<HashMap<String, QualifiedInfoSer>>();
+		let dust_utxos = wallet
+			.dust
+			.dust_local_state
+			.as_ref()
+			.map_or(vec![], |s| s.utxos().map(qualified_dust_output_to_ser).collect());
+		let debug_str = args.debug.then(|| format!("{wallet:#?}"));
+		(coins, dust_utxos, debug_str)
+	});
+
+	let utxos: Vec<UtxoSer> = ctx
+		.unshielded_utxos(seed)
+		.await
+		.into_iter()
+		.map(|(utxo, _ctime)| utxo_to_ser(utxo))
+		.collect();
+
+	match debug_str {
+		Some(debug_str) => Ok(ShowWalletResult::Debug(debug_str, utxos)),
+		None => Ok(ShowWalletResult::Json(WalletInfoJson { coins, utxos, dust_utxos })),
+	}
+}
+
 fn fork_wallet_result_v9(
 	result: crate::commands::fork::ledger_9::show_wallet::ShowWalletResult,
 ) -> ShowWalletResult {
@@ -212,6 +302,8 @@ mod tests {
 			address: Some(cli::wallet_address(addr).unwrap()),
 			debug: false,
 			dry_run: false,
+			indexer_url: None,
+			network: "undeployed".to_string(),
 		};
 
 		super::execute(args).await
@@ -263,6 +355,8 @@ mod tests {
 			address: None,
 			debug: false,
 			dry_run: false,
+			indexer_url: None,
+			network: "undeployed".to_string(),
 		};
 
 		super::execute(args).await

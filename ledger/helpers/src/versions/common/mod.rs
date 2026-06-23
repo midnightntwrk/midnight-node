@@ -93,7 +93,7 @@ pub use super::{
 		curve::Fr,
 		encryption::PublicKey as EncryptionPublicKey,
 		fab::ValueReprAlignedValue,
-		merkle_tree::{MerklePath, MerkleTree, leaf_hash},
+		merkle_tree::{MerklePath, MerkleTree, MerkleTreeCollapsedUpdate, leaf_hash},
 		proofs::{
 			KeyLocation, ParamsProver, ParamsProverProvider, ProofPreimage, ProverKey,
 			ProvingKeyMaterial, Resolver as ResolverTrait, VerifierKey,

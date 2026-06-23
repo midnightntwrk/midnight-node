@@ -771,6 +771,11 @@ prep:
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
+    # Indexer GraphQL schema for the typed `indexer-client` feature (read at compile time by
+    # `graphql_client`). `--if-exists` so prep still builds when the `indexer` submodule isn't
+    # checked out: only targets that compile the toolkit (build*, check*, *-toolkit, *-fixtures)
+    # need it, and they fail clearly at the macro if it's missing. `+test` excludes the toolkit.
+    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -956,6 +961,9 @@ check-rust:
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
+    # `cargo clippy --workspace` compiles the toolkit, whose indexer-client reads the indexer's
+    # GraphQL schema at compile time. Copy just that schema file.
+    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     RUN cargo fmt --all -- --check
 
@@ -977,6 +985,8 @@ check-feature-unification:
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
+    # `cargo hack check --workspace` compiles the toolkit, whose indexer-client reads the schema.
+    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
@@ -1131,6 +1141,9 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
+    # Optional: pin the indexer-standalone image for the indexer-backed show-wallet e2e
+    # (gated behind MN_RUN_INDEXER_E2E in the test; see util/toolkit/tests/indexer_show_wallet_e2e.rs).
+    ARG INDEXER_STANDALONE_IMAGE
     FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
 
@@ -1140,6 +1153,9 @@ test-toolkit:
     END
     IF [ -n "$FORK_FROM_NODE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+    IF [ -n "$INDEXER_STANDALONE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e INDEXER_STANDALONE_IMAGE=$INDEXER_STANDALONE_IMAGE -e MN_RUN_INDEXER_E2E=1"
     END
 
     # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
@@ -1213,6 +1229,9 @@ build:
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
+    # `cargo build --workspace` compiles the toolkit (indexer-client default on), whose typed
+    # indexer client reads the indexer's GraphQL schema at compile time. Copy just that file.
+    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     ARG NATIVEARCH
 
@@ -1241,6 +1260,8 @@ build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata relay res runtime util tests partner-chains .
+    # `cargo build --workspace` compiles the toolkit, whose indexer-client reads the schema.
+    COPY --keep-ts --if-exists indexer/indexer-api/graphql/schema-v4.graphql indexer/indexer-api/graphql/schema-v4.graphql
 
     ARG NATIVEARCH
 

@@ -19,6 +19,9 @@ zkir = { workspace = true }
 zkir-2-1 = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
+# Indexer GraphQL client (feature `indexer-client`): typed queries + WS subscriptions.
+graphql_client = { workspace = true, optional = true }
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"], optional = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"] }
 onchain-runtime-ledger-8 = { workspace = true }
@@ -58,3 +61,7 @@ can-panic = []
 erase-proof = []
 test-utils = []
 fixed-point-custom-serde = ["mn-ledger/fixed-point-custom-serde", "mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
+# Indexer-backed `BuilderContext` (the GraphQL client + `IndexerContext`). Off by default so the
+# node and other consumers build without the indexer submodule (the typed client reads the
+# indexer's committed GraphQL schema at compile time). The toolkit enables it by default.
+indexer-client = ["can-panic", "dep:graphql_client", "dep:tokio-tungstenite"]

@@ -1,0 +1,87 @@
+# GraphQL operations for the indexer-backed `BuilderContext` (feature `indexer-client`).
+# Typed against the indexer's committed schema (`indexer/indexer-api/graphql/schema-v4.graphql`)
+# at compile time via `graphql_client`. Only the operations the read-only `show-wallet` path
+# needs are defined here (see issue #1186).
+
+query LatestBlock {
+  block {
+    height
+    timestamp
+    zswapEndIndex
+    ledgerParameters
+  }
+}
+
+mutation Connect($viewingKey: ViewingKey!, $options: ConnectOptions) {
+  connect(viewingKey: $viewingKey, options: $options)
+}
+
+mutation Disconnect($sessionId: HexEncoded!) {
+  disconnect(sessionId: $sessionId)
+}
+
+subscription ShieldedTransactions($sessionId: HexEncoded!, $index: Int) {
+  shieldedTransactions(sessionId: $sessionId, index: $index) {
+    __typename
+    ... on RelevantTransaction {
+      transaction {
+        raw
+        zswapStartIndex
+        zswapEndIndex
+        transactionResult {
+          status
+        }
+      }
+      zswapCollapsedUpdate {
+        update
+      }
+    }
+    ... on ShieldedTransactionsProgress {
+      highestZswapEndIndex
+      highestCheckedZswapEndIndex
+      highestRelevantZswapEndIndex
+    }
+  }
+}
+
+# Shared so `createdUtxos`/`spentUtxos` map to a single generated Rust type.
+fragment UnshieldedUtxoFields on UnshieldedUtxo {
+  tokenType
+  value
+  intentHash
+  outputIndex
+  ctime
+}
+
+subscription UnshieldedTransactions($address: UnshieldedAddress!, $transactionId: Int) {
+  unshieldedTransactions(address: $address, transactionId: $transactionId) {
+    __typename
+    ... on UnshieldedTransaction {
+      # The transaction id lets the drain decide it has caught up to the progress
+      # sentinel's `highestTransactionId`, rather than stopping on the first progress.
+      # `Transaction` is an interface, so `graphql_client` requires `__typename` here.
+      transaction {
+        __typename
+        id
+      }
+      createdUtxos {
+        ...UnshieldedUtxoFields
+      }
+      spentUtxos {
+        ...UnshieldedUtxoFields
+      }
+    }
+    ... on UnshieldedTransactionsProgress {
+      highestTransactionId
+    }
+  }
+}
+
+subscription DustLedgerEvents($id: Int) {
+  dustLedgerEvents(id: $id) {
+    __typename
+    id
+    raw
+    maxId
+  }
+}

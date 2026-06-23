@@ -38,7 +38,10 @@ reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test"] }
-midnight-node-toolkit = { path = "../../util/toolkit" }
+# `default-features = false` drops the toolkit's `indexer-client` default so the e2e build does
+# not pull the indexer GraphQL client (and its compile-time schema dependency); these tests don't
+# use it.
+midnight-node-toolkit = { path = "../../util/toolkit", default-features = false }
 tempfile.workspace = true
 
 [[test]]
