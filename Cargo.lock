@@ -11177,6 +11177,7 @@ dependencies = [
  "substrate-prometheus-endpoint",
  "testcontainers-modules",
  "thiserror 2.0.18",
+ "time-source",
  "tokio",
  "tokio-test",
 ]
@@ -15915,6 +15916,7 @@ version = "1.8.1"
 dependencies = [
  "async-trait",
  "derive-new",
+ "log",
  "sidechain-domain",
  "sp-blockchain",
  "sp-consensus",

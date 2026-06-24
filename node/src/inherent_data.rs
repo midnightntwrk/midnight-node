@@ -34,6 +34,7 @@ use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
 use sidechain_mc_hash::McHashDataSource;
 use sidechain_mc_hash::McHashInherentDataProvider as McHashIDP;
+use sidechain_mc_hash::McHashInherentError;
 use sidechain_slots::ScSlotConfig;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
@@ -48,6 +49,7 @@ use sp_runtime::traits::{Block as BlockT, Header, Zero};
 use sp_session_validator_management::SessionValidatorManagementApi;
 use sp_timestamp::Timestamp;
 use std::error::Error;
+use std::time::Duration;
 use time_source::TimeSource;
 
 use midnight_primitives_mainchain_follower::{
@@ -55,8 +57,15 @@ use midnight_primitives_mainchain_follower::{
 	idp::{FederatedAuthorityInherentDataProvider, MidnightCNightObservationInherentDataProvider},
 };
 
-//#[cfg(feature = "experimental")]
-//use {midnight_node_runtime::BeneficiaryId, sp_block_rewards::BlockBeneficiaryInherentProvider};
+/// Default [`CreateInherentDataConfig::cardano_check_backoff`]: how long block verification waits
+/// before re-checking Cardano when our local Cardano observation is lagging and cannot yet
+/// classify a referenced main-chain block.
+const DEFAULT_CARDANO_CHECK_BACKOFF: Duration = Duration::from_secs(5);
+
+/// Default [`CreateInherentDataConfig::cardano_check_max_retries`]: how many times verification
+/// re-checks Cardano before giving up and propagating the error.
+const DEFAULT_CARDANO_CHECK_MAX_RETRIES: u32 = 60;
+
 #[allow(clippy::too_many_arguments)]
 #[derive(new)]
 pub(crate) struct ProposalCIDP<T> {
@@ -111,7 +120,7 @@ where
 			bridge_data_source,
 		} = self;
 
-		let CreateInherentDataConfig { mc_epoch_config, sc_slot_config, time_source } = config;
+		let CreateInherentDataConfig { mc_epoch_config, sc_slot_config, time_source, .. } = config;
 
 		let (slot, timestamp) =
 			timestamp_and_slot_cidp(sc_slot_config.slot_duration, time_source.clone());
@@ -266,19 +275,40 @@ where
 		));
 		let parent_header = client.expect_header(parent_hash)?;
 		let parent_slot = slot_from_predigest(&parent_header)?;
-		let mc_state_reference = McHashIDP::new_verification(
-			parent_header,
-			parent_slot,
-			verified_block_slot,
-			mc_hash.clone(),
-			config.slot_duration(),
-			mc_hash_data_source.as_ref(),
-		)
-		.await
-		.map_err(|e| {
-			log::warn!("Failed to create mc_hash inherent data for verification: {e}");
-			e
-		})?;
+		let mut cardano_check_attempts: u32 = 0;
+		let mc_state_reference = loop {
+			match McHashIDP::new_verification(
+				parent_header.clone(),
+				parent_slot,
+				verified_block_slot,
+				mc_hash.clone(),
+				config.slot_duration(),
+				mc_hash_data_source.as_ref(),
+			)
+			.await
+			{
+				Ok(mc_state_reference) => break mc_state_reference,
+				Err(McHashInherentError::AwaitingCardanoData(hash)) => {
+					let max_retries = config.cardano_check_max_retries;
+					if cardano_check_attempts >= max_retries {
+						log::warn!(
+							"Still awaiting fresh Cardano data to verify MC reference {hash} after {max_retries} retries; giving up and rejecting the block"
+						);
+						return Err(McHashInherentError::AwaitingCardanoData(hash).into());
+					}
+					cardano_check_attempts += 1;
+					let backoff = config.cardano_check_backoff;
+					log::warn!(
+						"Awaiting fresh Cardano data to verify MC reference {hash}; retry {cardano_check_attempts}/{max_retries} in {backoff:?}"
+					);
+					tokio::time::sleep(backoff).await;
+				},
+				Err(e) => {
+					log::warn!("Failed to create mc_hash inherent data for verification: {e}");
+					return Err(e.into());
+				},
+			}
+		};
 
 		let ariadne_data_provider = AriadneIDP::new(
 			client.as_ref(),
@@ -351,6 +381,8 @@ pub(crate) struct CreateInherentDataConfig {
 	pub mc_epoch_config: MainchainEpochConfig,
 	pub sc_slot_config: ScSlotConfig,
 	pub time_source: Arc<dyn TimeSource + Send + Sync + 'static>,
+	pub cardano_check_backoff: Duration,
+	pub cardano_check_max_retries: u32,
 }
 
 impl std::fmt::Debug for CreateInherentDataConfig {
@@ -426,7 +458,13 @@ impl CreateInherentDataConfig {
 	) -> Result<Self, InherentConfigError> {
 		check_mainchain_epoch_invariants(&mc_epoch_config)?;
 		check_sidechain_mainchain_coherence(&mc_epoch_config, &sc_slot_config)?;
-		Ok(Self { mc_epoch_config, sc_slot_config, time_source })
+		Ok(Self {
+			mc_epoch_config,
+			sc_slot_config,
+			time_source,
+			cardano_check_backoff: DEFAULT_CARDANO_CHECK_BACKOFF,
+			cardano_check_max_retries: DEFAULT_CARDANO_CHECK_MAX_RETRIES,
+		})
 	}
 
 	pub fn slot_duration(&self) -> SlotDuration {
