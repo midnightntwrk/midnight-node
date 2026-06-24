@@ -20,22 +20,35 @@ use super::{
 };
 use async_trait::async_trait;
 
-// TODO(ledger-9-rc.3 dual-stack): L9 proving is currently non-Send. midnight-zkir 2.2.0's
-// `LocalProvingProvider` routes L9 through the 2.x (`transient_crypto_old`) `ProvingProvider`,
-// whose `Resolver::resolve_key` is a bare async-fn-in-trait (no Send), so the future built by
-// `LocalProofServer::prove` below can't satisfy this trait's default `Send` box. We can't relax
-// to `#[async_trait(?Send)]` either: the toolkit `tokio::task::spawn`s proving (tx_generator
-// batches.rs / claim_rewards.rs), which genuinely needs `Send`. ledger-v9's own 3.x `Resolver`
-// is Send-clean; only the embedded 2.x stack is non-Send. Resolution needs either an upstream
-// `Send` bound on transient-crypto-old's `Resolver`, or a node-side Send-bridging resolver wrapper.
+// `prove` must stay `Send` (the trait is a `#[async_trait]`, not `?Send`): the toolkit
+// `tokio::task::spawn`s proving (tx_generator batches.rs / claim_rewards.rs), which genuinely
+// needs a `Send` future. But L9 proving is non-Send: midnight-zkir 2.2.0's `LocalProvingProvider`
+// routes L9 through the 2.x (`transient_crypto_old`) `ProvingProvider`, whose `Resolver::resolve_key`
+// is a bare async-fn-in-trait (no `Send` bound). Because that's an RPITIT, its future is treated as
+// `!Send` across the trait boundary even when fully monomorphized — so a Send-clean resolver wrapper
+// can't fix it at the type level, and `tx.prove(..).await` here would taint this future.
+//
+// We bridge at the executor level instead (see `LocalProofServer::prove`): the `!Send` proving future
+// is built and driven to completion *inside* a `tokio::task::spawn_blocking` closure, on a dedicated
+// blocking-pool thread running its own current-thread tokio runtime, so the future never crosses a
+// thread boundary. `.await`ing the `spawn_blocking` handle yields the calling worker, so N
+// semaphore-bounded proofs run on N blocking-pool threads in real parallel even on the toolkit's
+// single-threaded runtime. This `async fn` body holds no non-Send state across an await point,
+// leaving the boxed future trivially `Send`.
+//
+// To make the closure `Send + 'static` (a `spawn_blocking` requirement), `resolver` is `&'static`
+// (the resolver is already a `lazy_static`, so this is no plumbing change) and `cost_model` is owned
+// (`CostModel` is `Clone`, so the few call sites just `.clone()`). `tx`/`rng`/the returned
+// `Transaction` are already `Send + 'static`, since this trait's `Send` future requires that anyway.
+// No upstream patch needed; this is independent of the transient-crypto-old `Send` fix.
 #[async_trait]
 pub trait ProofProvider<D: DB + Clone>: Send + Sync {
 	async fn prove(
 		&self,
 		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 		rng: StdRng,
-		resolver: &Resolver,
-		cost_model: &CostModel,
+		resolver: &'static Resolver,
+		cost_model: CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D>;
 }
 
@@ -61,27 +74,45 @@ impl<D: DB + Clone> ProofProvider<D> for LocalProofServer {
 		&self,
 		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 		rng: StdRng,
-		resolver: &Resolver,
-		cost_model: &CostModel,
+		resolver: &'static Resolver,
+		cost_model: CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D> {
-		log::info!("Ensuring zswap key material is available...");
-		{
-			let ks =
-				futures::future::join_all((10..=15).map(|k| resolver.zswap_resolver.0.fetch_k(k)));
-			let keys = futures::future::join_all(
-				["midnight/zswap/spend", "midnight/zswap/output", "midnight/zswap/sign"]
-					.into_iter()
-					.map(|k| resolver.zswap_resolver.resolve_key(KeyLocation(k.into()))),
-			);
-			let (ks, keys) = futures::future::join(ks, keys).await;
-			ks.into_iter().collect::<Result<Vec<_>, _>>().expect("failed to get keys 'ks'");
-			keys.into_iter()
-				.collect::<Result<Vec<_>, _>>()
-				.expect("failed to get keys 'keys'");
-		}
+		// Local proving is CPU-bound (and, for L9, also `!Send` — this body is shared across
+		// L7/L8/L9). Run it on a blocking-pool thread via `spawn_blocking`: the future is built and
+		// driven inside the closure (in a fresh current-thread runtime) so even the `!Send` L9 future
+		// never crosses a thread boundary, and `.await`ing the handle yields the calling worker — so N
+		// semaphore-bounded proofs run in real parallel even on the toolkit's single-threaded runtime.
+		// The closure captures only `tx`/`rng`/`resolver` (`&'static`)/`cost_model` — not `self` (it
+		// uses `&*PUBLIC_PARAMS`, a static).
+		tokio::task::spawn_blocking(move || {
+			let rt = tokio::runtime::Builder::new_current_thread()
+				.enable_all()
+				.build()
+				.expect("failed to build local proving runtime");
+			rt.block_on(async move {
+				log::info!("Ensuring zswap key material is available...");
+				{
+					let ks = futures::future::join_all(
+						(10..=15).map(|k| resolver.zswap_resolver.0.fetch_k(k)),
+					);
+					let keys = futures::future::join_all(
+						["midnight/zswap/spend", "midnight/zswap/output", "midnight/zswap/sign"]
+							.into_iter()
+							.map(|k| resolver.zswap_resolver.resolve_key(KeyLocation(k.into()))),
+					);
+					let (ks, keys) = futures::future::join(ks, keys).await;
+					ks.into_iter().collect::<Result<Vec<_>, _>>().expect("failed to get keys 'ks'");
+					keys.into_iter()
+						.collect::<Result<Vec<_>, _>>()
+						.expect("failed to get keys 'keys'");
+				}
 
-		let pp = LocalProvingProvider { rng, resolver, params: &*PUBLIC_PARAMS };
+				let pp = LocalProvingProvider { rng, resolver, params: &*PUBLIC_PARAMS };
 
-		tx.prove(pp, cost_model).await.expect("Tx should be provable")
+				tx.prove(pp, &cost_model).await.expect("Tx should be provable")
+			})
+		})
+		.await
+		.expect("local proving task panicked")
 	}
 }

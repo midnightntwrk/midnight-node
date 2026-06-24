@@ -249,7 +249,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 		let mut rng = self.rng.split();
 		Ok(self
 			.prover
-			.prove(tx, rng.split(), resolver, &parameters.cost_model.runtime_cost_model)
+			.prove(tx, rng.split(), resolver, parameters.cost_model.runtime_cost_model.clone())
 			.await
 			.seal(rng))
 	}
@@ -525,7 +525,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 				tx_unproven,
 				self.rng.clone(),
 				resolver,
-				&parameters.cost_model.runtime_cost_model,
+				parameters.cost_model.runtime_cost_model.clone(),
 			)
 			.await;
 		tx_proven.seal(self.rng.clone())

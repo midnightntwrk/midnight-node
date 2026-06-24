@@ -440,7 +440,7 @@ impl GenesisGenerator {
 				unproven_tx,
 				rng.clone(),
 				&DEFAULT_RESOLVER,
-				&self.state.parameters.cost_model.runtime_cost_model,
+				self.state.parameters.cost_model.runtime_cost_model.clone(),
 			)
 			.await;
 
