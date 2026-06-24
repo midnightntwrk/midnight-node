@@ -73,6 +73,15 @@ pub mod ledger_7 {
 		onchain_runtime::state::ContractOperation::new(vk)
 	}
 
+	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
+	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
+	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
+	pub fn contract_operation_versioned_verifier_key(
+		vk: transient_crypto::proofs::VerifierKey,
+	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
+		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
+	}
+
 	pub fn signature_verifying_key(
 		key: base_crypto::signatures::VerifyingKey,
 	) -> SignatureVerifyingKey {
@@ -141,6 +150,15 @@ pub mod ledger_8 {
 		_ir_source: Option<Vec<u8>>,
 	) -> onchain_runtime::state::ContractOperation {
 		onchain_runtime::state::ContractOperation::new(vk)
+	}
+
+	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
+	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
+	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
+	pub fn contract_operation_versioned_verifier_key(
+		vk: transient_crypto::proofs::VerifierKey,
+	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
+		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
 	}
 
 	pub fn signature_verifying_key(
@@ -213,6 +231,17 @@ pub mod ledger_9 {
 		let ir = ir_source
 			.map(|bytes| ledger_storage::arena::Sp::new(onchain_runtime::state::IrBuf(bytes)));
 		onchain_runtime::state::ContractOperation::new(vk, ir)
+	}
+
+	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
+	/// Ledger 9 stores newly deployed verifier keys in the `v3` slot (`ContractOperation::new`
+	/// above), which is the `V4` (zk-stdlib v2) variant taking the 3.x
+	/// `transient_crypto::proofs::VerifierKey` this module deserializes. The `V3` variant is
+	/// reserved for legacy 2.x (`transient_crypto_old`) keys.
+	pub fn contract_operation_versioned_verifier_key(
+		vk: transient_crypto::proofs::VerifierKey,
+	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
+		mn_ledger::structure::ContractOperationVersionedVerifierKey::V4(vk)
 	}
 
 	pub fn signature_verifying_key(
