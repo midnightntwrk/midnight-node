@@ -82,11 +82,12 @@ pub struct BlockDataSourceImpl {
 	/// Block producers SHOULD take this parameter into account.
 	/// Block verification uses this value to determine if their observed Cardano tip is recent enough,
 	/// when verified block references unstable Cardano block.
-	/// Bigger value of this parameter makes attack on partner-chain liveness not feasible.
+	/// Bigger value of this parameter across both block producers and validators makes attacks on partner-chain liveness not feasible.
 	/// Recommended value is 10, that add 200 seconds of lag in observing Cardano, but is also safe unless Cardano tip is not older then 200 seconds.
 	block_stability_margin: u32,
 	/// Maximum tolerated age of the latest observed Cardano block before our view of
 	/// Cardano is considered stale by [Self::is_cardano_ok].
+	/// Should be set to block_stability_margin * expected block time.
 	max_latest_block_age_seconds: u32,
 	/// Number of contiguous Cardano blocks to be cached by this data source
 	cache_size: u16,
@@ -421,15 +422,7 @@ impl BlockDataSourceImpl {
 		let max_allowed_time = self.max_allowed_block_time(reference_timestamp);
 		let is_time_valid = self.is_stable_block_time_valid(&block, reference_timestamp);
 
-		if !is_stable {
-			return Err(StableBlockByHashError::NotStableYet {
-				hash,
-				block_no: block.block_no.0,
-				required_latest_block_no: required_latest_block_no.0,
-				latest_block_no: latest_block.block_no.0,
-				block,
-			});
-		}
+		// Check for timestamps relation first, because TimestampOutOfRange is final error, but NotStableYet is transient one.
 		if !is_time_valid {
 			return Err(StableBlockByHashError::TimestampOutOfRange {
 				hash,
@@ -437,6 +430,15 @@ impl BlockDataSourceImpl {
 				min_allowed_time,
 				max_allowed_time,
 				reference_timestamp,
+				block,
+			});
+		}
+		if !is_stable {
+			return Err(StableBlockByHashError::NotStableYet {
+				hash,
+				block_no: block.block_no.0,
+				required_latest_block_no: required_latest_block_no.0,
+				latest_block_no: latest_block.block_no.0,
 				block,
 			});
 		}
