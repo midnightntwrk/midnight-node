@@ -55,6 +55,19 @@ pub struct DustRegistrationBuilder {
 }
 
 impl DustRegistrationBuilder {
+	/// Build the registration *without* a signature. The registration must be attached to
+	/// its intent before signing, because under ledger 9-rc.3 the registration's fields are
+	/// part of the intent's `data_to_sign` — see [`Self::build`], which signs over the
+	/// (already-assembled) intent.
+	pub fn build_unsigned<D: DB>(&self) -> DustRegistration<Signature, D> {
+		DustRegistration {
+			night_key: signature_verifying_key(self.signing_key.verifying_key()),
+			dust_address: self.dust_address.map(|address| Sp::new(address)),
+			allow_fee_payment: self.allow_fee_payment,
+			signature: None,
+		}
+	}
+
 	pub fn build<
 		D: DB + Clone,
 		P: ProofKind<D>,
@@ -301,13 +314,27 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			Some(intent) => (*intent).clone(),
 			None => Intent::empty(&mut rng, ttl),
 		};
+		// Attach the registrations unsigned first: under ledger 9-rc.3 the registration
+		// fields are part of the intent's `data_to_sign`, so they must be present on the
+		// intent before each registration is signed (mirrors `Transaction::sign`).
+		let unsigned_registrations = self
+			.dust_registrations
+			.iter()
+			.map(|registration| registration.build_unsigned())
+			.collect::<Vec<DustRegistration<Signature, D>>>();
+		intent.dust_actions = Some(Sp::new(DustActions {
+			spends: spends.to_vec().into(),
+			registrations: unsigned_registrations.into(),
+			ctime: now,
+		}));
+
+		// Now sign over the fully-assembled intent.
 		let registrations = self
 			.dust_registrations
 			.iter()
 			.map(|registration| registration.build(&intent, &mut rng, segment_id))
 			.collect::<Vec<_>>()
 			.into();
-
 		intent.dust_actions = Some(Sp::new(DustActions {
 			spends: spends.to_vec().into(),
 			registrations,
