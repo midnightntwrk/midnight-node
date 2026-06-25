@@ -19,8 +19,8 @@ use super::{
 	Intent, Offer, OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind,
 	ProofMarker, ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen,
 	SeedableRng, Segment, SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp,
-	SplittableRng, StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, WalletSeed,
-	serialize, signature_verifying_key, transaction_signature,
+	SplittableRng, StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, UnshieldedOffer,
+	WalletSeed, serialize, signature_verifying_key, transaction_signature,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -314,9 +314,9 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			Some(intent) => (*intent).clone(),
 			None => Intent::empty(&mut rng, ttl),
 		};
-		// Attach the registrations unsigned first: under ledger 9-rc.3 the registration
-		// fields are part of the intent's `data_to_sign`, so they must be present on the
-		// intent before each registration is signed (mirrors `Transaction::sign`).
+		// Attach the registrations + spends unsigned first: under ledger 9-rc.3 these dust
+		// fields are folded into the intent's `data_to_sign`, so the whole intent must be
+		// assembled before anything in it is signed (mirrors the ledger's `Intent::sign`).
 		let unsigned_registrations = self
 			.dust_registrations
 			.iter()
@@ -328,11 +328,54 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			ctime: now,
 		}));
 
-		// Now sign over the fully-assembled intent.
+		// Compute `data_to_sign` once over the fully-assembled intent.
+		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+
+		// Re-sign the unshielded offers. Their signatures were produced by `IntentInfo::build`
+		// — before `dust_actions` existed — so they no longer match `data_to_sign` and would
+		// otherwise fail validation with `IntentSignatureVerificationFailure`. The signing keys
+		// come from the `IntentInfo` still held for this segment.
+		let (guaranteed_signing_keys, fallible_signing_keys) = self
+			.intents
+			.get(&segment_id)
+			.map(|intent_info| intent_info.unshielded_signing_keys(self.context.clone()))
+			.unwrap_or_default();
+		let resign_offer = |offer: &Option<Sp<UnshieldedOffer<Signature, D>, D>>,
+		                    signing_keys: &[SigningKey],
+		                    rng: &mut StdRng|
+		 -> Option<Sp<UnshieldedOffer<Signature, D>, D>> {
+			offer.as_ref().map(|offer| {
+				let signatures = offer
+					.inputs
+					.iter()
+					.zip(signing_keys)
+					.map(|(_input, signing_key)| {
+						transaction_signature(signing_key.sign(rng, &data_to_sign))
+					})
+					.collect::<Vec<_>>();
+				Sp::new(UnshieldedOffer {
+					inputs: offer.inputs.clone(),
+					outputs: offer.outputs.clone(),
+					signatures: signatures.into(),
+				})
+			})
+		};
+		intent.guaranteed_unshielded_offer =
+			resign_offer(&intent.guaranteed_unshielded_offer, &guaranteed_signing_keys, &mut rng);
+		intent.fallible_unshielded_offer =
+			resign_offer(&intent.fallible_unshielded_offer, &fallible_signing_keys, &mut rng);
+
+		// Sign the dust registrations over the same `data_to_sign`.
 		let registrations = self
 			.dust_registrations
 			.iter()
-			.map(|registration| registration.build(&intent, &mut rng, segment_id))
+			.map(|registration| {
+				let mut reg = registration.build_unsigned();
+				reg.signature = Some(Sp::new(transaction_signature(
+					registration.signing_key.sign(&mut rng, &data_to_sign),
+				)));
+				reg
+			})
 			.collect::<Vec<_>>()
 			.into();
 		intent.dust_actions = Some(Sp::new(DustActions {
