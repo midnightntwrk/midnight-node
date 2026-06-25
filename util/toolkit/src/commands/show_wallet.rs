@@ -15,6 +15,11 @@ pub struct WalletInfoJson {
 	pub coins: HashMap<String, QualifiedInfoSer>,
 	pub utxos: Vec<UtxoSer>,
 	pub dust_utxos: Vec<QualifiedDustOutputSer>,
+	/// NIGHT block rewards currently claimable by this wallet's unshielded address.
+	pub claimable_block_rewards: u128,
+	/// NIGHT from Cardano-bridge transfers currently claimable by this wallet's unshielded
+	/// address (amount already net of the bridge fee).
+	pub claimable_bridge_transfers: u128,
 }
 
 #[derive(Debug)]
@@ -218,27 +223,27 @@ mod tests {
 	}
 
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000001", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-1"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000002", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-2"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000003", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-3"
 	)]
 	#[test_case(test_fixture!("a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-4"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000005", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if utxos.is_empty() && coins.is_empty() && dust_utxos.is_empty();
 		"unfunded-unshielded-seed"
 	)]

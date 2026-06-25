@@ -378,6 +378,22 @@ pub trait LedgerBridge {
 	}
 
 	/*
+	 * Returns the unclaimed Cardano-bridge transfer amount for a provided beneficiary address
+	 */
+	// Current Enabled Version
+	fn get_bridge_receiving_amount(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		beneficiary: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_bridge_receiving_amount(state_key, beneficiary)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_bridge_receiving_amount(state_key, beneficiary)
+		}
+	}
+
+	/*
 	 * Returns the Ledger Parameters
 	 */
 	// Current Enabled Version
