@@ -73,6 +73,16 @@ pub mod ledger_7 {
 		onchain_runtime::state::ContractOperation::new(vk)
 	}
 
+	/// Builds a contract operation for a v1 (zk-stdlib v1 / 2.x) circuit. Pre-ledger-9
+	/// ledgers are single-stack, so this is identical to `contract_operation_new` (the
+	/// crate's `transient_crypto` already IS the 2.x stack here).
+	pub fn contract_operation_new_v1(
+		vk: Option<transient_crypto::proofs::VerifierKey>,
+		ir_source: Option<Vec<u8>>,
+	) -> onchain_runtime::state::ContractOperation {
+		contract_operation_new(vk, ir_source)
+	}
+
 	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
 	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
 	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
@@ -150,6 +160,16 @@ pub mod ledger_8 {
 		_ir_source: Option<Vec<u8>>,
 	) -> onchain_runtime::state::ContractOperation {
 		onchain_runtime::state::ContractOperation::new(vk)
+	}
+
+	/// Builds a contract operation for a v1 (zk-stdlib v1 / 2.x) circuit. Pre-ledger-9
+	/// ledgers are single-stack, so this is identical to `contract_operation_new` (the
+	/// crate's `transient_crypto` already IS the 2.x stack here).
+	pub fn contract_operation_new_v1(
+		vk: Option<transient_crypto::proofs::VerifierKey>,
+		ir_source: Option<Vec<u8>>,
+	) -> onchain_runtime::state::ContractOperation {
+		contract_operation_new(vk, ir_source)
 	}
 
 	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
@@ -231,6 +251,22 @@ pub mod ledger_9 {
 		let ir = ir_source
 			.map(|bytes| ledger_storage::arena::Sp::new(onchain_runtime::state::IrBuf(bytes)));
 		onchain_runtime::state::ContractOperation::new(vk, ir)
+	}
+
+	/// Builds a contract operation for a v1 (zk-stdlib v1 / 2.x) circuit. Ledger 9's
+	/// `ContractOperation` is dual-stack: v1 circuits (V2 proofs) verify against the
+	/// `v2` slot — a `transient_crypto_old` (2.x) key — whereas `contract_operation_new`
+	/// targets the `v3` (3.x) slot used by v2 circuits. `::transient_crypto` is the
+	/// workspace 2.x crate, the same type as `ContractOperation::v2`.
+	pub fn contract_operation_new_v1(
+		vk: Option<::transient_crypto::proofs::VerifierKey>,
+		ir_source: Option<Vec<u8>>,
+	) -> onchain_runtime::state::ContractOperation {
+		let ir = ir_source
+			.map(|bytes| ledger_storage::arena::Sp::new(onchain_runtime::state::IrBuf(bytes)));
+		let mut op = onchain_runtime::state::ContractOperation::new(None, ir);
+		op.v2 = vk;
+		op
 	}
 
 	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.

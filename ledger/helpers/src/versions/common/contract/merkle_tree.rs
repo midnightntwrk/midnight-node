@@ -26,7 +26,7 @@ use super::{
 	ChargedState, Contract, ContractMaintenanceAuthority, ContractState, EntryPointBuf,
 	HashMapStorage as HashMap, HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key,
 	KeyLocation, MerkleTree, PreTranscript, QueryContext, Rng, StateValue, VerifyingKey, key,
-	leaf_hash, partition_transcripts, stval, verifier_key,
+	leaf_hash, partition_transcripts, stval,
 };
 
 #[cfg(feature = "test-utils")]
@@ -80,12 +80,17 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 		rng: &mut StdRng,
 	) -> ContractDeploy<D> {
 		let root = MerkleTree::<()>::blank(10).root();
-		let store_op = super::super::contract_operation_new(
-			verifier_key(self.resolver, "store").await,
+		// simple-merkle-tree is a zk-stdlib v1 circuit, so its stored verifier keys are
+		// 2.x (transient_crypto_old) keys. Load them as such and place them in the v1
+		// slot — under ledger 9 that is `ContractOperation::v2`, which V2 proofs verify
+		// against. Using the 3.x `verifier_key`/`contract_operation_new` here fails to
+		// deserialize the keys and yields `VerifierKeyNotSet`.
+		let store_op = super::super::contract_operation_new_v1(
+			super::super::verifier_key_v1(self.resolver, "store").await,
 			super::super::ir_source(self.resolver, "store").await,
 		);
-		let check_op = super::super::contract_operation_new(
-			verifier_key(self.resolver, "check").await,
+		let check_op = super::super::contract_operation_new_v1(
+			super::super::verifier_key_v1(self.resolver, "check").await,
 			super::super::ir_source(self.resolver, "check").await,
 		);
 
