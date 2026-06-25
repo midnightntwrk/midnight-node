@@ -290,7 +290,8 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 			// only `V3` (2.x key), while ledger 9 stores newly deployed keys in the `V4`
 			// (zk-stdlib v2 / 3.x) slot. `contract_operation_versioned_verifier_key` selects the
 			// right variant for the active ledger generation.
-			entrypoints_to_insert.push((entrypoint, contract_operation_versioned_verifier_key(key)));
+			entrypoints_to_insert
+				.push((entrypoint, contract_operation_versioned_verifier_key(key)));
 		}
 
 		if entrypoints_to_remove.is_empty()
