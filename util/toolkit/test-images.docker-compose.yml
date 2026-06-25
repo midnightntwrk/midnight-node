@@ -16,7 +16,7 @@ services:
       guard:
         condition: service_completed_successfully
   indexer-standalone:
-    image: ${INDEXER_STANDALONE_IMAGE:-midnightntwrk/indexer-standalone:latest}
+    image: ${INDEXER_STANDALONE_IMAGE:-midnightntwrk/indexer-standalone:4.4.0-pre-alpha.11-l91r2-n2r1-bridge-and-events-epics-f5deb45}
     depends_on:
       guard:
         condition: service_completed_successfully

@@ -44,9 +44,11 @@ use testcontainers::{
 /// `show_wallet` unit tests assert is funded.
 const FUNDED_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 const NETWORK: &str = "undeployed";
-/// 32-byte hex secret the indexer uses to encrypt its wallet session store. Any value works for a
-/// throwaway standalone instance.
-const INDEXER_SECRET: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+/// 32-byte (64 hex char) secret the indexer uses to encrypt its wallet session store. Any valid
+/// hex works for a throwaway standalone instance, but it MUST contain a non-digit hex char: the
+/// indexer's config loader does `try_parsing` on `APP__` env vars, so an all-numeric value is
+/// coerced to an integer and rejected ("expected a string for key INFRA.SECRET").
+const INDEXER_SECRET: &str = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
 #[tokio::test]
 async fn indexer_show_wallet_reports_genesis_balances() {
