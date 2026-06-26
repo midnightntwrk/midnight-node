@@ -167,7 +167,12 @@ tokio-util = { version = "0.7", features = ["compat"] }
 substrate-build-script-utils.workspace = true
 
 [features]
-default = []
+default = ["iroh-transport"]
+
+# Experimental: build the node with the iroh (QUIC) base transport enabled in the
+# libp2p network backend (NAT traversal / relay fallback evaluation). Off by default;
+# pulls in the heavy iroh dependency tree from the SDK fork.
+iroh-transport = ["sc-network/with-iroh"]
 
 # Dependencies that are only required if runtime benchmarking should be build.
 runtime-benchmarks = [
