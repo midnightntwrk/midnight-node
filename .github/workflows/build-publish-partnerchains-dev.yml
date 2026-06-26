@@ -43,4 +43,4 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --ci --push +partnerchains-dev
+          . ./.envrc && earth --ci --push +partnerchains-dev

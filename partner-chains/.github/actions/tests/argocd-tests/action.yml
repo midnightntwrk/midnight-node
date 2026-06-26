@@ -75,12 +75,12 @@ runs:
         role-to-assume: ${{ env.AWS_ROLE_ARN_ }}
         aws-region: "eu-central-1"
 
-    - name: Setup earthly
-      uses: earthly/actions-setup@v1
+    - name: Setup EarthBuild
+      uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
       with:
         github-token: ${{ github.token }}
         use-cache: false
-        version: ^0.8.0
+        version: v0.8.17
 
     - name: Run Tests
       env:
@@ -91,7 +91,7 @@ runs:
         JOB_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
       run: |
         cd e2e-tests
-        earthly --secret AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
+        earth --secret AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
                 --secret AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
                 --secret AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
                 --secret SLACK_WEBHOOK_URL="$SLACK_WEBHOOK_URL" \

@@ -57,7 +57,7 @@ jobs:
       - name: Run build
         if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earthly --ci +check
+          . ./.envrc && earth --ci +check
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -102,7 +102,7 @@ jobs:
       - name: Run feature unification check
         if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earthly --ci +check-feature-unification
+          . ./.envrc && earth --ci +check-feature-unification
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

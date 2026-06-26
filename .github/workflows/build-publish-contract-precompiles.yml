@@ -32,7 +32,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      # Install Earthly
+      # Install EarthBuild
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
           version: v0.8.17
@@ -59,8 +59,8 @@ jobs:
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
-      # Run Earthly build with platform-specific flags
-      - name: Run Earthly build for linux/${{ matrix.platform }}
+      # Run EarthBuild with platform-specific flags
+      - name: Run EarthBuild for linux/${{ matrix.platform }}
         id: version
         env:
           PLATFORM: ${{ matrix.platform }}
@@ -70,7 +70,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --platform="linux/$PLATFORM" --push +node-ci-image-single-platform
+          . ./.envrc && earth --platform="linux/$PLATFORM" --push +node-ci-image-single-platform
 
           RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
           COMPACTC_VERSION=$(cat COMPACTC_VERSION)

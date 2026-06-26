@@ -93,7 +93,7 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly -P \
+          . ./.envrc && earth -P \
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \

@@ -12,7 +12,7 @@ on:
         description: 'Space-separated network names (e.g., "qanet preview")'
         required: true
       version:
-        description: 'Optional node image version (e.g., "0.22.0") — sets --NODE_IMAGE on earthly'
+        description: 'Optional node image version (e.g., "0.22.0") — sets --NODE_IMAGE on EarthBuild'
         required: false
 
 jobs:
@@ -129,7 +129,7 @@ jobs:
             fi
           done
 
-      - name: Setup Earthly
+      - name: Setup EarthBuild
         uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
           version: v0.8.17
@@ -159,10 +159,10 @@ jobs:
             echo "Using node image: $NODE_IMAGE"
           fi
 
-          # Split networks and run earthly for each
+          # Split networks and run EarthBuild for each
           for network in $NETWORKS; do
             echo "Rebuilding chainspec for network: $network"
-            earthly -P +rebuild-chainspec --NETWORK="$network" --NODE_IMAGE="$NODE_IMAGE"
+            earth -P +rebuild-chainspec --NETWORK="$network" --NODE_IMAGE="$NODE_IMAGE"
           done
 
       - name: Commit and push changes

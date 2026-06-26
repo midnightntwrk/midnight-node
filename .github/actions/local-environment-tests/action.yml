@@ -45,23 +45,23 @@ outputs: {}
 runs:
   using: "composite"
   steps:
-    - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+    - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
       with:
         version: v0.8.17
         use-cache: false
 
-    # Match the tls_enabled: false setting the other self-hosted earthly jobs apply
-    # (run / test-toolkit). Without this, this action's earthly invocation has a
-    # different settings hash than the one already running on the host, and earthly's
+    # Match the tls_enabled: false setting the other self-hosted EarthBuild jobs apply
+    # (run / test-toolkit). Without this, this action's 'earth' invocation has a
+    # different settings hash than the one already running on the host, and EarthBuild's
     # reuse-or-recycle logic SIGTERMs the existing buildkitd — taking down any
-    # concurrent earthly build on the same host. Still required after the WITH DOCKER
-    # flip: it governs the *outer* earthly/buildkitd, which we deliberately keep shared.
-    - name: Disable earthly TLS (self-hosted runner has no certs)
+    # concurrent EarthBuild on the same host. Still required after the WITH DOCKER
+    # flip: it governs the *outer* EarthBuild/buildkitd, which we deliberately keep shared.
+    - name: Disable EarthBuild TLS (self-hosted runner has no certs)
       shell: bash
       run: |
         echo "    tls_enabled: false" >> .earthly/config.yml
 
-    # GHCR auth for earthly's `--pull` of the private node / indexer / toolkit images
+    # GHCR auth for EarthBuild's `--pull` of the private node / indexer / toolkit images
     # into the nested DinD daemon (writes to the per-slot DOCKER_CONFIG the caller set).
     - name: Docker Login
       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee  #v4.2.0
@@ -82,12 +82,12 @@ runs:
         password: ${{ inputs.dockerhub-password }}
 
     # The WHOLE premerge surface — stack bring-up → verify-finality → e2e suite →
-    # toolkit multi-dest E2E — now runs INSIDE earthly's nested dockerd (+local-env-ci,
+    # toolkit multi-dest E2E — now runs INSIDE EarthBuild's nested dockerd (+local-env-ci,
     # needs `-P`). The nested daemon is ephemeral and per-invocation, so there are no
     # leftover host containers to reclaim and no fixed host ports to collide on — which
     # is why the caller drops the repo-wide concurrency group. No host-side node/just/npm
     # setup is needed (it all lives inside the target). Source .envrc so EARTHLY_CONFIG
-    # matches the other self-hosted jobs (else earthly recycles the shared buildkitd).
+    # matches the other self-hosted jobs (else EarthBuild recycles the shared buildkitd).
     - name: Deploy + test against local environment (nested dockerd)
       shell: bash
       env:
@@ -100,7 +100,7 @@ runs:
         DOCKERHUB_TOKEN: ${{ inputs.dockerhub-password }}
       run: |
         . ./.envrc
-        earthly -P \
+        earth -P \
           --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
           --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
           +local-env-ci \

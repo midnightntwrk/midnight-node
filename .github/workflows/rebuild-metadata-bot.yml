@@ -83,7 +83,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Setup Earthly
+      - name: Setup EarthBuild
         uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
           version: v0.8.17
@@ -104,7 +104,7 @@ jobs:
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-          earthly -P +rebuild-metadata
+          earth -P +rebuild-metadata
 
       - name: Commit and push changes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
