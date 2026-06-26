@@ -14,6 +14,12 @@ VERSION 0.8
 # the builtin resolves to the literal string `HEAD` across every PR.
 ARG --global CACHE_KEY=local
 
+# Enable the `kache` content-addressed rustc build cache (https://github.com/kunobi-ninja/kache).
+# It is installed and wired up as RUSTC_WRAPPER in `+prep-no-copy` (inherited by every
+# Rust-compiling target) and backed by per-variant `kache-{check,prep,build}` CACHE mounts
+# those targets declare. Set `--USE_KACHE=false` to build with a plain rustc and no wrapper.
+ARG --global USE_KACHE=true
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -143,6 +149,8 @@ subxt:
 # build-node-only builds only the midnight-node binary
 build-node-only:
     FROM +build-prepare
+    # Per-variant kache store (see USE_KACHE, top of file); shared with +build (release).
+    CACHE --sharing shared --id kache-build /kache
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
@@ -197,6 +205,9 @@ rebuild-sqlx:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
+    # scoped per build flavor so concurrent targets don't share one daemon/store.
+    CACHE --sharing shared --id kache-prep /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped.
     CACHE --id target-${CACHE_KEY} /target
     COPY local-environment/localenv_postgres.password .
@@ -765,6 +776,31 @@ prep-no-copy:
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
 
+    # kache: content-addressed rustc build cache (https://github.com/kunobi-ninja/kache).
+    # Installed here so every target that `FROM +prep-no-copy` (incl. +prep, +build-prepare,
+    # +check-rust-prepare) inherits the wrapper. Keyed on actual compile inputs, so it shares
+    # compiled artifacts across the per-CACHE_KEY scoped `/target` dirs and across Earthly runs
+    # via the per-variant `kache-*` CACHE mounts the compile targets declare. Local-only (no S3),
+    # and KACHE_FALLBACK makes any kache error transparently fall back to plain rustc, so a kache
+    # problem can never break the build. Static-musl binary -> works in any Linux base image.
+    # renovate: datasource=github-releases packageName=kunobi-ninja/kache
+    ARG KACHE_VERSION=0.7.0
+    IF [ "$USE_KACHE" = "true" ]
+        RUN ARCH=$(uname -m) && \
+            BASE="https://github.com/kunobi-ninja/kache/releases/download/v${KACHE_VERSION}" && \
+            ASSET="kache-${ARCH}-unknown-linux-musl.tar.gz" && \
+            curl -fsSL "${BASE}/${ASSET}" -o /tmp/kache.tar.gz && \
+            curl -fsSL "${BASE}/${ASSET}.sha256" -o /tmp/kache.sha256 && \
+            echo "$(awk '{print $1}' /tmp/kache.sha256)  /tmp/kache.tar.gz" | sha256sum -c - && \
+            tar -xzf /tmp/kache.tar.gz -C /usr/local/bin kache && \
+            rm -f /tmp/kache.tar.gz /tmp/kache.sha256 && \
+            kache --version
+        ENV RUSTC_WRAPPER=kache
+        ENV KACHE_CACHE_DIR=/kache
+        ENV KACHE_LOCAL_ONLY=1
+        ENV KACHE_FALLBACK=1
+    END
+
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
@@ -933,6 +969,9 @@ planner:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
+    # scoped per build flavor so concurrent targets don't share one daemon/store.
+    CACHE --sharing shared --id kache-prep /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped.
     CACHE --id target-${CACHE_KEY} /target
     RUN cargo chef prepare --recipe-path recipe.json
@@ -944,6 +983,9 @@ check-rust-prepare:
     # COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
+    # scoped per build flavor so concurrent targets don't share one daemon/store.
+    CACHE --sharing shared --id kache-check /kache
 
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
@@ -952,6 +994,9 @@ check-rust:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
+    # scoped per build flavor so concurrent targets don't share one daemon/store.
+    CACHE --sharing shared --id kache-check /kache
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -973,6 +1018,9 @@ check-feature-unification:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
+    # scoped per build flavor so concurrent targets don't share one daemon/store.
+    CACHE --sharing shared --id kache-check /kache
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -1011,6 +1059,9 @@ test:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
+    # scoped per build flavor so concurrent targets don't share one daemon/store.
+    CACHE --sharing shared --id kache-prep /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped.
     CACHE --id target-${CACHE_KEY} /target
 
@@ -1063,6 +1114,9 @@ test-pallet-fixtures:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
+    # scoped per build flavor so concurrent targets don't share one daemon/store.
+    CACHE --sharing shared --id kache-prep /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped.
     CACHE --id target-${CACHE_KEY} /target
 
@@ -1090,6 +1144,9 @@ build-test-toolkit:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
+    # scoped per build flavor so concurrent targets don't share one daemon/store.
+    CACHE --sharing shared --id kache-prep /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped.
     CACHE --id target-${CACHE_KEY} /target
 
@@ -1211,6 +1268,9 @@ build:
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
+    # `/target` cache stays off here (clean release artifacts), but the content-addressed
+    # kache store can still serve compiled units from earlier release builds.
+    CACHE --sharing shared --id kache-build /kache
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
 
@@ -1239,6 +1299,8 @@ build:
 
 build-benchmarks:
     FROM +build-prepare
+    # Per-variant kache store (see USE_KACHE, top of file); shared with +build (release).
+    CACHE --sharing shared --id kache-build /kache
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
