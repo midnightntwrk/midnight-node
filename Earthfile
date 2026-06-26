@@ -799,6 +799,22 @@ prep-no-copy:
         ENV KACHE_CACHE_DIR=/kache
         ENV KACHE_LOCAL_ONLY=1
         ENV KACHE_FALLBACK=1
+
+        # Make cargo-auditable compatible with kache as RUSTC_WRAPPER.
+        # `cargo auditable build` injects itself as RUSTC_WORKSPACE_WRAPPER (set to
+        # `current_exe()`), so cargo invokes the chain `kache <workspace-wrapper> <rustc> …`.
+        # kache only switches into its rustc-wrapper path when the wrapped binary's basename
+        # is rustc-family (`rustc*`/`clippy-driver`; see RustcCompiler::recognizes) — a plain
+        # `cargo-auditable` basename falls through to clap and dies with
+        # "unrecognized subcommand '/…/cargo-auditable'". Rename the real binary to a
+        # rustc-prefixed name (so RUSTC_WORKSPACE_WRAPPER resolves to `…/rustc-auditable`,
+        # which kache recognises and runs in its double-wrapper mode) and keep a
+        # `cargo-auditable` symlink so the `cargo auditable` subcommand is still found on PATH.
+        # cargo-auditable picks its mode from argv[1]/CARGO_AUDITABLE_ORIG_ARGS, not its own
+        # name, so the rename is transparent to it.
+        RUN ca="$(command -v cargo-auditable)" && dir="$(dirname "$ca")" && \
+            mv "$ca" "$dir/rustc-auditable" && \
+            ln -s rustc-auditable "$dir/cargo-auditable"
     END
 
 prep:
