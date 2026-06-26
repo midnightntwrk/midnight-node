@@ -82,7 +82,7 @@ zswap = { version = "=7.0.3", package = "midnight-zswap" }
 # (2.x), so it proves L7/L8 (v1 circuits) and L9 (v1/v2) alike. The rc.2-era renamed `zkir-2-1`
 # crate is gone: rc.3 dropped the separate 2.x zkir, and its frozen `Zkir` impl can't satisfy
 # transient-crypto 2.2.0's new tagged-IR trait methods.
-zkir = { version = "^2.1.0", package = "midnight-zkir" }
+zkir = { version = "^2.2.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
 # coin-structure and transient-crypto (2.x) share versions with L7 so reuse those entries.
