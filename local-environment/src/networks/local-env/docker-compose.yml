@@ -75,6 +75,33 @@ services:
     cap_drop:
       - ALL
 
+  # Seeds the Cardano side of the cNIGHT<->NIGHT bridge so the cross-chain pool
+  # invariants hold at genesis (midnight-node#1773 / #1778). Runs after the ICS /
+  # Reserve validators are deployed (needs their addresses) and before midnight-setup
+  # captures the bridge observation checkpoint (so the seeded ICS cNIGHT is treated
+  # as pre-existing locked supply). Uses the cardano image for cardano-cli.
+  cnight-seeder:
+    container_name: cnight-seeder
+    image: ${CARDANO_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+      contract-compiler:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - cardano-node-1-data:/data
+      - ./runtime-values:/runtime-values
+      - ./configurations/busybox:/busybox
+      - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
+      - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
+      - ./configurations/cnight-seeder/seed-cnight.sh:/seed-cnight.sh
+    environment:
+      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+    entrypoint: ["/bin/bash", "/seed-cnight.sh"]
+
   kupo:
     container_name: kupo
     image: ${KUPO_IMAGE}
@@ -484,6 +511,8 @@ services:
       ogmios:
         condition: service_healthy
       contract-compiler:
+        condition: service_completed_successfully
+      cnight-seeder:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true

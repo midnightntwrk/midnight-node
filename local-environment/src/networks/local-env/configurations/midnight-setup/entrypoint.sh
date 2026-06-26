@@ -54,6 +54,14 @@ COUNCIL_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Council Forever") | .addr
 TECHAUTH_POLICY_ID=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .scriptHash' $CONTRACT_INFO)
 TECHAUTH_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .address' $CONTRACT_INFO)
 CNIGHT_MAPPING_VALIDATOR_ADDRESS=$(jq -r '.[] | select(.name == "cNIGHT Generates Dust") | .address' $CONTRACT_INFO)
+# The bridge's ICS / Reserve validators are the immutable "Forever" proxies that
+# hold the locked / reserved cNIGHT. Their addresses are parameterised by a fresh
+# one-shot UTxO each compile, so the static res/local-environment/{ics,reserve}-config.json
+# addresses are stale — patch the deployed addresses from contracts-info.json below
+# (mirrors the Council / Tech-Auth patching), so the bridge observes the same
+# addresses the cnight-seeder funds and the e2e monitor reads.
+ICS_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "ICS Forever") | .address' $CONTRACT_INFO)
+RESERVE_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "Reserve Forever") | .address' $CONTRACT_INFO)
 export PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.[] | select(.name == "Federated Ops Forever") | .scriptHash' $CONTRACT_INFO)
 export GENESIS_UTXO="0000000000000000000000000000000000000000000000000000000000000000#0"
 
@@ -148,6 +156,23 @@ EOF
 echo "Created c2m-bridge-config.json:"
 cat /tmp/c2m-bridge-config.json
 
+# Patch the ICS / Reserve validator addresses with the freshly-deployed ones so the
+# bridge observes the real "Forever" validators (the static config addresses are
+# stale — see above). These must match the addresses the cnight-seeder funded.
+echo "Patching ics-config.json / reserve-config.json with deployed validator addresses..."
+echo "  ICS Forever address:     $ICS_FOREVER_ADDRESS"
+echo "  Reserve Forever address: $RESERVE_FOREVER_ADDRESS"
+jq --arg addr "$ICS_FOREVER_ADDRESS" \
+   '.illiquid_circulation_supply_validator_address = $addr' \
+   res/local-environment/ics-config.json > /tmp/ics-config.json
+jq --arg addr "$RESERVE_FOREVER_ADDRESS" \
+   '.reserve_validator_address = $addr' \
+   res/local-environment/reserve-config.json > /tmp/reserve-config.json
+echo "Patched ics-config.json:"
+cat /tmp/ics-config.json
+echo "Patched reserve-config.json:"
+cat /tmp/reserve-config.json
+
 export CHAINSPEC_NAME=localenv1
 export CHAINSPEC_ID=undeployed
 export CHAINSPEC_GENESIS_STATE=res/genesis/genesis_state_undeployed.mn
@@ -156,8 +181,8 @@ export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 comp
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
 export CHAINSPEC_CNIGHT_GENESIS=/tmp/cnight-config.json
-export CHAINSPEC_ICS_CONFIG=res/local-environment/ics-config.json
-export CHAINSPEC_RESERVE_CONFIG=res/local-environment/reserve-config.json
+export CHAINSPEC_ICS_CONFIG=/tmp/ics-config.json
+export CHAINSPEC_RESERVE_CONFIG=/tmp/reserve-config.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 export CHAINSPEC_PERMISSIONED_CANDIDATES_CONFIG=/tmp/permissioned-candidates-config.json
