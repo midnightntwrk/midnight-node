@@ -188,8 +188,7 @@ pub async fn ir_source(resolver: &Resolver, name: &'static str) -> Option<Vec<u8
 	Some(material.ir_source)
 }
 
-/// Resolves a circuit's verifier key by name. Ledger 9.1 (rc.3) dropped this from
-/// upstream `test_utilities`; provided here so it works across all ledger versions.
+/// Resolves a circuit's verifier key by name.
 pub async fn verifier_key(
 	resolver: &Resolver,
 	name: &'static str,

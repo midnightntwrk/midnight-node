@@ -56,9 +56,7 @@ pub struct DustRegistrationBuilder {
 
 impl DustRegistrationBuilder {
 	/// Build the registration *without* a signature. The registration must be attached to
-	/// its intent before signing, because under ledger 9-rc.3 the registration's fields are
-	/// part of the intent's `data_to_sign` — see [`Self::build`], which signs over the
-	/// (already-assembled) intent.
+	/// its intent before signing.
 	pub fn build_unsigned<D: DB>(&self) -> DustRegistration<Signature, D> {
 		DustRegistration {
 			night_key: signature_verifying_key(self.signing_key.verifying_key()),
@@ -314,7 +312,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			Some(intent) => (*intent).clone(),
 			None => Intent::empty(&mut rng, ttl),
 		};
-		// Attach the registrations + spends unsigned first: under ledger 9-rc.3 these dust
+		// Attach the registrations + spends unsigned first: since ledger 9.1.0-rc.3 these dust
 		// fields are folded into the intent's `data_to_sign`, so the whole intent must be
 		// assembled before anything in it is signed (mirrors the ledger's `Intent::sign`).
 		let unsigned_registrations = self

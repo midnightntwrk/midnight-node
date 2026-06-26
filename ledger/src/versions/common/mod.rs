@@ -859,6 +859,7 @@ where
 										// This match is shared across ledger versions, so the variants
 										// can't be named here (they don't exist in L7/L8's SingleUpdate);
 										// they're not yet broken out in ContractCallsDetails telemetry.
+										// TODO: support IrInsert/IrRemove
 										#[allow(unreachable_patterns)]
 										_ => {},
 									}

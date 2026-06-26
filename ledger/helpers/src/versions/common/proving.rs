@@ -20,27 +20,9 @@ use super::{
 };
 use async_trait::async_trait;
 
-// `prove` must stay `Send` (the trait is a `#[async_trait]`, not `?Send`): the toolkit
-// `tokio::task::spawn`s proving (tx_generator batches.rs / claim_rewards.rs), which genuinely
-// needs a `Send` future. But L9 proving is non-Send: midnight-zkir 2.2.0's `LocalProvingProvider`
-// routes L9 through the 2.x (`transient_crypto_old`) `ProvingProvider`, whose `Resolver::resolve_key`
-// is a bare async-fn-in-trait (no `Send` bound). Because that's an RPITIT, its future is treated as
-// `!Send` across the trait boundary even when fully monomorphized — so a Send-clean resolver wrapper
-// can't fix it at the type level, and `tx.prove(..).await` here would taint this future.
-//
-// We bridge at the executor level instead (see `LocalProofServer::prove`): the `!Send` proving future
-// is built and driven to completion *inside* a `tokio::task::spawn_blocking` closure, on a dedicated
-// blocking-pool thread running its own current-thread tokio runtime, so the future never crosses a
-// thread boundary. `.await`ing the `spawn_blocking` handle yields the calling worker, so N
-// semaphore-bounded proofs run on N blocking-pool threads in real parallel even on the toolkit's
-// single-threaded runtime. This `async fn` body holds no non-Send state across an await point,
-// leaving the boxed future trivially `Send`.
-//
-// To make the closure `Send + 'static` (a `spawn_blocking` requirement), `resolver` is `&'static`
-// (the resolver is already a `lazy_static`, so this is no plumbing change) and `cost_model` is owned
-// (`CostModel` is `Clone`, so the few call sites just `.clone()`). `tx`/`rng`/the returned
-// `Transaction` are already `Send + 'static`, since this trait's `Send` future requires that anyway.
-// No upstream patch needed; this is independent of the transient-crypto-old `Send` fix.
+// Proving a transaction is mostly CPU-bound, however the `prove` method also
+// resolves keys for use during proving. These may come from remote sources, hence
+// the need for this method to be async.
 #[async_trait]
 pub trait ProofProvider<D: DB + Clone>: Send + Sync {
 	async fn prove(
