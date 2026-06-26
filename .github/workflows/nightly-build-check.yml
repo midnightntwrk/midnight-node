@@ -26,7 +26,7 @@ jobs:
 
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 

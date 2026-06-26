@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           # Keep `use-cache: false` — that flag controls whether EarthBuild
           # caches state into GitHub Actions cache (which sets up TLS-secured
@@ -251,7 +251,7 @@ jobs:
     steps:
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -405,7 +405,7 @@ jobs:
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -446,7 +446,7 @@ jobs:
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -507,7 +507,7 @@ jobs:
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -560,7 +560,7 @@ jobs:
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -809,7 +809,7 @@ jobs:
       - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR
