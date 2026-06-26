@@ -99,15 +99,20 @@ FAUCET_ADDR=$(cardano-cli latest address build \
   --testnet-magic "$NETWORK_MAGIC")
 echo "Faucet (circulating) address: $FAUCET_ADDR"
 
-# Pick the two largest pure-ADA UTxOs at the faucet: one to fund the tx, one for
-# Plutus-mint collateral. Retry while the funded address settles after the
-# contract-compiler's deployment transactions.
-TX_IN=""
-COLLATERAL=""
-for i in {1..30}; do
+# Mint the full cNIGHT supply and split it across the three pools in one tx.
+# Reserve/ICS are script addresses, so their outputs carry an inline unit datum
+# (matching tests/e2e/src/api/cardano.rs::make_bridge_transfer and lock_to_ics.sh).
+# No bridge metadata (label 6500973) -> these are not transfers.
+#
+# The funded address is churned by the contract-compiler's deployment txs, so a
+# UTxO selected one moment may be spent the next ("All inputs are spent"). Build,
+# sign and submit inside a retry loop that re-queries fresh pure-ADA UTxOs each
+# attempt (mirrors the resilience in tests/e2e/src/api/cardano.rs).
+SEED_TX_ID=""
+for attempt in {1..15}; do
   cardano-cli latest query utxo --testnet-magic "$NETWORK_MAGIC" \
     --address "$FAUCET_ADDR" --output-text > /tmp/faucet_utxos.txt || true
-  # Pure-ADA line: "<hash> <ix> <n> lovelace + TxOutDatumNone" (NF==6).
+  # Pick the two largest pure-ADA UTxOs: "<hash> <ix> <n> lovelace + TxOutDatumNone" (NF==6).
   read -r TX_IN COLLATERAL < <(/busybox awk '
     NR>2 && $4=="lovelace" && $6=="TxOutDatumNone" {
       v=$3+0; ref=$1"#"$2;
@@ -115,51 +120,57 @@ for i in {1..30}; do
       else if (v>m2) { m2=v; u2=ref }
     }
     END { print u1, u2 }' /tmp/faucet_utxos.txt)
-  if [ -n "$TX_IN" ] && [ -n "$COLLATERAL" ]; then
+  if [ -z "$TX_IN" ] || [ -z "$COLLATERAL" ]; then
+    echo "No two pure-ADA UTxOs at faucet yet (attempt $attempt/15); waiting..."
+    sleep 4
+    continue
+  fi
+  echo "Attempt $attempt/15: minting $TOTAL_MINT_STARS cNIGHT (R=$RESERVE_STARS / L=$ICS_STARS / U=$FAUCET_STARS)"
+  echo "  funding=$TX_IN collateral=$COLLATERAL"
+
+  if ! cardano-cli latest transaction build \
+      --testnet-magic "$NETWORK_MAGIC" \
+      --tx-in "$TX_IN" \
+      --tx-in-collateral "$COLLATERAL" \
+      --tx-out "$RESERVE_ADDR+$MIN_UTXO_LOVELACE + $RESERVE_STARS $POLICY_ID" \
+      --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
+      --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $ICS_STARS $POLICY_ID" \
+      --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
+      --tx-out "$FAUCET_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_STARS $POLICY_ID" \
+      --mint "$TOTAL_MINT_STARS $POLICY_ID" \
+      --mint-script-file "$CNIGHT_PLUTUS" \
+      --mint-redeemer-value "{}" \
+      --change-address "$FAUCET_ADDR" \
+      --out-file /tmp/seed-cnight.raw; then
+    echo "  build failed (stale UTxO?); re-querying after a short wait..."
+    sleep 4
+    continue
+  fi
+
+  cardano-cli latest transaction sign \
+    --tx-body-file /tmp/seed-cnight.raw \
+    --signing-key-file /keys/funded_address.skey \
+    --testnet-magic "$NETWORK_MAGIC" \
+    --out-file /tmp/seed-cnight.signed
+
+  # `transaction txid` may print either a bare hash or JSON ({"txhash":"..."});
+  # extract the 64-hex id either way.
+  txid=$(cardano-cli latest transaction txid --tx-file /tmp/seed-cnight.signed \
+    | /busybox grep -oE '[0-9a-f]{64}' | /busybox head -1)
+  echo "  submitting tx $txid ..."
+  if cardano-cli latest transaction submit \
+      --tx-file /tmp/seed-cnight.signed \
+      --testnet-magic "$NETWORK_MAGIC"; then
+    SEED_TX_ID="$txid"
     break
   fi
-  echo "Waiting for two pure-ADA UTxOs at faucet (attempt $i/30)..."
-  sleep 2
+  echo "  submit failed (inputs spent / churn); retrying with fresh UTxOs..."
+  sleep 4
 done
-if [ -z "$TX_IN" ] || [ -z "$COLLATERAL" ]; then
-  echo "ERROR: could not find two pure-ADA UTxOs at $FAUCET_ADDR"
-  cat /tmp/faucet_utxos.txt || true
+if [ -z "$SEED_TX_ID" ]; then
+  echo "ERROR: failed to submit the cNIGHT seeding tx after 15 attempts"
   exit 1
 fi
-echo "Funding UTxO:    $TX_IN"
-echo "Collateral UTxO: $COLLATERAL"
-
-# Mint the full cNIGHT supply and split it across the three pools in one tx.
-# Reserve/ICS are script addresses, so their outputs carry an inline unit datum
-# (matching tests/e2e/src/api/cardano.rs::make_bridge_transfer and lock_to_ics.sh).
-# No bridge metadata (label 6500973) -> these are not transfers.
-echo "Minting $TOTAL_MINT_STARS cNIGHT and distributing R=$RESERVE_STARS / L=$ICS_STARS / U=$FAUCET_STARS ..."
-cardano-cli latest transaction build \
-  --testnet-magic "$NETWORK_MAGIC" \
-  --tx-in "$TX_IN" \
-  --tx-in-collateral "$COLLATERAL" \
-  --tx-out "$RESERVE_ADDR+$MIN_UTXO_LOVELACE + $RESERVE_STARS $POLICY_ID" \
-  --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
-  --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $ICS_STARS $POLICY_ID" \
-  --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
-  --tx-out "$FAUCET_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_STARS $POLICY_ID" \
-  --mint "$TOTAL_MINT_STARS $POLICY_ID" \
-  --mint-script-file "$CNIGHT_PLUTUS" \
-  --mint-redeemer-value "{}" \
-  --change-address "$FAUCET_ADDR" \
-  --out-file /tmp/seed-cnight.raw
-
-cardano-cli latest transaction sign \
-  --tx-body-file /tmp/seed-cnight.raw \
-  --signing-key-file /keys/funded_address.skey \
-  --testnet-magic "$NETWORK_MAGIC" \
-  --out-file /tmp/seed-cnight.signed
-
-SEED_TX_ID=$(cardano-cli latest transaction txid --tx-file /tmp/seed-cnight.signed)
-echo "Submitting cNIGHT seeding tx $SEED_TX_ID ..."
-cardano-cli latest transaction submit \
-  --tx-file /tmp/seed-cnight.signed \
-  --testnet-magic "$NETWORK_MAGIC"
 
 # Wait until the cNIGHT lands at the ICS address (confirms the tx is in a block,
 # so midnight-setup's checkpoint will be taken at/after it).
@@ -175,5 +186,8 @@ for i in {1..60}; do
   sleep 2
 done
 
+# The marker doubles as the seeding tx hash: midnight-setup uses it as the bridge
+# `initial_data_checkpoint` so the seeded ICS cNIGHT (locked in this tx) is treated
+# as pre-existing locked supply and not swept to Treasury.
 echo "$SEED_TX_ID" > "$SEEDED_MARKER"
 echo "=== cNIGHT genesis seeding complete (tx $SEED_TX_ID) ==="

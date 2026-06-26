@@ -143,9 +143,21 @@ echo "Created cnight-config.json:"
 cat /tmp/cnight-config.json
 
 echo "Creating c2m-bridge-config.json..."
-existing_tx_hash=$(curl -s -H 'Content-Type: application/json' \
-  -d '{"jsonrpc": "2.0", "method": "queryLedgerState/utxo", "id":1}' \
-  http://ogmios:1337 | jq -r .result[0].transaction.id)
+# The bridge starts observing strictly AFTER initial_data_checkpoint (the checkpoint
+# tx itself is skipped). Anchor it to the cNIGHT genesis-seeding tx (which locked the
+# ICS supply, see cnight-seeder) so the pre-seeded ICS cNIGHT is treated as existing
+# locked supply and NOT swept to Treasury. Fall back to the latest ledger UTxO tx if
+# the seeder didn't run.
+CNIGHT_SEED_MARKER=/runtime-values/cnight-seeded
+if [ -s "$CNIGHT_SEED_MARKER" ]; then
+  existing_tx_hash=$(cat "$CNIGHT_SEED_MARKER")
+  echo "Using cNIGHT seeding tx as bridge initial_data_checkpoint: $existing_tx_hash"
+else
+  existing_tx_hash=$(curl -s -H 'Content-Type: application/json' \
+    -d '{"jsonrpc": "2.0", "method": "queryLedgerState/utxo", "id":1}' \
+    http://ogmios:1337 | jq -r .result[0].transaction.id)
+  echo "cNIGHT seed marker absent; using ledger UTxO tx as initial_data_checkpoint: $existing_tx_hash"
+fi
 cat <<EOF > /tmp/c2m-bridge-config.json
 {
     "subminimal_transfers_flush_threshold": 500000,
