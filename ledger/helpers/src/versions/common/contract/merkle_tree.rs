@@ -78,21 +78,16 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 		commitee: &[VerifyingKey],
 		commitee_threshold: u32,
 		rng: &mut StdRng,
-	) -> ContractDeploy<D> {
+	) -> Result<ContractDeploy<D>, std::io::Error> {
 		let root = MerkleTree::<()>::blank(10).root();
-		// simple-merkle-tree is a zk-stdlib v1 circuit, so its stored verifier keys are
-		// 2.x (transient_crypto_old) keys. Load them as such and place them in the v1
-		// slot — under ledger 9 that is `ContractOperation::v2`, which V2 proofs verify
-		// against. Using the 3.x `verifier_key`/`contract_operation_new` here fails to
-		// deserialize the keys and yields `VerifierKeyNotSet`.
-		let store_op = super::super::contract_operation_new_v1(
-			super::super::verifier_key_v1(self.resolver, "store").await,
+		let store_op = super::super::contract_operation_new(
+			super::super::verifier_key(self.resolver, "store").await,
 			super::super::ir_source(self.resolver, "store").await,
-		);
-		let check_op = super::super::contract_operation_new_v1(
-			super::super::verifier_key_v1(self.resolver, "check").await,
+		)?;
+		let check_op = super::super::contract_operation_new(
+			super::super::verifier_key(self.resolver, "check").await,
 			super::super::ir_source(self.resolver, "check").await,
-		);
+		)?;
 
 		let contract = ContractState {
 			data: ChargedState::new(stval!([[{MT(10) {}}, (0u64), {root => null}]])),
@@ -107,7 +102,7 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 			balance: HashMap::new(),
 		};
 
-		ContractDeploy::new(rng, contract)
+		Ok(ContractDeploy::new(rng, contract))
 	}
 
 	fn resolver(&self) -> &'static Resolver {

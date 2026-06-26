@@ -11,9 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::ContractVerifyingKeyBytes;
+
 pub use super::make_block_context;
 pub use super::{
-	TransactionSignature as Signature, contract_operation_new_v1, maintenance_verifying_key,
+	TransactionSignature as Signature, contract_operation_new, maintenance_verifying_key,
 	signature_verifying_key, transaction_signature, transaction_signing_key,
 };
 pub use super::{
@@ -188,31 +190,15 @@ pub async fn ir_source(resolver: &Resolver, name: &'static str) -> Option<Vec<u8
 
 /// Resolves a circuit's verifier key by name. Ledger 9.1 (rc.3) dropped this from
 /// upstream `test_utilities`; provided here so it works across all ledger versions.
-pub async fn verifier_key(resolver: &Resolver, name: &'static str) -> Option<VerifierKey> {
-	let material = resolver
-		.resolve_key(KeyLocation(std::borrow::Cow::Borrowed(name)))
-		.await
-		.ok()??;
-	mn_ledger_serialize::tagged_deserialize(&mut &material.verifier_key[..]).ok()
-}
-
-/// Resolves a circuit's verifier key as a **2.x / zk-stdlib v1** key
-/// (`transient_crypto_old`, tagged `verifier-key[v6]`), regardless of the ledger
-/// generation this module is compiled for. The simple-merkle-tree and counter test
-/// contracts are v1 circuits, so their stored keys are 2.x keys that the 3.x
-/// [`verifier_key`] above cannot deserialize under ledger 9 (which expects
-/// `verifier-key[v7]`). `::transient_crypto` is the workspace 2.x crate (the same
-/// type as `ContractOperation::v2`), reached by an absolute path so the ledger_9
-/// module's `transient_crypto -> 3.x` alias does not shadow it.
-pub async fn verifier_key_v1(
+pub async fn verifier_key(
 	resolver: &Resolver,
 	name: &'static str,
-) -> Option<::transient_crypto::proofs::VerifierKey> {
+) -> Option<ContractVerifyingKeyBytes> {
 	let material = resolver
 		.resolve_key(KeyLocation(std::borrow::Cow::Borrowed(name)))
 		.await
 		.ok()??;
-	mn_ledger_serialize::tagged_deserialize(&mut &material.verifier_key[..]).ok()
+	Some(ContractVerifyingKeyBytes(material.verifier_key))
 }
 
 /// Serializes a mn_ledger::serialize-able type into bytes

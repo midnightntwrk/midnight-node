@@ -30,8 +30,14 @@ pub enum CoinSelectionStrategy {
 	SmallestFirst,
 }
 
+/// Struct to store serialized verifying key bytes
+/// To be deserialized when constructing ContractOperations
+pub struct ContractVerifyingKeyBytes(pub Vec<u8>);
+
 #[path = "versions"]
 pub mod ledger_7 {
+	use crate::ContractVerifyingKeyBytes;
+
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
@@ -62,25 +68,18 @@ pub mod ledger_7 {
 		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
 		VerifyingKey as SignatureVerifyingKey,
 	};
+	use midnight_serialize::tagged_deserialize;
 
 	/// Builds a contract operation from a verifier key. `_ir_source` is accepted
 	/// for cross-version call-site compatibility but silently dropped: pre-ledger-9
 	/// contract operations have no on-chain IR slot.
 	pub fn contract_operation_new(
-		vk: Option<transient_crypto::proofs::VerifierKey>,
+		vk: Option<ContractVerifyingKeyBytes>,
 		_ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
-		onchain_runtime::state::ContractOperation::new(vk)
-	}
-
-	/// Builds a contract operation for a v1 (zk-stdlib v1 / 2.x) circuit. Pre-ledger-9
-	/// ledgers are single-stack, so this is identical to `contract_operation_new` (the
-	/// crate's `transient_crypto` already IS the 2.x stack here).
-	pub fn contract_operation_new_v1(
-		vk: Option<transient_crypto::proofs::VerifierKey>,
-		ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
-		contract_operation_new(vk, ir_source)
+	) -> Result<onchain_runtime::state::ContractOperation, std::io::Error> {
+		let vk = vk
+			.map(|b| tagged_deserialize(&mut b.0.as_slice()).expect("failed to read verifier key"));
+		Ok(onchain_runtime::state::ContractOperation::new(vk))
 	}
 
 	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
@@ -119,6 +118,8 @@ pub mod ledger_7 {
 
 #[path = "versions"]
 pub mod ledger_8 {
+	use crate::ContractVerifyingKeyBytes;
+
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
@@ -151,25 +152,18 @@ pub mod ledger_8 {
 		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
 		VerifyingKey as SignatureVerifyingKey,
 	};
+	use midnight_serialize::tagged_deserialize;
 
 	/// Builds a contract operation from a verifier key. `_ir_source` is accepted
 	/// for cross-version call-site compatibility but silently dropped: pre-ledger-9
 	/// contract operations have no on-chain IR slot.
 	pub fn contract_operation_new(
-		vk: Option<transient_crypto::proofs::VerifierKey>,
+		vk: Option<ContractVerifyingKeyBytes>,
 		_ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
-		onchain_runtime::state::ContractOperation::new(vk)
-	}
-
-	/// Builds a contract operation for a v1 (zk-stdlib v1 / 2.x) circuit. Pre-ledger-9
-	/// ledgers are single-stack, so this is identical to `contract_operation_new` (the
-	/// crate's `transient_crypto` already IS the 2.x stack here).
-	pub fn contract_operation_new_v1(
-		vk: Option<transient_crypto::proofs::VerifierKey>,
-		ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
-		contract_operation_new(vk, ir_source)
+	) -> Result<onchain_runtime::state::ContractOperation, std::io::Error> {
+		let vk = vk
+			.map(|b| tagged_deserialize(&mut b.0.as_slice()).expect("failed to read verifier key"));
+		Ok(onchain_runtime::state::ContractOperation::new(vk))
 	}
 
 	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
@@ -208,6 +202,8 @@ pub mod ledger_8 {
 
 #[path = "versions"]
 pub mod ledger_9 {
+	use crate::ContractVerifyingKeyBytes;
+
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_9 as extract_tx_with_context;
@@ -223,6 +219,7 @@ pub mod ledger_9 {
 		zkir, zswap_ledger_9 as zswap,
 	};
 
+	use midnight_serialize::{peek_tag, tagged_deserialize};
 	pub use mn_ledger::test_utilities as test_utilities_local;
 
 	#[allow(clippy::duplicate_mod)]
@@ -245,28 +242,23 @@ pub mod ledger_9 {
 	/// key so the deployed contract's circuits can later be re-proven/upgraded
 	/// from chain state alone; it counts toward `max_contract_metadata_size`.
 	pub fn contract_operation_new(
-		vk: Option<transient_crypto::proofs::VerifierKey>,
+		vk: Option<ContractVerifyingKeyBytes>,
 		ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
-		let ir = ir_source
-			.map(|bytes| ledger_storage::arena::Sp::new(onchain_runtime::state::IrBuf(bytes)));
-		onchain_runtime::state::ContractOperation::new(vk, ir)
-	}
-
-	/// Builds a contract operation for a v1 (zk-stdlib v1 / 2.x) circuit. Ledger 9's
-	/// `ContractOperation` is dual-stack: v1 circuits (V2 proofs) verify against the
-	/// `v2` slot — a `transient_crypto_old` (2.x) key — whereas `contract_operation_new`
-	/// targets the `v3` (3.x) slot used by v2 circuits. `::transient_crypto` is the
-	/// workspace 2.x crate, the same type as `ContractOperation::v2`.
-	pub fn contract_operation_new_v1(
-		vk: Option<::transient_crypto::proofs::VerifierKey>,
-		ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
+	) -> Result<onchain_runtime::state::ContractOperation, std::io::Error> {
 		let ir = ir_source
 			.map(|bytes| ledger_storage::arena::Sp::new(onchain_runtime::state::IrBuf(bytes)));
 		let mut op = onchain_runtime::state::ContractOperation::new(None, ir);
-		op.v2 = vk;
-		op
+
+		if let Some(vk) = vk {
+			let tag = peek_tag(&mut std::io::Cursor::new(&vk.0))?;
+			match tag.as_str() {
+				"verifier-key[v6]" => op.v2 = Some(tagged_deserialize(&mut &vk.0[..])?),
+				"verifier-key[v7]" => op.v3 = Some(tagged_deserialize(&mut &vk.0[..])?),
+				_ => panic!("unknown verifier key tag: '{tag}'"),
+			}
+		}
+
+		Ok(op)
 	}
 
 	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
