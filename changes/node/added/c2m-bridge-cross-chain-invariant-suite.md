@@ -25,5 +25,5 @@ Requires the Part A cNIGHT genesis seeding (#1778) and a clean local-env (no pri
 cNIGHT minting). `reqwest` is now an unconditional dev-dependency of the e2e crate
 (also used by the kupo client).
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1781
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1779
