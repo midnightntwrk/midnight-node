@@ -771,6 +771,29 @@ impl MidnightClient {
         Ok(String::from_utf8(bytes)?)
     }
 
+    /// Reserve validator bech32 address from `Bridge::MainChainScriptsConfiguration`.
+    /// Mirror of [`Self::ics_validator_address`] — the cross-chain invariant suite reads
+    /// the aggregate cNIGHT held here as the Cardano reserve pool (C.R).
+    pub async fn reserve_validator_address(&self) -> Result<String, Box<dyn std::error::Error>> {
+        let addr = mn_meta::storage()
+            .bridge()
+            .main_chain_scripts_configuration();
+
+        let scripts = self
+            .online_client()
+            .at_current_block()
+            .await?
+            .storage()
+            .try_fetch(addr, ())
+            .await?
+            .map(|v| v.decode())
+            .transpose()?
+            .ok_or("Bridge::MainChainScriptsConfiguration is not set in storage")?;
+
+        let bytes = scripts.reserve_validator_address.0.0;
+        Ok(String::from_utf8(bytes)?)
+    }
+
     /// Read the active `LedgerParameters` via the `get_ledger_parameters` runtime API.
     pub async fn get_ledger_parameters(
         &self,

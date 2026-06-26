@@ -1803,6 +1803,86 @@ impl CardanoClient {
         })
     }
 
+    /// Build and sign — but do not submit — a *cooperative* bridge transfer for the
+    /// invariant flood (#1779): lock `amount` cNight at the ICS validator spending
+    /// **already-minted** cNight from `self`'s own UTxO(s), change (cNight + ADA) back
+    /// to `self`. Unlike [`Self::make_bridge_transfer`] it does not mint and takes a
+    /// variable input set, so the change is a single UTxO that chains into the next
+    /// lock. The ICS output keeps only min-ADA so the change retains ADA for fees.
+    ///
+    /// No collateral input: sending to the ICS script address carries a datum but runs
+    /// no Plutus validator, so the tx needs none.
+    pub async fn make_cooperative_bridge_transfer(
+        &self,
+        inputs: &[OgmiosUtxo],
+        ics_address: &str,
+        amount: u64,
+        recipient: BridgeTransferRecipient,
+    ) -> Result<SignedBridgeTransaction, OgmiosClientError> {
+        const BRIDGE_METADATUM_LABEL: u64 = 6_500_973;
+        const ICS_MIN_LOVELACE: u64 = 1_500_000;
+        let policy_id = config::cnight_token_policy_id();
+        let network = Network::Custom(self.constants.cost_model.clone());
+        let self_addr = self.address_as_bech32();
+
+        let send_assets = vec![
+            Asset::new_from_str("lovelace", &ICS_MIN_LOVELACE.to_string()),
+            Asset::new_from_str(&policy_id, &amount.to_string()),
+        ];
+
+        let mut tx_builder = TxBuilder::new_core();
+        tx_builder
+            .network(network)
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()));
+        for input in inputs {
+            tx_builder.tx_in(
+                &hex::encode(input.transaction.id),
+                input.index.into(),
+                &Self::build_asset_vector(input),
+                &self_addr,
+            );
+        }
+        let mut unsigned_tx_hex = tx_builder
+            .tx_out(ics_address, &send_assets)
+            .tx_out_inline_datum_value(&WData::JSON(
+                serde_json::json!({"constructor": 0, "fields": []}).to_string(),
+            ))
+            .metadata_value(
+                &BRIDGE_METADATUM_LABEL.to_string(),
+                BRIDGE_ADDRESS_METADATUM_PLACEHOLDER_JSON,
+            )
+            .change_address(&self_addr)
+            .complete_sync(None)
+            .unwrap()
+            .tx_hex();
+
+        if let BridgeTransferRecipient::Address(address) = &recipient {
+            unsigned_tx_hex = replace_with_bytes_metadatum(
+                &unsigned_tx_hex,
+                BRIDGE_METADATUM_LABEL,
+                address.as_slice(),
+            )
+            .expect("Failed to swap placeholder for bytes metadatum on cooperative bridge tx");
+        }
+
+        let signed_tx_hex = self
+            .wallet
+            .sign_tx(&unsigned_tx_hex)
+            .expect("Failed to sign cooperative bridge transfer tx");
+        let fixed_tx = whisky::csl::FixedTransaction::from_hex(&signed_tx_hex)
+            .expect("Failed to parse signed cooperative bridge transfer as FixedTransaction");
+        let tx_id: [u8; 32] = fixed_tx
+            .transaction_hash()
+            .to_bytes()
+            .try_into()
+            .expect("Cardano tx hash must be 32 bytes");
+        let signed_tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode signed tx hex");
+        Ok(SignedBridgeTransaction {
+            tx_id,
+            signed_tx_bytes,
+        })
+    }
+
     /// Submit an already built and signed Cardano transaction (CBOR bytes) via Ogmios.
     pub async fn submit_tx(
         &self,

@@ -31,7 +31,7 @@ const CLAIM_FUNDING_SEED_HEX: &str =
 // so can't run in parallel.
 static C2M_BRIDGE_SERIAL: LazyLock<AsyncMutex<()>> = LazyLock::new(|| AsyncMutex::new(()));
 
-async fn lock_c2m_bridge_serial() -> MutexGuard<'static, ()> {
+pub(crate) async fn lock_c2m_bridge_serial() -> MutexGuard<'static, ()> {
     C2M_BRIDGE_SERIAL.lock().await
 }
 
@@ -919,7 +919,7 @@ const LOCAL_ENV_TC_KEYS: [&str; 3] = ["//One", "//Two", "//Three"];
 /// FederatedAuthority motion close → Root call) so it executes with Root
 /// origin. The call is built dynamically against the live metadata so callers
 /// don't depend on a generated subxt builder existing for the target pallet.
-async fn submit_via_governance(
+pub(crate) async fn submit_via_governance(
     midnight: &MidnightClient,
     pallet: &str,
     call: &str,
@@ -943,7 +943,7 @@ async fn submit_via_governance(
 }
 
 /// Pre-approve a single Cardano tx hash via `C2MBridge.add_approved_mc_tx_hashes`.
-async fn approve_mc_tx_hash_via_governance(
+pub(crate) async fn approve_mc_tx_hash_via_governance(
     midnight: &MidnightClient,
     mc_tx_hash: [u8; 32],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -964,7 +964,7 @@ async fn approve_mc_tx_hash_via_governance(
 /// Set the `SubminimalTransfersConfig.subminimal_transfers_flush_threshold` on
 /// the c2m-bridge pallet. Reaches `set_subminimal_transfers_config` with Root
 /// origin via governance.
-async fn set_subminimal_threshold_via_governance(
+pub(crate) async fn set_subminimal_threshold_via_governance(
     midnight: &MidnightClient,
     threshold: u64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -987,7 +987,7 @@ async fn set_subminimal_threshold_via_governance(
 /// Read the c2m-bridge `SubminimalTransfersConfiguration` storage value and
 /// return its `subminimal_transfers_flush_threshold` field. Lets callers skip a
 /// no-op governance round-trip when the chain already holds the desired value.
-async fn read_subminimal_flush_threshold(
+pub(crate) async fn read_subminimal_flush_threshold(
     midnight: &MidnightClient,
 ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
     let storage_address = mn_meta::storage()
