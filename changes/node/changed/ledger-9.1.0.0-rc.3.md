@@ -35,8 +35,14 @@ rc.3 also bumps the ledger-state serialization tag (v17 → v18) and replaces th
   to the networks on the new ledger — `res/dev` (also used by `undeployed`),
   `res/devnet`, `res/stagenet`. Deployed networks (govnet, mainnet, perfnet,
   preprod, preview, qanet) read via L7/L8 and keep `parallelism_factor`.
-- Undeployed/devnet genesis (v18) and runtime metadata are regenerated for the
-  affected networks only; deployed-network genesis is unchanged.
+- Undeployed genesis (`res/genesis/genesis_{block,state}_undeployed.mn`, mirrored
+  into the toolkit test-data fixtures) and the derived `.mn` test fixtures
+  (`res/test-tx-deserialize`, `res/test-zswap`, `res/test-contract/contract_tx_*`)
+  are rebuilt at v18. Runtime metadata is *not* regenerated — the change is to
+  ledger-parameter config plus ledger-state encoding, not pallet storage or
+  extrinsics. Devnet genesis still needs an AWS-side rebuild + chainspec before the
+  next devnet reset (no seeds locally), so it is deliberately not regenerated here;
+  deployed-network genesis is unchanged.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1738
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1737
