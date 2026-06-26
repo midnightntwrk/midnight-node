@@ -156,7 +156,10 @@ async fn bulk_source_matches_standard_over_block_range() {
 	let (events, complete) = bulk_pull(&pool, &addresses, &window_start, &window_end, LARGE_LIMIT)
 		.await
 		.expect("bulk_pull window");
-	assert!(complete, "test window exceeded LARGE_LIMIT rows; widen LARGE_LIMIT or narrow the range");
+	assert!(
+		complete,
+		"test window exceeded LARGE_LIMIT rows; widen LARGE_LIMIT or narrow the range"
+	);
 	eprintln!("cached window [{window_from}, {window_to}] holds {} events", events.len());
 
 	let db_fallback = Arc::new(MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0));

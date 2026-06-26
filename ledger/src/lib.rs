@@ -208,12 +208,18 @@ pub mod genesis_version {
 	/// Version-dispatched [`get_root`](super::ledger_9::storage::get_root).
 	pub fn get_root(genesis_state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, String> {
 		match detect(genesis_state) {
-			Some(LedgerVersion::V9) => super::ledger_9::storage::get_root(genesis_state, network_id)
-				.map_err(|e| e.to_string()),
-			Some(LedgerVersion::V8) => super::ledger_8::storage::get_root(genesis_state, network_id)
-				.map_err(|e| e.to_string()),
-			Some(LedgerVersion::V7) => super::ledger_7::storage::get_root(genesis_state, network_id)
-				.map_err(|e| e.to_string()),
+			Some(LedgerVersion::V9) => {
+				super::ledger_9::storage::get_root(genesis_state, network_id)
+					.map_err(|e| e.to_string())
+			},
+			Some(LedgerVersion::V8) => {
+				super::ledger_8::storage::get_root(genesis_state, network_id)
+					.map_err(|e| e.to_string())
+			},
+			Some(LedgerVersion::V7) => {
+				super::ledger_7::storage::get_root(genesis_state, network_id)
+					.map_err(|e| e.to_string())
+			},
 			None => Err(unknown_version(genesis_state)),
 		}
 	}
@@ -254,24 +260,18 @@ pub mod genesis_version {
 		cache_size: usize,
 	) -> Vec<u8> {
 		match detect(genesis_state) {
-			Some(LedgerVersion::V9) =>
-				super::ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
-					db_instance,
-					genesis_state,
-					cache_size,
-				),
-			Some(LedgerVersion::V8) =>
-				super::ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
-					db_instance,
-					genesis_state,
-					cache_size,
-				),
-			Some(LedgerVersion::V7) =>
-				super::ledger_7::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
-					db_instance,
-					genesis_state,
-					cache_size,
-				),
+			Some(LedgerVersion::V9) => super::ledger_9::storage::init_storage_paritydb_unified::<
+				D,
+				COLUMN_OFFSET,
+			>(db_instance, genesis_state, cache_size),
+			Some(LedgerVersion::V8) => super::ledger_8::storage::init_storage_paritydb_unified::<
+				D,
+				COLUMN_OFFSET,
+			>(db_instance, genesis_state, cache_size),
+			Some(LedgerVersion::V7) => super::ledger_7::storage::init_storage_paritydb_unified::<
+				D,
+				COLUMN_OFFSET,
+			>(db_instance, genesis_state, cache_size),
 			None => panic!("{}", unknown_version(genesis_state)),
 		}
 	}

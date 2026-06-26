@@ -161,8 +161,7 @@ pub async fn bulk_pull(
 	all.sort();
 	// A query that returned exactly `limit` rows may have more behind it, so the
 	// pull is not provably complete.
-	let complete =
-		counts.0 < limit && counts.1 < limit && counts.2 < limit && counts.3 < limit;
+	let complete = counts.0 < limit && counts.1 < limit && counts.2 < limit && counts.3 < limit;
 	log::info!(
 		target: "cnight::sliding-window",
 		"bulk_pull [{}/{}, {}/{}] -> reg={} dereg={} create={} spend={} complete={} (auth_ident={:?} cnight_ident={:?})",
@@ -888,7 +887,9 @@ mod tests {
 
 	/// 50 transactions, 5 UTXOs each — distinct `tx_position` per transaction.
 	fn fifty_txs_five_utxos() -> Vec<ObservedUtxo> {
-		(0..50u32).flat_map(|tx| (0..5u16).map(move |u| utxo_with_index(tx, u))).collect()
+		(0..50u32)
+			.flat_map(|tx| (0..5u16).map(move |u| utxo_with_index(tx, u)))
+			.collect()
 	}
 
 	/// The cNIGHT observation skip bug, fixed: a row-limited (incomplete) fetch
@@ -900,13 +901,18 @@ mod tests {
 	#[test]
 	fn incomplete_fetch_must_not_advance_to_tip() {
 		// The range holds 50 txs but the fetch was row-limited to the first 40.
-		let fetched: Vec<ObservedUtxo> =
-			(0..40u32).flat_map(|tx| (0..5u16).map(move |u| utxo_with_index(tx, u))).collect();
+		let fetched: Vec<ObservedUtxo> = (0..40u32)
+			.flat_map(|tx| (0..5u16).map(move |u| utxo_with_index(tx, u)))
+			.collect();
 		let tip = pos(100, 0);
 
 		let obs = truncate_to_tx_capacity(
-			fetched, /* tx_capacity */ 1000, /* max_utxos */ 100_000, /* complete */ false,
-			&pos(0, 0), tip.clone(),
+			fetched,
+			/* tx_capacity */ 1000,
+			/* max_utxos */ 100_000,
+			/* complete */ false,
+			&pos(0, 0),
+			tip.clone(),
 		);
 
 		assert_ne!(obs.end, tip, "advanced to tip on an incomplete fetch -> skips unfetched txs");
@@ -940,7 +946,14 @@ mod tests {
 	fn utxo_envelope_cap_truncates_at_whole_tx() {
 		// 250 events. Cap 22 -> 4 whole txs (20 UTXOs); the 5th (would reach 25)
 		// is held back.
-		let obs = truncate_to_tx_capacity(fifty_txs_five_utxos(), 1000, 22, true, &pos(0, 0), pos(100, 0));
+		let obs = truncate_to_tx_capacity(
+			fifty_txs_five_utxos(),
+			1000,
+			22,
+			true,
+			&pos(0, 0),
+			pos(100, 0),
+		);
 		assert_eq!(obs.utxos.len(), 20, "did not cut on a whole-tx boundary");
 		assert!(obs.utxos.len() <= 22);
 		assert_eq!(obs.end, pos(3, 0).increment(), "must resume past the last whole tx");
@@ -949,7 +962,14 @@ mod tests {
 	/// The transaction-count cap admits at most `tx_capacity` whole transactions.
 	#[test]
 	fn tx_capacity_cap_truncates_at_whole_tx() {
-		let obs = truncate_to_tx_capacity(fifty_txs_five_utxos(), 10, 100_000, true, &pos(0, 0), pos(100, 0));
+		let obs = truncate_to_tx_capacity(
+			fifty_txs_five_utxos(),
+			10,
+			100_000,
+			true,
+			&pos(0, 0),
+			pos(100, 0),
+		);
 		let distinct: std::collections::BTreeSet<u32> =
 			obs.utxos.iter().map(|u| u.header.tx_position.block_number).collect();
 		assert_eq!(distinct.len(), 10);
