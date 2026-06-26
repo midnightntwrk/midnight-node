@@ -22,5 +22,5 @@ observes the same validators the seeder funds.
 
 This unblocks the cross-chain pool invariant e2e suite (#1773).
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1780
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1778
