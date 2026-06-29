@@ -14,7 +14,8 @@ qanet = []
 # assertions against a running indexer-api (default
 # http://127.0.0.1:8088/api/v3/graphql, override via INDEXER_GRAPHQL_URL).
 # When off, the tests behave exactly as before (node-side asserts only).
-indexer = ["dep:reqwest"]
+# (`reqwest` is an unconditional dep — also used by the kupo client.)
+indexer = []
 default = ["local-ci"]
 
 [dependencies]
@@ -34,7 +35,7 @@ blake2 = "0.10.6"
 tracing = { workspace = true, default-features = true }
 tracing-subscriber = { workspace = true }
 midnight-node-e2e-macros = { path = "macros" }
-reqwest = { workspace = true, optional = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test"] }

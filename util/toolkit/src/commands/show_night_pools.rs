@@ -48,13 +48,18 @@ fn night(stars: u128) -> String {
 	format!("{}.{:06} NIGHT", stars / STARS_PER_NIGHT, stars % STARS_PER_NIGHT)
 }
 
-pub async fn execute(
-	args: ShowNightPoolsArgs,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let ledger_state_db = args.source.ledger_state_db.clone();
-	let fetch_cache = args.source.fetch_cache.clone();
+/// Read the NIGHT pools from a network/source by replaying its `LedgerState`.
+///
+/// Shared by [`execute`] (which prints them) and external callers such as the
+/// cross-chain bridge invariant e2e suite, which compares these Midnight pools
+/// (M.R / M.L / M.U) against the Cardano cNIGHT pools.
+pub async fn read_night_pools(
+	source: Source,
+) -> Result<NightPools, Box<dyn std::error::Error + Send + Sync>> {
+	let ledger_state_db = source.ledger_state_db.clone();
+	let fetch_cache = source.fetch_cache.clone();
 
-	let src = TxGenerator::source(args.source, false).await?;
+	let src = TxGenerator::source(source, false).await?;
 	let source_txs = src.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
@@ -66,11 +71,17 @@ pub async fn execute(
 	let fork_ctx =
 		build_fork_aware_context_cached(&cache_seed, &source_txs, wallet_cache.as_deref()).await;
 
-	let night_pools = fork_ctx.dispatch(
+	fork_ctx.dispatch(
 		|ctx| ledger_7::night_pools::night_pools(&ctx),
 		|ctx| ledger_8::night_pools::night_pools(&ctx),
 		|ctx| ledger_9::night_pools::night_pools(&ctx),
-	)?;
+	)
+}
+
+pub async fn execute(
+	args: ShowNightPoolsArgs,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	let night_pools = read_night_pools(args.source).await?;
 
 	let total = night_pools.reserve
 		+ night_pools.locked

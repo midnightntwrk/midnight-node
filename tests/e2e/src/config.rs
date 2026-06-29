@@ -85,6 +85,7 @@ fn read_plutus_compiled_code(title: &str) -> String {
 pub struct Settings {
     pub node_client: NodeClientSettings,
     pub ogmios_client: OgmiosClientSettings,
+    pub kupo_client: KupoClientSettings,
     pub constants: Constants,
     /// Timeout for waiting for a Midnight observation event *after* the
     /// underlying Cardano tx has reached stability. Generous on networks
@@ -120,6 +121,16 @@ impl Settings {
                     timeout_seconds: 180,
                     network: CardanoNetwork::Preview,
                     network_info,
+                },
+                kupo_client: KupoClientSettings {
+                    #[cfg(any(feature = "local", feature = "local-dev"))]
+                    base_url: "http://127.0.0.1:1442".into(),
+                    #[cfg(feature = "local-ci")]
+                    base_url: "http://172.17.0.1:1442".into(),
+                    // kupo is only consulted by the local-env invariant suite; this is an
+                    // unused placeholder on qanet so the field still compiles.
+                    #[cfg(feature = "qanet")]
+                    base_url: "http://127.0.0.1:1442".into(),
                 },
                 #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
                 finality_timeout: Duration::from_secs(60),
@@ -216,6 +227,13 @@ pub struct OgmiosClientSettings {
     pub timeout_seconds: u64,
     pub network: CardanoNetwork,
     pub network_info: CardanoNetworkInfo,
+}
+
+#[derive(Clone)]
+pub struct KupoClientSettings {
+    /// kupo REST base URL (e.g. `http://127.0.0.1:1442`). Used by the cross-chain
+    /// bridge invariant suite (local-env only) to read total minted cNIGHT.
+    pub base_url: String,
 }
 
 #[derive(Clone)]
