@@ -41,7 +41,7 @@ export const resolveCompactcVersion = (
   if (!rawCompactcVersion) {
     console.error(
       `COMPACTC_VERSION is not set (expected one of ${SUPPORTED_COMPACTC_VERSIONS.join(', ')}). ` +
-        'The dev shell exports it from the root COMPACTC_VERSION file; set it explicitly to target another version.'
+      'The dev shell exports it from the root COMPACTC_VERSION file; set it explicitly to target another version.'
     );
     process.exit(1);
   }
@@ -134,7 +134,8 @@ export const installCompactcResolver = (compactcVersion: string): string => {
       // to the version installed in the toolkit package that will be run for the current COMPACTC_VERSION...
       if (
         specifier.startsWith('@midnight-ntwrk/compact-js') ||
-        specifier.startsWith('@midnight-ntwrk/compact-runtime')
+        specifier.startsWith('@midnight-ntwrk/compact-runtime') ||
+        specifier.startsWith('@midnight-ntwrk/platform-js')
       ) {
         return {
           url: `file://${toolkitResolve(specifier)}`,
