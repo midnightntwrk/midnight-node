@@ -120,17 +120,77 @@ impl ToolkitTestHelper {
 				"node_modules/@midnight-ntwrk/node-toolkit-compact-{}.{}",
 				compactc_version.major, compactc_version.minor
 			)),
-			self.toolkit_js_path.join(format!(
-				"node_modules/@midnight-ntwrk/midnight-js-compact/managed/{compactc_version}"
-			)),
 		];
 
 		if let Some(missing) = required_paths.iter().find(|path| !path.exists()) {
 			eprintln!(
 				"Skipping contract integration tests: missing {}\n\
-                 Setup: cd util/toolkit-js && npm install && npm run build && \
-                 npx fetch-compactc --version={compactc_version}",
+                 Setup: cd util/toolkit-js && npm install && npm run build",
 				missing.display()
+			);
+			return false;
+		}
+
+		// `run-compactc` needs a compiler. COMPACT_HOME takes precedence: when set,
+		// midnight-js-compact's `resolveCompactPath` uses that compiler regardless of
+		// COMPACTC_VERSION. Otherwise the legacy `fetch-compactc` download populates
+		// midnight-js-compact/managed/<version>.
+		if let Some(home) = std::env::var_os("COMPACT_HOME") {
+			let compactc = Path::new(&home).join("compactc");
+			if !compactc.exists() {
+				eprintln!(
+					"Skipping contract integration tests: COMPACT_HOME is set ({}) but no compactc there.\n\
+                     Setup: build it from the compact submodule (`just compactc`).",
+					Path::new(&home).display()
+				);
+				return false;
+			}
+
+			// COMPACT_HOME wins in run-compactc, so its compiler must match the version
+			// the tests select the toolkit package and cache key for — otherwise we would
+			// silently compile with the wrong compiler. `compactc --version` reports the
+			// bare semver (no tree-hash suffix), so compare against major.minor.patch.
+			let expected = format!(
+				"{}.{}.{}",
+				compactc_version.major, compactc_version.minor, compactc_version.patch
+			);
+			match std::process::Command::new(&compactc).arg("--version").output() {
+				Ok(out) if out.status.success() => {
+					let got = String::from_utf8_lossy(&out.stdout).trim().to_string();
+					if got != expected {
+						eprintln!(
+							"Skipping contract integration tests: COMPACT_HOME compactc is {got}, \
+                             but COMPACTC_VERSION selects {expected}.\n\
+                             run-compactc prefers COMPACT_HOME, so this would compile with the wrong \
+                             compiler. Rebuild the submodule to match (`just compactc`) or unset COMPACT_HOME."
+						);
+						return false;
+					}
+				},
+				other => {
+					eprintln!(
+						"Skipping contract integration tests: failed to query {} --version: {other:?}",
+						compactc.display()
+					);
+					return false;
+				},
+			}
+
+			return true;
+		}
+
+		let downloaded_ready = self
+			.toolkit_js_path
+			.join(format!(
+				"node_modules/@midnight-ntwrk/midnight-js-compact/managed/{compactc_version}"
+			))
+			.exists();
+
+		if !downloaded_ready {
+			eprintln!(
+				"Skipping contract integration tests: compactc unavailable.\n\
+                 Setup: build it from the compact submodule (`just compactc`, sets COMPACT_HOME),\n\
+                 or: cd util/toolkit-js && npx fetch-compactc --version={compactc_version}"
 			);
 			return false;
 		}

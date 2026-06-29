@@ -737,7 +737,9 @@ $ midnight-node-toolkit show-wallet
       "mt_index": 3
     },
 ...
-  ]
+  ],
+  "claimable_block_rewards": 0,
+  "claimable_bridge_transfers": 0
 }
 
 ```
