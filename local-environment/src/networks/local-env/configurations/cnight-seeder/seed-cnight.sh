@@ -99,15 +99,16 @@ FAUCET_ADDR=$(cardano-cli latest address build \
   --testnet-magic "$NETWORK_MAGIC")
 echo "Faucet (circulating) address: $FAUCET_ADDR"
 
-# Mint the full cNIGHT supply and split it across the three pools in one tx.
-# Reserve/ICS are script addresses, so their outputs carry an inline unit datum
-# (matching tests/e2e/src/api/cardano.rs::make_bridge_transfer and lock_to_ics.sh).
-# No bridge metadata (label 6500973) -> these are not transfers.
+# Mint the full cNIGHT supply and split it across the three pools in one tx. Reserve/ICS
+# are script addresses, so their outputs carry an inline unit datum (matching
+# tests/e2e/src/api/cardano.rs::make_bridge_transfer); no bridge metadata (label 6500973),
+# so these are not transfers.
 #
-# The funded address is churned by the contract-compiler's deployment txs, so a
-# UTxO selected one moment may be spent the next ("All inputs are spent"). Build,
-# sign and submit inside a retry loop that re-queries fresh pure-ADA UTxOs each
-# attempt (mirrors the resilience in tests/e2e/src/api/cardano.rs).
+# The contract-compiler's deploy txs chain through this funded address and can still be
+# settling on the node when we query (container exit / kupo confirmation don't guarantee
+# the node-socket UTxO set is quiescent), so a freshly-queried UTxO may be spent by the
+# next deploy tx before we submit ("All inputs are spent"). Build/sign/submit in a retry
+# loop that re-queries fresh pure-ADA UTxOs each attempt.
 SEED_TX_ID=""
 for attempt in {1..15}; do
   cardano-cli latest query utxo --testnet-magic "$NETWORK_MAGIC" \
@@ -172,22 +173,27 @@ if [ -z "$SEED_TX_ID" ]; then
   exit 1
 fi
 
-# Wait until the cNIGHT lands at the ICS address (confirms the tx is in a block,
-# so midnight-setup's checkpoint will be taken at/after it).
+# Require the cNIGHT to land at the ICS address before writing the marker: midnight-setup
+# uses the marker as the bridge `initial_data_checkpoint`, which must point at a confirmed
+# tx — otherwise the env could start from a checkpoint whose seeded pools don't exist.
 echo "Waiting for the seeding tx to be included on-chain..."
+included=false
 for i in {1..60}; do
   if cardano-cli latest query utxo --testnet-magic "$NETWORK_MAGIC" \
        --address "$ICS_ADDR" --output-text 2>/dev/null \
        | /busybox grep -q "$POLICY_ID"; then
     echo "Seeded ICS cNIGHT confirmed on-chain."
+    included=true
     break
   fi
   echo "Waiting for inclusion (attempt $i/60)..."
   sleep 2
 done
+if [ "$included" != true ]; then
+  echo "ERROR: seeding tx $SEED_TX_ID submitted but not confirmed at the ICS address within the budget"
+  exit 1
+fi
 
-# The marker doubles as the seeding tx hash: midnight-setup uses it as the bridge
-# `initial_data_checkpoint` so the seeded ICS cNIGHT (locked in this tx) is treated
-# as pre-existing locked supply and not swept to Treasury.
+# The marker doubles as the seeding tx hash midnight-setup anchors the bridge checkpoint to.
 echo "$SEED_TX_ID" > "$SEEDED_MARKER"
 echo "=== cNIGHT genesis seeding complete (tx $SEED_TX_ID) ==="

@@ -54,12 +54,6 @@ COUNCIL_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Council Forever") | .addr
 TECHAUTH_POLICY_ID=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .scriptHash' $CONTRACT_INFO)
 TECHAUTH_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .address' $CONTRACT_INFO)
 CNIGHT_MAPPING_VALIDATOR_ADDRESS=$(jq -r '.[] | select(.name == "cNIGHT Generates Dust") | .address' $CONTRACT_INFO)
-# The bridge's ICS / Reserve validators are the immutable "Forever" proxies that
-# hold the locked / reserved cNIGHT. Their addresses are parameterised by a fresh
-# one-shot UTxO each compile, so the static res/local-environment/{ics,reserve}-config.json
-# addresses are stale — patch the deployed addresses from contracts-info.json below
-# (mirrors the Council / Tech-Auth patching), so the bridge observes the same
-# addresses the cnight-seeder funds and the e2e monitor reads.
 ICS_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "ICS Forever") | .address' $CONTRACT_INFO)
 RESERVE_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "Reserve Forever") | .address' $CONTRACT_INFO)
 export PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.[] | select(.name == "Federated Ops Forever") | .scriptHash' $CONTRACT_INFO)
@@ -143,11 +137,9 @@ echo "Created cnight-config.json:"
 cat /tmp/cnight-config.json
 
 echo "Creating c2m-bridge-config.json..."
-# The bridge starts observing strictly AFTER initial_data_checkpoint (the checkpoint
-# tx itself is skipped). Anchor it to the cNIGHT genesis-seeding tx (which locked the
-# ICS supply, see cnight-seeder) so the pre-seeded ICS cNIGHT is treated as existing
-# locked supply and NOT swept to Treasury. Fall back to the latest ledger UTxO tx if
-# the seeder didn't run.
+# The bridge observes strictly AFTER initial_data_checkpoint, so anchor it to the cNIGHT
+# seeding tx: the pre-seeded ICS supply is already reflected in the genesis pools, so
+# re-observing it would double-account it. Fall back to the latest UTxO tx if not seeded.
 CNIGHT_SEED_MARKER=/runtime-values/cnight-seeded
 if [ -s "$CNIGHT_SEED_MARKER" ]; then
   existing_tx_hash=$(cat "$CNIGHT_SEED_MARKER")
@@ -168,21 +160,21 @@ EOF
 echo "Created c2m-bridge-config.json:"
 cat /tmp/c2m-bridge-config.json
 
-# Patch the ICS / Reserve validator addresses with the freshly-deployed ones so the
-# bridge observes the real "Forever" validators (the static config addresses are
-# stale — see above). These must match the addresses the cnight-seeder funded.
-echo "Patching ics-config.json / reserve-config.json with deployed validator addresses..."
-echo "  ICS Forever address:     $ICS_FOREVER_ADDRESS"
-echo "  Reserve Forever address: $RESERVE_FOREVER_ADDRESS"
-jq --arg addr "$ICS_FOREVER_ADDRESS" \
-   '.illiquid_circulation_supply_validator_address = $addr' \
-   res/local-environment/ics-config.json > /tmp/ics-config.json
-jq --arg addr "$RESERVE_FOREVER_ADDRESS" \
-   '.reserve_validator_address = $addr' \
-   res/local-environment/reserve-config.json > /tmp/reserve-config.json
-echo "Patched ics-config.json:"
+# Build the bridge ICS / Reserve configs from the freshly-deployed validator addresses and
+# the cNIGHT asset. The chain-spec build is the only consumer (pools come from the committed
+# genesis state), so utxos / total_amount are unused here.
+CNIGHT_POLICY_ID=$(jq -r '.addresses.cnight_policy_id' res/local-environment/cnight-config.json)
+CNIGHT_ASSET_NAME=$(jq -r '.addresses.cnight_asset_name' res/local-environment/cnight-config.json)
+echo "Building ics-config.json / reserve-config.json (ICS=$ICS_FOREVER_ADDRESS, Reserve=$RESERVE_FOREVER_ADDRESS)"
+jq -n --arg addr "$ICS_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" \
+   '{illiquid_circulation_supply_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: [], total_amount: 0}' \
+   > /tmp/ics-config.json
+jq -n --arg addr "$RESERVE_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" \
+   '{reserve_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: [], total_amount: 0}' \
+   > /tmp/reserve-config.json
+echo "Built ics-config.json:"
 cat /tmp/ics-config.json
-echo "Patched reserve-config.json:"
+echo "Built reserve-config.json:"
 cat /tmp/reserve-config.json
 
 export CHAINSPEC_NAME=localenv1
