@@ -1883,6 +1883,77 @@ impl CardanoClient {
         })
     }
 
+    /// Split `inputs` into `n` self-owned UTxOs, each holding `cnight_per` cNight +
+    /// `lovelace_per` lovelace (plus a change UTxO for the remainder). Submits and returns
+    /// the `n` freshly-created cNight UTxOs.
+    ///
+    /// Used by the invariant flood to give the wallet **independent per-deposit inputs**, so
+    /// every lock tx can be built up-front and all approved hashes batch-approved in a single
+    /// governance round-trip (instead of one round-trip per approved deposit). cNight stays
+    /// circulating (still `C.U`), so this doesn't perturb the pools.
+    pub async fn split_cnight_to_self(
+        &self,
+        inputs: &[OgmiosUtxo],
+        n: usize,
+        lovelace_per: u64,
+        cnight_per: u64,
+    ) -> Result<Vec<OgmiosUtxo>, OgmiosClientError> {
+        let policy_id = config::cnight_token_policy_id();
+        let network = Network::Custom(self.constants.cost_model.clone());
+        let self_addr = self.address_as_bech32();
+        let out_assets = vec![
+            Asset::new_from_str("lovelace", &lovelace_per.to_string()),
+            Asset::new_from_str(&policy_id, &cnight_per.to_string()),
+        ];
+
+        let mut tx_builder = TxBuilder::new_core();
+        tx_builder
+            .network(network)
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()));
+        for input in inputs {
+            tx_builder.tx_in(
+                &hex::encode(input.transaction.id),
+                input.index.into(),
+                &Self::build_asset_vector(input),
+                &self_addr,
+            );
+        }
+        for _ in 0..n {
+            tx_builder.tx_out(&self_addr, &out_assets);
+        }
+        let tx_hex = tx_builder
+            .change_address(&self_addr)
+            .complete_sync(None)
+            .unwrap()
+            .tx_hex();
+        let signed_tx = self
+            .wallet
+            .sign_tx(&tx_hex)
+            .expect("Failed to sign split tx");
+        let tx_bytes = hex::decode(signed_tx).expect("Failed to decode split tx hex");
+        let response = self.submit_tx(tx_bytes).await?;
+
+        let outputs = self
+            .find_utxos_by_tx_id(&self_addr, hex::encode(response.transaction.id))
+            .await;
+        // The `n` flood outputs each hold exactly `cnight_per`; the change UTxO holds the
+        // (larger) remainder, so filtering on the exact cNight amount isolates them.
+        Ok(outputs
+            .into_iter()
+            .filter(|u| {
+                u.value
+                    .native_tokens
+                    .iter()
+                    .filter(|(pid, _)| hex::encode(pid) == policy_id)
+                    .flat_map(|(_, assets)| assets.iter())
+                    .map(|a| a.amount)
+                    .sum::<u64>()
+                    == cnight_per
+            })
+            .take(n)
+            .collect())
+    }
+
     /// Submit an already built and signed Cardano transaction (CBOR bytes) via Ogmios.
     pub async fn submit_tx(
         &self,

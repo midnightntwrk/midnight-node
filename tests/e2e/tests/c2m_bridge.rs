@@ -947,11 +947,25 @@ pub(crate) async fn approve_mc_tx_hash_via_governance(
     midnight: &MidnightClient,
     mc_tx_hash: [u8; 32],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    approve_mc_tx_hashes_via_governance(midnight, &[mc_tx_hash]).await
+}
+
+/// Pre-approve several Cardano tx hashes in a **single** governance round-trip via
+/// `C2MBridge.add_approved_mc_tx_hashes` (which takes a `BoundedVec`). Batching matters
+/// for the invariant flood: governance is the dominant cost, so one round-trip for all
+/// approved deposits is far cheaper than one per deposit.
+pub(crate) async fn approve_mc_tx_hashes_via_governance(
+    midnight: &MidnightClient,
+    mc_tx_hashes: &[[u8; 32]],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // BoundedVec<McTxHash, _> SCALE-encodes identically to Vec<McTxHash>;
     // McTxHash is a single-field tuple struct around `[u8; 32]`.
-    let hashes_value = DynValue::unnamed_composite(vec![DynValue::unnamed_composite(vec![
-        DynValue::from_bytes(mc_tx_hash.as_slice()),
-    ])]);
+    let hashes_value = DynValue::unnamed_composite(
+        mc_tx_hashes
+            .iter()
+            .map(|h| DynValue::unnamed_composite(vec![DynValue::from_bytes(h.as_slice())]))
+            .collect::<Vec<_>>(),
+    );
     submit_via_governance(
         midnight,
         "C2MBridge",

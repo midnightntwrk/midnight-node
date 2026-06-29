@@ -38,7 +38,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::c2m_bridge::{
-    approve_mc_tx_hash_via_governance, lock_c2m_bridge_serial, read_subminimal_flush_threshold,
+    approve_mc_tx_hashes_via_governance, lock_c2m_bridge_serial, read_subminimal_flush_threshold,
     set_subminimal_threshold_via_governance,
 };
 use crate::global_faucet_manager;
@@ -59,6 +59,13 @@ const FLOOD_RNG_SEED: u64 = 0xC2C_1779;
 /// ADA funded to the flood wallet for fees + per-lock min-UTxO. Each lock sends
 /// ~1.5 ADA to ICS plus a small fee, so this covers a few hundred locks.
 const FLOOD_WALLET_ADA: u64 = 900_000_000;
+
+/// Lovelace placed on each per-deposit flood input (covers the ICS min-UTxO + fee).
+const FLOOD_INPUT_LOVELACE: u64 = 4_000_000;
+
+/// cNIGHT placed on each per-deposit flood input — comfortably above the largest
+/// planned deposit so any disposition's amount fits.
+const FLOOD_INPUT_CNIGHT: u64 = 150_000_000;
 
 /// The three pools of a single chain, in STARS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -386,50 +393,65 @@ async fn cross_chain_invariants_hold_under_flood() {
         .expect("flood wallet never received cNIGHT");
     tracing::info!("flood wallet {flood_addr} funded with ADA + circulating cNIGHT");
 
-    // The first lock spends both the cNIGHT UTxO and the ADA UTxO; afterwards the single
-    // change UTxO (cNIGHT + ADA) chains into each subsequent lock.
-    let mut inputs: Vec<OgmiosUtxo> = flood.utxos().await;
-
+    // Give the wallet one independent (cNIGHT + ADA) UTxO per planned deposit, so every
+    // lock tx can be built up-front (no chaining) and all approved hashes batch-approved in
+    // a single governance round-trip.
     let plan = build_flood_plan();
+    let flood_inputs = flood
+        .split_cnight_to_self(
+            &flood.utxos().await,
+            plan.len(),
+            FLOOD_INPUT_LOVELACE,
+            FLOOD_INPUT_CNIGHT,
+        )
+        .await
+        .expect("split flood inputs");
+    assert_eq!(
+        flood_inputs.len(),
+        plan.len(),
+        "expected one flood input per planned deposit"
+    );
+
+    // Build every lock tx up-front and collect the hashes that need approval.
+    let mut prepared: Vec<(Disposition, u64, [u8; 32], Vec<u8>)> = Vec::with_capacity(plan.len());
+    let mut approved_hashes: Vec<[u8; 32]> = Vec::new();
+    for (step, input) in plan.iter().zip(flood_inputs.into_iter()) {
+        let recipient = match step.disposition {
+            Disposition::Invalid => BridgeTransferRecipient::Invalid,
+            _ => BridgeTransferRecipient::Address(step.recipient),
+        };
+        let tx = flood
+            .make_cooperative_bridge_transfer(&[input], &ics, step.amount, recipient)
+            .await
+            .expect("build cooperative bridge transfer");
+        if matches!(step.disposition, Disposition::Approved) {
+            approved_hashes.push(tx.tx_id);
+        }
+        prepared.push((step.disposition, step.amount, tx.tx_id, tx.signed_tx_bytes));
+    }
+
+    // One governance round-trip approves every approved deposit before any is submitted, so
+    // the bridge sees the approvals before it observes the locks.
+    if !approved_hashes.is_empty() {
+        approve_mc_tx_hashes_via_governance(&midnight, &approved_hashes)
+            .await
+            .expect("batch pre-approve bridge tx hashes via governance");
+    }
+
+    // Submit in waves; after each wave only the directional inequalities are guaranteed.
     let wave_size = 3;
-    for (wave_idx, wave) in plan.chunks(wave_size).enumerate() {
-        for step in wave {
-            let recipient = match step.disposition {
-                Disposition::Invalid => BridgeTransferRecipient::Invalid,
-                _ => BridgeTransferRecipient::Address(step.recipient),
-            };
-            let prepared = flood
-                .make_cooperative_bridge_transfer(&inputs, &ics, step.amount, recipient)
-                .await
-                .expect("build cooperative bridge transfer");
-
-            if matches!(step.disposition, Disposition::Approved) {
-                approve_mc_tx_hash_via_governance(&midnight, prepared.tx_id)
-                    .await
-                    .expect("pre-approve bridge tx hash via governance");
-            }
-
+    for (wave_idx, wave) in prepared.chunks(wave_size).enumerate() {
+        for (disposition, amount, tx_id, signed_tx_bytes) in wave {
             funded
-                .submit_tx(prepared.signed_tx_bytes)
+                .submit_tx(signed_tx_bytes.clone())
                 .await
                 .expect("submit cooperative bridge transfer");
             tracing::info!(
                 "wave {wave_idx}: submitted {:?} amount={} tx={}",
-                step.disposition,
-                step.amount,
-                hex::encode(prepared.tx_id),
+                disposition,
+                amount,
+                hex::encode(tx_id),
             );
-
-            // Wait for the change to confirm, then chain it as the next input.
-            let change = funded
-                .find_utxos_by_tx_id(&flood_addr, hex::encode(prepared.tx_id))
-                .await;
-            inputs = vec![
-                change
-                    .into_iter()
-                    .find(|u| cnight_in_utxos(std::slice::from_ref(u), &policy) > 0)
-                    .expect("cooperative transfer produced no cNIGHT change"),
-            ];
         }
 
         // Mid-flood: only the directional inequalities are guaranteed (Cardano leads).
