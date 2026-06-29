@@ -102,3 +102,6 @@ AGENTS.local.md
 # Local-only image bundle for +local-env-ci-localimg (docker save → load); never commit
 local-env-images.tar
 toolkit-image.tar
+
+# Generated compactc wrapper from `just compactc` (points into the nix store)
+.compact-home/

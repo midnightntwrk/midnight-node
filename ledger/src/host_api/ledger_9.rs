@@ -75,6 +75,22 @@ pub trait Ledger9Bridge {
 		}
 	}
 
+	fn apply_post_block_update(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_post_block_update(*self, state_key, block_context)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_post_block_update(
+				*self,
+				state_key,
+				block_context,
+			)
+		}
+	}
+
 	// Current Enabled Version
 	fn get_version(&mut self) -> AllocateAndReturnFatPointer<Vec<u8>> {
 		// Dispatch on storage mode even though `get_version` doesn't read storage today —
@@ -270,6 +286,22 @@ pub trait Ledger9Bridge {
 			Bridge::<Signature, DbUnified>::get_unclaimed_amount(state_key, beneficiary)
 		} else {
 			Bridge::<Signature, DbSeparate>::get_unclaimed_amount(state_key, beneficiary)
+		}
+	}
+
+	/*
+	 * Returns the unclaimed Cardano-bridge transfer amount for a provided beneficiary address
+	 */
+	// Current Enabled Version
+	fn get_bridge_receiving_amount(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		beneficiary: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_bridge_receiving_amount(state_key, beneficiary)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_bridge_receiving_amount(state_key, beneficiary)
 		}
 	}
 

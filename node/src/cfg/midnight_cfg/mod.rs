@@ -19,6 +19,9 @@ use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use super::validation_utils::{maybe, path_exists};
 use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
 
+pub mod invariants;
+use invariants::check_mainchain_epoch_invariants;
+
 #[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StorageSeparation {
 	#[default]
@@ -35,6 +38,7 @@ fn default_cnight_observation_window_size() -> u32 {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
+#[validate(custom = mainchain_epoch_invariants)]
 /// Parameters specific to Midnight
 pub struct MidnightCfg {
 	/// On start-up, wipe the chain
@@ -164,6 +168,16 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 	Ok(())
 }
 
+/// Validates the self-contained mainchain timing invariants (I1–I4, I6) at config-parse time, so an
+/// internally-incoherent mainchain config fails as a `CfgError` before any service or runtime
+/// construction. The cross-field sidechain↔mainchain invariant (I5) is not checked here: it needs
+/// the sidechain slot configuration, which is only available at service construction.
+fn mainchain_epoch_invariants(cfg: &MidnightCfg) -> Result<(), validation::Error> {
+	let epoch_config: MainchainEpochConfig = cfg.clone().into();
+	check_mainchain_epoch_invariants(&epoch_config)
+		.map_err(|e| validation::Error::Custom(e.to_string()))
+}
+
 impl CfgHelp for MidnightCfg {
 	fn help(cur_cfg: Option<&config::Config>) -> Result<Vec<HelpField>, CfgError> {
 		cfg_help!(cur_cfg, Self)
@@ -185,5 +199,86 @@ impl From<MidnightCfg> for MainchainEpochConfig {
 				value.mc_slot_duration_millis,
 			),
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// A `MidnightCfg` whose mainchain timing fields are internally coherent (1000 ms slots, a
+	/// 5-day epoch divisible by the slot duration and at least one second). Other fields are left at
+	/// their defaults; the mainchain-invariant validator reads only the `mc_*` fields.
+	fn good_cfg() -> MidnightCfg {
+		MidnightCfg {
+			mc_first_epoch_timestamp_millis: 1_596_059_091_000,
+			mc_first_epoch_number: 208,
+			mc_epoch_duration_millis: 432_000_000,
+			mc_first_slot_number: 4_492_800,
+			mc_slot_duration_millis: 1000,
+			..Default::default()
+		}
+	}
+
+	#[test]
+	fn validator_accepts_coherent_mainchain_config() {
+		assert!(mainchain_epoch_invariants(&good_cfg()).is_ok());
+	}
+
+	#[test]
+	fn validator_rejects_zero_epoch_duration() {
+		let mut cfg = good_cfg();
+		cfg.mc_epoch_duration_millis = 0;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_zero_slot_duration() {
+		let mut cfg = good_cfg();
+		cfg.mc_slot_duration_millis = 0;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_sub_second_epoch_duration() {
+		let mut cfg = good_cfg();
+		cfg.mc_epoch_duration_millis = 999;
+		cfg.mc_slot_duration_millis = 1;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_non_divisible_epoch_slot_pair() {
+		let mut cfg = good_cfg();
+		cfg.mc_epoch_duration_millis = 10_000;
+		cfg.mc_slot_duration_millis = 3000;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn validator_rejects_non_1000ms_slot_duration() {
+		// epoch 432_000_000 ms is an exact multiple of a 2000 ms slot, so this passes the I4
+		// divisibility check yet is rejected by I6 because the vendored upstream `slots_per_epoch`
+		// hardcodes a 1000 ms slot.
+		let mut cfg = good_cfg();
+		cfg.mc_slot_duration_millis = 2000;
+		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	#[test]
+	fn serde_valid_validate_surfaces_mainchain_invariant_violation() {
+		// The aggregate `Validate::validate()` path (run by `Cfg::new()` → `cfg.validate()`,
+		// surfacing as a `CfgError`) reports the mainchain-invariant violation. Mock follower vars
+		// are set so the unrelated `main_chain_follower_vars` validator does not mask this failure.
+		let mut cfg = good_cfg();
+		cfg.use_main_chain_follower_mock = true;
+		cfg.mock_registrations_file = Some("/dev/null".to_string());
+		cfg.mc_epoch_duration_millis = 0;
+
+		let err = cfg.validate().expect_err("zero epoch duration must be rejected");
+		assert!(
+			err.to_string().contains("mc__epoch_duration_millis"),
+			"validation error should name the offending parameter, got: {err}"
+		);
 	}
 }
