@@ -13,6 +13,10 @@
 
 pub use super::make_block_context;
 pub use super::{
+	TransactionSignature as Signature, contract_operation_new, maintenance_verifying_key,
+	signature_verifying_key, transaction_signature, transaction_signing_key,
+};
+pub use super::{
 	base_crypto::{
 		cost_model::{
 			CostDuration, FeePrices, FixedPoint, NormalizedCost, RunningCost, SyntheticCost,
@@ -21,7 +25,7 @@ pub use super::{
 		fab::AlignedValue,
 		hash::{HashOutput, PERSISTENT_HASH_BYTES, persistent_commit, persistent_hash},
 		rng::SplittableRng,
-		signatures::{Signature, SigningKey, VerifyingKey},
+		signatures::{SigningKey, VerifyingKey},
 		time::{Duration, Timestamp},
 	},
 	coin_structure::{
@@ -66,7 +70,6 @@ pub use super::{
 			SystemTransaction, Transaction, TransactionCostModel, TransactionHash, UnshieldedOffer,
 			Utxo, UtxoOutput, UtxoSpend, VerifiedTransaction,
 		},
-		test_utilities::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver, verifier_key},
 		verify::WellFormedStrictness,
 	},
 	onchain_runtime::{
@@ -84,6 +87,7 @@ pub use super::{
 		},
 		transcript::Transcript,
 	},
+	test_utilities_local::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver, verifier_key},
 	transient_crypto::{
 		commitment::{Pedersen, PedersenRandomness, PureGeneratorPedersen},
 		curve::Fr,
@@ -100,6 +104,7 @@ pub use super::{
 		Delta, Input, Offer, Output, Transient, ZSWAP_EXPECTED_FILES,
 		error::OfferCreationFailed,
 		keys::{SecretKeys, Seed},
+		ledger::State as ZswapChainState,
 		local::State as WalletState,
 		prove::ZswapResolver,
 	},
@@ -167,6 +172,18 @@ impl<D: DB + Clone, E: std::fmt::Debug> IntoWalletState<D> for Result<WalletStat
 	fn into_wallet_state(self) -> WalletState<D> {
 		self.expect("wallet state apply failed")
 	}
+}
+
+/// Raw zkir bytes for circuit `name` (the `zkir/{name}.bzkir` the resolver
+/// loads as `ProvingKeyMaterial::ir_source`). Ledger 9+ stores these on-chain
+/// in the contract operation so deployed circuits can be re-proven/upgraded
+/// from chain state alone; pre-9 `contract_operation_new` ignores them.
+pub async fn ir_source(resolver: &Resolver, name: &'static str) -> Option<Vec<u8>> {
+	let material = resolver
+		.resolve_key(KeyLocation(std::borrow::Cow::Borrowed(name)))
+		.await
+		.ok()??;
+	Some(material.ir_source)
 }
 
 /// Serializes a mn_ledger::serialize-able type into bytes

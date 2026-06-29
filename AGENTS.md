@@ -89,6 +89,37 @@ CFG_PRESET=dev ./target/release/midnight-node
 ```
 Ports: P2P 30333, RPC 9944
 
+**Compiling contracts locally (compactc):** The Compact compiler source is vendored
+as the `compact/` git submodule (pinned to the 0.31.0 release commit). Build it once
+with nix and expose it to toolkit-js:
+```bash
+git submodule update --init compact
+just compactc   # builds compactc, writes the COMPACT_HOME wrapper
+```
+`.envrc` then exports `COMPACT_HOME`, so `cd util/toolkit-js && npm run compact` uses
+the locally built compiler instead of downloading the prebuilt binary. Re-run
+`just compactc` after bumping the submodule. First build compiles `zkir` from source
+unless you have nix `trusted-users` access to the IOG cache (`cache.iog.io`).
+
+`COMPACTC_VERSION` selects which compiler CI uses. Its format is
+`<compiler-version>-<12-char-tree-hash>` (e.g. `0.31.0-6587676a9bb2`), produced by
+`scripts/compact-submodule-version.sh` from the pinned `compact/` submodule (the compiler
+version comes from the submodule's `flake.nix`, the hash is `git rev-parse HEAD^{tree} | cut -c1-12`).
+Regenerate it after bumping the submodule: `scripts/compact-submodule-version.sh > COMPACTC_VERSION`.
+
+`+node-ci-image` decides build-vs-fetch by comparing `COMPACTC_VERSION` against the live
+submodule version (computed `LOCALLY`, since the COPY'd submodule has no `.git`):
+- **Match** (the tree-hash suffix agrees) → build from source via `+compactc-bundle`, which runs
+  `scripts/build-compactc.sh` inside a `nixos/nix` image (IOG cache enabled) and emits a
+  self-contained `COMPACT_HOME` bundle.
+- **No match** — i.e. `COMPACTC_VERSION` is a plain released version with no tree-hash suffix —
+  → fetch that version's prebuilt binary via `+compactc-fetch`.
+
+Either way the image then asserts the resulting `compactc --version` equals the
+`COMPACTC_VERSION` prefix (the compiler reports the bare semver, no hash), so a submodule bump
+without regenerating `COMPACTC_VERSION` fails loudly. The full hashed `COMPACTC_VERSION` is also
+used in the CI/toolkit image tags.
+
 **Debugging ledger issues:** Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.
 
 **Recommended tools:**
@@ -150,8 +181,8 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 
 **Signed commits:** All commits must be signed. Use `git commit -S` or configure Git to sign commits by default with `git config commit.gpgsign true`.
 
-**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant JIRA ticket link and add labels as needed:
-- No JIRA link: add `-l skip-changes-check-jira`
+**Creating PRs:** Use `gh pr create` to create pull requests. Always fill in the PR template (see `.github/pull_request_template.md`) - use `--body` with a heredoc that includes all template sections. Leave human-only checkboxes unchecked (e.g., "Self-reviewed the diff" - only humans can self-review). Prompt the user for a relevant GitHub issue link and add labels as needed:
+- No issue link: add `-l skip-changes-check-issue`
 - No change file: add `-l skip-changes-check-all`
 
 ## Change Files
@@ -171,7 +202,7 @@ Format:
 Longer description of the change
 
 PR: <link to PR>
-JIRA: <link to JIRA ticket, if applicable>
+Issue: <link to Github Issue, if applicable>
 ```
 
 Change files are optional for changes that don't affect products (e.g., CI-only changes), but are worth adding for significant changes anyway.

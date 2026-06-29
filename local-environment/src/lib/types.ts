@@ -16,9 +16,10 @@ export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
   /**
-   * Snapshot URI (http://, https://, or local path) to fork the well-known
-   * network from. Required for well-known networks since they only have a
-   * mock-authorities-driven bring-up path.
+   * Snapshot URI (http:// or https://) to fork the well-known network from.
+   * Required on the first bring-up of a well-known network; later runs can
+   * omit it to reuse existing restored data plus generated mock-authorities
+   * output.
    */
   fromSnapshot?: string;
 }
@@ -59,11 +60,31 @@ export interface FederatedRuntimeUpgradeOptions
   techCommitteeUris: string[];
   /** URI used to close the federated motion and apply the authorized upgrade */
   motionExecutorUri: string;
+  /**
+   * Use `system.authorizeUpgradeWithoutChecks` instead of `system.authorizeUpgrade`,
+   * skipping the runtime-side `SpecVersionNeedsToIncrease` check. Intended for
+   * local rehearsals where the candidate wasm shares a spec_version with the
+   * running runtime; production upgrades should leave this off so the check
+   * still catches real version-bump regressions.
+   */
+  allowSameVersion?: boolean;
 }
+
+/**
+ * Options for the two-phase `full-upgrade` command: image rollout followed by
+ * governance runtime upgrade. Inherits both option sets; there are no field
+ * conflicts because both ImageUpgradeOptions and FederatedRuntimeUpgradeOptions
+ * extend RunOptions.
+ */
+export interface FullUpgradeOptions
+  extends ImageUpgradeOptions,
+    FederatedRuntimeUpgradeOptions {}
 
 export const WELL_KNOWN_NAMESPACES = [
   "devnet",
   "preview",
+  "preprod",
+  "mainnet",
   "qanet",
   "testnet-02",
 ] as const;

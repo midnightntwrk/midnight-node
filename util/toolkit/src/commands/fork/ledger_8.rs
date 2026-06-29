@@ -22,6 +22,7 @@ pub mod inner {
 	pub mod contract_state;
 	pub mod dust_balance;
 	pub mod generate_intent;
+	pub mod night_pools;
 	pub mod serde_convert;
 	pub mod show_transaction;
 	pub mod show_wallet;

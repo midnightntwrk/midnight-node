@@ -86,7 +86,7 @@ mod tests {
 		t_token,
 		tx_generator::{
 			builder::{
-				BatchSingleTxArgs, BatchesArgs, ClaimRewardsArgs, CoinSelectionStrategy,
+				BatchSingleTxArgs, ClaimKindArg, ClaimRewardsArgs, CoinSelectionStrategy,
 				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
 			},
 			source::FetchCacheConfig,
@@ -133,10 +133,11 @@ mod tests {
 	// TODO: There should be expected transactions here, not just an OK state.
 	// We also need to define reaonsable errors
 	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
-		shielded_amount: Some(0),
-		shielded_token_type: t_token(),
-		unshielded_amount: Some(100),
-		unshielded_token_type: NIGHT,
+		outputs: vec![],
+		shielded_amount: vec![0],
+		shielded_token_type: vec![t_token()],
+		unshielded_amount: vec![100],
+		unshielded_token_type: vec![NIGHT],
 		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
 			.parse().unwrap(),
 		funding_seed: None,
@@ -160,26 +161,11 @@ mod tests {
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
 		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
 		rng_seed:None,
-		amount: 500_000
+		amount: 500_000,
+		claim_kind: ClaimKindArg::Reward
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"claim-rewards-tx"
-	)]
-	#[test_case(test_fixture!(Builder::Batches(BatchesArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-		num_txs_per_batch: 1,
-		num_batches: 1,
-		concurrency: None,
-		rng_seed: None,
-		shielded_token_type: t_token(),
-		coin_amount: 100,
-		initial_unshielded_intent_value: 50_000_000_000_000,
-		unshielded_token_type: NIGHT,
-		enable_shielded: false,
-		coin_selection: CoinSelectionStrategy::LargestFirst,
-	}), ["genesis/genesis_block_undeployed.mn"]) =>
-	   matches Ok(..);
-		"batches-tx"
 	)]
 	#[test_case(test_fixture!(Builder::ContractSimple(
 	    ContractCall::Deploy(ContractDeployArgs {
