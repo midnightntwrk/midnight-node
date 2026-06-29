@@ -440,7 +440,7 @@ impl GenesisGenerator {
 				unproven_tx,
 				rng.clone(),
 				&DEFAULT_RESOLVER,
-				&self.state.parameters.cost_model.runtime_cost_model,
+				self.state.parameters.cost_model.runtime_cost_model.clone(),
 			)
 			.await;
 
@@ -582,17 +582,20 @@ impl GenesisGenerator {
 		rng: &mut StdRng,
 		timestamp: Timestamp,
 	) {
-		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+		let mut signing_keys = vec![];
 		let mut registrations = vec![];
+		// Build the registrations unsigned first: under ledger 9-rc.3 the registration
+		// fields are part of `data_to_sign`, so the intent must already carry the
+		// dust_actions before we compute the bytes to sign.
 		for wallet in wallets {
-			let signature = wallet.unshielded.signing_key().sign(rng, &data_to_sign);
+			signing_keys.push(wallet.unshielded.signing_key().clone());
 			let night_key = wallet.unshielded.verifying_key.unwrap();
 			let dust_address = wallet.dust.public_key;
 			registrations.push(DustRegistration {
 				night_key: signature_verifying_key(night_key),
 				dust_address: Some(Sp::new(dust_address)),
 				allow_fee_payment: 0,
-				signature: Some(Sp::new(transaction_signature(signature))),
+				signature: None,
 			});
 		}
 		if registrations.is_empty() {
@@ -604,6 +607,26 @@ impl GenesisGenerator {
 			ctime: timestamp,
 		};
 		intent.dust_actions = Some(Sp::new(dust_actions));
+
+		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+		let signed = intent
+			.dust_actions
+			.as_ref()
+			.unwrap()
+			.registrations
+			.iter()
+			.zip(signing_keys.iter())
+			.map(|(reg, sk)| {
+				let mut reg = (*reg).clone();
+				reg.signature = Some(Sp::new(transaction_signature(sk.sign(rng, &data_to_sign))));
+				reg
+			})
+			.collect::<Vec<_>>();
+		intent.dust_actions = Some(Sp::new(DustActions {
+			spends: Array::new(),
+			registrations: signed.into(),
+			ctime: timestamp,
+		}));
 	}
 
 	fn apply_standard_tx(&mut self, tx: Transaction, block_context: &BlockContext) -> Result<()> {

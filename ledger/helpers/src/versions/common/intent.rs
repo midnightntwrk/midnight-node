@@ -15,7 +15,7 @@ use super::{
 	Array, BuildContractAction, BuilderContext, ContractAction, ContractAddress, ContractEffects,
 	DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, MidnightDataProvider,
 	OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker, ProvingKeyMaterial,
-	Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	Resolver, Signature, SigningKey, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
 	transaction_signing_key,
 };
 use async_trait::async_trait;
@@ -39,6 +39,18 @@ pub trait BuildIntent<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
 		context: Arc<C>,
 		segment_id: SegmentId,
 	) -> IntentOf<D>;
+
+	/// Signing keys for the unshielded offers this intent carries, returned as
+	/// `(guaranteed, fallible)` in the same order the offer inputs are built.
+	///
+	/// `StandardTrasactionInfo::apply_dust` uses these to re-sign the offers after it
+	/// attaches `dust_actions`: since ledger 9.1.0-rc.3, the dust fields are folded into the
+	/// intent's `data_to_sign`, so the signatures produced by [`Self::build`] (before the
+	/// dust existed) no longer match. Intents with no unshielded offer (the default) return
+	/// empty vectors.
+	fn unshielded_signing_keys(&self, _context: Arc<C>) -> (Vec<SigningKey>, Vec<SigningKey>) {
+		(Vec::new(), Vec::new())
+	}
 }
 
 pub struct IntentInfo<D: DB + Clone, C: BuilderContext<D>> {
@@ -104,6 +116,22 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D, C>
 				dust_registration_signing_keys.as_slice(),
 			)
 			.unwrap_or_else(|_| panic!("Intent signing with segment_id {segment_id:?} failed"))
+	}
+
+	fn unshielded_signing_keys(&self, context: Arc<C>) -> (Vec<SigningKey>, Vec<SigningKey>) {
+		let signing_keys = |offer: &Option<UnshieldedOfferInfo<D, C>>| {
+			offer
+				.as_ref()
+				.map(|offer| {
+					offer.inputs.iter().map(|input| input.signing_key(context.clone())).collect()
+				})
+				.unwrap_or_default()
+		};
+
+		(
+			signing_keys(&self.guaranteed_unshielded_offer),
+			signing_keys(&self.fallible_unshielded_offer),
+		)
 	}
 }
 
