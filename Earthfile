@@ -222,6 +222,7 @@ rebuild-genesis-state:
     # `LEDGER9-TOOLKIT-JS` to find the matching `#[ignore]`s in
     # `util/toolkit/src/commands/generate_intent.rs`.
     ARG GENERATE_JS_TEST_TXS=false
+    ARG COMPILE_SIMPLE_MERKLE_TREE=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     # Override with a pre-built registry image to skip rebuilding (e.g. in CI)
@@ -231,11 +232,13 @@ rebuild-genesis-state:
     ENV RUST_BACKTRACE=1
 
     # Compile simple-merkle-tree contract from source using compactc from toolkit-js
-    IF [ "$GENERATE_TEST_TXS" = "true" ]
+    IF [ "$COMPILE_SIMPLE_MERKLE_TREE" = "true" ]
         COPY ledger/test-data/simple-merkle-tree.compact /tmp/simple-merkle-tree.compact
         WORKDIR /toolkit-js
         RUN npx run-compactc /tmp/simple-merkle-tree.compact /test-static/simple-merkle-tree
         WORKDIR /
+    ELSE
+        COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     END
 
     # Skips faucet wallet funding if you do not have the secrets for the environment you're building for (expected)
