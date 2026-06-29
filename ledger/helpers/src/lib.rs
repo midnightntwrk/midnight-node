@@ -91,6 +91,14 @@ pub mod ledger_7 {
 		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
 	}
 
+	/// The verifier-key slot version for this ledger generation, used when *removing*
+	/// a key (the entry point alone doesn't say which slot the key lives in).
+	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
+	/// `contract_operation_versioned_verifier_key` above.
+	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+		mn_ledger::structure::ContractOperationVersion::V3
+	}
+
 	pub fn signature_verifying_key(
 		key: base_crypto::signatures::VerifyingKey,
 	) -> SignatureVerifyingKey {
@@ -173,6 +181,14 @@ pub mod ledger_8 {
 		vk: transient_crypto::proofs::VerifierKey,
 	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
 		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
+	}
+
+	/// The verifier-key slot version for this ledger generation, used when *removing*
+	/// a key (the entry point alone doesn't say which slot the key lives in).
+	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
+	/// `contract_operation_versioned_verifier_key` above.
+	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+		mn_ledger::structure::ContractOperationVersion::V3
 	}
 
 	pub fn signature_verifying_key(
@@ -270,6 +286,15 @@ pub mod ledger_9 {
 		vk: transient_crypto::proofs::VerifierKey,
 	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
 		mn_ledger::structure::ContractOperationVersionedVerifierKey::V4(vk)
+	}
+
+	/// The verifier-key slot version for this ledger generation, used when *removing*
+	/// a key (the entry point alone doesn't say which slot the key lives in). Ledger 9
+	/// stores newly deployed/upserted keys in the `V4` slot, so removals must target
+	/// `V4` to match `contract_operation_versioned_verifier_key` above; targeting `V3`
+	/// would miss the key and fail with `VerifierKeyNotFound`.
+	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+		mn_ledger::structure::ContractOperationVersion::V4
 	}
 
 	pub fn signature_verifying_key(

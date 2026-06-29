@@ -15,8 +15,9 @@ use crate::ContractVerifyingKeyBytes;
 
 pub use super::make_block_context;
 pub use super::{
-	TransactionSignature as Signature, contract_operation_new, maintenance_verifying_key,
-	signature_verifying_key, transaction_signature, transaction_signing_key,
+	TransactionSignature as Signature, contract_operation_new, contract_operation_version,
+	maintenance_verifying_key, signature_verifying_key, transaction_signature,
+	transaction_signing_key,
 };
 pub use super::{
 	base_crypto::{
