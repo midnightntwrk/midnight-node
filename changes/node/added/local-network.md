@@ -36,5 +36,6 @@ Includes:
   funding is done by the e2e tests (which spend the faucet's circulating cNIGHT) and is out
   of scope here.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1796
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1778
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1792
