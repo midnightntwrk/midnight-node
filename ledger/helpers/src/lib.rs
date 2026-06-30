@@ -45,9 +45,9 @@ pub mod ledger_7 {
 	/// Ledger generation implemented by this module.
 	pub const LEDGER_VERSION: u32 = 7;
 	/// Workspace dependency name of the ledger crate backing this module.
-	pub const CRATE_NAME: &str = "mn-ledger";
+	pub const CRATE_NAME: &str = "mn-ledger-7";
 	pub use {
-		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
+		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger_7 as mn_ledger,
 		onchain_runtime, transient_crypto, zkir, zswap,
 	};
 
