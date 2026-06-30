@@ -30,8 +30,14 @@ pub enum CoinSelectionStrategy {
 	SmallestFirst,
 }
 
+/// Struct to store serialized verifying key bytes
+/// To be deserialized when constructing ContractOperations
+pub struct ContractVerifyingKeyBytes(pub Vec<u8>);
+
 #[path = "versions"]
 pub mod ledger_7 {
+	use crate::ContractVerifyingKeyBytes;
+
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
@@ -42,7 +48,7 @@ pub mod ledger_7 {
 	pub const CRATE_NAME: &str = "mn-ledger";
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
-		onchain_runtime, transient_crypto, zkir_2_1 as zkir, zswap,
+		onchain_runtime, transient_crypto, zkir, zswap,
 	};
 
 	// Vendored test-utilities shim for v8.
@@ -62,15 +68,35 @@ pub mod ledger_7 {
 		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
 		VerifyingKey as SignatureVerifyingKey,
 	};
+	use midnight_serialize::tagged_deserialize;
 
 	/// Builds a contract operation from a verifier key. `_ir_source` is accepted
 	/// for cross-version call-site compatibility but silently dropped: pre-ledger-9
 	/// contract operations have no on-chain IR slot.
 	pub fn contract_operation_new(
-		vk: Option<transient_crypto::proofs::VerifierKey>,
+		vk: Option<ContractVerifyingKeyBytes>,
 		_ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
-		onchain_runtime::state::ContractOperation::new(vk)
+	) -> Result<onchain_runtime::state::ContractOperation, std::io::Error> {
+		let vk = vk
+			.map(|b| tagged_deserialize(&mut b.0.as_slice()).expect("failed to read verifier key"));
+		Ok(onchain_runtime::state::ContractOperation::new(vk))
+	}
+
+	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
+	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
+	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
+	pub fn contract_operation_versioned_verifier_key(
+		vk: transient_crypto::proofs::VerifierKey,
+	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
+		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
+	}
+
+	/// The verifier-key slot version for this ledger generation, used when *removing*
+	/// a key (the entry point alone doesn't say which slot the key lives in).
+	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
+	/// `contract_operation_versioned_verifier_key` above.
+	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+		mn_ledger::structure::ContractOperationVersion::V3
 	}
 
 	pub fn signature_verifying_key(
@@ -100,6 +126,8 @@ pub mod ledger_7 {
 
 #[path = "versions"]
 pub mod ledger_8 {
+	use crate::ContractVerifyingKeyBytes;
+
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
@@ -111,7 +139,7 @@ pub mod ledger_8 {
 	pub use {
 		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
 		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
-		zkir_2_1 as zkir, zswap_ledger_8 as zswap,
+		zkir, zswap_ledger_8 as zswap,
 	};
 
 	// Vendored test-utilities shim for v8.
@@ -132,15 +160,35 @@ pub mod ledger_8 {
 		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
 		VerifyingKey as SignatureVerifyingKey,
 	};
+	use midnight_serialize::tagged_deserialize;
 
 	/// Builds a contract operation from a verifier key. `_ir_source` is accepted
 	/// for cross-version call-site compatibility but silently dropped: pre-ledger-9
 	/// contract operations have no on-chain IR slot.
 	pub fn contract_operation_new(
-		vk: Option<transient_crypto::proofs::VerifierKey>,
+		vk: Option<ContractVerifyingKeyBytes>,
 		_ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
-		onchain_runtime::state::ContractOperation::new(vk)
+	) -> Result<onchain_runtime::state::ContractOperation, std::io::Error> {
+		let vk = vk
+			.map(|b| tagged_deserialize(&mut b.0.as_slice()).expect("failed to read verifier key"));
+		Ok(onchain_runtime::state::ContractOperation::new(vk))
+	}
+
+	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
+	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
+	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
+	pub fn contract_operation_versioned_verifier_key(
+		vk: transient_crypto::proofs::VerifierKey,
+	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
+		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
+	}
+
+	/// The verifier-key slot version for this ledger generation, used when *removing*
+	/// a key (the entry point alone doesn't say which slot the key lives in).
+	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
+	/// `contract_operation_versioned_verifier_key` above.
+	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+		mn_ledger::structure::ContractOperationVersion::V3
 	}
 
 	pub fn signature_verifying_key(
@@ -170,6 +218,8 @@ pub mod ledger_8 {
 
 #[path = "versions"]
 pub mod ledger_9 {
+	use crate::ContractVerifyingKeyBytes;
+
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_9 as extract_tx_with_context;
@@ -185,6 +235,7 @@ pub mod ledger_9 {
 		zkir, zswap_ledger_9 as zswap,
 	};
 
+	use midnight_serialize::{peek_tag, tagged_deserialize};
 	pub use mn_ledger::test_utilities as test_utilities_local;
 
 	#[allow(clippy::duplicate_mod)]
@@ -207,12 +258,43 @@ pub mod ledger_9 {
 	/// key so the deployed contract's circuits can later be re-proven/upgraded
 	/// from chain state alone; it counts toward `max_contract_metadata_size`.
 	pub fn contract_operation_new(
-		vk: Option<transient_crypto::proofs::VerifierKey>,
+		vk: Option<ContractVerifyingKeyBytes>,
 		ir_source: Option<Vec<u8>>,
-	) -> onchain_runtime::state::ContractOperation {
+	) -> Result<onchain_runtime::state::ContractOperation, std::io::Error> {
 		let ir = ir_source
 			.map(|bytes| ledger_storage::arena::Sp::new(onchain_runtime::state::IrBuf(bytes)));
-		onchain_runtime::state::ContractOperation::new(vk, ir)
+		let mut op = onchain_runtime::state::ContractOperation::new(None, ir);
+
+		if let Some(vk) = vk {
+			let tag = peek_tag(&mut std::io::Cursor::new(&vk.0))?;
+			match tag.as_str() {
+				"verifier-key[v6]" => op.v2 = Some(tagged_deserialize(&mut &vk.0[..])?),
+				"verifier-key[v7]" => op.v3 = Some(tagged_deserialize(&mut &vk.0[..])?),
+				_ => panic!("unknown verifier key tag: '{tag}'"),
+			}
+		}
+
+		Ok(op)
+	}
+
+	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
+	/// Ledger 9 stores newly deployed verifier keys in the `v3` slot (`ContractOperation::new`
+	/// above), which is the `V4` (zk-stdlib v2) variant taking the 3.x
+	/// `transient_crypto::proofs::VerifierKey` this module deserializes. The `V3` variant is
+	/// reserved for legacy 2.x (`transient_crypto_old`) keys.
+	pub fn contract_operation_versioned_verifier_key(
+		vk: transient_crypto::proofs::VerifierKey,
+	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
+		mn_ledger::structure::ContractOperationVersionedVerifierKey::V4(vk)
+	}
+
+	/// The verifier-key slot version for this ledger generation, used when *removing*
+	/// a key (the entry point alone doesn't say which slot the key lives in). Ledger 9
+	/// stores newly deployed/upserted keys in the `V4` slot, so removals must target
+	/// `V4` to match `contract_operation_versioned_verifier_key` above; targeting `V3`
+	/// would miss the key and fail with `VerifierKeyNotFound`.
+	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+		mn_ledger::structure::ContractOperationVersion::V4
 	}
 
 	pub fn signature_verifying_key(

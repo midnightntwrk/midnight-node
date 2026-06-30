@@ -836,6 +836,21 @@ where
 			.ok_or(LedgerApiError::BeneficiaryNotFound)
 	}
 
+	pub fn get_bridge_receiving_amount(
+		state_key: &[u8],
+		beneficiary: &[u8],
+	) -> Result<u128, LedgerApiError> {
+		let api = api::new();
+
+		let night_addr = api.night_address(beneficiary)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		ledger
+			.get_bridge_receiving_amount(night_addr)
+			.copied()
+			.ok_or(LedgerApiError::BeneficiaryNotFound)
+	}
+
 	pub fn get_ledger_parameters(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
@@ -931,6 +946,13 @@ where
 										SingleUpdate::VerifierKeyRemove(..) => {
 											cd.inc_verifier_key_remove();
 										},
+										// Ledger 9+ adds IrInsert/IrRemove (on-chain IR maintenance).
+										// This match is shared across ledger versions, so the variants
+										// can't be named here (they don't exist in L7/L8's SingleUpdate);
+										// they're not yet broken out in ContractCallsDetails telemetry.
+										// TODO: support IrInsert/IrRemove
+										#[allow(unreachable_patterns)]
+										_ => {},
 									}
 								}
 							},

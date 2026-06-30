@@ -26,7 +26,7 @@ use super::{
 	ChargedState, Contract, ContractMaintenanceAuthority, ContractState, EntryPointBuf,
 	HashMapStorage as HashMap, HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key,
 	KeyLocation, MerkleTree, PreTranscript, QueryContext, Rng, StateValue, VerifyingKey, key,
-	leaf_hash, partition_transcripts, stval, verifier_key,
+	leaf_hash, partition_transcripts, stval,
 };
 
 #[cfg(feature = "test-utils")]
@@ -78,16 +78,16 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 		commitee: &[VerifyingKey],
 		commitee_threshold: u32,
 		rng: &mut StdRng,
-	) -> ContractDeploy<D> {
+	) -> Result<ContractDeploy<D>, std::io::Error> {
 		let root = MerkleTree::<()>::blank(10).root();
 		let store_op = super::super::contract_operation_new(
-			verifier_key(self.resolver, "store").await,
+			super::super::verifier_key(self.resolver, "store").await,
 			super::super::ir_source(self.resolver, "store").await,
-		);
+		)?;
 		let check_op = super::super::contract_operation_new(
-			verifier_key(self.resolver, "check").await,
+			super::super::verifier_key(self.resolver, "check").await,
 			super::super::ir_source(self.resolver, "check").await,
-		);
+		)?;
 
 		let contract = ContractState {
 			data: ChargedState::new(stval!([[{MT(10) {}}, (0u64), {root => null}]])),
@@ -102,7 +102,7 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 			balance: HashMap::new(),
 		};
 
-		ContractDeploy::new(rng, contract)
+		Ok(ContractDeploy::new(rng, contract))
 	}
 
 	fn resolver(&self) -> &'static Resolver {
