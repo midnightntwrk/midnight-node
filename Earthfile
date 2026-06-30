@@ -245,13 +245,20 @@ rebuild-genesis-state:
     # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # Copy genesis config files (undeployed uses res/dev/)
+    # Copy genesis config files (undeployed uses res/dev/; local uses res/local/).
+    # undeployed and local are mock-main-chain dev networks: they have no cardano-tip.json
+    # and rely on the hardcoded faucet seeds injected below.
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
         COPY res/dev/ics-config.json /genesis-config/ics-config.json
         COPY res/dev/reserve-config.json /genesis-config/reserve-config.json
+    ELSE IF [ "${NETWORK}" = "local" ]
+        COPY res/local/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+        COPY res/local/cnight-config.json /genesis-config/cnight-config.json
+        COPY res/local/ics-config.json /genesis-config/ics-config.json
+        COPY res/local/reserve-config.json /genesis-config/reserve-config.json
     ELSE
         COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
@@ -288,13 +295,24 @@ rebuild-genesis-state:
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
         RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
-        RUN /midnight-node-toolkit generate-genesis \
-            --network ${NETWORK} \
-            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-            --cnight-generates-dust-config /genesis-config/cnight-config.json \
-            --ics-config /genesis-config/ics-config.json \
-            --reserve-config /genesis-config/reserve-config.json \
-            --cardano-tip-config /genesis-config/cardano-tip.json
+        # cardano-tip.json is only present for deployed networks (mainnet etc.). Mock-main-chain
+        # networks like local omit it, so include the flag only when the file exists.
+        RUN if [ -f /genesis-config/cardano-tip.json ]; then \
+                /midnight-node-toolkit generate-genesis \
+                    --network ${NETWORK} \
+                    --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+                    --cnight-generates-dust-config /genesis-config/cnight-config.json \
+                    --ics-config /genesis-config/ics-config.json \
+                    --reserve-config /genesis-config/reserve-config.json \
+                    --cardano-tip-config /genesis-config/cardano-tip.json; \
+            else \
+                /midnight-node-toolkit generate-genesis \
+                    --network ${NETWORK} \
+                    --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+                    --cnight-generates-dust-config /genesis-config/cnight-config.json \
+                    --ics-config /genesis-config/ics-config.json \
+                    --reserve-config /genesis-config/reserve-config.json; \
+            fi
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
@@ -463,6 +481,14 @@ rebuild-genesis-state-undeployed:
         --NETWORK=undeployed \
         --GENERATE_TEST_TXS=true
 
+# rebuild-genesis-state-local rebuilds the genesis ledger state for the local network (local-environment).
+# The local network does not fund any faucet wallets at genesis - wallets are funded at runtime via the
+# cNIGHT->DUST bridge. This MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-local:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=local \
+        --FUND_FAUCET_WALLETS=false
+
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-devnet:
     BUILD +rebuild-genesis-state \
@@ -507,6 +533,7 @@ rebuild-genesis-state-stagenet:
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
+    BUILD +rebuild-genesis-state-local
     BUILD +rebuild-genesis-state-devnet
     # Perfnet genesis is not meant to be rebuild in PR CI
     #BUILD +rebuild-genesis-state-perfnet

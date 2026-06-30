@@ -1,7 +1,4 @@
 {
-  "bootnodes": [
-    "/dns/midnight-node-boot-01/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
-  ],
   "chain_parameters": {
     "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
   },

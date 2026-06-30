@@ -20,8 +20,10 @@
     },
     "utxos": []
   },
-  "mappings": {},
-  "utxo_owners": {},
+  "mappings": {
+  },
+  "utxo_owners": {
+  },
   "next_cardano_position": {
     "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "block_number": 0,

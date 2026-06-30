@@ -54,6 +54,8 @@ COUNCIL_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Council Forever") | .addr
 TECHAUTH_POLICY_ID=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .scriptHash' $CONTRACT_INFO)
 TECHAUTH_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .address' $CONTRACT_INFO)
 CNIGHT_MAPPING_VALIDATOR_ADDRESS=$(jq -r '.[] | select(.name == "cNIGHT Generates Dust") | .address' $CONTRACT_INFO)
+ICS_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "ICS Forever") | .address' $CONTRACT_INFO)
+RESERVE_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "Reserve Forever") | .address' $CONTRACT_INFO)
 export PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.[] | select(.name == "Federated Ops Forever") | .scriptHash' $CONTRACT_INFO)
 export GENESIS_UTXO="0000000000000000000000000000000000000000000000000000000000000000#0"
 
@@ -69,7 +71,7 @@ jq 'env as $env | . + {
     "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk",
     "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID
   }
-}' res/local-environment/pc-chain-config.json > /tmp/pc-chain-config.json
+}' res/local/pc-chain-config.json > /tmp/pc-chain-config.json
 
 # Create patched federated-authority-config.json with Aiken policy IDs and addresses
 echo "Patching federated-authority-config.json with deployed Aiken contract values..."
@@ -83,7 +85,7 @@ jq --arg council_addr "$COUNCIL_SCRIPT_ADDRESS" \
    --arg techauth_addr "$TECHAUTH_SCRIPT_ADDRESS" \
    --arg techauth_policy "$TECHAUTH_POLICY_ID" \
    '.council.address = $council_addr | .council.policy_id = $council_policy | .technical_committee.address = $techauth_addr | .technical_committee.policy_id = $techauth_policy' \
-   /res/dev/federated-authority-config.json > /tmp/federated-authority-config.json
+   /res/local/federated-authority-config.json > /tmp/federated-authority-config.json
 
 echo "Patched federated-authority-config.json:"
 cat /tmp/federated-authority-config.json
@@ -94,7 +96,7 @@ cat /tmp/federated-authority-config.json
 echo "Patching system-parameters-config.json with D-parameter values..."
 jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
    '.d_parameter.num_permissioned_candidates = $d_perm | .d_parameter.num_registered_candidates = $d_reg' \
-   /res/dev/system-parameters-config.json > /tmp/system-parameters-config.json
+   /res/local/system-parameters-config.json > /tmp/system-parameters-config.json
 
 echo "Patched system-parameters-config.json:"
 cat /tmp/system-parameters-config.json
@@ -129,15 +131,42 @@ jq --arg mapping_addr "$CNIGHT_MAPPING_VALIDATOR_ADDRESS" \
   | .mappings = {}
   | .utxo_owners = {}
   | .next_cardano_position = .observed_utxos.start
-  | .system_tx = null' res/local-environment/cnight-config.json > /tmp/cnight-config.json
+  | .system_tx = null' res/local/cnight-config.json > /tmp/cnight-config.json
 
 echo "Created cnight-config.json:"
 cat /tmp/cnight-config.json
 
+# Build the bridge ICS / reserve *observation* configs from the freshly-deployed validator
+# addresses (ICS Forever / Reserve Forever) and the cNIGHT asset. The deployed addresses
+# (not the static res/local ones) are what the bridge actually locks to and observes, so the
+# c2m-bridge / ICS observation must watch these. The observation starts empty (utxos /
+# total_amount = 0) and tracks the local Cardano forward; genesis pools come from the
+# committed genesis state.
+CNIGHT_POLICY_ID=$(jq -r '.addresses.cnight_policy_id' res/local/cnight-config.json)
+CNIGHT_ASSET_NAME=$(jq -r '.addresses.cnight_asset_name' res/local/cnight-config.json)
+echo "Building ICS/reserve observation configs (ICS=$ICS_FOREVER_ADDRESS, Reserve=$RESERVE_FOREVER_ADDRESS)"
+jq -n --arg addr "$ICS_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" \
+   '{illiquid_circulation_supply_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: [], total_amount: 0}' \
+   > /tmp/ics-config.json
+jq -n --arg addr "$RESERVE_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" \
+   '{reserve_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: [], total_amount: 0}' \
+   > /tmp/reserve-config.json
+
 echo "Creating c2m-bridge-config.json..."
-existing_tx_hash=$(curl -s -H 'Content-Type: application/json' \
-  -d '{"jsonrpc": "2.0", "method": "queryLedgerState/utxo", "id":1}' \
-  http://ogmios:1337 | jq -r .result[0].transaction.id)
+# The bridge observes strictly AFTER initial_data_checkpoint, so anchor it to the cNIGHT
+# seeding tx (midnight-node#1778): the pre-seeded ICS supply is already reflected in the
+# genesis pools, so re-observing it would double-account it. Fall back to the latest UTxO
+# tx if the seeding step did not run.
+CNIGHT_SEED_MARKER=/runtime-values/cnight-seeded
+if [ -s "$CNIGHT_SEED_MARKER" ]; then
+  existing_tx_hash=$(cat "$CNIGHT_SEED_MARKER")
+  echo "Using cNIGHT seeding tx as bridge initial_data_checkpoint: $existing_tx_hash"
+else
+  existing_tx_hash=$(curl -s -H 'Content-Type: application/json' \
+    -d '{"jsonrpc": "2.0", "method": "queryLedgerState/utxo", "id":1}' \
+    http://ogmios:1337 | jq -r .result[0].transaction.id)
+  echo "cNIGHT seed marker absent; using ledger UTxO tx as initial_data_checkpoint: $existing_tx_hash"
+fi
 cat <<EOF > /tmp/c2m-bridge-config.json
 {
     "subminimal_transfers_flush_threshold": 500000,
@@ -148,16 +177,16 @@ EOF
 echo "Created c2m-bridge-config.json:"
 cat /tmp/c2m-bridge-config.json
 
-export CHAINSPEC_NAME=localenv1
-export CHAINSPEC_ID=undeployed
-export CHAINSPEC_GENESIS_STATE=res/genesis/genesis_state_undeployed.mn
-export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_undeployed.mn
-export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_undeployed.mn  #  0.13.5 compatibility, can be removed in the future
+export CHAINSPEC_NAME=local1
+export CHAINSPEC_ID=local
+export CHAINSPEC_GENESIS_STATE=res/genesis/genesis_state_local.mn
+export CHAINSPEC_GENESIS_BLOCK=res/genesis/genesis_block_local.mn
+export CHAINSPEC_GENESIS_TX=res/genesis/genesis_tx_local.mn  #  0.13.5 compatibility, can be removed in the future
 export CHAINSPEC_CHAIN_TYPE=live
 export CHAINSPEC_PC_CHAIN_CONFIG=/tmp/pc-chain-config.json
 export CHAINSPEC_CNIGHT_GENESIS=/tmp/cnight-config.json
-export CHAINSPEC_ICS_CONFIG=res/local-environment/ics-config.json
-export CHAINSPEC_RESERVE_CONFIG=res/local-environment/reserve-config.json
+export CHAINSPEC_ICS_CONFIG=/tmp/ics-config.json
+export CHAINSPEC_RESERVE_CONFIG=/tmp/reserve-config.json
 export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/tmp/federated-authority-config.json
 export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/tmp/system-parameters-config.json
 export CHAINSPEC_PERMISSIONED_CANDIDATES_CONFIG=/tmp/permissioned-candidates-config.json

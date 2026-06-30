@@ -23,20 +23,19 @@ fn assert_contract_not_present_error(err: &(dyn std::error::Error + 'static)) {
 
 /// #1166: a well-formed but undeployed contract address must return
 /// ContractNotPresent — not an empty string and not a generic decode error.
-/// Uses CONTRACT_ADDR (the address DEPLOY_TX deploys to) so we know the
-/// address itself parses; the only reason for failure is "no contract here".
-/// Pre-deploy gated so it runs before any DEPLOY_TX submission.
+/// Uses a well-formed but never-deployed address so we know the address itself
+/// parses; the only reason for failure is "no contract here".
+/// Pre-deploy gated so it runs before any deploy submission.
 #[e2e_test]
 async fn contract_state_for_undeployed_address_returns_not_present() {
     let _pre_deploy_guard = PreDeployGuard::new();
-    use midnight_node_res::undeployed::transactions::CONTRACT_ADDR;
 
     let settings = Settings::default();
     let client = MidnightClient::new(settings.node_client).await;
 
-    let addr = std::str::from_utf8(CONTRACT_ADDR)
-        .expect("CONTRACT_ADDR is ASCII hex")
-        .trim();
+    // A well-formed 32-byte contract address that is never deployed. Contract
+    // addresses are raw hex (network-independent), so no fixture is needed.
+    let addr = "0000000000000000000000000000000000000000000000000000000000000001";
 
     let result = client.get_contract_state(addr).await;
 
@@ -74,6 +73,7 @@ async fn contract_state_rejects_unparseable_address() {
 /// Block 1 (the first block after genesis) is the pre-deploy reference —
 /// no user transaction can have been included yet.
 #[e2e_test]
+#[ignore = "TODO(#1792): funds the deploy from wallet seed …0001, which the local network now funds at runtime via the cNIGHT bridge rather than at genesis; re-enable once bridge funding is wired into the local-env"]
 async fn contract_state_distinguishes_historical_and_current_blocks() {
     use midnight_node_ledger_helpers::extract_tx_with_context;
     use midnight_node_toolkit::commands::contract_address::{self, ContractAddressArgs};

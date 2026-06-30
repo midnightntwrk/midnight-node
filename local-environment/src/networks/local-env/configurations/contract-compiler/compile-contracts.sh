@@ -158,4 +158,20 @@ echo "✓ Contracts data exported successfully"
 echo "=== Contracts Data Export Complete ==="
 echo ""
 
+# Export bridge cNIGHT seeding inputs for the cnight-seeder step (midnight-node#1778):
+# the ICS/Reserve "Forever" validator addresses (the immutable proxies that hold the
+# locked / reserved cNIGHT) and the compiled infinite-mint cNIGHT policy as a .plutus
+# envelope. The seeder runs in a cardano-cli-only container (no jq), so we extract
+# these here where jq + the compiled artifacts are available.
+echo "=== cNIGHT Seeding Inputs Export ==="
+jq -r '.[] | select(.name == "ICS Forever") | .address' "$OUTPUT_DIR/contracts-info.json" > "$OUTPUT_DIR/ics_forever.addr"
+jq -r '.[] | select(.name == "Reserve Forever") | .address' "$OUTPUT_DIR/contracts-info.json" > "$OUTPUT_DIR/reserve_forever.addr"
+cnight_code=$(jq -r '.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .compiledCode' "$PLUTUS_JSON")
+jq -n --arg code "$cnight_code" '{type: "PlutusScriptV3", description: "", cborHex: $code}' > "$OUTPUT_DIR/cnight_policy.plutus"
+echo "ICS Forever address:     $(cat "$OUTPUT_DIR/ics_forever.addr")"
+echo "Reserve Forever address: $(cat "$OUTPUT_DIR/reserve_forever.addr")"
+echo "✓ cNIGHT seeding inputs exported"
+echo "=== cNIGHT Seeding Inputs Export Complete ==="
+echo ""
+
 echo "=== Contract Compiler Complete ==="
