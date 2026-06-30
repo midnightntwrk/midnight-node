@@ -260,12 +260,11 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let mut ledger = Ledger::post_block_update(ledger, block_context).map_err(|e| {
+		let mut ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
 			);
-			LedgerApiError::NoLedgerState
 		})?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -288,6 +287,23 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
+		Ok(state_root)
+	}
+
+	/// The end-of-block ledger transition cannot fail on block limits (the limit check runs
+	/// per-transaction via prevalidation, and fullness is clamped before applying), so this is
+	/// suitable for `on_finalize`. Loading the ledger state and serializing the resulting key
+	/// remain fallible — those represent genuine bugs rather than block-content conditions.
+	pub fn apply_post_block_update(
+		mut _externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		block_context: BlockContext,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
+		ledger.persist();
 		Ok(state_root)
 	}
 
@@ -744,6 +760,21 @@ where
 			.ok_or(LedgerApiError::BeneficiaryNotFound)
 	}
 
+	pub fn get_bridge_receiving_amount(
+		state_key: &[u8],
+		beneficiary: &[u8],
+	) -> Result<u128, LedgerApiError> {
+		let api = api::new();
+
+		let night_addr = api.night_address(beneficiary)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		ledger
+			.get_bridge_receiving_amount(night_addr)
+			.copied()
+			.ok_or(LedgerApiError::BeneficiaryNotFound)
+	}
+
 	pub fn get_ledger_parameters(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key)?;
@@ -839,6 +870,13 @@ where
 										SingleUpdate::VerifierKeyRemove(..) => {
 											cd.inc_verifier_key_remove();
 										},
+										// Ledger 9+ adds IrInsert/IrRemove (on-chain IR maintenance).
+										// This match is shared across ledger versions, so the variants
+										// can't be named here (they don't exist in L7/L8's SingleUpdate);
+										// they're not yet broken out in ContractCallsDetails telemetry.
+										// TODO: support IrInsert/IrRemove
+										#[allow(unreachable_patterns)]
+										_ => {},
 									}
 								}
 							},
@@ -962,13 +1000,15 @@ where
 			},
 		};
 
-		// Dry-run apply to validate guaranteed execution against current state
+		// Dry-run the guaranteed segment against the current state.
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
-		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
 
-		match result {
-			mn_ledger_local::semantics::TransactionResult::Success(_)
-			| mn_ledger_local::semantics::TransactionResult::PartialSuccess(_, _) => {
+		match super::guaranteed_validation::validate_guaranteed_execution(
+			&ledger.state,
+			verified_tx,
+			&ctx,
+		) {
+			Ok(()) => {
 				log::info!(
 					target: LOG_TARGET,
 					"📋 Validated transaction {} for mempool",
@@ -978,7 +1018,7 @@ where
 				SOFT_TX_VALIDATION_CACHE.insert(soft_key, Ok(()));
 				Ok(false)
 			},
-			mn_ledger_local::semantics::TransactionResult::Failure(reason) => {
+			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
 					"🚫 Rejected transaction {} from mempool: guaranteed execution would fail: {reason:?}",
@@ -993,8 +1033,9 @@ where
 	/// Validates transaction application, with caching.
 	///
 	/// Uses `get_verified_transaction` to get a cached or freshly computed
-	/// `VerifiedTransaction`, then performs a dry-run `apply()` to validate
-	/// the guaranteed part will succeed.
+	/// `VerifiedTransaction`, then dry-runs guaranteed execution (via the
+	/// version-specific `guaranteed_validation` module) to validate that the
+	/// transaction can enter a block.
 	///
 	/// Returns `true` if validation was served from the strict cache, `false` otherwise.
 	fn do_validate_guaranteed_execution(
@@ -1018,12 +1059,14 @@ where
 		let verified_tx = Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
-		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
 
-		match result {
-			mn_ledger_local::semantics::TransactionResult::Success(_)
-			| mn_ledger_local::semantics::TransactionResult::PartialSuccess(_, _) => Ok(was_cached),
-			mn_ledger_local::semantics::TransactionResult::Failure(reason) => {
+		match super::guaranteed_validation::validate_guaranteed_execution(
+			&ledger.state,
+			verified_tx,
+			&ctx,
+		) {
+			Ok(()) => Ok(was_cached),
+			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
 					"🚫 Rejecting transaction {} at pre-dispatch: guaranteed execution would fail: {reason:?}",

@@ -11,10 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::ContractVerifyingKeyBytes;
+
 pub use super::make_block_context;
 pub use super::{
-	TransactionSignature as Signature, maintenance_verifying_key, signature_verifying_key,
-	transaction_signature, transaction_signing_key,
+	TransactionSignature as Signature, contract_operation_new, contract_operation_version,
+	maintenance_verifying_key, signature_verifying_key, transaction_signature,
+	transaction_signing_key,
 };
 pub use super::{
 	base_crypto::{
@@ -70,7 +73,6 @@ pub use super::{
 			SystemTransaction, Transaction, TransactionCostModel, TransactionHash, UnshieldedOffer,
 			Utxo, UtxoOutput, UtxoSpend, VerifiedTransaction,
 		},
-		test_utilities::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver, verifier_key},
 		verify::WellFormedStrictness,
 	},
 	onchain_runtime::{
@@ -88,6 +90,7 @@ pub use super::{
 		},
 		transcript::Transcript,
 	},
+	test_utilities_local::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver},
 	transient_crypto::{
 		commitment::{Pedersen, PedersenRandomness, PureGeneratorPedersen},
 		curve::Fr,
@@ -172,6 +175,30 @@ impl<D: DB + Clone, E: std::fmt::Debug> IntoWalletState<D> for Result<WalletStat
 	fn into_wallet_state(self) -> WalletState<D> {
 		self.expect("wallet state apply failed")
 	}
+}
+
+/// Raw zkir bytes for circuit `name` (the `zkir/{name}.bzkir` the resolver
+/// loads as `ProvingKeyMaterial::ir_source`). Ledger 9+ stores these on-chain
+/// in the contract operation so deployed circuits can be re-proven/upgraded
+/// from chain state alone; pre-9 `contract_operation_new` ignores them.
+pub async fn ir_source(resolver: &Resolver, name: &'static str) -> Option<Vec<u8>> {
+	let material = resolver
+		.resolve_key(KeyLocation(std::borrow::Cow::Borrowed(name)))
+		.await
+		.ok()??;
+	Some(material.ir_source)
+}
+
+/// Resolves a circuit's verifier key by name.
+pub async fn verifier_key(
+	resolver: &Resolver,
+	name: &'static str,
+) -> Option<ContractVerifyingKeyBytes> {
+	let material = resolver
+		.resolve_key(KeyLocation(std::borrow::Cow::Borrowed(name)))
+		.await
+		.ok()??;
+	Some(ContractVerifyingKeyBytes(material.verifier_key))
 }
 
 /// Serializes a mn_ledger::serialize-able type into bytes

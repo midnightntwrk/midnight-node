@@ -73,17 +73,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Validator RPC host ports. On the self-hosted CI host each runner slot
-# publishes these on a slot-specific port; the job exports MN{1..4}_RPC_HOST_PORT
-# (see local-environment per-runner port isolation). Falls back to the legacy
-# ports for slot 0 / local runs.
-NODE_1="ws://localhost:${MN1_RPC_HOST_PORT:-9933}"
-NODE_2="ws://localhost:${MN2_RPC_HOST_PORT:-9934}"
-NODE_3="ws://localhost:${MN3_RPC_HOST_PORT:-9935}"
-NODE_4="ws://localhost:${MN4_RPC_HOST_PORT:-9936}"
+NODE_1="ws://localhost:9933"
+NODE_2="ws://localhost:9934"
+NODE_3="ws://localhost:9935"
+NODE_4="ws://localhost:9936"
 
 echo "Checking if local-environment is running..."
-if ! ./local-environment/check-health.sh -u "http://localhost:${MN1_RPC_HOST_PORT:-9933}" -t 30; then
+if ! ./local-environment/check-health.sh -u http://localhost:9933 -t 30; then
     echo "ERROR: local-environment is not running"
     echo "Please start it with: cd local-environment && npm run run:local-env"
     exit 1
@@ -226,6 +222,6 @@ else
 fi
 
 echo "Step 5: Verify transactions were processed"
-./local-environment/check-health.sh -u "http://localhost:${MN1_RPC_HOST_PORT:-9933}" -b 50 -t 120
+./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 120
 
 echo "Toolkit Multi-Destination URL E2E Test completed successfully"

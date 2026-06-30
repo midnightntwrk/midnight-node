@@ -51,8 +51,8 @@ directories and generated mock-authorities output.
 npm run image-upgrade:qanet
 npm run governance-runtime-upgrade:qanet -- \
   --wasm upgrade/midnight_node_runtime.compact.wasm \
-  --council-uris //Alice //Bob //Charlie \
-  --technical-uris //Dave //Eve //Ferdie \
+  --council-uris //Dave //Eve //Ferdie \
+  --technical-uris //Alice //Bob //Charlie \
   --executor-uri //Alice
 ```
 

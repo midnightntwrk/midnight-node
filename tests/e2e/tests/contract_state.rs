@@ -1,7 +1,6 @@
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
-use midnight_node_toolkit::tx_generator::source::FetchCacheConfig;
 use tokio::time::{Duration, sleep, timeout};
 
 use crate::{PreDeployGuard, wait_before_deploying};
@@ -125,13 +124,13 @@ async fn contract_state_distinguishes_historical_and_current_blocks() {
         })),
         source: Source {
             src_url: Some(url.clone()),
-            fetch_concurrency: 20,
+            fetch_concurrency: crate::fetch_concurrency(),
             fetch_compute_concurrency: None,
             src_files: None,
             dust_warp: false,
             ignore_block_context: false,
             fetch_only_cached: false,
-            fetch_cache: FetchCacheConfig::InMemory,
+            fetch_cache: crate::fetch_cache_config(),
             ledger_state_db: String::new(),
         },
         destination: Destination {
