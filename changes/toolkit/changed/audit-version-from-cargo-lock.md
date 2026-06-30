@@ -11,5 +11,5 @@ each dependency by its workspace alias, so the two aliases that rename `midnight
 different versions stay distinct with no version-spec guesswork. Addresses Least Authority audit
 finding "Prefer Cargo.lock For Build-Time Crate Versions".
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1793
 Issue: https://github.com/shieldedtech/shielded-security-engineering/issues/330
