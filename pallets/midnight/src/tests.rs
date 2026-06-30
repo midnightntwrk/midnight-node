@@ -497,4 +497,69 @@ fn test_send_claim_mint() {
 		});
 	*/
 }
+
+#[test]
+fn test_send_mn_root_transaction_succeeds_with_root_origin() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		assert_ok!(mock::Midnight::send_mn_root_transaction(RuntimeOrigin::root(), tx.clone()));
+
+		// Check emitted events — should include ContractDeploy and RootTxApplied (not regular TxApplied)
+		let events = mock::midnight_events();
+		assert_matches!(events[0], Event::ContractDeploy(_));
+		assert_matches!(&events[1], Event::RootTxApplied(details) => {
+			assert_eq!(details.serialized_transaction, tx);
+		});
+		// Ensure regular TxApplied is NOT emitted
+		assert!(!events.iter().any(|e| matches!(e, Event::TxApplied(_))));
+	})
+}
+
+#[test]
+fn test_send_mn_root_transaction_fails_without_root_origin() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		assert_err!(
+			mock::Midnight::send_mn_root_transaction(RuntimeOrigin::none(), tx.clone()),
+			sp_runtime::DispatchError::BadOrigin
+		);
+		assert_err!(
+			mock::Midnight::send_mn_root_transaction(RuntimeOrigin::signed(1), tx),
+			sp_runtime::DispatchError::BadOrigin
+		);
+	})
+}
+
+#[test]
+fn test_send_mn_transaction_only_accepts_unsigned() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		// Root origin rejected
+		assert_err!(
+			mock::Midnight::send_mn_transaction(RuntimeOrigin::root(), tx.clone()),
+			sp_runtime::DispatchError::BadOrigin
+		);
+		// Signed origin rejected
+		assert_err!(
+			mock::Midnight::send_mn_transaction(RuntimeOrigin::signed(1), tx.clone()),
+			sp_runtime::DispatchError::BadOrigin
+		);
+		// Unsigned (None) accepted
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx));
+
+		// Note: collective origins (e.g. pallet_collective::RawOrigin::Members)
+		// are also rejected by ensure_none, but testing them would require adding
+		// pallet_collective to the mock runtime. The ensure_none check guarantees
+		// that only RawOrigin::None passes — all other origins are rejected.
+	})
+}
 // grcov-excl-stop

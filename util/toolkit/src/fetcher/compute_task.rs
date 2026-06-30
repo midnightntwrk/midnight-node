@@ -234,6 +234,11 @@ impl ComputeTask {
 					let bytes = M::system_transaction_applied(event);
 					transactions.push(RawTransaction::System(bytes));
 				}
+				// Root-dispatched midnight transactions (via send_mn_root_transaction).
+				// Handles both RootTxApplied and RootTxPartialSuccess events.
+				if let Some(bytes) = M::root_tx_applied(&ev) {
+					transactions.push(RawTransaction::Midnight(bytes));
+				}
 			}
 		}
 

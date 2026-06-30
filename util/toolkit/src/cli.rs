@@ -1,4 +1,6 @@
 use crate::commands::{
+	apply_authorized_upgrade::{self, ApplyAuthorizedUpgradeArgs},
+	batch::{self, BatchArgs},
 	bridge_transfer::{self, BridgeTransferArgs},
 	contract_address::{self, ContractAddressArgs},
 	contract_state::{self, ContractStateArgs},
@@ -77,8 +79,23 @@ pub enum Commands {
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
-	/// Perform a runtime upgrade through federated governance
+	/// Authorize a runtime upgrade through federated governance
+	///
+	/// Submits `System::authorize_upgrade(blake2_256(wasm))` via council + technical-committee
+	/// approval. Once authorized, run `apply-authorized-upgrade` to actually swap the code.
 	RuntimeUpgrade(RuntimeUpgradeArgs),
+	/// Apply a previously-authorized runtime upgrade
+	///
+	/// Submits `System::apply_authorized_upgrade(wasm)` from any signing account. The upgrade
+	/// must already have been authorized (e.g. via `runtime-upgrade` or a batched governance
+	/// motion).
+	ApplyAuthorizedUpgrade(ApplyAuthorizedUpgradeArgs),
+	/// Batch one or more SCALE-encoded calls and dispatch the result through governance
+	///
+	/// Wraps the supplied `--encoded-call` blobs in `Batch::batch_all` (atomic) and forwards
+	/// the resulting call to the federated-authority motion flow. Pass `--allow-partial-failure`
+	/// to use `Batch::batch` instead.
+	Batch(BatchArgs),
 	/// Execute a call through governance with Root origin
 	///
 	/// This command allows executing arbitrary runtime calls through the federated authority
@@ -273,6 +290,14 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::RuntimeUpgrade(args) => {
 			runtime_upgrade::execute(args).await?;
+			Ok(())
+		},
+		Commands::ApplyAuthorizedUpgrade(args) => {
+			apply_authorized_upgrade::execute(args).await?;
+			Ok(())
+		},
+		Commands::Batch(args) => {
+			batch::execute(args).await?;
 			Ok(())
 		},
 		Commands::RootCall(args) => {

@@ -76,6 +76,13 @@ pub trait MidnightMetadata {
 	fn send_mn_system_transaction(call: &Self::Call) -> Option<Vec<u8>>;
 	fn timestamp_set(call: &Self::Call) -> Option<u64>;
 	fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8>;
+
+	/// Extract the serialized transaction from a `RootTxApplied` or
+	/// `RootTxPartialSuccess` event.
+	/// Returns `None` for runtime versions that don't have these events.
+	fn root_tx_applied(
+		event: &subxt::events::Event<'_, crate::client::MidnightNodeClientConfig>,
+	) -> Option<Vec<u8>>;
 }
 
 macro_rules! impl_midnight_metadata {
@@ -125,6 +132,31 @@ macro_rules! impl_midnight_metadata {
 
 			fn system_transaction_applied(event: Self::SystemTransactionAppliedEvent) -> Vec<u8> {
 				event.0.serialized_system_transaction
+			}
+
+			fn root_tx_applied(
+				event: &subxt::events::Event<'_, crate::client::MidnightNodeClientConfig>,
+			) -> Option<Vec<u8>> {
+				// Dynamically check for RootTxApplied / RootTxPartialSuccess by
+				// pallet + variant name. This works across all runtime versions:
+				// if the event doesn't exist in a version's metadata, the check
+				// simply won't match.
+				if event.pallet_name() == "Midnight" {
+					let variant = event.event_name();
+					if variant == "RootTxApplied" || variant == "RootTxPartialSuccess" {
+						// The event's first field (index 0) is a struct with
+						// `serialized_transaction: Vec<u8>`. Decode from raw bytes:
+						// skip the 2-byte event index prefix, then decode the struct.
+						let field_bytes = event.field_bytes();
+						// RootTxAppliedDetails { tx_hash: Hash, serialized_transaction: Vec<u8> }
+						// Hash is 32 bytes, then SCALE-encoded Vec<u8>
+						let tx_bytes = &field_bytes[32..]; // skip tx_hash
+						let serialized_tx: Vec<u8> =
+							parity_scale_codec::Decode::decode(&mut &tx_bytes[..]).ok()?;
+						return Some(serialized_tx);
+					}
+				}
+				None
 			}
 		}
 	};

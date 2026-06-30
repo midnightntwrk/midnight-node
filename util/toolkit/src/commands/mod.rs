@@ -11,6 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod apply_authorized_upgrade;
+pub mod batch;
 pub mod bridge_transfer;
 pub mod contract_address;
 pub mod contract_state;

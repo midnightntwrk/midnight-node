@@ -198,6 +198,12 @@ pub mod pallet {
 	}
 
 	#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
+	pub struct RootTxAppliedDetails {
+		pub tx_hash: LedgerTypes::Hash,
+		pub serialized_transaction: Vec<u8>,
+	}
+
+	#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct MaintainDetails {
 		pub tx_hash: LedgerTypes::Hash,
 		pub contract_address: Vec<u8>,
@@ -255,6 +261,12 @@ pub mod pallet {
 		UnshieldedTokens(UnshieldedTokensDetails),
 		/// Partial Success.
 		TxPartialSuccess(TxAppliedDetails),
+		/// A transaction was fully applied via Root origin (governance).
+		/// Contains the full serialized transaction for event-driven indexing.
+		RootTxApplied(RootTxAppliedDetails),
+		/// A transaction was partially applied via Root origin (governance).
+		/// Contains the full serialized transaction for event-driven indexing.
+		RootTxPartialSuccess(RootTxAppliedDetails),
 	}
 
 	// Errors inform users that something went wrong.
@@ -370,56 +382,14 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
 		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
-		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
-			let state_key = StateKey::<T>::get();
-			let block_context = Self::get_block_context();
-			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+		pub fn send_mn_transaction(origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
+			// Only unsigned transactions are allowed — governance must use
+			// send_mn_root_transaction instead.
+			ensure_none(origin)?;
 
-			let result = LedgerApi::apply_transaction(
-				&state_key,
-				&midnight_tx,
-				block_context,
-				runtime_version,
-			)
-			.map_err(Error::<T>::from)?;
+			let (tx_hash, all_applied) = Self::apply_and_emit_tx_events(&midnight_tx)?;
 
-			let new_state_key = result.state_root;
-			StateKey::<T>::put(new_state_key);
-
-			let tx_hash = result.tx_hash;
-			for address in result.call_addresses {
-				let call_event =
-					Event::ContractCall(CallDetails { tx_hash, contract_address: address });
-				Self::deposit_event(call_event);
-			}
-
-			for address in result.deploy_addresses {
-				let deploy_event =
-					Event::ContractDeploy(DeploymentDetails { tx_hash, contract_address: address });
-				Self::deposit_event(deploy_event);
-			}
-
-			for address in result.maintain_addresses {
-				let maintain_event =
-					Event::ContractMaintain(MaintainDetails { tx_hash, contract_address: address });
-				Self::deposit_event(maintain_event);
-			}
-
-			for value in result.claim_rewards {
-				let claim_event = Event::ClaimRewards(ClaimRewardsDetails { tx_hash, value });
-				Self::deposit_event(claim_event);
-			}
-
-			if !result.unshielded_utxos_created.is_empty()
-				|| !result.unshielded_utxos_spent.is_empty()
-			{
-				Self::deposit_event(Event::UnshieldedTokens(UnshieldedTokensDetails {
-					spent: result.unshielded_utxos_spent,
-					created: result.unshielded_utxos_created,
-				}));
-			}
-
-			if result.all_applied {
+			if all_applied {
 				Self::deposit_event(Event::TxApplied(TxAppliedDetails { tx_hash }));
 			} else {
 				Self::deposit_event(Event::TxPartialSuccess(TxAppliedDetails { tx_hash }));
@@ -435,6 +405,100 @@ pub mod pallet {
 			ensure_root(origin)?;
 			ConfigurableTransactionSizeWeight::<T>::set(new_weight);
 			Ok(())
+		}
+
+		/// Apply a midnight transaction with Root origin (governance).
+		///
+		/// Unlike `send_mn_transaction` (unsigned), this extrinsic requires Root
+		/// origin and emits `RootTxApplied` / `RootTxPartialSuccess` events
+		/// containing the full serialized transaction payload. This enables the
+		/// toolkit indexer to extract the transaction purely from events,
+		/// regardless of how the call was dispatched (direct governance,
+		/// scheduler, utility batch, etc.).
+		#[pallet::call_index(2)]
+		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
+		pub fn send_mn_root_transaction(
+			origin: OriginFor<T>,
+			midnight_tx: Vec<u8>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+
+			let (tx_hash, all_applied) = Self::apply_and_emit_tx_events(&midnight_tx)?;
+
+			if all_applied {
+				Self::deposit_event(Event::RootTxApplied(RootTxAppliedDetails {
+					tx_hash,
+					serialized_transaction: midnight_tx,
+				}));
+			} else {
+				Self::deposit_event(Event::RootTxPartialSuccess(RootTxAppliedDetails {
+					tx_hash,
+					serialized_transaction: midnight_tx,
+				}));
+			}
+
+			Ok(())
+		}
+	}
+
+	impl<T: Config> Pallet<T> {
+		/// Apply a midnight transaction and emit common events (contract calls,
+		/// deploys, maintains, claim rewards, unshielded tokens).
+		/// Returns `(tx_hash, all_applied)`.
+		fn apply_and_emit_tx_events(
+			midnight_tx: &[u8],
+		) -> Result<(LedgerTypes::Hash, bool), DispatchError> {
+			let state_key = StateKey::<T>::get();
+			let block_context = Self::get_block_context();
+			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+
+			let result = LedgerApi::apply_transaction(
+				&state_key,
+				midnight_tx,
+				block_context,
+				runtime_version,
+			)
+			.map_err(Error::<T>::from)?;
+
+			StateKey::<T>::put(&result.state_root);
+
+			let tx_hash = result.tx_hash;
+
+			for address in result.call_addresses {
+				Self::deposit_event(Event::ContractCall(CallDetails {
+					tx_hash,
+					contract_address: address,
+				}));
+			}
+
+			for address in result.deploy_addresses {
+				Self::deposit_event(Event::ContractDeploy(DeploymentDetails {
+					tx_hash,
+					contract_address: address,
+				}));
+			}
+
+			for address in result.maintain_addresses {
+				Self::deposit_event(Event::ContractMaintain(MaintainDetails {
+					tx_hash,
+					contract_address: address,
+				}));
+			}
+
+			for value in result.claim_rewards {
+				Self::deposit_event(Event::ClaimRewards(ClaimRewardsDetails { tx_hash, value }));
+			}
+
+			if !result.unshielded_utxos_created.is_empty()
+				|| !result.unshielded_utxos_spent.is_empty()
+			{
+				Self::deposit_event(Event::UnshieldedTokens(UnshieldedTokensDetails {
+					spent: result.unshielded_utxos_spent,
+					created: result.unshielded_utxos_created,
+				}));
+			}
+
+			Ok((tx_hash, result.all_applied))
 		}
 	}
 

@@ -19,6 +19,10 @@ toolkit-update-ledger-parameters-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-update-ledger-parameters-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Update Ledger Parameters E2E test completed successfully."
 
+toolkit-batch-governance-e2e NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/toolkit-batch-governance-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+  @echo "✅ Toolkit Batch Governance E2E test completed successfully."
+
 toolkit-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit E2E test completed successfully."

@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::str::FromStr;
-
 use clap::Args;
 use subxt::{OnlineClient, SubstrateConfig, dynamic};
 use thiserror::Error;
@@ -33,16 +31,8 @@ pub enum RuntimeUpgradeError {
 	OnlineClientAtBlockError(#[from] subxt::error::OnlineClientAtBlockError),
 	#[error("extrinsic error: {0}")]
 	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
-	#[error("transaction finalized error: {0}")]
-	TransactionFinalizedError(#[from] subxt::error::TransactionFinalizedSuccessError),
-	#[error("events error: {0}")]
-	EventsError(#[from] subxt::error::EventsError),
-	#[error("keypair parse error: {0}")]
-	KeypairParseError(#[from] midnight_node_ledger_helpers::KeypairParseError),
 	#[error("error executing root call: {0}")]
 	RootCallError(Box<dyn std::error::Error + Send + Sync>),
-	#[error("runtime upgrade failed: CodeUpdated event not found")]
-	CodeUpdateNotFound,
 }
 
 #[derive(Args)]
@@ -52,41 +42,49 @@ pub struct RuntimeUpgradeArgs {
 	pub wasm_file: String,
 
 	/// Council member private keys (32-byte sr25519 seeds)
-	#[arg(short, long, required = true)]
+	#[arg(short, long, required_unless_present = "encode_only")]
 	pub council_members: Vec<String>,
 
 	/// Technical Committee member private keys (32-byte sr25519 seeds)
-	#[arg(short, long, required = true)]
+	#[arg(short, long, required_unless_present = "encode_only")]
 	pub technical_committee_members: Vec<String>,
 
 	/// RPC URL of the node
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
 	pub rpc_url: String,
 
-	/// Signer key for the apply step (any funded account)
-	#[arg(long, default_value = "//Alice")]
-	pub signer_key: String,
+	/// If set, print the SCALE-encoded `System::authorize_upgrade` call as `0x`-prefixed hex
+	/// and exit without contacting governance. The output is suitable for passing to
+	/// `toolkit batch --encoded-call ...`.
+	#[arg(long)]
+	pub encode_only: bool,
 }
 
-pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError> {
-	// Step 1: Read the WASM file
+/// Build the SCALE-encoded `System::authorize_upgrade(blake2_256(wasm))` call for `args.wasm_file`.
+pub async fn build_encoded_call(args: &RuntimeUpgradeArgs) -> Result<Vec<u8>, RuntimeUpgradeError> {
 	let code = std::fs::read(&args.wasm_file)?;
 	log::info!("Read WASM file: {} ({} bytes)", args.wasm_file, code.len());
 
-	// Step 2: Compute blake2-256 hash of the WASM code
 	let code_hash = sp_crypto_hashing::blake2_256(&code);
 	log::info!("Code hash: 0x{}", hex::encode(code_hash));
 
-	// Step 3: Build System::authorize_upgrade call and encode it
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
 	let authorize_upgrade_call =
 		dynamic::tx("System", "authorize_upgrade", vec![dynamic::Value::from_bytes(&code_hash)]);
-	let encoded_call = api.tx().await?.call_data(&authorize_upgrade_call)?;
+	Ok(api.tx().await?.call_data(&authorize_upgrade_call)?)
+}
 
-	// Step 4: Execute the authorization through governance
+pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError> {
+	let encoded_call = build_encoded_call(&args).await?;
+
+	if args.encode_only {
+		println!("0x{}", hex::encode(&encoded_call));
+		return Ok(());
+	}
+
 	log::info!("Executing authorize_upgrade via federated authority governance.");
 	root_call::execute(RootCallArgs {
-		rpc_url: args.rpc_url.clone(),
+		rpc_url: args.rpc_url,
 		council_keys: args.council_members,
 		tc_keys: args.technical_committee_members,
 		encoded_call: Some(encoded_call),
@@ -95,34 +93,9 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 	.await
 	.map_err(RuntimeUpgradeError::RootCallError)?;
 
-	// Step 5: Apply the authorized upgrade
-	log::info!("Applying authorized upgrade...");
-	let signer = midnight_node_ledger_helpers::Keypair::from_str(&args.signer_key)?.0;
-	let apply_upgrade_call =
-		dynamic::tx("System", "apply_authorized_upgrade", vec![dynamic::Value::from_bytes(&code)]);
-
-	let apply_events = api
-		.tx()
-		.await?
-		.sign_and_submit_then_watch_default(&apply_upgrade_call, &signer)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
-
-	// Step 6: Verify CodeUpdated event
-	let mut success = false;
-	for event in apply_events.iter() {
-		let event = event?;
-		if event.pallet_name() == "System" && event.event_name() == "CodeUpdated" {
-			log::info!("Code update success: {:?}", event);
-			success = true;
-			break;
-		}
-	}
-	if !success {
-		return Err(RuntimeUpgradeError::CodeUpdateNotFound);
-	}
-
-	log::info!("Runtime upgrade completed successfully!");
+	log::info!(
+		"Runtime upgrade authorized. Run `toolkit apply-authorized-upgrade --wasm-file {}` to apply.",
+		args.wasm_file
+	);
 	Ok(())
 }

@@ -711,6 +711,24 @@ jobs:
         with:
           key: ${{ steps.guard.outputs.key }}
 
+  toolkit-batch-governance-e2e:
+    permissions:
+      contents: read
+    name: Toolkit Batch Governance E2E
+    needs: [run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        with:
+          submodules: true
+      - uses: ./.github/actions/reusable-e2e-tests
+        with:
+          just-command: toolkit-batch-governance-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
   toolkit-maintenance-e2e:
     permissions:
       contents: read

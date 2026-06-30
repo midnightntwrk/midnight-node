@@ -134,16 +134,22 @@ pub struct UpdateLedgerParametersArgs {
 	parameters: Option<String>,
 
 	/// Council member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, long, required_unless_present = "print_system_tx_hex")]
+	#[arg(short, long, required_unless_present_any = ["encode_only", "print_system_tx_hex"])]
 	council_members: Vec<String>,
 
 	/// Technical Committee member private keys as hex strings (32-byte sr25519 seeds)
-	#[arg(short, long, required_unless_present = "print_system_tx_hex")]
+	#[arg(short, long, required_unless_present_any = ["encode_only", "print_system_tx_hex"])]
 	technical_committee_members: Vec<String>,
 
 	/// RPC URL for sending the update.
 	#[arg(short, long, default_value = "ws://localhost:9944", env)]
 	rpc_url: String,
+
+	/// If set, print the SCALE-encoded `MidnightSystem::send_mn_system_transaction` call as
+	/// `0x`-prefixed hex and exit without contacting governance. The output is suitable for
+	/// passing to `toolkit batch --encoded-call ...`.
+	#[arg(long)]
+	encode_only: bool,
 
 	/// Print the serialized ledger `SystemTransaction` as a hex string and exit
 	/// without submitting the root call. Useful for offline review or signing flows.
@@ -154,13 +160,20 @@ pub struct UpdateLedgerParametersArgs {
 	params: UpdateableParams,
 }
 
-pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
-	// Create a new API client
+/// Build the SCALE-encoded `MidnightSystem::send_mn_system_transaction` call that an
+/// `update-ledger-parameters` invocation would dispatch, along with the inner
+/// serialized ledger `SystemTransaction`.
+///
+/// Connects to `args.rpc_url` to fetch base parameters (when `--parameters` is absent)
+/// and to encode the call against runtime metadata.
+pub async fn build_encoded_call(
+	args: &UpdateLedgerParametersArgs,
+) -> Result<(Vec<u8>, Vec<u8>), LedgerParametersError> {
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
 
-	let bytes = match args.parameters {
+	let bytes = match &args.parameters {
 		Some(parameters) => {
-			let hex_str = parameters.strip_prefix("0x").unwrap_or(&parameters);
+			let hex_str = parameters.strip_prefix("0x").unwrap_or(parameters);
 			hex::decode(hex_str)
 				.map_err(|e| LedgerParametersError::DecodeLedgerParameters(Box::new(e)))?
 		},
@@ -274,27 +287,38 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	log::info!("Ledger params loaded: {:#?}", parameters);
 
-	log::info!("Executing ledger parameters update via federated authority.");
-
-	// Step 1: Create the send system transaction call
-	let system_transaction = SystemTransaction::OverwriteParameters(parameters.clone());
+	let system_transaction = SystemTransaction::OverwriteParameters(parameters);
 	let serialized_system_tx =
 		serialize(&system_transaction).map_err(LedgerParametersError::SerializationError)?;
+	let send_system_tx_call = dynamic::tx(
+		"MidnightSystem",
+		"send_mn_system_transaction",
+		vec![serialized_system_tx.clone()],
+	);
+	let encoded_call = api.tx().await?.call_data(&send_system_tx_call)?;
+	Ok((serialized_system_tx, encoded_call))
+}
+
+pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
+	let (serialized_system_tx, encoded_call) = build_encoded_call(&args).await?;
 
 	if args.print_system_tx_hex {
 		println!("0x{}", hex::encode(&serialized_system_tx));
 		return Ok(());
 	}
 
-	let send_system_tx_call =
-		dynamic::tx("MidnightSystem", "send_mn_system_transaction", vec![serialized_system_tx]);
-	let send_system_tx_call_value = api.tx().await?.call_data(&send_system_tx_call)?;
+	if args.encode_only {
+		println!("0x{}", hex::encode(&encoded_call));
+		return Ok(());
+	}
+
+	log::info!("Executing ledger parameters update via federated authority.");
 
 	root_call::execute(RootCallArgs {
 		rpc_url: args.rpc_url,
 		council_keys: args.council_members,
 		tc_keys: args.technical_committee_members,
-		encoded_call: Some(send_system_tx_call_value),
+		encoded_call: Some(encoded_call),
 		encoded_call_file: None,
 	})
 	.await
