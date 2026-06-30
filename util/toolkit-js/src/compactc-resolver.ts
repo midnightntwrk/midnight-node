@@ -62,30 +62,24 @@ export const toolkitPackageName = (compactcVersion: string): string =>
   `@midnight-ntwrk/node-toolkit-compact-${compactcVersion}`;
 
 /**
- * Installs a module-resolution hook that redirects every `@midnight-ntwrk/compact-js*` and
- * `@midnight-ntwrk/compact-runtime` import (including transitive ones, e.g. those reached while loading a
- * contract config file) to the copy pinned by the variant workspace for `compactcVersion`.
+ * Builds a resolver bound to the variant workspace pinned for `compactcVersion`: the variant package
+ * name, a `require` rooted at that variant, and a `toolkitResolve` that resolves a specifier to an
+ * absolute path against it.
  *
- * This is the single source of truth for version dispatch shared by the CLI entrypoint (`bin.ts`) and the
- * test setup, so tests exercise the same resolution behaviour as production.
- *
- * @returns The resolved variant package name, so callers can dynamically import it.
+ * `toolkitResolve` carries a CJS→ESM fallback. The vendored variant copies are ESM-only, so a CJS
+ * `require.resolve` of a subpath export (e.g. `…/effect`) first fails with MODULE_NOT_FOUND pointing at
+ * the non-existent `dist/cjs/…` path; we rewrite that to `dist/esm/…` and re-resolve. This depends on the
+ * exact MODULE_NOT_FOUND message format, but is the simplest way to support both layouts without building
+ * a full resolver. Shared by {@link installCompactcResolver} and {@link resolveVariantModule}.
  */
-export const installCompactcResolver = (compactcVersion: string): string => {
+const makeVariantResolver = (compactcVersion: string) => {
   const packageName = toolkitPackageName(compactcVersion);
   const require = createRequire(import.meta.url);
   const toolkitRequire = createRequire(require.resolve(packageName));
   const cjsPathSegment = `${sep}dist${sep}cjs${sep}`;
   const esmPathSegment = `${sep}dist${sep}esm${sep}`;
 
-  /**
-   * Resolves a module relative to the toolkit package, with special handling to rewrite paths to support
-   * both CommonJS and ESM versions.
-   */
-  const toolkitResolve = (specifier: string) => {
-    // While this is dependant on the exact error message format of MODULE_NOT_FOUND errors, it is the
-    // most simple way to support both CJS and ESM versions of paths without having to build a full resolver.
-    // In the future, we may want to consider building a more robust resolver or adopt a third party package.
+  const toolkitResolve = (specifier: string): string => {
     try {
       return toolkitRequire.resolve(specifier);
     } catch (error: unknown) {
@@ -98,6 +92,38 @@ export const installCompactcResolver = (compactcVersion: string): string => {
       throw error;
     }
   };
+
+  return { packageName, toolkitRequire, toolkitResolve };
+};
+
+/**
+ * Resolves `specifier` to an absolute `file://` URL against the variant workspace pinned for
+ * `compactcVersion` — exactly the redirect the hook installed by {@link installCompactcResolver} applies
+ * to bare `@midnight-ntwrk/compact-js*` imports.
+ *
+ * Use this to `import()` a `compact-js*` module from a context whose module loader pre-resolves bare
+ * specifiers before Node's resolution hook can run — notably Vitest's runner, which would otherwise load
+ * whichever copy npm hoisted to the workspace root (a *different*, version-mismatched variant). Importing
+ * the returned absolute URL pins the load to this variant's copy; that copy's own (bare) transitive
+ * imports then still flow through the installed hook, keeping the whole module graph on one matched
+ * version. The hook must already be installed (see {@link installCompactcResolver}) for those transitive
+ * imports to be redirected.
+ */
+export const resolveVariantModule = (compactcVersion: string, specifier: string): string =>
+  `file://${makeVariantResolver(compactcVersion).toolkitResolve(specifier)}`;
+
+/**
+ * Installs a module-resolution hook that redirects every `@midnight-ntwrk/compact-js*` and
+ * `@midnight-ntwrk/compact-runtime` import (including transitive ones, e.g. those reached while loading a
+ * contract config file) to the copy pinned by the variant workspace for `compactcVersion`.
+ *
+ * This is the single source of truth for version dispatch shared by the CLI entrypoint (`bin.ts`) and the
+ * test setup, so tests exercise the same resolution behaviour as production.
+ *
+ * @returns The resolved variant package name, so callers can dynamically import it.
+ */
+export const installCompactcResolver = (compactcVersion: string): string => {
+  const { packageName, toolkitRequire, toolkitResolve } = makeVariantResolver(compactcVersion);
 
   // tsc/ts-node (used by compact-js-command's `ConfigCompiler` to type-check `contract.config.ts`) do NOT
   // honour the runtime resolve hook below — they use their own module resolution. Left to defaults they
