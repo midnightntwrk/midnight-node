@@ -82,6 +82,7 @@ pallet-partner-chains-bridge = { workspace = true }
 sp-partner-chains-bridge = { workspace = true }
 
 [dev-dependencies]
+pretty_assertions = { workspace = true }
 sp-io = { workspace = true }
 sp-keyring = { workspace = true }
 # we actually don't need it, cause in dev we can use full sp-keyring, but its usage gives a good example of how to create accountIds in WASM
