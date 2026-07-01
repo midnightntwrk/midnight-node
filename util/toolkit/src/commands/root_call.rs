@@ -240,11 +240,8 @@ async fn execute_governance_call(
 
 	// Step 3: Council members vote (need 2/3 threshold)
 	log::info!("Council members voting...");
-	for (i, voter) in council_keypairs.iter().take(2).enumerate() {
-		log::info!("Council vote {} from 0x{}", i + 1, hex::encode(voter.public_key().0));
-		vote_on_proposal(api, voter, "Council", proposal_hash, council_proposal_index, true)
-			.await?;
-	}
+	vote_on_proposal_batch(api, council_keypairs, "Council", proposal_hash, council_proposal_index, true)
+		.await?;
 
 	// Step 4: Close Council proposal
 	log::info!("Closing Council proposal...");
@@ -277,18 +274,15 @@ async fn execute_governance_call(
 
 	// Step 6: Technical Committee members vote
 	log::info!("Technical Committee members voting...");
-	for (i, voter) in tc_keypairs.iter().take(2).enumerate() {
-		log::info!("TC vote {} from 0x{}", i + 1, hex::encode(voter.public_key().0));
-		vote_on_proposal(
-			api,
-			voter,
-			"TechnicalCommittee",
-			proposal_hash,
-			tech_proposal_index,
-			true,
-		)
-		.await?;
-	}
+	vote_on_proposal_batch(
+		api,
+		tc_keypairs,
+		"TechnicalCommittee",
+		proposal_hash,
+		tech_proposal_index,
+		true,
+	)
+	.await?;
 
 	// Step 7: Close Technical Committee proposal
 	log::info!("Closing Technical Committee proposal...");
@@ -330,9 +324,15 @@ async fn execute_governance_call(
 	Ok(())
 }
 
-async fn vote_on_proposal(
+/// Cast the first two committee votes on `proposal`. The votes come from
+/// distinct signers (independent nonces) and the preceding `propose` is already
+/// finalized, so both votes are submitted back-to-back and then awaited
+/// together — they land in the same block(s) and finalize as one, rather than
+/// finalizing each vote serially. Nonces stay correct because the same-account
+/// predecessor (the proposer's `propose`) is finalized before these submit.
+async fn vote_on_proposal_batch(
 	api: &OnlineClient<SubstrateConfig>,
-	signer: &Keypair,
+	voters: &[Keypair],
 	pallet: &str,
 	proposal_hash: H256,
 	proposal_index: u32,
@@ -348,12 +348,22 @@ async fn vote_on_proposal(
 		],
 	);
 
-	api.tx()
-		.await?
-		.sign_and_submit_then_watch_default(&vote_call, signer)
-		.await?
-		.wait_for_finalized_success()
-		.await?;
+	// Submit all votes first (each returns once it's in the tx pool), so they
+	// land together in the next block(s)...
+	let mut submitted = Vec::new();
+	for (i, voter) in voters.iter().take(2).enumerate() {
+		log::info!("{} vote {} from 0x{}", pallet, i + 1, hex::encode(voter.public_key().0));
+		let progress = api
+			.tx()
+			.await?
+			.sign_and_submit_then_watch_default(&vote_call, voter)
+			.await?;
+		submitted.push(progress);
+	}
+	// ...then await finalization of each (they finalize together).
+	for progress in submitted {
+		progress.wait_for_finalized_success().await?;
+	}
 
 	Ok(())
 }
