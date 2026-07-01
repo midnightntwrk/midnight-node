@@ -22,6 +22,13 @@ export interface RunOptions {
    * output.
    */
   fromSnapshot?: string;
+  /**
+   * Bring the well-known network's base compose up from block 0 instead of
+   * forking a snapshot. Nothing is mocked in this mode: validator seed
+   * phrases and a main-chain data source must be supplied via env/--env-file.
+   * Mutually exclusive with fromSnapshot.
+   */
+  fromGenesis?: boolean;
 }
 
 export interface ImageUpgradeOptions extends RunOptions {

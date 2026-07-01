@@ -42,7 +42,8 @@ import {
  * Bring up a network locally:
  * - "local-env" runs the bundled local Cardano/PC stack from compose.
  * - Any well-known network (devnet/qanet/...) is forked from the
- *   provided snapshot via mock-authorities — there is no k8s-backed path.
+ *   provided snapshot via mock-authorities, or brought up from genesis
+ *   with --from-genesis — there is no k8s-backed path.
  */
 export async function run(network: string, runOptions: RunOptions) {
   if (network === "local-env") {
@@ -52,15 +53,20 @@ export async function run(network: string, runOptions: RunOptions) {
   }
 
   assertWellKnownNamespace(network);
-  console.log(
-    `Preparing ${network} local fork (mock-authorities-driven bring-up)`,
-  );
+  if (runOptions.fromGenesis) {
+    console.log(`Bringing up ${network} from genesis (base compose, no fork)`);
+  } else {
+    console.log(
+      `Preparing ${network} local fork (mock-authorities-driven bring-up)`,
+    );
+  }
   await runWellKnownNetwork(network, runOptions);
 }
 
 async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
-  const networkConfig = loadNetworkConfig(namespace);
-  const mock = requireMockConfig(namespace, networkConfig);
+  if (runOptions.fromGenesis && runOptions.fromSnapshot) {
+    throw new Error("--from-genesis and --from-snapshot are mutually exclusive.");
+  }
 
   const composeFile = resolveComposeFile(namespace);
   const composeDir = path.dirname(composeFile);
@@ -74,6 +80,14 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
       console.warn(`⚠️  Env file not found: ${envFilePath}`);
     }
   }
+
+  if (runOptions.fromGenesis) {
+    await runFromGenesis(composeFile, env, runOptions);
+    return;
+  }
+
+  const networkConfig = loadNetworkConfig(namespace);
+  const mock = requireMockConfig(namespace, networkConfig);
 
   let overridePath: string;
   if (runOptions.fromSnapshot) {
@@ -132,6 +146,55 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     profiles: runOptions.profiles,
     detach: true,
   });
+}
+
+/**
+ * Bring up the network's base compose from block 0 — no snapshot restore, no
+ * mock-authorities rewrite. The base compose expects the real network inputs
+ * (validator seed phrases, a main-chain data source) via env/--env-file, so
+ * report anything left unset up front rather than letting the chain come up
+ * silently unable to produce blocks.
+ */
+async function runFromGenesis(
+  composeFile: string,
+  env: Record<string, string>,
+  runOptions: RunOptions,
+) {
+  const staleDataDirs = discoverComposeDataMounts(composeFile).filter((dir) =>
+    isNonEmptyDirectory(dir),
+  );
+  if (staleDataDirs.length > 0) {
+    console.warn(
+      `⚠️  Existing chain data found (${staleDataDirs.join(", ")}); nodes will resume from it rather than genesis. Delete these directories first for a clean block-0 start.`,
+    );
+  }
+
+  const unsetVars = collectUnsetComposeVars(composeFile, env);
+  if (unsetVars.length > 0) {
+    console.warn(
+      `⚠️  Env vars referenced by the compose file but not set: ${unsetVars.join(", ")}. From-genesis mode mocks nothing — validator seeds and a main-chain data source must be provided via --env-file or the environment for the chain to produce blocks.`,
+    );
+  }
+
+  await runDockerCompose({
+    composeFile,
+    env,
+    profiles: runOptions.profiles,
+    detach: true,
+  });
+}
+
+/** Env var names referenced by the compose file ($VAR or ${VAR...}) that are unset or blank in env. */
+function collectUnsetComposeVars(
+  composeFile: string,
+  env: Record<string, string>,
+): string[] {
+  const text = fs.readFileSync(composeFile, "utf8");
+  const names = new Set<string>();
+  for (const match of text.matchAll(/\$\{?([A-Z][A-Z0-9_]*)/g)) {
+    names.add(match[1]);
+  }
+  return [...names].filter((name) => !env[name]).sort();
 }
 
 function assertReusableForkState(
