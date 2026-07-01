@@ -1,8 +1,12 @@
 {
+  "compiler-version": "0.31.0",
+  "language-version": "0.23.0",
+  "runtime-version": "0.16.0",
   "circuits": [
     {
       "name": "store",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "something",
@@ -21,6 +25,7 @@
     {
       "name": "check",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "something",
@@ -99,5 +104,18 @@
     }
   ],
   "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "tree",
+      "index": 0,
+      "exported": false,
+      "storage": "HistoricMerkleTree",
+      "depth": 10,
+      "type": {
+        "type-name": "Uint",
+        "maxval": 4294967295
+      }
+    }
   ]
 }

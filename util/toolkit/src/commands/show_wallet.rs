@@ -15,6 +15,11 @@ pub struct WalletInfoJson {
 	pub coins: HashMap<String, QualifiedInfoSer>,
 	pub utxos: Vec<UtxoSer>,
 	pub dust_utxos: Vec<QualifiedDustOutputSer>,
+	/// NIGHT block rewards currently claimable by this wallet's unshielded address.
+	pub claimable_block_rewards: u128,
+	/// NIGHT from Cardano-bridge transfers currently claimable by this wallet's unshielded
+	/// address (amount already net of the bridge fee).
+	pub claimable_bridge_transfers: u128,
 }
 
 #[derive(Debug)]
@@ -80,10 +85,18 @@ pub async fn execute(
 				fork_wallet_result_v7(result)
 			},
 			|ctx| {
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(seed.clone());
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
-					&ctx, seed.clone(), args.debug,
+					&ctx, seed_v8, args.debug,
 				);
 				fork_wallet_result_v8(result)
+			},
+			|ctx| {
+				let result = crate::commands::fork::ledger_9::show_wallet::show_wallet_from_seed(
+					&ctx, seed.clone(), args.debug,
+				);
+				fork_wallet_result_v9(result)
 			},
 		))
 	} else {
@@ -108,12 +121,32 @@ pub async fn execute(
 				fork_wallet_result_v7(result)
 			},
 			|ctx| {
+				let addr_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_address(
+					&address_clone,
+				);
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_address(
-					&ctx, address,
+					&ctx, addr_v8,
 				);
 				fork_wallet_result_v8(result)
 			},
+			|ctx| {
+				let result = crate::commands::fork::ledger_9::show_wallet::show_wallet_from_address(
+					&ctx, address,
+				);
+				fork_wallet_result_v9(result)
+			},
 		))
+	}
+}
+
+fn fork_wallet_result_v9(
+	result: crate::commands::fork::ledger_9::show_wallet::ShowWalletResult,
+) -> ShowWalletResult {
+	use crate::commands::fork::ledger_9::show_wallet::ShowWalletResult as R;
+	match result {
+		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
+		R::Json(j) => ShowWalletResult::Json(j),
 	}
 }
 
@@ -190,27 +223,27 @@ mod tests {
 	}
 
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000001", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-1"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000002", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-2"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000003", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-3"
 	)]
 	#[test_case(test_fixture!("a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
 		"funded-unshielded-seed-4"
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000005", "genesis/genesis_block_undeployed.mn") =>
-	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos}))
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if utxos.is_empty() && coins.is_empty() && dust_utxos.is_empty();
 		"unfunded-unshielded-seed"
 	)]

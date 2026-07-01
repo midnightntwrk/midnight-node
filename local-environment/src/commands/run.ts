@@ -15,9 +15,6 @@ import path from "path";
 import { globSync } from "glob";
 import fs, { existsSync } from "fs";
 import { parse } from "dotenv";
-import { connectToPostgres } from "../lib/connectToPostgres";
-import { getSecrets } from "../lib/getSecretsForEnv";
-import { prepareNamespaceKeystore } from "../lib/keystore";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
@@ -26,53 +23,49 @@ import {
 } from "../lib/localEnv";
 import { assertWellKnownNamespace, RunOptions } from "../lib/types";
 import { runDockerCompose } from "../lib/docker";
-import { restoreSnapshotFromS3 } from "../lib/snapshotRestore";
-import { ensureSnapshotCredentials } from "../lib/snapshotEnv";
-import { setupPreviewProxies } from "../lib/previewProxy";
-import { loadNetworkConfig } from "../lib/networkConfig";
+import {
+  discoverComposeDataMounts,
+  restoreSnapshot,
+} from "../lib/snapshotRestore";
+import { loadNetworkConfig, requireMockConfig } from "../lib/networkConfig";
+import {
+  defaultMockAuthoritiesImage,
+  runMockAuthoritiesConvert,
+} from "../lib/mockAuthorities";
+import {
+  generateMockComposeOverride,
+  mockOverridePath,
+  MOCKED_CONFIG_DIRNAME,
+} from "../lib/mockComposeOverride";
 
 /**
- * Runs a specified network, with passed configuration
- *
- * @param network - The name of the network to run, or else `local-env`
+ * Bring up a network locally:
+ * - "local-env" runs the bundled local Cardano/PC stack from compose.
+ * - Any well-known network (devnet/qanet/...) is forked from the
+ *   provided snapshot via mock-authorities — there is no k8s-backed path.
  */
 export async function run(network: string, runOptions: RunOptions) {
-  // TODO: For now, we will run the local environment as a separate option. In the future, we will include it as an option to run local env pc resources, alongside midnight nodes of the chosen environment
   if (network === "local-env") {
     console.log("Running environment with local Cardano/PC resources");
-    runLocalEnvironment(runOptions);
-  } else {
-    assertWellKnownNamespace(network);
-    console.log(
-      `Running ${network} chain from genesis with ${network} Cardano/PC resources`,
-    );
-    await runEphemeralEnvironment(network, runOptions);
+    await runLocalEnvironment(runOptions);
+    return;
   }
+
+  assertWellKnownNamespace(network);
+  console.log(
+    `Preparing ${network} local fork (mock-authorities-driven bring-up)`,
+  );
+  await runWellKnownNetwork(network, runOptions);
 }
 
-async function runEphemeralEnvironment(
-  namespace: string,
-  runOptions: RunOptions,
-) {
+async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
   const networkConfig = loadNetworkConfig(namespace);
-  const dbsyncMode = networkConfig.dbsync.mode;
+  const mock = requireMockConfig(namespace, networkConfig);
 
-  switch(dbsyncMode) {
-  case "public":
-    console.log("Skipping port-forward: DB marked as publicly reachable");
-    break;
-  case "rds-proxy":
-    console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
-    break;
-  default:
-    await connectToPostgres(namespace);
-  }
+  const composeFile = resolveComposeFile(namespace);
+  const composeDir = path.dirname(composeFile);
 
-  console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
-  const envObject = getSecrets(namespace);
-
-  let env: Record<string, string> = { ...cleanEnv(process.env), ...envObject };
-
+  let env: Record<string, string> = { ...cleanEnv(process.env) };
   for (const envFilePath of runOptions.envFile ?? []) {
     if (fs.existsSync(envFilePath)) {
       const envOverrides = parse(fs.readFileSync(envFilePath));
@@ -82,38 +75,116 @@ async function runEphemeralEnvironment(
     }
   }
 
-  if (dbsyncMode === "rds-proxy") {
-    const proxyOverrides = await setupPreviewProxies(env, namespace);
-    env = { ...env, ...proxyOverrides };
-  }
-
-  const composeFile = resolveComposeFile(namespace);
-
+  let overridePath: string;
   if (runOptions.fromSnapshot) {
-    ensureSnapshotCredentials(env);
-    await restoreSnapshotFromS3({
+    const restoredDirs = await restoreSnapshot({
       namespace,
       composeFile,
-      snapshotId: runOptions.fromSnapshot,
+      snapshotUri: runOptions.fromSnapshot,
       env,
+      permissive: true,
+      // Snapshot tarballs are wrapped in a top-level `node/` dir; strip it so
+      // chains/<chainId>/ lands directly at the data dir root, where both
+      // mock-authorities and the node binary expect it.
+      stripComponents: 1,
     });
+    if (restoredDirs.length === 0) {
+      throw new Error(
+        `Snapshot restore produced no data dirs for '${namespace}'; cannot run mock-authorities convert.`,
+      );
+    }
+
+    // mock-authorities expects --data-dir to be the parent containing every
+    // per-validator subdir (data/node-1, data/node-2, ...) so it can patch each
+    // one's paritydb with the synthesized authority set in a single pass.
+    // Pointing it at one validator's dir leaves the others on the original
+    // authority set and consensus never converges.
+    const dataParentDir = path.dirname(restoredDirs[0]);
+    const mockedConfigDir = path.join(composeDir, MOCKED_CONFIG_DIRNAME);
+    runMockAuthoritiesConvert({
+      dataDir: dataParentDir,
+      outputDir: mockedConfigDir,
+      chainId: mock.chainId,
+      numValidators: mock.numValidators,
+      image: defaultMockAuthoritiesImage(),
+    });
+
+    overridePath = generateMockComposeOverride({
+      composeDir,
+      network: namespace,
+      validatorServices: mock.validatorServices,
+      extraServices: mock.extraServices,
+    });
+    console.log(`Generated fork-mode override: ${overridePath}`);
+  } else {
+    // No snapshot: reuse the fork-mode artifacts from a previous bring-up.
+    // Reuse only when both the generated mock-authorities output and the
+    // restored data dirs are still present locally.
+    overridePath = mockOverridePath(composeDir, namespace);
+    assertReusableForkState(namespace, composeFile, composeDir, overridePath);
+    console.log(`Reusing existing fork-mode override: ${overridePath}`);
   }
 
-  // Setup keystore on nodes
-  await prepareNamespaceKeystore({
-    namespace,
-    env,
-  });
-
-  runDockerCompose({
+  await runDockerCompose({
     composeFile,
+    extraComposeFiles: [overridePath],
     env,
     profiles: runOptions.profiles,
     detach: true,
   });
 }
 
-function runLocalEnvironment(runOptions: RunOptions) {
+function assertReusableForkState(
+  namespace: string,
+  composeFile: string,
+  composeDir: string,
+  overridePath: string,
+) {
+  const requiredArtifacts = [
+    overridePath,
+    path.join(composeDir, MOCKED_CONFIG_DIRNAME, "mock-registrations.json"),
+    path.join(composeDir, MOCKED_CONFIG_DIRNAME, "seeds"),
+  ];
+  const missingArtifacts = requiredArtifacts.filter((p) => !fs.existsSync(p));
+
+  const missingDataDirs = discoverComposeDataMounts(composeFile).filter(
+    (dir) => !isNonEmptyDirectory(dir),
+  );
+
+  if (missingArtifacts.length === 0 && missingDataDirs.length === 0) {
+    return;
+  }
+
+  const problems: string[] = [];
+  if (missingArtifacts.length > 0) {
+    problems.push(
+      `missing fork-mode artifacts: ${missingArtifacts.join(", ")}`,
+    );
+  }
+  if (missingDataDirs.length > 0) {
+    problems.push(
+      `missing or empty restored data dirs: ${missingDataDirs.join(", ")}`,
+    );
+  }
+
+  throw new Error(
+    `--from-snapshot was not provided and reusable fork state for '${namespace}' is incomplete (${problems.join("; ")}). Provide --from-snapshot to perform the initial restore, or restore the snapshot data and re-run mock-authorities first.`,
+  );
+}
+
+function isNonEmptyDirectory(dir: string): boolean {
+  if (!fs.existsSync(dir)) {
+    return false;
+  }
+
+  try {
+    return fs.statSync(dir).isDirectory() && fs.readdirSync(dir).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function runLocalEnvironment(runOptions: RunOptions) {
   console.log("⚙️  Preparing local environment...");
   console.log(
     "ℹ️  Note: Midnight Governance will be active in 2 Cardano epochs.",
@@ -162,14 +233,12 @@ function runLocalEnvironment(runOptions: RunOptions) {
     "../networks/local-env/docker-compose.yml",
   );
 
-  runDockerCompose({
+  await runDockerCompose({
     composeFile,
     env,
     profiles: runOptions.profiles,
     detach: true,
   });
-
-  return;
 }
 
 function resolveComposeFile(namespace: string): string {

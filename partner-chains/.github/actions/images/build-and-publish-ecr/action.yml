@@ -65,7 +65,7 @@ runs:
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Login to ECR
-      uses: docker/login-action@v3
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
       with:
         registry: ${{ env.ECR_REGISTRY_SECRET }}
 

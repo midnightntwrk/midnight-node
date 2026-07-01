@@ -14,31 +14,22 @@
 import fs from "fs";
 import path from "path";
 
-export type DbsyncMode = "k8s" | "public" | "rds-proxy";
-export type SecretsMode = "pods-by-labels" | "preview-style" | "local-files";
-
-export interface NetworkConfig {
-  dbsync?: {
-    mode?: DbsyncMode;
-  };
-  secrets?: {
-    mode?: SecretsMode;
-  };
-  boot?: {
-    /** Optional explicit boot pod names to inspect for DB sync creds */
-    podNames?: string[];
-    /** Optional PVC name for the boot node data volume (used by snapshot) */
-    pvcName?: string;
-  };
+export interface MockModeConfig {
+  /** Substrate chain id (matches the on-disk paritydb chain folder name in the snapshot). */
+  chainId: string;
+  /** Number of validators to materialize with mock-authorities. */
+  numValidators: number;
+  /** Compose service names that map ./data/<svc>:/data and need seeds mounted. */
+  validatorServices: string[];
+  /** Non-validator services that still need fork-mode env (e.g. qanet's boot-node). */
+  extraServices?: string[];
 }
 
-const defaults: Required<NetworkConfig> = {
-  dbsync: { mode: "k8s" },
-  secrets: { mode: "pods-by-labels" },
-  boot: { podNames: [] },
-};
+export interface NetworkConfig {
+  mock?: MockModeConfig;
+}
 
-export function loadNetworkConfig(namespace: string): Required<NetworkConfig> {
+export function loadNetworkConfig(namespace: string): NetworkConfig {
   const configPath = path.resolve(
     __dirname,
     "../networks",
@@ -48,20 +39,27 @@ export function loadNetworkConfig(namespace: string): Required<NetworkConfig> {
   );
 
   if (!fs.existsSync(configPath)) {
-    return defaults;
+    return {};
   }
 
   try {
     const raw = fs.readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(raw) as NetworkConfig;
-    return {
-      dbsync: { ...defaults.dbsync, ...parsed.dbsync },
-      secrets: { ...defaults.secrets, ...parsed.secrets },
-      boot: { ...defaults.boot, ...parsed.boot },
-    };
+    return JSON.parse(raw) as NetworkConfig;
   } catch (error) {
     throw new Error(
       `Failed to parse network config at ${configPath}: ${(error as Error).message}`,
     );
   }
+}
+
+export function requireMockConfig(
+  namespace: string,
+  config: NetworkConfig,
+): MockModeConfig {
+  if (!config.mock) {
+    throw new Error(
+      `Network '${namespace}' has no 'mock' section in config.json — fork bring-up is unsupported for this network.`,
+    );
+  }
+  return config.mock;
 }

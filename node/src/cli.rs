@@ -372,7 +372,7 @@ pub enum Subcommand {
 
 	/// Partner chain subcommands (smart contract registration etc.)
 	#[clap(flatten)]
-	PartnerChains(PartnerChainsSubcommand<MidnightRuntime, MidnightAddress>),
+	PartnerChains(PartnerChainsSubcommand<MidnightRuntime>),
 
 	/// Build a chain specification.
 	BuildSpec(sc_cli::BuildSpecCmd),
@@ -528,7 +528,3 @@ impl std::fmt::Display for NotImplementedError {
 	}
 }
 impl core::error::Error for NotImplementedError {}
-
-// TODO: this is used to sign block producer metadata. Do we have a better type for that?
-#[derive(serde::Deserialize, Encode)]
-pub struct MidnightBlockProducerMetadata;

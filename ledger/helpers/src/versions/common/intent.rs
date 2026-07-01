@@ -12,10 +12,11 @@
 // limitations under the License.
 
 use super::{
-	Array, BuildContractAction, ContractAction, ContractAddress, ContractEffects, DB,
-	DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, LedgerContext,
-	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker,
-	ProvingKeyMaterial, Resolver, Signature, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	Array, BuildContractAction, BuilderContext, ContractAction, ContractAddress, ContractEffects,
+	DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, MidnightDataProvider,
+	OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker, ProvingKeyMaterial,
+	Resolver, Signature, SigningKey, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
+	transaction_signing_key,
 };
 use async_trait::async_trait;
 use rand::{CryptoRng, Rng};
@@ -30,69 +31,81 @@ pub type SegmentId = u16;
 
 type IntentOf<D> = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 #[async_trait]
-pub trait BuildIntent<D: DB + Clone>: Send + Sync {
+pub trait BuildIntent<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
 		ttl: Timestamp,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		segment_id: SegmentId,
 	) -> IntentOf<D>;
+
+	/// Signing keys for the unshielded offers this intent carries, returned as
+	/// `(guaranteed, fallible)` in the same order the offer inputs are built.
+	///
+	/// `StandardTrasactionInfo::apply_dust` uses these to re-sign the offers after it
+	/// attaches `dust_actions`: since ledger 9.1.0-rc.3, the dust fields are folded into the
+	/// intent's `data_to_sign`, so the signatures produced by [`Self::build`] (before the
+	/// dust existed) no longer match. Intents with no unshielded offer (the default) return
+	/// empty vectors.
+	fn unshielded_signing_keys(&self, _context: Arc<C>) -> (Vec<SigningKey>, Vec<SigningKey>) {
+		(Vec::new(), Vec::new())
+	}
 }
 
-pub struct IntentInfo<D: DB + Clone> {
-	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
-	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D>>,
-	pub actions: Vec<Box<dyn BuildContractAction<D>>>,
+pub struct IntentInfo<D: DB + Clone, C: BuilderContext<D>> {
+	pub guaranteed_unshielded_offer: Option<UnshieldedOfferInfo<D, C>>,
+	pub fallible_unshielded_offer: Option<UnshieldedOfferInfo<D, C>>,
+	pub actions: Vec<Box<dyn BuildContractAction<D, C>>>,
 	// TODO: Add TTL Option here
 }
 
 #[async_trait]
-impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D, C> {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
 		ttl: Timestamp,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		segment_id: SegmentId,
-	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
+	) -> IntentOf<D> {
 		let mut intent = Intent::<Signature, _, _, _>::empty(rng, ttl);
 
 		for action in self.actions.iter_mut() {
-			intent = action.build(rng, context.clone(), &intent).await;
+			let next = action.build(rng, context.clone(), &intent).await;
+			intent = next;
 		}
 
 		let mut guaranteed_signing_keys = Vec::default();
 		let mut fallible_signing_keys = Vec::default();
 		let dust_registration_signing_keys = Vec::default();
 
-		if let Some((unshielded_offer, signing_keys)) =
-			self.guaranteed_unshielded_offer.as_ref().map(|guo| {
-				(
-					guo.build(context.clone()),
-					guo.inputs
-						.iter()
-						.map(|input| input.signing_key(context.clone()))
-						.collect::<Vec<_>>(),
-				)
-			}) {
+		if let Some(ref guaranteed_unshielded_offer) = self.guaranteed_unshielded_offer {
+			let unshielded_offer = guaranteed_unshielded_offer.build(context.clone()).await;
+			let signing_keys = guaranteed_unshielded_offer
+				.inputs
+				.iter()
+				.map(|input| input.signing_key(context.clone()))
+				.collect::<Vec<_>>();
 			intent.guaranteed_unshielded_offer = Some(unshielded_offer);
 			guaranteed_signing_keys = signing_keys;
 		}
 
-		if let Some((unshielded_offer, signing_keys)) =
-			self.fallible_unshielded_offer.as_ref().map(|guo| {
-				(
-					guo.build(context.clone()),
-					guo.inputs
-						.iter()
-						.map(|input| input.signing_key(context.clone()))
-						.collect::<Vec<_>>(),
-				)
-			}) {
+		if let Some(ref fallible_unshielded_offer) = self.fallible_unshielded_offer {
+			let unshielded_offer = fallible_unshielded_offer.build(context.clone()).await;
+			let signing_keys = fallible_unshielded_offer
+				.inputs
+				.iter()
+				.map(|input| input.signing_key(context.clone()))
+				.collect::<Vec<_>>();
 			intent.fallible_unshielded_offer = Some(unshielded_offer);
 			fallible_signing_keys = signing_keys;
 		}
+
+		let guaranteed_signing_keys =
+			guaranteed_signing_keys.iter().map(transaction_signing_key).collect::<Vec<_>>();
+		let fallible_signing_keys =
+			fallible_signing_keys.iter().map(transaction_signing_key).collect::<Vec<_>>();
 
 		intent
 			.sign(
@@ -103,6 +116,22 @@ impl<D: DB + Clone> BuildIntent<D> for IntentInfo<D> {
 				dust_registration_signing_keys.as_slice(),
 			)
 			.unwrap_or_else(|_| panic!("Intent signing with segment_id {segment_id:?} failed"))
+	}
+
+	fn unshielded_signing_keys(&self, context: Arc<C>) -> (Vec<SigningKey>, Vec<SigningKey>) {
+		let signing_keys = |offer: &Option<UnshieldedOfferInfo<D, C>>| {
+			offer
+				.as_ref()
+				.map(|offer| {
+					offer.inputs.iter().map(|input| input.signing_key(context.clone())).collect()
+				})
+				.unwrap_or_default()
+		};
+
+		(
+			signing_keys(&self.guaranteed_unshielded_offer),
+			signing_keys(&self.fallible_unshielded_offer),
+		)
 	}
 }
 
@@ -235,12 +264,12 @@ impl<D: DB + Clone> IntentCustom<D> {
 }
 
 #[async_trait]
-impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentCustom<D> {
 	async fn build(
 		&mut self,
 		_rng: &mut StdRng,
 		ttl: Timestamp,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		_segment_id: SegmentId,
 	) -> IntentOf<D> {
 		log::debug!("Updating the resolver...");
@@ -252,11 +281,11 @@ impl<D: DB + Clone> BuildIntent<D> for IntentCustom<D> {
 }
 
 #[async_trait]
-impl<D: DB + Clone> BuildContractAction<D> for IntentCustom<D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for IntentCustom<D> {
 	async fn build(
 		&mut self,
 		_rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let mut actions = intent.actions.clone();
@@ -265,15 +294,16 @@ impl<D: DB + Clone> BuildContractAction<D> for IntentCustom<D> {
 			actions = actions.push((*action).clone());
 		}
 
-		context.update_resolver(self.resolver).await;
-
-		IntentOf::<D> {
+		let result = IntentOf::<D> {
 			guaranteed_unshielded_offer: intent.guaranteed_unshielded_offer.clone(),
 			fallible_unshielded_offer: intent.fallible_unshielded_offer.clone(),
 			actions,
 			dust_actions: intent.dust_actions.clone(),
 			ttl: intent.ttl,
 			binding_commitment: intent.binding_commitment,
-		}
+		};
+
+		context.update_resolver(self.resolver).await;
+		result
 	}
 }

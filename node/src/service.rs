@@ -50,7 +50,7 @@ use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
-use frame_benchmarking_cli::SUBSTRATE_REFERENCE_HARDWARE;
+use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
@@ -204,6 +204,7 @@ pub type HostFunctions = (
 	frame_benchmarking::benchmarking::HostFunctions,
 	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
 );
 /// Otherwise we only use the default Substrate host functions.
 #[cfg(not(feature = "runtime-benchmarks"))]
@@ -211,6 +212,7 @@ pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the
@@ -271,9 +273,22 @@ pub fn new_partial(
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 	let midnight_metrics =
 		MidnightDataSourceMetrics::register_warn_errors(config.prometheus_registry());
+	// Build the genesis storage once (reused for the genesis block builder below)
+	// and recover the cNIGHT follower genesis from it — the cnight-observation
+	// pallet genesis is baked into every chainspec, so the separate cnight-genesis
+	// file is only a fallback.
+	let genesis_storage = config
+		.chain_spec
+		.as_storage_builder()
+		.build_storage()
+		.map_err(sp_blockchain::Error::Storage)?;
+	let cnight_follower_genesis =
+		crate::main_chain_follower::cnight_follower_genesis_from_storage(&genesis_storage);
+
 	let data_sources = tokio::task::block_in_place(|| {
 		config.tokio_handle.block_on(create_cached_main_chain_follower_data_sources(
 			midnight_cfg.clone(),
+			cnight_follower_genesis,
 			mc_follower_metrics.clone(),
 			midnight_metrics.clone(),
 		))
@@ -311,12 +326,6 @@ pub fn new_partial(
 			.as_array()
 			.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?,
 	);
-
-	let genesis_storage = config
-		.chain_spec
-		.as_storage_builder()
-		.build_storage()
-		.map_err(sp_blockchain::Error::Storage)?;
 
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
 		genesis_storage,
@@ -409,7 +418,11 @@ pub fn new_partial(
 		.map_err(sp_blockchain::Error::from)?;
 
 	let time_source = Arc::new(SystemTimeSource);
-	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
+	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source)
+		.map_err(|e| {
+			log::error!(target: "midnight", "Incoherent consensus timing configuration: {e}");
+			ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
+		})?;
 
 	let import_queue = partner_chains_aura_import_queue::import_queue::<
 		AuraPair,
@@ -672,7 +685,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 
 	if let Some(hwbench) = hwbench {
 		sc_sysinfo::print_hwbench(&hwbench);
-		match SUBSTRATE_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {
+		match MIDNIGHT_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {
 			Err(err) if role.is_authority() => {
 				log::warn!(
 					"⚠️  The hardware does not meet the minimal requirements {} for role 'Authority'.",
@@ -707,7 +720,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);
 		let inherent_config =
-			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source);
+			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source)
+				.map_err(|e| {
+					log::error!(target: "midnight", "Incoherent consensus timing configuration: {e}");
+					ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
+				})?;
 
 		let aura = sc_partner_chains_consensus_aura::start_aura::<
 			AuraPair,
@@ -753,6 +770,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		task_manager
 			.spawn_essential_handle()
 			.spawn_blocking("aura", Some("block-authoring"), aura);
+
+		task_manager.spawn_handle().spawn(
+			"committee-membership-watch",
+			None,
+			crate::committee_membership::watch(client.clone(), keystore_container.keystore()),
+		);
 	}
 
 	if enable_grandpa {
