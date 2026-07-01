@@ -12,7 +12,9 @@
 // limitations under the License.
 
 import fs from "fs";
+import net from "net";
 import path from "path";
+import { promises as dnsPromises } from "dns";
 import { ApiPromise, WsProvider } from "@polkadot/api";
 import type { SubmittableExtrinsic } from "@polkadot/api/promise/types";
 import { Keyring } from "@polkadot/keyring";
@@ -82,6 +84,41 @@ export function resolveRpcUrl(candidate?: string): string {
   return DEFAULT_RPC_URL;
 }
 
+// Print the definite reason a connect failed: what the host resolved to (and in
+// what order) plus a raw per-address TCP probe. Distinguishes "IPv6 path dead,
+// IPv4 works" from "nothing is listening" without waiting out a job timeout.
+async function logConnectDiagnostics(rpcUrl: string): Promise<void> {
+  const url = new URL(rpcUrl);
+  const port = Number(url.port);
+  const addrs = await dnsPromises
+    .lookup(url.hostname, { all: true, verbatim: true })
+    .catch(() => [] as { address: string; family: number }[]);
+  if (addrs.length) {
+    console.error(
+      `DNS ${url.hostname} (verbatim order): ${addrs
+        .map((a) => `${a.address}(v${a.family})`)
+        .join(", ")}`,
+    );
+  }
+  const targets = addrs.length ? addrs.map((a) => a.address) : [url.hostname];
+  for (const address of targets) {
+    const result = await new Promise<string>((resolve) => {
+      const socket = net.connect({ host: address, port });
+      const done = (msg: string) => {
+        socket.destroy();
+        resolve(msg);
+      };
+      socket.setTimeout(4000);
+      socket.once("connect", () => done("OK"));
+      socket.once("timeout", () => done("TIMEOUT"));
+      socket.once("error", (e: NodeJS.ErrnoException) =>
+        done(`FAIL (${e.code ?? e.message})`),
+      );
+    });
+    console.error(`TCP ${address}:${port} -> ${result}`);
+  }
+}
+
 export async function createApi(
   rpcUrl: string,
   connectTimeoutMs: number = API_CONNECT_TIMEOUT_MS,
@@ -90,6 +127,18 @@ export async function createApi(
   provider: WsProvider;
 }> {
   const provider = new WsProvider(rpcUrl);
+  // Surface socket-level connect activity so a stuck connection is never silent.
+  provider.on("error", (e) =>
+    console.error(
+      `WsProvider error (${rpcUrl}): ${(e as Error)?.message ?? e}`,
+    ),
+  );
+  provider.on("disconnected", () =>
+    console.warn(`WsProvider disconnected (${rpcUrl})`),
+  );
+  provider.on("connected", () =>
+    console.log(`WsProvider connected (${rpcUrl})`),
+  );
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
@@ -108,6 +157,9 @@ export async function createApi(
     const api = await Promise.race([ApiPromise.create({ provider }), timeout]);
     return { api, provider };
   } catch (err) {
+    await logConnectDiagnostics(rpcUrl).catch(() => {
+      // diagnostics are best-effort
+    });
     // Tear down the socket so a failed connect doesn't keep reconnecting in the
     // background and hold the process open.
     try {
