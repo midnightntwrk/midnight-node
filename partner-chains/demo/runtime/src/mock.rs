@@ -45,6 +45,7 @@ frame_support::construct_runtime!(
 		Grandpa: pallet_grandpa,
 		Balances: pallet_balances,
 		Session: pallet_session,
+		Historical: pallet_session::historical,
 	}
 );
 
@@ -151,6 +152,19 @@ impl pallet_session::Config for Test {
 	type WeightInfo = pallet_session::weights::SubstrateWeight<Test>;
 	type Currency = Balances;
 	type KeyDeposit = ConstU128<0>;
+}
+
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AccountId32, Option<()>> for FullIdentificationOf {
+	fn convert(_: AccountId32) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
 }
 
 impl pallet_sidechain::Config for Test {
