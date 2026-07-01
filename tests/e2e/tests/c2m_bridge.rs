@@ -900,7 +900,7 @@ async fn setup_and_prepare_bridge_transfer(
 
 /// Wait until midnight's cnight observer picks up a bridge transfer, ignoring
 /// any block at or before `min_block_number`.
-async fn wait_for_bridge_calls(
+pub(crate) async fn wait_for_bridge_calls(
     midnight_client: &MidnightClient,
     min_block_number: u64,
 ) -> C2MBridgePalletCalls {
@@ -943,7 +943,7 @@ async fn submit_via_governance(
 }
 
 /// Pre-approve a single Cardano tx hash via `C2MBridge.add_approved_mc_tx_hashes`.
-async fn approve_mc_tx_hash_via_governance(
+pub(crate) async fn approve_mc_tx_hash_via_governance(
     midnight: &MidnightClient,
     mc_tx_hash: [u8; 32],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -1013,7 +1013,7 @@ async fn read_subminimal_flush_threshold(
 /// recipient's claimable balance with `amount - fee`, where the fee is
 /// `fee_bps` basis points of `amount` (or the whole amount if it is below
 /// `min_amount`). Used to compute the exact amount the recipient can claim.
-fn claimable_amount(amount: u128, fee_bps: u32, min_amount: u128) -> u128 {
+pub(crate) fn claimable_amount(amount: u128, fee_bps: u32, min_amount: u128) -> u128 {
     if amount < min_amount {
         return 0;
     }

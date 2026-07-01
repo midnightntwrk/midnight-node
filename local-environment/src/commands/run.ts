@@ -14,6 +14,7 @@
 import path from "path";
 import { globSync } from "glob";
 import fs, { existsSync } from "fs";
+import { spawnSync } from "child_process";
 import { parse } from "dotenv";
 import {
   generateSecretsIfMissing,
@@ -228,6 +229,10 @@ async function runLocalEnvironment(runOptions: RunOptions) {
     process.exit(1);
   }
 
+  // The local-env-seed job funds the dev wallet on bring-up; its image is built
+  // from source (can't be pulled), so build it locally on first use.
+  ensureSeederImage(env);
+
   const composeFile = path.resolve(
     __dirname,
     "../networks/local-env/docker-compose.yml",
@@ -239,6 +244,48 @@ async function runLocalEnvironment(runOptions: RunOptions) {
     profiles: runOptions.profiles,
     detach: true,
   });
+}
+
+/**
+ * Ensure the wallet-seeding image (`SEEDER_IMAGE`) exists locally. It's a
+ * from-source image (the e2e seeding test compiled in), so it can't be pulled
+ * from a registry — build it via `earthly +local-env-seeder-image` on first use.
+ * A no-op when the image is already present or `SEEDER_IMAGE` is unset.
+ */
+function ensureSeederImage(env: Record<string, string>) {
+  const image = env.SEEDER_IMAGE;
+  if (!image) {
+    return;
+  }
+  const present =
+    spawnSync("docker", ["image", "inspect", image], { stdio: "ignore" })
+      .status === 0;
+  if (present) {
+    return;
+  }
+  console.log(
+    `ℹ️  Seeder image '${image}' not found locally; building it via ` +
+      `'earthly +local-env-seeder-image' (one-time, may take several minutes)...`,
+  );
+  const repoRoot = path.resolve(__dirname, "../../..");
+  const result = spawnSync("earthly", ["+local-env-seeder-image"], {
+    stdio: "inherit",
+    cwd: repoRoot,
+    env: process.env,
+  });
+  if (result.error) {
+    throw new Error(
+      `Failed to invoke earthly to build the seeder image (${result.error.message}). ` +
+        `Install earthly and build it with 'earthly +local-env-seeder-image', or set ` +
+        `SEEDER_IMAGE to a prebuilt image.`,
+    );
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `'earthly +local-env-seeder-image' exited with code ${result.status}. Build the ` +
+        `seeder image manually or set SEEDER_IMAGE to a prebuilt image.`,
+    );
+  }
 }
 
 function resolveComposeFile(namespace: string): string {

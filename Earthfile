@@ -1704,6 +1704,44 @@ local-env-e2e:
     ENV RUSTFLAGS="-C debuginfo=1"
     RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
+# local-env-seeder-bin compiles the `local_env_seed::seed_wallet` e2e test (with the
+# `local-env-seed` feature, built alongside `local`) into its libtest harness binary,
+# then strips it so it ships as a small layer.
+local-env-seeder-bin:
+    FROM +prep
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    WORKDIR tests/e2e
+    RUN cargo test --test e2e_tests --no-default-features --features local,local-env-seed --no-run
+    # Locate the harness binary, strip it (drops the debuginfo bulk so it isn't a
+    # multi-GB layer), and sanity-check it still runs.
+    RUN bin=$(find / -xdev -maxdepth 8 -type f -name 'e2e_tests-*' -perm -u+x ! -name '*.d' 2>/dev/null | head -1) \
+        && echo "seeding test binary: $bin" \
+        && strip "$bin" -o /seeder \
+        && /seeder --list >/dev/null
+    SAVE ARTIFACT /seeder
+
+# local-env-seeder-image ships the stripped seeding-test binary on a slim runtime so
+# it runs directly (no cargo / toolchain / source at runtime). Used by the
+# `local-env-seed` docker-compose service to fund the dev wallet (seed 0x..01) by
+# running ONLY that test against a live stack (see tests/e2e/tests/local_env_seed.rs).
+# Build locally with `earthly +local-env-seeder-image`; it SAVEs `midnight-node-seeder:latest`.
+local-env-seeder-image:
+    FROM debian:bookworm-slim
+    RUN apt-get update \
+        && apt-get install -y --no-install-recommends bash ca-certificates libssl3 libsqlite3-0 \
+        && rm -rf /var/lib/apt/lists/*
+    COPY +local-env-seeder-bin/seeder /usr/local/bin/seeder
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    COPY scripts/local-env/run-seeder.sh /run-seeder.sh
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV SEEDER_BIN=/usr/local/bin/seeder
+    # Fail the build (not the container at runtime) if the binary is missing a shared lib.
+    RUN /usr/local/bin/seeder --list >/dev/null
+    ENTRYPOINT ["/bin/bash", "/run-seeder.sh"]
+    SAVE IMAGE midnight-node-seeder:latest
+
 # compares chain parameters with testnet-02
 chain-params-check:
     FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4

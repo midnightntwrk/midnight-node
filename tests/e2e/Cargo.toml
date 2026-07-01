@@ -10,6 +10,10 @@ local = []
 local-dev = []
 local-ci = []
 qanet = []
+# Opt-in flag for the local-env wallet-seeding job (tests/local_env_seed.rs): compiles +
+# runs only the bridge-funding test that seeds the dev wallet 0x..01. Gated so it never
+# joins the normal `cargo test` sweep for any network. Built alongside `local`.
+local-env-seed = []
 # Opt-in flag: when on, the c2m_bridge e2e tests run extra GraphQL
 # assertions against a running indexer-api (default
 # http://127.0.0.1:8088/api/v3/graphql, override via INDEXER_GRAPHQL_URL).
@@ -20,7 +24,7 @@ default = ["local-ci"]
 [dependencies]
 aiken-contracts-lib = { path = "../../util/aiken-contracts-lib" }
 hex.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 whisky.workspace = true
 tiny-bip39 = "2.0.0"
 ogmios-client = { path = "../../partner-chains/toolkit/utils/ogmios-client" }

@@ -356,3 +356,7 @@ mod contract_state;
 mod governance;
 mod operational;
 mod rpc_abuse;
+
+// Local-env wallet-seeding job — opt-in only, never part of the normal sweep.
+#[cfg(feature = "local-env-seed")]
+mod local_env_seed;
