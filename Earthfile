@@ -1785,20 +1785,27 @@ addresses-check:
 # start-local-env-latest starts up the local environment with the latest node image
 start-local-env-latest:
     LOCALLY
-    WITH DOCKER --load localhost/midnight-node:latest=+node-image
+    # Build both from-source images the local-env needs (node + the init-mnight-faucet
+    # bring-up job) and load them under fixed local tags, mirroring how the node is built.
+    WITH DOCKER \
+            --load localhost/midnight-node:latest=+node-image \
+            --load localhost/local-env-init-mnight-faucet:latest=+init-mnight-faucet-image
         # Ugly nested earthly call, but earthly complains if we use BUILD here
-        RUN earthly +start-local-env --NODE_IMAGE=localhost/midnight-node:latest
+        RUN earthly +start-local-env \
+            --NODE_IMAGE=localhost/midnight-node:latest \
+            --INIT_MNIGHT_FAUCET_IMAGE=localhost/local-env-init-mnight-faucet:latest
     END
 
 start-local-env:
     LOCALLY
     ARG NODE_IMAGE
+    ARG INIT_MNIGHT_FAUCET_IMAGE
     ARG TARGETPLATFORM
     ARG USERARCH
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE npm run stop:local-env
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE npm run run:local-env
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run stop:local-env
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run run:local-env
 
 start-local-env-with-indexer:
     LOCALLY
@@ -1808,10 +1815,11 @@ start-local-env-with-indexer:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
+    ARG INIT_MNIGHT_FAUCET_IMAGE
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 start-local-env-with-indexer-ci:
     LOCALLY
@@ -1821,6 +1829,7 @@ start-local-env-with-indexer-ci:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
+    ARG INIT_MNIGHT_FAUCET_IMAGE
     WORKDIR local-environment
     RUN npm ci
     # Tear down any stack left over from a previous run before starting a fresh
@@ -1830,8 +1839,8 @@ start-local-env-with-indexer-ci:
     # breaks chain-indexer with "unsupported protocol version" when the
     # genesis/runtime expectations disagree. The non-CI sibling target
     # `+start-local-env-with-indexer` does this same down already.
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
 # Runs the integration tests (stack → verify-finality → e2e → toolkit) in one RUN

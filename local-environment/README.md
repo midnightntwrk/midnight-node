@@ -162,13 +162,16 @@ Starting the environment via Earthly:
 earthly +start-local-env-latest
 ```
 
-Or specify a released node image:
+Or specify a released node image (pass the matching from-source faucet image too — see
+below):
 
 ```bash
-earthly +start-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0
+earthly +start-local-env \
+  --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0 \
+  --INIT_MNIGHT_FAUCET_IMAGE=ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<git-tree-hash>-<arch>
 ```
 
-You can also use npm scripts:
+You can also use npm scripts (these read the image env vars from `.envrc`):
 
 ```bash
 npm run run:local-env
@@ -176,12 +179,14 @@ npm run run:local-env-with-indexer
 ```
 
 The `init-mnight-faucet` job (funds + DUST-registers the dev wallet `0x..01` over the c2m
-bridge) runs a from-source image that CI publishes to
-`ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<git-tree-hash>-<arch>`. The runner
-derives the tag for your checkout and pulls it; if that tree isn't published yet (unmerged
-branch, or uncommitted changes to the job) it falls back to building the same tag locally
-via `earthly +init-mnight-faucet-image`. Pin a specific image by exporting
-`INIT_MNIGHT_FAUCET_IMAGE`.
+bridge) runs a from-source image, exactly like `midnight-node`. CI publishes it to
+`ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<git-tree-hash>-<arch>`;
+`local-environment/.envrc` derives that tag for your checkout and exports
+`INIT_MNIGHT_FAUCET_IMAGE`, so `npm run run:local-env` (and `docker compose`) pull it on
+bring-up. `earthly +start-local-env-latest` builds it from source automatically. If your
+tree isn't published yet (unmerged branch, or uncommitted changes to the job), build it
+locally with `earthly +init-mnight-faucet-image` (it tags the same ref), or export
+`INIT_MNIGHT_FAUCET_IMAGE` to pin your own.
 
 Stopping the environment:
 
