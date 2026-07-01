@@ -9,7 +9,7 @@ use frame_support::{
 use frame_system::EnsureRoot;
 use pallet_balances::AccountData;
 use sidechain_domain::byte_string::SizedByteString;
-use sp_core::{H256, blake2_256};
+use sp_core::{ConstU128, H256, blake2_256};
 use sp_runtime::{
 	BuildStorage, KeyTypeId,
 	key_types::DUMMY,
@@ -168,6 +168,8 @@ impl pallet_session::Config for Test {
 	type DisablingStrategy = ();
 	type WeightInfo = ();
 	type RuntimeEvent = RuntimeEvent;
+	type Currency = Balances;
+	type KeyDeposit = ConstU128<0>;
 }
 
 /// Build genesis storage according to the mock runtime.
