@@ -41,7 +41,6 @@ midnight-node-e2e-macros = { path = "macros" }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
-midnight-node-res = { workspace = true, features = ["test"] }
 midnight-node-toolkit = { path = "../../util/toolkit" }
 tempfile.workspace = true
 
