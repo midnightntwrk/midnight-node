@@ -373,6 +373,7 @@ impl frame_system::Config for Runtime {
 	type SingleBlockMigrations = (
 		// Needed if chain is upgradeing from before PC 1.6
 		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
+		// See migrations::authority_keys when opaque::SessionKeys changes shape.
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();

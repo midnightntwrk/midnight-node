@@ -45,6 +45,12 @@
 //! It assumes that the types `T::AuthorityId` and `T::AuthorityKeys` do not change as
 //! part of the same runtime upgrade. The only requirement for the new type
 //! `T::CommitteeMember` is to implement the trait `From<(T::AuthorityId, T::AuthorityKeys)>`.
+//!
+//! ## Changing `AuthorityKeys` after V1
+//!
+//! When `T::AuthorityKeys` changes shape, use `migrations::authority_keys::AuthorityKeysMigration`
+//! wired into `SingleBlockMigrations` with `FROM`/`TO` set to the pallet's on-chain storage
+//! versions before/after the upgrade. See that module's docs.
 
 pub mod v0;
 pub mod v1;
