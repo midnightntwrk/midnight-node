@@ -7,7 +7,7 @@
 //! empty.
 //!
 //! Unlike the c2m_bridge tests it does NOT mint fresh cNIGHT — it **spends the
-//! seeded faucet cNIGHT** (the circulating pool minted by the `cnight-seeder`
+//! seeded faucet cNIGHT** (the circulating pool minted by the `mint-cnight-supply`
 //! step). Each transfer only moves cNIGHT faucet→ICS (increasing `C.L`), so
 //! #1778's pools and the `M.U ≤ C.L` invariant are preserved.
 //!
@@ -18,7 +18,7 @@
 //! is feeless and self-signed by the seed, so the otherwise-empty wallet can
 //! claim its bridged NIGHT with no pre-existing balance or DUST.
 //!
-//! Gated behind the `local-env-seed` feature (built alongside `local`) so it
+//! Gated behind the `init-mnight-faucet` feature (built alongside `local`) so it
 //! never joins the normal `cargo test` sweep; run as a one-shot compose job.
 
 use midnight_node_e2e::api::cardano::{BridgeTransferRecipient, CardanoClient};
@@ -75,9 +75,9 @@ fn cnight_balance(utxo: &OgmiosUtxo, policy_hex: &str) -> u128 {
 }
 
 #[e2e_test]
-async fn seed_wallet() {
+async fn fund_faucet() {
     let settings = Settings::default();
-    // The funded faucet wallet holds the seeded cNIGHT (the cnight-seeder mints to
+    // The funded faucet wallet holds the seeded cNIGHT (the mint-cnight-supply mints to
     // its payment key). We move the amount to bridge into a fresh spender wallet and
     // bridge from there: the funded wallet is the local-env governance authority (an
     // enterprise address), and whisky drops its witness when signing the metadata +
@@ -107,7 +107,7 @@ async fn seed_wallet() {
         .unwrap_or_else(|| {
             panic!(
                 "no faucet cNIGHT UTxO with >= {AMOUNT_STARS} STARS under policy {cnight_policy} \
-                 at {funded_addr} — is the cnight-seeder step done?"
+                 at {funded_addr} — is the mint-cnight-supply step done?"
             )
         });
     let funding_ada = utxos

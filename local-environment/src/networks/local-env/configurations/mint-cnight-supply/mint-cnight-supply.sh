@@ -30,14 +30,14 @@
 # real addresses) and BEFORE midnight-setup captures the bridge observation
 # checkpoint (`initial_data_checkpoint`), so the bridge treats the seeded ICS
 # cNIGHT as pre-existing locked supply instead of sweeping it to Treasury. The
-# docker-compose dependency chain (contract-compiler -> cnight-seeder ->
+# docker-compose dependency chain (contract-compiler -> mint-cnight-supply ->
 # midnight-setup) guarantees both orderings.
 
 set -euo pipefail
 
 NETWORK_MAGIC=42
 RUNTIME_VALUES=/runtime-values
-SEEDED_MARKER="${RUNTIME_VALUES}/cnight-seeded"
+SEEDED_MARKER="${RUNTIME_VALUES}/cnight-supply-minted"
 
 # Inputs produced by the contract-compiler step (it has jq; this container does not).
 ICS_ADDR_FILE="${RUNTIME_VALUES}/ics_forever.addr"
@@ -142,25 +142,25 @@ for attempt in {1..15}; do
       --mint-script-file "$CNIGHT_PLUTUS" \
       --mint-redeemer-value "{}" \
       --change-address "$FAUCET_ADDR" \
-      --out-file /tmp/seed-cnight.raw; then
+      --out-file /tmp/cnight-supply.raw; then
     echo "  build failed (stale UTxO?); re-querying after a short wait..."
     sleep 4
     continue
   fi
 
   cardano-cli latest transaction sign \
-    --tx-body-file /tmp/seed-cnight.raw \
+    --tx-body-file /tmp/cnight-supply.raw \
     --signing-key-file /keys/funded_address.skey \
     --testnet-magic "$NETWORK_MAGIC" \
-    --out-file /tmp/seed-cnight.signed
+    --out-file /tmp/cnight-supply.signed
 
   # `transaction txid` may print either a bare hash or JSON ({"txhash":"..."});
   # extract the 64-hex id either way.
-  txid=$(cardano-cli latest transaction txid --tx-file /tmp/seed-cnight.signed \
+  txid=$(cardano-cli latest transaction txid --tx-file /tmp/cnight-supply.signed \
     | /busybox grep -oE '[0-9a-f]{64}' | /busybox head -1)
   echo "  submitting tx $txid ..."
   if cardano-cli latest transaction submit \
-      --tx-file /tmp/seed-cnight.signed \
+      --tx-file /tmp/cnight-supply.signed \
       --testnet-magic "$NETWORK_MAGIC"; then
     SEED_TX_ID="$txid"
     break

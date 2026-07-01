@@ -485,7 +485,7 @@ services:
         condition: service_healthy
       contract-compiler:
         condition: service_completed_successfully
-      cnight-seeder:
+      mint-cnight-supply:
         condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
@@ -513,9 +513,9 @@ services:
   # mints the full cNIGHT supply and distributes it to mirror the Midnight pools
   # (Reserve/ICS/faucet), so the cross-chain invariants hold from genesis. Runs after
   # the contracts are deployed and BEFORE midnight-setup captures the bridge checkpoint.
-  # (Per-wallet funding is done later by the `local-env-seed` job.)
-  cnight-seeder:
-    container_name: cnight-seeder
+  # (Per-wallet funding is done later by the `init-mnight-faucet` job.)
+  mint-cnight-supply:
+    container_name: mint-cnight-supply
     image: ${CARDANO_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
@@ -531,26 +531,26 @@ services:
       - ./configurations/busybox:/busybox
       - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
       - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
-      - ./configurations/cnight-seeder/seed-cnight.sh:/seed-cnight.sh
+      - ./configurations/mint-cnight-supply/mint-cnight-supply.sh:/mint-cnight-supply.sh
     environment:
       - CARDANO_NODE_SOCKET_PATH=/data/node.socket
-    entrypoint: ["/bin/bash", "/seed-cnight.sh"]
+    entrypoint: ["/bin/bash", "/mint-cnight-supply.sh"]
 
   # Funds the dev wallet (seed 0x..01) with NIGHT by driving the cNIGHT->NIGHT
-  # bridge end-to-end: spends the faucet cNIGHT seeded by `cnight-seeder`, locks
+  # bridge end-to-end: spends the faucet cNIGHT seeded by `mint-cnight-supply`, locks
   # it to the ICS validator naming the wallet, pre-approves the tx hash via
   # governance, submits it, then claims the bridged NIGHT (feeless). Implemented
-  # as the `local_env_seed::seed_wallet` e2e test baked into ${SEEDER_IMAGE}
-  # (built by `earthly +local-env-seeder-image`). Runs once after the chain is up
-  # and exits; a `runtime-values/wallets-seeded` marker makes it idempotent.
-  local-env-seed:
-    container_name: local-env-seed
-    image: ${SEEDER_IMAGE}
+  # as the `init_mnight_faucet::fund_faucet` e2e test baked into ${INIT_MNIGHT_FAUCET_IMAGE}
+  # (built by `earthly +init-mnight-faucet-image`). Runs once after the chain is up
+  # and exits; a `runtime-values/mnight-faucet-ready` marker makes it idempotent.
+  init-mnight-faucet:
+    container_name: init-mnight-faucet
+    image: ${INIT_MNIGHT_FAUCET_IMAGE}
     platform: ${ARCHITECTURE}
     depends_on:
       midnight-setup:
         condition: service_completed_successfully
-      cnight-seeder:
+      mint-cnight-supply:
         condition: service_completed_successfully
       midnight-node-1:
         condition: service_started
@@ -566,7 +566,7 @@ services:
       - RUNTIME_VALUES_DIR=/runtime-values
       # Persistent zswap public-params cache for the in-process claim prover.
       - MIDNIGHT_PP=/zk-params
-      - SEED_MARKER_FILE=/runtime-values/wallets-seeded
+      - FAUCET_MARKER_FILE=/runtime-values/mnight-faucet-ready
     volumes:
       - ./runtime-values:/runtime-values
       - zk-params:/zk-params

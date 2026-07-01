@@ -24,11 +24,11 @@ Includes:
   configs from the **deployed** `ICS Forever` / `Reserve Forever` addresses
   (`contracts-info.json`); and anchors the bridge `initial_data_checkpoint` to the cNIGHT
   seeding tx so the seeded ICS supply is treated as pre-existing locked supply (not swept).
-- **cNIGHT genesis seeding (#1778)**: a `cnight-seeder` docker-compose service runs between
+- **cNIGHT genesis seeding (#1778)**: a `mint-cnight-supply` docker-compose service runs between
   `contract-compiler` and `midnight-setup` and mints the full cNIGHT supply
   (`S = 24e15` STARS) in one cardano-cli tx, distributing it to mirror the Midnight pools —
   Reserve Forever `C.R = M.R`, ICS Forever `C.L = M.U` (inline unit datum, **no** bridge
-  metadata), faucet `C.U = M.L` — then records a `cnight-seeded` marker. `contract-compiler`
+  metadata), faucet `C.U = M.L` — then records a `cnight-supply-minted` marker. `contract-compiler`
   exports the validator addresses + compiled cNIGHT policy for it. Mirrors
   `scripts/cnight-generates-dust/{receive_cnight,lock_to_ics}.sh`.
 - `tests/e2e` contract-tx tests that relied on funded genesis fixtures are `#[ignore]`d;

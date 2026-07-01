@@ -229,9 +229,10 @@ async function runLocalEnvironment(runOptions: RunOptions) {
     process.exit(1);
   }
 
-  // The local-env-seed job funds the dev wallet on bring-up; its image is built
-  // from source (can't be pulled), so build it locally on first use.
-  ensureSeederImage(env);
+  // The init-mnight-faucet job funds the dev wallet on bring-up. CI publishes its image
+  // content-hash-tagged, so resolve to the tag for this checkout and pull it (build only
+  // as a fallback for an unpublished tree).
+  resolveMnightFaucetImage(env);
 
   const composeFile = path.resolve(
     __dirname,
@@ -247,43 +248,72 @@ async function runLocalEnvironment(runOptions: RunOptions) {
 }
 
 /**
- * Ensure the wallet-seeding image (`SEEDER_IMAGE`) exists locally. It's a
- * from-source image (the e2e seeding test compiled in), so it can't be pulled
- * from a registry — build it via `earthly +local-env-seeder-image` on first use.
- * A no-op when the image is already present or `SEEDER_IMAGE` is unset.
+ * Resolve `INIT_MNIGHT_FAUCET_IMAGE` and make sure it's available locally.
+ *
+ * - If it's already set (CI passes the just-built tag; or a power-user override), use it
+ *   as-is — the compose layer pulls/uses it.
+ * - Otherwise derive the content-hash tag for this checkout
+ *   (`ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<git HEAD^{tree}>-<arch>`), which CI
+ *   publishes on merge, set it, and `docker pull` it. If the pull fails (unmerged branch, or
+ *   uncommitted changes to the faucet job) fall back to `earthly +init-mnight-faucet-image`,
+ *   which builds the SAME tag locally (no push).
  */
-function ensureSeederImage(env: Record<string, string>) {
-  const image = env.SEEDER_IMAGE;
-  if (!image) {
-    return;
+function resolveMnightFaucetImage(env: Record<string, string>) {
+  if (env.INIT_MNIGHT_FAUCET_IMAGE) {
+    return; // CI / explicit override — already provided.
   }
-  const present =
-    spawnSync("docker", ["image", "inspect", image], { stdio: "ignore" })
-      .status === 0;
-  if (present) {
-    return;
-  }
-  console.log(
-    `ℹ️  Seeder image '${image}' not found locally; building it via ` +
-      `'earthly +local-env-seeder-image' (one-time, may take several minutes)...`,
-  );
+
   const repoRoot = path.resolve(__dirname, "../../..");
-  const result = spawnSync("earthly", ["+local-env-seeder-image"], {
+  const treeHash = spawnSync("git", ["rev-parse", "HEAD^{tree}"], {
+    cwd: repoRoot,
+    encoding: "utf-8",
+  })
+    .stdout?.trim()
+    .slice(0, 12);
+  if (!treeHash) {
+    throw new Error(
+      "Could not compute the git tree hash to resolve INIT_MNIGHT_FAUCET_IMAGE; " +
+        "set INIT_MNIGHT_FAUCET_IMAGE to a prebuilt image.",
+    );
+  }
+  const arch = process.arch === "arm64" ? "arm64" : "amd64";
+  const image = `ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:${treeHash}-${arch}`;
+  env.INIT_MNIGHT_FAUCET_IMAGE = image;
+
+  // Already local (built earlier, or a prior pull)?
+  if (
+    spawnSync("docker", ["image", "inspect", image], { stdio: "ignore" })
+      .status === 0
+  ) {
+    return;
+  }
+
+  // Pull the CI-published image for this checkout.
+  console.log(`ℹ️  Pulling ${image} ...`);
+  if (spawnSync("docker", ["pull", image], { stdio: "inherit" }).status === 0) {
+    return;
+  }
+
+  // Not published (unmerged branch / uncommitted faucet changes) — build it locally.
+  console.log(
+    `ℹ️  ${image} not published; building it locally via ` +
+      `'earthly +init-mnight-faucet-image' (one-time, may take several minutes)...`,
+  );
+  const result = spawnSync("earthly", ["+init-mnight-faucet-image"], {
     stdio: "inherit",
     cwd: repoRoot,
     env: process.env,
   });
   if (result.error) {
     throw new Error(
-      `Failed to invoke earthly to build the seeder image (${result.error.message}). ` +
-        `Install earthly and build it with 'earthly +local-env-seeder-image', or set ` +
-        `SEEDER_IMAGE to a prebuilt image.`,
+      `Failed to invoke earthly to build the faucet image (${result.error.message}). ` +
+        `Install earthly, or set INIT_MNIGHT_FAUCET_IMAGE to a prebuilt image.`,
     );
   }
   if (result.status !== 0) {
     throw new Error(
-      `'earthly +local-env-seeder-image' exited with code ${result.status}. Build the ` +
-        `seeder image manually or set SEEDER_IMAGE to a prebuilt image.`,
+      `'earthly +init-mnight-faucet-image' exited with code ${result.status}. ` +
+        `Build it manually or set INIT_MNIGHT_FAUCET_IMAGE to a prebuilt image.`,
     );
   }
 }

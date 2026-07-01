@@ -158,7 +158,7 @@ echo "✓ Contracts data exported successfully"
 echo "=== Contracts Data Export Complete ==="
 echo ""
 
-# Export bridge cNIGHT seeding inputs for the cnight-seeder step (midnight-node#1778):
+# Export bridge cNIGHT seeding inputs for the mint-cnight-supply step (midnight-node#1778):
 # the ICS/Reserve "Forever" validator addresses (the immutable proxies that hold the
 # locked / reserved cNIGHT) and the compiled infinite-mint cNIGHT policy as a .plutus
 # envelope. The seeder runs in a cardano-cli-only container (no jq), so we extract

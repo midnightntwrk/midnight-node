@@ -157,7 +157,7 @@ echo "Creating c2m-bridge-config.json..."
 # seeding tx (midnight-node#1778): the pre-seeded ICS supply is already reflected in the
 # genesis pools, so re-observing it would double-account it. Fall back to the latest UTxO
 # tx if the seeding step did not run.
-CNIGHT_SEED_MARKER=/runtime-values/cnight-seeded
+CNIGHT_SEED_MARKER=/runtime-values/cnight-supply-minted
 if [ -s "$CNIGHT_SEED_MARKER" ]; then
   existing_tx_hash=$(cat "$CNIGHT_SEED_MARKER")
   echo "Using cNIGHT seeding tx as bridge initial_data_checkpoint: $existing_tx_hash"

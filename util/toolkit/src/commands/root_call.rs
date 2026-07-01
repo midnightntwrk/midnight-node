@@ -240,8 +240,15 @@ async fn execute_governance_call(
 
 	// Step 3: Council members vote (need 2/3 threshold)
 	log::info!("Council members voting...");
-	vote_on_proposal_batch(api, council_keypairs, "Council", proposal_hash, council_proposal_index, true)
-		.await?;
+	vote_on_proposal_batch(
+		api,
+		council_keypairs,
+		"Council",
+		proposal_hash,
+		council_proposal_index,
+		true,
+	)
+	.await?;
 
 	// Step 4: Close Council proposal
 	log::info!("Closing Council proposal...");
@@ -353,11 +360,8 @@ async fn vote_on_proposal_batch(
 	let mut submitted = Vec::new();
 	for (i, voter) in voters.iter().take(2).enumerate() {
 		log::info!("{} vote {} from 0x{}", pallet, i + 1, hex::encode(voter.public_key().0));
-		let progress = api
-			.tx()
-			.await?
-			.sign_and_submit_then_watch_default(&vote_call, voter)
-			.await?;
+		let progress =
+			api.tx().await?.sign_and_submit_then_watch_default(&vote_call, voter).await?;
 		submitted.push(progress);
 	}
 	// ...then await finalization of each (they finalize together).

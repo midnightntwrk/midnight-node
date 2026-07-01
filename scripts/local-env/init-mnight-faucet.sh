@@ -13,18 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Entry point for the `local-env-seed` docker-compose service (built into
-# midnight-node-seeder via `earthly +local-env-seeder-image`). Runs ONLY the
-# `local_env_seed::seed_wallet` e2e test, which funds the dev wallet (seed
+# Entry point for the `init-mnight-faucet` docker-compose service (built into
+# local-env-init-mnight-faucet via `earthly +init-mnight-faucet-image`). Runs ONLY the
+# `init_mnight_faucet::fund_faucet` e2e test, which funds the dev wallet (seed
 # 0x..01) with NIGHT by driving the cNIGHT->NIGHT bridge end-to-end against the
-# live local-env stack (see tests/e2e/tests/local_env_seed.rs).
+# live local-env stack (see tests/e2e/tests/init_mnight_faucet.rs).
 #
-# Idempotent: a `$SEED_MARKER_FILE` in the mounted runtime-values dir short-
+# Idempotent: a `$FAUCET_MARKER_FILE` in the mounted runtime-values dir short-
 # circuits a re-run so a stack restart doesn't double-fund the wallet.
 
 set -euo pipefail
 
-MARKER="${SEED_MARKER_FILE:-/runtime-values/wallets-seeded}"
+MARKER="${FAUCET_MARKER_FILE:-/runtime-values/mnight-faucet-ready}"
 if [ -f "$MARKER" ]; then
   echo "wallets already seeded ($MARKER present); skipping."
   exit 0
@@ -56,12 +56,12 @@ fi
 echo "node RPC reachable; starting seeding"
 
 # The seeding test binary is prebuilt + stripped into the image (Earthfile
-# +local-env-seeder-image), so we run it directly — no cargo / toolchain / source
+# +init-mnight-faucet-image), so we run it directly — no cargo / toolchain / source
 # needed at runtime. It is the libtest harness binary; select only our test.
 SEEDER_BIN="${SEEDER_BIN:-/usr/local/bin/seeder}"
 LOG="$(mktemp)"
 set +e
-"$SEEDER_BIN" --exact local_env_seed::seed_wallet --nocapture --test-threads=1 2>&1 | tee "$LOG"
+"$SEEDER_BIN" --exact init_mnight_faucet::fund_faucet --nocapture --test-threads=1 2>&1 | tee "$LOG"
 status=${PIPESTATUS[0]}
 set -e
 

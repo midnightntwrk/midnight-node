@@ -137,6 +137,25 @@ with Cardano.
 Once Postgres is populated, Midnight nodes begin block production after 2 main
 chain epochs.
 
+#### Startup phases
+
+`docker compose up` brings the stack up in dependency order: the one-shot jobs
+(`contract-compiler` → `mint-cnight-supply` → `midnight-setup` → `init-mnight-faucet`)
+each run to completion (`exit 0`) before the next phase starts.
+
+| Phase | Container(s) | Does |
+|------:|--------------|------|
+| 0 | `cardano-node-1`, `postgres` | base |
+| 1 | `ogmios`, `kupo`, `db-sync` | Cardano API + chain indexing |
+| 2 | `contract-compiler` | compile + deploy the Aiken governance contracts |
+| 3 | `mint-cnight-supply` | mint the cNIGHT supply on Cardano → Reserve / ICS / faucet pools |
+| 4 | `midnight-setup` | build the chainspec/genesis + bridge observation config + checkpoint |
+| 5 | `midnight-node-1` … `midnight-node-5` | validators; produce + finalize blocks |
+| 6 | `init-mnight-faucet` | fund + DUST-register wallet `0x..01` over the c2m bridge |
+
+With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
+`wallet-indexer`, `indexer-api`) starts alongside the Cardano services.
+
 Starting the environment via Earthly:
 
 ```bash
@@ -155,6 +174,14 @@ You can also use npm scripts:
 npm run run:local-env
 npm run run:local-env-with-indexer
 ```
+
+The `init-mnight-faucet` job (funds + DUST-registers the dev wallet `0x..01` over the c2m
+bridge) runs a from-source image that CI publishes to
+`ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<git-tree-hash>-<arch>`. The runner
+derives the tag for your checkout and pulls it; if that tree isn't published yet (unmerged
+branch, or uncommitted changes to the job) it falls back to building the same tag locally
+via `earthly +init-mnight-faucet-image`. Pin a specific image by exporting
+`INIT_MNIGHT_FAUCET_IMAGE`.
 
 Stopping the environment:
 
