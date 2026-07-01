@@ -239,20 +239,39 @@ jobs:
           echo "node1 bridge IP: ${node1_ip:-<none>}"
           candidates="127.0.0.1:9950 [::1]:9950"
           [ -n "$node1_ip" ] && candidates="$candidates ${node1_ip}:9944"
+
+          probe() {
+            curl -sS --max-time 5 -o /dev/null \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}' \
+              "http://$1"
+          }
+
+          # `compose up -d` returns before the node binds its RPC port, so a
+          # single-shot probe races the node boot and loses. Poll all candidates
+          # until one answers system_health or the deadline hits.
           rpc_ws=""
-          for target in $candidates; do
-            if curl -sS --max-time 5 -o /dev/null \
-                 -H 'Content-Type: application/json' \
-                 -d '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}' \
-                 "http://${target}"; then
-              echo "RPC reachable at http://${target}"
-              rpc_ws="ws://${target}"
-              echo "RPC_HTTP=http://${target}" >> "$GITHUB_ENV"
-              break
-            fi
-            echo "RPC NOT reachable at http://${target}"
+          deadline=$((SECONDS + 120))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            for target in $candidates; do
+              if probe "$target" 2>/dev/null; then
+                echo "RPC reachable at http://${target}"
+                rpc_ws="ws://${target}"
+                echo "RPC_HTTP=http://${target}" >> "$GITHUB_ENV"
+                break 2
+              fi
+            done
+            echo "RPC not ready yet (${SECONDS}s elapsed); retrying..."
+            sleep 3
           done
-          [ -n "$rpc_ws" ] || { echo "No reachable RPC endpoint found" >&2; exit 1; }
+          if [ -z "$rpc_ws" ]; then
+            echo "No reachable RPC endpoint found after ${SECONDS}s; per-target errors:" >&2
+            for target in $candidates; do
+              echo "--- http://${target}" >&2
+              probe "$target" || true
+            done
+            exit 1
+          fi
 
           npm run "governance-runtime-upgrade:${NETWORK}" -- \
             --skip-run \
