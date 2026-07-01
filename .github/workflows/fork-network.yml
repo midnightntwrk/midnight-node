@@ -215,6 +215,10 @@ jobs:
       #
       # node1's container RPC port 9944 is published on host port 9950 for
       # every well-known network compose file, hence the --rpc-url override.
+      # Use 127.0.0.1, not localhost: under Node 17+ resolver order `localhost`
+      # resolves to ::1 first, and the runner's IPv6 loopback path to the
+      # published port is not routable, so the polkadot-js WsProvider (which has
+      # no connect timeout) hangs forever instead of falling back to IPv4.
       - name: Run runtime upgrade via governance
         if: inputs.upgrade_mode == 'runtime'
         working-directory: local-environment
@@ -229,7 +233,7 @@ jobs:
           npm run "governance-runtime-upgrade:${NETWORK}" -- \
             --from-snapshot "$SNAPSHOT_URL" \
             --wasm "$WASM_REL" \
-            --rpc-url ws://localhost:9950 \
+            --rpc-url ws://127.0.0.1:9950 \
             --council-uris //Dave //Eve //Ferdie \
             --technical-uris //Alice //Bob //Charlie \
             --executor-uri //Alice \
@@ -249,7 +253,7 @@ jobs:
           npm run "full-upgrade:${NETWORK}" -- \
             --from-snapshot "$SNAPSHOT_URL" \
             --wasm "$WASM_REL" \
-            --rpc-url ws://localhost:9950 \
+            --rpc-url ws://127.0.0.1:9950 \
             --council-uris //Dave //Eve //Ferdie \
             --technical-uris //Alice //Bob //Charlie \
             --executor-uri //Alice \
@@ -258,7 +262,7 @@ jobs:
       - name: Wait for block + finality progression
         timeout-minutes: 15
         env:
-          RPC_URL: "http://localhost:9950"
+          RPC_URL: "http://127.0.0.1:9950"
           REQUIRED_BLOCKS: "5"
         run: |
           get_tip() {
@@ -315,7 +319,7 @@ jobs:
       - name: Verify on-chain runtime matches candidate wasm
         if: inputs.upgrade_mode != 'image'
         env:
-          RPC_URL: "http://localhost:9950"
+          RPC_URL: "http://127.0.0.1:9950"
           WASM_REL: ${{ steps.wasm.outputs.wasm_rel }}
         run: |
           wasm_file="local-environment/artifacts/$WASM_REL"
