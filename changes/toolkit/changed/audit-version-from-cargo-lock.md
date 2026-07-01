@@ -2,7 +2,7 @@
 # Resolve ledger versions from Cargo.lock at build time
 
 The toolkit `version` command now reports the *resolved* ledger crate versions, baked in at
-compile time from `Cargo.lock` by a `build.rs` (`cargo metadata --locked --offline`), instead of
+compile time from `Cargo.lock` by a `build.rs` (`cargo metadata --locked`), instead of
 parsing the requested specs from `Cargo.toml` at runtime. The manifest can hide the built version:
 a git dependency pinned by `version = "=1.0.0"` actually resolves to a specific pre-release
 tag/commit. Git deps now report their locked tag and full commit SHA, e.g.

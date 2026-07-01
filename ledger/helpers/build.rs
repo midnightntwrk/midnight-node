@@ -19,7 +19,9 @@
 //! Why `cargo metadata` and not a hand-rolled lock parse: the resolve graph keys each dependency by
 //! its *workspace alias* (`mn_ledger`, `mn_ledger_8`, `mn_ledger_9`), so two aliases that rename the
 //! same crate (`midnight-ledger` 7.0.3 and 8.1.0) are distinct nodes — no version-spec
-//! disambiguation guesswork. `--locked --offline` keeps it deterministic and network-free.
+//! disambiguation guesswork. `--locked` keeps the resolve deterministic (no lockfile mutation);
+//! `--offline` is deliberately *not* used, since the registry/git cache may not be warm when the
+//! build script runs.
 
 use cargo_metadata::MetadataCommand;
 
@@ -32,7 +34,7 @@ const LEDGER_ALIASES: [(&str, &str); 3] = [
 
 fn main() {
 	let meta = MetadataCommand::new()
-		.other_options(["--locked".to_owned(), "--offline".to_owned()])
+		.other_options(["--locked".to_owned()])
 		.exec()
 		.expect("cargo metadata failed - is Cargo.lock committed and current?");
 

@@ -12,7 +12,7 @@
 // limitations under the License.
 
 // Resolved ledger versions, baked in at compile time by `build.rs` from `Cargo.lock`
-// (`cargo metadata --locked --offline`). This replaces the runtime `Cargo.toml` parse the
+// (`cargo metadata --locked`). This replaces the runtime `Cargo.toml` parse the
 // LeastAuthority audit flagged ("Prefer Cargo.lock For Build-Time Crate Versions"): the constants
 // reflect what was actually resolved and built, and git deps carry their locked tag + commit SHA.
 const LEDGER_7_VERSION: &str = env!("LEDGER_7_VERSION");
