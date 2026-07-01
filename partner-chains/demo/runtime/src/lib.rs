@@ -314,6 +314,19 @@ impl pallet_session::Config for Runtime {
 	type KeyDeposit = ConstU128<0>;
 }
 
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AccountId, Option<()>> for FullIdentificationOf {
+	fn convert(_: AccountId) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
+}
+
 impl pallet_grandpa::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 
@@ -532,6 +545,7 @@ construct_runtime!(
 		// `SessionCommitteeManagement` pallet are the only source of truth about keys
 		// and accounts of block producers.
 		Session: pallet_session exclude_parts { Call },
+		Historical: pallet_session::historical,
 		Bridge: pallet_partner_chains_bridge,
 		TestHelperPallet: crate::test_helper_pallet,
 	}

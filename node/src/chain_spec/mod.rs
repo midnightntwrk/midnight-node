@@ -275,11 +275,15 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			.map_err(ChainSpecInitError::GenesisStateError)?,
 		},
 		session: SessionConfig {
-			initial_validators: authority_keys
+			keys: authority_keys
 				.iter()
 				.cloned()
-				.map(|keys| (keys.cross_chain.into(), keys.session))
+				.map(|keys| {
+					let account_id: AccountId = keys.cross_chain.into();
+					(account_id.clone(), account_id, keys.session)
+				})
 				.collect::<Vec<_>>(),
+			non_authority_keys: Default::default(),
 		},
 		sidechain: SidechainConfig {
 			genesis_utxo: std::str::FromStr::from_str(genesis.genesis_utxo())
@@ -296,7 +300,6 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			main_chain_scripts: genesis.main_chain_scripts().into(),
 		},
 		tx_pause: Default::default(),
-		pallet_session: Default::default(),
 		c_night_observation: CNightObservationConfig {
 			config: cnight_genesis,
 			_marker: Default::default(),

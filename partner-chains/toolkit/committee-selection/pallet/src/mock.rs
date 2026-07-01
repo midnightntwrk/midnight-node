@@ -59,6 +59,7 @@ frame_support::construct_runtime!(
 		Balances: pallet_balances,
 		SessionCommitteeManagement: pallet,
 		Session: pallet_session,
+		Historical: pallet_session::historical,
 		Mock: mock_pallet,
 	}
 );
@@ -170,6 +171,19 @@ impl pallet_session::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Currency = Balances;
 	type KeyDeposit = ConstU128<0>;
+}
+
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AuthorityId, Option<()>> for FullIdentificationOf {
+	fn convert(_: AuthorityId) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
 }
 
 /// Build genesis storage according to the mock runtime.

@@ -2,18 +2,23 @@
 //!
 //! This implementation has lag of one additional PC epoch when applying committees to sessions.
 //!
-//! To use it, wire [crate::Pallet] in runtime configuration of [`pallet_session`].
+//! To use it, wire [crate::Pallet] in runtime configuration of [`pallet_session`], and enable
+//! `pallet_session`'s `historical` feature with the runtime implementing
+//! [`pallet_session::historical::Config`]. Registering committee members' keys is done via
+//! [`pallet_session::SessionInterface::set_keys`], which is intended for privileged/internal
+//! callers and (unlike the `set_keys` extrinsic) does not require an ownership proof — a
+//! validator's session keys are already authenticated off-chain as part of their Cardano
+//! registration, so re-proving ownership on-chain here would be redundant.
 use crate::CommitteeMember;
-use frame_support::traits::UnfilteredDispatchable;
-use frame_system::RawOrigin;
 use frame_system::pallet_prelude::BlockNumberFor;
 use log::{debug, info, warn};
+use pallet_session::SessionInterface;
 use sp_staking::SessionIndex;
 use sp_std::collections::btree_set::BTreeSet;
-use sp_std::{vec, vec::Vec};
+use sp_std::vec::Vec;
 
-impl<T: crate::Config + pallet_session::Config> pallet_session::SessionManager<T::AccountId>
-	for crate::Pallet<T>
+impl<T: crate::Config + pallet_session::Config + pallet_session::historical::Config>
+	pallet_session::SessionManager<T::AccountId> for crate::Pallet<T>
 where
 	<T as pallet_session::Config>::Keys: From<T::AuthorityKeys>,
 {
@@ -56,7 +61,9 @@ where
 // Registers keys of new committee members in the session pallet. This is necessary, as the pallet
 // requires the keys to be registered prior to session start and we do not wish to force block
 // producers to do it manually.
-fn register_committee_keys<T: crate::Config + pallet_session::Config>(
+fn register_committee_keys<
+	T: crate::Config + pallet_session::Config + pallet_session::historical::Config,
+>(
 	new_committee: &[T::CommitteeMember],
 ) where
 	<T as pallet_session::Config>::Keys: From<T::AuthorityKeys>,
@@ -70,14 +77,12 @@ fn register_committee_keys<T: crate::Config + pallet_session::Config>(
 		}
 
 		keys_added.insert(account_id.clone());
-		let call = pallet_session::Call::<T>::set_keys {
-			keys: From::from(member.authority_keys()),
-			proof: vec![],
-		};
-		let call_result = call.dispatch_bypass_filter(RawOrigin::Signed(account_id.clone()).into());
+		let keys = <T as pallet_session::Config>::Keys::from(member.authority_keys());
+		let call_result =
+			<pallet_session::Pallet<T> as SessionInterface>::set_keys(&account_id, keys);
 		match call_result {
 			Ok(_) => debug!("set_keys for {account_id:?}"),
-			Err(e) => info!("Could not set_keys for {account_id:?}, error: {:?}", e.error),
+			Err(e) => info!("Could not set_keys for {account_id:?}, error: {:?}", e),
 		}
 	}
 }
