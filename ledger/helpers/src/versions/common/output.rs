@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::{
-	CoinInfo, ContractAddress, DB, LedgerContext, Output, ProofPreimage, Segment,
+	BuilderContext, CoinInfo, ContractAddress, DB, Output, ProofPreimage, Segment,
 	ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, WalletSeed,
 };
 use std::sync::Arc;
@@ -39,20 +39,20 @@ impl<D> OutputInfo<D> {
 	}
 }
 
-pub trait BuildOutput<D: DB + Clone>: TokenInfo + Send + Sync {
-	fn build(&self, rng: &mut StdRng, context: Arc<LedgerContext<D>>) -> Output<ProofPreimage, D>;
+pub trait BuildOutput<D: DB + Clone, C: BuilderContext<D>>: TokenInfo + Send + Sync {
+	fn build(&self, rng: &mut StdRng, context: Arc<C>) -> Output<ProofPreimage, D>;
 }
 
-impl<D: DB + Clone> BuildOutput<D> for OutputInfo<ContractAddress> {
-	fn build(&self, rng: &mut StdRng, _context: Arc<LedgerContext<D>>) -> Output<ProofPreimage, D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildOutput<D, C> for OutputInfo<ContractAddress> {
+	fn build(&self, rng: &mut StdRng, _context: Arc<C>) -> Output<ProofPreimage, D> {
 		let coin_info = self.coin_info(rng);
 		Output::new_contract_owned(rng, &coin_info, Segment::Guaranteed.into(), self.destination)
 			.expect("Invalid output attributes")
 	}
 }
 
-impl<D: DB + Clone> BuildOutput<D> for OutputInfo<WalletSeed> {
-	fn build(&self, rng: &mut StdRng, context: Arc<LedgerContext<D>>) -> Output<ProofPreimage, D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildOutput<D, C> for OutputInfo<WalletSeed> {
+	fn build(&self, rng: &mut StdRng, context: Arc<C>) -> Output<ProofPreimage, D> {
 		context.with_wallet_from_seed(self.destination.clone(), |wallet| {
 			let coin_info = self.coin_info(rng);
 
@@ -73,8 +73,8 @@ impl<D: DB + Clone> BuildOutput<D> for OutputInfo<WalletSeed> {
 	}
 }
 
-impl<D: DB + Clone> BuildOutput<D> for OutputInfo<ShieldedWallet<D>> {
-	fn build(&self, rng: &mut StdRng, _context: Arc<LedgerContext<D>>) -> Output<ProofPreimage, D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildOutput<D, C> for OutputInfo<ShieldedWallet<D>> {
+	fn build(&self, rng: &mut StdRng, _context: Arc<C>) -> Output<ProofPreimage, D> {
 		let coin_info = self.coin_info(rng);
 
 		Output::new(

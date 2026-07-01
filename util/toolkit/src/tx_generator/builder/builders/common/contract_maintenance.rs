@@ -12,11 +12,12 @@
 // limitations under the License.
 
 use super::ledger_helpers_local::{
-	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractAddress,
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuilderContext, ContractAddress,
 	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo,
-	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo, LedgerContext,
+	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo,
 	MaintenanceUpdateInfo, OfferInfo, ProofProvider, SigningKey, TransactionWithContext,
-	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed, deserialize,
+	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed,
+	contract_operation_versioned_verifier_key, deserialize, maintenance_verifying_key,
 	serialize_untagged,
 };
 use async_trait::async_trait;
@@ -29,8 +30,8 @@ use crate::{
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
-pub struct ContractMaintenanceBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct ContractMaintenanceBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	current_committee: Vec<SigningKey>,
 	new_committee: Vec<SigningKey>,
@@ -43,10 +44,10 @@ pub struct ContractMaintenanceBuilder {
 	rng_seed: Option<[u8; 32]>,
 }
 
-impl ContractMaintenanceBuilder {
+impl<C: BuilderContext<DefaultDB>> ContractMaintenanceBuilder<C> {
 	pub fn new(
 		args: ContractMaintenanceArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		use super::type_convert::{convert_contract_address, convert_wallet_seed};
@@ -85,7 +86,7 @@ impl ContractMaintenanceBuilder {
 	}
 }
 
-impl BuildTxsExt for ContractMaintenanceBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxsExt<C> for ContractMaintenanceBuilder<C> {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -94,7 +95,7 @@ impl BuildTxsExt for ContractMaintenanceBuilder {
 		self.rng_seed
 	}
 
-	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+	fn context(&self) -> &Arc<C> {
 		&self.context
 	}
 
@@ -103,13 +104,13 @@ impl BuildTxsExt for ContractMaintenanceBuilder {
 	}
 }
 
-impl ContractMaintenanceBuilder {
+impl<C: BuilderContext<DefaultDB>> ContractMaintenanceBuilder<C> {
 	fn create_intent_info(
 		&self,
 		committee: Vec<SigningKey>,
 		entrypoints_to_remove: Vec<EntryPointBuf>,
 		entrypoints_to_insert: Vec<(EntryPointBuf, ContractOperationVersionedVerifierKey)>,
-	) -> Box<dyn BuildIntent<DefaultDB>> {
+	) -> Box<dyn BuildIntent<DefaultDB, C>> {
 		log::info!("Create intent info for Maintenance");
 
 		let mut updates = vec![];
@@ -131,7 +132,7 @@ impl ContractMaintenanceBuilder {
 			}));
 		}
 
-		let call_contract: Box<dyn BuildContractAction<DefaultDB>> =
+		let call_contract: Box<dyn BuildContractAction<DefaultDB, C>> =
 			Box::new(MaintenanceUpdateInfo {
 				committee,
 				address: self.contract_address,
@@ -139,7 +140,7 @@ impl ContractMaintenanceBuilder {
 				counter: self.counter,
 			});
 
-		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![call_contract];
+		let actions: Vec<Box<dyn BuildContractAction<DefaultDB, C>>> = vec![call_contract];
 
 		// - Intents
 		let intent_info = IntentInfo {
@@ -178,7 +179,12 @@ fn check_committee(
 	provided_committee: &[VerifyingKey],
 	authority: &ContractMaintenanceAuthority,
 ) -> Result<(), ContractMaintenanceBuilderError> {
-	if !provided_committee.iter().all(|c| authority.committee.contains(&c)) {
+	if !provided_committee
+		.iter()
+		.cloned()
+		.map(maintenance_verifying_key)
+		.all(|c| authority.committee.contains(&c))
+	{
 		let provided_committee_display: Vec<String> = provided_committee
 			.iter()
 			.map(|v| hex::encode(serialize_untagged(&v).unwrap()))
@@ -211,7 +217,7 @@ fn check_committee(
 }
 
 #[async_trait]
-impl BuildTxs for ContractMaintenanceBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 	type Error = ContractMaintenanceBuilderError;
 
 	async fn build_txs_from(
@@ -221,14 +227,10 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		// - LedgerContext and TransactionInfo
 		let (context, mut tx_info) = self.context_and_tx_info();
 
-		let contract_state = context.with_ledger_state(|ref_state| {
-			Ok(ref_state
-				.index(self.contract_address)
-				.ok_or_else(|| {
-					ContractMaintenanceBuilderError::ContractNotPresent(self.contract_address)
-				})?
-				.clone())
-		})?;
+		let contract_state =
+			context.contract_state(self.contract_address).await.ok_or_else(|| {
+				ContractMaintenanceBuilderError::ContractNotPresent(self.contract_address)
+			})?;
 
 		let mut committee = self.current_committee.clone();
 		let mut committee_verifying_keys: Vec<_> =
@@ -236,14 +238,15 @@ impl BuildTxs for ContractMaintenanceBuilder {
 
 		let funding_signing_key =
 			UnshieldedWallet::default(self.funding_seed()).signing_key().clone();
-		if !committee_verifying_keys.contains(&funding_signing_key.verifying_key())
+		let funding_verifying_key = funding_signing_key.verifying_key();
+		if !committee_verifying_keys.contains(&funding_verifying_key)
 			&& contract_state
 				.maintenance_authority
 				.committee
-				.contains(&funding_signing_key.verifying_key())
+				.contains(&maintenance_verifying_key(funding_verifying_key.clone()))
 		{
 			committee.push(funding_signing_key.clone());
-			committee_verifying_keys.push(funding_signing_key.verifying_key());
+			committee_verifying_keys.push(funding_verifying_key);
 		}
 
 		check_committee(&committee_verifying_keys, &contract_state.maintenance_authority)?;
@@ -283,8 +286,12 @@ impl BuildTxs for ContractMaintenanceBuilder {
 			if existing_entrypoints.contains(&entrypoint) {
 				entrypoints_to_remove.push(entrypoint.clone());
 			}
+			// The maintenance-update variant is version-dependent: pre-ledger-9 ledgers expose
+			// only `V3` (2.x key), while ledger 9 stores newly deployed keys in the `V4`
+			// (zk-stdlib v2 / 3.x) slot. `contract_operation_versioned_verifier_key` selects the
+			// right variant for the active ledger generation.
 			entrypoints_to_insert
-				.push((entrypoint, ContractOperationVersionedVerifierKey::V3(key)));
+				.push((entrypoint, contract_operation_versioned_verifier_key(key)));
 		}
 
 		if entrypoints_to_remove.is_empty()
@@ -300,10 +307,10 @@ impl BuildTxs for ContractMaintenanceBuilder {
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB, C>>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB, C>>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };

@@ -16,26 +16,24 @@ use std::error::Error;
 use std::sync::Arc;
 
 use super::ledger_helpers_local::{
-	BuildIntent, DefaultDB, FromContext, LedgerContext, ProofProvider, StandardTrasactionInfo,
+	BuildIntent, BuilderContext, DefaultDB, FromContext, ProofProvider, StandardTrasactionInfo,
 	WalletSeed,
 };
 
 /// An extension to help build transactions.
-pub trait BuildTxsExt {
+pub trait BuildTxsExt<C: BuilderContext<DefaultDB>> {
 	fn funding_seed(&self) -> WalletSeed;
 
 	fn rng_seed(&self) -> Option<[u8; 32]>;
 
 	/// Returns a reference to the stored context.
-	fn context(&self) -> &Arc<LedgerContext<DefaultDB>>;
+	fn context(&self) -> &Arc<C>;
 
 	/// Returns a reference to the stored prover.
 	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>>;
 
-	/// Returns a tuple of an Arc<LedgerContext> and the StandardTransactionInfo.
-	fn context_and_tx_info(
-		&self,
-	) -> (Arc<LedgerContext<DefaultDB>>, StandardTrasactionInfo<DefaultDB>) {
+	/// Returns a tuple of the context and the StandardTransactionInfo.
+	fn context_and_tx_info(&self) -> (Arc<C>, StandardTrasactionInfo<DefaultDB, C>) {
 		let context = self.context().clone();
 		let prover = self.prover().clone();
 		let tx_info =
@@ -46,13 +44,13 @@ pub trait BuildTxsExt {
 }
 
 /// Create Intent Info
-pub trait CreateIntentInfo {
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>>;
+pub trait CreateIntentInfo<C: BuilderContext<DefaultDB>> {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB, C>>;
 }
 
 /// A trait to save a Contract (serialized`Intent` Structure) into a file.
 #[async_trait]
-pub trait IntentToFile: CreateIntentInfo + BuildTxsExt {
+pub trait IntentToFile<C: BuilderContext<DefaultDB>>: CreateIntentInfo<C> + BuildTxsExt<C> {
 	async fn generate_intent_file(
 		&mut self,
 		dir: &str,

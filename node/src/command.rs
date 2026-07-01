@@ -171,12 +171,12 @@ fn decode_genesis_state(
 
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	bail_if_runtime_benchmarks("running a node");
-	let run_cmd: RunCmd = cfg
-		.substrate_cfg
-		.clone()
-		.into_run_cmd(&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?)?;
 	let run_midnight = RunMidnight::try_parse_from(cfg.substrate_cfg.clone().argv())
 		.map_err(|e| sc_cli::Error::Input(format!("invalid node run arguments: {e}")))?;
+	let run_cmd: RunCmd = cfg.substrate_cfg.clone().apply_overrides_to_run_cmd(
+		run_midnight.run.clone(),
+		&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?,
+	)?;
 	let tx_filter_config = if run_midnight.filter_deploy_txs {
 		TxFilterConfig::enabled()
 	} else {
