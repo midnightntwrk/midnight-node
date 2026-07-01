@@ -15,8 +15,8 @@ node1's docker bridge IP, which is routable from the runner regardless of the
 loopback/DNAT setup — and reuses that endpoint for the finality-wait and
 `:code` verification steps. As defense-in-depth, `createApi` in the
 local-environment tooling now fails fast with an actionable error after a bounded
-connect timeout (`API_CONNECT_TIMEOUT_MS`) and logs per-address connectivity
-diagnostics, and its `DEFAULT_RPC_URL` uses an explicit IPv4 host. `full` mode
+connect timeout (`API_CONNECT_TIMEOUT_MS`), and its `DEFAULT_RPC_URL` uses an
+explicit IPv4 host. `full` mode
 brings the fork up internally (no `--skip-run`) so it still relies on the
 published port; making it robust needs a follow-up tooling change.
 
