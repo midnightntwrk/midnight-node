@@ -127,10 +127,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
           # --PROD gates the hermetic, cache-free release build (see Earthfile).
@@ -320,10 +316,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           # --PROD gates the hermetic, cache-free release build (see Earthfile).
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --PROD="$PROD" +node-image
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --PROD="$PROD" +toolkit-image

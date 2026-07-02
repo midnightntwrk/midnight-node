@@ -101,9 +101,6 @@ jobs:
         env:
           EARTHLY_CONFIG: .earthly/config.yml
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
           earthly -P +rebuild-metadata
 
       - name: Commit and push changes

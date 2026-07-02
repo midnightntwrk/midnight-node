@@ -65,11 +65,6 @@ jobs:
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
-          # Force cargo to use CLI git instead of libgit2 (more robust in CI)
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           . ./.envrc && earthly --platform="linux/$PLATFORM" --push +node-ci-image-single-platform
 
           RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')

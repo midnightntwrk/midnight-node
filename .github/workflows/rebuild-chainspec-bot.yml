@@ -149,10 +149,6 @@ jobs:
           NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
           VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || steps.parse_comment.outputs.version }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           NODE_IMAGE="+node-image"
           if [ -n "$VERSION" ]; then
             NODE_IMAGE="midnightntwrk/midnight-node:$VERSION"

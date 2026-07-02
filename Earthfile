@@ -782,6 +782,18 @@ prep-no-copy:
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
 
+    # cargo's git/registry cache lives here so the CACHE --id cargo-git/cargo-reg mounts
+    # (declared at /usr/local/cargo/* in every build/check/test target) are actually used.
+    # Set AFTER all cargo-tool installs so those tools remain in /root/.cargo/bin (already on PATH).
+    ENV CARGO_HOME=/usr/local/cargo
+    # Pin git-fetch-with-cli at CARGO_HOME (canonical, workdir-independent) rather than relying on
+    # the CI image's /.cargo/config.toml being found via the CWD=/ walk — that breaks the day a
+    # target sets a non-/ WORKDIR. This is cargo's lowest-priority config source, so any
+    # directory-level .cargo/config.toml still overrides it.
+    RUN mkdir -p "$CARGO_HOME" \
+      && echo "[net]" >> "$CARGO_HOME/config.toml" \
+      && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml"
+
     # kache: content-addressed rustc build cache (https://github.com/kunobi-ninja/kache).
     # Installed here so every target that `FROM +prep-no-copy` (incl. +prep, +build-prepare,
     # +check-rust-prepare) inherits the wrapper. Keyed on actual compile inputs, so it shares
@@ -1287,14 +1299,13 @@ build-prepare:
 # build creates production ready binaries
 build:
     FROM +build-prepare
-    # Caching is gated on PROD (see top of file). Dev/CI builds (PROD=false) mount the full set
-    # of caches — cargo registry/git, /target, and the content-addressed kache store — for fast
-    # incremental rebuilds. A PROD=true release build declares none of them, so it compiles from
-    # scratch into an ephemeral /target with nothing served from any cache.
+    # Caching is gated on PROD (see top of file). Dev/CI builds (PROD=false) mount cargo
+    # registry/git and the content-addressed kache store for fast incremental rebuilds (/target
+    # itself is intentionally left uncached — kache caches the compile units). A PROD=true release
+    # build declares none of them, so it compiles from scratch with nothing served from any cache.
     IF [ "$PROD" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        CACHE /target
         CACHE --sharing shared --id kache-build /kache
     END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
