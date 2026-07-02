@@ -802,7 +802,7 @@ prep-no-copy:
     # and KACHE_FALLBACK makes any kache error transparently fall back to plain rustc, so a kache
     # problem can never break the build. Static-musl binary -> works in any Linux base image.
     # renovate: datasource=github-releases packageName=kunobi-ninja/kache
-    ARG KACHE_VERSION=0.7.0
+    ARG KACHE_VERSION=0.8.0
     IF [ "$USE_KACHE" = "true" ]
         RUN ARCH=$(uname -m) && \
             BASE="https://github.com/kunobi-ninja/kache/releases/download/v${KACHE_VERSION}" && \
