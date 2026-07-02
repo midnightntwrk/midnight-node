@@ -1,7 +1,8 @@
 //!  Pallet for setting the Partner Chain validators using inherent data
 //!
 //! *Important*: It is recommended that when `pallet_session` is wired into the runtime, its
-//! extrinsics are hidden, using `exclude_parts` like so:
+//! extrinsics are disabled, using `#[runtime::disable_call]` (or `exclude_parts { Call }` with
+//! `construct_runtime!`) like so:
 //! ```rust,ignore
 //! construct_runtime!(
 //! 	pub struct Runtime {
