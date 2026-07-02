@@ -76,12 +76,13 @@ where
 	/// Build the protocol config to register on `net_config` before `build_network`, plus — when
 	/// `serve` is true — the handler to spawn via [`run`](Self::run).
 	///
-	/// `serve` gates the **server** side only. Validators pass `serve = false`: serializing the
-	/// multi-million-node arena is this protocol's most CPU-expensive operation, and it must never
-	/// compete with a validator's authoring/finality duties (an easy remote DoS vector). A
-	/// non-serving node advertises no inbound queue, so the network routes no requests to it — but
-	/// the protocol is still registered, so the node can act as a warp-sync *client* and recover
-	/// its own arena. Returns `None` for the handler when not serving.
+	/// `serve` gates the **server** side only. Validators pass `serve = false` unless they opt in
+	/// via `--serve-warp-ledger-sync`: serializing the multi-million-node arena is this
+	/// protocol's most CPU-expensive operation, and it must never compete with a validator's
+	/// authoring/finality duties (an easy remote DoS vector). A non-serving node advertises no
+	/// inbound queue, so the network routes no requests to it — but the protocol is still
+	/// registered, so the node can act as a warp-sync *client* and recover its own arena. Returns
+	/// `None` for the handler when not serving.
 	pub fn new<N: NetworkBackend<B, <B as BlockT>::Hash>>(
 		genesis_hash: B::Hash,
 		fork_id: Option<&str>,

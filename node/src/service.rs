@@ -507,6 +507,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	hwbench: Option<sc_sysinfo::HwBench>,
 	tx_filter_config: TxFilterConfig,
 	max_finality_subscriptions: u32,
+	serve_warp_ledger_sync: bool,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
@@ -581,10 +582,19 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// Midnight ledger arena after warp+state-sync. The server handler is spawned after the network
 	// is built; `ledger_sync_protocol_name` is reused by the client driver in the monitor.
 	//
-	// Validators do not serve: arena serialization is the protocol's most CPU-expensive operation
-	// and must not compete with authoring/finality (a remote DoS vector). They still register the
-	// protocol as a client, so a fresh validator can warp-sync and recover its own arena.
-	let serve_ledger_sync = !config.role.is_authority();
+	// Non-validators serve by default. Validators don't — arena serialization is the protocol's
+	// most CPU-expensive operation and must not compete with authoring/finality (a remote DoS
+	// vector) — unless the operator opts in via `--serve-warp-ledger-sync` (for small or local
+	// networks with no non-validator nodes to serve). Every node still registers the protocol as
+	// a client, so it can warp-sync and recover its own arena regardless.
+	let serve_ledger_sync = !config.role.is_authority() || serve_warp_ledger_sync;
+	if serve_warp_ledger_sync && config.role.is_authority() {
+		log::warn!(
+			"--serve-warp-ledger-sync is enabled on an authority: serializing ledger snapshots \
+			 for warp-syncing peers is CPU-expensive and may compete with block authoring and \
+			 finality duties"
+		);
+	}
 	let ledger_sync_protocol_name: sc_network::ProtocolName =
 		crate::warp_ledger_sync::protocol::ledger_sync_protocol_name(
 			genesis_hash,
@@ -632,8 +642,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// also gates the import queue) is shared with the monitor (which flips its flags) and the
 	// authoring SyncOracle (which reads them).
 
-	// Serve ledger snapshots to warp-syncing peers (non-validators only; see above). On a
-	// validator `ledger_sync_handler` is `None` and no server task is spawned.
+	// Serve ledger snapshots to warp-syncing peers (non-validators, plus validators that opted in
+	// via `--serve-warp-ledger-sync`; see above). When not serving, `ledger_sync_handler` is
+	// `None` and no server task is spawned.
 	if let Some(ledger_sync_handler) = ledger_sync_handler {
 		task_manager.spawn_handle().spawn(
 			"midnight-ledger-sync-server",
