@@ -401,6 +401,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         if: steps.guard.outputs.hit != 'true'
@@ -442,6 +444,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         if: steps.guard.outputs.hit != 'true'
@@ -503,6 +507,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         if: steps.guard.outputs.hit != 'true'
@@ -556,6 +562,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         if: steps.guard.outputs.hit != 'true'
@@ -673,6 +681,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -699,6 +709,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -725,6 +737,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
       # - uses: ./.github/actions/reusable-e2e-tests
       #   if: steps.guard.outputs.hit != 'true'
@@ -752,6 +766,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       #"LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
       # - uses: ./.github/actions/reusable-e2e-tests
       #   if: steps.guard.outputs.hit != 'true'
@@ -779,6 +795,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
       # - uses: ./.github/actions/reusable-e2e-tests
       #   if: steps.guard.outputs.hit != 'true'
@@ -806,6 +824,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -902,6 +922,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
       # - uses: ./.github/actions/reusable-e2e-tests
       #   if: steps.guard.outputs.hit != 'true'
@@ -929,6 +951,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -976,6 +1000,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
       - uses: ./.github/actions/reusable-e2e-tests
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -1134,6 +1160,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       # Isolate docker config per job — see the matching step in the `run` job.
       # This job runs concurrently, so per-job isolation matters: multiple

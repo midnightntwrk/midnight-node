@@ -9,10 +9,14 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    # `no-cache-*` sentinel keys mean the guard opted out (workflow override
+    # or no hmac-key) — saving them would just create junk entries.
+    - if: ${{ !startsWith(inputs.key, 'no-cache') }}
+      shell: bash
       run: mkdir -p /tmp/ci-sentinel && touch /tmp/ci-sentinel/ok
 
-    - uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 #v4
+    - if: ${{ !startsWith(inputs.key, 'no-cache') }}
+      uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 #v4
       with:
         key: ${{ inputs.key }}
         path: /tmp/ci-sentinel

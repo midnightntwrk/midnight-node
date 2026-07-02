@@ -10,6 +10,13 @@ inputs:
     description: Extra key suffix for matrix jobs
     required: false
     default: ''
+  hmac-key:
+    description: >-
+      HMAC key authenticating cache keys (pass secrets.TREE_GUARD_HMAC).
+      Runs without secrets access (fork PRs) can neither forge nor hit
+      entries; when empty the guard always reports a miss.
+    required: false
+    default: ''
 
 outputs:
   hit:
@@ -40,6 +47,13 @@ runs:
           exit 0
         fi
 
+        if [[ -z "$HMAC_KEY" ]]; then
+          echo "::notice::hmac-key not provided (fork PR?) — skipping cache"
+          echo "hit=false" >> "$GITHUB_OUTPUT"
+          echo "key=no-cache-no-hmac-key" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
         workflow="${WORKFLOW_NAME// /-}"
         job="${CHECK_NAME// /-}"
         arch="${RUNNER_ARCH// /-}"
@@ -49,7 +63,14 @@ runs:
           matrix="${MATRIX_KEY// /-}"
           check="${check}-${matrix}"
         fi
-        key="passed-${check}-${tree}"
+        # `gh cache list` sees entries from every branch scope, so a fork PR
+        # (which can write caches scoped to its own ref) could otherwise mint
+        # a "passed" key and make trusted runs skip checks. Forks don't get
+        # secrets, so they can't compute the signature. Never put the raw
+        # secret in the key — keys are readable via the cache API. 16 hex
+        # chars (64 bits) is ample forgery resistance.
+        sig=$(printf '%s' "${check}-${tree}" | openssl dgst -sha256 -hmac "$HMAC_KEY" | awk '{print $NF}')
+        key="passed-${check}-${tree}-${sig:0:16}"
 
         echo "key=${key}" >> "$GITHUB_OUTPUT"
 
@@ -65,5 +86,6 @@ runs:
         COMMIT_SHA: ${{ github.sha }}
         CHECK_NAME: ${{ inputs.check-name }}
         MATRIX_KEY: ${{ inputs.matrix-key }}
+        HMAC_KEY: ${{ inputs.hmac-key }}
         RUNNER_ARCH: ${{ runner.arch }}
         WORKFLOW_NAME: ${{ github.workflow }}

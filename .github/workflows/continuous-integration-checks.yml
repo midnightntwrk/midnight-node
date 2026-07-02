@@ -30,6 +30,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - name: Merge Conflict Finder
         if: steps.guard.outputs.hit != 'true'
@@ -79,6 +81,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
