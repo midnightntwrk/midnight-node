@@ -688,7 +688,7 @@ node-ci-image-single-platform:
     # v18 and lacks the File API undici needs). +local-env-ci runs `npm ci`/`npm run`
     # straight off this base image, so the version baked here is the one it uses.
     # renovate: datasource=node-version packageName=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     RUN ARCH=$(uname -m) && \
         if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
         curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
@@ -855,7 +855,7 @@ compactc-fetch:
 # util/toolkit-js/compact-0.33.0/vendor/README.md and scripts/build-compact-js-bundle.sh.
 compact-js-bundle:
     # TODO: pin to a digest once first green CI confirms it works.
-    FROM node:22-bookworm
+    FROM node:24-bookworm
     # node-gyp toolchain so any native devDeps without a linux-x64 prebuilt can still build.
     RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
         && rm -rf /var/lib/apt/lists/*
@@ -906,7 +906,7 @@ toolkit-js-prep:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 23 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=23.11.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
@@ -1142,7 +1142,7 @@ build-test-toolkit:
 
     # Install Node.js 23 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
     # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
-    ARG NODE_VERSION=23.11.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1448,7 +1448,7 @@ toolkit-image:
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     RUN if [ "$NATIVEARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
@@ -1508,7 +1508,7 @@ audit-npm:
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1547,7 +1547,7 @@ audit-yarn:
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1598,7 +1598,7 @@ fix-lock-npm:
 
     # Keep in sync with audit-npm target
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
