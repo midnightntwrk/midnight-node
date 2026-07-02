@@ -231,11 +231,8 @@ mod tests {
 	use super::midnight_serialize_local;
 	use super::mn_ledger_local::dust::{DustPublicKey, DustSecretKey};
 
-	/// Build a deterministic, valid DustPublicKey byte vector.
-	///
-	/// Uses `DustSecretKey::derive_secret_key` to avoid pulling `rand` into the
-	/// ledger crate's dev-dependencies — the derivation is deterministic so the
-	/// test does not need entropy.
+	/// Build a deterministic, valid DustPublicKey byte vector (derived, so no
+	/// `rand` dev-dependency is needed).
 	fn known_good_dust_public_key_bytes() -> Vec<u8> {
 		let sk = DustSecretKey::derive_secret_key(&[0u8; 32]);
 		let pk: DustPublicKey = DustPublicKey::from(sk);
@@ -243,10 +240,7 @@ mod tests {
 			Vec::with_capacity(midnight_serialize_local::Serializable::serialized_size(&pk));
 		midnight_serialize_local::Serializable::serialize(&pk, &mut bytes)
 			.expect("DustPublicKey serializes cleanly");
-		// Sanity-check the serialized form against the wire-length envelope
-		// (DustPublicKeyBytes is BoundedVec<u8, ConstU32<33>>): the encoding
-		// must fit. If this ever stops being true the IDP-level filter would
-		// need a different validator factoring — surface that here.
+		// Must fit the 33-byte DustPublicKeyBytes envelope.
 		assert!(bytes.len() <= 33, "serialized DustPublicKey length {} > 33", bytes.len());
 		bytes
 	}
