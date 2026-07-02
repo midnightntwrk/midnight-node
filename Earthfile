@@ -24,8 +24,13 @@ ARG --global CACHE_KEY=local
 
 # Enable the `kache` content-addressed rustc build cache (https://github.com/kunobi-ninja/kache).
 # It is installed and wired up as RUSTC_WRAPPER in `+prep-no-copy` (inherited by every
-# Rust-compiling target) and backed by per-variant `kache-{check,prep,build}` CACHE mounts
-# those targets declare. Set `--USE_KACHE=false` to build with a plain rustc and no wrapper.
+# Rust-compiling target) and backed by a single shared `kache` CACHE mount those targets
+# declare. One id (not per-flavor) is safe and maximizes reuse: kache is content-addressed
+# (keys include normalized rustc flags), so check/debug/release entries coexist without
+# collision and identical host compiles — proc-macros, build scripts, identically-flagged
+# deps — are served across flavors instead of rebuilt. (Unlike `/target` above, which MUST
+# be scoped because cargo's fingerprints leak across branches.)
+# Set `--USE_KACHE=false` to build with a plain rustc and no wrapper.
 ARG --global USE_KACHE=true
 
 # Hermetic production build. When true, +build declares no CACHE mounts, bypasses kache
@@ -172,7 +177,7 @@ build-node-only:
     # of file) so they never share /target at all.
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE --sharing shared --id kache-build /kache
+    CACHE --sharing shared --id kache /kache
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
@@ -229,9 +234,10 @@ rebuild-sqlx:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
-    # scoped per build flavor so concurrent targets don't share one daemon/store.
-    CACHE --sharing shared --id kache-prep /kache
+    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
+    # across all flavors — content-addressed keys isolate profiles, so sharing only
+    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
+    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1029,9 +1035,10 @@ planner:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
-    # scoped per build flavor so concurrent targets don't share one daemon/store.
-    CACHE --sharing shared --id kache-prep /kache
+    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
+    # across all flavors — content-addressed keys isolate profiles, so sharing only
+    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
+    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1044,9 +1051,10 @@ check-rust-prepare:
     # COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
-    # scoped per build flavor so concurrent targets don't share one daemon/store.
-    CACHE --sharing shared --id kache-check /kache
+    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
+    # across all flavors — content-addressed keys isolate profiles, so sharing only
+    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
+    CACHE --sharing shared --id kache /kache
 
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
@@ -1055,9 +1063,10 @@ check-rust:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
-    # scoped per build flavor so concurrent targets don't share one daemon/store.
-    CACHE --sharing shared --id kache-check /kache
+    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
+    # across all flavors — content-addressed keys isolate profiles, so sharing only
+    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
+    CACHE --sharing shared --id kache /kache
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -1079,9 +1088,10 @@ check-feature-unification:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
-    # scoped per build flavor so concurrent targets don't share one daemon/store.
-    CACHE --sharing shared --id kache-check /kache
+    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
+    # across all flavors — content-addressed keys isolate profiles, so sharing only
+    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
+    CACHE --sharing shared --id kache /kache
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -1120,9 +1130,10 @@ test:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
-    # scoped per build flavor so concurrent targets don't share one daemon/store.
-    CACHE --sharing shared --id kache-prep /kache
+    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
+    # across all flavors — content-addressed keys isolate profiles, so sharing only
+    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
+    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1176,9 +1187,10 @@ test-pallet-fixtures:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
-    # scoped per build flavor so concurrent targets don't share one daemon/store.
-    CACHE --sharing shared --id kache-prep /kache
+    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
+    # across all flavors — content-addressed keys isolate profiles, so sharing only
+    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
+    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1207,9 +1219,10 @@ build-test-toolkit:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
-    # scoped per build flavor so concurrent targets don't share one daemon/store.
-    CACHE --sharing shared --id kache-prep /kache
+    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
+    # across all flavors — content-addressed keys isolate profiles, so sharing only
+    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
+    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1338,7 +1351,7 @@ build:
     IF [ "$PROD" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        CACHE --sharing shared --id kache-build /kache
+        CACHE --sharing shared --id kache /kache
         # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
         CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
@@ -1378,8 +1391,8 @@ build:
 
 build-benchmarks:
     FROM +build-prepare
-    # Per-variant kache store (see USE_KACHE, top of file); shared with +build (release).
-    CACHE --sharing shared --id kache-build /kache
+    # Shared kache store (see USE_KACHE, top of file); one id across all flavors.
+    CACHE --sharing shared --id kache /kache
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
