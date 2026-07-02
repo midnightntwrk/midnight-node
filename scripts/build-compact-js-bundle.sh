@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Builds the four GitHub-Packages-only tarballs the `compact-0.31.110` toolkit-js variant consumes via
-# `file:` references (see util/toolkit-js/compact-0.31.110/vendor/README.md). They are produced from
+# Builds the four GitHub-Packages-only tarballs the `compact-0.33.0` toolkit-js variant consumes via
+# `file:` references (see util/toolkit-js/compact-0.33.0/vendor/README.md). They are produced from
 # the pinned `midnight-sdk` submodule:
 #
 #   compact-js.tgz          ┐
@@ -45,7 +45,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 SDK_DIR="${SDK_DIR:-${repo_root}/midnight-sdk}"
-VENDOR_DIR="${VENDOR_DIR:-${repo_root}/util/toolkit-js/compact-0.31.110/vendor}"
+VENDOR_DIR="${VENDOR_DIR:-${repo_root}/util/toolkit-js/compact-0.33.0/vendor}"
 COMPACT_JS_ROOT="${SDK_DIR}/compact-js"
 COMPACT_JS_PKGS=(compact-js compact-js-command compact-js-node)
 

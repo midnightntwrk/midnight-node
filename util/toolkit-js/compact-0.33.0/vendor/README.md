@@ -1,26 +1,25 @@
 # Vendored dependency tarballs
 
-This directory holds the `npm pack` tarballs that the `compact-0.31.110` variant consumes via
+This directory holds the `npm pack` tarballs that the `compact-0.33.0` variant consumes via
 `file:` references in its `package.json`. They are the four `@midnight-ntwrk` packages in the
-compact-js 2.5.3 closure that are **only published to GitHub Packages** (a private registry);
+compact-js 2.5.5-rc.4 closure that are **only published to GitHub Packages** (a private registry);
 everything else in the closure resolves from **public npm**, so the consume path
 (`npm ci` in `util/toolkit-js`) needs no `.npmrc` and no token.
 
 | File | Source | Why vendored |
 |---|---|---|
-| `compact-js.tgz` | `@midnight-ntwrk/compact-js@2.5.3` | GitHub Packages only |
-| `compact-js-command.tgz` | `@midnight-ntwrk/compact-js-command@2.5.3` | GitHub Packages only |
-| `compact-js-node.tgz` | `@midnight-ntwrk/compact-js-node@2.5.3` | GitHub Packages only |
-| `compact-runtime.tgz` | `@midnight-ntwrk/compact-runtime@0.16.103-dev.<hash>` | GitHub Packages only |
+| `compact-js.tgz` | `@midnight-ntwrk/compact-js@2.5.5-rc.4` | GitHub Packages only |
+| `compact-js-command.tgz` | `@midnight-ntwrk/compact-js-command@2.5.5-rc.4` | GitHub Packages only |
+| `compact-js-node.tgz` | `@midnight-ntwrk/compact-js-node@2.5.5-rc.4` | GitHub Packages only |
+| `compact-runtime.tgz` | `@midnight-ntwrk/compact-runtime@0.18.0-rc.0` | GitHub Packages only |
 
 Resolved from public npm (not vendored): `@midnightntwrk/ledger-v9@^1.0.0-rc.2`,
-`@midnightntwrk/onchain-runtime-v4`, `@midnight-ntwrk/platform-js@^2.2.4`,
-`@midnight-ntwrk/wallet-sdk-address-format@3.1.0`, `@midnight-ntwrk/ledger-v8@8.0.2`, and the
-`@effect/*` packages.
+`@midnightntwrk/onchain-runtime-v4@^4.0.0-rc.2`, `@midnight-ntwrk/platform-js@^3.0.0`,
+`@midnight-ntwrk/wallet-sdk-address-format@3.1.0`, and the `@effect/*` packages.
 
 ## How these were produced
 
-The compact-js 2.5.3 packages aren't published with this SDK revision's dep set, so the three
+The compact-js 2.5.5-rc.4 packages aren't published with this SDK revision's dep set, so the three
 `compact-js*` blobs are built from the pinned `midnight-sdk` submodule. Pack them via the SDK's own
 `package` step (build-utils), not a raw `npm pack` of the source dir — the source `package.json`
 `exports` point at `./src/*.ts`, whose `.d.ts` don't line up with `@effect/cli`'s `Command` type in a
