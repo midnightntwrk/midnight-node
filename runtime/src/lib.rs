@@ -1023,6 +1023,7 @@ mod runtime {
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
 	#[runtime::pallet_index(30)]
+	#[runtime::disable_call]
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
