@@ -110,15 +110,7 @@ fn dust_public_key() -> DustPublicKeyBytes {
 	DustPublicKeyBytes(serialize_untagged(&dust_public_key).unwrap().try_into().unwrap())
 }
 
-/// Onchain dust address that fails the IDP-level Fr-range validator.
-///
-/// A length-32 vector of `0xFF` bytes round-trips through the
-/// `DustPublicKeyBytes` envelope (`BoundedVec<u8, ConstU32<33>>`) but encodes
-/// a scalar above the Bls12-381 Fr modulus, so
-/// `<DustPublicKey as Deserializable>::deserialize` rejects it. The pallet
-/// writer admits this shape at the v2 api (legacy semantics), and
-/// `handle_create` / `handle_spend` route it through the variant-narrowed
-/// `Deserialization(DustPublicKey)` arm of `LedgerApiError`.
+/// Invalid dust address (fails IDP-level Fr-range validator).
 fn invalid_dust_public_key() -> DustPublicKeyBytes {
 	DustPublicKeyBytes(BoundedVec::try_from(vec![0xFFu8; 32]).unwrap())
 }

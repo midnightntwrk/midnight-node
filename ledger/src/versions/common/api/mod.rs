@@ -212,19 +212,12 @@ pub(crate) fn new() -> Api {
 	Api::new()
 }
 
-/// Validates that `bytes` decode to a well-formed `DustPublicKey`.
+/// Returns whether `bytes` decode to a well-formed `DustPublicKey`, including
+/// the Fr-range check that the length envelope alone does not enforce.
 ///
-/// The function accepts any byte slice and rejects empty, too-short, and
-/// out-of-Fr-range inputs. Callers that source bytes from `DustPublicKeyBytes`
-/// (`BoundedVec<u8, ConstU32<33>>`) already have the wire-length envelope
-/// enforced upstream; this helper additionally performs the Fr-range check,
-/// since values whose 33-byte encoding sits above the Bls12-381 Fr modulus
-/// pass the length check but fail downstream circuit use. The check is
-/// performed without emitting the `log::error!` line that `Api::deserialize`
-/// produces on failure — call sites that filter inputs upstream (e.g. the
-/// cNight-observation inherent-data provider) treat invalid registrations as
-/// a per-UTXO non-fatal outcome, so the deserialise failure must not surface
-/// as an `error`-severity log line.
+/// Unlike `Api::deserialize`, a rejection here emits no `log::error!` line, so
+/// upstream filters (e.g. the cNight-observation IDP) can treat an invalid
+/// registration as a non-fatal per-UTXO skip.
 pub fn dust_public_key_is_valid(bytes: &[u8]) -> bool {
 	<DustPublicKey as Deserializable>::deserialize(&mut &*bytes, 0).is_ok()
 }
@@ -266,14 +259,8 @@ mod tests {
 
 	#[test]
 	fn dust_public_key_is_valid_rejects_high_byte_set() {
-		// A 33-byte vector with the leading byte 0xff forces the encoded value
-		// above the Bls12-381 Fr modulus (~2^254), so deserialisation must fail.
-		//
-		// L-5 (plan): no `log::error!` is emitted on this rejection — the
-		// validator calls the `Deserializable` trait directly, bypassing the
-		// `Api::deserialize` wrapper that produces the `error`-severity log
-		// line. Pinned by inspection rather than a log-capture assertion
-		// (the ledger crate's test target does not install a subscriber).
+		// 33 bytes of 0xff encode a value above the Bls12-381 Fr modulus, so
+		// deserialisation must fail.
 		let bytes = vec![0xffu8; 33];
 		assert!(
 			!dust_public_key_is_valid(&bytes),
