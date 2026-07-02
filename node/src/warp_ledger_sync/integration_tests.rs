@@ -46,8 +46,8 @@ fn compress_page_reassemble_decompress(blob: &[u8], chunk: u32) -> Vec<u8> {
 #[test]
 fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	let dir = tempfile::tempdir().expect("tempdir");
-	// Use a bundled v13 fixture because the current warp snapshot dispatch table supports
-	// ledger-state v5/v13/v16; the local undeployed fixture is already v17.
+	// Use a bundled v13 fixture to exercise the `ledger_8` dispatch path; the local undeployed
+	// fixture is v18 (`ledger_9`).
 	let genesis_state = include_bytes!("../../../res/genesis/genesis_state_preview.mn");
 
 	// Initialize the arena from genesis in Separate mode. This sets the process-global

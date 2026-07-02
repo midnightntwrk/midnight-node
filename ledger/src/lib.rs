@@ -157,7 +157,7 @@ pub fn drop_all_default_storage() {
 /// Parse the `vNN` from a `ledger-state[vNN]` tag embedded in a tagged blob (a `StateKey` or a
 /// genesis_state). Used to dispatch warp serialize/import (and genesis-init) to the ledger module
 /// whose `LedgerState` serialization matches: **v5 → `ledger_7`, v13 → `ledger_8`,
-/// v16/v17 → `ledger_9`**.
+/// v16/v17/v18 → `ledger_9`**.
 /// A warp-syncing node can target a chain governed by an *older* ledger version than this build's
 /// latest (e.g. a real devnet whose arena is still v13), so the version is read from the data, not
 /// assumed to be the tip's.
@@ -201,7 +201,7 @@ macro_rules! bridge_arena_call {
 #[cfg(feature = "std")]
 pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<u8>, String> {
 	match ledger_state_tag_version(state_key) {
-		Some(16 | 17) => {
+		Some(16 | 17 | 18) => {
 			bridge_arena_call!(ledger_9, unified, serialize_ledger_snapshot(state_key))
 				.map_err(|e| format!("{e:?}"))
 		},
@@ -224,7 +224,7 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 #[cfg(feature = "std")]
 pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
 	match ledger_state_tag_version(state_key) {
-		Some(16 | 17) => {
+		Some(16 | 17 | 18) => {
 			bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok()
 		},
 		Some(13) => bridge_arena_call!(ledger_8, unified, get_ledger_state_root(state_key)).is_ok(),
@@ -285,7 +285,7 @@ pub fn import_verified_ledger_snapshot(
 	// Dispatch on the `StateKey`'s ledger-state version (the underlying method returns the shared
 	// `SnapshotImportError` for every version, so no error mapping is needed).
 	match ledger_state_tag_version(expected_state_key) {
-		Some(16 | 17) => {
+		Some(16 | 17 | 18) => {
 			bridge_arena_call!(
 				ledger_9,
 				unified,
