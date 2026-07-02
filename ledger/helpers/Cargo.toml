@@ -16,7 +16,6 @@ ledger-storage = { workspace = true }
 transient-crypto = { workspace = true }
 zswap = { workspace = true }
 zkir = { workspace = true }
-zkir-2-1 = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 

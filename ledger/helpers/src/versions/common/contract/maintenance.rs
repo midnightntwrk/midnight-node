@@ -18,10 +18,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use super::super::{
-	BuilderContext, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
+	BuilderContext, ContractAddress, ContractMaintenanceAuthority,
 	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, MaintenanceUpdate,
 	PedersenRandomness, ProofPreimageMarker, Signature, SigningKey, SingleUpdate, StdRng,
-	maintenance_verifying_key, transaction_signature,
+	contract_operation_version, maintenance_verifying_key, transaction_signature,
 };
 use super::BuildContractAction;
 
@@ -68,7 +68,10 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for Maintena
 					})
 				},
 				UpdateInfo::VerifierKeyRemove(k) => {
-					SingleUpdate::VerifierKeyRemove(k.clone(), ContractOperationVersion::V3)
+					// Target the slot version this ledger generation actually uses (V4 on
+					// ledger 9, V3 before). A hard-coded V3 misses ledger-9 keys, which live
+					// in the V4 slot, so the maintenance update fails with VerifierKeyNotFound.
+					SingleUpdate::VerifierKeyRemove(k.clone(), contract_operation_version())
 				},
 				UpdateInfo::VerifierKeyInsert(k, new_key) => {
 					SingleUpdate::VerifierKeyInsert(k.clone(), new_key.clone())

@@ -150,12 +150,12 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 			);
 		}
 
-		let tx = tokio::task::spawn_blocking(move || {
-			tokio::runtime::Handle::current().block_on(tx_info.prove())
-		})
-		.await
-		.expect("proving task panicked")
-		.map_err(|e| BatchTransferError::ProvingFailed(format!("{e}")))?;
+		// Proving now self-offloads onto the blocking pool (see `ProofProvider::prove`), so await it
+		// directly rather than wrapping it in a second `spawn_blocking`.
+		let tx = tx_info
+			.prove()
+			.await
+			.map_err(|e| BatchTransferError::ProvingFailed(format!("{e}")))?;
 
 		Ok(TransactionWithContext::new(tx, None))
 	}
