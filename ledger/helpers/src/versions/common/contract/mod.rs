@@ -55,7 +55,7 @@ pub trait Contract<D: DB + Clone>: Send + Sync {
 		commitee: &[VerifyingKey],
 		commitee_threshold: u32,
 		rng: &mut StdRng,
-	) -> ContractDeploy<D>;
+	) -> Result<ContractDeploy<D>, std::io::Error>;
 
 	fn resolver(&self) -> &'static Resolver;
 
