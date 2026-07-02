@@ -79,7 +79,14 @@ const makeVariantResolver = (compactcVersion: string) => {
   const cjsPathSegment = `${sep}dist${sep}cjs${sep}`;
   const esmPathSegment = `${sep}dist${sep}esm${sep}`;
 
+  // Specifiers currently being resolved by `toolkitResolve`. On Node 24 the CJS `require.resolve`
+  // below is itself routed through `registerHooks`, so the hook installed by `installCompactcResolver`
+  // re-enters for the same bare specifier; the hook consults this set to break that recursion. (Node 22's
+  // CJS resolver ignored the hook, so the set is never hit there — the guard is a no-op on Node 22.)
+  const resolving = new Set<string>();
+
   const toolkitResolve = (specifier: string): string => {
+    resolving.add(specifier);
     try {
       return toolkitRequire.resolve(specifier);
     } catch (error: unknown) {
@@ -90,10 +97,12 @@ const makeVariantResolver = (compactcVersion: string) => {
         }
       }
       throw error;
+    } finally {
+      resolving.delete(specifier);
     }
   };
 
-  return { packageName, toolkitRequire, toolkitResolve };
+  return { packageName, toolkitRequire, toolkitResolve, resolving };
 };
 
 /**
@@ -123,7 +132,7 @@ export const resolveVariantModule = (compactcVersion: string, specifier: string)
  * @returns The resolved variant package name, so callers can dynamically import it.
  */
 export const installCompactcResolver = (compactcVersion: string): string => {
-  const { packageName, toolkitRequire, toolkitResolve } = makeVariantResolver(compactcVersion);
+  const { packageName, toolkitRequire, toolkitResolve, resolving } = makeVariantResolver(compactcVersion);
 
   // tsc/ts-node (used by compact-js-command's `ConfigCompiler` to type-check `contract.config.ts`) do NOT
   // honour the runtime resolve hook below — they use their own module resolution. Left to defaults they
@@ -158,10 +167,16 @@ export const installCompactcResolver = (compactcVersion: string): string => {
     resolve(specifier: string, context: ResolveHookContext, next) {
       // Intercept imports of the 'compact-js*' and 'compact-runtime' packages, and resolve them relative
       // to the version installed in the toolkit package that will be run for the current COMPACTC_VERSION...
+      // `!resolving.has(specifier)` skips interception on re-entry: on Node 24 the `toolkitResolve` call
+      // below issues a CJS `require.resolve` that routes back through this hook for the same specifier.
+      // Deferring to `next` then lets Node's default resolution finish — rooted at the variant package,
+      // since the re-entrant lookup originates from `toolkitRequire` — instead of recursing until the
+      // stack overflows.
       if (
-        specifier.startsWith('@midnight-ntwrk/compact-js') ||
-        specifier.startsWith('@midnight-ntwrk/compact-runtime') ||
-        specifier.startsWith('@midnight-ntwrk/platform-js')
+        !resolving.has(specifier) &&
+        (specifier.startsWith('@midnight-ntwrk/compact-js') ||
+          specifier.startsWith('@midnight-ntwrk/compact-runtime') ||
+          specifier.startsWith('@midnight-ntwrk/platform-js'))
       ) {
         return {
           url: `file://${toolkitResolve(specifier)}`,
