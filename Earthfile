@@ -12,6 +12,14 @@ VERSION 0.8
 # EARTHLY_GIT_BRANCH is NOT a reliable source here because actions/checkout
 # leaves the workspace on the PR merge commit in detached-HEAD state, so
 # the builtin resolves to the literal string `HEAD` across every PR.
+#
+# The `/target` cache mounts also suffix the id with `-${TARGETARCH}` (e.g.
+# `target-<key>-amd64`). BuildKit cache-mount ids are NOT scoped by platform
+# (moby/buildkit#2598), so a daemon that ever builds more than one arch (e.g.
+# emulated multi-platform) would otherwise point both arches at the same native
+# `/target/release` and thrash each other's artifacts. Native per-arch runners
+# already isolate them today; the suffix makes this correct regardless of the
+# daemon topology, at no cost (same-arch builds still share the cache).
 ARG --global CACHE_KEY=local
 
 # Enable the `kache` content-addressed rustc build cache (https://github.com/kunobi-ninja/kache).
@@ -155,6 +163,7 @@ subxt:
 # build-node-only builds only the midnight-node binary
 build-node-only:
     FROM +build-prepare
+    ARG TARGETARCH
     # Same cache wiring as +build. This target builds a strict subset (-p midnight-node) of
     # +build's --workspace, so sharing the cargo registry/git, the kache store, and the
     # per-branch /target lets the two reuse each other's compiled artifacts. /target uses
@@ -164,7 +173,7 @@ build-node-only:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE --sharing shared --id kache-build /kache
-    CACHE --id target-${CACHE_KEY} /target
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
@@ -223,8 +232,9 @@ rebuild-sqlx:
     # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
     # scoped per build flavor so concurrent targets don't share one daemon/store.
     CACHE --sharing shared --id kache-prep /kache
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    ARG TARGETARCH
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -1019,8 +1029,9 @@ planner:
     # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
     # scoped per build flavor so concurrent targets don't share one daemon/store.
     CACHE --sharing shared --id kache-prep /kache
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    ARG TARGETARCH
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     RUN cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
@@ -1109,8 +1120,9 @@ test:
     # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
     # scoped per build flavor so concurrent targets don't share one daemon/store.
     CACHE --sharing shared --id kache-prep /kache
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    ARG TARGETARCH
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
 
     # Test
     RUN mkdir /test-artifacts
@@ -1164,8 +1176,9 @@ test-pallet-fixtures:
     # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
     # scoped per build flavor so concurrent targets don't share one daemon/store.
     CACHE --sharing shared --id kache-prep /kache
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    ARG TARGETARCH
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
     # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
@@ -1194,8 +1207,9 @@ build-test-toolkit:
     # Per-variant kache store (see USE_KACHE, top of file): persists across runs,
     # scoped per build flavor so concurrent targets don't share one daemon/store.
     CACHE --sharing shared --id kache-prep /kache
-    # See top-of-file CACHE_KEY ARG for why this is scoped.
-    CACHE --id target-${CACHE_KEY} /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    ARG TARGETARCH
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
     RUN microdnf -y install tar gzip xz docker && \
@@ -1204,7 +1218,7 @@ build-test-toolkit:
     # Install Node.js 23 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
     # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
     ARG NODE_VERSION=23.11.0
-    ARG TARGETARCH
+    # TARGETARCH already declared above for the /target cache id
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
@@ -1312,6 +1326,7 @@ build-prepare:
 # build creates production ready binaries
 build:
     FROM +build-prepare
+    ARG TARGETARCH
     # Caching is gated on PROD (see top of file). Dev/CI builds (PROD=false) mount cargo
     # registry/git, the content-addressed kache store, and a per-branch-scoped /target dir so
     # cargo's incremental fingerprinting can skip unchanged crates across runs (kache still backs
@@ -1322,7 +1337,7 @@ build:
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
         CACHE --sharing shared --id kache-build /kache
         # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
-        CACHE --id target-${CACHE_KEY} /target
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
