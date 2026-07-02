@@ -29,7 +29,7 @@ FROM node:22-slim@sha256:7378f5a4830ef48eb36d1abf4ef398391db562b5c41a0bded83192f
 # renovate: datasource=debian depName=unzip versioning=deb
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        jq=1.6-2.1+deb12u1 \
+        jq=1.6-2.1+deb12u2 \
         curl=7.88.1-10+deb12u14 \
         ca-certificates=20230311+deb12u1 \
         vim=2:9.0.1378-2+deb12u2 \
