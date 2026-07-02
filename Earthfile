@@ -779,13 +779,14 @@ prep-no-copy:
 
     # ca-certificates and curl-minimal already present in the CI base image
 
-    RUN cargo --version
-    RUN cargo binstall --no-confirm cargo-auditable
-
-    # cargo's git/registry cache lives here so the CACHE --id cargo-git/cargo-reg mounts
-    # (declared at /usr/local/cargo/* in every build/check/test target) are actually used.
-    # Set AFTER all cargo-tool installs so those tools remain in /root/.cargo/bin (already on PATH).
+    # cargo's home lives here — git/registry cache, config.toml, AND build-time-installed tool
+    # binaries ($CARGO_HOME/bin). Relocating it makes the CACHE --id cargo-git/cargo-reg mounts
+    # (declared at /usr/local/cargo/* in every build/check/test target) actually effective.
+    # Set BEFORE the cargo-tool install(s) below so those tools land in $CARGO_HOME/bin, and put
+    # that dir on PATH so they resolve. (cargo/rustc are rustup proxies in /root/.cargo/bin, also
+    # on PATH from the CI image, and are unaffected — CARGO_HOME only moves cargo's data/bin home.)
     ENV CARGO_HOME=/usr/local/cargo
+    ENV PATH="/usr/local/cargo/bin:${PATH}"
     # Pin git-fetch-with-cli at CARGO_HOME (canonical, workdir-independent) rather than relying on
     # the CI image's /.cargo/config.toml being found via the CWD=/ walk — that breaks the day a
     # target sets a non-/ WORKDIR. This is cargo's lowest-priority config source, so any
@@ -793,6 +794,9 @@ prep-no-copy:
     RUN mkdir -p "$CARGO_HOME" \
       && echo "[net]" >> "$CARGO_HOME/config.toml" \
       && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml"
+
+    RUN cargo --version
+    RUN cargo binstall --no-confirm cargo-auditable
 
     # kache: content-addressed rustc build cache (https://github.com/kunobi-ninja/kache).
     # Installed here so every target that `FROM +prep-no-copy` (incl. +prep, +build-prepare,
