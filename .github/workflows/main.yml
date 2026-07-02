@@ -14,6 +14,11 @@ on:
         required: false
         type: boolean
         default: false
+      prod:
+        description: "Hermetic build (all caches off) — slower, fully reproducible"
+        required: false
+        type: boolean
+        default: false
 
 # no top level default permissions for security reasons
 permissions: {}
@@ -26,6 +31,8 @@ jobs:
       IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
     env:
       FORCE_COLOR: 1
+      # Hermetic (cache-free) build for pushed release images; opt-in for manual dispatch. See Earthfile.
+      PROD: ${{ github.event_name == 'push' && 'true' || inputs.prod || 'false' }}
     permissions:
       contents: write
       packages: write
@@ -126,8 +133,9 @@ jobs:
 
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          # --PROD gates the hermetic, cache-free release build (see Earthfile).
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --PROD="$PROD" +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --PROD="$PROD" +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -248,6 +256,8 @@ jobs:
     runs-on: ubuntu-latest-8-core-arm64
     env:
       FORCE_COLOR: 1
+      # Hermetic (cache-free) build for pushed release images; opt-in for manual dispatch. See Earthfile.
+      PROD: ${{ github.event_name == 'push' && 'true' || inputs.prod || 'false' }}
     permissions:
       contents: write
       packages: write
@@ -314,8 +324,9 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          # --PROD gates the hermetic, cache-free release build (see Earthfile).
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --PROD="$PROD" +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --PROD="$PROD" +toolkit-image
 
       - name: Get image digests
         id: digests

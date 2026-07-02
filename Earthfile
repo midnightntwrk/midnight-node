@@ -20,6 +20,12 @@ ARG --global CACHE_KEY=local
 # those targets declare. Set `--USE_KACHE=false` to build with a plain rustc and no wrapper.
 ARG --global USE_KACHE=true
 
+# Hermetic production build. When true, +build declares no CACHE mounts, bypasses kache
+# (RUSTC_WRAPPER unset), and compiles with --no-cache, so release artifacts are built from
+# scratch with nothing served from any cache. Defaults false (fast, fully-cached dev/CI builds).
+# The main workflow sets --PROD=true when building pushed release images.
+ARG --global PROD=false
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -1281,12 +1287,16 @@ build-prepare:
 # build creates production ready binaries
 build:
     FROM +build-prepare
-    # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # CACHE /target
-    # `/target` cache stays off here (clean release artifacts), but the content-addressed
-    # kache store can still serve compiled units from earlier release builds.
-    CACHE --sharing shared --id kache-build /kache
+    # Caching is gated on PROD (see top of file). Dev/CI builds (PROD=false) mount the full set
+    # of caches — cargo registry/git, /target, and the content-addressed kache store — for fast
+    # incremental rebuilds. A PROD=true release build declares none of them, so it compiles from
+    # scratch into an ephemeral /target with nothing served from any cache.
+    IF [ "$PROD" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        CACHE /target
+        CACHE --sharing shared --id kache-build /kache
+    END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
 
@@ -1302,8 +1312,14 @@ build:
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
     # Default build (no hardfork)
-    RUN \
-        cargo auditable build --workspace --locked --release
+    IF [ "$PROD" = "true" ]
+        # Hermetic release build: bypass the kache RUSTC_WRAPPER and force a full recompile
+        # (--no-cache) so nothing is reused from Earthly's layer cache either.
+        RUN --no-cache RUSTC_WRAPPER= cargo auditable build --workspace --locked --release
+    ELSE
+        RUN \
+            cargo auditable build --workspace --locked --release
+    END
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
