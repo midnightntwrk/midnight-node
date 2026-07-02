@@ -155,8 +155,16 @@ subxt:
 # build-node-only builds only the midnight-node binary
 build-node-only:
     FROM +build-prepare
-    # Per-variant kache store (see USE_KACHE, top of file); shared with +build (release).
+    # Same cache wiring as +build. This target builds a strict subset (-p midnight-node) of
+    # +build's --workspace, so sharing the cargo registry/git, the kache store, and the
+    # per-branch /target lets the two reuse each other's compiled artifacts. /target uses
+    # Earthly's default `locked` sharing: concurrent builds on the same CACHE_KEY serialize
+    # rather than clobber each other, and different branches get a different CACHE_KEY (see top
+    # of file) so they never share /target at all.
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     CACHE --sharing shared --id kache-build /kache
+    CACHE --id target-${CACHE_KEY} /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
@@ -164,8 +172,9 @@ build-node-only:
 
     RUN cargo auditable build -p midnight-node --locked --release
 
+    # cp (not mv) so the linked binary stays in the persistent /target cache (see +build).
     RUN mkdir -p /artifacts-$NATIVEARCH \
-        && mv /target/release/midnight-node /artifacts-$NATIVEARCH
+        && cp /target/release/midnight-node /artifacts-$NATIVEARCH
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH
 
@@ -1304,13 +1313,16 @@ build-prepare:
 build:
     FROM +build-prepare
     # Caching is gated on PROD (see top of file). Dev/CI builds (PROD=false) mount cargo
-    # registry/git and the content-addressed kache store for fast incremental rebuilds (/target
-    # itself is intentionally left uncached — kache caches the compile units). A PROD=true release
-    # build declares none of them, so it compiles from scratch with nothing served from any cache.
+    # registry/git, the content-addressed kache store, and a per-branch-scoped /target dir so
+    # cargo's incremental fingerprinting can skip unchanged crates across runs (kache still backs
+    # the compile units it does have to rebuild). A PROD=true release build declares none of them,
+    # so it compiles from scratch with nothing served from any cache.
     IF [ "$PROD" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
         CACHE --sharing shared --id kache-build /kache
+        # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
+        CACHE --id target-${CACHE_KEY} /target
     END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
@@ -1336,10 +1348,12 @@ build:
             cargo auditable build --workspace --locked --release
     END
 
+    # cp (not mv) so the linked binaries stay in the now-persistent /target cache; otherwise
+    # cargo would re-link every binary on the next run even when its inputs are unchanged.
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
-        && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
-        && mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
-        && mv /target/release/aiken-deployer /artifacts-$NATIVEARCH \
+        && cp /target/release/midnight-node /artifacts-$NATIVEARCH \
+        && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
+        && cp /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
