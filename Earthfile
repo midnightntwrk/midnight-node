@@ -902,13 +902,19 @@ toolkit-js-prep:
     FROM +prep-no-copy
 
     # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
+    RUN microdnf -y install tar gzip xz perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 23 from official binaries (AL2023's nodejs is v18)
     ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
+    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
+    # `tar` overlays rather than replaces, so leftover files from the base's older npm
+    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
+    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        rm -rf /usr/local/lib/node_modules && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
@@ -1144,11 +1150,17 @@ build-test-toolkit:
     # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
     ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
+    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
+    # `tar` overlays rather than replaces, so leftover files from the base's older npm
+    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
+    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
+        rm -rf /usr/local/lib/node_modules && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
@@ -1443,7 +1455,8 @@ toolkit-image:
     USER root
 
     # Install dependencies for Node.js (libxml2 pinned via base image digest, python3-pip not installed)
-    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 && \
+    # Install shasum via perl-Digest-SHA for compactc
+    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
