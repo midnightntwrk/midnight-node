@@ -1,12 +1,12 @@
 {
-  "reserve_validator_address": "addr_test1wz6h9v3yqeqgr70kqpaxe9euv2g7uf9sq0tqu8alwqp46usyw3pg6",
+  "reserve_validator_address": "addr_test1wz6m98qlhjdwyldnv7w5t6zfcdnqsaqtud00085c8d020msm73pkp",
   "asset": {
     "policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-    "asset_name": "NIGHT"
+    "asset_name": ""
   },
   "utxos": [
     {
-      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "tx_hash": "bc2a450a37f62c83fbf8767cbd6d8cd193cc6d408ca9c21f0a2973d35e39da30",
       "output_index": 0,
       "amount": 5000000000873988
     }
