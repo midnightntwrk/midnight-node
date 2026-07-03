@@ -138,19 +138,42 @@ cat /tmp/cnight-config.json
 
 # Build the bridge ICS / reserve *observation* configs from the freshly-deployed validator
 # addresses (ICS Forever / Reserve Forever) and the cNIGHT asset. The deployed addresses
-# (not the static res/local ones) are what the bridge actually locks to and observes, so the
-# c2m-bridge / ICS observation must watch these. The observation starts empty (utxos /
-# total_amount = 0) and tracks the local Cardano forward; genesis pools come from the
-# committed genesis state.
+# (not the static res/local ones) are what the bridge actually locks to and observes.
+# The baseline utxos/total_amount are the cNIGHT the seeding tx (mint-cnight-supply)
+# locked at each validator, queried live from ogmios: the bridge checkpoint is anchored
+# to that same tx, so these UTxOs are never re-observed and must be present as the
+# pre-existing supply. The later faucet bridge transfer is post-checkpoint and
+# deliberately excluded (the observation processes it as a user transfer).
 CNIGHT_POLICY_ID=$(jq -r '.addresses.cnight_policy_id' res/local/cnight-config.json)
 CNIGHT_ASSET_NAME=$(jq -r '.addresses.cnight_asset_name' res/local/cnight-config.json)
-echo "Building ICS/reserve observation configs (ICS=$ICS_FOREVER_ADDRESS, Reserve=$RESERVE_FOREVER_ADDRESS)"
-jq -n --arg addr "$ICS_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" \
-   '{illiquid_circulation_supply_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: [], total_amount: 0}' \
+cnight_seed_tx=$(cat /runtime-values/cnight-supply-minted 2>/dev/null || echo "")
+
+# The seed tx's cNIGHT outputs at <address>, as IcsUtxo/ReserveUtxo JSON objects.
+# With no seed marker the filter matches nothing -> empty baseline (old behaviour).
+seeded_utxos() {
+  curl -s -H 'Content-Type: application/json' \
+    -d '{"jsonrpc": "2.0", "method": "queryLedgerState/utxo", "params": {"addresses": ["'"$1"'"]}, "id": 1}' \
+    "$OGMIOS_URL" \
+  | jq --arg tx "$cnight_seed_tx" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" \
+      '[.result[]
+        | select(.transaction.id == $tx)
+        | {tx_hash: .transaction.id, output_index: .index, amount: .value[$pid][$name]}
+        | select(.amount != null)]'
+}
+ics_utxos=$(seeded_utxos "$ICS_FOREVER_ADDRESS")
+reserve_utxos=$(seeded_utxos "$RESERVE_FOREVER_ADDRESS")
+echo "Building ICS/reserve observation configs (ICS=$ICS_FOREVER_ADDRESS, Reserve=$RESERVE_FOREVER_ADDRESS, seed tx=${cnight_seed_tx:-<none>})"
+jq -n --arg addr "$ICS_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" --argjson utxos "$ics_utxos" \
+   '{illiquid_circulation_supply_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: $utxos, total_amount: ($utxos | map(.amount) | add // 0)}' \
    > /tmp/ics-config.json
-jq -n --arg addr "$RESERVE_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" \
-   '{reserve_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: [], total_amount: 0}' \
+jq -n --arg addr "$RESERVE_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" --argjson utxos "$reserve_utxos" \
+   '{reserve_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: $utxos, total_amount: ($utxos | map(.amount) | add // 0)}' \
    > /tmp/reserve-config.json
+
+echo "Created ics-config.json:"
+cat /tmp/ics-config.json
+echo "Created reserve-config.json:"
+cat /tmp/reserve-config.json
 
 echo "Creating c2m-bridge-config.json..."
 # The bridge observes strictly AFTER initial_data_checkpoint, so anchor it to the cNIGHT
