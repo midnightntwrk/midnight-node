@@ -246,8 +246,9 @@ rebuild-genesis-state:
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     # Copy genesis config files (undeployed uses res/dev/; local uses res/local/).
-    # undeployed and local are mock-main-chain dev networks: they have no cardano-tip.json
-    # and rely on the hardcoded faucet seeds injected below.
+    # Neither network has a live Cardano to snapshot — undeployed mocks the main chain,
+    # local brings up its own dockerized Cardano from scratch — so there is no
+    # cardano-tip.json; both rely on the hardcoded faucet seeds injected below.
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json

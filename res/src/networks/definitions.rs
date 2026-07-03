@@ -106,10 +106,11 @@ impl MidnightNetwork for UndeployedNetwork {
 	}
 }
 
-/// The `local` network backs the dockerized local-environment. It mirrors
-/// `UndeployedNetwork` (mock main chain, //Alice authority) but has its own
-/// ledger identity (`local`, addresses `mn_addr_local1…`), its own genesis
-/// artifacts, and sources all config from `res/local/` rather than `res/dev/`.
+/// The `local` network backs the dockerized local-environment. Unlike
+/// `UndeployedNetwork` it runs against a real (local, dockerized) Cardano main
+/// chain — no follower mock. It has its own ledger identity (`local`, addresses
+/// `mn_addr_local1…`), its own genesis artifacts, and sources all config from
+/// `res/local/` rather than `res/dev/`.
 pub struct LocalNetwork;
 impl MidnightNetwork for LocalNetwork {
 	fn name(&self) -> &str {
