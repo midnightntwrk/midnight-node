@@ -40,6 +40,7 @@ use pallet_cnight_observation_mock::mock::{
 };
 use rand::prelude::*;
 use sidechain_domain::{McBlockHash, McTxHash, UtxoId};
+use std::collections::BTreeMap;
 use test_log::test;
 
 fn create_inherent(
@@ -1697,48 +1698,151 @@ fn is_inherent_required_with_malformed_data_returns_error() {
 	});
 }
 
-// One representative regression guard for the operator-facing panic shape in
-// `BuildGenesisConfig::build`. The four call sites use a byte-identical format
-// string differing only in the dotted field path and the destination bound;
-// `cnight_policy_id` is not exercised because its source type `[u8; 28]` makes
-// the panic at that site unreachable from chain-spec deserialization.
-#[test]
-fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_long() {
-	let over_length = "a".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize + 1);
-	let genesis = pallet_cnight_observation::GenesisConfig::<Test> {
+// Build a genesis config with the given mapping-validator address and reward-key
+// mappings, defaulting the remaining address fields.
+fn genesis_with(
+	mapping_validator_address: &str,
+	mappings: BTreeMap<CardanoRewardAddressBytes, Vec<config::MappingEntryGenesis>>,
+) -> pallet_cnight_observation::GenesisConfig<Test> {
+	pallet_cnight_observation::GenesisConfig::<Test> {
 		config: pallet_cnight_observation::config::CNightGenesis {
 			addresses: CNightAddresses {
-				mapping_validator_address: over_length,
+				mapping_validator_address: mapping_validator_address.to_string(),
 				auth_token_asset_name: String::new(),
 				cnight_policy_id: [0u8; 28],
 				cnight_asset_name: String::new(),
 			},
+			mappings,
 			..Default::default()
 		},
 		_marker: Default::default(),
-	};
+	}
+}
 
+// Run `build()` and return the panic message, failing if the build did not panic.
+fn build_panic_message(genesis: pallet_cnight_observation::GenesisConfig<Test>) -> String {
 	let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
 		sp_io::TestExternalities::default().execute_with(|| {
 			genesis.build();
 		});
 	}))
-	.expect_err("genesis build must panic on over-length mapping_validator_address");
+	.expect("genesis build must panic");
 
-	let msg = payload
+	payload
 		.downcast_ref::<String>()
 		.cloned()
 		.or_else(|| payload.downcast_ref::<&'static str>().map(|s| s.to_string()))
-		.expect("panic payload should be String or &'static str");
+		.expect("panic payload should be String or &'static str")
+}
+
+// Regression guard for the operator-facing over-length panic shape in
+// `BuildGenesisConfig::build`. The address has a valid `addr_test` prefix so it
+// passes the HRP check and reaches the length branch, which is the path that
+// names the destination bound.
+#[test]
+fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_long() {
+	let over_length =
+		format!("addr_test1{}", "q".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize));
+	let msg = build_panic_message(genesis_with(&over_length, BTreeMap::new()));
 
 	assert!(
 		msg.contains("cNightObservation.config.addresses.mapping_validator_address"),
 		"panic must name the chain-spec field path; got: {msg}"
 	);
 	assert!(
-		msg.contains(&format!("maximum {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
+		msg.contains(&format!("max length {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
 		"panic must name the destination bound; got: {msg}"
 	);
+}
+
+// A mapping-validator address with an unrecognized Bech32 prefix is rejected as
+// structurally invalid before the length branch, so the panic carries the
+// specific `InvalidMappingValidatorAddress` error rather than a length message.
+#[test]
+fn build_panics_with_invalid_error_when_mapping_validator_address_has_bad_prefix() {
+	let msg = build_panic_message(genesis_with("not_a_cardano_address", BTreeMap::new()));
+
+	assert!(
+		msg.contains("cNightObservation.config.addresses.mapping_validator_address"),
+		"panic must name the chain-spec field path; got: {msg}"
+	);
+	assert!(
+		msg.contains("InvalidMappingValidatorAddress"),
+		"panic must name the structural-validation error; got: {msg}"
+	);
+}
+
+// Genesis fail-fast on a reward-address mapping key whose network nibble does not
+// match the network derived from the mapping-validator address. The validator
+// prefix `addr_test` fixes the expected network to testnet (0), while the key is
+// a valid type-14 reward address on mainnet (network nibble 1), so the build
+// must panic naming the invalid key.
+#[test]
+fn build_panics_when_mapping_key_has_wrong_network() {
+	// header: upper nibble 14 (reward key hash), lower nibble 1 (mainnet).
+	let mut key_bytes = vec![(14u8 << 4) | 1u8];
+	key_bytes.extend(std::iter::repeat(0u8).take(28));
+	let key = CardanoRewardAddressBytes(key_bytes.try_into().unwrap());
+	let mut mappings = BTreeMap::new();
+	mappings.insert(key, Vec::new());
+
+	let msg = build_panic_message(genesis_with(
+		"addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng",
+		mappings,
+	));
+
+	assert!(
+		msg.contains("invalid") && msg.contains("reward-address key"),
+		"panic must name the invalid reward-address key; got: {msg}"
+	);
+}
+
+// The `set_mapping_validator_contract_address` extrinsic rejects a bad-prefix
+// address with the specific structural error and leaves storage unchanged.
+#[test]
+fn set_mapping_validator_contract_address_rejects_bad_prefix_without_storing() {
+	new_test_ext().execute_with(|| {
+		let before = MainChainMappingValidatorAddress::<Test>::get();
+
+		assert_noop!(
+			CNightObservation::set_mapping_validator_contract_address(
+				RawOrigin::Root.into(),
+				b"not_a_cardano_address".to_vec(),
+			),
+			Error::<Test>::InvalidMappingValidatorAddress
+		);
+
+		assert_eq!(
+			MainChainMappingValidatorAddress::<Test>::get(),
+			before,
+			"rejected address must not be stored"
+		);
+	});
+}
+
+// A valid-prefix address over the bounded length is rejected with the length
+// error rather than the structural error, and is not stored.
+#[test]
+fn set_mapping_validator_contract_address_rejects_over_length_without_storing() {
+	new_test_ext().execute_with(|| {
+		let before = MainChainMappingValidatorAddress::<Test>::get();
+		let over_length =
+			format!("addr_test1{}", "q".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize));
+
+		assert_noop!(
+			CNightObservation::set_mapping_validator_contract_address(
+				RawOrigin::Root.into(),
+				over_length.into_bytes(),
+			),
+			Error::<Test>::MaxCardanoAddrLengthExceeded
+		);
+
+		assert_eq!(
+			MainChainMappingValidatorAddress::<Test>::get(),
+			before,
+			"rejected address must not be stored"
+		);
+	});
 }
 
 type BoundedAssetName = BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>;
