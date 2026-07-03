@@ -28,6 +28,15 @@ check_json_validity() {
   fi
 }
 
+# Big banner for the top-level phases of this job.
+phase() {
+  echo ""
+  echo "############################################################"
+  echo "##  $1"
+  echo "############################################################"
+}
+
+# Smaller banner for each config section within a phase.
 section() {
   echo ""
   echo "===== $1 ====="
@@ -63,9 +72,7 @@ RESERVE_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "Reserve Forever") | .add
 REGISTERED_CANDIDATES_ADDRESS=$(jq -r '.[] | select(.name == "Registered Candidate") | .address' $CONTRACT_INFO)
 PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.[] | select(.name == "Federated Ops Forever") | .scriptHash' $CONTRACT_INFO)
 
-echo ""
-echo "Generating chain-spec.json file for Midnight Nodes..."
-
+phase "Patching configs"
 
 section "pc-chain-config.json"
 echo "Patching pc-chain-config.json with:"
@@ -157,26 +164,34 @@ ics_utxos=$(seeded_utxos "$ICS_FOREVER_ADDRESS")
 reserve_utxos=$(seeded_utxos "$RESERVE_FOREVER_ADDRESS")
 
 section "ics-config.json"
-echo "Creating ics-config.json with:"
+echo "Patching ics-config.json with:"
 echo "  illiquid_circulation_supply_validator_address: $ICS_FOREVER_ADDRESS"
 echo "  asset.policy_id: $CNIGHT_POLICY_ID"
 echo "  utxos/total_amount: cNIGHT outputs of seed tx ${cnight_seed_tx:-<none>}"
-jq -n --arg addr "$ICS_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" --argjson utxos "$ics_utxos" \
-   '{illiquid_circulation_supply_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: $utxos, total_amount: ($utxos | map(.amount) | add // 0)}' \
-   > /res/local/ics-config.json
-echo "Created ics-config.json:"
+patch_json /res/local/ics-config.json \
+   --arg addr "$ICS_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" --argjson utxos "$ics_utxos" \
+   '.illiquid_circulation_supply_validator_address = $addr
+   | .asset = {policy_id: $pid, asset_name: $name}
+   | .utxos = $utxos
+   | .total_amount = ($utxos | map(.amount) | add // 0)'
+echo "Patched ics-config.json:"
 cat /res/local/ics-config.json
 
+
 section "reserve-config.json"
-echo "Creating reserve-config.json with:"
+echo "Patching reserve-config.json with:"
 echo "  reserve_validator_address: $RESERVE_FOREVER_ADDRESS"
 echo "  asset.policy_id: $CNIGHT_POLICY_ID"
 echo "  utxos/total_amount: cNIGHT outputs of seed tx ${cnight_seed_tx:-<none>}"
-jq -n --arg addr "$RESERVE_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" --argjson utxos "$reserve_utxos" \
-   '{reserve_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: $utxos, total_amount: ($utxos | map(.amount) | add // 0)}' \
-   > /res/local/reserve-config.json
-echo "Created reserve-config.json:"
+patch_json /res/local/reserve-config.json \
+   --arg addr "$RESERVE_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" --argjson utxos "$reserve_utxos" \
+   '.reserve_validator_address = $addr
+   | .asset = {policy_id: $pid, asset_name: $name}
+   | .utxos = $utxos
+   | .total_amount = ($utxos | map(.amount) | add // 0)'
+echo "Patched reserve-config.json:"
 cat /res/local/reserve-config.json
+
 
 # The bridge observes strictly AFTER initial_data_checkpoint, so anchor it to the cNIGHT
 # seeding tx (midnight-node#1778): the pre-seeded ICS supply is already reflected in the
@@ -203,18 +218,17 @@ else
 fi
 
 section "c2m-bridge-config.json"
-echo "Creating c2m-bridge-config.json with:"
+echo "Patching c2m-bridge-config.json with:"
 echo "  initial_data_checkpoint: $existing_tx_hash"
 echo "  approved_txs: $approved_txs"
-cat <<EOF > /res/local/c2m-bridge-config.json
-{
-    "subminimal_transfers_flush_threshold": 500000,
-    "initial_data_checkpoint": "$existing_tx_hash",
-    "approved_txs": $approved_txs
-}
-EOF
-echo "Created c2m-bridge-config.json:"
+patch_json /res/local/c2m-bridge-config.json \
+  --arg checkpoint "$existing_tx_hash" \
+  --argjson approved "$approved_txs" \
+  '.initial_data_checkpoint = $checkpoint | .approved_txs = $approved'
+echo "Patched c2m-bridge-config.json:"
 cat /res/local/c2m-bridge-config.json
+
+phase "Building chain-spec"
 
 export CHAINSPEC_NAME=local1
 export CHAINSPEC_ID=local
@@ -251,7 +265,7 @@ echo "chain-spec.json generation complete."
 
 echo "Partnerchain configuration is complete, and will be able to start after two mainchain epochs."
 
-echo -e "\n===== Partnerchain Configuration Complete =====\n"
+phase "Awaiting activation"
 
 echo "Waiting for contracts to become active at epoch $contracts_active_epoch..."
 epoch=$(curl -s --request POST \
