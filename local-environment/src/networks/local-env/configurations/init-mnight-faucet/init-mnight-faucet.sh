@@ -42,13 +42,13 @@ echo "=== init mNIGHT faucet (wallet seed ${FAUCET_SEED:0:6}..${FAUCET_SEED: -2}
 # 1. Wait for the node RPC to accept connections (depends_on service_started is not
 #    RPC-ready) — /dev/tcp probe, no extra tooling needed.
 echo "Waiting for $NODE_HOST:$NODE_PORT ..."
-for i in {1..180}; do
+for i in {1..30}; do
   if (exec 3<>"/dev/tcp/${NODE_HOST}/${NODE_PORT}") 2>/dev/null; then
     exec 3>&- 3<&- || true
     echo "Node RPC is up."
     break
   fi
-  [ "$i" -eq 180 ] && { echo "ERROR: node RPC not reachable after 180 attempts"; exit 1; }
+  [ "$i" -eq 30 ] && { echo "ERROR: node RPC not reachable after 1 min"; exit 1; }
   sleep 2
 done
 
