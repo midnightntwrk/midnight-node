@@ -9,7 +9,7 @@ mc__epoch_duration_millis = 60000
 mc__slot_duration_millis = 1000
 
 chainspec_name = "Midnight Local"
-chainspec_id = "midnight_local"
+chainspec_id = "local"
 chainspec_genesis_state = "res/genesis/genesis_state_local.mn"
 chainspec_genesis_block = "res/genesis/genesis_block_local.mn"
 chainspec_chain_type = "local"

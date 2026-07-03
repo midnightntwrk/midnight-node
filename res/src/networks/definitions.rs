@@ -113,7 +113,7 @@ impl MidnightNetwork for UndeployedNetwork {
 pub struct LocalNetwork;
 impl MidnightNetwork for LocalNetwork {
 	fn name(&self) -> &str {
-		"local1"
+		"Midnight Local"
 	}
 
 	fn id(&self) -> &str {
