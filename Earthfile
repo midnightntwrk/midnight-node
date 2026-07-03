@@ -1868,6 +1868,13 @@ local-env-ci:
                 exit $rc ; \
               fi ) && \
             npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
@@ -1929,6 +1936,13 @@ local-env-full-ci-localimg:
                 exit $rc ; \
               fi ) && \
             npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
@@ -1991,6 +2005,13 @@ local-env-oneshot:
                 exit $rc ; \
               fi ) && \
             npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
