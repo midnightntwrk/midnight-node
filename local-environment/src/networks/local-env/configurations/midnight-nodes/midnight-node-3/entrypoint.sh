@@ -20,13 +20,14 @@ set -euxo pipefail
 . /shared/mc.env
 
 ./midnight-node \
-  --charlie \
+  --validator \
   --chain=/shared/chain-spec.json \
   --node-key=0000000000000000000000000000000000000000000000000000000000000003 \
   --port=30335 \
   --public-addr=/dns/midnight-node-3/tcp/30335/p2p/12D3KooWSCufgHzV4fCwRijfH2k3abrpAJxTKxEvN1FDuRXA2U9x \
   --bootnodes="/dns/midnight-node-1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   --base-path=/data \
+  --keystore-path=/keystore \
   --unsafe-rpc-external \
   --rpc-methods=Unsafe \
   --rpc-port=9935 \

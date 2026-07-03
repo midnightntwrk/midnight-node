@@ -46,7 +46,7 @@ export POSTGRES_DB="cexplorer"
 export DB_SYNC_POSTGRES_CONNECTION_STRING="psql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
 export OGMIOS_URL=http://ogmios:$OGMIOS_PORT
 
-D_PERMISSIONED=3
+D_PERMISSIONED=5
 D_REGISTERED=0
 CONTRACT_INFO="/runtime-values/contracts-info.json"
 COUNCIL_POLICY_ID=$(jq -r '.[] | select(.name == "Council Forever") | .scriptHash' $CONTRACT_INFO)

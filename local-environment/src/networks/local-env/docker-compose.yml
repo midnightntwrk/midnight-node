@@ -365,6 +365,7 @@ services:
       - midnight-node-2-data:/data
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-2/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-2/keystore:/keystore
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
@@ -395,8 +396,12 @@ services:
       - midnight-node-3-data:/data
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-3/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-3/seeds:/seeds
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      AURA_SEED_FILE: "/seeds/aura.seed"
+      CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed"
+      GRANDPA_SEED_FILE: "/seeds/grandpa.seed"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator

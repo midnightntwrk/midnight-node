@@ -1,0 +1,21 @@
+# Node keys and keystore files
+
+Keys and keystore of nodes in local-environment reflect few possible scenarios of AURA to BABE migration states.
+All are setup as validators and are expect to produce blocks. In other words there are no invalid configurations.
+
+* `midnight-node-1` is run as `--alice`, therefore it does not have `keystore` folder,
+its `keys` folder has keys generated with `//Alice` Secret Key UI,
+for this reason its `aura.vkey` and `babe.vkey` are equal (both are same scheme and same SURI)
+* `midnight-node-2` is a node that does not have configured BABE key,
+see [contract-compiler](contract-compiler/.env) and [midnight-setup](midnight-setup/permissioned-candidates-config.json) related files,
+this node should fall back to its AURA keys, keys of this node match `//Bob` SURI
+* `midnight-node-3` does have BABE configured on Cardano (BABE equals AURA),
+but not in the local keystore, keys of this node match `//Charlie` SURI,
+this node is using seeds files that are inserted to keystore on the node startup
+* `midnight-node-4` does not have BABE configured on Cardano, but it has BABE key in the keystore (which equals AURA key)
+* `midnight-node-5` is a node that has both keys configured,
+
+
+## midnight-setup permissioned-candidates-config.json
+
+The first 5 entries in the array reflect keys from `midnight-node-1` to `midnight-node-5`. Following entries are for `//Eve`, `//Ferdie`, and so forth.
