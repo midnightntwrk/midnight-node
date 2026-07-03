@@ -284,6 +284,15 @@ impl MidnightClient {
         // mint-observed / spend-not-yet state. See `PRE_AWAIT_SUBMISSION_SPACING`
         // in `tests/lib.rs` for the spacing/poll-interval interaction.
         const POLL_INTERVAL: Duration = Duration::from_secs(5);
+
+        // The watermark normally advances every few Cardano blocks — minutes,
+        // even at a degraded block rate. If it hasn't moved at all for this
+        // long, the follower (or the db-sync feed behind it) is stuck and no
+        // outer timeout will save the test: fail with a diagnosis now instead
+        // of burning the remaining hours of `timeout_duration`.
+        const WATERMARK_STALL_LIMIT: Duration = Duration::from_secs(45 * 60);
+        let mut last_advance: Option<(u64, Instant)> = None;
+
         let inner = async {
             loop {
                 // Each iteration is two short-lived RPC calls: head lookup +
@@ -330,6 +339,26 @@ impl MidnightClient {
                                          Test wait will exceed the usual stability window."
                                     );
                                 }
+                            }
+                        }
+
+                        // Stall detector (see WATERMARK_STALL_LIMIT above).
+                        match last_advance {
+                            Some((last_wm, _)) if watermark > last_wm => {
+                                last_advance = Some((watermark, Instant::now()));
+                            }
+                            Some((last_wm, since)) if since.elapsed() > WATERMARK_STALL_LIMIT => {
+                                return Err(format!(
+                                    "await_cnight_observations: watermark stalled at {last_wm} \
+                                     for {:?} (target {target}); the Midnight follower or its \
+                                     db-sync feed appears stuck",
+                                    since.elapsed(),
+                                )
+                                .into());
+                            }
+                            Some(_) => {}
+                            None => {
+                                last_advance = Some((watermark, Instant::now()));
                             }
                         }
 

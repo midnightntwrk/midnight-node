@@ -29,7 +29,12 @@ jobs:
     # that closes the drift.
     container:
       image: rust:1.95-trixie
-    timeout-minutes: 360
+    # Budget: ~10 min build/setup + observation await + scan/assertions.
+    # The await is bounded by OBSERVATION_AWAIT_TIMEOUT (6 h) in
+    # tests/e2e/tests/cnight/observation.rs — sized for Preview's degraded
+    # block rate (~34s/block since mid-June 2026; the stability window is
+    # ~465 blocks ≈ 4.4 h). Self-hosted runners have no 6 h job ceiling.
+    timeout-minutes: 480
 
     steps:
       - name: Resolve runtime settings
@@ -86,8 +91,9 @@ jobs:
       # --release: qanet replays the long-lived Preview chain; the dev
       # profile is ~50× slower (see tests/e2e/README.md).
       # --test-threads 16: all observation tests must run concurrently;
-      # otherwise the shared stability window (~3 h on Cardano Preview)
-      # is paid once per batch and the run blows past the 6 h job timeout.
+      # otherwise the shared stability window (~4.5 h on Cardano Preview
+      # at its degraded ~34s/block rate) is paid once per batch and the
+      # run blows past the job timeout.
       # See tests/e2e/README.md "Cardano stability barrier".
       - name: Run e2e observation tests
         working-directory: tests/e2e/tests

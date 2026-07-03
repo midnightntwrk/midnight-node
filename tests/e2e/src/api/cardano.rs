@@ -9,7 +9,7 @@ use ogmios_client::jsonrpsee::{OgmiosClients, client_for_url};
 use ogmios_client::query_ledger_state::{OgmiosTip, QueryLedgerState};
 use ogmios_client::query_network::{QueryNetwork, ShelleyGenesisConfigurationResponse};
 use ogmios_client::transactions::{SubmitTransactionResponse, Transactions};
-use ogmios_client::types::OgmiosUtxo;
+use ogmios_client::types::{OgmiosTx, OgmiosUtxo};
 use ogmios_client::{OgmiosClient, OgmiosClientError, OgmiosParams};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -27,25 +27,60 @@ use whisky::{
 
 const OGMIOS_MAX_ATTEMPTS: u32 = 5;
 
-/// Classify an ogmios error as retriable. Returns `Some((delay, label))` if we should retry,
-/// `None` for terminal errors. The label is for logging.
+/// Classify an ogmios error as retriable. Returns `Some((delay, label, rebuild_client))` if we
+/// should retry, `None` for terminal errors. The label is for logging; `rebuild_client` evicts
+/// the cached client so the retry opens a fresh WebSocket connection.
 ///
-/// Two retriable classes today:
-/// - WS transport task died (jsonrpsee "background task closed") — retry quickly (2s).
+/// Retriable classes today:
+/// - WS transport task died (jsonrpsee "background task closed") — retry quickly (2s) on a
+///   fresh connection.
+/// - Request timed out (jsonrpsee "Request timeout") — no answer within `timeout_seconds`.
+///   Seen when the parallel observation tests herd their register/mint submissions and
+///   ogmios/cardano-node fall behind, and when a connection dies without a close frame
+///   (every request pending on it then times out). Rebuild the connection and back off.
+///   NOTE: for a timed-out `SubmitTx` the outcome is unknown — the tx may have been
+///   accepted even though the response was lost. `ogmios_request` recognizes the
+///   rejection of the duplicate re-submission and converts it to success.
+/// - Could not (re)connect ("connect: ...") — endpoint briefly unreachable (LB restart,
+///   network blip). Nothing is cached on connect failure, so no eviction needed.
 /// - Cardano-node mempool refused admission because tx validation was too slow under load
 ///   ("MempoolTxTooSlow", server error 3997) — tx is valid, node is just busy. Back off
 ///   longer (5s) so the mempool can clear concurrent submissions.
-fn retry_delay_for(e: &OgmiosClientError) -> Option<(Duration, &'static str)> {
+fn retry_delay_for(e: &OgmiosClientError) -> Option<(Duration, &'static str, bool)> {
     let OgmiosClientError::RequestError(s) = e else {
         return None;
     };
     if s.contains("background task closed") {
-        Some((Duration::from_secs(2), "WS transient"))
+        Some((Duration::from_secs(2), "WS transient", true))
+    } else if s.contains("Request timeout") {
+        Some((Duration::from_secs(5), "request timeout", true))
+    } else if s.starts_with("connect:") {
+        Some((Duration::from_secs(5), "connect failed", false))
     } else if s.contains("MempoolTxTooSlow") {
-        Some((Duration::from_secs(5), "node mempool busy"))
+        Some((Duration::from_secs(5), "node mempool busy", false))
     } else {
         None
     }
+}
+
+/// Detects ogmios predicate-failure 3117: "The transaction contains unknown UTxO references
+/// as inputs. This can happen if the inputs you're trying to spend have already been
+/// spent, ...". Each test wallet is controlled by that test alone, so seeing this on the
+/// re-submission of a tx whose first submission timed out ambiguously means the first copy
+/// consumed the inputs — i.e. it was accepted.
+fn is_unknown_utxo_error(e: &OgmiosClientError) -> bool {
+    let OgmiosClientError::RequestError(s) = e else {
+        return false;
+    };
+    let s = s.to_lowercase();
+    s.contains("unknown utxo reference") || s.contains("unknownoutputreferences")
+}
+
+/// Compute a transaction's id (blake2b-256 of its body) locally from the signed tx bytes,
+/// for when a submission was accepted but its response was lost in transit.
+fn local_tx_id(tx_bytes: &[u8]) -> Option<[u8; 32]> {
+    let hash_hex = whisky::calculate_tx_hash(&hex::encode(tx_bytes)).ok()?;
+    hex::decode(hash_hex).ok()?.try_into().ok()
 }
 
 /// Detects the "ogmios response was missing a required field" parse failure — typically the
@@ -202,8 +237,8 @@ impl CardanoClient {
             match Self::fetch_chain_params_once(config).await {
                 Ok(v) => return v,
                 Err(e) => match retry_delay_for(&e) {
-                    Some((delay, label)) => {
-                        if label == "WS transient" {
+                    Some((delay, label, rebuild_client)) => {
+                        if rebuild_client {
                             Self::invalidate_ogmios_client(&config.base_url);
                         }
                         tracing::info!(
@@ -408,26 +443,54 @@ impl CardanoClient {
         req: OgmiosRequest,
     ) -> Result<OgmiosResponse, OgmiosClientError> {
         let mut last_err = None;
+        // Set once a SubmitTx attempt fails retriably (request timeout, dead
+        // WS task, …): the tx may have been accepted even though the response
+        // never arrived, so a later rejection of the re-submission for
+        // consumed inputs (ogmios 3117) proves the first copy landed and is
+        // converted into success below. Sound because each test wallet is
+        // controlled by that test alone — nothing else can consume its inputs.
+        let mut submit_outcome_unknown = false;
         for attempt in 1..=OGMIOS_MAX_ATTEMPTS {
             match Self::ogmios_request_once(config, req.clone()).await {
                 Ok(v) => return Ok(v),
-                Err(e) => match retry_delay_for(&e) {
-                    Some((delay, label)) => {
-                        if label == "WS transient" {
-                            Self::invalidate_ogmios_client(&config.base_url);
+                Err(e) => {
+                    if submit_outcome_unknown && is_unknown_utxo_error(&e) {
+                        if let OgmiosRequest::SubmitTx { tx_bytes } = &req {
+                            if let Some(id) = local_tx_id(tx_bytes) {
+                                tracing::warn!(
+                                    "ogmios request: SubmitTx re-submission rejected for \
+                                     consumed inputs after an earlier ambiguous failure — \
+                                     treating the original submission as accepted \
+                                     (tx_id=0x{})",
+                                    hex::encode(id),
+                                );
+                                return Ok(OgmiosResponse::SubmitTx(SubmitTransactionResponse {
+                                    transaction: OgmiosTx { id },
+                                }));
+                            }
                         }
-                        tracing::info!(
-                            "ogmios request: {} on attempt {}/{}; retry in {:?}",
-                            label,
-                            attempt,
-                            OGMIOS_MAX_ATTEMPTS,
-                            delay,
-                        );
-                        last_err = Some(e);
-                        sleep(delay).await;
                     }
-                    None => return Err(e),
-                },
+                    match retry_delay_for(&e) {
+                        Some((delay, label, rebuild_client)) => {
+                            if rebuild_client {
+                                Self::invalidate_ogmios_client(&config.base_url);
+                            }
+                            if matches!(req, OgmiosRequest::SubmitTx { .. }) {
+                                submit_outcome_unknown = true;
+                            }
+                            tracing::info!(
+                                "ogmios request: {} on attempt {}/{}; retry in {:?}",
+                                label,
+                                attempt,
+                                OGMIOS_MAX_ATTEMPTS,
+                                delay,
+                            );
+                            last_err = Some(e);
+                            sleep(delay).await;
+                        }
+                        None => return Err(e),
+                    }
+                }
             }
         }
         Err(last_err.unwrap())
@@ -505,12 +568,14 @@ impl CardanoClient {
     /// advance gives us a safe upper bound on the landing block.
     ///
     /// Polls every 2s until either (a) tip advances by ≥2 blocks, or
-    /// (b) the 5-minute wait budget is exhausted (in which case the
+    /// (b) the 10-minute wait budget is exhausted (in which case the
     /// latest known tip is returned — downstream waits will catch a
-    /// genuinely slow chain).
+    /// genuinely slow chain). The budget is sized for Preview's degraded
+    /// ~34s/block rate: 2 blocks arrive in ~70s on average, but the
+    /// exponential tail of block intervals needs generous headroom.
     pub async fn snapshot_tip_after_advance(ogmios_settings: &OgmiosClientSettings) -> Option<u64> {
         const POLL_INTERVAL: Duration = Duration::from_secs(2);
-        const WAIT_BUDGET: Duration = Duration::from_secs(300);
+        const WAIT_BUDGET: Duration = Duration::from_secs(600);
         const REQUIRED_ADVANCE: u64 = 2;
         let baseline = Self::current_block_height(ogmios_settings).await?;
         let start = Instant::now();
@@ -1145,7 +1210,9 @@ impl CardanoClient {
     }
 
     pub async fn find_utxo_by_tx_id(&self, address: &str, tx_id_hex: String) -> Option<OgmiosUtxo> {
-        const MAX_ATTEMPTS: u32 = 120;
+        // 240 × 2s = 8 min: inclusion is usually 1-2 blocks, but must absorb
+        // the block-interval tail at Preview's degraded ~34s/block rate.
+        const MAX_ATTEMPTS: u32 = 240;
         const PAUSE: Duration = Duration::from_secs(2);
         let tx_id_bytes = hex::decode(tx_id_hex.clone()).expect("invalid hex tx_id");
         let request = OgmiosRequest::QueryUtxo {
@@ -1173,7 +1240,8 @@ impl CardanoClient {
     }
 
     pub async fn find_utxos_by_tx_id(&self, address: &str, tx_id_hex: String) -> Vec<OgmiosUtxo> {
-        const MAX_ATTEMPTS: u32 = 120;
+        // Same budget rationale as `find_utxo_by_tx_id`.
+        const MAX_ATTEMPTS: u32 = 240;
         const PAUSE: Duration = Duration::from_secs(2);
         let tx_id_bytes = hex::decode(&tx_id_hex).expect("invalid hex tx_id");
         let request = OgmiosRequest::QueryUtxo {

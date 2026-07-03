@@ -17,7 +17,7 @@ To run test in parallel use `--test-threads N` argument, e.g.
 run concurrently. Six is the historic recommendation for local-env.
 
 **On Cardano Preview (`qanet` feature) thread count is load-bearing:** the
-stability barrier amortises its ~3 h wait *only* when observation tests
+stability barrier amortises its multi-hour wait *only* when observation tests
 run concurrently. With fewer threads than observation tests the wait is
 paid per batch, which can blow past CI budgets. Set
 `--test-threads >= 16` (we have 13 observation tests with headroom).
@@ -59,9 +59,18 @@ E2E_SKIP_DEPLOY_GATE=1 cargo test-e2e-local valid_deploy_transaction
 Observation tests (those that assert the Midnight node saw a Cardano tx
 they submitted) only succeed once the Cardano tx is *stable*, i.e. at
 least `cardano_security_parameter` blocks behind the tip. On local-env
-this parameter is ~5 blocks; on Cardano Preview it is 432 blocks
-(~3 h). Tests can't observe before the follower processes a stable
-block, so they wait.
+this parameter is ~5 blocks; on Cardano Preview it is 432 blocks. The
+wall-clock cost of those 432 blocks (+~30 blocks of follower processing
+lag) depends entirely on Preview's block rate, and that rate is not the
+nominal 20 s/block: it degraded to ~34 s/block in mid-June 2026
+(epoch 1337 minted 2,502 blocks/day vs ~3,400 earlier that month),
+stretching the wait from ~3 h to ~4.5 h. `OBSERVATION_AWAIT_TIMEOUT`
+(6 h, in `tests/cnight/observation.rs`) and the nightly job's
+`timeout-minutes` are sized against the degraded rate with headroom —
+if runs start timing out again while the watermark still tracks
+~465 blocks behind the tip, re-check the block rate (blocks-per-epoch
+via any Preview explorer) before suspecting the harness. Tests can't
+observe before the follower processes a stable block, so they wait.
 
 The wait is handled by `MidnightClient::await_cnight_observations` —
 each cNIGHT observation test calls it once (or twice, for tests that
@@ -81,9 +90,9 @@ cardano: tip=4339244 target=4339214 (0 blocks to stability),
 2/4 observed, 2 remaining
 ```
 
-**Out of scope:** Cardano Preprod and mainnet (`k = 2160`, ~12 h wait)
-exceed the 6 h GitHub Actions ceiling. No compile-time gate prevents
-running there; just don't.
+**Out of scope:** Cardano Preprod and mainnet (`k = 2160`, 12–20 h wait
+depending on block rate) exceed any reasonable nightly budget. No
+compile-time gate prevents running there; just don't.
 
 `create_hundred_registrations` is `#[cfg(any(feature = "local",
 feature = "local-dev", feature = "local-ci"))]`-gated — it doesn't
