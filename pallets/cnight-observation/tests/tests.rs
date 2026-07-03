@@ -1726,7 +1726,7 @@ fn build_panic_message(genesis: pallet_cnight_observation::GenesisConfig<Test>) 
 			genesis.build();
 		});
 	}))
-	.expect("genesis build must panic");
+	.expect_err("genesis build must panic");
 
 	payload
 		.downcast_ref::<String>()
