@@ -201,7 +201,7 @@ macro_rules! bridge_arena_call {
 #[cfg(feature = "std")]
 pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<u8>, String> {
 	match ledger_state_tag_version(state_key) {
-		Some(16 | 17 | 18) => {
+		Some(16..=18) => {
 			bridge_arena_call!(ledger_9, unified, serialize_ledger_snapshot(state_key))
 				.map_err(|e| format!("{e:?}"))
 		},
@@ -224,7 +224,7 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 #[cfg(feature = "std")]
 pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
 	match ledger_state_tag_version(state_key) {
-		Some(16 | 17 | 18) => {
+		Some(16..=18) => {
 			bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok()
 		},
 		Some(13) => bridge_arena_call!(ledger_8, unified, get_ledger_state_root(state_key)).is_ok(),
@@ -285,7 +285,7 @@ pub fn import_verified_ledger_snapshot(
 	// Dispatch on the `StateKey`'s ledger-state version (the underlying method returns the shared
 	// `SnapshotImportError` for every version, so no error mapping is needed).
 	match ledger_state_tag_version(expected_state_key) {
-		Some(16 | 17 | 18) => {
+		Some(16..=18) => {
 			bridge_arena_call!(
 				ledger_9,
 				unified,
@@ -326,7 +326,7 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	cache_size: usize,
 ) {
 	match ledger_state_tag_version(genesis_state) {
-		Some(16 | 17 | 18) => {
+		Some(16..=18) => {
 			ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size);
 		},
 		Some(13) => {
@@ -351,7 +351,7 @@ pub fn init_storage_paritydb_unified<D, const COLUMN_OFFSET: u8>(
 	D: std::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
 {
 	match ledger_state_tag_version(genesis_state) {
-		Some(16 | 17 | 18) => {
+		Some(16..=18) => {
 			ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
 				db_instance,
 				genesis_state,
