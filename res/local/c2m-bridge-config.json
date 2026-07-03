@@ -1,5 +1,7 @@
 {
-    "subminimal_transfers_flush_threshold": 500000,
-    "initial_data_checkpoint": "bc2a450a37f62c83fbf8767cbd6d8cd193cc6d408ca9c21f0a2973d35e39da30",
-    "approved_txs": ["a0797132c7cb3533942f32250c11ed82b6681311bd9643d92aff5fe5158e53ff"]
+  "subminimal_transfers_flush_threshold": 500000,
+  "initial_data_checkpoint": "bc2a450a37f62c83fbf8767cbd6d8cd193cc6d408ca9c21f0a2973d35e39da30",
+  "approved_txs": [
+    "a0797132c7cb3533942f32250c11ed82b6681311bd9643d92aff5fe5158e53ff"
+  ]
 }

@@ -46,12 +46,14 @@ PLUTUS_JSON="${RUNTIME_VALUES}/plutus-local.json"
 CNIGHT_PLUTUS=/tmp/cnight_policy.plutus
 
 # cNIGHT amounts in STARS (1 NIGHT = 1_000_000 STARS). These mirror the committed
-# local-env Midnight genesis pools (`toolkit show-night-pools`), so the Part B
-# monitor's genesis quiescence assertion (C.* == M.*) is the canary that keeps
-# these in sync. Total minted = S = 24,000,000,000 NIGHT.
+# local-env Midnight genesis pool inputs (res/local/{reserve,ics}-config.json →
+# `toolkit show-night-pools`), so the Part B monitor's genesis quiescence assertion
+# (C.* == M.*) is the canary that keeps these in sync. Total minted = S =
+# 24,000,000,000 NIGHT. The ICS seed is only the 1.2B treasury baseline; the faucet
+# bridge transfer below moves a further 1B faucet→ICS as a normal observed transfer.
 RESERVE_STARS=5000000000873988      # C.R = M.R (reserve_pool)
-ICS_STARS=2200000000000000          # C.L = M.U (unlocked = S - M.R - M.L)
-FAUCET_STARS=16799999999126012      # C.U = M.L (locked_pool)
+ICS_STARS=1200000000000000          # C.L = treasury baseline (ics-config total_amount)
+FAUCET_STARS=17799999999126012      # C.U = S - C.R - C.L (circulating; funds the bridge transfer)
 TOTAL_MINT_STARS=24000000000000000  # S
 # min-UTxO lovelace bundled with each cNIGHT output (matches the e2e/manual scripts).
 MIN_UTXO_LOVELACE=1500000
