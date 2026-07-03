@@ -333,7 +333,7 @@ pub mod pallet {
 			// operator edits) and reads the cap from the destination BoundedVec type, so a
 			// startup-failure log points directly at the offending field.
 			MainChainMappingValidatorAddress::<T>::set(
-				Self::validate_mapping_validator_address(
+				Pallet::<T>::validate_mapping_validator_address(
 					self.config.addresses.mapping_validator_address.as_bytes().to_vec(),
 				)
 				.unwrap_or_else(|e| {
