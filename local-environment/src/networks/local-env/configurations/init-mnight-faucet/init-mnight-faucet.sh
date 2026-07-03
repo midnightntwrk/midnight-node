@@ -56,19 +56,19 @@ show_wallet() {
   "$TOOLKIT" show-wallet --src-url "$NODE_URL" --seed "$FAUCET_SEED" 2>/dev/null
 }
 
-# 2. Wait for the bridge observation to make the transfer claimable. The mainchain
-#    follower needs the Cardano tx to reach stable depth + db-sync to index it, so give
-#    it a generous budget (~15 min; typically well under 2).
+# 2. Wait for the bridge observation to make the transfer claimable (the mainchain
+#    follower needs the Cardano tx at stable depth + db-sync to have indexed it).
+#    Local-env only, so 2 minutes is the cap.
 echo "Waiting for the faucet bridge transfer to become claimable..."
 CLAIMABLE=0
-for i in {1..180}; do
+for i in {1..24}; do
   CLAIMABLE=$(show_wallet | jq -r '.claimable_bridge_transfers // 0' || echo 0)
   if [ "$CLAIMABLE" != "0" ] && [ -n "$CLAIMABLE" ] && [ "$CLAIMABLE" != "null" ]; then
     echo "Claimable bridge transfer: $CLAIMABLE STARS"
     break
   fi
-  [ "$i" -eq 180 ] && { echo "ERROR: no claimable bridge transfer after ~15 min"; exit 1; }
-  echo "  not claimable yet (attempt $i/180)..."
+  [ "$i" -eq 24 ] && { echo "ERROR: no claimable bridge transfer after 2 min"; exit 1; }
+  echo "  not claimable yet (attempt $i/24)..."
   sleep 5
 done
 
