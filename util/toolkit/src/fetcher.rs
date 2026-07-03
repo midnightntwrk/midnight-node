@@ -353,10 +353,14 @@ pub async fn fetch_from_rpc(
 	let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
+	// The queried node can report a finalized height below the cached minimum
+	// (e.g. it lags behind the node the cache was built from), so saturate to
+	// avoid underflow.
+	let fetched_blocks = finalized_height.saturating_sub(min_height);
 	log::info!(
 		"fetched {} blocks, read {} blocks from cache, total transactions: {}",
-		finalized_height - min_height,
-		blocks.len() - (finalized_height - min_height) as usize,
+		fetched_blocks,
+		blocks.len().saturating_sub(fetched_blocks as usize),
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 	);
 
