@@ -292,6 +292,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
             fetch_concurrency: crate::fetch_concurrency(),
             fetch_compute_concurrency: None,
             src_files: None,
+            overlay_files: None,
             dust_warp: false,
             ignore_block_context: false,
             fetch_only_cached: false,

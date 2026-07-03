@@ -111,6 +111,12 @@ pub struct Source {
 	/// Load input transactions/blocks from file(s). Used as initial state for transaction generator.
 	#[arg(long = "src-file", value_delimiter = ' ', conflicts_with = "src_url", global = true)]
 	pub src_files: Option<Vec<String>>,
+	/// Overlay transactions/blocks from file(s) ON TOP of the main source. Unlike
+	/// `--src-file` this composes with `--src-url`: the generator state becomes the live
+	/// chain plus these (typically not-yet-submitted) transactions — e.g. building a
+	/// contract call against a deploy that intentionally never goes on-chain.
+	#[arg(long = "src-overlay-file", value_delimiter = ' ', global = true)]
+	pub overlay_files: Option<Vec<String>>,
 	/// Ignore block context. Useful when using `send` subcommand
 	#[arg(long, conflicts_with = "src_url", global = true)]
 	pub ignore_block_context: bool,
@@ -247,6 +253,26 @@ impl GetTxs for GetTxsFromFile {
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		let txs = self.txs_from_files()?;
 		Ok(txs)
+	}
+}
+
+/// Chains an overlay source after a base source: the generator's initial state becomes
+/// base ⊕ overlay. Used for `--src-overlay-file`, e.g. to build a contract call against
+/// a deploy transaction that was generated but deliberately never submitted.
+pub struct GetTxsChained {
+	pub base: Box<dyn GetTxs>,
+	pub overlay: Box<dyn GetTxs>,
+}
+
+#[async_trait]
+impl GetTxs for GetTxsChained {
+	async fn get_txs(
+		&self,
+	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
+		let mut base = self.base.get_txs().await?;
+		let overlay = self.overlay.get_txs().await?;
+		base.blocks.extend(overlay.blocks);
+		Ok(base)
 	}
 }
 

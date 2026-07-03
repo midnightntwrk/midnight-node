@@ -33,19 +33,19 @@ pub enum ShowWalletResult {
 #[group(id = "wallet_id", required = true, multiple = false)]
 pub struct ShowWalletArgs {
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 	/// The seed of the wallet to show wallet state for, including private state
 	#[arg(long, value_parser = cli::wallet_seed_decode, group = "wallet_id")]
-	seed: Option<WalletSeed>,
+	pub seed: Option<WalletSeed>,
 	/// The address of the wallet to show wallet state for, does not include private state
 	#[arg(long, value_parser = cli::wallet_address, group = "wallet_id")]
-	address: Option<WalletAddress>,
+	pub address: Option<WalletAddress>,
 	/// Output the full wallet state using a debug print
 	#[arg(long)]
-	debug: bool,
+	pub debug: bool,
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 pub async fn execute(
@@ -207,6 +207,7 @@ mod tests {
 				fetch_concurrency: 20,
 				fetch_compute_concurrency: None,
 				src_files: Some(src_files),
+				overlay_files: None,
 				dust_warp: false,
 				ignore_block_context: false,
 				fetch_only_cached: false,
@@ -258,6 +259,7 @@ mod tests {
 				fetch_concurrency: 20,
 				fetch_compute_concurrency: None,
 				src_files: Some(src_files),
+				overlay_files: None,
 				dust_warp: true,
 				ignore_block_context: false,
 				fetch_only_cached: false,

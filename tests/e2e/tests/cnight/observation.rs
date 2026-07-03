@@ -460,6 +460,7 @@ async fn register_2_cardano_same_dust_address_production() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(base_url),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -606,6 +607,7 @@ async fn cnight_produces_dust() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -639,6 +641,7 @@ async fn cnight_produces_dust() {
     let args2 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -780,6 +783,7 @@ async fn deregister_from_dust_production() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1370,6 +1374,7 @@ async fn register_twice_with_same_cardano_address() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1396,6 +1401,7 @@ async fn register_twice_with_same_cardano_address() {
     let args2 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1581,6 +1587,7 @@ async fn deregister_with_valid_cnight_utxo() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1614,6 +1621,7 @@ async fn deregister_with_valid_cnight_utxo() {
     let args2 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1728,6 +1736,7 @@ async fn deregister_first_mapping() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1801,6 +1810,7 @@ async fn deregister_first_mapping() {
     let args2 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1872,6 +1882,7 @@ async fn deregister_first_mapping() {
     let args3 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1905,6 +1916,7 @@ async fn deregister_first_mapping() {
     let args4 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -1992,6 +2004,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -2063,6 +2076,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     let args2 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -2239,6 +2253,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
     let args2 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(same_base_url),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -2279,6 +2294,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(base_url),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -2447,6 +2463,7 @@ async fn spend_cnight_producing_dust() {
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
@@ -2487,6 +2504,7 @@ async fn spend_cnight_producing_dust() {
     let args2 = DustBalanceArgs {
         source: Source {
             src_files: None,
+            overlay_files: None,
             src_url: Some(settings.node_client.base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,

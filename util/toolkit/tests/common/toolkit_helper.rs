@@ -68,6 +68,7 @@ fn default_source() -> Source {
 		fetch_concurrency: 0,
 		fetch_compute_concurrency: None,
 		src_files: None,
+		overlay_files: None,
 		dust_warp: true,
 		ignore_block_context: false,
 		fetch_cache: FetchCacheConfig::InMemory,

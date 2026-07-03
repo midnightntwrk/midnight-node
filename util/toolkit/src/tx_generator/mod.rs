@@ -23,7 +23,7 @@ pub mod source;
 use builder::{Builder, DynamicError, ProverConfig, build_fork_aware_context_cached};
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
 use source::{
-	FetchCacheConfig, GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError,
+	FetchCacheConfig, GetTxs, GetTxsChained, GetTxsFromFile, GetTxsFromUrl, Source, SourceError,
 	create_file_wallet_cache,
 };
 
@@ -81,35 +81,48 @@ impl TxGenerator {
 	}
 
 	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
-		if let Some(ref src_files) = src.src_files {
+		let base: Box<dyn GetTxs> = if let Some(ref src_files) = src.src_files {
 			if dry_run {
 				log::info!("Dry-run: Source transactions from file(s): {:?}", &src_files);
 				return Ok(Box::new(()));
 			}
-			let source: Box<dyn GetTxs> = Box::new(GetTxsFromFile::new(
+			Box::new(GetTxsFromFile::new(
 				src_files.clone(),
 				src.dust_warp,
 				src.ignore_block_context,
-			));
-			Ok(source)
-		} else if let Some(url) = src.src_url {
+			))
+		} else if let Some(ref url) = src.src_url {
 			if dry_run {
 				log::info!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let source: Box<dyn GetTxs> = Box::new(GetTxsFromUrl::new(
-				&url,
+			Box::new(GetTxsFromUrl::new(
+				url,
 				src.fetch_concurrency,
 				src.fetch_compute_concurrency
 					.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())),
 				src.dust_warp,
 				src.fetch_only_cached,
 				src.fetch_cache,
-			));
-			Ok(source)
+			))
 		} else {
-			Err(SourceError::InvalidSourceArgs(src))
+			return Err(SourceError::InvalidSourceArgs(src));
+		};
+
+		// Overlay (typically not-yet-submitted) transaction files on top of the base
+		// source. No dust-warp for the overlay: the base source already established the
+		// timeline, and a second synthetic timestamp block would corrupt it.
+		if let Some(ref overlay_files) = src.overlay_files {
+			log::info!("Overlaying transactions from file(s): {:?}", overlay_files);
+			let overlay: Box<dyn GetTxs> = Box::new(GetTxsFromFile::new(
+				overlay_files.clone(),
+				false,
+				src.ignore_block_context,
+			));
+			return Ok(Box::new(GetTxsChained { base, overlay }));
 		}
+
+		Ok(base)
 	}
 
 	async fn destinations(
