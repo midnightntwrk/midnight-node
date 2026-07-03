@@ -160,6 +160,17 @@ static WARMUP_STATE: LazyLock<Mutex<WarmupState>> = LazyLock::new(|| {
     })
 });
 static WARMUP_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
+/// Set when the warmup snapshots its seed batch (quiescence reached). Seeds
+/// registered after this point are NOT covered by the warmup — their
+/// `dust_balance::execute` replays from genesis, which is multi-hour on
+/// Preview and can starve the whole suite past the job timeout (#1644).
+static WARMUP_FIRED: AtomicBool = AtomicBool::new(false);
+/// Set once the warmup's `execute_many` finished (successfully or not).
+/// Most tests reach their `dust_balance::execute` only after their
+/// observation await — hours past warmup completion — but a test that
+/// probes a balance *before* its await must gate on [`wait_for_warmup`]
+/// or its execute races the warmup with a genesis replay of its own.
+static WARMUP_DONE: AtomicBool = AtomicBool::new(false);
 
 struct WarmupState {
     seeds: Vec<WalletSeed>,
@@ -190,6 +201,15 @@ pub(crate) fn register_test_seed(seed: WalletSeed) {
              after {:?} of no new registrations",
             state.seeds.len(),
             WARMUP_QUIESCENCE,
+        );
+    }
+    if WARMUP_FIRED.load(Ordering::SeqCst) {
+        tracing::warn!(
+            "warmup: seed registered AFTER the warmup batch fired — its \
+             dust_balance calls will replay from genesis (multi-hour on \
+             Preview, and concurrent replays can starve the whole suite). \
+             Create + register every seed a test needs at the top of the \
+             test body, before any faucet/submission work (#1644)."
         );
     }
     ensure_warmup_thread_started();
@@ -230,6 +250,9 @@ async fn run_warmup() {
         let state = WARMUP_STATE.lock().expect("warmup state lock poisoned");
         state.seeds.clone()
     };
+    // From here on, newly registered seeds miss the batch; make
+    // `register_test_seed` warn loudly about it.
+    WARMUP_FIRED.store(true, Ordering::SeqCst);
     if seeds.is_empty() {
         tracing::warn!("warmup: quiesced with zero seeds; skipping");
         return;
@@ -279,6 +302,25 @@ async fn run_warmup() {
              genesis replay each",
             started.elapsed()
         ),
+    }
+    WARMUP_DONE.store(true, Ordering::SeqCst);
+}
+
+/// Block until the background warmup finished writing wallet snapshots,
+/// or `cap` elapsed (warmup wedged — e.g. node unreachable; the caller
+/// then proceeds and its `execute` falls back to a genesis replay).
+/// Cheap no-op once the warmup is done.
+pub(crate) async fn wait_for_warmup(cap: Duration) {
+    let started = Instant::now();
+    while !WARMUP_DONE.load(Ordering::SeqCst) {
+        if started.elapsed() > cap {
+            tracing::warn!(
+                "wait_for_warmup: warmup not done after {cap:?}; proceeding \
+                 without the warm cache"
+            );
+            return;
+        }
+        sleep(WARMUP_POLL).await;
     }
 }
 

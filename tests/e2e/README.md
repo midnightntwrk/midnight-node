@@ -116,8 +116,8 @@ Mechanism:
    window (30 s of no new seed registrations) and then issues one
    `dust_balance::execute_many` covering every registered seed.
 3. The warmup runs concurrently with the stability + observation
-   barriers (the 3-h Preview wait), and writes wallet snapshots into
-   `tests/e2e/toolkit_cache/ledger_cache_db/`.
+   barriers (the multi-hour Preview wait), and writes wallet snapshots
+   into `tests/e2e/toolkit_cache/ledger_cache_db/`.
 4. Each test's later `dust_balance::execute(args)` uses that same
    `ledger_state_db` path; on cache hit it restores from the warm
    snapshot in seconds.
@@ -129,6 +129,17 @@ batch them in one pass. Serial execution would mean the warmup fires
 on the first seed, then later tests miss the cache. A "warmup:
 completed for K seed(s)" log line with K less than your test count is
 the signal to raise `--test-threads`.
+
+**Every seed a test needs must be created and registered at the top of
+the test body** — before any faucet request or Cardano submission, and
+never lazily mid-test. Faucet requests take minutes under contention
+(past the quiescence window), and a seed registered after the warmup
+fired pays a full genesis replay in each of its `dust_balance` calls:
+`build_fork_aware_context_cached` replays from height 0 whenever *any*
+requested seed lacks a cached snapshot. On the nightly runner a few
+such replays run concurrently, starve the CPU, and can push the whole
+suite past the job timeout (#1644). `register_test_seed` WARNs when a
+seed arrives after the warmup batch fired.
 
 If the warmup task fails (e.g. node unreachable, fetch-cache backend
 down), each test's `execute` falls back to its own genesis replay

@@ -16,7 +16,7 @@ use subxt::events::Event;
 use subxt::ext::codec::Decode;
 use tokio::time::Duration;
 
-use crate::{global_faucet_manager, register_test_seed, warmup_ledger_state_db};
+use crate::{global_faucet_manager, register_test_seed, wait_for_warmup, warmup_ledger_state_db};
 
 // -------- TIMEOUTS --------
 //
@@ -1277,6 +1277,13 @@ async fn register_twice_with_same_cardano_address() {
         dust_hex
     );
 
+    // The second registration's seed is pure randomness, so create and
+    // register it upfront too — created lazily mid-test (after the first
+    // observation await) it would miss the warmup batch and its
+    // dust_balance would replay from genesis (#1644).
+    let midnight_wallet_seed2 = MidnightClient::new_seed();
+    register_test_seed(midnight_wallet_seed2.clone());
+
     let faucet = global_faucet_manager().await;
     let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
     let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
@@ -1342,11 +1349,10 @@ async fn register_twice_with_same_cardano_address() {
         "UTXO owner does not match DUST address"
     );
 
-    // register second time
+    // register second time — the seed itself was created and registered
+    // for warmup at the top of the test (#1644)
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
-    let midnight_wallet_seed2 = MidnightClient::new_seed();
-    register_test_seed(midnight_wallet_seed2.clone());
     let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2.clone());
     let register_tx_id2 = cardano_client
         .register(&dust_hex2, &tx_in2, &collateral_utxo)
@@ -1680,6 +1686,13 @@ async fn deregister_first_mapping() {
         dust_hex
     );
 
+    // The second registration's seed is pure randomness, so create and
+    // register it upfront too — created lazily mid-test (after the first
+    // observation await) it would miss the warmup batch and its
+    // dust_balance would replay from genesis (#1644).
+    let midnight_wallet_seed2 = MidnightClient::new_seed();
+    register_test_seed(midnight_wallet_seed2.clone());
+
     let faucet = global_faucet_manager().await;
     let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
     let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
@@ -1772,11 +1785,10 @@ async fn deregister_first_mapping() {
 
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
-    // register second time
+    // register second time — the seed itself was created and registered
+    // for warmup at the top of the test (#1644)
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
-    let midnight_wallet_seed2 = MidnightClient::new_seed();
-    register_test_seed(midnight_wallet_seed2.clone());
     let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2.clone());
     let register_tx_id2 = cardano_client
         .register(&dust_hex2, &tx_in2, &collateral_utxo)
@@ -1961,12 +1973,11 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     let address_bech32 = cardano_client.address_as_bech32();
     tracing::info!("New Cardano wallet created: {:?}", address_bech32);
 
-    let faucet = global_faucet_manager().await;
-    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
-    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
-    // for minting cNIGHT tokens
-    faucet.request_tokens(&address_bech32, 7_000_000).await;
-
+    // Seed generation is independent of the faucet work below; register it
+    // first so it makes the warmup batch. Under faucet contention the
+    // requests below take minutes — past the warmup quiescence window — and
+    // a seed that misses the warmup pays a full genesis replay in every
+    // dust_balance call (#1644).
     let midnight_wallet_seed = MidnightClient::new_seed();
     register_test_seed(midnight_wallet_seed.clone());
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
@@ -1976,6 +1987,12 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         address_bech32,
         dust_hex
     );
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    // for minting cNIGHT tokens
+    faucet.request_tokens(&address_bech32, 7_000_000).await;
 
     let amount = 100;
     let tx_id = cardano_client
@@ -2009,6 +2026,15 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         "Registration transaction submitted with hash: {}",
         hex::encode(register_tx_id)
     );
+
+    // This balance probe runs minutes into the test — before the shared
+    // warmup (~75 min on Preview) has written wallet snapshots. Without
+    // waiting, the cache misses and this execute replays the chain from
+    // genesis, racing the warmup's own replay and starving the runner
+    // (#1644). The assert-0 premise survives the wait: the registration
+    // above only becomes visible to Midnight after the multi-hour
+    // stability window, far later than the warmup completes.
+    wait_for_warmup(Duration::from_secs(2 * 60 * 60)).await;
 
     let args = DustBalanceArgs {
         source: Source {
@@ -2120,11 +2146,9 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
     let midnight_client = MidnightClient::new(settings.node_client).await;
     tracing::info!("New Cardano wallet created: {:?}", address_bech32);
 
-    let faucet = global_faucet_manager().await;
-    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
-    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
-    faucet.request_tokens(&address_bech32, 7_000_000).await;
-
+    // Register the seed before the faucet work so it makes the warmup batch
+    // — a seed that misses the warmup pays a full genesis replay in every
+    // dust_balance call (#1644).
     let midnight_wallet_seed = MidnightClient::new_seed();
     register_test_seed(midnight_wallet_seed.clone());
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
@@ -2133,6 +2157,11 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         address_bech32,
         dust_hex
     );
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    faucet.request_tokens(&address_bech32, 7_000_000).await;
 
     // Phase 1: register → mint. `find_utxo_by_tx_id` polls for Cardano
     // inclusion in both cases.
