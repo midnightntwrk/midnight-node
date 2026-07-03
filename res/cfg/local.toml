@@ -22,14 +22,3 @@ chainspec_system_parameters_config = "res/local/system-parameters-config.json"
 chainspec_permissioned_candidates_config = "res/local/permissioned-candidates-config.json"
 chainspec_registered_candidates_addresses = "res/local/registered-candidates-addresses.json"
 chainspec_c2m_bridge_config = "res/local/c2m-bridge-config.json"
-
-args = [
-    "--dev",
-    "--chain", "local",
-    "--node-key", "0000000000000000000000000000000000000000000000000000000000000001",
-    "--rpc-external",
-    "--rpc-cors=all",
-    "--prometheus-external",
-    "--state-pruning", "archive",
-    "--blocks-pruning", "archive"
-]
