@@ -57,23 +57,19 @@ CNIGHT_MAPPING_VALIDATOR_ADDRESS=$(jq -r '.[] | select(.name == "cNIGHT Generate
 ICS_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "ICS Forever") | .address' $CONTRACT_INFO)
 RESERVE_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "Reserve Forever") | .address' $CONTRACT_INFO)
 export PERMISSIONED_CANDIDATES_POLICY_ID=$(jq -r '.[] | select(.name == "Federated Ops Forever") | .scriptHash' $CONTRACT_INFO)
-export GENESIS_UTXO="0000000000000000000000000000000000000000000000000000000000000000#0"
 
 echo ""
 echo "Generating chain-spec.json file for Midnight Nodes..."
 
-# Create pc-chain-config.json with genesis_utxo and cardano_addresses
+echo "Patching pc-chain-config.json with deployed Aiken permissioned candidates policy ID..."
 jq 'env as $env | . + {
-  "chain_parameters": {
-    "genesis_utxo": $env.GENESIS_UTXO
-  },
   "cardano_addresses": {
-    "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk",
     "permissioned_candidates_policy_id": $env.PERMISSIONED_CANDIDATES_POLICY_ID
   }
 }' res/local/pc-chain-config.json > /tmp/pc-chain-config.json
+cat /tmp/pc-chain-config.json
 
-# Create patched federated-authority-config.json with Aiken policy IDs and addresses
+
 echo "Patching federated-authority-config.json with deployed Aiken contract values..."
 echo "  Council policy ID: $COUNCIL_POLICY_ID"
 echo "  Council address: $COUNCIL_SCRIPT_ADDRESS"
@@ -101,7 +97,7 @@ jq --argjson d_perm "$D_PERMISSIONED" --argjson d_reg "$D_REGISTERED" \
 echo "Patched system-parameters-config.json:"
 cat /tmp/system-parameters-config.json
 
-# Create permissioned-candidates-config.json with deployed Aiken policy ID and first D_PERMISSIONED candidates
+
 echo "Creating permissioned-candidates-config.json with deployed Aiken policy ID..."
 jq --arg policy_id "$PERMISSIONED_CANDIDATES_POLICY_ID" --argjson d_perm "$D_PERMISSIONED" \
    '.permissioned_candidates_policy_id = ("0x" + $policy_id) | .initial_permissioned_candidates = .initial_permissioned_candidates[:$d_perm]' \
@@ -110,13 +106,13 @@ jq --arg policy_id "$PERMISSIONED_CANDIDATES_POLICY_ID" --argjson d_perm "$D_PER
 echo "Created permissioned-candidates-config.json:"
 cat /tmp/permissioned-candidates-config.json
 
-# Create registered-candidates-addresses.json
 echo "Creating registered-candidates-addresses.json..."
 cat <<EOF > /tmp/registered-candidates-addresses.json
 {
     "committee_candidates_address": "addr_test1wr4zpkfvylru9y3zahezf6vvfz7hlhf2pa4h9vxq70xwqzszre3qk"
 }
 EOF
+
 
 echo "Created registered-candidates-addresses.json:"
 cat /tmp/registered-candidates-addresses.json
@@ -136,17 +132,11 @@ jq --arg mapping_addr "$CNIGHT_MAPPING_VALIDATOR_ADDRESS" \
 echo "Created cnight-config.json:"
 cat /tmp/cnight-config.json
 
-# Build the bridge ICS / reserve *observation* configs from the freshly-deployed validator
-# addresses (ICS Forever / Reserve Forever) and the cNIGHT asset. The deployed addresses
-# (not the static res/local ones) are what the bridge actually locks to and observes.
-# The baseline utxos/total_amount are the cNIGHT the seeding tx (mint-cnight-supply)
-# locked at each validator, queried live from ogmios: the bridge checkpoint is anchored
-# to that same tx, so these UTxOs are never re-observed and must be present as the
-# pre-existing supply. The later faucet bridge transfer is post-checkpoint and
-# deliberately excluded (the observation processes it as a user transfer).
+
 CNIGHT_POLICY_ID=$(jq -r '.addresses.cnight_policy_id' res/local/cnight-config.json)
 CNIGHT_ASSET_NAME=$(jq -r '.addresses.cnight_asset_name' res/local/cnight-config.json)
 cnight_seed_tx=$(cat /runtime-values/cnight-supply-minted 2>/dev/null || echo "")
+echo "Building ICS/reserve observation configs (ICS=$ICS_FOREVER_ADDRESS, Reserve=$RESERVE_FOREVER_ADDRESS, seed tx=${cnight_seed_tx:-<none>})"
 
 # The seed tx's cNIGHT outputs at <address>, as IcsUtxo/ReserveUtxo JSON objects.
 # With no seed marker the filter matches nothing -> empty baseline (old behaviour).
@@ -162,7 +152,6 @@ seeded_utxos() {
 }
 ics_utxos=$(seeded_utxos "$ICS_FOREVER_ADDRESS")
 reserve_utxos=$(seeded_utxos "$RESERVE_FOREVER_ADDRESS")
-echo "Building ICS/reserve observation configs (ICS=$ICS_FOREVER_ADDRESS, Reserve=$RESERVE_FOREVER_ADDRESS, seed tx=${cnight_seed_tx:-<none>})"
 jq -n --arg addr "$ICS_FOREVER_ADDRESS" --arg pid "$CNIGHT_POLICY_ID" --arg name "$CNIGHT_ASSET_NAME" --argjson utxos "$ics_utxos" \
    '{illiquid_circulation_supply_validator_address: $addr, asset: {policy_id: $pid, asset_name: $name}, utxos: $utxos, total_amount: ($utxos | map(.amount) | add // 0)}' \
    > /tmp/ics-config.json
