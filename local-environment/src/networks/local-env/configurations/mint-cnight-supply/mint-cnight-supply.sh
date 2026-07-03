@@ -39,10 +39,11 @@ NETWORK_MAGIC=42
 RUNTIME_VALUES=/runtime-values
 SEEDED_MARKER="${RUNTIME_VALUES}/cnight-supply-minted"
 
-# Inputs produced by the contract-compiler step (it has jq; this container does not).
-ICS_ADDR_FILE="${RUNTIME_VALUES}/ics_forever.addr"
-RESERVE_ADDR_FILE="${RUNTIME_VALUES}/reserve_forever.addr"
-CNIGHT_PLUTUS="${RUNTIME_VALUES}/cnight_policy.plutus"
+# Inputs produced by the contract-compiler step. Everything needed is derived from
+# these two with jq (which the cardano-node image ships), same as midnight-setup does.
+CONTRACTS_INFO="${RUNTIME_VALUES}/contracts-info.json"
+PLUTUS_JSON="${RUNTIME_VALUES}/plutus-local.json"
+CNIGHT_PLUTUS=/tmp/cnight_policy.plutus
 
 # cNIGHT amounts in STARS (1 NIGHT = 1_000_000 STARS). These mirror the committed
 # local-env Midnight genesis pools (`toolkit show-night-pools`), so the Part B
@@ -67,22 +68,30 @@ fi
 
 echo "=== cNIGHT genesis seeding ==="
 
-# Wait for the contract-compiler artifacts (addresses + compiled policy).
+# Wait for the contract-compiler artifacts (deployed-contract info + compiled policy).
 for i in {1..60}; do
-  if [ -s "$ICS_ADDR_FILE" ] && [ -s "$RESERVE_ADDR_FILE" ] && [ -s "$CNIGHT_PLUTUS" ]; then
+  if [ -s "$CONTRACTS_INFO" ] && [ -s "$PLUTUS_JSON" ]; then
     break
   fi
   echo "Waiting for contract-compiler artifacts (attempt $i/60)..."
   sleep 2
 done
-[ -s "$ICS_ADDR_FILE" ] || { echo "ERROR: $ICS_ADDR_FILE missing"; exit 1; }
-[ -s "$RESERVE_ADDR_FILE" ] || { echo "ERROR: $RESERVE_ADDR_FILE missing"; exit 1; }
-[ -s "$CNIGHT_PLUTUS" ] || { echo "ERROR: $CNIGHT_PLUTUS missing"; exit 1; }
+[ -s "$CONTRACTS_INFO" ] || { echo "ERROR: $CONTRACTS_INFO missing"; exit 1; }
+[ -s "$PLUTUS_JSON" ] || { echo "ERROR: $PLUTUS_JSON missing"; exit 1; }
 
-ICS_ADDR=$(cat "$ICS_ADDR_FILE")
-RESERVE_ADDR=$(cat "$RESERVE_ADDR_FILE")
+# ICS/Reserve "Forever" validator addresses: the immutable proxies that hold the
+# locked / reserved cNIGHT.
+ICS_ADDR=$(jq -r '.[] | select(.name == "ICS Forever") | .address' "$CONTRACTS_INFO")
+RESERVE_ADDR=$(jq -r '.[] | select(.name == "Reserve Forever") | .address' "$CONTRACTS_INFO")
+[ -n "$ICS_ADDR" ] || { echo "ERROR: ICS Forever address missing from $CONTRACTS_INFO"; exit 1; }
+[ -n "$RESERVE_ADDR" ] || { echo "ERROR: Reserve Forever address missing from $CONTRACTS_INFO"; exit 1; }
 echo "ICS Forever address:     $ICS_ADDR"
 echo "Reserve Forever address: $RESERVE_ADDR"
+
+# Wrap the compiled infinite-mint cNIGHT policy into a .plutus text envelope for
+# cardano-cli's --mint-script-file / policyid.
+jq '{type: "PlutusScriptV3", description: "", cborHex: (.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .compiledCode)}' \
+  "$PLUTUS_JSON" > "$CNIGHT_PLUTUS"
 
 # Verify the compiled cNIGHT policy is the one the bridge observes.
 POLICY_ID=$(cardano-cli latest transaction policyid --script-file "$CNIGHT_PLUTUS")
