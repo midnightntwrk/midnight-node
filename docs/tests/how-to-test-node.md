@@ -378,7 +378,6 @@ just toolkit-maintenance-e2e <NODE_IMG> <TOOLKIT_IMG>      # CI-disabled (LEDGER
 just toolkit-contracts-e2e <NODE_IMG> <TOOLKIT_IMG>        # CI-disabled (LEDGER9-TOOLKIT-JS)
 just toolkit-mint-e2e <NODE_IMG> <TOOLKIT_IMG>             # CI-disabled (LEDGER9-TOOLKIT-JS)
 just toolkit-tokens-minter-e2e [<NODE_IMG> <TOOLKIT_IMG>]  # CI-disabled (LEDGER9-TOOLKIT-JS)
-just toolkit-multi-dest-e2e <TOOLKIT_IMG>
 just startup-dev-e2e <NODE_IMG>
 just startup-qanet-e2e <NODE_IMG>                          # not scheduled by CI; manual / reusable-action only
 just genesis-wallets-undeployed-e2e <NODE_IMG> <TOOLKIT_IMG>

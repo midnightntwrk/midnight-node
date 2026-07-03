@@ -28,6 +28,72 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
     tracing::info!("✓ valid DEPLOY_TX accepted and included");
 }
 
+/// Regression guard: the toolkit must not hang on exit when sending with
+/// multiple `--dest-url` options (ported from the old
+/// scripts/tests/toolkit-multi-dest-e2e.sh, which assumed the unfunded
+/// undeployed genesis). Builds one unshielded self-transfer from the
+/// bridge-funded dev wallet (0x..01) and sends it via `generate-txs send` with
+/// several destination URLs, asserting the send completes within a timeout (a
+/// hang would blow the timeout) and returns Ok.
+///
+/// The URLs deliberately repeat the one node RPC: the sender opens one client
+/// per URL and must tear all of them down on exit — that N-client setup+teardown
+/// is where the hang lived, and it's exercised regardless of how many txs flow.
+/// One tx keeps it conflict-free (multiple dev-wallet txs sent concurrently would
+/// collide on the wallet's single DUST UTxO).
+#[e2e_test]
+async fn toolkit_multi_dest_send_does_not_hang() {
+    use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
+    use midnight_node_toolkit::tx_generator::builder::Builder;
+    use midnight_node_toolkit::tx_generator::destination::Destination;
+    use midnight_node_toolkit::tx_generator::source::Source;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    crate::ensure_dev_wallet_funded().await;
+    // Submits a real tx from 0x..01 — serialize against the other deploy tests
+    // sharing that wallet (and wait out the pre-deploy quiescence gate).
+    let _deploy_guard = crate::wait_before_deploying().await;
+
+    let settings = Settings::default();
+    let url = settings.node_client.base_url.clone();
+    let tempdir = tempfile::tempdir().expect("create tempdir");
+
+    let tx_file = tempdir.path().join("selftx.mn");
+    crate::build_unshielded_self_transfer(&url, &tx_file).await;
+
+    const N_DEST_URLS: usize = 3;
+    let send = generate_txs::execute(GenerateTxsArgs {
+        builder: Builder::Send,
+        source: Source {
+            src_url: None,
+            src_files: Some(vec![tx_file.to_string_lossy().into_owned()]),
+            overlay_files: None,
+            fetch_concurrency: crate::fetch_concurrency(),
+            fetch_compute_concurrency: None,
+            dust_warp: false,
+            ignore_block_context: false,
+            fetch_only_cached: false,
+            fetch_cache: crate::fetch_cache_config(),
+            ledger_state_db: String::new(),
+        },
+        destination: Destination {
+            dest_urls: vec![url.clone(); N_DEST_URLS],
+            rate: 2.0,
+            dest_file: None,
+            no_watch_progress: false,
+        },
+        proof_server: None,
+        dry_run: false,
+    });
+
+    timeout(Duration::from_secs(120), send)
+        .await
+        .expect("toolkit `send` hung with multiple --dest-url (regression)")
+        .expect("multi-dest send returned an error");
+    tracing::info!("✓ multi-dest send completed without hanging");
+}
+
 /// One-shot cleanup task: consolidates fragmented UTXOs at the funded faucet
 /// address. Useful when the faucet has accumulated many small change UTXOs
 /// from prior runs. Opt-in via `cargo test --ignored consolidate_faucet`.

@@ -1878,10 +1878,9 @@ local-env-ci:
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
-            echo "=== toolkit multi-dest E2E ===" && \
+            echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE" && \
             rm -f /root/.docker/config.json
     END
 
@@ -1946,10 +1945,9 @@ local-env-full-ci-localimg:
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
-            echo "=== toolkit multi-dest E2E ===" && \
+            echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
-            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE"
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
     END
 
 
@@ -2015,10 +2013,9 @@ local-env-oneshot:
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
-            echo "=== toolkit multi-dest E2E ===" && \
+            echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
-            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh ghcr.io/midnight-ntwrk/midnight-node-toolkit:local
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
     END
 
 

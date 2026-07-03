@@ -515,6 +515,53 @@ pub(crate) async fn deploy_and_confirm(
     unreachable!("deploy_and_confirm loop returns or panics")
 }
 
+/// The dev wallet's own unshielded address on the `local` network (seed 0x..01).
+/// Regenerate with:
+///   midnight-node-toolkit show-address --network local --seed 0x..01 | jq -r .unshielded
+pub(crate) const DEV_WALLET_UNSHIELDED_ADDR_LOCAL: &str =
+    "mn_addr_local1h3ssm5ru2t6eqy4g3she78zlxn96e36ms6pq996aduvmateh9p9snnpjtr";
+
+/// Build one tiny unshielded self-transfer from the dev wallet (0x..01) to `dest`.
+///
+/// A single tx on purpose: the dev wallet has one DUST UTxO, and the toolkit's
+/// sender fires a batch's txs concurrently, so multiple dev-wallet txs sent
+/// together collide on their DUST spend (InvalidDustSpendProof / DustDoubleSpend).
+/// The multi-dest-url regression is about the *sender* managing N destination
+/// clients, not N txs — so one valid tx across N URLs is the right, conflict-free
+/// exercise.
+pub(crate) async fn build_unshielded_self_transfer(url: &str, dest: &std::path::Path) {
+    use midnight_node_toolkit::cli_parsers as cli;
+    use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
+    use midnight_node_toolkit::tx_generator::builder::{Builder, SingleTxArgs};
+
+    let recipient = cli::wallet_address(DEV_WALLET_UNSHIELDED_ADDR_LOCAL)
+        .expect("valid dev wallet unshielded address");
+    let seed = WalletSeed::try_from_hex_str(DEV_WALLET_SEED).expect("valid dev wallet seed");
+
+    let args = GenerateTxsArgs {
+        builder: Builder::SingleTx(SingleTxArgs {
+            outputs: vec![],
+            shielded_amount: vec![],
+            shielded_token_type: vec![],
+            unshielded_amount: vec![100],
+            unshielded_token_type: vec![],
+            source_seed: seed,
+            funding_seed: None,
+            destination_address: vec![recipient],
+            input_utxos: vec![],
+            rng_seed: None,
+            coin_selection: cli::coin_selection_strategy("largest-first").unwrap(),
+        }),
+        source: live_source_with_overlay(url, None),
+        destination: to_file_dest(dest),
+        proof_server: None,
+        dry_run: false,
+    };
+    generate_txs::execute(args)
+        .await
+        .expect("generate-txs single-tx self-transfer failed");
+}
+
 // -------- GLOBAL ASYNC FAUCET MANAGER --------
 
 static FAUCET_MANAGER: OnceCell<Arc<FaucetManager>> = OnceCell::const_new();
