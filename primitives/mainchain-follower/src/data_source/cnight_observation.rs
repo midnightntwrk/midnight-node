@@ -86,13 +86,7 @@ pub enum RegistrationDatumDecodeError {
 }
 
 /// Validate the bytes emitted by `cardano-serialization-lib`'s `RewardAddress`
-/// against CIP-19 before wrapping them, replacing the previous
-/// `to_bytes().try_into().unwrap()` shortcut at every follower construction site.
-///
-/// `cardano_network` is the network the follower is syncing against (derived once
-/// in `bulk_pull`); it is the value the reward address's network nibble must match.
-/// Routing all four sites through this one helper means every reward address the
-/// follower stores has passed the same length + type + network checks.
+/// against CIP-19 before wrapping them.
 fn decode_reward_address(
 	reward_address_bytes: Vec<u8>,
 	cardano_network: u8,

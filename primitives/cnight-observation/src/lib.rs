@@ -68,11 +68,6 @@ pub struct CardanoRewardAddressBytes(
 const CARDANO_REWARD_ADDRESS_TYPE_KEY_HASH: u8 = 14;
 const CARDANO_REWARD_ADDRESS_TYPE_SCRIPT_HASH: u8 = 15;
 
-/// Why a byte string was rejected as a CIP-19 Cardano reward address.
-///
-/// Each variant maps to exactly one of the checks [`CardanoRewardAddressBytes::try_new`]
-/// runs, so a rejection points at the specific header property that failed rather
-/// than collapsing every failure into a single opaque error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CardanoRewardAddressError {
 	/// The input was not the fixed CIP-19 reward-address length of 29 bytes
@@ -106,14 +101,9 @@ impl core::fmt::Display for CardanoRewardAddressError {
 }
 
 impl CardanoRewardAddressBytes {
-	/// Validated CIP-19 constructor: the single trust-boundary entry point that
-	/// asserts a byte string is a well-formed reward address for `expected_network`.
-	///
-	/// Checks run length-first so that reading the header byte is only ever done on
-	/// a 29-byte input, then the header's two nibbles: the upper nibble must be a
-	/// reward-account type (14 or 15) and the lower nibble must equal
-	/// `expected_network`. Uses plain slice/bit arithmetic so it compiles under
-	/// `no_std`.
+	/// Validated CIP-19 constructor for a reward address on `expected_network`.
+	/// Checks length first, then the header's type nibble (14 or 15) and network
+	/// nibble, so the header byte is only read on a 29-byte input.
 	pub fn try_new(
 		bytes: Vec<u8>,
 		expected_network: u8,

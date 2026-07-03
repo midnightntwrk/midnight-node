@@ -70,12 +70,6 @@ mod mappings_serde {
 					access.next_entry::<String, Vec<MappingEntryGenesis>>()?
 				{
 					let bytes: Vec<u8> = hex::decode(&key).map_err(serde::de::Error::custom)?;
-					// Length-only check here: serde deserialization has no access to the
-					// expected network id, so the CIP-19 type + network nibbles are
-					// validated later in the pallet's genesis `build`, where the network
-					// is derivable from the mapping-validator address. The message names
-					// the length so a length failure is not misattributed to a header
-					// problem.
 					let byte_len = bytes.len();
 					let addr = CardanoRewardAddressBytes::try_from(bytes).map_err(|_| {
 						serde::de::Error::custom(alloc::format!(

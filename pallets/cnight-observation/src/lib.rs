@@ -198,8 +198,7 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// A Cardano Wallet address was sent, but was longer than expected
 		MaxCardanoAddrLengthExceeded,
-		/// The mapping-validator address is not a well-formed Cardano Bech32
-		/// address (wrong human-readable prefix, empty, or over the length bound)
+		/// The mapping-validator address is not a well-formed Cardano Bech32 address
 		InvalidMappingValidatorAddress,
 		/// A Cardano asset name contained non-ASCII bytes
 		NonAsciiAssetName,
@@ -472,17 +471,11 @@ pub mod pallet {
 	}
 
 	impl<T: Config> Pallet<T> {
-		/// Sibling of the reward-address `try_new` for the mapping-validator address.
-		///
-		/// The mapping-validator address is a Shelley script/enterprise (payment)
-		/// address, not a reward address — CIP-19 gives it a different address-type
-		/// category, so it must NOT go through the reward `try_new` (which would
-		/// reject it on the type nibble). Full Bech32/CIP-19 decoding belongs in the
-		/// follower, not the pallet, so this validates structurally: the bytes must
-		/// be a non-empty, valid UTF-8 Cardano Bech32 address (`addr` / `addr_test`
-		/// prefix) within the bounded length. It returns a specific error rather than
-		/// the generic length error so a malformed address is distinguishable from a
-		/// merely over-long one.
+		/// Structural validator for the mapping-validator address, which is a Shelley
+		/// payment address rather than a reward address and so cannot use the reward
+		/// `try_new`. Checks the bytes are a UTF-8 Cardano Bech32 address within the
+		/// bounded length, returning a specific error to distinguish malformed from
+		/// merely over-long.
 		fn validate_mapping_validator_address(
 			address: Vec<u8>,
 		) -> Result<BoundedCardanoAddress, Error<T>> {
