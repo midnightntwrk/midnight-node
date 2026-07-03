@@ -61,6 +61,88 @@ pub struct CardanoRewardAddressBytes(
 	#[serde(with = "hex")] pub [u8; CARDANO_REWARD_ADDRESS_LENGTH],
 );
 
+/// The two CIP-19 address-type nibbles that denote a reward (stake) account:
+/// 14 = reward account keyed by a stake key hash, 15 = reward account keyed by a
+/// script hash. Any other upper nibble is a different address category (Shelley
+/// base/pointer/enterprise or Byron) and is not a reward address.
+const CARDANO_REWARD_ADDRESS_TYPE_KEY_HASH: u8 = 14;
+const CARDANO_REWARD_ADDRESS_TYPE_SCRIPT_HASH: u8 = 15;
+
+/// Why a byte string was rejected as a CIP-19 Cardano reward address.
+///
+/// Each variant maps to exactly one of the checks [`CardanoRewardAddressBytes::try_new`]
+/// runs, so a rejection points at the specific header property that failed rather
+/// than collapsing every failure into a single opaque error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CardanoRewardAddressError {
+	/// The input was not the fixed CIP-19 reward-address length of 29 bytes
+	/// (1 header byte + 28 credential bytes).
+	WrongLength { found: usize },
+	/// The header's upper nibble is not a reward-address type (14 or 15), so the
+	/// bytes describe a different Cardano address category.
+	WrongAddressType { found: u8 },
+	/// The header's lower nibble does not match the network the chain expects
+	/// (testnet = 0, mainnet = 1).
+	WrongNetwork { expected: u8, found: u8 },
+}
+
+impl core::fmt::Display for CardanoRewardAddressError {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			CardanoRewardAddressError::WrongLength { found } => write!(
+				f,
+				"invalid Cardano reward address length: expected {CARDANO_REWARD_ADDRESS_LENGTH} bytes, found {found}"
+			),
+			CardanoRewardAddressError::WrongAddressType { found } => write!(
+				f,
+				"invalid Cardano reward address type: header nibble {found} is not a reward account (expected 14 or 15)"
+			),
+			CardanoRewardAddressError::WrongNetwork { expected, found } => write!(
+				f,
+				"invalid Cardano reward address network: expected network id {expected}, found {found}"
+			),
+		}
+	}
+}
+
+impl CardanoRewardAddressBytes {
+	/// Validated CIP-19 constructor: the single trust-boundary entry point that
+	/// asserts a byte string is a well-formed reward address for `expected_network`.
+	///
+	/// Checks run length-first so that reading the header byte is only ever done on
+	/// a 29-byte input, then the header's two nibbles: the upper nibble must be a
+	/// reward-account type (14 or 15) and the lower nibble must equal
+	/// `expected_network`. Uses plain slice/bit arithmetic so it compiles under
+	/// `no_std`.
+	pub fn try_new(
+		bytes: Vec<u8>,
+		expected_network: u8,
+	) -> Result<Self, CardanoRewardAddressError> {
+		if bytes.len() != CARDANO_REWARD_ADDRESS_LENGTH {
+			return Err(CardanoRewardAddressError::WrongLength { found: bytes.len() });
+		}
+
+		let header = bytes[0];
+		let address_type = header >> 4;
+		if address_type != CARDANO_REWARD_ADDRESS_TYPE_KEY_HASH
+			&& address_type != CARDANO_REWARD_ADDRESS_TYPE_SCRIPT_HASH
+		{
+			return Err(CardanoRewardAddressError::WrongAddressType { found: address_type });
+		}
+
+		let network = header & 0x0F;
+		if network != expected_network {
+			return Err(CardanoRewardAddressError::WrongNetwork {
+				expected: expected_network,
+				found: network,
+			});
+		}
+
+		// Length is confirmed to be exactly 29, so this conversion cannot fail.
+		Ok(Self(bytes.try_into().expect("length checked to be 29 above")))
+	}
+}
+
 impl TryFrom<Vec<u8>> for CardanoRewardAddressBytes {
 	type Error = <[u8; CARDANO_REWARD_ADDRESS_LENGTH] as TryFrom<Vec<u8>>>::Error;
 
@@ -443,5 +525,97 @@ decl_runtime_apis! {
 		// (`pallet_cnight_observation::CardanoTxCapacityPerBlock`), not a UTXO count.
 		// Callers must multiply by the per-tx UTXO over-fetch factor to get a row limit.
 		fn get_utxo_capacity_per_block() -> u32;
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	const MAINNET: u8 = 1;
+	const TESTNET: u8 = 0;
+
+	/// Build a 29-byte reward address with the given header byte followed by a
+	/// deterministic 28-byte credential.
+	fn reward_address_with_header(header: u8) -> Vec<u8> {
+		let mut bytes = Vec::with_capacity(CARDANO_REWARD_ADDRESS_LENGTH);
+		bytes.push(header);
+		bytes.extend((0..28u8).map(|i| i.wrapping_add(1)));
+		bytes
+	}
+
+	#[test]
+	fn try_new_rejects_wrong_length() {
+		// 28 bytes (one short) and 30 bytes (one long) both fail on length before
+		// the header is ever inspected.
+		let short = vec![0u8; CARDANO_REWARD_ADDRESS_LENGTH - 1];
+		assert_eq!(
+			CardanoRewardAddressBytes::try_new(short, MAINNET),
+			Err(CardanoRewardAddressError::WrongLength { found: 28 })
+		);
+
+		let long = vec![0u8; CARDANO_REWARD_ADDRESS_LENGTH + 1];
+		assert_eq!(
+			CardanoRewardAddressBytes::try_new(long, MAINNET),
+			Err(CardanoRewardAddressError::WrongLength { found: 30 })
+		);
+	}
+
+	#[test]
+	fn try_new_rejects_wrong_address_type() {
+		// Type nibble 0 (Shelley base) with a mainnet network nibble: correct
+		// length and network, but not a reward-account type.
+		let header = (0 << 4) | MAINNET;
+		let bytes = reward_address_with_header(header);
+		assert_eq!(
+			CardanoRewardAddressBytes::try_new(bytes, MAINNET),
+			Err(CardanoRewardAddressError::WrongAddressType { found: 0 })
+		);
+	}
+
+	#[test]
+	fn try_new_rejects_wrong_network() {
+		// Valid reward type (14) but the network nibble is mainnet while the chain
+		// expects testnet.
+		let header = (CARDANO_REWARD_ADDRESS_TYPE_KEY_HASH << 4) | MAINNET;
+		let bytes = reward_address_with_header(header);
+		assert_eq!(
+			CardanoRewardAddressBytes::try_new(bytes, TESTNET),
+			Err(CardanoRewardAddressError::WrongNetwork { expected: TESTNET, found: MAINNET })
+		);
+	}
+
+	#[test]
+	fn try_new_rejects_malformed_header() {
+		// A 29-byte blob whose header is neither a reward type nor the expected
+		// network. The type check runs first, so the specific variant is
+		// WrongAddressType (type nibble 8 = Byron), matching PL-2: "malformed" is
+		// surfaced as whichever nibble check fails first.
+		let header = (8 << 4) | 0x0F;
+		let bytes = reward_address_with_header(header);
+		assert_eq!(
+			CardanoRewardAddressBytes::try_new(bytes, MAINNET),
+			Err(CardanoRewardAddressError::WrongAddressType { found: 8 })
+		);
+	}
+
+	#[test]
+	fn try_new_accepts_valid_key_hash_reward_address() {
+		// Type 14 (stake key hash) for mainnet round-trips to the exact bytes.
+		let header = (CARDANO_REWARD_ADDRESS_TYPE_KEY_HASH << 4) | MAINNET;
+		let bytes = reward_address_with_header(header);
+		let addr = CardanoRewardAddressBytes::try_new(bytes.clone(), MAINNET)
+			.expect("valid type-14 mainnet reward address");
+		assert_eq!(addr.0.to_vec(), bytes);
+	}
+
+	#[test]
+	fn try_new_accepts_valid_script_hash_reward_address() {
+		// Type 15 (script hash) for testnet round-trips to the exact bytes.
+		let header = (CARDANO_REWARD_ADDRESS_TYPE_SCRIPT_HASH << 4) | TESTNET;
+		let bytes = reward_address_with_header(header);
+		let addr = CardanoRewardAddressBytes::try_new(bytes.clone(), TESTNET)
+			.expect("valid type-15 testnet reward address");
+		assert_eq!(addr.0.to_vec(), bytes);
 	}
 }
