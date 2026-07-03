@@ -10323,6 +10323,7 @@ dependencies = [
  "pallet-partner-chains-bridge",
  "parity-scale-codec",
  "scale-info",
+ "serde_json",
  "sidechain-domain",
  "sp-api",
  "sp-core",
