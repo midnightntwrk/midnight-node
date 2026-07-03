@@ -561,19 +561,15 @@ services:
       # Reach the node RPC by compose service name (works on Mac + Linux).
       - NODE_HOST=midnight-node-1
       - NODE_PORT=9933
-      # Persistent zswap public-params cache for the in-process prover.
-      - MIDNIGHT_PP=/zk-params
       - FAUCET_MARKER_FILE=/runtime-values/mnight-faucet-ready
     volumes:
       - ./runtime-values:/runtime-values
       - ./configurations/init-mnight-faucet/init-mnight-faucet.sh:/init-mnight-faucet.sh
-      - zk-params:/zk-params
     entrypoint: ["/bin/bash", "/init-mnight-faucet.sh"]
     restart: "no"
 
 volumes:
   cardano-node-1-data: {}
-  zk-params: {}
   shared-volume: {}
   db-sync-state-dir: {}
   midnight-node-1-data: {}

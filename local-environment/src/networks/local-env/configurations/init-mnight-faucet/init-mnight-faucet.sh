@@ -74,24 +74,13 @@ done
 
 # 3. Claim it (feeless, self-signed: funding_seed IS the claiming wallet's seed).
 #    The default destination watcher waits for finalization before returning.
-#    Retried: the first invocation downloads the zswap prover keys from
-#    srs.midnight.network into the MIDNIGHT_PP cache, which can hiccup transiently.
 echo "Claiming $CLAIMABLE STARS from the Cardano bridge..."
-claimed=false
-for i in {1..3}; do
-  if RUST_LOG=info "$TOOLKIT" generate-txs \
-      --src-url "$NODE_URL" --dest-url "$NODE_URL" \
-      claim-rewards \
-      --funding-seed "$FAUCET_SEED" \
-      --amount "$CLAIMABLE" \
-      --claim-kind cardano-bridge; then
-    claimed=true
-    break
-  fi
-  echo "  claim attempt $i/3 failed; retrying in 10s..."
-  sleep 10
-done
-[ "$claimed" = true ] || { echo "ERROR: claim failed after 3 attempts"; exit 1; }
+RUST_LOG=info "$TOOLKIT" generate-txs \
+  --src-url "$NODE_URL" --dest-url "$NODE_URL" \
+  claim-rewards \
+  --funding-seed "$FAUCET_SEED" \
+  --amount "$CLAIMABLE" \
+  --claim-kind cardano-bridge
 
 # 4. Register for DUST production. The registration self-funds from the retroactive
 #    DUST the claimed NIGHT generates as it ages (~1 block/6 s on local-env), so retry
