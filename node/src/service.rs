@@ -330,19 +330,10 @@ pub fn new_partial(
 			.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?,
 	);
 
-	// Commit the genesis trie state only when NOT warp syncing. With `--sync warp` we skip the
-	// commit — leaving `finalized_state == None` so substrate will actually engage warp sync (it
-	// refuses warp on a DB that already has a finalized state); hardcoding `true` here previously
-	// meant warp sync silently fell back to full sync. Stock substrate (`sc_service::builder`'s
-	// `!config.no_genesis()`) also skips the commit for `--sync fast` (`SyncMode::LightState`), but
-	// fast sync has no ledger-arena recovery path (the monitor only drives the warp path), so we
-	// deliberately keep committing genesis there — preserving fast sync's pre-existing
-	// fall-back-to-full behavior — until it's supported. Full-sync behavior is unchanged (commit).
-	// The ledger arena genesis init in `open_paritydb` is independent and still runs, so
-	// `default_storage` is set for post-warp recovery.
+	let is_warp_sync = config.network.sync_mode.is_warp();
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
 		genesis_storage,
-		!config.network.sync_mode.is_warp(),
+		!is_warp_sync,
 		backend.clone(),
 		executor.clone(),
 		genesis_extrinsics?,
