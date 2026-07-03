@@ -87,7 +87,7 @@ RUST_LOG=info "$TOOLKIT" generate-txs \
 #    a few times while it accrues instead of hardcoding an aging sleep.
 echo "Registering wallet for DUST production..."
 registered=false
-for i in {1..20}; do
+for i in {1..10}; do
   if RUST_LOG=info "$TOOLKIT" generate-txs \
       --src-url "$NODE_URL" --dest-url "$NODE_URL" \
       register-dust-address \
@@ -95,10 +95,10 @@ for i in {1..20}; do
     registered=true
     break
   fi
-  echo "  DUST registration not accepted yet (attempt $i/20); letting the NIGHT age..."
+  echo "  DUST registration not accepted yet (attempt $i/10); letting the NIGHT age..."
   sleep 6
 done
-[ "$registered" = true ] || { echo "ERROR: DUST registration failed after 20 attempts"; exit 1; }
+[ "$registered" = true ] || { echo "ERROR: DUST registration failed after 10 attempts"; exit 1; }
 
 echo "faucet wallet funded ($CLAIMABLE STARS) and DUST-registered" > "$FAUCET_MARKER_FILE"
 echo "=== mNIGHT faucet ready ==="
