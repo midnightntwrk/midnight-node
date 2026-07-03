@@ -130,6 +130,11 @@ pub struct PermissionedCandidatesConfig {
 pub struct C2MBridgeConfig {
 	pub initial_data_checkpoint: Option<String>,
 	pub subminimal_transfers_flush_threshold: u64,
+	/// Mainchain tx hashes (hex) to pre-approve at genesis, so bridge transfers made
+	/// before chain start are claimable without a governance round (e.g. the local-env
+	/// faucet seeding transfer).
+	#[serde(default)]
+	pub approved_txs: Vec<String>,
 }
 
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
