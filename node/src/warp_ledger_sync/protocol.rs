@@ -93,6 +93,16 @@ pub fn clamp_max_len(requested: u32) -> u32 {
 	requested.min(MAX_LEDGER_SYNC_CHUNK)
 }
 
+/// The chunk length the client requires at `offset` of a blob of `compressed_total_len` bytes,
+/// given it always requests [`MAX_LEDGER_SYNC_CHUNK`]: an honest server ([`build_response`]) fills
+/// every chunk to the end of the requested range, so anything shorter is a stalling/misbehaving
+/// peer. Enforcing this caps the requests spent on one peer at
+/// `ceil(compressed_total_len / MAX_LEDGER_SYNC_CHUNK)` — a peer serving valid-but-tiny chunks
+/// can't tie the client up in an unbounded request loop.
+pub fn required_chunk_len(compressed_total_len: u64, offset: u64) -> u64 {
+	compressed_total_len.saturating_sub(offset).min(MAX_LEDGER_SYNC_CHUNK as u64)
+}
+
 /// Snappy-compress a canonical snapshot blob for transport.
 pub fn compress_snapshot(blob: &[u8]) -> Result<Vec<u8>, snap::Error> {
 	snap::raw::Encoder::new().compress_vec(blob)
@@ -332,6 +342,25 @@ mod tests {
 		assert_eq!(clamp_max_len(10), 10);
 		assert_eq!(clamp_max_len(MAX_LEDGER_SYNC_CHUNK + 1), MAX_LEDGER_SYNC_CHUNK);
 		assert_eq!(clamp_max_len(u32::MAX), MAX_LEDGER_SYNC_CHUNK);
+	}
+
+	#[test]
+	fn required_chunk_len_matches_honest_server() {
+		let max = MAX_LEDGER_SYNC_CHUNK as u64;
+		// Interior chunks must be full-size; the final chunk is the remainder.
+		assert_eq!(required_chunk_len(3 * max + 100, 0), max);
+		assert_eq!(required_chunk_len(3 * max + 100, 3 * max), 100);
+		// At/past the end (and for an empty blob) nothing is required.
+		assert_eq!(required_chunk_len(3 * max + 100, 3 * max + 100), 0);
+		assert_eq!(required_chunk_len(100, 200), 0);
+		assert_eq!(required_chunk_len(0, 0), 0);
+
+		// What build_response produces is exactly what the client requires, at every offset.
+		let blob: Vec<u8> = (0..=255u8).cycle().take(5000).collect();
+		for offset in [0u64, 1000, 4999, 5000] {
+			let r = build_response(&blob, 10_000, offset, MAX_LEDGER_SYNC_CHUNK);
+			assert_eq!(r.bytes.len() as u64, required_chunk_len(blob.len() as u64, offset));
+		}
 	}
 
 	#[test]

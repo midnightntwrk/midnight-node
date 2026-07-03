@@ -38,7 +38,7 @@ use super::{
 	LOG_TARGET,
 	protocol::{
 		ChunkAssembler, DecompressError, LedgerSyncRequest, LedgerSyncResponse,
-		MAX_LEDGER_SYNC_CHUNK, decompress_snapshot, validate_snapshot_lengths,
+		MAX_LEDGER_SYNC_CHUNK, decompress_snapshot, required_chunk_len, validate_snapshot_lengths,
 	},
 	read_state_key,
 };
@@ -122,6 +122,10 @@ where
 	/// Fetch the full compressed blob from a single peer by paging contiguous byte ranges in order,
 	/// then decompress it to the canonical `Ledger`-rooted blob.
 	///
+	/// Every chunk must be full-size ([`required_chunk_len`]) — an honest server always fills the
+	/// requested range — so a peer drip-feeding tiny (or empty) chunks fails immediately instead of
+	/// tying the client up in an unbounded request loop.
+	///
 	/// (Parallel / multi-peer range fetch is a possible future optimization; the
 	/// `ChunkAssembler` already supports resume by `next_offset`.)
 	async fn fetch_blob_from(&self, peer: PeerId, target: B::Hash) -> Result<Vec<u8>, ClientError> {
@@ -131,6 +135,7 @@ where
 		let raw_total_len = first.raw_total_len;
 		validate_snapshot_lengths(compressed_total_len, raw_total_len)?;
 		let mut assembler = ChunkAssembler::new(compressed_total_len);
+		ensure_full_chunk(&first)?;
 		assembler.accept(first.offset, &first.bytes)?;
 
 		while !assembler.is_complete() {
@@ -140,11 +145,7 @@ where
 			{
 				return Err(ClientError::InconsistentResponse);
 			}
-			if next.bytes.is_empty() {
-				// Server returned an empty range before completion: treat as a truncated transfer.
-				// `into_blob` below will surface `Incomplete`.
-				break;
-			}
+			ensure_full_chunk(&next)?;
 			assembler.accept(next.offset, &next.bytes)?;
 		}
 
@@ -174,6 +175,20 @@ where
 	}
 }
 
+/// Require a response chunk to be full-size for its offset (see [`required_chunk_len`]). Oversized
+/// chunks are fine (more progress than required); the assembler's overflow check still bounds them.
+fn ensure_full_chunk(response: &LedgerSyncResponse) -> Result<(), ClientError> {
+	let required = required_chunk_len(response.compressed_total_len, response.offset);
+	if (response.bytes.len() as u64) < required {
+		return Err(ClientError::UndersizedChunk {
+			offset: response.offset,
+			got: response.bytes.len() as u64,
+			required,
+		});
+	}
+	Ok(())
+}
+
 /// Failure modes of [`LedgerSyncClient::recover`]. All are non-fatal: the monitor leaves the
 /// authoring gate closed and retries.
 #[derive(Debug, thiserror::Error)]
@@ -192,6 +207,10 @@ pub enum ClientError {
 	Assemble(#[from] super::protocol::AssembleError),
 	#[error("peer changed ledger-sync response metadata between chunks")]
 	InconsistentResponse,
+	#[error(
+		"peer served an undersized chunk at offset {offset}: got {got} bytes, required {required}"
+	)]
+	UndersizedChunk { offset: u64, got: u64, required: u64 },
 	#[error("failed to decompress ledger snapshot: {0}")]
 	Decompress(#[from] DecompressError),
 	#[error("all peers failed to provide a verifiable snapshot")]

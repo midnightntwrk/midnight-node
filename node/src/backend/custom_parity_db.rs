@@ -107,67 +107,28 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
 
-	// Dispatch genesis-arena-init on the genesis_state's `ledger-state[vNN]` tag, not this build's
-	// latest version. A network genesis'd with an older ledger version (e.g. a real devnet whose
-	// genesis arena is still v13/ledger_8) must be initialised with the matching deserializer, or the
-	// init panics with a tag-version mismatch. (This is also what lets a fresh node warp-sync onto such
-	// a network: the genesis arena is set up under the right version, then warp recovery overwrites it
-	// with the verified target arena.)
+	// Genesis-arena init dispatches (inside the ledger crate) on the genesis_state's
+	// `ledger-state[vNN]` tag, not this build's latest version. A network genesis'd with an older
+	// ledger version (e.g. a real devnet whose genesis arena is still v13/ledger_8) must be
+	// initialised with the matching deserializer, or the init panics with a tag-version mismatch.
+	// (This is also what lets a fresh node warp-sync onto such a network: the genesis arena is set
+	// up under the right version, then warp recovery overwrites it with the verified target arena.)
 	let genesis_state = &storage_config.genesis_state;
-	let genesis_version = midnight_node_ledger::ledger_state_tag_version(genesis_state);
 	match storage_config.separation {
 		StorageSeparation::Separate => {
-			let dir = &storage_config.db_path;
-			let cache = storage_config.cache_size;
-			match genesis_version {
-				Some(16 | 17 | 18) => {
-					midnight_node_ledger::ledger_9::storage::init_storage_paritydb_separate(
-						dir,
-						genesis_state,
-						cache,
-					);
-				},
-				Some(13) => {
-					midnight_node_ledger::ledger_8::storage::init_storage_paritydb_separate(
-						dir,
-						genesis_state,
-						cache,
-					);
-				},
-				Some(5) => {
-					midnight_node_ledger::ledger_7::storage::init_storage_paritydb_separate(
-						dir,
-						genesis_state,
-						cache,
-					);
-				},
-				other => panic!("unsupported genesis ledger-state version {other:?}"),
-			}
+			midnight_node_ledger::init_storage_paritydb_separate(
+				&storage_config.db_path,
+				genesis_state,
+				storage_config.cache_size,
+			);
 			Ok((OwnedDb(db), LedgerStorageDb::SeparateDb(storage_config.db_path.clone())))
 		},
 		StorageSeparation::Unified => {
-			let cache = storage_config.cache_size;
-			match genesis_version {
-				Some(16 | 17 | 18) => {
-					midnight_node_ledger::ledger_9::storage::init_storage_paritydb_unified::<
-						_,
-						NUM_COLUMNS_POLKADOT,
-					>(OwnedDb(db.clone()), genesis_state, cache);
-				},
-				Some(13) => {
-					midnight_node_ledger::ledger_8::storage::init_storage_paritydb_unified::<
-						_,
-						NUM_COLUMNS_POLKADOT,
-					>(OwnedDb(db.clone()), genesis_state, cache);
-				},
-				Some(5) => {
-					midnight_node_ledger::ledger_7::storage::init_storage_paritydb_unified::<
-						_,
-						NUM_COLUMNS_POLKADOT,
-					>(OwnedDb(db.clone()), genesis_state, cache);
-				},
-				other => panic!("unsupported genesis ledger-state version {other:?}"),
-			}
+			midnight_node_ledger::init_storage_paritydb_unified::<_, NUM_COLUMNS_POLKADOT>(
+				OwnedDb(db.clone()),
+				genesis_state,
+				storage_config.cache_size,
+			);
 			Ok((OwnedDb(db.clone()), LedgerStorageDb::UnifiedDb(db.clone())))
 		},
 	}

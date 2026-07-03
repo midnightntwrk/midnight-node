@@ -330,16 +330,19 @@ pub fn new_partial(
 			.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?,
 	);
 
-	// Commit the genesis trie state only when NOT warp/fast syncing. With `--sync warp`,
-	// `no_genesis()` is true, so we skip the commit — leaving `finalized_state == None` so substrate
-	// will actually engage warp sync (it refuses warp on a DB that already has a finalized state).
-	// This mirrors stock substrate (`sc_service::builder`'s `!config.no_genesis()`); hardcoding
-	// `true` here previously meant warp sync silently fell back to full sync. Full-sync behavior is
-	// unchanged (`no_genesis()` is false → commit). The ledger arena genesis init in `open_paritydb`
-	// is independent and still runs, so `default_storage` is set for post-warp recovery.
+	// Commit the genesis trie state only when NOT warp syncing. With `--sync warp` we skip the
+	// commit — leaving `finalized_state == None` so substrate will actually engage warp sync (it
+	// refuses warp on a DB that already has a finalized state); hardcoding `true` here previously
+	// meant warp sync silently fell back to full sync. Stock substrate (`sc_service::builder`'s
+	// `!config.no_genesis()`) also skips the commit for `--sync fast` (`SyncMode::LightState`), but
+	// fast sync has no ledger-arena recovery path (the monitor only drives the warp path), so we
+	// deliberately keep committing genesis there — preserving fast sync's pre-existing
+	// fall-back-to-full behavior — until it's supported. Full-sync behavior is unchanged (commit).
+	// The ledger arena genesis init in `open_paritydb` is independent and still runs, so
+	// `default_storage` is set for post-warp recovery.
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
 		genesis_storage,
-		!config.no_genesis(),
+		!config.network.sync_mode.is_warp(),
 		backend.clone(),
 		executor.clone(),
 		genesis_extrinsics?,
@@ -646,7 +649,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// via `--serve-warp-ledger-sync`; see above). When not serving, `ledger_sync_handler` is
 	// `None` and no server task is spawned.
 	if let Some(ledger_sync_handler) = ledger_sync_handler {
-		task_manager.spawn_handle().spawn(
+		// `spawn_blocking`: on a cache miss the handler serializes + compresses the multi-million
+		// node arena synchronously — seconds of CPU work that must not stall the shared async
+		// executor the node's other tasks run on. A dedicated thread confines the stall to this
+		// protocol (subsequent range requests are served from the memoized blob).
+		task_manager.spawn_handle().spawn_blocking(
 			"midnight-ledger-sync-server",
 			Some("midnight-ledger-sync"),
 			ledger_sync_handler.run(),

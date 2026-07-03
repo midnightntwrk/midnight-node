@@ -312,6 +312,70 @@ pub fn import_verified_ledger_snapshot(
 	}
 }
 
+/// Initialise the ledger arena default storage (separate-DB layout) at `dir` and allocate
+/// `genesis_state` into it, dispatching to the ledger module matching the genesis state's
+/// `ledger-state[vNN]` tag (see [`ledger_state_tag_version`]) — the version→module mapping lives
+/// here, next to the other tag dispatchers, so embedders don't maintain their own copy.
+///
+/// Panics on an unsupported tag version: a build that cannot deserialize a network's genesis
+/// state cannot run that network at all.
+#[cfg(feature = "std")]
+pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
+	dir: P,
+	genesis_state: &[u8],
+	cache_size: usize,
+) {
+	match ledger_state_tag_version(genesis_state) {
+		Some(16 | 17 | 18) => {
+			ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size);
+		},
+		Some(13) => {
+			ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size);
+		},
+		Some(5) => {
+			ledger_7::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size);
+		},
+		other => panic!("unsupported genesis ledger-state version {other:?}"),
+	}
+}
+
+/// Unified-DB counterpart of [`init_storage_paritydb_separate`]: initialise the arena default
+/// storage inside the embedder's already-open ParityDb at column offset `COLUMN_OFFSET`,
+/// dispatching on the genesis state's `ledger-state[vNN]` tag. Panics on an unsupported version.
+#[cfg(feature = "std")]
+pub fn init_storage_paritydb_unified<D, const COLUMN_OFFSET: u8>(
+	db_instance: D,
+	genesis_state: &[u8],
+	cache_size: usize,
+) where
+	D: std::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+{
+	match ledger_state_tag_version(genesis_state) {
+		Some(16 | 17 | 18) => {
+			ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+				db_instance,
+				genesis_state,
+				cache_size,
+			);
+		},
+		Some(13) => {
+			ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+				db_instance,
+				genesis_state,
+				cache_size,
+			);
+		},
+		Some(5) => {
+			ledger_7::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+				db_instance,
+				genesis_state,
+				cache_size,
+			);
+		},
+		other => panic!("unsupported genesis ledger-state version {other:?}"),
+	}
+}
+
 mod common;
 
 pub mod types {
