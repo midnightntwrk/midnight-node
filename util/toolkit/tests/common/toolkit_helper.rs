@@ -340,6 +340,7 @@ impl ToolkitTestHelper {
 					coin_public: cli_parsers::coin_public_decode(coin_public)
 						.expect("invalid coin public key"),
 					authority_seed: None,
+					authority_seed_file: None,
 					output_intent: RelativePath(intent.clone()),
 					output_private_state: RelativePath(private_state.clone()),
 					output_zswap_state: RelativePath(zswap_state.clone()),

@@ -169,6 +169,25 @@ fn decode_genesis_state(
 	Ok(genesis_state)
 }
 
+/// Seed files hold at most a mnemonic or hex seed; 4 KiB is generous.
+const SEED_FILE_MAX_SIZE: u64 = 4 * 1024;
+
+/// Read a consensus seed file via the hardened reader (regular-file check, size cap).
+/// Symlinks are allowed because Kubernetes secret mounts expose files as symlinks
+/// into `..data/`.
+fn read_seed_file(seed_file: &str, label: &str) -> Result<String, sc_cli::Error> {
+	crate::cfg::validated_file::safe_read_to_string(
+		seed_file,
+		&crate::cfg::validated_file::SafeReadOpts {
+			max_size: SEED_FILE_MAX_SIZE,
+			unsafe_allow_symlinks: true,
+		},
+	)
+	.map_err(|e| {
+		sc_cli::Error::Input(format!("error when reading {label} seed file at {seed_file}: {e}"))
+	})
+}
+
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	bail_if_runtime_benchmarks("running a node");
 	let run_midnight = RunMidnight::try_parse_from(cfg.substrate_cfg.clone().argv())
@@ -219,11 +238,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	};
 
 	if let Some(seed_file) = &cfg.midnight_cfg.aura_seed_file {
-		let seed = std::fs::read_to_string(seed_file).map_err(|e| {
-			sc_cli::Error::Input(format!(
-				"error when reading AURA seed file at {seed_file}. Error: {e}"
-			))
-		})?;
+		let seed = read_seed_file(seed_file, "AURA")?;
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
@@ -232,11 +247,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.grandpa_seed_file {
-		let seed = std::fs::read_to_string(seed_file).map_err(|e| {
-			sc_cli::Error::Input(format!(
-				"error when reading GRANDPA seed file at {seed_file}. Error: {e}"
-			))
-		})?;
+		let seed = read_seed_file(seed_file, "GRANDPA")?;
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
@@ -245,11 +256,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.cross_chain_seed_file {
-		let seed = std::fs::read_to_string(seed_file).map_err(|e| {
-			sc_cli::Error::Input(format!(
-				"error when reading CROSS_CHAIN seed file at {seed_file}. Error: {e}"
-			))
-		})?;
+		let seed = read_seed_file(seed_file, "CROSS_CHAIN")?;
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::ecdsa::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid CROSS_CHAIN seed: {e}")))?;

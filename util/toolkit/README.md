@@ -445,13 +445,19 @@ $ midnight-node-toolkit generate-intent maintain-contract
 >   --contract-address 3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806
 >   --output-intent out/intent.bin
 >   --signing 0000000000000000000000000000000000000000000000000000000000000001
->   0000000000000000000000000000000000000000000000000000000000000002
+>   --new-authority 0000000000000000000000000000000000000000000000000000000000000002
 [..]Executing generate-intent[..]
 [..]Executing maintain command
-[..]Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "contract", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "0000000000000000000000000000000000000000000000000000000000000002"]...
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "contract", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing-file", "[..]", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "--new-authority-file", "[..]"]...
 [..]written: out/intent.bin
 
 ```
+
+Secrets can also be read from files instead of inline values, keeping key
+material out of argv, shell history, and CI logs: `--signing-file <path>`
+(instead of `--signing`), `--new-authority-file <path>` (instead of
+`--new-authority`), and `deploy --authority-seed-file <path>` (instead of
+`--authority-seed`).
 
 To send it, see "Generate and send a tx from an intent" above
 
@@ -469,7 +475,7 @@ $ midnight-node-toolkit generate-intent maintain-circuit
 >   ./test-data/contract/counter/keys/increment.verifier
 [..]Executing generate-intent[..]
 [..]Executing maintain command
-[..]Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing", "0000000000000000000000000000000000000000000000000000000000000001", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment", "[CWD]/test-data/contract/counter/keys/increment.verifier"]...
+[..]Executing ../toolkit-js/dist/bin.js with arguments: ["maintain", "circuit", "-c", "[CWD]/../toolkit-js/test/contract/contract.config.ts", "--network", "undeployed", "--coin-public", "aa0d72bb77ea46f986a800c66d75c4e428a95bd7e1244f1ed059374e6266eb98", "--input", "[CWD]/test-data/contract/counter/contract_state.mn", "--output", "[CWD]/out/intent.bin", "--signing-file", "[..]", "3102ba67572345ef8bc5cd238bff10427b4533e376b4aaed524c2f1ef5eca806", "increment", "[CWD]/test-data/contract/counter/keys/increment.verifier"]...
 [..]written: out/intent.bin
 
 ```
