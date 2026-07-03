@@ -230,23 +230,12 @@ cat /res/local/c2m-bridge-config.json
 
 phase "Building chain-spec"
 
-export CHAINSPEC_NAME=local1
-export CHAINSPEC_ID=local
-# Genesis blobs come from the /res mount (the repo working tree), so a locally
-# regenerated genesis takes effect on the next bring-up without a node-image rebuild.
-export CHAINSPEC_GENESIS_STATE=/res/genesis/genesis_state_local.mn
-export CHAINSPEC_GENESIS_BLOCK=/res/genesis/genesis_block_local.mn
-export CHAINSPEC_GENESIS_TX=/res/genesis/genesis_tx_local.mn  #  0.13.5 compatibility, can be removed in the future
-export CHAINSPEC_CHAIN_TYPE=live
-export CHAINSPEC_PC_CHAIN_CONFIG=/res/local/pc-chain-config.json
-export CHAINSPEC_CNIGHT_GENESIS=/res/local/cnight-config.json
-export CHAINSPEC_ICS_CONFIG=/res/local/ics-config.json
-export CHAINSPEC_RESERVE_CONFIG=/res/local/reserve-config.json
-export CHAINSPEC_FEDERATED_AUTHORITY_CONFIG=/res/local/federated-authority-config.json
-export CHAINSPEC_SYSTEM_PARAMETERS_CONFIG=/res/local/system-parameters-config.json
-export CHAINSPEC_PERMISSIONED_CANDIDATES_CONFIG=/res/local/permissioned-candidates-config.json
-export CHAINSPEC_REGISTERED_CANDIDATES_ADDRESSES=/res/local/registered-candidates-addresses.json
-export CHAINSPEC_C2M_BRIDGE_CONFIG=/res/local/c2m-bridge-config.json
+# All chainspec inputs come from the `local` cfg preset (res/cfg/local.toml): the
+# chainspec_* paths there are relative (res/local/..., res/genesis/...) and the image
+# workdir is /, so they resolve through the /res repo mount — build-spec reads the
+# configs patched above, and a locally regenerated genesis takes effect on the next
+# bring-up without a node-image rebuild.
+export CFG_PRESET=local
 
 ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
 echo "chain-spec.json file generated."
