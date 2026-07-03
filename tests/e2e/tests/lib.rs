@@ -242,6 +242,7 @@ async fn run_warmup() {
             fetch_concurrency: fetch_concurrency(),
             fetch_compute_concurrency: None,
             src_files: None,
+            overlay_files: None,
             // Live-chain warmup: appending a synthetic dust-warp block
             // here would fight the per-test `dust_balance::execute`
             // calls (which set dust_warp=true on their own and would
@@ -280,6 +281,238 @@ async fn run_warmup() {
             started.elapsed()
         ),
     }
+}
+
+// -------- DEV WALLET FUNDING GUARD --------
+
+/// Seed of the local-env dev wallet funded on bring-up: the `init-mnight-faucet`
+/// job claims ~950M NIGHT for it over the c2m bridge and registers it for DUST.
+pub(crate) const DEV_WALLET_SEED: &str =
+    "0000000000000000000000000000000000000000000000000000000000000001";
+
+/// Block until the dev wallet (seed `0x..01`) holds spendable NIGHT and has
+/// generated DUST — i.e. it can fund and pay fees for a contract deploy/call.
+///
+/// In CI the `init-mnight-faucet` job (gated before the e2e suite) guarantees
+/// this; on a warm local env it is already true. Tests attached to a
+/// just-started env poll here (rather than flake) while the faucet job runs and
+/// DUST accrues. Panics with a clear message if funding never arrives.
+pub(crate) async fn ensure_dev_wallet_funded() {
+    use midnight_node_ledger_helpers::WalletSeed;
+    use midnight_node_toolkit::commands::show_wallet::{self, ShowWalletArgs, ShowWalletResult};
+
+    let settings = Settings::default();
+    let seed = WalletSeed::try_from_hex_str(DEV_WALLET_SEED).expect("valid dev wallet seed");
+    let deadline = Instant::now() + Duration::from_secs(180);
+
+    loop {
+        let args = ShowWalletArgs {
+            source: Source {
+                src_url: Some(settings.node_client.base_url.clone()),
+                fetch_concurrency: fetch_concurrency(),
+                fetch_compute_concurrency: None,
+                src_files: None,
+                overlay_files: None,
+                dust_warp: false,
+                ignore_block_context: false,
+                fetch_only_cached: false,
+                fetch_cache: fetch_cache_config(),
+                ledger_state_db: String::new(),
+            },
+            seed: Some(seed.clone()),
+            address: None,
+            debug: false,
+            dry_run: false,
+        };
+
+        match show_wallet::execute(args).await {
+            Ok(ShowWalletResult::Json(w)) => {
+                let night: u128 = w.utxos.iter().map(|u| u.value).sum();
+                if night > 0 && !w.dust_utxos.is_empty() {
+                    tracing::info!(
+                        "dev wallet {DEV_WALLET_SEED:.8}… funded: {night} NIGHT across {} utxo(s), {} dust utxo(s)",
+                        w.utxos.len(),
+                        w.dust_utxos.len(),
+                    );
+                    return;
+                }
+                tracing::info!(
+                    "dev wallet not deploy-ready yet (night={night}, dust_utxos={}); waiting…",
+                    w.dust_utxos.len()
+                );
+            }
+            Ok(other) => tracing::warn!("unexpected show-wallet result: {other:?}"),
+            Err(e) => tracing::warn!("show-wallet for dev wallet failed (retrying): {e}"),
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "dev wallet {DEV_WALLET_SEED} was not funded + DUST-registered within 180s — is the \
+             init-mnight-faucet bring-up job healthy?"
+        );
+        sleep(Duration::from_secs(3)).await;
+    }
+}
+
+/// A `Source` reading the live chain at `url`, optionally overlaying `.mn` file(s)
+/// (typically an un-submitted deploy) on top — see `Source::overlay_files`.
+fn live_source_with_overlay(url: &str, overlay: Option<Vec<String>>) -> Source {
+    Source {
+        src_url: Some(url.to_string()),
+        fetch_concurrency: fetch_concurrency(),
+        fetch_compute_concurrency: None,
+        src_files: None,
+        overlay_files: overlay,
+        dust_warp: false,
+        ignore_block_context: false,
+        fetch_only_cached: false,
+        fetch_cache: fetch_cache_config(),
+        ledger_state_db: String::new(),
+    }
+}
+
+fn to_file_dest(
+    dest: &std::path::Path,
+) -> midnight_node_toolkit::tx_generator::destination::Destination {
+    midnight_node_toolkit::tx_generator::destination::Destination {
+        dest_urls: vec![],
+        rate: 1.0,
+        dest_file: Some(dest.to_string_lossy().to_string()),
+        no_watch_progress: true,
+    }
+}
+
+/// Build a fresh contract-deploy transaction against the live chain, funded by
+/// the dev wallet (`0x..01`), written to `dest` and returned as raw `.mn` bytes.
+///
+/// Generated dynamically (not from a static fixture) so its intent TTL is valid
+/// against current chain time. The toolkit's in-process local prover handles ZK
+/// proving (MIDNIGHT_LEDGER_TEST_STATIC_DIR, set in .envrc); no proof server.
+/// The caller decides whether to submit it (valid-deploy / replay tests) or keep
+/// it off-chain as an overlay (store-without-deploy tests). `rng_seed` makes the
+/// deploy — and thus the contract address — deterministic/distinct across calls.
+pub(crate) async fn build_contract_deploy(
+    url: &str,
+    dest: &std::path::Path,
+    rng_seed: Option<[u8; 32]>,
+) -> Vec<u8> {
+    use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
+    use midnight_node_toolkit::tx_generator::builder::{Builder, ContractCall, ContractDeployArgs};
+
+    let args = GenerateTxsArgs {
+        builder: Builder::ContractSimple(ContractCall::Deploy(ContractDeployArgs {
+            funding_seed: DEV_WALLET_SEED.to_string(),
+            authority_seeds: vec![],
+            authority_threshold: None,
+            rng_seed,
+        })),
+        source: live_source_with_overlay(url, None),
+        destination: to_file_dest(dest),
+        proof_server: None,
+        dry_run: false,
+    };
+    generate_txs::execute(args)
+        .await
+        .expect("generate-txs contract-simple deploy failed");
+    std::fs::read(dest).expect("read generated deploy tx file")
+}
+
+/// Build a `store` call for the contract deployed by `deploy_file`, against the
+/// live chain with that deploy overlaid (so the contract is "present" to the
+/// generator) but WITHOUT the deploy ever being submitted on-chain. Submitting
+/// the result therefore hits `ContractNotPresent` at pre_dispatch — the DDoS
+/// attack shape. Returns the store tx as raw `.mn` bytes.
+pub(crate) async fn build_contract_store(
+    url: &str,
+    deploy_file: &std::path::Path,
+    dest: &std::path::Path,
+    rng_seed: Option<[u8; 32]>,
+) -> Vec<u8> {
+    use midnight_node_toolkit::cli_parsers::contract_address_decode;
+    use midnight_node_toolkit::commands::contract_address::{self, ContractAddressArgs};
+    use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
+    use midnight_node_toolkit::tx_generator::builder::{Builder, ContractCall, ContractCallArgs};
+
+    let deploy_str = deploy_file.to_string_lossy().to_string();
+    let addr_str = contract_address::execute(ContractAddressArgs {
+        tagged: false,
+        untagged: false,
+        src_file: deploy_str.clone(),
+    })
+    .expect("derive contract address from deploy tx");
+    let contract_address =
+        contract_address_decode(&addr_str).expect("decode derived contract address");
+
+    let args = GenerateTxsArgs {
+        builder: Builder::ContractSimple(ContractCall::Call(ContractCallArgs {
+            funding_seed: DEV_WALLET_SEED.to_string(),
+            call_key: "store".to_string(),
+            contract_address,
+            rng_seed,
+            fee: 1_300_000,
+        })),
+        source: live_source_with_overlay(url, Some(vec![deploy_str])),
+        destination: to_file_dest(dest),
+        proof_server: None,
+        dry_run: false,
+    };
+    generate_txs::execute(args)
+        .await
+        .expect("generate-txs contract-simple store (overlay) failed");
+    std::fs::read(dest).expect("read generated store tx file")
+}
+
+/// Build a fresh deploy funded by the dev wallet, submit it, wait for inclusion,
+/// and return `(landed tx bytes, contract address)` — the bytes for callers that
+/// replay them, the address for callers that query the deployed contract.
+///
+/// Retries by rebuilding on a transient DUST double-spend (ledger code 196) or
+/// input-not-in-utxos (195): the deploy tests share dev wallet `0x..01`, so a
+/// serialized prior deploy's DUST/UTxO spend may not yet be visible in the state
+/// this build fetched. Rebuilding after a short settle picks up the fresh state.
+/// Panics if it never lands.
+pub(crate) async fn deploy_and_confirm(
+    client: &midnight_node_e2e::api::midnight::MidnightClient,
+    url: &str,
+) -> (Vec<u8>, String) {
+    use midnight_node_ledger_helpers::extract_tx_with_context;
+    use midnight_node_toolkit::commands::contract_address::{self, ContractAddressArgs};
+
+    let tempdir = tempfile::tempdir().expect("create tempdir");
+    const ATTEMPTS: u8 = 4;
+    for attempt in 1..=ATTEMPTS {
+        let deploy_file = tempdir.path().join(format!("deploy_{attempt}.mn"));
+        let deploy_bytes = build_contract_deploy(url, &deploy_file, None).await;
+        let (deploy_tx, _ctx) = extract_tx_with_context(&deploy_bytes);
+        match client.submit_expecting_success(deploy_tx.to_vec()).await {
+            Ok(()) => {
+                let addr = contract_address::execute(ContractAddressArgs {
+                    src_file: deploy_file.to_string_lossy().to_string(),
+                    tagged: false,
+                    untagged: false,
+                })
+                .expect("derive contract address from deploy tx");
+                return (deploy_tx.to_vec(), addr);
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // 196 = DustDoubleSpend, 195 = InputNotInUtxos — both transient under
+                // shared-wallet contention; anything else is a real failure.
+                let transient =
+                    msg.contains("custom error: 196") || msg.contains("custom error: 195");
+                assert!(
+                    transient && attempt < ATTEMPTS,
+                    "DEPLOY_TX failed to land (attempt {attempt}/{ATTEMPTS}): {msg}"
+                );
+                tracing::warn!(
+                    "deploy attempt {attempt}/{ATTEMPTS} hit transient shared-wallet contention \
+                     ({msg}); rebuilding against fresh state after settle"
+                );
+                sleep(Duration::from_secs(8)).await;
+            }
+        }
+    }
+    unreachable!("deploy_and_confirm loop returns or panics")
 }
 
 // -------- GLOBAL ASYNC FAUCET MANAGER --------

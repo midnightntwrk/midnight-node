@@ -4,16 +4,28 @@ use midnight_node_e2e::e2e_test;
 
 /// PR367-TC-0003-03 E2E: Valid Transaction Succeeds
 ///
-/// TODO(#1792): The `local` network no longer funds faucet wallets at genesis;
-/// wallets are funded at runtime via the cNIGHT->DUST bridge. The static
-/// `local` contract fixtures were removed with the unfunded genesis. Rebuild
-/// the deploy transaction dynamically against the live, bridge-funded chain
-/// (see `contract_state_distinguishes_historical_and_current_blocks` for the
-/// pattern) and re-enable.
+/// A well-formed contract deploy, built dynamically against the live chain and
+/// funded by the bridge-funded dev wallet (0x..01), is accepted at the RPC and
+/// included in a block.
 #[e2e_test]
-#[ignore = "TODO(#1792): rebuild deploy tx dynamically against the bridge-funded local chain"]
 async fn valid_deploy_transaction_succeeds_via_rpc() {
-    todo!("rebuild deploy tx dynamically once wallet seeds are funded via the cNIGHT bridge");
+    use midnight_node_e2e::api::midnight::MidnightClient;
+
+    // Funded + DUST-registered at runtime by init-mnight-faucet; wait until ready.
+    crate::ensure_dev_wallet_funded().await;
+    // Coordinate with the pre-deploy quiescence gate (this submits a deploy) and
+    // serialize against the other deploy tests that share dev wallet 0x..01.
+    let _deploy_guard = crate::wait_before_deploying().await;
+
+    let settings = Settings::default();
+    let client = MidnightClient::new(settings.node_client.clone()).await;
+    let url = settings.node_client.base_url.clone();
+
+    // Builds a fresh deploy against current settled state and submits it,
+    // rebuilding on transient shared-wallet DUST contention. Panics if it never
+    // lands — proving a well-formed deploy is accepted + included (PR367-TC-0003-03).
+    crate::deploy_and_confirm(&client, &url).await;
+    tracing::info!("✓ valid DEPLOY_TX accepted and included");
 }
 
 /// One-shot cleanup task: consolidates fragmented UTXOs at the funded faucet
@@ -58,6 +70,7 @@ async fn dust_balance_smoke() {
             fetch_concurrency: crate::fetch_concurrency(),
             fetch_compute_concurrency: None,
             src_files: None,
+            overlay_files: None,
             dust_warp: true,
             ignore_block_context: false,
             fetch_only_cached: false,
@@ -124,6 +137,7 @@ async fn dust_balance_smoke_many() {
             fetch_concurrency: crate::fetch_concurrency(),
             fetch_compute_concurrency: None,
             src_files: None,
+            overlay_files: None,
             // false for live-chain use: per the CLI help, dust_warp
             // "may result in invalid proofs when connected to a live
             // chain". Concretely it appends a system-time block at
