@@ -1704,54 +1704,6 @@ local-env-e2e:
     ENV RUSTFLAGS="-C debuginfo=1"
     RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
-# init-mnight-faucet-bin compiles the `init_mnight_faucet::fund_faucet` e2e test (with the
-# `init-mnight-faucet` feature, built alongside `local`) into its libtest harness binary,
-# then strips it so it ships as a small layer.
-init-mnight-faucet-bin:
-    FROM +prep
-    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
-    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
-    ENV RUSTFLAGS="-C debuginfo=1"
-    WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests --no-default-features --features local,init-mnight-faucet --no-run
-    # Locate the harness binary, strip it (drops the debuginfo bulk so it isn't a
-    # multi-GB layer), and sanity-check it still runs.
-    RUN bin=$(find / -xdev -maxdepth 8 -type f -name 'e2e_tests-*' -perm -u+x ! -name '*.d' 2>/dev/null | head -1) \
-        && echo "seeding test binary: $bin" \
-        && strip "$bin" -o /seeder \
-        && /seeder --list >/dev/null
-    SAVE ARTIFACT /seeder
-
-# init-mnight-faucet-image ships the stripped seeding-test binary on a slim runtime so
-# it runs directly (no cargo / toolchain / source at runtime). Used by the
-# `init-mnight-faucet` docker-compose service to fund the dev wallet (seed 0x..01) by
-# running ONLY that test against a live stack (see tests/e2e/tests/init_mnight_faucet.rs).
-# CI (`earthly --push +images`) pushes ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<tree-hash>-<arch>;
-# a plain `earthly +init-mnight-faucet-image` builds it locally under the same tag (no push).
-init-mnight-faucet-image:
-    LOCALLY
-    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
-    ARG NATIVEARCH
-    FROM debian:bookworm-slim
-    RUN apt-get update \
-        && apt-get install -y --no-install-recommends bash ca-certificates libssl3 libsqlite3-0 \
-        && rm -rf /var/lib/apt/lists/*
-    COPY +init-mnight-faucet-bin/seeder /usr/local/bin/seeder
-    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
-    COPY scripts/local-env/init-mnight-faucet.sh /init-mnight-faucet.sh
-    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
-    ENV SEEDER_BIN=/usr/local/bin/seeder
-    # Fail the build (not the container at runtime) if the binary is missing a shared lib.
-    RUN /usr/local/bin/seeder --list >/dev/null
-    ENTRYPOINT ["/bin/bash", "/init-mnight-faucet.sh"]
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG="${CONTENT_HASH_SHORT}-${NATIVEARCH}"
-    # `--push` only pushes under `earthly --push` (CI); a plain `earthly +…` saves the tag
-    # locally. Content-hash + arch tag mirrors +node-image / +toolkit-image.
-    SAVE IMAGE --push \
-        $GHCR_REGISTRY/local-env-init-mnight-faucet:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/local-env-init-mnight-faucet:$IMAGE_TAG
-
 # compares chain parameters with testnet-02
 chain-params-check:
     FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
@@ -1785,27 +1737,28 @@ addresses-check:
 # start-local-env-latest starts up the local environment with the latest node image
 start-local-env-latest:
     LOCALLY
-    # Build both from-source images the local-env needs (node + the init-mnight-faucet
-    # bring-up job) and load them under fixed local tags, mirroring how the node is built.
+    # Build both from-source images the local-env needs (node + toolkit — the latter runs
+    # the init-mnight-faucet bring-up job) and load them under
+    # fixed local tags.
     WITH DOCKER \
             --load localhost/midnight-node:latest=+node-image \
-            --load localhost/local-env-init-mnight-faucet:latest=+init-mnight-faucet-image
+            --load localhost/midnight-node-toolkit:latest=+toolkit-image
         # Ugly nested earthly call, but earthly complains if we use BUILD here
         RUN earthly +start-local-env \
             --NODE_IMAGE=localhost/midnight-node:latest \
-            --INIT_MNIGHT_FAUCET_IMAGE=localhost/local-env-init-mnight-faucet:latest
+            --TOOLKIT_IMAGE=localhost/midnight-node-toolkit:latest
     END
 
 start-local-env:
     LOCALLY
     ARG NODE_IMAGE
-    ARG INIT_MNIGHT_FAUCET_IMAGE
+    ARG TOOLKIT_IMAGE
     ARG TARGETPLATFORM
     ARG USERARCH
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run stop:local-env
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run run:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env
 
 start-local-env-with-indexer:
     LOCALLY
@@ -1815,11 +1768,11 @@ start-local-env-with-indexer:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
-    ARG INIT_MNIGHT_FAUCET_IMAGE
+    ARG TOOLKIT_IMAGE
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 start-local-env-with-indexer-ci:
     LOCALLY
@@ -1829,7 +1782,7 @@ start-local-env-with-indexer-ci:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
-    ARG INIT_MNIGHT_FAUCET_IMAGE
+    ARG TOOLKIT_IMAGE
     WORKDIR local-environment
     RUN npm ci
     # Tear down any stack left over from a previous run before starting a fresh
@@ -1839,8 +1792,8 @@ start-local-env-with-indexer-ci:
     # breaks chain-indexer with "unsupported protocol version" when the
     # genesis/runtime expectations disagree. The non-CI sibling target
     # `+start-local-env-with-indexer` does this same down already.
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
 # Runs the integration tests (stack → verify-finality → e2e → toolkit) in one RUN
@@ -1858,21 +1811,18 @@ local-env-ci:
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
     ARG TOOLKIT_IMAGE
-    ARG INIT_MNIGHT_FAUCET_IMAGE
     ARG USERARCH
     # Fail early + kindly if any image ref is empty — otherwise `WITH DOCKER --pull` below
     # gets an empty arg and dies with the opaque "invalid reference format".
     RUN test -n "$NODE_IMAGE" && test -n "$TOOLKIT_IMAGE" && test -n "$INDEXER_API_IMAGE" \
-          && test -n "$CHAIN_INDEXER_IMAGE" && test -n "$WALLET_INDEXER_IMAGE" \
-          && test -n "$INIT_MNIGHT_FAUCET_IMAGE" || { \
-        echo "+local-env-ci needs all six image refs, e.g.:"; \
+          && test -n "$CHAIN_INDEXER_IMAGE" && test -n "$WALLET_INDEXER_IMAGE" || { \
+        echo "+local-env-ci needs all five image refs, e.g.:"; \
         echo "  earthly -P +local-env-ci \\"; \
         echo "    --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag> \\"; \
         echo "    --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag> \\"; \
         echo "    --INDEXER_API_IMAGE=ghcr.io/midnight-ntwrk/indexer-api:<tag> \\"; \
         echo "    --CHAIN_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/chain-indexer:<tag> \\"; \
-        echo "    --WALLET_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/wallet-indexer:<tag> \\"; \
-        echo "    --INIT_MNIGHT_FAUCET_IMAGE=ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<tag>"; \
+        echo "    --WALLET_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/wallet-indexer:<tag>"; \
         echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
         exit 1; }
     # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
@@ -1894,8 +1844,7 @@ local-env-ci:
             --pull $INDEXER_API_IMAGE \
             --pull $CHAIN_INDEXER_IMAGE \
             --pull $WALLET_INDEXER_IMAGE \
-            --pull $TOOLKIT_IMAGE \
-            --pull $INIT_MNIGHT_FAUCET_IMAGE
+            --pull $TOOLKIT_IMAGE
         RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
             if [ -n "$DOCKERHUB_TOKEN" ]; then \
               echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
@@ -1909,7 +1858,7 @@ local-env-ci:
               INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE \
               INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
               INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
-              INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE \
+              TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
@@ -1945,9 +1894,6 @@ local-env-full-ci-localimg:
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
     ARG TOOLKIT_IMAGE
-    # Permissionless twin: the faucet image is built + loaded locally (below), so it
-    # defaults to a fixed local tag rather than a pulled registry ref.
-    ARG INIT_MNIGHT_FAUCET_IMAGE=local-env-init-mnight-faucet:local
     ARG USERARCH
     # node/npm + the docker compose-v2 plugin both ship in the +prep base image.
     # +prep carries res/+tests/ but not local-environment/, scripts/, the submodule, or static/.
@@ -1961,10 +1907,7 @@ local-env-full-ci-localimg:
     RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
     COPY local-env-images.tar .
     COPY toolkit-image.tar .
-    # Build + load the faucet image locally (no registry) under the fixed local tag
-    # the ARG above defaults to, so the on-by-default init-mnight-faucet service can start.
-    WITH DOCKER \
-            --load $INIT_MNIGHT_FAUCET_IMAGE=+init-mnight-faucet-image
+    WITH DOCKER
         RUN docker load -i local-env-images.tar && \
             docker load -i toolkit-image.tar && \
             ROOT="$PWD" && \
@@ -1976,7 +1919,7 @@ local-env-full-ci-localimg:
               INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE \
               INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
               INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
-              INIT_MNIGHT_FAUCET_IMAGE=$INIT_MNIGHT_FAUCET_IMAGE \
+              TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
@@ -2023,8 +1966,7 @@ local-env-oneshot:
     # fixed :local tags (no registry). The 3 indexer images are built in-sandbox below.
     WITH DOCKER \
             --load ghcr.io/midnight-ntwrk/midnight-node:local=+node-image \
-            --load ghcr.io/midnight-ntwrk/midnight-node-toolkit:local=+toolkit-image \
-            --load ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:local=+init-mnight-faucet-image
+            --load ghcr.io/midnight-ntwrk/midnight-node-toolkit:local=+toolkit-image
         RUN ROOT="$PWD" && \
             IRV=$(grep '^channel' indexer/rust-toolchain.toml | sed -r 's/.*"(.*)".*/\1/') && \
             for pkg in indexer-api chain-indexer wallet-indexer; do \
@@ -2039,7 +1981,7 @@ local-env-oneshot:
               INDEXER_CHAIN_IMAGE=midnightntwrk/chain-indexer:local \
               INDEXER_WALLET_IMAGE=midnightntwrk/wallet-indexer:local \
               INDEXER_API_IMAGE=midnightntwrk/indexer-api:local \
-              INIT_MNIGHT_FAUCET_IMAGE=ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:local \
+              TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:local \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
@@ -2063,7 +2005,7 @@ stop-local-env:
     ARG USERARCH
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
 
 
 # extract-node-artifacts pulls artifacts from a pre-built node image
@@ -2168,4 +2110,3 @@ images:
     FROM scratch
     BUILD +node-image
     BUILD +toolkit-image
-    BUILD +init-mnight-faucet-image

@@ -39,9 +39,6 @@ inputs:
   wallet-indexer-image:
     description: "Wallet indexer image reference"
     required: true
-  mnight-faucet-image:
-    description: "init-mnight-faucet image reference"
-    required: true
 
 outputs: {}
 
@@ -99,7 +96,6 @@ runs:
         INDEXER_API_IMAGE: ${{ inputs.indexer-api-image }}
         CHAIN_INDEXER_IMAGE: ${{ inputs.chain-indexer-image }}
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
-        INIT_MNIGHT_FAUCET_IMAGE: ${{ inputs.mnight-faucet-image }}
         DOCKERHUB_USER: ${{ inputs.dockerhub-username }}
         DOCKERHUB_TOKEN: ${{ inputs.dockerhub-password }}
       run: |
@@ -112,5 +108,4 @@ runs:
           --TOOLKIT_IMAGE="$TOOLKIT_IMAGE" \
           --INDEXER_API_IMAGE="$INDEXER_API_IMAGE" \
           --CHAIN_INDEXER_IMAGE="$CHAIN_INDEXER_IMAGE" \
-          --WALLET_INDEXER_IMAGE="$WALLET_INDEXER_IMAGE" \
-          --INIT_MNIGHT_FAUCET_IMAGE="$INIT_MNIGHT_FAUCET_IMAGE"
+          --WALLET_INDEXER_IMAGE="$WALLET_INDEXER_IMAGE"

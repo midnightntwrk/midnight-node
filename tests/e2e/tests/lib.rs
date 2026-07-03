@@ -357,6 +357,3 @@ mod governance;
 mod operational;
 mod rpc_abuse;
 
-// Local-env wallet-seeding job — opt-in only, never part of the normal sweep.
-#[cfg(feature = "init-mnight-faucet")]
-mod init_mnight_faucet;

@@ -148,10 +148,10 @@ each run to completion (`exit 0`) before the next phase starts.
 | 0 | `cardano-node-1`, `postgres` | base |
 | 1 | `ogmios`, `kupo`, `db-sync` | Cardano API + chain indexing |
 | 2 | `contract-compiler` | compile + deploy the Aiken governance contracts |
-| 3 | `mint-cnight-supply` | mint the cNIGHT supply on Cardano → Reserve / ICS / faucet pools |
-| 4 | `midnight-setup` | build the chainspec/genesis + bridge observation config + checkpoint |
+| 3 | `mint-cnight-supply` | mint the cNIGHT supply → Reserve / ICS / faucet pools, then send the c2m bridge transfer funding wallet `0x..01` (1B NIGHT) |
+| 4 | `midnight-setup` | build the chainspec/genesis (bridge checkpoint + pre-approved faucet tx) |
 | 5 | `midnight-node-1` … `midnight-node-5` | validators; produce + finalize blocks |
-| 6 | `init-mnight-faucet` | fund + DUST-register wallet `0x..01` over the c2m bridge |
+| 6 | `init-mnight-faucet` | claim the bridged NIGHT + DUST-register wallet `0x..01` |
 
 With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
 `wallet-indexer`, `indexer-api`) starts alongside the Cardano services.
@@ -162,13 +162,12 @@ Starting the environment via Earthly:
 earthly +start-local-env-latest
 ```
 
-Or specify a released node image (pass the matching from-source faucet image too — see
-below):
+Or specify released node + toolkit images:
 
 ```bash
 earthly +start-local-env \
   --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0 \
-  --INIT_MNIGHT_FAUCET_IMAGE=ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<git-tree-hash>-<arch>
+  --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:0.12.0
 ```
 
 You can also use npm scripts (these read the image env vars from `.envrc`):
@@ -178,15 +177,11 @@ npm run run:local-env
 npm run run:local-env-with-indexer
 ```
 
-The `init-mnight-faucet` job (funds + DUST-registers the dev wallet `0x..01` over the c2m
-bridge) runs a from-source image, exactly like `midnight-node`. CI publishes it to
-`ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:<git-tree-hash>-<arch>`;
-`local-environment/.envrc` derives that tag for your checkout and exports
-`INIT_MNIGHT_FAUCET_IMAGE`, so `npm run run:local-env` (and `docker compose`) pull it on
-bring-up. `earthly +start-local-env-latest` builds it from source automatically. If your
-tree isn't published yet (unmerged branch, or uncommitted changes to the job), build it
-locally with `earthly +init-mnight-faucet-image` (it tags the same ref), or export
-`INIT_MNIGHT_FAUCET_IMAGE` to pin your own.
+The `init-mnight-faucet` job (claims the bridged NIGHT + DUST-registers the dev wallet
+`0x..01`) is a plain shell script on the standard toolkit image — no dedicated image.
+`local-environment/.envrc` derives `TOOLKIT_IMAGE` for your checkout the same way as
+`MIDNIGHT_NODE_IMAGE`; `earthly +start-local-env-latest` builds both from source
+automatically. Export `TOOLKIT_IMAGE` to pin your own.
 
 Stopping the environment:
 

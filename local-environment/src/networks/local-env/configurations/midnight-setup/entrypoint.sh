@@ -167,10 +167,22 @@ else
     http://ogmios:1337 | jq -r .result[0].transaction.id)
   echo "cNIGHT seed marker absent; using ledger UTxO tx as initial_data_checkpoint: $existing_tx_hash"
 fi
+# Pre-approve the faucet bridge transfer (submitted by mint-cnight-supply strictly after
+# the checkpoint tx above) so wallet 0x..01 can claim it without a governance round.
+FAUCET_BRIDGE_TX_FILE=/runtime-values/faucet-bridge-tx-hash
+approved_txs="[]"
+if [ -s "$FAUCET_BRIDGE_TX_FILE" ]; then
+  faucet_bridge_tx=$(cat "$FAUCET_BRIDGE_TX_FILE")
+  approved_txs="[\"$faucet_bridge_tx\"]"
+  echo "Pre-approving faucet bridge transfer at genesis: $faucet_bridge_tx"
+else
+  echo "No faucet bridge tx marker; genesis approved_txs stays empty"
+fi
 cat <<EOF > /tmp/c2m-bridge-config.json
 {
     "subminimal_transfers_flush_threshold": 500000,
-    "initial_data_checkpoint": "$existing_tx_hash"
+    "initial_data_checkpoint": "$existing_tx_hash",
+    "approved_txs": $approved_txs
 }
 EOF
 

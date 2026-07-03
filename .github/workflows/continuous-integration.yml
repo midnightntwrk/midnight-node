@@ -43,7 +43,6 @@ jobs:
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
       node_image_tag_no_dev: ${{ steps.image_tags.outputs.node_image_tag_no_dev }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
-      mnight_faucet_image_tag: ${{ steps.image_tags.outputs.mnight_faucet_image_tag }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
@@ -128,7 +127,6 @@ jobs:
           echo "node_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
           echo "node_image_tag_no_dev=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
           echo "toolkit_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
-          echo "mnight_faucet_image_tag=${content_hash}-amd64" >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
@@ -276,7 +274,6 @@ jobs:
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "node_image_tag=${version}-dev-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
           echo "toolkit_image_tag=${version}-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
-          echo "mnight_faucet_image_tag=${content_hash}-arm64" >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
@@ -1155,7 +1152,6 @@ jobs:
           tag: CI
           image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
           toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-          mnight-faucet-image: ghcr.io/midnight-ntwrk/local-env-init-mnight-faucet:${{ needs.run.outputs.mnight_faucet_image_tag }}
           indexer-api-image: ${{ needs.build-indexer-images.outputs.indexer_api_image }}
           chain-indexer-image: ${{ needs.build-indexer-images.outputs.chain_indexer_image }}
           wallet-indexer-image: ${{ needs.build-indexer-images.outputs.wallet_indexer_image }}

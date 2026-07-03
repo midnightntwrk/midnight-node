@@ -194,6 +194,82 @@ if [ "$included" != true ]; then
   exit 1
 fi
 
+# --- Faucet bridge transfer (funds the Midnight dev wallet 0x..01) ---------------------
+#
+# Send the c2m bridge transfer that funds the dev faucet wallet: lock 1B NIGHT of the
+# just-seeded circulating cNIGHT to the ICS validator with the bridge metadata naming the
+# wallet (mirrors scripts/cnight-generates-dust/lock_to_ics.sh and
+# tests/e2e/src/api/cardano.rs::make_bridge_transfer). Because it spends the seeding tx's
+# outputs it lands strictly AFTER the bridge `initial_data_checkpoint` (the seeding tx),
+# so the observation processes it as a user transfer; midnight-setup pre-approves its tx
+# hash in the c2m-bridge genesis config (`approved_txs`), so claiming it needs no
+# governance round. The claim + DUST registration happen post-genesis (init-mnight-faucet).
+
+# 32-byte Midnight recipient: `UnshieldedWallet::default(0x..01).user_address`.
+# Regenerate with: midnight-node-toolkit show-address --network local --seed 00..01
+#                  | jq -r .userAddress
+FAUCET_RECIPIENT_HEX=bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b
+# 1B NIGHT = 1e15 STARS: comfortably above the bridge minimum, a small fraction of C.U.
+FAUCET_TRANSFER_STARS=1000000000000000
+# Metadata label used by the bridge (TOKEN_TRANSFER_METADATUM_KEY).
+METADATUM_LABEL=6500973
+BRIDGE_TX_HASH_FILE="${RUNTIME_VALUES}/faucet-bridge-tx-hash"
+
+# The seeding tx's outputs are deterministic: 0=reserve, 1=ICS, 2=faucet cNIGHT,
+# 3=ADA change (appended by `transaction build`) — spend #2 + #3 directly.
+echo "=== faucet bridge transfer (recipient $FAUCET_RECIPIENT_HEX) ==="
+cat > /tmp/faucet-bridge-metadata.json <<EOF
+{
+  "$METADATUM_LABEL": {
+    "list": [
+      { "bytes": "$FAUCET_RECIPIENT_HEX" }
+    ]
+  }
+}
+EOF
+cardano-cli latest transaction build \
+  --testnet-magic "$NETWORK_MAGIC" \
+  --tx-in "$SEED_TX_ID#2" \
+  --tx-in "$SEED_TX_ID#3" \
+  --tx-in-collateral "$SEED_TX_ID#3" \
+  --tx-out "$ICS_ADDR+$MIN_UTXO_LOVELACE + $FAUCET_TRANSFER_STARS $POLICY_ID" \
+  --tx-out-inline-datum-value '{"constructor": 0, "fields": []}' \
+  --metadata-json-file /tmp/faucet-bridge-metadata.json \
+  --json-metadata-detailed-schema \
+  --change-address "$FAUCET_ADDR" \
+  --out-file /tmp/faucet-bridge.raw
+cardano-cli latest transaction sign \
+  --tx-body-file /tmp/faucet-bridge.raw \
+  --signing-key-file /keys/funded_address.skey \
+  --testnet-magic "$NETWORK_MAGIC" \
+  --out-file /tmp/faucet-bridge.signed
+BRIDGE_TX_ID=$(cardano-cli latest transaction txid --tx-file /tmp/faucet-bridge.signed \
+  | /busybox grep -oE '[0-9a-f]{64}' | /busybox head -1)
+cardano-cli latest transaction submit \
+  --tx-file /tmp/faucet-bridge.signed \
+  --testnet-magic "$NETWORK_MAGIC"
+echo "Waiting for the faucet bridge tx to be included on-chain..."
+included=false
+for i in {1..60}; do
+  if cardano-cli latest query utxo --testnet-magic "$NETWORK_MAGIC" \
+       --tx-in "$BRIDGE_TX_ID#0" --output-text 2>/dev/null \
+       | /busybox grep -q "$BRIDGE_TX_ID"; then
+    echo "Faucet bridge tx confirmed on-chain."
+    included=true
+    break
+  fi
+  echo "Waiting for inclusion (attempt $i/60)..."
+  sleep 2
+done
+if [ "$included" != true ]; then
+  echo "ERROR: faucet bridge tx $BRIDGE_TX_ID submitted but not confirmed within the budget"
+  exit 1
+fi
+# midnight-setup pre-approves this hash in the c2m-bridge genesis config.
+echo "$BRIDGE_TX_ID" > "$BRIDGE_TX_HASH_FILE"
+echo "=== faucet bridge transfer submitted (tx $BRIDGE_TX_ID) ==="
+
 # The marker doubles as the seeding tx hash midnight-setup anchors the bridge checkpoint to.
+# Written LAST so a partially-completed run (e.g. bridge transfer failed) re-runs whole.
 echo "$SEED_TX_ID" > "$SEEDED_MARKER"
 echo "=== cNIGHT genesis seeding complete (tx $SEED_TX_ID) ==="

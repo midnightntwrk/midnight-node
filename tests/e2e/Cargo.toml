@@ -10,10 +10,6 @@ local = []
 local-dev = []
 local-ci = []
 qanet = []
-# Opt-in flag for the local-env wallet-seeding job (tests/init_mnight_faucet.rs): compiles +
-# runs only the bridge-funding test that seeds the dev wallet 0x..01. Gated so it never
-# joins the normal `cargo test` sweep for any network. Built alongside `local`.
-init-mnight-faucet = []
 # Opt-in flag: when on, the c2m_bridge e2e tests run extra GraphQL
 # assertions against a running indexer-api (default
 # http://127.0.0.1:8088/api/v3/graphql, override via INDEXER_GRAPHQL_URL).
