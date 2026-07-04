@@ -55,7 +55,6 @@ RESERVE_STARS=5000000000873988      # C.R = M.R (reserve_pool)
 ICS_STARS=1200000000000000          # C.L = treasury baseline (ics-config total_amount)
 FAUCET_STARS=17799999999126012      # C.U = S - C.R - C.L (circulating; funds the bridge transfer)
 TOTAL_MINT_STARS=24000000000000000  # S
-# min-UTxO lovelace bundled with each cNIGHT output (matches the e2e/manual scripts).
 MIN_UTXO_LOVELACE=1500000
 
 if [ -f "$SEEDED_MARKER" ]; then
@@ -64,11 +63,6 @@ if [ -f "$SEEDED_MARKER" ]; then
 fi
 
 echo "=== cNIGHT genesis seeding ==="
-
-# The contract-compiler artifacts (deployed-contract info + compiled policy) are already
-# on the shared /runtime-values volume: docker-compose gates this service on
-# `contract-compiler: service_completed_successfully`, so the compiler has exited before
-# we start. No need to wait — just assert they're present so a broken setup fails loudly.
 [ -s "$CONTRACTS_INFO" ] || { echo "ERROR: $CONTRACTS_INFO missing"; exit 1; }
 [ -s "$PLUTUS_JSON" ] || { echo "ERROR: $PLUTUS_JSON missing"; exit 1; }
 
@@ -93,11 +87,6 @@ FAUCET_ADDR=$(cardano-cli latest address build \
   --testnet-magic "$NETWORK_MAGIC")
 echo "Faucet (circulating) address: $FAUCET_ADDR"
 
-# Mint the full cNIGHT supply and split it across the three pools in one tx. Reserve/ICS
-# are script addresses, so their outputs carry an inline unit datum (matching
-# tests/e2e/src/api/cardano.rs::make_bridge_transfer); no bridge metadata (label 6500973),
-# so these are not transfers.
-#
 # The contract-compiler's deploy txs chain through this funded address and can still be
 # settling on the node when we query (container exit / kupo confirmation don't guarantee
 # the node-socket UTxO set is quiescent), so a freshly-queried UTxO may be spent by the
@@ -205,7 +194,6 @@ fi
 FAUCET_RECIPIENT_HEX=bc610dd07c52f59012a88c2f9f1c5f34cbacc75b868202975d6f19beaf37284b
 # 1B NIGHT = 1e15 STARS: comfortably above the bridge minimum, a small fraction of C.U.
 FAUCET_TRANSFER_STARS=1000000000000000
-# Metadata label used by the bridge (TOKEN_TRANSFER_METADATUM_KEY).
 METADATUM_LABEL=6500973
 BRIDGE_TX_HASH_FILE="${RUNTIME_VALUES}/faucet-bridge-tx-hash"
 
