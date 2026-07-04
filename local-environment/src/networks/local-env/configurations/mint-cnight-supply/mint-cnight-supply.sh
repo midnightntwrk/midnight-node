@@ -65,19 +65,13 @@ fi
 
 echo "=== cNIGHT genesis seeding ==="
 
-# Wait for the contract-compiler artifacts (deployed-contract info + compiled policy).
-for i in {1..60}; do
-  if [ -s "$CONTRACTS_INFO" ] && [ -s "$PLUTUS_JSON" ]; then
-    break
-  fi
-  echo "Waiting for contract-compiler artifacts (attempt $i/60)..."
-  sleep 2
-done
+# The contract-compiler artifacts (deployed-contract info + compiled policy) are already
+# on the shared /runtime-values volume: docker-compose gates this service on
+# `contract-compiler: service_completed_successfully`, so the compiler has exited before
+# we start. No need to wait — just assert they're present so a broken setup fails loudly.
 [ -s "$CONTRACTS_INFO" ] || { echo "ERROR: $CONTRACTS_INFO missing"; exit 1; }
 [ -s "$PLUTUS_JSON" ] || { echo "ERROR: $PLUTUS_JSON missing"; exit 1; }
 
-# ICS/Reserve "Forever" validator addresses: the immutable proxies that hold the
-# locked / reserved cNIGHT.
 ICS_ADDR=$(jq -r '.[] | select(.name == "ICS Forever") | .address' "$CONTRACTS_INFO")
 RESERVE_ADDR=$(jq -r '.[] | select(.name == "Reserve Forever") | .address' "$CONTRACTS_INFO")
 [ -n "$ICS_ADDR" ] || { echo "ERROR: ICS Forever address missing from $CONTRACTS_INFO"; exit 1; }
@@ -90,13 +84,6 @@ echo "Reserve Forever address: $RESERVE_ADDR"
 jq '{type: "PlutusScriptV3", description: "", cborHex: (.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .compiledCode)}' \
   "$PLUTUS_JSON" > "$CNIGHT_PLUTUS"
 
-# The compiled infinite-mint cNIGHT policy id, used for the mint below. The bridge
-# observes the full asset id — policy id + asset name — from cnight-config.json
-# (cnight_policy_id + cnight_asset_name=""); `--mint "N $POLICY_ID"` mints under that
-# same empty asset name, so the two match. We deliberately don't assert it against a
-# hardcoded expectation here: a policy/asset drift makes the faucet bridge transfer
-# unobservable, so the init-mnight-faucet gate and the c2m bridge e2e tests fail on it
-# — the system under test catches this, not more setup-correctness scaffolding.
 POLICY_ID=$(cardano-cli latest transaction policyid --script-file "$CNIGHT_PLUTUS")
 echo "cNIGHT policy id: $POLICY_ID"
 
