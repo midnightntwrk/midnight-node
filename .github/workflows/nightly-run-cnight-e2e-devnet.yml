@@ -37,11 +37,18 @@ jobs:
     timeout-minutes: 480
 
     steps:
+      # devnet: runs a 2.x (Ledger9) runtime, which the toolkit's
+      # wallet-state cache supports — on qanet (1.x runtime, Ledger8
+      # blocks) the cache never persists (see #1604) and every
+      # dust_balance call replays the chain from genesis, starving the
+      # runner. devnet follows the same Cardano Preview network and
+      # observes the same cNIGHT contracts as qanet, so coverage is
+      # equivalent Cardano-side.
       - name: Resolve runtime settings
         id: vars
         shell: bash
         run: |
-          echo "env=qanet" >> "$GITHUB_OUTPUT"
+          echo "env=devnet" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
@@ -88,7 +95,7 @@ jobs:
           fi
           psql "$TOOLKIT_CACHE_DB_URL" -c 'SELECT 1;' >/dev/null
 
-      # --release: qanet replays the long-lived Preview chain; the dev
+      # --release: the toolkit's chain replay is compute-bound; the dev
       # profile is ~50× slower (see tests/e2e/README.md).
       # --test-threads 16: all observation tests must run concurrently;
       # otherwise the shared stability window (~4.5 h on Cardano Preview

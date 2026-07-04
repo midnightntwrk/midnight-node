@@ -16,9 +16,9 @@ To run test in parallel use `--test-threads N` argument, e.g.
 `--test-threads` should be large enough to let pre-deploy and deploy tests
 run concurrently. Six is the historic recommendation for local-env.
 
-**On Cardano Preview (`qanet` feature) thread count is load-bearing:** the
-stability barrier amortises its multi-hour wait *only* when observation tests
-run concurrently. With fewer threads than observation tests the wait is
+**On Cardano Preview (`qanet`/`devnet` features) thread count is
+load-bearing:** the stability barrier amortises its multi-hour wait *only*
+when observation tests run concurrently. With fewer threads than observation tests the wait is
 paid per batch, which can blow past CI budgets. Set
 `--test-threads >= 16` (we have 13 observation tests with headroom).
 The nightly workflow sets this explicitly.
@@ -96,7 +96,16 @@ compile-time gate prevents running there; just don't.
 
 `create_hundred_registrations` is `#[cfg(any(feature = "local",
 feature = "local-dev", feature = "local-ci"))]`-gated — it doesn't
-exist when compiled with `--features qanet`.
+exist when compiled with `--features qanet` or `--features devnet`.
+
+**The nightly targets devnet, not qanet.** Both networks follow Cardano
+Preview and observe the identical cNIGHT contracts, so Cardano-side
+coverage is the same — but qanet still runs a 1.x runtime whose blocks
+replay under Ledger8, and the toolkit's wallet-state cache only persists
+Ledger9 contexts (dropped for Ledger8 in #1604). On qanet the warmup
+below is therefore a silent no-op and every `dust_balance` call replays
+the chain from genesis, which starves the runner. devnet runs a 2.x
+(Ledger9) runtime, where the cache works.
 
 ## Toolkit wallet-cache warmup
 
@@ -194,12 +203,11 @@ selected by feature via `crate::fetch_cache_config()` in
 - **local-env** (`local`, `local-dev`, `local-ci`): `InMemory` —
   ephemeral RAM cache, no dependencies. Fine for short-lived local
   chains where syncing is cheap.
-- **qanet**: `Postgres` at
-  `postgresql://postgres:postgres@localhost:5433/toolkit_cache`.
-  Persists across runs so the long-lived Preview chain doesn't need
-  to be re-synced every time. (The URL is currently developer-local;
-  the nightly workflow will need its own Postgres service container
-  before this branch can run there end-to-end.)
+- **qanet/devnet**: `Postgres` via `TOOLKIT_CACHE_DB_URL` (CI wires the
+  shared toolkit-cache RDS through this secret; developers can point it
+  at an SSH-tunneled instance). Persists across runs so remote chains
+  don't need to be re-synced every time; cache tables are keyed by
+  chain id, so both networks share one database.
 
 To verify the Postgres path is wired correctly, run the smoke tests:
 

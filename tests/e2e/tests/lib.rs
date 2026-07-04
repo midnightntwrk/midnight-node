@@ -348,16 +348,18 @@ pub(crate) async fn global_faucet_manager() -> Arc<FaucetManager> {
 ///
 /// - local-env: `InMemory` — local chains are small and ephemeral, so
 ///   syncing into RAM per run costs nothing and adds no dependencies.
-/// - qanet: `Postgres` when `TOOLKIT_CACHE_DB_URL` is set (CI wires
-///   the shared cache via this secret — see PR #1578; developers can
-///   set it locally to e.g. an SSH-tunneled RDS), otherwise
-///   `InMemory` so local invocations without a tunnel still work.
+/// - qanet/devnet: `Postgres` when `TOOLKIT_CACHE_DB_URL` is set (CI
+///   wires the shared cache via this secret — see PR #1578; developers
+///   can set it locally to e.g. an SSH-tunneled RDS), otherwise
+///   `InMemory` so local invocations without a tunnel still work. The
+///   cache tables are keyed by chain id, so both networks share one
+///   database without collisions.
 pub(crate) fn fetch_cache_config() -> FetchCacheConfig {
     #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
     {
         FetchCacheConfig::InMemory
     }
-    #[cfg(feature = "qanet")]
+    #[cfg(any(feature = "qanet", feature = "devnet"))]
     {
         // CI sets `TOOLKIT_CACHE_DB_URL` to the shared toolkit-cache
         // RDS (see PR #1578); locally the SSH-tunneled URL is the
@@ -378,14 +380,14 @@ pub(crate) fn fetch_cache_config() -> FetchCacheConfig {
 ///
 /// - local-env: 4 — small chain, low total work; 4 workers × ~10 parallel
 ///   tests stays well under the node's connection cap.
-/// - qanet: 20 — Cardano Preview's chain is large, fetch is the bottleneck,
-///   the remote node has more headroom.
+/// - qanet/devnet: 20 — remote chains are larger, fetch is the
+///   bottleneck, and the remote nodes have more headroom.
 pub(crate) fn fetch_concurrency() -> usize {
     #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
     {
         4
     }
-    #[cfg(feature = "qanet")]
+    #[cfg(any(feature = "qanet", feature = "devnet"))]
     {
         20
     }
