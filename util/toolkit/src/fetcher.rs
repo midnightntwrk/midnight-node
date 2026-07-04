@@ -351,20 +351,21 @@ pub async fn fetch_from_rpc(
 
 	log::debug!("[perf] fetch_from_rpc RPC pipeline took {:?}", t_rpc_total.elapsed());
 
-	// Set highest verified height for quicker fetch next time
-	fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
+	// Set highest verified height for quicker fetch next time. Never lower it:
+	// when the queried node lags the cache, blocks beyond its finalized height
+	// are already verified, and read_blocks_from_cache bases its read range on
+	// this value — lowering it would hide them.
+	if finalized_height > min_height {
+		fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
+	}
 	let t = std::time::Instant::now();
 	let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
-	// The queried node can report a finalized height below the cached minimum
-	// (e.g. it lags behind the node the cache was built from), so saturate to
-	// avoid underflow.
-	let fetched_blocks = finalized_height.saturating_sub(min_height);
 	log::info!(
 		"fetched {} blocks, read {} blocks from cache, total transactions: {}",
-		fetched_blocks,
-		blocks.len().saturating_sub(fetched_blocks as usize),
+		fetch_span,
+		blocks.len().saturating_sub(fetch_span as usize),
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 	);
 
