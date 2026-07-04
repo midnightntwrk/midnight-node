@@ -462,6 +462,62 @@ pub(crate) async fn build_contract_store(
     std::fs::read(dest).expect("read generated store tx file")
 }
 
+/// True if `msg` names a transient shared-wallet ledger error that a rebuild
+/// against fresh state typically clears: DUST double-spend (196), input not in
+/// UTxOs (195), or invalid DUST spend proof (170). Everything built from the
+/// single dev wallet `0x..01` can hit these when the state it was built against
+/// has advanced (DUST regenerates every block) by submit/apply time — more
+/// likely under CI's slower, `--test-threads`-concurrent proving.
+pub(crate) fn is_transient_shared_wallet_error(msg: &str) -> bool {
+    msg.contains("custom error: 196")
+        || msg.contains("custom error: 195")
+        || msg.contains("custom error: 170")
+}
+
+/// Build a DDoS attack pair against the live chain and return the `store` tx
+/// bytes: a contract deploy is generated (funded by `0x..01`) but never
+/// submitted, then a `store` call is built with that deploy overlaid — so
+/// submitting the store hits `ContractNotPresent` at pre_dispatch. `rng_seed`
+/// makes the deploy — and thus the contract address — distinct across calls.
+///
+/// Retries on a build panic: under CI's slower, concurrent proving the deploy
+/// built at T can be stale by the time the store's overlay applies it (the live
+/// chain advanced, DUST regenerated). The overlay then silently drops the
+/// unappliable deploy, leaving the contract absent, and the toolkit panics
+/// building a call against it (ledger `contract/call.rs`: "Contract … does not
+/// exist"). A rebuild against fresh state clears it. A non-transient panic is
+/// re-raised on the final attempt so real failures still surface.
+pub(crate) async fn build_ddos_store_attack(url: &str, rng_seed: Option<[u8; 32]>) -> Vec<u8> {
+    use futures::future::FutureExt;
+
+    const ATTEMPTS: u8 = 4;
+    for attempt in 1..=ATTEMPTS {
+        let tempdir = tempfile::tempdir().expect("create tempdir");
+        let deploy_file = tempdir.path().join("deploy.mn");
+        let store_file = tempdir.path().join("store.mn");
+
+        // AssertUnwindSafe: the build borrows only local paths and rebuilds from
+        // scratch each attempt, so a caught panic leaves no observable poisoned
+        // state to worry about.
+        let build = std::panic::AssertUnwindSafe(async {
+            build_contract_deploy(url, &deploy_file, rng_seed).await;
+            build_contract_store(url, &deploy_file, &store_file, rng_seed).await
+        });
+        match build.catch_unwind().await {
+            Ok(bytes) => return bytes,
+            Err(_panic) if attempt < ATTEMPTS => {
+                tracing::warn!(
+                    "ddos attack build attempt {attempt}/{ATTEMPTS} panicked (likely a stale \
+                     overlay deploy under shared-wallet contention); rebuilding after settle"
+                );
+                sleep(Duration::from_secs(8)).await;
+            }
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
+    unreachable!("build_ddos_store_attack loop returns or panics")
+}
+
 /// Build a fresh deploy funded by the dev wallet, submit it, wait for inclusion,
 /// and return `(landed tx bytes, contract address)` — the bytes for callers that
 /// replay them, the address for callers that query the deployed contract.
@@ -496,12 +552,8 @@ pub(crate) async fn deploy_and_confirm(
             }
             Err(e) => {
                 let msg = e.to_string();
-                // 196 = DustDoubleSpend, 195 = InputNotInUtxos — both transient under
-                // shared-wallet contention; anything else is a real failure.
-                let transient =
-                    msg.contains("custom error: 196") || msg.contains("custom error: 195");
                 assert!(
-                    transient && attempt < ATTEMPTS,
+                    is_transient_shared_wallet_error(&msg) && attempt < ATTEMPTS,
                     "DEPLOY_TX failed to land (attempt {attempt}/{ATTEMPTS}): {msg}"
                 );
                 tracing::warn!(

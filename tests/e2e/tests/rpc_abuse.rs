@@ -3,9 +3,7 @@ use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 use midnight_node_ledger_helpers::extract_tx_with_context;
 
-use crate::{
-    PreDeployGuard, build_contract_deploy, build_contract_store, ensure_dev_wallet_funded,
-};
+use crate::{PreDeployGuard, build_ddos_store_attack, ensure_dev_wallet_funded};
 
 // ============================================================================
 // DDoS Mitigation E2E Tests (PR367)
@@ -46,13 +44,9 @@ async fn ddos_attack_transaction_rejected_at_rpc() {
     let client = MidnightClient::new(settings.node_client.clone()).await;
     let url = settings.node_client.base_url.clone();
 
-    let tempdir = tempfile::tempdir().expect("create tempdir");
-    let deploy_file = tempdir.path().join("deploy.mn");
-    let store_file = tempdir.path().join("store.mn");
-
-    // Build (but never submit) a deploy, then a store against it via overlay.
-    build_contract_deploy(&url, &deploy_file, None).await;
-    let store_bytes = build_contract_store(&url, &deploy_file, &store_file, None).await;
+    // Build (but never submit) a deploy, then a store against it via overlay
+    // (rebuilds on transient stale-overlay contention — see build_ddos_store_attack).
+    let store_bytes = build_ddos_store_attack(&url, None).await;
     let (store_tx, _ctx) = extract_tx_with_context(&store_bytes);
 
     tracing::info!("Submitting STORE for a never-deployed contract (expect rejection)...");
@@ -80,19 +74,14 @@ async fn ddos_batch_attack_all_rejected() {
     let settings = Settings::default();
     let client = MidnightClient::new(settings.node_client.clone()).await;
     let url = settings.node_client.base_url.clone();
-    let tempdir = tempfile::tempdir().expect("create tempdir");
 
     const TOTAL_ATTACKS: u8 = 3;
     for i in 1..=TOTAL_ATTACKS {
-        let deploy_file = tempdir.path().join(format!("deploy_{i}.mn"));
-        let store_file = tempdir.path().join(format!("store_{i}.mn"));
         // Distinct rng_seed → distinct contract address → distinct store tx.
         let mut rng_seed = [0u8; 32];
         rng_seed[31] = i;
 
-        build_contract_deploy(&url, &deploy_file, Some(rng_seed)).await;
-        let store_bytes =
-            build_contract_store(&url, &deploy_file, &store_file, Some(rng_seed)).await;
+        let store_bytes = build_ddos_store_attack(&url, Some(rng_seed)).await;
         let (store_tx, _ctx) = extract_tx_with_context(&store_bytes);
 
         let result = client.submit_expecting_rejection(store_tx.to_vec()).await;

@@ -8001,6 +8001,7 @@ version = "0.1.0"
 dependencies = [
  "aiken-contracts-lib",
  "blake2 0.10.6",
+ "futures",
  "hex",
  "midnight-node-e2e-macros",
  "midnight-node-ledger-helpers",

@@ -57,41 +57,68 @@ async fn toolkit_multi_dest_send_does_not_hang() {
 
     let settings = Settings::default();
     let url = settings.node_client.base_url.clone();
-    let tempdir = tempfile::tempdir().expect("create tempdir");
-
-    let tx_file = tempdir.path().join("selftx.mn");
-    crate::build_unshielded_self_transfer(&url, &tx_file).await;
 
     const N_DEST_URLS: usize = 3;
-    let send = generate_txs::execute(GenerateTxsArgs {
-        builder: Builder::Send,
-        source: Source {
-            src_url: None,
-            src_files: Some(vec![tx_file.to_string_lossy().into_owned()]),
-            overlay_files: None,
-            fetch_concurrency: crate::fetch_concurrency(),
-            fetch_compute_concurrency: None,
-            dust_warp: false,
-            ignore_block_context: false,
-            fetch_only_cached: false,
-            fetch_cache: crate::fetch_cache_config(),
-            ledger_state_db: String::new(),
-        },
-        destination: Destination {
-            dest_urls: vec![url.clone(); N_DEST_URLS],
-            rate: 2.0,
-            dest_file: None,
-            no_watch_progress: false,
-        },
-        proof_server: None,
-        dry_run: false,
-    });
+    const ATTEMPTS: u8 = 4;
+    for attempt in 1..=ATTEMPTS {
+        let tempdir = tempfile::tempdir().expect("create tempdir");
+        let tx_file = tempdir.path().join("selftx.mn");
+        // Rebuilt each attempt so the DUST spend is fresh against current state.
+        crate::build_unshielded_self_transfer(&url, &tx_file).await;
 
-    timeout(Duration::from_secs(120), send)
-        .await
-        .expect("toolkit `send` hung with multiple --dest-url (regression)")
-        .expect("multi-dest send returned an error");
-    tracing::info!("✓ multi-dest send completed without hanging");
+        let send = generate_txs::execute(GenerateTxsArgs {
+            builder: Builder::Send,
+            source: Source {
+                src_url: None,
+                src_files: Some(vec![tx_file.to_string_lossy().into_owned()]),
+                overlay_files: None,
+                fetch_concurrency: crate::fetch_concurrency(),
+                fetch_compute_concurrency: None,
+                dust_warp: false,
+                ignore_block_context: false,
+                fetch_only_cached: false,
+                fetch_cache: crate::fetch_cache_config(),
+                ledger_state_db: String::new(),
+            },
+            destination: Destination {
+                dest_urls: vec![url.clone(); N_DEST_URLS],
+                rate: 2.0,
+                dest_file: None,
+                no_watch_progress: false,
+            },
+            proof_server: None,
+            dry_run: false,
+        });
+
+        // A genuine hang blows the per-attempt timeout — fail fast on that, it's
+        // the regression this test guards (never retried).
+        let outcome = timeout(Duration::from_secs(120), send)
+            .await
+            .expect("toolkit `send` hung with multiple --dest-url (regression)");
+        match outcome {
+            Ok(()) => {
+                tracing::info!("✓ multi-dest send completed without hanging");
+                return;
+            }
+            // `send` returns a generic "destination tasks failed" that hides the
+            // ledger code, so we can't classify the error — but the only expected
+            // failure here is transient shared-wallet DUST contention, which a
+            // rebuild against fresh state clears. Retry; surface the last error if
+            // it never succeeds.
+            Err(e) => {
+                assert!(
+                    attempt < ATTEMPTS,
+                    "multi-dest send failed on all {ATTEMPTS} attempts: {e}"
+                );
+                tracing::warn!(
+                    "multi-dest send attempt {attempt}/{ATTEMPTS} failed ({e}); \
+                     rebuilding + resending after settle"
+                );
+                tokio::time::sleep(Duration::from_secs(8)).await;
+            }
+        }
+    }
+    unreachable!("multi-dest send loop returns or panics");
 }
 
 /// One-shot cleanup task: consolidates fragmented UTXOs at the funded faucet
