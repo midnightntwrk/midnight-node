@@ -162,14 +162,23 @@ pub async fn fetch_from_rpc(
 	let max_height = finalized_height + 1;
 	let min_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 
-	let blocks_per_job = if (max_height - min_height) < BLOCKS_PER_JOB * num_workers as u64 {
-		(max_height - min_height).div_ceil(num_workers as u64).max(5)
+	// A shared fetch cache (e.g. Postgres) can be *ahead* of this node's
+	// reported finalized height: concurrent fetchers populate it through the
+	// same RPC URL, and load-balanced replicas don't agree block-for-block.
+	// Saturate so an ahead-of-node cache means "nothing new to fetch" —
+	// a plain subtraction underflows, inflating the job count to ~u64::MAX
+	// and aborting the whole process (SIGABRT) when the jobs vector's
+	// allocation is attempted.
+	let new_blocks = max_height.saturating_sub(min_height);
+
+	let blocks_per_job = if new_blocks < BLOCKS_PER_JOB * num_workers as u64 {
+		new_blocks.div_ceil(num_workers as u64).max(5)
 	} else {
 		BLOCKS_PER_JOB
 	};
 
 	// Cap workers to the number of jobs to avoid unnecessary connections.
-	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
+	let num_jobs = new_blocks.div_ceil(blocks_per_job);
 	let num_workers = num_workers.min(num_jobs as usize).max(1);
 
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
@@ -284,7 +293,7 @@ pub async fn fetch_from_rpc(
 
 	log::debug!("final verify step");
 	// Receive final jobs
-	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
+	let num_jobs = new_blocks.div_ceil(blocks_per_job);
 	let mut jobs = Vec::with_capacity(num_jobs as usize);
 	let mut received = 0;
 	let mut fetch_workers_exited = 0;
@@ -316,7 +325,7 @@ pub async fn fetch_from_rpc(
 			job = final_jobs_rx.recv() => {
 				jobs.push(job.expect("..."));
 				received += 1;
-				log::info!("fetch progress: {:.1}% of {} blocks complete", (received as f64 / num_jobs as f64) * 100f64, max_height - min_height);
+				log::info!("fetch progress: {:.1}% of {} blocks complete", (received as f64 / num_jobs as f64) * 100f64, new_blocks);
 			}
 		}
 	}

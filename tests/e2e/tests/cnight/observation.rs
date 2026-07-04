@@ -494,7 +494,7 @@ async fn register_2_cardano_same_dust_address_production() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -640,7 +640,7 @@ async fn cnight_produces_dust() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -673,7 +673,7 @@ async fn cnight_produces_dust() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -814,7 +814,7 @@ async fn deregister_from_dust_production() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -1410,7 +1410,7 @@ async fn register_twice_with_same_cardano_address() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -1436,7 +1436,7 @@ async fn register_twice_with_same_cardano_address() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -1621,7 +1621,7 @@ async fn deregister_with_valid_cnight_utxo() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -1654,7 +1654,7 @@ async fn deregister_with_valid_cnight_utxo() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -1775,7 +1775,7 @@ async fn deregister_first_mapping() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -1847,7 +1847,7 @@ async fn deregister_first_mapping() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -1918,7 +1918,7 @@ async fn deregister_first_mapping() {
         dry_run: false,
     };
 
-    let result3 = dust_balance::execute(args3)
+    let result3 = crate::gated_dust_balance(args3)
         .await
         .expect("dust-balance error");
 
@@ -1951,7 +1951,7 @@ async fn deregister_first_mapping() {
         dry_run: false,
     };
 
-    let result4 = dust_balance::execute(args4)
+    let result4 = crate::gated_dust_balance(args4)
         .await
         .expect("dust-balance error");
 
@@ -2052,7 +2052,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -2123,7 +2123,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -2302,7 +2302,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -2342,7 +2342,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -2510,7 +2510,7 @@ async fn spend_cnight_producing_dust() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -2550,7 +2550,7 @@ async fn spend_cnight_producing_dust() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 

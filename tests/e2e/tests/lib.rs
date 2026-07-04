@@ -7,7 +7,7 @@ use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex as AsyncMutex, MutexGuard, OnceCell};
+use tokio::sync::{Mutex as AsyncMutex, MutexGuard, OnceCell, Semaphore};
 use tokio::time::sleep;
 
 // ============================================================================
@@ -340,6 +340,33 @@ pub(crate) async fn global_faucet_manager() -> Arc<FaucetManager> {
         })
         .await
         .clone()
+}
+
+// -------- DUST-BALANCE CONCURRENCY GATE --------
+
+/// Gate for per-test `dust_balance::execute` calls.
+///
+/// All observation tests cross the stability barrier within seconds of each
+/// other and immediately launch their dust-balance replays; each replay
+/// builds a fresh node client and spawns `fetch_concurrency()` websocket
+/// fetch workers, so N concurrent tests hit the node RPC with an N×-worker
+/// connection storm. devnet's RPC times out under that load (run
+/// 28702436341 failed tests with `CouldNotObtainRpcMethodList` /
+/// `CannotFetchValue` request timeouts). With the warm wallet cache each
+/// execute is seconds of work, so limiting concurrency costs little
+/// wall-clock — and the first execute through the gate writes the
+/// since-warmup delta blocks into the shared fetch cache, making the queued
+/// ones cheaper still.
+static DUST_BALANCE_GATE: Semaphore = Semaphore::const_new(2);
+
+pub(crate) async fn gated_dust_balance(
+    args: dust_balance::DustBalanceArgs,
+) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
+    let _permit = DUST_BALANCE_GATE
+        .acquire()
+        .await
+        .expect("dust-balance gate semaphore closed");
+    dust_balance::execute(args).await
 }
 
 // -------- TOOLKIT FETCH CACHE --------
