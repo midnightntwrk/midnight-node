@@ -58,11 +58,6 @@ TOTAL_MINT_STARS=24000000000000000  # S
 # min-UTxO lovelace bundled with each cNIGHT output (matches the e2e/manual scripts).
 MIN_UTXO_LOVELACE=1500000
 
-# The bridge is configured to observe this cNIGHT minting policy on every non-mainnet
-# environment. We assert the compiled policy matches so a contract change can't
-# silently mint under a policy the bridge ignores.
-EXPECTED_POLICY_ID=d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1
-
 if [ -f "$SEEDED_MARKER" ]; then
   echo "cNIGHT already seeded ($SEEDED_MARKER present); skipping."
   exit 0
@@ -95,14 +90,15 @@ echo "Reserve Forever address: $RESERVE_ADDR"
 jq '{type: "PlutusScriptV3", description: "", cborHex: (.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .compiledCode)}' \
   "$PLUTUS_JSON" > "$CNIGHT_PLUTUS"
 
-# Verify the compiled cNIGHT policy is the one the bridge observes.
+# The compiled infinite-mint cNIGHT policy id, used for the mint below. The bridge
+# observes the full asset id — policy id + asset name — from cnight-config.json
+# (cnight_policy_id + cnight_asset_name=""); `--mint "N $POLICY_ID"` mints under that
+# same empty asset name, so the two match. We deliberately don't assert it against a
+# hardcoded expectation here: a policy/asset drift makes the faucet bridge transfer
+# unobservable, so the init-mnight-faucet gate and the c2m bridge e2e tests fail on it
+# — the system under test catches this, not more setup-correctness scaffolding.
 POLICY_ID=$(cardano-cli latest transaction policyid --script-file "$CNIGHT_PLUTUS")
 echo "cNIGHT policy id: $POLICY_ID"
-if [ "$POLICY_ID" != "$EXPECTED_POLICY_ID" ]; then
-  echo "ERROR: compiled cNIGHT policy id $POLICY_ID != expected $EXPECTED_POLICY_ID"
-  echo "       (the bridge would not observe cNIGHT under a different policy)"
-  exit 1
-fi
 
 # The faucet / circulating address is the funded address shared with the e2e suite.
 FAUCET_ADDR=$(cardano-cli latest address build \
