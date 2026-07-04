@@ -5,10 +5,10 @@
 shielded coins or unshielded UTXOs. These are expected runtime conditions for
 a CLI, so they now surface as structured errors (`SingleTxError`, mirroring
 `BatchSingleTxError`) with a clean non-zero exit; proving failures and empty
-transactions are converted the same way. Also saturate two subtractions in the
-`fetch_from_rpc` summary log that underflowed (debug-build panic) when the
-queried node's finalized height was below the cached minimum. Found by
-Antithesis fault testing.
+transactions are converted the same way. Also saturate the height-span
+arithmetic in `fetch_from_rpc` (job sizing, progress log, and summary log),
+which underflowed (debug-build panic) when the queried node's finalized height
+was below the cached watermark. Found by Antithesis fault testing.
 
 Closes: #1821
 PR: https://github.com/midnightntwrk/midnight-node/pull/1822

@@ -162,14 +162,18 @@ pub async fn fetch_from_rpc(
 	let max_height = finalized_height + 1;
 	let min_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 
-	let blocks_per_job = if (max_height - min_height) < BLOCKS_PER_JOB * num_workers as u64 {
-		(max_height - min_height).div_ceil(num_workers as u64).max(5)
+	// The cache watermark can be ahead of this node's finalized height (e.g. the
+	// node lags behind the node the cache was built from); saturate to zero so we
+	// serve from cache instead of underflowing.
+	let fetch_span = max_height.saturating_sub(min_height);
+	let blocks_per_job = if fetch_span < BLOCKS_PER_JOB * num_workers as u64 {
+		fetch_span.div_ceil(num_workers as u64).max(5)
 	} else {
 		BLOCKS_PER_JOB
 	};
 
 	// Cap workers to the number of jobs to avoid unnecessary connections.
-	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
+	let num_jobs = fetch_span.div_ceil(blocks_per_job);
 	let num_workers = num_workers.min(num_jobs as usize).max(1);
 
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
@@ -284,7 +288,7 @@ pub async fn fetch_from_rpc(
 
 	log::debug!("final verify step");
 	// Receive final jobs
-	let num_jobs = (max_height - min_height).div_ceil(blocks_per_job);
+	let num_jobs = fetch_span.div_ceil(blocks_per_job);
 	let mut jobs = Vec::with_capacity(num_jobs as usize);
 	let mut received = 0;
 	let mut fetch_workers_exited = 0;
@@ -316,7 +320,7 @@ pub async fn fetch_from_rpc(
 			job = final_jobs_rx.recv() => {
 				jobs.push(job.expect("..."));
 				received += 1;
-				log::info!("fetch progress: {:.1}% of {} blocks complete", (received as f64 / num_jobs as f64) * 100f64, max_height - min_height);
+				log::info!("fetch progress: {:.1}% of {} blocks complete", (received as f64 / num_jobs as f64) * 100f64, fetch_span);
 			}
 		}
 	}
