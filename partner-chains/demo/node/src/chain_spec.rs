@@ -46,7 +46,7 @@ pub fn pc_create_chain_spec(config: &CreateChainSpecConfig<SessionKeys>) -> serd
 		grandpa: partner_chains_demo_runtime::GrandpaConfig::default(),
 		sudo: partner_chains_demo_runtime::SudoConfig::default(),
 		transaction_payment: Default::default(),
-		session: Default::default(),
+		session: config.pallet_session_config(),
 		sidechain: config.pallet_sidechain_config(SlotsPerEpoch::default()),
 		session_committee_management: config.pallet_session_validator_management_config(),
 		bridge: config.bridge_config(),

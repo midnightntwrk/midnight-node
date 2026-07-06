@@ -29,9 +29,9 @@ use sp_core::crypto::CryptoType;
 use sp_core::{ByteArray, H256, Pair, crypto::AccountId32};
 use sp_core::{ecdsa, ed25519, sr25519};
 use sp_runtime::{
-	BuildStorage, Digest, DigestItem, MultiSigner, impl_opaque_keys,
+	BuildStorage, Digest, DigestItem, impl_opaque_keys,
 	key_types::{AURA, GRANDPA},
-	traits::{BlakeTwo256, ConvertInto, IdentifyAccount, IdentityLookup, OpaqueKeys},
+	traits::{BlakeTwo256, ConvertInto, IdentityLookup, OpaqueKeys},
 };
 use std::cmp::max;
 
@@ -419,9 +419,6 @@ pub struct TestKeys {
 impl TestKeys {
 	pub fn from_seed(s: &str) -> Self {
 		Self { cross_chain: pair_from_seed(s), aura: pair_from_seed(s), grandpa: pair_from_seed(s) }
-	}
-	pub fn account(&self) -> AccountId32 {
-		MultiSigner::from(sp_core::ecdsa::Public::from(self.cross_chain.public())).into_account()
 	}
 	pub fn session(&self) -> TestSessionKeys {
 		TestSessionKeys { aura: self.aura.public(), grandpa: self.grandpa.public() }
