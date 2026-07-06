@@ -1,0 +1,21 @@
+{
+  // Tuned for Node's native TypeScript type-stripping (no build step): the LSP
+  // enforces the same constraints Node does at runtime, so what type-checks here
+  // is what `node scope.ts` will actually run.
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    // Node type-stripping only erases syntax; it never rewrites imports/exports,
+    // and it needs the real `.ts` extension in import specifiers. These flags make
+    // the type-checker reject anything Node couldn't strip.
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true
+  },
+  "include": ["*.ts"]
+}
