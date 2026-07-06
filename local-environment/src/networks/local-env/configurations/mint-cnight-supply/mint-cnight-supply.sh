@@ -74,11 +74,12 @@ echo "ICS Forever address:     $ICS_ADDR"
 echo "Reserve Forever address: $RESERVE_ADDR"
 
 # Wrap the compiled infinite-mint cNIGHT policy into a .plutus text envelope for
-# cardano-cli's --mint-script-file / policyid.
+# cardano-cli's --mint-script-file.
 jq '{type: "PlutusScriptV3", description: "", cborHex: (.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .compiledCode)}' \
   "$PLUTUS_JSON" > "$CNIGHT_PLUTUS"
 
-POLICY_ID=$(cardano-cli latest transaction policyid --script-file "$CNIGHT_PLUTUS")
+POLICY_ID=$(jq -r '.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .hash' "$PLUTUS_JSON")
+[ -n "$POLICY_ID" ] && [ "$POLICY_ID" != "null" ] || { echo "ERROR: cNIGHT minting policy id not found in $PLUTUS_JSON"; exit 1; }
 echo "cNIGHT policy id: $POLICY_ID"
 
 # The faucet / circulating address is the funded address shared with the e2e suite.
