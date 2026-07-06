@@ -156,6 +156,30 @@ each run to completion (`exit 0`) before the next phase starts.
 With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
 `wallet-indexer`, `indexer-api`) starts alongside the Cardano services.
 
+#### cNIGHT bridge funding
+
+The `local` network ships an **unfunded** genesis (no faucet wallets), so all NIGHT
+enters through the real cNIGHT→mNIGHT bridge. Two one-shot services drive this:
+
+- **`mint-cnight-supply`** seeds the Cardano side of the bridge (#1778). It runs after
+  the governance contracts are deployed and *before* `midnight-setup` captures the
+  bridge observation checkpoint. In one `cardano-cli` tx it mints the full cNIGHT
+  supply and splits it to mirror the Midnight genesis pools — Reserve (`C.R = M.R`),
+  ICS (`C.L = M.U`), and the funded/faucet address (`C.U = M.L`) — so the cross-chain
+  pool invariants hold from block 0. It then sends a c2m bridge transfer locking 1B
+  NIGHT of the circulating cNIGHT to ICS for the dev wallet `0x..01`; because that
+  transfer spends the seeding tx's outputs it lands strictly *after* the checkpoint and
+  is observed as a user transfer, and `midnight-setup` pre-approves its tx hash in the
+  c2m-bridge genesis config (`approved_txs`), so claiming it needs no governance round.
+
+- **`init-mnight-faucet`** runs once the chain is producing blocks. It claims that
+  pre-approved transfer (`claim-rewards --claim-kind cardano-bridge` — feeless and
+  self-signed, so the empty wallet needs no starting balance or DUST) and registers the
+  wallet's DUST address (`register-dust-address`, self-funded from the claimed NIGHT's
+  retroactive DUST), so `0x..01` can generate DUST and transact. It is plain toolkit CLI
+  calls on `${TOOLKIT_IMAGE}` (no dedicated image), idempotent via a
+  `runtime-values/mnight-faucet-ready` marker.
+
 Starting the environment via Earthly:
 
 ```bash
@@ -177,8 +201,7 @@ npm run run:local-env
 npm run run:local-env-with-indexer
 ```
 
-The `init-mnight-faucet` job (claims the bridged NIGHT + DUST-registers the dev wallet
-`0x..01`) is a plain shell script on the standard toolkit image — no dedicated image.
+`init-mnight-faucet` runs on the standard toolkit image (no dedicated image), so
 `local-environment/.envrc` derives `TOOLKIT_IMAGE` for your checkout the same way as
 `MIDNIGHT_NODE_IMAGE`; `earthly +start-local-env-latest` builds both from source
 automatically. Export `TOOLKIT_IMAGE` to pin your own.

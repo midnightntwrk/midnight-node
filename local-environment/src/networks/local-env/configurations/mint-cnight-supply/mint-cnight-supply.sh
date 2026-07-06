@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Seed the Cardano side of the cNIGHT <-> NIGHT bridge so the cross-chain pool
+# Seed the Cardano side of the cNIGHT -> mNIGHT bridge so the cross-chain pool
 # invariants hold at genesis (see midnight-node#1773 / #1778).
 #
 # On local-env the Midnight side already carries the full NIGHT pools via the

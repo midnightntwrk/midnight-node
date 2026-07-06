@@ -485,8 +485,6 @@ services:
         condition: service_healthy
       contract-compiler:
         condition: service_completed_successfully
-      # mint-cnight-supply also emits the faucet bridge tx hash, which must exist
-      # before genesis is built (it's pre-approved in the c2m-bridge genesis config).
       mint-cnight-supply:
         condition: service_completed_successfully
     security_opt:
@@ -511,13 +509,6 @@ services:
       - OGMIOS_PORT=${OGMIOS_PORT}
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
 
-  # Seeds the Cardano side of the cNIGHT<->NIGHT bridge at genesis (midnight-node#1778):
-  # mints the full cNIGHT supply and distributes it to mirror the Midnight pools
-  # (Reserve/ICS/faucet), so the cross-chain invariants hold from genesis. Runs after
-  # the contracts are deployed and BEFORE midnight-setup captures the bridge checkpoint.
-  # It then sends the c2m bridge transfer funding the dev faucet wallet (0x..01) —
-  # strictly after the checkpoint tx, so it IS observed; midnight-setup pre-approves
-  # its hash at genesis. The claim happens later in the `init-mnight-faucet` job.
   mint-cnight-supply:
     container_name: mint-cnight-supply
     image: ${CARDANO_IMAGE}
@@ -540,11 +531,6 @@ services:
       - CARDANO_NODE_SOCKET_PATH=/data/node.socket
     entrypoint: ["/bin/bash", "/mint-cnight-supply.sh"]
 
-  # Initializes the dev faucet wallet (seed 0x..01) once the chain is up: claims the
-  # pre-approved c2m bridge transfer (feeless, self-signed — the empty wallet needs no
-  # balance or DUST) and registers the wallet for DUST production (self-funded from the
-  # claimed NIGHT's retroactive DUST). Plain toolkit CLI calls on ${TOOLKIT_IMAGE};
-  # a `runtime-values/mnight-faucet-ready` marker makes it idempotent.
   init-mnight-faucet:
     container_name: init-mnight-faucet
     image: ${TOOLKIT_IMAGE}
