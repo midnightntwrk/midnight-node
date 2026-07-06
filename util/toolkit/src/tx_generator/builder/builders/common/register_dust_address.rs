@@ -164,7 +164,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 				},
 			);
 			tx_info.add_dust_registration(DustRegistrationBuilder {
-				signing_key: wallet.unshielded.signing_key().clone(),
+				wallet: wallet.unshielded.clone(),
 				dust_address: Some(destination_dust),
 				allow_fee_payment,
 			});

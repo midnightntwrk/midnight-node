@@ -25,7 +25,11 @@ use midnight_node_ledger_helpers::fork::{
 };
 use midnight_node_ledger_helpers::*;
 use serde::Deserialize;
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{
+	collections::{HashMap, HashSet},
+	path::PathBuf,
+	sync::Arc,
+};
 
 use crate::{
 	cli_parsers as cli,
@@ -892,14 +896,27 @@ macro_rules! timed {
 	}};
 }
 
+/// Per-seed unshielded signature scheme for context/cache building. Seeds absent from the map
+/// resolve to Schnorr (the default), so the empty map reproduces the pre-ECDSA behaviour.
+pub type WalletSchemes = HashMap<WalletSeed, UnshieldedSignatureScheme>;
+
+/// Resolve the scheme for `seed`, defaulting to Schnorr.
+fn scheme_of(schemes: &WalletSchemes, seed: &WalletSeed) -> UnshieldedSignatureScheme {
+	schemes.get(seed).copied().unwrap_or_default()
+}
+
 /// Load per-wallet cache entries and partition into uncached seeds and cached (seed, state) pairs.
 /// Cached pairs are sorted by block height for two-pointer replay.
 async fn load_and_partition_cache(
 	wallet_seeds: &[WalletSeed],
 	chain_id: H256,
 	storage: &dyn WalletStateCaching,
+	schemes: &WalletSchemes,
 ) -> (Vec<WalletSeed>, Vec<(WalletSeed, CachedWalletState)>) {
-	let seed_hashes: Vec<H256> = wallet_seeds.iter().map(wallet_state_cache::hash_seed).collect();
+	let seed_hashes: Vec<H256> = wallet_seeds
+		.iter()
+		.map(|seed| wallet_state_cache::wallet_cache_key(seed, scheme_of(schemes, seed)))
+		.collect();
 	let raw_cached = timed!(
 		"storage.get_wallet_states",
 		storage.get_wallet_states(chain_id, &seed_hashes).await
@@ -924,9 +941,11 @@ fn inject_cached_wallets(
 	wallets: &[(WalletSeed, CachedWalletState)],
 	ledger_state: &LedgerState<DefaultDB>,
 	at_height: u64,
+	schemes: &WalletSchemes,
 ) {
 	for (seed, state) in wallets {
-		wallet_state_cache::inject_wallet_from_cache(ctx, state, seed, ledger_state)
+		let scheme = scheme_of(schemes, seed);
+		wallet_state_cache::inject_wallet_from_cache(ctx, state, seed, scheme, ledger_state)
 			.unwrap_or_else(|e| {
 				panic!(
 					"failed to inject wallet at height {}: {} — clear caches and retry",
@@ -943,14 +962,19 @@ async fn initialize_context(
 	start_height: u64,
 	storage: &dyn WalletStateCaching,
 	chain_id: H256,
+	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
 	if start_height == 0 {
+		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
+			.iter()
+			.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
+			.collect();
 		timed!(
 			"new_from_wallet_seeds (cold)",
-			ForkAwareLedgerContext::new_from_wallet_seeds(
+			ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
 				received_tx.ledger_version(),
 				&received_tx.network_id,
-				uncached_seeds,
+				&seeds_with_schemes,
 			)
 		)
 	} else {
@@ -1055,6 +1079,7 @@ fn replay_blocks_9(
 	ctx: &midnight_node_ledger_helpers::ledger_9::context::LedgerContext<Db9>,
 	blocks_sorted_by_height: &[RawBlockData],
 	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_9::Event<Db9>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
@@ -1070,7 +1095,7 @@ fn replay_blocks_9(
 				events.clear();
 			}
 			let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
-			inject_cached_wallets(ctx, to_inject, &ls, block.number);
+			inject_cached_wallets(ctx, to_inject, &ls, block.number, schemes);
 			remaining = rest;
 		}
 
@@ -1102,7 +1127,7 @@ fn replay_blocks_9(
 	if !remaining.is_empty() {
 		let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
 		let height = blocks_sorted_by_height.last().map(|b| b.number).unwrap_or(0);
-		inject_cached_wallets(ctx, remaining, &ls, height);
+		inject_cached_wallets(ctx, remaining, &ls, height, schemes);
 	}
 
 	if let Some(block) = blocks_sorted_by_height.last() {
@@ -1116,6 +1141,7 @@ pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
 	blocks: &[RawBlockData],
 	cached: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
 	if !blocks.is_empty() && !cached.is_empty() {
 		log::info!(
@@ -1158,7 +1184,7 @@ pub(crate) fn replay_blocks(
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger9 context");
 			assert!(l8_blocks.is_empty(), "Ledger8 blocks with Ledger9 context");
-			replay_blocks_9(&ctx9, l9_blocks, cached);
+			replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
 			ForkAwareLedgerContext::Ledger9(ctx9)
 		},
 	};
@@ -1180,18 +1206,38 @@ pub async fn build_fork_aware_context_cached(
 	received_tx: &SourceTransactions,
 	cache_storage: Option<&dyn WalletStateCaching>,
 ) -> ForkAwareLedgerContext {
+	build_fork_aware_context_cached_with_schemes(
+		wallet_seeds,
+		received_tx,
+		cache_storage,
+		&WalletSchemes::new(),
+	)
+	.await
+}
+
+/// Scheme-aware variant of [`build_fork_aware_context_cached`]. `schemes` maps each seed to its
+/// unshielded signature scheme (absent → Schnorr); this determines both the cache key and how
+/// wallets are (re)built, so ECDSA identities cache and restore correctly and never collide with
+/// their Schnorr counterparts for the same seed.
+pub async fn build_fork_aware_context_cached_with_schemes(
+	wallet_seeds: &[WalletSeed],
+	received_tx: &SourceTransactions,
+	cache_storage: Option<&dyn WalletStateCaching>,
+	schemes: &WalletSchemes,
+) -> ForkAwareLedgerContext {
 	if wallet_seeds.is_empty() {
-		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	}
 	let Some(chain_id) = received_tx.chain_id() else {
-		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	};
 	let Some(storage) = cache_storage else {
-		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	};
 
 	// 1. Load cache and partition wallets.
-	let (uncached_seeds, cached) = load_and_partition_cache(wallet_seeds, chain_id, storage).await;
+	let (uncached_seeds, cached) =
+		load_and_partition_cache(wallet_seeds, chain_id, storage, schemes).await;
 
 	// 2. Compute start height.
 	let start_height = if !uncached_seeds.is_empty() {
@@ -1202,7 +1248,8 @@ pub async fn build_fork_aware_context_cached(
 
 	// 3. Initialize context (cold genesis or warm snapshot restore).
 	let fork_ctx =
-		initialize_context(received_tx, &uncached_seeds, start_height, storage, chain_id).await;
+		initialize_context(received_tx, &uncached_seeds, start_height, storage, chain_id, schemes)
+			.await;
 
 	// 4. Determine blocks to replay.
 	//
@@ -1246,14 +1293,15 @@ pub async fn build_fork_aware_context_cached(
 	};
 
 	// 5. Replay with mid-replay wallet injection.
-	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached);
+	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached, schemes);
 
 	// 6. Save updated cache. `blocks.last()` is sound here because
 	// step 4 already excluded the dust-warp synthetic (`number = 0`)
 	// from `blocks`; the last entry is the real chain head, and
 	// pointer lookup beats an O(n) `max_by_key` on long replays.
 	if let Some(final_block) = blocks.last() {
-		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage).await;
+		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage, schemes)
+			.await;
 	}
 
 	// 7. Apply the dust-warp synthetic block (in-memory only, post-save).
@@ -1312,6 +1360,7 @@ async fn try_save_cache_v2(
 	chain_id: H256,
 	block_height: u64,
 	storage: &dyn WalletStateCaching,
+	schemes: &WalletSchemes,
 ) {
 	let ctx = match fork_ctx {
 		ForkAwareLedgerContext::Ledger9(ctx) => ctx,
@@ -1345,7 +1394,12 @@ async fn try_save_cache_v2(
 	let wallet_snapshots: Vec<_> = wallet_seeds
 		.iter()
 		.filter_map(|seed| {
-			match wallet_state_cache::create_wallet_snapshot(ctx, seed, block_height) {
+			match wallet_state_cache::create_wallet_snapshot(
+				ctx,
+				seed,
+				scheme_of(schemes, seed),
+				block_height,
+			) {
 				Ok(ws) => Some(ws),
 				Err(e) => {
 					log::warn!("Failed to create wallet snapshot: {}", e);
@@ -1398,6 +1452,16 @@ pub fn build_fork_aware_context_raw(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
 ) -> ForkAwareLedgerContext {
+	build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, &WalletSchemes::new())
+}
+
+/// Scheme-aware variant of [`build_fork_aware_context_raw`] (see
+/// [`build_fork_aware_context_cached_with_schemes`]).
+pub fn build_fork_aware_context_raw_with_schemes(
+	received_tx: &SourceTransactions,
+	wallet_seeds: &[WalletSeed],
+	schemes: &WalletSchemes,
+) -> ForkAwareLedgerContext {
 	let network_id = &received_tx.network_id;
 	let initial_version = received_tx
 		.blocks
@@ -1405,12 +1469,20 @@ pub fn build_fork_aware_context_raw(
 		.map(|b| b.ledger_version())
 		.unwrap_or(LedgerVersion::Ledger9);
 
+	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
+		.iter()
+		.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
+		.collect();
+
 	let t = std::time::Instant::now();
-	let ctx =
-		ForkAwareLedgerContext::new_from_wallet_seeds(initial_version, network_id, wallet_seeds);
+	let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
+		initial_version,
+		network_id,
+		&seeds_with_schemes,
+	);
 	log::debug!("[perf] new_from_wallet_seeds (raw) took {:?}", t.elapsed());
 
-	replay_blocks(ctx, &received_tx.blocks, &[])
+	replay_blocks(ctx, &received_tx.blocks, &[], schemes)
 }
 
 /// Build a fork-aware context from source transactions, returning a ledger 9 context.

@@ -70,6 +70,34 @@ pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error>
 	})
 }
 
+/// Reusable `--seed` / `--seed-ecdsa` pair for any command whose seed drives a NIGHT signature.
+///
+/// Exactly one must be given (enforced by clap's `ArgGroup`): `--seed` selects the historical
+/// Schnorr scheme, `--seed-ecdsa` the ledger-9+ ECDSA scheme. Flatten it into a command with
+/// `#[command(flatten)]` and call [`SeedArg::resolve`] to get the `(seed, scheme)` pair.
+#[derive(clap::Args, Clone, Debug)]
+#[group(required = true, multiple = false)]
+pub struct SeedArg {
+	/// Wallet seed for a Schnorr unshielded (NIGHT) identity.
+	#[arg(long, value_parser = wallet_seed_decode)]
+	pub seed: Option<WalletSeed>,
+	/// Wallet seed for an ECDSA unshielded (NIGHT) identity (supported from ledger 9).
+	#[arg(long, value_parser = wallet_seed_decode)]
+	pub seed_ecdsa: Option<WalletSeed>,
+}
+
+impl SeedArg {
+	/// The chosen seed and its unshielded signature scheme. Clap's `ArgGroup`
+	/// (`required = true, multiple = false`) guarantees exactly one of the two is set.
+	pub fn resolve(&self) -> (WalletSeed, UnshieldedSignatureScheme) {
+		match (&self.seed, &self.seed_ecdsa) {
+			(Some(seed), None) => (seed.clone(), UnshieldedSignatureScheme::Schnorr),
+			(None, Some(seed)) => (seed.clone(), UnshieldedSignatureScheme::Ecdsa),
+			_ => unreachable!("clap guarantees exactly one of --seed / --seed-ecdsa is provided"),
+		}
+	}
+}
+
 pub fn keypair_from_str(input: &str) -> Result<Keypair, clap::error::Error> {
 	input.parse().map_err(|e| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);

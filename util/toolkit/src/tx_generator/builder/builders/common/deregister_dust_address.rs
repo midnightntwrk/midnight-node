@@ -140,7 +140,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> 
 		// Deregistration: pass dust_address: None instead of Some(dust_address)
 		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			tx_info.add_dust_registration(DustRegistrationBuilder {
-				signing_key: wallet.unshielded.signing_key().clone(),
+				wallet: wallet.unshielded.clone(),
 				dust_address: None,
 				allow_fee_payment: 0,
 			});
