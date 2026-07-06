@@ -28,6 +28,21 @@ fn assert_invalid_transaction(error_msg: &str) {
     );
 }
 
+/// Assert the rejection is specifically `ContractNotPresent` (ledger custom error 114).
+///
+/// The store is funded from the same single-utxo dev wallet (0x..01) that funds the
+/// overlaid, never-submitted deploy, so its inputs can be the deploy's overlay-only
+/// change. If that happened the store would be rejected for missing inputs (195/196)
+/// rather than the pre-dispatch contract-presence check these tests exist to cover — and
+/// the generic `assert_invalid_transaction` would pass anyway, hiding it. Requiring 114
+/// makes a wrong-path rejection fail loudly.
+fn assert_contract_not_present(error_msg: &str) {
+    assert!(
+        error_msg.contains("custom error: 114"),
+        "expected ContractNotPresent (custom error: 114) from pre_dispatch, got: {error_msg}"
+    );
+}
+
 /// PR367-TC-0003-06: DDoS Attack Prevention - Single Transaction
 ///
 /// A store for a non-deployed contract must be rejected at pre_dispatch
@@ -58,7 +73,7 @@ async fn ddos_attack_transaction_rejected_at_rpc() {
     );
     let error_msg = result.unwrap();
     tracing::info!("✓ rejected with: {error_msg}");
-    assert_invalid_transaction(&error_msg);
+    assert_contract_not_present(&error_msg);
 }
 
 /// PR367-TC-0003-06: DDoS Attack Prevention - Batch Attack
@@ -90,7 +105,7 @@ async fn ddos_batch_attack_all_rejected() {
             "attack tx {i}/{TOTAL_ATTACKS} should be rejected, but was accepted: {:?}",
             result.err()
         );
-        assert_invalid_transaction(&result.unwrap());
+        assert_contract_not_present(&result.unwrap());
         tracing::info!("  ✓ attack tx {i}/{TOTAL_ATTACKS} rejected");
     }
     tracing::info!("✓ all {TOTAL_ATTACKS} attack transactions rejected");
