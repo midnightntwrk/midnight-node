@@ -21,8 +21,8 @@ use midnight_node_runtime::{
 	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
 	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
 	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
-	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
-	SidechainConfig, Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
+	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SidechainConfig,
+	Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
 	TechnicalCommitteeMembershipConfig, TimestampCall, UncheckedExtrinsic, WASM_BINARY,
 	opaque::SessionKeys,
 };
@@ -274,17 +274,9 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			)
 			.map_err(ChainSpecInitError::GenesisStateError)?,
 		},
-		session: SessionConfig {
-			keys: authority_keys
-				.iter()
-				.cloned()
-				.map(|keys| {
-					let account_id: AccountId = keys.cross_chain.into();
-					(account_id.clone(), account_id, keys.session)
-				})
-				.collect::<Vec<_>>(),
-			non_authority_keys: Default::default(),
-		},
+		// Session keys are registered by `session_committee_management` genesis via
+		// `SessionInterface::set_keys`, not duplicated here.
+		session: Default::default(),
 		sidechain: SidechainConfig {
 			genesis_utxo: std::str::FromStr::from_str(genesis.genesis_utxo())
 				.expect("failed to convert genesis_utxo"),

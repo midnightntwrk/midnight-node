@@ -24,9 +24,11 @@ where
 {
 	/// Sets the first validator-set by mapping the current committee from [crate::Pallet]
 	fn new_session_genesis(_new_index: SessionIndex) -> Option<Vec<T::AccountId>> {
+		let committee = crate::Pallet::<T>::current_committee_storage().committee;
+		provide_committee_accounts::<T>(&committee);
+		register_committee_keys::<T>(&committee);
 		Some(
-			crate::Pallet::<T>::current_committee_storage()
-				.committee
+			committee
 				.into_iter()
 				.map(|member| member.authority_id().into())
 				.collect::<Vec<_>>(),
@@ -61,7 +63,7 @@ where
 // Registers keys of new committee members in the session pallet. This is necessary, as the pallet
 // requires the keys to be registered prior to session start and we do not wish to force block
 // producers to do it manually.
-fn register_committee_keys<
+pub(crate) fn register_committee_keys<
 	T: crate::Config + pallet_session::Config + pallet_session::historical::Config,
 >(
 	new_committee: &[T::CommitteeMember],
@@ -163,6 +165,20 @@ mod tests {
 				committee: next_committee,
 			});
 			assert!(Manager::should_end_session(IRRELEVANT));
+		});
+	}
+
+	#[test]
+	fn genesis_registers_session_keys_externally() {
+		use pallet_session::ExternallySetKeys;
+
+		new_test_ext().execute_with(|| {
+			assert!(ExternallySetKeys::<Test>::contains_key(&ALICE.authority_id));
+			assert!(ExternallySetKeys::<Test>::contains_key(&BOB.authority_id));
+			assert_eq!(
+				Session::load_keys(&ALICE.authority_id),
+				Some(SessionKeys { foo: UintAuthorityId(ALICE.authority_keys) })
+			);
 		});
 	}
 
