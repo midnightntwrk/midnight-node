@@ -14,7 +14,9 @@ on:
       - "**/Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
-      - "scripts/feature-unification-scope.ts"
+      - "scripts/feature-unification-scope/scope.ts"
+      - "scripts/feature-unification-scope/package.json"
+      - "scripts/feature-unification-scope/package-lock.json"
       - ".github/workflows/feature-unification.yml"
 
 # no top level default permissions for security reasons
@@ -68,7 +70,7 @@ jobs:
           git show HEAD^1:Cargo.lock > .scope/base-lock.txt 2>/dev/null || : > .scope/base-lock.txt
           git diff HEAD^1 HEAD -- Cargo.toml > .scope/toml-diff.txt 2>/dev/null || : > .scope/toml-diff.txt
 
-      # scripts/feature-unification-scope.ts attributes the diff to crates
+      # scripts/feature-unification-scope/scope.ts attributes the diff to crates
       # in-container and skips the cargo-hack check when nothing is affected.
       - name: Run feature unification check
         if: steps.guard.outputs.hit != 'true'

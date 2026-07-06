@@ -1,0 +1,16 @@
+{
+  "name": "feature-unification-scope",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Compute the cargo-hack package scope for the feature-unification CI check (TypeScript, run directly via node type-stripping).",
+  "scripts": {
+    "test": "node --test *.test.ts"
+  },
+  "dependencies": {
+    "smol-toml": "^1.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0"
+  }
+}

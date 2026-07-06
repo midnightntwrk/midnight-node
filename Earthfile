@@ -859,8 +859,8 @@ check-rust:
 # The partner-chains demo crates are excluded: they are upstream examples, not
 # shipped artifacts, and cost ~5min of the serial check.
 #
-# Scope is computed in-container by scripts/feature-unification-scope.ts (the
-# reverse-dependency closure of the crates the PR diff touches). It reads three
+# Scope is computed in-container by scripts/feature-unification-scope/scope.ts
+# (the reverse-dependency closure of the crates the PR diff touches). It reads three
 # git-derived files from .scope/, which must exist before the build -- git
 # history only lives on the host, and `--ci` (strict) forbids LOCALLY. The CI
 # workflow writes them; for a local run, from the repo root:
@@ -874,14 +874,15 @@ check-feature-unification:
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # Scope tooling deps (smol-toml) in their own layer so workspace edits don't
-    # reinstall. node + npm are pinned in the CI base image.
-    COPY scripts/package.json scripts/package-lock.json scripts/
-    RUN cd scripts && npm ci --no-audit --no-fund
+    # reinstall. node + npm are pinned in the CI base image. --omit=dev skips
+    # @types/node (LSP-only, not needed at runtime).
+    COPY scripts/feature-unification-scope/package.json scripts/feature-unification-scope/package-lock.json scripts/feature-unification-scope/
+    RUN cd scripts/feature-unification-scope && npm ci --no-audit --no-fund --omit=dev
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
-    COPY scripts/feature-unification-scope.ts scripts/feature-unification-scope.ts
+    COPY scripts/feature-unification-scope/scope.ts scripts/feature-unification-scope/scope.ts
     # git-derived scope inputs, produced on the host before the build (see above)
     COPY .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt .scope/
 
@@ -894,7 +895,7 @@ check-feature-unification:
     RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
     # node is pinned in the CI base image; the scoper reads the git-derived
     # inputs and emits the `-p` selection (empty => nothing to check).
-    RUN PACKAGES="$(node scripts/feature-unification-scope.ts \
+    RUN PACKAGES="$(node scripts/feature-unification-scope/scope.ts \
             .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
         if [ -z "$PACKAGES" ]; then \
             echo "feature-unification: nothing affected — skipping"; exit 0; \
