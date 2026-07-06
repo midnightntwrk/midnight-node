@@ -30,5 +30,5 @@ live db source.
 Operators can still tune this per node via `cnight_observation_window_size`
 (env `CNIGHT_OBSERVATION_WINDOW_SIZE`).
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1836
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1835
