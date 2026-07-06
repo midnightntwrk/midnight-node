@@ -252,8 +252,6 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		(bob().cross_chain.public(), bob().session()).into(),
 	];
 
-	let session_keys: Vec<_> =
-		vec![(alice().account(), alice().session()), (bob().account(), bob().session())];
 	let main_chain_scripts = MainChainScripts::default();
 	pallet_session_validator_management::GenesisConfig::<Test> {
 		initial_authorities,
@@ -262,15 +260,9 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	.assimilate_storage(&mut t)
 	.unwrap();
 
-	pallet_session::GenesisConfig::<Test> {
-		keys: session_keys
-			.into_iter()
-			.map(|(account, keys)| (account.clone(), account, keys))
-			.collect(),
-		non_authority_keys: Default::default(),
-	}
-	.assimilate_storage(&mut t)
-	.unwrap();
+	pallet_session::GenesisConfig::<Test>::default()
+		.assimilate_storage(&mut t)
+		.unwrap();
 
 	pallet_sidechain::GenesisConfig::<Test> {
 		genesis_utxo: UtxoId::default(),
