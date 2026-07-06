@@ -80,16 +80,7 @@ fn pc_create_chain_spec_test() {
 	assert_eq!(
 		config_obj.get("session").unwrap(),
 		&serde_json::json!({
-			"keys": [
-				[
-					"5CUUBrDiVEKVa655Bsm8sYc5An5Jqi52PetteUpMY2JFbuRF",
-					"5CUUBrDiVEKVa655Bsm8sYc5An5Jqi52PetteUpMY2JFbuRF",
-					{
-						"aura": "5CLW1ZaVdZdj6bf7nmvJfba6GbvxueXzV6Dw5fnPaKTiSARx",
-						"grandpa": "5CMpMdu3LbHuj2TqX4RAUzXCHCqmNj8Fce43wAbcqSFZuNfp"
-					}
-				]
-			],
+			"keys": [],
 			"nonAuthorityKeys": []
 		})
 	);
