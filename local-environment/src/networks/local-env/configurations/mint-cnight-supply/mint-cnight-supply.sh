@@ -251,7 +251,9 @@ fi
 echo "$BRIDGE_TX_ID" > "$BRIDGE_TX_HASH_FILE"
 echo "=== faucet bridge transfer submitted (tx $BRIDGE_TX_ID) ==="
 
-# The marker doubles as the seeding tx hash midnight-setup anchors the bridge checkpoint to.
-# Written LAST so a partially-completed run (e.g. bridge transfer failed) re-runs whole.
+# The marker doubles as the seeding tx hash midnight-setup anchors the bridge checkpoint
+# to; written last so it only marks a fully successful run. A partial run is not re-runnable
+# on the same Cardano volumes (the infinite mint policy would double the supply) — recover
+# by tearing the env down (wipes volumes + runtime-values) and re-seeding from scratch.
 echo "$SEED_TX_ID" > "$SEEDED_MARKER"
 echo "=== cNIGHT genesis seeding complete (tx $SEED_TX_ID) ==="
