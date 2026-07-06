@@ -8075,7 +8075,6 @@ dependencies = [
  "sp-runtime",
  "sp-runtime-interface",
  "sp-tracing",
- "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -8087,6 +8086,7 @@ dependencies = [
  "bech32 0.11.1",
  "bip32",
  "bip39",
+ "cargo_metadata 0.15.4",
  "derive-where",
  "futures",
  "hex",
@@ -8121,7 +8121,6 @@ dependencies = [
  "subxt-signer 0.50.0",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "zeroize",
 ]
 
@@ -10280,6 +10279,7 @@ dependencies = [
  "pallet-partner-chains-bridge",
  "parity-scale-codec",
  "scale-info",
+ "serde_json",
  "sidechain-domain",
  "sp-api",
  "sp-core",
