@@ -1,7 +1,3 @@
-# Cardano main-chain / epoch parameters for the local-environment Cardano
-# (fast devnet: ~5s security param, 60s epochs). Overrides the slower
-# testnet defaults in default.toml so the main-chain follower's epoch math
-# matches the local Cardano.
 cardano_security_parameter = 5
 cardano_active_slots_coeff = 1
 mc__first_epoch_timestamp_millis = 1772211480000
