@@ -230,8 +230,8 @@ mod tests {
 
 			advance_one_block();
 			assert_eq!(Session::current_index(), 1);
-			// pallet_session needs additional session to apply CHARLIE and DAVE as validators
-			assert_eq!(Session::validators(), Vec::<u64>::new());
+			// pallet_session needs an additional session to apply CHARLIE and DAVE as validators
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
 			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 1);
 
 			advance_one_block();
