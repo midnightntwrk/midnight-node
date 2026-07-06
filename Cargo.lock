@@ -11120,7 +11120,6 @@ dependencies = [
  "sp-partner-chains-bridge",
  "sp-runtime",
  "sp-session-validator-management",
- "sp-staking",
  "tempfile",
  "tokio",
 ]

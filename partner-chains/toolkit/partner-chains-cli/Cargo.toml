@@ -45,7 +45,6 @@ sp-partner-chains-bridge = { workspace = true, features = ["std"] }
 pallet-session = { workspace = true, features = ["std"] }
 pallet-sidechain = { workspace = true, features = ["std"] }
 sidechain-slots = { workspace = true }
-sp-staking = { workspace = true }
 authority-selection-inherents = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
@@ -62,7 +61,7 @@ sp-runtime = { workspace = true }
 [features]
 default = ["std"]
 std = []
-runtime-benchmarks = ["pallet-partner-chains-bridge/runtime-benchmarks"]
+runtime-benchmarks = []
 
 [lib]
 doctest = false
