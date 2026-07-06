@@ -38,14 +38,9 @@ where
 	}
 
 	/// Rotates the committee in [crate::Pallet] and plans this new committee as upcoming validator-set.
-	/// Updates the session index of [`pallet_session`].
-	// Instead of Some((*).expect) we could just use (*). However, we rather panic in presence of important programming errors.
 	fn new_session(new_index: SessionIndex) -> Option<Vec<T::AccountId>> {
 		info!("PalletSessionSupport: new_session {new_index}");
-		let new_committee = crate::Pallet::<T>::rotate_committee_to_next_epoch().expect(
-			"Session should never end without current epoch validators defined. \
-				Check ShouldEndSession implementation or if it is used before starting new session",
-		);
+		let new_committee = crate::Pallet::<T>::rotate_committee_to_next_epoch()?;
 
 		provide_committee_accounts::<T>(&new_committee);
 		register_committee_keys::<T>(&new_committee);

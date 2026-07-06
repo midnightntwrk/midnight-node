@@ -13,7 +13,7 @@ impl PartnerChainRuntime for MockRuntime {
 		config: &super::CreateChainSpecConfig<TestSessionKeys>,
 	) -> serde_json::Value {
 		serde_json::json!({
-			"session":config.pallet_partner_chains_session_config::<MockRuntime>(),
+			"session":config.pallet_session_config::<MockRuntime>(),
 			"sessionCommitteeManagement": config.pallet_session_validator_management_config::<MockRuntime>(),
 			"sidechain": config.pallet_sidechain_config::<MockRuntime>(SlotsPerEpoch(13)),
 			"bridge":config.bridge_config::<MockRuntime>(),
