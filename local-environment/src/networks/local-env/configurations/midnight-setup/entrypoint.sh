@@ -67,6 +67,15 @@ COUNCIL_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Council Forever") | .addr
 TECHAUTH_POLICY_ID=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .scriptHash' $CONTRACT_INFO)
 TECHAUTH_SCRIPT_ADDRESS=$(jq -r '.[] | select(.name == "Tech Auth Forever") | .address' $CONTRACT_INFO)
 CNIGHT_MAPPING_VALIDATOR_ADDRESS=$(jq -r '.[] | select(.name == "cNIGHT Generates Dust") | .address' $CONTRACT_INFO)
+# cNIGHT minting policy id = the compiled mint script's hash in the Aiken blueprint (the
+# same value cardano-cli policyid computes and mint-cnight-supply mints under). Deriving it
+# here — rather than trusting the committed cnight-config value — keeps the bridge asset in
+# sync with the actual contract if the mint script ever changes.
+PLUTUS_INFO="/runtime-values/plutus-local.json"
+CNIGHT_MINTING_POLICY_ID=$(jq -r '.validators[] | select(.title == "test_cnight_no_audit.tcnight_mint_infinite.else") | .hash' "$PLUTUS_INFO")
+[ -n "$CNIGHT_MINTING_POLICY_ID" ] && [ "$CNIGHT_MINTING_POLICY_ID" != "null" ] || {
+  echo "ERROR: cNIGHT minting policy id not found in $PLUTUS_INFO"; exit 1;
+}
 ICS_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "ICS Forever") | .address' $CONTRACT_INFO)
 RESERVE_FOREVER_ADDRESS=$(jq -r '.[] | select(.name == "Reserve Forever") | .address' $CONTRACT_INFO)
 REGISTERED_CANDIDATES_ADDRESS=$(jq -r '.[] | select(.name == "Registered Candidate") | .address' $CONTRACT_INFO)
@@ -131,9 +140,12 @@ cat /res/local/registered-candidates-addresses.json
 section "cnight-config.json"
 echo "Patching cnight-config.json with:"
 echo "  addresses.mapping_validator_address: $CNIGHT_MAPPING_VALIDATOR_ADDRESS"
+echo "  addresses.cnight_policy_id: $CNIGHT_MINTING_POLICY_ID"
 patch_json /res/local/cnight-config.json \
   --arg mapping_addr "$CNIGHT_MAPPING_VALIDATOR_ADDRESS" \
+  --arg cnight_pid "$CNIGHT_MINTING_POLICY_ID" \
   '.addresses.mapping_validator_address = $mapping_addr
+  | .addresses.cnight_policy_id = $cnight_pid
   | .observed_utxos.end = .observed_utxos.start
   | .observed_utxos.utxos = []
   | .mappings = {}
