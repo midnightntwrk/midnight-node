@@ -10,7 +10,7 @@ on:
     # as defined in the (optional) "skipLabels" property.
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
     paths-ignore:
-      - '.gihub/**'
+      - '.github/**'
       - 'changes/**'
       - 'docs/**'
       - 'tests/**'
@@ -51,6 +51,8 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PR title is untrusted input - only ever handle it via env, never inline
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
@@ -62,6 +64,13 @@ jobs:
             echo "number=$PR_NUM" >> "$GITHUB_OUTPUT"
             LABELS=$(gh pr view "$PR_NUM" --json labels | jq -c '[.labels[].name]')
             echo "labels=$LABELS" >> "$GITHUB_OUTPUT"
+            PR_TITLE=$(gh pr view "$PR_NUM" --json title -q .title)
+          fi
+          # CI-only PRs ("ci:" / "ci(scope):" conventional-commit titles) don't need a change file
+          if printf '%s' "$PR_TITLE" | grep -qE '^ci(\([^)]*\))?:'; then
+            echo "ci_title=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ci_title=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check changes can be rendered
@@ -71,7 +80,7 @@ jobs:
         run: season build
 
       - name: Check changes files for link to PR
-        if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
+        if: ${{ steps.pr.outputs.ci_title != 'true' && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
