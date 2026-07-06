@@ -41,10 +41,31 @@ use std::sync::{Arc, Mutex};
 /// one shot.
 const LARGE_LIMIT: usize = 5_000_000;
 
-/// Default number of cardano blocks to keep in the sliding window when the
-/// node config doesn't override it. Memory cost ≈ 5 KB × events-per-block,
-/// so 100k blocks ≈ a few hundred MB on a busy chain.
-pub const DEFAULT_WINDOW_SIZE: u32 = 100_000;
+/// Default number of Cardano blocks the sliding window retains *behind* the
+/// follower when the node config doesn't override it.
+///
+/// This is a reorg-safety **lookback**, not a general cache size. Steady-state
+/// refreshes trim the window to `follower - window_size` (see [`plan_refresh`]),
+/// so `window_size` directly bounds how wide the window stays once the node has
+/// caught up. Forward sync never misses regardless of its value — the runtime
+/// only ever reads `[start_position, tip]`, i.e. at or ahead of the follower, so
+/// blocks behind the follower are never served from cache. A larger value only
+/// lets more *backward*-going reads (Cardano reorgs, block re-imports) hit the
+/// in-memory cache instead of falling back to db-sync.
+///
+/// Sized at 10× the runtime's own observation window
+/// (`CNightObservationApi::get_cardano_block_window_size` = 1000) and comfortably
+/// above Cardano's security parameter k (~2160), so it covers the deepest
+/// possible reorg with headroom. Memory cost ≈ 5 KB × events-per-block × window
+/// blocks, so 10k blocks ≈ tens of MB on a busy chain.
+///
+/// The previous default of 100_000 (100× the runtime window) pinned validators
+/// that synced from genesis at a ~100k-wide window: such a node advances the
+/// follower contiguously the whole way, never hits `plan_refresh`'s narrow jump
+/// re-anchor, and so keeps a 100k-block lookback permanently. Every refresh then
+/// queried a Cardano range far wider than a healthy peer's, overrunning the 6s
+/// slot and starving block authoring. See issue #1835.
+pub const DEFAULT_WINDOW_SIZE: u32 = 10_000;
 
 /// If the next-needed cardano position (`start_position`) is within this many
 /// blocks of the cache's `end`, kick an async refresh that slides the window
@@ -770,6 +791,43 @@ mod tests {
 		// behind the jump target (which would claim coverage over a gap).
 		let (from, start) = plan_refresh(99, 570_000, 0, Some(50), 100_000);
 		assert_eq!((from, start), (570_000, 570_000));
+	}
+
+	#[test]
+	fn plan_refresh_from_genesis_steady_state_tracks_follower_not_genesis() {
+		// Regression for #1835. A node that syncs from genesis advances the
+		// follower contiguously, so once it has caught up it is still in the
+		// contiguous branch (never the narrow jump re-anchor). The window must
+		// then trim to a bounded lookback behind the follower — NOT stay pinned
+		// at the genesis observation position (0), which is what produced the
+		// permanent ~100k-wide window.
+		let window_size = DEFAULT_WINDOW_SIZE;
+		let follower = 5_000_000;
+		let old_end = follower + 5; // cache prefetched slightly ahead → contiguous, no jump
+		let existing_start = 0; // worst case: window start still at genesis
+		let (from, start) =
+			plan_refresh(old_end, follower, existing_start, Some(follower), window_size);
+		// Contiguous: extend from just past the cached end.
+		assert_eq!(from, old_end + 1);
+		// Trim to a bounded lookback behind the follower, well past genesis.
+		assert_eq!(start, follower - window_size);
+		assert!(start > 0, "window must re-anchor near the follower, not stay at genesis");
+		// The retained lookback is exactly `window_size`, independent of how far
+		// the follower has travelled from genesis — the window width is bounded.
+		assert_eq!(follower - start, window_size);
+	}
+
+	#[test]
+	fn default_window_size_is_a_modest_reorg_lookback() {
+		// Regression guard for #1835. `DEFAULT_WINDOW_SIZE` is the steady-state
+		// lookback (see `plan_refresh`), so it must stay a modest multiple of the
+		// runtime's own observation window (1000) and above Cardano's security
+		// parameter k (~2160) — not the old 100_000, which pinned from-genesis
+		// validators at a ~100k-wide window and starved block authoring.
+		assert!(
+			(2_160..=20_000).contains(&DEFAULT_WINDOW_SIZE),
+			"DEFAULT_WINDOW_SIZE={DEFAULT_WINDOW_SIZE} is outside the sane reorg-safety lookback range"
+		);
 	}
 
 	#[test]

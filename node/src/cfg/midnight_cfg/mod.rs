@@ -99,10 +99,15 @@ pub struct MidnightCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	pub federated_authority_config_file: Option<String>,
 
-	/// Cardano blocks to keep in the cNIGHT observation sliding window.
-	/// Bigger = fewer cache misses during sync but more memory; smaller =
-	/// less memory but more db-fallback calls. Defaults to
-	/// `DEFAULT_WINDOW_SIZE` (100k) when unset.
+	/// Cardano blocks the cNIGHT observation sliding window retains *behind* the
+	/// follower — a reorg-safety lookback, not a general cache size. Bigger =
+	/// more backward-going reads (Cardano reorgs, block re-imports) hit the
+	/// in-memory cache instead of db-sync, at the cost of memory and a
+	/// proportionally heavier refresh query; smaller = less memory and lighter
+	/// refreshes but more db-fallback calls on reorgs. Forward sync never misses
+	/// regardless. Directly bounds the steady-state window width, so keep it a
+	/// modest multiple of the runtime observation window rather than oversizing
+	/// it. Defaults to `DEFAULT_WINDOW_SIZE` when unset.
 	#[serde(default = "default_cnight_observation_window_size")]
 	pub cnight_observation_window_size: u32,
 
