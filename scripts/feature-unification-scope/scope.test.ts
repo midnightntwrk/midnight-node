@@ -2,7 +2,8 @@
 //
 // The pure decision lives in computeScope(); these drive it end-to-end with
 // synthetic `cargo metadata` and Cargo.lock inputs and assert the exact
-// cargo-hack selection string, plus unit tests for the trickier helpers.
+// cargo-hack selection string, plus unit tests for helper behaviour that
+// isn't otherwise observable through computeScope's output.
 //
 // Run: `npm test` (i.e. `node --test *.test.ts`, Node >= 22.18).
 
@@ -16,7 +17,6 @@ import {
 	type Meta,
 	owningCrate,
 	parseLock,
-	reverseClosure,
 	reverseReachMembers,
 	type ScopeInput,
 	WORKSPACE_ARGS,
@@ -99,11 +99,10 @@ function scope(over: Partial<ScopeInput> & { changed: string[] }): string {
 }
 
 describe("computeScope: file attribution", () => {
-	test("no changed files -> empty scope (skip the check)", () => {
+	test("no compile-relevant changes -> empty scope (skip the check)", () => {
 		assert.equal(scope({ changed: [] }), "");
-	});
-
-	test("only ignored files -> empty scope", () => {
+		// Only files the scoper explicitly ignores, including its own folder --
+		// editing the scoper itself must never force a full check.
 		assert.equal(
 			scope({
 				changed: [
@@ -113,16 +112,6 @@ describe("computeScope: file attribution", () => {
 					"README.md",
 					"LICENSE",
 					"Earthfile",
-				],
-			}),
-			"",
-		);
-	});
-
-	test("editing the scoper's own folder -> empty scope (never self-triggers a full check)", () => {
-		assert.equal(
-			scope({
-				changed: [
 					"scripts/feature-unification-scope/scope.ts",
 					"scripts/feature-unification-scope/scope.test.ts",
 					"scripts/feature-unification-scope/package.json",
@@ -134,32 +123,24 @@ describe("computeScope: file attribution", () => {
 		);
 	});
 
-	test("a leaf crate's source -> that crate plus its reverse-dep closure", () => {
+	test("a leaf crate's source -> that crate plus its reverse-dependency closure", () => {
 		assert.equal(scope({ changed: ["crates/leaf/src/lib.rs"] }), "-p leaf -p mid -p top");
 	});
 
-	test("a top crate's source -> only itself (nothing depends on it)", () => {
+	test("a terminal crate's source -> only itself (nothing depends on it)", () => {
 		assert.equal(scope({ changed: ["crates/top/src/main.rs"] }), "-p top");
 	});
 
-	test("build-dependency edges are followed", () => {
-		assert.equal(
-			scope({ changed: ["crates/buildtool/src/lib.rs"] }),
-			"-p buildtool -p usesbuild",
-		);
-	});
-
-	test("dev-dependency edges are NOT followed (the check strips dev-deps)", () => {
-		// devdependent depends on devonly only via a dev-dep, so it must not appear.
+	test("build-dependency edges are followed; dev-dependency edges are not", () => {
+		assert.equal(scope({ changed: ["crates/buildtool/src/lib.rs"] }), "-p buildtool -p usesbuild");
+		// devdependent depends on devonly only via a dev-dep, so it must not appear
+		// (the check strips dev-deps).
 		assert.equal(scope({ changed: ["crates/devonly/src/lib.rs"] }), "-p devonly");
 	});
 
-	test("nested crate wins over its parent by longest-prefix", () => {
+	test("nested crates win by longest prefix; multiple changed crates union their closures", () => {
 		assert.equal(scope({ changed: ["pallets/x/mock/src/lib.rs"] }), "-p nest-child");
 		assert.equal(scope({ changed: ["pallets/x/src/lib.rs"] }), "-p nest-parent");
-	});
-
-	test("multiple changed crates union their closures", () => {
 		assert.equal(
 			scope({ changed: ["crates/leaf/src/lib.rs", "crates/buildtool/src/lib.rs"] }),
 			"-p buildtool -p leaf -p mid -p top -p usesbuild",
@@ -168,16 +149,11 @@ describe("computeScope: file attribution", () => {
 });
 
 describe("computeScope: whole-workspace fallbacks", () => {
-	test("a global input (rust-toolchain) forces the whole workspace", () => {
-		assert.equal(scope({ changed: ["rust-toolchain.toml"] }), WORKSPACE_ARGS);
-	});
-
-	test("a .cargo/ config change forces the whole workspace", () => {
-		assert.equal(scope({ changed: [".cargo/config.toml"] }), WORKSPACE_ARGS);
-	});
-
-	test("a .config/ change forces the whole workspace", () => {
-		assert.equal(scope({ changed: [".config/nextest.toml"] }), WORKSPACE_ARGS);
+	test("global inputs (toolchain, .cargo/, .config/) force the whole workspace", () => {
+		assert.equal(
+			scope({ changed: ["rust-toolchain.toml", ".cargo/config.toml", ".config/nextest.toml"] }),
+			WORKSPACE_ARGS,
+		);
 	});
 
 	test("an unattributable file (under no crate, not ignored) forces the whole workspace", () => {
@@ -272,99 +248,69 @@ describe("owningCrate", () => {
 		{ name: "parent", dir: "pallets/x" },
 		{ name: "child", dir: "pallets/x/mock" },
 	];
-	test("longest matching prefix wins", () => {
+	test("longest prefix wins; requires a directory boundary; unowned files are null", () => {
 		assert.equal(owningCrate("pallets/x/mock/src/lib.rs", crates), "child");
 		assert.equal(owningCrate("pallets/x/src/lib.rs", crates), "parent");
-	});
-	test("requires a directory boundary, not just a string prefix", () => {
 		// 'pallets/xyz' must not be attributed to the 'pallets/x' crate.
 		assert.equal(owningCrate("pallets/xyz/src/lib.rs", crates), null);
-	});
-	test("files under no crate are unowned", () => {
 		assert.equal(owningCrate("docs/readme.md", crates), null);
-	});
-});
-
-describe("reverseClosure", () => {
-	const deps = new Map<string, string[]>([
-		["leaf", []],
-		["mid", ["leaf"]],
-		["top", ["mid"]],
-	]);
-	const names = ["leaf", "mid", "top"];
-	test("walks reverse edges to a fixed point, sorted", () => {
-		assert.deepEqual(reverseClosure(deps, names, ["leaf"]), ["leaf", "mid", "top"]);
-		assert.deepEqual(reverseClosure(deps, names, ["mid"]), ["mid", "top"]);
-		assert.deepEqual(reverseClosure(deps, names, ["top"]), ["top"]);
-	});
-	test("empty seeds -> empty result", () => {
-		assert.deepEqual(reverseClosure(deps, names, []), []);
 	});
 });
 
 describe("reverseReachMembers", () => {
 	const lock = parseLock(LOCK_HEAD);
 	const members = ["leaf", "mid", "top"];
-	test("reverse-walks the lock graph and keeps only members", () => {
+	test("reverse-walks the lock graph, keeping only members; a member seed reappears alongside its dependents", () => {
 		// external is not a member; its dependents mid and top are.
 		assert.deepEqual(reverseReachMembers(lock, ["external"], members), ["mid", "top"]);
-	});
-	test("a member seed reappears alongside its dependents", () => {
 		assert.deepEqual(reverseReachMembers(lock, ["leaf"], members), ["leaf", "mid", "top"]);
-	});
-	test("no seeds -> nothing", () => {
-		assert.deepEqual(reverseReachMembers(lock, [], members), []);
 	});
 });
 
 describe("lockChanged", () => {
-	const base = parseLock(mkLock([{ name: "x", version: "1.0.0", source: REGISTRY, checksum: "a" }]));
-	test("identical locks -> nothing changed", () => {
+	test("detects version, checksum, dependency-set, and membership changes; ignores identical locks and entry order", () => {
+		const base = parseLock(mkLock([{ name: "x", version: "1.0.0", source: REGISTRY, checksum: "a" }]));
 		assert.deepEqual(lockChanged(base, base), []);
-	});
-	test("a version bump is detected", () => {
-		const head = parseLock(mkLock([{ name: "x", version: "2.0.0", source: REGISTRY, checksum: "a" }]));
-		assert.deepEqual(lockChanged(base, head), ["x"]);
-	});
-	test("a checksum change is detected", () => {
-		const head = parseLock(mkLock([{ name: "x", version: "1.0.0", source: REGISTRY, checksum: "b" }]));
-		assert.deepEqual(lockChanged(base, head), ["x"]);
-	});
-	test("a dependency-set change is detected", () => {
-		const b = parseLock(mkLock([{ name: "x", version: "1", deps: ["a"] }]));
-		const h = parseLock(mkLock([{ name: "x", version: "1", deps: ["a", "c"] }]));
-		assert.deepEqual(lockChanged(b, h), ["x"]);
-	});
-	test("added and removed packages are detected", () => {
-		const h = parseLock(
+
+		const versionBump = parseLock(mkLock([{ name: "x", version: "2.0.0", source: REGISTRY, checksum: "a" }]));
+		assert.deepEqual(lockChanged(base, versionBump), ["x"]);
+
+		const checksumChange = parseLock(mkLock([{ name: "x", version: "1.0.0", source: REGISTRY, checksum: "b" }]));
+		assert.deepEqual(lockChanged(base, checksumChange), ["x"]);
+
+		const depsBase = parseLock(mkLock([{ name: "x", version: "1", deps: ["a"] }]));
+		const depsHead = parseLock(mkLock([{ name: "x", version: "1", deps: ["a", "c"] }]));
+		assert.deepEqual(lockChanged(depsBase, depsHead), ["x"]);
+
+		const added = parseLock(
 			mkLock([
 				{ name: "x", version: "1.0.0", source: REGISTRY, checksum: "a" },
 				{ name: "y", version: "1.0.0", source: REGISTRY, checksum: "c" },
 			]),
 		);
-		assert.deepEqual(lockChanged(base, h), ["y"]);
-	});
-	test("multi-version packages fingerprint order-independently", () => {
-		const b = parseLock(
+		assert.deepEqual(lockChanged(base, added), ["y"]);
+
+		// Same two entries for a multi-version package, emitted in the opposite
+		// order -> not a change (fingerprint must be order-independent).
+		const multiA = parseLock(
 			mkLock([
 				{ name: "x", version: "1.0.0", source: REGISTRY, checksum: "a" },
 				{ name: "x", version: "2.0.0", source: REGISTRY, checksum: "b" },
 			]),
 		);
-		// same two entries, emitted in the opposite order -> not a change.
-		const h = parseLock(
+		const multiB = parseLock(
 			mkLock([
 				{ name: "x", version: "2.0.0", source: REGISTRY, checksum: "b" },
 				{ name: "x", version: "1.0.0", source: REGISTRY, checksum: "a" },
 			]),
 		);
-		assert.deepEqual(lockChanged(b, h), []);
+		assert.deepEqual(lockChanged(multiA, multiB), []);
 	});
 });
 
 describe("parseLock", () => {
-	test("parses fields and strips the version/source suffix from dep entries", () => {
-		const pkgs = parseLock(
+	test("parses fields, strips the version/source suffix from dep entries, and defaults path members", () => {
+		const [pkg] = parseLock(
 			mkLock([
 				{
 					name: "foo",
@@ -376,34 +322,26 @@ describe("parseLock", () => {
 				},
 			]),
 		);
-		assert.equal(pkgs.length, 1);
-		assert.deepEqual(pkgs[0], {
+		assert.deepEqual(pkg, {
 			name: "foo",
 			version: "1.2.3",
 			source: REGISTRY,
 			checksum: "deadbeef",
 			deps: ["bar", "baz"],
 		});
-	});
-	test("path/workspace members with no source/checksum/deps get empty defaults", () => {
-		const [p] = parseLock(mkLock([{ name: "member", version: "0.1.0" }]));
-		assert.deepEqual(p, { name: "member", version: "0.1.0", source: "", checksum: "", deps: [] });
+
+		const [member] = parseLock(mkLock([{ name: "member", version: "0.1.0" }]));
+		assert.deepEqual(member, { name: "member", version: "0.1.0", source: "", checksum: "", deps: [] });
 	});
 });
 
 describe("lockAffected", () => {
 	const members = ["leaf", "mid", "top"];
-	test("returns null when the lock changed but there is no base to diff", () => {
+	test("returns null with no base lock to diff; otherwise combines lock-diff and manifest dep-name seeds", () => {
 		assert.equal(lockAffected(["Cargo.lock"], members, "", "", LOCK_HEAD), null);
-	});
-	test("combines lock-diff seeds and manifest dep-name seeds", () => {
-		const out = lockAffected(
-			["Cargo.lock", "Cargo.toml"],
-			members,
-			LOCK_BASE,
-			"+external = { workspace = true }",
-			LOCK_HEAD,
+		assert.deepEqual(
+			lockAffected(["Cargo.lock", "Cargo.toml"], members, LOCK_BASE, "+external = { workspace = true }", LOCK_HEAD),
+			["mid", "top"],
 		);
-		assert.deepEqual(out, ["mid", "top"]);
 	});
 });
