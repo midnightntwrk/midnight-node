@@ -246,9 +246,11 @@ rebuild-genesis-state:
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
     # Copy genesis config files (undeployed uses res/dev/; local uses res/local/).
-    # Neither network has a live Cardano to snapshot — undeployed mocks the main chain,
-    # local brings up its own dockerized Cardano from scratch — so there is no
-    # cardano-tip.json; both rely on the hardcoded faucet seeds injected below.
+    # Neither network has a cardano-tip.json (a snapshot of a live Cardano tip to anchor
+    # genesis to): undeployed mocks the main chain, and local runs its own real dockerized
+    # Cardano from genesis (block 0), so there is no pre-existing tip. undeployed funds
+    # faucet wallets from the hardcoded seeds injected below; local ships an unfunded genesis
+    # and is funded over the cNIGHT bridge at runtime instead.
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
@@ -296,8 +298,10 @@ rebuild-genesis-state:
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
         RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
-        # cardano-tip.json is only present for deployed networks (mainnet etc.). Mock-main-chain
-        # networks like local omit it, so include the flag only when the file exists.
+        # cardano-tip.json is only present for deployed networks (mainnet etc.) that anchor
+        # genesis to a live Cardano tip. Networks spawned from their own genesis omit it —
+        # undeployed (mocked main chain) and local (its own dockerized Cardano) — so include
+        # the flag only when the file exists.
         RUN if [ -f /genesis-config/cardano-tip.json ]; then \
                 /midnight-node-toolkit generate-genesis \
                     --network ${NETWORK} \
