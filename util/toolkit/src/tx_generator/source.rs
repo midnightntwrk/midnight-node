@@ -271,7 +271,10 @@ impl GetTxs for GetTxsChained {
 	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		let mut base = self.base.get_txs().await?;
 		let overlay = self.overlay.get_txs().await?;
-		base.blocks.extend(overlay.blocks);
+		// Renumber overlay blocks to continue ascending from the base head — file-loaded
+		// blocks are all `number = 0`, which otherwise breaks the warm-cache replay height
+		// filter and looks like the trailing dust-warp synthetic. See `chain_overlay`.
+		base.chain_overlay(overlay.blocks);
 		Ok(base)
 	}
 }
