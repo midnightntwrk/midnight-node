@@ -11193,7 +11193,6 @@ dependencies = [
  "sc-telemetry",
  "sc-transaction-pool",
  "sc-transaction-pool-api",
- "serde",
  "serde_json",
  "sidechain-domain",
  "sidechain-mc-hash",
