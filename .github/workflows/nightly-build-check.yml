@@ -24,9 +24,9 @@ jobs:
         with:
           submodules: true
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -42,4 +42,4 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly -P --ci --platform=linux/amd64 +node-image
+          . ./.envrc && earth -P --ci --platform=linux/amd64 +node-image

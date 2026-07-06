@@ -51,16 +51,16 @@ jobs:
           submodules: true
           ref: ${{ inputs.ref }}
 
-      - name: Setup Earthly
-        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - name: Setup EarthBuild
+        uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
       - name: Run srtool build
         run: |
-          . ./.envrc && earthly +srtool-build
+          . ./.envrc && earth +srtool-build
 
       - name: Rename WASM assets with version
         if: inputs.runtime-tag-release != ''

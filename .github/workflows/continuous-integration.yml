@@ -45,9 +45,9 @@ jobs:
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           # Keep `use-cache: false` — that flag controls whether EarthBuild
           # caches state into GitHub Actions cache (which sets up TLS-secured
@@ -65,12 +65,12 @@ jobs:
         id: get_sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      # TEST ONLY — let earthly manage its own buildkitd on the self-hosted
-      # runner, but without TLS (no certs are provisioned). Earthly defaults
+      # TEST ONLY — let EarthBuild manage its own buildkitd on the self-hosted
+      # runner, but without TLS (no certs are provisioned). EarthBuild defaults
       # to TLS for its managed buildkitd, which fails on a fresh runner.
       # Appending `tls_enabled: false` to the repo's existing .earthly/config.yml
-      # keeps the rest of midnight-node's earthly settings intact.
-      - name: Disable earthly TLS (self-hosted runner has no certs)
+      # keeps the rest of midnight-node's EarthBuild settings intact.
+      - name: Disable EarthBuild TLS (self-hosted runner has no certs)
         run: |
           echo "    tls_enabled: false" >> .earthly/config.yml
           echo "--- updated .earthly/config.yml ---"
@@ -171,11 +171,11 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          # Retry the earthly invocation up to 3 times. Buildkit's default
+          # Retry the EarthBuild invocation up to 3 times. Buildkit's default
           # response-header timeout for registry uploads (~30s in the
           # underlying containerd resolver) isn't tunable via buildkitd.toml,
           # and the self-hosted -> ghcr.io path occasionally drops a layer push
-          # with "timeout awaiting response headers". Earthly's cache means
+          # with "timeout awaiting response headers". EaEarthBuild's cache means
           # retries skip everything that already succeeded — they essentially
           # only retry the failing push.
           #
@@ -183,17 +183,17 @@ jobs:
           # the GHA log, not collapsed.
           . ./.envrc
           for attempt in 1 2 3; do
-            echo "----- earthly attempt $attempt/3 -----"
-            if earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
+            echo "----- EarthBuild attempt $attempt/3 -----"
+            if earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
               exit 0
             fi
-            echo "----- earthly attempt $attempt failed -----"
+            echo "----- EarthBuild attempt $attempt failed -----"
             if [ $attempt -lt 3 ]; then
               echo "sleeping 30s before retry"
               sleep 30
             fi
           done
-          echo "earthly failed after 3 attempts"
+          echo "EarthBuild failed after 3 attempts"
           exit 1
 
       - name: Upload build artifacts
@@ -249,9 +249,9 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -302,7 +302,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -402,10 +402,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -416,7 +416,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly +check-deps
+          . ./.envrc && earth +check-deps
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -443,10 +443,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -476,7 +476,7 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
             +rebuild-genesis
@@ -504,10 +504,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -528,7 +528,7 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly -P --strict \
+          . ./.envrc && earth -P --strict \
             +test-pallet-fixtures --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -557,10 +557,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -581,7 +581,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       # Earthfile FROMs midnightntwrk/midnight-node-ci and other docker.io
-      # images; earthly pushes inline cache back to those repos under --push,
+      # images; EarthBuild pushes inline cache back to those repos under --push,
       # which needs Docker Hub auth.
       # Non-fatal: pushes target ghcr.io and the docker.io base images are
       # public, so the build proceeds without these creds (e.g. Dependabot runs,
@@ -598,11 +598,11 @@ jobs:
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
         run: scripts/free-disk-space.sh
 
-      # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
+      # Self-hosted-runner-specific: EarthBuild's managed buildkitd defaults to TLS
       # but no certs are provisioned on the runner. Append tls_enabled: false
-      # to the workspace .earthly/config.yml so earthly skips TLS for its own
+      # to the workspace .earthly/config.yml so EarthBuild skips TLS for its own
       # buildkitd container.
-      - name: Disable earthly TLS (self-hosted runner has no certs)
+      - name: Disable EarthBuildEarthBuild TLS (self-hosted runner has no certs)
         if: steps.guard.outputs.hit != 'true'
         run: |
           echo "    tls_enabled: false" >> .earthly/config.yml
@@ -617,7 +617,7 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true.
-          # Force earthly's tempdir to live under $RUNNER_TEMP which is
+          # Force EarthBuild's tempdir to live under $RUNNER_TEMP which is
           # outside the per-service PrivateTmp namespace.
           TMPDIR: ${{ runner.temp }}
           # Force-clear in case a runner process has stale EARTHLY_REMOTE_CACHE
@@ -625,7 +625,7 @@ jobs:
           EARTHLY_REMOTE_CACHE: ""
           # The runner's .env redirects ACTIONS_CACHE_URL to a local cache
           # server. Earthly auto-detects this and tries to push to it with the
-          # wrong auth; override to empty for the earthly call.
+          # wrong auth; override to empty for the EarthBuild call.
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
           # +test-toolkit pulls in +build-test-toolkit's `target-${CACHE_KEY}`
@@ -645,7 +645,7 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             -P --strict $PUSH_FLAG \
@@ -806,10 +806,10 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@3eefe0d8a96e1ffbefb86e2bbf6542eec78cbccb
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.17
           github-token: ${{ github.token }}
           use-cache: false
       - name: Login to GHCR
@@ -823,7 +823,7 @@ jobs:
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
         run: |
-          . ./.envrc && earthly --ci -P \
+          . ./.envrc && earth --ci -P \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save
@@ -1115,12 +1115,12 @@ jobs:
     # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
     # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
     runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
-    # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
+    # No concurrency group: the local-env stack now runs INSIDE EarthBuild's nested dockerd
     # (+local-env-ci), which gives each invocation its own network namespace. The stack
     # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
     # so concurrent PRs on the same self-hosted host can't collide — the repo-wide
     # `local-environment-tests-self-hosted` serialization is gone. Concurrency is now
-    # RAM-bounded (the shared buildkit/RAM pool), which earthly queues, not hard-serialized.
+    # RAM-bounded (the shared buildkit/RAM pool), which EarthBuild queues, not hard-serialized.
     permissions:
       pull-requests: write
       packages: read
@@ -1138,7 +1138,7 @@ jobs:
       # Isolate docker config per job — see the matching step in the `run` job.
       # This job runs concurrently, so per-job isolation matters: multiple
       # instances log in at once and would otherwise clobber each other's docker
-      # auth. Inherited by the composite action's docker login and earthly --pull.
+      # auth. Inherited by the composite action's docker login and EarthBuild --pull.
       - name: Isolate docker config
         if: steps.guard.outputs.hit != 'true'
         run: |
