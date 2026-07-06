@@ -48,7 +48,9 @@ use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sp_core::{
 	ByteArray, Pair,
-	crypto::key_types::{AURA as AURA_KEY_TYPE, BABE as BABE_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE},
+	crypto::key_types::{
+		AURA as AURA_KEY_TYPE, BABE as BABE_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE,
+	},
 	offchain::KeyTypeId,
 };
 use sp_keystore::KeystorePtr;
