@@ -13,7 +13,6 @@
 
 use std::{
 	collections::{HashMap, HashSet},
-	convert::Infallible,
 	sync::Arc,
 };
 
@@ -39,6 +38,18 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub(crate) const MAX_GUARANTEED_OUTPUTS: usize = 2;
 const MAX_GUARANTEED_INPUTS_OUTPUTS: usize = 3;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SingleTxError {
+	#[error("failed to select unshielded UTXOs for transfer: {0}")]
+	UtxoSelection(#[from] UtxoSelectionError),
+	#[error("insufficient shielded coins for transfer: {0}")]
+	ShieldedCoinSelection(#[from] ShieldedCoinSelectionError),
+	#[error("proving failed: {0}")]
+	ProvingFailed(String),
+	#[error("transaction is empty: no valid destination addresses were resolved into outputs")]
+	EmptyTransaction,
+}
 
 pub struct SingleTxBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
@@ -115,7 +126,7 @@ impl<C: BuilderContext<DefaultDB>> SingleTxBuilder<C> {
 
 #[async_trait]
 impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
-	type Error = Infallible;
+	type Error = SingleTxError;
 
 	async fn build_txs_from(
 		&self,
@@ -139,8 +150,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 				self.source_seed.clone(),
 				self.shielded_outputs.iter().map(clone_shielded_spec).collect(),
 				self.coin_selection,
-			)
-			.expect("insufficient shielded coins for transfer");
+			)?;
 			if offer.outputs.len() > MAX_GUARANTEED_OUTPUTS {
 				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
 			} else {
@@ -156,10 +166,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 				&self.input_utxos,
 				self.coin_selection,
 			)
-			.await
-			.unwrap_or_else(|error| {
-				panic!("failed to select unshielded UTXOs for transfer: {error}")
-			});
+			.await?;
 			tx_info.set_intents(intents);
 		}
 
@@ -170,10 +177,13 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 			log::error!(
 				"transaction is empty! No valid destination_addresses were resolved into outputs"
 			);
-			panic!("transaction empty");
+			return Err(SingleTxError::EmptyTransaction);
 		}
 
-		let tx = tx_info.prove().await.expect("Balancing TX failed");
+		let tx = tx_info
+			.prove()
+			.await
+			.map_err(|e| SingleTxError::ProvingFailed(format!("{e}")))?;
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
