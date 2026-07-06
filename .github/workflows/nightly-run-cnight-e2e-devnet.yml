@@ -95,6 +95,34 @@ jobs:
           fi
           psql "$TOOLKIT_CACHE_DB_URL" -c 'SELECT 1;' >/dev/null
 
+      # Fail fast if ogmios or the Midnight node RPC are unreachable
+      # *from this runner* — fresh infra deployments have dropped this
+      # runner's IP from an ingress allowlist before (run 28788167439:
+      # every test died at startup on ogmios WebSocket handshake EOF and
+      # the job hung to its 8 h timeout). The URLs must match
+      # tests/e2e/src/config.rs for the feature the run uses.
+      - name: Smoke test ogmios + node RPC endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 15 \
+            -H "Connection: Upgrade" -H "Upgrade: websocket" \
+            -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: c21va2UtdGVzdA==" \
+            https://ogmios.devnet.midnight.network/ || echo "000")
+          if [ "$code" != "101" ]; then
+            echo "::error::ogmios WebSocket handshake returned HTTP $code (expected 101) — endpoint unreachable or this runner's IP is not allowlisted"
+            exit 1
+          fi
+          spec=$(curl -s -m 15 -X POST https://rpc.devnet.midnight.network \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"state_getRuntimeVersion","params":[]}' \
+            | grep -o '"specVersion":[0-9]*' || true)
+          if [ -z "$spec" ]; then
+            echo "::error::Midnight node RPC did not answer state_getRuntimeVersion"
+            exit 1
+          fi
+          echo "ogmios handshake OK; node $spec"
+
       # --release: the toolkit's chain replay is compute-bound; the dev
       # profile is ~50× slower (see tests/e2e/README.md).
       # --test-threads 16: all observation tests must run concurrently;

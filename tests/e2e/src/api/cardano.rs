@@ -31,6 +31,14 @@ const OGMIOS_MAX_ATTEMPTS: u32 = 5;
 /// should retry, `None` for terminal errors. The label is for logging; `rebuild_client` evicts
 /// the cached client so the retry opens a fresh WebSocket connection.
 ///
+/// `delay` is a base value — the retry loops scale it linearly by attempt
+/// number (5s, 10s, 15s, …), so the total tolerance window grows to ~75s
+/// over `OGMIOS_MAX_ATTEMPTS`. Fixed short delays proved too tight for
+/// connect flakes: when the observation tests start they open many
+/// WebSocket connections near-simultaneously, and ogmios (7.0.0 deployment)
+/// occasionally drops some mid-handshake ("unexpected end of file") for
+/// longer than the previous 5×5s window.
+///
 /// Retriable classes today:
 /// - WS transport task died (jsonrpsee "background task closed") — retry quickly (2s) on a
 ///   fresh connection.
@@ -241,6 +249,7 @@ impl CardanoClient {
                         if rebuild_client {
                             Self::invalidate_ogmios_client(&config.base_url);
                         }
+                        let delay = delay * attempt;
                         tracing::info!(
                             "ogmios protocol-params query: {} on attempt {}/{}; retry in {:?}",
                             label,
@@ -478,6 +487,7 @@ impl CardanoClient {
                             if matches!(req, OgmiosRequest::SubmitTx { .. }) {
                                 submit_outcome_unknown = true;
                             }
+                            let delay = delay * attempt;
                             tracing::info!(
                                 "ogmios request: {} on attempt {}/{}; retry in {:?}",
                                 label,
