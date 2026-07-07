@@ -48,9 +48,21 @@ const WORKERS_ENV_KEY: &str = "E2E_FAUCET_WORKERS";
 /// inadvertently draining a worker in one shot.
 const REQUEST_CAP_LOVELACE: u64 = 1_000_000_000; // 1000 ADA
 
-/// Minimum lovelace a worker UTXO must hold at init / after refresh. Equal to the request
-/// cap so any single request is guaranteed to fit.
+/// Minimum lovelace a worker UTXO must hold at init / after refresh.
+///
+/// - local-env: equal to the request cap, so any single request is guaranteed
+///   to fit — the genesis-funded local faucet is effectively unlimited and
+///   local-only tests request up to 500 ADA.
+/// - qanet/devnet: 250 ADA. The shared Preview faucet wallet is a finite,
+///   slowly-draining resource (run 28850280550 failed to prime 16×1000 ADA
+///   workers with 15.8k ADA left), and no observation test requests more
+///   than ~21 ADA — the floor only needs comfortable headroom over the
+///   largest request plus fees. A request larger than a worker's balance
+///   still fails loudly via the drained-worker check in `request_tokens`.
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 const MIN_WORKER_LOVELACE: u64 = REQUEST_CAP_LOVELACE;
+#[cfg(any(feature = "qanet", feature = "devnet"))]
+const MIN_WORKER_LOVELACE: u64 = 250_000_000;
 
 /// Lovelace headroom reserved on top of N×MIN_WORKER_LOVELACE when sizing a prime tx —
 /// covers the prime tx fee and keeps the change output above min-UTXO.

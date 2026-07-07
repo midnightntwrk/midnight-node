@@ -1537,6 +1537,21 @@ async fn deregister_with_valid_cnight_utxo() {
         hex::encode(deregister_tx)
     );
 
+    // Confirm the deregister's inclusion before the await snapshots its
+    // target: an unincluded tx can outlive the tip+2 advance in the
+    // mempool, land in a block above the target, and be invisible to the
+    // scan-back — run 28851092527 lost exactly this tx that way (#1652).
+    // Register and mint are already covered by the find_utxo_by_tx_id
+    // polls above.
+    cardano_client
+        .wait_for_tx_inclusion(
+            &deregister_tx,
+            &cardano_client.address_as_bech32(),
+            TX_INCLUSION_TIMEOUT,
+        )
+        .await
+        .expect("deregister tx should be included within timeout");
+
     let reward_address = cardano_client.reward_address_bytes();
     let dust_address: Vec<u8> = hex::decode(&dust_hex)
         .expect("Failed to decode DUST hex")
