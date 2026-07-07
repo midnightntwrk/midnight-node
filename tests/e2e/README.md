@@ -39,8 +39,8 @@ adapts to subset runs that still include some pre-deploy tests:
   `entered == completed`, and no counter change has happened for
   `PRE_DEPLOY_QUIESCENCE` (5 s).
 
-`cargo test ... contract_state::` and `... rpc_abuse::` work without
-any manual setup — both modules carry at least one pre-deploy test.
+`cargo test ... contract_state::` works without any manual setup —
+the module carries at least one pre-deploy test.
 
 **Subset runs that select only deploy tests must opt out explicitly**
 via `E2E_SKIP_DEPLOY_GATE=1`. The gate does not auto-open on a
@@ -262,7 +262,6 @@ Tests are grouped by topic across module files under `tests/`:
     that need the stability barrier
 - `governance.rs` — d-parameter, ariadne, federated-ops, council, tech-auth
   - `governance/observation.rs` — governance membership-reset observation
-- `rpc_abuse.rs` — DDoS and replay rejection at the RPC layer
 - `contract_state.rs` — `contract_state` RPC behaviour
 - `operational.rs` — manual / ignored operational tests (`consolidate_faucet`,
   `valid_deploy_transaction_succeeds_via_rpc`)

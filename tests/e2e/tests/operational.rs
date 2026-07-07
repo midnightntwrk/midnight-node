@@ -71,7 +71,6 @@ async fn toolkit_multi_dest_send_does_not_hang() {
             source: Source {
                 src_url: None,
                 src_files: Some(vec![tx_file.to_string_lossy().into_owned()]),
-                overlay_files: None,
                 fetch_concurrency: crate::fetch_concurrency(),
                 fetch_compute_concurrency: None,
                 dust_warp: false,
@@ -163,7 +162,6 @@ async fn dust_balance_smoke() {
             fetch_concurrency: crate::fetch_concurrency(),
             fetch_compute_concurrency: None,
             src_files: None,
-            overlay_files: None,
             dust_warp: true,
             ignore_block_context: false,
             fetch_only_cached: false,
@@ -230,7 +228,6 @@ async fn dust_balance_smoke_many() {
             fetch_concurrency: crate::fetch_concurrency(),
             fetch_compute_concurrency: None,
             src_files: None,
-            overlay_files: None,
             // false for live-chain use: per the CLI help, dust_warp
             // "may result in invalid proofs when connected to a live
             // chain". Concretely it appends a system-time block at

@@ -106,8 +106,8 @@ Three kinds:
 - **Unsigned transaction** — no Substrate signature. **Midnight's main user tx path
   is unsigned:** `send_mn_transaction` (`pallet-midnight`) carries a shielded
   payload that authorises itself via zk-proofs, so a Substrate signature would
-  just be a weaker second layer. `rpc_abuse.rs` asserts at `validate_unsigned` /
-  `pre_dispatch`.
+  just be a weaker second layer. `pallet-midnight`'s unit tests assert the
+  `validate_unsigned` / `pre_dispatch` path.
 - **Inherent** — the block author inserts it; not a user tx. E.g. the timestamp,
   and the cNIGHT `process_tokens` payload several of our tests assert on.
 
@@ -216,10 +216,9 @@ scripts under `scripts/`.
    - Undeployed address ⇒ `ContractNotPresent`.
    - Unparseable address ⇒ explicit RPC error.
    - Historical vs. current block distinguish correctly.
-6. **RPC abuse / DoS surface** (`rpc_abuse.rs`)
-   - DDoS-shaped tx rejected at RPC.
-   - Batched DDoS — all rejected.
-   - Replay attacks rejected.
+6. **Pre-dispatch validation / DoS surface** (`pallet-midnight` unit tests)
+   - Store for a never-deployed contract ⇒ `ContractNotPresent` at `pre_dispatch`.
+   - Malformed and replayed txs rejected; validation doesn't mutate state.
 7. **Operational / on-demand** (`operational.rs`, `--ignored`)
    - `valid_deploy_transaction_succeeds_via_rpc`
    - `consolidate_faucet`

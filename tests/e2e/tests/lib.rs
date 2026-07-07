@@ -24,7 +24,7 @@ use tokio::time::sleep;
 // The deploy gate (`wait_before_deploying`) waits until the entered/completed
 // counters are at parity AND no counter change has happened for
 // `PRE_DEPLOY_QUIESCENCE`, then proceeds. The gate adapts naturally to
-// subset runs (`cargo test ... contract_state::`, `... rpc_abuse::`) where
+// subset runs (`cargo test ... contract_state::`) where
 // fewer pre-deploy tests are scheduled — we never hard-code the count.
 //
 // The gate refuses to open on `entered == 0`: there is no in-process way
@@ -242,7 +242,6 @@ async fn run_warmup() {
             fetch_concurrency: fetch_concurrency(),
             fetch_compute_concurrency: None,
             src_files: None,
-            overlay_files: None,
             // Live-chain warmup: appending a synthetic dust-warp block
             // here would fight the per-test `dust_balance::execute`
             // calls (which set dust_warp=true on their own and would
@@ -312,7 +311,6 @@ pub(crate) async fn ensure_dev_wallet_funded() {
                 fetch_concurrency: fetch_concurrency(),
                 fetch_compute_concurrency: None,
                 src_files: None,
-                overlay_files: None,
                 dust_warp: false,
                 ignore_block_context: false,
                 fetch_only_cached: false,
@@ -354,15 +352,13 @@ pub(crate) async fn ensure_dev_wallet_funded() {
     }
 }
 
-/// A `Source` reading the live chain at `url`, optionally overlaying `.mn` file(s)
-/// (typically an un-submitted deploy) on top — see `Source::overlay_files`.
-fn live_source_with_overlay(url: &str, overlay: Option<Vec<String>>) -> Source {
+/// A `Source` reading the live chain at `url`.
+fn live_source(url: &str) -> Source {
     Source {
         src_url: Some(url.to_string()),
         fetch_concurrency: fetch_concurrency(),
         fetch_compute_concurrency: None,
         src_files: None,
-        overlay_files: overlay,
         dust_warp: false,
         ignore_block_context: false,
         fetch_only_cached: false,
@@ -388,9 +384,7 @@ fn to_file_dest(
 /// Generated dynamically (not from a static fixture) so its intent TTL is valid
 /// against current chain time. The toolkit's in-process local prover handles ZK
 /// proving (MIDNIGHT_LEDGER_TEST_STATIC_DIR, set in .envrc); no proof server.
-/// The caller decides whether to submit it (valid-deploy / replay tests) or keep
-/// it off-chain as an overlay (store-without-deploy tests). `rng_seed` makes the
-/// deploy — and thus the contract address — deterministic/distinct across calls.
+/// `rng_seed` makes the deploy — and thus the contract address — deterministic.
 pub(crate) async fn build_contract_deploy(
     url: &str,
     dest: &std::path::Path,
@@ -406,7 +400,7 @@ pub(crate) async fn build_contract_deploy(
             authority_threshold: None,
             rng_seed,
         })),
-        source: live_source_with_overlay(url, None),
+        source: live_source(url),
         destination: to_file_dest(dest),
         proof_server: None,
         dry_run: false,
@@ -415,51 +409,6 @@ pub(crate) async fn build_contract_deploy(
         .await
         .expect("generate-txs contract-simple deploy failed");
     std::fs::read(dest).expect("read generated deploy tx file")
-}
-
-/// Build a `store` call for the contract deployed by `deploy_file`, against the
-/// live chain with that deploy overlaid (so the contract is "present" to the
-/// generator) but WITHOUT the deploy ever being submitted on-chain. Submitting
-/// the result therefore hits `ContractNotPresent` at pre_dispatch — the DDoS
-/// attack shape. Returns the store tx as raw `.mn` bytes.
-pub(crate) async fn build_contract_store(
-    url: &str,
-    deploy_file: &std::path::Path,
-    dest: &std::path::Path,
-    rng_seed: Option<[u8; 32]>,
-) -> Vec<u8> {
-    use midnight_node_toolkit::cli_parsers::contract_address_decode;
-    use midnight_node_toolkit::commands::contract_address::{self, ContractAddressArgs};
-    use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
-    use midnight_node_toolkit::tx_generator::builder::{Builder, ContractCall, ContractCallArgs};
-
-    let deploy_str = deploy_file.to_string_lossy().to_string();
-    let addr_str = contract_address::execute(ContractAddressArgs {
-        tagged: false,
-        untagged: false,
-        src_file: deploy_str.clone(),
-    })
-    .expect("derive contract address from deploy tx");
-    let contract_address =
-        contract_address_decode(&addr_str).expect("decode derived contract address");
-
-    let args = GenerateTxsArgs {
-        builder: Builder::ContractSimple(ContractCall::Call(ContractCallArgs {
-            funding_seed: DEV_WALLET_SEED.to_string(),
-            call_key: "store".to_string(),
-            contract_address,
-            rng_seed,
-            fee: 1_300_000,
-        })),
-        source: live_source_with_overlay(url, Some(vec![deploy_str])),
-        destination: to_file_dest(dest),
-        proof_server: None,
-        dry_run: false,
-    };
-    generate_txs::execute(args)
-        .await
-        .expect("generate-txs contract-simple store (overlay) failed");
-    std::fs::read(dest).expect("read generated store tx file")
 }
 
 /// True if `msg` names a transient shared-wallet ledger error that a rebuild
@@ -472,50 +421,6 @@ pub(crate) fn is_transient_shared_wallet_error(msg: &str) -> bool {
     msg.contains("custom error: 196")
         || msg.contains("custom error: 195")
         || msg.contains("custom error: 170")
-}
-
-/// Build a DDoS attack pair against the live chain and return the `store` tx
-/// bytes: a contract deploy is generated (funded by `0x..01`) but never
-/// submitted, then a `store` call is built with that deploy overlaid — so
-/// submitting the store hits `ContractNotPresent` at pre_dispatch. `rng_seed`
-/// makes the deploy — and thus the contract address — distinct across calls.
-///
-/// Retries on a build panic: under CI's slower, concurrent proving the deploy
-/// built at T can be stale by the time the store's overlay applies it (the live
-/// chain advanced, DUST regenerated). The overlay then silently drops the
-/// unappliable deploy, leaving the contract absent, and the toolkit panics
-/// building a call against it (ledger `contract/call.rs`: "Contract … does not
-/// exist"). A rebuild against fresh state clears it. A non-transient panic is
-/// re-raised on the final attempt so real failures still surface.
-pub(crate) async fn build_ddos_store_attack(url: &str, rng_seed: Option<[u8; 32]>) -> Vec<u8> {
-    use futures::future::FutureExt;
-
-    const ATTEMPTS: u8 = 4;
-    for attempt in 1..=ATTEMPTS {
-        let tempdir = tempfile::tempdir().expect("create tempdir");
-        let deploy_file = tempdir.path().join("deploy.mn");
-        let store_file = tempdir.path().join("store.mn");
-
-        // AssertUnwindSafe: the build borrows only local paths and rebuilds from
-        // scratch each attempt, so a caught panic leaves no observable poisoned
-        // state to worry about.
-        let build = std::panic::AssertUnwindSafe(async {
-            build_contract_deploy(url, &deploy_file, rng_seed).await;
-            build_contract_store(url, &deploy_file, &store_file, rng_seed).await
-        });
-        match build.catch_unwind().await {
-            Ok(bytes) => return bytes,
-            Err(_panic) if attempt < ATTEMPTS => {
-                tracing::warn!(
-                    "ddos attack build attempt {attempt}/{ATTEMPTS} panicked (likely a stale \
-                     overlay deploy under shared-wallet contention); rebuilding after settle"
-                );
-                sleep(Duration::from_secs(8)).await;
-            }
-            Err(panic) => std::panic::resume_unwind(panic),
-        }
-    }
-    unreachable!("build_ddos_store_attack loop returns or panics")
 }
 
 /// Build a fresh deploy funded by the dev wallet, submit it, wait for inclusion,
@@ -604,7 +509,7 @@ pub(crate) async fn build_unshielded_self_transfer(url: &str, dest: &std::path::
             rng_seed: None,
             coin_selection: cli::coin_selection_strategy("largest-first").unwrap(),
         }),
-        source: live_source_with_overlay(url, None),
+        source: live_source(url),
         destination: to_file_dest(dest),
         proof_server: None,
         dry_run: false,
@@ -687,4 +592,3 @@ mod cnight;
 mod contract_state;
 mod governance;
 mod operational;
-mod rpc_abuse;

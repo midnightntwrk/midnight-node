@@ -28,15 +28,12 @@ use std::{
 pub struct SourceTransactions {
 	pub blocks: Vec<RawBlockData>,
 	pub network_id: String,
-	/// Set when off-chain overlay blocks were chained in. Such a source is not a faithful
-	/// view of any real chain, so it must stay out of the chain-id-keyed wallet cache.
-	pub overlaid: bool,
 }
 
 impl SourceTransactions {
 	/// Create a new SourceTransactions with pre-computed network_id.
 	pub fn new(blocks: Vec<RawBlockData>, network_id: &str) -> Self {
-		Self { blocks, network_id: network_id.to_string(), overlaid: false }
+		Self { blocks, network_id: network_id.to_string() }
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
@@ -79,7 +76,7 @@ impl SourceTransactions {
 			panic!("Could not find transaction with 'network id' in given blocks");
 		});
 
-		Self { blocks, network_id, overlaid: false }
+		Self { blocks, network_id }
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
@@ -155,18 +152,14 @@ impl SourceTransactions {
 		let block = RawBlockData::new_from_timestamp(now_secs, ledger_version, transactions);
 		let network_id = network_id
 			.unwrap_or_else(|| panic!("Network id has not been given nor found in transactions"));
-		Self { blocks: vec![block], network_id, overlaid: false }
+		Self { blocks: vec![block], network_id }
 	}
 
 	/// Derive a deterministic chain identity for wallet state cache keying.
 	///
-	/// Returns `None` when no block #1 is available (e.g. file-loaded datasets) or when the
-	/// source carries off-chain overlay blocks — both signal the caller to skip caching and
-	/// avoid poisoning the live-chain cache with state that never existed on-chain.
+	/// Returns `None` when no block #1 is available (e.g. file-loaded datasets),
+	/// which signals the caller to skip caching and avoid cross-dataset collisions.
 	pub fn chain_id(&self) -> Option<subxt::utils::H256> {
-		if self.overlaid {
-			return None;
-		}
 		self.blocks
 			.iter()
 			.find(|b| b.number == 1)
@@ -178,37 +171,6 @@ impl SourceTransactions {
 			.first()
 			.map(|b| b.ledger_version())
 			.unwrap_or(LedgerVersion::default())
-	}
-
-	/// Splice overlay blocks (from `--src-overlay-file`) onto these blocks, renumbering
-	/// them to continue ascending from the current highest block number.
-	///
-	/// File-loaded overlay blocks all carry `number = 0` (`RawBlockData::new_from_timestamp`).
-	/// Appended verbatim after the base's real, ascending numbers they'd (a) sit out of
-	/// height order, so the warm-cache replay height filter in
-	/// `build_fork_aware_context_cached` — `partition_point(|b| b.number <= start_height)`,
-	/// which assumes ascending numbers — silently skips them, and (b) make the last overlay
-	/// block look like the trailing dust-warp synthetic (`number == 0`) and get dropped from
-	/// the replay set. Renumbering fixes both.
-	///
-	/// If these blocks already end with their own dust-warp synthetic (a trailing
-	/// `number == 0` block alongside earlier real blocks, appended by
-	/// `from_blocks(_, dust_warp = true, _)`), the overlay is spliced in *before* it so that
-	/// synthetic stays last — its "advance to now" must apply after the pending overlay txs
-	/// and remain detectable as the tail warp.
-	pub fn chain_overlay(&mut self, overlay_blocks: Vec<RawBlockData>) {
-		let max_number = self.blocks.iter().map(|b| b.number).max().unwrap_or(0);
-		let trailing_warp = self
-			.blocks
-			.last()
-			.is_some_and(|last| last.number == 0 && self.blocks.iter().any(|b| b.number > 0));
-		let insert_at = if trailing_warp { self.blocks.len() - 1 } else { self.blocks.len() };
-		for (offset, mut block) in overlay_blocks.into_iter().enumerate() {
-			block.number = max_number + 1 + offset as u64;
-			self.blocks.insert(insert_at + offset, block);
-		}
-		// Off-chain state now — keep it out of the chain-id-keyed wallet cache.
-		self.overlaid = true;
 	}
 }
 
@@ -267,62 +229,5 @@ mod tests {
 		);
 		assert_eq!(src_no_warp.blocks.last().unwrap().number, 3);
 		assert_eq!(src_no_warp.blocks.iter().max_by_key(|b| b.number).unwrap().number, 3,);
-	}
-
-	/// `chain_overlay` renumbers file-loaded overlay blocks (all `number = 0`) to
-	/// continue ascending after the base head, so the warm-cache `partition_point`
-	/// height filter can't skip them and the last one isn't mistaken for the dust-warp
-	/// synthetic.
-	#[test]
-	fn chain_overlay_renumbers_overlay_blocks_ascending() {
-		let mut base = SourceTransactions::new(vec![block_at(1), block_at(2), block_at(3)], "test");
-		// Two overlay blocks as produced by file loading: both at number 0.
-		base.chain_overlay(vec![block_at(0), block_at(0)]);
-
-		let numbers: Vec<u64> = base.blocks.iter().map(|b| b.number).collect();
-		assert_eq!(numbers, vec![1, 2, 3, 4, 5], "overlay renumbered to continue ascending");
-		assert!(
-			numbers.windows(2).all(|w| w[0] < w[1]),
-			"block numbers strictly ascending — partition_point height filter is sound"
-		);
-		assert_ne!(
-			base.blocks.last().unwrap().number,
-			0,
-			"last block is a real overlay block, not a number-0 synthetic"
-		);
-	}
-
-	/// When the base ends with its own dust-warp synthetic (trailing `number = 0`), the
-	/// overlay is spliced in *before* it so the synthetic stays last and still detectable.
-	#[test]
-	fn chain_overlay_keeps_trailing_dust_warp_synthetic_last() {
-		let mut base = SourceTransactions::from_blocks(
-			vec![block_at(1), block_at(2), block_at(3)],
-			/* dust_warp = */ true,
-			Some("test".to_string()),
-		);
-		assert_eq!(base.blocks.last().unwrap().number, 0, "precondition: trailing synthetic");
-
-		base.chain_overlay(vec![block_at(0)]);
-
-		let numbers: Vec<u64> = base.blocks.iter().map(|b| b.number).collect();
-		// real 1,2,3 -> overlay renumbered to 4 -> synthetic 0 stays last.
-		assert_eq!(numbers, vec![1, 2, 3, 4, 0]);
-		let last = base.blocks.last().unwrap();
-		assert!(
-			last.number == 0 && base.blocks.iter().any(|b| b.number > 0),
-			"trailing dust-warp synthetic still detectable"
-		);
-	}
-
-	/// An overlaid source reports no chain id, so the caller skips the wallet cache and
-	/// can't poison the live-chain cache with off-chain overlay state.
-	#[test]
-	fn chain_overlay_disables_caching_via_chain_id() {
-		let mut base = SourceTransactions::new(vec![block_at(1), block_at(2)], "test");
-		assert!(base.chain_id().is_some(), "base with block #1 has a chain id");
-		base.chain_overlay(vec![block_at(0)]);
-		assert!(base.overlaid);
-		assert!(base.chain_id().is_none(), "overlaid source reports no chain id (cache skipped)");
 	}
 }

@@ -23,7 +23,7 @@ pub mod source;
 use builder::{Builder, DynamicError, ProverConfig, build_fork_aware_context_cached};
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
 use source::{
-	FetchCacheConfig, GetTxs, GetTxsChained, GetTxsFromFile, GetTxsFromUrl, Source, SourceError,
+	FetchCacheConfig, GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError,
 	create_file_wallet_cache,
 };
 
@@ -108,19 +108,6 @@ impl TxGenerator {
 		} else {
 			return Err(SourceError::InvalidSourceArgs(src));
 		};
-
-		// Overlay (typically not-yet-submitted) transaction files on top of the base
-		// source. No dust-warp for the overlay: the base source already established the
-		// timeline, and a second synthetic timestamp block would corrupt it.
-		if let Some(ref overlay_files) = src.overlay_files {
-			log::info!("Overlaying transactions from file(s): {:?}", overlay_files);
-			let overlay: Box<dyn GetTxs> = Box::new(GetTxsFromFile::new(
-				overlay_files.clone(),
-				false,
-				src.ignore_block_context,
-			));
-			return Ok(Box::new(GetTxsChained { base, overlay }));
-		}
 
 		Ok(base)
 	}
