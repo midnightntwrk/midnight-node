@@ -34,4 +34,5 @@ Schnorr the default.
   pre-ECDSA cache entries are invalidated and evicted.
 - ECDSA is rejected with a clear error on pre-ledger-9 fork paths.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1837
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1542
