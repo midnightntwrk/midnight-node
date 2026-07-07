@@ -10632,6 +10632,7 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
+ "sp-application-crypto",
  "sp-core",
  "sp-io",
  "sp-runtime",

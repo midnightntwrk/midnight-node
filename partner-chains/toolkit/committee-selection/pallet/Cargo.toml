@@ -34,6 +34,7 @@ frame-benchmarking = { workspace = true, optional = true }
 [dev-dependencies]
 sp-io = { workspace = true }
 pallet-balances = { workspace = true }
+sp-application-crypto = { workspace = true, features = ["std"] }
 
 [features]
 default = ["std"]
@@ -51,6 +52,7 @@ std = [
     "sidechain-domain/std",
     "sidechain-domain/serde",
     "pallet-session/std",
+    "sp-io/std",
     "sp-staking/std",
     "frame-benchmarking?/std",
 ]

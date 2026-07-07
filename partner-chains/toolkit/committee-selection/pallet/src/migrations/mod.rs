@@ -56,3 +56,5 @@ pub mod v0;
 pub mod v1;
 
 pub mod authority_keys;
+#[cfg(test)]
+mod authority_keys_tests;

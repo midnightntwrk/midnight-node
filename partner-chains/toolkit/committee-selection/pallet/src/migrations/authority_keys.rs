@@ -127,11 +127,12 @@ where
 		+ Encode
 		+ Clone
 		+ CommitteeMemberT<AuthorityId = T::AuthorityId, AuthorityKeys = OldAuthorityKeys>,
-	OldAuthorityKeys: Member + Decode + Clone + OpaqueKeys + Into<T::AuthorityKeys>,
+	OldAuthorityKeys: Member + Decode + Encode + Clone + OpaqueKeys + Into<T::AuthorityKeys>,
 	T::AuthorityKeys: OpaqueKeys,
 {
 	fn on_runtime_upgrade() -> sp_runtime::Weight {
-		let mut weight = sp_runtime::Weight::zero();
+		// `translate` always reads the value; it writes only when the value was present.
+		let mut weight = T::DbWeight::get().reads(2);
 
 		let current_translated =
 			crate::CurrentCommittee::<T>::translate::<OldCommitteeInfo<T, OldCommitteeMember>, _>(
@@ -139,7 +140,7 @@ where
 			)
 			.expect("Decoding of the old value must succeed");
 		if current_translated.is_some() {
-			weight = weight.saturating_add(T::DbWeight::get().reads_writes(1, 1));
+			weight = weight.saturating_add(T::DbWeight::get().writes(1));
 		}
 
 		let next_translated = crate::NextCommittee::<T>::translate::<
@@ -148,7 +149,7 @@ where
 		>(|old| old.map(upgrade_committee_info::<T, OldCommitteeMember>))
 		.expect("Decoding of the old value must succeed");
 		if next_translated.is_some() {
-			weight = weight.saturating_add(T::DbWeight::get().reads_writes(1, 1));
+			weight = weight.saturating_add(T::DbWeight::get().writes(1));
 		}
 
 		// `upgrade_keys` translates the entire `NextKeys` map (1 read + 1 write per entry) and
@@ -180,6 +181,8 @@ where
 	fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
 		// `CurrentCommittee`/`NextCommittee` `.get()` decodes as `T::CommitteeMember`, i.e. the
 		// post-upgrade shape — but at this point the on-chain bytes are still `OldCommitteeMember`.
+		// The same applies to `pallet_session`'s `NextKeys`/`QueuedKeys`, which still hold
+		// `OldAuthorityKeys` bytes, so all values are read through `unhashed` with the old types.
 		let current: OldCommitteeInfo<T, OldCommitteeMember> =
 			frame_support::storage::unhashed::get_or_default(
 				&crate::CurrentCommittee::<T>::hashed_key(),
@@ -187,16 +190,37 @@ where
 		let next: Option<OldCommitteeInfo<T, OldCommitteeMember>> =
 			frame_support::storage::unhashed::get(&crate::NextCommittee::<T>::hashed_key());
 
-		Ok((current, next).encode())
+		let next_keys: Vec<(T::ValidatorId, OldAuthorityKeys)> =
+			pallet_session::NextKeys::<T>::iter_keys()
+				.map(|validator| {
+					let old_keys: OldAuthorityKeys = frame_support::storage::unhashed::get(
+						&pallet_session::NextKeys::<T>::hashed_key_for(&validator),
+					)
+					.ok_or(sp_runtime::TryRuntimeError::Other(
+						"session NextKeys entries must decode with the old keys type",
+					))?;
+					Ok((validator, old_keys))
+				})
+				.collect::<Result<_, sp_runtime::TryRuntimeError>>()?;
+
+		// `QueuedKeys` is a `ValueQuery` storage: absent means empty.
+		let queued_keys: Vec<(T::ValidatorId, OldAuthorityKeys)> =
+			frame_support::storage::unhashed::get_or_default(
+				&pallet_session::QueuedKeys::<T>::hashed_key(),
+			);
+
+		Ok((current, next, next_keys, queued_keys).encode())
 	}
 
 	#[cfg(feature = "try-runtime")]
 	fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
 		use frame_support::ensure;
 
-		let (old_current, old_next): (
+		let (old_current, old_next, old_next_keys, old_queued_keys): (
 			OldCommitteeInfo<T, OldCommitteeMember>,
 			Option<OldCommitteeInfo<T, OldCommitteeMember>>,
+			Vec<(T::ValidatorId, OldAuthorityKeys)>,
+			Vec<(T::ValidatorId, OldAuthorityKeys)>,
 		) = Decode::decode(&mut state.as_slice()).map_err(|_| {
 			sp_runtime::TryRuntimeError::Other("Previously encoded state should be decodable")
 		})?;
@@ -222,6 +246,41 @@ where
 				"next committee membership should be preserved"
 			);
 		}
+
+		ensure!(
+			pallet_session::NextKeys::<T>::iter_keys().count() == old_next_keys.len(),
+			"session NextKeys entry count should be preserved"
+		);
+		// Only key types present in both old and new keys are checked in `KeyOwner`: keys of a
+		// newly added type may be identical across validators (e.g. a shared default), in which
+		// case `upgrade_keys` leaves the entry pointing at whichever validator was processed last.
+		let common_key_types: Vec<_> = T::AuthorityKeys::key_ids()
+			.iter()
+			.filter(|id| OldAuthorityKeys::key_ids().contains(id))
+			.collect();
+		for (validator, old_keys) in old_next_keys {
+			let expected_keys: T::AuthorityKeys = old_keys.into();
+			ensure!(
+				pallet_session::NextKeys::<T>::get(&validator) == Some(expected_keys.clone()),
+				"session NextKeys should be upgraded in place"
+			);
+			for key_type in &common_key_types {
+				ensure!(
+					pallet_session::KeyOwner::<T>::get((
+						**key_type,
+						expected_keys.get_raw(**key_type).to_vec()
+					)) == Some(validator.clone()),
+					"KeyOwner should map each upgraded key back to its validator"
+				);
+			}
+		}
+
+		let expected_queued_keys: Vec<(T::ValidatorId, T::AuthorityKeys)> =
+			old_queued_keys.into_iter().map(|(v, keys)| (v, keys.into())).collect();
+		ensure!(
+			pallet_session::QueuedKeys::<T>::get() == expected_queued_keys,
+			"session QueuedKeys should be upgraded in place"
+		);
 
 		Ok(())
 	}
