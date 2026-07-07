@@ -469,7 +469,8 @@ rebuild-genesis-state-undeployed:
 
 # rebuild-genesis-state-local rebuilds the genesis ledger state for the local network (local-environment).
 # The local network does not fund any faucet wallets at genesis - wallets are funded at runtime via the
-# cNIGHT->DUST bridge. This MUST be followed by updating the chainspecs for CI to pass!
+# cNIGHT->mNIGHT bridge. No chainspec update needed afterwards: local has no committed chain spec
+# (midnight-setup builds it at runtime).
 rebuild-genesis-state-local:
     BUILD +rebuild-genesis-state \
         --NETWORK=local \
