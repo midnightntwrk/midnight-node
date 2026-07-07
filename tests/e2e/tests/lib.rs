@@ -374,6 +374,56 @@ pub(crate) async fn global_faucet_manager() -> Arc<FaucetManager> {
 /// ones cheaper still.
 static DUST_BALANCE_GATE: Semaphore = Semaphore::const_new(2);
 
+/// Failures of `dust_balance::execute` worth a fresh attempt: the toolkit's
+/// node client has no mid-execute reconnect, so a websocket dropped by the
+/// RPC's idle-killer or a restart surfaces as `RestartNeeded` /
+/// `Connection(Closed)`; load-balanced replicas answering at slightly
+/// different heights can return `null` for a block hash another replica
+/// already announced ("invalid type: null" in run 28838014366); and the
+/// shared Postgres fetch cache can transiently exhaust its pool. A retried
+/// execute builds fresh clients, and the blocks the failed attempt fetched
+/// are already in the fetch cache, so retries are cheap.
+fn is_transient_dust_balance_error(e: &(dyn std::error::Error + Send + Sync)) -> bool {
+    let s = format!("{e:?}");
+    [
+        "RestartNeeded",
+        "Connection(Closed)",
+        "RequestTimeout",
+        "Request timeout",
+        "invalid type: null",
+        "PoolTimedOut",
+    ]
+    .iter()
+    .any(|m| s.contains(m))
+}
+
+async fn dust_balance_execute_with_retry(
+    args: dust_balance::DustBalanceArgs,
+) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
+    const ATTEMPTS: usize = 3;
+    const RETRY_DELAY: Duration = Duration::from_secs(15);
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let attempt_args = dust_balance::DustBalanceArgs {
+            source: args.source.clone(),
+            seed: args.seed.clone(),
+            dry_run: args.dry_run,
+        };
+        match dust_balance::execute(attempt_args).await {
+            Ok(r) => return Ok(r),
+            Err(e) if attempt < ATTEMPTS && is_transient_dust_balance_error(e.as_ref()) => {
+                tracing::warn!(
+                    "dust_balance attempt {attempt}/{ATTEMPTS} failed transiently: {e:?}; \
+                     retrying in {RETRY_DELAY:?}"
+                );
+                sleep(RETRY_DELAY).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 pub(crate) async fn gated_dust_balance(
     args: dust_balance::DustBalanceArgs,
 ) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
@@ -381,7 +431,7 @@ pub(crate) async fn gated_dust_balance(
         .acquire()
         .await
         .expect("dust-balance gate semaphore closed");
-    dust_balance::execute(args).await
+    dust_balance_execute_with_retry(args).await
 }
 
 /// Ungated dust-balance for *window-sensitive* reads only: the spacing tests
@@ -397,7 +447,7 @@ pub(crate) async fn gated_dust_balance(
 pub(crate) async fn window_dust_balance(
     args: dust_balance::DustBalanceArgs,
 ) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
-    dust_balance::execute(args).await
+    dust_balance_execute_with_retry(args).await
 }
 
 // -------- TOOLKIT FETCH CACHE --------
