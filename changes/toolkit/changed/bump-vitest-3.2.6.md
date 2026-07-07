@@ -10,4 +10,4 @@ created and the Create Release workflow failed with "image not found".
 
 Bumps vitest 3.2.4 -> 3.2.6 (the patched release on the 3.x line).
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1841
