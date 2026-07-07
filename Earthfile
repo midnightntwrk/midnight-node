@@ -245,29 +245,21 @@ rebuild-genesis-state:
     # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # Copy genesis config files (undeployed uses res/dev/; local uses res/local/).
-    # Neither network has a cardano-tip.json (a snapshot of a live Cardano tip to anchor
-    # genesis to): undeployed mocks the main chain, and local runs its own real dockerized
-    # Cardano from genesis (block 0), so there is no pre-existing tip. undeployed funds
-    # faucet wallets from the hardcoded seeds injected below; local ships an unfunded genesis
-    # and is funded over the cNIGHT bridge at runtime instead.
+    # Copy genesis config files. undeployed's configs live in res/dev; every other network
+    # uses res/<network>. Only deployed networks ship a cardano-tip.json (genesis-spawned
+    # nets like local have no live tip), so copy it only if present.
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
         COPY res/dev/ics-config.json /genesis-config/ics-config.json
         COPY res/dev/reserve-config.json /genesis-config/reserve-config.json
-    ELSE IF [ "${NETWORK}" = "local" ]
-        COPY res/local/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
-        COPY res/local/cnight-config.json /genesis-config/cnight-config.json
-        COPY res/local/ics-config.json /genesis-config/ics-config.json
-        COPY res/local/reserve-config.json /genesis-config/reserve-config.json
     ELSE
         COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
         COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
         COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
         COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
-        COPY res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
+        COPY --if-exists res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
     END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -298,26 +290,15 @@ rebuild-genesis-state:
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
         RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
-        # cardano-tip.json is only present for deployed networks (mainnet etc.) that anchor
-        # genesis to a live Cardano tip. Networks spawned from their own genesis omit it —
-        # undeployed (mocked main chain) and local (its own dockerized Cardano) — so include
-        # the flag only when the file exists.
-        RUN if [ -f /genesis-config/cardano-tip.json ]; then \
-                /midnight-node-toolkit generate-genesis \
-                    --network ${NETWORK} \
-                    --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-                    --cnight-generates-dust-config /genesis-config/cnight-config.json \
-                    --ics-config /genesis-config/ics-config.json \
-                    --reserve-config /genesis-config/reserve-config.json \
-                    --cardano-tip-config /genesis-config/cardano-tip.json; \
-            else \
-                /midnight-node-toolkit generate-genesis \
-                    --network ${NETWORK} \
-                    --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
-                    --cnight-generates-dust-config /genesis-config/cnight-config.json \
-                    --ics-config /genesis-config/ics-config.json \
-                    --reserve-config /genesis-config/reserve-config.json; \
-            fi
+        # Only deployed networks pass a cardano-tip; genesis-spawned nets (local, undeployed)
+        # have no live tip, so add the flag only when the file is present.
+        RUN /midnight-node-toolkit generate-genesis \
+            --network ${NETWORK} \
+            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --cnight-generates-dust-config /genesis-config/cnight-config.json \
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json \
+            $(if [ -f /genesis-config/cardano-tip.json ]; then echo "--cardano-tip-config /genesis-config/cardano-tip.json"; fi)
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
