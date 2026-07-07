@@ -99,6 +99,8 @@ pub struct UnshieldedWallet {
 /// so a wallet can hold only the public half.
 #[derive(Clone, Serializable)]
 #[tag = "unshielded-wallet-keys[v1]"]
+// For ledger 7/8, the ECDSA variant of this enum is size 1 - so we ignore the clippy warning here
+#[allow(clippy::large_enum_variant)]
 pub enum UnshieldedWalletKeys {
 	Schnorr { verifying_key: VerifyingKeySchnorr, signing_key: Option<SigningKeySchnorr> },
 	Ecdsa { verifying_key: VerifyingKeyEcdsa, signing_key: Option<SigningKeyEcdsa> },
