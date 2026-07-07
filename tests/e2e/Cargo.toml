@@ -39,8 +39,6 @@ reqwest = { workspace = true, optional = true }
 [dev-dependencies]
 midnight-node-toolkit = { path = "../../util/toolkit" }
 tempfile.workspace = true
-# `FutureExt::catch_unwind` — retry a panicking toolkit build (stale overlay).
-futures.workspace = true
 
 [[test]]
 name = "e2e_tests"
