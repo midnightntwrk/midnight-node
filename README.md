@@ -269,9 +269,9 @@ These are built in CI. See the workflow files for the latest `earthly` commands:
 ### Start local network
 
 **Available Networks:**
-- `dev` - Development network with a funded genesis; use this for a standalone node
-- `local` - Local-environment network; unfunded genesis, bootstrapped by the dockerized
-  local-env (cNIGHT/faucet). Not for standalone use — see [local-environment/README.md](local-environment/README.md)
+- `dev` - Development network; genesis funds well-known dev wallets — use for a standalone node
+- `local` - Local-environment network; genesis funds no wallets (they're funded at runtime over
+  the cNIGHT bridge), so it needs the dockerized local-env — see [local-environment/README.md](local-environment/README.md)
 - `qanet` - QA testing network
 - `preview` - Preview/staging network
 - `perfnet` - Performance testing network
