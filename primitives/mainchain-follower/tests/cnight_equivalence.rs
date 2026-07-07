@@ -50,7 +50,7 @@ use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::data_source::{
-	BulkCacheConfig, BulkCachedCNightObservationDataSource, DEFAULT_WINDOW_SIZE,
+	BulkCacheConfig, BulkCachedCNightObservationDataSource,
 	MidnightCNightObservationDataSourceImpl, bulk_pull,
 };
 use midnight_primitives_mainchain_follower::inherent_provider::MidnightCNightObservationDataSource;
@@ -162,7 +162,6 @@ async fn bulk_source_matches_standard_over_block_range() {
 		BulkCacheConfig {
 			window_start_block: window_from,
 			window_end_block: window_to,
-			window_size: DEFAULT_WINDOW_SIZE,
 			stability_margin: 0, // irrelevant for a pre-populated, static window
 			pool: pool.clone(),
 			db_fallback,

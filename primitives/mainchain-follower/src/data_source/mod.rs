@@ -31,7 +31,7 @@ pub use cnight_observation::{
 	TxPosition,
 };
 pub use cnight_observation_bulk::{
-	BulkCacheConfig, BulkCachedCNightObservationDataSource, DEFAULT_WINDOW_SIZE, bulk_pull,
+	BulkCacheConfig, BulkCachedCNightObservationDataSource, bulk_pull,
 };
 pub use cnight_observation_mock::CNightObservationDataSourceMock;
 pub use federated_authority_observation::FederatedAuthorityObservationDataSourceImpl;
