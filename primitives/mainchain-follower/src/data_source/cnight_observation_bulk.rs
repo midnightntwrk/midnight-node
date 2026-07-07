@@ -235,10 +235,11 @@ pub struct BulkCachedCNightObservationDataSource {
 	/// cNIGHT addresses cached so the sliding-window refresh can re-run the
 	/// observation queries without re-reading the chainspec JSON.
 	cnight_addresses: CNightAddresses,
-	/// Cardano blocks to leave un-fetched past the requested target (re-org
-	/// safety), and the lookback the window keeps behind the follower so
-	/// reorg-depth re-reads stay in cache rather than hitting `db_fallback`.
-	/// Equals `cardano_security_parameter + block_stability_margin`.
+	/// Cardano reorg depth (`cardano_security_parameter + block_stability_margin`).
+	/// Used two ways: the margin left un-fetched past a refresh's target (so
+	/// proactive look-ahead never caches rollback-prone blocks), and the lookback
+	/// kept behind the follower (so a reorg that rewinds the follower is still
+	/// served from cache instead of `db_fallback`).
 	stability_margin: u32,
 	/// Single-flight gate for sliding-window refreshes. The owned lock guard is
 	/// held by the in-flight refresh task; `try_lock_owned` failing means a
@@ -257,9 +258,9 @@ pub struct BulkCacheConfig {
 	/// Cardano block range the initial events cover: `[window_start_block, window_end_block]`.
 	pub window_start_block: u32,
 	pub window_end_block: u32,
-	/// Cardano blocks to leave un-fetched past the requested target (re-org
-	/// safety), and the lookback the window keeps behind the follower. Equals
-	/// `cardano_security_parameter + block_stability_margin`.
+	/// Cardano reorg depth (`cardano_security_parameter + block_stability_margin`).
+	/// Bounds both the refresh look-ahead and the window's lookback behind the
+	/// follower.
 	pub stability_margin: u32,
 	/// db-sync connection used by the refresh and per-call block lookups.
 	pub pool: PgPool,
@@ -446,25 +447,26 @@ impl RefreshContext {
 /// `(from_block, new_window_start)`.
 ///
 /// Contiguous case (`follower_anchor <= old_end + 1`): extend from
-/// `old_end + 1` and trim the window to `reorg_margin` blocks behind the
-/// follower. The runtime only ever reads at or ahead of the follower, so
-/// anything further back is never served from cache; the only reason to keep
-/// any is a Cardano reorg, which can't run deeper than `reorg_margin` (deeper
-/// re-reads fall back to `db_fallback`). Trimming this close keeps a node that
-/// synced from genesis tracking the tip rather than trailing it by a whole
-/// window (#1835). With no follower call observed yet (`trim_anchor` is
-/// `None`), keep the existing start — never move it backward, or we'd lie
-/// about coverage.
+/// `old_end + 1`, and trim the window's start to `reorg_margin` blocks behind
+/// the follower. The runtime only ever reads at or ahead of the follower, so
+/// blocks further back are never served from the cache — the one thing that
+/// could need them is a reorg, which can't rewind deeper than `reorg_margin`
+/// (a deeper re-read just falls back to `db_fallback`). Trimming this close is
+/// what keeps a node that synced from genesis tracking the tip instead of
+/// trailing it by a whole window (#1835). The start only ever moves forward:
+/// `existing_start.max(..)` never rewinds it — that would claim coverage the
+/// cache has already dropped — and with no follower position observed yet
+/// (`trim_anchor` is `None`) it stays put.
 ///
-/// Jump case (`follower_anchor > old_end + 1`): the runtime has already
-/// processed past the window's end, so extending contiguously would re-pull
-/// history nobody needs — e.g. a node restarting after a full sync, where
-/// the window is still anchored at the genesis observation position.
-/// Restart the window at the follower's position instead; older queries
-/// (competing forks) are served by `db_fallback`. The window start must equal
-/// the pull start here: the pre-gap events sit below the follower, so claiming
-/// coverage from an older `new_window_start` would leave a hole in
-/// `(old_end, follower_anchor)` that cache reads would silently miss.
+/// Jump case (`follower_anchor > old_end + 1`): the runtime is already past the
+/// window's end, so extending contiguously would re-pull history nobody needs
+/// — e.g. a node restarting after a full sync with its window still anchored at
+/// the genesis observation position. Restart the window at the follower
+/// instead; older queries (competing forks) fall back to `db_fallback`. Here
+/// the window start must equal the pull start: the retained events sit below
+/// the gap, so a smaller `new_window_start` would claim `(old_end,
+/// follower_anchor)` while holding nothing there — a hole cache reads would
+/// silently miss.
 fn plan_refresh(
 	old_end: u32,
 	follower_anchor: u32,
