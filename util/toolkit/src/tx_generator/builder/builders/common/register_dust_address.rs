@@ -30,12 +30,18 @@ impl<C: BuilderContext<DefaultDB>> RegisterDustAddressBuilder<C> {
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		// Only the seed values are stored; their schemes are applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (wallet_seed, _) = args.wallet_seed.resolve();
+		let funding_seed =
+			crate::cli_parsers::resolve_scheme_pair(args.funding_seed, args.funding_seed_ecdsa)
+				.map(|(seed, _)| seed);
 		Self {
 			context,
 			prover,
-			seed: args.wallet_seed,
+			seed: wallet_seed,
 			rng_seed: args.rng_seed,
-			funding_seed: args.funding_seed,
+			funding_seed,
 			destination_dust: args
 				.destination_dust
 				.as_ref()

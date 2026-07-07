@@ -78,10 +78,16 @@ impl BatchesBuilder {
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		use super::type_convert::{convert_shielded_token_type, convert_unshielded_token_type};
+		// Only the seed value is stored; its scheme is applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (funding_seed, _) = crate::cli_parsers::resolve_defaulted_funding(
+			args.funding_seed,
+			args.funding_seed_ecdsa,
+		);
 		Self {
 			context,
 			prover,
-			funding_seed: args.funding_seed,
+			funding_seed,
 			num_txs_per_batch: args.num_txs_per_batch,
 			num_batches: args.num_batches,
 			concurrency: args.concurrency,

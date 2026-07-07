@@ -87,7 +87,8 @@ mod tests {
 		tx_generator::{
 			builder::{
 				BatchSingleTxArgs, ClaimKindArg, ClaimRewardsArgs, CoinSelectionStrategy,
-				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
+				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, SourceSeedArg,
+				TransferArgs,
 			},
 			source::FetchCacheConfig,
 		},
@@ -138,9 +139,13 @@ mod tests {
 		shielded_token_type: vec![t_token()],
 		unshielded_amount: vec![100],
 		unshielded_token_type: vec![NIGHT],
-		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
-			.parse().unwrap(),
+		source_seed: SourceSeedArg {
+			source_seed: Some("0000000000000000000000000000000000000000000000000000000000000001"
+				.parse().unwrap()),
+			source_seed_ecdsa: None,
+		},
 		funding_seed: None,
+		funding_seed_ecdsa: None,
 		destination_address: vec![
 			WalletAddress::from_str(
 				"mn_addr_undeployed13h0e3c2m7rcfem6wvjljnyjmxy5rkg9kkwcldzt73ya5pv7c4p8skzgqwj",
@@ -160,6 +165,7 @@ mod tests {
 	)]
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
 		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+		funding_seed_ecdsa: None,
 		rng_seed:None,
 		amount: 500_000,
 		claim_kind: ClaimKindArg::Reward

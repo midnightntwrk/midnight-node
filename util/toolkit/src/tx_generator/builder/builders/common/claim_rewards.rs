@@ -45,10 +45,16 @@ impl<C: BuilderContext<DefaultDB>> ClaimRewardsBuilder<C> {
 			ClaimKindArg::Reward => ClaimKind::Reward,
 			ClaimKindArg::CardanoBridge => ClaimKind::CardanoBridge,
 		};
+		// Only the seed value is stored; its scheme is applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (funding_seed, _) = crate::cli_parsers::resolve_defaulted_funding(
+			args.funding_seed,
+			args.funding_seed_ecdsa,
+		);
 		Self {
 			context,
 			prover,
-			funding_seed: args.funding_seed,
+			funding_seed,
 			rng_seed: args.rng_seed,
 			amount: args.amount,
 			claim_kind,

@@ -90,11 +90,60 @@ impl SeedArg {
 	/// The chosen seed and its unshielded signature scheme. Clap's `ArgGroup`
 	/// (`required = true, multiple = false`) guarantees exactly one of the two is set.
 	pub fn resolve(&self) -> (WalletSeed, UnshieldedSignatureScheme) {
-		match (&self.seed, &self.seed_ecdsa) {
-			(Some(seed), None) => (seed.clone(), UnshieldedSignatureScheme::Schnorr),
-			(None, Some(seed)) => (seed.clone(), UnshieldedSignatureScheme::Ecdsa),
-			_ => unreachable!("clap guarantees exactly one of --seed / --seed-ecdsa is provided"),
-		}
+		resolve_seed(self.seed.clone(), self.seed_ecdsa.clone())
+	}
+}
+
+/// Pick between a `--foo` (Schnorr) and `--foo-ecdsa` (ECDSA) seed pair, pairing the chosen value
+/// with its [`UnshieldedSignatureScheme`]. Returns `None` when neither is set (optional pairs).
+///
+/// Every CLI caller of this guards the pair with a clap `ArgGroup` or `conflicts_with`, so the
+/// "both set" arm is unreachable in practice; the `unreachable!` documents that invariant.
+pub fn resolve_scheme_pair<T>(
+	schnorr: Option<T>,
+	ecdsa: Option<T>,
+) -> Option<(T, UnshieldedSignatureScheme)> {
+	match (schnorr, ecdsa) {
+		(Some(seed), None) => Some((seed, UnshieldedSignatureScheme::Schnorr)),
+		(None, Some(seed)) => Some((seed, UnshieldedSignatureScheme::Ecdsa)),
+		(None, None) => None,
+		(Some(_), Some(_)) => {
+			unreachable!("clap group / conflicts_with rejects both the schnorr and ecdsa seed")
+		},
+	}
+}
+
+/// Resolve a required `--foo` / `--foo-ecdsa` [`WalletSeed`] pair. Clap's `required = true,
+/// multiple = false` group guarantees exactly one is set.
+pub fn resolve_seed(
+	schnorr: Option<WalletSeed>,
+	ecdsa: Option<WalletSeed>,
+) -> (WalletSeed, UnshieldedSignatureScheme) {
+	resolve_scheme_pair(schnorr, ecdsa)
+		.expect("clap group requires exactly one of the seed / seed-ecdsa pair")
+}
+
+/// [`resolve_seed`] for the `String`-typed seed commands (the value is decoded to a
+/// [`WalletSeed`] later, in the builder). Clap's required group guarantees exactly one is set.
+pub fn resolve_seed_str(
+	schnorr: Option<String>,
+	ecdsa: Option<String>,
+) -> (String, UnshieldedSignatureScheme) {
+	resolve_scheme_pair(schnorr, ecdsa)
+		.expect("clap group requires exactly one of the seed / seed-ecdsa pair")
+}
+
+/// Resolve a *defaulted* `--funding-seed` (always present, via its clap `default_value`) against
+/// its optional `--funding-seed-ecdsa` sibling. The two are `conflicts_with`, so at most one is
+/// explicitly given; the ECDSA seed wins when present, otherwise the (possibly defaulted) Schnorr
+/// seed is used.
+pub fn resolve_defaulted_funding(
+	schnorr: String,
+	ecdsa: Option<String>,
+) -> (String, UnshieldedSignatureScheme) {
+	match ecdsa {
+		Some(seed) => (seed, UnshieldedSignatureScheme::Ecdsa),
+		None => (schnorr, UnshieldedSignatureScheme::Schnorr),
 	}
 }
 

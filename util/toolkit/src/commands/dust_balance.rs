@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::tx_generator::builder::build_fork_aware_context_cached;
+use crate::tx_generator::builder::{
+	WalletSchemes, build_fork_aware_context_cached_with_schemes, ensure_ecdsa_supported,
+};
 use crate::tx_generator::source::create_file_wallet_cache;
 use crate::{TxGenerator, WalletSeed, source::Source};
 use crate::{
@@ -8,23 +10,31 @@ use crate::{
 	serde_def::{DustGenerationInfoSer, QualifiedDustOutputSer},
 };
 use clap::Args;
+use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 
 #[derive(Args)]
+#[group(id = "dust_balance_seed", required = true, multiple = false)]
 pub struct DustBalanceArgs {
 	#[command(flatten)]
 	pub source: Source,
-	/// The seed of the wallet to show wallet state for, including private state
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	pub seed: WalletSeed,
+	/// The seed of the wallet to show wallet state for, including private state (Schnorr NIGHT
+	/// identity)
+	#[arg(long, value_parser = cli::wallet_seed_decode, group = "dust_balance_seed")]
+	pub seed: Option<WalletSeed>,
+	/// The seed of the wallet to show wallet state for, using an ECDSA NIGHT identity (ledger 9+).
+	/// DUST resolution depends on the NIGHT identity, so this genuinely differs from `--seed`.
+	#[arg(long, value_parser = cli::wallet_seed_decode, group = "dust_balance_seed")]
+	pub seed_ecdsa: Option<WalletSeed>,
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
 	pub dry_run: bool,
 }
 
-/// Batched form of [`DustBalanceArgs`]. See [`execute_many`].
+/// Batched form of [`DustBalanceArgs`]. See [`execute_many`]. Each seed is paired with the
+/// unshielded signature scheme of its NIGHT identity, since DUST resolution is scheme-dependent.
 pub struct DustBalanceManyArgs {
 	pub source: Source,
-	pub seeds: Vec<WalletSeed>,
+	pub seeds: Vec<(WalletSeed, UnshieldedSignatureScheme)>,
 	pub dry_run: bool,
 }
 
@@ -53,8 +63,13 @@ pub enum DustBalanceResult {
 pub async fn execute(
 	args: DustBalanceArgs,
 ) -> Result<DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
-	let many =
-		DustBalanceManyArgs { source: args.source, seeds: vec![args.seed], dry_run: args.dry_run };
+	// Exactly one of `--seed` / `--seed-ecdsa` is set (clap's `dust_balance_seed` group).
+	let (seed, scheme) = cli::resolve_seed(args.seed, args.seed_ecdsa);
+	let many = DustBalanceManyArgs {
+		source: args.source,
+		seeds: vec![(seed, scheme)],
+		dry_run: args.dry_run,
+	};
 	let mut results = execute_many(many).await?;
 	// `execute_many` returns one result per input seed; we passed exactly one.
 	Ok(results.pop().expect("execute_many with one seed must return one result").1)
@@ -89,18 +104,34 @@ pub async fn execute_many(
 
 	if args.dry_run {
 		log::info!("Dry-run: fetching wallet state for {} seed(s)", args.seeds.len());
-		return Ok(args.seeds.into_iter().map(|s| (s, DustBalanceResult::DryRun(()))).collect());
+		return Ok(args
+			.seeds
+			.into_iter()
+			.map(|(seed, _)| (seed, DustBalanceResult::DryRun(())))
+			.collect());
 	}
 
 	let source_blocks = src.get_txs().await?;
+
+	// The cache key folds the scheme, so ECDSA and Schnorr identities for the same seed cache
+	// independently.
+	let schemes: WalletSchemes = args.seeds.iter().cloned().collect();
+
+	// Guard: ECDSA NIGHT identities are only representable from ledger 9.
+	ensure_ecdsa_supported(source_blocks.ledger_version(), &schemes)?;
+
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
-
-	let fork_ctx =
-		build_fork_aware_context_cached(&args.seeds, &source_blocks, wallet_cache.as_deref()).await;
-
 	// `dispatch` consumes the context, so iterate the seeds *inside* the
 	// closure: one context, N per-seed balance extractions.
-	let seeds = args.seeds;
+	let seeds: Vec<WalletSeed> = args.seeds.into_iter().map(|(seed, _)| seed).collect();
+
+	let fork_ctx = build_fork_aware_context_cached_with_schemes(
+		&seeds,
+		&source_blocks,
+		wallet_cache.as_deref(),
+		&schemes,
+	)
+	.await;
 	let jsons: Vec<DustBalanceJson> = fork_ctx.dispatch(
 		|ctx| {
 			seeds
@@ -144,6 +175,8 @@ pub async fn execute_many(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	// The dust-warp cache regression test drives the 3-arg (Schnorr-default) builder directly.
+	use crate::tx_generator::builder::build_fork_aware_context_cached;
 	use crate::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
 
@@ -170,11 +203,43 @@ mod tests {
 	#[tokio::test]
 	async fn check_balance_non_zero(seed: &str, src_files: Vec<String>) {
 		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
-		let args = DustBalanceArgs { source: source_for(src_files), seed, dry_run: false };
+		let args = DustBalanceArgs {
+			source: source_for(src_files),
+			seed: Some(seed),
+			seed_ecdsa: None,
+			dry_run: false,
+		};
 
 		let res = execute(args).await.expect("result was not Ok");
 
 		assert!(matches!(res, DustBalanceResult::Json(DustBalanceJson { total, .. }) if total > 0));
+	}
+
+	/// Wiring smoke test for `--seed-ecdsa`: dust-balance for an ECDSA identity must resolve on a
+	/// ledger-9 source (the scheme threads through, the pre-ledger-9 guard does not trip, and
+	/// nothing panics). Note this genesis fixture pre-allocates DUST by the scheme-independent dust
+	/// address, so the ECDSA total matches the Schnorr one here; the scheme-dependent NIGHT-UTXO
+	/// difference is asserted in `show_wallet`'s `ecdsa_seed_resolves_distinct_identity_from_schnorr`
+	/// (dust only diverges by scheme on a real chain, where DUST is generated from NIGHT UTXOs).
+	#[tokio::test]
+	async fn check_balance_ecdsa_seed_resolves() {
+		let seed = WalletSeed::try_from_hex_str(
+			"0000000000000000000000000000000000000000000000000000000000000001",
+		)
+		.unwrap();
+		let args = DustBalanceArgs {
+			source: source_for(vec![td("genesis/genesis_block_undeployed.mn")]),
+			seed: None,
+			seed_ecdsa: Some(seed),
+			dry_run: false,
+		};
+
+		let res = execute(args).await.expect("ECDSA dust-balance should resolve on ledger 9");
+
+		assert!(
+			matches!(res, DustBalanceResult::Json(_)),
+			"ECDSA dust-balance must resolve to a JSON result on a ledger-9 source"
+		);
 	}
 
 	#[tokio::test]
@@ -197,7 +262,7 @@ mod tests {
 		];
 		let args = DustBalanceManyArgs {
 			source: source_for(vec![td("genesis/genesis_block_undeployed.mn")]),
-			seeds: seeds.clone(),
+			seeds: seeds.iter().cloned().map(|s| (s, UnshieldedSignatureScheme::Schnorr)).collect(),
 			dry_run: false,
 		};
 
@@ -433,7 +498,7 @@ mod tests {
 		];
 		let args = DustBalanceManyArgs {
 			source: source_for(vec![td("genesis/genesis_block_undeployed.mn")]),
-			seeds: seeds.clone(),
+			seeds: seeds.iter().cloned().map(|s| (s, UnshieldedSignatureScheme::Schnorr)).collect(),
 			dry_run: true,
 		};
 		let res = execute_many(args).await.expect("result was not Ok");

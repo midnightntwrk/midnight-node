@@ -1,0 +1,18 @@
+bin.name = "midnight-node-toolkit"
+args = [
+    "show-address",
+    "--network", "testnet",
+    "--seed", "0000000000000000000000000000000000000000000000000000000000000001",
+    "--seed-ecdsa", "0000000000000000000000000000000000000000000000000000000000000001",
+]
+status.code = 2
+
+stdout = ""
+
+stderr = """
+error: the argument '--seed <SEED>' cannot be used with '--seed-ecdsa <SEED_ECDSA>'
+
+Usage: midnight-node-toolkit show-address --network <NETWORK> <--seed <SEED>|--seed-ecdsa <SEED_ECDSA>>
+
+For more information, try '--help'.
+"""

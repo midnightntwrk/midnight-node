@@ -101,13 +101,21 @@ impl<C: BuilderContext<DefaultDB>> SingleTxBuilder<C> {
 		};
 		let (shielded_outputs, unshielded_outputs) = resolve_outputs_from_triples(&output_args);
 
+		// The builder stores only the seed value; the unshielded signature scheme is applied when
+		// the context wallet is built (see `Builder::relevant_wallet_schemes`), so the scheme half
+		// of each resolved pair is dropped here.
+		let (source_seed, _) = args.source_seed.resolve();
+		let funding_seed =
+			crate::cli_parsers::resolve_scheme_pair(args.funding_seed, args.funding_seed_ecdsa)
+				.map(|(seed, _)| seed);
+
 		Self {
 			context,
 			prover,
 			shielded_outputs,
 			unshielded_outputs,
-			source_seed: convert_wallet_seed(args.source_seed),
-			funding_seed: args.funding_seed.map(convert_wallet_seed),
+			source_seed: convert_wallet_seed(source_seed),
+			funding_seed: funding_seed.map(convert_wallet_seed),
 			input_utxos: {
 				let mut seen: HashSet<([u8; 32], u32)> = HashSet::new();
 				args.input_utxos
