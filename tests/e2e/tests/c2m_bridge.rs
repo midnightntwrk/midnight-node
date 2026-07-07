@@ -283,6 +283,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
     let claim_args = GenerateTxsArgs {
         builder: Builder::ClaimRewards(ClaimRewardsArgs {
             funding_seed: CLAIM_FUNDING_SEED_HEX.to_string(),
+            funding_seed_ecdsa: None,
             rng_seed: None,
             amount: claimable,
             claim_kind: ClaimKindArg::CardanoBridge,

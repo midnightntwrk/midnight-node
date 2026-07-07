@@ -1,7 +1,7 @@
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::faucet::FaucetManager;
-use midnight_node_ledger_helpers::WalletSeed;
+use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
 use midnight_node_toolkit::commands::dust_balance;
 use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -256,7 +256,12 @@ async fn run_warmup() {
             fetch_cache: fetch_cache_config(),
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seeds: seeds.clone(),
+        // e2e wallets are all Schnorr NIGHT identities; pair each seed with its scheme.
+        seeds: seeds
+            .iter()
+            .cloned()
+            .map(|s| (s, UnshieldedSignatureScheme::Schnorr))
+            .collect(),
         dry_run: false,
     };
 
