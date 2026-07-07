@@ -143,11 +143,44 @@ impl FaucetManager {
         }
 
         let assets = vec![Asset::new_from_str("lovelace", &lovelace.to_string())];
-        let response = self
-            .faucet
-            .send(std::slice::from_ref(&*worker), address, assets)
-            .await
-            .expect("Failed to fund recipient from faucet worker");
+
+        // The faucet wallet is shared across runs (CI nightly, manual
+        // dispatches, developer laptops). A concurrent run adopts its own
+        // workers from the same UTXO set and can spend this worker's UTXO
+        // out from under us during a long stability wait — the send is then
+        // rejected with "All inputs are spent" (run 28825722707). Recover by
+        // re-acquiring a fresh eligible UTXO from the live faucet state; an
+        // in-process collision on the fresh pick would fail the same way and
+        // retry again, so the loop converges or gives up loudly.
+        const SEND_MAX_ATTEMPTS: usize = 3;
+        let mut attempt = 0;
+        let response = loop {
+            attempt += 1;
+            match self
+                .faucet
+                .send(std::slice::from_ref(&*worker), address, assets.clone())
+                .await
+            {
+                Ok(r) => break r,
+                Err(e)
+                    if attempt < SEND_MAX_ATTEMPTS
+                        && crate::api::cardano::is_inputs_spent_error(&e) =>
+                {
+                    tracing::warn!(
+                        "FaucetManager: worker[{}] UTXO {}#{} was already spent (concurrent \
+                         run sharing the faucet wallet?); re-acquiring a fresh worker UTXO \
+                         (attempt {}/{})",
+                        worker_idx,
+                        hex::encode(worker.transaction.id),
+                        worker.index,
+                        attempt,
+                        SEND_MAX_ATTEMPTS,
+                    );
+                    *worker = self.fresh_worker_utxo(&worker, need).await;
+                }
+                Err(e) => panic!("Failed to fund recipient from faucet worker: {e:?}"),
+            }
+        };
         let tx_id_hex = hex::encode(response.transaction.id);
 
         let dest_utxo = self
@@ -173,6 +206,35 @@ impl FaucetManager {
         );
         *worker = new_worker;
         dest_utxo
+    }
+
+    /// Re-query the faucet address and pick a fresh UTXO able to cover
+    /// `need` lovelace, excluding the stale one being replaced. Selection is
+    /// randomized so concurrent re-acquisitions (in-process or cross-run)
+    /// are unlikely to pile onto the same UTXO; a residual collision is
+    /// caught by the caller's inputs-spent retry. Panics if the faucet holds
+    /// no suitable UTXO — that's a genuine top-up situation.
+    async fn fresh_worker_utxo(&self, stale: &OgmiosUtxo, need: u64) -> OgmiosUtxo {
+        let candidates: Vec<OgmiosUtxo> = self
+            .faucet
+            .utxos()
+            .await
+            .into_iter()
+            .filter(|u| {
+                u.value.lovelace >= need.max(MIN_WORKER_LOVELACE)
+                    && !(u.transaction.id == stale.transaction.id && u.index == stale.index)
+            })
+            .collect();
+        if candidates.is_empty() {
+            panic!(
+                "FaucetManager: no live UTXO >= {} lovelace left at {} to replace a stale \
+                 worker. Faucet needs top-up or re-prime.",
+                need.max(MIN_WORKER_LOVELACE),
+                self.faucet.address_as_bech32(),
+            );
+        }
+        let pick = rand::random::<u32>() as usize % candidates.len();
+        candidates[pick].clone()
     }
 
     async fn acquire_worker(&self) -> (usize, MutexGuard<'_, OgmiosUtxo>) {

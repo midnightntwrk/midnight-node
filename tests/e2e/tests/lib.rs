@@ -227,7 +227,22 @@ fn ensure_warmup_thread_started() {
                     .enable_all()
                     .build()
                     .expect("build warmup runtime");
-                rt.block_on(run_warmup());
+                // Contain panics from the warmup internals (e.g. the
+                // toolkit's postgres backend panicking on PoolTimedOut, run
+                // 28825722707): the warmup is best-effort — per-test
+                // executes fall back to their own replay — but WARMUP_DONE
+                // must be set regardless or `wait_for_warmup` callers idle
+                // for their full cap.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    rt.block_on(run_warmup());
+                }));
+                if result.is_err() {
+                    tracing::warn!(
+                        "warmup: thread panicked — wallet snapshots may be missing; \
+                         per-test dust_balance calls will fall back to their own replay"
+                    );
+                }
+                WARMUP_DONE.store(true, Ordering::SeqCst);
             })
             .expect("spawn warmup thread");
     }
@@ -366,6 +381,22 @@ pub(crate) async fn gated_dust_balance(
         .acquire()
         .await
         .expect("dust-balance gate semaphore closed");
+    dust_balance::execute(args).await
+}
+
+/// Ungated dust-balance for *window-sensitive* reads only: the spacing tests
+/// (`spend_cnight_producing_dust`,
+/// `stop_dust_producing_after_deregistration_and_rotation`) submit both tx
+/// batches upfront and must read `balance_before` after the first batch's
+/// watermark crossing but *before* the second's — a window of only the
+/// enforced block spacing (~10-15 min at degraded Preview rates). Queueing
+/// such a read behind [`DUST_BALANCE_GATE`] can eat the whole window: in run
+/// 28825722707 stop_dust's read waited 12 min in the queue and completed the
+/// second the dereg/rotate batch crossed, reading `balance_before = 0`. At
+/// most two tests bypass concurrently, which the node RPC tolerates.
+pub(crate) async fn window_dust_balance(
+    args: dust_balance::DustBalanceArgs,
+) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
     dust_balance::execute(args).await
 }
 

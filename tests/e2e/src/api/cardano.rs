@@ -81,7 +81,26 @@ fn is_unknown_utxo_error(e: &OgmiosClientError) -> bool {
         return false;
     };
     let s = s.to_lowercase();
-    s.contains("unknown utxo reference") || s.contains("unknownoutputreferences")
+    // 3117's "unknown UTxO references" is the ledger-level rejection; the
+    // mempool-level flavor (3997, seen from ogmios 7 / cardano-node 11) is
+    // "All inputs are spent. Transaction has probably already been
+    // included". Both prove the inputs were consumed.
+    s.contains("unknown utxo reference")
+        || s.contains("unknownoutputreferences")
+        || s.contains("all inputs are spent")
+}
+
+/// Detects the mempool rejection for a tx whose inputs are already consumed
+/// (ogmios 7 ServerError 3997, `data.error` "All inputs are spent.
+/// Transaction has probably already been included"). The faucet uses this to
+/// recognize a worker UTXO that a *concurrent run sharing the faucet wallet*
+/// spent out from under it, and re-acquires a fresh worker UTXO.
+pub fn is_inputs_spent_error(e: &OgmiosClientError) -> bool {
+    let OgmiosClientError::RequestError(s) = e else {
+        return false;
+    };
+    let s = s.to_lowercase();
+    s.contains("all inputs are spent") || s.contains("unknown utxo reference")
 }
 
 /// Compute a transaction's id (blake2b-256 of its body) locally from the signed tx bytes,
@@ -1076,13 +1095,18 @@ impl CardanoClient {
         let response = match Self::ogmios_request(&self.ogmios_settings, request).await {
             Ok(r) => r,
             Err(e) => {
+                // Return the error rather than panicking: the faucet retries
+                // a send whose worker UTXO was spent out from under it by a
+                // concurrent run sharing the faucet wallet (see
+                // `FaucetManager::request_tokens`). Other callers treat the
+                // error as fatal, preserving the previous behaviour.
                 tracing::error!(
                     "Ogmios SubmitTx failed: {e}\n  inputs ({}): [{}]\n  tx_hex prefix: {tx_fingerprint}... (len={})",
                     inputs_fmt.len(),
                     inputs_fmt.join(", "),
                     tx_hex.len(),
                 );
-                panic!("Ogmios SubmitTx failed: {e:?}");
+                return Err(e);
             }
         };
         match response {

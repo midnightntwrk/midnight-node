@@ -105,10 +105,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          code=$(curl -s -o /dev/null -w "%{http_code}" -m 15 \
+          # After a successful 101 upgrade curl holds the open WebSocket
+          # until -m expires and exits nonzero — `|| true` keeps the
+          # captured status code; on connection failure curl itself
+          # prints 000 via -w.
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 8 \
             -H "Connection: Upgrade" -H "Upgrade: websocket" \
             -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: c21va2UtdGVzdA==" \
-            https://ogmios.devnet.midnight.network/ || echo "000")
+            https://ogmios.devnet.midnight.network/ || true)
           if [ "$code" != "101" ]; then
             echo "::error::ogmios WebSocket handshake returned HTTP $code (expected 101) — endpoint unreachable or this runner's IP is not allowlisted"
             exit 1

@@ -2302,7 +2302,9 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         dry_run: false,
     };
 
-    let result2 = crate::gated_dust_balance(args2)
+    // Window-sensitive read (between the two batch crossings) — must
+    // not queue behind the dust-balance gate; see `window_dust_balance`.
+    let result2 = crate::window_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -2510,7 +2512,9 @@ async fn spend_cnight_producing_dust() {
         dry_run: false,
     };
 
-    let result = crate::gated_dust_balance(args)
+    // Window-sensitive read (between the two batch crossings) — must
+    // not queue behind the dust-balance gate; see `window_dust_balance`.
+    let result = crate::window_dust_balance(args)
         .await
         .expect("dust-balance error");
 
