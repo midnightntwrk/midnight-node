@@ -18,7 +18,7 @@ use documented::FieldInfo;
 use midnight_node_res::{
 	default_cfg,
 	networks::{
-		C2MBridgeConfig, CustomNetwork, LocalNetwork, MainChainScripts, MessageConfig,
+		C2MBridgeConfig, CustomNetwork, MainChainScripts, MessageConfig,
 		PermissionedCandidatesConfig, RegisteredCandidatesAddresses, UndeployedNetwork,
 	},
 };
@@ -302,7 +302,6 @@ impl SubstrateCli for Cfg {
 				};
 				chain_config(network)
 			},
-			"local" => chain_config(LocalNetwork),
 			"dev" => chain_config(UndeployedNetwork),
 			path => crate::chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))
 				.map_err(|err| ChainSpecInitError::ParseError(err.to_string())),

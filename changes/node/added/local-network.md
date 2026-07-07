@@ -7,9 +7,9 @@ the real cNIGHT->mNIGHT bridge — genesis ships **no** funded wallets, so the c
 pool invariants hold from block 0 (fixes #1778).
 
 Network:
-- Config preset `res/cfg/local.toml` and config namespace `res/local/`.
-- `LocalNetwork` in `res/src/networks/definitions.rs`; `--chain local` resolves to it
-  (`dev` still maps to `UndeployedNetwork`).
+- Config preset `res/cfg/local.toml` and config namespace `res/local/`. `build-spec` with
+  `CFG_PRESET=local` sources everything from `res/local/` at runtime via the dynamic
+  `CustomNetwork` path — no compile-time network (`dev` stays the built-in `UndeployedNetwork`).
 - Generated genesis `res/genesis/genesis_{state,block}_local.mn` — treasury/reserve/
   locked pools, no wallets. Earthfile `rebuild-genesis-state-local`
   (`--FUND_FAUCET_WALLETS=false`); the no-funding path also works without
