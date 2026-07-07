@@ -28,12 +28,15 @@ use std::{
 pub struct SourceTransactions {
 	pub blocks: Vec<RawBlockData>,
 	pub network_id: String,
+	/// Set when off-chain overlay blocks were chained in. Such a source is not a faithful
+	/// view of any real chain, so it must stay out of the chain-id-keyed wallet cache.
+	pub overlaid: bool,
 }
 
 impl SourceTransactions {
 	/// Create a new SourceTransactions with pre-computed network_id.
 	pub fn new(blocks: Vec<RawBlockData>, network_id: &str) -> Self {
-		Self { blocks, network_id: network_id.to_string() }
+		Self { blocks, network_id: network_id.to_string(), overlaid: false }
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
@@ -76,7 +79,7 @@ impl SourceTransactions {
 			panic!("Could not find transaction with 'network id' in given blocks");
 		});
 
-		Self { blocks, network_id }
+		Self { blocks, network_id, overlaid: false }
 	}
 
 	/// Convert untyped transactions (from file loading) into RawBlockData.
@@ -152,14 +155,18 @@ impl SourceTransactions {
 		let block = RawBlockData::new_from_timestamp(now_secs, ledger_version, transactions);
 		let network_id = network_id
 			.unwrap_or_else(|| panic!("Network id has not been given nor found in transactions"));
-		Self { blocks: vec![block], network_id }
+		Self { blocks: vec![block], network_id, overlaid: false }
 	}
 
 	/// Derive a deterministic chain identity for wallet state cache keying.
 	///
-	/// Returns `None` when no block #1 is available (e.g. file-loaded datasets),
-	/// which signals the caller to skip caching and avoid cross-dataset collisions.
+	/// Returns `None` when no block #1 is available (e.g. file-loaded datasets) or when the
+	/// source carries off-chain overlay blocks — both signal the caller to skip caching and
+	/// avoid poisoning the live-chain cache with state that never existed on-chain.
 	pub fn chain_id(&self) -> Option<subxt::utils::H256> {
+		if self.overlaid {
+			return None;
+		}
 		self.blocks
 			.iter()
 			.find(|b| b.number == 1)
@@ -200,6 +207,8 @@ impl SourceTransactions {
 			block.number = max_number + 1 + offset as u64;
 			self.blocks.insert(insert_at + offset, block);
 		}
+		// Off-chain state now — keep it out of the chain-id-keyed wallet cache.
+		self.overlaid = true;
 	}
 }
 
@@ -304,5 +313,16 @@ mod tests {
 			last.number == 0 && base.blocks.iter().any(|b| b.number > 0),
 			"trailing dust-warp synthetic still detectable"
 		);
+	}
+
+	/// An overlaid source reports no chain id, so the caller skips the wallet cache and
+	/// can't poison the live-chain cache with off-chain overlay state.
+	#[test]
+	fn chain_overlay_disables_caching_via_chain_id() {
+		let mut base = SourceTransactions::new(vec![block_at(1), block_at(2)], "test");
+		assert!(base.chain_id().is_some(), "base with block #1 has a chain id");
+		base.chain_overlay(vec![block_at(0)]);
+		assert!(base.overlaid);
+		assert!(base.chain_id().is_none(), "overlaid source reports no chain id (cache skipped)");
 	}
 }
