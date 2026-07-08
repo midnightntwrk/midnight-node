@@ -1188,6 +1188,7 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
         END
