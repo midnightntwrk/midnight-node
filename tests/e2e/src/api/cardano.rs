@@ -29,47 +29,40 @@ const OGMIOS_MAX_ATTEMPTS: u32 = 5;
 
 /// Classify an ogmios error as retriable: dead WS task, request timeout,
 /// connect failure, or busy mempool. Returns the base delay (the retry
-/// loops scale it linearly per attempt), a log label, and whether to evict
-/// the cached client so the retry opens a fresh connection.
-fn retry_delay_for(e: &OgmiosClientError) -> Option<(Duration, &'static str, bool)> {
+/// loops scale it linearly per attempt), a log label, whether to evict the
+/// cached client, and whether a failed SubmitTx may still have been
+/// accepted — true only where the request could have reached the node with
+/// the response lost, not for never-sent or definitively rejected classes.
+fn retry_delay_for(e: &OgmiosClientError) -> Option<(Duration, &'static str, bool, bool)> {
     let OgmiosClientError::RequestError(s) = e else {
         return None;
     };
     if s.contains("background task closed") {
-        Some((Duration::from_secs(2), "WS transient", true))
+        Some((Duration::from_secs(2), "WS transient", true, true))
     } else if s.contains("Request timeout") {
-        Some((Duration::from_secs(5), "request timeout", true))
+        Some((Duration::from_secs(5), "request timeout", true, true))
     } else if s.starts_with("connect:") {
-        Some((Duration::from_secs(5), "connect failed", false))
+        Some((Duration::from_secs(5), "connect failed", false, false))
     } else if s.contains("MempoolTxTooSlow") {
-        Some((Duration::from_secs(5), "node mempool busy", false))
+        Some((Duration::from_secs(5), "node mempool busy", false, false))
     } else {
         None
     }
 }
 
-/// Detects a rejection for already-consumed inputs. Each test wallet is
-/// private to its test, so seeing this on the re-submission of a tx whose
-/// first attempt failed ambiguously means the first copy was accepted.
-fn is_unknown_utxo_error(e: &OgmiosClientError) -> bool {
-    let OgmiosClientError::RequestError(s) = e else {
-        return false;
-    };
-    let s = s.to_lowercase();
-    // Both the ledger-level and the mempool-level wordings.
-    s.contains("unknown utxo reference")
-        || s.contains("unknownoutputreferences")
-        || s.contains("all inputs are spent")
-}
-
-/// Detects a rejection for already-consumed inputs; the faucet uses it to
-/// spot a worker UTXO spent by a concurrent run sharing the faucet wallet.
+/// Detects a rejection for already-consumed inputs, in both the
+/// ledger-level and mempool-level wordings. Used to recognize the
+/// re-submission of an ambiguously-failed tx as accepted, and by the
+/// faucet to spot a worker UTXO spent by a concurrent run sharing the
+/// wallet.
 pub fn is_inputs_spent_error(e: &OgmiosClientError) -> bool {
     let OgmiosClientError::RequestError(s) = e else {
         return false;
     };
     let s = s.to_lowercase();
-    s.contains("all inputs are spent") || s.contains("unknown utxo reference")
+    s.contains("unknown utxo reference")
+        || s.contains("unknownoutputreferences")
+        || s.contains("all inputs are spent")
 }
 
 /// Compute a tx id locally, for when a submission was accepted but its
@@ -233,7 +226,7 @@ impl CardanoClient {
             match Self::fetch_chain_params_once(config).await {
                 Ok(v) => return v,
                 Err(e) => match retry_delay_for(&e) {
-                    Some((delay, label, rebuild_client)) => {
+                    Some((delay, label, rebuild_client, _)) => {
                         if rebuild_client {
                             Self::invalidate_ogmios_client(&config.base_url);
                         }
@@ -448,7 +441,7 @@ impl CardanoClient {
             match Self::ogmios_request_once(config, req.clone()).await {
                 Ok(v) => return Ok(v),
                 Err(e) => {
-                    if submit_outcome_unknown && is_unknown_utxo_error(&e) {
+                    if submit_outcome_unknown && is_inputs_spent_error(&e) {
                         if let OgmiosRequest::SubmitTx { tx_bytes } = &req {
                             if let Some(id) = local_tx_id(tx_bytes) {
                                 tracing::warn!(
@@ -465,11 +458,11 @@ impl CardanoClient {
                         }
                     }
                     match retry_delay_for(&e) {
-                        Some((delay, label, rebuild_client)) => {
+                        Some((delay, label, rebuild_client, ambiguous)) => {
                             if rebuild_client {
                                 Self::invalidate_ogmios_client(&config.base_url);
                             }
-                            if matches!(req, OgmiosRequest::SubmitTx { .. }) {
+                            if ambiguous && matches!(req, OgmiosRequest::SubmitTx { .. }) {
                                 submit_outcome_unknown = true;
                             }
                             let delay = delay * attempt;

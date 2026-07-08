@@ -36,8 +36,9 @@
 use crate::api::cardano::CardanoClient;
 use ogmios_client::OgmiosClientError;
 use ogmios_client::types::OgmiosUtxo;
-use std::sync::OnceLock;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex as StdMutex, OnceLock};
 use tokio::sync::{Mutex, MutexGuard};
 use whisky::Asset;
 
@@ -99,6 +100,11 @@ pub struct FaucetManager {
     faucet: CardanoClient,
     workers: Vec<Mutex<OgmiosUtxo>>,
     next_worker: AtomicUsize,
+    /// Refs of every UTXO currently assigned to a worker slot, so a stale
+    /// slot's replacement never duplicates a live slot (worker mutexes
+    /// can't be peeked). Every slot write goes through
+    /// [`Self::replace_worker_slot`].
+    assigned: StdMutex<HashSet<([u8; 32], u16)>>,
 }
 
 impl FaucetManager {
@@ -110,11 +116,24 @@ impl FaucetManager {
     /// workers, or if ogmios reports inconsistent UTXOs across `PRIME_MAX_ATTEMPTS` retries.
     pub async fn new(faucet: CardanoClient) -> Self {
         let workers = Self::initialise_workers(&faucet).await;
+        let assigned = workers
+            .iter()
+            .map(|u| (u.transaction.id, u.index))
+            .collect();
         FaucetManager {
             faucet,
             workers: workers.into_iter().map(Mutex::new).collect(),
             next_worker: AtomicUsize::new(0),
+            assigned: StdMutex::new(assigned),
         }
+    }
+
+    /// Swap a worker slot's UTXO, keeping the assigned-refs registry in sync.
+    fn replace_worker_slot(&self, slot: &mut OgmiosUtxo, new: OgmiosUtxo) {
+        let mut assigned = self.assigned.lock().expect("assigned registry poisoned");
+        assigned.remove(&(slot.transaction.id, slot.index));
+        assigned.insert((new.transaction.id, new.index));
+        *slot = new;
     }
 
     /// Send `lovelace` from the faucet to `address` and return the resulting UTXO at the
@@ -179,7 +198,8 @@ impl FaucetManager {
                         attempt,
                         SEND_MAX_ATTEMPTS,
                     );
-                    *worker = self.fresh_worker_utxo(&worker, need).await;
+                    let replacement = self.fresh_worker_utxo(need).await;
+                    self.replace_worker_slot(&mut worker, replacement);
                 }
                 Err(e) => panic!("Failed to fund recipient from faucet worker: {e:?}"),
             }
@@ -207,22 +227,26 @@ impl FaucetManager {
             lovelace / 1_000_000,
             address,
         );
-        *worker = new_worker;
+        self.replace_worker_slot(&mut worker, new_worker);
         dest_utxo
     }
 
     /// Re-query the faucet and pick a fresh UTXO covering `need`, excluding
-    /// the stale one. Randomized so concurrent re-acquisitions spread out;
+    /// every currently-assigned slot. Randomized so concurrent
+    /// re-acquisitions spread out;
     /// panics if nothing suitable is left (genuine top-up situation).
-    async fn fresh_worker_utxo(&self, stale: &OgmiosUtxo, need: u64) -> OgmiosUtxo {
-        let candidates: Vec<OgmiosUtxo> = self
-            .faucet
-            .utxos()
-            .await
+    async fn fresh_worker_utxo(&self, need: u64) -> OgmiosUtxo {
+        let utxos = self.faucet.utxos().await;
+        let assigned = self
+            .assigned
+            .lock()
+            .expect("assigned registry poisoned")
+            .clone();
+        let candidates: Vec<OgmiosUtxo> = utxos
             .into_iter()
             .filter(|u| {
                 u.value.lovelace >= need.max(MIN_WORKER_LOVELACE)
-                    && !(u.transaction.id == stale.transaction.id && u.index == stale.index)
+                    && !assigned.contains(&(u.transaction.id, u.index))
             })
             .collect();
         if candidates.is_empty() {
