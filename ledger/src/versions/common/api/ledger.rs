@@ -28,6 +28,7 @@ use ledger_storage_local::{
 use helpers_local::{StorableSyntheticCost, compute_overall_fullness};
 use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
+	events::Event,
 	semantics::{TransactionContext, TransactionResult},
 	structure::{LedgerParameters, LedgerState, SignatureKind},
 };
@@ -130,13 +131,17 @@ impl<D: DB> Ledger<D> {
 	///
 	/// This is used when a `VerifiedTransaction` has been cached from a prior
 	/// validation step, avoiding redundant ZK proof verification.
+	///
+	/// Returns the applied stage classification and the per-transaction
+	/// `Event<D>` stream the ledger emitted. `TransactionResult::Failure`
+	/// produces no events and returns an error, matching the prior semantics.
 	pub(crate) fn apply_verified_transaction<S: SignatureKind<D>>(
 		sp: Sp<Self, D>,
 		api: &Api,
 		tx: &Transaction<S, D>,
 		verified_tx: &mn_ledger_local::structure::VerifiedTransaction<D>,
 		ctx: &TransactionContext<D>,
-	) -> Result<(Sp<Self, D>, AppliedStage<D>), LedgerApiError> {
+	) -> Result<(Sp<Self, D>, AppliedStage<D>, Vec<Event<D>>), LedgerApiError> {
 		let tx_cost =
 			tx.0.cost(&sp.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
@@ -154,15 +159,15 @@ impl<D: DB> Ledger<D> {
 			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() });
 
 		match result {
-			TransactionResult::Success(_) => Ok((new_sp, AppliedStage::AllApplied)),
-			TransactionResult::PartialSuccess(segments, _) => {
+			TransactionResult::Success(events) => Ok((new_sp, AppliedStage::AllApplied, events)),
+			TransactionResult::PartialSuccess(segments, events) => {
 				log::warn!(
 					target: LOG_TARGET,
 					"Non guaranteed part of the transaction failed tx_hash = {:?}, segments = {:?}",
 					tx.identifiers().map(|i| api.tagged_serialize(&i)).collect::<Vec<_>>(),
 					segments
 				);
-				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect())))
+				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect()), events))
 			},
 			TransactionResult::Failure(reason) => {
 				log::warn!(target: LOG_TARGET, "Error applying Transaction: {reason:?}");
@@ -225,14 +230,17 @@ impl<D: DB> Ledger<D> {
 			.alloc(Ledger { state: next_state, block_fullness: SyntheticCost::ZERO.into() })
 	}
 
+	/// Returns the new ledger snapshot together with the `Event<D>` stream the
+	/// ledger emitted for the system transaction (`ParamChange`,
+	/// `DustInitialUtxo`, dust-generation events, etc.).
 	pub(crate) fn apply_system_tx(
 		sp: Sp<Self, D>,
 		tx: &SystemTransaction,
 		tblock: Timestamp,
-	) -> Result<Sp<Self, D>, LedgerApiError> {
+	) -> Result<(Sp<Self, D>, Vec<Event<D>>), LedgerApiError> {
 		let tx_cost = tx.cost(&sp.state.parameters);
 		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
-		let (next_state, _) = sp.state.apply_system_tx(tx, tblock).map_err(|e| {
+		let (next_state, events) = sp.state.apply_system_tx(tx, tblock).map_err(|e| {
 			log::error!(target: LOG_TARGET, "Error applying System Transaction: {e:?}");
 			LedgerApiError::Transaction(TransactionError::SystemTransaction(e.into()))
 		})?;
@@ -244,9 +252,10 @@ impl<D: DB> Ledger<D> {
 			&next_state.parameters.limits.block_limits,
 			"apply_system_tx",
 		)?;
-		Ok(default_storage::<D>()
+		let new_sp = default_storage::<D>()
 			.arena
-			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() }))
+			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() });
+		Ok((new_sp, events))
 	}
 
 	pub(crate) fn get_unclaimed_amount(&self, beneficiary: UserAddress) -> Option<&u128> {
@@ -327,7 +336,7 @@ mod tests {
 				tx_ctx.block_context.tblock,
 			)
 			.unwrap_or_else(|err| panic!("Transaction not well-formed: {err:?}"));
-		let (mut new_ledger_state, _applied_stage) =
+		let (mut new_ledger_state, _applied_stage, _events) =
 			Ledger::<DefaultDB>::apply_verified_transaction(
 				ledger.clone(),
 				api,
