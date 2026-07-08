@@ -198,8 +198,7 @@ impl FaucetManager {
                         attempt,
                         SEND_MAX_ATTEMPTS,
                     );
-                    let replacement = self.fresh_worker_utxo(need).await;
-                    self.replace_worker_slot(&mut worker, replacement);
+                    self.replace_with_fresh_worker(&mut worker, need).await;
                 }
                 Err(e) => panic!("Failed to fund recipient from faucet worker: {e:?}"),
             }
@@ -231,19 +230,16 @@ impl FaucetManager {
         dest_utxo
     }
 
-    /// Re-query the faucet and pick a fresh UTXO covering `need`, excluding
-    /// every currently-assigned slot. Randomized so concurrent
-    /// re-acquisitions spread out;
-    /// panics if nothing suitable is left (genuine top-up situation).
-    async fn fresh_worker_utxo(&self, need: u64) -> OgmiosUtxo {
+    /// Re-query the faucet and swap the slot to a fresh UTXO covering
+    /// `need`. Candidate filtering, the pick, and the registry update
+    /// happen under one lock acquisition so concurrent recoveries can't
+    /// reserve the same candidate. Randomized so re-acquisitions spread
+    /// out; panics if nothing suitable is left (genuine top-up situation).
+    async fn replace_with_fresh_worker(&self, slot: &mut OgmiosUtxo, need: u64) {
         let utxos = self.faucet.utxos().await;
-        let assigned = self
-            .assigned
-            .lock()
-            .expect("assigned registry poisoned")
-            .clone();
-        let candidates: Vec<OgmiosUtxo> = utxos
-            .into_iter()
+        let mut assigned = self.assigned.lock().expect("assigned registry poisoned");
+        let candidates: Vec<&OgmiosUtxo> = utxos
+            .iter()
             .filter(|u| {
                 u.value.lovelace >= need.max(MIN_WORKER_LOVELACE)
                     && !assigned.contains(&(u.transaction.id, u.index))
@@ -257,8 +253,10 @@ impl FaucetManager {
                 self.faucet.address_as_bech32(),
             );
         }
-        let pick = rand::random::<u32>() as usize % candidates.len();
-        candidates[pick].clone()
+        let pick = candidates[rand::random::<u32>() as usize % candidates.len()].clone();
+        assigned.remove(&(slot.transaction.id, slot.index));
+        assigned.insert((pick.transaction.id, pick.index));
+        *slot = pick;
     }
 
     async fn acquire_worker(&self) -> (usize, MutexGuard<'_, OgmiosUtxo>) {
