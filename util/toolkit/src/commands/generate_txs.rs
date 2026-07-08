@@ -87,8 +87,8 @@ mod tests {
 		tx_generator::{
 			builder::{
 				BatchSingleTxArgs, ClaimKindArg, ClaimRewardsArgs, CoinSelectionStrategy,
-				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, SourceSeedArg,
-				TransferArgs,
+				ContractCall, ContractCallArgs, ContractDeployArgs, FundingSeedArg, SingleTxArgs,
+				SourceSeedArg, TransferArgs,
 			},
 			source::FetchCacheConfig,
 		},
@@ -164,8 +164,10 @@ mod tests {
 		"send-tx"
 	)]
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-		funding_seed_ecdsa: None,
+		funding_seed: FundingSeedArg {
+			funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+			funding_seed_ecdsa: None,
+		},
 		rng_seed:None,
 		amount: 500_000,
 		claim_kind: ClaimKindArg::Reward

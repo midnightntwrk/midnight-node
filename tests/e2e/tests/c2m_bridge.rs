@@ -13,7 +13,9 @@ use midnight_node_ledger_helpers::{
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::TransferRecipient;
 use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
-use midnight_node_toolkit::tx_generator::builder::{Builder, ClaimKindArg, ClaimRewardsArgs};
+use midnight_node_toolkit::tx_generator::builder::{
+    Builder, ClaimKindArg, ClaimRewardsArgs, FundingSeedArg,
+};
 use midnight_node_toolkit::tx_generator::destination::Destination;
 use midnight_node_toolkit::tx_generator::source::Source;
 use std::sync::LazyLock;
@@ -282,8 +284,10 @@ async fn bridge_transfer_cnight_to_midnight_address() {
     let claim_file_str = claim_file.to_string_lossy().to_string();
     let claim_args = GenerateTxsArgs {
         builder: Builder::ClaimRewards(ClaimRewardsArgs {
-            funding_seed: CLAIM_FUNDING_SEED_HEX.to_string(),
-            funding_seed_ecdsa: None,
+            funding_seed: FundingSeedArg {
+                funding_seed: CLAIM_FUNDING_SEED_HEX.to_string(),
+                funding_seed_ecdsa: None,
+            },
             rng_seed: None,
             amount: claimable,
             claim_kind: ClaimKindArg::CardanoBridge,

@@ -55,10 +55,7 @@ impl<C: BuilderContext<DefaultDB>> DeregisterDustAddressBuilder<C> {
 		// Only the seed values are stored; their schemes are applied at context build time (see
 		// `Builder::relevant_wallet_schemes`).
 		let (wallet_seed, _) = args.wallet_seed.resolve();
-		let (funding_seed, _) = crate::cli_parsers::resolve_defaulted_funding(
-			args.funding_seed,
-			args.funding_seed_ecdsa,
-		);
+		let (funding_seed, _) = args.funding_seed.resolve();
 		Self { context, prover, seed: wallet_seed, rng_seed: args.rng_seed, funding_seed }
 	}
 }

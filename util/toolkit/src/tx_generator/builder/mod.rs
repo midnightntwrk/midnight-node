@@ -91,6 +91,29 @@ impl WalletSeedArg {
 	}
 }
 
+/// Reusable *defaulted* `--funding-seed` / `--funding-seed-ecdsa` pair, flattened into commands
+/// whose fee-payer defaults to [`FUNDING_SEED`] when unspecified. Unlike [`SourceSeedArg`] this is
+/// not a `required` `ArgGroup`: `--funding-seed` carries the default so it is always present, and
+/// `--funding-seed-ecdsa` is the optional `conflicts_with` sibling that selects ECDSA when set.
+#[derive(Args, Clone, Debug)]
+pub struct FundingSeedArg {
+	/// Seed for funding the transactions (Schnorr NIGHT identity)
+	#[arg(long, default_value = FUNDING_SEED)]
+	pub funding_seed: String,
+	/// Seed for funding the transactions with an ECDSA NIGHT identity (ledger 9+). Mutually
+	/// exclusive with `--funding-seed`; when set it selects the ECDSA scheme for the fee-payer.
+	#[arg(long, conflicts_with = "funding_seed")]
+	pub funding_seed_ecdsa: Option<String>,
+}
+
+impl FundingSeedArg {
+	/// The chosen funding seed and its unshielded signature scheme. The ECDSA seed wins when
+	/// present, otherwise the (possibly defaulted) Schnorr seed is used.
+	pub fn resolve(&self) -> (String, UnshieldedSignatureScheme) {
+		cli::resolve_defaulted_funding(self.funding_seed.clone(), self.funding_seed_ecdsa.clone())
+	}
+}
+
 /// Toolkit-local mirror of the ledger's `ClaimKind`, used so the CLI can expose a
 /// `--claim-kind` selector via clap's `ValueEnum` without depending on a specific
 /// ledger version's type. Each version builder converts this into its own `ClaimKind`.
@@ -106,16 +129,9 @@ pub enum ClaimKindArg {
 
 #[derive(Args, Clone, Debug)]
 pub struct ClaimRewardsArgs {
-	/// Seed for funding the transactions (Schnorr NIGHT identity)
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
-	/// Seed for funding the transactions with an ECDSA NIGHT identity (ledger 9+). Mutually
-	/// exclusive with `--funding-seed`; when set it selects the ECDSA scheme for the fee-payer.
-	#[arg(long, conflicts_with = "funding_seed")]
-	pub funding_seed_ecdsa: Option<String>,
+	/// Fee-payer seed: `--funding-seed` (Schnorr, defaulted) or `--funding-seed-ecdsa` (ECDSA).
+	#[command(flatten)]
+	pub funding_seed: FundingSeedArg,
 	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
@@ -245,16 +261,9 @@ pub struct ContractMaintenanceArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct BatchesArgs {
-	/// Seed for funding the transactions (Schnorr NIGHT identity)
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
-	/// Seed for funding the transactions with an ECDSA NIGHT identity (ledger 9+). Mutually
-	/// exclusive with `--funding-seed`; when set it selects the ECDSA scheme for the fee-payer.
-	#[arg(long, conflicts_with = "funding_seed")]
-	pub funding_seed_ecdsa: Option<String>,
+	/// Fee-payer seed: `--funding-seed` (Schnorr, defaulted) or `--funding-seed-ecdsa` (ECDSA).
+	#[command(flatten)]
+	pub funding_seed: FundingSeedArg,
 	/// Number of txs that can be sent concurrently
 	#[arg(long, short = 'n', default_value = "1")]
 	pub num_txs_per_batch: usize,
@@ -405,16 +414,9 @@ pub struct DeregisterDustAddressArgs {
 	/// (ECDSA, ledger 9+) is required.
 	#[command(flatten)]
 	pub wallet_seed: WalletSeedArg,
-	/// Seed for funding wallet (Schnorr NIGHT identity)
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
-	/// Seed for funding wallet with an ECDSA NIGHT identity (ledger 9+). Mutually exclusive with
-	/// `--funding-seed`.
-	#[arg(long, conflicts_with = "funding_seed")]
-	pub funding_seed_ecdsa: Option<String>,
+	/// Fee-payer seed: `--funding-seed` (Schnorr, defaulted) or `--funding-seed-ecdsa` (ECDSA).
+	#[command(flatten)]
+	pub funding_seed: FundingSeedArg,
 	/// RNG seed for deterministic transaction generation (32 bytes hex)
 	#[arg(
         long,
@@ -681,10 +683,7 @@ impl Builder {
 	pub fn relevant_wallet_seeds(&self) -> Result<Vec<WalletSeed>, &'static str> {
 		match self {
 			Builder::Batches(args) => {
-				let (funding, _) = cli::resolve_defaulted_funding(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				);
+				let (funding, _) = args.funding_seed.resolve();
 				compute_batches_seeds(&funding, args.num_txs_per_batch, args.num_batches)
 			},
 			Builder::ContractSimple(call) => {
@@ -699,10 +698,7 @@ impl Builder {
 				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
 			},
 			Builder::ClaimRewards(args) => {
-				let (funding, _) = cli::resolve_defaulted_funding(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				);
+				let (funding, _) = args.funding_seed.resolve();
 				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&funding)])
 			},
 			Builder::SingleTx(args) => {
@@ -730,10 +726,7 @@ impl Builder {
 			},
 			Builder::DeregisterDustAddress(args) => {
 				let (wallet_seed, _) = args.wallet_seed.resolve();
-				let (funding, _) = cli::resolve_defaulted_funding(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				);
+				let (funding, _) = args.funding_seed.resolve();
 				Ok(vec![
 					Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed),
 					Wallet::<DefaultDB>::wallet_seed_decode(&funding),
@@ -777,17 +770,11 @@ impl Builder {
 		};
 		match self {
 			Builder::Batches(args) => {
-				let (funding, scheme) = cli::resolve_defaulted_funding(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				);
+				let (funding, scheme) = args.funding_seed.resolve();
 				mark(Wallet::<DefaultDB>::wallet_seed_decode(&funding), scheme);
 			},
 			Builder::ClaimRewards(args) => {
-				let (funding, scheme) = cli::resolve_defaulted_funding(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				);
+				let (funding, scheme) = args.funding_seed.resolve();
 				mark(Wallet::<DefaultDB>::wallet_seed_decode(&funding), scheme);
 			},
 			Builder::SingleTx(args) => {
@@ -813,10 +800,7 @@ impl Builder {
 			Builder::DeregisterDustAddress(args) => {
 				let (wallet_seed, wallet_scheme) = args.wallet_seed.resolve();
 				mark(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed), wallet_scheme);
-				let (funding, funding_scheme) = cli::resolve_defaulted_funding(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				);
+				let (funding, funding_scheme) = args.funding_seed.resolve();
 				mark(Wallet::<DefaultDB>::wallet_seed_decode(&funding), funding_scheme);
 			},
 			Builder::BatchSingleTx(args) => {
