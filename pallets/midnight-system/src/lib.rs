@@ -15,7 +15,7 @@ pub mod pallet {
 
 	use alloc::vec::Vec;
 	use midnight_node_ledger::types::{
-		Hash, active_ledger_bridge as LedgerApi,
+		Hash, LedgerEvent, active_ledger_bridge as LedgerApi,
 		active_version::{
 			DeserializationError, LedgerApiError, SerializationError, TransactionError,
 		},
@@ -29,6 +29,12 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		SystemTransactionApplied(SystemTransactionApplied),
+		/// A ledger event emitted while applying a system transaction (e.g.
+		/// `ParamChange`, `DustInitialUtxo`). One deposited per event the ledger
+		/// produced; `content_tagged_bytes` is the ledger's own tagged
+		/// serialisation of the event details. Appended last so the existing
+		/// variant index is unchanged.
+		LedgerEvent(LedgerEvent),
 	}
 
 	#[derive(Clone, Debug, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
@@ -130,16 +136,20 @@ pub mod pallet {
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 			let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
 
-			let hash = <T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
-				let result = LedgerApi::apply_system_transaction(
-					&state_key,
-					&midnight_system_tx.clone(),
-					block_context,
-					runtime_version,
-				)
-				.map_err(Error::<T>::from)?;
-				Ok::<(Vec<u8>, Hash), Error<T>>((result.state_root, result.tx_hash))
-			})?;
+			let (hash, ledger_events) =
+				<T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
+					let result = LedgerApi::apply_system_transaction(
+						&state_key,
+						&midnight_system_tx.clone(),
+						block_context,
+						runtime_version,
+					)
+					.map_err(Error::<T>::from)?;
+					Ok::<(Vec<u8>, (Hash, Vec<LedgerEvent>)), Error<T>>((
+						result.state_root,
+						(result.tx_hash, result.events),
+					))
+				})?;
 
 			Self::deposit_event(Event::<T>::SystemTransactionApplied(
 				super::SystemTransactionApplied {
@@ -147,6 +157,12 @@ pub mod pallet {
 					serialized_system_transaction: midnight_system_tx,
 				},
 			));
+
+			// One runtime event per ledger event, mirroring pallet-midnight. See
+			// the accept-unpriced pricing note (T7/C1).
+			for ledger_event in ledger_events {
+				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
+			}
 
 			Ok(())
 		}
@@ -157,23 +173,33 @@ pub mod pallet {
 			serialized_system_transaction: Vec<u8>,
 		) -> Result<Hash, DispatchError> {
 			// Apply the System transaction
-			let hash = <T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
-				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
-				let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
-				let result = LedgerApi::apply_system_transaction(
-					&state_key,
-					&serialized_system_transaction.clone(),
-					block_context,
-					runtime_version,
-				)
-				.map_err(Error::<T>::from)?;
-				Ok::<(Vec<u8>, Hash), Error<T>>((result.state_root, result.tx_hash))
-			})?;
+			let (hash, ledger_events) =
+				<T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
+					let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+					let block_context =
+						<T as Config>::LedgerBlockContextProvider::get_block_context();
+					let result = LedgerApi::apply_system_transaction(
+						&state_key,
+						&serialized_system_transaction.clone(),
+						block_context,
+						runtime_version,
+					)
+					.map_err(Error::<T>::from)?;
+					Ok::<(Vec<u8>, (Hash, Vec<LedgerEvent>)), Error<T>>((
+						result.state_root,
+						(result.tx_hash, result.events),
+					))
+				})?;
 
 			// Emit System Transaction for the indexer
 			Self::deposit_event(Event::<T>::SystemTransactionApplied(
 				super::SystemTransactionApplied { hash, serialized_system_transaction },
 			));
+
+			// One runtime event per ledger event, mirroring pallet-midnight.
+			for ledger_event in ledger_events {
+				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
+			}
 
 			Ok(hash)
 		}
