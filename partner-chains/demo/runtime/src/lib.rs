@@ -24,7 +24,6 @@ use frame_support::{
 use frame_system::EnsureRoot;
 use opaque::SessionKeys;
 use pallet_grandpa::AuthorityId as GrandpaId;
-use pallet_session_validator_management::pallet_session_support::PalletSessionSupport;
 use pallet_transaction_payment::{ConstFeeMultiplier, FungibleAdapter, Multiplier};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
@@ -303,9 +302,9 @@ impl pallet_session::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type ValidatorId = AccountId;
 	type ValidatorIdOf = ConvertInto;
-	type ShouldEndSession = PalletSessionSupport<Runtime>;
+	type ShouldEndSession = SessionCommitteeManagement;
 	type NextSessionRotation = ();
-	type SessionManager = PalletSessionSupport<Runtime>;
+	type SessionManager = SessionCommitteeManagement;
 	type SessionHandler = <SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
 	type Keys = SessionKeys;
 	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
@@ -313,6 +312,19 @@ impl pallet_session::Config for Runtime {
 	type WeightInfo = pallet_session::weights::SubstrateWeight<Runtime>;
 	type Currency = Balances;
 	type KeyDeposit = ConstU128<0>;
+}
+
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AccountId, Option<()>> for FullIdentificationOf {
+	fn convert(_: AccountId) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
 }
 
 impl pallet_grandpa::Config for Runtime {
@@ -533,6 +545,7 @@ construct_runtime!(
 		// `SessionCommitteeManagement` pallet are the only source of truth about keys
 		// and accounts of block producers.
 		Session: pallet_session exclude_parts { Call },
+		Historical: pallet_session::historical,
 		Bridge: pallet_partner_chains_bridge,
 		TestHelperPallet: crate::test_helper_pallet,
 	}

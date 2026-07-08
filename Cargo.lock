@@ -8186,7 +8186,6 @@ dependencies = [
  "pallet-migrations",
  "pallet-mmr",
  "pallet-partner-chains-bridge",
- "pallet-partner-chains-session",
  "pallet-preimage",
  "pallet-scheduler",
  "pallet-session",
@@ -10551,22 +10550,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-partner-chains-session"
-version = "1.8.1"
-dependencies = [
- "frame-support",
- "frame-system",
- "impl-trait-for-tuples",
- "log",
- "pallet-session",
- "parity-scale-codec",
- "scale-info",
- "sp-runtime",
- "sp-staking",
- "sp-std",
-]
-
-[[package]]
 name = "pallet-preimage"
 version = "46.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2603#2e4dd0bc22366a5af820492528869a493b5a5208"
@@ -10641,13 +10624,11 @@ dependencies = [
 name = "pallet-session-validator-management"
 version = "1.8.1"
 dependencies = [
- "derive-new",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
  "pallet-balances",
- "pallet-partner-chains-session",
  "pallet-session",
  "parity-scale-codec",
  "scale-info",
@@ -10656,6 +10637,7 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-session-validator-management",
+ "sp-staking",
  "sp-std",
 ]
 
@@ -11255,7 +11237,6 @@ dependencies = [
  "pallet-balances",
  "pallet-grandpa",
  "pallet-partner-chains-bridge",
- "pallet-partner-chains-session",
  "pallet-session",
  "pallet-session-validator-management",
  "pallet-sidechain",

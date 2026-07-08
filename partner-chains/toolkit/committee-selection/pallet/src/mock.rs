@@ -1,4 +1,4 @@
-use crate::{Call, pallet, pallet_session_support::PalletSessionSupport};
+use crate::{Call, pallet};
 use frame_support::{
 	derive_impl,
 	dispatch::PostDispatchInfo,
@@ -59,6 +59,7 @@ frame_support::construct_runtime!(
 		Balances: pallet_balances,
 		SessionCommitteeManagement: pallet,
 		Session: pallet_session,
+		Historical: pallet_session::historical,
 		Mock: mock_pallet,
 	}
 );
@@ -160,9 +161,9 @@ impl pallet_session::SessionHandler<AccountId> for TestSessionHandler {
 impl pallet_session::Config for Test {
 	type ValidatorId = AuthorityId;
 	type ValidatorIdOf = sp_runtime::traits::ConvertInto;
-	type ShouldEndSession = PalletSessionSupport<Test>;
+	type ShouldEndSession = crate::Pallet<Test>;
 	type NextSessionRotation = ();
-	type SessionManager = PalletSessionSupport<Test>;
+	type SessionManager = crate::Pallet<Test>;
 	type SessionHandler = TestSessionHandler;
 	type Keys = SessionKeys;
 	type DisablingStrategy = ();
@@ -170,6 +171,19 @@ impl pallet_session::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
 	type Currency = Balances;
 	type KeyDeposit = ConstU128<0>;
+}
+
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AuthorityId, Option<()>> for FullIdentificationOf {
+	fn convert(_: AuthorityId) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Test {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
 }
 
 /// Build genesis storage according to the mock runtime.
@@ -269,4 +283,28 @@ pub fn create_inherent_set_validators_call(
 
 pub(crate) fn current_epoch_number() -> u64 {
 	mock_pallet::CurrentEpoch::<Test>::get()
+}
+
+#[track_caller]
+pub(crate) fn start_session(session_index: u32) {
+	for i in Session::current_index()..session_index {
+		System::on_finalize(System::block_number());
+		Session::on_finalize(System::block_number());
+
+		let parent_hash = if System::block_number() > 1 {
+			let hdr = System::finalize();
+			hdr.hash()
+		} else {
+			System::parent_hash()
+		};
+
+		System::reset_events();
+		System::initialize(&(i as u64 + 1), &parent_hash, &Default::default());
+		System::set_block_number((i + 1).into());
+
+		System::on_initialize(System::block_number());
+		Session::on_initialize(System::block_number());
+	}
+
+	assert_eq!(Session::current_index(), session_index);
 }

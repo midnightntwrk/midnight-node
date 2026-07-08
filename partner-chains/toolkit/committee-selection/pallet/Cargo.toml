@@ -27,9 +27,8 @@ sp-core = { workspace = true }
 sp-session-validator-management = { workspace = true, features = ["serde"] }
 sp-io = { workspace = true }
 sidechain-domain = { workspace = true }
-derive-new = { workspace = true }
 pallet-session = { workspace = true }
-pallet-partner-chains-session = { workspace = true }
+sp-staking = { workspace = true }
 frame-benchmarking = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -51,9 +50,8 @@ std = [
     "sp-session-validator-management/serde",
     "sidechain-domain/std",
     "sidechain-domain/serde",
-    "derive-new/std",
     "pallet-session/std",
-    "pallet-partner-chains-session/std",
+    "sp-staking/std",
     "frame-benchmarking?/std",
 ]
 try-runtime = ["frame-support/try-runtime"]

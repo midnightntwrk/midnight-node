@@ -1,7 +1,7 @@
 use crate::chain_spec::*;
 use partner_chains_demo_runtime::{
 	AuraConfig, BalancesConfig, BridgeConfig, GrandpaConfig, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
+	SessionCommitteeManagementConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
 use sc_service::ChainType;
 use sp_core::serde::de::Error;
@@ -26,11 +26,7 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			key: None,
 		},
 		transaction_payment: Default::default(),
-		session: SessionConfig {
-			// Keys are meant to be updated in the chain spec file, so it is empty here.
-			keys: vec![],
-			non_authority_keys: Default::default(),
-		},
+		session: Default::default(),
 		sidechain: SidechainConfig { genesis_utxo, ..Default::default() },
 		session_committee_management: SessionCommitteeManagementConfig {
 			// Same as SessionConfig
