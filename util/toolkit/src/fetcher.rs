@@ -162,23 +162,18 @@ pub async fn fetch_from_rpc(
 	let max_height = finalized_height + 1;
 	let min_height = fetch_storage.get_highest_verified_block(chain_id).await.unwrap_or(0);
 
-	// A shared fetch cache (e.g. Postgres) can be *ahead* of this node's
-	// reported finalized height: concurrent fetchers populate it through the
-	// same RPC URL, and load-balanced replicas don't agree block-for-block.
-	// Saturate so an ahead-of-node cache means "nothing new to fetch" —
-	// a plain subtraction underflows, inflating the job count to ~u64::MAX
-	// and aborting the whole process (SIGABRT) when the jobs vector's
-	// allocation is attempted.
-	let new_blocks = max_height.saturating_sub(min_height);
-
-	let blocks_per_job = if new_blocks < BLOCKS_PER_JOB * num_workers as u64 {
-		new_blocks.div_ceil(num_workers as u64).max(5)
+	// The cache watermark can be ahead of this node's finalized height (e.g. the
+	// node lags behind the node the cache was built from); saturate to zero so we
+	// serve from cache instead of underflowing.
+	let fetch_span = max_height.saturating_sub(min_height);
+	let blocks_per_job = if fetch_span < BLOCKS_PER_JOB * num_workers as u64 {
+		fetch_span.div_ceil(num_workers as u64).max(5)
 	} else {
 		BLOCKS_PER_JOB
 	};
 
 	// Cap workers to the number of jobs to avoid unnecessary connections.
-	let num_jobs = new_blocks.div_ceil(blocks_per_job);
+	let num_jobs = fetch_span.div_ceil(blocks_per_job);
 	let num_workers = num_workers.min(num_jobs as usize).max(1);
 
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
@@ -293,7 +288,7 @@ pub async fn fetch_from_rpc(
 
 	log::debug!("final verify step");
 	// Receive final jobs
-	let num_jobs = new_blocks.div_ceil(blocks_per_job);
+	let num_jobs = fetch_span.div_ceil(blocks_per_job);
 	let mut jobs = Vec::with_capacity(num_jobs as usize);
 	let mut received = 0;
 	let mut fetch_workers_exited = 0;
@@ -325,7 +320,7 @@ pub async fn fetch_from_rpc(
 			job = final_jobs_rx.recv() => {
 				jobs.push(job.expect("..."));
 				received += 1;
-				log::info!("fetch progress: {:.1}% of {} blocks complete", (received as f64 / num_jobs as f64) * 100f64, new_blocks);
+				log::info!("fetch progress: {:.1}% of {} blocks complete", (received as f64 / num_jobs as f64) * 100f64, fetch_span);
 			}
 		}
 	}
@@ -356,16 +351,21 @@ pub async fn fetch_from_rpc(
 
 	log::debug!("[perf] fetch_from_rpc RPC pipeline took {:?}", t_rpc_total.elapsed());
 
-	// Set highest verified height for quicker fetch next time
-	fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
+	// Set highest verified height for quicker fetch next time. Never lower it:
+	// when the queried node lags the cache, blocks beyond its finalized height
+	// are already verified, and read_blocks_from_cache bases its read range on
+	// this value — lowering it would hide them.
+	if finalized_height > min_height {
+		fetch_storage.set_highest_verified_block(chain_id, finalized_height).await;
+	}
 	let t = std::time::Instant::now();
 	let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
 	log::info!(
 		"fetched {} blocks, read {} blocks from cache, total transactions: {}",
-		finalized_height - min_height,
-		blocks.len() - (finalized_height - min_height) as usize,
+		fetch_span,
+		blocks.len().saturating_sub(fetch_span as usize),
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 	);
 

@@ -269,7 +269,9 @@ These are built in CI. See the workflow files for the latest `earthly` commands:
 ### Start local network
 
 **Available Networks:**
-- `local` - Development network (default)
+- `dev` - Development network; genesis funds well-known dev wallets — use for a standalone node
+- `local` - Local-environment network; genesis funds no wallets (they're funded at runtime over
+  the cNIGHT bridge), so it needs the dockerized local-env — see [local-environment/README.md](local-environment/README.md)
 - `qanet` - QA testing network
 - `preview` - Preview/staging network
 - `perfnet` - Performance testing network
@@ -284,7 +286,7 @@ Chain specifications are located in `/res/` directory.
 | AURA seed | `AURA_SEED_FILE=/path/to/seed` | - | Path to AURA consensus seed file |
 | GRANDPA seed | `GRANDPA_SEED_FILE=/path/to/seed` | - | Path to GRANDPA finality seed file |
 | Cross-chain seed | `CROSS_CHAIN_SEED_FILE=/path/to/seed` | - | Path to cross-chain seed file |
-| Chain spec | `CHAIN=local` | `--chain local` | Network to connect to |
+| Chain spec | `CHAIN=dev` | `--chain dev` | Network to connect to |
 | Base path | `BASE_PATH=/tmp/node-1` | `--base-path /tmp/node-1` | Data directory |
 | Validator mode | `VALIDATOR=true` | `--validator` | Run as validator (true/1/TRUE) |
 | P2P port | - | `--port 30333` | Networking port (default: 30333) |
@@ -301,43 +303,43 @@ Chain specifications are located in `/res/` directory.
 ```shell
 echo "//Alice" > /tmp/alice-seed && \
 CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed CROSS_CHAIN_SEED_FILE=/tmp/alice-seed \
-  BASE_PATH=/tmp/node-1 CHAIN=local VALIDATOR=true ./target/release/midnight-node
+  BASE_PATH=/tmp/node-1 CHAIN=dev VALIDATOR=true ./target/release/midnight-node
 ```
 
-**Start multi-node local network** with 6/7 authority nodes using the `local` chain specification:
+**Start multi-node local network** with 6/7 authority nodes using the `dev` chain specification:
 
 ```shell
 echo "//Alice" > /tmp/alice-seed && echo "0000000000000000000000000000000000000000000000000000000000000001" > /tmp/alice-key && \
 CFG_PRESET=dev AURA_SEED_FILE=/tmp/alice-seed GRANDPA_SEED_FILE=/tmp/alice-seed CROSS_CHAIN_SEED_FILE=/tmp/alice-seed \
-  NODE_KEY_FILE=/tmp/alice-key BASE_PATH=/tmp/node-1 CHAIN=local VALIDATOR=true ./target/release/midnight-node --port 30333
+  NODE_KEY_FILE=/tmp/alice-key BASE_PATH=/tmp/node-1 CHAIN=dev VALIDATOR=true ./target/release/midnight-node --port 30333
 
 echo "//Bob" > /tmp/bob-seed && echo "0000000000000000000000000000000000000000000000000000000000000002" > /tmp/bob-key && \
 CFG_PRESET=dev AURA_SEED_FILE=/tmp/bob-seed GRANDPA_SEED_FILE=/tmp/bob-seed CROSS_CHAIN_SEED_FILE=/tmp/bob-seed \
-  NODE_KEY_FILE=/tmp/bob-key BASE_PATH=/tmp/node-2 CHAIN=local VALIDATOR=true \
+  NODE_KEY_FILE=/tmp/bob-key BASE_PATH=/tmp/node-2 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30334
 
 echo "//Charlie" > /tmp/charlie-seed && echo "0000000000000000000000000000000000000000000000000000000000000003" > /tmp/charlie-key && \
 CFG_PRESET=dev AURA_SEED_FILE=/tmp/charlie-seed GRANDPA_SEED_FILE=/tmp/charlie-seed CROSS_CHAIN_SEED_FILE=/tmp/charlie-seed \
-  NODE_KEY_FILE=/tmp/charlie-key BASE_PATH=/tmp/node-3 CHAIN=local VALIDATOR=true \
+  NODE_KEY_FILE=/tmp/charlie-key BASE_PATH=/tmp/node-3 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30335
 
 echo "//Dave" > /tmp/dave-seed && echo "0000000000000000000000000000000000000000000000000000000000000004" > /tmp/dave-key && \
 CFG_PRESET=dev AURA_SEED_FILE=/tmp/dave-seed GRANDPA_SEED_FILE=/tmp/dave-seed CROSS_CHAIN_SEED_FILE=/tmp/dave-seed \
-  NODE_KEY_FILE=/tmp/dave-key BASE_PATH=/tmp/node-4 CHAIN=local VALIDATOR=true \
+  NODE_KEY_FILE=/tmp/dave-key BASE_PATH=/tmp/node-4 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30336
 
 echo "//Eve" > /tmp/eve-seed && echo "0000000000000000000000000000000000000000000000000000000000000005" > /tmp/eve-key && \
 CFG_PRESET=dev AURA_SEED_FILE=/tmp/eve-seed GRANDPA_SEED_FILE=/tmp/eve-seed CROSS_CHAIN_SEED_FILE=/tmp/eve-seed \
-  NODE_KEY_FILE=/tmp/eve-key BASE_PATH=/tmp/node-5 CHAIN=local VALIDATOR=true \
+  NODE_KEY_FILE=/tmp/eve-key BASE_PATH=/tmp/node-5 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30337
 
 echo "//Ferdie" > /tmp/ferdie-seed && echo "0000000000000000000000000000000000000000000000000000000000000006" > /tmp/ferdie-key && \
 CFG_PRESET=dev AURA_SEED_FILE=/tmp/ferdie-seed GRANDPA_SEED_FILE=/tmp/ferdie-seed CROSS_CHAIN_SEED_FILE=/tmp/ferdie-seed \
-  NODE_KEY_FILE=/tmp/ferdie-key BASE_PATH=/tmp/node-6 CHAIN=local VALIDATOR=true \
+  NODE_KEY_FILE=/tmp/ferdie-key BASE_PATH=/tmp/node-6 CHAIN=dev VALIDATOR=true \
   BOOTNODES="/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   ./target/release/midnight-node --port 30338
 ```
