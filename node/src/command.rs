@@ -48,7 +48,9 @@ use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sp_core::{
 	ByteArray, Pair,
-	crypto::key_types::{AURA as AURA_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE},
+	crypto::key_types::{
+		AURA as AURA_KEY_TYPE, BABE as BABE_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE,
+	},
 	offchain::KeyTypeId,
 };
 use sp_keystore::KeystorePtr;
@@ -229,6 +231,19 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
 		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("AURA pubkey: {}", &keypair.public())
+	}
+
+	if let Some(seed_file) = &cfg.midnight_cfg.babe_seed_file {
+		let seed = std::fs::read_to_string(seed_file).map_err(|e| {
+			sc_cli::Error::Input(format!(
+				"error when reading BABE seed file at {seed_file}. Error: {e}"
+			))
+		})?;
+		let seed = seed.trim();
+		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
+			.map_err(|e| sc_cli::Error::Input(format!("Invalid BABE seed: {e}")))?;
+		keystore.insert(BABE_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		log::info!("BABE pubkey: {}", &keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.grandpa_seed_file {

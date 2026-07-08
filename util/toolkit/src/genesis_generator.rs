@@ -154,12 +154,31 @@ impl GenesisGenerator {
 			return Err(GenesisGeneratorError::InvalidPoolsAmounts("Reserve is empty".to_string()));
 		}
 
+		let funded_seeds_amount = funding
+			.unshielded_mint_amount
+			.checked_mul(funding.unshielded_num_funding_outputs as u128)
+			.and_then(|x| x.checked_mul(seeds.map(|ss| ss.len() as u128).unwrap_or(0)))
+			.ok_or_else(|| {
+				GenesisGeneratorError::InvalidPoolsAmounts(
+					"Pool for funded seeds exceeds u128".to_string(),
+				)
+			})?;
+
+		// Reserve is increased according to funded seeds configuration, because
+		// funding is implemented as block rewards payout to the seeds.
+		let reserve_plus_funded_seeds =
+			reserve_pool.checked_add(funded_seeds_amount).ok_or_else(|| {
+				GenesisGeneratorError::InvalidPoolsAmounts(
+					"Reserve Pool plus pool for funded seeds exceeds u128".to_string(),
+				)
+			})?;
+
 		let locked_pool = MAX_SUPPLY
-			.checked_sub(reserve_pool)
+			.checked_sub(reserve_plus_funded_seeds)
 			.and_then(|x| x.checked_sub(treasury))
 			.ok_or_else(|| {
 				log::error!(
-					"Treasury = {treasury} and Reserve = {reserve_pool} exceed MAX_SUPPLY = {MAX_SUPPLY}!"
+					"Treasury = {treasury} and Reserve plus funded seeds = {reserve_plus_funded_seeds} exceed MAX_SUPPLY = {MAX_SUPPLY}!"
 				);
 				GenesisGeneratorError::InvalidPoolsAmounts(
 					"Tresury and Reserve exceed MAX_SUPPLY".to_string(),
@@ -181,7 +200,7 @@ impl GenesisGenerator {
 			network_id,
 			original_parameters.clone(),
 			locked_pool,
-			reserve_pool,
+			reserve_plus_funded_seeds,
 			treasury,
 		)
 		.map_err(SystemTransactionError::from)?;
@@ -826,16 +845,14 @@ mod test {
 		.await
 		.unwrap();
 
-		// Pools should reflect the actual config value minus amount taken for funded seeds.
-		let expected_reserve: u128 = reserve_config_amount - MINT_AMOUNT;
-		let expected_locked = MAX_SUPPLY - reserve_config_amount; // no ICS config, so treasury = 0
+		let expected_locked = MAX_SUPPLY - reserve_config_amount - MINT_AMOUNT;
 		assert_eq!(
 			genesis.state.locked_pool, expected_locked,
-			"locked_pool should be MAX_SUPPLY minus reserve"
+			"locked_pool should be MAX_SUPPLY minus reserve minus funded seeds"
 		);
 		assert_eq!(
-			genesis.state.reserve_pool, expected_reserve,
-			"reserve_pool should equal reserve config total_amount minus funded seeds"
+			genesis.state.reserve_pool, reserve_config_amount,
+			"reserve_pool should equal reserve config total_amount"
 		);
 	}
 
