@@ -160,16 +160,11 @@ static WARMUP_STATE: LazyLock<Mutex<WarmupState>> = LazyLock::new(|| {
     })
 });
 static WARMUP_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
-/// Set when the warmup snapshots its seed batch (quiescence reached). Seeds
-/// registered after this point are NOT covered by the warmup — their
-/// `dust_balance::execute` replays from genesis, which is multi-hour on
-/// Preview and can starve the whole suite past the job timeout (#1644).
+/// Set when the warmup snapshots its seed batch; seeds registered after
+/// this point miss it and pay a full replay.
 static WARMUP_FIRED: AtomicBool = AtomicBool::new(false);
-/// Set once the warmup's `execute_many` finished (successfully or not).
-/// Most tests reach their `dust_balance::execute` only after their
-/// observation await — hours past warmup completion — but a test that
-/// probes a balance *before* its await must gate on [`wait_for_warmup`]
-/// or its execute races the warmup with a genesis replay of its own.
+/// Set once the warmup finished (successfully or not). Balance probes that
+/// run before their observation await gate on it via [`wait_for_warmup`].
 static WARMUP_DONE: AtomicBool = AtomicBool::new(false);
 
 struct WarmupState {
@@ -227,12 +222,9 @@ fn ensure_warmup_thread_started() {
                     .enable_all()
                     .build()
                     .expect("build warmup runtime");
-                // Contain panics from the warmup internals (e.g. the
-                // toolkit's postgres backend panicking on PoolTimedOut, run
-                // 28825722707): the warmup is best-effort — per-test
-                // executes fall back to their own replay — but WARMUP_DONE
-                // must be set regardless or `wait_for_warmup` callers idle
-                // for their full cap.
+                // The warmup is best-effort (per-test executes fall back to
+                // their own replay), but the done flag must latch even on a
+                // panic or waiters idle for their full cap.
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     rt.block_on(run_warmup());
                 }));
@@ -321,10 +313,8 @@ async fn run_warmup() {
     WARMUP_DONE.store(true, Ordering::SeqCst);
 }
 
-/// Block until the background warmup finished writing wallet snapshots,
-/// or `cap` elapsed (warmup wedged — e.g. node unreachable; the caller
-/// then proceeds and its `execute` falls back to a genesis replay).
-/// Cheap no-op once the warmup is done.
+/// Block until the warmup finished, or `cap` elapsed (the caller then
+/// proceeds and falls back to its own replay).
 pub(crate) async fn wait_for_warmup(cap: Duration) {
     let started = Instant::now();
     while !WARMUP_DONE.load(Ordering::SeqCst) {
@@ -596,30 +586,16 @@ pub(crate) async fn global_faucet_manager() -> Arc<FaucetManager> {
 
 // -------- DUST-BALANCE CONCURRENCY GATE --------
 
-/// Gate for per-test `dust_balance::execute` calls.
-///
-/// All observation tests cross the stability barrier within seconds of each
-/// other and immediately launch their dust-balance replays; each replay
-/// builds a fresh node client and spawns `fetch_concurrency()` websocket
-/// fetch workers, so N concurrent tests hit the node RPC with an N×-worker
-/// connection storm. devnet's RPC times out under that load (run
-/// 28702436341 failed tests with `CouldNotObtainRpcMethodList` /
-/// `CannotFetchValue` request timeouts). With the warm wallet cache each
-/// execute is seconds of work, so limiting concurrency costs little
-/// wall-clock — and the first execute through the gate writes the
-/// since-warmup delta blocks into the shared fetch cache, making the queued
-/// ones cheaper still.
+/// Gate for per-test dust-balance calls: all tests cross the stability
+/// barrier together, and unbounded concurrent replays storm the node RPC
+/// with fetch-worker connections until it times out. With the warm cache
+/// each execute is seconds of work, so queueing costs little.
 static DUST_BALANCE_GATE: Semaphore = Semaphore::const_new(2);
 
-/// Failures of `dust_balance::execute` worth a fresh attempt: the toolkit's
-/// node client has no mid-execute reconnect, so a websocket dropped by the
-/// RPC's idle-killer or a restart surfaces as `RestartNeeded` /
-/// `Connection(Closed)`; load-balanced replicas answering at slightly
-/// different heights can return `null` for a block hash another replica
-/// already announced ("invalid type: null" in run 28838014366); and the
-/// shared Postgres fetch cache can transiently exhaust its pool. A retried
-/// execute builds fresh clients, and the blocks the failed attempt fetched
-/// are already in the fetch cache, so retries are cheap.
+/// Failures worth a fresh attempt: dropped websockets (the toolkit's node
+/// client has no mid-execute reconnect), load-balanced replicas answering
+/// at different heights, and transient fetch-cache pool exhaustion. A retry
+/// builds fresh clients and re-reads already-cached blocks, so it's cheap.
 fn is_transient_dust_balance_error(e: &(dyn std::error::Error + Send + Sync)) -> bool {
     let s = format!("{e:?}");
     [
@@ -671,16 +647,9 @@ pub(crate) async fn gated_dust_balance(
     dust_balance_execute_with_retry(args).await
 }
 
-/// Ungated dust-balance for *window-sensitive* reads only: the spacing tests
-/// (`spend_cnight_producing_dust`,
-/// `stop_dust_producing_after_deregistration_and_rotation`) submit both tx
-/// batches upfront and must read `balance_before` after the first batch's
-/// watermark crossing but *before* the second's — a window of only the
-/// enforced block spacing (~10-15 min at degraded Preview rates). Queueing
-/// such a read behind [`DUST_BALANCE_GATE`] can eat the whole window: in run
-/// 28825722707 stop_dust's read waited 12 min in the queue and completed the
-/// second the dereg/rotate batch crossed, reading `balance_before = 0`. At
-/// most two tests bypass concurrently, which the node RPC tolerates.
+/// Ungated dust-balance for window-sensitive reads only: the spacing tests
+/// must read between their two batch crossings, and queueing behind the
+/// gate can eat that whole window. At most two tests bypass concurrently.
 pub(crate) async fn window_dust_balance(
     args: dust_balance::DustBalanceArgs,
 ) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {

@@ -29,21 +29,9 @@ jobs:
     # that closes the drift.
     container:
       image: rust:1.95-trixie
-    # Budget: ~10 min build/setup + observation await + scan/assertions.
-    # The await is bounded by OBSERVATION_AWAIT_TIMEOUT (6 h) in
-    # tests/e2e/tests/cnight/observation.rs — sized for Preview's degraded
-    # block rate (~34s/block since mid-June 2026; the stability window is
-    # ~465 blocks ≈ 4.4 h). Self-hosted runners have no 6 h job ceiling.
     timeout-minutes: 480
 
     steps:
-      # devnet: runs a 2.x (Ledger9) runtime, which the toolkit's
-      # wallet-state cache supports — on qanet (1.x runtime, Ledger8
-      # blocks) the cache never persists (see #1604) and every
-      # dust_balance call replays the chain from genesis, starving the
-      # runner. devnet follows the same Cardano Preview network and
-      # observes the same cNIGHT contracts as qanet, so coverage is
-      # equivalent Cardano-side.
       - name: Resolve runtime settings
         id: vars
         shell: bash
@@ -95,20 +83,10 @@ jobs:
           fi
           psql "$TOOLKIT_CACHE_DB_URL" -c 'SELECT 1;' >/dev/null
 
-      # Fail fast if ogmios or the Midnight node RPC are unreachable
-      # *from this runner* — fresh infra deployments have dropped this
-      # runner's IP from an ingress allowlist before (run 28788167439:
-      # every test died at startup on ogmios WebSocket handshake EOF and
-      # the job hung to its 8 h timeout). The URLs must match
-      # tests/e2e/src/config.rs for the feature the run uses.
       - name: Smoke test ogmios + node RPC endpoints
         shell: bash
         run: |
           set -euo pipefail
-          # After a successful 101 upgrade curl holds the open WebSocket
-          # until -m expires and exits nonzero — `|| true` keeps the
-          # captured status code; on connection failure curl itself
-          # prints 000 via -w.
           code=$(curl -s -o /dev/null -w "%{http_code}" -m 8 \
             -H "Connection: Upgrade" -H "Upgrade: websocket" \
             -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: c21va2UtdGVzdA==" \

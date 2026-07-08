@@ -285,11 +285,9 @@ impl MidnightClient {
         // in `tests/lib.rs` for the spacing/poll-interval interaction.
         const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
-        // The watermark normally advances every few Cardano blocks — minutes,
-        // even at a degraded block rate. If it hasn't moved at all for this
-        // long, the follower (or the db-sync feed behind it) is stuck and no
-        // outer timeout will save the test: fail with a diagnosis now instead
-        // of burning the remaining hours of `timeout_duration`.
+        // The watermark normally advances every few minutes; a longer
+        // freeze means the follower (or its db-sync feed) is stuck, so fail
+        // with a diagnosis now instead of burning the outer timeout.
         const WATERMARK_STALL_LIMIT: Duration = Duration::from_secs(45 * 60);
         let mut last_advance: Option<(u64, Instant)> = None;
 

@@ -1277,10 +1277,7 @@ async fn register_twice_with_same_cardano_address() {
         dust_hex
     );
 
-    // The second registration's seed is pure randomness, so create and
-    // register it upfront too — created lazily mid-test (after the first
-    // observation await) it would miss the warmup batch and its
-    // dust_balance would replay from genesis (#1644).
+    // Created upfront so it makes the warmup batch.
     let midnight_wallet_seed2 = MidnightClient::new_seed();
     register_test_seed(midnight_wallet_seed2.clone());
 
@@ -1349,8 +1346,7 @@ async fn register_twice_with_same_cardano_address() {
         "UTXO owner does not match DUST address"
     );
 
-    // register second time — the seed itself was created and registered
-    // for warmup at the top of the test (#1644)
+    // register second time (seed already registered for warmup above)
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
     let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2.clone());
@@ -1537,12 +1533,9 @@ async fn deregister_with_valid_cnight_utxo() {
         hex::encode(deregister_tx)
     );
 
-    // Confirm the deregister's inclusion before the await snapshots its
-    // target: an unincluded tx can outlive the tip+2 advance in the
-    // mempool, land in a block above the target, and be invisible to the
-    // scan-back — run 28851092527 lost exactly this tx that way (#1652).
-    // Register and mint are already covered by the find_utxo_by_tx_id
-    // polls above.
+    // Confirm inclusion before the await snapshots its target — a tx
+    // still in the mempool can land above the target, out of the
+    // scan-back's reach.
     cardano_client
         .wait_for_tx_inclusion(
             &deregister_tx,
@@ -1701,10 +1694,7 @@ async fn deregister_first_mapping() {
         dust_hex
     );
 
-    // The second registration's seed is pure randomness, so create and
-    // register it upfront too — created lazily mid-test (after the first
-    // observation await) it would miss the warmup batch and its
-    // dust_balance would replay from genesis (#1644).
+    // Created upfront so it makes the warmup batch.
     let midnight_wallet_seed2 = MidnightClient::new_seed();
     register_test_seed(midnight_wallet_seed2.clone());
 
@@ -1800,8 +1790,7 @@ async fn deregister_first_mapping() {
 
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
-    // register second time — the seed itself was created and registered
-    // for warmup at the top of the test (#1644)
+    // register second time (seed already registered for warmup above)
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
     let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2.clone());
@@ -1988,11 +1977,8 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     let address_bech32 = cardano_client.address_as_bech32();
     tracing::info!("New Cardano wallet created: {:?}", address_bech32);
 
-    // Seed generation is independent of the faucet work below; register it
-    // first so it makes the warmup batch. Under faucet contention the
-    // requests below take minutes — past the warmup quiescence window — and
-    // a seed that misses the warmup pays a full genesis replay in every
-    // dust_balance call (#1644).
+    // Register the seed before the slow faucet work so it makes the
+    // warmup batch.
     let midnight_wallet_seed = MidnightClient::new_seed();
     register_test_seed(midnight_wallet_seed.clone());
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
@@ -2042,13 +2028,9 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         hex::encode(register_tx_id)
     );
 
-    // This balance probe runs minutes into the test — before the shared
-    // warmup (~75 min on Preview) has written wallet snapshots. Without
-    // waiting, the cache misses and this execute replays the chain from
-    // genesis, racing the warmup's own replay and starving the runner
-    // (#1644). The assert-0 premise survives the wait: the registration
-    // above only becomes visible to Midnight after the multi-hour
-    // stability window, far later than the warmup completes.
+    // This probe runs before the warmup finishes; wait for it so the read
+    // hits the warm cache. The assert-0 premise holds until the
+    // registration clears the stability window, much later.
     wait_for_warmup(Duration::from_secs(2 * 60 * 60)).await;
 
     let args = DustBalanceArgs {
@@ -2161,9 +2143,8 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
     let midnight_client = MidnightClient::new(settings.node_client).await;
     tracing::info!("New Cardano wallet created: {:?}", address_bech32);
 
-    // Register the seed before the faucet work so it makes the warmup batch
-    // — a seed that misses the warmup pays a full genesis replay in every
-    // dust_balance call (#1644).
+    // Register the seed before the slow faucet work so it makes the
+    // warmup batch.
     let midnight_wallet_seed = MidnightClient::new_seed();
     register_test_seed(midnight_wallet_seed.clone());
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
@@ -2317,8 +2298,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         dry_run: false,
     };
 
-    // Window-sensitive read (between the two batch crossings) — must
-    // not queue behind the dust-balance gate; see `window_dust_balance`.
+    // Window-sensitive read — must not queue behind the gate.
     let result2 = crate::window_dust_balance(args2)
         .await
         .expect("dust-balance error");
@@ -2527,8 +2507,7 @@ async fn spend_cnight_producing_dust() {
         dry_run: false,
     };
 
-    // Window-sensitive read (between the two batch crossings) — must
-    // not queue behind the dust-balance gate; see `window_dust_balance`.
+    // Window-sensitive read — must not queue behind the gate.
     let result = crate::window_dust_balance(args)
         .await
         .expect("dust-balance error");

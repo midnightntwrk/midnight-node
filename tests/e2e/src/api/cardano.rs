@@ -27,33 +27,10 @@ use whisky::{
 
 const OGMIOS_MAX_ATTEMPTS: u32 = 5;
 
-/// Classify an ogmios error as retriable. Returns `Some((delay, label, rebuild_client))` if we
-/// should retry, `None` for terminal errors. The label is for logging; `rebuild_client` evicts
-/// the cached client so the retry opens a fresh WebSocket connection.
-///
-/// `delay` is a base value — the retry loops scale it linearly by attempt
-/// number (5s, 10s, 15s, …), so the total tolerance window grows to ~75s
-/// over `OGMIOS_MAX_ATTEMPTS`. Fixed short delays proved too tight for
-/// connect flakes: when the observation tests start they open many
-/// WebSocket connections near-simultaneously, and ogmios (7.0.0 deployment)
-/// occasionally drops some mid-handshake ("unexpected end of file") for
-/// longer than the previous 5×5s window.
-///
-/// Retriable classes today:
-/// - WS transport task died (jsonrpsee "background task closed") — retry quickly (2s) on a
-///   fresh connection.
-/// - Request timed out (jsonrpsee "Request timeout") — no answer within `timeout_seconds`.
-///   Seen when the parallel observation tests herd their register/mint submissions and
-///   ogmios/cardano-node fall behind, and when a connection dies without a close frame
-///   (every request pending on it then times out). Rebuild the connection and back off.
-///   NOTE: for a timed-out `SubmitTx` the outcome is unknown — the tx may have been
-///   accepted even though the response was lost. `ogmios_request` recognizes the
-///   rejection of the duplicate re-submission and converts it to success.
-/// - Could not (re)connect ("connect: ...") — endpoint briefly unreachable (LB restart,
-///   network blip). Nothing is cached on connect failure, so no eviction needed.
-/// - Cardano-node mempool refused admission because tx validation was too slow under load
-///   ("MempoolTxTooSlow", server error 3997) — tx is valid, node is just busy. Back off
-///   longer (5s) so the mempool can clear concurrent submissions.
+/// Classify an ogmios error as retriable: dead WS task, request timeout,
+/// connect failure, or busy mempool. Returns the base delay (the retry
+/// loops scale it linearly per attempt), a log label, and whether to evict
+/// the cached client so the retry opens a fresh connection.
 fn retry_delay_for(e: &OgmiosClientError) -> Option<(Duration, &'static str, bool)> {
     let OgmiosClientError::RequestError(s) = e else {
         return None;
@@ -71,30 +48,22 @@ fn retry_delay_for(e: &OgmiosClientError) -> Option<(Duration, &'static str, boo
     }
 }
 
-/// Detects ogmios predicate-failure 3117: "The transaction contains unknown UTxO references
-/// as inputs. This can happen if the inputs you're trying to spend have already been
-/// spent, ...". Each test wallet is controlled by that test alone, so seeing this on the
-/// re-submission of a tx whose first submission timed out ambiguously means the first copy
-/// consumed the inputs — i.e. it was accepted.
+/// Detects a rejection for already-consumed inputs. Each test wallet is
+/// private to its test, so seeing this on the re-submission of a tx whose
+/// first attempt failed ambiguously means the first copy was accepted.
 fn is_unknown_utxo_error(e: &OgmiosClientError) -> bool {
     let OgmiosClientError::RequestError(s) = e else {
         return false;
     };
     let s = s.to_lowercase();
-    // 3117's "unknown UTxO references" is the ledger-level rejection; the
-    // mempool-level flavor (3997, seen from ogmios 7 / cardano-node 11) is
-    // "All inputs are spent. Transaction has probably already been
-    // included". Both prove the inputs were consumed.
+    // Both the ledger-level and the mempool-level wordings.
     s.contains("unknown utxo reference")
         || s.contains("unknownoutputreferences")
         || s.contains("all inputs are spent")
 }
 
-/// Detects the mempool rejection for a tx whose inputs are already consumed
-/// (ogmios 7 ServerError 3997, `data.error` "All inputs are spent.
-/// Transaction has probably already been included"). The faucet uses this to
-/// recognize a worker UTXO that a *concurrent run sharing the faucet wallet*
-/// spent out from under it, and re-acquires a fresh worker UTXO.
+/// Detects a rejection for already-consumed inputs; the faucet uses it to
+/// spot a worker UTXO spent by a concurrent run sharing the faucet wallet.
 pub fn is_inputs_spent_error(e: &OgmiosClientError) -> bool {
     let OgmiosClientError::RequestError(s) = e else {
         return false;
@@ -103,8 +72,8 @@ pub fn is_inputs_spent_error(e: &OgmiosClientError) -> bool {
     s.contains("all inputs are spent") || s.contains("unknown utxo reference")
 }
 
-/// Compute a transaction's id (blake2b-256 of its body) locally from the signed tx bytes,
-/// for when a submission was accepted but its response was lost in transit.
+/// Compute a tx id locally, for when a submission was accepted but its
+/// response was lost in transit.
 fn local_tx_id(tx_bytes: &[u8]) -> Option<[u8; 32]> {
     let hash_hex = whisky::calculate_tx_hash(&hex::encode(tx_bytes)).ok()?;
     hex::decode(hash_hex).ok()?.try_into().ok()
@@ -471,12 +440,9 @@ impl CardanoClient {
         req: OgmiosRequest,
     ) -> Result<OgmiosResponse, OgmiosClientError> {
         let mut last_err = None;
-        // Set once a SubmitTx attempt fails retriably (request timeout, dead
-        // WS task, …): the tx may have been accepted even though the response
-        // never arrived, so a later rejection of the re-submission for
-        // consumed inputs (ogmios 3117) proves the first copy landed and is
-        // converted into success below. Sound because each test wallet is
-        // controlled by that test alone — nothing else can consume its inputs.
+        // Set once a SubmitTx attempt fails retriably: the tx may have been
+        // accepted with the response lost, so a later consumed-inputs
+        // rejection of the re-submission is converted into success below.
         let mut submit_outcome_unknown = false;
         for attempt in 1..=OGMIOS_MAX_ATTEMPTS {
             match Self::ogmios_request_once(config, req.clone()).await {
@@ -597,11 +563,10 @@ impl CardanoClient {
     /// advance gives us a safe upper bound on the landing block.
     ///
     /// Polls every 2s until either (a) tip advances by ≥2 blocks, or
-    /// (b) the 10-minute wait budget is exhausted (in which case the
-    /// latest known tip is returned — downstream waits will catch a
-    /// genuinely slow chain). The budget is sized for Preview's degraded
-    /// ~34s/block rate: 2 blocks arrive in ~70s on average, but the
-    /// exponential tail of block intervals needs generous headroom.
+    /// (b) the wait budget is exhausted (in which case the latest known
+    /// tip is returned — downstream waits will catch a genuinely slow
+    /// chain). The budget absorbs the block-interval tail at degraded
+    /// block rates.
     pub async fn snapshot_tip_after_advance(ogmios_settings: &OgmiosClientSettings) -> Option<u64> {
         const POLL_INTERVAL: Duration = Duration::from_secs(2);
         const WAIT_BUDGET: Duration = Duration::from_secs(600);
@@ -1095,11 +1060,8 @@ impl CardanoClient {
         let response = match Self::ogmios_request(&self.ogmios_settings, request).await {
             Ok(r) => r,
             Err(e) => {
-                // Return the error rather than panicking: the faucet retries
-                // a send whose worker UTXO was spent out from under it by a
-                // concurrent run sharing the faucet wallet (see
-                // `FaucetManager::request_tokens`). Other callers treat the
-                // error as fatal, preserving the previous behaviour.
+                // Returned (not panicked) so the faucet can retry a send
+                // whose worker UTXO was spent by a concurrent run.
                 tracing::error!(
                     "Ogmios SubmitTx failed: {e}\n  inputs ({}): [{}]\n  tx_hex prefix: {tx_fingerprint}... (len={})",
                     inputs_fmt.len(),
@@ -1244,8 +1206,8 @@ impl CardanoClient {
     }
 
     pub async fn find_utxo_by_tx_id(&self, address: &str, tx_id_hex: String) -> Option<OgmiosUtxo> {
-        // 240 × 2s = 8 min: inclusion is usually 1-2 blocks, but must absorb
-        // the block-interval tail at Preview's degraded ~34s/block rate.
+        // Generous vs typical 1-2 block inclusion: absorbs the
+        // block-interval tail at degraded block rates.
         const MAX_ATTEMPTS: u32 = 240;
         const PAUSE: Duration = Duration::from_secs(2);
         let tx_id_bytes = hex::decode(tx_id_hex.clone()).expect("invalid hex tx_id");
@@ -1274,7 +1236,6 @@ impl CardanoClient {
     }
 
     pub async fn find_utxos_by_tx_id(&self, address: &str, tx_id_hex: String) -> Vec<OgmiosUtxo> {
-        // Same budget rationale as `find_utxo_by_tx_id`.
         const MAX_ATTEMPTS: u32 = 240;
         const PAUSE: Duration = Duration::from_secs(2);
         let tx_id_bytes = hex::decode(&tx_id_hex).expect("invalid hex tx_id");

@@ -60,17 +60,14 @@ Observation tests (those that assert the Midnight node saw a Cardano tx
 they submitted) only succeed once the Cardano tx is *stable*, i.e. at
 least `cardano_security_parameter` blocks behind the tip. On local-env
 this parameter is ~5 blocks; on Cardano Preview it is 432 blocks. The
-wall-clock cost of those 432 blocks (+~30 blocks of follower processing
-lag) depends entirely on Preview's block rate, and that rate is not the
-nominal 20 s/block: it degraded to ~34 s/block in mid-June 2026
-(epoch 1337 minted 2,502 blocks/day vs ~3,400 earlier that month),
-stretching the wait from ~3 h to ~4.5 h. `OBSERVATION_AWAIT_TIMEOUT`
-(6 h, in `tests/cnight/observation.rs`) and the nightly job's
-`timeout-minutes` are sized against the degraded rate with headroom —
-if runs start timing out again while the watermark still tracks
-~465 blocks behind the tip, re-check the block rate (blocks-per-epoch
-via any Preview explorer) before suspecting the harness. Tests can't
-observe before the follower processes a stable block, so they wait.
+wall-clock cost of the window scales with Preview's block rate, which
+has degraded well past the nominal 20 s/block — the observation await
+timeout and the nightly job timeout are sized against the degraded
+rate with headroom. If runs time out again while the watermark still
+tracks a steady distance behind the tip, re-check the block rate
+(blocks-per-epoch via any Preview explorer) before suspecting the
+harness. Tests can't observe before the follower processes a stable
+block, so they wait.
 
 The wait is handled by `MidnightClient::await_cnight_observations` —
 each cNIGHT observation test calls it once (or twice, for tests that
@@ -100,12 +97,11 @@ exist when compiled with `--features qanet` or `--features devnet`.
 
 **The nightly targets devnet, not qanet.** Both networks follow Cardano
 Preview and observe the identical cNIGHT contracts, so Cardano-side
-coverage is the same — but qanet still runs a 1.x runtime whose blocks
-replay under Ledger8, and the toolkit's wallet-state cache only persists
-Ledger9 contexts (dropped for Ledger8 in #1604). On qanet the warmup
-below is therefore a silent no-op and every `dust_balance` call replays
-the chain from genesis, which starves the runner. devnet runs a 2.x
-(Ledger9) runtime, where the cache works.
+coverage is the same — but qanet's 1.x runtime replays under Ledger8,
+which the toolkit's wallet-state cache no longer persists. On qanet the
+warmup below is a silent no-op and every dust-balance call replays the
+chain from genesis, starving the runner. devnet's 2.x runtime is where
+the cache works.
 
 ## Toolkit wallet-cache warmup
 
@@ -141,14 +137,11 @@ the signal to raise `--test-threads`.
 
 **Every seed a test needs must be created and registered at the top of
 the test body** — before any faucet request or Cardano submission, and
-never lazily mid-test. Faucet requests take minutes under contention
-(past the quiescence window), and a seed registered after the warmup
-fired pays a full genesis replay in each of its `dust_balance` calls:
-`build_fork_aware_context_cached` replays from height 0 whenever *any*
-requested seed lacks a cached snapshot. On the nightly runner a few
-such replays run concurrently, starve the CPU, and can push the whole
-suite past the job timeout (#1644). `register_test_seed` WARNs when a
-seed arrives after the warmup batch fired.
+never lazily mid-test. A seed registered after the warmup fired pays a
+full genesis replay in each of its dust-balance calls (the cache only
+short-circuits when every requested seed has a snapshot), and a few
+concurrent replays can starve the runner past the job timeout. A WARN
+is logged when a seed arrives late.
 
 If the warmup task fails (e.g. node unreachable, fetch-cache backend
 down), each test's `execute` falls back to its own genesis replay

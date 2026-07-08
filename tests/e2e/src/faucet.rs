@@ -49,16 +49,11 @@ const WORKERS_ENV_KEY: &str = "E2E_FAUCET_WORKERS";
 const REQUEST_CAP_LOVELACE: u64 = 1_000_000_000; // 1000 ADA
 
 /// Minimum lovelace a worker UTXO must hold at init / after refresh.
-///
-/// - local-env: equal to the request cap, so any single request is guaranteed
-///   to fit — the genesis-funded local faucet is effectively unlimited and
-///   local-only tests request up to 500 ADA.
-/// - qanet/devnet: 250 ADA. The shared Preview faucet wallet is a finite,
-///   slowly-draining resource (run 28850280550 failed to prime 16×1000 ADA
-///   workers with 15.8k ADA left), and no observation test requests more
-///   than ~21 ADA — the floor only needs comfortable headroom over the
-///   largest request plus fees. A request larger than a worker's balance
-///   still fails loudly via the drained-worker check in `request_tokens`.
+/// local-env: equal to the request cap (the genesis-funded faucet is
+/// effectively unlimited). Shared networks: much lower — the shared faucet
+/// wallet is a finite, slowly-draining resource, and the observation tests'
+/// requests are tiny. An oversized request still fails loudly via the
+/// drained-worker check.
 #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 const MIN_WORKER_LOVELACE: u64 = REQUEST_CAP_LOVELACE;
 #[cfg(any(feature = "qanet", feature = "devnet"))]
@@ -156,14 +151,10 @@ impl FaucetManager {
 
         let assets = vec![Asset::new_from_str("lovelace", &lovelace.to_string())];
 
-        // The faucet wallet is shared across runs (CI nightly, manual
-        // dispatches, developer laptops). A concurrent run adopts its own
-        // workers from the same UTXO set and can spend this worker's UTXO
-        // out from under us during a long stability wait — the send is then
-        // rejected with "All inputs are spent" (run 28825722707). Recover by
-        // re-acquiring a fresh eligible UTXO from the live faucet state; an
-        // in-process collision on the fresh pick would fail the same way and
-        // retry again, so the loop converges or gives up loudly.
+        // A concurrent run sharing the faucet wallet can spend this
+        // worker's UTXO out from under us; recover by re-acquiring a fresh
+        // one from live faucet state. Collisions on the fresh pick retry
+        // the same way, so the loop converges or gives up loudly.
         const SEND_MAX_ATTEMPTS: usize = 3;
         let mut attempt = 0;
         let response = loop {
@@ -220,12 +211,9 @@ impl FaucetManager {
         dest_utxo
     }
 
-    /// Re-query the faucet address and pick a fresh UTXO able to cover
-    /// `need` lovelace, excluding the stale one being replaced. Selection is
-    /// randomized so concurrent re-acquisitions (in-process or cross-run)
-    /// are unlikely to pile onto the same UTXO; a residual collision is
-    /// caught by the caller's inputs-spent retry. Panics if the faucet holds
-    /// no suitable UTXO — that's a genuine top-up situation.
+    /// Re-query the faucet and pick a fresh UTXO covering `need`, excluding
+    /// the stale one. Randomized so concurrent re-acquisitions spread out;
+    /// panics if nothing suitable is left (genuine top-up situation).
     async fn fresh_worker_utxo(&self, stale: &OgmiosUtxo, need: u64) -> OgmiosUtxo {
         let candidates: Vec<OgmiosUtxo> = self
             .faucet

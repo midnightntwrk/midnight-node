@@ -50,11 +50,9 @@ fn submodule_network() -> &'static str {
     {
         "qanet"
     }
-    // devnet observes the exact same Preview-deployed contracts as qanet
-    // (compare `mapping_validator_address` / `cnight_policy_id` in
-    // res/qanet/cnight-config.json vs res/devnet/cnight-config.json), and
-    // the pinned midnight-reserve-contracts submodule commit has no
-    // devnet snapshot dir — so read the identical qanet snapshot.
+    // devnet observes the same Preview-deployed contracts as qanet (the
+    // two networks' cnight configs match), and the pinned contracts
+    // submodule has no devnet dir — read the identical qanet snapshot.
     #[cfg(feature = "devnet")]
     {
         "qanet"
