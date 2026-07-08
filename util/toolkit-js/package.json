@@ -44,7 +44,7 @@
   },
   "overrides": {
     "esbuild": "0.28.1",
-    "@midnightntwrk/ledger-v9": "1.0.0-rc.2",
-    "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.2"
+    "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
+    "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3"
   }
 }
