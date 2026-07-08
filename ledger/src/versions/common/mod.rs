@@ -443,6 +443,8 @@ where
 			claim_rewards: vec![],
 			unshielded_utxos_created: utxo_outputs,
 			unshielded_utxos_spent: utxo_inputs,
+			// T3 populates this from the ledger event stream.
+			events: vec![],
 		};
 		log::trace!(
 			target: LOG_TARGET,
@@ -556,6 +558,8 @@ where
 			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
 			tx_hash,
 			tx_type: tx_type.to_string(),
+			// T3 populates this from the ledger event stream.
+			events: vec![],
 		};
 
 		// Only update state after no errors

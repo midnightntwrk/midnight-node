@@ -233,6 +233,7 @@ pub enum SerializationError {
 	CNightGeneratesDustEvent,
 	SystemTransaction,
 	ArenaHash,
+	EventDetails,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -315,6 +316,9 @@ impl core::fmt::Display for LedgerApiError {
 				SerializationError::ArenaHash => {
 					write!(f, "Error serializing: ArenaHash")
 				},
+				SerializationError::EventDetails => {
+					write!(f, "Error serializing: EventDetails")
+				},
 			},
 			LedgerApiError::Transaction(error) => match error {
 				Invalid(e) => write!(f, "Transaction Error: Invalid({e:?})"),
@@ -389,6 +393,7 @@ impl From<LedgerApiError> for u8 {
 				SerializationError::CNightGeneratesDustEvent => 61,
 				SerializationError::SystemTransaction => 62,
 				SerializationError::ArenaHash => 63,
+				SerializationError::EventDetails => 64,
 			},
 			// Reserved from [100-150)
 			LedgerApiError::Transaction(error) => match error {
