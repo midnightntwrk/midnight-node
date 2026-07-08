@@ -9,7 +9,7 @@
 //! callers and (unlike the `set_keys` extrinsic) does not require an ownership proof — a
 //! validator's session keys are already authenticated off-chain as part of their Cardano
 //! registration, so re-proving ownership on-chain here would be redundant.
-use crate::{CommitteeMember, CommitteeRotationStage, CommitteeRotationStages};
+use crate::CommitteeMember;
 use frame_system::pallet_prelude::BlockNumberFor;
 use log::{debug, info, warn};
 use pallet_session::SessionInterface;
@@ -37,13 +37,6 @@ where
 
 	/// Rotates the committee in [crate::Pallet] and plans this new committee as upcoming validator-set.
 	fn new_session(new_index: SessionIndex) -> Option<Vec<T::AccountId>> {
-		if CommitteeRotationStage::<T>::get() == CommitteeRotationStages::AdditionalSession {
-			info!("Session manager: new additional session {new_index}");
-			CommitteeRotationStage::<T>::put(CommitteeRotationStages::AwaitEpochChange);
-			let committee = crate::Pallet::<T>::current_committee_storage().committee;
-			return Some(committee.iter().map(|member| member.authority_id().into()).collect());
-		}
-
 		info!("Session manager: new_session {new_index}, rotating the committee");
 		let new_committee = crate::Pallet::<T>::rotate_committee_to_next_epoch()?;
 
@@ -127,7 +120,6 @@ where
 		if current_epoch_number > current_committee_epoch {
 			if next_committee_is_defined {
 				info!("Session manager: should_end_session({n:?}) = true");
-				CommitteeRotationStage::<T>::put(CommitteeRotationStages::NewSessionDueEpochChange);
 				true
 			} else {
 				warn!(
@@ -136,14 +128,7 @@ where
 				false
 			}
 		} else {
-			let stage = CommitteeRotationStage::<T>::get();
-			if stage == CommitteeRotationStages::NewSessionDueEpochChange {
-				CommitteeRotationStage::<T>::put(CommitteeRotationStages::AdditionalSession);
-				info!("Session manager: should_end_session({n:?}) to force the new committee");
-				true
-			} else {
-				false
-			}
+			false
 		}
 	}
 }
@@ -221,30 +206,37 @@ mod tests {
 	}
 
 	#[test]
-	fn ends_two_sessions_and_rotates_once_when_committee_changes() {
+	fn ends_one_session_per_epoch_and_applies_committee_next_session() {
 		new_test_ext().execute_with(|| {
 			assert_eq!(Session::current_index(), 0);
 			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 0);
 			increment_epoch();
 			set_validators_directly(&[CHARLIE, DAVE], 1).unwrap();
 
+			// Single session ends at the epoch boundary: the committee is rotated and queued,
+			// but stock pallet_session only applies a queued validator-set from the next session,
+			// so CHARLIE and DAVE are not active yet (one-epoch application lag).
 			advance_one_block();
 			assert_eq!(Session::current_index(), 1);
-			// pallet_session needs an additional session to apply CHARLIE and DAVE as validators
 			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
 			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 1);
 
+			// No additional session is forced within the epoch: the committee is not applied faster.
+			for _i in 0..10 {
+				advance_one_block();
+				assert_eq!(Session::current_index(), 1);
+				assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+				assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 1);
+			}
+
+			// Only the next epoch change ends another session, which applies the committee
+			// queued at the previous boundary.
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
 			advance_one_block();
 			assert_eq!(Session::current_index(), 2);
 			assert_eq!(Session::validators(), vec![CHARLIE.authority_id, DAVE.authority_id]);
-			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 1);
-
-			for _i in 0..10 {
-				advance_one_block();
-				assert_eq!(Session::current_index(), 2);
-				assert_eq!(Session::validators(), vec![CHARLIE.authority_id, DAVE.authority_id]);
-				assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 1);
-			}
+			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 2);
 		});
 	}
 }
