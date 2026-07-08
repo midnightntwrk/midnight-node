@@ -256,10 +256,7 @@ pub mod pallet {
 		UnshieldedTokens(UnshieldedTokensDetails),
 		/// Partial Success.
 		TxPartialSuccess(TxAppliedDetails),
-		/// A ledger event emitted while applying the transaction. One deposited
-		/// per event the ledger produced; the payload's `content_tagged_bytes`
-		/// is the ledger's own tagged serialisation of the event details.
-		/// Appended last so the existing variant indices are unchanged.
+		/// A ledger event emitted while applying the transaction
 		LedgerEvent(LedgerEvent),
 	}
 
@@ -425,9 +422,7 @@ pub mod pallet {
 				}));
 			}
 
-			// One runtime event per ledger event, preserving per-event subxt /
-			// Polkadot.js filtering. Emission is non-consensus narration and is
-			// not weighed — see the accept-unpriced pricing note (T7/C1).
+			// One runtime event per ledger event
 			for ledger_event in result.events {
 				Self::deposit_event(Event::LedgerEvent(ledger_event));
 			}
