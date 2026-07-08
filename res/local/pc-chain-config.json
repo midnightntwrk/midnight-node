@@ -1,9 +1,10 @@
 {
-  "bootnodes": [
-    "/dns/midnight-node-boot-01/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
-  ],
   "chain_parameters": {
     "genesis_utxo": "0000000000000000000000000000000000000000000000000000000000000000#0"
+  },
+  "cardano_addresses": {
+    "committee_candidates_address": "addr_test1wq8r0s6ku3wk0cps3n2sdpufa0r6h3yg5pfu7ndx2ze34wc96629f",
+    "permissioned_candidates_policy_id": "c85e090e9dc23d47cf7f1ff7d25e589e1c204030b4c7f138eed246d9"
   },
   "cardano": {
     "security_parameter": 5,

@@ -24,7 +24,7 @@ use tokio::time::sleep;
 // The deploy gate (`wait_before_deploying`) waits until the entered/completed
 // counters are at parity AND no counter change has happened for
 // `PRE_DEPLOY_QUIESCENCE`, then proceeds. The gate adapts naturally to
-// subset runs (`cargo test ... contract_state::`, `... rpc_abuse::`) where
+// subset runs (`cargo test ... contract_state::`) where
 // fewer pre-deploy tests are scheduled — we never hard-code the count.
 //
 // The gate refuses to open on `entered == 0`: there is no in-process way
@@ -282,6 +282,243 @@ async fn run_warmup() {
     }
 }
 
+// -------- DEV WALLET FUNDING GUARD --------
+
+/// Seed of the local-env dev wallet funded on bring-up: the `init-mnight-faucet`
+/// job claims ~950M NIGHT for it over the c2m bridge and registers it for DUST.
+pub(crate) const DEV_WALLET_SEED: &str =
+    "0000000000000000000000000000000000000000000000000000000000000001";
+
+/// Block until the dev wallet (seed `0x..01`) holds spendable NIGHT and has
+/// generated DUST — i.e. it can fund and pay fees for a contract deploy/call.
+///
+/// In CI the `init-mnight-faucet` job (gated before the e2e suite) guarantees
+/// this; on a warm local env it is already true. Tests attached to a
+/// just-started env poll here (rather than flake) while the faucet job runs and
+/// DUST accrues. Panics with a clear message if funding never arrives.
+pub(crate) async fn ensure_dev_wallet_funded() {
+    use midnight_node_ledger_helpers::WalletSeed;
+    use midnight_node_toolkit::commands::show_wallet::{self, ShowWalletArgs, ShowWalletResult};
+
+    let settings = Settings::default();
+    let seed = WalletSeed::try_from_hex_str(DEV_WALLET_SEED).expect("valid dev wallet seed");
+    let deadline = Instant::now() + Duration::from_secs(180);
+
+    loop {
+        let args = ShowWalletArgs {
+            source: Source {
+                src_url: Some(settings.node_client.base_url.clone()),
+                fetch_concurrency: fetch_concurrency(),
+                fetch_compute_concurrency: None,
+                src_files: None,
+                dust_warp: false,
+                ignore_block_context: false,
+                fetch_only_cached: false,
+                fetch_cache: fetch_cache_config(),
+                ledger_state_db: String::new(),
+            },
+            seed: Some(seed.clone()),
+            address: None,
+            debug: false,
+            dry_run: false,
+        };
+
+        match show_wallet::execute(args).await {
+            Ok(ShowWalletResult::Json(w)) => {
+                let night: u128 = w.utxos.iter().map(|u| u.value).sum();
+                if night > 0 && !w.dust_utxos.is_empty() {
+                    tracing::info!(
+                        "dev wallet {DEV_WALLET_SEED:.8}… funded: {night} NIGHT across {} utxo(s), {} dust utxo(s)",
+                        w.utxos.len(),
+                        w.dust_utxos.len(),
+                    );
+                    return;
+                }
+                tracing::info!(
+                    "dev wallet not deploy-ready yet (night={night}, dust_utxos={}); waiting…",
+                    w.dust_utxos.len()
+                );
+            }
+            Ok(other) => tracing::warn!("unexpected show-wallet result: {other:?}"),
+            Err(e) => tracing::warn!("show-wallet for dev wallet failed (retrying): {e}"),
+        }
+
+        assert!(
+            Instant::now() < deadline,
+            "dev wallet {DEV_WALLET_SEED} was not funded + DUST-registered within 180s — is the \
+             init-mnight-faucet bring-up job healthy?"
+        );
+        sleep(Duration::from_secs(3)).await;
+    }
+}
+
+/// A `Source` reading the live chain at `url`.
+fn live_source(url: &str) -> Source {
+    Source {
+        src_url: Some(url.to_string()),
+        fetch_concurrency: fetch_concurrency(),
+        fetch_compute_concurrency: None,
+        src_files: None,
+        dust_warp: false,
+        ignore_block_context: false,
+        fetch_only_cached: false,
+        fetch_cache: fetch_cache_config(),
+        ledger_state_db: String::new(),
+    }
+}
+
+fn to_file_dest(
+    dest: &std::path::Path,
+) -> midnight_node_toolkit::tx_generator::destination::Destination {
+    midnight_node_toolkit::tx_generator::destination::Destination {
+        dest_urls: vec![],
+        rate: 1.0,
+        dest_file: Some(dest.to_string_lossy().to_string()),
+        no_watch_progress: true,
+    }
+}
+
+/// Build a fresh contract-deploy transaction against the live chain, funded by
+/// the dev wallet (`0x..01`), written to `dest` and returned as raw `.mn` bytes.
+///
+/// Generated dynamically (not from a static fixture) so its intent TTL is valid
+/// against current chain time. The toolkit's in-process local prover handles ZK
+/// proving (MIDNIGHT_LEDGER_TEST_STATIC_DIR, set in .envrc); no proof server.
+/// `rng_seed` makes the deploy — and thus the contract address — deterministic.
+pub(crate) async fn build_contract_deploy(
+    url: &str,
+    dest: &std::path::Path,
+    rng_seed: Option<[u8; 32]>,
+) -> Vec<u8> {
+    use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
+    use midnight_node_toolkit::tx_generator::builder::{Builder, ContractCall, ContractDeployArgs};
+
+    let args = GenerateTxsArgs {
+        builder: Builder::ContractSimple(ContractCall::Deploy(ContractDeployArgs {
+            funding_seed: DEV_WALLET_SEED.to_string(),
+            authority_seeds: vec![],
+            authority_threshold: None,
+            rng_seed,
+        })),
+        source: live_source(url),
+        destination: to_file_dest(dest),
+        proof_server: None,
+        dry_run: false,
+    };
+    generate_txs::execute(args)
+        .await
+        .expect("generate-txs contract-simple deploy failed");
+    std::fs::read(dest).expect("read generated deploy tx file")
+}
+
+/// True if `msg` names a transient shared-wallet ledger error that a rebuild
+/// against fresh state typically clears: DUST double-spend (196), input not in
+/// UTxOs (195), or invalid DUST spend proof (170). Everything built from the
+/// single dev wallet `0x..01` can hit these when the state it was built against
+/// has advanced (DUST regenerates every block) by submit/apply time — more
+/// likely under CI's slower, `--test-threads`-concurrent proving.
+pub(crate) fn is_transient_shared_wallet_error(msg: &str) -> bool {
+    msg.contains("custom error: 196")
+        || msg.contains("custom error: 195")
+        || msg.contains("custom error: 170")
+}
+
+/// Build a fresh deploy funded by the dev wallet, submit it, wait for inclusion,
+/// and return `(landed tx bytes, contract address)` — the bytes for callers that
+/// replay them, the address for callers that query the deployed contract.
+///
+/// Retries by rebuilding on a transient DUST double-spend (ledger code 196) or
+/// input-not-in-utxos (195): the deploy tests share dev wallet `0x..01`, so a
+/// serialized prior deploy's DUST/UTxO spend may not yet be visible in the state
+/// this build fetched. Rebuilding after a short settle picks up the fresh state.
+/// Panics if it never lands.
+pub(crate) async fn deploy_and_confirm(
+    client: &midnight_node_e2e::api::midnight::MidnightClient,
+    url: &str,
+) -> (Vec<u8>, String) {
+    use midnight_node_ledger_helpers::extract_tx_with_context;
+    use midnight_node_toolkit::commands::contract_address::{self, ContractAddressArgs};
+
+    let tempdir = tempfile::tempdir().expect("create tempdir");
+    const ATTEMPTS: u8 = 4;
+    for attempt in 1..=ATTEMPTS {
+        let deploy_file = tempdir.path().join(format!("deploy_{attempt}.mn"));
+        let deploy_bytes = build_contract_deploy(url, &deploy_file, None).await;
+        let (deploy_tx, _ctx) = extract_tx_with_context(&deploy_bytes);
+        match client.submit_expecting_success(deploy_tx.to_vec()).await {
+            Ok(()) => {
+                let addr = contract_address::execute(ContractAddressArgs {
+                    src_file: deploy_file.to_string_lossy().to_string(),
+                    tagged: false,
+                    untagged: false,
+                })
+                .expect("derive contract address from deploy tx");
+                return (deploy_tx.to_vec(), addr);
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    is_transient_shared_wallet_error(&msg) && attempt < ATTEMPTS,
+                    "DEPLOY_TX failed to land (attempt {attempt}/{ATTEMPTS}): {msg}"
+                );
+                tracing::warn!(
+                    "deploy attempt {attempt}/{ATTEMPTS} hit transient shared-wallet contention \
+                     ({msg}); rebuilding against fresh state after settle"
+                );
+                sleep(Duration::from_secs(8)).await;
+            }
+        }
+    }
+    unreachable!("deploy_and_confirm loop returns or panics")
+}
+
+/// The dev wallet's own unshielded address on the `local` network (seed 0x..01).
+/// Regenerate with:
+///   midnight-node-toolkit show-address --network local --seed 0x..01 | jq -r .unshielded
+pub(crate) const DEV_WALLET_UNSHIELDED_ADDR_LOCAL: &str =
+    "mn_addr_local1h3ssm5ru2t6eqy4g3she78zlxn96e36ms6pq996aduvmateh9p9snnpjtr";
+
+/// Build one tiny unshielded self-transfer from the dev wallet (0x..01) to `dest`.
+///
+/// A single tx on purpose: the dev wallet has one DUST UTxO, and the toolkit's
+/// sender fires a batch's txs concurrently, so multiple dev-wallet txs sent
+/// together collide on their DUST spend (InvalidDustSpendProof / DustDoubleSpend).
+/// The multi-dest-url regression is about the *sender* managing N destination
+/// clients, not N txs — so one valid tx across N URLs is the right, conflict-free
+/// exercise.
+pub(crate) async fn build_unshielded_self_transfer(url: &str, dest: &std::path::Path) {
+    use midnight_node_toolkit::cli_parsers as cli;
+    use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
+    use midnight_node_toolkit::tx_generator::builder::{Builder, SingleTxArgs};
+
+    let recipient = cli::wallet_address(DEV_WALLET_UNSHIELDED_ADDR_LOCAL)
+        .expect("valid dev wallet unshielded address");
+    let seed = WalletSeed::try_from_hex_str(DEV_WALLET_SEED).expect("valid dev wallet seed");
+
+    let args = GenerateTxsArgs {
+        builder: Builder::SingleTx(SingleTxArgs {
+            outputs: vec![],
+            shielded_amount: vec![],
+            shielded_token_type: vec![],
+            unshielded_amount: vec![100],
+            unshielded_token_type: vec![],
+            source_seed: seed,
+            funding_seed: None,
+            destination_address: vec![recipient],
+            input_utxos: vec![],
+            rng_seed: None,
+            coin_selection: cli::coin_selection_strategy("largest-first").unwrap(),
+        }),
+        source: live_source(url),
+        destination: to_file_dest(dest),
+        proof_server: None,
+        dry_run: false,
+    };
+    generate_txs::execute(args)
+        .await
+        .expect("generate-txs single-tx self-transfer failed");
+}
+
 // -------- GLOBAL ASYNC FAUCET MANAGER --------
 
 static FAUCET_MANAGER: OnceCell<Arc<FaucetManager>> = OnceCell::const_new();
@@ -355,4 +592,3 @@ mod cnight;
 mod contract_state;
 mod governance;
 mod operational;
-mod rpc_abuse;

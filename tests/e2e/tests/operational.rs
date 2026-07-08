@@ -1,37 +1,123 @@
 use midnight_node_e2e::api::cardano::CardanoClient;
-use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 
-use crate::wait_before_deploying;
-
 /// PR367-TC-0003-03 E2E: Valid Transaction Succeeds
 ///
-/// Confirms no regression - valid transactions should still be accepted.
-/// Note: This test requires a fresh node state where the contract hasn't been deployed.
+/// A well-formed contract deploy, built dynamically against the live chain and
+/// funded by the bridge-funded dev wallet (0x..01), is accepted at the RPC and
+/// included in a block.
 #[e2e_test]
-#[ignore = "Requires fresh node state - run manually with cargo test-e2e-local"]
 async fn valid_deploy_transaction_succeeds_via_rpc() {
-    use midnight_node_res::undeployed::transactions::DEPLOY_TX;
+    use midnight_node_e2e::api::midnight::MidnightClient;
+
+    // Funded + DUST-registered at runtime by init-mnight-faucet; wait until ready.
+    crate::ensure_dev_wallet_funded().await;
+    // Coordinate with the pre-deploy quiescence gate (this submits a deploy) and
+    // serialize against the other deploy tests that share dev wallet 0x..01.
+    let _deploy_guard = crate::wait_before_deploying().await;
 
     let settings = Settings::default();
-    let client = MidnightClient::new(settings.node_client).await;
+    let client = MidnightClient::new(settings.node_client.clone()).await;
+    let url = settings.node_client.base_url.clone();
 
-    tracing::info!("=== PR367-TC-0003-03 E2E: Valid Transaction Test ===");
-    let _deploy_guard = wait_before_deploying().await;
-    tracing::info!("Submitting valid DEPLOY_TX...");
+    // Builds a fresh deploy against current settled state and submits it,
+    // rebuilding on transient shared-wallet DUST contention. Panics if it never
+    // lands — proving a well-formed deploy is accepted + included (PR367-TC-0003-03).
+    crate::deploy_and_confirm(&client, &url).await;
+    tracing::info!("✓ valid DEPLOY_TX accepted and included");
+}
 
-    let result = client.submit_expecting_success(DEPLOY_TX.to_vec()).await;
+/// Regression guard: the toolkit must not hang on exit when sending with
+/// multiple `--dest-url` options (ported from the old
+/// scripts/tests/toolkit-multi-dest-e2e.sh, which assumed the unfunded
+/// undeployed genesis). Builds one unshielded self-transfer from the
+/// bridge-funded dev wallet (0x..01) and sends it via `generate-txs send` with
+/// several destination URLs, asserting the send completes within a timeout (a
+/// hang would blow the timeout) and returns Ok.
+///
+/// The URLs deliberately repeat the one node RPC: the sender opens one client
+/// per URL and must tear all of them down on exit — that N-client setup+teardown
+/// is where the hang lived, and it's exercised regardless of how many txs flow.
+/// One tx keeps it conflict-free (multiple dev-wallet txs sent concurrently would
+/// collide on the wallet's single DUST UTxO).
+#[e2e_test]
+async fn toolkit_multi_dest_send_does_not_hang() {
+    use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
+    use midnight_node_toolkit::tx_generator::builder::Builder;
+    use midnight_node_toolkit::tx_generator::destination::Destination;
+    use midnight_node_toolkit::tx_generator::source::Source;
+    use std::time::Duration;
+    use tokio::time::timeout;
 
-    assert!(
-        result.is_ok(),
-        "Valid DEPLOY_TX should be accepted, but was rejected: {:?}",
-        result.err()
-    );
+    crate::ensure_dev_wallet_funded().await;
+    // Submits a real tx from 0x..01 — serialize against the other deploy tests
+    // sharing that wallet (and wait out the pre-deploy quiescence gate).
+    let _deploy_guard = crate::wait_before_deploying().await;
 
-    tracing::info!(
-        "✓ PR367-TC-0003-03 E2E PASSED: Valid transaction accepted and included in block"
-    );
+    let settings = Settings::default();
+    let url = settings.node_client.base_url.clone();
+
+    const N_DEST_URLS: usize = 3;
+    const ATTEMPTS: u8 = 4;
+    for attempt in 1..=ATTEMPTS {
+        let tempdir = tempfile::tempdir().expect("create tempdir");
+        let tx_file = tempdir.path().join("selftx.mn");
+        // Rebuilt each attempt so the DUST spend is fresh against current state.
+        crate::build_unshielded_self_transfer(&url, &tx_file).await;
+
+        let send = generate_txs::execute(GenerateTxsArgs {
+            builder: Builder::Send,
+            source: Source {
+                src_url: None,
+                src_files: Some(vec![tx_file.to_string_lossy().into_owned()]),
+                fetch_concurrency: crate::fetch_concurrency(),
+                fetch_compute_concurrency: None,
+                dust_warp: false,
+                ignore_block_context: false,
+                fetch_only_cached: false,
+                fetch_cache: crate::fetch_cache_config(),
+                ledger_state_db: String::new(),
+            },
+            destination: Destination {
+                dest_urls: vec![url.clone(); N_DEST_URLS],
+                rate: 2.0,
+                dest_file: None,
+                no_watch_progress: false,
+            },
+            proof_server: None,
+            dry_run: false,
+        });
+
+        // A genuine hang blows the per-attempt timeout — fail fast on that, it's
+        // the regression this test guards (never retried).
+        let outcome = timeout(Duration::from_secs(120), send)
+            .await
+            .expect("toolkit `send` hung with multiple --dest-url (regression)");
+        match outcome {
+            Ok(()) => {
+                tracing::info!("✓ multi-dest send completed without hanging");
+                return;
+            }
+            // `send` returns a generic "destination tasks failed" that hides the
+            // ledger code, so we can't classify the error — but the only expected
+            // failure here is transient shared-wallet DUST contention, which a
+            // rebuild against fresh state clears. Retry; surface the last error if
+            // it never succeeds.
+            Err(e) => {
+                assert!(
+                    attempt < ATTEMPTS,
+                    "multi-dest send failed on all {ATTEMPTS} attempts: {e}"
+                );
+                tracing::warn!(
+                    "multi-dest send attempt {attempt}/{ATTEMPTS} failed ({e}); \
+                     rebuilding + resending after settle"
+                );
+                tokio::time::sleep(Duration::from_secs(8)).await;
+            }
+        }
+    }
+    unreachable!("multi-dest send loop returns or panics");
 }
 
 /// One-shot cleanup task: consolidates fragmented UTXOs at the funded faucet
