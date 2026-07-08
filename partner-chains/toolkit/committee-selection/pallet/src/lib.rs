@@ -37,6 +37,8 @@ mod tests;
 
 pub mod weights;
 
+use parity_scale_codec::{Decode, Encode, MaxEncodedLen};
+use scale_info::TypeInfo;
 pub use sp_session_validator_management::CommitteeMember;
 pub use weights::WeightInfo;
 
@@ -168,6 +170,12 @@ pub mod pallet {
 		CommitteeInfo<T::ScEpochNumber, T::CommitteeMember, T::MaxValidators>,
 		OptionQuery,
 	>;
+
+	/// Stores the stage of handling the inputs change. Used by session manager, to decide
+	/// if the session should be ended quickly, to speed up using the newly selected committee.
+	#[pallet::storage]
+	pub type CommitteeRotationStage<T: Config> =
+		StorageValue<_, CommitteeRotationStages, ValueQuery>;
 
 	#[pallet::storage]
 	pub type MainChainScriptsConfiguration<T: Config> =
@@ -444,4 +452,16 @@ pub mod pallet {
 			MainChainScriptsConfiguration::<T>::get()
 		}
 	}
+}
+
+/// For session state machine
+#[derive(Encode, Decode, Default, Debug, MaxEncodedLen, TypeInfo, PartialEq, Eq)]
+pub enum CommitteeRotationStages {
+	/// No action is required until the current committee becomes obsolete
+	#[default]
+	AwaitEpochChange,
+	/// Session ended because of epoch change
+	NewSessionDueEpochChange,
+	/// Session ended to accelerate use of validators queued in the previous block
+	AdditionalSession,
 }
