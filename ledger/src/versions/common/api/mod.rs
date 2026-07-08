@@ -133,6 +133,15 @@ impl DeserializableError for CNightGeneratesDustEvent {
 	}
 }
 
+// Ledger-emitted event payloads are tagged-serialised into the opaque bytes
+// carried by `LedgerEvent`; failures surface through the existing
+// `LedgerApiError::Serialization` channel.
+impl<D: DB> SerializableError for mn_ledger_local::events::EventDetails<D> {
+	fn error() -> SerializationError {
+		SerializationError::EventDetails
+	}
+}
+
 pub(crate) struct Api {}
 
 impl Api {

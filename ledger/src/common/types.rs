@@ -42,6 +42,33 @@ pub struct TransactionApplied {
 	pub claim_rewards: Vec<u128>,
 }
 
+/// Routing header for a ledger-emitted event. Mirrors the ledger's
+/// `EventSource` (tag `event-source[v1]`, unchanged across v7/v8/v9) as a
+/// SCALE-encodable struct so consumers can route on the source triple
+/// `(transaction_hash, logical_segment, physical_segment)` without touching the
+/// opaque event content.
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]
+pub struct LedgerEventSource {
+	pub transaction_hash: Hash,
+	pub logical_segment: u16,
+	pub physical_segment: u16,
+}
+
+/// One ledger event carried across the host boundary.
+///
+/// `content_tagged_bytes` is the ledger crate's own `tagged_serialize` of the
+/// event's `EventDetails<D>`. The tag is a self-describing byte-prefix
+/// (`event-details[v9]` for v7/v8, `event-details[v14]` for v9), so the payload
+/// stays opaque to SCALE and a version-aware consumer deserialises it against
+/// the matching ledger version. Keeping it opaque means a future ledger upgrade
+/// that extends the upstream `#[non_exhaustive]` enum does not invalidate this
+/// struct's SCALE metadata.
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]
+pub struct LedgerEvent {
+	pub source: LedgerEventSource,
+	pub content_tagged_bytes: Vec<u8>,
+}
+
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct TransactionAppliedStateRoot {
 	pub state_root: Vec<u8>,
@@ -53,6 +80,10 @@ pub struct TransactionAppliedStateRoot {
 	pub claim_rewards: Vec<u128>,
 	pub unshielded_utxos_created: Vec<UtxoInfo>,
 	pub unshielded_utxos_spent: Vec<UtxoInfo>,
+	// Appended last so the field is additive: a decoder built with this field
+	// defaults it to an empty vec on bytes encoded before it existed, keeping
+	// historical-block replay decode-safe. Populated in `Bridge::apply_transaction`.
+	pub events: Vec<LedgerEvent>,
 }
 
 #[derive(Encode, Decode, DecodeWithMemTracking)]
@@ -60,6 +91,9 @@ pub struct SystemTransactionAppliedStateRoot {
 	pub state_root: Vec<u8>,
 	pub tx_hash: Hash,
 	pub tx_type: String,
+	// Appended last for the same additive-field reason as
+	// `TransactionAppliedStateRoot::events`.
+	pub events: Vec<LedgerEvent>,
 }
 
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]
