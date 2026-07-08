@@ -1088,12 +1088,21 @@ impl MidnightClient {
         tx_bytes: Vec<u8>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         tracing::info!("Submitting transaction expecting rejection...");
-        match self
-            .submit_midnight_tx(tx_bytes)
-            .await?
-            .wait_for_finalized_success()
-            .await
-        {
+        // A rejection can surface two ways, both valid:
+        //  (1) submit_and_watch errors at submission time — e.g. "already imported" /
+        //      "temporarily banned", common when replaying a tx whose original is still in
+        //      (or was just pruned from) the pool;
+        //  (2) the tx is watched and then fails pre_dispatch/execution.
+        // Only case (2) reaches wait_for_finalized_success, so catch case (1) here rather
+        // than propagating it as an unexpected error.
+        let progress = match self.submit_midnight_tx(tx_bytes).await {
+            Ok(progress) => progress,
+            Err(e) => {
+                tracing::info!("Transaction rejected at submission as expected: {e}");
+                return Ok(e.to_string());
+            }
+        };
+        match progress.wait_for_finalized_success().await {
             Err(e) => {
                 tracing::info!("Transaction rejected as expected: {}", e);
                 Ok(e.to_string())

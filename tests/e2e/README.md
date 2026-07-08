@@ -1,5 +1,9 @@
 # End to End Tests
 
+> For the broader "how to test the Midnight node" guide — test levels, user
+> flows, CI surface, release evidence — see
+> [`docs/tests/how-to-test-node.md`](../../docs/tests/how-to-test-node.md).
+
 These tests are not run by default when running `cargo test` in the workspace.
 
 To execute these tests in CI, run `cargo test --test e2e_tests`
@@ -35,8 +39,8 @@ adapts to subset runs that still include some pre-deploy tests:
   `entered == completed`, and no counter change has happened for
   `PRE_DEPLOY_QUIESCENCE` (5 s).
 
-`cargo test ... contract_state::` and `... rpc_abuse::` work without
-any manual setup — both modules carry at least one pre-deploy test.
+`cargo test ... contract_state::` works without any manual setup —
+the module carries at least one pre-deploy test.
 
 **Subset runs that select only deploy tests must opt out explicitly**
 via `E2E_SKIP_DEPLOY_GATE=1`. The gate does not auto-open on a
@@ -258,7 +262,6 @@ Tests are grouped by topic across module files under `tests/`:
     that need the stability barrier
 - `governance.rs` — d-parameter, ariadne, federated-ops, council, tech-auth
   - `governance/observation.rs` — governance membership-reset observation
-- `rpc_abuse.rs` — DDoS and replay rejection at the RPC layer
 - `contract_state.rs` — `contract_state` RPC behaviour
 - `operational.rs` — manual / ignored operational tests (`consolidate_faucet`,
   `valid_deploy_transaction_succeeds_via_rpc`)
@@ -279,6 +282,15 @@ cargo test-e2e-local governance::              # all governance
 
 `cargo test`'s positional filter is a substring match against the full test
 name (`module::fn_name`); the `::` suffix scopes the match to one module.
+
+## Adding a new test family
+
+When you introduce a new test module / user-flow group here (a new top-level
+`tests/<topic>.rs` covering a distinct chain interaction), also add a
+corresponding entry to **§2.2 "Main user flows we exercise"** in
+[`docs/tests/how-to-test-node.md`](../../docs/tests/how-to-test-node.md). That
+section is the SDET-facing inventory of what we actually exercise; keeping it
+current as new modules land prevents the guide from drifting back into staleness.
 
 ## Note on `cargo check`
 

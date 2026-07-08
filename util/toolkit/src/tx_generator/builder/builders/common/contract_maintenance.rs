@@ -16,8 +16,9 @@ use super::ledger_helpers_local::{
 	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo,
 	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo,
 	MaintenanceUpdateInfo, OfferInfo, ProofProvider, SigningKey, TransactionWithContext,
-	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed, deserialize,
-	maintenance_verifying_key, serialize_untagged,
+	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed,
+	contract_operation_versioned_verifier_key, deserialize, maintenance_verifying_key,
+	serialize_untagged,
 };
 use async_trait::async_trait;
 use std::{path::PathBuf, sync::Arc};
@@ -285,8 +286,12 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 			if existing_entrypoints.contains(&entrypoint) {
 				entrypoints_to_remove.push(entrypoint.clone());
 			}
+			// The maintenance-update variant is version-dependent: pre-ledger-9 ledgers expose
+			// only `V3` (2.x key), while ledger 9 stores newly deployed keys in the `V4`
+			// (zk-stdlib v2 / 3.x) slot. `contract_operation_versioned_verifier_key` selects the
+			// right variant for the active ledger generation.
 			entrypoints_to_insert
-				.push((entrypoint, ContractOperationVersionedVerifierKey::V3(key)));
+				.push((entrypoint, contract_operation_versioned_verifier_key(key)));
 		}
 
 		if entrypoints_to_remove.is_empty()

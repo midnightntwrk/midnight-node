@@ -96,7 +96,7 @@ impl Settings {
     pub fn new() -> Self {
         {
             let network_info = CardanoNetworkInfo::testnet_preview();
-            Self {
+            let mut settings = Self {
                 node_client: NodeClientSettings {
                     #[cfg(feature = "local-dev")]
                     base_url: "ws://127.0.0.1:9944".into(),
@@ -195,7 +195,18 @@ impl Settings {
                         ],
                     ],
                 },
+            };
+            // Reachability override: when running as a compose service on the
+            // local-env network, the node RPC + ogmios are reached by service
+            // name (e.g. ws://midnight-node-1:9933 / ws://ogmios:1337), not the
+            // host-mapped ports the feature defaults assume. Unset = no change.
+            if let Ok(url) = std::env::var("E2E_NODE_URL") {
+                settings.node_client.base_url = url;
             }
+            if let Ok(url) = std::env::var("E2E_OGMIOS_URL") {
+                settings.ogmios_client.base_url = url;
+            }
+            settings
         }
     }
 }
