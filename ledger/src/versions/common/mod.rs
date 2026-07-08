@@ -368,7 +368,10 @@ where
 			"⏱️  Tx context ready (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let (mut new_ledger, applied_stage) =
+		// T3 consumes `_ledger_events` (tagged-serialise into `LedgerEvent` and
+		// attach to the return struct). For T1 it is discarded so the wire
+		// shape is unchanged.
+		let (mut new_ledger, applied_stage, _ledger_events) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -543,7 +546,10 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		let mut ledger =
+		// T3 consumes `_ledger_events` (tagged-serialise into `LedgerEvent` and
+		// attach to the return struct). For T1 it is discarded so the wire
+		// shape is unchanged.
+		let (mut ledger, _ledger_events) =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
