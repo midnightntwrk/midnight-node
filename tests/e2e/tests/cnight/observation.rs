@@ -16,7 +16,20 @@ use subxt::events::Event;
 use subxt::ext::codec::Decode;
 use tokio::time::Duration;
 
-use crate::{global_faucet_manager, register_test_seed, warmup_ledger_state_db};
+use crate::{global_faucet_manager, register_test_seed, wait_for_warmup, warmup_ledger_state_db};
+
+// -------- TIMEOUTS --------
+
+// The follower only processes Cardano blocks once they're a security
+// parameter deep, and that stability window scales with Preview's block
+// rate — ~4.5h at the degraded ~34s/block. Sized with headroom; a stuck
+// follower fails much earlier via the stall detector. See the README's
+// "Cardano stability barrier" section.
+const OBSERVATION_AWAIT_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
+
+// ~10 Preview blocks at the degraded ~34s/block rate — absorbs the
+// block-interval tail past the typical 1-2 block inclusion.
+const TX_INCLUSION_TIMEOUT: Duration = Duration::from_secs(360);
 
 // -------- EVENT FORMAT HELPERS --------
 //
@@ -131,7 +144,7 @@ async fn register_for_dust_production() {
         .wait_for_tx_inclusion(
             &register_tx_id,
             &config::mapping_validator_address(),
-            Duration::from_secs(120),
+            TX_INCLUSION_TIMEOUT,
         )
         .await
         .expect("register tx should be included within timeout");
@@ -145,7 +158,7 @@ async fn register_for_dust_production() {
         .await_cnight_observations(
             &[register_tx_id],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("register observation should arrive within timeout");
@@ -271,7 +284,7 @@ async fn register_2_cardano_same_dust_address_production() {
     // Cardano-side inclusion wait: register's output lives at the mapping
     // validator script address.
     let mapping_validator_addr = config::mapping_validator_address();
-    let inclusion_timeout = Duration::from_secs(120);
+    let inclusion_timeout = TX_INCLUSION_TIMEOUT;
     cardano_client_1
         .wait_for_tx_inclusion(
             &register_tx_id_1,
@@ -367,7 +380,7 @@ async fn register_2_cardano_same_dust_address_production() {
                 mint_tx_id_2,
             ],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("all four cNIGHT observations should arrive within timeout");
@@ -473,7 +486,7 @@ async fn register_2_cardano_same_dust_address_production() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -587,7 +600,7 @@ async fn cnight_produces_dust() {
         .await_cnight_observations(
             &[register_tx_id, tx_id],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("register + mint observations should arrive within timeout");
@@ -619,7 +632,7 @@ async fn cnight_produces_dust() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -652,7 +665,7 @@ async fn cnight_produces_dust() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -734,7 +747,7 @@ async fn deregister_from_dust_production() {
         .await_cnight_observations(
             &[deregister_tx],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("deregister observation should arrive within timeout");
@@ -793,7 +806,7 @@ async fn deregister_from_dust_production() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -882,7 +895,7 @@ async fn removing_excessive_registrations() {
     );
 
     let validator_address = config::mapping_validator_address();
-    let inclusion_timeout = Duration::from_secs(120);
+    let inclusion_timeout = TX_INCLUSION_TIMEOUT;
     cardano_client
         .wait_for_tx_inclusion(&register_tx_id, &validator_address, inclusion_timeout)
         .await
@@ -965,7 +978,7 @@ async fn removing_excessive_registrations() {
                 mint_tx_id,
             ],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("all four cNIGHT observations should arrive within timeout");
@@ -1214,7 +1227,7 @@ async fn create_hundred_registrations() {
         .await_cnight_observations(
             &[last_deregistration_tx_id],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("last deregister observation should arrive within timeout");
@@ -1255,6 +1268,10 @@ async fn register_twice_with_same_cardano_address() {
         address_bech32,
         dust_hex
     );
+
+    // Created upfront so it makes the warmup batch.
+    let midnight_wallet_seed2 = MidnightClient::new_seed();
+    register_test_seed(midnight_wallet_seed2.clone());
 
     let faucet = global_faucet_manager().await;
     let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
@@ -1305,7 +1322,7 @@ async fn register_twice_with_same_cardano_address() {
         .await_cnight_observations(
             &[register_tx_id, tx_id],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("register + mint observations should arrive within timeout");
@@ -1321,11 +1338,9 @@ async fn register_twice_with_same_cardano_address() {
         "UTXO owner does not match DUST address"
     );
 
-    // register second time
+    // register second time (seed already registered for warmup above)
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
-    let midnight_wallet_seed2 = MidnightClient::new_seed();
-    register_test_seed(midnight_wallet_seed2.clone());
     let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2.clone());
     let register_tx_id2 = cardano_client
         .register(&dust_hex2, &tx_in2, &collateral_utxo)
@@ -1383,7 +1398,7 @@ async fn register_twice_with_same_cardano_address() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -1409,7 +1424,7 @@ async fn register_twice_with_same_cardano_address() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -1510,6 +1525,18 @@ async fn deregister_with_valid_cnight_utxo() {
         hex::encode(deregister_tx)
     );
 
+    // Confirm inclusion before the await snapshots its target — a tx
+    // still in the mempool can land above the target, out of the
+    // scan-back's reach.
+    cardano_client
+        .wait_for_tx_inclusion(
+            &deregister_tx,
+            &cardano_client.address_as_bech32(),
+            TX_INCLUSION_TIMEOUT,
+        )
+        .await
+        .expect("deregister tx should be included within timeout");
+
     let reward_address = cardano_client.reward_address_bytes();
     let dust_address: Vec<u8> = hex::decode(&dust_hex)
         .expect("Failed to decode DUST hex")
@@ -1521,7 +1548,7 @@ async fn deregister_with_valid_cnight_utxo() {
         .await_cnight_observations(
             &[register_tx_id, mint_tx_id, deregister_tx],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("all three cNIGHT observations should arrive within timeout");
@@ -1594,7 +1621,7 @@ async fn deregister_with_valid_cnight_utxo() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -1627,7 +1654,7 @@ async fn deregister_with_valid_cnight_utxo() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -1658,6 +1685,10 @@ async fn deregister_first_mapping() {
         address_bech32,
         dust_hex
     );
+
+    // Created upfront so it makes the warmup batch.
+    let midnight_wallet_seed2 = MidnightClient::new_seed();
+    register_test_seed(midnight_wallet_seed2.clone());
 
     let faucet = global_faucet_manager().await;
     let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
@@ -1708,7 +1739,7 @@ async fn deregister_first_mapping() {
         .await_cnight_observations(
             &[register_tx_id, tx_id],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("register + mint observations should arrive within timeout");
@@ -1741,7 +1772,7 @@ async fn deregister_first_mapping() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -1751,11 +1782,9 @@ async fn deregister_first_mapping() {
 
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
 
-    // register second time
+    // register second time (seed already registered for warmup above)
     let tx_in2 = faucet.request_tokens(&address_bech32, 10_000_000).await;
 
-    let midnight_wallet_seed2 = MidnightClient::new_seed();
-    register_test_seed(midnight_wallet_seed2.clone());
     let dust_hex2 = MidnightClient::new_dust_hex(midnight_wallet_seed2.clone());
     let register_tx_id2 = cardano_client
         .register(&dust_hex2, &tx_in2, &collateral_utxo)
@@ -1814,7 +1843,7 @@ async fn deregister_first_mapping() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -1885,7 +1914,7 @@ async fn deregister_first_mapping() {
         dry_run: false,
     };
 
-    let result3 = dust_balance::execute(args3)
+    let result3 = crate::gated_dust_balance(args3)
         .await
         .expect("dust-balance error");
 
@@ -1918,7 +1947,7 @@ async fn deregister_first_mapping() {
         dry_run: false,
     };
 
-    let result4 = dust_balance::execute(args4)
+    let result4 = crate::gated_dust_balance(args4)
         .await
         .expect("dust-balance error");
 
@@ -1940,12 +1969,8 @@ async fn produce_dust_from_tokens_owned_before_registration() {
     let address_bech32 = cardano_client.address_as_bech32();
     tracing::info!("New Cardano wallet created: {:?}", address_bech32);
 
-    let faucet = global_faucet_manager().await;
-    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
-    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
-    // for minting cNIGHT tokens
-    faucet.request_tokens(&address_bech32, 7_000_000).await;
-
+    // Register the seed before the slow faucet work so it makes the
+    // warmup batch.
     let midnight_wallet_seed = MidnightClient::new_seed();
     register_test_seed(midnight_wallet_seed.clone());
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
@@ -1955,6 +1980,12 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         address_bech32,
         dust_hex
     );
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    // for minting cNIGHT tokens
+    faucet.request_tokens(&address_bech32, 7_000_000).await;
 
     let amount = 100;
     let tx_id = cardano_client
@@ -1989,6 +2020,11 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         hex::encode(register_tx_id)
     );
 
+    // This probe runs before the warmup finishes; wait for it so the read
+    // hits the warm cache. The assert-0 premise holds until the
+    // registration clears the stability window, much later.
+    wait_for_warmup(Duration::from_secs(2 * 60 * 60)).await;
+
     let args = DustBalanceArgs {
         source: Source {
             src_files: None,
@@ -2005,7 +2041,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -2044,7 +2080,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         .await_cnight_observations(
             &[cnight_utxo_new.transaction.id],
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("rotate observation should arrive within timeout");
@@ -2076,7 +2112,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -2099,11 +2135,8 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
     let midnight_client = MidnightClient::new(settings.node_client).await;
     tracing::info!("New Cardano wallet created: {:?}", address_bech32);
 
-    let faucet = global_faucet_manager().await;
-    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
-    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
-    faucet.request_tokens(&address_bech32, 7_000_000).await;
-
+    // Register the seed before the slow faucet work so it makes the
+    // warmup batch.
     let midnight_wallet_seed = MidnightClient::new_seed();
     register_test_seed(midnight_wallet_seed.clone());
     let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed.clone());
@@ -2112,6 +2145,11 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         address_bech32,
         dust_hex
     );
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    faucet.request_tokens(&address_bech32, 7_000_000).await;
 
     // Phase 1: register → mint. `find_utxo_by_tx_id` polls for Cardano
     // inclusion in both cases.
@@ -2216,7 +2254,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             &[register_tx_id, mint_tx_id],
             first_target,
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("register + mint observations should arrive within timeout");
@@ -2252,7 +2290,8 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    // Window-sensitive read — must not queue behind the gate.
+    let result2 = crate::window_dust_balance(args2)
         .await
         .expect("dust-balance error");
 
@@ -2292,7 +2331,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    let result = crate::gated_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -2424,7 +2463,7 @@ async fn spend_cnight_producing_dust() {
             &[register_tx_id, mint_tx_id],
             first_target,
             &ogmios_settings,
-            Duration::from_secs(4 * 60 * 60),
+            OBSERVATION_AWAIT_TIMEOUT,
         )
         .await
         .expect("register + mint observations should arrive within timeout");
@@ -2460,7 +2499,8 @@ async fn spend_cnight_producing_dust() {
         dry_run: false,
     };
 
-    let result = dust_balance::execute(args)
+    // Window-sensitive read — must not queue behind the gate.
+    let result = crate::window_dust_balance(args)
         .await
         .expect("dust-balance error");
 
@@ -2500,7 +2540,7 @@ async fn spend_cnight_producing_dust() {
         dry_run: false,
     };
 
-    let result2 = dust_balance::execute(args2)
+    let result2 = crate::gated_dust_balance(args2)
         .await
         .expect("dust-balance error");
 

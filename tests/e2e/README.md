@@ -16,9 +16,9 @@ To run test in parallel use `--test-threads N` argument, e.g.
 `--test-threads` should be large enough to let pre-deploy and deploy tests
 run concurrently. Six is the historic recommendation for local-env.
 
-**On Cardano Preview (`qanet` feature) thread count is load-bearing:** the
-stability barrier amortises its ~3 h wait *only* when observation tests
-run concurrently. With fewer threads than observation tests the wait is
+**On Cardano Preview (`qanet`/`devnet` features) thread count is
+load-bearing:** the stability barrier amortises its multi-hour wait *only*
+when observation tests run concurrently. With fewer threads than observation tests the wait is
 paid per batch, which can blow past CI budgets. Set
 `--test-threads >= 16` (we have 13 observation tests with headroom).
 The nightly workflow sets this explicitly.
@@ -59,8 +59,14 @@ E2E_SKIP_DEPLOY_GATE=1 cargo test-e2e-local valid_deploy_transaction
 Observation tests (those that assert the Midnight node saw a Cardano tx
 they submitted) only succeed once the Cardano tx is *stable*, i.e. at
 least `cardano_security_parameter` blocks behind the tip. On local-env
-this parameter is ~5 blocks; on Cardano Preview it is 432 blocks
-(~3 h). Tests can't observe before the follower processes a stable
+this parameter is ~5 blocks; on Cardano Preview it is 432 blocks. The
+wall-clock cost of the window scales with Preview's block rate, which
+has degraded well past the nominal 20 s/block — the observation await
+timeout and the nightly job timeout are sized against the degraded
+rate with headroom. If runs time out again while the watermark still
+tracks a steady distance behind the tip, re-check the block rate
+(blocks-per-epoch via any Preview explorer) before suspecting the
+harness. Tests can't observe before the follower processes a stable
 block, so they wait.
 
 The wait is handled by `MidnightClient::await_cnight_observations` —
@@ -81,13 +87,21 @@ cardano: tip=4339244 target=4339214 (0 blocks to stability),
 2/4 observed, 2 remaining
 ```
 
-**Out of scope:** Cardano Preprod and mainnet (`k = 2160`, ~12 h wait)
-exceed the 6 h GitHub Actions ceiling. No compile-time gate prevents
-running there; just don't.
+**Out of scope:** Cardano Preprod and mainnet (`k = 2160`, 12–20 h wait
+depending on block rate) exceed any reasonable nightly budget. No
+compile-time gate prevents running there; just don't.
 
 `create_hundred_registrations` is `#[cfg(any(feature = "local",
 feature = "local-dev", feature = "local-ci"))]`-gated — it doesn't
-exist when compiled with `--features qanet`.
+exist when compiled with `--features qanet` or `--features devnet`.
+
+**The nightly targets devnet, not qanet.** Both networks follow Cardano
+Preview and observe the identical cNIGHT contracts, so Cardano-side
+coverage is the same — but qanet's 1.x runtime replays under Ledger8,
+which the toolkit's wallet-state cache no longer persists. On qanet the
+warmup below is a silent no-op and every dust-balance call replays the
+chain from genesis, starving the runner. devnet's 2.x runtime is where
+the cache works.
 
 ## Toolkit wallet-cache warmup
 
@@ -107,8 +121,8 @@ Mechanism:
    window (30 s of no new seed registrations) and then issues one
    `dust_balance::execute_many` covering every registered seed.
 3. The warmup runs concurrently with the stability + observation
-   barriers (the 3-h Preview wait), and writes wallet snapshots into
-   `tests/e2e/toolkit_cache/ledger_cache_db/`.
+   barriers (the multi-hour Preview wait), and writes wallet snapshots
+   into `tests/e2e/toolkit_cache/ledger_cache_db/`.
 4. Each test's later `dust_balance::execute(args)` uses that same
    `ledger_state_db` path; on cache hit it restores from the warm
    snapshot in seconds.
@@ -120,6 +134,14 @@ batch them in one pass. Serial execution would mean the warmup fires
 on the first seed, then later tests miss the cache. A "warmup:
 completed for K seed(s)" log line with K less than your test count is
 the signal to raise `--test-threads`.
+
+**Every seed a test needs must be created and registered at the top of
+the test body** — before any faucet request or Cardano submission, and
+never lazily mid-test. A seed registered after the warmup fired pays a
+full genesis replay in each of its dust-balance calls (the cache only
+short-circuits when every requested seed has a snapshot), and a few
+concurrent replays can starve the runner past the job timeout. A WARN
+is logged when a seed arrives late.
 
 If the warmup task fails (e.g. node unreachable, fetch-cache backend
 down), each test's `execute` falls back to its own genesis replay
@@ -174,12 +196,11 @@ selected by feature via `crate::fetch_cache_config()` in
 - **local-env** (`local`, `local-dev`, `local-ci`): `InMemory` —
   ephemeral RAM cache, no dependencies. Fine for short-lived local
   chains where syncing is cheap.
-- **qanet**: `Postgres` at
-  `postgresql://postgres:postgres@localhost:5433/toolkit_cache`.
-  Persists across runs so the long-lived Preview chain doesn't need
-  to be re-synced every time. (The URL is currently developer-local;
-  the nightly workflow will need its own Postgres service container
-  before this branch can run there end-to-end.)
+- **qanet/devnet**: `Postgres` via `TOOLKIT_CACHE_DB_URL` (CI wires the
+  shared toolkit-cache RDS through this secret; developers can point it
+  at an SSH-tunneled instance). Persists across runs so remote chains
+  don't need to be re-synced every time; cache tables are keyed by
+  chain id, so both networks share one database.
 
 To verify the Postgres path is wired correctly, run the smoke tests:
 

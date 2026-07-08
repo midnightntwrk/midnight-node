@@ -7,7 +7,7 @@ use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex as AsyncMutex, MutexGuard, OnceCell};
+use tokio::sync::{Mutex as AsyncMutex, MutexGuard, OnceCell, Semaphore};
 use tokio::time::sleep;
 
 // ============================================================================
@@ -160,6 +160,12 @@ static WARMUP_STATE: LazyLock<Mutex<WarmupState>> = LazyLock::new(|| {
     })
 });
 static WARMUP_THREAD_STARTED: AtomicBool = AtomicBool::new(false);
+/// Set when the warmup snapshots its seed batch; seeds registered after
+/// this point miss it and pay a full replay.
+static WARMUP_FIRED: AtomicBool = AtomicBool::new(false);
+/// Set once the warmup finished (successfully or not). Balance probes that
+/// run before their observation await gate on it via [`wait_for_warmup`].
+static WARMUP_DONE: AtomicBool = AtomicBool::new(false);
 
 struct WarmupState {
     seeds: Vec<WalletSeed>,
@@ -192,6 +198,15 @@ pub(crate) fn register_test_seed(seed: WalletSeed) {
             WARMUP_QUIESCENCE,
         );
     }
+    if WARMUP_FIRED.load(Ordering::SeqCst) {
+        tracing::warn!(
+            "warmup: seed registered AFTER the warmup batch fired — its \
+             dust_balance calls will replay from genesis (multi-hour on \
+             Preview, and concurrent replays can starve the whole suite). \
+             Create + register every seed a test needs at the top of the \
+             test body, before any faucet/submission work (#1644)."
+        );
+    }
     ensure_warmup_thread_started();
 }
 
@@ -207,7 +222,19 @@ fn ensure_warmup_thread_started() {
                     .enable_all()
                     .build()
                     .expect("build warmup runtime");
-                rt.block_on(run_warmup());
+                // The warmup is best-effort (per-test executes fall back to
+                // their own replay), but the done flag must latch even on a
+                // panic or waiters idle for their full cap.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    rt.block_on(run_warmup());
+                }));
+                if result.is_err() {
+                    tracing::warn!(
+                        "warmup: thread panicked — wallet snapshots may be missing; \
+                         per-test dust_balance calls will fall back to their own replay"
+                    );
+                }
+                WARMUP_DONE.store(true, Ordering::SeqCst);
             })
             .expect("spawn warmup thread");
     }
@@ -230,6 +257,9 @@ async fn run_warmup() {
         let state = WARMUP_STATE.lock().expect("warmup state lock poisoned");
         state.seeds.clone()
     };
+    // From here on, newly registered seeds miss the batch; make
+    // `register_test_seed` warn loudly about it.
+    WARMUP_FIRED.store(true, Ordering::SeqCst);
     if seeds.is_empty() {
         tracing::warn!("warmup: quiesced with zero seeds; skipping");
         return;
@@ -279,6 +309,23 @@ async fn run_warmup() {
              genesis replay each",
             started.elapsed()
         ),
+    }
+    WARMUP_DONE.store(true, Ordering::SeqCst);
+}
+
+/// Block until the warmup finished, or `cap` elapsed (the caller then
+/// proceeds and falls back to its own replay).
+pub(crate) async fn wait_for_warmup(cap: Duration) {
+    let started = Instant::now();
+    while !WARMUP_DONE.load(Ordering::SeqCst) {
+        if started.elapsed() > cap {
+            tracing::warn!(
+                "wait_for_warmup: warmup not done after {cap:?}; proceeding \
+                 without the warm cache"
+            );
+            return;
+        }
+        sleep(WARMUP_POLL).await;
     }
 }
 
@@ -537,22 +584,96 @@ pub(crate) async fn global_faucet_manager() -> Arc<FaucetManager> {
         .clone()
 }
 
+// -------- DUST-BALANCE CONCURRENCY GATE --------
+
+/// Gate for per-test dust-balance calls: all tests cross the stability
+/// barrier together, and unbounded concurrent replays storm the node RPC
+/// with fetch-worker connections until it times out. With the warm cache
+/// each execute is seconds of work, so queueing costs little.
+static DUST_BALANCE_GATE: Semaphore = Semaphore::const_new(2);
+
+/// Failures worth a fresh attempt: dropped websockets (the toolkit's node
+/// client has no mid-execute reconnect), load-balanced replicas answering
+/// at different heights, and transient fetch-cache pool exhaustion. A retry
+/// builds fresh clients and re-reads already-cached blocks, so it's cheap.
+fn is_transient_dust_balance_error(e: &(dyn std::error::Error + Send + Sync)) -> bool {
+    let s = format!("{e:?}");
+    [
+        "RestartNeeded",
+        "Connection(Closed)",
+        "RequestTimeout",
+        "Request timeout",
+        "invalid type: null",
+        "PoolTimedOut",
+    ]
+    .iter()
+    .any(|m| s.contains(m))
+}
+
+async fn dust_balance_execute_with_retry(
+    args: dust_balance::DustBalanceArgs,
+) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
+    const ATTEMPTS: usize = 3;
+    const RETRY_DELAY: Duration = Duration::from_secs(15);
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let attempt_args = dust_balance::DustBalanceArgs {
+            source: args.source.clone(),
+            seed: args.seed.clone(),
+            dry_run: args.dry_run,
+        };
+        match dust_balance::execute(attempt_args).await {
+            Ok(r) => return Ok(r),
+            Err(e) if attempt < ATTEMPTS && is_transient_dust_balance_error(e.as_ref()) => {
+                tracing::warn!(
+                    "dust_balance attempt {attempt}/{ATTEMPTS} failed transiently: {e:?}; \
+                     retrying in {RETRY_DELAY:?}"
+                );
+                sleep(RETRY_DELAY).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+pub(crate) async fn gated_dust_balance(
+    args: dust_balance::DustBalanceArgs,
+) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
+    let _permit = DUST_BALANCE_GATE
+        .acquire()
+        .await
+        .expect("dust-balance gate semaphore closed");
+    dust_balance_execute_with_retry(args).await
+}
+
+/// Ungated dust-balance for window-sensitive reads only: the spacing tests
+/// must read between their two batch crossings, and queueing behind the
+/// gate can eat that whole window. At most two tests bypass concurrently.
+pub(crate) async fn window_dust_balance(
+    args: dust_balance::DustBalanceArgs,
+) -> Result<dust_balance::DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
+    dust_balance_execute_with_retry(args).await
+}
+
 // -------- TOOLKIT FETCH CACHE --------
 
 /// Cache backend for the toolkit's tx fetcher, selected by feature.
 ///
 /// - local-env: `InMemory` — local chains are small and ephemeral, so
 ///   syncing into RAM per run costs nothing and adds no dependencies.
-/// - qanet: `Postgres` when `TOOLKIT_CACHE_DB_URL` is set (CI wires
-///   the shared cache via this secret — see PR #1578; developers can
-///   set it locally to e.g. an SSH-tunneled RDS), otherwise
-///   `InMemory` so local invocations without a tunnel still work.
+/// - qanet/devnet: `Postgres` when `TOOLKIT_CACHE_DB_URL` is set (CI
+///   wires the shared cache via this secret — see PR #1578; developers
+///   can set it locally to e.g. an SSH-tunneled RDS), otherwise
+///   `InMemory` so local invocations without a tunnel still work. The
+///   cache tables are keyed by chain id, so both networks share one
+///   database without collisions.
 pub(crate) fn fetch_cache_config() -> FetchCacheConfig {
     #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
     {
         FetchCacheConfig::InMemory
     }
-    #[cfg(feature = "qanet")]
+    #[cfg(any(feature = "qanet", feature = "devnet"))]
     {
         // CI sets `TOOLKIT_CACHE_DB_URL` to the shared toolkit-cache
         // RDS (see PR #1578); locally the SSH-tunneled URL is the
@@ -573,14 +694,14 @@ pub(crate) fn fetch_cache_config() -> FetchCacheConfig {
 ///
 /// - local-env: 4 — small chain, low total work; 4 workers × ~10 parallel
 ///   tests stays well under the node's connection cap.
-/// - qanet: 20 — Cardano Preview's chain is large, fetch is the bottleneck,
-///   the remote node has more headroom.
+/// - qanet/devnet: 20 — remote chains are larger, fetch is the
+///   bottleneck, and the remote nodes have more headroom.
 pub(crate) fn fetch_concurrency() -> usize {
     #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
     {
         4
     }
-    #[cfg(feature = "qanet")]
+    #[cfg(any(feature = "qanet", feature = "devnet"))]
     {
         20
     }
