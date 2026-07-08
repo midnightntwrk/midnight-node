@@ -13,6 +13,7 @@
 
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
+use crate::aura_to_babe_migration_keystore::AuraToBabeMigrationKeystore;
 use crate::backend::{create_database_source, open_paritydb};
 use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
@@ -583,7 +584,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			sc_offchain::OffchainWorkers::new(sc_offchain::OffchainWorkerOptions {
 				runtime_api_provider: client.clone(),
 				is_validator: config.role.is_authority(),
-				keystore: Some(keystore_container.keystore()),
+				keystore: Some(AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore())),
 				offchain_db: backend.offchain_storage(),
 				transaction_pool: Some(OffchainTransactionPoolFactory::new(
 					transaction_pool.clone(),
@@ -670,7 +671,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let _rpc_handlers = sc_service::spawn_tasks(sc_service::SpawnTasksParams {
 		network: network.clone(),
 		client: client.clone(),
-		keystore: keystore_container.keystore(),
+		keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
 		task_manager: &mut task_manager,
 		transaction_pool: transaction_pool.clone(),
 		rpc_builder: Box::new(rpc_extensions_builder),
@@ -756,7 +757,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			),
 			force_authoring,
 			backoff_authoring_blocks,
-			keystore: keystore_container.keystore(),
+			keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
 			sync_oracle: sync_service.clone(),
 			justification_sync_link: sync_service.clone(),
 			block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
@@ -774,7 +775,10 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		task_manager.spawn_handle().spawn(
 			"committee-membership-watch",
 			None,
-			crate::committee_membership::watch(client.clone(), keystore_container.keystore()),
+			crate::committee_membership::watch(
+				client.clone(),
+				AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
+			),
 		);
 	}
 

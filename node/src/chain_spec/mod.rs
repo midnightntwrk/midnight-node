@@ -393,7 +393,13 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 					subminimal_transfers_flush_threshold: bridge_config
 						.subminimal_transfers_flush_threshold,
 				},
-				approved_txs: vec![],
+				approved_txs: bridge_config
+					.approved_txs
+					.iter()
+					.map(|s| {
+						McTxHash::decode_hex(s).expect("Failed to decode c2m approved_txs entry")
+					})
+					.collect(),
 				_marker: Default::default(),
 			}
 		},

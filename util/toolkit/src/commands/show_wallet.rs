@@ -46,13 +46,13 @@ pub struct ShowWalletArgs {
 	seed_ecdsa: Option<WalletSeed>,
 	/// The address of the wallet to show wallet state for, does not include private state
 	#[arg(long, value_parser = cli::wallet_address, group = "wallet_id")]
-	address: Option<WalletAddress>,
+	pub address: Option<WalletAddress>,
 	/// Output the full wallet state using a debug print
 	#[arg(long)]
-	debug: bool,
+	pub debug: bool,
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 pub async fn execute(

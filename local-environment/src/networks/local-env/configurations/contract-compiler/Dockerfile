@@ -108,7 +108,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential=12.9 \
         pkg-config=1.8.1-1 \
-        libssl-dev=3.0.20-1~deb12u1 && \
+        libssl-dev=3.0.20-1~deb12u2 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Rust toolchain via pinned rustup-init binary with hash verification

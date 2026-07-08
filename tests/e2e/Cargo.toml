@@ -20,7 +20,7 @@ default = ["local-ci"]
 [dependencies]
 aiken-contracts-lib = { path = "../../util/aiken-contracts-lib" }
 hex.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 whisky.workspace = true
 tiny-bip39 = "2.0.0"
 ogmios-client = { path = "../../partner-chains/toolkit/utils/ogmios-client" }
@@ -37,7 +37,6 @@ midnight-node-e2e-macros = { path = "macros" }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
-midnight-node-res = { workspace = true, features = ["test"] }
 midnight-node-toolkit = { path = "../../util/toolkit" }
 tempfile.workspace = true
 
