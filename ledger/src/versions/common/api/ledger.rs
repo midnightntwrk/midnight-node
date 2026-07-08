@@ -305,7 +305,7 @@ mod tests {
 		undeployed::transactions::{CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX},
 	};
 	use midnight_serialize_local::tagged_deserialize;
-	use mn_ledger_local::structure::LedgerState;
+	use mn_ledger_local::{events::EventDetails, structure::LedgerState};
 
 	fn prepare_ledger() -> Sp<Ledger<DefaultDB>> {
 		sp_tracing::try_init_simple();
@@ -324,7 +324,7 @@ mod tests {
 		ledger: &mut Sp<Ledger<DefaultDB>>,
 		bytes: &[u8],
 		block_context: &BlockContext,
-	) {
+	) -> Vec<Event<DefaultDB>> {
 		let tx = api
 			.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes)
 			.expect("failed to deserialize tx");
@@ -336,7 +336,7 @@ mod tests {
 				tx_ctx.block_context.tblock,
 			)
 			.unwrap_or_else(|err| panic!("Transaction not well-formed: {err:?}"));
-		let (mut new_ledger_state, _applied_stage, _events) =
+		let (mut new_ledger_state, _applied_stage, events) =
 			Ledger::<DefaultDB>::apply_verified_transaction(
 				ledger.clone(),
 				api,
@@ -351,6 +351,7 @@ mod tests {
 				.expect("Post block update failed");
 
 		*ledger = new_ledger_state;
+		events
 	}
 
 	#[test]
@@ -376,6 +377,29 @@ mod tests {
 		let mut ledger = prepare_ledger();
 		let (serialized_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
 		assert_apply_transaction(&api, &mut ledger, &serialized_tx, &block_context.into());
+	}
+
+	/// PR1849-TC-01/TC-02: a successful apply emits events, and each event's
+	/// tagged-serialised `content` round-trips back to an equal `EventDetails`.
+	#[test]
+	fn should_emit_events_whose_payload_round_trips() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let api = Api::new();
+		let mut ledger = prepare_ledger();
+		let (serialized_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
+		let events =
+			assert_apply_transaction(&api, &mut ledger, &serialized_tx, &block_context.into());
+
+		assert!(!events.is_empty(), "deploy should emit at least one event");
+		for ev in &events {
+			let bytes = api.tagged_serialize(&ev.content).expect("serialize event content");
+			let decoded: EventDetails<DefaultDB> =
+				tagged_deserialize(&bytes[..]).expect("round-trip decode");
+			assert_eq!(decoded, ev.content);
+		}
 	}
 
 	#[test]

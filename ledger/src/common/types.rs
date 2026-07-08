@@ -293,3 +293,26 @@ pub struct UtxoInfo {
 	pub value: u128,
 	pub output_no: u32,
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use alloc::vec;
+
+	// PR1849-TC-11/TC-14: the LedgerEvent wire types round-trip through SCALE, so
+	// the opaque payload carried across the host boundary decodes as encoded.
+	#[test]
+	fn ledger_event_scale_round_trips() {
+		let event = LedgerEvent {
+			source: LedgerEventSource {
+				transaction_hash: [7u8; 32],
+				logical_segment: 3,
+				physical_segment: 5,
+			},
+			content_tagged_bytes: vec![1, 2, 3, 4],
+		};
+		let bytes = event.encode();
+		let decoded = LedgerEvent::decode(&mut &bytes[..]).expect("decode");
+		assert_eq!(decoded, event);
+	}
+}
