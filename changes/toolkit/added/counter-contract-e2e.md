@@ -19,5 +19,5 @@ The test is currently `#[ignore]d` for the LEDGER9-TOOLKIT-JS blocker (like bboa
 toolkit-js v9 is vendored, the `#[ignore]` is swapped for the
 `#[cfg_attr(not(feature = "compact-contract-tests"), ignore = ...)]` cadence gate.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1852
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1772
