@@ -66,6 +66,7 @@ use {
 	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
+		events::Event,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
 			MaintenanceUpdate, OutputInstructionUnshielded, ProofMarker, SignatureKind,
@@ -80,9 +81,9 @@ use {
 };
 
 use crate::common::types::{
-	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, Op,
-	SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
-	WrappedHash,
+	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, LedgerEvent,
+	LedgerEventSource, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
+	TransactionDetails, Tx, WrappedHash,
 };
 
 use super::BlockContext;
@@ -368,10 +369,7 @@ where
 			"⏱️  Tx context ready (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		// T3 consumes `_ledger_events` (tagged-serialise into `LedgerEvent` and
-		// attach to the return struct). For T1 it is discarded so the wire
-		// shape is unchanged.
-		let (mut new_ledger, applied_stage, _ledger_events) =
+		let (mut new_ledger, applied_stage, ledger_events) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -443,8 +441,7 @@ where
 			claim_rewards: vec![],
 			unshielded_utxos_created: utxo_outputs,
 			unshielded_utxos_spent: utxo_inputs,
-			// T3 populates this from the ledger event stream.
-			events: vec![],
+			events: Self::build_ledger_events(&api, &ledger_events)?,
 		};
 		log::trace!(
 			target: LOG_TARGET,
@@ -548,18 +545,14 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		// T3 consumes `_ledger_events` (tagged-serialise into `LedgerEvent` and
-		// attach to the return struct). For T1 it is discarded so the wire
-		// shape is unchanged.
-		let (mut ledger, _ledger_events) =
+		let (mut ledger, ledger_events) =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
 			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
 			tx_hash,
 			tx_type: tx_type.to_string(),
-			// T3 populates this from the ledger event stream.
-			events: vec![],
+			events: Self::build_ledger_events(&api, &ledger_events)?,
 		};
 
 		// Only update state after no errors
@@ -575,6 +568,29 @@ where
 		}
 
 		Ok(event)
+	}
+
+	/// Build the SCALE `Vec<LedgerEvent>` envelope from the ledger's own
+	/// `Event<D>` stream. `EventSource` is mirrored field-by-field; the
+	/// `EventDetails<D>` payload is tagged-serialised so the wire shape stays
+	/// opaque to the codec and self-identifies its ledger version — the same
+	/// helper is uniform across v7/v8/v9 (the tag absorbs the divergence).
+	fn build_ledger_events(
+		api: &api::Api,
+		events: &[Event<D>],
+	) -> Result<Vec<LedgerEvent>, LedgerApiError> {
+		events
+			.iter()
+			.map(|ev| {
+				let source = LedgerEventSource {
+					transaction_hash: ev.source.transaction_hash.0.0,
+					logical_segment: ev.source.logical_segment,
+					physical_segment: ev.source.physical_segment,
+				};
+				let content_tagged_bytes = api.tagged_serialize(&ev.content)?;
+				Ok(LedgerEvent { source, content_tagged_bytes })
+			})
+			.collect()
 	}
 
 	pub fn validate_transaction(
