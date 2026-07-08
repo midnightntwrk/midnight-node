@@ -52,7 +52,8 @@ pub mod pallet {
 	use sidechain_domain::byte_string::BoundedString;
 
 	use midnight_node_ledger::types::{
-		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
+		self as LedgerTypes, GasCost, LedgerEvent, Tx as LedgerTx, UtxoInfo,
+		active_ledger_bridge as LedgerApi,
 		active_version::{
 			BlockContext, DeserializationError, LedgerApiError, SerializationError,
 			TransactionError,
@@ -255,6 +256,11 @@ pub mod pallet {
 		UnshieldedTokens(UnshieldedTokensDetails),
 		/// Partial Success.
 		TxPartialSuccess(TxAppliedDetails),
+		/// A ledger event emitted while applying the transaction. One deposited
+		/// per event the ledger produced; the payload's `content_tagged_bytes`
+		/// is the ledger's own tagged serialisation of the event details.
+		/// Appended last so the existing variant indices are unchanged.
+		LedgerEvent(LedgerEvent),
 	}
 
 	// Errors inform users that something went wrong.
@@ -417,6 +423,13 @@ pub mod pallet {
 					spent: result.unshielded_utxos_spent,
 					created: result.unshielded_utxos_created,
 				}));
+			}
+
+			// One runtime event per ledger event, preserving per-event subxt /
+			// Polkadot.js filtering. Emission is non-consensus narration and is
+			// not weighed — see the accept-unpriced pricing note (T7/C1).
+			for ledger_event in result.events {
+				Self::deposit_event(Event::LedgerEvent(ledger_event));
 			}
 
 			if result.all_applied {
