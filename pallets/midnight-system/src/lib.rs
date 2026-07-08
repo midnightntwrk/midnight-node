@@ -29,11 +29,6 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		SystemTransactionApplied(SystemTransactionApplied),
-		/// A ledger event emitted while applying a system transaction (e.g.
-		/// `ParamChange`, `DustInitialUtxo`). One deposited per event the ledger
-		/// produced; `content_tagged_bytes` is the ledger's own tagged
-		/// serialisation of the event details. Appended last so the existing
-		/// variant index is unchanged.
 		LedgerEvent(LedgerEvent),
 	}
 
@@ -158,8 +153,7 @@ pub mod pallet {
 				},
 			));
 
-			// One runtime event per ledger event, mirroring pallet-midnight. See
-			// the accept-unpriced pricing note (T7/C1).
+			// One runtime event per ledger event
 			for ledger_event in ledger_events {
 				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
 			}
@@ -196,7 +190,7 @@ pub mod pallet {
 				super::SystemTransactionApplied { hash, serialized_system_transaction },
 			));
 
-			// One runtime event per ledger event, mirroring pallet-midnight.
+			// One runtime event per ledger event
 			for ledger_event in ledger_events {
 				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
 			}

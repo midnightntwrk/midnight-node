@@ -22,17 +22,12 @@ use midnight_node_ledger::types::{LedgerEvent, LedgerEventSource};
 /// Per-event payload size for the event-emission benchmark, in bytes.
 ///
 /// Sized to a deploy-heavy `ContractDeploy`/`ContractLog` event (~4 KiB of
-/// tagged `content_tagged_bytes`). The upper bound on `MAX_BENCH_EVENTS` is
-/// chosen so the total event volume approaches the ledger's per-block
-/// `bytes_churned` ceiling (`INITIAL_LIMITS.block_limits.bytes_churned` =
-/// 1_000_000), which is the worst-case magnitude derived in the comprehension
-/// artifact (DD11): an event stream cannot exceed the state churn it narrates
-/// by more than a constant framing overhead per event.
+/// tagged `content_tagged_bytes`).
 const BENCH_EVENT_PAYLOAD_BYTES: usize = 4 * 1024;
 
 /// Upper bound on the number of ledger events deposited in a single block for
 /// the worst-case benchmark. `MAX_BENCH_EVENTS * BENCH_EVENT_PAYLOAD_BYTES`
-/// (~1 MiB) tracks the `bytes_churned` block ceiling (see above).
+/// (~1 MiB) tracks the `bytes_churned` block ceiling.
 const MAX_BENCH_EVENTS: u32 = 256;
 
 /// Build `count` synthetic `LedgerEvent`s with worst-case-sized opaque
@@ -66,14 +61,10 @@ mod benchmarks {
 		send_mn_transaction(RawOrigin::None, Vec::default());
 	}
 
-	/// Worst-case event-emission guardrail (GO-gate condition C1 / metric M8).
+	/// Worst-case event-emission guardrail
 	///
 	/// Fills a block with `n` worst-case-sized ledger events and measures the
-	/// cost of depositing them as runtime events. This validates the
-	/// accept-unpriced pricing decision (plan D3): `deposit_event` carries no
-	/// per-event weight term, so this benchmark bounds the state-write cost the
-	/// decision leaves unpriced. The human runs it and compares the reported
-	/// weight against `BlockWeights` headroom.
+	/// cost of depositing them as runtime events.
 	///
 	/// Component `n`: number of ledger events in the block (0..MAX_BENCH_EVENTS).
 	#[benchmark]

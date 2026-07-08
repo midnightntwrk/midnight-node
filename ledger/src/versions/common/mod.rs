@@ -570,11 +570,7 @@ where
 		Ok(event)
 	}
 
-	/// Build the SCALE `Vec<LedgerEvent>` envelope from the ledger's own
-	/// `Event<D>` stream. `EventSource` is mirrored field-by-field; the
-	/// `EventDetails<D>` payload is tagged-serialised so the wire shape stays
-	/// opaque to the codec and self-identifies its ledger version — the same
-	/// helper is uniform across v7/v8/v9 (the tag absorbs the divergence).
+	/// Build the SCALE `Vec<LedgerEvent>` envelope from the ledger's own `Event<D>` stream.
 	fn build_ledger_events(
 		api: &api::Api,
 		events: &[Event<D>],
