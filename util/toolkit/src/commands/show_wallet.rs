@@ -35,15 +35,15 @@ pub enum ShowWalletResult {
 #[group(id = "wallet_id", required = true, multiple = false)]
 pub struct ShowWalletArgs {
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 	/// The seed of the wallet to show wallet state for, including private state (Schnorr NIGHT
 	/// identity)
 	#[arg(long, value_parser = cli::wallet_seed_decode, group = "wallet_id")]
-	seed: Option<WalletSeed>,
+	pub seed: Option<WalletSeed>,
 	/// The seed of the wallet to show wallet state for, using an ECDSA NIGHT identity (ledger 9+).
 	/// Resolves distinct NIGHT UTXOs from `--seed`; the shielded/dust state is scheme-independent.
 	#[arg(long, value_parser = cli::wallet_seed_decode, group = "wallet_id")]
-	seed_ecdsa: Option<WalletSeed>,
+	pub seed_ecdsa: Option<WalletSeed>,
 	/// The address of the wallet to show wallet state for, does not include private state
 	#[arg(long, value_parser = cli::wallet_address, group = "wallet_id")]
 	pub address: Option<WalletAddress>,
