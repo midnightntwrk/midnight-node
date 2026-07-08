@@ -1206,8 +1206,9 @@ impl CardanoClient {
     }
 
     pub async fn find_utxo_by_tx_id(&self, address: &str, tx_id_hex: String) -> Option<OgmiosUtxo> {
-        // Generous vs typical 1-2 block inclusion: absorbs the
-        // block-interval tail at degraded block rates.
+        // 240 x 2s = 8 min, ~14 Preview blocks at the degraded ~34s/block
+        // rate — absorbs the block-interval tail past the typical
+        // 1-2 block inclusion.
         const MAX_ATTEMPTS: u32 = 240;
         const PAUSE: Duration = Duration::from_secs(2);
         let tx_id_bytes = hex::decode(tx_id_hex.clone()).expect("invalid hex tx_id");

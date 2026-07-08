@@ -19,24 +19,16 @@ use tokio::time::Duration;
 use crate::{global_faucet_manager, register_test_seed, wait_for_warmup, warmup_ledger_state_db};
 
 // -------- TIMEOUTS --------
-//
-// The Midnight mainchain follower only processes Cardano blocks that are
-// k = 432 blocks behind the tip (plus ~30 blocks of processing lag), so an
-// observation await must outlast ~465 Cardano blocks regardless of how fast
-// the chain mints them. Preview's block rate is nominally ~20s, but it
-// degraded to ~34s/block in mid-June 2026 (epoch 1337: 2,502 blocks/day vs
-// ~3,400 earlier that month) — the stability window grew to ~4.4h and every
-// nightly run blew the previous 4h timeout while sitting 20-70 blocks short
-// of its target. 6h keeps the wait covered up to ~46s/block; the nightly
-// job's `timeout-minutes` budgets for it. A genuinely stuck follower fails
-// much earlier via the stall detector in `await_cnight_observations_at`.
+
+// The follower only processes Cardano blocks once they're a security
+// parameter deep, and that stability window scales with Preview's block
+// rate — ~4.5h at the degraded ~34s/block. Sized with headroom; a stuck
+// follower fails much earlier via the stall detector. See the README's
+// "Cardano stability barrier" section.
 const OBSERVATION_AWAIT_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
 
-// Budget for a submitted Cardano tx to appear in a block. Inclusion usually
-// takes 1-2 blocks, but the budget must absorb the exponential tail of the
-// block-interval distribution: at ~34s/block a 120s budget misses ~3% of
-// waits, and with ~15 such waits per nightly run that flaked almost every
-// night. 360s pushes the per-wait miss below 0.01%.
+// ~10 Preview blocks at the degraded ~34s/block rate — absorbs the
+// block-interval tail past the typical 1-2 block inclusion.
 const TX_INCLUSION_TIMEOUT: Duration = Duration::from_secs(360);
 
 // -------- EVENT FORMAT HELPERS --------
