@@ -114,6 +114,7 @@ thiserror = "1.0.50"
 log.workspace = true
 authority-selection-inherents.workspace = true
 #sp-block-rewards = { workspace = true, optional = true }
+sp-crypto-hashing.workspace = true
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
 partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "bridge"] }
