@@ -15,6 +15,7 @@ All are setup as validators and are expect to produce blocks. In other words the
 - `midnight-node-4` does not have BABE configured on Cardano, but it has BABE key in the keystore (which equals AURA key)
 - `midnight-node-5` is a node that has both keys configured,
 
-## midnight-setup permissioned-candidates-config.json
+## permissioned-candidates-config.json
 
-The first 5 entries in the array reflect keys from `midnight-node-1` to `midnight-node-5`. Following entries are for `//Eve`, `//Ferdie`, and so forth.
+`midnight-setup` and `contracts-compiler` use `res/local/permissioned-candidates-config.json` file to set
+chain-spec initial validators and on Cardano state respectively.
