@@ -32,6 +32,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         if: steps.guard.outputs.hit != 'true'
@@ -84,6 +86,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         if: steps.guard.outputs.hit != 'true'

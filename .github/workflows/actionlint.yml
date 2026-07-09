@@ -28,6 +28,8 @@ jobs:
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          hmac-key: ${{ secrets.TREE_GUARD_HMAC }}
 
       - name: Run actionlint
         if: steps.guard.outputs.hit != 'true'
