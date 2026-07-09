@@ -1,0 +1,81 @@
+name: compact contract tests
+
+# Compact contract E2E tests (compactc compile + local ZK proving), too slow for per-PR
+# CI. Runs nightly and on demand. Ported from midnight-contracts (#1772)
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compact-contract-tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  toolkit-contract-e2e:
+    name: Compact contract E2E
+    runs-on: [ self-hosted, "tier:large" ]
+    timeout-minutes: 360
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        with:
+          submodules: true
+
+      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Isolate docker config
+        run: |
+          mkdir -p "$RUNNER_TEMP/.docker"
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
+
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Login to Docker Hub
+        continue-on-error: true
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        with:
+          username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
+      # but no certs are provisioned on the runner. Append tls_enabled: false
+      # to the workspace .earthly/config.yml so earthly skips TLS for its own
+      # buildkitd container.
+      - name: Disable earthly TLS (self-hosted runner has no certs)
+        run: |
+          echo "    tls_enabled: false" >> .earthly/config.yml
+
+      - name: Run compact contract tests
+        env:
+          # Self-hosted-runner-specific overrides - see continuous-integration.yml
+          GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+          TMPDIR: ${{ runner.temp }}
+          EARTHLY_REMOTE_CACHE: ""
+          ACTIONS_CACHE_URL: ""
+          ACTIONS_RUNTIME_URL: ""
+        run: |
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+            --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
+            --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+            -P --strict \
+            --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
+            +test-toolkit \
+              --CACHE_KEY=compact-contract-tests \
+              --RUN_COMPACT_CONTRACT_TESTS=true
