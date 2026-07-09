@@ -668,54 +668,71 @@ impl Builder {
 	/// the pre-ECDSA behaviour). Keys are decoded identically to `relevant_wallet_seeds` so the two
 	/// stay aligned.
 	///
+	/// Rejects a seed that is requested under both schemes within the same build (e.g.
+	/// `--source-seed X --funding-seed-ecdsa X`, or two batch-transfer specs referring to `X` with
+	/// different schemes): since the context/cache plumbing keys wallets by seed alone, silently
+	/// collapsing such a seed to a single scheme would build/sign with the wrong identity.
+	///
 	/// Committee/contract seeds (`ContractSimple`, `ContractCustom`) and the batch *output* seeds
 	/// stay Schnorr and are intentionally omitted here (out of scope for ECDSA).
 	pub fn relevant_wallet_schemes(&self) -> Result<WalletSchemes, &'static str> {
 		let mut schemes = WalletSchemes::new();
-		let mut mark = |seed: WalletSeed, scheme: UnshieldedSignatureScheme| {
+		let mut seen: HashMap<WalletSeed, UnshieldedSignatureScheme> = HashMap::new();
+		let mut mark = |seed: WalletSeed,
+		                 scheme: UnshieldedSignatureScheme|
+		 -> Result<(), &'static str> {
+			if let Some(previous) = seen.insert(seed.clone(), scheme) {
+				if previous != scheme {
+					return Err(
+						"the same seed was requested under both Schnorr and ECDSA schemes in one build; each seed must use a single scheme",
+					);
+				}
+				return Ok(());
+			}
 			if scheme == UnshieldedSignatureScheme::Ecdsa {
 				schemes.insert(seed, scheme);
 			}
+			Ok(())
 		};
 		match self {
 			Builder::Batches(args) => {
 				let (funding, scheme) = args.funding_seed.resolve();
-				mark(funding, scheme);
+				mark(funding, scheme)?;
 			},
 			Builder::ClaimRewards(args) => {
 				let (funding, scheme) = args.funding_seed.resolve();
-				mark(funding, scheme);
+				mark(funding, scheme)?;
 			},
 			Builder::SingleTx(args) => {
 				let (source, source_scheme) = args.source_seed.resolve();
-				mark(source, source_scheme);
+				mark(source, source_scheme)?;
 				if let Some((funding, funding_scheme)) =
 					args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
 				{
-					mark(funding, funding_scheme);
+					mark(funding, funding_scheme)?;
 				}
 			},
 			Builder::RegisterDustAddress(args) => {
 				let (wallet_seed, wallet_scheme) = args.wallet_seed.resolve();
-				mark(wallet_seed, wallet_scheme);
+				mark(wallet_seed, wallet_scheme)?;
 				if let Some((funding, funding_scheme)) =
 					args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
 				{
-					mark(funding, funding_scheme);
+					mark(funding, funding_scheme)?;
 				}
 			},
 			Builder::DeregisterDustAddress(args) => {
 				let (wallet_seed, wallet_scheme) = args.wallet_seed.resolve();
-				mark(wallet_seed, wallet_scheme);
+				mark(wallet_seed, wallet_scheme)?;
 				let (funding, funding_scheme) = args.funding_seed.resolve();
-				mark(funding, funding_scheme);
+				mark(funding, funding_scheme)?;
 			},
 			Builder::BatchSingleTx(args) => {
 				for spec in &args.get_transfer_specs() {
 					let (source, source_scheme) = spec.resolve_source();
-					mark(source, source_scheme);
+					mark(source, source_scheme)?;
 					if let Some((funding, funding_scheme)) = spec.resolve_funding() {
-						mark(funding, funding_scheme);
+						mark(funding, funding_scheme)?;
 					}
 				}
 			},
@@ -1636,6 +1653,33 @@ mod tests {
 	#[test]
 	fn ecdsa_guard_allows_ledger9() {
 		assert!(ensure_ecdsa_supported(LedgerVersion::Ledger9, &ecdsa_schemes()).is_ok());
+	}
+
+	#[test]
+	fn relevant_wallet_schemes_rejects_same_seed_under_both_schemes() {
+		let seed = "0000000000000000000000000000000000000000000000000000000000000042";
+		let builder = Builder::DeregisterDustAddress(DeregisterDustAddressArgs {
+			wallet_seed: format!("schnorr:{seed}").parse().unwrap(),
+			funding_seed: format!("ecdsa:{seed}").parse().unwrap(),
+			rng_seed: None,
+		});
+
+		builder
+			.relevant_wallet_schemes()
+			.expect_err("same seed requested under two different schemes must be rejected");
+	}
+
+	#[test]
+	fn relevant_wallet_schemes_allows_same_seed_under_one_scheme() {
+		let seed = "0000000000000000000000000000000000000000000000000000000000000042";
+		let builder = Builder::DeregisterDustAddress(DeregisterDustAddressArgs {
+			wallet_seed: format!("ecdsa:{seed}").parse().unwrap(),
+			funding_seed: format!("ecdsa:{seed}").parse().unwrap(),
+			rng_seed: None,
+		});
+
+		let schemes = builder.relevant_wallet_schemes().expect("repeated same-scheme seed is fine");
+		assert_eq!(schemes.len(), 1);
 	}
 
 	#[test]
