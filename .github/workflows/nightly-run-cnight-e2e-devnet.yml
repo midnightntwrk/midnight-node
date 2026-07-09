@@ -29,14 +29,14 @@ jobs:
     # that closes the drift.
     container:
       image: rust:1.95-trixie
-    timeout-minutes: 360
+    timeout-minutes: 480
 
     steps:
       - name: Resolve runtime settings
         id: vars
         shell: bash
         run: |
-          echo "env=qanet" >> "$GITHUB_OUTPUT"
+          echo "env=devnet" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
@@ -83,11 +83,34 @@ jobs:
           fi
           psql "$TOOLKIT_CACHE_DB_URL" -c 'SELECT 1;' >/dev/null
 
-      # --release: qanet replays the long-lived Preview chain; the dev
+      - name: Smoke test ogmios + node RPC endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 8 \
+            -H "Connection: Upgrade" -H "Upgrade: websocket" \
+            -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: c21va2UtdGVzdA==" \
+            https://ogmios.devnet.midnight.network/ || true)
+          if [ "$code" != "101" ]; then
+            echo "::error::ogmios WebSocket handshake returned HTTP $code (expected 101) — endpoint unreachable or this runner's IP is not allowlisted"
+            exit 1
+          fi
+          spec=$(curl -s -m 15 -X POST https://rpc.devnet.midnight.network \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"state_getRuntimeVersion","params":[]}' \
+            | grep -o '"specVersion":[0-9]*' || true)
+          if [ -z "$spec" ]; then
+            echo "::error::Midnight node RPC did not answer state_getRuntimeVersion"
+            exit 1
+          fi
+          echo "ogmios handshake OK; node $spec"
+
+      # --release: the toolkit's chain replay is compute-bound; the dev
       # profile is ~50× slower (see tests/e2e/README.md).
       # --test-threads 16: all observation tests must run concurrently;
-      # otherwise the shared stability window (~3 h on Cardano Preview)
-      # is paid once per batch and the run blows past the 6 h job timeout.
+      # otherwise the shared stability window (~4.5 h on Cardano Preview
+      # at its degraded ~34s/block rate) is paid once per batch and the
+      # run blows past the job timeout.
       # See tests/e2e/README.md "Cardano stability barrier".
       - name: Run e2e observation tests
         working-directory: tests/e2e/tests

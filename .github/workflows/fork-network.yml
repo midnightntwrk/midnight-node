@@ -213,8 +213,13 @@ jobs:
       # authority observation source), so these dev-keyring URIs always meet
       # the 2/3 approval threshold on a freshly converted fork.
       #
-      # node1's container RPC port 9944 is published on host port 9950 for
-      # every well-known network compose file, hence the --rpc-url override.
+      # node1's container RPC port 9944 is published on host port 9950, but on
+      # some self-hosted runners the host loopback -> docker-published-port path
+      # is black-holed (e.g. Docker started with userland-proxy disabled): the
+      # SYN is silently dropped, so the RPC client hangs. So bring the fork up
+      # first, then connect to whichever endpoint actually answers -- preferring
+      # the published port, but falling back to node1's docker bridge IP, which
+      # is routable from the runner regardless of the loopback/DNAT setup.
       - name: Run runtime upgrade via governance
         if: inputs.upgrade_mode == 'runtime'
         working-directory: local-environment
@@ -226,15 +231,63 @@ jobs:
           if [ "$ALLOW_SAME_VERSION" = "true" ]; then
             same_version_flag=(--allow-same-version)
           fi
+
+          # Bring the fork up first so we can probe for a reachable RPC endpoint.
+          npm run "run:${NETWORK}" -- --from-snapshot "$SNAPSHOT_URL"
+
+          node1_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' node1 | tr -d '[:space:]')"
+          echo "node1 bridge IP: ${node1_ip:-<none>}"
+          candidates="127.0.0.1:9950 [::1]:9950"
+          [ -n "$node1_ip" ] && candidates="$candidates ${node1_ip}:9944"
+
+          probe() {
+            curl -sS --max-time 5 -o /dev/null \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}' \
+              "http://$1"
+          }
+
+          # `compose up -d` returns before the node binds its RPC port, so a
+          # single-shot probe races the node boot and loses. Poll all candidates
+          # until one answers system_health or the deadline hits.
+          rpc_ws=""
+          deadline=$((SECONDS + 120))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            for target in $candidates; do
+              if probe "$target" 2>/dev/null; then
+                echo "RPC reachable at http://${target}"
+                rpc_ws="ws://${target}"
+                echo "RPC_HTTP=http://${target}" >> "$GITHUB_ENV"
+                break 2
+              fi
+            done
+            echo "RPC not ready yet (${SECONDS}s elapsed); retrying..."
+            sleep 3
+          done
+          if [ -z "$rpc_ws" ]; then
+            echo "No reachable RPC endpoint found after ${SECONDS}s; per-target errors:" >&2
+            for target in $candidates; do
+              echo "--- http://${target}" >&2
+              probe "$target" || true
+            done
+            exit 1
+          fi
+
           npm run "governance-runtime-upgrade:${NETWORK}" -- \
-            --from-snapshot "$SNAPSHOT_URL" \
+            --skip-run \
             --wasm "$WASM_REL" \
-            --rpc-url ws://localhost:9950 \
+            --rpc-url "$rpc_ws" \
             --council-uris //Dave //Eve //Ferdie \
             --technical-uris //Alice //Bob //Charlie \
             --executor-uri //Alice \
             "${same_version_flag[@]}"
 
+      # NOTE: full-upgrade brings the fork up itself (image rollout) and has no
+      # --skip-run, so we cannot pre-resolve node1's bridge IP the way the
+      # runtime step does. It therefore still relies on the host published port;
+      # on a runner where the loopback path is black-holed this will time out.
+      # Making full-upgrade robust needs a tooling-side change (resolve the
+      # node's reachable endpoint after its internal bring-up).
       - name: Run full-upgrade
         if: inputs.upgrade_mode == 'full'
         working-directory: local-environment
@@ -249,7 +302,7 @@ jobs:
           npm run "full-upgrade:${NETWORK}" -- \
             --from-snapshot "$SNAPSHOT_URL" \
             --wasm "$WASM_REL" \
-            --rpc-url ws://localhost:9950 \
+            --rpc-url ws://127.0.0.1:9950 \
             --council-uris //Dave //Eve //Ferdie \
             --technical-uris //Alice //Bob //Charlie \
             --executor-uri //Alice \
@@ -258,9 +311,12 @@ jobs:
       - name: Wait for block + finality progression
         timeout-minutes: 15
         env:
-          RPC_URL: "http://localhost:9950"
           REQUIRED_BLOCKS: "5"
         run: |
+          # Reuse the endpoint the upgrade step found reachable (published port
+          # or node1's bridge IP); fall back to the published port otherwise.
+          RPC_URL="${RPC_HTTP:-http://127.0.0.1:9950}"
+          echo "Using RPC endpoint: $RPC_URL"
           get_tip() {
             curl -sf -H 'Content-Type: application/json' \
               -d '{"jsonrpc":"2.0","id":1,"method":"chain_getHeader","params":[]}' \
@@ -315,9 +371,10 @@ jobs:
       - name: Verify on-chain runtime matches candidate wasm
         if: inputs.upgrade_mode != 'image'
         env:
-          RPC_URL: "http://localhost:9950"
           WASM_REL: ${{ steps.wasm.outputs.wasm_rel }}
         run: |
+          RPC_URL="${RPC_HTTP:-http://127.0.0.1:9950}"
+          echo "Using RPC endpoint: $RPC_URL"
           wasm_file="local-environment/artifacts/$WASM_REL"
           expected_hex=$(od -An -v -tx1 "$wasm_file" | tr -d ' \n')
           onchain_hex=$(curl -sf -H 'Content-Type: application/json' \
