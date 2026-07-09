@@ -679,7 +679,7 @@ impl Builder {
 		let mut schemes = WalletSchemes::new();
 		let mut seen: HashMap<WalletSeed, UnshieldedSignatureScheme> = HashMap::new();
 		let mut mark = |seed: WalletSeed,
-		                 scheme: UnshieldedSignatureScheme|
+		                scheme: UnshieldedSignatureScheme|
 		 -> Result<(), &'static str> {
 			if let Some(previous) = seen.insert(seed.clone(), scheme) {
 				if previous != scheme {
