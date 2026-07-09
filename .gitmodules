@@ -7,6 +7,3 @@
 [submodule "compact"]
 	path = compact
 	url = https://github.com/LFDT-Minokawa/compact.git
-[submodule "midnight-sdk"]
-	path = midnight-sdk
-	url = https://github.com/midnightntwrk/midnight-sdk

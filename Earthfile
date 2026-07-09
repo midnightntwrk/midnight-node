@@ -861,40 +861,6 @@ compactc-fetch:
         rm /tmp/compactc.zip
     SAVE ARTIFACT /compact-home
 
-# Builds the four vendored `.tgz` blobs the `compact-0.33.0` toolkit-js variant consumes via `file:`
-# references (compact-js{,-command,-node} 2.5.5-rc.4 + the matching compact-runtime), from the pinned
-# `midnight-sdk` submodule. Pure JS: `yarn install` + the SDK's build-utils `package` step build and
-# pack the three compact-js packages, and compact-runtime is `npm pack`ed straight from GitHub Packages
-# (it is a published dev build — no nix, no compact-submodule runtime build). ledger-v9 + everything
-# else resolves from public npm. The GitHub Packages read token is consumed ONLY here (SDK install +
-# compact-runtime pack) — the consume path (`npm ci` in util/toolkit-js) needs no token. See
-# util/toolkit-js/compact-0.33.0/vendor/README.md and scripts/build-compact-js-bundle.sh.
-compact-js-bundle:
-    # TODO: pin to a digest once first green CI confirms it works.
-    FROM node:24-bookworm
-    # node-gyp toolchain so any native devDeps without a linux-x64 prebuilt can still build.
-    RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
-        && rm -rf /var/lib/apt/lists/*
-    # The midnight-sdk submodule (its compact-js workspace) + the build script. Only the SDK's compact-js
-    # source is needed — compact-runtime is published, so the nested compact-submodule is not used here
-    # (the caller checks out submodules non-recursively).
-    COPY midnight-sdk /work/midnight-sdk
-    COPY scripts/build-compact-js-bundle.sh /work/scripts/build-compact-js-bundle.sh
-    WORKDIR /work
-    # Buildkit cache mounts to speed up re-runs: npm's cache (compact-runtime pack) and yarn's
-    # per-project package cache, persisted across runs so re-runs skip already-fetched downloads.
-    CACHE /root/.npm
-    CACHE /work/midnight-sdk/compact-js/.yarn/cache
-    # yarn comes from corepack (bundled with node), honouring the SDK's pinned yarn 4.10.3. The token is
-    # consumed only here and never written into the produced tarballs.
-    RUN --secret MIDNIGHTCI_PACKAGES_READ \
-        SDK_DIR=/work/midnight-sdk VENDOR_DIR=/work/vendor-out \
-        bash /work/scripts/build-compact-js-bundle.sh
-    SAVE ARTIFACT /work/vendor-out/compact-js.tgz AS LOCAL util/toolkit-js/compact-0.33.0/vendor/compact-js.tgz
-    SAVE ARTIFACT /work/vendor-out/compact-js-command.tgz AS LOCAL util/toolkit-js/compact-0.33.0/vendor/compact-js-command.tgz
-    SAVE ARTIFACT /work/vendor-out/compact-js-node.tgz AS LOCAL util/toolkit-js/compact-0.33.0/vendor/compact-js-node.tgz
-    SAVE ARTIFACT /work/vendor-out/compact-runtime.tgz AS LOCAL util/toolkit-js/compact-0.33.0/vendor/compact-runtime.tgz
-
 # compactc-build-local builds and exports compactc to .compact-home
 compactc-build-local:
     LOCALLY

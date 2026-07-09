@@ -28,7 +28,6 @@ earthly doc                               # List all available targets
 - `/bot rebuild-metadata` - Rebuild runtime metadata
 - `/bot rebuild-chainspec <network1> <network2>` - Rebuild chainspecs for specified networks
 - `/bot cargo-fmt` - Run cargo fmt
-- `/bot rebuild-compact-js-bundle` - Rebuild the vendored `compact-js` tarballs for the `compact-0.33.0` toolkit-js variant (see `util/toolkit-js/README.md`)
 
 **E2E tests (just):**
 ```bash

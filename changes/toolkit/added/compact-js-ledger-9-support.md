@@ -6,13 +6,9 @@ toolkit, and re-enables the toolkit-js tests/CI that `partial-ledger-9-support` 
 
 **New `compact-0.31.110` toolkit-js variant (compact-js 2.5.3).** A new
 `util/toolkit-js/compact-0.31.110/` workspace pins `@midnight-ntwrk/compact-js*` 2.5.3,
-selected when `COMPACTC_VERSION` resolves to `0.31.110`. Because compact-js 2.5.3 and its
-matching `compact-runtime` are unpublished, the variant consumes five `npm pack` tarballs via
-`file:` references (`compact-js{,-command,-node}`, `compact-runtime`, `ledger-v9`). The blobs
-are built in CI from the pinned `midnight-sdk` submodule by the new `+compact-js-bundle`
-Earthly target (`scripts/build-compact-js-bundle.sh`) and committed to the PR branch by the
-`rebuild-compact-js-bundle-bot` workflow (`/bot rebuild-compact-js-bundle`). The consume path
-(`npm ci` in `util/toolkit-js`) needs no registry token — everything else resolves from public npm.
+selected when `COMPACTC_VERSION` resolves to `0.31.110`. `compact-js{,-command,-node}`,
+`compact-runtime`, and `ledger-v9` all resolve from public npm, so the consume path
+(`npm ci` in `util/toolkit-js`) needs no registry token.
 
 **Dispatch on the full patch version.** toolkit-js now selects its variant on the full
 `<major>.<minor>.<patch>` compactc version instead of truncating to `<major>.<minor>`, since a
