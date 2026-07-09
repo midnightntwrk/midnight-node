@@ -284,6 +284,13 @@ impl MidnightClient {
         // mint-observed / spend-not-yet state. See `PRE_AWAIT_SUBMISSION_SPACING`
         // in `tests/lib.rs` for the spacing/poll-interval interaction.
         const POLL_INTERVAL: Duration = Duration::from_secs(5);
+
+        // The watermark normally advances every few minutes; a longer
+        // freeze means the follower (or its db-sync feed) is stuck, so fail
+        // with a diagnosis now instead of burning the outer timeout.
+        const WATERMARK_STALL_LIMIT: Duration = Duration::from_secs(45 * 60);
+        let mut last_advance: Option<(u64, Instant)> = None;
+
         let inner = async {
             loop {
                 // Each iteration is two short-lived RPC calls: head lookup +
@@ -330,6 +337,26 @@ impl MidnightClient {
                                          Test wait will exceed the usual stability window."
                                     );
                                 }
+                            }
+                        }
+
+                        // Stall detector (see WATERMARK_STALL_LIMIT above).
+                        match last_advance {
+                            Some((last_wm, _)) if watermark > last_wm => {
+                                last_advance = Some((watermark, Instant::now()));
+                            }
+                            Some((last_wm, since)) if since.elapsed() > WATERMARK_STALL_LIMIT => {
+                                return Err(format!(
+                                    "await_cnight_observations: watermark stalled at {last_wm} \
+                                     for {:?} (target {target}); the Midnight follower or its \
+                                     db-sync feed appears stuck",
+                                    since.elapsed(),
+                                )
+                                .into());
+                            }
+                            Some(_) => {}
+                            None => {
+                                last_advance = Some((watermark, Instant::now()));
                             }
                         }
 
@@ -1088,12 +1115,21 @@ impl MidnightClient {
         tx_bytes: Vec<u8>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         tracing::info!("Submitting transaction expecting rejection...");
-        match self
-            .submit_midnight_tx(tx_bytes)
-            .await?
-            .wait_for_finalized_success()
-            .await
-        {
+        // A rejection can surface two ways, both valid:
+        //  (1) submit_and_watch errors at submission time — e.g. "already imported" /
+        //      "temporarily banned", common when replaying a tx whose original is still in
+        //      (or was just pruned from) the pool;
+        //  (2) the tx is watched and then fails pre_dispatch/execution.
+        // Only case (2) reaches wait_for_finalized_success, so catch case (1) here rather
+        // than propagating it as an unexpected error.
+        let progress = match self.submit_midnight_tx(tx_bytes).await {
+            Ok(progress) => progress,
+            Err(e) => {
+                tracing::info!("Transaction rejected at submission as expected: {e}");
+                return Ok(e.to_string());
+            }
+        };
+        match progress.wait_for_finalized_success().await {
             Err(e) => {
                 tracing::info!("Transaction rejected as expected: {}", e);
                 Ok(e.to_string())

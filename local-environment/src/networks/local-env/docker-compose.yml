@@ -222,7 +222,7 @@ services:
       APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
-      APP__APPLICATION__NETWORK_ID: "undeployed"
+      APP__APPLICATION__NETWORK_ID: "local"
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/chain-indexer/running"]
       start_interval: "5s"
@@ -485,6 +485,8 @@ services:
         condition: service_healthy
       contract-compiler:
         condition: service_completed_successfully
+      mint-cnight-supply:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     user: "0:0"
@@ -506,6 +508,50 @@ services:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+
+  mint-cnight-supply:
+    container_name: mint-cnight-supply
+    image: ${CARDANO_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+      contract-compiler:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - cardano-node-1-data:/data
+      - ./runtime-values:/runtime-values
+      - ./configurations/busybox:/busybox
+      - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
+      - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
+      - ./configurations/mint-cnight-supply/mint-cnight-supply.sh:/mint-cnight-supply.sh
+    environment:
+      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+    entrypoint: ["/bin/bash", "/mint-cnight-supply.sh"]
+
+  init-mnight-faucet:
+    container_name: init-mnight-faucet
+    image: ${TOOLKIT_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+      midnight-node-1:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    user: "0:0"
+    environment:
+      - NODE_HOST=midnight-node-1
+      - NODE_PORT=9933
+      - FAUCET_MARKER_FILE=/runtime-values/mnight-faucet-ready
+    volumes:
+      - ./runtime-values:/runtime-values
+      - ./configurations/init-mnight-faucet/init-mnight-faucet.sh:/init-mnight-faucet.sh
+    entrypoint: ["/bin/bash", "/init-mnight-faucet.sh"]
+    restart: "no"
 
 volumes:
   cardano-node-1-data: {}
