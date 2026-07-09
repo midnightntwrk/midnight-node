@@ -1,7 +1,7 @@
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::faucet::FaucetManager;
-use midnight_node_ledger_helpers::WalletSeed;
+use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
 use midnight_node_toolkit::commands::dust_balance;
 use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -286,7 +286,12 @@ async fn run_warmup() {
             fetch_cache: fetch_cache_config(),
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seeds: seeds.clone(),
+        // e2e wallets are all Schnorr NIGHT identities; pair each seed with its scheme.
+        seeds: seeds
+            .iter()
+            .cloned()
+            .map(|s| (s, UnshieldedSignatureScheme::Schnorr))
+            .collect(),
         dry_run: false,
     };
 
@@ -364,7 +369,10 @@ pub(crate) async fn ensure_dev_wallet_funded() {
                 fetch_cache: fetch_cache_config(),
                 ledger_state_db: String::new(),
             },
-            seed: Some(seed.clone()),
+            seed: Some(midnight_node_toolkit::cli_parsers::SchemeSeed {
+                seed: seed.clone(),
+                scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+            }),
             address: None,
             debug: false,
             dry_run: false,
@@ -549,7 +557,10 @@ pub(crate) async fn build_unshielded_self_transfer(url: &str, dest: &std::path::
             shielded_token_type: vec![],
             unshielded_amount: vec![100],
             unshielded_token_type: vec![],
-            source_seed: seed,
+            source_seed: cli::SchemeSeed {
+                seed,
+                scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+            },
             funding_seed: None,
             destination_address: vec![recipient],
             input_utxos: vec![],
