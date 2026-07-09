@@ -1148,6 +1148,7 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
+    ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
 
@@ -1157,6 +1158,9 @@ test-toolkit:
     END
     IF [ -n "$FORK_FROM_NODE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+    IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
     END
 
     # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
@@ -1198,6 +1202,7 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
         END
@@ -1605,65 +1610,6 @@ fix-lock-rust:
 fix-lock:
     BUILD +fix-lock-rust
     BUILD +fix-lock-js
-
-# partnerchains-dev contains tools for working with partner chains contracts on Cardano
-partnerchains-dev:
-    LET PARTNER_CHAINS_VERSION=1.5.0
-    LET CARDANO_VERSION=10.1.4
-
-    ARG EARTHLY_GIT_SHORT_HASH
-
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
-    # Get node version for the image tag
-    COPY node/Cargo.toml /node/
-    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
-    RUN rm -rf /node
-    LET NODE_VERSION = "$(cat node_version)"
-    LET IMAGE_TAG_SEMVER=$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH
-
-    # Install Node.js repository
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_23.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install necessary packages
-    RUN microdnf -y install \
-        curl \
-        unzip \
-        nodejs \
-        bash \
-        jq \
-        socat \
-        && microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Download cardano node (for cardano-cli)
-    RUN curl -L https://github.com/IntersectMBO/cardano-node/releases/download/${CARDANO_VERSION}/cardano-node-${CARDANO_VERSION}-linux.tar.gz -o cardano-node.tar.gz && \
-        mkdir cardano-node && \
-        tar -xzf cardano-node.tar.gz -C cardano-node --strip-components=1 && \
-        mv cardano-node/bin/cardano-cli . && \
-        rm -rf cardano-node cardano-node.tar.gz
-
-    # Download partner chains node
-    RUN curl -L https://github.com/midnightntwrk/partner-chains/releases/download/v${PARTNER_CHAINS_VERSION}/partner-chains-node-v${PARTNER_CHAINS_VERSION}-x86_64-linux  -o partner-chains-node && \
-        chmod +x partner-chains-node
-
-    COPY +node-image/midnight-node /midnight-node
-    COPY scripts/partnerchains-dev/* /
-
-    ENV CARDANO_NODE_SOCKET_PATH=/node.socket
-    ENV CARDANO_NODE_NETWORK_ID=2
-    ENV AS_INIT=1
-    ENV NODE_HOST=host.docker.internal
-
-    ENTRYPOINT ["/bin/bash", "--init-file", "serve.sh"]
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    LET IMAGE_TAG=${PARTNER_CHAINS_VERSION}-${CARDANO_VERSION}
-    SAVE IMAGE --push ghcr.io/midnight-ntwrk/partnerchains-dev:$IMAGE_TAG_SEMVER ghcr.io/midnight-ntwrk/partnerchains-dev:$IMAGE_TAG ghcr.io/midnight-ntwrk/partnerchains-dev:latest
 
 # run-node-mocked Run a local node against a mock ariadne bridge.
 run-node-mocked:

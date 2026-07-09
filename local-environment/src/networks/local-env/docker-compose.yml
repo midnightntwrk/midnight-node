@@ -70,6 +70,7 @@ services:
       - ${MIDNIGHT_RESERVE_CONTRACTS_PATH}:/contracts
       - ./configurations/contract-compiler/.env:/.env
       - ./configurations/contract-compiler/compile-contracts.sh:/compile-contracts.sh
+      - ../../../../res/local/permissioned-candidates-config.json:/permissioned-candidates-config.json
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -365,6 +366,7 @@ services:
       - midnight-node-2-data:/data
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-2/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-2/keystore:/keystore
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
@@ -395,8 +397,12 @@ services:
       - midnight-node-3-data:/data
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-3/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-3/seeds:/seeds
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      AURA_SEED_FILE: "/seeds/aura.seed"
+      CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed"
+      GRANDPA_SEED_FILE: "/seeds/grandpa.seed"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
@@ -527,6 +533,7 @@ services:
       - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
       - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
       - ./configurations/mint-cnight-supply/mint-cnight-supply.sh:/mint-cnight-supply.sh
+      - ../../../../res/:/res/
     environment:
       - CARDANO_NODE_SOCKET_PATH=/data/node.socket
     entrypoint: ["/bin/bash", "/mint-cnight-supply.sh"]
