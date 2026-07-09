@@ -38,9 +38,12 @@ sc-transaction-pool-api = { workspace = true, default-features = true }
 sp-blockchain = { workspace = true }
 sp-consensus-aura = { workspace = true, default-features = true }
 sp-consensus-babe = { workspace = true, default-features = true }
+sp-externalities = { workspace = true, default-features = true }
 sp-keystore = { workspace = true, default-features = true }
+sp-state-machine = { workspace = true, default-features = true }
 sp-timestamp = { workspace = true, default-features = true }
 sp-tracing = { workspace = true, default-features = true }
+sp-version = { workspace = true, default-features = true }
 substrate-test-runtime-client = { workspace = true }
 tokio.workspace = true
 

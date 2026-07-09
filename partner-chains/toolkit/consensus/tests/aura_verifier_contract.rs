@@ -14,26 +14,318 @@
 //! * a block sealed by the wrong authority is rejected, proving the seal check still
 //!   runs even though the inner verifier never sees the body.
 //!
-//! Not covered (not observable with the runtime's no-op `check_inherents`): an upstream
-//! change that moves the inner verifier's inherent check off the body gate.
+//! The body gate on Aura's inherent check is pinned by control tests that wrap the real
+//! verifier (without [`PartnerChainsVerifier`]) around a client recording
+//! `BlockBuilderApi::check_inherents` calls.
 
 use parity_scale_codec::{Decode, Encode};
 use sc_block_builder::BlockBuilderBuilder;
+use sc_client_api::backend::AuxStore;
 use sc_consensus::block_import::{BlockImportParams, ForkChoiceStrategy};
 use sc_consensus::import_queue::Verifier;
 use sc_partner_chains_consensus::{InherentDigest, PartnerChainsVerifier, SlotExtractor};
-use sp_api::ProvideRuntimeApi;
-use sp_blockchain::HeaderBackend;
+use sp_api::{ApiRef, ProvideRuntimeApi};
+use sp_block_builder::BlockBuilder as BlockBuilderApi;
+use sp_blockchain::{HeaderBackend, HeaderMetadata};
 use sp_consensus::BlockOrigin;
 use sp_consensus_aura::AuraApi;
 use sp_consensus_aura::sr25519::{AuthorityId, AuthorityPair, AuthoritySignature};
 use sp_consensus_slots::Slot;
-use sp_inherents::{CreateInherentDataProviders, InherentData};
+use sp_inherents::{CheckInherentsResult, CreateInherentDataProviders, InherentData};
 use sp_keystore::{Keystore, KeystorePtr};
-use sp_runtime::traits::{Block as BlockT, Header as _};
-use sp_runtime::{Digest, DigestItem, KeyTypeId};
+use sp_runtime::traits::{Block as BlockT, Header as _, NumberFor};
+use sp_runtime::{Digest, DigestItem, ExtrinsicInclusionMode, KeyTypeId};
+use sp_version::RuntimeVersion;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use substrate_test_runtime_client::{TestClient, runtime::Block};
+
+/// Client wrapper recording whether the runtime's `check_inherents` API was invoked.
+///
+/// Delegates everything else to the inner [`TestClient`] so the real Aura verifier can run
+/// unchanged. Only `BlockBuilderApi::check_inherents` sets the flag.
+struct RecordingClient {
+	inner: Arc<TestClient>,
+	check_inherents_called: Arc<AtomicBool>,
+}
+
+impl RecordingClient {
+	fn new(inner: Arc<TestClient>, check_inherents_called: Arc<AtomicBool>) -> Self {
+		Self { inner, check_inherents_called }
+	}
+}
+
+struct RecordingRuntimeApi {
+	inner: Arc<TestClient>,
+	check_inherents_called: Arc<AtomicBool>,
+}
+
+impl BlockBuilderApi<Block> for RecordingRuntimeApi {
+	fn __runtime_api_internal_call_api_at(
+		&self,
+		at: <Block as BlockT>::Hash,
+		params: Vec<u8>,
+		fn_name: &dyn Fn(RuntimeVersion) -> &'static str,
+	) -> Result<Vec<u8>, sp_api::ApiError> {
+		BlockBuilderApi::<Block>::__runtime_api_internal_call_api_at(
+			&*self.inner.runtime_api(),
+			at,
+			params,
+			fn_name,
+		)
+	}
+
+	fn apply_extrinsic(
+		&self,
+		at: <Block as BlockT>::Hash,
+		extrinsic: <Block as BlockT>::Extrinsic,
+	) -> Result<sp_runtime::ApplyExtrinsicResult, sp_api::ApiError> {
+		self.inner.runtime_api().apply_extrinsic(at, extrinsic)
+	}
+
+	fn finalize_block(
+		&self,
+		at: <Block as BlockT>::Hash,
+	) -> Result<<Block as BlockT>::Header, sp_api::ApiError> {
+		self.inner.runtime_api().finalize_block(at)
+	}
+
+	fn inherent_extrinsics(
+		&self,
+		at: <Block as BlockT>::Hash,
+		inherent: InherentData,
+	) -> Result<Vec<<Block as BlockT>::Extrinsic>, sp_api::ApiError> {
+		self.inner.runtime_api().inherent_extrinsics(at, inherent)
+	}
+
+	fn check_inherents(
+		&self,
+		at: <Block as BlockT>::Hash,
+		block: <Block as BlockT>::LazyBlock,
+		data: InherentData,
+	) -> Result<CheckInherentsResult, sp_api::ApiError> {
+		self.check_inherents_called.store(true, Ordering::SeqCst);
+		self.inner.runtime_api().check_inherents(at, block, data)
+	}
+}
+
+impl AuraApi<Block, AuthorityId> for RecordingRuntimeApi {
+	fn __runtime_api_internal_call_api_at(
+		&self,
+		at: <Block as BlockT>::Hash,
+		params: Vec<u8>,
+		fn_name: &dyn Fn(RuntimeVersion) -> &'static str,
+	) -> Result<Vec<u8>, sp_api::ApiError> {
+		AuraApi::<Block, AuthorityId>::__runtime_api_internal_call_api_at(
+			&*self.inner.runtime_api(),
+			at,
+			params,
+			fn_name,
+		)
+	}
+
+	fn authorities(
+		&self,
+		at: <Block as BlockT>::Hash,
+	) -> Result<Vec<AuthorityId>, sp_api::ApiError> {
+		self.inner.runtime_api().authorities(at)
+	}
+
+	fn slot_duration(
+		&self,
+		at: <Block as BlockT>::Hash,
+	) -> Result<sp_consensus_aura::SlotDuration, sp_api::ApiError> {
+		self.inner.runtime_api().slot_duration(at)
+	}
+}
+
+impl sp_api::Core<Block> for RecordingRuntimeApi {
+	fn __runtime_api_internal_call_api_at(
+		&self,
+		at: <Block as BlockT>::Hash,
+		params: Vec<u8>,
+		fn_name: &dyn Fn(RuntimeVersion) -> &'static str,
+	) -> Result<Vec<u8>, sp_api::ApiError> {
+		sp_api::Core::<Block>::__runtime_api_internal_call_api_at(
+			&*self.inner.runtime_api(),
+			at,
+			params,
+			fn_name,
+		)
+	}
+
+	fn version(
+		&self,
+		at: <Block as BlockT>::Hash,
+	) -> Result<RuntimeVersion, sp_api::ApiError> {
+		self.inner.runtime_api().version(at)
+	}
+
+	fn execute_block(
+		&self,
+		at: <Block as BlockT>::Hash,
+		block: <Block as BlockT>::LazyBlock,
+	) -> Result<(), sp_api::ApiError> {
+		self.inner.runtime_api().execute_block(at, block)
+	}
+
+	fn initialize_block(
+		&self,
+		at: <Block as BlockT>::Hash,
+		header: &<Block as BlockT>::Header,
+	) -> Result<ExtrinsicInclusionMode, sp_api::ApiError> {
+		self.inner.runtime_api().initialize_block(at, header)
+	}
+}
+
+impl sp_api::ApiExt<Block> for RecordingRuntimeApi {
+	fn execute_in_transaction<F: FnOnce(&Self) -> sp_api::TransactionOutcome<R>, R>(
+		&self,
+		call: F,
+	) -> R {
+		call(self).into_inner()
+	}
+
+	fn has_api<A: sp_api::RuntimeApiInfo + ?Sized>(
+		&self,
+		at_hash: <Block as BlockT>::Hash,
+	) -> Result<bool, sp_api::ApiError> {
+		self.inner.runtime_api().has_api::<A>(at_hash)
+	}
+
+	fn has_api_with<A: sp_api::RuntimeApiInfo + ?Sized, P: Fn(u32) -> bool>(
+		&self,
+		at_hash: <Block as BlockT>::Hash,
+		pred: P,
+	) -> Result<bool, sp_api::ApiError> {
+		self.inner.runtime_api().has_api_with::<A, P>(at_hash, pred)
+	}
+
+	fn api_version<A: sp_api::RuntimeApiInfo + ?Sized>(
+		&self,
+		at_hash: <Block as BlockT>::Hash,
+	) -> Result<Option<u32>, sp_api::ApiError> {
+		self.inner.runtime_api().api_version::<A>(at_hash)
+	}
+
+	fn record_proof(&mut self) {
+		self.inner.runtime_api().record_proof();
+	}
+
+	fn record_proof_with_recorder(&mut self, recorder: sp_api::ProofRecorder<Block>) {
+		self.inner.runtime_api().record_proof_with_recorder(recorder);
+	}
+
+	fn extract_proof(&mut self) -> Option<sp_api::StorageProof> {
+		self.inner.runtime_api().extract_proof()
+	}
+
+	fn proof_recorder(&self) -> Option<sp_api::ProofRecorder<Block>> {
+		self.inner.runtime_api().proof_recorder()
+	}
+
+	fn into_storage_changes<B: sp_state_machine::Backend<sp_runtime::traits::HashingFor<Block>>>(
+		&self,
+		backend: &B,
+		parent_hash: <Block as BlockT>::Hash,
+	) -> Result<sp_api::StorageChanges<Block>, String> {
+		self.inner.runtime_api().into_storage_changes(backend, parent_hash)
+	}
+
+	fn set_call_context(&mut self, call_context: sp_api::CallContext) {
+		self.inner.runtime_api().set_call_context(call_context);
+	}
+
+	fn register_extension<E: sp_externalities::Extension>(&mut self, extension: E) {
+		self.inner.runtime_api().register_extension(extension);
+	}
+}
+
+impl ProvideRuntimeApi<Block> for RecordingClient {
+	type Api = RecordingRuntimeApi;
+
+	fn runtime_api(&self) -> ApiRef<'_, Self::Api> {
+		RecordingRuntimeApi {
+			inner: self.inner.clone(),
+			check_inherents_called: self.check_inherents_called.clone(),
+		}
+		.into()
+	}
+}
+
+impl HeaderBackend<Block> for RecordingClient {
+	fn header(
+		&self,
+		hash: <Block as BlockT>::Hash,
+	) -> sp_blockchain::Result<Option<<Block as BlockT>::Header>> {
+		self.inner.header(hash)
+	}
+
+	fn info(&self) -> sp_blockchain::Info<Block> {
+		self.inner.info()
+	}
+
+	fn status(&self, hash: <Block as BlockT>::Hash) -> sp_blockchain::Result<sp_blockchain::BlockStatus> {
+		self.inner.status(hash)
+	}
+
+	fn number(
+		&self,
+		hash: <Block as BlockT>::Hash,
+	) -> sp_blockchain::Result<Option<NumberFor<Block>>> {
+		self.inner.number(hash)
+	}
+
+	fn hash(
+		&self,
+		number: NumberFor<Block>,
+	) -> sp_blockchain::Result<Option<<Block as BlockT>::Hash>> {
+		self.inner.hash(number)
+	}
+}
+
+impl HeaderMetadata<Block> for RecordingClient {
+	type Error = <TestClient as HeaderMetadata<Block>>::Error;
+
+	fn header_metadata(
+		&self,
+		hash: <Block as BlockT>::Hash,
+	) -> Result<sp_blockchain::CachedHeaderMetadata<Block>, Self::Error> {
+		self.inner.header_metadata(hash)
+	}
+
+	fn insert_header_metadata(
+		&self,
+		hash: <Block as BlockT>::Hash,
+		header_metadata: sp_blockchain::CachedHeaderMetadata<Block>,
+	) {
+		self.inner.insert_header_metadata(hash, header_metadata)
+	}
+
+	fn remove_header_metadata(&self, hash: <Block as BlockT>::Hash) {
+		self.inner.remove_header_metadata(hash)
+	}
+}
+
+impl AuxStore for RecordingClient {
+	fn insert_aux<
+		'a,
+		'b: 'a,
+		'c: 'a,
+		I: IntoIterator<Item = &'a (&'c [u8], &'c [u8])>,
+		D: IntoIterator<Item = &'a &'b [u8]>,
+	>(
+		&self,
+		insert: I,
+		delete: D,
+	) -> sp_blockchain::Result<()> {
+		self.inner.insert_aux(insert, delete)
+	}
+
+	fn get_aux(&self, key: &[u8]) -> sp_blockchain::Result<Option<Vec<u8>>> {
+		self.inner.get_aux(key)
+	}
+}
 
 const AURA_KEY_TYPE: KeyTypeId = KeyTypeId(*b"aura");
 
@@ -128,6 +420,29 @@ fn partner_chains_aura_verifier(
 		aura_verifier,
 		client,
 		RecordingCIDP { recorded },
+	)
+}
+
+/// The real Aura verifier alone, for control tests that observe its body-gated inherent check.
+fn aura_verifier(client: Arc<RecordingClient>) -> impl Verifier<Block> {
+	let slot_duration =
+		sc_consensus_aura::slot_duration(&*client.inner).expect("slot duration is available");
+
+	sc_consensus_aura::build_verifier::<AuthorityPair, _, _, _>(
+		sc_consensus_aura::BuildVerifierParams {
+			client,
+			create_inherent_data_providers: move |_parent_hash, ()| async move {
+				let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+				let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+					*timestamp,
+					slot_duration,
+				);
+				Ok((slot, timestamp))
+			},
+			check_for_equivocation: Default::default(),
+			telemetry: None,
+			compatibility_mode: Default::default(),
+		},
 	)
 }
 
@@ -268,4 +583,46 @@ async fn rejects_block_without_partner_chains_digest() {
 	};
 
 	assert!(error.contains("Failed to retrieve inherent digest"), "unexpected error: {error}");
+}
+
+#[tokio::test]
+async fn unwrapped_aura_verifier_runs_its_body_gated_inherent_check() {
+	// Control for the canary above: verifying through the real Aura verifier *without*
+	// the Partner Chains wrapper (body present) must call `check_inherents`, proving the
+	// recording client actually observes the body gate.
+	let inner = Arc::new(substrate_test_runtime_client::new());
+	let keystore: KeystorePtr = Arc::new(sp_keystore::testing::MemoryKeystore::new());
+	let alice = generate_key(&keystore, "//Alice");
+	let slot = latest_slot_of(&inner, &alice);
+	let check_inherents_called = Arc::new(AtomicBool::new(false));
+	let client = Arc::new(RecordingClient::new(inner.clone(), check_inherents_called.clone()));
+	let verifier = aura_verifier(client);
+
+	let block = sealed_block(&inner, &keystore, slot, false, &alice);
+	verifier.verify(block).await.expect("verification succeeds");
+
+	assert!(
+		check_inherents_called.load(Ordering::SeqCst),
+		"Aura must call check_inherents when the body is present"
+	);
+}
+
+#[tokio::test]
+async fn unwrapped_aura_verifier_skips_inherent_check_without_body() {
+	let inner = Arc::new(substrate_test_runtime_client::new());
+	let keystore: KeystorePtr = Arc::new(sp_keystore::testing::MemoryKeystore::new());
+	let alice = generate_key(&keystore, "//Alice");
+	let slot = latest_slot_of(&inner, &alice);
+	let check_inherents_called = Arc::new(AtomicBool::new(false));
+	let client = Arc::new(RecordingClient::new(inner.clone(), check_inherents_called.clone()));
+	let verifier = aura_verifier(client);
+
+	let mut block = sealed_block(&inner, &keystore, slot, false, &alice);
+	block.body = None;
+	verifier.verify(block).await.expect("verification succeeds");
+
+	assert!(
+		!check_inherents_called.load(Ordering::SeqCst),
+		"Aura must not call check_inherents for a header-only block"
+	);
 }
