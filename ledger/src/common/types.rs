@@ -68,6 +68,10 @@ pub enum Op {
 	Deploy { address: Vec<u8> },
 	Maintain { address: Vec<u8> },
 	ClaimRewards { value: u128 },
+	// New variants MUST be appended at the end: `Op` is SCALE-encoded across the
+	// `get_decoded_transaction` runtime-API boundary, so the variant indices are wire-significant.
+	// Appending keeps existing indices stable (an older decoder simply never sees the new index).
+	ClaimBridgeTransfer { value: u128 },
 }
 
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]

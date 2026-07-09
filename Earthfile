@@ -245,7 +245,9 @@ rebuild-genesis-state:
     # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
 
-    # Copy genesis config files (undeployed uses res/dev/)
+    # Copy genesis config files. undeployed's configs live in res/dev; every other network
+    # uses res/<network>. Only deployed networks ship a cardano-tip.json (genesis-spawned
+    # nets like local have no live tip), so copy it only if present.
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
@@ -257,7 +259,7 @@ rebuild-genesis-state:
         COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
         COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
         COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
-        COPY res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
+        COPY --if-exists res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
     END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
@@ -288,13 +290,15 @@ rebuild-genesis-state:
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
         RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
+        # Only deployed networks pass a cardano-tip; genesis-spawned nets (local, undeployed)
+        # have no live tip, so add the flag only when the file is present.
         RUN /midnight-node-toolkit generate-genesis \
             --network ${NETWORK} \
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
             --ics-config /genesis-config/ics-config.json \
             --reserve-config /genesis-config/reserve-config.json \
-            --cardano-tip-config /genesis-config/cardano-tip.json
+            $(if [ -f /genesis-config/cardano-tip.json ]; then echo "--cardano-tip-config /genesis-config/cardano-tip.json"; fi)
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
@@ -463,6 +467,15 @@ rebuild-genesis-state-undeployed:
         --NETWORK=undeployed \
         --GENERATE_TEST_TXS=true
 
+# rebuild-genesis-state-local rebuilds the genesis ledger state for the local network (local-environment).
+# The local network does not fund any faucet wallets at genesis - wallets are funded at runtime via the
+# cNIGHT->mNIGHT bridge. No chainspec update needed afterwards: local has no committed chain spec
+# (midnight-setup builds it at runtime).
+rebuild-genesis-state-local:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=local \
+        --FUND_FAUCET_WALLETS=false
+
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-devnet:
     BUILD +rebuild-genesis-state \
@@ -507,6 +520,7 @@ rebuild-genesis-state-stagenet:
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
+    BUILD +rebuild-genesis-state-local
     BUILD +rebuild-genesis-state-devnet
     # Perfnet genesis is not meant to be rebuild in PR CI
     #BUILD +rebuild-genesis-state-perfnet
@@ -1592,65 +1606,6 @@ fix-lock:
     BUILD +fix-lock-rust
     BUILD +fix-lock-js
 
-# partnerchains-dev contains tools for working with partner chains contracts on Cardano
-partnerchains-dev:
-    LET PARTNER_CHAINS_VERSION=1.5.0
-    LET CARDANO_VERSION=10.1.4
-
-    ARG EARTHLY_GIT_SHORT_HASH
-
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
-    # Get node version for the image tag
-    COPY node/Cargo.toml /node/
-    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
-    RUN rm -rf /node
-    LET NODE_VERSION = "$(cat node_version)"
-    LET IMAGE_TAG_SEMVER=$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH
-
-    # Install Node.js repository
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_23.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install necessary packages
-    RUN microdnf -y install \
-        curl \
-        unzip \
-        nodejs \
-        bash \
-        jq \
-        socat \
-        && microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Download cardano node (for cardano-cli)
-    RUN curl -L https://github.com/IntersectMBO/cardano-node/releases/download/${CARDANO_VERSION}/cardano-node-${CARDANO_VERSION}-linux.tar.gz -o cardano-node.tar.gz && \
-        mkdir cardano-node && \
-        tar -xzf cardano-node.tar.gz -C cardano-node --strip-components=1 && \
-        mv cardano-node/bin/cardano-cli . && \
-        rm -rf cardano-node cardano-node.tar.gz
-
-    # Download partner chains node
-    RUN curl -L https://github.com/midnightntwrk/partner-chains/releases/download/v${PARTNER_CHAINS_VERSION}/partner-chains-node-v${PARTNER_CHAINS_VERSION}-x86_64-linux  -o partner-chains-node && \
-        chmod +x partner-chains-node
-
-    COPY +node-image/midnight-node /midnight-node
-    COPY scripts/partnerchains-dev/* /
-
-    ENV CARDANO_NODE_SOCKET_PATH=/node.socket
-    ENV CARDANO_NODE_NETWORK_ID=2
-    ENV AS_INIT=1
-    ENV NODE_HOST=host.docker.internal
-
-    ENTRYPOINT ["/bin/bash", "--init-file", "serve.sh"]
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    LET IMAGE_TAG=${PARTNER_CHAINS_VERSION}-${CARDANO_VERSION}
-    SAVE IMAGE --push ghcr.io/midnight-ntwrk/partnerchains-dev:$IMAGE_TAG_SEMVER ghcr.io/midnight-ntwrk/partnerchains-dev:$IMAGE_TAG ghcr.io/midnight-ntwrk/partnerchains-dev:latest
-
 # run-node-mocked Run a local node against a mock ariadne bridge.
 run-node-mocked:
     FROM +node-image
@@ -1710,20 +1665,28 @@ addresses-check:
 # start-local-env-latest starts up the local environment with the latest node image
 start-local-env-latest:
     LOCALLY
-    WITH DOCKER --load localhost/midnight-node:latest=+node-image
+    # Build both from-source images the local-env needs (node + toolkit — the latter runs
+    # the init-mnight-faucet bring-up job) and load them under
+    # fixed local tags.
+    WITH DOCKER \
+            --load localhost/midnight-node:latest=+node-image \
+            --load localhost/midnight-node-toolkit:latest=+toolkit-image
         # Ugly nested earthly call, but earthly complains if we use BUILD here
-        RUN earthly +start-local-env --NODE_IMAGE=localhost/midnight-node:latest
+        RUN earthly +start-local-env \
+            --NODE_IMAGE=localhost/midnight-node:latest \
+            --TOOLKIT_IMAGE=localhost/midnight-node-toolkit:latest
     END
 
 start-local-env:
     LOCALLY
     ARG NODE_IMAGE
+    ARG TOOLKIT_IMAGE
     ARG TARGETPLATFORM
     ARG USERARCH
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE npm run stop:local-env
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE npm run run:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env
 
 start-local-env-with-indexer:
     LOCALLY
@@ -1733,10 +1696,11 @@ start-local-env-with-indexer:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 start-local-env-with-indexer-ci:
     LOCALLY
@@ -1746,6 +1710,7 @@ start-local-env-with-indexer-ci:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
     WORKDIR local-environment
     RUN npm ci
     # Tear down any stack left over from a previous run before starting a fresh
@@ -1755,8 +1720,8 @@ start-local-env-with-indexer-ci:
     # breaks chain-indexer with "unsupported protocol version" when the
     # genesis/runtime expectations disagree. The non-CI sibling target
     # `+start-local-env-with-indexer` does this same down already.
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 
 # Runs the integration tests (stack → verify-finality → e2e → toolkit) in one RUN
@@ -1821,6 +1786,7 @@ local-env-ci:
               INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE \
               INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
               INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
+              TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
@@ -1829,13 +1795,19 @@ local-env-ci:
                 exit $rc ; \
               fi ) && \
             npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
-            echo "=== toolkit multi-dest E2E ===" && \
+            echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE" && \
             rm -f /root/.docker/config.json
     END
 
@@ -1881,6 +1853,7 @@ local-env-full-ci-localimg:
               INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE \
               INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
               INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
+              TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
@@ -1889,13 +1862,19 @@ local-env-full-ci-localimg:
                 exit $rc ; \
               fi ) && \
             npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
-            echo "=== toolkit multi-dest E2E ===" && \
+            echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
-            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh "$TOOLKIT_IMAGE"
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
     END
 
 
@@ -1942,6 +1921,7 @@ local-env-oneshot:
               INDEXER_CHAIN_IMAGE=midnightntwrk/chain-indexer:local \
               INDEXER_WALLET_IMAGE=midnightntwrk/wallet-indexer:local \
               INDEXER_API_IMAGE=midnightntwrk/indexer-api:local \
+              TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:local \
               npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
               if [ $rc -ne 0 ]; then \
                 echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
@@ -1950,13 +1930,19 @@ local-env-oneshot:
                 exit $rc ; \
               fi ) && \
             npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
             echo "=== e2e suite ===" && \
             ( cd "$ROOT/tests/e2e" && \
               cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
-            echo "=== toolkit multi-dest E2E ===" && \
+            echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
-            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
-            bash scripts/tests/toolkit-multi-dest-e2e.sh ghcr.io/midnight-ntwrk/midnight-node-toolkit:local
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
     END
 
 
@@ -1965,7 +1951,7 @@ stop-local-env:
     ARG USERARCH
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
 
 
 # extract-node-artifacts pulls artifacts from a pre-built node image

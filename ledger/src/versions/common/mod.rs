@@ -473,11 +473,19 @@ where
 						start_tx_processing_time.elapsed().as_millis()
 					);
 				},
-				TransactionOperation::ClaimRewards { value, .. } => {
+				TransactionOperation::ClaimRewards { value } => {
 					event.claim_rewards.push(value);
 					log::trace!(
 						target: LOG_TARGET,
 						"⏱️  Tx op: ClaimRewards (elapsed_ms={})",
+						start_tx_processing_time.elapsed().as_millis()
+					);
+				},
+				TransactionOperation::ClaimBridgeTransfer { value } => {
+					event.claim_rewards.push(value);
+					log::trace!(
+						target: LOG_TARGET,
+						"⏱️  Tx op: ClaimBridgeTransfer (elapsed_ms={})",
 						start_tx_processing_time.elapsed().as_millis()
 					);
 				},
@@ -673,6 +681,9 @@ where
 					Op::Maintain { address: api.tagged_serialize(&address)? }
 				},
 				TransactionOperation::ClaimRewards { value } => Op::ClaimRewards { value },
+				TransactionOperation::ClaimBridgeTransfer { value } => {
+					Op::ClaimBridgeTransfer { value }
+				},
 			};
 			acc.push(a);
 			Ok::<_, LedgerApiError>(acc)
