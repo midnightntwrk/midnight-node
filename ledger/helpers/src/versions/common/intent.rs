@@ -15,8 +15,8 @@ use super::{
 	Array, BuildContractAction, BuilderContext, ContractAction, ContractAddress, ContractEffects,
 	DB, DUST_EXPECTED_FILES, DustResolver, FetchMode, Intent, KeyLocation, MidnightDataProvider,
 	OutputMode, PUBLIC_PARAMS, PedersenRandomness, ProofPreimageMarker, ProvingKeyMaterial,
-	Resolver, Signature, SigningKey, StdRng, Timestamp, UnshieldedOfferInfo, deserialize,
-	transaction_signing_key,
+	Resolver, Signature, StdRng, Timestamp, TransactionSigningKey, UnshieldedOfferInfo,
+	deserialize,
 };
 use async_trait::async_trait;
 use rand::{CryptoRng, Rng};
@@ -48,7 +48,10 @@ pub trait BuildIntent<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
 	/// intent's `data_to_sign`, so the signatures produced by [`Self::build`] (before the
 	/// dust existed) no longer match. Intents with no unshielded offer (the default) return
 	/// empty vectors.
-	fn unshielded_signing_keys(&self, _context: Arc<C>) -> (Vec<SigningKey>, Vec<SigningKey>) {
+	fn unshielded_signing_keys(
+		&self,
+		_context: Arc<C>,
+	) -> (Vec<TransactionSigningKey>, Vec<TransactionSigningKey>) {
 		(Vec::new(), Vec::new())
 	}
 }
@@ -102,11 +105,6 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D, C>
 			fallible_signing_keys = signing_keys;
 		}
 
-		let guaranteed_signing_keys =
-			guaranteed_signing_keys.iter().map(transaction_signing_key).collect::<Vec<_>>();
-		let fallible_signing_keys =
-			fallible_signing_keys.iter().map(transaction_signing_key).collect::<Vec<_>>();
-
 		intent
 			.sign(
 				rng,
@@ -118,7 +116,10 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildIntent<D, C> for IntentInfo<D, C>
 			.unwrap_or_else(|_| panic!("Intent signing with segment_id {segment_id:?} failed"))
 	}
 
-	fn unshielded_signing_keys(&self, context: Arc<C>) -> (Vec<SigningKey>, Vec<SigningKey>) {
+	fn unshielded_signing_keys(
+		&self,
+		context: Arc<C>,
+	) -> (Vec<TransactionSigningKey>, Vec<TransactionSigningKey>) {
 		let signing_keys = |offer: &Option<UnshieldedOfferInfo<D, C>>| {
 			offer
 				.as_ref()

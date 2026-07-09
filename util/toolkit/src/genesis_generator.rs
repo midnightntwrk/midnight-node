@@ -315,12 +315,7 @@ impl GenesisGenerator {
 		// And now reward it to each wallet.
 		let mut night_distribution_instructions = vec![];
 		for wallet in wallets.iter() {
-			let target_address = wallet
-				.unshielded
-				.verifying_key
-				.clone()
-				.ok_or(GenesisGeneratorError::MissingVerifyingKey)?
-				.into();
+			let target_address = wallet.unshielded.user_address;
 			for _ in 0..funding.unshielded_num_funding_outputs {
 				night_distribution_instructions.push(OutputInstructionUnshielded {
 					amount: funding.unshielded_mint_amount,
@@ -370,18 +365,18 @@ impl GenesisGenerator {
 		let unsigned_claim: ClaimRewardsTransaction<(), DefaultDB> = ClaimRewardsTransaction {
 			network_id: self.state.network_id.clone(),
 			value: rewards,
-			owner: signature_verifying_key(wallet.unshielded.verifying_key.clone().unwrap()),
+			owner: wallet.unshielded.verifying_key(),
 			nonce: rng.r#gen(),
 			signature: (),
 			kind: ClaimKind::Reward,
 		};
-		let signature = wallet.unshielded.signing_key().sign(rng, &unsigned_claim.data_to_sign());
+		let signature = wallet.unshielded.sign(rng, &unsigned_claim.data_to_sign());
 		let signed_claim = ClaimRewardsTransaction {
 			network_id: unsigned_claim.network_id,
 			value: unsigned_claim.value,
 			owner: unsigned_claim.owner,
 			nonce: unsigned_claim.nonce,
-			signature: transaction_signature(signature),
+			signature,
 			kind: unsigned_claim.kind,
 		};
 		Transaction::ClaimRewards(signed_claim)
@@ -607,11 +602,11 @@ impl GenesisGenerator {
 		// fields are part of `data_to_sign`, so the intent must already carry the
 		// dust_actions before we compute the bytes to sign.
 		for wallet in wallets {
-			signing_keys.push(wallet.unshielded.signing_key().clone());
-			let night_key = wallet.unshielded.verifying_key.unwrap();
+			signing_keys.push(wallet.unshielded.transaction_signing_key());
+			let night_key = wallet.unshielded.verifying_key();
 			let dust_address = wallet.dust.public_key;
 			registrations.push(DustRegistration {
-				night_key: signature_verifying_key(night_key),
+				night_key,
 				dust_address: Some(Sp::new(dust_address)),
 				allow_fee_payment: 0,
 				signature: None,
@@ -637,7 +632,7 @@ impl GenesisGenerator {
 			.zip(signing_keys.iter())
 			.map(|(reg, sk)| {
 				let mut reg = (*reg).clone();
-				reg.signature = Some(Sp::new(transaction_signature(sk.sign(rng, &data_to_sign))));
+				reg.signature = Some(Sp::new(sk.sign(rng, &data_to_sign)));
 				reg
 			})
 			.collect::<Vec<_>>();

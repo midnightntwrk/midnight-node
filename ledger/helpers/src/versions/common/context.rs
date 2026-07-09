@@ -16,10 +16,10 @@ use super::{
 	DustResolver, Event, FetchMode, LedgerParameters, LedgerState, Loader, MidnightDataProvider,
 	Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen,
 	Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged,
-	Timestamp, Transaction, TransactionContext, TransactionResult, Utxo, VerifiedTransaction,
-	Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState, clamp_and_normalize,
-	compute_overall_fullness, default_storage, deserialize, mn_ledger_serialize as serialize,
-	mn_ledger_storage as storage, types::StorableSyntheticCost,
+	Timestamp, Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme, Utxo,
+	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState,
+	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
+	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
 use hex::encode as hex_encode;
@@ -116,14 +116,28 @@ impl<D: DB + Clone> LedgerContext<D> {
 		network_id: impl Into<String>,
 		wallet_seeds: &[WalletSeed],
 	) -> Self {
+		let with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
+			.iter()
+			.map(|seed| (seed.clone(), UnshieldedSignatureScheme::Schnorr))
+			.collect();
+		Self::new_from_wallet_seeds_with_schemes(network_id, &with_schemes)
+	}
+
+	/// Like [`Self::new_from_wallet_seeds`] but builds each seed's wallet with an explicit
+	/// unshielded signature scheme. The `wallets` map is keyed by seed only, so a given seed
+	/// resolves to a single scheme for the lifetime of the context.
+	pub fn new_from_wallet_seeds_with_schemes(
+		network_id: impl Into<String>,
+		wallet_seeds: &[(WalletSeed, UnshieldedSignatureScheme)],
+	) -> Self {
 		let ledger_state = LedgerState::new(network_id);
 		let wallets = Mutex::new(HashMap::new());
 
 		// Use default `Resolver` for Zswaps
 		let resolver = MutexTokio::new(&*DEFAULT_RESOLVER);
 
-		for seed in wallet_seeds {
-			let wallet = Wallet::default(seed.clone(), &ledger_state);
+		for (seed, scheme) in wallet_seeds {
+			let wallet = Wallet::new(seed.clone(), &ledger_state, *scheme);
 			wallets
 				.lock()
 				.expect("Error locking `LedgerContext` wallets")

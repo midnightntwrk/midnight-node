@@ -313,7 +313,10 @@ impl ToolkitTestHelper {
 	pub fn show_address_coin_public(&self, seed: &str) -> String {
 		let args = ShowAddressArgs {
 			network: self.network.clone(),
-			seed: cli_parsers::wallet_seed_decode(seed).expect("invalid wallet seed"),
+			seed: cli_parsers::SchemeSeed {
+				seed: cli_parsers::wallet_seed_decode(seed).expect("invalid wallet seed"),
+				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+			},
 			specific_address: SpecificAddressTypeArgs { coin_public: true, ..Default::default() },
 		};
 		match show_address::execute(args) {

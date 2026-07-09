@@ -2,9 +2,11 @@ use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::{self, Settings};
 use midnight_node_e2e::e2e_test;
+use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
     Deregistration, Registration,
 };
+use midnight_node_toolkit::cli_parsers::SchemeSeed;
 use midnight_node_toolkit::commands::dust_balance::{
     self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
 };
@@ -482,7 +484,10 @@ async fn register_2_cardano_same_dust_address_production() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -628,7 +633,10 @@ async fn cnight_produces_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -661,7 +669,10 @@ async fn cnight_produces_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -802,7 +813,10 @@ async fn deregister_from_dust_production() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1394,7 +1408,10 @@ async fn register_twice_with_same_cardano_address() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1420,7 +1437,10 @@ async fn register_twice_with_same_cardano_address() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed2,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed2,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1617,7 +1637,10 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1650,7 +1673,10 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1768,7 +1794,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1839,7 +1868,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed2,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed2,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1910,7 +1942,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1943,7 +1978,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2037,7 +2075,10 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2108,7 +2149,10 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2286,7 +2330,10 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2327,7 +2374,10 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2495,7 +2545,10 @@ async fn spend_cnight_producing_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2536,7 +2589,10 @@ async fn spend_cnight_producing_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
