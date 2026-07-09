@@ -141,7 +141,7 @@ async fn consolidate_faucet() {
 /// branch is exercised. Expects `Ok(_)` — that proves the Postgres
 /// connection, fetch+cache write path, and dust derivation all work.
 /// Opt-in via `cargo test --ignored dust_balance_smoke`.
-#[cfg(feature = "qanet")]
+#[cfg(any(feature = "qanet", feature = "devnet"))]
 #[e2e_test(flavor = "multi_thread", worker_threads = 16)]
 #[ignore = "wiring smoke test for Postgres-backed fetch cache; \
             opt-in with `cargo test --ignored dust_balance_smoke`"]
@@ -192,7 +192,7 @@ async fn dust_balance_smoke() {
 /// the I/O side on a single OS thread.
 ///
 /// Opt-in via `cargo test --ignored dust_balance_smoke_many`.
-#[cfg(feature = "qanet")]
+#[cfg(any(feature = "qanet", feature = "devnet"))]
 #[e2e_test(flavor = "multi_thread", worker_threads = 16)]
 #[ignore = "wiring smoke test for batched dust_balance; \
             opt-in with `cargo test --ignored dust_balance_smoke_many`"]

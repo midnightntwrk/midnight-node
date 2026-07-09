@@ -568,7 +568,6 @@ Reference reads:
 | `scripts/generate-utxo-ordering-overrides.sh`   | Generate the `utxo-ordering.sql` override snippets                  |
 | `sync-with-qanet.sh`, `sync-with-testnet-02.sh` | Bring up a local node attached to qanet / testnet-02 boot nodes     |
 | `local-environment/src/networks/local-env/hardfork-pv11.sh` | Drive a Cardano PV10 → PV11 (Dijkstra) hard fork on local-env (CC + SPO + DRep votes, ~5 epochs); reusable template for future hard forks |
-| `partnerchains-dev.sh`                          | Dev helper for the partner-chains submodule                         |
 
 ### 5.4 PR bots (saves a local rebuild)
 
