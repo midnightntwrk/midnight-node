@@ -421,16 +421,22 @@ impl PartialOrd for ObservedUtxoHeader {
 }
 
 decl_runtime_apis! {
-	// v2 once gated a node-side db-sync over-fetch multiplier; the node now
+	// Two version families are in play and they are NOT the same thing:
+	// "v2"/"v3" here are versions of this runtime API trait (`api_version`),
+	// while "v1"/"v2" in the node's derivation code (`derive_inherent_v1/_v2`)
+	// are versions of the inherent derivation, selected by runtime
+	// `spec_version`.
+	//
+	// API v2 once gated a node-side db-sync over-fetch multiplier; the node now
 	// fetches the whole range instead, so nothing is gated on it. Retained for
 	// compatibility.
 	//
-	// v3 adds `get_utxo_per_tx_overestimate`: the acceptance-envelope multiplier
+	// API v3 adds `get_utxo_per_tx_overestimate`: the per-tx UTXO overestimate
 	// became runtime storage (mirroring `CardanoTxCapacityPerBlock`), so the node
 	// reads it at `parent_hash` instead of compiling in a constant. The node only
-	// calls it on the v2 derivation path, which is gated on a `spec_version` that
-	// ships in the same runtime as this API method — so a pre-v3 runtime is never
-	// asked for it.
+	// calls it on the *derivation v2* path, which activates at a `spec_version`
+	// that ships in the same runtime as this API method — so a runtime without
+	// API v3 is never asked for it.
 	#[api_version(3)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums

@@ -299,11 +299,13 @@ pub mod pallet {
 	}
 
 	#[pallet::storage]
-	/// Acceptance-envelope multiplier. The per-block UTXO bound enforced by
-	/// `process_tokens` is `CardanoTxCapacityPerBlock * UtxoPerTxOverestimate`.
-	/// Exposed to the node IDP via `CNightObservationApi::get_utxo_per_tx_overestimate`
-	/// so the block author's truncation cap and the runtime's acceptance bound are
-	/// always the same value at a given parent.
+	/// Upper bound on how many cNIGHT UTXOs a single observed Cardano transaction
+	/// is assumed to carry — a deliberate overestimate. Multiplied by
+	/// `CardanoTxCapacityPerBlock` it gives the per-block UTXO bound enforced by
+	/// `process_tokens`. Exposed to the node IDP via
+	/// `CNightObservationApi::get_utxo_per_tx_overestimate` so the block author's
+	/// truncation cap and the runtime's acceptance bound are always the same value
+	/// at a given parent.
 	pub type UtxoPerTxOverestimate<T: Config> =
 		StorageValue<_, u32, ValueQuery, DefaultUtxoPerTxOverestimate>;
 

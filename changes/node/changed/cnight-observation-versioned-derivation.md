@@ -5,8 +5,10 @@
 The cNIGHT observation inherent is derived by the block author and re-derived
 byte-for-byte by every importing node (`check_inherent`), so any change to the
 derivation is a consensus change. Post-1.0 work (sliding-window bulk cache,
-fetch-determinism fix) had altered the derivation in place, risking divergence
-from the v1 derivation that authored finalized mainnet history.
+fetch-determinism fix) had altered the derivation in place. Mainnet-sync testing
+showed it re-derives everything that happened on mainnet up to the tested
+instant, but equivalence beyond that point is not guaranteed by construction — a
+divergence risk for the v1 derivation that authored finalized mainnet history.
 
 This factors the derivation into explicit, versioned functions selected by the
 parent runtime `spec_version`:

@@ -170,11 +170,8 @@ pub mod genesis_version {
 	/// Ledger storage version a tagged genesis blob was produced with.
 	#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 	pub enum LedgerVersion {
-		/// ledger 7
 		V7,
-		/// ledger 8
 		V8,
-		/// ledger 9
 		V9,
 	}
 

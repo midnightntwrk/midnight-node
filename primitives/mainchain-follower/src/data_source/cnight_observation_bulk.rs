@@ -230,7 +230,13 @@ pub fn truncate_to_tx_capacity(
 	}
 
 	let end = if capped {
-		// Caps are far below LARGE_LIMIT, so the last accepted tx is whole.
+		// Only whole txs are admitted, so resuming just past the last one is
+		// safe. That holds even for a row-limited fetch (`limit = max_utxos + 1`):
+		// a query that hit the row limit contributed more rows than the
+		// `max_utxos` cap admits, so the cap fires inside the proven-complete
+		// prefix. Sole exception: the lone-oversized-tx admission above, whose
+		// fetched rows may themselves be truncated — that needs one tx with more
+		// than `max_utxos` events, beyond what a Cardano tx can physically carry.
 		boundary_after(&truncated, start_position)
 	} else if complete {
 		fallback_end
@@ -246,7 +252,11 @@ pub fn truncate_to_tx_capacity(
 	ObservedUtxos { start: start_position.clone(), end, utxos: truncated }
 }
 
-/// Position just past the last accepted event, or `start` if none were accepted.
+/// Position just past the last accepted event. When nothing was accepted this
+/// still increments past `start`, skipping the tx at the cursor — reachable
+/// only if the sole fetched tx was dropped as row-truncated, i.e. a single tx
+/// with more than `max_utxos` events at the cursor, beyond what a Cardano tx
+/// can physically carry.
 fn boundary_after(truncated: &[ObservedUtxo], start_position: &CardanoPosition) -> CardanoPosition {
 	truncated
 		.last()

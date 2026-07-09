@@ -11,18 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! v2 cNIGHT observation derivation: **one Cardano block per inherent**.
+//! v2 cNIGHT observation derivation: **at most one Cardano block per inherent**.
 //!
 //! Selected by the IDP once the parent runtime `spec_version` reaches the v2
 //! activation (see `idp::cnight_observation::CNIGHT_OBSERVATION_V2_SPEC_VERSION`).
 //! Until then the frozen v1 path runs and this is dormant.
 //!
-//! The consensus rule is deliberately tiny: an inherent ingests the cNIGHT
-//! events of **exactly one Cardano block** — the first non-empty block at or
-//! after the cursor — and advances the cursor past it. Because "the events in
-//! block N" is unambiguous and a block contains whole transactions by
-//! definition, there is no cross-block truncation, no row-limit completeness
-//! flag, and no synthesised cursor: the cursor is always a real position.
+//! The consensus rule is deliberately tiny: an inherent ingests whole cNIGHT
+//! transactions from a **single Cardano block** — the first non-empty block at
+//! or after the cursor — and advances the cursor past what it took. Usually
+//! that is the whole block; an oversized block yields only a whole-tx prefix
+//! and drains across several inherents (see below). Because "the events in
+//! block N" is unambiguous and transactions are never split, there is no
+//! cross-block truncation, no row-limit completeness flag, and no synthesised
+//! cursor: the cursor is always a real position.
 //!
 //! Cases:
 //! - **empty span** — no events in `[cursor, tip]`: advance the cursor to the
