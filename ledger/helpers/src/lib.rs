@@ -60,6 +60,14 @@ pub mod ledger_7 {
 	mod block_context;
 	pub use block_context::*;
 
+	// ECDSA is only supported from ledger 9. Pre-9 dependency versions can't represent an
+	// ECDSA unshielded identity (coin-structure has no `From<ecdsa::VerifyingKey> for
+	// UserAddress`, and the signature enums have no ECDSA variant), so the shared `common`
+	// code compiles against these unimplemented stubs and fails loudly if ever exercised.
+	#[allow(clippy::duplicate_mod)]
+	mod ecdsa_unimpl;
+	pub use ecdsa_unimpl::{SigningKeyEcdsa, VerifyingKeyEcdsa};
+
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
@@ -121,6 +129,24 @@ pub mod ledger_7 {
 		key: base_crypto::signatures::VerifyingKey,
 	) -> SignatureVerifyingKey {
 		key
+	}
+
+	pub fn signature_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn transaction_signing_key_ecdsa(_key: &SigningKeyEcdsa) -> TransactionSigningKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn transaction_signature_ecdsa(
+		_signature: base_crypto::ecdsa::Signature,
+	) -> TransactionSignature {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn maintenance_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
 	}
 }
 
@@ -152,6 +178,11 @@ pub mod ledger_8 {
 	mod block_context;
 	pub use block_context::*;
 
+	// ECDSA is only supported from ledger 9 (see the note in `ledger_7`).
+	#[allow(clippy::duplicate_mod)]
+	mod ecdsa_unimpl;
+	pub use ecdsa_unimpl::{SigningKeyEcdsa, VerifyingKeyEcdsa};
+
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
@@ -213,6 +244,24 @@ pub mod ledger_8 {
 		key: base_crypto::signatures::VerifyingKey,
 	) -> SignatureVerifyingKey {
 		key
+	}
+
+	pub fn signature_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn transaction_signing_key_ecdsa(_key: &SigningKeyEcdsa) -> TransactionSigningKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn transaction_signature_ecdsa(
+		_signature: base_crypto::ecdsa::Signature,
+	) -> TransactionSignature {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn maintenance_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
 	}
 }
 
@@ -252,6 +301,12 @@ pub mod ledger_9 {
 		SigningKey as TransactionSigningKey,
 	};
 	pub use onchain_runtime::state::ContractMaintenanceVerifyingKey;
+
+	// ECDSA is natively supported from ledger 9: the signature enums carry an `ECDSA` variant
+	// and coin-structure provides `From<ecdsa::VerifyingKey> for UserAddress`.
+	pub use base_crypto::ecdsa::{
+		SigningKey as SigningKeyEcdsa, VerifyingKey as VerifyingKeyEcdsa,
+	};
 
 	/// Builds a contract operation from a verifier key plus, from ledger 9 on,
 	/// the circuit's zkir. `ir_source` is stored on-chain alongside the verifier
@@ -319,6 +374,30 @@ pub mod ledger_9 {
 		key: base_crypto::signatures::VerifyingKey,
 	) -> ContractMaintenanceVerifyingKey {
 		ContractMaintenanceVerifyingKey::Schnorr(key)
+	}
+
+	pub fn signature_verifying_key_ecdsa(
+		key: base_crypto::ecdsa::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		SignatureVerifyingKey::ECDSA(key)
+	}
+
+	pub fn transaction_signing_key_ecdsa(
+		key: &base_crypto::ecdsa::SigningKey,
+	) -> TransactionSigningKey {
+		TransactionSigningKey::ECDSA(key.clone())
+	}
+
+	pub fn transaction_signature_ecdsa(
+		signature: base_crypto::ecdsa::Signature,
+	) -> TransactionSignature {
+		TransactionSignature::ECDSA(signature)
+	}
+
+	pub fn maintenance_verifying_key_ecdsa(
+		key: base_crypto::ecdsa::VerifyingKey,
+	) -> ContractMaintenanceVerifyingKey {
+		ContractMaintenanceVerifyingKey::ECDSA(key)
 	}
 }
 

@@ -114,6 +114,7 @@ thiserror = "1.0.50"
 log.workspace = true
 authority-selection-inherents.workspace = true
 #sp-block-rewards = { workspace = true, optional = true }
+sp-crypto-hashing.workspace = true
 sp-sidechain.workspace = true
 sp-session-validator-management.workspace = true
 partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "bridge"] }
@@ -162,6 +163,8 @@ sp-transaction-pool.workspace = true
 tempfile = "3"
 yamux = "0.13"
 tokio-util = { version = "0.7", features = ["compat"] }
+# Enable the `std`-gated `testing` module (MemoryKeystore) for unit tests.
+sp-keystore = { workspace = true, features = ["std"] }
 
 [build-dependencies]
 substrate-build-script-utils.workspace = true
