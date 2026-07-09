@@ -19,9 +19,10 @@
   "dependencies": {
     "@effect/platform-node": "^0.105.0",
     "@effect/cli": "^0.74.0",
-    "@midnight-ntwrk/compact-js": "2.5.1",
-    "@midnight-ntwrk/compact-js-command": "2.5.1",
-    "@midnight-ntwrk/compact-js-node": "2.5.1",
+    "@midnight-ntwrk/compact-js": "file:../../../.midnight-sdk-js/compact-js.tgz",
+    "@midnight-ntwrk/compact-js-command": "file:../../../.midnight-sdk-js/compact-js-command.tgz",
+    "@midnight-ntwrk/compact-js-node": "file:../../../.midnight-sdk-js/compact-js-node.tgz",
+    "@midnight-ntwrk/platform-js": "file:../../../.midnight-sdk-js/platform-js.tgz",
     "effect": "^3.21.0"
   }
 }

@@ -3,3 +3,5 @@ target
 **/node_modules
 **/dist
 !/tests/.papi/descriptors/dist
+.midnight-sdk-js
+.compact-home
