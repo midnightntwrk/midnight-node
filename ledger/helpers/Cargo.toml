@@ -55,6 +55,9 @@ serde_json.workspace = true
 serde_bytes = "0.11"
 zeroize = { workspace = true }
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [features]
 default = []
 can-panic = []

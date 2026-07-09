@@ -1,4 +1,7 @@
-use std::{io::BufRead, path::PathBuf};
+use std::{
+	io::{BufRead, Write},
+	path::PathBuf,
+};
 
 use clap::{
 	Args, Subcommand,
@@ -8,7 +11,7 @@ use hex::ToHex;
 use midnight_node_ledger_helpers::{
 	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
 };
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 pub(crate) mod encoded_zswap_local_state;
 pub use encoded_zswap_local_state::{EncodedOutput, EncodedZswapLocalState};
 
@@ -124,8 +127,11 @@ pub struct DeployArgs {
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
 	/// Contract maintenance authority seed.
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
+	#[arg(long, value_parser = cli::wallet_seed_decode, conflicts_with = "authority_seed_file")]
 	pub authority_seed: Option<WalletSeed>,
+	/// Read the contract maintenance authority seed from a file (keeps the secret off argv).
+	#[arg(long, value_parser = cli::wallet_seed_from_file)]
+	pub authority_seed_file: Option<WalletSeed>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	pub output_intent: RelativePath,
@@ -153,9 +159,12 @@ pub struct SharedMaintainArgs {
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	coin_public: CoinPublicKey,
-	/// A public BIP-340 signing key, hex encoded.
-	#[arg(long)]
-	signing: Option<String>,
+	/// A BIP-340 signing key, hex encoded. Treated as secret: redacted from logs.
+	#[arg(long, conflicts_with = "signing_file", value_parser = cli::secret_string_decode)]
+	signing: Option<cli::SecretString>,
+	/// Read the BIP-340 signing key from a file (keeps the secret off argv).
+	#[arg(long, value_parser = cli::secret_string_from_file)]
+	signing_file: Option<cli::SecretString>,
 	/// Input file containing the current on-chain circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	input_onchain_state: RelativePath,
@@ -168,9 +177,18 @@ pub struct SharedMaintainArgs {
 pub struct MaintainContractArgs {
 	#[command(flatten)]
 	shared: SharedMaintainArgs,
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	/// A public BIP-340 signing key, hex encoded. Replaces the signing key for the contract.
-	new_authority: WalletSeed,
+	/// Seed of the new contract maintenance authority (secret: redacted from logs).
+	/// Replaces the signing key for the contract.
+	#[arg(
+		long,
+		value_parser = cli::wallet_seed_decode,
+		required_unless_present = "new_authority_file",
+		conflicts_with = "new_authority_file"
+	)]
+	new_authority: Option<WalletSeed>,
+	/// Read the new contract maintenance authority seed from a file (keeps the secret off argv).
+	#[arg(long, value_parser = cli::wallet_seed_from_file)]
+	new_authority_file: Option<WalletSeed>,
 }
 
 #[derive(Args, Debug)]
@@ -261,24 +279,26 @@ impl ToolkitJs {
 			cmd_args.extend_from_slice(&["--network", &args.network]);
 		}
 
-		let mut signing_key = args
+		// `Zeroizing` clears the hex key even when an early `?` returns.
+		let signing_key = args
 			.authority_seed
+			.or(args.authority_seed_file)
 			.map(|s| {
 				let mut bytes = serialize_untagged(UnshieldedWallet::default(s).signing_key())
 					.map_err(ToolkitJsError::ExecutionError)?;
-				let hex = bytes.encode_hex::<String>();
+				let hex = Zeroizing::new(bytes.encode_hex::<String>());
 				bytes.zeroize();
-				Ok::<String, ToolkitJsError>(hex)
+				Ok::<Zeroizing<String>, ToolkitJsError>(hex)
 			})
 			.transpose()?;
-		if let Some(ref key) = signing_key {
-			cmd_args.extend_from_slice(&["--signing", key]);
+		let signing_tmp = signing_key.as_deref().map(|s| secret_temp_file(s)).transpose()?;
+		if let Some((_, ref path)) = signing_tmp {
+			cmd_args.extend_from_slice(&["--signing-file", path]);
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
-		let result = self.execute_js(&cmd_args);
-		signing_key.as_mut().map(|s| s.zeroize());
-		result?;
+		let secrets: Vec<&str> = signing_key.as_deref().map(|s| s.as_str()).into_iter().collect();
+		self.execute_js(&cmd_args, &secrets)?;
 		log::info!(
 			"written: {}, {}, {}",
 			args.output_intent,
@@ -341,7 +361,7 @@ impl ToolkitJs {
 		// Add positional args
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
 		cmd_args.extend(args.call_args.iter().map(|s| s.as_str()));
-		self.execute_js(&cmd_args)?;
+		self.execute_js(&cmd_args, &[])?;
 		log::info!(
 			"written: {}, {}, {}",
 			args.output_intent,
@@ -375,19 +395,33 @@ impl ToolkitJs {
 			cmd_args.extend_from_slice(&["--network", &args.network]);
 		}
 
-		if let Some(ref signing) = args.signing {
-			cmd_args.extend_from_slice(&["--signing", signing]);
+		let signing = args.signing.as_deref().or(args.signing_file.as_deref());
+		let signing_tmp = signing.map(secret_temp_file).transpose()?;
+		if let Some((_, ref path)) = signing_tmp {
+			cmd_args.extend_from_slice(&["--signing-file", path]);
 		}
 		// Add positional args
 		cmd_args.push(&contract_address_str);
-		let mut new_authority = match &command {
-			MaintainCommand::Contract(MaintainContractArgs { new_authority, .. }) => {
-				Some(new_authority.as_bytes().encode_hex::<String>())
+		// `Zeroizing` clears the hex seed even when an early `?` returns.
+		let new_authority = match &command {
+			MaintainCommand::Contract(MaintainContractArgs {
+				new_authority,
+				new_authority_file,
+				..
+			}) => {
+				let seed = new_authority.as_ref().or(new_authority_file.as_ref()).expect(
+					"clap enforces one of --new-authority/--new-authority-file being present",
+				);
+				Some(Zeroizing::new(seed.as_bytes().encode_hex::<String>()))
 			},
 			_ => None,
 		};
-		if let Some(ref new_authority) = new_authority {
-			cmd_args.push(new_authority)
+		// bin.ts expands this back into the positional new-authority value, so
+		// it must sit exactly where the positional would (after the address).
+		let new_authority_tmp =
+			new_authority.as_deref().map(|s| secret_temp_file(s)).transpose()?;
+		if let Some((_, ref path)) = new_authority_tmp {
+			cmd_args.extend_from_slice(&["--new-authority-file", path]);
 		}
 		if let MaintainCommand::Circuit(args) = &command {
 			cmd_args.push(&args.circuit_id);
@@ -395,33 +429,24 @@ impl ToolkitJs {
 				cmd_args.push(&vk_path);
 			}
 		}
-		let result = self.execute_js(&cmd_args);
-		new_authority.as_mut().map(|s| s.zeroize());
-		result?;
+		let secrets: Vec<&str> = signing
+			.into_iter()
+			.chain(new_authority.as_deref().map(|s| s.as_str()))
+			.collect();
+		self.execute_js(&cmd_args, &secrets)?;
 		log::info!("written: {}", args.output_intent);
 		Ok(())
 	}
 
-	fn execute_js(&self, args: &[&str]) -> Result<(), ToolkitJsError> {
+	/// `secrets` lists argument values that must never reach the logs. In normal
+	/// operation secrets travel via temp files (see [`secret_temp_file`]) and
+	/// never appear in `args` at all; the value-based redaction here is a
+	/// backstop against future code reintroducing inline secrets.
+	fn execute_js(&self, args: &[&str], secrets: &[&str]) -> Result<(), ToolkitJsError> {
 		let cmd = PathBuf::from(&self.path).join(BUILD_DIST).to_string_lossy().to_string();
 		log::info!("Executing {cmd}...");
 		if log::log_enabled!(log::Level::Debug) {
-			let redacted_args: Vec<&str> = {
-				let mut result = Vec::with_capacity(args.len());
-				let mut redact_next = false;
-				for &arg in args {
-					if redact_next {
-						result.push("[REDACTED]");
-						redact_next = false;
-					} else if arg == "--signing" || arg == "--new-authority" {
-						result.push(arg);
-						redact_next = true;
-					} else {
-						result.push(arg);
-					}
-				}
-				result
-			};
+			let redacted_args = redact_args(args, secrets);
 			log::debug!("Executing {cmd} with arguments: {redacted_args:?}...");
 		}
 
@@ -460,5 +485,71 @@ impl ToolkitJs {
 			});
 		}
 		Ok(())
+	}
+}
+
+/// Hand a secret to toolkit-js via an owner-only temp file instead of argv
+/// (0600 on Unix — the `tempfile` crate's default; on other platforms it is
+/// whatever `NamedTempFile` provides): a child's argv is world-readable on
+/// Linux via `/proc/<pid>/cmdline`
+/// for its whole (ZK-slow) lifetime. `bin.ts` expands the `*-file` flag back
+/// into the in-memory argv, which the kernel's cmdline snapshot never sees.
+/// The file is deleted when the returned handle drops, so keep it alive until
+/// the child has exited.
+fn secret_temp_file(secret: &str) -> Result<(tempfile::NamedTempFile, String), ToolkitJsError> {
+	let mut file = tempfile::NamedTempFile::new().map_err(ToolkitJsError::ExecutionError)?;
+	file.write_all(secret.as_bytes()).map_err(ToolkitJsError::ExecutionError)?;
+	file.flush().map_err(ToolkitJsError::ExecutionError)?;
+	let path = file.path().to_string_lossy().into_owned();
+	Ok((file, path))
+}
+
+/// Replace every argument that exactly matches a secret with `[REDACTED]`.
+fn redact_args<'a>(args: &[&'a str], secrets: &[&str]) -> Vec<&'a str> {
+	args.iter()
+		.map(|&arg| if secrets.contains(&arg) { "[REDACTED]" } else { arg })
+		.collect()
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	const SECRET: &str = "9f2d3a4b5c6d7e8f9f2d3a4b5c6d7e8f9f2d3a4b5c6d7e8f9f2d3a4b5c6d7e8f";
+
+	/// Regression test for the April key-disclosure report. Production code no
+	/// longer puts secrets in the child argv at all (temp-file handoff), so
+	/// this guards the backstop: if inline secrets are ever reintroduced,
+	/// redaction must catch them both as flag values (`--signing <key>`) and
+	/// positionally (maintain-contract's new authority).
+	#[test]
+	fn redacts_flagged_and_positional_secrets() {
+		let args = ["maintain", "contract", "--signing", SECRET, "0011aabb", SECRET, "my_circuit"];
+		let redacted = redact_args(&args, &[SECRET]);
+		let rendered = format!("{redacted:?}");
+		assert!(!rendered.contains(SECRET), "secret leaked into log output: {rendered}");
+		assert_eq!(redacted.iter().filter(|a| **a == "[REDACTED]").count(), 2);
+	}
+
+	/// Secrets travel to toolkit-js via owner-only temp files, never argv.
+	#[test]
+	fn secret_temp_file_is_owner_only_and_deleted_on_drop() {
+		let (file, path) = secret_temp_file(SECRET).unwrap();
+		assert_eq!(std::fs::read_to_string(&path).unwrap(), SECRET);
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::PermissionsExt;
+			let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+			assert_eq!(mode & 0o777, 0o600, "secret temp file must be owner-only");
+		}
+		drop(file);
+		assert!(!std::path::Path::new(&path).exists(), "temp file must vanish on drop");
+	}
+
+	#[test]
+	fn non_secrets_pass_through_unchanged() {
+		let args = ["deploy", "-c", "config.ts", "--coin-public", "aabbccdd"];
+		assert_eq!(redact_args(&args, &[]), args);
+		assert_eq!(redact_args(&args, &[SECRET]), args);
 	}
 }

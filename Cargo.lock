@@ -8115,6 +8115,7 @@ dependencies = [
  "serde_json",
  "subxt 0.50.0",
  "subxt-signer 0.50.0",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "zeroize",

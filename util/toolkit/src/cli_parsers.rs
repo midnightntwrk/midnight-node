@@ -15,6 +15,7 @@ use std::str::FromStr;
 
 use midnight_node_ledger_helpers::*;
 use serde::Deserialize;
+use zeroize::Zeroize;
 
 use crate::tx_generator::source::FetchCacheConfig;
 
@@ -68,6 +69,74 @@ pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error>
 		);
 		err
 	})
+}
+
+/// Cap for secret files (hex seed, mnemonic, or signing key); 4 KiB is generous.
+const SECRET_FILE_MAX_SIZE: u64 = 4 * 1024;
+
+/// A secret string (e.g. a hex signing key). `Debug` and `Display` are
+/// redacted so formatting (including `derive(Debug)` on arg structs) can't
+/// leak it into logs, and the value is zeroized on drop. Access the value
+/// explicitly via `Deref` (`&*secret`).
+#[derive(Clone, Zeroize, zeroize::ZeroizeOnDrop)]
+pub struct SecretString(String);
+
+impl core::fmt::Debug for SecretString {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		f.write_str("REDACTED")
+	}
+}
+
+impl core::fmt::Display for SecretString {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		f.write_str("REDACTED")
+	}
+}
+
+impl core::ops::Deref for SecretString {
+	type Target = str;
+	fn deref(&self) -> &str {
+		&self.0
+	}
+}
+
+/// Parse an inline secret argument value into a [`SecretString`].
+pub fn secret_string_decode(input: &str) -> Result<SecretString, clap::error::Error> {
+	Ok(SecretString(input.to_string()))
+}
+
+fn clap_value_error(msg: String) -> clap::error::Error {
+	let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+	err.insert(clap::error::ContextKind::Custom, clap::error::ContextValue::String(msg));
+	err
+}
+
+/// Read a secret from a file so it never appears on a command line (argv is
+/// world-readable via `ps`, and shells/CI log it). Mirrors the node's
+/// `*_seed_file` options. Symlinks are allowed because Kubernetes secret
+/// mounts expose files as symlinks into `..data/`.
+pub fn secret_string_from_file(path: &str) -> Result<SecretString, clap::error::Error> {
+	let mut raw = validated_file::safe_read_to_string(
+		path,
+		&validated_file::SafeReadOpts {
+			max_size: SECRET_FILE_MAX_SIZE,
+			unsafe_allow_symlinks: true,
+		},
+	)
+	.map_err(clap_value_error)?;
+	let secret = SecretString(raw.trim().to_string());
+	raw.zeroize();
+	Ok(secret)
+}
+
+/// Parse a [`WalletSeed`] from a file path argument (see [`secret_string_from_file`]).
+pub fn wallet_seed_from_file(path: &str) -> Result<WalletSeed, clap::error::Error> {
+	let mut secret = secret_string_from_file(path)?;
+	let seed = secret
+		.parse()
+		.map_err(|e| clap_value_error(format!("failed to parse seed from file '{path}': {e}")));
+	secret.zeroize();
+	seed
 }
 
 pub fn keypair_from_str(input: &str) -> Result<Keypair, clap::error::Error> {
@@ -277,6 +346,41 @@ pub fn semver_decode(input: &str) -> Result<semver::Version, clap::Error> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	// `wallet_seed_from_file` / `secret_string_from_file` — secrets stay off argv.
+
+	/// `derive(Debug)` on arg structs holding a [`SecretString`] must not leak
+	/// the value (the dry-run info logs Debug-format whole arg structs).
+	#[test]
+	fn secret_string_debug_is_redacted() {
+		let secret = secret_string_decode("deadbeef").unwrap();
+		assert_eq!(format!("{secret:?}"), "REDACTED");
+		assert_eq!(format!("{secret}"), "REDACTED");
+		assert_eq!(format!("{:?}", Some(&secret)), "Some(REDACTED)");
+		assert_eq!(&*secret, "deadbeef");
+	}
+
+	#[test]
+	fn wallet_seed_from_file_reads_and_trims() {
+		use std::io::Write;
+		let mut f = tempfile::NamedTempFile::new().unwrap();
+		writeln!(f, "{}", "11".repeat(32)).unwrap();
+		let seed = wallet_seed_from_file(f.path().to_str().unwrap()).unwrap();
+		assert_eq!(seed, wallet_seed_decode(&"11".repeat(32)).unwrap());
+	}
+
+	#[test]
+	fn wallet_seed_from_file_rejects_garbage() {
+		use std::io::Write;
+		let mut f = tempfile::NamedTempFile::new().unwrap();
+		writeln!(f, "not a seed").unwrap();
+		assert!(wallet_seed_from_file(f.path().to_str().unwrap()).is_err());
+	}
+
+	#[test]
+	fn secret_string_from_file_rejects_missing_file() {
+		assert!(secret_string_from_file("/nonexistent/secret").is_err());
+	}
 
 	// `coin_public_decode` — untagged per ADR-0022.
 
