@@ -5,7 +5,7 @@ use crate::tx_generator::builder::{
 	WalletSchemes, build_fork_aware_context_cached_with_schemes, ensure_ecdsa_supported,
 };
 use crate::tx_generator::source::create_file_wallet_cache;
-use crate::{HRP_CREDENTIAL_SHIELDED, TxGenerator, WalletAddress, WalletSeed};
+use crate::{HRP_CREDENTIAL_SHIELDED, TxGenerator, WalletAddress};
 use crate::{
 	cli_parsers::{self as cli},
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
@@ -36,14 +36,12 @@ pub enum ShowWalletResult {
 pub struct ShowWalletArgs {
 	#[command(flatten)]
 	pub source: Source,
-	/// The seed of the wallet to show wallet state for, including private state (Schnorr NIGHT
-	/// identity)
-	#[arg(long, value_parser = cli::wallet_seed_decode, group = "wallet_id")]
-	pub seed: Option<WalletSeed>,
-	/// The seed of the wallet to show wallet state for, using an ECDSA NIGHT identity (ledger 9+).
-	/// Resolves distinct NIGHT UTXOs from `--seed`; the shielded/dust state is scheme-independent.
-	#[arg(long, value_parser = cli::wallet_seed_decode, group = "wallet_id")]
-	pub seed_ecdsa: Option<WalletSeed>,
+	/// The seed of the wallet to show wallet state for, including private state. Bare seed
+	/// selects Schnorr; prefix with `ecdsa:` for an ECDSA NIGHT identity (ledger 9+), e.g.
+	/// `--seed ecdsa:<seed>`. Resolves distinct NIGHT UTXOs between the two schemes; the
+	/// shielded/dust state is scheme-independent.
+	#[arg(long, value_parser = cli::scheme_seed_decode, group = "wallet_id")]
+	pub seed: Option<cli::SchemeSeed>,
 	/// The address of the wallet to show wallet state for, does not include private state
 	#[arg(long, value_parser = cli::wallet_address, group = "wallet_id")]
 	pub address: Option<WalletAddress>,
@@ -62,10 +60,8 @@ pub async fn execute(
 	let fetch_cache = args.source.fetch_cache.clone();
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
-	// Exactly one of `--seed` / `--seed-ecdsa` / `--address` is set (clap's `wallet_id` group).
-	// `resolve_scheme_pair` folds the two seed flags into `Some((seed, scheme))`, or `None` when
-	// the address flag was used instead.
-	let resolved_seed = cli::resolve_scheme_pair(args.seed, args.seed_ecdsa);
+	// Exactly one of `--seed` / `--address` is set (clap's `wallet_id` group).
+	let resolved_seed = args.seed.as_ref().map(cli::SchemeSeed::resolve);
 
 	if args.dry_run {
 		match &resolved_seed {
@@ -195,6 +191,7 @@ fn fork_wallet_result_v7(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::WalletSeed;
 	use crate::tx_generator::source::FetchCacheConfig;
 	use test_case::test_case;
 
@@ -236,7 +233,6 @@ mod tests {
 				ledger_state_db: String::new(),
 			},
 			seed: None,
-			seed_ecdsa: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
 			debug: false,
 			dry_run: false,
@@ -287,8 +283,10 @@ mod tests {
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
 			},
-			seed: Some(seed),
-			seed_ecdsa: None,
+			seed: Some(cli::SchemeSeed {
+				seed,
+				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+			}),
 			address: None,
 			debug: false,
 			dry_run: false,
@@ -299,8 +297,8 @@ mod tests {
 
 	/// Seed 01 is funded for its *Schnorr* NIGHT identity in genesis. The ECDSA identity of the
 	/// same seed is a different unshielded address and owns no genesis NIGHT UTXOs, so
-	/// `--seed-ecdsa` must resolve an empty *unshielded* UTXO set (whereas `--seed` resolves a
-	/// funded one — see the `funded-unshielded-seed-1` case). This proves the chosen scheme is
+	/// `--seed ecdsa:<seed>` must resolve an empty *unshielded* UTXO set (whereas a bare `--seed`
+	/// resolves a funded one — see the `funded-unshielded-seed-1` case). This proves the chosen scheme is
 	/// threaded into wallet resolution. The shielded coins and DUST wallet derive from the seed
 	/// alone (scheme-independent), so they stay funded and are not asserted here.
 	#[tokio::test]
@@ -325,8 +323,10 @@ mod tests {
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
 			},
-			seed: None,
-			seed_ecdsa: Some(seed),
+			seed: Some(cli::SchemeSeed {
+				seed,
+				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Ecdsa,
+			}),
 			address: None,
 			debug: false,
 			dry_run: false,

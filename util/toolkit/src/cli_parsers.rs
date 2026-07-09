@@ -70,81 +70,62 @@ pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error>
 	})
 }
 
-/// Reusable `--seed` / `--seed-ecdsa` pair for any command whose seed drives a NIGHT signature.
-///
-/// Exactly one must be given (enforced by clap's `ArgGroup`): `--seed` selects the historical
-/// Schnorr scheme, `--seed-ecdsa` the ledger-9+ ECDSA scheme. Flatten it into a command with
-/// `#[command(flatten)]` and call [`SeedArg::resolve`] to get the `(seed, scheme)` pair.
-#[derive(clap::Args, Clone, Debug)]
-#[group(required = true, multiple = false)]
-pub struct SeedArg {
-	/// Wallet seed for a Schnorr unshielded (NIGHT) identity.
-	#[arg(long, value_parser = wallet_seed_decode)]
-	pub seed: Option<WalletSeed>,
-	/// Wallet seed for an ECDSA unshielded (NIGHT) identity (supported from ledger 9).
-	#[arg(long, value_parser = wallet_seed_decode)]
-	pub seed_ecdsa: Option<WalletSeed>,
+/// A NIGHT wallet seed together with its [`UnshieldedSignatureScheme`], parsed from a single CLI
+/// (or JSON) value: `[schnorr:|ecdsa:]<hex|lazy-hex|mnemonic>`. No prefix defaults to Schnorr —
+/// backwards compatible with the historical bare `--seed <seed>` form. An explicit `ecdsa:`
+/// prefix selects the ledger-9+ ECDSA scheme.
+#[derive(Clone, Debug)]
+pub struct SchemeSeed {
+	pub seed: WalletSeed,
+	pub scheme: UnshieldedSignatureScheme,
 }
 
-impl SeedArg {
-	/// The chosen seed and its unshielded signature scheme. Clap's `ArgGroup`
-	/// (`required = true, multiple = false`) guarantees exactly one of the two is set.
+impl SchemeSeed {
+	/// The seed and its unshielded signature scheme, as a pair.
 	pub fn resolve(&self) -> (WalletSeed, UnshieldedSignatureScheme) {
-		resolve_seed(self.seed.clone(), self.seed_ecdsa.clone())
+		(self.seed.clone(), self.scheme)
 	}
 }
 
-/// Pick between a `--foo` (Schnorr) and `--foo-ecdsa` (ECDSA) seed pair, pairing the chosen value
-/// with its [`UnshieldedSignatureScheme`]. Returns `None` when neither is set (optional pairs).
-///
-/// Every CLI caller of this guards the pair with a clap `ArgGroup` or `conflicts_with`, so the
-/// "both set" arm is unreachable in practice; the `unreachable!` documents that invariant.
-pub fn resolve_scheme_pair<T>(
-	schnorr: Option<T>,
-	ecdsa: Option<T>,
-) -> Option<(T, UnshieldedSignatureScheme)> {
-	match (schnorr, ecdsa) {
-		(Some(seed), None) => Some((seed, UnshieldedSignatureScheme::Schnorr)),
-		(None, Some(seed)) => Some((seed, UnshieldedSignatureScheme::Ecdsa)),
-		(None, None) => None,
-		(Some(_), Some(_)) => {
-			unreachable!("clap group / conflicts_with rejects both the schnorr and ecdsa seed")
-		},
+#[derive(Debug, thiserror::Error)]
+pub enum SchemeSeedParseError {
+	#[error("unknown seed scheme '{0}', expected 'schnorr' or 'ecdsa'")]
+	UnknownScheme(String),
+	#[error(transparent)]
+	Seed(#[from] WalletSeedParseError),
+}
+
+impl FromStr for SchemeSeed {
+	type Err = SchemeSeedParseError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let (scheme, rest) = match s.split_once(':') {
+			Some(("schnorr", rest)) => (UnshieldedSignatureScheme::Schnorr, rest),
+			Some(("ecdsa", rest)) => (UnshieldedSignatureScheme::Ecdsa, rest),
+			Some((prefix, _)) => return Err(SchemeSeedParseError::UnknownScheme(prefix.into())),
+			None => (UnshieldedSignatureScheme::Schnorr, s),
+		};
+		Ok(SchemeSeed { seed: rest.parse()?, scheme })
 	}
 }
 
-/// Resolve a required `--foo` / `--foo-ecdsa` [`WalletSeed`] pair. Clap's `required = true,
-/// multiple = false` group guarantees exactly one is set.
-pub fn resolve_seed(
-	schnorr: Option<WalletSeed>,
-	ecdsa: Option<WalletSeed>,
-) -> (WalletSeed, UnshieldedSignatureScheme) {
-	resolve_scheme_pair(schnorr, ecdsa)
-		.expect("clap group requires exactly one of the seed / seed-ecdsa pair")
-}
-
-/// [`resolve_seed`] for the `String`-typed seed commands (the value is decoded to a
-/// [`WalletSeed`] later, in the builder). Clap's required group guarantees exactly one is set.
-pub fn resolve_seed_str(
-	schnorr: Option<String>,
-	ecdsa: Option<String>,
-) -> (String, UnshieldedSignatureScheme) {
-	resolve_scheme_pair(schnorr, ecdsa)
-		.expect("clap group requires exactly one of the seed / seed-ecdsa pair")
-}
-
-/// Resolve a *defaulted* `--funding-seed` (always present, via its clap `default_value`) against
-/// its optional `--funding-seed-ecdsa` sibling. The two are `conflicts_with`, so at most one is
-/// explicitly given; the ECDSA seed wins when present, otherwise the (possibly defaulted) Schnorr
-/// seed is used.
-pub fn resolve_defaulted_funding(
-	schnorr: String,
-	ecdsa: Option<String>,
-) -> (String, UnshieldedSignatureScheme) {
-	match ecdsa {
-		Some(seed) => (seed, UnshieldedSignatureScheme::Ecdsa),
-		None => (schnorr, UnshieldedSignatureScheme::Schnorr),
+impl<'de> serde::Deserialize<'de> for SchemeSeed {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		let s = <String as serde::Deserialize>::deserialize(deserializer)?;
+		s.parse().map_err(serde::de::Error::custom)
 	}
+}
+
+/// Clap `value_parser` adapter for [`SchemeSeed`].
+pub fn scheme_seed_decode(input: &str) -> Result<SchemeSeed, clap::error::Error> {
+	input.parse().map_err(|e| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+		);
+		err
+	})
 }
 
 pub fn keypair_from_str(input: &str) -> Result<Keypair, clap::error::Error> {

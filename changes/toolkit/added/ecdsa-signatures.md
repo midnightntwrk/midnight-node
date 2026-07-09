@@ -15,16 +15,17 @@ Schnorr the default.
   ledger-version signature types, so downstream builders never see a raw per-scheme key. The
   persisted layout changed, so the tag is bumped to `unshielded-wallet[v2]`.
 - HD `Role::Metadata` (index 4) is repurposed as `Role::Ecdsa` (`m/44'/2400'/0'/4/0`).
-- CLI: `--seed` selects Schnorr, `--seed-ecdsa` selects ECDSA (mutually exclusive). Every command
-  whose seed drives a NIGHT signature now accepts the ECDSA variant:
-  - `show-address`, `show-wallet`, `show-seed`, `dust-balance` gain `--seed-ecdsa` alongside
-    `--seed` (for `show-seed` the output is the raw, scheme-independent seed bytes, so the flag is
-    accepted only for parity and is a no-op).
-  - `generate-txs single-tx` gains `--source-seed-ecdsa` and `--funding-seed-ecdsa`;
-    `register-dust-address` / `deregister-dust-address` gain `--wallet-seed-ecdsa` and
-    `--funding-seed-ecdsa`; `claim-rewards` and `batches` gain `--funding-seed-ecdsa`.
-  - `transfer` / `batch-single-tx` JSON transfer specs accept optional `source_seed_ecdsa` and
-    `funding_seed_ecdsa` fields.
+- CLI: every seed-bearing flag now takes a single value with an optional scheme prefix —
+  `--seed <seed>` (bare, defaults to Schnorr, backwards compatible), `--seed schnorr:<seed>`
+  (explicit Schnorr), or `--seed ecdsa:<seed>` (ECDSA). This applies uniformly to every command
+  whose seed drives a NIGHT signature:
+  - `show-address`, `show-wallet`, `show-seed`, `dust-balance` (for `show-seed` the output is the
+    raw, scheme-independent seed bytes, so the prefix only affects parity and is a no-op there).
+  - `generate-txs single-tx` (`--source-seed`, `--funding-seed`), `register-dust-address` /
+    `deregister-dust-address` (`--wallet-seed`, `--funding-seed`), `claim-rewards` and `batches`
+    (`--funding-seed`).
+  - `transfer` / `batch-single-tx` JSON transfer specs accept a `source_seed` string and an
+    optional `funding_seed` string, each parsed with the same `schnorr:`/`ecdsa:` prefix rule.
   - The chosen per-seed scheme is threaded into the fork-aware context/cache builders, so a NIGHT
     identity is built, resolved and signed for with the requested scheme.
   - `generate-genesis` stays Schnorr-only (its seeds come from a JSON `--seeds-file`); contract

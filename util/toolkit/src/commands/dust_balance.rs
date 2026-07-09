@@ -13,18 +13,14 @@ use clap::Args;
 use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 
 #[derive(Args)]
-#[group(id = "dust_balance_seed", required = true, multiple = false)]
 pub struct DustBalanceArgs {
 	#[command(flatten)]
 	pub source: Source,
-	/// The seed of the wallet to show wallet state for, including private state (Schnorr NIGHT
-	/// identity)
-	#[arg(long, value_parser = cli::wallet_seed_decode, group = "dust_balance_seed")]
-	pub seed: Option<WalletSeed>,
-	/// The seed of the wallet to show wallet state for, using an ECDSA NIGHT identity (ledger 9+).
-	/// DUST resolution depends on the NIGHT identity, so this genuinely differs from `--seed`.
-	#[arg(long, value_parser = cli::wallet_seed_decode, group = "dust_balance_seed")]
-	pub seed_ecdsa: Option<WalletSeed>,
+	/// The seed of the wallet to show wallet state for. Bare seed selects Schnorr; prefix with
+	/// `ecdsa:` for an ECDSA NIGHT identity (ledger 9+), e.g. `--seed ecdsa:<seed>`. DUST
+	/// resolution depends on the NIGHT identity, so the scheme genuinely matters here.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub seed: cli::SchemeSeed,
 	/// Dry-run - don't fetch wallet state, just print out settings
 	#[arg(long)]
 	pub dry_run: bool,
@@ -63,8 +59,7 @@ pub enum DustBalanceResult {
 pub async fn execute(
 	args: DustBalanceArgs,
 ) -> Result<DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
-	// Exactly one of `--seed` / `--seed-ecdsa` is set (clap's `dust_balance_seed` group).
-	let (seed, scheme) = cli::resolve_seed(args.seed, args.seed_ecdsa);
+	let (seed, scheme) = args.seed.resolve();
 	let many = DustBalanceManyArgs {
 		source: args.source,
 		seeds: vec![(seed, scheme)],
@@ -205,8 +200,7 @@ mod tests {
 		let seed = WalletSeed::try_from_hex_str(seed).unwrap();
 		let args = DustBalanceArgs {
 			source: source_for(src_files),
-			seed: Some(seed),
-			seed_ecdsa: None,
+			seed: cli::SchemeSeed { seed, scheme: UnshieldedSignatureScheme::Schnorr },
 			dry_run: false,
 		};
 
@@ -215,7 +209,7 @@ mod tests {
 		assert!(matches!(res, DustBalanceResult::Json(DustBalanceJson { total, .. }) if total > 0));
 	}
 
-	/// Wiring smoke test for `--seed-ecdsa`: dust-balance for an ECDSA identity must resolve on a
+	/// Wiring smoke test for `--seed ecdsa:<seed>`: dust-balance for an ECDSA identity must resolve on a
 	/// ledger-9 source (the scheme threads through, the pre-ledger-9 guard does not trip, and
 	/// nothing panics). Note this genesis fixture pre-allocates DUST by the scheme-independent dust
 	/// address, so the ECDSA total matches the Schnorr one here; the scheme-dependent NIGHT-UTXO
@@ -229,8 +223,7 @@ mod tests {
 		.unwrap();
 		let args = DustBalanceArgs {
 			source: source_for(vec![td("genesis/genesis_block_undeployed.mn")]),
-			seed: None,
-			seed_ecdsa: Some(seed),
+			seed: cli::SchemeSeed { seed, scheme: UnshieldedSignatureScheme::Ecdsa },
 			dry_run: false,
 		};
 

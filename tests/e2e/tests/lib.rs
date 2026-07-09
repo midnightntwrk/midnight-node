@@ -322,8 +322,10 @@ pub(crate) async fn ensure_dev_wallet_funded() {
                 fetch_cache: fetch_cache_config(),
                 ledger_state_db: String::new(),
             },
-            seed: Some(seed.clone()),
-            seed_ecdsa: None,
+            seed: Some(midnight_node_toolkit::cli_parsers::SchemeSeed {
+                seed: seed.clone(),
+                scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+            }),
             address: None,
             debug: false,
             dry_run: false,
@@ -495,7 +497,7 @@ pub(crate) const DEV_WALLET_UNSHIELDED_ADDR_LOCAL: &str =
 pub(crate) async fn build_unshielded_self_transfer(url: &str, dest: &std::path::Path) {
     use midnight_node_toolkit::cli_parsers as cli;
     use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
-    use midnight_node_toolkit::tx_generator::builder::{Builder, SingleTxArgs, SourceSeedArg};
+    use midnight_node_toolkit::tx_generator::builder::{Builder, SingleTxArgs};
 
     let recipient = cli::wallet_address(DEV_WALLET_UNSHIELDED_ADDR_LOCAL)
         .expect("valid dev wallet unshielded address");
@@ -508,12 +510,11 @@ pub(crate) async fn build_unshielded_self_transfer(url: &str, dest: &std::path::
             shielded_token_type: vec![],
             unshielded_amount: vec![100],
             unshielded_token_type: vec![],
-            source_seed: SourceSeedArg {
-                source_seed: Some(seed),
-                source_seed_ecdsa: None,
+            source_seed: cli::SchemeSeed {
+                seed,
+                scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
             },
             funding_seed: None,
-            funding_seed_ecdsa: None,
             destination_address: vec![recipient],
             input_utxos: vec![],
             rng_seed: None,

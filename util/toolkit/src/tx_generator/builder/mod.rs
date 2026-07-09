@@ -46,74 +46,6 @@ pub mod builders;
 
 pub const FUNDING_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
-/// Reusable required `--source-seed` / `--source-seed-ecdsa` pair, flattened into commands whose
-/// *source* wallet drives a NIGHT signature (`single-tx`). It carries its own clap `ArgGroup`
-/// (`required = true, multiple = false`) so exactly one is required and the two are mutually
-/// exclusive. NOTE: this must be flattened rather than declared as a container `#[group]` on the
-/// parent — a container group sweeps in *every* non-flag arg of the parent, not just the seed pair.
-#[derive(Args, Clone, Debug)]
-#[group(required = true, multiple = false)]
-pub struct SourceSeedArg {
-	/// Seed for source wallet (Schnorr NIGHT identity)
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	pub source_seed: Option<WalletSeed>,
-	/// Seed for source wallet with an ECDSA NIGHT identity (ledger 9+). Mutually exclusive with
-	/// `--source-seed`; exactly one of the two is required.
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	pub source_seed_ecdsa: Option<WalletSeed>,
-}
-
-impl SourceSeedArg {
-	/// The chosen source seed and its unshielded signature scheme (clap guarantees exactly one).
-	pub fn resolve(&self) -> (WalletSeed, UnshieldedSignatureScheme) {
-		cli::resolve_seed(self.source_seed.clone(), self.source_seed_ecdsa.clone())
-	}
-}
-
-/// Reusable required `--wallet-seed` / `--wallet-seed-ecdsa` pair (`String`-typed, decoded later),
-/// flattened into the DUST (de)registration commands. Same rationale as [`SourceSeedArg`].
-#[derive(Args, Clone, Debug)]
-#[group(required = true, multiple = false)]
-pub struct WalletSeedArg {
-	/// Seed for the wallet (Schnorr NIGHT identity)
-	#[arg(long)]
-	pub wallet_seed: Option<String>,
-	/// Seed for the wallet with an ECDSA NIGHT identity (ledger 9+). Mutually exclusive with
-	/// `--wallet-seed`; exactly one of the two is required.
-	#[arg(long)]
-	pub wallet_seed_ecdsa: Option<String>,
-}
-
-impl WalletSeedArg {
-	/// The chosen wallet seed and its unshielded signature scheme (clap guarantees exactly one).
-	pub fn resolve(&self) -> (String, UnshieldedSignatureScheme) {
-		cli::resolve_seed_str(self.wallet_seed.clone(), self.wallet_seed_ecdsa.clone())
-	}
-}
-
-/// Reusable *defaulted* `--funding-seed` / `--funding-seed-ecdsa` pair, flattened into commands
-/// whose fee-payer defaults to [`FUNDING_SEED`] when unspecified. Unlike [`SourceSeedArg`] this is
-/// not a `required` `ArgGroup`: `--funding-seed` carries the default so it is always present, and
-/// `--funding-seed-ecdsa` is the optional `conflicts_with` sibling that selects ECDSA when set.
-#[derive(Args, Clone, Debug)]
-pub struct FundingSeedArg {
-	/// Seed for funding the transactions (Schnorr NIGHT identity)
-	#[arg(long, default_value = FUNDING_SEED)]
-	pub funding_seed: String,
-	/// Seed for funding the transactions with an ECDSA NIGHT identity (ledger 9+). Mutually
-	/// exclusive with `--funding-seed`; when set it selects the ECDSA scheme for the fee-payer.
-	#[arg(long, conflicts_with = "funding_seed")]
-	pub funding_seed_ecdsa: Option<String>,
-}
-
-impl FundingSeedArg {
-	/// The chosen funding seed and its unshielded signature scheme. The ECDSA seed wins when
-	/// present, otherwise the (possibly defaulted) Schnorr seed is used.
-	pub fn resolve(&self) -> (String, UnshieldedSignatureScheme) {
-		cli::resolve_defaulted_funding(self.funding_seed.clone(), self.funding_seed_ecdsa.clone())
-	}
-}
-
 /// Toolkit-local mirror of the ledger's `ClaimKind`, used so the CLI can expose a
 /// `--claim-kind` selector via clap's `ValueEnum` without depending on a specific
 /// ledger version's type. Each version builder converts this into its own `ClaimKind`.
@@ -129,9 +61,10 @@ pub enum ClaimKindArg {
 
 #[derive(Args, Clone, Debug)]
 pub struct ClaimRewardsArgs {
-	/// Fee-payer seed: `--funding-seed` (Schnorr, defaulted) or `--funding-seed-ecdsa` (ECDSA).
-	#[command(flatten)]
-	pub funding_seed: FundingSeedArg,
+	/// Fee-payer seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--funding-seed ecdsa:<seed>`.
+	#[arg(long, default_value = FUNDING_SEED, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: cli::SchemeSeed,
 	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
@@ -261,9 +194,10 @@ pub struct ContractMaintenanceArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct BatchesArgs {
-	/// Fee-payer seed: `--funding-seed` (Schnorr, defaulted) or `--funding-seed-ecdsa` (ECDSA).
-	#[command(flatten)]
-	pub funding_seed: FundingSeedArg,
+	/// Fee-payer seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--funding-seed ecdsa:<seed>`.
+	#[arg(long, default_value = FUNDING_SEED, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: cli::SchemeSeed,
 	/// Number of txs that can be sent concurrently
 	#[arg(long, short = 'n', default_value = "1")]
 	pub num_txs_per_batch: usize,
@@ -349,17 +283,14 @@ pub struct SingleTxArgs {
 		value_parser = cli::token_decode::<UnshieldedTokenType>,
 	)]
 	pub unshielded_token_type: Vec<UnshieldedTokenType>,
-	/// Source wallet seed: exactly one of `--source-seed` (Schnorr) / `--source-seed-ecdsa`
-	/// (ECDSA, ledger 9+) is required.
-	#[command(flatten)]
-	pub source_seed: SourceSeedArg,
-	/// Funding seed for transaction. If not set, uses source_seed (Schnorr NIGHT identity)
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	pub funding_seed: Option<WalletSeed>,
-	/// Funding seed for transaction with an ECDSA NIGHT identity (ledger 9+). Mutually exclusive
-	/// with `--funding-seed`.
-	#[arg(long, value_parser = cli::wallet_seed_decode, conflicts_with = "funding_seed")]
-	pub funding_seed_ecdsa: Option<WalletSeed>,
+	/// Source wallet seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--source-seed ecdsa:<seed>`.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub source_seed: cli::SchemeSeed,
+	/// Funding seed for transaction. If not set, uses source_seed. Bare seed selects Schnorr;
+	/// prefix with `ecdsa:` for an ECDSA identity (ledger 9+).
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: Option<cli::SchemeSeed>,
 	/// Destination address, both shielded and unshielded. Used together with
 	/// `--*-amount` / `--*-token-type` flags. Either this or `--output` must
 	/// be provided, but not both.
@@ -385,17 +316,14 @@ pub struct SingleTxArgs {
 }
 #[derive(Args, Clone, Debug)]
 pub struct RegisterDustAddressArgs {
-	/// Source wallet seed: exactly one of `--wallet-seed` (Schnorr) / `--wallet-seed-ecdsa`
-	/// (ECDSA, ledger 9+) is required.
-	#[command(flatten)]
-	pub wallet_seed: WalletSeedArg,
-	/// Seed for funding wallet. If not provided, uses retroactive DUST from NIGHT UTXOs.
-	#[arg(long)]
-	pub funding_seed: Option<String>,
-	/// Seed for funding wallet with an ECDSA NIGHT identity (ledger 9+). Mutually exclusive with
-	/// `--funding-seed`.
-	#[arg(long, conflicts_with = "funding_seed")]
-	pub funding_seed_ecdsa: Option<String>,
+	/// Wallet seed to register. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA
+	/// identity (ledger 9+), e.g. `--wallet-seed ecdsa:<seed>`.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub wallet_seed: cli::SchemeSeed,
+	/// Seed for funding wallet. If not provided, uses retroactive DUST from NIGHT UTXOs. Bare
+	/// seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity (ledger 9+).
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: Option<cli::SchemeSeed>,
 	#[arg(
 		long,
 		value_parser = cli::wallet_address,
@@ -410,13 +338,14 @@ pub struct RegisterDustAddressArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct DeregisterDustAddressArgs {
-	/// Wallet seed to deregister: exactly one of `--wallet-seed` (Schnorr) / `--wallet-seed-ecdsa`
-	/// (ECDSA, ledger 9+) is required.
-	#[command(flatten)]
-	pub wallet_seed: WalletSeedArg,
-	/// Fee-payer seed: `--funding-seed` (Schnorr, defaulted) or `--funding-seed-ecdsa` (ECDSA).
-	#[command(flatten)]
-	pub funding_seed: FundingSeedArg,
+	/// Wallet seed to deregister. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA
+	/// identity (ledger 9+), e.g. `--wallet-seed ecdsa:<seed>`.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub wallet_seed: cli::SchemeSeed,
+	/// Fee-payer seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--funding-seed ecdsa:<seed>`.
+	#[arg(long, default_value = FUNDING_SEED, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: cli::SchemeSeed,
 	/// RNG seed for deterministic transaction generation (32 bytes hex)
 	#[arg(
         long,
@@ -427,42 +356,29 @@ pub struct DeregisterDustAddressArgs {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TransferSpec {
-	pub source_seed: String,
+	/// Source wallet seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `"ecdsa:<seed>"`.
+	pub source_seed: cli::SchemeSeed,
 	pub destination_address: String,
 	pub unshielded_amount: Option<u128>,
 	pub unshielded_token_type: Option<String>,
 	pub shielded_amount: Option<u128>,
 	pub shielded_token_type: Option<String>,
-	pub funding_seed: Option<String>,
+	/// Fee-payer seed. Absent means the source seed funds the tx. Bare seed selects Schnorr;
+	/// prefix with `ecdsa:` for an ECDSA identity (ledger 9+).
+	pub funding_seed: Option<cli::SchemeSeed>,
 	pub rng_seed: Option<String>,
-	/// When set, the source NIGHT identity is ECDSA (ledger 9+) derived from this seed, superseding
-	/// `source_seed`. Absent → the Schnorr `source_seed` identity is used.
-	#[serde(default)]
-	pub source_seed_ecdsa: Option<String>,
-	/// When set, the fee-payer NIGHT identity is ECDSA (ledger 9+) derived from this seed,
-	/// superseding `funding_seed`. Absent → `funding_seed` (Schnorr) if given, else the source seed.
-	#[serde(default)]
-	pub funding_seed_ecdsa: Option<String>,
 }
 
 impl TransferSpec {
-	/// The source NIGHT identity: `source_seed_ecdsa` (ECDSA) when present, else `source_seed`
-	/// (Schnorr). Returns the seed string plus its scheme.
-	pub fn resolve_source(&self) -> (String, UnshieldedSignatureScheme) {
-		match &self.source_seed_ecdsa {
-			Some(seed) => (seed.clone(), UnshieldedSignatureScheme::Ecdsa),
-			None => (self.source_seed.clone(), UnshieldedSignatureScheme::Schnorr),
-		}
+	/// The source NIGHT identity and its unshielded signature scheme.
+	pub fn resolve_source(&self) -> (WalletSeed, UnshieldedSignatureScheme) {
+		self.source_seed.resolve()
 	}
 
-	/// The optional fee-payer NIGHT identity: `funding_seed_ecdsa` (ECDSA) if present, else
-	/// `funding_seed` (Schnorr) if present, else `None` (the source seed funds the tx).
-	pub fn resolve_funding(&self) -> Option<(String, UnshieldedSignatureScheme)> {
-		match (&self.funding_seed, &self.funding_seed_ecdsa) {
-			(_, Some(seed)) => Some((seed.clone(), UnshieldedSignatureScheme::Ecdsa)),
-			(Some(seed), None) => Some((seed.clone(), UnshieldedSignatureScheme::Schnorr)),
-			(None, None) => None,
-		}
+	/// The optional fee-payer NIGHT identity: `None` means the source seed funds the tx.
+	pub fn resolve_funding(&self) -> Option<(WalletSeed, UnshieldedSignatureScheme)> {
+		self.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
 	}
 }
 
@@ -606,8 +522,8 @@ pub enum BuilderConstructionError {
 	NotSupportedForLedger7(&'static str),
 	#[error(
 		"ECDSA unshielded (NIGHT) signatures are only supported from ledger 9; the source chain is \
-		 on {0:?}. Use a Schnorr seed (--seed / --source-seed / --wallet-seed / --funding-seed) \
-		 instead."
+		 on {0:?}. Use a bare or `schnorr:`-prefixed seed (--seed / --source-seed / --wallet-seed / \
+		 --funding-seed) instead of an `ecdsa:`-prefixed one."
 	)]
 	EcdsaNotSupportedForLedger(LedgerVersion),
 	#[error("chain has not reached any known ledger version")]
@@ -677,9 +593,10 @@ impl Builder {
 	/// Extract wallet seeds needed by this builder configuration, without constructing
 	/// the full builder (which requires context/prover). Returns empty for pass-through builders.
 	///
-	/// Seeds are resolved from each command's `--…-seed` / `--…-seed-ecdsa` pair (the scheme
-	/// itself is dropped here — see [`Self::relevant_wallet_schemes`] for the companion scheme map,
-	/// which must decode the *same* resolved seed values so the two line up by key).
+	/// Seeds are resolved from each command's `--…-seed` value (a bare/`schnorr:`/`ecdsa:`-prefixed
+	/// [`cli::SchemeSeed`]); the scheme itself is dropped here — see [`Self::relevant_wallet_schemes`]
+	/// for the companion scheme map, which must decode the *same* resolved seed values so the two
+	/// line up by key).
 	pub fn relevant_wallet_seeds(&self) -> Result<Vec<WalletSeed>, &'static str> {
 		match self {
 			Builder::Batches(args) => {
@@ -699,38 +616,30 @@ impl Builder {
 			},
 			Builder::ClaimRewards(args) => {
 				let (funding, _) = args.funding_seed.resolve();
-				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&funding)])
+				Ok(vec![funding])
 			},
 			Builder::SingleTx(args) => {
 				let (source, _) = args.source_seed.resolve();
 				let mut seeds = vec![source];
-				if let Some((funding, _)) = cli::resolve_scheme_pair(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				) {
+				if let Some((funding, _)) = args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+				{
 					seeds.push(funding);
 				}
 				Ok(seeds)
 			},
 			Builder::RegisterDustAddress(args) => {
 				let (wallet_seed, _) = args.wallet_seed.resolve();
-				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed);
-				if let Some((funding, _)) = cli::resolve_scheme_pair(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				) {
-					Ok(vec![seed, Wallet::<DefaultDB>::wallet_seed_decode(&funding)])
+				if let Some((funding, _)) = args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+				{
+					Ok(vec![wallet_seed, funding])
 				} else {
-					Ok(vec![seed])
+					Ok(vec![wallet_seed])
 				}
 			},
 			Builder::DeregisterDustAddress(args) => {
 				let (wallet_seed, _) = args.wallet_seed.resolve();
 				let (funding, _) = args.funding_seed.resolve();
-				Ok(vec![
-					Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed),
-					Wallet::<DefaultDB>::wallet_seed_decode(&funding),
-				])
+				Ok(vec![wallet_seed, funding])
 			},
 			Builder::BatchSingleTx(args) => {
 				let specs = args.get_transfer_specs();
@@ -739,11 +648,11 @@ impl Builder {
 				for spec in &specs {
 					let (source, _) = spec.resolve_source();
 					if seen.insert(source.clone()) {
-						seeds.push(Wallet::<DefaultDB>::wallet_seed_decode(&source));
+						seeds.push(source);
 					}
 					if let Some((funding, _)) = spec.resolve_funding() {
 						if seen.insert(funding.clone()) {
-							seeds.push(Wallet::<DefaultDB>::wallet_seed_decode(&funding));
+							seeds.push(funding);
 						}
 					}
 				}
@@ -771,44 +680,42 @@ impl Builder {
 		match self {
 			Builder::Batches(args) => {
 				let (funding, scheme) = args.funding_seed.resolve();
-				mark(Wallet::<DefaultDB>::wallet_seed_decode(&funding), scheme);
+				mark(funding, scheme);
 			},
 			Builder::ClaimRewards(args) => {
 				let (funding, scheme) = args.funding_seed.resolve();
-				mark(Wallet::<DefaultDB>::wallet_seed_decode(&funding), scheme);
+				mark(funding, scheme);
 			},
 			Builder::SingleTx(args) => {
 				let (source, source_scheme) = args.source_seed.resolve();
 				mark(source, source_scheme);
-				if let Some((funding, funding_scheme)) = cli::resolve_scheme_pair(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				) {
+				if let Some((funding, funding_scheme)) =
+					args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+				{
 					mark(funding, funding_scheme);
 				}
 			},
 			Builder::RegisterDustAddress(args) => {
 				let (wallet_seed, wallet_scheme) = args.wallet_seed.resolve();
-				mark(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed), wallet_scheme);
-				if let Some((funding, funding_scheme)) = cli::resolve_scheme_pair(
-					args.funding_seed.clone(),
-					args.funding_seed_ecdsa.clone(),
-				) {
-					mark(Wallet::<DefaultDB>::wallet_seed_decode(&funding), funding_scheme);
+				mark(wallet_seed, wallet_scheme);
+				if let Some((funding, funding_scheme)) =
+					args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+				{
+					mark(funding, funding_scheme);
 				}
 			},
 			Builder::DeregisterDustAddress(args) => {
 				let (wallet_seed, wallet_scheme) = args.wallet_seed.resolve();
-				mark(Wallet::<DefaultDB>::wallet_seed_decode(&wallet_seed), wallet_scheme);
+				mark(wallet_seed, wallet_scheme);
 				let (funding, funding_scheme) = args.funding_seed.resolve();
-				mark(Wallet::<DefaultDB>::wallet_seed_decode(&funding), funding_scheme);
+				mark(funding, funding_scheme);
 			},
 			Builder::BatchSingleTx(args) => {
 				for spec in &args.get_transfer_specs() {
 					let (source, source_scheme) = spec.resolve_source();
-					mark(Wallet::<DefaultDB>::wallet_seed_decode(&source), source_scheme);
+					mark(source, source_scheme);
 					if let Some((funding, funding_scheme)) = spec.resolve_funding() {
-						mark(Wallet::<DefaultDB>::wallet_seed_decode(&funding), funding_scheme);
+						mark(funding, funding_scheme);
 					}
 				}
 			},

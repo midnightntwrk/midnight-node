@@ -105,9 +105,7 @@ impl<C: BuilderContext<DefaultDB>> SingleTxBuilder<C> {
 		// the context wallet is built (see `Builder::relevant_wallet_schemes`), so the scheme half
 		// of each resolved pair is dropped here.
 		let (source_seed, _) = args.source_seed.resolve();
-		let funding_seed =
-			crate::cli_parsers::resolve_scheme_pair(args.funding_seed, args.funding_seed_ecdsa)
-				.map(|(seed, _)| seed);
+		let funding_seed = args.funding_seed.map(|s| s.resolve().0);
 
 		Self {
 			context,

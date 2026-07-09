@@ -146,7 +146,8 @@ async fn consolidate_faucet() {
 #[ignore = "wiring smoke test for Postgres-backed fetch cache; \
             opt-in with `cargo test --ignored dust_balance_smoke`"]
 async fn dust_balance_smoke() {
-    use midnight_node_ledger_helpers::WalletSeed;
+    use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
+    use midnight_node_toolkit::cli_parsers::SchemeSeed;
     use midnight_node_toolkit::commands::dust_balance::{self, DustBalanceArgs};
     use midnight_node_toolkit::tx_generator::source::Source;
 
@@ -168,8 +169,10 @@ async fn dust_balance_smoke() {
             fetch_cache: crate::fetch_cache_config(),
             ledger_state_db: String::new(),
         },
-        seed: Some(seed),
-        seed_ecdsa: None,
+        seed: SchemeSeed {
+            seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
