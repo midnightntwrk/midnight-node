@@ -23,7 +23,7 @@ pub use pallet::*;
 mod check_throttle;
 pub use check_throttle::CheckThrottle;
 
-pub mod migration;
+pub mod migrations;
 
 #[cfg(test)]
 mod mock;
@@ -73,7 +73,7 @@ pub mod pallet {
 		type WindowSize: Get<u32>;
 	}
 
-	/// Tracks (bytes_used, window_start_block) per account for throttling signed transactions.
+	/// Tracks per-account throttle usage within a rolling block window.
 	#[pallet::storage]
 	pub type AccountUsage<T: Config> =
 		StorageMap<_, Blake2_128Concat, T::AccountId, UsageStats<T>, ValueQuery>;

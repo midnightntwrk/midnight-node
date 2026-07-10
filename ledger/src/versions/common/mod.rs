@@ -12,6 +12,9 @@
 // limitations under the License.
 
 #[cfg(feature = "std")]
+pub(crate) use super::TransactionSignature;
+
+#[cfg(feature = "std")]
 use super::{
 	base_crypto_local, coin_structure_local, helpers_local, ledger_storage_local,
 	midnight_serialize_local, mn_ledger_local, onchain_runtime_local, transient_crypto_local,
@@ -56,10 +59,10 @@ use {
 	ledger_storage_local::{
 		Storage,
 		arena::{ArenaKey, Sp, TypedArenaKey},
-		db::{DB, ParityDb},
+		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
+	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
@@ -188,13 +191,33 @@ where
 	pub fn set_default_storage(mut externalities: &mut dyn Externalities) {
 		let maybe_storage = externalities.extension::<LedgerStorageExt>();
 		if let Some(storage) = maybe_storage {
-			let res = set_default_storage(|| {
-				let db = ParityDb::<sha2::Sha256>::open(storage.0.db_path.as_path());
-				Storage::new(storage.0.cache_size, db)
-			});
-			if res.is_err() {
-				log::warn!("Warning: Failed to set default storage: {res:?}");
-			}
+			match &storage.db {
+				LedgerStorageDb::UnifiedDb(db) => {
+					let res = set_default_storage(|| {
+						let db =
+                            ParityDb::<sha2::Sha256, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(OwnedDb(db.clone()));
+						Storage::new(storage.cache_size, db)
+					});
+					if res.is_err() {
+						log::warn!(
+							target: LOG_TARGET,
+							"Warning: Failed to set default storage, already initialized (UnifiedDb)"
+						);
+					}
+				},
+				LedgerStorageDb::SeparateDb(db_path) => {
+					let res = set_default_storage(|| {
+						let db = ParityDb::<sha2::Sha256>::open(db_path.as_path());
+						Storage::new(storage.0.cache_size, db)
+					});
+					if res.is_err() {
+						log::warn!(
+							target: LOG_TARGET,
+							"Warning: Failed to set default storage, already initialized (SeparateDb)"
+						);
+					}
+				},
+			};
 		} else {
 			log::error!(
 				target: LOG_TARGET,
@@ -257,12 +280,11 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let mut ledger = Ledger::post_block_update(ledger, block_context).map_err(|e| {
+		let mut ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
 			);
-			LedgerApiError::NoLedgerState
 		})?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -285,6 +307,23 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
+		Ok(state_root)
+	}
+
+	/// The end-of-block ledger transition cannot fail on block limits (the limit check runs
+	/// per-transaction via prevalidation, and fullness is clamped before applying), so this is
+	/// suitable for `on_finalize`. Loading the ledger state and serializing the resulting key
+	/// remain fallible — those represent genuine bugs rather than block-content conditions.
+	pub fn apply_post_block_update(
+		mut _externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		block_context: BlockContext,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
+		ledger.persist();
 		Ok(state_root)
 	}
 
@@ -455,11 +494,19 @@ where
 						start_tx_processing_time.elapsed().as_millis()
 					);
 				},
-				TransactionOperation::ClaimRewards { value, .. } => {
+				TransactionOperation::ClaimRewards { value } => {
 					event.claim_rewards.push(value);
 					log::trace!(
 						target: LOG_TARGET,
 						"⏱️  Tx op: ClaimRewards (elapsed_ms={})",
+						start_tx_processing_time.elapsed().as_millis()
+					);
+				},
+				TransactionOperation::ClaimBridgeTransfer { value } => {
+					event.claim_rewards.push(value);
+					log::trace!(
+						target: LOG_TARGET,
+						"⏱️  Tx op: ClaimBridgeTransfer (elapsed_ms={})",
 						start_tx_processing_time.elapsed().as_millis()
 					);
 				},
@@ -638,6 +685,9 @@ where
 					Op::Maintain { address: api.tagged_serialize(&address)? }
 				},
 				TransactionOperation::ClaimRewards { value } => Op::ClaimRewards { value },
+				TransactionOperation::ClaimBridgeTransfer { value } => {
+					Op::ClaimBridgeTransfer { value }
+				},
 			};
 			acc.push(a);
 			Ok::<_, LedgerApiError>(acc)
@@ -719,7 +769,25 @@ where
 		let night_addr = api.night_address(beneficiary)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
-		Ok(*ledger.get_unclaimed_amount(night_addr).unwrap_or(&0))
+		ledger
+			.get_unclaimed_amount(night_addr)
+			.copied()
+			.ok_or(LedgerApiError::BeneficiaryNotFound)
+	}
+
+	pub fn get_bridge_receiving_amount(
+		state_key: &[u8],
+		beneficiary: &[u8],
+	) -> Result<u128, LedgerApiError> {
+		let api = api::new();
+
+		let night_addr = api.night_address(beneficiary)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		ledger
+			.get_bridge_receiving_amount(night_addr)
+			.copied()
+			.ok_or(LedgerApiError::BeneficiaryNotFound)
 	}
 
 	pub fn get_ledger_parameters(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
@@ -727,6 +795,13 @@ where
 		let ledger = Self::get_ledger(&api, state_key)?;
 		let ledger_parameters = Self::get_deserialized_ledger_parameters(&ledger);
 		api.tagged_serialize(&ledger_parameters)
+	}
+
+	pub fn get_c_to_m_bridge_min_amount(state_key: &[u8]) -> Result<u128, LedgerApiError> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let ledger_parameters = Self::get_deserialized_ledger_parameters(&ledger);
+		Ok(ledger_parameters.c_to_m_bridge_min_amount)
 	}
 
 	pub fn get_transaction_cost(
@@ -810,6 +885,13 @@ where
 										SingleUpdate::VerifierKeyRemove(..) => {
 											cd.inc_verifier_key_remove();
 										},
+										// Ledger 9+ adds IrInsert/IrRemove (on-chain IR maintenance).
+										// This match is shared across ledger versions, so the variants
+										// can't be named here (they don't exist in L7/L8's SingleUpdate);
+										// they're not yet broken out in ContractCallsDetails telemetry.
+										// TODO: support IrInsert/IrRemove
+										#[allow(unreachable_patterns)]
+										_ => {},
 									}
 								}
 							},
@@ -973,13 +1055,15 @@ where
 			return Ok(cache_outcome);
 		}
 
-		// Dry-run apply to validate guaranteed execution against current state
+		// Dry-run the guaranteed segment against the current state.
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
-		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
 
-		match result {
-			mn_ledger_local::semantics::TransactionResult::Success(_)
-			| mn_ledger_local::semantics::TransactionResult::PartialSuccess(_, _) => {
+		match super::guaranteed_validation::validate_guaranteed_execution(
+			&ledger.state,
+			verified_tx,
+			&ctx,
+		) {
+			Ok(()) => {
 				log::info!(
 					target: LOG_TARGET,
 					"📋 Validated transaction {} for mempool",
@@ -987,7 +1071,7 @@ where
 				);
 				Ok(cache_outcome)
 			},
-			mn_ledger_local::semantics::TransactionResult::Failure(reason) => {
+			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
 					"🚫 Rejected transaction {} from mempool: guaranteed execution would fail: {reason:?}",
@@ -1002,8 +1086,9 @@ where
 	/// Validates transaction application, with caching.
 	///
 	/// Uses `get_verified_transaction` to get a cached or freshly computed
-	/// `VerifiedTransaction`, then performs a dry-run `apply()` to validate
-	/// the guaranteed part will succeed.
+	/// `VerifiedTransaction`, then dry-runs guaranteed execution (via the
+	/// version-specific `guaranteed_validation` module) to validate that the
+	/// transaction can enter a block.
 	///
 	/// Returns the cache outcome indicating how validation was resolved.
 	fn do_validate_guaranteed_execution(
@@ -1019,12 +1104,14 @@ where
 			Self::get_verified_transaction(ledger, tx, block_context, key)?;
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
-		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
 
-		match result {
-			mn_ledger_local::semantics::TransactionResult::Success(_)
-			| mn_ledger_local::semantics::TransactionResult::PartialSuccess(_, _) => Ok(cache_outcome),
-			mn_ledger_local::semantics::TransactionResult::Failure(reason) => {
+		match super::guaranteed_validation::validate_guaranteed_execution(
+			&ledger.state,
+			verified_tx,
+			&ctx,
+		) {
+			Ok(()) => Ok(cache_outcome),
+			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
 					"🚫 Rejecting transaction {} at pre-dispatch: guaranteed execution would fail: {reason:?}",
@@ -1096,16 +1183,13 @@ where
 
 	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let system_tx = SystemTransaction::DistributeReserve(amount);
+		let system_tx = super::system_tx::distribute_reserve_system_tx(amount);
 		api.tagged_serialize(&system_tx)
 	}
 
-	pub fn construct_distribute_treasury_system_tx(
-		amount: u128,
-	) -> Result<Vec<u8>, LedgerApiError> {
+	pub fn construct_unlock_to_treasury_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		//TODO: this is wrong transaction, ledger is missing the correct one yet. https://github.com/midnightntwrk/midnight-node/issues/1277
-		let system_tx = SystemTransaction::PayBlockRewardsToTreasury { amount };
+		let system_tx = super::system_tx::unlock_to_treasury_system_tx(amount)?;
 		api.tagged_serialize(&system_tx)
 	}
 }
@@ -1121,7 +1205,8 @@ fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiE
 		SystemTransaction::PayBlockRewardsToTreasury { .. } => Ok("pay_block_rewards_to_treasury"),
 		SystemTransaction::PayFromTreasuryShielded { .. } => Ok("pay_from_treasury_shielded"),
 		SystemTransaction::PayFromTreasuryUnshielded { .. } => Ok("pay_from_treasury_unshielded"),
-		SystemTransaction::DistributeReserve(_) => Ok("distribute_reserve"),
+		tx if super::system_tx::is_distribute_reserve_system_tx(tx) => Ok("distribute_reserve"),
+		tx if super::system_tx::is_unlock_to_treasury_system_tx(tx) => Ok("unlock_to_treasury"),
 		SystemTransaction::CNightGeneratesDustUpdate { .. } => Ok("cnight_generates_dust_update"),
 		other => {
 			log::error!(
@@ -1244,7 +1329,7 @@ mod tests {
 
 	#[test]
 	fn get_system_tx_type_distribute_reserve() {
-		let tx = SystemTransaction::DistributeReserve(0);
+		let tx = super::super::system_tx::distribute_reserve_system_tx(0);
 		assert_eq!(get_system_tx_type(&tx).unwrap(), "distribute_reserve");
 	}
 
@@ -1252,5 +1337,12 @@ mod tests {
 	fn get_system_tx_type_cnight_generates_dust_update() {
 		let tx = SystemTransaction::CNightGeneratesDustUpdate { events: vec![] };
 		assert_eq!(get_system_tx_type(&tx).unwrap(), "cnight_generates_dust_update");
+	}
+
+	#[test]
+	fn get_system_tx_type_unlock_to_treasury() {
+		if let Ok(tx) = super::super::system_tx::unlock_to_treasury_system_tx(0) {
+			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
+		}
 	}
 }

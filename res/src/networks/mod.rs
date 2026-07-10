@@ -125,6 +125,18 @@ pub struct PermissionedCandidatesConfig {
 	pub initial_permissioned_candidates: Vec<InitialAuthorityData>,
 }
 
+/// Config loaded from `c2m-bridge-config.json`
+#[derive(Clone, Debug, Deserialize)]
+pub struct C2MBridgeConfig {
+	pub initial_data_checkpoint: Option<String>,
+	pub subminimal_transfers_flush_threshold: u64,
+	/// Mainchain tx hashes (hex) to pre-approve at genesis, so bridge transfers made
+	/// before chain start are claimable without a governance round (e.g. the local-env
+	/// faucet seeding transfer).
+	#[serde(default)]
+	pub approved_txs: Vec<String>,
+}
+
 impl From<MainChainScripts> for sp_session_validator_management::MainChainScripts {
 	fn from(value: MainChainScripts) -> Self {
 		let committee_candidate_address = FromStr::from_str(&value.committee_candidates_address)
@@ -187,6 +199,7 @@ pub trait MidnightNetwork {
 	fn ics_config(&self) -> IcsConfig;
 	fn reserve_config(&self) -> ReserveConfig;
 	fn message_config(&self) -> Option<MessageConfig>;
+	fn c2m_bridge_config(&self) -> C2MBridgeConfig;
 
 	fn root_key(&self) -> Option<sp_core::sr25519::Public> {
 		Some(self.initial_authorities()[0].aura_pubkey)

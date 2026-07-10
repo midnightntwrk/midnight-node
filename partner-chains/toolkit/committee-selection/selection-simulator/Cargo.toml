@@ -4,7 +4,7 @@ authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
 repository.workspace = true
-version.workspace = true
+version = "1.8.1"
 license = "Apache-2.0"
 description = "Executable tool for simulating committee selection using the Ariadne algorithm"
 
@@ -17,7 +17,7 @@ rand_chacha = { workspace = true }
 rand = { workspace = true, features = ["sys_rng"] }
 log = { workspace = true }
 env_logger = { workspace = true }
-itertools = { workspace = true }
+itertools = { workspace = true, features = ["use_std"] }
 
 [lints]
 workspace = true

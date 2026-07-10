@@ -1,5 +1,5 @@
 fn main() {
-	#[cfg(feature = "std")]
+	#[cfg(all(feature = "std", feature = "wasm-runtime"))]
 	{
 		substrate_wasm_builder::WasmBuilder::new()
 			.with_current_project()

@@ -1,10 +1,10 @@
 use crate::chain_spec::*;
 use partner_chains_demo_runtime::{
-	AuraConfig, BalancesConfig, BridgeConfig, GovernedMapConfig, GrandpaConfig,
-	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	SudoConfig, SystemConfig, TestHelperPalletConfig,
+	AuraConfig, BalancesConfig, BridgeConfig, GrandpaConfig, RuntimeGenesisConfig,
+	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
 use sc_service::ChainType;
+use sp_core::serde::de::Error;
 
 /// Produces template chain spec for Partner Chains.
 /// This code should be run by `partner-chains-node wizards chain-spec`, to produce JSON chain spec file.
@@ -37,14 +37,6 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 			initial_authorities: vec![],
 			main_chain_scripts: sp_session_validator_management::MainChainScripts::read_from_env()?,
 		},
-		governed_map: GovernedMapConfig {
-			main_chain_scripts: Some(sp_governed_map::MainChainScriptsV1::read_from_env()?),
-			..Default::default()
-		},
-		test_helper_pallet: TestHelperPalletConfig {
-			participation_data_release_period: 30,
-			..Default::default()
-		},
 		bridge: BridgeConfig {
 			main_chain_scripts: Some(sp_partner_chains_bridge::MainChainScripts::read_from_env()?),
 			initial_checkpoint: Some(genesis_utxo.tx_hash),
@@ -52,7 +44,7 @@ pub fn chain_spec() -> Result<ChainSpec, envy::Error> {
 		},
 	};
 	let genesis_json = serde_json::to_value(runtime_genesis_config)
-		.expect("Genesis config must be serialized correctly");
+		.map_err(|_| envy::Error::custom("Could not serialize genesis config"))?;
 	Ok(ChainSpec::builder(runtime_wasm(), None)
 		.with_name("Partner Chains Template")
 		.with_id("partner_chains_template")

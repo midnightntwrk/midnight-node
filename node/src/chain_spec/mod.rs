@@ -18,21 +18,24 @@ use serde_valid::Validate as _;
 use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
-	AccountId, BeefyConfig, Block, BridgeConfig, CNightObservationCall, CNightObservationConfig,
-	CouncilConfig, CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig,
-	MidnightCall, MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SystemCall,
-	SystemParametersConfig, TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig,
-	TimestampCall, UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
+	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
+	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
+	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
+	SidechainConfig, Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
+	TechnicalCommitteeMembershipConfig, TimestampCall, UncheckedExtrinsic, WASM_BINARY,
+	opaque::SessionKeys,
 };
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::{AssetName, MainchainAddress};
+use sidechain_domain::{AssetName, MainchainAddress, McTxHash};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
-use sp_partner_chains_bridge::MainChainScripts as BridgeMainChainScripts;
+use sp_partner_chains_bridge::{
+	MainChainScripts as BridgeMainChainScripts, SubminimalTransfersConfig,
+};
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
 use std::{fmt, str::FromStr};
 
@@ -53,7 +56,7 @@ pub enum ChainSpecInitError {
 	Missing(String),
 	ParseError(String),
 	Serialization(String),
-	GenesisStateError(midnight_node_ledger::ledger_8::storage::GetRootError),
+	GenesisStateError(midnight_node_ledger::ledger_9::storage::GetRootError),
 }
 
 impl fmt::Display for ChainSpecInitError {
@@ -265,7 +268,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: genesis.network_id(),
-			genesis_state_key: midnight_node_ledger::ledger_8::storage::get_root(
+			genesis_state_key: midnight_node_ledger::ledger_9::storage::get_root(
 				genesis.genesis_state(),
 				Some(&genesis.network_id()),
 			)
@@ -354,6 +357,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		bridge: {
 			let ics_config = genesis.ics_config();
+			let reserve_config = genesis.reserve_config();
+			let bridge_config = genesis.c2m_bridge_config();
 			BridgeConfig {
 				main_chain_scripts: if ics_config
 					.illiquid_circulation_supply_validator_address
@@ -368,9 +373,33 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 							&ics_config.illiquid_circulation_supply_validator_address,
 						)
 						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
+						reserve_validator_address: MainchainAddress::from_str(
+							&reserve_config.reserve_validator_address,
+						)
+						.expect("Failed to decode reserve_validator_address"),
 					})
 				},
-				initial_checkpoint: None,
+				initial_checkpoint: bridge_config.initial_data_checkpoint.map(|s| {
+					McTxHash::decode_hex(&s)
+						.expect("Failed to decode Bridge initial_data_checkpoint")
+				}),
+				_marker: Default::default(),
+			}
+		},
+		c2m_bridge: {
+			let bridge_config = genesis.c2m_bridge_config();
+			C2MBridgeConfig {
+				subminimal_transfers_config: SubminimalTransfersConfig {
+					subminimal_transfers_flush_threshold: bridge_config
+						.subminimal_transfers_flush_threshold,
+				},
+				approved_txs: bridge_config
+					.approved_txs
+					.iter()
+					.map(|s| {
+						McTxHash::decode_hex(s).expect("Failed to decode c2m approved_txs entry")
+					})
+					.collect(),
 				_marker: Default::default(),
 			}
 		},

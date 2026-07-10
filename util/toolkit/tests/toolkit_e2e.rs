@@ -19,6 +19,7 @@ use clap::Parser;
 use common::{
 	test_image,
 	toolkit_helper::{CircuitCall, ToolkitTestHelper},
+	wait_for_node::wait_for_finalized_block,
 };
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
@@ -54,11 +55,14 @@ async fn node_ws_url() -> &'static str {
 
 			let port =
 				container.get_host_port_ipv4(9944).await.expect("failed to get node RPC port");
+			let ws_url = format!("ws://127.0.0.1:{port}");
 
-			// Wait for at least 2 blocks to be produced (6s block time).
-			tokio::time::sleep(Duration::from_secs(20)).await;
+			// Wait for finality. The toolkit CLI calls get_block_one_hash on
+			// transaction-generating commands, which fails with OnlyGenesisFinalized
+			// until finalized height >= 1.
+			wait_for_finalized_block(&ws_url, 1, Duration::from_secs(60)).await;
 
-			SharedNode { _container: container, ws_url: format!("ws://127.0.0.1:{port}") }
+			SharedNode { _container: container, ws_url }
 		})
 		.await
 		.ws_url
@@ -488,4 +492,67 @@ async fn bboard_private_witness_not_leaked() {
 
 	println!("9. Verifying takeDown() transaction does not contain secret key");
 	helper.assert_secret_not_in_tx(&takedown_tx, secret_key, "takeDown()");
+}
+
+/// Counter contract E2E ported from `midnight-contracts`: deploy, then `increment()`,
+/// exercising the full compile -> prove -> submit -> on-chain verify pipeline.
+#[tokio::test]
+async fn counter_increment_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	if !helper.prerequisites_ready() {
+		return;
+	}
+
+	let coin_public_addr = helper.show_address_coin_public(FUNDING_SEED);
+
+	let counter_source = helper.load_contract_file("counter/counter.compact");
+	let compiled_dir = helper
+		.compile_contract(&counter_source, "counter")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"counter/config.template.ts",
+		&[("COIN_PUBLIC", &coin_public_addr), ("NETWORK", "undeployed")],
+	);
+	let config_file = helper.write_config(&config_content, "counter/contract.config.ts");
+
+	let deploy = helper
+		.generate_intent_deploy(&config_file, &coin_public_addr)
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+
+	let counter_addr =
+		helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	let state_file = helper.work_dir.path().join("counter_state.mn");
+	helper
+		.contract_state(&counter_addr, &state_file)
+		.await
+		.expect("contract state fetch failed");
+
+	let increment = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public_addr,
+			&state_file,
+			&deploy.private_state,
+			&counter_addr,
+			CircuitCall { circuit_id: "increment", call_args: &[] },
+		)
+		.await
+		.expect("generate increment intent failed");
+	let increment_tx = helper
+		.send_intent(&increment.intent, &compiled_dir, FUNDING_SEED, Some(&increment.zswap_state))
+		.await
+		.expect("send increment intent failed");
+
+	helper.submit_tx(&increment_tx).await.expect("submit increment tx failed");
 }

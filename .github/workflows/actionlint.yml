@@ -1,7 +1,5 @@
 name: Validate GitHub Actions Workflows
 
-permissions: {}
-
 on:
   merge_group:
   pull_request:
@@ -15,21 +13,30 @@ on:
       - ".github/workflows/*.yaml"
 
 # no top level default permissions for security reasons
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   actionlint:
     name: Lint workflows
     runs-on: ubuntu-latest
+    # no top level default permissions for security reasons
     permissions:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
 
       - name: Run actionlint
-        uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2
+        if: steps.guard.outputs.hit != 'true'
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2
         with:
           matcher: true # Enable GitHub annotations for errors
           fail-on-error: true # Fail CI when errors are found
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

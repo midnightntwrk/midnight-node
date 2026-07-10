@@ -1,0 +1,23 @@
+# Earthly config used on self-hosted CI runners. Selected by .envrc when
+# RUNNER_ENVIRONMENT=self-hosted (GitHub Actions sets that on self-hosted
+# runners; dev laptops and github-hosted runners don't have it set, so they
+# fall back to ./config.yml).
+#
+# Settings here are host-shaped — sized for the SRE-managed self-hosted
+# fleet (~96 logical CPUs, ~251 GB RAM). The companion file ./config.yml
+# is the dev/github-hosted default and stays conservatively sized.
+global:
+    # Buildkit container memory cap. The self-hosted host has ~251 GB;
+    # runner agents are capped at 6 GB each × 8 = 48 GB; the shared
+    # earthly-buildkitd container gets most of the rest. 180 GB lets
+    # concurrent cargo builds (cranelift-codegen in particular) breathe
+    # without OOMing.
+    buildkit_additional_args: ["-m", "180Gb"]
+    # No TLS certs are provisioned on the self-hosted runner, so earthly's
+    # managed buildkitd has to run plain-TCP. Setting it here means CI
+    # workflows no longer need to `echo "tls_enabled: false" >> config.yml`
+    # per-step (those appends become inert on self-hosted).
+    tls_enabled: false
+    disable_analytics: true
+    buildkit_max_parallelism: 16
+    cache_size_pct: 50

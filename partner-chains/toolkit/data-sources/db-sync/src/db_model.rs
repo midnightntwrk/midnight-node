@@ -166,43 +166,30 @@ pub(crate) struct TokenTxOutput {
 	pub datum: Option<DbDatum>,
 }
 
-#[cfg(feature = "governed-map")]
-#[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
-pub(crate) struct DatumOutput {
-	pub datum: DbDatum,
-}
+/// Reflect native token amount type, Db-sync uses:
+/// CREATE DOMAIN "word64type" AS numeric(20,0)	CONSTRAINT flyway_needs_this CHECK (VALUE >= 0::numeric AND VALUE <= '18446744073709551615'::numeric);
+#[derive(Debug, Clone, PartialEq, Copy, PartialOrd)]
+pub struct NativeTokenAmount(pub u64);
 
-#[cfg(feature = "governed-map")]
-#[derive(Debug, Clone, PartialEq, sqlx::Type)]
-#[repr(i32)]
-/// Describes the type of a single change to the governed map
-pub(crate) enum GovernedMapAction {
-	/// Spending of a governed map utxo
-	Spend,
-	/// Creation of a governed map utxo
-	Create,
-}
-
-#[cfg(feature = "governed-map")]
-#[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
-pub(crate) struct DatumChangeOutput {
-	pub datum: DbDatum,
-	pub block_no: BlockNumber,
-	pub block_index: TxIndexInBlock,
-	pub action: GovernedMapAction,
-}
-
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub struct NativeTokenAmount(pub u128);
 impl From<NativeTokenAmount> for sidechain_domain::NativeTokenAmount {
 	fn from(value: NativeTokenAmount) -> Self {
-		Self(value.0)
+		Self(value.0.into())
+	}
+}
+
+impl From<NativeTokenAmount> for u64 {
+	fn from(value: NativeTokenAmount) -> Self {
+		value.0
 	}
 }
 
 impl NativeTokenAmount {
 	pub fn checked_sub(self, rhs: NativeTokenAmount) -> Option<NativeTokenAmount> {
 		self.0.checked_sub(rhs.0).map(NativeTokenAmount)
+	}
+
+	pub fn saturating_sub(self, rhs: NativeTokenAmount) -> NativeTokenAmount {
+		NativeTokenAmount(self.0.saturating_sub(rhs.0))
 	}
 
 	pub fn is_zero(&self) -> bool {
@@ -219,47 +206,9 @@ impl sqlx::Type<Postgres> for NativeTokenAmount {
 impl<'r> Decode<'r, Postgres> for NativeTokenAmount {
 	fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
 		let decoded = <sqlx::types::BigDecimal as Decode<Postgres>>::decode(value)?;
-		let i = decoded.to_u128().ok_or("NativeTokenQuantity is always a u128".to_string())?;
+		let i = decoded.to_u64().ok_or("NativeTokenQuantity is always a u64".to_string())?;
 		Ok(Self(i))
 	}
-}
-
-#[cfg(feature = "block-participation")]
-#[derive(Debug, Clone, sqlx::FromRow, PartialEq)]
-pub(crate) struct StakePoolDelegationOutputRow {
-	pub epoch_stake_amount: StakeDelegation,
-	pub pool_hash_raw: [u8; 28],
-	pub stake_address_hash_raw: [u8; 29],
-	pub stake_address_script_hash: Option<[u8; 28]>,
-}
-
-#[cfg(feature = "block-participation")]
-pub(crate) async fn get_stake_pool_delegations_for_pools(
-	pool: &Pool<Postgres>,
-	epoch: EpochNumber,
-	stake_pool_hashes: Vec<[u8; 28]>,
-) -> Result<Vec<StakePoolDelegationOutputRow>, SqlxError> {
-	Ok(sqlx::query_as::<_, StakePoolDelegationOutputRow>(
-		"
-SELECT
-	epoch_stake.amount AS epoch_stake_amount,
-	pool_hash.hash_raw AS pool_hash_raw,
-	stake_address.hash_raw AS stake_address_hash_raw,
-	stake_address.script_hash AS stake_address_script_hash
-FROM
-			   epoch_stake
-	INNER JOIN stake_address      ON epoch_stake.addr_id = stake_address.id
-	INNER JOIN pool_hash          ON epoch_stake.pool_id = pool_hash.id
-WHERE
-	    epoch_stake.epoch_no = $1
-	AND epoch_stake.amount > 0
-	AND pool_hash.hash_raw IN (SELECT unnest($2))
-    ",
-	)
-	.bind(epoch)
-	.bind(stake_pool_hashes)
-	.fetch_all(pool)
-	.await?)
 }
 
 #[cfg(feature = "block-source")]
@@ -442,209 +391,6 @@ pub(crate) async fn get_token_utxo_for_epoch(
 		.await?)
 }
 
-#[cfg(feature = "governed-map")]
-pub(crate) async fn get_governed_map_changes(
-	pool: &Pool<Postgres>,
-	address: &Address,
-	after_block: Option<BlockNumber>,
-	to_block: BlockNumber,
-	asset: Asset,
-	tx_in_configuration: TxInConfiguration,
-) -> Result<Vec<DatumChangeOutput>, SqlxError> {
-	match tx_in_configuration {
-		TxInConfiguration::Enabled => {
-			get_governed_map_changes_tx_in_enabled(pool, address, after_block, to_block, asset)
-				.await
-		},
-		TxInConfiguration::Consumed => {
-			get_governed_map_changes_tx_in_consumed(pool, address, after_block, to_block, asset)
-				.await
-		},
-	}
-}
-
-#[cfg(feature = "governed-map")]
-pub(crate) async fn get_governed_map_changes_tx_in_enabled(
-	pool: &Pool<Postgres>,
-	address: &Address,
-	after_block: Option<BlockNumber>,
-	to_block: BlockNumber,
-	asset: Asset,
-) -> Result<Vec<DatumChangeOutput>, SqlxError> {
-	let query = "
-		((SELECT
-			datum.value as datum, origin_block.block_no as block_no, origin_tx.block_index as block_index, $6 as action, 1 as action_order
-		FROM tx_out
-		INNER JOIN tx origin_tx			ON tx_out.tx_id = origin_tx.id
-		INNER JOIN block origin_block	ON origin_tx.block_id = origin_block.id
-		INNER JOIN datum				ON tx_out.data_hash = datum.hash
-		INNER JOIN ma_tx_out			ON tx_out.id = ma_tx_out.tx_out_id
-		INNER JOIN multi_asset			ON multi_asset.id = ma_tx_out.ident
-		WHERE
-			tx_out.address = $1 AND ($2 IS NULL OR origin_block.block_no > $2) AND origin_block.block_no <= $3
-			AND multi_asset.policy = $4
-			AND multi_asset.name = $5)
-		UNION
-		(SELECT
-			datum.value as datum, consuming_block.block_no as block_no, consuming_tx.block_index as block_index, $7 as action, -1 as action_order
-		FROM tx_out
-		LEFT JOIN tx_in consuming_tx_in	ON tx_out.tx_id = consuming_tx_in.tx_out_id AND tx_out.index = consuming_tx_in.tx_out_index
-		LEFT JOIN tx consuming_tx		ON consuming_tx_in.tx_in_id = consuming_tx.id
-		LEFT JOIN block consuming_block	ON consuming_tx.block_id = consuming_block.id
-		INNER JOIN datum				ON tx_out.data_hash = datum.hash
-		INNER JOIN ma_tx_out			ON tx_out.id = ma_tx_out.tx_out_id
-		INNER JOIN multi_asset			ON multi_asset.id = ma_tx_out.ident
-		WHERE
-			tx_out.address = $1
-			AND (consuming_tx_in.id IS NOT NULL AND ($2 IS NULL OR consuming_block.block_no > $2) AND consuming_block.block_no <= $3)
-			AND multi_asset.policy = $4
-			AND multi_asset.name = $5))
-		ORDER BY block_no, block_index, action_order ASC";
-	Ok(sqlx::query_as::<_, DatumChangeOutput>(query)
-		.bind(&address.0)
-		.bind(after_block)
-		.bind(to_block)
-		.bind(&asset.policy_id.0)
-		.bind(&asset.asset_name.0)
-		.bind(GovernedMapAction::Create)
-		.bind(GovernedMapAction::Spend)
-		.fetch_all(pool)
-		.await?)
-}
-
-#[cfg(feature = "governed-map")]
-pub(crate) async fn get_governed_map_changes_tx_in_consumed(
-	pool: &Pool<Postgres>,
-	address: &Address,
-	after_block: Option<BlockNumber>,
-	to_block: BlockNumber,
-	asset: Asset,
-) -> Result<Vec<DatumChangeOutput>, SqlxError> {
-	let query = "
-		((SELECT
-			datum.value as datum, origin_block.block_no as block_no, origin_tx.block_index as block_index, $6 as action, 1 as action_order
-		FROM tx_out
-		INNER JOIN tx origin_tx			ON tx_out.tx_id = origin_tx.id
-		INNER JOIN block origin_block	ON origin_tx.block_id = origin_block.id
-		INNER JOIN datum				ON tx_out.data_hash = datum.hash
-		INNER JOIN ma_tx_out			ON tx_out.id = ma_tx_out.tx_out_id
-		INNER JOIN multi_asset			ON multi_asset.id = ma_tx_out.ident
-		WHERE
-			tx_out.address = $1 AND ($2 IS NULL OR origin_block.block_no > $2) AND origin_block.block_no <= $3
-			AND multi_asset.policy = $4
-			AND multi_asset.name = $5)
-		UNION
-		(SELECT
-			datum.value as datum, consuming_block.block_no as block_no, consuming_tx.block_index as block_index, $7 as action, -1 as action_order
-		FROM tx_out
-		LEFT JOIN tx consuming_tx		ON tx_out.consumed_by_tx_id = consuming_tx.id
-		LEFT JOIN block consuming_block	ON consuming_tx.block_id = consuming_block.id
-		INNER JOIN datum				ON tx_out.data_hash = datum.hash
-		INNER JOIN ma_tx_out			ON tx_out.id = ma_tx_out.tx_out_id
-		INNER JOIN multi_asset			ON multi_asset.id = ma_tx_out.ident
-		WHERE
-			tx_out.address = $1
-			AND (tx_out.consumed_by_tx_id IS NOT NULL AND ($2 IS NULL OR consuming_block.block_no > $2) AND consuming_block.block_no <= $3)
-			AND multi_asset.policy = $4
-			AND multi_asset.name = $5))
-		ORDER BY block_no, block_index, action_order ASC";
-	Ok(sqlx::query_as::<_, DatumChangeOutput>(query)
-		.bind(&address.0)
-		.bind(after_block)
-		.bind(to_block)
-		.bind(&asset.policy_id.0)
-		.bind(&asset.asset_name.0)
-		.bind(GovernedMapAction::Create)
-		.bind(GovernedMapAction::Spend)
-		.fetch_all(pool)
-		.await?)
-}
-
-#[cfg(feature = "governed-map")]
-pub(crate) async fn get_datums_at_address_with_token(
-	pool: &Pool<Postgres>,
-	address: &Address,
-	block: BlockNumber,
-	asset: Asset,
-	tx_in_configuration: TxInConfiguration,
-) -> Result<Vec<DatumOutput>, SqlxError> {
-	match tx_in_configuration {
-		TxInConfiguration::Enabled => {
-			get_datums_at_address_with_token_tx_in_enabled(pool, address, block, asset).await
-		},
-		TxInConfiguration::Consumed => {
-			get_datums_at_address_with_token_tx_in_consumed(pool, address, block, asset).await
-		},
-	}
-}
-
-#[cfg(feature = "governed-map")]
-pub(crate) async fn get_datums_at_address_with_token_tx_in_enabled(
-	pool: &Pool<Postgres>,
-	address: &Address,
-	block: BlockNumber,
-	asset: Asset,
-) -> Result<Vec<DatumOutput>, SqlxError> {
-	let query = "
-			SELECT
-				datum.value as datum
-			FROM tx_out
-			INNER JOIN tx origin_tx			ON tx_out.tx_id = origin_tx.id
-			INNER JOIN block origin_block	ON origin_tx.block_id = origin_block.id
-			LEFT JOIN tx_in consuming_tx_in	ON tx_out.tx_id = consuming_tx_in.tx_out_id AND tx_out.index = consuming_tx_in.tx_out_index
-			LEFT JOIN tx consuming_tx		ON consuming_tx_in.tx_in_id = consuming_tx.id
-			LEFT JOIN block consuming_block	ON consuming_tx.block_id = consuming_block.id
-			INNER JOIN datum				ON tx_out.data_hash = datum.hash
-			INNER JOIN ma_tx_out			ON tx_out.id = ma_tx_out.tx_out_id
-			INNER JOIN multi_asset			ON multi_asset.id = ma_tx_out.ident
-			WHERE
-				tx_out.address = $1 AND origin_block.block_no <= $2
-				AND (consuming_tx_in.id IS NULL OR consuming_block.block_no > $2)
-				AND multi_asset.policy = $3
-				AND multi_asset.name = $4
-				ORDER BY origin_block.block_no ASC, origin_tx.block_index ASC";
-	Ok(sqlx::query_as::<_, DatumOutput>(query)
-		.bind(&address.0)
-		.bind(block)
-		.bind(&asset.policy_id.0)
-		.bind(&asset.asset_name.0)
-		.fetch_all(pool)
-		.await?)
-}
-
-#[cfg(feature = "governed-map")]
-pub(crate) async fn get_datums_at_address_with_token_tx_in_consumed(
-	pool: &Pool<Postgres>,
-	address: &Address,
-	block: BlockNumber,
-	asset: Asset,
-) -> Result<Vec<DatumOutput>, SqlxError> {
-	let query = "
-			SELECT
-				datum.value as datum
-			FROM tx_out
-			INNER JOIN tx origin_tx			ON tx_out.tx_id = origin_tx.id
-			INNER JOIN block origin_block	ON origin_tx.block_id = origin_block.id
-			LEFT JOIN tx consuming_tx		ON tx_out.consumed_by_tx_id = consuming_tx.id
-			LEFT JOIN block consuming_block	ON consuming_tx.block_id = consuming_block.id
-			INNER JOIN datum				ON tx_out.data_hash = datum.hash
-			INNER JOIN ma_tx_out			ON tx_out.id = ma_tx_out.tx_out_id
-			INNER JOIN multi_asset			ON multi_asset.id = ma_tx_out.ident
-			WHERE
-				tx_out.address = $1 AND origin_block.block_no <= $2
-				AND (tx_out.consumed_by_tx_id IS NULL OR consuming_block.block_no > $2)
-				AND multi_asset.policy = $3
-				AND multi_asset.name = $4
-				ORDER BY origin_block.block_no ASC, origin_tx.block_index ASC";
-	Ok(sqlx::query_as::<_, DatumOutput>(query)
-		.bind(&address.0)
-		.bind(block)
-		.bind(&asset.policy_id.0)
-		.bind(&asset.asset_name.0)
-		.fetch_all(pool)
-		.await?)
-}
-
 #[cfg(feature = "candidate-source")]
 pub(crate) async fn get_epoch_nonce(
 	pool: &Pool<Postgres>,
@@ -784,7 +530,7 @@ pub(crate) async fn create_idx_ma_tx_out_ident(pool: &Pool<Postgres>) -> Result<
 }
 
 /// Used by multiple queries across functionalities.
-#[cfg(any(feature = "candidate-source", feature = "governed-map"))]
+#[cfg(any(feature = "candidate-source"))]
 pub(crate) async fn create_idx_tx_out_address(pool: &Pool<Postgres>) -> Result<(), SqlxError> {
 	let exists = index_exists(pool, "idx_tx_out_address").await?;
 	if exists {
@@ -856,10 +602,17 @@ pub(crate) struct BridgeTx {
 	pub(crate) block_number: BlockNumber,
 	pub(crate) tx_ix: TxIndexInBlock,
 	pub(crate) tx_hash: TxHash,
-	pub(crate) amount: NativeTokenAmount,
 	/// Value of transaction metadata with a specific C-to-M key.
 	/// Not the full metadata JSON. Db-sync metadata uses a separate row per metadata key.
 	pub(crate) c2m_metadata: Option<JsonValue>,
+	/// Sum of bridge token amounts in inputs at bridge address for given tx
+	pub(crate) bridge_in: NativeTokenAmount,
+	/// Sum of bridge token amounts in outputs at bridge address for given tx
+	pub(crate) bridge_out: NativeTokenAmount,
+	// Sum of bridge token amounts in inputs at reserve address for given tx
+	pub(crate) reserve_in: NativeTokenAmount,
+	/// Sum of bridge token amounts in outputs at reserve address for given tx
+	pub(crate) reserve_out: NativeTokenAmount,
 }
 #[cfg(feature = "bridge")]
 impl BridgeTx {
@@ -921,10 +674,12 @@ WHERE tx.hash = $1
 }
 
 #[cfg(feature = "bridge")]
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn get_bridge_txs(
 	tx_in_configuration: TxInConfiguration,
 	pool: &Pool<Postgres>,
-	icp_address: &Address,
+	ics_address: &Address,
+	reserve_address: &Address,
 	native_token: Asset,
 	checkpoint: ResolvedBridgeDataCheckpoint,
 	to_block: BlockNumber,
@@ -943,81 +698,136 @@ pub(crate) async fn get_bridge_txs(
 			format!("(block.block_no, tx.block_index) > ({}, {})", block_number.0, tx_ix.0)
 		},
 	};
-	// TODO: improve query by using metadata.ident "cache" and tx, tx_out, ma_tx_out, tx_metadata and tx_in ids boundries. https://github.com/midnightntwrk/partner-chains/issues/26
-	let transfers_subquery = format!(
-		"
-		SELECT
-			  block.block_no                            AS block_number
-			, tx.block_index                            AS tx_ix
-			, tx.hash                                   AS tx_hash
-			, tx.id                                     AS tx_id
-			, tx_metadata.json						    AS c2m_metadata
-			, coalesce(sum(output_tokens.quantity), 0)  AS tokens_out
-			, native_token.id                           AS native_token_id
-		FROM tx_out         outputs
-		JOIN tx                               ON outputs.tx_id = tx.id
-		JOIN block                            ON tx.block_id = block.id
-		JOIN ma_tx_out      output_tokens     ON output_tokens.tx_out_id = outputs.id
-		JOIN multi_asset    native_token      ON native_token.id = output_tokens.ident
-		LEFT JOIN           tx_metadata       ON tx_metadata.tx_id = tx.id AND tx_metadata.key = $5
-		WHERE native_token.policy = $2
-          AND native_token.name = $3
-          AND outputs.address = $1
-          AND block_no <= $4
-          AND {checkpoint_limit}
-		GROUP BY tx.id, tx.hash, tx_metadata.json, block.block_no, tx.block_index, native_token.id
-		LIMIT {max_rows}
-"
-	);
 
-	let inputs_subquery = match tx_in_configuration {
+	// Collects every native-token tx_out at the ICS address that has
+	// been consumed by another tx, attributed to the consuming tx. Two variants depending on
+	// whether db-sync's `tx_out.consumed_by_tx_id` denormalization is populated.
+	let bridge_inputs_subquery = match tx_in_configuration {
 		TxInConfiguration::Consumed => {
 			"
 			SELECT
 				  tx_out.consumed_by_tx_id  AS consuming_tx_id
-                , ma_tx_out.ident           AS native_token_id
-                , ma_tx_out.quantity        AS tokens_in
+				, ma_tx_out.quantity        AS quantity
 			FROM tx_out
-			LEFT JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
-			WHERE tx_out.address = $1
+				JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+				JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+			WHERE multi_asset.policy = $3
+			  AND multi_asset.name = $4
+			  AND tx_out.address = $1
+			  AND tx_out.consumed_by_tx_id IS NOT NULL
 		"
 		},
 		TxInConfiguration::Enabled => {
 			"
 			SELECT
-                  tx_in.tx_in_id         AS consuming_tx_id
-                , ma_tx_out.ident        AS native_token_id
-                , ma_tx_out.quantity     AS tokens_in
-			FROM tx_out
-			LEFT JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
-			LEFT JOIN tx_in     ON tx_in.tx_out_id = tx_out.tx_id and tx_in.tx_out_index = tx_out.index
-			WHERE tx_out.address = $1
+			    tx_in.tx_in_id     AS consuming_tx_id
+			  , ma_tx_out.quantity AS quantity
+			FROM tx_in
+				JOIN tx_out      ON tx_out.tx_id = tx_in.tx_out_id AND tx_out.index = tx_in.tx_out_index
+				JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+				JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+			WHERE multi_asset.policy = $3
+				AND multi_asset.name = $4
+				AND tx_out.address = $1
 		"
 		},
 	};
 
-	let mut query_builder = QueryBuilder::new(&format!("
-		WITH
-            transfers AS ({transfers_subquery})
-		  , inputs    AS ({inputs_subquery})
+	let reserve_inputs_subquery = match tx_in_configuration {
+		TxInConfiguration::Consumed => {
+			"
+			SELECT
+				  tx_out.consumed_by_tx_id  AS consuming_tx_id
+				, ma_tx_out.quantity        AS quantity
+			FROM tx_out
+				JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+				JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+			WHERE multi_asset.policy = $3
+			  AND multi_asset.name = $4
+			  AND tx_out.address = $2
+			  AND tx_out.consumed_by_tx_id IS NOT NULL
+		"
+		},
+		TxInConfiguration::Enabled => {
+			"
+			SELECT
+			    tx_in.tx_in_id     AS consuming_tx_id
+			  , ma_tx_out.quantity AS quantity
+			FROM tx_in
+				JOIN tx_out      ON tx_out.tx_id = tx_in.tx_out_id AND tx_out.index = tx_in.tx_out_index
+				JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+				JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+			WHERE multi_asset.policy = $3
+				AND multi_asset.name = $4
+				AND tx_out.address = $2
+		"
+		},
+	};
+
+	// Collects every native-token tx_out at the ICS address, attributed to the producing tx.
+	let bridge_outputs_subquery = "
 		SELECT
-            block_number
-          , tx_ix
-          , tx_hash
-          , tokens_out - coalesce(sum(tokens_in), 0) as amount
-          , c2m_metadata
-		FROM transfers
-		LEFT JOIN inputs ON inputs.consuming_tx_id = transfers.tx_id AND inputs.native_token_id = transfers.native_token_id
-		GROUP BY tx_hash, c2m_metadata, block_number, tx_ix, tokens_out
-		ORDER BY block_number, tx_ix;
-	"));
+			  tx_out.tx_id       AS producing_tx_id
+			, ma_tx_out.quantity AS quantity
+		FROM tx_out
+			JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+			JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+		WHERE multi_asset.policy = $3
+		  AND multi_asset.name = $4
+		  AND tx_out.address = $1
+	";
+
+	let reserve_outputs_subquery = "
+		SELECT
+			  tx_out.tx_id       AS producing_tx_id
+			, ma_tx_out.quantity AS quantity
+		FROM tx_out
+			JOIN ma_tx_out   ON ma_tx_out.tx_out_id = tx_out.id
+			JOIN multi_asset ON multi_asset.id = ma_tx_out.ident
+		WHERE multi_asset.policy = $3
+		  AND multi_asset.name = $4
+		  AND tx_out.address = $2
+	";
+
+	// TODO: improve query by using metadata.ident "cache" and tx, tx_out, ma_tx_out,
+	// tx_metadata and tx_in ids boundaries. https://github.com/midnightntwrk/partner-chains/issues/26
+	let mut query_builder = QueryBuilder::new(&format!(
+		"
+		WITH
+			bridge_inputs  AS ({bridge_inputs_subquery}),
+			bridge_outputs AS ({bridge_outputs_subquery}),
+			reserve_inputs  AS ({reserve_inputs_subquery}),
+			reserve_outputs AS ({reserve_outputs_subquery}),
+			relevant_txs AS (SELECT DISTINCT producing_tx_id AS tx_id FROM bridge_outputs)
+		SELECT * FROM
+			(SELECT
+				  block.block_no   AS block_number
+				, tx.block_index   AS tx_ix
+				, tx.hash          AS tx_hash
+				, tx_metadata.json AS c2m_metadata
+				, COALESCE((SELECT sum(quantity) FROM bridge_inputs WHERE consuming_tx_id = tx.id), 0) AS bridge_in
+				, COALESCE((SELECT sum(quantity) FROM bridge_outputs WHERE producing_tx_id = tx.id), 0) AS bridge_out
+				, COALESCE((SELECT sum(quantity) FROM reserve_inputs WHERE consuming_tx_id = tx.id), 0) AS reserve_in
+				, COALESCE((SELECT sum(quantity) FROM reserve_outputs WHERE producing_tx_id = tx.id), 0) AS reserve_out
+			FROM tx
+			    JOIN block        ON block.id = tx.block_id
+			    JOIN relevant_txs ON relevant_txs.tx_id = tx.id
+			    LEFT JOIN tx_metadata ON tx_metadata.tx_id = tx.id AND tx_metadata.key = $5
+			WHERE block.block_no <= $6
+				AND {checkpoint_limit}) AS bridge_tx_totals
+		WHERE bridge_out > bridge_in OR reserve_in > reserve_out
+		ORDER BY block_number, tx_ix
+		LIMIT {max_rows};
+		"
+	));
 
 	let query = query_builder
 		.build_query_as::<BridgeTx>()
-		.bind(&icp_address.0)
+		.bind(&ics_address.0)
+		.bind(&reserve_address.0)
 		.bind(&native_token.policy_id.0)
 		.bind(&native_token.asset_name.0)
-		.bind(to_block)
-		.bind(i64::try_from(TOKEN_TRANSFER_METADATUM_KEY).expect("Constant is valid i64"));
+		.bind(i64::try_from(TOKEN_TRANSFER_METADATUM_KEY).expect("Constant is valid i64"))
+		.bind(to_block);
 	Ok(query.fetch_all(pool).await?)
 }

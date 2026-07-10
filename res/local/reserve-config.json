@@ -1,0 +1,15 @@
+{
+  "reserve_validator_address": "addr_test1wz6m98qlhjdwyldnv7w5t6zfcdnqsaqtud00085c8d020msm73pkp",
+  "asset": {
+    "policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
+    "asset_name": ""
+  },
+  "utxos": [
+    {
+      "tx_hash": "73dca41e6839a54fd0e3c08499bfb866367da621774ee4e5f3afdaa763b8006a",
+      "output_index": 0,
+      "amount": 5000000000873988
+    }
+  ],
+  "total_amount": 5000000000873988
+}

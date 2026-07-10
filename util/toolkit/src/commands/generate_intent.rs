@@ -108,15 +108,18 @@ pub async fn fetch_zswap_state(
 
 	let received_tx = source.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
-	let fork_ctx =
-		build_fork_aware_context_cached(&[wallet_seed], &received_tx, wallet_cache.as_deref())
-			.await;
+	let fork_ctx = build_fork_aware_context_cached(
+		&[wallet_seed.clone()],
+		&received_tx,
+		wallet_cache.as_deref(),
+	)
+	.await;
 
 	Ok(fork_ctx.dispatch(
 		|ctx| {
 			let seed_v7 =
 				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(
-					wallet_seed,
+					wallet_seed.clone(),
 				);
 			let cpk_v7 =
 				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_coin_public_key(
@@ -127,9 +130,22 @@ pub async fn fetch_zswap_state(
 			)
 		},
 		|ctx| {
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+					wallet_seed.clone(),
+				);
+			let cpk_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_coin_public_key(
+					coin_public,
+				);
 			crate::commands::fork::ledger_8::generate_intent::fetch_zswap_state_from_context(
+				&ctx, seed_v8, cpk_v8,
+			)
+		},
+		|ctx| {
+			crate::commands::fork::ledger_9::generate_intent::fetch_zswap_state_from_context(
 				&ctx,
-				wallet_seed,
+				wallet_seed.clone(),
 				coin_public,
 			)
 		},
