@@ -11,4 +11,4 @@ there instead (e.g. Aura). `PartnerChainsProposerFactory` injects the `mcsh` dig
 proposal time.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1700
-Issue:
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1859

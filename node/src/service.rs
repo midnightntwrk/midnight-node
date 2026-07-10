@@ -52,9 +52,9 @@ use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
+use sc_partner_chains_consensus::PartnerChainsProposerFactory;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
-use sc_partner_chains_consensus::PartnerChainsProposerFactory;
 use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero};
 use sp_runtime::{Digest, DigestItem};
 use std::{

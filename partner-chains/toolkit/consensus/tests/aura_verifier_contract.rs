@@ -154,10 +154,7 @@ impl sp_api::Core<Block> for RecordingRuntimeApi {
 		)
 	}
 
-	fn version(
-		&self,
-		at: <Block as BlockT>::Hash,
-	) -> Result<RuntimeVersion, sp_api::ApiError> {
+	fn version(&self, at: <Block as BlockT>::Hash) -> Result<RuntimeVersion, sp_api::ApiError> {
 		self.inner.runtime_api().version(at)
 	}
 
@@ -265,7 +262,10 @@ impl HeaderBackend<Block> for RecordingClient {
 		self.inner.info()
 	}
 
-	fn status(&self, hash: <Block as BlockT>::Hash) -> sp_blockchain::Result<sp_blockchain::BlockStatus> {
+	fn status(
+		&self,
+		hash: <Block as BlockT>::Hash,
+	) -> sp_blockchain::Result<sp_blockchain::BlockStatus> {
 		self.inner.status(hash)
 	}
 

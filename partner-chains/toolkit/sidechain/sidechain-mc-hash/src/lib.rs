@@ -171,11 +171,11 @@
 #![warn(missing_docs)]
 use crate::McHashInherentError::StableBlockNotFound;
 use async_trait::async_trait;
+use sc_partner_chains_consensus::InherentDigest;
 use sidechain_domain::{byte_string::ByteString, *};
 use sp_blockchain::HeaderBackend;
 use sp_consensus_slots::{Slot, SlotDuration};
 use sp_inherents::{InherentData, InherentDataProvider, InherentIdentifier};
-use sc_partner_chains_consensus::InherentDigest;
 use sp_runtime::{
 	DigestItem,
 	traits::{Block as BlockT, Header as HeaderT, Zero},
