@@ -20,6 +20,7 @@ use super::{
 };
 use async_trait::async_trait;
 use rand::{CryptoRng, Rng};
+use sha2::{Digest, Sha256};
 use std::{
 	io,
 	path::Path,
@@ -28,6 +29,109 @@ use std::{
 };
 
 pub type SegmentId = u16;
+
+/// Parse a compact-js contract key location of the form
+/// `contract:<64-hex-addr>/<circuit>?vk=<64-hex-hash>`, returning
+/// `(circuit_id, verifier_key_hash_hex)`. Returns `None` for plain key names
+/// (older toolkits and dust builtins), which are used verbatim as the file stem.
+fn parse_contract_key_location(loc: &str) -> Option<(&str, &str)> {
+	let rest = loc.strip_prefix("contract:")?;
+	let (_addr, after) = rest.split_once('/')?;
+	let (circuit, vk) = after.split_once("?vk=")?;
+	(!circuit.is_empty() && !vk.is_empty()).then_some((circuit, vk))
+}
+
+/// Resolve key material for a new-format contract key location. Identically-named
+/// circuits from different contracts can appear across `artifact_dirs`, so pin
+/// resolution to the dir whose verifier-key content matches `expected_vk_hash` and
+/// take all three files from that same dir, continuing the search otherwise.
+fn resolve_contract_key(
+	artifact_dirs: &[String],
+	circuit: &str,
+	expected_vk_hash: &str,
+) -> io::Result<Option<ProvingKeyMaterial>> {
+	for parent_dir in artifact_dirs {
+		let read = |dir: &str, ext: &str| -> io::Result<Option<Vec<u8>>> {
+			let path = format!("{parent_dir}/{dir}/{circuit}.{ext}");
+			match std::fs::read(&path) {
+				Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+				Err(e) => {
+					log::error!("Resolver: error reading key at path {path}: {e}");
+					Err(e)
+				},
+				Ok(v) => Ok(Some(v)),
+			}
+		};
+
+		let Some(verifier_key) = read("keys", "verifier")? else {
+			continue;
+		};
+		let actual_vk_hash = hex::encode(Sha256::digest(&verifier_key));
+		if actual_vk_hash != expected_vk_hash {
+			log::debug!(
+				"Resolver: {parent_dir}/keys/{circuit}.verifier vk {actual_vk_hash} != {expected_vk_hash}, skipping"
+			);
+			continue;
+		}
+		let Some(prover_key) = read("keys", "prover")? else {
+			continue;
+		};
+		let Some(ir_source) = read("zkir", "bzkir")? else {
+			continue;
+		};
+
+		log::info!(
+			"Resolver: resolved key material for {circuit} (vk {expected_vk_hash}) from {parent_dir}"
+		);
+		return Ok(Some(ProvingKeyMaterial { prover_key, verifier_key, ir_source }));
+	}
+	log::warn!("Resolver: no key material with vk {expected_vk_hash} found for {circuit}");
+	Ok(None)
+}
+
+/// Resolve key material for a legacy key location (bare circuit name, or dust/zswap
+/// builtins), searching each file independently across all artifact dirs.
+fn resolve_legacy_key(
+	artifact_dirs: &[String],
+	loc: &str,
+) -> io::Result<Option<ProvingKeyMaterial>> {
+	let read_file = |dir: &str, ext: &str| {
+		for parent_dir in artifact_dirs {
+			let path = format!("{parent_dir}/{dir}/{loc}.{ext}");
+			match std::fs::read(&path) {
+				Err(e) if e.kind() == io::ErrorKind::NotFound => {
+					log::debug!("Resolver: missing key at path {path}");
+					continue;
+				},
+				Err(e) => {
+					log::error!("Resolver: error reading key at path {path}: {e}");
+					return Err(e);
+				},
+				Ok(v) => {
+					log::debug!("Resolver: found key at path {path}");
+					return Ok(Some(v));
+				},
+			}
+		}
+		Ok(None)
+	};
+	let Some(prover_key) = read_file("keys", "prover")? else {
+		log::warn!("prover key not created");
+		return Ok(None);
+	};
+	let Some(verifier_key) = read_file("keys", "verifier")? else {
+		log::warn!("verifier key not created");
+		return Ok(None);
+	};
+	let Some(ir_source) = read_file("zkir", "bzkir")? else {
+		log::warn!("IR source not created");
+		return Ok(None);
+	};
+
+	log::info!("Creating Proving Key Material...");
+
+	Ok(Some(ProvingKeyMaterial { prover_key, verifier_key, ir_source }))
+}
 
 type IntentOf<D> = Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 #[async_trait]
@@ -218,46 +322,12 @@ impl<D: DB + Clone> IntentCustom<D> {
 				DUST_EXPECTED_FILES.to_owned(),
 			)?),
 			Box::new(move |KeyLocation(loc)| {
-				let artifact_dirs = artifact_dirs.to_vec();
-				let sync_block = move || {
-					let read_file = |dir, ext| {
-						for parent_dir in &artifact_dirs {
-							let path = format!("{parent_dir}/{dir}/{loc}.{ext}");
-							match std::fs::read(&path) {
-								Err(e) if e.kind() == io::ErrorKind::NotFound => {
-									log::debug!("Resolver: missing key at path {path}");
-									continue;
-								},
-								Err(e) => {
-									log::error!("Resolver: error reading key at path {path}: {e}");
-									return Err(e);
-								},
-								Ok(v) => {
-									log::debug!("Resolver: found key at path {path}");
-									return Ok(Some(v));
-								},
-							}
-						}
-						Ok(None)
-					};
-					let Some(prover_key) = read_file("keys", "prover")? else {
-						log::warn!("prover key not created");
-						return Ok(None);
-					};
-					let Some(verifier_key) = read_file("keys", "verifier")? else {
-						log::warn!("verifier key not created");
-						return Ok(None);
-					};
-					let Some(ir_source) = read_file("zkir", "bzkir")? else {
-						log::warn!("IR source not created");
-						return Ok(None);
-					};
-
-					log::info!("Creating Proving Key Material...");
-
-					Ok(Some(ProvingKeyMaterial { prover_key, verifier_key, ir_source }))
+				let res = match parse_contract_key_location(&loc) {
+					Some((circuit, expected_vk_hash)) => {
+						resolve_contract_key(&artifact_dirs, circuit, expected_vk_hash)
+					},
+					None => resolve_legacy_key(&artifact_dirs, &loc),
 				};
-				let res = sync_block();
 				Box::pin(std::future::ready(res))
 			}),
 		))

@@ -27,9 +27,10 @@
     "compact-mint": "run-compactc ./mint/mint.compact ./mint/out"
   },
   "dependencies": {
-    "@midnight-ntwrk/node-toolkit-compact-0.29": "^0.1.0",
-    "@midnight-ntwrk/node-toolkit-compact-0.30": "^0.1.0",
-    "@midnight-ntwrk/node-toolkit-compact-0.31": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.29.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.30.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.31.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.33.0": "^0.1.0",
     "effect": "^3.21.0"
   },
   "devDependencies": {
@@ -42,6 +43,8 @@
     "turbo": "2.9.14"
   },
   "overrides": {
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
+    "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3"
   }
 }

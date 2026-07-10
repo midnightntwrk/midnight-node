@@ -101,23 +101,29 @@ the locally built compiler instead of downloading the prebuilt binary. Re-run
 `just compactc` after bumping the submodule. First build compiles `zkir` from source
 unless you have nix `trusted-users` access to the IOG cache (`cache.iog.io`).
 
-`COMPACTC_VERSION` selects which compiler CI uses. Its format is
-`<compiler-version>-<12-char-tree-hash>` (e.g. `0.31.0-6587676a9bb2`), produced by
-`scripts/compact-submodule-version.sh` from the pinned `compact/` submodule (the compiler
-version comes from the submodule's `flake.nix`, the hash is `git rev-parse HEAD^{tree} | cut -c1-12`).
-Regenerate it after bumping the submodule: `scripts/compact-submodule-version.sh > COMPACTC_VERSION`.
+`COMPACTC_VERSION` selects which compiler CI uses. It can take one of three forms:
+- `<compiler-version>-<12-char-tree-hash>` (e.g. `0.31.0-6587676a9bb2`) — the pinned
+  `compact/` submodule, produced by `scripts/compact-submodule-version.sh` (the compiler
+  version comes from the submodule's `flake.nix`, the hash is `git rev-parse HEAD^{tree} | cut -c1-12`).
+  Regenerate it after bumping the submodule: `scripts/compact-submodule-version.sh > COMPACTC_VERSION`.
+- `<compiler-version>-<40-char-commit-sha>` (e.g. `0.31.110-3a289c2e7811d2868e7810bd5a5f1f0b7055995f`)
+  — a public **dev build** published from an arbitrary `compact` commit. Set this by hand to pin a
+  dev build without touching the submodule.
+- a plain or pre-release version (e.g. `0.31.108`, `0.30.0-rc.1`) — a conventional release.
 
 `+node-ci-image` decides build-vs-fetch by comparing `COMPACTC_VERSION` against the live
 submodule version (computed `LOCALLY`, since the COPY'd submodule has no `.git`):
 - **Match** (the tree-hash suffix agrees) → build from source via `+compactc-bundle`, which runs
   `scripts/build-compactc.sh` inside a `nixos/nix` image (IOG cache enabled) and emits a
   self-contained `COMPACT_HOME` bundle.
-- **No match** — i.e. `COMPACTC_VERSION` is a plain released version with no tree-hash suffix —
-  → fetch that version's prebuilt binary via `+compactc-fetch`.
+- **No match** → fetch the prebuilt binary via `+compactc-fetch`. It picks the release by suffix:
+  a bare 40-char hex commit SHA selects the dev build (`compactc-dev-<sha>` tag /
+  `compactc_dev-<sha>_<arch>…` asset); anything else (plain version or semver pre-release like
+  `-rc.1`) uses the conventional `compactc-v<version>` tag / `compactc_v<version>_<arch>…` asset.
 
 Either way the image then asserts the resulting `compactc --version` equals the
-`COMPACTC_VERSION` prefix (the compiler reports the bare semver, no hash), so a submodule bump
-without regenerating `COMPACTC_VERSION` fails loudly. The full hashed `COMPACTC_VERSION` is also
+`COMPACTC_VERSION` prefix (the compiler reports the bare semver, no suffix), so a submodule bump
+without regenerating `COMPACTC_VERSION` fails loudly. The full suffixed `COMPACTC_VERSION` is also
 used in the CI/toolkit image tags.
 
 **Debugging ledger issues:** Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.

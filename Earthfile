@@ -215,14 +215,6 @@ rebuild-redemption-skeleton:
 rebuild-genesis-state:
     ARG NETWORK
     ARG GENERATE_TEST_TXS=false
-    # LEDGER9-TOOLKIT-JS: toolkit-js v8 / compact-js 2.5.1 still emits
-    # `midnight:intent[v6]` (ledger-8), which the ledger-9 Rust `send-intent`
-    # path rejects. Disabled by default until `util/toolkit-js/v9/` lands with
-    # a compact-js whose intent serializer targets `intent[v7]`. Grep for
-    # `LEDGER9-TOOLKIT-JS` to find the matching `#[ignore]`s in
-    # `util/toolkit/src/commands/generate_intent.rs`.
-    ARG GENERATE_JS_TEST_TXS=false
-    ARG COMPILE_SIMPLE_MERKLE_TREE=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     # Override with a pre-built registry image to skip rebuilding (e.g. in CI)
@@ -387,7 +379,7 @@ rebuild-genesis-state:
         ; fi
 
     RUN mkdir -p /res/test-data/contract/counter \
-        && if [ "$GENERATE_JS_TEST_TXS" = "true" ]; then \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
                     /midnight-node-toolkit \
@@ -418,7 +410,7 @@ rebuild-genesis-state:
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
     RUN mkdir -p /res/test-data/contract/mint \
-        && if [ "$GENERATE_JS_TEST_TXS" = "true" ]; then \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
                     /midnight-node-toolkit \
@@ -712,7 +704,7 @@ node-ci-image-single-platform:
     # v18 and lacks the File API undici needs). +local-env-ci runs `npm ci`/`npm run`
     # straight off this base image, so the version baked here is the one it uses.
     # renovate: datasource=node-version packageName=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     RUN ARCH=$(uname -m) && \
         if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
         curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
@@ -733,12 +725,13 @@ node-ci-image-single-platform:
     # compactc is exposed via COMPACT_HOME; when it is set, toolkit-js scripts honour
     # it: `fetch-compactc` skips the download and `run-compactc` uses this compiler.
     # When COMPACTC_VERSION matches the pinned submodule (version + tree hash), build
-    # compactc from source; otherwise COMPACTC_VERSION names a released version (no
-    # tree-hash suffix) and we fetch the prebuilt binary for it.
+    # compactc from source; otherwise COMPACTC_VERSION names a release we fetch the
+    # prebuilt binary for — either a plain/pre-release version (0.31.108, 0.30.0-rc.1)
+    # or a `<version>-<40-char-commit-sha>` dev build (see +compactc-fetch).
     IF [ "$COMPACT_SUBMODULE_VERSION" = "$COMPACTC_VERSION" ]
         COPY +compactc-bundle/compact-home /compact-home
     ELSE
-        COPY (+compactc-fetch --VERSION="$COMPACTC_VERSION")/compact-home /compact-home
+        COPY (+compactc-fetch/compact-home --VERSION="$COMPACTC_VERSION") /compact-home
     END
     ENV COMPACT_HOME=/compact-home
     ENV COMPACTC_VERSION="$COMPACTC_VERSION"
@@ -840,11 +833,26 @@ compactc-fetch:
     ARG COMPACT_TAG_PREFIX=compactc-v
     FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl unzip
+    # The tag/asset names depend on the kind of release VERSION names:
+    #   - a "dev build" published from an arbitrary commit carries that commit's full
+    #     40-char git SHA as its suffix (e.g. 0.31.108-73ebf...) and follows the
+    #     compactc-dev-<sha> / compactc_dev-<sha>_<arch> naming;
+    #   - a released or pre-release version (e.g. 0.31.108, 0.30.0-rc.1) follows the
+    #     conventional compactc-v<version> / compactc_v<version>_<arch> naming.
+    # Only a bare 40-char hex suffix selects the dev path, so semver pre-releases
+    # (-rc.N, -alpha, ...) keep their normal release naming.
     RUN set -e && \
         ARCH=$(uname -m) && \
         if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
-        ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip" && \
-        URL="https://github.com/${COMPACT_REPO}/releases/download/${COMPACT_TAG_PREFIX}${VERSION}/${ASSET}" && \
+        SUFFIX="${VERSION#*-}" && \
+        if [ "$SUFFIX" != "$VERSION" ] && printf '%s' "$SUFFIX" | grep -Eq '^[0-9a-f]{40}$'; then \
+            TAG="compactc-dev-${SUFFIX}"; \
+            ASSET="compactc_dev-${SUFFIX}_${COMPACTC_ARCH}-unknown-linux-musl.zip"; \
+        else \
+            TAG="${COMPACT_TAG_PREFIX}${VERSION}"; \
+            ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip"; \
+        fi && \
+        URL="https://github.com/${COMPACT_REPO}/releases/download/${TAG}/${ASSET}" && \
         mkdir -p /compact-home && \
         echo "Downloading compactc: ${URL}" && \
         curl -fsSL "${URL}" -o /tmp/compactc.zip && \
@@ -876,13 +884,19 @@ toolkit-js-prep:
     FROM +prep-no-copy
 
     # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
+    RUN microdnf -y install tar gzip xz perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 23 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=23.11.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
+    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
+    # `tar` overlays rather than replaces, so leftover files from the base's older npm
+    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
+    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        rm -rf /usr/local/lib/node_modules && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
@@ -1116,13 +1130,19 @@ build-test-toolkit:
 
     # Install Node.js 23 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
     # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
-    ARG NODE_VERSION=23.11.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
+    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
+    # `tar` overlays rather than replaces, so leftover files from the base's older npm
+    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
+    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
+        rm -rf /usr/local/lib/node_modules && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
@@ -1422,12 +1442,13 @@ toolkit-image:
     USER root
 
     # Install dependencies for Node.js (libxml2 pinned via base image digest, python3-pip not installed)
-    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 && \
+    # Install shasum via perl-Digest-SHA for compactc
+    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     RUN if [ "$NATIVEARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
@@ -1487,7 +1508,7 @@ audit-npm:
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1526,7 +1547,7 @@ audit-yarn:
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1577,7 +1598,7 @@ fix-lock-npm:
 
     # Keep in sync with audit-npm target
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
