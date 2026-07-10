@@ -124,7 +124,7 @@ mod tests {
 		fn value_from_digest(
 			_digests: &[DigestItem],
 		) -> Result<Self::Value, Box<dyn Error + Send + Sync>> {
-			todo!()
+			unimplemented!()
 		}
 	}
 
@@ -142,7 +142,7 @@ mod tests {
 		fn value_from_digest(
 			_digests: &[DigestItem],
 		) -> Result<Self::Value, Box<dyn Error + Send + Sync>> {
-			todo!()
+			unimplemented!()
 		}
 	}
 

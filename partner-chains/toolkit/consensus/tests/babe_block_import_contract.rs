@@ -20,7 +20,7 @@
 //! PartnerChainsBlockImport<BabeBlockImport<Probe<PartnerChainsBodyRestore<Client>>>>
 //! ```
 
-use parity_scale_codec::{Decode, Encode};
+use parity_scale_codec::Encode;
 use sc_block_builder::BlockBuilderBuilder;
 use sc_client_api::BlockBackend;
 use sc_consensus::block_import::{
@@ -30,6 +30,7 @@ use sc_consensus_babe::{BabeIntermediate, BabeLink, INTERMEDIATE_KEY};
 use sc_consensus_epochs::descendent_query;
 use sc_partner_chains_consensus::{
 	InherentDigest, PartnerChainsBlockImport, PartnerChainsBodyRestore, SlotExtractor,
+	test_support::{TEST_DIGEST_VALUE, TestInherentDigest},
 };
 use sc_transaction_pool_api::{OffchainTransactionPoolFactory, RejectAllTxPool};
 use sp_blockchain::HeaderBackend;
@@ -48,36 +49,6 @@ use substrate_test_runtime_client::{
 	Backend, DefaultTestClientBuilderExt, TestClient, TestClientBuilder, TestClientBuilderExt,
 	runtime::Block,
 };
-
-/// Pre-runtime digest standing in for a Partner Chains inherent digest (e.g. `mcsh`).
-const PC_DIGEST_ID: [u8; 4] = *b"pcsh";
-const PC_DIGEST_VALUE: u32 = 42;
-
-struct PcDigest;
-
-impl InherentDigest for PcDigest {
-	type Value = u32;
-
-	fn from_inherent_data(
-		_inherent_data: &InherentData,
-	) -> Result<Vec<DigestItem>, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(vec![DigestItem::PreRuntime(PC_DIGEST_ID, PC_DIGEST_VALUE.encode())])
-	}
-
-	fn value_from_digest(
-		digests: &[DigestItem],
-	) -> Result<Self::Value, Box<dyn std::error::Error + Send + Sync>> {
-		digests
-			.iter()
-			.find_map(|item| match item {
-				DigestItem::PreRuntime(id, data) if *id == PC_DIGEST_ID => {
-					u32::decode(&mut &data[..]).ok()
-				},
-				_ => None,
-			})
-			.ok_or_else(|| "no Partner Chains inherent digest in header".into())
-	}
-}
 
 /// [`SlotExtractor`] reading the slot from the BABE pre-runtime digest, as a BABE-based
 /// node would define it.
@@ -252,7 +223,7 @@ impl TestBed {
 	/// remain usable.
 	fn partner_chains_import(&mut self) -> PcBabeImport {
 		PartnerChainsBlockImport::new(
-			self.babe_import.take().expect("the BABE import has not been taken yet"),
+			self.babe_import.take().expect("this should be called only once in test setup"),
 			self.client.clone(),
 			RecordingCIDP { recorded: self.pc_recorded.clone() },
 		)
@@ -265,7 +236,7 @@ type PcBabeImport = PartnerChainsBlockImport<
 	RecordingCIDP,
 	Block,
 	BabeSlotExtractor,
-	PcDigest,
+	TestInherentDigest,
 >;
 
 /// Builds an empty block on top of genesis carrying the BABE secondary-plain pre-digest
@@ -282,7 +253,7 @@ fn importable_block(
 	let mut logs = vec![DigestItem::PreRuntime(BABE_ENGINE_ID, pre_digest.encode())];
 	if include_pc_digest {
 		logs.extend(
-			PcDigest::from_inherent_data(&InherentData::new())
+			TestInherentDigest::from_inherent_data(&InherentData::new())
 				.expect("Partner Chains digest can be created"),
 		);
 	}
@@ -325,7 +296,7 @@ async fn wrapped_babe_import_checks_pc_inherents_and_skips_babes_inherent_check(
 
 	// The Partner Chains inherent check ran exactly once, parameterised by the slot and
 	// digest value from the header.
-	assert_eq!(*bed.pc_recorded.lock().unwrap(), vec![(Slot::from(1), PC_DIGEST_VALUE)]);
+	assert_eq!(*bed.pc_recorded.lock().unwrap(), vec![(Slot::from(1), TEST_DIGEST_VALUE)]);
 	// Canary: BABE's body-gated inherent check did not run. If this fails after a
 	// polkadot-sdk upgrade, BABE now checks inherents without the body gate and the
 	// body-withholding approach no longer suppresses its check.

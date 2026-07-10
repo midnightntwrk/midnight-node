@@ -19,8 +19,8 @@ mod block_import;
 mod block_proposal;
 mod inherent_check;
 mod inherent_digest;
-#[cfg(test)]
-mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 mod verifier;
 
 pub use block_import::{PartnerChainsBlockImport, PartnerChainsBodyRestore};

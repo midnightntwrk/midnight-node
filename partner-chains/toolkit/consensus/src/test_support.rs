@@ -1,7 +1,8 @@
 //! Scaffolding shared by the unit tests of [`crate::PartnerChainsVerifier`] and
-//! [`crate::PartnerChainsBlockImport`].
+//! [`crate::PartnerChainsBlockImport`], and by the contract tests in `tests/`.
 
 use crate::{InherentDigest, SlotExtractor};
+use parity_scale_codec::{Decode, Encode};
 use sc_consensus::block_import::BlockImportParams;
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_block_builder::BlockBuilder as BlockBuilderApi;
@@ -10,7 +11,7 @@ use sp_consensus_slots::Slot;
 use sp_inherents::{CheckInherentsResult, InherentData, InherentDataProvider, InherentIdentifier};
 use sp_runtime::generic::Header;
 use sp_runtime::traits::{BlakeTwo256, Block as BlockT};
-use sp_runtime::{DigestItem, OpaqueExtrinsic};
+use sp_runtime::{Digest, DigestItem, OpaqueExtrinsic};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,8 +19,10 @@ pub(crate) type Block = sp_runtime::generic::Block<Header<u32, BlakeTwo256>, Opa
 
 /// Slot [`TestSlotExtractor`] extracts from every header.
 pub(crate) const TEST_SLOT: u64 = 7;
+/// Pre-runtime digest ID standing in for a Partner Chains inherent digest (e.g. `mcsh`).
+const TEST_DIGEST_ID: [u8; 4] = *b"pcsh";
 /// Value [`TestInherentDigest`] extracts from every header.
-pub(crate) const TEST_DIGEST_VALUE: u32 = 42;
+pub const TEST_DIGEST_VALUE: u32 = 42;
 
 pub(crate) struct TestSlotExtractor;
 
@@ -29,7 +32,8 @@ impl SlotExtractor<Block> for TestSlotExtractor {
 	}
 }
 
-pub(crate) struct TestInherentDigest;
+/// Stand-in for a Partner Chains inherent digest (e.g. the mainchain reference hash).
+pub struct TestInherentDigest;
 
 impl InherentDigest for TestInherentDigest {
 	type Value = u32;
@@ -37,13 +41,21 @@ impl InherentDigest for TestInherentDigest {
 	fn from_inherent_data(
 		_inherent_data: &InherentData,
 	) -> Result<Vec<DigestItem>, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(vec![])
+		Ok(vec![DigestItem::PreRuntime(TEST_DIGEST_ID, TEST_DIGEST_VALUE.encode())])
 	}
 
 	fn value_from_digest(
-		_digests: &[DigestItem],
+		digests: &[DigestItem],
 	) -> Result<Self::Value, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(TEST_DIGEST_VALUE)
+		digests
+			.iter()
+			.find_map(|item| match item {
+				DigestItem::PreRuntime(id, data) if *id == TEST_DIGEST_ID => {
+					u32::decode(&mut &data[..]).ok()
+				},
+				_ => None,
+			})
+			.ok_or_else(|| "no Partner Chains inherent digest in header".into())
 	}
 }
 
@@ -77,10 +89,15 @@ fn create_inherent_data_providers(
 	_parent_hash: <Block as BlockT>::Hash,
 	(slot, digest_value): (Slot, u32),
 ) -> futures::future::Ready<Result<TestIDP, Box<dyn std::error::Error + Send + Sync>>> {
-	// The Partner Chains inherent check must be parameterised with the values
-	// extracted from the block header.
-	assert_eq!(slot, Slot::from(TEST_SLOT));
-	assert_eq!(digest_value, TEST_DIGEST_VALUE);
+	assert_eq!(
+		slot,
+		Slot::from(TEST_SLOT),
+		"the Partner Chains inherent check must be parameterised with the slot extracted from the block header",
+	);
+	assert_eq!(
+		digest_value, TEST_DIGEST_VALUE,
+		"the Partner Chains inherent check must be parameterised with the digest value extracted from the block header",
+	);
 	futures::future::ready(Ok(TestIDP))
 }
 
@@ -149,12 +166,14 @@ pub(crate) fn test_client(fail_inherent_check: bool) -> (Arc<TestClient>, Arc<At
 pub(crate) fn block_import_params(
 	body: Option<Vec<<Block as BlockT>::Extrinsic>>,
 ) -> BlockImportParams<Block> {
+	let digest_logs = TestInherentDigest::from_inherent_data(&InherentData::new())
+		.expect("Partner Chains digest can be created");
 	let header = Header {
 		parent_hash: Default::default(),
 		number: 1,
 		state_root: Default::default(),
 		extrinsics_root: Default::default(),
-		digest: Default::default(),
+		digest: Digest { logs: digest_logs },
 	};
 	let mut block = BlockImportParams::new(BlockOrigin::NetworkInitialSync, header);
 	block.body = body;

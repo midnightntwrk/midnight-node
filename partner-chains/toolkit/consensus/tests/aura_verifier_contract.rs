@@ -1,5 +1,5 @@
 //! Contract ("canary") tests for the upstream behaviour [`PartnerChainsVerifier`] relies
-//! on, run against the real `sc_consensus_aura` verifier and `substrate-test-runtime`.
+//! on, run against the standard `sc_consensus_aura` verifier and `substrate-test-runtime`.
 //!
 //! [`PartnerChainsVerifier`] withholds the block body from the wrapped verifier so that
 //! its body-gated inherent check is skipped while all of its header-level consensus
@@ -14,16 +14,18 @@
 //! * a block sealed by the wrong authority is rejected, proving the seal check still
 //!   runs even though the inner verifier never sees the body.
 //!
-//! The body gate on Aura's inherent check is pinned by control tests that wrap the real
-//! verifier (without [`PartnerChainsVerifier`]) around a client recording
+//! The body gate on Aura's inherent check is pinned by control tests that use the standard
+//! Aura verifier (without [`PartnerChainsVerifier`]) around a client recording
 //! `BlockBuilderApi::check_inherents` calls.
 
-use parity_scale_codec::{Decode, Encode};
 use sc_block_builder::BlockBuilderBuilder;
 use sc_client_api::backend::AuxStore;
 use sc_consensus::block_import::{BlockImportParams, ForkChoiceStrategy};
 use sc_consensus::import_queue::Verifier;
-use sc_partner_chains_consensus::{InherentDigest, PartnerChainsVerifier, SlotExtractor};
+use sc_partner_chains_consensus::{
+	InherentDigest, PartnerChainsVerifier, SlotExtractor,
+	test_support::{TEST_DIGEST_VALUE, TestInherentDigest},
+};
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_block_builder::BlockBuilder as BlockBuilderApi;
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
@@ -34,7 +36,7 @@ use sp_consensus_slots::Slot;
 use sp_inherents::{CheckInherentsResult, CreateInherentDataProviders, InherentData};
 use sp_keystore::{Keystore, KeystorePtr};
 use sp_runtime::traits::{Block as BlockT, Header as _, NumberFor};
-use sp_runtime::{Digest, DigestItem, ExtrinsicInclusionMode, KeyTypeId};
+use sp_runtime::{Digest, ExtrinsicInclusionMode, KeyTypeId};
 use sp_version::RuntimeVersion;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -42,7 +44,7 @@ use substrate_test_runtime_client::{TestClient, runtime::Block};
 
 /// Client wrapper recording whether the runtime's `check_inherents` API was invoked.
 ///
-/// Delegates everything else to the inner [`TestClient`] so the real Aura verifier can run
+/// Delegates everything else to the inner [`TestClient`] so the standard Aura verifier can run
 /// unchanged. Only `BlockBuilderApi::check_inherents` sets the flag.
 struct RecordingClient {
 	inner: Arc<TestClient>,
@@ -336,36 +338,6 @@ impl AuxStore for RecordingClient {
 
 const AURA_KEY_TYPE: KeyTypeId = KeyTypeId(*b"aura");
 
-/// Pre-runtime digest standing in for a Partner Chains inherent digest (e.g. `mcsh`).
-const PC_DIGEST_ID: [u8; 4] = *b"pcsh";
-const PC_DIGEST_VALUE: u32 = 42;
-
-struct PcDigest;
-
-impl InherentDigest for PcDigest {
-	type Value = u32;
-
-	fn from_inherent_data(
-		_inherent_data: &InherentData,
-	) -> Result<Vec<DigestItem>, Box<dyn std::error::Error + Send + Sync>> {
-		Ok(vec![DigestItem::PreRuntime(PC_DIGEST_ID, PC_DIGEST_VALUE.encode())])
-	}
-
-	fn value_from_digest(
-		digests: &[DigestItem],
-	) -> Result<Self::Value, Box<dyn std::error::Error + Send + Sync>> {
-		digests
-			.iter()
-			.find_map(|item| match item {
-				DigestItem::PreRuntime(id, data) if *id == PC_DIGEST_ID => {
-					u32::decode(&mut &data[..]).ok()
-				},
-				_ => None,
-			})
-			.ok_or_else(|| "no Partner Chains inherent digest in header".into())
-	}
-}
-
 /// [`SlotExtractor`] reading the slot from the Aura pre-runtime digest, as the nodes
 /// define it in their `service.rs`.
 struct AuraSlotExtractor;
@@ -397,7 +369,7 @@ impl CreateInherentDataProviders<Block, (Slot, u32)> for RecordingCIDP {
 	}
 }
 
-/// The real Aura verifier wrapped in [`PartnerChainsVerifier`], composed exactly as in
+/// The standard Aura verifier wrapped in [`PartnerChainsVerifier`], composed exactly as in
 /// the nodes' `new_partial`.
 fn partner_chains_aura_verifier(
 	client: Arc<TestClient>,
@@ -423,14 +395,14 @@ fn partner_chains_aura_verifier(
 		},
 	);
 
-	PartnerChainsVerifier::<_, _, _, _, AuraSlotExtractor, PcDigest>::new(
+	PartnerChainsVerifier::<_, _, _, _, AuraSlotExtractor, TestInherentDigest>::new(
 		aura_verifier,
 		client,
 		RecordingCIDP { recorded },
 	)
 }
 
-/// The real Aura verifier alone, for control tests that observe its body-gated inherent check.
+/// The standard Aura verifier alone, for control tests that observe its body-gated inherent check.
 fn aura_verifier(client: Arc<RecordingClient>) -> impl Verifier<Block> {
 	let slot_duration =
 		sc_consensus_aura::slot_duration(&*client.inner).expect("slot duration is available");
@@ -489,7 +461,7 @@ fn sealed_block(
 	let mut logs = vec![sc_consensus_aura::standalone::pre_digest::<AuthorityPair>(slot)];
 	if include_pc_digest {
 		logs.extend(
-			PcDigest::from_inherent_data(&InherentData::new())
+			TestInherentDigest::from_inherent_data(&InherentData::new())
 				.expect("Partner Chains digest can be created"),
 		);
 	}
@@ -538,7 +510,7 @@ async fn accepts_sealed_block_and_runs_partner_chains_check_with_header_extracte
 	let block = sealed_block(&client, &keystore, slot, true, &alice);
 	let verified = verifier.verify(block).await.expect("verification succeeds");
 
-	// The real Aura verifier ran on the withheld-body block: the seal was moved from
+	// The standard Aura verifier ran on the withheld-body block: the seal was moved from
 	// the header into the post-digests and the fork choice was set.
 	assert_eq!(verified.post_digests.len(), 1);
 	assert_eq!(verified.header.digest().logs().len(), 2);
@@ -547,7 +519,7 @@ async fn accepts_sealed_block_and_runs_partner_chains_check_with_header_extracte
 	assert!(verified.body.is_some());
 	// The Partner Chains inherent check ran exactly once, parameterised by the slot and
 	// digest value from the header.
-	assert_eq!(*recorded.lock().unwrap(), vec![(slot, PC_DIGEST_VALUE)]);
+	assert_eq!(*recorded.lock().unwrap(), vec![(slot, TEST_DIGEST_VALUE)]);
 }
 
 #[tokio::test]
@@ -593,8 +565,8 @@ async fn rejects_block_without_partner_chains_digest() {
 }
 
 #[tokio::test]
-async fn unwrapped_aura_verifier_runs_its_body_gated_inherent_check() {
-	// Control for the canary above: verifying through the real Aura verifier *without*
+async fn standard_aura_verifier_runs_its_body_gated_inherent_check() {
+	// Control for the canary above: verifying through the standard Aura verifier, without
 	// the Partner Chains wrapper (body present) must call `check_inherents`, proving the
 	// recording client actually observes the body gate.
 	let inner = Arc::new(substrate_test_runtime_client::new());
@@ -615,7 +587,7 @@ async fn unwrapped_aura_verifier_runs_its_body_gated_inherent_check() {
 }
 
 #[tokio::test]
-async fn unwrapped_aura_verifier_skips_inherent_check_without_body() {
+async fn standard_aura_verifier_skips_inherent_check_without_body() {
 	let inner = Arc::new(substrate_test_runtime_client::new());
 	let keystore: KeystorePtr = Arc::new(sp_keystore::testing::MemoryKeystore::new());
 	let alice = generate_key(&keystore, "//Alice");
