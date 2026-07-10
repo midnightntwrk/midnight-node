@@ -236,6 +236,13 @@ impl sp_api::ApiExt<Block> for RecordingRuntimeApi {
 	fn register_extension<E: sp_externalities::Extension>(&mut self, extension: E) {
 		self.inner.runtime_api().register_extension(extension);
 	}
+
+	fn set_overlayed_changes(
+		&mut self,
+		changes: sp_api::OverlayedChanges<sp_runtime::traits::HashingFor<Block>>,
+	) {
+		self.inner.runtime_api().set_overlayed_changes(changes);
+	}
 }
 
 impl ProvideRuntimeApi<Block> for RecordingClient {
