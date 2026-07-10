@@ -872,6 +872,25 @@ locally-test:
     RUN echo $PWD
 
 # Prepares Node Toolkit (JS) in time for testing
+# midnight-sdk-js builds @midnight-ntwrk/{platform-js,compact-js,compact-js-node,
+# compact-js-command} from the pinned `midnight-sdk/` submodule into byte-reproducible
+# `file:` tarballs — toolkit-js/compact-0.31 consumes these instead of npm registry
+# tarballs. The submodule commit, not the registry, is the version of truth.
+midnight-sdk-js:
+    # renovate: datasource=docker packageName=node
+    FROM node:23.11.0@sha256:ee8a0bc5bbaece0c538c76e7c20fde6d4db319bbd5d4e423940999f16da89aa1
+    COPY midnight-sdk /midnight-sdk
+    COPY scripts/build-midnight-sdk-js.sh /scripts/build-midnight-sdk-js.sh
+    RUN /scripts/build-midnight-sdk-js.sh /midnight-sdk /.midnight-sdk-js
+    SAVE ARTIFACT /.midnight-sdk-js
+
+# midnight-sdk-js-local exports the tarballs to ./.midnight-sdk-js on the host, where
+# a local `npm ci`/`npm install` in util/toolkit-js expects them (run once, and again
+# after bumping the submodule — see AGENTS.md).
+midnight-sdk-js-local:
+    FROM +midnight-sdk-js
+    SAVE ARTIFACT /.midnight-sdk-js AS LOCAL ./.midnight-sdk-js
+
 toolkit-js-prep:
     FROM +prep-no-copy
 
@@ -892,6 +911,11 @@ toolkit-js-prep:
     COPY util/toolkit-js toolkit-js
     ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
+
+    # SDK packages built from the midnight-sdk submodule; compact-0.31's `file:`
+    # deps resolve to /.midnight-sdk-js (relative to /toolkit-js), so this must
+    # precede `npm ci`.
+    COPY +midnight-sdk-js/.midnight-sdk-js /.midnight-sdk-js
 
     WORKDIR /toolkit-js
     RUN npm ci

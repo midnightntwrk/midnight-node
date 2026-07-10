@@ -120,6 +120,26 @@ Either way the image then asserts the resulting `compactc --version` equals the
 without regenerating `COMPACTC_VERSION` fails loudly. The full hashed `COMPACTC_VERSION` is also
 used in the CI/toolkit image tags.
 
+**compact-js / platform-js from source (midnight-sdk submodule):** The
+`midnight-sdk/` git submodule pins the [midnightntwrk/midnight-sdk](https://github.com/midnightntwrk/midnight-sdk)
+commit that `util/toolkit-js/compact-0.31` builds its
+`@midnight-ntwrk/{compact-js,compact-js-node,compact-js-command,platform-js}`
+dependencies from — the submodule commit, not the npm registry, is the version
+of truth (older `compact-0.29`/`compact-0.30` variants stay on registry pins).
+Before running `npm ci`/`npm install` in `util/toolkit-js`:
+```bash
+git submodule update --init midnight-sdk
+earthly +midnight-sdk-js-local   # builds .midnight-sdk-js/*.tgz
+```
+This runs `scripts/build-midnight-sdk-js.sh` inside the `+midnight-sdk-js`
+Earthly target (pinned node image); the output is byte-reproducible, so the
+`file:` tarball integrity hashes in `package-lock.json` stay stable. After
+bumping the submodule, re-run the target and then `npm install` in
+`util/toolkit-js` to refresh the lockfile (npm caches file: tarballs by hash —
+use `npm update @midnight-ntwrk/compact-js @midnight-ntwrk/compact-js-command
+@midnight-ntwrk/compact-js-node @midnight-ntwrk/platform-js` if integrity goes
+stale). CI consumes the same target from `+toolkit-js-prep`.
+
 **Debugging ledger issues:** Keep a local checkout of `midnight-ledger` for searching error messages and understanding `LedgerState` implementation.
 
 **Recommended tools:**
