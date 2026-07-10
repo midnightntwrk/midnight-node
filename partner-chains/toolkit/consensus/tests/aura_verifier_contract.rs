@@ -239,7 +239,7 @@ impl sp_api::ApiExt<Block> for RecordingRuntimeApi {
 
 	fn set_overlayed_changes(
 		&mut self,
-		changes: sp_api::OverlayedChanges<sp_runtime::traits::HashingFor<Block>>,
+		changes: sp_state_machine::OverlayedChanges<sp_runtime::traits::HashingFor<Block>>,
 	) {
 		self.inner.runtime_api().set_overlayed_changes(changes);
 	}
