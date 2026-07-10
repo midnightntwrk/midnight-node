@@ -50,7 +50,7 @@ pub struct PartnerChainsVerifier<Inner, C, CIDP, B: BlockT, SE, ID> {
 	inner: Inner,
 	client: Arc<C>,
 	create_inherent_data_providers: CIDP,
-	_phantom: PhantomData<fn() -> (B, SE, ID)>,
+	_phantom: PhantomData<(B, SE, ID)>,
 }
 
 impl<Inner, C, CIDP, B: BlockT, SE, ID> PartnerChainsVerifier<Inner, C, CIDP, B, SE, ID> {

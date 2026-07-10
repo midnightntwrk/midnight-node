@@ -45,7 +45,7 @@ pub struct PartnerChainsBlockImport<Inner, C, CIDP, B: BlockT, SE, ID> {
 	inner: Inner,
 	client: Arc<C>,
 	create_inherent_data_providers: CIDP,
-	_phantom: PhantomData<fn() -> (B, SE, ID)>,
+	_phantom: PhantomData<(B, SE, ID)>,
 }
 
 impl<Inner, C, CIDP, B: BlockT, SE, ID> PartnerChainsBlockImport<Inner, C, CIDP, B, SE, ID> {
@@ -110,7 +110,7 @@ where
 /// and the client) receive the complete block. See [`PartnerChainsBlockImport`].
 pub struct PartnerChainsBodyRestore<Inner, B: BlockT> {
 	inner: Inner,
-	_phantom: PhantomData<fn() -> B>,
+	_phantom: PhantomData<B>,
 }
 
 impl<Inner, B: BlockT> PartnerChainsBodyRestore<Inner, B> {
