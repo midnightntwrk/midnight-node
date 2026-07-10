@@ -87,9 +87,10 @@ pub struct ContractDeployArgs {
 		default_value = FUNDING_SEED
 	)]
 	pub funding_seed: String,
-	/// Seed for the contract committee. Accepts multiple
-	#[arg(long = "authority-seed", value_parser = cli::wallet_seed_decode)]
-	pub authority_seeds: Vec<WalletSeed>,
+	/// Seed for the contract committee. Accepts multiple. Each accepts an optional
+	/// `schnorr:`/`ecdsa:` scheme prefix (bare = Schnorr; ECDSA requires ledger 9).
+	#[arg(long = "authority-seed", value_parser = cli::scheme_seed_decode)]
+	pub authority_seeds: Vec<cli::SchemeSeed>,
 	/// Authority committee threshold. Default == authority_seeds.len()
 	#[arg(long)]
 	pub authority_threshold: Option<u32>,
@@ -164,12 +165,14 @@ pub struct ContractMaintenanceArgs {
 		default_value = FUNDING_SEED
 	)]
 	pub funding_seed: String,
-	/// Seed for the current contract authority. Accepts multiple
-	#[arg(long = "authority-seed", value_parser = cli::wallet_seed_decode)]
-	pub authority_seeds: Vec<WalletSeed>,
-	/// Seed for the new authority. Accepts multiple
-	#[arg(long = "new-authority-seed", value_parser = cli::wallet_seed_decode)]
-	pub new_authority_seeds: Vec<WalletSeed>,
+	/// Seed for the current contract authority. Accepts multiple. Each accepts an optional
+	/// `schnorr:`/`ecdsa:` scheme prefix (bare = Schnorr; ECDSA requires ledger 9).
+	#[arg(long = "authority-seed", value_parser = cli::scheme_seed_decode)]
+	pub authority_seeds: Vec<cli::SchemeSeed>,
+	/// Seed for the new authority. Accepts multiple. Each accepts an optional
+	/// `schnorr:`/`ecdsa:` scheme prefix (bare = Schnorr; ECDSA requires ledger 9).
+	#[arg(long = "new-authority-seed", value_parser = cli::scheme_seed_decode)]
+	pub new_authority_seeds: Vec<cli::SchemeSeed>,
 	/// File to read the contract address from
 	#[arg(long, value_parser = cli::contract_address_decode)]
 	pub contract_address: ContractAddress,
@@ -604,12 +607,25 @@ impl Builder {
 				compute_batches_seeds(&funding, args.num_txs_per_batch, args.num_batches)
 			},
 			Builder::ContractSimple(call) => {
-				let seed_str = match call {
+				let funding = match call {
 					ContractCall::Deploy(args) => &args.funding_seed,
 					ContractCall::Call(args) => &args.funding_seed,
 					ContractCall::Maintenance(args) => &args.funding_seed,
 				};
-				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(seed_str)])
+				let mut seeds = vec![Wallet::<DefaultDB>::wallet_seed_decode(funding)];
+				// Committee members are also built into the context so their (possibly ECDSA)
+				// scheme is resolved consistently with `relevant_wallet_schemes`.
+				match call {
+					ContractCall::Deploy(args) => {
+						seeds.extend(args.authority_seeds.iter().map(|s| s.resolve().0));
+					},
+					ContractCall::Maintenance(args) => {
+						seeds.extend(args.authority_seeds.iter().map(|s| s.resolve().0));
+						seeds.extend(args.new_authority_seeds.iter().map(|s| s.resolve().0));
+					},
+					ContractCall::Call(_) => {},
+				}
+				Ok(seeds)
 			},
 			Builder::ContractCustom(args) => {
 				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
@@ -673,8 +689,9 @@ impl Builder {
 	/// different schemes): since the context/cache plumbing keys wallets by seed alone, silently
 	/// collapsing such a seed to a single scheme would build/sign with the wrong identity.
 	///
-	/// Committee/contract seeds (`ContractSimple`, `ContractCustom`) and the batch *output* seeds
-	/// stay Schnorr and are intentionally omitted here (out of scope for ECDSA).
+	/// Contract-committee seeds (`ContractSimple` deploy/maintenance authority members) carry a
+	/// per-seed scheme and are included here so ECDSA committees are guarded on pre-ledger-9 chains.
+	/// The contract *funding* seed, `ContractCustom` seeds and the batch *output* seeds stay Schnorr.
 	pub fn relevant_wallet_schemes(&self) -> Result<WalletSchemes, &'static str> {
 		let mut schemes = WalletSchemes::new();
 		let mut seen: HashMap<WalletSeed, UnshieldedSignatureScheme> = HashMap::new();
@@ -736,7 +753,22 @@ impl Builder {
 					}
 				}
 			},
-			Builder::ContractSimple(_) | Builder::ContractCustom(_) | Builder::Send => {},
+			Builder::ContractSimple(call) => match call {
+				ContractCall::Deploy(args) => {
+					for s in &args.authority_seeds {
+						let (seed, scheme) = s.resolve();
+						mark(seed, scheme)?;
+					}
+				},
+				ContractCall::Maintenance(args) => {
+					for s in args.authority_seeds.iter().chain(&args.new_authority_seeds) {
+						let (seed, scheme) = s.resolve();
+						mark(seed, scheme)?;
+					}
+				},
+				ContractCall::Call(_) => {},
+			},
+			Builder::ContractCustom(_) | Builder::Send => {},
 		}
 		Ok(schemes)
 	}
