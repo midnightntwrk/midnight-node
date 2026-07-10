@@ -82,10 +82,12 @@ pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
 pallet-system-parameters.workspace = true
 pallet-throttle.workspace = true
+pallet-consensus-engine.workspace = true
 pallet-version.workspace = true
 midnight-primitives-beefy.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
 midnight-primitives-session-info.workspace = true
+midnight-primitives-consensus-engine.workspace = true
 pallet-c2m-bridge.workspace = true
 pallet-cnight-observation.workspace = true
 midnight-primitives-cnight-observation.workspace = true
@@ -125,6 +127,7 @@ std = [
     "pallet-midnight/std",
     "pallet-system-parameters/std",
     "pallet-throttle/std",
+    "pallet-consensus-engine/std",
     "pallet-mmr/std",
     "pallet-partner-chains-bridge/std",
     "pallet-version/std",
@@ -172,6 +175,7 @@ std = [
     "midnight-primitives-beefy/std",
     "midnight-primitives-cnight-observation/std",
     "midnight-primitives-session-info/std",
+    "midnight-primitives-consensus-engine/std",
     "runtime-common/std"
 ]
 runtime-benchmarks = [
@@ -223,6 +227,7 @@ try-runtime = [
     "pallet-membership/try-runtime",
     "pallet-collective/try-runtime",
     "pallet-throttle/try-runtime",
+    "pallet-consensus-engine/try-runtime",
     "pallet-cnight-observation/try-runtime",
 ]
 experimental = []
