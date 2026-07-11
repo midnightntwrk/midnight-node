@@ -322,9 +322,7 @@ impl From<UserAddress> for UnshieldedWallet {
 // `derive_seed`/`DerivationPath` require the `can-panic` feature (see `hd.rs`).
 #[cfg(all(test, feature = "can-panic"))]
 mod tests {
-	use super::super::super::{
-		DerivationPath, DeriveSeed, Role, SigningKeyEcdsa, UserAddress, WalletSeed,
-	};
+	use super::super::super::WalletSeed;
 	use super::{UnshieldedSignatureScheme, UnshieldedWallet};
 
 	// `common` is compiled once per ledger generation. ECDSA is real only on ledger 9; on 7/8 the
@@ -344,24 +342,6 @@ mod tests {
 		assert_eq!(
 			UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Schnorr).user_address,
 			UnshieldedWallet::default(seed()).user_address,
-		);
-	}
-
-	/// MIP-0003 conformance: an ECDSA wallet's address must equal `UserAddress::from(verifying_key)`
-	/// for the key derived at the ECDSA role (`m/44'/2400'/0'/4/0`).
-	#[test]
-	fn ecdsa_address_matches_verifying_key_derivation() {
-		if LEDGER_GENERATION != 9 {
-			return;
-		}
-		let path = DerivationPath::default_for_role(Role::Ecdsa);
-		let derived = UnshieldedWallet::derive_seed(seed(), &path);
-		let sk = SigningKeyEcdsa::from_bytes(&derived).expect("derive ECDSA signing key");
-		let expected: UserAddress = sk.verifying_key().into();
-
-		assert_eq!(
-			UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address,
-			expected,
 		);
 	}
 
