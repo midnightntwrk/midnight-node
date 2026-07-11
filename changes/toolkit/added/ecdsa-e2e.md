@@ -18,5 +18,5 @@ Because every submitted transaction runs the ledger's `Transaction::well_formed`
 
 This complements the existing in-crate unit and ledger-acceptance tests with a full node round-trip.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1861
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1542

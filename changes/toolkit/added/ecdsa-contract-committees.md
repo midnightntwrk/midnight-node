@@ -25,5 +25,5 @@ round-trip, and tagged wallet (de)serialization (`ledger/helpers`); plus a ledge
 that the ledger's `SignatureKind::signature_verify` (the primitive `Transaction::well_formed` runs)
 accepts the toolkit's wrapped ECDSA signature and rejects cross-scheme mismatches (`util/toolkit`).
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1861
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1542

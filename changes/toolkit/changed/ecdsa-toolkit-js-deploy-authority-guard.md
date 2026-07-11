@@ -20,5 +20,5 @@ parse error (`ecdsa:` is not valid hex) into a clear, actionable message.
 Tests: unit coverage that an `ecdsa:` authority seed is rejected before spawning toolkit-js and that
 a Schnorr seed passes the scheme guard (`util/toolkit`).
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1861
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1542
