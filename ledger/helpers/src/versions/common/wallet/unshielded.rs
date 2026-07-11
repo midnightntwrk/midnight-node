@@ -404,9 +404,11 @@ mod tests {
 		assert!(wallet.maintenance_verifying_key() == maintenance_verifying_key_ecdsa(vk.clone()));
 	}
 
-	/// Golden vector / regression anchor for ECDSA address derivation from `seed()` on ledger 9.
-	/// Cross-check against the official MIP-0003 vectors once published (the seed here is arbitrary,
-	/// so regenerate against the MIP seed for byte-for-byte parity).
+	/// Golden vector / regression anchor for ECDSA address derivation over the *full HD path*
+	/// (root seed → `m/44'/2400'/0'/4/0` leaf → key → address) on ledger 9. This value is
+	/// self-generated: the published MIP-0003 vectors exercise the uniform-bytes→key→address steps
+	/// (see [`ecdsa_address_mip0003_conformance`]) but not the root-seed→leaf HD mapping, so there is
+	/// no official vector to pin the whole path against. `seed()` is arbitrary but stable.
 	#[test]
 	fn ecdsa_address_golden_vector() {
 		if LEDGER_GENERATION != 9 {
@@ -420,5 +422,40 @@ mod tests {
 		);
 
 		assert_eq!(actual, EXPECTED_ECDSA_ADDRESS_HEX);
+	}
+
+	/// MIP-0003 conformance for the ECDSA address *formula* — `SHA-256("midnight:ecdsa:" ‖
+	/// compressed-SEC1-vk)` applied to `UserAddress::from(ecdsa::VerifyingKey)`. The vectors come
+	/// from the official `midnight-wallet` `spec-reference` reference implementation and generator
+	/// (authored by the MIP author); each `uniform_bytes` is fed *directly* as the secp256k1 scalar
+	/// (i.e. it is the HD-path leaf output, NOT a root wallet seed) — which is exactly what
+	/// [`UnshieldedWallet::from_bytes_ecdsa`] consumes. Pinning these guarantees byte-for-byte
+	/// interop with the Wallet SDK's derivation.
+	#[test]
+	fn ecdsa_address_mip0003_conformance() {
+		if LEDGER_GENERATION != 9 {
+			return;
+		}
+		// (uniform_bytes, expected 32-byte unshielded address hex)
+		let cases: [([u8; 32], &str); 3] = [
+			(
+				[0x01; 32],
+				"1139359859a68b29bec3120d85691f21a56593a27d4ee15c10aa059d0699eb3e",
+			),
+			(
+				[0x02; 32],
+				"9dd08a454c354133504bddd366db239ea169db8454ebffb9b7718662b6a6e73d",
+			),
+			(
+				[0x04; 32],
+				"7b62f3aeaf1e9df17474a4ab2dcd4b6ca4d832499d88b3b60fb2a35d69d02933",
+			),
+		];
+
+		for (uniform_bytes, expected) in cases {
+			let actual =
+				hex::encode(UnshieldedWallet::from_bytes_ecdsa(uniform_bytes).user_address.0.0);
+			assert_eq!(actual, expected, "uniform bytes {uniform_bytes:02x?}");
+		}
 	}
 }
