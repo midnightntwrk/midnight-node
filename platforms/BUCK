@@ -32,3 +32,19 @@ re_cache_execution_platform(
     os_configuration = host_configuration.os,
     visibility = ["PUBLIC"],
 )
+
+# Explicit linux-x86_64 target platform for CI. The distributed CI runs on
+# x86_64 ubuntu-latest, but buck2's host auto-detection (prelude//platforms:
+# default) misfired there — third-party platform selects resolved to arm (neon
+# sources on x86 → compile failure). Passing `--target-platforms
+# root//platforms:linux-x86_64` pins os:linux + cpu:x86_64 so reindeer's
+# `platform = {"linux-x86_64": …}` branches (x86 SIMD, libc, no windows code)
+# are selected deterministically, independent of host detection.
+platform(
+    name = "linux-x86_64",
+    constraint_values = [
+        "prelude//os/constraints:linux",
+        "prelude//cpu/constraints:x86_64",
+    ],
+    visibility = ["PUBLIC"],
+)
