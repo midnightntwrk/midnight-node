@@ -74,9 +74,23 @@ jobs:
 
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
       # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
-      - name: buck2 build
-        run: buck2 build root//... --target-platforms root//platforms:linux-x86_64 2>&1 | tee build.log
+      #
+      # Build the real deliverables, not `root//...`: the latter also builds
+      # orphan platform-specific object targets (e.g. ring's Windows `*-nasm.o`,
+      # which reindeer emits without `target_compatible_with`, so they aren't
+      # skipped off-Windows and fail `ld.lld: unknown file type` on Linux). The
+      # node/toolkit binaries + the wasm blob pull the whole first-party + third-
+      # party closure through their real (platform-correct) deps.
+      - name: buck2 build (node + toolkit binaries + on-chain wasm blob)
+        run: |
+          buck2 build --target-platforms root//platforms:linux-x86_64 \
+            root//node:midnight-node-bin \
+            root//util/toolkit:midnight-node-toolkit-bin \
+            root//:runtime-wasm 2>&1 | tee build.log
 
+      # `buck2 test` builds every test target + its deps and runs them — this is
+      # the "builds and runs the tests" deliverable. Orphan object targets are
+      # not test deps, so they're not built here either.
       - name: buck2 test (excluding infra-dependent tests)
         run: buck2 test root//... --target-platforms root//platforms:linux-x86_64 --exclude ci-infra 2>&1 | tee test.log
 
