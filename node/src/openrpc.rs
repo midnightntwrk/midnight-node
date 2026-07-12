@@ -981,8 +981,7 @@ mod tests {
 		let doc = build_openrpc_document(&all_custom_method_names());
 		let expected = serde_json::to_string_pretty(&doc).unwrap() + "\n";
 
-		let static_path =
-			std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/openrpc.json");
+		let static_path = midnight_node_res::locate_workspace_root().join("docs/openrpc.json");
 		if !static_path.exists() {
 			panic!(
 				"docs/openrpc.json does not exist. Generate it with:\n\
@@ -1072,8 +1071,7 @@ mod tests {
 	fn generate_static_openrpc_json() {
 		let doc = build_openrpc_document(&all_custom_method_names());
 		let json = serde_json::to_string_pretty(&doc).unwrap() + "\n";
-		let out_path =
-			std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/openrpc.json");
+		let out_path = midnight_node_res::locate_workspace_root().join("docs/openrpc.json");
 		std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
 		std::fs::write(&out_path, json).unwrap();
 		eprintln!("Wrote {}", out_path.display());

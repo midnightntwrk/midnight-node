@@ -1,0 +1,6 @@
+# The substrate wasm runtime is strictly no_std; `std`/`use_std` only reach this
+# crate on wasm32 via host proc-macro/build feature unification that reindeer's
+# per-platform resolver can't fully separate. Drop them on wasm32 (host/exec
+# builds keep them). Mirrors Bazel's `wasm_aware_features` overrides.
+['cfg(target_arch = "wasm32")']
+omit_features = ["std", "use_std"]

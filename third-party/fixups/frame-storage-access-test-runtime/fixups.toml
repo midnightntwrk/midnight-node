@@ -1,0 +1,15 @@
+# substrate-wasm-builder can't run under buck (spawns cargo) and drags in the
+# wasm-opt/binaryen cxx chain. Skip it; overlay the WASM_BINARY=None stub the
+# build script would emit. lib.rs does
+# `#[cfg(feature="std")] include!(concat!(env!("OUT_DIR"),"/wasm_binary.rs"))`,
+# resolved from the srcs-tree root (rustc CWD), so OUT_DIR must equal the
+# crate's manifest dir (where the overlay lands the stub).
+# CAVEAT: the git-fetch dir hash below tracks the polkadot-sdk pin; regenerate
+# on a polkadot-sdk bump (or replace with a buildscript genrule). See
+# docs/buck2-notes.md.
+buildscript.run = false
+cargo_env = true
+overlay = "overlay"
+
+[env]
+OUT_DIR = "polkadot-sdk-eff3836c89051857/substrate/utils/frame/storage-access-test-runtime"

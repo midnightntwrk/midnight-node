@@ -1,0 +1,44 @@
+name: buck2 Linux toolchain
+description: >-
+  Install the toolchain the buck2 build needs on an ubuntu-latest runner: a
+  pinned rustc (+ the wasm32v1-none target for the on-chain runtime blob), a
+  wasm-capable clang/lld (Apple/stock clang lacks the WebAssembly backend but
+  distro LLVM ships it), and wasm-opt (binaryen). Used identically by the
+  rebuck2 driver and worker jobs so a dispatched compile action finds the same
+  tools on whichever runner executes it.
+
+inputs:
+  rust-version:
+    description: Pinned rustc. A floating rustc changes action digests → stale cache hits.
+    default: "1.95"
+
+runs:
+  using: composite
+  steps:
+    # Pinned rustc + wasm target. dtolnay/rust-toolchain@master.
+    - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
+      with:
+        toolchain: ${{ inputs.rust-version }}
+        targets: wasm32v1-none
+
+    - name: Install clang + lld + llvm + wasm-opt
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends clang lld llvm binaryen
+        # Some ubuntu images ship only version-suffixed binaries; expose the
+        # unsuffixed names the buck toolchain (toolchains/BUCK) expects.
+        for t in clang clang++ llvm-ar; do
+          if ! command -v "$t" >/dev/null; then
+            cand="$(ls /usr/bin/${t}-* 2>/dev/null | sort -V | tail -1 || true)"
+            [ -n "$cand" ] && sudo ln -sf "$cand" "/usr/bin/${t}"
+          fi
+        done
+        # Fail fast if the distro clang can't target wasm (the whole runtime
+        # blob build depends on it).
+        clang --print-targets | grep -qi wasm \
+          || { echo "clang has no WebAssembly backend"; exit 1; }
+        for t in clang clang++ llvm-ar wasm-opt; do
+          echo "$t -> $(command -v "$t")"
+        done

@@ -1,0 +1,3 @@
+# this polkadot-sdk rev generates protobuf into OUT_DIR (schema/light.v1.proto);
+# shared fixup pins run=false for older revs that shipped generated code
+buildscript.run = true

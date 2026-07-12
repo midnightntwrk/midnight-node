@@ -1,0 +1,3 @@
+# with the (always-on here) `vendored` feature the build script skips its
+# chez-scheme codegen and does nothing
+buildscript.run = false

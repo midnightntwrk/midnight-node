@@ -1,0 +1,5 @@
+cargo_env = true
+
+# cc-rs compiles the vendored binaryen sources; needs OPT_LEVEL
+[buildscript.run.env]
+OPT_LEVEL = "3"

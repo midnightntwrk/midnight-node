@@ -1,0 +1,107 @@
+# Distributed buck2 build + test on free ubuntu-latest runners.
+#
+# buck2 needs no big paid machine here: one `driver` job owns the buck2
+# invocation and N `worker` jobs lend their cores over an iroh P2P mesh
+# (gilescope/rebuck2). Compile/link/test actions are dispatched to whichever
+# runner is free; blobs move peer-to-peer. Rendezvous is keyless — every job
+# derives the driver's iroh key from the run id, so no service and no secrets.
+#
+# The build includes the on-chain WASM runtime blob (wasm32 cdylib → wasm-opt →
+# zstd), so the toolchain step installs a wasm-capable clang + wasm-opt on every
+# runner. Tests tagged `ci-infra` (Docker/devnet/Cardano) are excluded — they
+# need external stacks these runners don't have; everything else must pass.
+name: buck2 distributed
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [giles-buck2-build]
+    paths:
+      - "**/BUCK"
+      - ".buckconfig"
+      - "platforms/**"
+      - "toolchains/**"
+      - "wasm-deps/**"
+      - "tools/wasm-compress/**"
+      - "scripts/buck2/**"
+      - ".github/workflows/buck2-distributed.yml"
+      - ".github/actions/buck2-linux-toolchain/**"
+
+permissions: {}
+
+env:
+  # One mesh session per run; driver + workers derive the iroh key from it.
+  MESH_SESSION: mesh-${{ github.run_id }}
+
+jobs:
+  # The driver owns buck2. It also lends half its cores as a co-worker, so the
+  # fleet is (driver co-worker + 3 workers). min-workers is below the worker
+  # count: one no-show runner must not scrap the run.
+  driver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: write # driver publishes its mesh address as a run artifact
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: gilescope/install-buck2@79ce03d0602320942c0a39bdf1c754fe19a85703 # latest
+      - uses: ./.github/actions/buck2-linux-toolchain
+
+      - name: Bring up rebuck2 driver
+        uses: gilescope/rebuck/rebuck2/actions/driver@4c402ee3169c58d497e0afcac620516970cd889b
+        with:
+          session: ${{ env.MESH_SESSION }}
+          buck2-version: "" # we install buck2 ourselves (install-buck2 above)
+          min-workers: "2"
+          co-worker-slots: "half"
+          execution-platforms: root//platforms:re-exec
+          # Point the wasm C toolchain at the runner's distro LLVM (macOS dev
+          # defaults in toolchains/BUCK don't exist here).
+          buckconfig-extra: |
+            [wasm]
+            cc = /usr/bin/clang
+            cxx = /usr/bin/clang++
+            ar = /usr/bin/llvm-ar
+
+      - name: buck2 build (all actions distributed)
+        run: buck2 build root//... 2>&1 | tee build.log
+
+      - name: buck2 test (excluding infra-dependent tests)
+        run: buck2 test root//... --exclude ci-infra 2>&1 | tee test.log
+
+      - name: Assert actions ran cross-runner
+        run: |
+          set -euo pipefail
+          grep -Eq 'remote: [1-9]' build.log \
+            || { echo "FAIL: buck2 reports no remote commands — nothing distributed"; exit 1; }
+          echo "PASS: distributed build+test"
+
+      - name: Tear down rebuck2 driver
+        if: always()
+        uses: gilescope/rebuck/rebuck2/actions/driver-finish@4c402ee3169c58d497e0afcac620516970cd889b
+
+  # Workers join the mesh from anywhere, claim actions least-loaded-first, fetch
+  # inputs P2P, execute, stream outputs back. No checkout — the source arrives as
+  # blobs. continue-on-error: the driver job is the verdict; a lost worker just
+  # means fewer cores.
+  worker:
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [1, 2, 3]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read # fetch the driver-address run artifact
+    steps:
+      # Checkout only to resolve the local composite action below — the build
+      # inputs themselves arrive as blobs over the mesh, not from this tree.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: ./.github/actions/buck2-linux-toolchain
+      - name: Join the mesh and serve
+        uses: gilescope/rebuck/rebuck2/actions/worker@4c402ee3169c58d497e0afcac620516970cd889b
+        with:
+          session: ${{ env.MESH_SESSION }}

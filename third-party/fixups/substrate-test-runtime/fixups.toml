@@ -1,0 +1,10 @@
+# substrate-wasm-builder can't run under buck; skip it and overlay the
+# WASM_BINARY=None stub the build script would emit. Same pattern as
+# frame-storage-access-test-runtime; OUT_DIR = crate manifest dir (the git-fetch
+# subdir hash tracks the polkadot-sdk pin — regenerate on bump).
+buildscript.run = false
+cargo_env = true
+overlay = "overlay"
+
+[env]
+OUT_DIR = "polkadot-sdk-eff3836c89051857/substrate/test-utils/runtime"

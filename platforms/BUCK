@@ -1,0 +1,34 @@
+load("@prelude//platforms:defs.bzl", "host_configuration")
+load(":defs.bzl", "re_cache_execution_platform")
+
+# Target platform for the on-chain WASM runtime. Building a target with
+# `--target-platforms=root//platforms:wasm32v1-none` makes the rust toolchain
+# (toolchains/BUCK) target wasm32v1-none and pass --cfg substrate_runtime.
+platform(
+    name = "wasm32v1-none",
+    constraint_values = [
+        "prelude//os/constraints:none",
+        "prelude//cpu/constraints:wasm32",
+    ],
+    visibility = ["PUBLIC"],
+)
+
+# Distributed-CI execution platforms (gilescope/rebuck2). Default local builds
+# keep `.buckconfig`'s prelude platform; the rebuck driver writes a
+# `.buckconfig.local` selecting one of these:
+#   re-cache — remote action cache on, execution local (cache-only rebuck).
+#   re-exec  — every action dispatched to rebuck2 workers (local_enabled=False).
+re_cache_execution_platform(
+    name = "re-cache",
+    cpu_configuration = host_configuration.cpu,
+    os_configuration = host_configuration.os,
+    visibility = ["PUBLIC"],
+)
+
+re_cache_execution_platform(
+    name = "re-exec",
+    cpu_configuration = host_configuration.cpu,
+    local_enabled = False,
+    os_configuration = host_configuration.os,
+    visibility = ["PUBLIC"],
+)

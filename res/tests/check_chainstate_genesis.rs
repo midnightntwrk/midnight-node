@@ -19,7 +19,8 @@ fn load_genesis_state_file(genesis_state_path: &std::path::PathBuf) -> Vec<u8> {
 
 #[test]
 fn check_all_chainspec_integrity() {
-	*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
+	let root = midnight_node_res::locate_workspace_root();
+	*midnight_node_res::CFG_ROOT.lock().unwrap() = Some(root.to_string_lossy().into_owned());
 	for name in midnight_node_res::list_configs() {
 		let config_str = midnight_node_res::get_config(&name)
 			.unwrap_or_else(|| panic!("get_config error ({name})"));
@@ -32,7 +33,7 @@ fn check_all_chainspec_integrity() {
 		}
 
 		let chain_spec: serde_json::Value = serde_json::from_str(
-			&std::fs::read_to_string(std::path::Path::new("../").join(
+			&std::fs::read_to_string(root.join(
 				chainspec_path.unwrap().as_str().unwrap_or_else(|| panic!("'chain' not string")),
 			))
 			.unwrap(),
@@ -46,7 +47,7 @@ fn check_all_chainspec_integrity() {
 			.unwrap_or_else(|| panic!("genesis_state not a string ({name})"));
 
 		let genesis_state = load_genesis_state_file(
-			&std::path::Path::new("../").join(
+			&root.join(
 				config
 					.get("chainspec_genesis_state")
 					.unwrap_or_else(|| panic!("failed to find chainspec_genesis_state ({name})"))

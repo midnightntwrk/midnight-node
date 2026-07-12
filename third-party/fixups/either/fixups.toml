@@ -1,0 +1,8 @@
+# `either` is only reached in the wasm (target) tree via no_std consumers
+# (polkadot-ckb-merkle-mountain-range -> itertools). Its `std`/`use_std` features
+# leak onto wasm32 from the host proc-macro chain (aquamarine -> itertools) that
+# reindeer's per-platform resolver can't fully separate. The wasm runtime is
+# no_std, so drop them on wasm32 (host/exec builds keep them). Mirrors Bazel's
+# `wasm_aware_features` overrides.
+['cfg(target_arch = "wasm32")']
+omit_features = ["std", "use_std"]

@@ -25,6 +25,34 @@ pub mod toolkit_js;
 pub mod tx_generator;
 pub mod utils;
 
+/// Test-only path helpers. Fixtures live under the workspace's `res/`, which
+/// tests historically reached via `../../res/...` assuming cargo's CWD = crate
+/// dir. Buck2 runs tests from the workspace root, so anchor to the root instead:
+/// walk up until `res/cfg/default.toml` is found (works under both).
+#[cfg(test)]
+pub(crate) mod test_paths {
+	use std::path::PathBuf;
+
+	pub fn workspace_root() -> PathBuf {
+		let mut dir = std::env::current_dir().expect("cwd");
+		loop {
+			if dir.join("res/cfg/default.toml").exists() {
+				return dir;
+			}
+			if !dir.pop() {
+				panic!(
+					"could not locate workspace root (res/cfg/default.toml not found above cwd)"
+				);
+			}
+		}
+	}
+
+	/// Absolute path to a `res/`-relative fixture, e.g. `res("dev/ics-config.json")`.
+	pub fn res(rel: &str) -> String {
+		workspace_root().join("res").join(rel).to_string_lossy().into_owned()
+	}
+}
+
 use progress::{Progress, Spin};
 use rand::{SeedableRng, rngs::StdRng};
 use subxt::utils::H256;

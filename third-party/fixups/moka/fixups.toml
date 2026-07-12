@@ -1,0 +1,2 @@
+# build.rs is a no-op unless cfg(skeptic)/cfg(rustver) are set externally
+buildscript.run = false
