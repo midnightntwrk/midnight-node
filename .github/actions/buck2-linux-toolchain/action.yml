@@ -20,10 +20,13 @@ runs:
     # fetch them on-the-fly during the build: parallel rustc actions each honour
     # rust-toolchain.toml and race the component install, hitting
     # "detected conflict: bin/cargo-clippy". dtolnay/rust-toolchain@master.
+    # targets + components must match rust-toolchain.toml exactly, else rustc
+    # auto-installs the missing ones on-the-fly (racing under parallel actions).
+    # rust-toolchain.toml pins targets = [wasm32v1-none, aarch64-unknown-linux-gnu].
     - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
       with:
         toolchain: ${{ inputs.rust-version }}
-        targets: wasm32v1-none
+        targets: wasm32v1-none, aarch64-unknown-linux-gnu
         components: rust-src, rustfmt, clippy, llvm-tools-preview, rust-analyzer
 
     - name: Install clang + lld + llvm + wasm-opt
