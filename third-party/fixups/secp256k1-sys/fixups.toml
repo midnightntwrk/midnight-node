@@ -1,0 +1,11 @@
+# Local override of the shared secp256k1-sys fixup (preserves its config, adds a
+# wasm CFLAG). secp256k1-sys's vendored wasm/wasm-sysroot predates clang making
+# implicit function declarations a hard error (C99+); a newer distro clang
+# (ubuntu clang-18 in CI) fails the wasm.c compile. Demote it to a warning — the
+# symbols resolve at link from the real wasi/libc. See AGENTS.md
+# "Troubleshooting WASM runtime builds (Linux)".
+cargo_env = true
+
+[buildscript.run.env]
+OPT_LEVEL = "3"
+CFLAGS_wasm32v1_none = "-Wno-error=implicit-function-declaration"
