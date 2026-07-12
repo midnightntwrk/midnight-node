@@ -8,4 +8,10 @@ cargo_env = true
 
 [buildscript.run.env]
 OPT_LEVEL = "3"
-CFLAGS_wasm32v1_none = "-Wno-error=implicit-function-declaration"
+# secp256k1-sys 0.10's build.rs emits wasm codegen flags (-mcpu=mvp
+# -mmutable-globals) but relies on cc-rs to add the clang target; cc-rs does NOT
+# recognise the `wasm32v1-none` rust target name, so no `--target` reaches clang
+# and it rejects `-mcpu=mvp` as an x86 CPU (empty stderr under buck). Force the
+# wasm clang target explicitly. -Wno-error keeps the vendored wasm-sysroot's
+# implicit decls non-fatal on newer clang. See AGENTS.md.
+CFLAGS_wasm32v1_none = "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration"

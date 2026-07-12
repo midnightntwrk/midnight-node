@@ -7341,7 +7341,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "9",
         "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
-        "CFLAGS_wasm32v1_none": "-Wno-error=implicit-function-declaration",
+        "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
     },
     features = [
@@ -7440,7 +7440,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "10",
         "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
-        "CFLAGS_wasm32v1_none": "-Wno-error=implicit-function-declaration",
+        "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
     },
     features = [
