@@ -32,6 +32,11 @@ permissions: {}
 env:
   # One mesh session per run; driver + workers derive the iroh key from it.
   MESH_SESSION: mesh-${{ github.run_id }}
+  # Pin the toolchain so rustc uses the pre-installed 1.95 directly and never
+  # consults rust-toolchain.toml at build time — parallel rustc actions otherwise
+  # race to rustup-install its pinned components ("detected conflict:
+  # bin/cargo-clippy"). The composite also pre-installs those components.
+  RUSTUP_TOOLCHAIN: 1.95-x86_64-unknown-linux-gnu
 
 jobs:
   # The driver owns buck2. It also lends half its cores as a co-worker, so the
@@ -59,6 +64,10 @@ jobs:
           # local_only (they hit the network), and re-exec's local_enabled=False
           # rejects them. Hybrid runs local_only local, the rest via the mesh.
           execution-platforms: root//platforms:re-cache
+          # No cross-run store snapshot: the monolith is multi-GB (2.3 GB seen)
+          # and blows the actions-cache budget. Each run is a cold build for now;
+          # revisit with sharded-CAS persistence once the build is reliably green.
+          snapshot-key-prefix: ""
           # Point the wasm C toolchain at the runner's distro LLVM (macOS dev
           # defaults in toolchains/BUCK don't exist here).
           buckconfig-extra: |
@@ -82,7 +91,11 @@ jobs:
       # node/toolkit binaries + the wasm blob pull the whole first-party + third-
       # party closure through their real (platform-correct) deps.
       - name: buck2 build (node + toolkit binaries + on-chain wasm blob)
+        # pipefail: `… | tee` otherwise returns tee's exit (0), masking a buck2
+        # failure as a green step. This is load-bearing — it's what turns a real
+        # build failure into a failed job.
         run: |
+          set -o pipefail
           buck2 build --target-platforms root//platforms:linux-x86_64 \
             root//node:midnight-node-bin \
             root//util/toolkit:midnight-node-toolkit-bin \
@@ -92,7 +105,9 @@ jobs:
       # the "builds and runs the tests" deliverable. Orphan object targets are
       # not test deps, so they're not built here either.
       - name: buck2 test (excluding infra-dependent tests)
-        run: buck2 test root//... --target-platforms root//platforms:linux-x86_64 --exclude ci-infra 2>&1 | tee test.log
+        run: |
+          set -o pipefail
+          buck2 test root//... --target-platforms root//platforms:linux-x86_64 --exclude ci-infra 2>&1 | tee test.log
 
       - name: Report distribution
         if: always()
