@@ -66,13 +66,17 @@ jobs:
       # swap on /mnt covers local rustc memory peaks (the driver also co-works).
       - name: Redirect buck-out + store to /mnt, add swap
         run: |
+          set -e
+          # The real fix (must succeed): keep buck-out + the CAS store off /.
           sudo mkdir -p /mnt/buck-out /mnt/rebuck2
           sudo chown "$(id -u):$(id -g)" /mnt/buck-out /mnt/rebuck2
           ln -s /mnt/buck-out buck-out
-          sudo fallocate -l 6G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
+          # Bonus swap for local rustc peaks — best-effort: the runner may already
+          # have an active /mnt/swapfile, so use a fresh name and never fail here.
+          ( sudo fallocate -l 6G /mnt/rebuck-swap \
+            && sudo chmod 600 /mnt/rebuck-swap \
+            && sudo mkswap /mnt/rebuck-swap \
+            && sudo swapon /mnt/rebuck-swap ) || echo "extra swap unavailable (continuing)"
           df -h / /mnt; free -h
       - uses: gilescope/install-buck2@79ce03d0602320942c0a39bdf1c754fe19a85703 # latest
       - uses: ./.github/actions/buck2-linux-toolchain
