@@ -79,28 +79,6 @@ jobs:
             cxx = /usr/local/bin/wasm-cc.sh
             ar = /usr/local/bin/wasm-ar.sh
 
-      - name: Diagnose runner arch + resolved platform
-        run: |
-          echo "uname -m: $(uname -m); RUNNER_ARCH=$RUNNER_ARCH"
-          buck2 audit providers root//platforms:linux-x86_64 2>&1 | grep -iE "constraint|cpu|os" | head || true
-
-      # DEBUG: buck swallows the build-script cc stderr, so reproduce the exact
-      # secp256k1 wasm.c compile outside buck to see clang's real diagnostic.
-      - name: DEBUG reproduce secp256k1 wasm compile
-        continue-on-error: true
-        run: |
-          clang --version | head -1
-          cd "$RUNNER_TEMP"
-          curl -sL https://static.crates.io/crates/secp256k1-sys/secp256k1-sys-0.10.1.crate | tar xz
-          cd secp256k1-sys-0.10.1
-          FLAGS="-O3 -mcpu=mvp -mmutable-globals -I depend/secp256k1/ -I depend/secp256k1/include -I depend/secp256k1/src -I wasm/wasm-sysroot -Wall -Wextra -DSECP256K1_API= -DENABLE_MODULE_ELLSWIFT=1 -Werror=unused-command-line-argument -Wno-error=implicit-function-declaration"
-          echo "=== A: with --ld-path (buck adds this; expect FAIL) ==="
-          /usr/local/bin/wasm-cc.sh --ld-path=/bin/true -fno-sanitize=all $FLAGS -c wasm/wasm.c -o /tmp/a.o \
-            && echo "A: COMPILE OK" || echo "A: COMPILE FAILED rc=$?"
-          echo "=== B: same + -Qunused-arguments (the proposed fix; expect OK) ==="
-          /usr/local/bin/wasm-cc.sh -Qunused-arguments --ld-path=/bin/true -fno-sanitize=all $FLAGS -c wasm/wasm.c -o /tmp/b.o \
-            && echo "B: COMPILE OK" || echo "B: COMPILE FAILED rc=$?"
-
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
       # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
       #

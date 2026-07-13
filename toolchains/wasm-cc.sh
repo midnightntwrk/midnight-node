@@ -13,9 +13,14 @@ elif [ -x /usr/local/opt/llvm/bin/clang ]; then
 else
   CLANG=clang
 fi
+# -Qunused-arguments: buck's cc shim passes --ld-path=<ld_shim> (and -fno-sanitize)
+# to the compiler for every invocation, including -c compiles that never link.
+# clang then flags --ld-path as an unused argument, and cc-rs compiles with
+# -Werror=unused-command-line-argument, turning that into a fatal (and, under
+# buck's stderr-swallowing buildscript wrapper, invisible) error. Suppress it.
 # Capture + force-emit clang's stderr: buck's buildscript_run wrapper otherwise
 # swallows it, leaving cc-rs failures with an empty diagnostic (undebuggable).
-err="$("$CLANG" --target=wasm32-unknown-unknown "$@" 2>&1 1>/dev/null)"
+err="$("$CLANG" --target=wasm32-unknown-unknown -Qunused-arguments "$@" 2>&1 1>/dev/null)"
 rc=$?
 if [ "$rc" -ne 0 ]; then
   printf 'wasm-cc.sh: %s exited %d\ncmd: %s %s\n%s\n' \
