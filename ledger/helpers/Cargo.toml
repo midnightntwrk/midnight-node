@@ -29,9 +29,15 @@ mn-ledger-8 = { workspace = true, features = ["proving"] }
 onchain-runtime-ledger-8 = { workspace = true }
 ledger-storage-ledger-8 = { workspace = true }
 zswap-ledger-8 = { workspace = true }
+coin-structure-ledger-8 = { workspace = true }
+base-crypto-ledger-8 = { workspace = true }
+transient-crypto-ledger-8 = { workspace = true }
+serialize-ledger-8 = { workspace = true }
+zkir-ledger-8 = { workspace = true }
 
 mn-ledger-9 = { workspace = true, features = ["proving", "test-utilities"] }
 onchain-runtime-ledger-9 = { workspace = true }
+ledger-storage-ledger-9 = { workspace = true }
 zswap-ledger-9 = { workspace = true }
 coin-structure-ledger-9 = { workspace = true }
 transient-crypto-ledger-9 = { workspace = true }

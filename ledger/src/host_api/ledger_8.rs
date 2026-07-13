@@ -32,7 +32,7 @@ type Signature = crate::ledger_8::base_crypto_local::signatures::Signature;
 type DbSeparate = crate::ledger_8::ledger_storage_local::db::ParityDb;
 #[cfg(feature = "std")]
 type DbUnified = crate::ledger_8::ledger_storage_local::db::ParityDb<
-	sha2::Sha256,
+	crate::ledger_8::ledger_storage_local::DefaultHasher,
 	crate::ledger_8::ledger_storage_local::db::paritydb::OwnedDb,
 	{ LedgerStorageExt::COLUMN_OFFSET },
 >;

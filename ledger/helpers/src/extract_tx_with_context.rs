@@ -15,22 +15,15 @@ pub fn extract_tx_with_context_ledger_9(bytes: &[u8]) -> (Vec<u8>, crate::ledger
 
 #[cfg(feature = "can-panic")]
 pub fn extract_tx_with_context_ledger_8(bytes: &[u8]) -> (Vec<u8>, crate::ledger_8::BlockContext) {
-	use crate::fork::raw_block_data::RawTransaction;
-
-	let serialized_tx: SerializedTx =
+	// The `BlockContext` JSON wire shape is version-agnostic (see `SerializedTx`
+	// docs), so deserialize straight into L8's context type.
+	let serialized_tx: SerializedTx<crate::ledger_8::BlockContext> =
 		serde_json::from_slice(bytes).expect("failed to deserialize as SerializedTx");
 	let RawTransaction::Midnight(tx_bytes) = serialized_tx.tx else {
 		panic!("expected test to run against midnight transaction");
 	};
 
-	let block_context = crate::ledger_8::BlockContext {
-		tblock: serialized_tx.context.tblock,
-		tblock_err: serialized_tx.context.tblock_err,
-		parent_block_hash: serialized_tx.context.parent_block_hash,
-		last_block_time: serialized_tx.context.last_block_time,
-	};
-
-	(tx_bytes, block_context)
+	(tx_bytes, serialized_tx.context)
 }
 
 #[cfg(feature = "can-panic")]

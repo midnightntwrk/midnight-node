@@ -24,8 +24,6 @@ use super::{
 #[cfg(feature = "std")]
 use midnight_serialize_local::Tagged;
 #[cfg(feature = "std")]
-use sha2::digest::{OutputSizeUser, generic_array::typenum::U32};
-#[cfg(feature = "std")]
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use alloc::vec::Vec;
@@ -58,7 +56,7 @@ use {
 	},
 	coin_structure_local::coin::Nonce,
 	ledger_storage_local::{
-		Storage,
+		DefaultHasher, Storage,
 		arena::{ArenaKey, Sp, TypedArenaKey},
 		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
@@ -166,7 +164,6 @@ pub struct Bridge<S: SignatureKind<D>, D: DB> {
 impl<S: SignatureKind<D> + std::fmt::Debug, D: DB> Bridge<S, D>
 where
 	mn_ledger_local::structure::Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Tagged,
-	D::Hasher: OutputSizeUser<OutputSize = U32>,
 {
 	pub fn set_default_storage(mut externalities: &mut dyn Externalities) {
 		let maybe_storage = externalities.extension::<LedgerStorageExt>();
@@ -175,7 +172,7 @@ where
 				LedgerStorageDb::UnifiedDb(db) => {
 					let res = set_default_storage(|| {
 						let db =
-                            ParityDb::<sha2::Sha256, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(OwnedDb(db.clone()));
+                            ParityDb::<DefaultHasher, _, { LedgerStorageExt::COLUMN_OFFSET }>::from_existing_db(OwnedDb(db.clone()));
 						Storage::new(storage.cache_size, db)
 					});
 					if res.is_err() {
@@ -187,7 +184,7 @@ where
 				},
 				LedgerStorageDb::SeparateDb(db_path) => {
 					let res = set_default_storage(|| {
-						let db = ParityDb::<sha2::Sha256>::open(db_path.as_path());
+						let db = ParityDb::<DefaultHasher>::open(db_path.as_path());
 						Storage::new(storage.0.cache_size, db)
 					});
 					if res.is_err() {
@@ -941,8 +938,14 @@ where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let state_hash = ledger.state.state_hash();
-		let strict_key =
-			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
+		let strict_key = StrictTxValidationKey {
+			// The hasher output is `GenericArray` (digest 0.10, used by L7/L9) or hybrid-array
+			// `Array` (digest 0.11, used by L8's git-8.2 storage-core). Both deref to `[u8]`, so
+			// go via the slice rather than a version-specific `OutputSize = U32` type bound.
+			state_hash: <[u8; 32]>::try_from(&state_hash.0[..])
+				.expect("persistent state hash must be 32 bytes"),
+			tx_hash: tx_hash.0,
+		};
 
 		// Check strict cache
 		if let Some(cached) = STRICT_TX_VALIDATION_CACHE.get(&strict_key) {
@@ -1063,8 +1066,14 @@ where
 
 		// Check strict cache to determine if this is a cache hit
 		let state_hash = ledger.state.state_hash();
-		let strict_key =
-			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
+		let strict_key = StrictTxValidationKey {
+			// The hasher output is `GenericArray` (digest 0.10, used by L7/L9) or hybrid-array
+			// `Array` (digest 0.11, used by L8's git-8.2 storage-core). Both deref to `[u8]`, so
+			// go via the slice rather than a version-specific `OutputSize = U32` type bound.
+			state_hash: <[u8; 32]>::try_from(&state_hash.0[..])
+				.expect("persistent state hash must be 32 bytes"),
+			tx_hash: tx_hash.0,
+		};
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
 		let verified_tx = Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;

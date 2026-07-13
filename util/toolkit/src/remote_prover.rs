@@ -73,7 +73,9 @@ impl<D: DB + Clone> ProofProvider<D> for RemoteProofServer {
 }
 
 #[async_trait]
-impl<D: DB + Clone> midnight_node_ledger_helpers::ledger_8::ProofProvider<D> for RemoteProofServer {
+impl<D: midnight_node_ledger_helpers::ledger_8::DB + Clone>
+	midnight_node_ledger_helpers::ledger_8::ProofProvider<D> for RemoteProofServer
+{
 	async fn prove(
 		&self,
 		tx: midnight_node_ledger_helpers::ledger_8::Transaction<

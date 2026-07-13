@@ -71,12 +71,12 @@ pub mod ledger_7 {
 pub mod ledger_8 {
 	#[cfg(feature = "std")]
 	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
+		base_crypto_ledger_8 as base_crypto_local, coin_structure_ledger_8 as coin_structure_local,
 		ledger_storage_ledger_8 as ledger_storage_local,
-		midnight_node_ledger_helpers::ledger_8 as helpers_local,
-		midnight_serialize as midnight_serialize_local, mn_ledger_8 as mn_ledger_local,
+		midnight_node_ledger_helpers::ledger_8 as helpers_local, mn_ledger_8 as mn_ledger_local,
 		onchain_runtime_ledger_8 as onchain_runtime_local,
-		transient_crypto as transient_crypto_local, zswap_ledger_8 as zswap_local,
+		serialize_ledger_8 as midnight_serialize_local,
+		transient_crypto_ledger_8 as transient_crypto_local, zswap_ledger_8 as zswap_local,
 	};
 
 	#[path = "block_context/post_ledger_8.rs"]
@@ -108,7 +108,7 @@ pub mod ledger_9 {
 	#[cfg(feature = "std")]
 	pub(crate) use {
 		base_crypto as base_crypto_local, coin_structure_ledger_9 as coin_structure_local,
-		ledger_storage_ledger_8 as ledger_storage_local,
+		ledger_storage_ledger_9 as ledger_storage_local,
 		midnight_node_ledger_helpers::ledger_9 as helpers_local,
 		midnight_serialize as midnight_serialize_local, mn_ledger_9 as mn_ledger_local,
 		onchain_runtime_ledger_9 as onchain_runtime_local,
@@ -167,7 +167,7 @@ pub mod types {
 mod tests {
 	use frame_support::assert_ok;
 	use ledger_storage_ledger_8::{
-		Storage,
+		DefaultHasher, Storage,
 		db::ParityDb,
 		storage::{set_default_storage, try_get_default_storage, unsafe_drop_default_storage},
 	};
@@ -185,7 +185,7 @@ mod tests {
 					panic!("Failed to create dir {}, err {}", db_path.display(), err)
 				});
 
-				let db = ParityDb::<sha2::Sha256>::open(&db_path);
+				let db = ParityDb::<DefaultHasher>::open(&db_path);
 
 				Storage::new(0, db)
 			});

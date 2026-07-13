@@ -166,9 +166,11 @@ pub mod ledger_8 {
 	/// Workspace dependency name of the ledger crate backing this module.
 	pub const CRATE_NAME: &str = "mn-ledger-8";
 	pub use {
-		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
-		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
-		zkir, zswap_ledger_8 as zswap,
+		base_crypto_ledger_8 as base_crypto, coin_structure_ledger_8 as coin_structure,
+		ledger_storage_ledger_8 as ledger_storage, mn_ledger_8 as mn_ledger,
+		onchain_runtime_ledger_8 as onchain_runtime, serialize_ledger_8 as midnight_serialize,
+		transient_crypto_ledger_8 as transient_crypto, zkir_ledger_8 as zkir,
+		zswap_ledger_8 as zswap,
 	};
 
 	// Vendored test-utilities shim for v8.
@@ -285,7 +287,7 @@ pub mod ledger_9 {
 	pub const CRATE_NAME: &str = "mn-ledger-9";
 	pub use {
 		base_crypto, coin_structure_ledger_9 as coin_structure,
-		ledger_storage_ledger_8 as ledger_storage, midnight_serialize, mn_ledger_9 as mn_ledger,
+		ledger_storage_ledger_9 as ledger_storage, midnight_serialize, mn_ledger_9 as mn_ledger,
 		onchain_runtime_ledger_9 as onchain_runtime, transient_crypto_ledger_9 as transient_crypto,
 		zkir, zswap_ledger_9 as zswap,
 	};
