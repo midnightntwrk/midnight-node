@@ -2636,3 +2636,83 @@ async fn spend_cnight_producing_dust() {
         matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total < *balance)
     );
 }
+
+#[e2e_test]
+async fn two_utxo_with_only_one_dust_producing() {
+    let settings = Settings::default();
+    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let address_bech32 = cardano_client.address_as_bech32();
+    tracing::info!("New Cardano wallet created: {:?}", address_bech32);
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    // for minting cNIGHT tokens
+    faucet.request_tokens(&address_bech32, 7_000_000).await;
+
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    tracing::info!(
+        "Registering Cardano wallet {} with DUST address {}",
+        address_bech32,
+        dust_hex
+    );
+
+    let amount = 100;
+    let tx_id = cardano_client
+        .mint_tokens(amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    tracing::info!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
+
+    let cnight_utxo = match cardano_client
+        .find_utxo_by_tx_id(&cardano_client.address_as_bech32(), hex::encode(tx_id))
+        .await
+    {
+        Some(cnight_utxo) => cnight_utxo,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix = b"asset_create";
+    let nonce =
+        MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
+    tracing::info!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    let register_tx_id = cardano_client
+        .register(&dust_hex, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to register tx")
+        .transaction
+        .id;
+    tracing::info!(
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
+    );
+
+    let cnight_utxo_new = cardano_client
+        .rotate_cnight(&cnight_utxo)
+        .await
+        .expect("Failed to rotate cNight UTxO");
+    tracing::info!(
+        "Rotated cNIGHT UTXO: {}",
+        &hex::encode(&cnight_utxo_new.transaction.id)
+    );
+
+    let cnight_new = match cardano_client
+        .find_utxo_by_tx_id(
+            &cardano_client.address_as_bech32(),
+            hex::encode(&cnight_utxo_new.transaction.id),
+        )
+        .await
+    {
+        Some(cnight_new) => cnight_new,
+        None => panic!("No cNIGHT UTXO found after rotation"),
+    };
+
+    let prefix2 = b"asset_create";
+    let nonce_new =
+        MidnightClient::calculate_nonce(prefix2, cnight_new.transaction.id, cnight_new.index);
+    tracing::info!("Calculated nonce for cNIGHT UTXO: {}", nonce_new);
+}
