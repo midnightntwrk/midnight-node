@@ -12,12 +12,16 @@
 // limitations under the License.
 
 use super::super::{
-	ArenaKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable, HRP_CONSTANT,
+	ArenaKey, DB, DerivationPath, DeriveSeed, Deserializable, HRP_CONSTANT,
 	HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash, IntoWalletAddress, Loader, Role,
-	Serializable, SigningKey, Storable, Tagged, UserAddress, VerifyingKey, WalletAddress,
-	WalletSeed, deserialize_untagged, serialize_untagged,
+	Serializable, Signature, SignatureVerifyingKey, SigningKeyEcdsa, SigningKeySchnorr, Storable,
+	Tagged, TransactionSigningKey, UserAddress, VerifyingKeyEcdsa, VerifyingKeySchnorr,
+	WalletAddress, WalletSeed, deserialize_untagged, serialize_untagged, signature_verifying_key,
+	signature_verifying_key_ecdsa, transaction_signature, transaction_signature_ecdsa,
+	transaction_signing_key, transaction_signing_key_ecdsa,
 };
 use hex::FromHexError;
+use rand::{CryptoRng, Rng};
 use std::num::ParseIntError;
 
 #[derive(Copy, Clone, Debug)]
@@ -65,22 +69,61 @@ impl std::str::FromStr for UtxoId {
 	}
 }
 
+/// Signature scheme backing an unshielded (NIGHT) identity.
+///
+/// Schnorr is the historical default. ECDSA is only representable from ledger 9 on; selecting it
+/// against an earlier generation panics deep in [`SigningKeyEcdsa`] — callers (the toolkit CLI)
+/// guard against that and surface a clear error instead.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum UnshieldedSignatureScheme {
+	#[default]
+	Schnorr,
+	Ecdsa,
+}
+
+/// An unshielded (NIGHT) wallet identity.
+///
+/// `keys` is `None` for address-only wallets (parsed from a bech32 address or a bare
+/// [`UserAddress`]); those can name a recipient but cannot sign. The tag is `[v2]` because the
+/// on-disk layout changed when the flat Schnorr fields became the scheme enum below — any tagged
+/// (de)serialization, including the `fork_*` migrations, must reject the old layout.
 #[derive(Clone, Storable, Serializable)]
-#[tag = "unshielded-wallet"]
+#[tag = "unshielded-wallet[v2]"]
 #[storable(base)]
 pub struct UnshieldedWallet {
 	pub user_address: UserAddress,
-	pub verifying_key: Option<VerifyingKey>,
-	signing_key: Option<SigningKey>,
+	keys: Option<UnshieldedWalletKeys>,
+}
+
+/// The per-scheme key material behind an [`UnshieldedWallet`]. The `signing_key` is `Option`
+/// so a wallet can hold only the public half.
+#[derive(Clone, Serializable)]
+#[tag = "unshielded-wallet-keys[v1]"]
+// For ledger 7/8, the ECDSA variant of this enum is size 1 - so we ignore the clippy warning here
+#[allow(clippy::large_enum_variant)]
+pub enum UnshieldedWalletKeys {
+	Schnorr { verifying_key: VerifyingKeySchnorr, signing_key: Option<SigningKeySchnorr> },
+	Ecdsa { verifying_key: VerifyingKeyEcdsa, signing_key: Option<SigningKeyEcdsa> },
 }
 
 impl std::fmt::Debug for UnshieldedWallet {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("UnshieldedWallet")
-			.field("user_address", &self.user_address)
-			.field("verifying_key", &self.verifying_key)
-			.field("signing_key", &"REDACTED")
-			.finish()
+		let mut debug_struct = f.debug_struct("UnshieldedWallet");
+		debug_struct.field("user_address", &self.user_address);
+
+		match &self.keys {
+			Some(UnshieldedWalletKeys::Schnorr { verifying_key, .. }) => {
+				debug_struct.field("verifying_key(schnorr)", verifying_key);
+			},
+			Some(UnshieldedWalletKeys::Ecdsa { verifying_key, .. }) => {
+				debug_struct.field("verifying_key(ecdsa)", verifying_key);
+			},
+			None => {
+				debug_struct.field("verifying_key", &Option::<()>::None);
+			},
+		}
+
+		debug_struct.field("signing_key", &"REDACTED").finish()
 	}
 }
 
@@ -103,37 +146,103 @@ impl IntoWalletAddress for UnshieldedWallet {
 }
 
 impl UnshieldedWallet {
-	fn from_seed(derived_seed: [u8; 32]) -> Self {
-		let sk = SigningKey::from_bytes(&derived_seed)
+	fn from_bytes_schnorr(derived_seed: [u8; 32]) -> Self {
+		let sk = SigningKeySchnorr::from_bytes(&derived_seed)
 			.unwrap_or_else(|err| panic!("Error calculating the `SigningKey`: {err}"));
 		let vk = sk.verifying_key();
 		let user_address: UserAddress = vk.clone().into();
 
-		Self { user_address, verifying_key: Some(vk), signing_key: Some(sk) }
+		Self {
+			user_address,
+			keys: Some(UnshieldedWalletKeys::Schnorr { verifying_key: vk, signing_key: Some(sk) }),
+		}
 	}
 
+	fn from_bytes_ecdsa(derived_seed: [u8; 32]) -> Self {
+		let sk = SigningKeyEcdsa::from_bytes(&derived_seed)
+			.unwrap_or_else(|err| panic!("Error calculating the ECDSA `SigningKey`: {err}"));
+		let vk = sk.verifying_key();
+		let user_address: UserAddress = vk.clone().into();
+
+		Self {
+			user_address,
+			keys: Some(UnshieldedWalletKeys::Ecdsa { verifying_key: vk, signing_key: Some(sk) }),
+		}
+	}
+
+	/// Default (Schnorr) unshielded wallet derived at `m/44'/2400'/0'/0/0`.
 	pub fn default(root_seed: WalletSeed) -> Self {
-		let role = Role::UnshieldedExternal;
+		let path = DerivationPath::default_for_role(Role::UnshieldedExternal);
+		let derived_seed = Self::derive_seed(root_seed, &path);
+
+		Self::from_bytes_schnorr(derived_seed)
+	}
+
+	/// Build an unshielded wallet for the given signature `scheme`. Schnorr derives at the
+	/// external role (`.../0/0`); ECDSA derives at the dedicated ECDSA role (`.../4/0`).
+	pub fn new(root_seed: WalletSeed, scheme: UnshieldedSignatureScheme) -> Self {
+		let role = match scheme {
+			UnshieldedSignatureScheme::Schnorr => Role::UnshieldedExternal,
+			UnshieldedSignatureScheme::Ecdsa => Role::Ecdsa,
+		};
 		let path = DerivationPath::default_for_role(role);
 		let derived_seed = Self::derive_seed(root_seed, &path);
 
-		Self::from_seed(derived_seed)
+		match scheme {
+			UnshieldedSignatureScheme::Schnorr => Self::from_bytes_schnorr(derived_seed),
+			UnshieldedSignatureScheme::Ecdsa => Self::from_bytes_ecdsa(derived_seed),
+		}
 	}
 
-	pub fn from_path(
-		root_seed: WalletSeed,
-		path: &DerivationPath,
-	) -> Result<Self, DerivationPathError> {
-		path.validate_role(&[Role::UnshieldedExternal, Role::UnshieldedInternal])?;
-		let derived_seed = Self::derive_seed(root_seed, path);
-		Ok(Self::from_seed(derived_seed))
+	/// The verifying key wrapped in this ledger generation's signature-verifying-key type
+	/// (the concrete Schnorr key on ledger 7/8, the scheme enum on ledger 9).
+	pub fn verifying_key(&self) -> SignatureVerifyingKey {
+		match &self.keys {
+			Some(UnshieldedWalletKeys::Schnorr { verifying_key, .. }) => {
+				signature_verifying_key(verifying_key.clone())
+			},
+			Some(UnshieldedWalletKeys::Ecdsa { verifying_key, .. }) => {
+				signature_verifying_key_ecdsa(verifying_key.clone())
+			},
+			None => panic!("Missing verifying key for the `UnshieldedWallet`"),
+		}
 	}
 
+	/// The signing key wrapped in this ledger generation's transaction-signing-key type.
+	pub fn transaction_signing_key(&self) -> TransactionSigningKey {
+		match &self.keys {
+			Some(UnshieldedWalletKeys::Schnorr { signing_key: Some(sk), .. }) => {
+				transaction_signing_key(sk)
+			},
+			Some(UnshieldedWalletKeys::Ecdsa { signing_key: Some(sk), .. }) => {
+				transaction_signing_key_ecdsa(sk)
+			},
+			_ => panic!("Missing `SigningKey` for the `UnshieldedWallet`"),
+		}
+	}
+
+	/// Sign `msg`, producing this ledger generation's signature type. Schnorr consumes `rng`;
+	/// ECDSA signs deterministically (RFC 6979) and ignores it.
+	pub fn sign(&self, rng: &mut (impl Rng + CryptoRng), msg: &[u8]) -> Signature {
+		match &self.keys {
+			Some(UnshieldedWalletKeys::Schnorr { signing_key: Some(sk), .. }) => {
+				transaction_signature(sk.sign(rng, msg))
+			},
+			Some(UnshieldedWalletKeys::Ecdsa { signing_key: Some(sk), .. }) => {
+				transaction_signature_ecdsa(sk.sign(msg))
+			},
+			_ => panic!("Missing `SigningKey` for the `UnshieldedWallet`"),
+		}
+	}
+
+	/// The raw Schnorr signing key, for the Schnorr-only contract-maintenance committee and
+	/// key-serialization paths. Panics for a non-Schnorr or address-only wallet.
 	#[cfg(feature = "can-panic")]
-	pub fn signing_key(&self) -> &SigningKey {
-		self.signing_key
-			.as_ref()
-			.expect("Missing `SigningKey` for the `UnshieldedWallet")
+	pub fn signing_key(&self) -> &SigningKeySchnorr {
+		match &self.keys {
+			Some(UnshieldedWalletKeys::Schnorr { signing_key: Some(sk), .. }) => sk,
+			_ => panic!("Missing Schnorr `SigningKey` for the `UnshieldedWallet`"),
+		}
 	}
 }
 
@@ -173,16 +282,12 @@ impl TryFrom<&WalletAddress> for UnshieldedWallet {
 			.try_into()
 			.map_err(|_| UnshieldedAddressParseError::InvalidDataLen(address.data().len()))?;
 
-		Ok(Self {
-			user_address: UserAddress(HashOutput(address_data)),
-			verifying_key: None,
-			signing_key: None,
-		})
+		Ok(Self { user_address: UserAddress(HashOutput(address_data)), keys: None })
 	}
 }
 
 impl From<UserAddress> for UnshieldedWallet {
 	fn from(user_address: UserAddress) -> Self {
-		Self { user_address, verifying_key: None, signing_key: None }
+		Self { user_address, keys: None }
 	}
 }

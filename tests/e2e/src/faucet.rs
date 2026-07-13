@@ -36,8 +36,9 @@
 use crate::api::cardano::CardanoClient;
 use ogmios_client::OgmiosClientError;
 use ogmios_client::types::OgmiosUtxo;
-use std::sync::OnceLock;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex as StdMutex, OnceLock};
 use tokio::sync::{Mutex, MutexGuard};
 use whisky::Asset;
 
@@ -48,9 +49,16 @@ const WORKERS_ENV_KEY: &str = "E2E_FAUCET_WORKERS";
 /// inadvertently draining a worker in one shot.
 const REQUEST_CAP_LOVELACE: u64 = 1_000_000_000; // 1000 ADA
 
-/// Minimum lovelace a worker UTXO must hold at init / after refresh. Equal to the request
-/// cap so any single request is guaranteed to fit.
+/// Minimum lovelace a worker UTXO must hold at init / after refresh.
+/// local-env: equal to the request cap (the genesis-funded faucet is
+/// effectively unlimited). Shared networks: much lower — the shared faucet
+/// wallet is a finite, slowly-draining resource, and the observation tests'
+/// requests are tiny. An oversized request still fails loudly via the
+/// drained-worker check.
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 const MIN_WORKER_LOVELACE: u64 = REQUEST_CAP_LOVELACE;
+#[cfg(any(feature = "qanet", feature = "devnet"))]
+const MIN_WORKER_LOVELACE: u64 = 250_000_000;
 
 /// Lovelace headroom reserved on top of N×MIN_WORKER_LOVELACE when sizing a prime tx —
 /// covers the prime tx fee and keeps the change output above min-UTXO.
@@ -92,6 +100,11 @@ pub struct FaucetManager {
     faucet: CardanoClient,
     workers: Vec<Mutex<OgmiosUtxo>>,
     next_worker: AtomicUsize,
+    /// Refs of every UTXO currently assigned to a worker slot, so a stale
+    /// slot's replacement never duplicates a live slot (worker mutexes
+    /// can't be peeked). Every slot write goes through
+    /// [`Self::replace_worker_slot`].
+    assigned: StdMutex<HashSet<([u8; 32], u16)>>,
 }
 
 impl FaucetManager {
@@ -103,11 +116,24 @@ impl FaucetManager {
     /// workers, or if ogmios reports inconsistent UTXOs across `PRIME_MAX_ATTEMPTS` retries.
     pub async fn new(faucet: CardanoClient) -> Self {
         let workers = Self::initialise_workers(&faucet).await;
+        let assigned = workers
+            .iter()
+            .map(|u| (u.transaction.id, u.index))
+            .collect();
         FaucetManager {
             faucet,
             workers: workers.into_iter().map(Mutex::new).collect(),
             next_worker: AtomicUsize::new(0),
+            assigned: StdMutex::new(assigned),
         }
+    }
+
+    /// Swap a worker slot's UTXO, keeping the assigned-refs registry in sync.
+    fn replace_worker_slot(&self, slot: &mut OgmiosUtxo, new: OgmiosUtxo) {
+        let mut assigned = self.assigned.lock().expect("assigned registry poisoned");
+        assigned.remove(&(slot.transaction.id, slot.index));
+        assigned.insert((new.transaction.id, new.index));
+        *slot = new;
     }
 
     /// Send `lovelace` from the faucet to `address` and return the resulting UTXO at the
@@ -143,11 +169,40 @@ impl FaucetManager {
         }
 
         let assets = vec![Asset::new_from_str("lovelace", &lovelace.to_string())];
-        let response = self
-            .faucet
-            .send(std::slice::from_ref(&*worker), address, assets)
-            .await
-            .expect("Failed to fund recipient from faucet worker");
+
+        // A concurrent run sharing the faucet wallet can spend this
+        // worker's UTXO out from under us; recover by re-acquiring a fresh
+        // one from live faucet state. Collisions on the fresh pick retry
+        // the same way, so the loop converges or gives up loudly.
+        const SEND_MAX_ATTEMPTS: usize = 3;
+        let mut attempt = 0;
+        let response = loop {
+            attempt += 1;
+            match self
+                .faucet
+                .send(std::slice::from_ref(&*worker), address, assets.clone())
+                .await
+            {
+                Ok(r) => break r,
+                Err(e)
+                    if attempt < SEND_MAX_ATTEMPTS
+                        && crate::api::cardano::is_inputs_spent_error(&e) =>
+                {
+                    tracing::warn!(
+                        "FaucetManager: worker[{}] UTXO {}#{} was already spent (concurrent \
+                         run sharing the faucet wallet?); re-acquiring a fresh worker UTXO \
+                         (attempt {}/{})",
+                        worker_idx,
+                        hex::encode(worker.transaction.id),
+                        worker.index,
+                        attempt,
+                        SEND_MAX_ATTEMPTS,
+                    );
+                    self.replace_with_fresh_worker(&mut worker, need).await;
+                }
+                Err(e) => panic!("Failed to fund recipient from faucet worker: {e:?}"),
+            }
+        };
         let tx_id_hex = hex::encode(response.transaction.id);
 
         let dest_utxo = self
@@ -171,8 +226,37 @@ impl FaucetManager {
             lovelace / 1_000_000,
             address,
         );
-        *worker = new_worker;
+        self.replace_worker_slot(&mut worker, new_worker);
         dest_utxo
+    }
+
+    /// Re-query the faucet and swap the slot to a fresh UTXO covering
+    /// `need`. Candidate filtering, the pick, and the registry update
+    /// happen under one lock acquisition so concurrent recoveries can't
+    /// reserve the same candidate. Randomized so re-acquisitions spread
+    /// out; panics if nothing suitable is left (genuine top-up situation).
+    async fn replace_with_fresh_worker(&self, slot: &mut OgmiosUtxo, need: u64) {
+        let utxos = self.faucet.utxos().await;
+        let mut assigned = self.assigned.lock().expect("assigned registry poisoned");
+        let candidates: Vec<&OgmiosUtxo> = utxos
+            .iter()
+            .filter(|u| {
+                u.value.lovelace >= need.max(MIN_WORKER_LOVELACE)
+                    && !assigned.contains(&(u.transaction.id, u.index))
+            })
+            .collect();
+        if candidates.is_empty() {
+            panic!(
+                "FaucetManager: no live UTXO >= {} lovelace left at {} to replace a stale \
+                 worker. Faucet needs top-up or re-prime.",
+                need.max(MIN_WORKER_LOVELACE),
+                self.faucet.address_as_bech32(),
+            );
+        }
+        let pick = candidates[rand::random::<u32>() as usize % candidates.len()].clone();
+        assigned.remove(&(slot.transaction.id, slot.index));
+        assigned.insert((pick.transaction.id, pick.index));
+        *slot = pick;
     }
 
     async fn acquire_worker(&self) -> (usize, MutexGuard<'_, OgmiosUtxo>) {

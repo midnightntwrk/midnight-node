@@ -21,9 +21,9 @@ cd "$(dirname "$0")/.."
 # Unset it so each iteration fetches and compiles with the COMPACTC_VERSION it actually requested.
 unset COMPACT_HOME
 
-# Concrete patch versions to fetch for each supported <major>.<minor> line (see SUPPORTED_COMPACTC_VERSIONS
-# in src/compactc-resolver.ts). Override by passing versions as arguments.
-DEFAULT_VERSIONS=("0.29.0" "0.30.0" "0.31.0")
+# Concrete patch versions to fetch for each supported <major>.<minor>.<patch> variant (see
+# SUPPORTED_COMPACTC_VERSIONS in src/compactc-resolver.ts). Override by passing versions as arguments.
+DEFAULT_VERSIONS=("0.29.0" "0.30.0" "0.31.0" "0.33.0-rc.0")
 if [ "$#" -gt 0 ]; then
   VERSIONS=("$@")
 else

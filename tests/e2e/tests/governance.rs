@@ -215,7 +215,7 @@ async fn get_ariadne_parameters_returns_valid_structure() {
 /// TC-PC-003: Verify D-Parameter from pallet matches expected configuration.
 ///
 /// The D-Parameter is now sourced from pallet-system-parameters instead of Cardano.
-/// In local environment, it's configured as (4, 1) - 4 permissioned, 1 registered.
+/// In local environment, it's configured as (5, 0) - 5 permissioned, 0 registered.
 #[e2e_test]
 async fn d_parameter_from_pallet_matches_config() {
     tracing::info!("=== TC-PC-003: D-Parameter Pallet Integration ===");
@@ -258,11 +258,10 @@ async fn d_parameter_from_pallet_matches_config() {
         "D-Parameter registered count should match between endpoints"
     );
 
-    // Local environment configures D-Parameter as (3, 0)
-    // 3 permissioned (Alice, Bob, Charlie) from qanet config
+    // Local environment configures D-Parameter as (5, 0)
     assert_eq!(
-        d_param.num_permissioned_candidates, 3,
-        "Permissioned count should match system-parameters config (expected 3)"
+        d_param.num_permissioned_candidates, 5,
+        "Permissioned count should match system-parameters config (expected 5)"
     );
     assert_eq!(
         d_param.num_registered_candidates, 0,

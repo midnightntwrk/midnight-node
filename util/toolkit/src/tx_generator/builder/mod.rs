@@ -25,7 +25,11 @@ use midnight_node_ledger_helpers::fork::{
 };
 use midnight_node_ledger_helpers::*;
 use serde::Deserialize;
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{
+	collections::{HashMap, HashSet},
+	path::PathBuf,
+	sync::Arc,
+};
 
 use crate::{
 	cli_parsers as cli,
@@ -57,12 +61,10 @@ pub enum ClaimKindArg {
 
 #[derive(Args, Clone, Debug)]
 pub struct ClaimRewardsArgs {
-	/// Seed for funding the transactions
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
+	/// Fee-payer seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--funding-seed ecdsa:<seed>`.
+	#[arg(long, default_value = FUNDING_SEED, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: cli::SchemeSeed,
 	#[arg(
         long,
         value_parser = cli::hex_str_decode::<[u8; 32]>,
@@ -192,12 +194,10 @@ pub struct ContractMaintenanceArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct BatchesArgs {
-	/// Seed for funding the transactions
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
+	/// Fee-payer seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--funding-seed ecdsa:<seed>`.
+	#[arg(long, default_value = FUNDING_SEED, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: cli::SchemeSeed,
 	/// Number of txs that can be sent concurrently
 	#[arg(long, short = 'n', default_value = "1")]
 	pub num_txs_per_batch: usize,
@@ -283,12 +283,14 @@ pub struct SingleTxArgs {
 		value_parser = cli::token_decode::<UnshieldedTokenType>,
 	)]
 	pub unshielded_token_type: Vec<UnshieldedTokenType>,
-	/// Seed for source wallet
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	pub source_seed: WalletSeed,
-	/// Funding seed for transaction. If not set, uses source_seed
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	pub funding_seed: Option<WalletSeed>,
+	/// Source wallet seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--source-seed ecdsa:<seed>`.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub source_seed: cli::SchemeSeed,
+	/// Funding seed for transaction. If not set, uses source_seed. Bare seed selects Schnorr;
+	/// prefix with `ecdsa:` for an ECDSA identity (ledger 9+).
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: Option<cli::SchemeSeed>,
 	/// Destination address, both shielded and unshielded. Used together with
 	/// `--*-amount` / `--*-token-type` flags. Either this or `--output` must
 	/// be provided, but not both.
@@ -314,12 +316,14 @@ pub struct SingleTxArgs {
 }
 #[derive(Args, Clone, Debug)]
 pub struct RegisterDustAddressArgs {
-	/// Seed for source wallet
-	#[arg(long)]
-	pub wallet_seed: String,
-	/// Seed for funding wallet. If not provided, uses retroactive DUST from NIGHT UTXOs.
-	#[arg(long)]
-	pub funding_seed: Option<String>,
+	/// Wallet seed to register. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA
+	/// identity (ledger 9+), e.g. `--wallet-seed ecdsa:<seed>`.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub wallet_seed: cli::SchemeSeed,
+	/// Seed for funding wallet. If not provided, uses retroactive DUST from NIGHT UTXOs. Bare
+	/// seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity (ledger 9+).
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: Option<cli::SchemeSeed>,
 	#[arg(
 		long,
 		value_parser = cli::wallet_address,
@@ -334,15 +338,14 @@ pub struct RegisterDustAddressArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct DeregisterDustAddressArgs {
-	/// Seed for the wallet to deregister
-	#[arg(long)]
-	pub wallet_seed: String,
-	/// Seed for funding wallet
-	#[arg(
-		long,
-		default_value = FUNDING_SEED
-	)]
-	pub funding_seed: String,
+	/// Wallet seed to deregister. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA
+	/// identity (ledger 9+), e.g. `--wallet-seed ecdsa:<seed>`.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub wallet_seed: cli::SchemeSeed,
+	/// Fee-payer seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--funding-seed ecdsa:<seed>`.
+	#[arg(long, default_value = FUNDING_SEED, value_parser = cli::scheme_seed_decode)]
+	pub funding_seed: cli::SchemeSeed,
 	/// RNG seed for deterministic transaction generation (32 bytes hex)
 	#[arg(
         long,
@@ -353,14 +356,30 @@ pub struct DeregisterDustAddressArgs {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TransferSpec {
-	pub source_seed: String,
+	/// Source wallet seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `"ecdsa:<seed>"`.
+	pub source_seed: cli::SchemeSeed,
 	pub destination_address: String,
 	pub unshielded_amount: Option<u128>,
 	pub unshielded_token_type: Option<String>,
 	pub shielded_amount: Option<u128>,
 	pub shielded_token_type: Option<String>,
-	pub funding_seed: Option<String>,
+	/// Fee-payer seed. Absent means the source seed funds the tx. Bare seed selects Schnorr;
+	/// prefix with `ecdsa:` for an ECDSA identity (ledger 9+).
+	pub funding_seed: Option<cli::SchemeSeed>,
 	pub rng_seed: Option<String>,
+}
+
+impl TransferSpec {
+	/// The source NIGHT identity and its unshielded signature scheme.
+	pub fn resolve_source(&self) -> (WalletSeed, UnshieldedSignatureScheme) {
+		self.source_seed.resolve()
+	}
+
+	/// The optional fee-payer NIGHT identity: `None` means the source seed funds the tx.
+	pub fn resolve_funding(&self) -> Option<(WalletSeed, UnshieldedSignatureScheme)> {
+		self.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+	}
 }
 
 #[derive(Args, Clone, Debug)]
@@ -501,6 +520,12 @@ pub enum BuilderConstructionError {
 	RemoteProverNotSupportedForLedger7,
 	#[error("{0} builder is not supported for ledger 7")]
 	NotSupportedForLedger7(&'static str),
+	#[error(
+		"ECDSA unshielded (NIGHT) signatures are only supported from ledger 9; the source chain is \
+		 on {0:?}. Use a bare or `schnorr:`-prefixed seed (--seed / --source-seed / --wallet-seed / \
+		 --funding-seed) instead of an `ecdsa:`-prefixed one."
+	)]
+	EcdsaNotSupportedForLedger(LedgerVersion),
 	#[error("chain has not reached any known ledger version")]
 	NoContext,
 	#[error("internal error: version mismatch in fork context")]
@@ -567,10 +592,16 @@ impl<T: BuildTxs + Send + Sync> BuildTxs for DynamicTransactionBuilder<T> {
 impl Builder {
 	/// Extract wallet seeds needed by this builder configuration, without constructing
 	/// the full builder (which requires context/prover). Returns empty for pass-through builders.
+	///
+	/// Seeds are resolved from each command's `--…-seed` value (a bare/`schnorr:`/`ecdsa:`-prefixed
+	/// [`cli::SchemeSeed`]); the scheme itself is dropped here — see [`Self::relevant_wallet_schemes`]
+	/// for the companion scheme map, which must decode the *same* resolved seed values so the two
+	/// line up by key).
 	pub fn relevant_wallet_seeds(&self) -> Result<Vec<WalletSeed>, &'static str> {
 		match self {
 			Builder::Batches(args) => {
-				compute_batches_seeds(&args.funding_seed, args.num_txs_per_batch, args.num_batches)
+				let (funding, _) = args.funding_seed.resolve();
+				compute_batches_seeds(&funding, args.num_txs_per_batch, args.num_batches)
 			},
 			Builder::ContractSimple(call) => {
 				let seed_str = match call {
@@ -584,37 +615,44 @@ impl Builder {
 				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
 			},
 			Builder::ClaimRewards(args) => {
-				Ok(vec![Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed)])
+				let (funding, _) = args.funding_seed.resolve();
+				Ok(vec![funding])
 			},
 			Builder::SingleTx(args) => {
-				let mut seeds = vec![args.source_seed.clone()];
-				seeds.extend(args.funding_seed.iter().cloned());
+				let (source, _) = args.source_seed.resolve();
+				let mut seeds = vec![source];
+				if let Some((funding, _)) = args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+				{
+					seeds.push(funding);
+				}
 				Ok(seeds)
 			},
 			Builder::RegisterDustAddress(args) => {
-				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
-				if let Some(ref funding_seed) = args.funding_seed {
-					Ok(vec![seed, Wallet::<DefaultDB>::wallet_seed_decode(funding_seed)])
+				let (wallet_seed, _) = args.wallet_seed.resolve();
+				if let Some((funding, _)) = args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+				{
+					Ok(vec![wallet_seed, funding])
 				} else {
-					Ok(vec![seed])
+					Ok(vec![wallet_seed])
 				}
 			},
 			Builder::DeregisterDustAddress(args) => {
-				let seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.wallet_seed);
-				let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&args.funding_seed);
-				Ok(vec![seed, funding_seed])
+				let (wallet_seed, _) = args.wallet_seed.resolve();
+				let (funding, _) = args.funding_seed.resolve();
+				Ok(vec![wallet_seed, funding])
 			},
 			Builder::BatchSingleTx(args) => {
 				let specs = args.get_transfer_specs();
 				let mut seen = HashSet::new();
 				let mut seeds = Vec::new();
 				for spec in &specs {
-					if seen.insert(spec.source_seed.clone()) {
-						seeds.push(Wallet::<DefaultDB>::wallet_seed_decode(&spec.source_seed));
+					let (source, _) = spec.resolve_source();
+					if seen.insert(source.clone()) {
+						seeds.push(source);
 					}
-					if let Some(ref fs) = spec.funding_seed {
-						if seen.insert(fs.clone()) {
-							seeds.push(Wallet::<DefaultDB>::wallet_seed_decode(fs));
+					if let Some((funding, _)) = spec.resolve_funding() {
+						if seen.insert(funding.clone()) {
+							seeds.push(funding);
 						}
 					}
 				}
@@ -622,6 +660,85 @@ impl Builder {
 			},
 			Builder::Send => Ok(vec![]),
 		}
+	}
+
+	/// Companion to [`Self::relevant_wallet_seeds`]: map each *resolved* seed to its unshielded
+	/// signature scheme. Only ECDSA seeds get an entry — seeds absent from the map default to
+	/// Schnorr via [`scheme_of`], so a pure-Schnorr configuration returns an empty map (matching
+	/// the pre-ECDSA behaviour). Keys are decoded identically to `relevant_wallet_seeds` so the two
+	/// stay aligned.
+	///
+	/// Rejects a seed that is requested under both schemes within the same build (e.g.
+	/// `--source-seed X --funding-seed-ecdsa X`, or two batch-transfer specs referring to `X` with
+	/// different schemes): since the context/cache plumbing keys wallets by seed alone, silently
+	/// collapsing such a seed to a single scheme would build/sign with the wrong identity.
+	///
+	/// Committee/contract seeds (`ContractSimple`, `ContractCustom`) and the batch *output* seeds
+	/// stay Schnorr and are intentionally omitted here (out of scope for ECDSA).
+	pub fn relevant_wallet_schemes(&self) -> Result<WalletSchemes, &'static str> {
+		let mut schemes = WalletSchemes::new();
+		let mut seen: HashMap<WalletSeed, UnshieldedSignatureScheme> = HashMap::new();
+		let mut mark = |seed: WalletSeed,
+		                scheme: UnshieldedSignatureScheme|
+		 -> Result<(), &'static str> {
+			if let Some(previous) = seen.insert(seed.clone(), scheme) {
+				if previous != scheme {
+					return Err(
+						"the same seed was requested under both Schnorr and ECDSA schemes in one build; each seed must use a single scheme",
+					);
+				}
+				return Ok(());
+			}
+			if scheme == UnshieldedSignatureScheme::Ecdsa {
+				schemes.insert(seed, scheme);
+			}
+			Ok(())
+		};
+		match self {
+			Builder::Batches(args) => {
+				let (funding, scheme) = args.funding_seed.resolve();
+				mark(funding, scheme)?;
+			},
+			Builder::ClaimRewards(args) => {
+				let (funding, scheme) = args.funding_seed.resolve();
+				mark(funding, scheme)?;
+			},
+			Builder::SingleTx(args) => {
+				let (source, source_scheme) = args.source_seed.resolve();
+				mark(source, source_scheme)?;
+				if let Some((funding, funding_scheme)) =
+					args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+				{
+					mark(funding, funding_scheme)?;
+				}
+			},
+			Builder::RegisterDustAddress(args) => {
+				let (wallet_seed, wallet_scheme) = args.wallet_seed.resolve();
+				mark(wallet_seed, wallet_scheme)?;
+				if let Some((funding, funding_scheme)) =
+					args.funding_seed.as_ref().map(cli::SchemeSeed::resolve)
+				{
+					mark(funding, funding_scheme)?;
+				}
+			},
+			Builder::DeregisterDustAddress(args) => {
+				let (wallet_seed, wallet_scheme) = args.wallet_seed.resolve();
+				mark(wallet_seed, wallet_scheme)?;
+				let (funding, funding_scheme) = args.funding_seed.resolve();
+				mark(funding, funding_scheme)?;
+			},
+			Builder::BatchSingleTx(args) => {
+				for spec in &args.get_transfer_specs() {
+					let (source, source_scheme) = spec.resolve_source();
+					mark(source, source_scheme)?;
+					if let Some((funding, funding_scheme)) = spec.resolve_funding() {
+						mark(funding, funding_scheme)?;
+					}
+				}
+			},
+			Builder::ContractSimple(_) | Builder::ContractCustom(_) | Builder::Send => {},
+		}
+		Ok(schemes)
 	}
 
 	/// Construct a versioned builder for the appropriate ledger version.
@@ -892,14 +1009,46 @@ macro_rules! timed {
 	}};
 }
 
+/// Per-seed unshielded signature scheme for context/cache building. Seeds absent from the map
+/// resolve to Schnorr (the default), so the empty map reproduces the pre-ECDSA behaviour.
+pub type WalletSchemes = HashMap<WalletSeed, UnshieldedSignatureScheme>;
+
+/// Resolve the scheme for `seed`, defaulting to Schnorr.
+fn scheme_of(schemes: &WalletSchemes, seed: &WalletSeed) -> UnshieldedSignatureScheme {
+	schemes.get(seed).copied().unwrap_or_default()
+}
+
+/// Reject ECDSA seeds on a pre-ledger-9 source with a clear CLI error, rather than letting the
+/// loud panic fire deep in [`ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes`]. Returns
+/// `Ok(())` when no ECDSA seed is present, or when the source has already reached ledger 9.
+///
+/// Callers must pass the source's *initial* ledger version (`SourceTransactions::ledger_version()`)
+/// — the same version the cold-path context is built at, which is where the ledger-level guard
+/// asserts.
+pub fn ensure_ecdsa_supported(
+	ledger_version: LedgerVersion,
+	schemes: &WalletSchemes,
+) -> Result<(), BuilderConstructionError> {
+	if ledger_version != LedgerVersion::Ledger9
+		&& schemes.values().any(|scheme| *scheme == UnshieldedSignatureScheme::Ecdsa)
+	{
+		return Err(BuilderConstructionError::EcdsaNotSupportedForLedger(ledger_version));
+	}
+	Ok(())
+}
+
 /// Load per-wallet cache entries and partition into uncached seeds and cached (seed, state) pairs.
 /// Cached pairs are sorted by block height for two-pointer replay.
 async fn load_and_partition_cache(
 	wallet_seeds: &[WalletSeed],
 	chain_id: H256,
 	storage: &dyn WalletStateCaching,
+	schemes: &WalletSchemes,
 ) -> (Vec<WalletSeed>, Vec<(WalletSeed, CachedWalletState)>) {
-	let seed_hashes: Vec<H256> = wallet_seeds.iter().map(wallet_state_cache::hash_seed).collect();
+	let seed_hashes: Vec<H256> = wallet_seeds
+		.iter()
+		.map(|seed| wallet_state_cache::wallet_cache_key(seed, scheme_of(schemes, seed)))
+		.collect();
 	let raw_cached = timed!(
 		"storage.get_wallet_states",
 		storage.get_wallet_states(chain_id, &seed_hashes).await
@@ -924,9 +1073,11 @@ fn inject_cached_wallets(
 	wallets: &[(WalletSeed, CachedWalletState)],
 	ledger_state: &LedgerState<DefaultDB>,
 	at_height: u64,
+	schemes: &WalletSchemes,
 ) {
 	for (seed, state) in wallets {
-		wallet_state_cache::inject_wallet_from_cache(ctx, state, seed, ledger_state)
+		let scheme = scheme_of(schemes, seed);
+		wallet_state_cache::inject_wallet_from_cache(ctx, state, seed, scheme, ledger_state)
 			.unwrap_or_else(|e| {
 				panic!(
 					"failed to inject wallet at height {}: {} — clear caches and retry",
@@ -943,14 +1094,19 @@ async fn initialize_context(
 	start_height: u64,
 	storage: &dyn WalletStateCaching,
 	chain_id: H256,
+	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
 	if start_height == 0 {
+		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
+			.iter()
+			.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
+			.collect();
 		timed!(
 			"new_from_wallet_seeds (cold)",
-			ForkAwareLedgerContext::new_from_wallet_seeds(
+			ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
 				received_tx.ledger_version(),
 				&received_tx.network_id,
-				uncached_seeds,
+				&seeds_with_schemes,
 			)
 		)
 	} else {
@@ -1055,6 +1211,7 @@ fn replay_blocks_9(
 	ctx: &midnight_node_ledger_helpers::ledger_9::context::LedgerContext<Db9>,
 	blocks_sorted_by_height: &[RawBlockData],
 	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_9::Event<Db9>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
@@ -1070,7 +1227,7 @@ fn replay_blocks_9(
 				events.clear();
 			}
 			let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
-			inject_cached_wallets(ctx, to_inject, &ls, block.number);
+			inject_cached_wallets(ctx, to_inject, &ls, block.number, schemes);
 			remaining = rest;
 		}
 
@@ -1102,7 +1259,7 @@ fn replay_blocks_9(
 	if !remaining.is_empty() {
 		let ls = ctx.ledger_state.lock().expect("ledger_state lock poisoned").clone();
 		let height = blocks_sorted_by_height.last().map(|b| b.number).unwrap_or(0);
-		inject_cached_wallets(ctx, remaining, &ls, height);
+		inject_cached_wallets(ctx, remaining, &ls, height, schemes);
 	}
 
 	if let Some(block) = blocks_sorted_by_height.last() {
@@ -1116,6 +1273,7 @@ pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
 	blocks: &[RawBlockData],
 	cached: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
 	if !blocks.is_empty() && !cached.is_empty() {
 		log::info!(
@@ -1158,7 +1316,7 @@ pub(crate) fn replay_blocks(
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger9 context");
 			assert!(l8_blocks.is_empty(), "Ledger8 blocks with Ledger9 context");
-			replay_blocks_9(&ctx9, l9_blocks, cached);
+			replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
 			ForkAwareLedgerContext::Ledger9(ctx9)
 		},
 	};
@@ -1180,18 +1338,38 @@ pub async fn build_fork_aware_context_cached(
 	received_tx: &SourceTransactions,
 	cache_storage: Option<&dyn WalletStateCaching>,
 ) -> ForkAwareLedgerContext {
+	build_fork_aware_context_cached_with_schemes(
+		wallet_seeds,
+		received_tx,
+		cache_storage,
+		&WalletSchemes::new(),
+	)
+	.await
+}
+
+/// Scheme-aware variant of [`build_fork_aware_context_cached`]. `schemes` maps each seed to its
+/// unshielded signature scheme (absent → Schnorr); this determines both the cache key and how
+/// wallets are (re)built, so ECDSA identities cache and restore correctly and never collide with
+/// their Schnorr counterparts for the same seed.
+pub async fn build_fork_aware_context_cached_with_schemes(
+	wallet_seeds: &[WalletSeed],
+	received_tx: &SourceTransactions,
+	cache_storage: Option<&dyn WalletStateCaching>,
+	schemes: &WalletSchemes,
+) -> ForkAwareLedgerContext {
 	if wallet_seeds.is_empty() {
-		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	}
 	let Some(chain_id) = received_tx.chain_id() else {
-		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	};
 	let Some(storage) = cache_storage else {
-		return build_fork_aware_context_raw(received_tx, wallet_seeds);
+		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	};
 
 	// 1. Load cache and partition wallets.
-	let (uncached_seeds, cached) = load_and_partition_cache(wallet_seeds, chain_id, storage).await;
+	let (uncached_seeds, cached) =
+		load_and_partition_cache(wallet_seeds, chain_id, storage, schemes).await;
 
 	// 2. Compute start height.
 	let start_height = if !uncached_seeds.is_empty() {
@@ -1202,7 +1380,8 @@ pub async fn build_fork_aware_context_cached(
 
 	// 3. Initialize context (cold genesis or warm snapshot restore).
 	let fork_ctx =
-		initialize_context(received_tx, &uncached_seeds, start_height, storage, chain_id).await;
+		initialize_context(received_tx, &uncached_seeds, start_height, storage, chain_id, schemes)
+			.await;
 
 	// 4. Determine blocks to replay.
 	//
@@ -1246,14 +1425,15 @@ pub async fn build_fork_aware_context_cached(
 	};
 
 	// 5. Replay with mid-replay wallet injection.
-	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached);
+	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached, schemes);
 
 	// 6. Save updated cache. `blocks.last()` is sound here because
 	// step 4 already excluded the dust-warp synthetic (`number = 0`)
 	// from `blocks`; the last entry is the real chain head, and
 	// pointer lookup beats an O(n) `max_by_key` on long replays.
 	if let Some(final_block) = blocks.last() {
-		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage).await;
+		try_save_cache_v2(&fork_ctx, wallet_seeds, chain_id, final_block.number, storage, schemes)
+			.await;
 	}
 
 	// 7. Apply the dust-warp synthetic block (in-memory only, post-save).
@@ -1312,6 +1492,7 @@ async fn try_save_cache_v2(
 	chain_id: H256,
 	block_height: u64,
 	storage: &dyn WalletStateCaching,
+	schemes: &WalletSchemes,
 ) {
 	let ctx = match fork_ctx {
 		ForkAwareLedgerContext::Ledger9(ctx) => ctx,
@@ -1345,7 +1526,12 @@ async fn try_save_cache_v2(
 	let wallet_snapshots: Vec<_> = wallet_seeds
 		.iter()
 		.filter_map(|seed| {
-			match wallet_state_cache::create_wallet_snapshot(ctx, seed, block_height) {
+			match wallet_state_cache::create_wallet_snapshot(
+				ctx,
+				seed,
+				scheme_of(schemes, seed),
+				block_height,
+			) {
 				Ok(ws) => Some(ws),
 				Err(e) => {
 					log::warn!("Failed to create wallet snapshot: {}", e);
@@ -1398,6 +1584,16 @@ pub fn build_fork_aware_context_raw(
 	received_tx: &SourceTransactions,
 	wallet_seeds: &[WalletSeed],
 ) -> ForkAwareLedgerContext {
+	build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, &WalletSchemes::new())
+}
+
+/// Scheme-aware variant of [`build_fork_aware_context_raw`] (see
+/// [`build_fork_aware_context_cached_with_schemes`]).
+pub fn build_fork_aware_context_raw_with_schemes(
+	received_tx: &SourceTransactions,
+	wallet_seeds: &[WalletSeed],
+	schemes: &WalletSchemes,
+) -> ForkAwareLedgerContext {
 	let network_id = &received_tx.network_id;
 	let initial_version = received_tx
 		.blocks
@@ -1405,12 +1601,20 @@ pub fn build_fork_aware_context_raw(
 		.map(|b| b.ledger_version())
 		.unwrap_or(LedgerVersion::Ledger9);
 
+	let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = wallet_seeds
+		.iter()
+		.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
+		.collect();
+
 	let t = std::time::Instant::now();
-	let ctx =
-		ForkAwareLedgerContext::new_from_wallet_seeds(initial_version, network_id, wallet_seeds);
+	let ctx = ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
+		initial_version,
+		network_id,
+		&seeds_with_schemes,
+	);
 	log::debug!("[perf] new_from_wallet_seeds (raw) took {:?}", t.elapsed());
 
-	replay_blocks(ctx, &received_tx.blocks, &[])
+	replay_blocks(ctx, &received_tx.blocks, &[], schemes)
 }
 
 /// Build a fork-aware context from source transactions, returning a ledger 9 context.
@@ -1424,4 +1628,70 @@ pub fn build_fork_aware_context(
 	let ctx = build_fork_aware_context_raw(received_tx, wallet_seeds);
 	let final_version = ctx.version();
 	ctx.into_ledger9().ok_or(ContextNotLedger9Error(final_version))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn ecdsa_schemes() -> WalletSchemes {
+		WalletSchemes::from([(WalletSeed::Short([7u8; 16]), UnshieldedSignatureScheme::Ecdsa)])
+	}
+
+	#[test]
+	fn ecdsa_guard_rejects_pre_ledger9_sources() {
+		for version in [LedgerVersion::Ledger7, LedgerVersion::Ledger8] {
+			let err = ensure_ecdsa_supported(version, &ecdsa_schemes())
+				.expect_err("ECDSA on a pre-ledger-9 source must be rejected");
+			assert!(
+				matches!(err, BuilderConstructionError::EcdsaNotSupportedForLedger(v) if v == version),
+				"expected EcdsaNotSupportedForLedger({version:?}), got {err:?}",
+			);
+		}
+	}
+
+	#[test]
+	fn ecdsa_guard_allows_ledger9() {
+		assert!(ensure_ecdsa_supported(LedgerVersion::Ledger9, &ecdsa_schemes()).is_ok());
+	}
+
+	#[test]
+	fn relevant_wallet_schemes_rejects_same_seed_under_both_schemes() {
+		let seed = "0000000000000000000000000000000000000000000000000000000000000042";
+		let builder = Builder::DeregisterDustAddress(DeregisterDustAddressArgs {
+			wallet_seed: format!("schnorr:{seed}").parse().unwrap(),
+			funding_seed: format!("ecdsa:{seed}").parse().unwrap(),
+			rng_seed: None,
+		});
+
+		builder
+			.relevant_wallet_schemes()
+			.expect_err("same seed requested under two different schemes must be rejected");
+	}
+
+	#[test]
+	fn relevant_wallet_schemes_allows_same_seed_under_one_scheme() {
+		let seed = "0000000000000000000000000000000000000000000000000000000000000042";
+		let builder = Builder::DeregisterDustAddress(DeregisterDustAddressArgs {
+			wallet_seed: format!("ecdsa:{seed}").parse().unwrap(),
+			funding_seed: format!("ecdsa:{seed}").parse().unwrap(),
+			rng_seed: None,
+		});
+
+		let schemes = builder.relevant_wallet_schemes().expect("repeated same-scheme seed is fine");
+		assert_eq!(schemes.len(), 1);
+	}
+
+	#[test]
+	fn schnorr_only_is_allowed_on_every_version() {
+		// The empty map (all-Schnorr) and an explicit Schnorr entry must both pass on any version.
+		let schnorr = WalletSchemes::from([(
+			WalletSeed::Short([7u8; 16]),
+			UnshieldedSignatureScheme::Schnorr,
+		)]);
+		for version in [LedgerVersion::Ledger7, LedgerVersion::Ledger8, LedgerVersion::Ledger9] {
+			assert!(ensure_ecdsa_supported(version, &WalletSchemes::new()).is_ok());
+			assert!(ensure_ecdsa_supported(version, &schnorr).is_ok());
+		}
+	}
 }

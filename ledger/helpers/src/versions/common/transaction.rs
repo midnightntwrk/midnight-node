@@ -18,9 +18,9 @@ use super::{
 	DustLocalState, DustParameters, DustPublicKey, DustRegistration, DustSpend, HashMapStorage,
 	Intent, Offer, OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind,
 	ProofMarker, ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen,
-	SeedableRng, Segment, SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp,
-	SplittableRng, StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, UnshieldedOffer,
-	WalletSeed, serialize, signature_verifying_key, transaction_signature,
+	SeedableRng, Segment, SegmentId, Serializable, Signature, SignatureKind, Sp, SplittableRng,
+	StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, TransactionSigningKey,
+	UnshieldedOffer, UnshieldedWallet, WalletSeed, serialize,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -49,7 +49,10 @@ pub trait FromContext<D: DB + Clone, C: BuilderContext<D>> {
 }
 
 pub struct DustRegistrationBuilder {
-	pub signing_key: SigningKey,
+	/// Scheme-agnostic signer for the registering NIGHT identity. The wallet wraps the
+	/// verifying key and signature in the right ledger-version types, so this builder no longer
+	/// leaks a concrete Schnorr key.
+	pub wallet: UnshieldedWallet,
 	pub dust_address: Option<DustPublicKey>,
 	pub allow_fee_payment: u128,
 }
@@ -59,7 +62,7 @@ impl DustRegistrationBuilder {
 	/// its intent before signing.
 	pub fn build_unsigned<D: DB>(&self) -> DustRegistration<Signature, D> {
 		DustRegistration {
-			night_key: signature_verifying_key(self.signing_key.verifying_key()),
+			night_key: self.wallet.verifying_key(),
 			dust_address: self.dust_address.map(|address| Sp::new(address)),
 			allow_fee_payment: self.allow_fee_payment,
 			signature: None,
@@ -77,14 +80,14 @@ impl DustRegistrationBuilder {
 		segment_id: u16,
 	) -> DustRegistration<Signature, D> {
 		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
-		let signature = self.signing_key.sign(rng, &data_to_sign);
-		let night_key = signature_verifying_key(self.signing_key.verifying_key());
+		let signature = self.wallet.sign(rng, &data_to_sign);
+		let night_key = self.wallet.verifying_key();
 
 		DustRegistration {
 			night_key,
 			dust_address: self.dust_address.map(|address| Sp::new(address)),
 			allow_fee_payment: self.allow_fee_payment,
-			signature: Some(Sp::new(transaction_signature(signature))),
+			signature: Some(Sp::new(signature)),
 		}
 	}
 }
@@ -339,7 +342,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			.map(|intent_info| intent_info.unshielded_signing_keys(self.context.clone()))
 			.unwrap_or_default();
 		let resign_offer = |offer: &Option<Sp<UnshieldedOffer<Signature, D>, D>>,
-		                    signing_keys: &[SigningKey],
+		                    signing_keys: &[TransactionSigningKey],
 		                    rng: &mut StdRng|
 		 -> Option<Sp<UnshieldedOffer<Signature, D>, D>> {
 			offer.as_ref().map(|offer| {
@@ -347,9 +350,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 					.inputs
 					.iter()
 					.zip(signing_keys)
-					.map(|(_input, signing_key)| {
-						transaction_signature(signing_key.sign(rng, &data_to_sign))
-					})
+					.map(|(_input, signing_key)| signing_key.sign(rng, &data_to_sign))
 					.collect::<Vec<_>>();
 				Sp::new(UnshieldedOffer {
 					inputs: offer.inputs.clone(),
@@ -369,9 +370,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			.iter()
 			.map(|registration| {
 				let mut reg = registration.build_unsigned();
-				reg.signature = Some(Sp::new(transaction_signature(
-					registration.signing_key.sign(&mut rng, &data_to_sign),
-				)));
+				reg.signature = Some(Sp::new(registration.wallet.sign(&mut rng, &data_to_sign)));
 				reg
 			})
 			.collect::<Vec<_>>()
@@ -561,20 +560,20 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 			let unsigned_claim_mint: ClaimRewardsTransaction<(), D> = ClaimRewardsTransaction {
 				network_id: network_id.clone(),
 				value: self.coin.value,
-				owner: signature_verifying_key(wallet.unshielded.signing_key().verifying_key()),
+				owner: wallet.unshielded.verifying_key(),
 				nonce,
 				signature: (),
 				kind: self.kind,
 			};
 
 			let data_to_sign = unsigned_claim_mint.data_to_sign();
-			let signature = wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
+			let signature = wallet.unshielded.sign(&mut self.rng, &data_to_sign);
 			ClaimRewardsTransaction {
 				network_id: network_id.clone(),
 				value: self.coin.value,
-				owner: signature_verifying_key(wallet.unshielded.signing_key().verifying_key()),
+				owner: wallet.unshielded.verifying_key(),
 				nonce,
-				signature: transaction_signature(signature),
+				signature,
 				kind: self.kind,
 			}
 		});

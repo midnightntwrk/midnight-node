@@ -18,11 +18,30 @@
 
 use midnight_node_ledger_helpers::{
 	BlockContext, DefaultDB, DustLocalState, HashOutput, LedgerContext, LedgerState, Sp, Timestamp,
-	Wallet, WalletSeed, WalletState, deserialize_untagged, serialize_untagged,
+	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged,
+	serialize_untagged,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subxt::utils::H256;
+
+/// On-disk format version for a [`CachedWalletState`] value. Bump when the header/value layout
+/// changes so older entries are detected as a miss and evicted rather than silently misread.
+///
+/// v1 (pre-ECDSA): 8-byte LE `block_height` header, no version byte, seed-only cache key.
+/// v2: 1-byte version prefix + 8-byte LE `block_height`, and the cache key folds in the
+///     unshielded signature scheme (see [`wallet_cache_key`]).
+pub const WALLET_CACHE_FORMAT_VERSION: u8 = 2;
+
+/// Byte identifying the unshielded signature scheme in the cache key, so the same seed maps to
+/// distinct entries for Schnorr vs ECDSA (they resolve to different NIGHT — and therefore
+/// different dust — identities).
+fn scheme_discriminant(scheme: UnshieldedSignatureScheme) -> u8 {
+	match scheme {
+		UnshieldedSignatureScheme::Schnorr => 0,
+		UnshieldedSignatureScheme::Ecdsa => 1,
+	}
+}
 
 /// Serializable representation of BlockContext.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -133,9 +152,13 @@ pub fn serialize_ledger_state_fast(
 	Ok(bytes)
 }
 
-/// Hash a wallet seed for use as snapshot/cache key.
-pub fn hash_seed(seed: &WalletSeed) -> H256 {
+/// Cache key for a wallet, folding in both the format version and the unshielded signature
+/// scheme. Schnorr and ECDSA identities for one seed occupy distinct entries, and because the
+/// scheme byte is always mixed in, every pre-ECDSA (scheme-less) entry hashes differently and is
+/// therefore unreachable — old caches are transparently invalidated.
+pub fn wallet_cache_key(seed: &WalletSeed, scheme: UnshieldedSignatureScheme) -> H256 {
 	let mut hasher = Sha256::new();
+	hasher.update([WALLET_CACHE_FORMAT_VERSION, scheme_discriminant(scheme)]);
 	hasher.update(seed.as_bytes());
 	H256::from_slice(&hasher.finalize())
 }
@@ -171,28 +194,45 @@ impl LedgerSnapshot {
 }
 
 impl CachedWalletState {
+	/// Value header: `[version: u8][block_height: u64 LE]`, followed by the postcard body.
+	/// `block_height` lives after the version byte so the height helpers below read from offset 1.
+	const HEADER_LEN: usize = 1 + 8;
+
 	pub fn to_value_bytes(&self) -> Result<Vec<u8>, CacheError> {
 		let postcard_bytes = postcard::to_allocvec(self)
 			.map_err(|e| CacheError::SerializeWalletState(e.to_string()))?;
-		let mut out = Vec::with_capacity(8 + postcard_bytes.len());
+		let mut out = Vec::with_capacity(Self::HEADER_LEN + postcard_bytes.len());
+		out.push(WALLET_CACHE_FORMAT_VERSION);
 		out.extend_from_slice(&self.block_height.to_le_bytes());
 		out.extend_from_slice(&postcard_bytes);
 		Ok(out)
 	}
 
 	pub fn from_value_bytes(bytes: &[u8], seed_hash: H256) -> Result<Self, CacheError> {
-		if bytes.len() < 8 {
+		if bytes.len() < Self::HEADER_LEN {
 			return Err(CacheError::DeserializeWalletState("data too short".into()));
 		}
-		let mut state: Self = postcard::from_bytes(&bytes[8..])
+		// A missing/mismatched version byte means the entry predates this format (or a future
+		// one): report it as an error so the backend treats it as a miss and evicts the file.
+		if bytes[0] != WALLET_CACHE_FORMAT_VERSION {
+			return Err(CacheError::DeserializeWalletState(format!(
+				"unsupported wallet cache format version {} (expected {WALLET_CACHE_FORMAT_VERSION})",
+				bytes[0]
+			)));
+		}
+		let mut state: Self = postcard::from_bytes(&bytes[Self::HEADER_LEN..])
 			.map_err(|e| CacheError::DeserializeWalletState(e.to_string()))?;
 		state.seed_hash = seed_hash;
 		Ok(state)
 	}
 
-	/// Extract block_height from the 8-byte LE header prefix.
+	/// Extract block_height from the value header. Returns `None` if the header is too short or
+	/// carries an unrecognized format version.
 	pub fn block_height_from_header(data: &[u8]) -> Option<u64> {
-		data.get(..8)?.try_into().ok().map(u64::from_le_bytes)
+		if *data.first()? != WALLET_CACHE_FORMAT_VERSION {
+			return None;
+		}
+		data.get(1..Self::HEADER_LEN)?.try_into().ok().map(u64::from_le_bytes)
 	}
 }
 
@@ -222,6 +262,7 @@ pub fn create_ledger_snapshot(
 pub fn create_wallet_snapshot(
 	context: &LedgerContext<DefaultDB>,
 	seed: &WalletSeed,
+	scheme: UnshieldedSignatureScheme,
 	block_height: u64,
 ) -> Result<CachedWalletState, CacheError> {
 	let wallets = context
@@ -244,7 +285,7 @@ pub fn create_wallet_snapshot(
 		.map_err(|e| CacheError::SerializeWalletState(format!("dust state: {}", e)))?;
 
 	Ok(CachedWalletState {
-		seed_hash: hash_seed(seed),
+		seed_hash: wallet_cache_key(seed, scheme),
 		block_height,
 		shielded_state_bytes,
 		dust_local_state_bytes,
@@ -307,9 +348,12 @@ pub fn inject_wallet_from_cache(
 	context: &LedgerContext<DefaultDB>,
 	cached: &CachedWalletState,
 	seed: &WalletSeed,
+	scheme: UnshieldedSignatureScheme,
 	ledger_state: &LedgerState<DefaultDB>,
 ) -> Result<(), CacheError> {
-	let mut wallet = Wallet::default(seed.clone(), ledger_state);
+	// Rebuild with the cached scheme so the restored unshielded/dust identity matches the seed's
+	// NIGHT key for that scheme (dust derives from the NIGHT identity).
+	let mut wallet = Wallet::new(seed.clone(), ledger_state, scheme);
 
 	if !cached.shielded_state_bytes.is_empty() {
 		let shielded_state =
@@ -433,6 +477,54 @@ mod tests {
 		assert_eq!(CachedWalletState::block_height_from_header(&[0; 7]), None);
 	}
 
+	#[test]
+	fn wallet_cache_key_distinguishes_scheme() {
+		let seed = WalletSeed::try_from_hex_str(
+			"0000000000000000000000000000000000000000000000000000000000000001",
+		)
+		.unwrap();
+		let schnorr = wallet_cache_key(&seed, UnshieldedSignatureScheme::Schnorr);
+		let ecdsa = wallet_cache_key(&seed, UnshieldedSignatureScheme::Ecdsa);
+		assert_ne!(schnorr, ecdsa, "Schnorr and ECDSA must not share a cache key for one seed");
+	}
+
+	#[test]
+	fn old_format_wallet_value_is_a_miss() {
+		let seed_hash = H256::from([7u8; 32]);
+		// A v1 (pre-ECDSA) value had no version byte: it began with the 8-byte LE height.
+		// Simulate one whose first byte differs from the current format version.
+		let mut legacy = 0u64.to_le_bytes().to_vec();
+		legacy.extend_from_slice(&[0u8; 16]); // some postcard-ish trailing bytes
+		assert_ne!(legacy[0], WALLET_CACHE_FORMAT_VERSION);
+		assert!(
+			CachedWalletState::from_value_bytes(&legacy, seed_hash).is_err(),
+			"an old-format value must be reported as an error (treated as a miss)"
+		);
+		assert_eq!(
+			CachedWalletState::block_height_from_header(&legacy),
+			None,
+			"the height helper must reject an unrecognized format version"
+		);
+	}
+
+	#[test]
+	fn current_format_wallet_value_roundtrips_and_reports_version() {
+		let seed_hash = H256::from([9u8; 32]);
+		let wallet = CachedWalletState {
+			seed_hash,
+			block_height: 123,
+			shielded_state_bytes: vec![0x11; 8],
+			dust_local_state_bytes: None,
+		};
+		let bytes = wallet.to_value_bytes().expect("serialize");
+		assert_eq!(bytes[0], WALLET_CACHE_FORMAT_VERSION, "value must carry the version prefix");
+		assert_eq!(CachedWalletState::block_height_from_header(&bytes), Some(123));
+		assert_eq!(
+			CachedWalletState::from_value_bytes(&bytes, seed_hash).unwrap().block_height,
+			123
+		);
+	}
+
 	fn load_genesis_context(
 		wallet_seeds: &[WalletSeed],
 	) -> (crate::serde_def::SourceTransactions, LedgerContext<DefaultDB>) {
@@ -498,10 +590,18 @@ mod tests {
 
 		// Create snapshots
 		let ledger_snap = create_ledger_snapshot(&context, total_blocks).expect("snapshot failed");
-		let wallet_snap = create_wallet_snapshot(&context, &wallet_seed, total_blocks)
-			.expect("wallet snapshot failed");
+		let wallet_snap = create_wallet_snapshot(
+			&context,
+			&wallet_seed,
+			UnshieldedSignatureScheme::Schnorr,
+			total_blocks,
+		)
+		.expect("wallet snapshot failed");
 
-		assert_eq!(wallet_snap.seed_hash, hash_seed(&wallet_seed));
+		assert_eq!(
+			wallet_snap.seed_hash,
+			wallet_cache_key(&wallet_seed, UnshieldedSignatureScheme::Schnorr)
+		);
 		assert_eq!(wallet_snap.block_height, total_blocks);
 
 		// Restore context from ledger snapshot
@@ -509,8 +609,14 @@ mod tests {
 			restore_context_from_ledger_snapshot(&ledger_snap).expect("restore failed");
 
 		// Inject wallet
-		inject_wallet_from_cache(&restored, &wallet_snap, &wallet_seed, &ledger_state)
-			.expect("inject failed");
+		inject_wallet_from_cache(
+			&restored,
+			&wallet_snap,
+			&wallet_seed,
+			UnshieldedSignatureScheme::Schnorr,
+			&ledger_state,
+		)
+		.expect("inject failed");
 
 		// Verify wallet state matches
 		let original_wallets = context.wallets.lock().unwrap();
@@ -572,21 +678,32 @@ mod tests {
 		let cache_height = (split_at as u64).saturating_sub(1);
 		let ledger_snap =
 			create_ledger_snapshot(&partial_context, cache_height).expect("snapshot failed");
-		let wallet_snap = create_wallet_snapshot(&partial_context, &wallet_seed, cache_height)
-			.expect("wallet snapshot failed");
+		let wallet_snap = create_wallet_snapshot(
+			&partial_context,
+			&wallet_seed,
+			UnshieldedSignatureScheme::Schnorr,
+			cache_height,
+		)
+		.expect("wallet snapshot failed");
 
 		// Restore
 		let (restored, ledger_state, height) =
 			restore_context_from_ledger_snapshot(&ledger_snap).expect("restore failed");
 		assert_eq!(height, cache_height);
 
-		inject_wallet_from_cache(&restored, &wallet_snap, &wallet_seed, &ledger_state)
-			.expect("inject failed");
+		inject_wallet_from_cache(
+			&restored,
+			&wallet_snap,
+			&wallet_seed,
+			UnshieldedSignatureScheme::Schnorr,
+			&ledger_state,
+		)
+		.expect("inject failed");
 
 		// Replay remaining blocks
-		use crate::tx_generator::builder::replay_blocks;
+		use crate::tx_generator::builder::{WalletSchemes, replay_blocks};
 		let fork_ctx = ForkAwareLedgerContext::Ledger9(restored);
-		let fork_ctx = replay_blocks(fork_ctx, &second_half, &[]);
+		let fork_ctx = replay_blocks(fork_ctx, &second_half, &[], &WalletSchemes::new());
 		let incremental_context = fork_ctx.into_ledger9().expect("expected ledger 9 after replay");
 
 		// Compare ledger state

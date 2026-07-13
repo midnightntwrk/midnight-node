@@ -35,7 +35,7 @@ pub mod pallet {
 	use log::{info, warn};
 	use sidechain_domain::byte_string::SizedByteString;
 	use sidechain_domain::{MainchainAddress, PolicyId};
-	use sp_core::blake2_256;
+	use sp_crypto_hashing::blake2_256;
 	use sp_runtime::traits::{MaybeSerializeDeserialize, One, Zero};
 	use sp_session_validator_management::*;
 	use sp_std::fmt::Display;

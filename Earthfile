@@ -215,14 +215,6 @@ rebuild-redemption-skeleton:
 rebuild-genesis-state:
     ARG NETWORK
     ARG GENERATE_TEST_TXS=false
-    # LEDGER9-TOOLKIT-JS: toolkit-js v8 / compact-js 2.5.1 still emits
-    # `midnight:intent[v6]` (ledger-8), which the ledger-9 Rust `send-intent`
-    # path rejects. Disabled by default until `util/toolkit-js/v9/` lands with
-    # a compact-js whose intent serializer targets `intent[v7]`. Grep for
-    # `LEDGER9-TOOLKIT-JS` to find the matching `#[ignore]`s in
-    # `util/toolkit/src/commands/generate_intent.rs`.
-    ARG GENERATE_JS_TEST_TXS=false
-    ARG COMPILE_SIMPLE_MERKLE_TREE=false
     ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
     # Override with a pre-built registry image to skip rebuilding (e.g. in CI)
@@ -387,7 +379,7 @@ rebuild-genesis-state:
         ; fi
 
     RUN mkdir -p /res/test-data/contract/counter \
-        && if [ "$GENERATE_JS_TEST_TXS" = "true" ]; then \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
                     /midnight-node-toolkit \
@@ -418,7 +410,7 @@ rebuild-genesis-state:
                 --dest-file /res/test-data/contract/counter/contract_state.mn \
         ; fi
     RUN mkdir -p /res/test-data/contract/mint \
-        && if [ "$GENERATE_JS_TEST_TXS" = "true" ]; then \
+        && if [ "$GENERATE_TEST_TXS" = "true" ]; then \
             /midnight-node-toolkit generate-intent deploy \
                 --coin-public $( \
                     /midnight-node-toolkit \
@@ -712,7 +704,7 @@ node-ci-image-single-platform:
     # v18 and lacks the File API undici needs). +local-env-ci runs `npm ci`/`npm run`
     # straight off this base image, so the version baked here is the one it uses.
     # renovate: datasource=node-version packageName=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     RUN ARCH=$(uname -m) && \
         if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
         curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
@@ -733,12 +725,13 @@ node-ci-image-single-platform:
     # compactc is exposed via COMPACT_HOME; when it is set, toolkit-js scripts honour
     # it: `fetch-compactc` skips the download and `run-compactc` uses this compiler.
     # When COMPACTC_VERSION matches the pinned submodule (version + tree hash), build
-    # compactc from source; otherwise COMPACTC_VERSION names a released version (no
-    # tree-hash suffix) and we fetch the prebuilt binary for it.
+    # compactc from source; otherwise COMPACTC_VERSION names a release we fetch the
+    # prebuilt binary for — either a plain/pre-release version (0.31.108, 0.30.0-rc.1)
+    # or a `<version>-<40-char-commit-sha>` dev build (see +compactc-fetch).
     IF [ "$COMPACT_SUBMODULE_VERSION" = "$COMPACTC_VERSION" ]
         COPY +compactc-bundle/compact-home /compact-home
     ELSE
-        COPY (+compactc-fetch --VERSION="$COMPACTC_VERSION")/compact-home /compact-home
+        COPY (+compactc-fetch/compact-home --VERSION="$COMPACTC_VERSION") /compact-home
     END
     ENV COMPACT_HOME=/compact-home
     ENV COMPACTC_VERSION="$COMPACTC_VERSION"
@@ -840,11 +833,26 @@ compactc-fetch:
     ARG COMPACT_TAG_PREFIX=compactc-v
     FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl unzip
+    # The tag/asset names depend on the kind of release VERSION names:
+    #   - a "dev build" published from an arbitrary commit carries that commit's full
+    #     40-char git SHA as its suffix (e.g. 0.31.108-73ebf...) and follows the
+    #     compactc-dev-<sha> / compactc_dev-<sha>_<arch> naming;
+    #   - a released or pre-release version (e.g. 0.31.108, 0.30.0-rc.1) follows the
+    #     conventional compactc-v<version> / compactc_v<version>_<arch> naming.
+    # Only a bare 40-char hex suffix selects the dev path, so semver pre-releases
+    # (-rc.N, -alpha, ...) keep their normal release naming.
     RUN set -e && \
         ARCH=$(uname -m) && \
         if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
-        ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip" && \
-        URL="https://github.com/${COMPACT_REPO}/releases/download/${COMPACT_TAG_PREFIX}${VERSION}/${ASSET}" && \
+        SUFFIX="${VERSION#*-}" && \
+        if [ "$SUFFIX" != "$VERSION" ] && printf '%s' "$SUFFIX" | grep -Eq '^[0-9a-f]{40}$'; then \
+            TAG="compactc-dev-${SUFFIX}"; \
+            ASSET="compactc_dev-${SUFFIX}_${COMPACTC_ARCH}-unknown-linux-musl.zip"; \
+        else \
+            TAG="${COMPACT_TAG_PREFIX}${VERSION}"; \
+            ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip"; \
+        fi && \
+        URL="https://github.com/${COMPACT_REPO}/releases/download/${TAG}/${ASSET}" && \
         mkdir -p /compact-home && \
         echo "Downloading compactc: ${URL}" && \
         curl -fsSL "${URL}" -o /tmp/compactc.zip && \
@@ -876,13 +884,19 @@ toolkit-js-prep:
     FROM +prep-no-copy
 
     # Install dependencies for Node.js (curl-minimal already in base image)
-    RUN microdnf -y install tar gzip xz && \
+    RUN microdnf -y install tar gzip xz perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 23 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=23.11.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
+    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
+    # `tar` overlays rather than replaces, so leftover files from the base's older npm
+    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
+    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        rm -rf /usr/local/lib/node_modules && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
@@ -1116,13 +1130,19 @@ build-test-toolkit:
 
     # Install Node.js 23 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
     # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
-    ARG NODE_VERSION=23.11.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
+    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
+    # `tar` overlays rather than replaces, so leftover files from the base's older npm
+    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
+    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
+        rm -rf /usr/local/lib/node_modules && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
@@ -1148,6 +1168,7 @@ test-toolkit:
     ARG NATIVEARCH
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
+    ARG RUN_COMPACT_CONTRACT_TESTS
     FROM earthly/dind:alpine
     RUN mkdir -p /artifacts
 
@@ -1157,6 +1178,9 @@ test-toolkit:
     END
     IF [ -n "$FORK_FROM_NODE_IMAGE" ]
         SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+    IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
     END
 
     # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
@@ -1198,6 +1222,7 @@ test-toolkit:
                 -e DOCKER_CONFIG=/root/.docker \
                 -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
                 -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
                 test-toolkit:latest && \
                 rm -f /root/.docker/config.json
         END
@@ -1417,12 +1442,13 @@ toolkit-image:
     USER root
 
     # Install dependencies for Node.js (libxml2 pinned via base image digest, python3-pip not installed)
-    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 && \
+    # Install shasum via perl-Digest-SHA for compactc
+    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     RUN if [ "$NATIVEARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
@@ -1482,7 +1508,7 @@ audit-npm:
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1521,7 +1547,7 @@ audit-yarn:
 
     # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1572,7 +1598,7 @@ fix-lock-npm:
 
     # Keep in sync with audit-npm target
     # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=22.22.0
+    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -1605,65 +1631,6 @@ fix-lock-rust:
 fix-lock:
     BUILD +fix-lock-rust
     BUILD +fix-lock-js
-
-# partnerchains-dev contains tools for working with partner chains contracts on Cardano
-partnerchains-dev:
-    LET PARTNER_CHAINS_VERSION=1.5.0
-    LET CARDANO_VERSION=10.1.4
-
-    ARG EARTHLY_GIT_SHORT_HASH
-
-    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
-    # Get node version for the image tag
-    COPY node/Cargo.toml /node/
-    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
-    RUN rm -rf /node
-    LET NODE_VERSION = "$(cat node_version)"
-    LET IMAGE_TAG_SEMVER=$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH
-
-    # Install Node.js repository
-    RUN printf "%s\n" \
-        "[nodesource]" \
-        "name=Node.js Packages for Linux RPM based distros - \$basearch" \
-        "baseurl=https://rpm.nodesource.com/pub_23.x/el/9/\$basearch" \
-        "enabled=1" \
-        "gpgcheck=1" \
-        "gpgkey=https://rpm.nodesource.com/pub/el/NODESOURCE-GPG-SIGNING-KEY-EL" \
-        > /etc/yum.repos.d/nodesource.repo
-
-    # Install necessary packages
-    RUN microdnf -y install \
-        curl \
-        unzip \
-        nodejs \
-        bash \
-        jq \
-        socat \
-        && microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
-
-    # Download cardano node (for cardano-cli)
-    RUN curl -L https://github.com/IntersectMBO/cardano-node/releases/download/${CARDANO_VERSION}/cardano-node-${CARDANO_VERSION}-linux.tar.gz -o cardano-node.tar.gz && \
-        mkdir cardano-node && \
-        tar -xzf cardano-node.tar.gz -C cardano-node --strip-components=1 && \
-        mv cardano-node/bin/cardano-cli . && \
-        rm -rf cardano-node cardano-node.tar.gz
-
-    # Download partner chains node
-    RUN curl -L https://github.com/midnightntwrk/partner-chains/releases/download/v${PARTNER_CHAINS_VERSION}/partner-chains-node-v${PARTNER_CHAINS_VERSION}-x86_64-linux  -o partner-chains-node && \
-        chmod +x partner-chains-node
-
-    COPY +node-image/midnight-node /midnight-node
-    COPY scripts/partnerchains-dev/* /
-
-    ENV CARDANO_NODE_SOCKET_PATH=/node.socket
-    ENV CARDANO_NODE_NETWORK_ID=2
-    ENV AS_INIT=1
-    ENV NODE_HOST=host.docker.internal
-
-    ENTRYPOINT ["/bin/bash", "--init-file", "serve.sh"]
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    LET IMAGE_TAG=${PARTNER_CHAINS_VERSION}-${CARDANO_VERSION}
-    SAVE IMAGE --push ghcr.io/midnight-ntwrk/partnerchains-dev:$IMAGE_TAG_SEMVER ghcr.io/midnight-ntwrk/partnerchains-dev:$IMAGE_TAG ghcr.io/midnight-ntwrk/partnerchains-dev:latest
 
 # run-node-mocked Run a local node against a mock ariadne bridge.
 run-node-mocked:

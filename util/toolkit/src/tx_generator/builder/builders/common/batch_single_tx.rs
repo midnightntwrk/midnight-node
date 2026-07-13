@@ -77,12 +77,13 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 	> {
 		use super::type_convert::*;
 
-		let source_seed =
-			convert_wallet_seed(spec.source_seed.parse().expect("invalid source_seed hex"));
+		// The scheme half of each resolved pair is applied at context build time (see
+		// `Builder::relevant_wallet_schemes`); here we only need the seed value.
+		let (source_seed, _) = spec.resolve_source();
+		let source_seed = convert_wallet_seed(source_seed);
 		let funding_seed = spec
-			.funding_seed
-			.as_ref()
-			.map(|s| convert_wallet_seed(s.parse().expect("invalid funding_seed hex")))
+			.resolve_funding()
+			.map(|(s, _)| convert_wallet_seed(s))
 			.unwrap_or(source_seed.clone());
 
 		let rng_seed: Option<[u8; 32]> = spec.rng_seed.as_ref().map(|s| {

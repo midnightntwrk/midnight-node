@@ -247,8 +247,8 @@ pub fn cnight_follower_genesis_from_storage(
 	genesis_storage: &sp_core::storage::Storage,
 ) -> Option<(CNightAddresses, CardanoPosition)> {
 	let storage_value_key = |item: &[u8]| {
-		let mut key = sp_core::twox_128(b"CNightObservation").to_vec();
-		key.extend_from_slice(&sp_core::twox_128(item));
+		let mut key = sp_crypto_hashing::twox_128(b"CNightObservation").to_vec();
+		key.extend_from_slice(&sp_crypto_hashing::twox_128(item));
 		key
 	};
 	let raw = |item: &[u8]| genesis_storage.top.get(&storage_value_key(item));

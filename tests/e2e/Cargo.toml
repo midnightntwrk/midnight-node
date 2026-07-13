@@ -10,6 +10,7 @@ local = []
 local-dev = []
 local-ci = []
 qanet = []
+devnet = []
 # Opt-in flag: when on, the c2m_bridge e2e tests run extra GraphQL
 # assertions against a running indexer-api (default
 # http://127.0.0.1:8088/api/v3/graphql, override via INDEXER_GRAPHQL_URL).

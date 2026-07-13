@@ -17,9 +17,6 @@
 # patched configs itself, so xtrace would just double every line with '+' noise.)
 set -euo pipefail
 
-microdnf -y update
-microdnf -y install curl-minimal jq
-
 check_json_validity() {
   local file="$1"
   if ! jq -e . "$file" > /dev/null 2>&1; then

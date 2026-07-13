@@ -84,6 +84,39 @@ impl ForkAwareLedgerContext {
 		}
 	}
 
+	/// Like [`Self::new_from_wallet_seeds`] but with a per-seed unshielded signature scheme.
+	///
+	/// ECDSA identities are only representable from ledger 9. On an earlier generation any ECDSA
+	/// scheme is rejected with a clear panic here rather than being allowed to blow up deep inside
+	/// the ledger-7/8 ECDSA stubs.
+	pub fn new_from_wallet_seeds_with_schemes(
+		version: LedgerVersion,
+		network_id: impl Into<String>,
+		seeds: &[(crate::ledger_9::WalletSeed, crate::ledger_9::UnshieldedSignatureScheme)],
+	) -> Self {
+		let network_id = network_id.into();
+		match version {
+			LedgerVersion::Ledger9 => Self::Ledger9(
+				crate::ledger_9::context::LedgerContext::new_from_wallet_seeds_with_schemes(
+					network_id, seeds,
+				),
+			),
+			LedgerVersion::Ledger7 | LedgerVersion::Ledger8 => {
+				assert!(
+					seeds.iter().all(|(_, scheme)| matches!(
+						scheme,
+						crate::ledger_9::UnshieldedSignatureScheme::Schnorr
+					)),
+					"ECDSA unshielded signatures are only supported from ledger 9; \
+					 the source chain is on {version:?}"
+				);
+				let plain: Vec<crate::ledger_9::WalletSeed> =
+					seeds.iter().map(|(s, _)| s.clone()).collect();
+				Self::new_from_wallet_seeds(version, network_id, &plain)
+			},
+		}
+	}
+
 	/// Get the current ledger version.
 	pub fn version(&self) -> LedgerVersion {
 		match self {

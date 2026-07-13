@@ -70,6 +70,64 @@ pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error>
 	})
 }
 
+/// A NIGHT wallet seed together with its [`UnshieldedSignatureScheme`], parsed from a single CLI
+/// (or JSON) value: `[schnorr:|ecdsa:]<hex|lazy-hex|mnemonic>`. No prefix defaults to Schnorr —
+/// backwards compatible with the historical bare `--seed <seed>` form. An explicit `ecdsa:`
+/// prefix selects the ledger-9+ ECDSA scheme.
+#[derive(Clone, Debug)]
+pub struct SchemeSeed {
+	pub seed: WalletSeed,
+	pub scheme: UnshieldedSignatureScheme,
+}
+
+impl SchemeSeed {
+	/// The seed and its unshielded signature scheme, as a pair.
+	pub fn resolve(&self) -> (WalletSeed, UnshieldedSignatureScheme) {
+		(self.seed.clone(), self.scheme)
+	}
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SchemeSeedParseError {
+	#[error("unknown seed scheme '{0}', expected 'schnorr' or 'ecdsa'")]
+	UnknownScheme(String),
+	#[error(transparent)]
+	Seed(#[from] WalletSeedParseError),
+}
+
+impl FromStr for SchemeSeed {
+	type Err = SchemeSeedParseError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let (scheme, rest) = match s.split_once(':') {
+			Some(("schnorr", rest)) => (UnshieldedSignatureScheme::Schnorr, rest),
+			Some(("ecdsa", rest)) => (UnshieldedSignatureScheme::Ecdsa, rest),
+			Some((prefix, _)) => return Err(SchemeSeedParseError::UnknownScheme(prefix.into())),
+			None => (UnshieldedSignatureScheme::Schnorr, s),
+		};
+		Ok(SchemeSeed { seed: rest.parse()?, scheme })
+	}
+}
+
+impl<'de> serde::Deserialize<'de> for SchemeSeed {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		let s = <String as serde::Deserialize>::deserialize(deserializer)?;
+		s.parse().map_err(serde::de::Error::custom)
+	}
+}
+
+/// Clap `value_parser` adapter for [`SchemeSeed`].
+pub fn scheme_seed_decode(input: &str) -> Result<SchemeSeed, clap::error::Error> {
+	input.parse().map_err(|e| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+		);
+		err
+	})
+}
+
 pub fn keypair_from_str(input: &str) -> Result<Keypair, clap::error::Error> {
 	input.parse().map_err(|e| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);

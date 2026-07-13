@@ -45,6 +45,22 @@ impl<D: DB + Clone> Wallet<D> {
 		Self { root_seed: Some(root_seed), shielded, unshielded, dust }
 	}
 
+	/// Build a wallet whose unshielded (NIGHT) identity uses the given signature `scheme`.
+	/// Only the unshielded sub-wallet varies; the shielded and dust sub-wallets are unchanged
+	/// (dust derives from the NIGHT identity, so an ECDSA scheme also shifts the dust state).
+	/// `Wallet::default` is equivalent to `new(.., UnshieldedSignatureScheme::Schnorr)`.
+	pub fn new(
+		root_seed: WalletSeed,
+		ledger_state: &LedgerState<D>,
+		scheme: UnshieldedSignatureScheme,
+	) -> Self {
+		let shielded = ShieldedWallet::default(root_seed.clone());
+		let unshielded = UnshieldedWallet::new(root_seed.clone(), scheme);
+		let dust = DustWallet::default(root_seed.clone(), Some(&ledger_state.parameters));
+
+		Self { root_seed: Some(root_seed), shielded, unshielded, dust }
+	}
+
 	pub fn update_state_from_offers<P: Storable<D>>(&mut self, offers: &[Offer<P, D>]) {
 		let secret_keys = self.shielded.secret_keys().clone();
 		for offer in offers {

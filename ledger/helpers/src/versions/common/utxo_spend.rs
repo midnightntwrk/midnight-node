@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use super::{
-	BuilderContext, DB, IntentHash, SigningKey, UnshieldedTokenType, Utxo, UtxoId, UtxoSpend,
-	WalletSeed, signature_verifying_key,
+	BuilderContext, DB, IntentHash, TransactionSigningKey, UnshieldedTokenType, Utxo, UtxoId,
+	UtxoSpend, WalletSeed,
 };
 use crate::CoinSelectionStrategy;
 use async_trait::async_trait;
@@ -51,7 +51,7 @@ pub struct UtxoSpendInfo<O> {
 #[async_trait]
 pub trait BuildUtxoSpend<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
 	async fn build(&self, context: Arc<C>) -> UtxoSpend;
-	fn signing_key(&self, context: Arc<C>) -> SigningKey;
+	fn signing_key(&self, context: Arc<C>) -> TransactionSigningKey;
 }
 
 impl UtxoSpendInfo<WalletSeed> {
@@ -185,9 +185,8 @@ impl UtxoSpendInfo<WalletSeed> {
 #[async_trait]
 impl<D: DB + Clone, C: BuilderContext<D>> BuildUtxoSpend<D, C> for UtxoSpendInfo<WalletSeed> {
 	async fn build(&self, context: Arc<C>) -> UtxoSpend {
-		let owner = context.with_wallet_from_seed(self.owner.clone(), |wallet| {
-			signature_verifying_key(wallet.unshielded.signing_key().verifying_key())
-		});
+		let owner = context
+			.with_wallet_from_seed(self.owner.clone(), |wallet| wallet.unshielded.verifying_key());
 		// If self identifies an UTXO then use it, otherwise find the best matching UTXO.
 		match (self.intent_hash, self.output_number) {
 			(Some(intent_hash), Some(output_no)) => UtxoSpend {
@@ -210,9 +209,9 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildUtxoSpend<D, C> for UtxoSpendInfo
 		}
 	}
 
-	fn signing_key(&self, context: Arc<C>) -> SigningKey {
+	fn signing_key(&self, context: Arc<C>) -> TransactionSigningKey {
 		context.with_wallet_from_seed(self.owner.clone(), |wallet| {
-			wallet.unshielded.signing_key().clone()
+			wallet.unshielded.transaction_signing_key()
 		})
 	}
 }
