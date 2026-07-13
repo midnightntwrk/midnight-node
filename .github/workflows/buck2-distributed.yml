@@ -117,13 +117,19 @@ jobs:
             --target-platforms root//platforms:wasm32v1-none $WASM_BS 2>&1 | tee prebuild-wasm.log
 
       # TEMP DEBUG: surface the real clang diagnostic for the secp256k1 wasm
-      # compile that cc-rs swallows (written to /tmp/wasm-cc-fail.log by
-      # wasm-cc.sh on the driver during the --local-only pre-build above).
+      # compile that cc-rs swallows (wasm-cc.sh writes wasm-cc-fail.log into the
+      # action CWD under buck-out during the --local-only pre-build above).
       - name: DEBUG dump wasm-cc diagnostic
         if: always()
         run: |
-          echo "=== /tmp/wasm-cc-fail.log ==="
-          cat /tmp/wasm-cc-fail.log 2>/dev/null || echo "(no diagnostic captured)"
+          echo "=== wasm-cc-fail.log files under buck-out ==="
+          found=$(find buck-out -name wasm-cc-fail.log 2>/dev/null)
+          if [ -n "$found" ]; then
+            for f in $found; do echo "--- $f ---"; cat "$f"; done
+          else
+            echo "(no diagnostic captured under buck-out)"
+            find / -name wasm-cc-fail.log 2>/dev/null | head
+          fi
 
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
       # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
