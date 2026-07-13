@@ -378,44 +378,52 @@ prelude bump breaks parse. Store persistence across runs (sharded CAS snapshot)
 is not yet wired — each run is a cold distributed build. rebuck2 is WIP (a
 dropped worker fails its in-flight actions).
 
+### Linux `-sys` / toolchain failures — root-caused + fixed
+
+The full node + toolkit + wasm blob builds green on Linux (verified in an
+`ubuntu:24.04` container, clang 18.1.3, matching CI). The two cc-rs ones hid
+behind cc-rs capturing the compiler stderr and reprinting only its own "command
+did not execute successfully" one-liner — buck showed an empty diagnostic.
+Diagnosed by reproducing in the container and re-running the printed
+`__cc_shim.sh` by hand. The others surfaced only once those cleared and the build
+reached the blob assembly / final link.
+
+* **`secp256k1-sys` wasm compile — buck2 cell-scoping.** The cc-shim exec'd
+  `/opt/homebrew/opt/llvm/bin/clang` (the macOS default in `toolchains/BUCK`) →
+  `FileNotFoundError` on Linux. The `[wasm] cc` override the driver writes to
+  `.buckconfig.local` is **root-cell-scoped**, but `toolchains/BUCK`'s
+  `read_config("wasm", …)` runs in the `toolchains` cell, which doesn't see it
+  (`buck2 audit config --cell toolchains wasm.cc` → empty). Fix: pass it as a
+  **global `-c wasm.cc=…`** on the build/test commands (`BUCK_WASM_CFG`), which
+  reaches every cell. (`-Qunused-arguments` + absolute clang in `wasm-cc.sh` were
+  also needed once the right compiler is found.)
+
+* **`openssl` version skew — static-vs-dynamic.** Reindeer captures openssl-sys's
+  `links` version (`DEP_OPENSSL_VERSION_NUMBER`) once, at buckify time, from the
+  buckify host's openssl. Buckified on macOS (Homebrew 3.5) it baked `3050000f`,
+  so `openssl-0.10` gated in 3.3+ symbols (`EVP_DigestSqueeze`, …). But at build
+  time openssl-sys dynamically detects the real host (3.0.13 on ubuntu), whose
+  ffi lacks them → "not found in `ffi`". Fix: `third-party/fixups/openssl/` pins
+  `DEP_OPENSSL_VERSION_NUMBER` to the 3.0 baseline (`30000000`) so the dependent
+  matches the ubuntu build target. `DEP_OPENSSL_CONF` (`OPENSSL_NO_IDEA`, …) must
+  be restated in the same fixup env block — it replaces rather than merges
+  reindeer's baked env, and without it `openssl-0.10` references `EVP_idea_*`
+  symbols the ffi omits. (Proper fix would be dynamic `DEP_OPENSSL_*` wiring.)
+
+* **`ittapi-sys` — build script disabled by a shared fixup.** The shared
+  `buck2-fixups/fixups/ittapi-sys` sets `buildscript.run = false`, so
+  `jitprofiling.c` (defining `iJIT_NotifyEvent` / `iJIT_GetNewMethodID`) is never
+  compiled. On Linux the node pulls `ittapi` via wasmtime's profiling and the
+  final link fails `undefined symbol: iJIT_*`. Fix: local
+  `third-party/fixups/ittapi-sys/` re-enables it (`[buildscript.run.env]` +
+  `OPT_LEVEL`). macOS doesn't pull ittapi, so it's a no-op there.
+
+* **`protoc` + `binaryen`.** The composite now installs `protobuf-compiler`
+  (substrate's `sc-network*`/`litep2p` codegen protobufs via prost-build) and a
+  **pinned binaryen v130** from GitHub instead of apt's v108 — the `runtime-wasm`
+  blob genrule runs `wasm-opt … --signext-lowering`, which v108 rejects.
+
 ## Remaining blockers
-
-### Non-hermetic build scripts under remote execution (the CI blocker)
-
-The distributed build is green for everything except two `-sys` crates whose
-**build scripts** misbehave when rebuck2 dispatches them to a worker. Build
-scripts are non-hermetic: they probe the host and shell out to cc/cmake reading
-absolute system paths that aren't declared buck inputs.
-
-* **`secp256k1-sys` (wasm).** Its `build.rs` cc-compiles vendored `wasm/wasm.c`
-  for `wasm32`. Fails under buck on Linux (both worker *and* driver via
-  `--local-only`) with **empty stderr, exit 1** — cc-rs captures the compiler's
-  output and reprints only its own one-liner, so clang's real diagnostic is
-  lost. Builds fine on the macOS dev box (Homebrew clang). Fixes already in
-  place that were *not* enough: `-Qunused-arguments` in `toolchains/wasm-cc.sh`
-  (clears buck's cc-shim `--ld-path` unused-arg error, confirmed via a
-  standalone A/B on the runner) and absolute `/usr/bin/clang`. Something buck-
-  specific remains (cc-shim `from_any_dir --cwd` create-cwd? the real
-  `--ld-path=<ld_shim>`?). **Cannot be diagnosed in CI** — every stderr/side-file
-  channel is captured by cc-rs or torn down with the action sandbox. Needs a
-  local Linux buck2 checkout: run the failing target, then re-run the exact
-  `__cc_shim.sh` command buck prints, by hand, to see clang's output.
-
-* **`openssl` version cfgs.** `openssl-0.10` fails to compile — `EVP_DigestSqueeze`
-  / `OSSL_get_max_threads` / `X509_PURPOSE_CODE_SIGN` "not found in `ffi`":
-  openssl-sys's build-script version probe misdetects a too-high version under RE,
-  so the `openssl` crate gates in symbols the bound `openssl-sys` (`ffi`) lacks.
-
-The clean fix for both is to pin cargo build-script *run* actions to
-`local_only` — but that lives in the prelude's `rust/cargo_buildscript.bzl`, and
-this repo uses buck2's **bundled** prelude (`[external_cells] prelude = bundled`),
-which `[external_cell_fixups]` does *not* overlay (it only mounts the `fixups`
-cell for win import-libs + reindeer). A workflow-level pre-build with
-`--local-only` doesn't help secp256k1 (fails locally too) and surfaces other
-build scripts that need `protoc`. Options to finish: (a) switch to buck2-fixups'
-vendored prelude carrying `local_only=True` (pushed on branch `giles-win-prelude`
-@ `de3d929`, version-match risk); (b) fix rebuck2's RE staging so these build
-scripts run remote; (c) diagnose + fix the secp256k1 compile on a local Linux box.
 
 * **`rs_merkle` digest version (relay binary)** — `rs_merkle-1` fails
   `[u8;32]: From<GenericArray<...>>`: a `generic-array`/`digest` multi-version

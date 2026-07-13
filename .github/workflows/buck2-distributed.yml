@@ -37,6 +37,14 @@ env:
   # race to rustup-install its pinned components ("detected conflict:
   # bin/cargo-clippy"). The composite also pre-installs those components.
   RUSTUP_TOOLCHAIN: 1.95-x86_64-unknown-linux-gnu
+  # Wasm C toolchain, passed as *global* `-c` overrides (reach every cell,
+  # unlike a root-cell `.buckconfig.local`). The wrappers force
+  # --target=wasm32-unknown-unknown (cc-rs doesn't for the wasm32v1-none rust
+  # target) and add -Qunused-arguments for buck's cc-shim `--ld-path`.
+  BUCK_WASM_CFG: >-
+    -c wasm.cc=/usr/local/bin/wasm-cc.sh
+    -c wasm.cxx=/usr/local/bin/wasm-cc.sh
+    -c wasm.ar=/usr/local/bin/wasm-ar.sh
 
 jobs:
   # The driver owns buck2. It also lends half its cores as a co-worker, so the
@@ -68,16 +76,14 @@ jobs:
           # and blows the actions-cache budget. Each run is a cold build for now;
           # revisit with sharded-CAS persistence once the build is reliably green.
           snapshot-key-prefix: ""
-          # Point the wasm C toolchain at the committed wrapper scripts (absolute
-          # path — the cc shim cd's before exec, so a relative name wouldn't
-          # resolve). They force --target=wasm32-unknown-unknown (cc-rs doesn't
-          # pass it for the wasm32v1-none rust target under distro clang) and
-          # resolve clang/llvm-ar from PATH.
-          buckconfig-extra: |
-            [wasm]
-            cc = /usr/local/bin/wasm-cc.sh
-            cxx = /usr/local/bin/wasm-cc.sh
-            ar = /usr/local/bin/wasm-ar.sh
+          # NB: the `[wasm]` cc/cxx/ar override is NOT set here. The driver writes
+          # it to `.buckconfig.local`, which is root-cell-scoped — but the wasm C
+          # toolchain (`toolchains/BUCK`) reads `read_config("wasm", …)` from the
+          # `toolchains` cell, which doesn't see it, so it fell back to the macOS
+          # Homebrew clang path and `os.execl` FileNotFound'd on Linux (cc-rs
+          # swallows that as an empty-stderr exit 1). Pass it as a *global* `-c`
+          # override on the build/test commands instead (see BUCK_WASM_CFG) —
+          # that reaches every cell.
 
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
       # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
@@ -94,7 +100,7 @@ jobs:
         # build failure into a failed job.
         run: |
           set -o pipefail
-          buck2 build --target-platforms root//platforms:linux-x86_64 \
+          buck2 build $BUCK_WASM_CFG --target-platforms root//platforms:linux-x86_64 \
             root//node:midnight-node-bin \
             root//util/toolkit:midnight-node-toolkit-bin \
             root//:runtime-wasm 2>&1 | tee build.log
@@ -105,7 +111,7 @@ jobs:
       - name: buck2 test (excluding infra-dependent tests)
         run: |
           set -o pipefail
-          buck2 test root//... --target-platforms root//platforms:linux-x86_64 --exclude ci-infra 2>&1 | tee test.log
+          buck2 test $BUCK_WASM_CFG root//... --target-platforms root//platforms:linux-x86_64 --exclude ci-infra 2>&1 | tee test.log
 
       - name: Report distribution
         if: always()
