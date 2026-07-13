@@ -350,10 +350,14 @@ as an ad-hoc distributed Remote Execution engine over an iroh P2P mesh:
 * Rendezvous is keyless: every job derives the driver's iroh key from
   `github.run_id`, so no service and no secrets.
 
-The build selects `root//platforms:re-exec` (via a `.buckconfig.local` the driver
-action writes) — `local_enabled=False`, so every action goes to the mesh. The
-platform rules live in `platforms/defs.bzl` (`re_cache_execution_platform`);
-`re-cache` (hybrid, cache-only) is the robustness lever if remote-exec is flaky.
+The build selects `root//platforms:re-cache` (via a `.buckconfig.local` the driver
+action writes) — hybrid (`local_enabled=True`), so `local_only` actions (reindeer
+`git_fetch`) run on the driver and the rest distribute. `re-exec`
+(`local_enabled=False`) rejects the `local_only` fetches, so re-cache is the one
+that works. Platform rules live in `platforms/defs.bzl`.
+
+**Proven:** the mesh forms keyless, and a cold build dispatches ~2500-3800 actions
+to workers (`remote:` in the buck summary). rustc/cxx compiles distribute cleanly.
 
 **Toolchain portability.** The wasm blob build needs a wasm-capable clang and
 `wasm-opt` on every runner. `.github/actions/buck2-linux-toolchain` installs a
@@ -375,6 +379,43 @@ is not yet wired — each run is a cold distributed build. rebuck2 is WIP (a
 dropped worker fails its in-flight actions).
 
 ## Remaining blockers
+
+### Non-hermetic build scripts under remote execution (the CI blocker)
+
+The distributed build is green for everything except two `-sys` crates whose
+**build scripts** misbehave when rebuck2 dispatches them to a worker. Build
+scripts are non-hermetic: they probe the host and shell out to cc/cmake reading
+absolute system paths that aren't declared buck inputs.
+
+* **`secp256k1-sys` (wasm).** Its `build.rs` cc-compiles vendored `wasm/wasm.c`
+  for `wasm32`. Fails under buck on Linux (both worker *and* driver via
+  `--local-only`) with **empty stderr, exit 1** — cc-rs captures the compiler's
+  output and reprints only its own one-liner, so clang's real diagnostic is
+  lost. Builds fine on the macOS dev box (Homebrew clang). Fixes already in
+  place that were *not* enough: `-Qunused-arguments` in `toolchains/wasm-cc.sh`
+  (clears buck's cc-shim `--ld-path` unused-arg error, confirmed via a
+  standalone A/B on the runner) and absolute `/usr/bin/clang`. Something buck-
+  specific remains (cc-shim `from_any_dir --cwd` create-cwd? the real
+  `--ld-path=<ld_shim>`?). **Cannot be diagnosed in CI** — every stderr/side-file
+  channel is captured by cc-rs or torn down with the action sandbox. Needs a
+  local Linux buck2 checkout: run the failing target, then re-run the exact
+  `__cc_shim.sh` command buck prints, by hand, to see clang's output.
+
+* **`openssl` version cfgs.** `openssl-0.10` fails to compile — `EVP_DigestSqueeze`
+  / `OSSL_get_max_threads` / `X509_PURPOSE_CODE_SIGN` "not found in `ffi`":
+  openssl-sys's build-script version probe misdetects a too-high version under RE,
+  so the `openssl` crate gates in symbols the bound `openssl-sys` (`ffi`) lacks.
+
+The clean fix for both is to pin cargo build-script *run* actions to
+`local_only` — but that lives in the prelude's `rust/cargo_buildscript.bzl`, and
+this repo uses buck2's **bundled** prelude (`[external_cells] prelude = bundled`),
+which `[external_cell_fixups]` does *not* overlay (it only mounts the `fixups`
+cell for win import-libs + reindeer). A workflow-level pre-build with
+`--local-only` doesn't help secp256k1 (fails locally too) and surfaces other
+build scripts that need `protoc`. Options to finish: (a) switch to buck2-fixups'
+vendored prelude carrying `local_only=True` (pushed on branch `giles-win-prelude`
+@ `de3d929`, version-match risk); (b) fix rebuck2's RE staging so these build
+scripts run remote; (c) diagnose + fix the secp256k1 compile on a local Linux box.
 
 * **`rs_merkle` digest version (relay binary)** — `rs_merkle-1` fails
   `[u8;32]: From<GenericArray<...>>`: a `generic-array`/`digest` multi-version
