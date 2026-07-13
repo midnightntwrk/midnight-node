@@ -104,8 +104,13 @@ jobs:
           # (--prefer-local is only a hint the hybrid executor may still race to
           # a worker). set -f keeps the shell from globbing the [out_dir] suffix.
           set -f
-          HOST_BS=$(buck2 uquery "root//third-party:" | grep -E 'build-script-run$' | sed 's/$/[out_dir]/' || true)
-          WASM_BS=$(buck2 uquery "root//wasm-deps:" | grep -E 'build-script-run$' | sed 's/$/[out_dir]/' || true)
+          # Only the crates whose build scripts are non-hermetic in a way that
+          # breaks under RE: openssl(-sys) probes the host openssl version, and
+          # secp256k1-sys compiles vendored wasm C. Other build scripts (protoc
+          # codegen for sc-network/litep2p, etc.) build fine distributed and are
+          # left alone -- forcing them local would need their own host tooling.
+          HOST_BS=$(buck2 uquery "root//third-party:" | grep -E 'build-script-run$' | grep -E 'openssl-[0-9]' | sed 's/$/[out_dir]/' || true)
+          WASM_BS=$(buck2 uquery "root//wasm-deps:" | grep -E 'build-script-run$' | grep -E 'secp256k1-sys' | sed 's/$/[out_dir]/' || true)
           [ -n "$HOST_BS" ] && buck2 build --local-only \
             --target-platforms root//platforms:linux-x86_64 $HOST_BS 2>&1 | tee prebuild-host.log
           [ -n "$WASM_BS" ] && buck2 build --local-only \
