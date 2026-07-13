@@ -40844,7 +40844,6 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
         "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
-        "WASM_CC_LOG": "/tmp/wasm-cc-fail.log",
     },
     features = [
         "alloc",
@@ -40946,7 +40945,6 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
         "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
-        "WASM_CC_LOG": "/tmp/wasm-cc-fail.log",
     },
     features = [
         "alloc",
@@ -41049,7 +41047,6 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
         "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
-        "WASM_CC_LOG": "/tmp/wasm-cc-fail.log",
     },
     features = [
         "alloc",
