@@ -5,12 +5,13 @@ load("@prelude//toolchains:python.bzl", "system_python_bootstrap_toolchain")
 load("@prelude//toolchains:remote_test_execution.bzl", "remote_test_execution_toolchain")
 load("@prelude//toolchains:rust.bzl", "system_rust_toolchain")
 
-# Wasm32 C toolchain paths — absolute (the cc shim `cd`s before exec'ing, so a
-# relative/PATH name wouldn't resolve). Defaults are the macOS-arm64 dev box
-# (Homebrew LLVM, whose clang has the WebAssembly backend Apple's /usr/bin/clang
-# lacks). Linux CI overrides via `[wasm] cc/cxx/ar` in .buckconfig.local, e.g.
-# /usr/bin/clang (distro clang includes the wasm target). The wasm linker is a
-# portable wrapper (toolchains/wasm-lld.sh — locates rust-lld via the sysroot).
+# Wasm32 C toolchain. Absolute paths only — the cc shim `cd`s before exec'ing,
+# so a relative wrapper name wouldn't resolve. Default is macOS-arm64's Homebrew
+# LLVM clang (its wasm backend + cc-rs's own --target handling build the vendored
+# C fine locally). Linux CI overrides `[wasm] cc/cxx/ar` to an absolute path to
+# the wasm-cc.sh / wasm-ar.sh wrappers (which force --target=wasm32-unknown-
+# unknown — cc-rs doesn't pass it for `wasm32v1-none` under distro clang). Mirror
+# of ../midnight-node (bazel) toolchains/wasm32_cc.sh.
 _WASM_CC = read_config("wasm", "cc", "/opt/homebrew/opt/llvm/bin/clang")
 _WASM_CXX = read_config("wasm", "cxx", "/opt/homebrew/opt/llvm/bin/clang++")
 _WASM_AR = read_config("wasm", "ar", "/opt/homebrew/opt/llvm/bin/llvm-ar")

@@ -38,8 +38,9 @@ runs:
         # pkg-config: openssl-sys's build script probes the system openssl to set
         # its version cfgs (ossl3xx) — without the headers it sets the wrong ones
         # and openssl's ffi bindings don't resolve ("not found in `ffi`").
+        # cmake + perl: aws-lc-sys builds AWS-LC (C crypto) from source via cmake.
         sudo apt-get install -y --no-install-recommends \
-          clang lld llvm binaryen libssl-dev pkg-config
+          clang lld llvm binaryen libssl-dev pkg-config cmake perl
         # Some ubuntu images ship only version-suffixed binaries; expose the
         # unsuffixed names the buck toolchain (toolchains/BUCK) expects.
         for t in clang clang++ llvm-ar; do

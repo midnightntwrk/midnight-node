@@ -68,13 +68,16 @@ jobs:
           # and blows the actions-cache budget. Each run is a cold build for now;
           # revisit with sharded-CAS persistence once the build is reliably green.
           snapshot-key-prefix: ""
-          # Point the wasm C toolchain at the runner's distro LLVM (macOS dev
-          # defaults in toolchains/BUCK don't exist here).
+          # Point the wasm C toolchain at the committed wrapper scripts (absolute
+          # path — the cc shim cd's before exec, so a relative name wouldn't
+          # resolve). They force --target=wasm32-unknown-unknown (cc-rs doesn't
+          # pass it for the wasm32v1-none rust target under distro clang) and
+          # resolve clang/llvm-ar from PATH.
           buckconfig-extra: |
             [wasm]
-            cc = /usr/bin/clang
-            cxx = /usr/bin/clang++
-            ar = /usr/bin/llvm-ar
+            cc = ${{ github.workspace }}/toolchains/wasm-cc.sh
+            cxx = ${{ github.workspace }}/toolchains/wasm-cc.sh
+            ar = ${{ github.workspace }}/toolchains/wasm-ar.sh
 
       - name: Diagnose runner arch + resolved platform
         run: |

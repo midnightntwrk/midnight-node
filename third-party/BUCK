@@ -17522,7 +17522,6 @@ cargo.rust_library(
         "serde",
         "std",
     ],
-    rustc_flags = ["--cfg=has_std"],
     visibility = [],
     deps = [
         ":equivalent-1",
@@ -27063,6 +27062,8 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "9",
         "CARGO_PKG_VERSION_PATCH": "116",
         "CARGO_PKG_VERSION_PRE": "",
+        "OPENSSL_INCLUDE_DIR": "/usr/include",
+        "OPENSSL_LIB_DIR": "/usr/lib/x86_64-linux-gnu",
         "OPT_LEVEL": "3",
     },
     rustc_link_lib = True,
@@ -40822,6 +40823,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "8",
         "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
+        "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
     },
     features = [
@@ -40922,6 +40924,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "9",
         "CARGO_PKG_VERSION_PATCH": "2",
         "CARGO_PKG_VERSION_PRE": "",
+        "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
     },
     features = [
@@ -41023,6 +41026,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_MINOR": "10",
         "CARGO_PKG_VERSION_PATCH": "1",
         "CARGO_PKG_VERSION_PRE": "",
+        "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
     },
     features = [
