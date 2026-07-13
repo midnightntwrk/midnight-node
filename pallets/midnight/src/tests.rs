@@ -12,6 +12,8 @@
 // limitations under the License.
 
 // grcov-excl-start
+#![allow(deprecated)]
+
 use super::*;
 use crate::{
 	Call as MidnightCall, mock,

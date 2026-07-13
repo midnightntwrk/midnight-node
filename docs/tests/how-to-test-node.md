@@ -373,10 +373,10 @@ only (annotated below):
 ```bash
 just toolkit-e2e <NODE_IMG> <TOOLKIT_IMG>
 just toolkit-update-ledger-parameters-e2e <NODE_IMG> <TOOLKIT_IMG>
-just toolkit-maintenance-e2e <NODE_IMG> <TOOLKIT_IMG>      # CI-disabled (LEDGER9-TOOLKIT-JS)
-just toolkit-contracts-e2e <NODE_IMG> <TOOLKIT_IMG>        # CI-disabled (LEDGER9-TOOLKIT-JS)
-just toolkit-mint-e2e <NODE_IMG> <TOOLKIT_IMG>             # CI-disabled (LEDGER9-TOOLKIT-JS)
-just toolkit-tokens-minter-e2e [<NODE_IMG> <TOOLKIT_IMG>]  # CI-disabled (LEDGER9-TOOLKIT-JS)
+just toolkit-maintenance-e2e <NODE_IMG> <TOOLKIT_IMG>
+just toolkit-contracts-e2e <NODE_IMG> <TOOLKIT_IMG>
+just toolkit-mint-e2e <NODE_IMG> <TOOLKIT_IMG>
+just toolkit-tokens-minter-e2e [<NODE_IMG> <TOOLKIT_IMG>]
 just startup-dev-e2e <NODE_IMG>
 just startup-qanet-e2e <NODE_IMG>                          # not scheduled by CI; manual / reusable-action only
 just genesis-wallets-undeployed-e2e <NODE_IMG> <TOOLKIT_IMG>
@@ -568,7 +568,6 @@ Reference reads:
 | `scripts/generate-utxo-ordering-overrides.sh`   | Generate the `utxo-ordering.sql` override snippets                  |
 | `sync-with-qanet.sh`, `sync-with-testnet-02.sh` | Bring up a local node attached to qanet / testnet-02 boot nodes     |
 | `local-environment/src/networks/local-env/hardfork-pv11.sh` | Drive a Cardano PV10 → PV11 (Dijkstra) hard fork on local-env (CC + SPO + DRep votes, ~5 epochs); reusable template for future hard forks |
-| `partnerchains-dev.sh`                          | Dev helper for the partner-chains submodule                         |
 
 ### 5.4 PR bots (saves a local rebuild)
 

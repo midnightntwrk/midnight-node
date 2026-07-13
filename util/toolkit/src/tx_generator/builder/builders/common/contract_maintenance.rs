@@ -13,12 +13,11 @@
 
 use super::ledger_helpers_local::{
 	BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuilderContext, ContractAddress,
-	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo,
+	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo, ContractOperationVersion,
 	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo,
 	MaintenanceUpdateInfo, OfferInfo, ProofProvider, SigningKey, TransactionWithContext,
-	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed,
-	contract_operation_versioned_verifier_key, deserialize, maintenance_verifying_key,
-	serialize_untagged,
+	UnshieldedWallet, UpdateInfo, VerifyingKey, Wallet, WalletSeed, contract_operation_version_of,
+	contract_operation_versioned_verifier_key, maintenance_verifying_key, serialize_untagged,
 };
 use async_trait::async_trait;
 use std::{path::PathBuf, sync::Arc};
@@ -108,15 +107,15 @@ impl<C: BuilderContext<DefaultDB>> ContractMaintenanceBuilder<C> {
 	fn create_intent_info(
 		&self,
 		committee: Vec<SigningKey>,
-		entrypoints_to_remove: Vec<EntryPointBuf>,
+		entrypoints_to_remove: Vec<(EntryPointBuf, ContractOperationVersion)>,
 		entrypoints_to_insert: Vec<(EntryPointBuf, ContractOperationVersionedVerifierKey)>,
 	) -> Box<dyn BuildIntent<DefaultDB, C>> {
 		log::info!("Create intent info for Maintenance");
 
 		let mut updates = vec![];
 
-		for entrypoint in entrypoints_to_remove {
-			updates.push(UpdateInfo::VerifierKeyRemove(entrypoint));
+		for (entrypoint, version) in entrypoints_to_remove {
+			updates.push(UpdateInfo::VerifierKeyRemove(entrypoint, version));
 		}
 
 		for (entrypoint, key) in entrypoints_to_insert {
@@ -251,19 +250,16 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 
 		check_committee(&committee_verifying_keys, &contract_state.maintenance_authority)?;
 
-		// Check remove entrypoints
-		let mut entrypoints_to_remove: Vec<_> = self
-			.remove_entrypoints
-			.iter()
-			.map(|e| EntryPointBuf(e.as_bytes().into()))
-			.collect();
-		let existing_entrypoints: Vec<_> = contract_state.operations.keys().collect();
-		for entrypoint in &entrypoints_to_remove {
-			if !existing_entrypoints.contains(entrypoint) {
-				return Err(ContractMaintenanceBuilderError::RemovingMissingEntrypoint(
-					String::from_utf8_lossy(&entrypoint.0).to_string(),
-				));
-			}
+		// Check remove entrypoints. The version (which slot the existing key lives in) is
+		// looked up per-entrypoint rather than assumed, since on ledger 9 a key can be in
+		// either the legacy `V3` (v6) or `V4` (v7) slot depending on what compiled it.
+		let mut entrypoints_to_remove = vec![];
+		for e in &self.remove_entrypoints {
+			let entrypoint = EntryPointBuf(e.as_bytes().into());
+			let op = contract_state.operations.get(&entrypoint).ok_or_else(|| {
+				ContractMaintenanceBuilderError::RemovingMissingEntrypoint(e.clone())
+			})?;
+			entrypoints_to_remove.push((entrypoint, contract_operation_version_of(&op)));
 		}
 
 		let mut entrypoints_to_insert = vec![];
@@ -280,18 +276,20 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 			let key_bytes =
 				std::fs::read(&p).map_err(ContractMaintenanceBuilderError::VerifierKeyLoadError)?;
 
-			let key: VerifierKey = deserialize(&mut &key_bytes[..])
+			// The maintenance-update variant is version- (and, on ledger 9, key-format-)
+			// dependent: pre-ledger-9 ledgers expose only `V3` (2.x key), while ledger 9
+			// accepts either a legacy 2.x key (`V3`) or a 3.x/zk-stdlib-v2 key (`V4`) and
+			// picks the right one by peeking the key file's tag.
+			// `contract_operation_versioned_verifier_key` selects the right variant/type
+			// for the active ledger generation.
+			let versioned_key = contract_operation_versioned_verifier_key(key_bytes)
 				.map_err(|e| ContractMaintenanceBuilderError::DeserializationError(p.clone(), e))?;
 
-			if existing_entrypoints.contains(&entrypoint) {
-				entrypoints_to_remove.push(entrypoint.clone());
+			if let Some(op) = contract_state.operations.get(&entrypoint) {
+				entrypoints_to_remove
+					.push((entrypoint.clone(), contract_operation_version_of(&op)));
 			}
-			// The maintenance-update variant is version-dependent: pre-ledger-9 ledgers expose
-			// only `V3` (2.x key), while ledger 9 stores newly deployed keys in the `V4`
-			// (zk-stdlib v2 / 3.x) slot. `contract_operation_versioned_verifier_key` selects the
-			// right variant for the active ledger generation.
-			entrypoints_to_insert
-				.push((entrypoint, contract_operation_versioned_verifier_key(key)));
+			entrypoints_to_insert.push((entrypoint, versioned_key));
 		}
 
 		if entrypoints_to_remove.is_empty()
