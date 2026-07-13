@@ -1914,6 +1914,8 @@ buildscript_run(
                 "AWS_LC_SYS_CMAKE_BUILDER": "1",
                 "CC": "/usr/bin/clang",
                 "CXX": "/usr/bin/clang++",
+                "DEBUG": "false",
+                "PROFILE": "release",
             },
         ),
         "linux-x86_64": dict(
@@ -1921,6 +1923,8 @@ buildscript_run(
                 "AWS_LC_SYS_CMAKE_BUILDER": "1",
                 "CC": "/usr/bin/clang",
                 "CXX": "/usr/bin/clang++",
+                "DEBUG": "false",
+                "PROFILE": "release",
             },
         ),
     },

@@ -10,6 +10,10 @@ if [ -x /opt/homebrew/opt/llvm/bin/clang ]; then
   CLANG=/opt/homebrew/opt/llvm/bin/clang
 elif [ -x /usr/local/opt/llvm/bin/clang ]; then
   CLANG=/usr/local/opt/llvm/bin/clang
+elif [ -x /usr/bin/clang ]; then
+  # Absolute path: under buck remote execution the action env may not carry a
+  # PATH that includes /usr/bin, so a bare `clang` would fail to resolve.
+  CLANG=/usr/bin/clang
 else
   CLANG=clang
 fi

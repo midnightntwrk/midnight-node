@@ -20,3 +20,8 @@ OPT_LEVEL = "3"
 AWS_LC_SYS_CMAKE_BUILDER = "1"
 CC = "/usr/bin/clang"
 CXX = "/usr/bin/clang++"
+# The `cmake` crate reads Cargo's PROFILE/DEBUG to pick CMAKE_BUILD_TYPE and
+# panics if PROFILE is unset ("environment variable `PROFILE` not defined").
+# reindeer's cargo_env doesn't emit them, so set them explicitly.
+PROFILE = "release"
+DEBUG = "false"
