@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,18 +13,23 @@
 
 //! Benchmarking setup for pallet-federated-authority-observation
 
+#![allow(clippy::unwrap_in_result)]
+
 use super::*;
 
 use crate::Pallet as FederatedAuthorityObservation;
 use core::str::FromStr;
 use frame_benchmarking::{account, v2::*};
+use frame_support::{BoundedVec, assert_ok};
 use frame_system::RawOrigin;
 use midnight_primitives_federated_authority_observation::MainchainMember;
 use sidechain_domain::{MainchainAddress, PolicyId};
 
-/// Helper function to generate accounts with mainchain members
-fn generate_accounts_with_mainchain<T: Config>(count: u32) -> Vec<(T::AccountId, MainchainMember)> {
-	(0..count)
+/// Helper function to generate accounts with mainchain members for council
+fn generate_council_members<T: Config>(
+	count: u32,
+) -> BoundedVec<(T::AccountId, MainchainMember), T::CouncilMaxMembers> {
+	let members: Vec<_> = (0..count)
 		.map(|i| {
 			let account_id = account("member", i, 0);
 			let mut bytes = [0u8; 28];
@@ -32,12 +37,33 @@ fn generate_accounts_with_mainchain<T: Config>(count: u32) -> Vec<(T::AccountId,
 			let mainchain_member = PolicyId(bytes);
 			(account_id, mainchain_member)
 		})
-		.collect()
+		.collect();
+	members.try_into().expect("too many council members")
+}
+
+/// Helper function to generate accounts with mainchain members for technical committee
+fn generate_tc_members<T: Config>(
+	count: u32,
+) -> BoundedVec<(T::AccountId, MainchainMember), T::TechnicalCommitteeMaxMembers> {
+	let members: Vec<_> = (0..count)
+		.map(|i| {
+			let account_id = account("tc_member", i, 0);
+			let mut bytes = [0u8; 28];
+			bytes[0] = i as u8;
+			let mainchain_member = PolicyId(bytes);
+			(account_id, mainchain_member)
+		})
+		.collect();
+	members.try_into().expect("too many tc members")
 }
 
 #[benchmarks]
 mod benchmarks {
 	use super::*;
+
+	fn reset_inherent_guard<T: Config>() {
+		InherentExecutedThisBlock::<T>::kill();
+	}
 
 	/// Benchmark resetting only Council members
 	/// Variable `a`: Number of council members to reset
@@ -47,18 +73,21 @@ mod benchmarks {
 		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
-		// Setup: Create initial state with some members
-		let initial_council = generate_accounts_with_mainchain::<T>(a + 1);
-		let initial_tc = generate_accounts_with_mainchain::<T>(b);
+		reset_inherent_guard::<T>();
 
-		let _ = FederatedAuthorityObservation::<T>::reset_members(
+		// Setup: Create initial state with some members
+		let initial_council = generate_council_members::<T>(a + 1);
+		let initial_tc = generate_tc_members::<T>(b);
+
+		assert_ok!(FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
 			initial_council,
 			initial_tc.clone(),
-		);
+		));
+		reset_inherent_guard::<T>();
 
 		// Create new council members
-		let new_council_members = generate_accounts_with_mainchain::<T>(a);
+		let new_council_members = generate_council_members::<T>(a);
 
 		#[extrinsic_call]
 		reset_members(RawOrigin::None, new_council_members, initial_tc);
@@ -76,18 +105,21 @@ mod benchmarks {
 		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
-		// Setup: Create initial state with some members
-		let initial_council = generate_accounts_with_mainchain::<T>(a);
-		let initial_tc = generate_accounts_with_mainchain::<T>(b + 1);
+		reset_inherent_guard::<T>();
 
-		let _ = FederatedAuthorityObservation::<T>::reset_members(
+		// Setup: Create initial state with some members
+		let initial_council = generate_council_members::<T>(a);
+		let initial_tc = generate_tc_members::<T>(b + 1);
+
+		assert_ok!(FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
 			initial_council.clone(),
 			initial_tc,
-		);
+		));
+		reset_inherent_guard::<T>();
 
 		// Create new TC members
-		let new_tc_members = generate_accounts_with_mainchain::<T>(b);
+		let new_tc_members = generate_tc_members::<T>(b);
 
 		#[extrinsic_call]
 		reset_members(RawOrigin::None, initial_council, new_tc_members);
@@ -105,19 +137,22 @@ mod benchmarks {
 		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
-		// Setup: Create initial state with some members
-		let initial_council = generate_accounts_with_mainchain::<T>(a + 1);
-		let initial_tc = generate_accounts_with_mainchain::<T>(b + 1);
+		reset_inherent_guard::<T>();
 
-		let _ = FederatedAuthorityObservation::<T>::reset_members(
+		// Setup: Create initial state with some members
+		let initial_council = generate_council_members::<T>(a + 1);
+		let initial_tc = generate_tc_members::<T>(b + 1);
+
+		assert_ok!(FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
 			initial_council,
 			initial_tc,
-		);
+		));
+		reset_inherent_guard::<T>();
 
 		// Create new members for both committees
-		let new_council_members = generate_accounts_with_mainchain::<T>(a);
-		let new_tc_members = generate_accounts_with_mainchain::<T>(b);
+		let new_council_members = generate_council_members::<T>(a);
+		let new_tc_members = generate_tc_members::<T>(b);
 
 		#[extrinsic_call]
 		reset_members(RawOrigin::None, new_council_members, new_tc_members);
@@ -135,15 +170,18 @@ mod benchmarks {
 		a: Linear<1, { T::CouncilMaxMembers::get() }>,
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() }>,
 	) {
-		// Setup: Create initial state with some members
-		let council_members = generate_accounts_with_mainchain::<T>(a);
-		let tc_members = generate_accounts_with_mainchain::<T>(b);
+		reset_inherent_guard::<T>();
 
-		let _ = FederatedAuthorityObservation::<T>::reset_members(
+		// Setup: Create initial state with some members
+		let council_members = generate_council_members::<T>(a);
+		let tc_members = generate_tc_members::<T>(b);
+
+		assert_ok!(FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
 			council_members.clone(),
 			tc_members.clone(),
-		);
+		));
+		reset_inherent_guard::<T>();
 
 		#[extrinsic_call]
 		reset_members(RawOrigin::None, council_members.clone(), tc_members.clone());

@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,25 +11,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+use std::num::TryFromIntError;
 
 use super::{
 	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
 	mn_ledger_local, transient_crypto_local,
 };
 
-use base_crypto_local::{hash::HashOutput, time::Timestamp};
+use base_crypto_local::hash::HashOutput;
 use ledger_storage_local::db::DB;
 use midnight_serialize_local::{Deserializable, Tagged};
 use transient_crypto_local::commitment::PureGeneratorPedersen;
 
-use coin_structure_local::coin::{UnshieldedTokenType, UserAddress};
+use coin_structure_local::coin::{NIGHT, UnshieldedTokenType, UserAddress};
 use ledger_storage_local::arena::Sp;
 use mn_ledger_local::{
 	error::MalformedTransaction,
 	structure::{
-		ClaimRewardsTransaction, ContractAction, IntentHash, LedgerState, ProofKind, ProofMarker,
-		SignatureKind, StandardTransaction, Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
+		ClaimKind, ClaimRewardsTransaction, ContractAction, IntentHash,
+		OutputInstructionUnshielded, ProofKind, ProofMarker, SignatureKind, StandardTransaction,
+		Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
 	},
 };
 use std::borrow::Borrow;
@@ -40,7 +42,7 @@ use super::{
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
 use crate::{
-	common::types::{BlockContext, Hash, SegmentId, UtxoInfo},
+	common::types::{Hash, SegmentId, UtxoInfo},
 	types::PERSISTENT_HASH_BYTES,
 };
 
@@ -86,9 +88,10 @@ where
 		InnerTx::tag_unique_factor()
 	}
 }
-pub enum ContractActionExt<P: ProofKind<D>, D: DB> {
+enum ContractActionExt<P: ProofKind<D>, D: DB> {
 	ContractAction(Box<ContractAction<P, D>>),
 	ClaimRewards { value: u128 },
+	ClaimBridgeTransfer { value: u128 },
 }
 
 struct UtxoOutputInfo {
@@ -123,14 +126,14 @@ fn from_utxo_spend(spend: UtxoSpend) -> UtxoInfo {
 
 #[derive(Default, Debug)]
 pub struct UnshieldedUtxos {
-	pub outputs: HashMap<SegmentId, Vec<UtxoInfo>>,
-	pub inputs: HashMap<SegmentId, Vec<UtxoInfo>>,
+	pub outputs: BTreeMap<SegmentId, Vec<UtxoInfo>>,
+	pub inputs: BTreeMap<SegmentId, Vec<UtxoInfo>>,
 }
 
 impl UnshieldedUtxos {
 	pub fn remove_failed_segments<D: DB>(
 		&mut self,
-		segments: &HashMap<SegmentId, Result<(), TransactionInvalid<D>>>,
+		segments: &BTreeMap<SegmentId, Result<(), TransactionInvalid<D>>>,
 	) {
 		segments.iter().for_each(|(segment_id, maybe_tx_invalid)| {
 			// Remove the failing segments from `outputs` and `inputs`
@@ -218,32 +221,6 @@ impl UnshieldedUtxos {
 }
 
 impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
-	// #[cfg(not(feature = "runtime-benchmarks"))]
-	pub(crate) fn validate(
-		&self,
-		ledger: &Ledger<D>,
-		block_context: &BlockContext,
-	) -> Result<(), LedgerApiError> {
-		self.0
-			.well_formed(
-				<Ledger<D> as Borrow<LedgerState<D>>>::borrow(ledger),
-				mn_ledger_local::verify::WellFormedStrictness::default(),
-				Timestamp::from_secs(block_context.tblock),
-			)
-			.map_err(|e| {
-				log::error!(target: LOG_TARGET, "Error validating Transaction: {e:?}");
-				LedgerApiError::Transaction(TransactionError::Malformed(e.into()))
-			})?;
-
-		log::info!(
-			target: LOG_TARGET,
-			"✅ Validated Midnight transaction {:?}",
-			hex::encode(self.hash())
-		);
-
-		Ok(())
-	}
-
 	pub(crate) fn hash(&self) -> Hash {
 		self.0.transaction_hash().0.0
 	}
@@ -271,8 +248,14 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 					}
 				})
 				.collect(),
-			Tx::ClaimRewards(ClaimRewardsTransaction { value, .. }) => {
-				vec![ContractActionExt::ClaimRewards { value: *value }]
+			Tx::ClaimRewards(ClaimRewardsTransaction { value, kind, .. }) => {
+				let action = match kind {
+					ClaimKind::Reward => ContractActionExt::ClaimRewards { value: *value },
+					ClaimKind::CardanoBridge => {
+						ContractActionExt::ClaimBridgeTransfer { value: *value }
+					},
+				};
+				vec![action]
 			},
 		};
 
@@ -290,6 +273,9 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 				},
 			},
 			ContractActionExt::ClaimRewards { value } => Operation::ClaimRewards { value },
+			ContractActionExt::ClaimBridgeTransfer { value } => {
+				Operation::ClaimBridgeTransfer { value }
+			},
 		})
 	}
 
@@ -322,8 +308,8 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 	}
 
 	pub(crate) fn unshielded_utxos(&self) -> UnshieldedUtxos {
-		let mut outputs: HashMap<u16, Vec<UtxoInfo>> = HashMap::new();
-		let mut inputs: HashMap<u16, Vec<UtxoInfo>> = HashMap::new();
+		let mut outputs: BTreeMap<u16, Vec<UtxoInfo>> = BTreeMap::new();
+		let mut inputs: BTreeMap<u16, Vec<UtxoInfo>> = BTreeMap::new();
 
 		let mut update_outputs = |segment_id: SegmentId, outputs_info: Vec<UtxoInfo>| {
 			if !outputs_info.is_empty() {
@@ -337,7 +323,7 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 			}
 		};
 
-		let utxos = match &self.0 {
+		match &self.0 {
 			Tx::Standard(tx) => {
 				for segment_id in tx.segments() {
 					// Guaranteed phase
@@ -348,7 +334,13 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 
 							let utxo_outputs = intent.guaranteed_outputs();
 							let outputs_info =
-								Self::utxos_info_from_output(utxo_outputs, intent_hash);
+								match Self::utxos_info_from_output(utxo_outputs, intent_hash) {
+									Ok(info) => info,
+									Err(e) => {
+										log::error!(target: LOG_TARGET, "Output index exceeds u32::MAX in guaranteed phase: {e}");
+										return UnshieldedUtxos::default();
+									},
+								};
 
 							let utxo_inputs = intent.guaranteed_inputs();
 							let inputs_info = Self::utxos_info_from_inputs(utxo_inputs);
@@ -365,7 +357,14 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 						let intent_hash = parent.intent_hash(segment_id).0.0;
 
 						let utxo_outputs = intent.fallible_outputs();
-						let outputs_info = Self::utxos_info_from_output(utxo_outputs, intent_hash);
+						let outputs_info =
+							match Self::utxos_info_from_output(utxo_outputs, intent_hash) {
+								Ok(info) => info,
+								Err(e) => {
+									log::error!(target: LOG_TARGET, "Output index exceeds u32::MAX in fallible phase: {e}");
+									return UnshieldedUtxos::default();
+								},
+							};
 
 						let utxo_inputs = intent.fallible_inputs();
 						let inputs_info = Self::utxos_info_from_inputs(utxo_inputs);
@@ -377,27 +376,45 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 						update_inputs(segment_id, inputs_info);
 					}
 				}
-				Some(UnshieldedUtxos { outputs, inputs })
+				UnshieldedUtxos { outputs, inputs }
 			},
-			_ => None,
-		};
-
-		utxos.unwrap_or_default()
+			Tx::ClaimRewards(claim) => {
+				let address = UserAddress::from(claim.owner.clone());
+				let address_bytes = address.0.0;
+				let intent_hash = OutputInstructionUnshielded {
+					amount: claim.value,
+					target_address: address,
+					nonce: claim.nonce,
+				}
+				.mk_intent_hash(NIGHT);
+				update_outputs(
+					0,
+					vec![UtxoInfo {
+						address: address_bytes,
+						token_type: NIGHT.0.0,
+						intent_hash: intent_hash.0.0,
+						value: claim.value,
+						output_no: 0,
+					}],
+				);
+				UnshieldedUtxos { outputs, inputs }
+			},
+		}
 	}
 
 	pub(crate) fn utxos_info_from_output(
 		outputs: Vec<UtxoOutput>,
 		intent_hash: [u8; PERSISTENT_HASH_BYTES],
-	) -> Vec<UtxoInfo> {
+	) -> Result<Vec<UtxoInfo>, TryFromIntError> {
 		outputs
 			.into_iter()
 			.enumerate()
 			.map(|(output_no, output)| {
 				let utxo_output_info =
-					UtxoOutputInfo { output, intent_hash, output_no: output_no as u32 };
-				UtxoInfo::from(utxo_output_info)
+					UtxoOutputInfo { output, intent_hash, output_no: u32::try_from(output_no)? };
+				Ok(UtxoInfo::from(utxo_output_info))
 			})
-			.collect()
+			.collect::<Result<Vec<_>, _>>()
 	}
 
 	pub(crate) fn utxos_info_from_inputs(inputs: Vec<UtxoSpend>) -> Vec<UtxoInfo> {
@@ -411,20 +428,23 @@ pub enum Operation {
 	Deploy { address: ContractAddress },
 	Maintain { address: ContractAddress },
 	ClaimRewards { value: u128 },
+	ClaimBridgeTransfer { value: u128 },
 }
 
 // grcov-excl-start
 #[cfg(test)]
 mod tests {
 	use super::super::super::{
-		super::{CRATE_NAME, helpers_local::extract_info_from_tx_with_context},
-		api,
+		super::{
+			CRATE_NAME, TransactionSignature as Signature, helpers_local::extract_tx_with_context,
+		},
+		BlockContext, api,
 	};
 	use super::*;
-	use base_crypto_local::signatures::Signature;
 	use ledger_storage_local::DefaultDB;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
+	use mn_ledger_local::structure::LedgerState;
 
 	const DEPLOY: &[u8] = midnight_node_res::undeployed::transactions::DEPLOY_TX;
 	const MALFORMED: &[u8] = include_bytes!("../../../../test-data/malformed_tx.json");
@@ -443,7 +463,7 @@ mod tests {
 		api: &api::Api,
 		bytes: &[u8],
 	) -> (api::Transaction<Signature, DefaultDB>, BlockContext) {
-		let (tx, block_context) = extract_info_from_tx_with_context(bytes);
+		let (tx, block_context) = extract_tx_with_context(bytes);
 		let tx = api.tagged_deserialize::<Transaction<Signature, DefaultDB>>(&tx);
 		assert!(tx.is_ok(), "Can't deserialize transaction: {}", tx.unwrap_err());
 
@@ -452,6 +472,9 @@ mod tests {
 
 	#[test]
 	fn should_validate_transaction() {
+		use base_crypto_local::time::Timestamp;
+		use std::borrow::Borrow;
+
 		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
 			return;
@@ -459,8 +482,12 @@ mod tests {
 		let api = api::new();
 		let (tx, block_context) = prepare_transaction(&api, DEPLOY);
 		let ledger = prepare_ledger();
-		let result = tx.validate(&ledger, &block_context);
-		assert!(result.is_ok(), "Transaction is invalid: {}", result.unwrap_err());
+		let result = tx.0.well_formed(
+			<Ledger<DefaultDB> as Borrow<LedgerState<DefaultDB>>>::borrow(&ledger),
+			mn_ledger_local::verify::WellFormedStrictness::default(),
+			Timestamp::from_secs(block_context.tblock),
+		);
+		assert!(result.is_ok(), "Transaction is invalid: {result:?}");
 	}
 
 	#[test]
@@ -511,6 +538,121 @@ mod tests {
 
 		assert!(fee.unwrap() > 0);
 		assert!(parameters.c_to_m_bridge_min_amount > 0);
+	}
+
+	fn make_utxo_output(value: u128, owner_byte: u8, type_byte: u8) -> UtxoOutput {
+		UtxoOutput {
+			value,
+			owner: UserAddress(HashOutput([owner_byte; PERSISTENT_HASH_BYTES])),
+			type_: UnshieldedTokenType(HashOutput([type_byte; PERSISTENT_HASH_BYTES])),
+		}
+	}
+
+	#[test]
+	fn utxos_info_from_output_empty_vec() {
+		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+			vec![],
+			[0u8; PERSISTENT_HASH_BYTES],
+		);
+		assert_eq!(result.unwrap(), vec![]);
+	}
+
+	#[test]
+	fn utxos_info_from_output_single_output() {
+		let output = make_utxo_output(100, 0x01, 0x02);
+		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+			vec![output],
+			[0u8; PERSISTENT_HASH_BYTES],
+		);
+		let infos = result.unwrap();
+		assert_eq!(infos.len(), 1);
+		assert_eq!(infos[0].output_no, 0);
+	}
+
+	#[test]
+	fn utxos_info_from_output_sequential_indices() {
+		let outputs = vec![
+			make_utxo_output(10, 0, 0),
+			make_utxo_output(20, 0, 0),
+			make_utxo_output(30, 0, 0),
+		];
+		let result = Transaction::<Signature, DefaultDB>::utxos_info_from_output(
+			outputs,
+			[0u8; PERSISTENT_HASH_BYTES],
+		);
+		let infos = result.unwrap();
+		assert_eq!(infos.len(), 3);
+		for (i, info) in infos.iter().enumerate() {
+			assert_eq!(info.output_no, u32::try_from(i).unwrap());
+		}
+	}
+
+	#[test]
+	fn utxos_info_from_output_field_propagation() {
+		let owner_bytes = [0xAA; PERSISTENT_HASH_BYTES];
+		let type_bytes = [0xBB; PERSISTENT_HASH_BYTES];
+		let intent_hash = [0xCC; PERSISTENT_HASH_BYTES];
+		let value = 42u128;
+
+		let output = UtxoOutput {
+			value,
+			owner: UserAddress(HashOutput(owner_bytes)),
+			type_: UnshieldedTokenType(HashOutput(type_bytes)),
+		};
+		let result =
+			Transaction::<Signature, DefaultDB>::utxos_info_from_output(vec![output], intent_hash);
+		let infos = result.unwrap();
+		assert_eq!(infos.len(), 1);
+
+		let info = &infos[0];
+		assert_eq!(info.address, owner_bytes);
+		assert_eq!(info.token_type, type_bytes);
+		assert_eq!(info.intent_hash, intent_hash);
+		assert_eq!(info.value, value);
+		assert_eq!(info.output_no, 0);
+	}
+
+	#[test]
+	fn unshielded_utxos_reports_claim_rewards_minted_utxo() {
+		use coin_structure_local::coin::Nonce;
+		use mn_ledger_local::structure::ClaimKind;
+
+		let value: u128 = 4_242;
+		let nonce = Nonce(HashOutput([7u8; PERSISTENT_HASH_BYTES]));
+
+		let claim = ClaimRewardsTransaction::<(), DefaultDB> {
+			network_id: "undeployed".to_string(),
+			value,
+			owner: Default::default(),
+			nonce,
+			signature: (),
+			kind: ClaimKind::CardanoBridge,
+		};
+
+		let address = UserAddress::from(claim.owner.clone());
+		let address_bytes = address.0.0;
+		let expected_intent_hash =
+			OutputInstructionUnshielded { amount: value, target_address: address, nonce }
+				.mk_intent_hash(NIGHT)
+				.0
+				.0;
+
+		let tx = Transaction::<(), DefaultDB>(Tx::ClaimRewards(claim));
+		let utxos = tx.unshielded_utxos();
+
+		assert!(utxos.inputs().is_empty(), "a claim spends no UTXO inputs");
+		let outputs = utxos.outputs();
+		assert_eq!(outputs.len(), 1, "a claim mints exactly one UTXO");
+
+		let info = &outputs[0];
+		assert_eq!(info.address, address_bytes, "minted UTXO owner must be the claimant");
+		assert_eq!(info.token_type, NIGHT.0.0, "minted UTXO must be NIGHT");
+		assert_eq!(
+			info.intent_hash, expected_intent_hash,
+			"intent hash must match claim_unshielded's"
+		);
+		assert_eq!(info.value, value, "minted UTXO value must equal the claimed amount");
+		assert_eq!(info.output_no, 0);
 	}
 }
 // grcov-excl-stop

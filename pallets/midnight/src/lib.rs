@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,6 +12,8 @@
 // limitations under the License.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
 
 /// Edit this file to define custom logic or remove it if it is not needed.
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
@@ -26,6 +28,8 @@ pub use midnight_primitives::{
 	LedgerMutFn, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
 };
 
+pub use midnight_node_ledger::types::active_version::LedgerApiError;
+
 #[cfg(test)]
 mod mock;
 
@@ -39,61 +43,63 @@ pub mod migrations;
 
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::{pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
+	use crate::alloc::string::ToString;
+	use frame_support::dispatch::GetDispatchInfo;
+	use frame_support::{ensure, pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
 	use scale_info::prelude::{string::String, vec::Vec};
+	use sidechain_domain::byte_string::BoundedString;
 
 	use midnight_node_ledger::types::{
 		self as LedgerTypes, GasCost, Tx as LedgerTx, UtxoInfo, active_ledger_bridge as LedgerApi,
 		active_version::{
-			DeserializationError, LedgerApiError, SerializationError, TransactionError,
+			BlockContext, DeserializationError, LedgerApiError, SerializationError,
+			TransactionError,
 		},
 	};
 	use sp_runtime::Weight;
 
 	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
 		fn get_ledger_state_key() -> Vec<u8> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
-			state_key.into()
+			StateKey::<T>::get()
 		}
 
+		#[allow(clippy::unwrap_in_result)] // generic error type E cannot be constructed here
 		fn mut_ledger_state<F, E, R>(f: F) -> Result<R, E>
 		where
 			F: FnOnce(Vec<u8>) -> Result<(Vec<u8>, R), E>,
 		{
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 
-			let (new_state_key, custom_result) = f(state_key.into())?;
+			let (new_state_key, custom_result) = f(state_key)?;
 
-			let new_state_key: BoundedVec<_, _> =
-				new_state_key.to_vec().try_into().expect("State key size out of boundaries");
-			StateKey::<T>::put(new_state_key.clone());
+			StateKey::<T>::put(new_state_key);
 
 			Ok(custom_result)
 		}
 	}
 
 	impl<T: Config> LedgerBlockContextProvider for Pallet<T> {
-		fn get_block_context() -> LedgerTypes::BlockContext {
+		fn get_block_context() -> BlockContext {
 			let parent_hash = <frame_system::Pallet<T>>::parent_hash();
 			let now_ms = <pallet_timestamp::Pallet<T>>::get();
+
 			let now_s = now_ms / <T as pallet_timestamp::Config>::Moment::from(1_000u32);
 			let drift_s = 30; // (from private const MAX_TIMESTAMP_DRIFT_MILLIS in substrate/frame/timestamp/src/lib.rs)
 
-			LedgerTypes::BlockContext {
+			let last_block_time = ParentTimestamp::<T>::get();
+
+			BlockContext {
 				tblock: now_s.unique_saturated_into(),
 				tblock_err: drift_s as u32,
 				parent_block_hash: parent_hash.as_ref().to_vec(),
+				last_block_time,
 			}
 		}
 	}
 
-	#[cfg(not(hardfork_test))]
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
-
-	#[cfg(hardfork_test)]
-	const STORAGE_VERSION: StorageVersion = StorageVersion::new(100);
 
 	// Manually add ~1% of block weight
 	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
@@ -130,16 +136,36 @@ pub mod pallet {
 
 	// The pallet's runtime storage items.
 	// https://docs.substrate.io/main-docs/build/runtime-storage/
-	pub type StateKeyLength = ConstU32<128>;
+
+	/// Maximum length for the serialized ledger state key.
+	///
+	/// Derivation (from midnight-ledger):
+	/// - Tag prefix: "midnight:storage-key(ledger-state[vXX]):" = ~40 bytes
+	/// - GLOBAL_TAG "midnight:" (9) + "storage-key(" (12) + "ledger-state[vXX]" (17) + "):" (2)
+	/// - ArenaKey discriminant: 1 byte
+	/// - DirectChildNode max size: SMALL_OBJECT_LIMIT = 1024 bytes
+	///
+	/// Theoretical maximum: 40 + 1 + 1024 = 1065 bytes
+	pub type StateKeyLength = ConstU32<1065>;
 	type MaxNetworkIdLength = ConstU32<64>;
 	#[pallet::storage]
 	#[pallet::getter(fn state_key)]
-	// Learn more about declaring storage items:
-	// https://docs.substrate.io/main-docs/build/runtime-storage/#declaring-storage-items
-	pub type StateKey<T> = StorageValue<_, BoundedVec<u8, StateKeyLength>>;
+	/// It is safe to keep the state key unbounded as its size can not be influenced by external users.
+	/// We might want still to verify the bounded length for genesis build due it may be not set by a ledger.
+	/// Handling of the case that state key will go out of boundaries during runtime operation is unrecoverable.
+	#[pallet::unbounded]
+	pub type StateKey<T> = StorageValue<_, Vec<u8>, ValueQuery>;
+
+	#[pallet::type_value]
+	pub fn DefaultParentTimestamp() -> u64 {
+		0
+	}
 
 	#[pallet::storage]
-	pub type NetworkId<T> = StorageValue<_, BoundedVec<u8, MaxNetworkIdLength>>;
+	pub type ParentTimestamp<T> = StorageValue<_, u64, ValueQuery, DefaultParentTimestamp>;
+
+	#[pallet::storage]
+	pub type NetworkId<T> = StorageValue<_, BoundedString<MaxNetworkIdLength>, ValueQuery>;
 
 	#[pallet::type_value]
 	pub fn DefaultWeight() -> Weight {
@@ -258,6 +284,12 @@ pub mod pallet {
 		HostApiError,
 		#[codec(index = 11)]
 		NetworkIdNotString,
+		#[codec(index = 12)]
+		GetTransactionContextError,
+		#[codec(index = 13)]
+		ContractNotPresent,
+		#[codec(index = 14)]
+		BeneficiaryNotFound,
 	}
 	// grcov-excl-stop
 
@@ -276,6 +308,11 @@ pub mod pallet {
 				LedgerApiError::BlockLimitExceededError => Error::<T>::BlockLimitExceededError,
 				LedgerApiError::FeeCalculationError => Error::<T>::FeeCalculationError,
 				LedgerApiError::HostApiError => Error::<T>::HostApiError,
+				LedgerApiError::GetTransactionContextError => {
+					Error::<T>::GetTransactionContextError
+				},
+				LedgerApiError::ContractNotPresent => Error::<T>::ContractNotPresent,
+				LedgerApiError::BeneficiaryNotFound => Error::<T>::BeneficiaryNotFound,
 			}
 		}
 	}
@@ -283,60 +320,44 @@ pub mod pallet {
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_block: BlockNumberFor<T>) -> Weight {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			// Ensure ledger storage is initialized for current runtime version.
+			let reinitialized = LedgerApi::ensure_storage_initialized();
+			if reinitialized {
+				log::info!("Ledger storage (re)initialized");
+			}
 
-			LedgerApi::pre_fetch_storage(&state_key).expect("Failed to pre-fetch storage");
+			// Get the Timestamp
+			// Timestamp inherent hasn't been executed yet, so this will == parent block's timestamp
+			let parent_ms = <pallet_timestamp::Pallet<T>>::get();
+			let parent_s = parent_ms / <T as pallet_timestamp::Config>::Moment::from(1_000u32);
+			let parent_s = parent_s.unique_saturated_into();
+			ParentTimestamp::<T>::set(parent_s);
 
 			ConfigurableOnInitializeWeight::<T>::get()
 		}
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
 			// Post Block Ledger Update
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 
-			let state_root = LedgerApi::post_block_update(&state_key, block_context.clone())
-				.expect("Post block update failed");
+			let state_root = LedgerApi::apply_post_block_update(&state_key, block_context.clone())
+				.expect("FATAL: Apply post block update failed");
 
-			let new_state_key: BoundedVec<_, _> =
-				state_root.to_vec().try_into().expect("State key size out of boundaries");
-			StateKey::<T>::put(new_state_key);
+			StateKey::<T>::put(state_root);
 
 			// Flush ledger storage changes to disk
 			LedgerApi::flush_storage();
-
-			let (reward, beneficiary) = T::BlockReward::get();
-			if reward == 0 {
-				return;
-			}
-			if let Some(beneficiary) = beneficiary {
-				let state_key = StateKey::<T>::get().expect("Failed to get state key");
-
-				match LedgerApi::mint_coins(&state_key, reward, &beneficiary[..], block_context) {
-					Ok(new_state_key) => {
-						log::info!("Minting {reward:?} coins for {beneficiary:?}");
-						Self::deposit_event(Event::PayoutMinted(PayoutDetails {
-							amount: reward,
-							receiver: beneficiary.to_vec(),
-						}));
-						let state_key: BoundedVec<_, _> =
-							new_state_key.try_into().expect("New state key size out of boundaries");
-						StateKey::<T>::put(state_key);
-
-						LedgerApi::flush_storage();
-					},
-					Err(e) => log::error!("Unable to mint coins: {e:#?}"),
-				};
-			}
 		}
 
-		#[cfg(hardfork_test)]
 		fn on_runtime_upgrade() -> Weight {
-			if Self::in_code_storage_version() != Self::on_chain_storage_version() {
-				LedgerApi::drop_default_storage();
-				LedgerApi::set_default_storage();
+			// Ensure ledger storage is initialized for current runtime version.
+			// Storage initialization is also handled in on_initialize for rollback-safety.
+			let reinitialized = LedgerApi::ensure_storage_initialized();
+			if reinitialized {
+				log::info!("Ledger storage (re)initialized");
 			}
-			// TODO: Benchmark Weight in case of a real hard-fork
+
 			ConfigurableOnRuntimeUpgradeWeight::<T>::get()
 		}
 	}
@@ -350,7 +371,7 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
@@ -362,9 +383,8 @@ pub mod pallet {
 			)
 			.map_err(Error::<T>::from)?;
 
-			let state_key: BoundedVec<_, _> =
-				result.state_root.to_vec().try_into().expect("State key size out of boundaries");
-			StateKey::<T>::put(state_key);
+			let new_state_key = result.state_root;
+			StateKey::<T>::put(new_state_key);
 
 			let tx_hash = result.tx_hash;
 			for address in result.call_addresses {
@@ -408,7 +428,7 @@ pub mod pallet {
 			Ok(())
 		}
 
-		#[pallet::call_index(2)]
+		#[pallet::call_index(1)]
 		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
 		// A system transaction for configuring contract call weights
 		pub fn set_tx_size_weight(origin: OriginFor<T>, new_weight: Weight) -> DispatchResult {
@@ -419,6 +439,7 @@ pub mod pallet {
 	}
 
 	#[pallet::validate_unsigned]
+	#[allow(deprecated)]
 	impl<T: Config> ValidateUnsigned for Pallet<T> {
 		type Call = Call<T>;
 		fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
@@ -442,9 +463,27 @@ pub mod pallet {
 		}
 
 		fn pre_dispatch(call: &Self::Call) -> Result<(), TransactionValidityError> {
-			let block_context = Self::get_block_context();
+			let Call::send_mn_transaction { midnight_tx } = call else {
+				return Err(Self::invalid_transaction(Default::default()));
+			};
 
-			Self::validate_unsigned(call, block_context).map(|_| ())
+			// Substrate's Bare extrinsic path runs pallet pre_dispatch before the
+			// CheckWeight extension, so we pre-check here to avoid expensive ledger
+			// validation for txs that won't fit in the block.
+			Self::check_weight(call)?;
+
+			let block_context = Self::get_block_context();
+			let state_key = StateKey::<T>::get();
+			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
+
+			LedgerApi::validate_guaranteed_execution(
+				&state_key,
+				midnight_tx,
+				block_context,
+				runtime_version,
+			)
+			.map_err(|e| Self::invalid_transaction(e.into()))?;
+			Ok(())
 		}
 	}
 
@@ -452,20 +491,19 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		pub fn initialize_state(network_id: &str, state_key: &[u8]) {
 			//todo add checks
-			let genesis_state_key: BoundedVec<_, _> =
+			// It is correct to call expect for genesis initialization
+			let genesis_state_key: BoundedVec<u8, StateKeyLength> =
 				state_key.to_vec().try_into().expect("Genesis state key size out of boundaries");
 			StateKey::<T>::put(genesis_state_key);
 
-			let network_id: BoundedVec<_, _> = network_id
-				.as_bytes()
-				.to_vec()
-				.try_into()
+			// It is correct to call expect for genesis initialization
+			let network_id = BoundedString::<MaxNetworkIdLength>::try_from(network_id)
 				.expect("Network Id size out of boundaries");
 			NetworkId::<T>::put(network_id);
 		}
 
 		pub fn get_contract_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_contract_state(&state_key, contract_address)
 		}
 
@@ -481,33 +519,61 @@ pub mod pallet {
 
 		// grcov-excl-start
 		pub fn get_network_id() -> String {
-			match <NetworkId<T>>::get() {
-				None => String::new(),
-				Some(name) => String::from_utf8(name.to_vec()).expect("NetworkId is not a String"),
-			}
+			NetworkId::<T>::get().to_string()
 		}
 
 		pub fn get_zswap_chain_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_zswap_chain_state(&state_key, contract_address)
 		}
 		// grcov-excl-stop
+
+		/// Early block weight check to avoid expensive ledger validation for
+		/// transactions that won't fit. It is slightly more relaxed than
+		/// `frame_system::extensions::check_weight::calculate_consumed_weight`.
+		/// Assumes that Dispatch class has both max_total and reserved limits set.
+		/// Assumes that `frame_system::extensions::check_weight::calculate_consumed_weight` is
+		/// called later
+		fn check_weight(call: &Call<T>) -> Result<(), TransactionValidityError> {
+			let info = call.get_dispatch_info();
+			let maximum_weight = T::BlockWeights::get();
+			let mut all_weight = <frame_system::Pallet<T>>::block_weight();
+
+			let limit_per_class = maximum_weight.get(info.class);
+			let extrinsic_weight =
+				info.total_weight().saturating_add(limit_per_class.base_extrinsic);
+
+			let (max_total_limit, reserved_limit) =
+				match (limit_per_class.max_total, limit_per_class.reserved) {
+					(Some(max_total), Some(reserved)) => (max_total, reserved),
+					_ => return Ok(()),
+				};
+
+			all_weight
+				.checked_accrue(extrinsic_weight, info.class)
+				.map_err(|_| InvalidTransaction::ExhaustsResources)?;
+
+			let per_class = *all_weight.get(info.class);
+			let class_limit_hit = per_class.any_gt(max_total_limit);
+			let block_limit_hit = all_weight.total().any_gt(maximum_weight.max_block)
+				&& per_class.any_gt(reserved_limit);
+
+			ensure!(!class_limit_hit && !block_limit_hit, InvalidTransaction::ExhaustsResources);
+			Ok(())
+		}
 
 		//todo annotate with exclude for non test runs
 		fn invalid_transaction(error_code: u8) -> TransactionValidityError {
 			TransactionValidityError::Invalid(InvalidTransaction::Custom(error_code))
 		}
 
-		fn validate_unsigned(
-			call: &Call<T>,
-			block_context: LedgerTypes::BlockContext,
-		) -> TransactionValidity {
+		fn validate_unsigned(call: &Call<T>, block_context: BlockContext) -> TransactionValidity {
 			if let Call::send_mn_transaction { midnight_tx } = call {
-				let state_key = StateKey::<T>::get().expect("Failed to get state key");
+				let state_key = StateKey::<T>::get();
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
-				let (tx_hash, _) = LedgerApi::validate_transaction(
+				let tx_hash = LedgerApi::validate_transaction(
 					&state_key,
 					midnight_tx,
 					block_context,
@@ -529,33 +595,43 @@ pub mod pallet {
 		}
 
 		pub fn get_unclaimed_amount(beneficiary: &[u8]) -> Result<u128, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_unclaimed_amount(&state_key, beneficiary)
 		}
 
 		pub fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_ledger_parameters(&state_key)
 		}
 
+		pub fn get_c_to_m_bridge_min_amount() -> Result<u128, LedgerApiError> {
+			let state_key = StateKey::<T>::get();
+			LedgerApi::get_c_to_m_bridge_min_amount(&state_key)
+		}
+
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 			let max_weight = T::BlockWeights::get().max_block.ref_time();
 			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
 		}
 
 		pub fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get().expect("Failed to get state key");
+			let state_key = StateKey::<T>::get();
 			LedgerApi::get_zswap_state_root(&state_key)
+		}
+
+		pub fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
+			let state_key = StateKey::<T>::get();
+			LedgerApi::get_ledger_state_root(&state_key)
 		}
 
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
-			let gas_cost =
-				Self::get_transaction_cost(tx).expect("Should be able to inspect transactions");
-
-			Weight::from_parts(gas_cost, 0) + ConfigurableTransactionSizeWeight::<T>::get()
+			Self::get_transaction_cost(tx)
+				.map(|gas_cost| Weight::from_parts(gas_cost, 0))
+				.unwrap_or(crate::EXTRA_WEIGHT_TX_SIZE)
+				+ ConfigurableTransactionSizeWeight::<T>::get()
 		}
 	}
 }

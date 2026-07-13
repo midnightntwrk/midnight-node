@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,13 +13,17 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+extern crate alloc;
+
+use alloc::vec::Vec;
 use hex_literal::hex;
-use midnight_node_ledger::types::{BlockContext, Hash, Tx, active_version::LedgerApiError};
+use midnight_node_ledger::types::{
+	Hash, Tx,
+	active_version::{BlockContext, LedgerApiError},
+};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
-use sp_runtime::RuntimeDebug;
-use sp_std::vec::Vec;
 
 pub type LedgerMutFn<E> = fn(Vec<u8>) -> Result<Vec<u8>, E>;
 /// Trait to allow pallets to mutate the Ledger state
@@ -45,14 +49,14 @@ pub trait MidnightSystemTransactionExecutor {
 
 #[derive(Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
 pub enum TransactionType {
-	MidnightTx(sp_std::vec::Vec<u8>, Option<Tx>),
+	MidnightTx(Vec<u8>, Option<Tx>),
 	TimestampTx(u64),
 	UnknownTx,
 }
 
 #[derive(Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]
 pub enum TransactionTypeV2 {
-	MidnightTx(sp_std::vec::Vec<u8>, Result<Tx, LedgerApiError>),
+	MidnightTx(Vec<u8>, Result<Tx, LedgerApiError>),
 	TimestampTx(u64),
 	UnknownTx,
 }
@@ -61,8 +65,8 @@ pub use bridge::{BridgeRecipient, BridgeRecipientError, BridgeRecipientMaxLen};
 
 pub mod bridge {
 	use super::*;
+	use core::ops::Deref;
 	use sp_core::{Get, H256, bounded::BoundedVec, crypto::UncheckedFrom};
-	use sp_std::{ops::Deref, vec::Vec};
 
 	/// Maximum length (bytes) of a Midnight recipient encoded in the bridge datum.
 	pub const BRIDGE_RECIPIENT_MAX_BYTES: u32 = 32;
@@ -77,7 +81,7 @@ pub mod bridge {
 	}
 
 	/// Error type returned when bridge recipient bytes cannot be converted.
-	#[derive(Clone, Copy, PartialEq, Eq, RuntimeDebug)]
+	#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 	pub enum BridgeRecipientError {
 		/// The encoded recipient exceeds the configured byte limit.
 		TooLong,
@@ -93,7 +97,7 @@ pub mod bridge {
 		DecodeWithMemTracking,
 		MaxEncodedLen,
 		TypeInfo,
-		RuntimeDebug,
+		Debug,
 		Default,
 	)]
 	#[scale_info(skip_type_params(BridgeRecipientMaxLen))]

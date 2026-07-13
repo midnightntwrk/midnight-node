@@ -1,0 +1,180 @@
+use alloc::collections::{BTreeMap, BTreeSet};
+use frame_support::inherent::ProvideInherent;
+use midnight_primitives_cnight_observation::{
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	INHERENT_IDENTIFIER, ObservedUtxos, TimestampUnixMillis,
+};
+use midnight_primitives_mainchain_follower::{
+	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
+	ObservedUtxoData,
+};
+use pallet_cnight_observation::{
+	Mapping, NextCardanoPosition, UtxoOwners,
+	config::{CNightGenesis, MappingEntryGenesis, SystemTx},
+};
+use pallet_cnight_observation_mock::mock_with_capture as mock;
+use sidechain_domain::McBlockHash;
+use sp_inherents::InherentData;
+use sp_runtime::traits::Dispatchable;
+use std::{path::Path, sync::Arc};
+
+use serde_json;
+use tokio::{fs::File, io::AsyncWriteExt};
+
+const TX_CAPACITY: usize = 1000;
+// Genesis is one-shot and not consensus-validated, so we use a generous over-fetch
+// factor to ensure we never split a transaction across a paged query.
+const UTXO_OVERESTIMATE: usize = TX_CAPACITY * 64;
+
+#[derive(Debug, thiserror::Error)]
+pub enum CNightGenesisError {
+	#[error("Failed to query UTXOs: {0}")]
+	UtxoQueryError(Box<dyn std::error::Error + Send + Sync>),
+
+	#[error("Failed to serialize UTXOs to JSON: {0}")]
+	SerdeError(#[from] serde_json::Error),
+
+	#[error("I/O error: {0}")]
+	IoError(#[from] std::io::Error),
+}
+
+fn create_inherent(
+	utxos: Vec<ObservedUtxo>,
+	next_cardano_position: CardanoPosition,
+) -> InherentData {
+	let mut inherent_data = InherentData::new();
+	inherent_data
+		.put_data(
+			INHERENT_IDENTIFIER,
+			&MidnightObservationTokenMovement { utxos, next_cardano_position },
+		)
+		.expect("inherent data insertion should not fail");
+	inherent_data
+}
+
+struct PalletExecResult {
+	mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntryGenesis>>,
+	utxo_owners: BTreeMap<[u8; 32], DustPublicKeyBytes>,
+	next_cardano_position: CardanoPosition,
+	system_tx: Option<Vec<u8>>,
+}
+
+fn exec_pallet(utxos: &ObservedUtxos) -> PalletExecResult {
+	mock::new_test_ext().execute_with(|| {
+		let inherent_data = create_inherent(utxos.utxos.clone(), utxos.end.clone());
+		let call = mock::CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = mock::RuntimeCall::CNightObservation(call);
+		assert!(call.dispatch(frame_system::RawOrigin::None.into()).is_ok());
+
+		let mut mappings: BTreeMap<CardanoRewardAddressBytes, Vec<MappingEntryGenesis>> =
+			BTreeMap::new();
+		for (addr, utxo_id, dust_public_key) in Mapping::<mock::Test>::iter() {
+			mappings.entry(addr).or_default().push(MappingEntryGenesis {
+				cardano_reward_address: addr,
+				dust_public_key,
+				utxo_tx_hash: utxo_id.tx_hash,
+				utxo_index: utxo_id.index.0,
+			});
+		}
+
+		PalletExecResult {
+			mappings,
+			utxo_owners: UtxoOwners::<mock::Test>::iter().map(|(k, v)| (k.0, v)).collect(),
+			next_cardano_position: NextCardanoPosition::<mock::Test>::get(),
+			system_tx: mock::MidnightSystemTx::pop_captured_system_txs().pop(),
+		}
+	})
+}
+
+pub async fn generate_cnight_genesis(
+	addresses: CNightAddresses,
+	cnight_observation_data_source: Arc<dyn MidnightCNightObservationDataSource>,
+	// Cardano block hash("mc hash") which is assumed to be the tip for the queries
+	cardano_tip: McBlockHash,
+	output_path: impl AsRef<Path>,
+) -> Result<(), CNightGenesisError> {
+	let mut current_position = CardanoPosition {
+		// Required to fulfill struct, but value will be unused
+		block_hash: McBlockHash([0; 32]),
+		block_number: 0,
+		block_timestamp: TimestampUnixMillis(0),
+		tx_index_in_block: 0,
+	};
+
+	let mut all_utxos = Vec::new();
+
+	loop {
+		let observed = cnight_observation_data_source
+			.get_utxos_up_to_capacity(
+				&addresses,
+				&current_position,
+				cardano_tip.clone(),
+				TX_CAPACITY,
+				UTXO_OVERESTIMATE,
+			)
+			.await
+			.map_err(CNightGenesisError::UtxoQueryError)?;
+
+		current_position = observed.end;
+		log::info!(
+			"Fetched {} cNight utxos. Current tip: {current_position:?}",
+			observed.utxos.len(),
+		);
+		all_utxos.extend(observed.utxos);
+
+		// Optional: break early if position is past the tip
+		if current_position.block_hash == cardano_tip {
+			break;
+		}
+	}
+
+	// Collect all Cardano reward addresses that appear in any Registration or Deregistration.
+	// AssetCreate/AssetSpend for owners without a registration produce no effect in exec_pallet,
+	// so we can safely filter them out before processing.
+	let registered_addresses: BTreeSet<CardanoRewardAddressBytes> = all_utxos
+		.iter()
+		.filter_map(|utxo| match &utxo.data {
+			ObservedUtxoData::Registration(d) => Some(d.cardano_reward_address),
+			ObservedUtxoData::Deregistration(d) => Some(d.cardano_reward_address),
+			_ => None,
+		})
+		.collect();
+
+	let total_before = all_utxos.len();
+	all_utxos.retain(|utxo| match &utxo.data {
+		ObservedUtxoData::Registration(_) | ObservedUtxoData::Deregistration(_) => true,
+		ObservedUtxoData::AssetCreate(d) => registered_addresses.contains(&d.owner),
+		ObservedUtxoData::AssetSpend(d) => registered_addresses.contains(&d.owner),
+	});
+	log::info!(
+		"Filtered UTXOs: {} -> {} (removed {} without registration)",
+		total_before,
+		all_utxos.len(),
+		total_before - all_utxos.len(),
+	);
+
+	let observed_utxos = ObservedUtxos {
+		start: CardanoPosition::default(),
+		end: current_position,
+		utxos: all_utxos,
+	};
+
+	let PalletExecResult { mappings, utxo_owners, next_cardano_position, system_tx } =
+		exec_pallet(&observed_utxos);
+
+	let config = CNightGenesis {
+		addresses,
+		observed_utxos,
+		mappings,
+		utxo_owners,
+		next_cardano_position,
+		system_tx: system_tx.map(SystemTx),
+	};
+
+	let json = serde_json::to_string_pretty(&config)?;
+	let mut file = File::create(output_path.as_ref()).await?;
+	file.write_all(json.as_bytes()).await?;
+	log::info!("Wrote cNIGHT Generates Dust genesis to {}", output_path.as_ref().display());
+	Ok(())
+}

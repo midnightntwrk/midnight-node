@@ -8,18 +8,29 @@ use hex::ToHex;
 use midnight_node_ledger_helpers::{
 	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
 };
-mod encoded_zswap_local_state;
-pub use encoded_zswap_local_state::{EncodedOutputInfo, EncodedZswapLocalState};
+use zeroize::Zeroize;
+pub(crate) mod encoded_zswap_local_state;
+pub use encoded_zswap_local_state::{EncodedOutput, EncodedZswapLocalState};
 
 use crate::cli_parsers as cli;
 
 const BUILD_DIST: &str = "dist/bin.js";
+const DEFAULT_COMPACTC_VERSION: &str = include_str!("../../../../COMPACTC_VERSION");
 
 #[derive(Args, Debug)]
 pub struct ToolkitJs {
 	/// location of the toolkit-js.
 	#[arg(long = "toolkit-js-path", env = "TOOLKIT_JS_PATH")]
 	pub path: String,
+
+	/// version of compactc
+	#[arg(
+        long = "compactc-version",
+        env = "COMPACTC_VERSION",
+        default_value = DEFAULT_COMPACTC_VERSION,
+        value_parser = cli::semver_decode
+    )]
+	pub compactc_version: semver::Version,
 }
 
 /// Adds some protection against accidentally passing relative types to toolkit-js
@@ -49,7 +60,11 @@ impl From<PathBuf> for RelativePath {
 
 pub enum Command {
 	Deploy(DeployArgs),
-	Circuit { args: CircuitArgs, input_zswap_state: Option<RelativePath> },
+	Circuit {
+		args: CircuitArgs,
+		input_zswap_state: Option<RelativePath>,
+		ledger_parameters: RelativePath,
+	},
 	Maintain(MaintainCommand),
 }
 
@@ -57,65 +72,71 @@ pub enum Command {
 pub struct CircuitArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	config: RelativePath,
+	pub config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
-	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
-	contract_address: ContractAddress,
+	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
+	pub contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
-	network: String,
+	pub network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
 	/// Input file containing the current on-chain circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	input_onchain_state: RelativePath,
+	pub input_onchain_state: RelativePath,
 	/// Input file containing the private circuit state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	input_private_state: RelativePath,
+	pub input_private_state: RelativePath,
+	/// A file path of where the generated 'ZswapLocalState' is stored.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	pub input_zswap_state: Option<RelativePath>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_intent: RelativePath,
+	pub output_intent: RelativePath,
+	/// The output file of the on-chain (public) state
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	pub output_onchain_state: Option<RelativePath>,
 	/// The output file of the private state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_private_state: RelativePath,
+	pub output_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_zswap_state: RelativePath,
+	pub output_zswap_state: RelativePath,
 	/// A file path of where the invoked circuit result data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_result: Option<RelativePath>,
+	pub output_result: Option<RelativePath>,
 	/// Name of the circuit to invoke
-	circuit_id: String,
+	pub circuit_id: String,
 	/// Arguments to pass to the circuit
-	call_args: Vec<String>,
+	pub call_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
 pub struct DeployArgs {
 	/// a user-defined config.ts file of the contract. See toolkit-js for the example.
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	config: RelativePath,
+	pub config: RelativePath,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
-	network: String,
+	pub network: String,
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
 	/// Contract maintenance authority seed.
 	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	authority_seed: Option<WalletSeed>,
+	pub authority_seed: Option<WalletSeed>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_intent: RelativePath,
+	pub output_intent: RelativePath,
 	/// The output file of the private state
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_private_state: RelativePath,
+	pub output_private_state: RelativePath,
 	/// A file path of where the generated 'ZswapLocalState' data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
-	output_zswap_state: RelativePath,
+	pub output_zswap_state: RelativePath,
 	/// Arguments to pass to the contract constructor
-	constructor_args: Vec<String>,
+	pub constructor_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -124,7 +145,7 @@ pub struct SharedMaintainArgs {
 	#[arg(long, short, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	config: RelativePath,
 	/// Hex-encoded ledger-serialized address of the contract - this should include the network id header
-	#[arg(long, short = 'a', value_parser = cli::hex_ledger_untagged_decode::<ContractAddress>)]
+	#[arg(long, short = 'a', value_parser = cli::contract_address_decode)]
 	contract_address: ContractAddress,
 	/// Target network
 	#[arg(long, default_value = "undeployed")]
@@ -147,7 +168,7 @@ pub struct SharedMaintainArgs {
 pub struct MaintainContractArgs {
 	#[command(flatten)]
 	shared: SharedMaintainArgs,
-	#[arg(value_parser = cli::wallet_seed_decode)]
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
 	/// A public BIP-340 signing key, hex encoded. Replaces the signing key for the contract.
 	new_authority: WalletSeed,
 }
@@ -190,21 +211,34 @@ pub enum ToolkitJsError {
 	ExecutionError(std::io::Error),
 	#[error("failed to read toolkit-js output")]
 	ToolkitJsOutputReadError(std::io::Error),
+	#[error("toolkit-js exited with {status}\nstdout: {stdout}\nstderr: {stderr}")]
+	NonZeroExit { status: std::process::ExitStatus, stdout: String, stderr: String },
 }
 
 impl ToolkitJs {
+	/// `true` if the pinned compactc predates 0.31.0 and therefore needs the
+	/// legacy `--network` flag passed to toolkit-js.
+	///
+	/// The comparison ignores any pre-release suffix on `compactc_version`, otherwise
+	/// semver matches doesn't behave as expected (0.30.0-<some-hash> < 0.31.0 is false!)
+	fn needs_legacy_network_flag(&self) -> bool {
+		let mut version = self.compactc_version.clone();
+		version.pre = semver::Prerelease::EMPTY;
+		semver::VersionReq::parse("<0.31.0").unwrap().matches(&version)
+	}
+
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
 		match cmd {
 			Command::Deploy(args) => self.execute_deploy(args),
-			Command::Circuit { args, input_zswap_state } => {
-				self.execute_ciruit(args, input_zswap_state)
+			Command::Circuit { args, input_zswap_state, ledger_parameters } => {
+				self.execute_circuit(args, input_zswap_state, ledger_parameters)
 			},
 			Command::Maintain(command) => self.execute_maintain(command),
 		}
 	}
 
 	pub fn execute_deploy(&self, args: DeployArgs) -> Result<(), ToolkitJsError> {
-		println!("Executing deploy command");
+		log::info!("Executing deploy command");
 		let config = args.config.absolute();
 		let output_intent = args.output_intent.absolute();
 		let output_private_state = args.output_private_state.absolute();
@@ -214,8 +248,6 @@ impl ToolkitJs {
 			"deploy",
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--output",
@@ -225,31 +257,45 @@ impl ToolkitJs {
 			"--output-zswap",
 			&output_zswap_state,
 		];
-		let signing_key = args.authority_seed.map(|s| {
-			serialize_untagged(UnshieldedWallet::default(s).signing_key())
-				.unwrap()
-				.encode_hex::<String>()
-		});
+		if self.needs_legacy_network_flag() {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
+
+		let mut signing_key = args
+			.authority_seed
+			.map(|s| {
+				let mut bytes = serialize_untagged(UnshieldedWallet::default(s).signing_key())
+					.map_err(ToolkitJsError::ExecutionError)?;
+				let hex = bytes.encode_hex::<String>();
+				bytes.zeroize();
+				Ok::<String, ToolkitJsError>(hex)
+			})
+			.transpose()?;
 		if let Some(ref key) = signing_key {
 			cmd_args.extend_from_slice(&["--signing", key]);
 		}
 		// Add positional args
 		cmd_args.extend(args.constructor_args.iter().map(|s| s.as_str()));
-		self.execute_js(&cmd_args)?;
-		println!(
+		let result = self.execute_js(&cmd_args);
+		signing_key.as_mut().map(|s| s.zeroize());
+		result?;
+		log::info!(
 			"written: {}, {}, {}",
-			args.output_intent, args.output_private_state, args.output_zswap_state
+			args.output_intent,
+			args.output_private_state,
+			args.output_zswap_state
 		);
 		Ok(())
 	}
 
-	pub fn execute_ciruit(
+	pub fn execute_circuit(
 		&self,
 		args: CircuitArgs,
 		input_zswap_state: Option<RelativePath>,
+		ledger_parameters: RelativePath,
 	) -> Result<(), ToolkitJsError> {
 		let contract_address_str = hex::encode(args.contract_address.0.0);
-		println!("Executing circuit command");
+		log::info!("Executing circuit command");
 		let config = args.config.absolute();
 		let input_onchain_state = args.input_onchain_state.absolute();
 		let input_private_state = args.input_private_state.absolute();
@@ -257,12 +303,11 @@ impl ToolkitJs {
 		let output_private_state = args.output_private_state.absolute();
 		let output_zswap_state = args.output_zswap_state.absolute();
 		let coin_public_key = hex::encode(args.coin_public.0.0);
+		let input_ledger_parameters = ledger_parameters.absolute();
 		let mut cmd_args = vec![
 			"circuit",
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
@@ -275,10 +320,19 @@ impl ToolkitJs {
 			&output_private_state,
 			"--output-zswap",
 			&output_zswap_state,
+			"--input-ledger-params",
+			&input_ledger_parameters,
 		];
+		if self.needs_legacy_network_flag() {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
 		let input_zswap_state = input_zswap_state.map(|s| s.absolute());
 		if let Some(ref input_zswap_state) = input_zswap_state {
 			cmd_args.extend_from_slice(&["--input-zswap", &input_zswap_state]);
+		}
+		let output_onchain_state = args.output_onchain_state.map(|s| s.absolute());
+		if let Some(ref output_onchain_state) = output_onchain_state {
+			cmd_args.extend_from_slice(&["--output-oc", &output_onchain_state]);
 		}
 		let output_result = args.output_result.map(|s| s.absolute());
 		if let Some(ref output_result) = output_result {
@@ -288,9 +342,11 @@ impl ToolkitJs {
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
 		cmd_args.extend(args.call_args.iter().map(|s| s.as_str()));
 		self.execute_js(&cmd_args)?;
-		println!(
+		log::info!(
 			"written: {}, {}, {}",
-			args.output_intent, args.output_private_state, args.output_zswap_state
+			args.output_intent,
+			args.output_private_state,
+			args.output_zswap_state
 		);
 		Ok(())
 	}
@@ -298,7 +354,7 @@ impl ToolkitJs {
 	pub fn execute_maintain(&self, command: MaintainCommand) -> Result<(), ToolkitJsError> {
 		let args = command.shared_args();
 		let contract_address_str = hex::encode(args.contract_address.0.0);
-		println!("Executing maintain command");
+		log::info!("Executing maintain command");
 		let config = args.config.absolute();
 		let input_onchain_state = args.input_onchain_state.absolute();
 		let output_intent = args.output_intent.absolute();
@@ -308,8 +364,6 @@ impl ToolkitJs {
 			command.name(),
 			"-c",
 			&config,
-			"--network",
-			&args.network,
 			"--coin-public",
 			&coin_public_key,
 			"--input",
@@ -317,12 +371,16 @@ impl ToolkitJs {
 			"--output",
 			&output_intent,
 		];
+		if self.needs_legacy_network_flag() {
+			cmd_args.extend_from_slice(&["--network", &args.network]);
+		}
+
 		if let Some(ref signing) = args.signing {
 			cmd_args.extend_from_slice(&["--signing", signing]);
 		}
 		// Add positional args
 		cmd_args.push(&contract_address_str);
-		let new_authority = match command {
+		let mut new_authority = match &command {
 			MaintainCommand::Contract(MaintainContractArgs { new_authority, .. }) => {
 				Some(new_authority.as_bytes().encode_hex::<String>())
 			},
@@ -337,16 +395,38 @@ impl ToolkitJs {
 				cmd_args.push(&vk_path);
 			}
 		}
-		self.execute_js(&cmd_args)?;
-		println!("written: {}", args.output_intent);
+		let result = self.execute_js(&cmd_args);
+		new_authority.as_mut().map(|s| s.zeroize());
+		result?;
+		log::info!("written: {}", args.output_intent);
 		Ok(())
 	}
 
 	fn execute_js(&self, args: &[&str]) -> Result<(), ToolkitJsError> {
 		let cmd = PathBuf::from(&self.path).join(BUILD_DIST).to_string_lossy().to_string();
-		println!("Executing {cmd} with arguments: {args:?}...");
+		log::info!("Executing {cmd}...");
+		if log::log_enabled!(log::Level::Debug) {
+			let redacted_args: Vec<&str> = {
+				let mut result = Vec::with_capacity(args.len());
+				let mut redact_next = false;
+				for &arg in args {
+					if redact_next {
+						result.push("[REDACTED]");
+						redact_next = false;
+					} else if arg == "--signing" || arg == "--new-authority" {
+						result.push(arg);
+						redact_next = true;
+					} else {
+						result.push(arg);
+					}
+				}
+				result
+			};
+			log::debug!("Executing {cmd} with arguments: {redacted_args:?}...");
+		}
 
 		let output = std::process::Command::new(cmd)
+			.env("COMPACTC_VERSION", self.compactc_version.to_string())
 			.current_dir(&self.path)
 			.args(args)
 			.output()
@@ -370,6 +450,14 @@ impl ToolkitJs {
 			} else {
 				eprintln!("toolkit-js> {line}");
 			}
+		}
+
+		if !output.status.success() {
+			return Err(ToolkitJsError::NonZeroExit {
+				status: output.status,
+				stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+				stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+			});
 		}
 		Ok(())
 	}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # This file is part of midnight-node.
-# Copyright (C) 2025 Midnight Foundation
+# Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
@@ -14,6 +14,9 @@
 # limitations under the License.
 
 set -euxo pipefail
+
+# shellcheck disable=SC1091
+. "$(dirname "$0")/lib/wait-for-node.sh"
 
 NODE_IMAGE="$1"
 
@@ -43,17 +46,13 @@ docker run -d --rm \
   -e SIDECHAIN_BLOCK_BENEFICIARY="04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e" \
   "${NODE_IMAGE}"
 
-echo "⏳ Waiting for node to start..."
-sleep 30
-
-# ensure node with CFG_PRESET=dev can start fine
-(docker logs $(docker ps -q --filter ancestor=${NODE_IMAGE}) 2>&1 | grep "Prepared block for proposing at" && \
-docker logs $(docker ps -q --filter ancestor=${NODE_IMAGE}) 2>&1 | grep "finalized #1")
-if [ $? -ne 0 ]; then
+# Smoke test: assert finality is advancing, matching the old `finalized #1`
+# log-grep semantics this script used to have.
+if wait_for_finalized_block http://localhost:9944 1 60; then
+    echo "✅ Node started successfully with CFG_PRESET=dev"
+else
     echo "❌ Node failed to start with CFG_PRESET=dev"
     TEST_FAILED=true
-else
-    echo "✅ Node started successfully with CFG_PRESET=dev"
 fi
 
 # Teardown node

@@ -1,7 +1,7 @@
 use std::{fs::File, io::BufReader};
 
 use midnight_primitives_beefy::BEEFY_KEY_TYPE;
-use subxt::{backend::rpc::RpcClient, ext::subxt_rpcs::rpc_params};
+use subxt::rpcs::{RpcClient, rpc_params};
 
 use crate::Error;
 

@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,10 +13,12 @@
 
 //! Benchmarking for system-parameters pallet
 
+#![allow(clippy::unwrap_in_result)]
+
 use super::*;
+use alloc::{vec, vec::Vec};
 use frame_benchmarking::v2::*;
 use frame_system::RawOrigin;
-use sp_std::{vec, vec::Vec};
 
 #[benchmarks]
 mod benchmarks {

@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -57,6 +57,18 @@ pub struct ChainSpecCfg {
 	pub chainspec_cnight_genesis: Option<String>,
 
 	/// Required for generic Live network chain spec
+	/// ICS (Illiquid Circulation Supply) config file e.g. devnet/ics-config.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_ics_config: Option<String>,
+
+	/// Required for generic Live network chain spec
+	/// Reserve contract config file e.g. devnet/reserve-config.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_reserve_config: Option<String>,
+
+	/// Required for generic Live network chain spec
 	/// Members of the Council Governance Authority
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
@@ -67,6 +79,30 @@ pub struct ChainSpecCfg {
 	#[validate(custom = |s| maybe(s, path_exists))]
 	#[serde(default)]
 	pub chainspec_system_parameters_config: Option<String>,
+
+	/// Required for generic Live network chain spec
+	/// Permissioned candidates config file e.g. devnet/permissioned-candidates-config.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_permissioned_candidates_config: Option<String>,
+
+	/// Required for generic Live network chain spec
+	/// Registered candidates addresses file e.g. devnet/registered-candidates-addresses.json
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_registered_candidates_addresses: Option<String>,
+
+	/// Optional genesis remark message config file e.g. mainnet/message-config.json
+	/// If not provided, no System::remark extrinsic will be added to genesis
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_message_config: Option<String>,
+
+	/// Cardano-to-Midnight bridge genesis config file path e.g. mainnet/c2m-bridge-config.json
+	/// Required to set bridge configuration.
+	#[validate(custom = |s| maybe(s, path_exists))]
+	#[serde(default)]
+	pub chainspec_c2m_bridge_config: Option<String>,
 }
 
 fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
@@ -77,8 +113,12 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		|| cfg.chainspec_chain_type.is_some()
 		|| cfg.chainspec_pc_chain_config.is_some()
 		|| cfg.chainspec_cnight_genesis.is_some()
+		|| cfg.chainspec_ics_config.is_some()
+		|| cfg.chainspec_reserve_config.is_some()
 		|| cfg.chainspec_federated_authority_config.is_some()
 		|| cfg.chainspec_system_parameters_config.is_some()
+		|| cfg.chainspec_permissioned_candidates_config.is_some()
+		|| cfg.chainspec_registered_candidates_addresses.is_some()
 	{
 		if cfg.chainspec_name.is_none() {
 			missing.push("chainspec_name".to_string());
@@ -101,11 +141,23 @@ fn all_required(cfg: &ChainSpecCfg) -> Result<(), validation::Error> {
 		if cfg.chainspec_cnight_genesis.is_none() {
 			missing.push("chainspec_cnight_genesis".to_string());
 		}
+		if cfg.chainspec_ics_config.is_none() {
+			missing.push("chainspec_ics_config".to_string());
+		}
+		if cfg.chainspec_reserve_config.is_none() {
+			missing.push("chainspec_reserve_config".to_string());
+		}
 		if cfg.chainspec_federated_authority_config.is_none() {
 			missing.push("chainspec_federated_authority_config".to_string());
 		}
 		if cfg.chainspec_system_parameters_config.is_none() {
 			missing.push("chainspec_system_parameters_config".to_string());
+		}
+		if cfg.chainspec_permissioned_candidates_config.is_none() {
+			missing.push("chainspec_permissioned_candidates_config".to_string());
+		}
+		if cfg.chainspec_registered_candidates_addresses.is_none() {
+			missing.push("chainspec_registered_candidates_addresses".to_string());
 		}
 	}
 

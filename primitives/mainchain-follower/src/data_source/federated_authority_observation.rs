@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,34 +11,90 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{FederatedAuthorityObservationDataSource, db::get_governance_body_utxo};
+use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
+use crate::{
+	FederatedAuthorityObservationDataSource,
+	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
+};
 use cardano_serialization_lib::PlutusData;
-use derive_new::new;
+use lru::LruCache;
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
 	FederatedAuthorityObservationConfig, GovernanceAuthorityDatumR0, GovernanceAuthorityDatums,
 };
-use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use sidechain_domain::{McBlockHash, PolicyId};
 pub use sqlx::PgPool;
+use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
 
-#[derive(new)]
-pub struct FederatedAuthorityObservationDataSourceImpl {
-	pub pool: PgPool,
-	pub metrics_opt: Option<McFollowerMetrics>,
-	#[allow(dead_code)]
-	cache_size: u16,
+/// Cache key for `get_federated_authority_data`.
+///
+/// The result is derived from the Cardano block *and* the governance bodies the
+/// query reads (council and technical committee addresses + policy ids), so all
+/// of those must take part in the key. Keying on `mc_block_hash` alone would
+/// serve stale data if the governance config changes (e.g. across a runtime
+/// upgrade) while the block hash is unchanged. The genesis-only `members` /
+/// `members_mainchain` fields don't affect the query, so they're left out.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct FederatedAuthorityCacheKey {
+	mc_block_hash: McBlockHash,
+	council_address: String,
+	council_policy_id: PolicyId,
+	technical_committee_address: String,
+	technical_committee_policy_id: PolicyId,
 }
 
-#[async_trait::async_trait]
+impl FederatedAuthorityCacheKey {
+	fn new(config: &FederatedAuthorityObservationConfig, mc_block_hash: &McBlockHash) -> Self {
+		Self {
+			mc_block_hash: mc_block_hash.clone(),
+			council_address: config.council.address.clone(),
+			council_policy_id: config.council.policy_id.clone(),
+			technical_committee_address: config.technical_committee.address.clone(),
+			technical_committee_policy_id: config.technical_committee.policy_id.clone(),
+		}
+	}
+}
+
+pub struct FederatedAuthorityObservationDataSourceImpl {
+	pub pool: PgPool,
+	pub metrics_opt: Option<MidnightDataSourceMetrics>,
+	cache: Arc<Mutex<LruCache<FederatedAuthorityCacheKey, FederatedAuthorityData>>>,
+}
+
+impl FederatedAuthorityObservationDataSourceImpl {
+	pub fn new(
+		pool: PgPool,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		cache_size: u16,
+	) -> Self {
+		let cap = NonZeroUsize::new(cache_size.max(1) as usize).unwrap();
+		let cache = Arc::new(Mutex::new(LruCache::new(cap)));
+		Self { pool, metrics_opt, cache }
+	}
+}
+
+observed_async_trait!(
 impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDataSourceImpl {
 	async fn get_federated_authority_data(
 		&self,
 		config: &FederatedAuthorityObservationConfig,
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
+		// Memoize combined council and technical committee data by Cardano block
+		// hash *and* the governance config the query reads from.
+		let cache_key = FederatedAuthorityCacheKey::new(config, mc_block_hash);
+		if let Ok(mut cache) = self.cache.lock()
+			&& let Some(cached) = cache.get(&cache_key)
+		{
+			log::debug!("fedauth cache hit for mc_block_hash {:?}", mc_block_hash);
+			return Ok(cached.clone());
+		}
+
 		// Get block number from hash
+		let _block_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_block_by_hash");
 		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone()).await?;
+		drop(_block_timer);
 
 		let block_number = match block {
 			Some(b) => b.block_number.0,
@@ -47,7 +103,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 		};
 
-		// Query council UTXO
+		let _council_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_council_utxo");
 		let council_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.council.address,
@@ -55,18 +111,23 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			block_number,
 		)
 		.await?;
+		drop(_council_timer);
 
 		let council_authorities: AuthoritiesData = match council_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
 				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
-					log::warn!("Failed to decode council datum: {}. Using empty list.", e);
+					log::warn!(
+						"Failed to decode council datum in Cardano block {}: {}. Using empty list.",
+						utxo.block_number.0,
+						e,
+					);
 					AuthoritiesData { authorities: vec![], round: 0 }
 				},
 			},
 			None => {
 				log::warn!(
-					"No council UTXO found for block {} (address: {}, policy_id: {}). Using empty list.",
+					"No council UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
 					block_number,
 					config.council.address,
 					config.council.policy_id
@@ -75,7 +136,8 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 		};
 
-		// Query technical committee UTXO
+		let _techcomm_timer =
+			start_sub_query_timer(&self.metrics_opt, "fedauth_get_technical_committee_utxo");
 		let technical_committee_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.technical_committee.address,
@@ -83,21 +145,23 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			block_number,
 		)
 		.await?;
+		drop(_techcomm_timer);
 
 		let technical_committee_authorities: AuthoritiesData = match technical_committee_utxo {
 			Some(utxo) => match Self::decode_governance_datum(&utxo.full_datum.0) {
 				Ok(datum) => AuthoritiesData::from(datum),
 				Err(e) => {
 					log::warn!(
-						"Failed to decode technical committee datum: {}. Using empty list.",
-						e
+						"Failed to decode technical committee datum in Cardano block {}: {}. Using empty list.",
+						utxo.block_number.0,
+						e,
 					);
 					AuthoritiesData { authorities: vec![], round: 0 }
 				},
 			},
 			None => {
 				log::warn!(
-					"No technical committee UTXO found for block {} (address: {}, policy_id: {}). Using empty list.",
+					"No technical committee UTXO found for Cardano block {} (address: {}, policy_id: {}). Using empty list.",
 					block_number,
 					config.technical_committee.address,
 					config.technical_committee.policy_id
@@ -106,25 +170,30 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 		};
 
-		Ok(FederatedAuthorityData {
+		let result = FederatedAuthorityData {
 			council_authorities,
 			technical_committee_authorities,
 			mc_block_hash: mc_block_hash.clone(),
-		})
+		};
+		if let Ok(mut cache) = self.cache.lock() {
+			cache.put(cache_key, result.clone());
+		}
+		Ok(result)
 	}
 }
+);
 
 impl FederatedAuthorityObservationDataSourceImpl {
 	/// Decode PlutusData containing governance body members
 	///
-	/// Expected format (VersionedMultisig):
+	/// Expected format (VersionedMultisig)
 	/// ```text
-	/// {
-	///   data: [total_signers: Int, {...(CborBytes, Sr25519Keys)}],
-	///   round: Int
-	/// }
+	/// [
+	///   [total_signers: Int, {...(CborBytes, Sr25519Keys)}],  // Multisig (also @list)
+	///   logic_round: Int
+	/// ]
 	/// ```
-	/// The `data` field contains:
+	/// The first element (Multisig) contains:
 	/// - total_signers: the threshold number of signers required
 	/// - a map where the key is CBOR-encoded Cardano public key hash (32 bytes, first 4 bytes ditched for 28-byte PolicyId)
 	///   and Sr25519Keys is a 32-byte public key
@@ -133,52 +202,56 @@ impl FederatedAuthorityObservationDataSourceImpl {
 	fn decode_governance_datum(
 		datum: &PlutusData,
 	) -> Result<GovernanceAuthorityDatums, Box<dyn std::error::Error + Send + Sync>> {
-		// The new format is a Constr with fields: [data, round]
-		// where data is [total_signers, members_map]
-		let constr = datum
-			.as_constr_plutus_data()
-			.ok_or("Expected PlutusData to be a constructor (VersionedMultisig)")?;
+		// The new format uses @list annotation, so VersionedMultisig is a list: [data, logic_round]
+		// where data (Multisig) is also a list: [total_signers, members_map]
+		let versioned_list: Vec<PlutusData> = datum
+			.as_list()
+			.ok_or("Expected PlutusData to be a list (VersionedMultisig with @list annotation)")?
+			.into_iter()
+			.cloned()
+			.collect();
 
-		let fields = constr.data();
-
-		if fields.len() < 2 {
+		if versioned_list.len() < 2 {
 			return Err(format!(
-				"Expected at least 2 fields in VersionedMultisig constructor, got {}",
-				fields.len()
+				"Expected at least 2 elements in VersionedMultisig list, got {}",
+				versioned_list.len()
 			)
 			.into());
 		}
 
-		// Get the 'data' field (index 0) which is [total_signers, members_map]
-		let data_field = fields.get(0);
+		// Get the 'data' field (index 0) which is Multisig: [total_signers, members_map]
+		let data_field = versioned_list.first().ok_or("Expected index 0 to exist")?;
 		let data_list: Vec<PlutusData> = data_field
 			.as_list()
-			.ok_or("Expected 'data' field to be a list")?
+			.ok_or("Expected 'data' field (Multisig) to be a list")?
 			.into_iter()
 			.cloned()
 			.collect();
 
 		if data_list.len() < 2 {
 			return Err(format!(
-				"Expected at least 2 elements in data list, got {}",
+				"Expected at least 2 elements in Multisig list, got {}",
 				data_list.len()
 			)
 			.into());
 		}
 
-		// Get the 'round' field (index 1)
-		let round_field = fields.get(1);
-		let round_bigint =
-			round_field.as_integer().ok_or("Expected 'round' field to be an integer")?;
+		// Get the 'logic_round' field (index 1)
+		let round_field = versioned_list.get(1).ok_or("Expected index 1 to exist")?;
+		let round_bigint = round_field
+			.as_integer()
+			.ok_or("Expected 'logic_round' field to be an integer")?;
 		// Convert BigInt to u64, then to u8
 		let round_u64: u64 = round_bigint
 			.as_u64()
-			.ok_or("Expected 'round' to be a non-negative integer that fits in u64")?
+			.ok_or("Expected 'logic_round' to be a non-negative integer that fits in u64")?
 			.into();
-		let round = u8::try_from(round_u64).map_err(|_| "Expected 'round' to fit in u8 (0-255)")?;
+		let round =
+			u8::try_from(round_u64).map_err(|_| "Expected 'logic_round' to fit in u8 (0-255)")?;
 
 		// Get the members map from data_list[1]
-		let members_data = data_list.get(1).ok_or("Expected index 1 to exist in the data list")?;
+		let members_data =
+			data_list.get(1).ok_or("Expected index 1 to exist in the Multisig list")?;
 
 		let mut authority_members = Vec::new();
 

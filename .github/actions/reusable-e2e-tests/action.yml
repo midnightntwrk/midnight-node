@@ -7,9 +7,6 @@ inputs:
   node-image:
     description: "The full node image name (with tag)"
     required: false
-  upgrader-image:
-    description: "Optional: the upgrader image (if needed)"
-    required: false
   toolkit-image:
     description: "Optional: the toolkit image (if needed)"
     required: false
@@ -25,7 +22,7 @@ runs:
         tool: just
 
     - name: Docker Login
-      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
       with:
         registry: ghcr.io
         username: MidnightCI
@@ -37,16 +34,16 @@ runs:
 
         case "${{ inputs.just-command }}" in
           indexer-api-e2e)
-            just ${{ inputs.just-command }}
+            just "${{ inputs.just-command }}"
             ;;
           startup-dev-e2e | startup-qanet-e2e)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}"
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}"
             ;;
-          node-e2e | toolkit-e2e | toolkit-update-ledger-parameters-e2e | toolkit-maintenance-e2e | toolkit-mint-e2e | toolkit-ut-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
+          toolkit-e2e | toolkit-update-ledger-parameters-e2e | toolkit-maintenance-e2e | toolkit-mint-e2e | toolkit-tokens-minter-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
             ;;
           *)
-            just ${{ inputs.just-command }} "${{ inputs.node-image }}" "${{ inputs.upgrader-image }}"
+            just "${{ inputs.just-command }}" "${{ inputs.node-image }}"
             ;;
         esac
       shell: bash

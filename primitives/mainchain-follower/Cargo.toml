@@ -6,7 +6,6 @@ description = "Extensions to Partnerchains mainchain follower"
 license-file.workspace = true
 
 [dependencies]
-sp-std.workspace = true
 parity-scale-codec.workspace = true
 midnight-primitives-cnight-observation.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
@@ -22,20 +21,27 @@ thiserror = { workspace = true, optional = true }
 cardano-serialization-lib = { workspace = true, optional = true }
 sqlx = { version = "0.8.5",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
 db-sync-sqlx = { workspace = true, optional = true }
-derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
 scale-info.workspace = true
 log.workspace = true
-rand = { version = "0.9.1", default-features = false }
+prometheus-endpoint = { workspace = true, optional = true }
+rand.workspace = true
+itertools = { workspace = true, optional = true }
+authority-selection-inherents = { workspace = true, features = ["std"], optional = true }
+partner-chains-plutus-data = { workspace = true, optional = true }
+figment = { workspace = true, optional = true }
+lru = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["full"], optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"]}
+serde_json = { workspace = true }
 
 [features]
 default = ["std"]
 std = [
     "parity-scale-codec/std",
-    "sp-std/std",
     "sp-runtime/std",
     "sidechain-domain/std",
     "midnight-primitives-federated-authority-observation/std",
@@ -53,6 +59,14 @@ std = [
     "db-sync-sqlx",
     "log/std",
     "partner-chains-db-sync-data-sources",
+    "prometheus-endpoint",
     "rand/std",
     "rand/thread_rng",
+    "itertools",
+    "authority-selection-inherents",
+    "partner-chains-plutus-data",
+    "figment",
+    "lru",
+    "serde",
+    "tokio",
 ]

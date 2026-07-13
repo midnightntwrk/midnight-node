@@ -1,0 +1,15 @@
+{
+  "reserve_validator_address": "addr_test1wpqtg375yhdwahv3zzyht08gu7nl4epx2n93m4a488vhs0sf6nna5",
+  "asset": {
+    "policy_id": "0xd2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
+    "asset_name": "NIGHT"
+  },
+  "utxos": [
+    {
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "output_index": 0,
+      "amount": 6000000000873988
+    }
+  ],
+  "total_amount": 6000000000873988
+}

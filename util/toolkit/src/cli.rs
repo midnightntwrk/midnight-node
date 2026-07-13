@@ -1,17 +1,21 @@
 use crate::commands::{
+	bridge_transfer::{self, BridgeTransferArgs},
 	contract_address::{self, ContractAddressArgs},
 	contract_state::{self, ContractStateArgs},
 	dust_balance::{self, DustBalanceArgs, DustBalanceResult},
+	fetch::{self, FetchArgs},
 	generate_genesis::{self, GenerateGenesisArgs},
 	generate_intent::{self, GenerateIntentArgs},
 	generate_sample_intent::{self, GenerateSampleIntentArgs},
 	generate_txs::{self, GenerateTxsArgs},
-	get_tx_from_context::{self, GetTxFromContextArgs},
 	random_address::{self, RandomAddressArgs},
+	root_call::{self, RootCallArgs},
+	runtime_upgrade::{self, RuntimeUpgradeArgs},
 	send_intent::{self, SendIntentArgs},
-	show_address::ShowAddress,
-	show_address::{self, ShowAddressArgs},
+	show_address::{self, ShowAddress, ShowAddressArgs},
+	show_block::{self, ShowBlockArgs, ShowBlockValue},
 	show_ledger_parameters::{self, ShowLedgerParametersArgs},
+	show_night_pools::{self, ShowNightPoolsArgs},
 	show_seed::{self, ShowSeedArgs},
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
 	show_transaction::{self, ShowTransactionArgs},
@@ -20,20 +24,8 @@ use crate::commands::{
 	update_ledger_parameters::{self, UpdateLedgerParametersArgs},
 };
 use crate::utils;
-use crate::{
-	ProofMarker, Signature,
-	serde_def::SourceTransactions,
-	tx_generator::source::{GetTxs, GetTxsFromUrl, Source},
-};
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use midnight_node_ledger_helpers::find_dependency_version;
-use std::time::Duration;
-
-#[derive(Args)]
-pub struct FetchArgs {
-	#[command(flatten)]
-	src: Source,
-}
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -65,34 +57,71 @@ pub enum Commands {
 	ShowAddress(ShowAddressArgs),
 	/// Show the ledger parameters
 	ShowLedgerParameters(ShowLedgerParametersArgs),
+	/// Show the NIGHT pools (Reserved / Locked / Unlocked) from a network's LedgerState
+	ShowNightPools(ShowNightPoolsArgs),
 	/// Show the seed of a wallet
 	ShowSeed(ShowSeedArgs),
 	/// Show the viewing key of a shielded wallet using its seed
 	ShowViewingKey(ShowViewingKeyArgs),
 	/// Show the token type for a contract address + domain sep pair
 	ShowTokenType(ShowTokenTypeArgs),
+	/// Inspect a block: view metadata and deserialized transactions
+	ShowBlock(ShowBlockArgs),
 	/// Show the deserialized value of a serialized transaction
 	ShowTransaction(ShowTransactionArgs),
 	/// Show and save in a file the Contract Address included in a DeployContract tx
 	ContractAddress(ContractAddressArgs),
 	/// Show and save a Contract state
 	ContractState(ContractStateArgs),
-	/// Extract `Transaction` from `TransactionWithContext`
-	GetTxFromContext(GetTxFromContextArgs),
 	/// Generate a random `UserAddress` for a given `NetworkId`
 	RandomAddress(RandomAddressArgs),
 	/// Update the ledger parameters
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
+	/// Perform a runtime upgrade through federated governance
+	RuntimeUpgrade(RuntimeUpgradeArgs),
+	/// Execute a call through governance with Root origin
+	///
+	/// This command allows executing arbitrary runtime calls through the federated authority
+	/// governance mechanism. It requires private keys from both Council and Technical Committee
+	/// members to vote and approve the motion.
+	RootCall(RootCallArgs),
 	/// Get the version information
 	Version,
 	/// Fetch
 	Fetch(FetchArgs),
+	/// Transfer cNight from a Cardano wallet to the ICS validator address
+	BridgeTransfer(BridgeTransferArgs),
 }
 
 /// Node Toolkit for Midnight
 #[derive(Parser)]
 #[command(about, long_about, verbatim_doc_comment)]
 pub struct Cli {
+	/// Enable verbose output (sets log level to debug)
+	#[arg(long, short = 'v', conflicts_with = "quiet", global = true, env = "MN_VERBOSE")]
+	pub verbose: bool,
+
+	/// Enable verbose ledger tracing output (sets tracing level to debug)
+	#[arg(long, conflicts_with = "quiet", global = true, env = "MN_VERBOSE_LEDGER")]
+	pub verbose_ledger: bool,
+
+	/// Enable verbose fetch logging (sets midnight_node_toolkit::fetcher to debug)
+	#[arg(long, conflicts_with = "quiet", global = true, env = "MN_VERBOSE_FETCH")]
+	pub verbose_fetch: bool,
+
+	/// Suppress info-level logs (only show warnings and errors)
+	#[arg(long, short = 'q', conflicts_with = "verbose", global = true, env = "MN_QUIET")]
+	pub quiet: bool,
+
+	/// Output logs in JSON format (for machine parsing)
+	#[arg(long, global = true, env = "MN_LOG_JSON")]
+	pub log_json: bool,
+
+	/// Number of threads for parallel wallet updates during block replay.
+	/// Defaults to number of CPU cores.
+	#[arg(long, global = true, env = "MN_REPLAY_CONCURRENCY")]
+	pub replay_concurrency: Option<usize>,
+
 	#[command(subcommand)]
 	pub command: Commands,
 }
@@ -117,15 +146,15 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::GenerateGenesis(args) => {
 			let generator = generate_genesis::execute(args).await?;
-			println!("The tx: {:#?}", generator.txs);
+			log::debug!("The tx: {:#?}", generator.txs);
 			Ok(())
 		},
 		Commands::ShowWallet(args) => {
 			let result = show_wallet::execute(args).await?;
 			match result {
-				ShowWalletResult::Debug(result) => {
-					println!("{:#?}", result.wallet);
-					println!("Unshielded UTXOs: {:#?}", result.utxos)
+				ShowWalletResult::Debug(wallet_debug, utxos) => {
+					println!("{}", wallet_debug);
+					println!("Unshielded UTXOs: {:#?}", utxos)
 				},
 				ShowWalletResult::Json(json) => {
 					println!("{}", serde_json::to_string_pretty(&json)?);
@@ -155,6 +184,10 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			}
 			Ok(())
 		},
+		Commands::ShowNightPools(args) => {
+			show_night_pools::execute(args).await?;
+			Ok(())
+		},
 		Commands::UpdateLedgerParameters(args) => {
 			update_ledger_parameters::execute(args).await?;
 			Ok(())
@@ -169,6 +202,21 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			println!("{viewing_key}");
 			Ok(())
 		},
+		Commands::ShowBlock(args) => {
+			let result = show_block::execute(args).await?;
+			match result {
+				ShowBlockValue::Json(json) => {
+					println!("{}", serde_json::to_string_pretty(&json)?);
+				},
+				ShowBlockValue::Human(value) => {
+					for block in value {
+						println!("{}", block);
+					}
+				},
+				ShowBlockValue::DryRun(()) => (),
+			};
+			Ok(())
+		},
 		Commands::ShowTransaction(args) => {
 			let transaction_information = show_transaction::execute(args)?;
 
@@ -181,12 +229,6 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::ContractState(args) => contract_state::execute(args).await,
-		Commands::GetTxFromContext(args) => {
-			let (serialized_tx, timestamp) = get_tx_from_context::execute(&args)?;
-			std::fs::write(args.dest_file, serialized_tx)?;
-			println!("{}", timestamp);
-			Ok(())
-		},
 		Commands::RandomAddress(args) => {
 			let address = random_address::execute(args);
 			println!("{}", address);
@@ -195,13 +237,15 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::Version => {
 			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
-			let ledger_version =
-				find_dependency_version("mn-ledger").expect("missing ledger version");
+			let ledger_generation = midnight_node_ledger_helpers::latest::LEDGER_VERSION;
+			let ledger_semver =
+				find_dependency_version(midnight_node_ledger_helpers::latest::CRATE_NAME)
+					.expect("missing ledger version");
 			let compactc_version = include_str!("../../../COMPACTC_VERSION").trim();
 
 			println!(
-				"Node: {}\nLedger: {}\nCompactc: {}",
-				node_version, ledger_version, compactc_version
+				"Node: {}\nLedger: {} ({})\nCompactc: {}",
+				node_version, ledger_generation, ledger_semver, compactc_version
 			);
 			return Ok(());
 		},
@@ -227,28 +271,15 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 
 			Ok(())
 		},
-		Commands::Fetch(FetchArgs { src }) => {
-			if src.src_files.is_some() {
-				panic!("error: fetch command doesn't work with '--src-files'");
-			}
-			let start = std::time::Instant::now();
-			let txs: SourceTransactions<Signature, ProofMarker> = GetTxsFromUrl::new(
-				&src.src_url.unwrap(),
-				src.fetch_concurrency,
-				src.dust_warp,
-				src.fetch_cache,
-			)
-			.get_txs()
-			.await?;
-			log::info!(
-				"fetched {} blocks in {:.3} s",
-				txs.blocks.len(),
-				start.elapsed().as_secs_f32()
-			);
-
-			// Wait a little - allows logs to reach stdout before exit
-			tokio::time::sleep(Duration::from_millis(200)).await;
+		Commands::RuntimeUpgrade(args) => {
+			runtime_upgrade::execute(args).await?;
 			Ok(())
 		},
+		Commands::RootCall(args) => {
+			root_call::execute(args).await?;
+			Ok(())
+		},
+		Commands::Fetch(args) => fetch::execute(args).await,
+		Commands::BridgeTransfer(args) => bridge_transfer::execute(args).await,
 	}
 }

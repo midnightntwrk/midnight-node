@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -82,31 +82,6 @@ impl From<Block> for CardanoPosition {
 pub struct DbBlockHash(pub [u8; 32]);
 
 #[derive(Debug, Clone, sqlx::FromRow)]
-pub struct RedemptionCreateRow {
-	pub full_datum: DbDatum,
-	pub block_number: DbBlockNumber,
-	pub block_hash: DbBlockHash,
-	pub block_timestamp: NaiveDateTime,
-	pub tx_index_in_block: DbTxIndexInBlock,
-	pub tx_hash: DbTxHash,
-	pub utxo_index: DbUtxoIndexInTx,
-	pub quantity: i64,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow)]
-pub struct RedemptionSpendRow {
-	pub full_datum: DbDatum,
-	pub block_number: DbBlockNumber,
-	pub block_hash: DbBlockHash,
-	pub block_timestamp: NaiveDateTime,
-	pub tx_index_in_block: DbTxIndexInBlock,
-	pub tx_hash: DbTxHash,
-	pub utxo_tx_hash: DbTxHash,
-	pub utxo_index: DbUtxoIndexInTx,
-	pub quantity: i64,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct RegistrationRow {
 	pub full_datum: DbDatum,
 	pub block_number: DbBlockNumber,
@@ -169,4 +144,28 @@ pub struct GovernanceBodyUtxoRow {
 	pub tx_index_in_block: DbTxIndexInBlock,
 	pub tx_hash: DbTxHash,
 	pub utxo_index: DbUtxoIndexInTx,
+}
+
+/// Encapsulates ids of three big tables.
+/// Used to filter out most of the tables before joining them.
+/// db_sync id types are 'bigint' which have bound like 'i64'
+#[derive(Debug, Clone, Copy, sqlx::FromRow)]
+pub struct QueryBounds {
+	pub tx_id: i64,
+	pub tx_out_id: i64,
+	pub ma_tx_out_id: i64,
+	pub tx_in_id: i64,
+}
+
+/// A block-range + pagination window shared by the cNight observation queries.
+/// `start`/`end` scope blocks and tx index; `low_bound`/`high_bound` pre-filter
+/// the underlying id-indexed tables so the SQL planner avoids full scans.
+#[derive(Debug, Clone, Copy)]
+pub struct PagedQuery<'a> {
+	pub start: &'a CardanoPosition,
+	pub end: &'a CardanoPosition,
+	pub limit: usize,
+	pub offset: usize,
+	pub low_bound: QueryBounds,
+	pub high_bound: QueryBounds,
 }

@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,110 +11,146 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use async_trait::async_trait;
 use futures::stream::{self, StreamExt};
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
+use std::{collections::HashMap, future::Future, sync::Arc};
 use subxt::utils::H256;
 use tokio::sync::Mutex;
 
-use super::MidnightBlock;
-use async_trait::async_trait;
-use midnight_node_ledger_helpers::{
-	BlockContext, DB, ProofKind, SerdeTransaction, SignatureKind, Tagged,
-};
+use super::MidnightClientAtBlock;
+use super::wallet_state_cache::{CachedWalletState, LedgerSnapshot};
 
+pub mod file_backend;
 pub mod postgres_backend;
 pub mod redb_backend;
 
-#[derive(Clone)]
-pub struct FetchedBlock {
-	pub block: MidnightBlock,
-	pub state_root: Option<Vec<u8>>,
+/// Trait for per-wallet state caching operations.
+///
+/// Separates ledger snapshots (one per block height, ~49MB) from individual
+/// wallet state (~5-15KB), eliminating redundant storage when multiple wallets
+/// share the same chain state.
+#[async_trait]
+pub trait WalletStateCaching: Send + Sync {
+	/// Retrieve a ledger snapshot at a specific block height.
+	async fn get_ledger_snapshot(
+		&self,
+		chain_id: H256,
+		block_height: u64,
+	) -> Option<LedgerSnapshot>;
+
+	/// Store a ledger snapshot.
+	async fn set_ledger_snapshot(&self, chain_id: H256, snapshot: LedgerSnapshot);
+
+	/// Get the latest (highest) ledger snapshot height for a chain.
+	async fn get_latest_ledger_height(&self, chain_id: H256) -> Option<u64>;
+
+	/// Batch-retrieve wallet states by seed hash. Returns `None` for uncached wallets.
+	/// Implementors must keep the ordering in return value
+	/// seed_hashes.len() == result.len()
+	async fn get_wallet_states(
+		&self,
+		chain_id: H256,
+		seed_hashes: &[H256],
+	) -> Vec<Option<CachedWalletState>>;
+
+	/// Batch-store wallet states.
+	async fn set_wallet_states(&self, chain_id: H256, wallets: &[CachedWalletState]);
+
+	/// Delete wallet states by seed hash.
+	async fn delete_wallet_states(&self, chain_id: H256, seed_hashes: &[H256]);
+
+	/// Remove ledger snapshots not referenced by any wallet cache entry.
+	/// Keeps only snapshots at the specified heights.
+	async fn gc_ledger_snapshots(&self, chain_id: H256, keep_heights: &[u64]);
+
+	/// Return all distinct block heights referenced by cached wallets for a chain.
+	async fn get_all_cached_wallet_heights(&self, chain_id: H256) -> Vec<u64>;
 }
 
-pub type FetchedTransaction<S, P, D> = SerdeTransaction<S, P, D>;
-
-/// Block data stored by [`FetchStorage`] implementations.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockData<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB> {
-	pub hash: H256,
-	pub parent_hash: H256,
-	pub number: u64,
-	#[serde(bound(
-		deserialize = "Vec<FetchedTransaction<S, P, D>>: Deserialize<'de>",
-		serialize = "Vec<FetchedTransaction<S, P, D>>: Serialize"
-	))]
-	pub transactions: Vec<FetchedTransaction<S, P, D>>,
-	pub context: BlockContext,
+#[derive(Clone)]
+pub struct FetchedBlock {
+	pub block: MidnightClientAtBlock,
+	pub raw_body: Vec<Vec<u8>>,
 	pub state_root: Option<Vec<u8>>,
+	pub state: Option<Vec<u8>>,
 }
 
 /// Storage backend for fetched block data.
 ///
-/// Provides methods to store and retrieve [`BlockData`] by chain ID and block number,
+/// Provides methods to store and retrieve [`RawBlockData`] by chain ID and block number,
 /// as well as tracking the highest verified block per chain.
-#[async_trait]
-pub trait FetchStorage<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB + Clone> {
-	async fn get_block_data(&self, chain_id: H256, block_number: u64)
-	-> Option<BlockData<S, P, D>>;
-	async fn get_block_data_range(
+pub trait FetchStorage: Send + Sync {
+	// =========================================================================
+	// Block data methods
+	// =========================================================================
+
+	fn get_block_data(
+		&self,
+		chain_id: H256,
+		block_number: u64,
+	) -> impl Future<Output = Option<RawBlockData>> + Send;
+
+	fn get_block_data_range(
 		&self,
 		chain_id: H256,
 		range: impl Iterator<Item = u64> + Send,
-	) -> Vec<Option<BlockData<S, P, D>>> {
-		let block_stream = stream::iter(
-			range.map(async |block_number| self.get_block_data(chain_id, block_number).await),
-		);
-		let buffered = block_stream.buffered(10);
-		buffered.collect().await
-	}
-
-	async fn insert_block_data(&self, chain_id: H256, block_number: u64, block: BlockData<S, P, D>);
-	async fn insert_block_data_range(
-		&self,
-		chain_id: H256,
-		range: impl Iterator<Item = (u64, BlockData<S, P, D>)> + Send,
-	) {
-		let block_stream = stream::iter(range.map(async |(block_number, block)| {
-			self.insert_block_data(chain_id, block_number, block).await
-		}));
-		let buffered = block_stream.buffer_unordered(10);
-		buffered.collect().await
-	}
-	async fn get_highest_verified_block(&self, chain_id: H256) -> Option<u64>;
-	async fn set_highest_verified_block(&self, chain_id: H256, height: u64);
-}
-
-#[derive(Clone)]
-pub struct InMemory<S: SignatureKind<D> + Tagged, P: ProofKind<D>, D: DB> {
-	highest_verified: Arc<Mutex<HashMap<H256, u64>>>,
-	blocks: Arc<Mutex<HashMap<Vec<u8>, BlockData<S, P, D>>>>,
-}
-
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D>> Default for InMemory<S, P, D> {
-	fn default() -> Self {
-		Self {
-			highest_verified: Arc::new(Mutex::new(HashMap::new())),
-			blocks: Arc::new(Mutex::new(HashMap::new())),
+	) -> impl Future<Output = Vec<Option<RawBlockData>>> + Send {
+		async move {
+			let block_stream =
+				stream::iter(range.map(|block_number| self.get_block_data(chain_id, block_number)));
+			let buffered = block_stream.buffered(10);
+			buffered.collect().await
 		}
 	}
+
+	fn insert_block_data(
+		&self,
+		chain_id: H256,
+		block_number: u64,
+		block: RawBlockData,
+	) -> impl Future<Output = ()> + Send;
+
+	fn insert_block_data_range(
+		&self,
+		chain_id: H256,
+		range: impl Iterator<Item = RawBlockData> + Send,
+	) -> impl Future<Output = ()> + Send {
+		async move {
+			let block_stream = stream::iter(
+				range.map(|block| self.insert_block_data(chain_id, block.number, block)),
+			);
+			let buffered = block_stream.buffer_unordered(10);
+			buffered.collect().await
+		}
+	}
+
+	fn get_highest_verified_block(
+		&self,
+		chain_id: H256,
+	) -> impl Future<Output = Option<u64>> + Send;
+
+	fn set_highest_verified_block(
+		&self,
+		chain_id: H256,
+		height: u64,
+	) -> impl Future<Output = ()> + Send;
 }
 
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D>> InMemory<S, P, D> {
+#[derive(Clone, Default)]
+pub struct InMemory {
+	highest_verified: Arc<Mutex<HashMap<H256, u64>>>,
+	blocks: Arc<Mutex<HashMap<Vec<u8>, RawBlockData>>>,
+}
+
+impl InMemory {
 	fn block_key(chain_id: &[u8], block_number: u64) -> Vec<u8> {
 		[chain_id, b":", &block_number.to_be_bytes()[..]].concat()
 	}
 }
 
-#[async_trait]
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D>> FetchStorage<S, P, D>
-	for InMemory<S, P, D>
-{
-	async fn get_block_data(
-		&self,
-		chain_id: H256,
-		block_number: u64,
-	) -> Option<BlockData<S, P, D>> {
+impl FetchStorage for InMemory {
+	async fn get_block_data(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
 		let k = Self::block_key(&chain_id.0, block_number);
 		self.blocks.lock().await.get(&k).cloned()
 	}
@@ -122,7 +158,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D>> FetchStorage<
 		&self,
 		chain_id: H256,
 		range: impl Iterator<Item = u64> + Send,
-	) -> Vec<Option<BlockData<S, P, D>>> {
+	) -> Vec<Option<RawBlockData>> {
 		let blocks = self.blocks.lock().await;
 		range
 			.map(|block_number| {
@@ -132,23 +168,18 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D>> FetchStorage<
 			.collect()
 	}
 
-	async fn insert_block_data(
-		&self,
-		chain_id: H256,
-		block_number: u64,
-		block: BlockData<S, P, D>,
-	) {
+	async fn insert_block_data(&self, chain_id: H256, block_number: u64, block: RawBlockData) {
 		let k = Self::block_key(&chain_id.0, block_number);
 		self.blocks.lock().await.insert(k, block);
 	}
 	async fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, BlockData<S, P, D>)> + Send,
+		range: impl Iterator<Item = RawBlockData> + Send,
 	) {
 		let mut blocks = self.blocks.lock().await;
-		range.for_each(|(block_number, block)| {
-			let k = Self::block_key(&chain_id.0, block_number);
+		range.for_each(|block| {
+			let k = Self::block_key(&chain_id.0, block.number);
 			blocks.insert(k, block);
 		});
 	}

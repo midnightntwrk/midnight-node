@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 use frame_system::pallet_prelude::BlockNumberFor;
 use log::info;
 use sidechain_domain::ScEpochNumber;
 use sp_session_validator_management::CommitteeMember as _;
 use sp_staking::SessionIndex;
-use sp_std::vec::Vec;
 
 pub struct ValidatorManagementSessionManager<T> {
 	_phantom: PhantomData<T>,
@@ -52,8 +52,9 @@ impl<T: pallet_session_validator_management::Config + pallet_sidechain::Config>
 		)
 	}
 
-	// Instead of Some((*).expect) we could just use (*). However, we rather panic in presence of
-	// important programming errors.
+	// Intentionally panic if rotate fails — a missing committee is an unrecoverable programming
+	// error that must not be silently swallowed by returning None.
+	#[allow(clippy::unwrap_in_result)]
 	fn new_session(new_index: SessionIndex) -> Option<Vec<(T::AccountId, T::AuthorityKeys)>> {
 		info!("New session {new_index}");
 		Some(

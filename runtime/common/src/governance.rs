@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,12 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 use frame_support::traits::{
 	ChangeMembers, InitializeMembers, SortedMembers, UnfilteredDispatchable,
 };
 use pallet_collective::{DefaultVote, MemberCount};
 use sp_runtime::traits::Dispatchable;
-use sp_std::{marker::PhantomData, vec::Vec};
 
 /// Wrapper struct to handle frame_system sufficients and delegate
 /// `InitializeMembers` and `ChangeMembers` calls to `P`.
@@ -61,6 +62,14 @@ where
 		for who in outgoing {
 			frame_system::Pallet::<T>::dec_sufficients(who);
 		}
+	}
+
+	fn set_prime(prime: Option<T::AccountId>) {
+		<P as ChangeMembers<T::AccountId>>::set_prime(prime);
+	}
+
+	fn get_prime() -> Option<T::AccountId> {
+		<P as ChangeMembers<T::AccountId>>::get_prime()
 	}
 }
 

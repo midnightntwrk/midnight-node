@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nSELECT\n    spending_block.block_no AS \"block_number!: _\",\n    spending_block.hash AS \"block_hash: _\",\n    spending_block.time AS \"block_timestamp: _\",\n    spending_tx.block_index AS \"tx_index_in_block: _\",\n    ma_tx_out.quantity::BIGINT AS \"quantity!\",\n    tx_out.address AS holder_address,\n    tx.hash AS \"utxo_tx_hash: _\",\n    tx_out.index AS \"utxo_index: _\",\n    spending_tx.hash AS \"spending_tx_hash: _\"\nFROM block AS spending_block\n    JOIN tx AS spending_tx ON spending_tx.block_id = spending_block.id\n    JOIN tx_in ON tx_in.tx_in_id = spending_tx.id\n    JOIN tx_out ON tx_out.tx_id = tx_in.tx_out_id\n                AND tx_out.index = tx_in.tx_out_index\n    JOIN tx ON tx_out.tx_id = tx.id\n    JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id\nWHERE spending_block.block_no >= $2 AND spending_block.block_no <= $4\n    AND ma_tx_out.ident = $1\n    AND (spending_block.block_no > $2 OR (spending_block.block_no = $2 AND spending_tx.block_index >= $3))\n    AND (spending_block.block_no < $4 OR (spending_block.block_no = $4 AND spending_tx.block_index < $5))\n    AND spending_tx.id >= $8 AND spending_tx.id <=$9\n    AND tx_in.id >= $10 AND tx_in.id <= $11\nORDER BY spending_block.block_no, spending_tx.block_index, tx_out.index\nLIMIT $6 OFFSET $7;\n    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number!: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_timestamp: _",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 3,
+        "name": "tx_index_in_block: _",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "quantity!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "holder_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "utxo_tx_hash: _",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "utxo_index: _",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "spending_tx_hash: _",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fb7be71dfaf1e2d984606a6bc11731590b18bffe97c9c6fa08ad2e3c1cfe876d"
+}

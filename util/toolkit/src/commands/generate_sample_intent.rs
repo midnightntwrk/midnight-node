@@ -1,15 +1,11 @@
-use crate::{
-	ProofType, SignatureType,
-	tx_generator::{
-		TxGenerator,
-		builder::{
-			ContractCall, IntentToFile,
-			builders::{ContractCallBuilder, ContractDeployBuilder},
-		},
-		source::Source,
-	},
+use crate::tx_generator::{
+	TxGenerator,
+	builder::{ContractCall, ProverConfig, build_fork_aware_context_cached},
+	source::{Source, create_file_wallet_cache},
 };
 use clap::Args;
+use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
+use std::sync::Arc;
 
 #[derive(Args)]
 pub struct GenerateSampleIntentArgs {
@@ -29,39 +25,191 @@ pub struct GenerateSampleIntentArgs {
 }
 
 pub async fn execute(args: GenerateSampleIntentArgs) {
-	println!("Generate a contract and save to file");
+	log::info!("Generate a contract and save to file");
 
-	let builder_and_contract_type: (Box<dyn IntentToFile + Send>, &str) =
-		match args.contract_call.clone() {
-			ContractCall::Deploy(args) => (Box::new(ContractDeployBuilder::new(args)), "deploy"),
-			ContractCall::Call(args) => (Box::new(ContractCallBuilder::new(args)), "call"),
-			ContractCall::Maintenance(_args) => unimplemented!("not implemented for Maintenance"),
-		};
-	let mut builder = builder_and_contract_type.0;
-	let partial_file_name = builder_and_contract_type.1;
-
+	let ledger_state_db = args.source.ledger_state_db.clone();
+	let fetch_cache = args.source.fetch_cache.clone();
 	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
 		.expect("failed to init tx source");
-	let prover = TxGenerator::<SignatureType, ProofType>::prover(args.proof_server, args.dry_run);
+	let prover_config = TxGenerator::prover_config(args.proof_server, args.dry_run);
 
 	if args.dry_run {
-		println!("Dry-run: generate intent for contract call {:?}", args.contract_call);
-		println!("Dry-run: write files to directory {:?}", args.dest_dir);
+		log::info!("Dry-run: generate intent for contract call {:?}", args.contract_call);
+		log::info!("Dry-run: write files to directory {:?}", args.dest_dir);
 		return ();
 	}
 
 	let received_txs = source.get_txs().await.expect("should receive txs");
+	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
+
+	// Build the context + prover, then construct the appropriate builder
+	let funding_seed_str = match &args.contract_call {
+		ContractCall::Deploy(a) => &a.funding_seed,
+		ContractCall::Call(a) => &a.funding_seed,
+		ContractCall::Maintenance(a) => &a.funding_seed,
+	};
+	let seeds =
+		vec![midnight_node_ledger_helpers::Wallet::<midnight_node_ledger_helpers::DefaultDB>::wallet_seed_decode(funding_seed_str)];
+
+	let fork_ctx =
+		build_fork_aware_context_cached(&seeds, &received_txs, wallet_cache.as_deref()).await;
+	let version = fork_ctx.version();
+
+	if matches!(prover_config, ProverConfig::Remote(_)) {
+		panic!("remote prover is not supported for intent generation");
+	}
+
+	match version {
+		LedgerVersion::Ledger9 => {
+			let context = Arc::new(fork_ctx.into_ledger9().expect("expected ledger 9 context"));
+			let prover: Arc<
+				dyn midnight_node_ledger_helpers::ledger_9::ProofProvider<
+						midnight_node_ledger_helpers::ledger_9::DefaultDB,
+					>,
+			> = Arc::new(midnight_node_ledger_helpers::ledger_9::LocalProofServer::new());
+
+			execute_with_builders_v9(args.contract_call, context, prover, &args.dest_dir).await;
+		},
+		LedgerVersion::Ledger8 => {
+			let context = Arc::new(fork_ctx.into_ledger8().expect("expected ledger 8 context"));
+			let prover: Arc<
+				dyn midnight_node_ledger_helpers::ledger_8::ProofProvider<
+						midnight_node_ledger_helpers::ledger_8::DefaultDB,
+					>,
+			> = Arc::new(midnight_node_ledger_helpers::ledger_8::LocalProofServer::new());
+
+			execute_with_builders_v8(args.contract_call, context, prover, &args.dest_dir).await;
+		},
+		LedgerVersion::Ledger7 => {
+			let context = Arc::new(fork_ctx.into_ledger7().expect("expected ledger 7 context"));
+			let prover: Arc<
+				dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
+						midnight_node_ledger_helpers::ledger_7::DefaultDB,
+					>,
+			> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
+
+			execute_with_builders_v7(args.contract_call, context, prover, &args.dest_dir).await;
+		},
+	}
+}
+
+async fn execute_with_builders_v9(
+	contract_call: ContractCall,
+	context: Arc<
+		midnight_node_ledger_helpers::ledger_9::context::LedgerContext<
+			midnight_node_ledger_helpers::ledger_9::DefaultDB,
+		>,
+	>,
+	prover: Arc<
+		dyn midnight_node_ledger_helpers::ledger_9::ProofProvider<
+				midnight_node_ledger_helpers::ledger_9::DefaultDB,
+			>,
+	>,
+	dest_dir: &str,
+) {
+	use crate::tx_generator::builder::builders::ledger_9::{
+		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
+	};
+	type Ctx = midnight_node_ledger_helpers::ledger_9::context::LedgerContext<
+		midnight_node_ledger_helpers::ledger_9::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
 
 	builder
-		.generate_intent_file(received_txs, prover, &args.dest_dir, partial_file_name)
-		.await;
+		.generate_intent_file(dest_dir, partial_file_name)
+		.await
+		.expect("failed to generate intent file");
+}
+
+async fn execute_with_builders_v8(
+	contract_call: ContractCall,
+	context: Arc<
+		midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
+			midnight_node_ledger_helpers::ledger_8::DefaultDB,
+		>,
+	>,
+	prover: Arc<
+		dyn midnight_node_ledger_helpers::ledger_8::ProofProvider<
+				midnight_node_ledger_helpers::ledger_8::DefaultDB,
+			>,
+	>,
+	dest_dir: &str,
+) {
+	use crate::tx_generator::builder::builders::ledger_8::{
+		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
+	};
+	type Ctx = midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
+		midnight_node_ledger_helpers::ledger_8::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
+
+	builder
+		.generate_intent_file(dest_dir, partial_file_name)
+		.await
+		.expect("failed to generate intent file");
+}
+
+async fn execute_with_builders_v7(
+	contract_call: ContractCall,
+	context: Arc<
+		midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
+			midnight_node_ledger_helpers::ledger_7::DefaultDB,
+		>,
+	>,
+	prover: Arc<
+		dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
+				midnight_node_ledger_helpers::ledger_7::DefaultDB,
+			>,
+	>,
+	dest_dir: &str,
+) {
+	use crate::tx_generator::builder::builders::ledger_7::{
+		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
+	};
+	type Ctx = midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
+		midnight_node_ledger_helpers::ledger_7::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
+
+	builder
+		.generate_intent_file(dest_dir, partial_file_name)
+		.await
+		.expect("failed to generate intent file");
 }
 
 #[cfg(test)]
 mod test {
 	use std::fs;
 	use std::fs::remove_file;
+	use std::path::Path;
 
 	use crate::cli_parsers::hex_str_decode;
 	use crate::tx_generator::builder::{ContractDeployArgs, FUNDING_SEED};
@@ -69,8 +217,27 @@ mod test {
 
 	use super::{ContractCall, GenerateSampleIntentArgs, Source, execute};
 
+	fn ledger_test_artifacts_ready() -> bool {
+		let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
+			eprintln!("Skipping contract intent tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR is not set");
+			return false;
+		};
+		if !Path::new(&path).exists() {
+			eprintln!(
+				"Skipping contract intent tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR does not exist: {}",
+				path
+			);
+			return false;
+		}
+		true
+	}
+
 	#[tokio::test]
 	async fn test_generate_sample_intent() {
+		if !ledger_test_artifacts_ready() {
+			return;
+		}
+
 		let rng_seed = "0000000000000000000000000000000000000000000000000000000000000037";
 		let src_files = "../../res/genesis/genesis_block_undeployed.mn";
 
@@ -87,9 +254,13 @@ mod test {
 		let source = Source {
 			src_url: None,
 			fetch_concurrency: 0,
+			fetch_compute_concurrency: None,
 			src_files: Some(vec![src_files.to_string()]),
 			dust_warp: true,
+			ignore_block_context: false,
+			fetch_only_cached: false,
 			fetch_cache: FetchCacheConfig::InMemory,
+			ledger_state_db: String::new(),
 		};
 
 		let args = GenerateSampleIntentArgs {

@@ -1,4 +1,5 @@
 {
+  "packageManager": "npm@9.8.0",
   "name": "@midnight-ntwrk/node-toolkit",
   "version": "0.1.0",
   "license": "Apache-2.0",
@@ -9,36 +10,41 @@
   "bin": {
     "midnight-node-toolkit-js": "dist/bin.js"
   },
-  "exports": {
-    "./package.json": "./package.json"
-  },
+  "workspaces": [
+    ".",
+    "compact-*"
+  ],
   "scripts": {
-    "build": "tsc && chmod +x dist/bin.js",
+    "build": "npm run build:variants && tsc && chmod +x dist/bin.js",
+    "build:variants": "turbo run build --filter='@midnight-ntwrk/node-toolkit-compact-*'",
     "start": "dist/bin.js",
-    "test": "npm run build-compact && vitest run",
+    "test": "npm run build:variants && npm run build-compact && vitest run",
+    "test:compat": "./scripts/test-all-compactc.sh",
     "build-compact": "(shx --negate test -d ./test/contract/managed && npm run compact || true)",
-    "compact": "fetch-compactc && npm run compact-counter && npm run compact-ut && npm run compact-mint",
+    "compact": "fetch-compactc && npm run compact-counter && npm run compact-mint && npm run compact-tokens-minter",
     "compact-counter": "run-compactc ./test/contract/counter.compact ./test/contract/managed/counter",
-    "compact-ut": "run-compactc ./test/ut_contract/unshielder.compact ./test/ut_contract/out",
+    "compact-tokens-minter": "run-compactc ./test/minter_contract/minter.compact ./test/minter_contract/out",
     "compact-mint": "run-compactc ./mint/mint.compact ./mint/out"
   },
-  "files": [
-    "dist"
-  ],
   "dependencies": {
-    "@effect/platform-node": "^0.98.3",
-    "@effect/cli": "^0.71.0",
-    "@midnight-ntwrk/compact-js": "2.3.0-pre.5d4ff2c",
-    "@midnight-ntwrk/compact-js-command": "2.3.0-pre.5d4ff2c",
-    "@midnight-ntwrk/compact-js-node": "2.3.0-pre.5d4ff2c",
-    "effect": "^3.18.4"
+    "@midnight-ntwrk/node-toolkit-compact-0.29.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.30.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.31.0": "^0.1.0",
+    "@midnight-ntwrk/node-toolkit-compact-0.33.0": "^0.1.0",
+    "effect": "^3.21.0"
   },
   "devDependencies": {
-    "@midnight-ntwrk/midnight-js-compact": "2.1.0",
-    "@tsconfig/node22": "22.0.5",
+    "@midnight-ntwrk/midnight-js-compact": "4.0.4",
+    "@tsconfig/node24": "24.0.0",
     "@types/node": "22.18.10",
     "shx": "0.4.0",
     "typescript": "5.9.3",
-    "vitest": "3.2.4"
+    "vitest": "4.1.0",
+    "turbo": "2.9.14"
+  },
+  "overrides": {
+    "esbuild": "0.28.1",
+    "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
+    "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3"
   }
 }

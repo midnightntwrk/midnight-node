@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+# no top level default permissions for security reasons
+permissions:
+  contents: read
+
 jobs:
   build_node:
     name: Build Node against latest
@@ -16,7 +20,9 @@ jobs:
       node_result: ${{ steps.run_earthly.outputs.node_result }}
     steps:
       - name: Checkout
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 #v6.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        with:
+          submodules: true
 
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
         with:
@@ -27,10 +33,13 @@ jobs:
       - name: Cat the Cargo.toml
         run: cat ./Cargo.toml
 
+      - name: Free disk space
+        run: scripts/free-disk-space.sh
+
       - name: Run check
         run: |
           mkdir -p "$HOME"/.cargo
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          . ./.envrc && earthly -P --ci --platform=linux/amd64 +node-image
+          . ./.envrc && earthly --platform=linux/amd64 +node-image

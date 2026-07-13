@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -78,7 +78,7 @@ mod tests {
 	}
 
 	#[test_case(test_fixture!("devnet", true, "0000000000000000000000000000000000000000000000000000000000000001") =>
-	    "mn_shield-addr_devnet1xscm9xd96mmx8u2s2mgpsk66yewrqluax7d0vgu5asff2ek8fcmj7lhx8rldjmzp856l5fl4ly56u2vt6y6wel3c62nt3tvvlf65acczuddha";
+	    "mn_shield-addr_devnet1pvaarw27t9rlyxyxuway92ud2k0zst4regjv45huzhzxned525nz7lhx8rldjmzp856l5fl4ly56u2vt6y6wel3c62nt3tvvlf65accqxnzh0";
 		"shielded address from seed"
 	)]
 	#[test_case(test_fixture!("devnet", false, "0000000000000000000000000000000000000000000000000000000000000001") =>

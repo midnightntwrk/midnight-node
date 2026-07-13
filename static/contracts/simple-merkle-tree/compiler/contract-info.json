@@ -1,8 +1,12 @@
 {
+  "compiler-version": "0.33.0",
+  "language-version": "0.25.0",
+  "runtime-version": "0.18.0-rc.0",
   "circuits": [
     {
       "name": "store",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "something",
@@ -21,6 +25,7 @@
     {
       "name": "check",
       "pure": false,
+      "proof": true,
       "arguments": [
         {
           "name": "something",
@@ -34,6 +39,82 @@
         "type-name": "Tuple",
         "types": [
         ]
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "name": "find",
+      "arguments": [
+        {
+          "name": "content",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 4294967295
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Struct",
+        "name": "MerkleTreePath",
+        "elements": [
+          {
+            "name": "leaf",
+            "type": {
+              "type-name": "Uint",
+              "maxval": 4294967295
+            }
+          },
+          {
+            "name": "path",
+            "type": {
+              "type-name": "Vector",
+              "length": 10,
+              "type": {
+                "type-name": "Struct",
+                "name": "MerkleTreePathEntry",
+                "elements": [
+                  {
+                    "name": "sibling",
+                    "type": {
+                      "type-name": "Struct",
+                      "name": "MerkleTreeDigest",
+                      "elements": [
+                        {
+                          "name": "field",
+                          "type": {
+                            "type-name": "Field"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "goes_left",
+                    "type": {
+                      "type-name": "Boolean"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "contracts": [
+  ],
+  "ledger": [
+    {
+      "name": "tree",
+      "index": 0,
+      "exported": false,
+      "storage": "HistoricMerkleTree",
+      "depth": 10,
+      "type": {
+        "type-name": "Uint",
+        "maxval": 4294967295
       }
     }
   ]

@@ -1,130 +1,71 @@
-use std::sync::Arc;
-
 use midnight_node_ledger_helpers::{
-	BuildOutput, CoinInfo, CoinPublicKey, ContractAddress, DB, Deserializable, EncryptionPublicKey,
-	HashOutput, LedgerContext, Nonce, Output, PERSISTENT_HASH_BYTES, ProofPreimage, Recipient,
-	Serializable, ShieldedTokenType, ShieldedWallet, TokenInfo, WalletState,
+	CoinPublicKey, ContractAddress, DB, Deserializable, HashOutput, PERSISTENT_HASH_BYTES,
+	Serializable, WalletState,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EncodedQualifiedShieldedCoinInfo {
-	nonce: Vec<u8>,
-	color: Vec<u8>,
+	pub(crate) nonce: [u8; PERSISTENT_HASH_BYTES],
+	pub(crate) color: [u8; PERSISTENT_HASH_BYTES],
 	#[serde(with = "string")]
-	value: u128,
+	pub(crate) value: u128,
 	#[serde(with = "string")]
-	mt_index: u64,
+	pub(crate) mt_index: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EncodedShieldedCoinInfo {
-	nonce: [u8; PERSISTENT_HASH_BYTES],
-	color: [u8; PERSISTENT_HASH_BYTES],
+	pub(crate) nonce: [u8; PERSISTENT_HASH_BYTES],
+	pub(crate) color: [u8; PERSISTENT_HASH_BYTES],
 	#[serde(with = "string")]
-	value: u128,
+	pub(crate) value: u128,
 }
 
-impl<D: DB + Clone> BuildOutput<D> for EncodedOutputInfo {
-	fn build(
-		&self,
-		rng: &mut rand::prelude::StdRng,
-		_context: Arc<LedgerContext<D>>,
-	) -> Output<ProofPreimage, D> {
-		let coin_info = CoinInfo {
-			nonce: Nonce(HashOutput(self.encoded_output.coin_info.nonce)),
-			type_: ShieldedTokenType(HashOutput(self.encoded_output.coin_info.color)),
-			value: self.encoded_output.coin_info.value,
-		};
-
-		println!("coin_info: {coin_info:?}");
-		let recipient: Recipient = self.encoded_output.recipient.clone().into();
-
-		match recipient {
-			Recipient::User(public_key) => {
-				Output::new(rng, &coin_info, self.segment, &public_key, self.encryption_public_key)
-					.expect("failed to construct output")
-			},
-			Recipient::Contract(contract_address) => {
-				Output::new_contract_owned(rng, &coin_info, self.segment, contract_address)
-					.expect("failed to construct output")
-			},
-		}
-	}
-}
-
-pub struct EncodedOutputInfo {
-	pub encoded_output: EncodedOutput,
-	pub segment: u16,
-	pub encryption_public_key: Option<EncryptionPublicKey>,
-}
-
-impl EncodedOutputInfo {
-	/// Create a new EncodedOutputInfo, searching for a matching encryption public key from
-	/// possible destinations
-	pub fn new<D: DB + Clone>(
-		encoded_output: EncodedOutput,
-		segment: u16,
-		possible_destinations: &[ShieldedWallet<D>],
+impl EncodedShieldedCoinInfo {
+	pub(crate) fn new(
+		nonce: [u8; PERSISTENT_HASH_BYTES],
+		color: [u8; PERSISTENT_HASH_BYTES],
+		value: u128,
 	) -> Self {
-		let mut encryption_public_key = None;
-		let recipient: Recipient = encoded_output.recipient.clone().into();
-		if let Recipient::User(ref public_key) = recipient {
-			if let Some(wallet) =
-				possible_destinations.iter().find(|w| w.coin_public_key == *public_key)
-			{
-				encryption_public_key = Some(wallet.enc_public_key);
-			} else {
-				println!(
-					"warning: missing encryption_public_key for zswap output {} - output will be invisible to indexer",
-					hex::encode(&encoded_output.coin_info.nonce)
-				);
-			}
-		}
-
-		Self { encoded_output, segment, encryption_public_key }
-	}
-}
-
-impl TokenInfo for EncodedOutputInfo {
-	fn token_type(&self) -> ShieldedTokenType {
-		ShieldedTokenType(HashOutput(self.encoded_output.coin_info.color))
-	}
-
-	fn value(&self) -> u128 {
-		self.encoded_output.coin_info.value
+		Self { nonce, color, value }
 	}
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodedOutput {
-	coin_info: EncodedShieldedCoinInfo,
-	recipient: EncodedRecipient,
+	pub(crate) coin_info: EncodedShieldedCoinInfo,
+	pub(crate) recipient: EncodedRecipient,
 }
 
+impl EncodedOutput {
+	pub(crate) fn new(coin_info: EncodedShieldedCoinInfo, recipient: EncodedRecipient) -> Self {
+		Self { coin_info, recipient }
+	}
+}
 /// Either a coin public key if the recipient is a user, or a contract address
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EncodedRecipient {
-	is_left: bool,
+	pub(crate) is_left: bool,
 	#[serde(with = "bytes")]
-	left: EncodedCoinPublic,
+	pub(crate) left: EncodedCoinPublic,
 	#[serde(with = "bytes")]
-	right: EncodedContractAddress,
+	pub(crate) right: EncodedContractAddress,
 }
 
-impl From<EncodedRecipient> for Recipient {
-	fn from(value: EncodedRecipient) -> Self {
-		if value.is_left {
-			Recipient::User(value.left.0)
-		} else {
-			Recipient::Contract(value.right.0)
+impl EncodedRecipient {
+	pub(crate) fn user(coin_public: EncodedCoinPublic) -> Self {
+		Self {
+			is_left: true,
+			left: coin_public,
+			right: EncodedContractAddress(ContractAddress::default()),
 		}
 	}
 }
 
 #[derive(Debug, Clone)]
-pub struct EncodedContractAddress(ContractAddress);
+pub struct EncodedContractAddress(pub(crate) ContractAddress);
 
 impl From<&EncodedContractAddress> for Vec<u8> {
 	fn from(value: &EncodedContractAddress) -> Self {
@@ -146,7 +87,13 @@ impl TryFrom<Vec<u8>> for EncodedContractAddress {
 }
 
 #[derive(Debug, Clone)]
-pub struct EncodedCoinPublic(CoinPublicKey);
+pub struct EncodedCoinPublic(pub(crate) CoinPublicKey);
+
+impl EncodedCoinPublic {
+	pub(crate) fn from_raw_bytes(bytes: [u8; PERSISTENT_HASH_BYTES]) -> Self {
+		Self(CoinPublicKey(HashOutput(bytes)))
+	}
+}
 
 impl From<&EncodedCoinPublic> for Vec<u8> {
 	fn from(value: &EncodedCoinPublic) -> Self {
@@ -187,9 +134,9 @@ impl EncodedZswapLocalState {
 			outputs: value
 				.coins
 				.iter()
-				.map(|(nullifier, c)| EncodedOutput {
+				.map(|(_nullifier, c)| EncodedOutput {
 					coin_info: EncodedShieldedCoinInfo {
-						nonce: nullifier.0.0,
+						nonce: c.nonce.0.0,
 						color: c.type_.0.0,
 						value: c.value,
 					},
@@ -256,5 +203,73 @@ mod bytes {
 	{
 		let bytes_struct = BytesSerDe::deserialize(deserializer)?;
 		bytes_struct.bytes.try_into().map_err(de::Error::custom)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use midnight_node_ledger_helpers::coin_structure::coin::Nullifier;
+	use midnight_node_ledger_helpers::{
+		CoinPublicKey, DefaultDB, HashOutput, Nonce, PERSISTENT_HASH_BYTES, QualifiedInfo,
+		ShieldedTokenType, WalletState,
+	};
+
+	fn make_test_state()
+	-> (WalletState<DefaultDB>, [u8; PERSISTENT_HASH_BYTES], [u8; PERSISTENT_HASH_BYTES]) {
+		let nonce_bytes = [0xAA_u8; PERSISTENT_HASH_BYTES];
+		let nullifier_bytes = [0xBB_u8; PERSISTENT_HASH_BYTES];
+
+		let nonce = Nonce(HashOutput(nonce_bytes));
+		let nullifier = Nullifier(HashOutput(nullifier_bytes));
+		let coin = QualifiedInfo {
+			nonce,
+			type_: ShieldedTokenType(HashOutput([0xCC_u8; PERSISTENT_HASH_BYTES])),
+			value: 42,
+			mt_index: 0,
+		};
+
+		let state = WalletState::<DefaultDB>::new();
+		let coins = state.coins.insert(nullifier, coin);
+		let state = WalletState { coins, ..state };
+
+		(state, nonce_bytes, nullifier_bytes)
+	}
+
+	#[test]
+	fn from_zswap_state_uses_coin_nonce_not_nullifier() {
+		let (state, nonce_bytes, _nullifier_bytes) = make_test_state();
+		let coin_public = CoinPublicKey(HashOutput([0u8; PERSISTENT_HASH_BYTES]));
+
+		let encoded = EncodedZswapLocalState::from_zswap_state(state, coin_public);
+
+		assert_eq!(encoded.outputs.len(), 1);
+		assert_eq!(
+			encoded.outputs[0].coin_info.nonce, nonce_bytes,
+			"serialized nonce must match the coin value's Nonce, not the map key Nullifier"
+		);
+	}
+
+	#[test]
+	fn from_zswap_state_preserves_color_and_value() {
+		let (state, _nonce_bytes, _nullifier_bytes) = make_test_state();
+		let coin_public = CoinPublicKey(HashOutput([0u8; PERSISTENT_HASH_BYTES]));
+
+		let encoded = EncodedZswapLocalState::from_zswap_state(state, coin_public);
+
+		assert_eq!(encoded.outputs[0].coin_info.color, [0xCC_u8; PERSISTENT_HASH_BYTES]);
+		assert_eq!(encoded.outputs[0].coin_info.value, 42);
+	}
+
+	#[test]
+	fn from_zswap_state_handles_empty_wallet() {
+		let state = WalletState::<DefaultDB>::new();
+		let coin_public = CoinPublicKey(HashOutput([0u8; PERSISTENT_HASH_BYTES]));
+
+		let encoded = EncodedZswapLocalState::from_zswap_state(state, coin_public);
+
+		assert!(encoded.outputs.is_empty());
+		assert!(encoded.inputs.is_empty());
+		assert_eq!(encoded.current_index, 0);
 	}
 }

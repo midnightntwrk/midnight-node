@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
 
 //! Runtime API definitions for System Parameters pallet
 
+use alloc::vec::Vec;
 use parity_scale_codec::{Decode, Encode};
 use scale_info::TypeInfo;
 use sidechain_domain::DParameter;
-use sp_std::vec::Vec;
 
 /// Terms and Conditions for runtime API (uses Vec<u8> for URL to avoid generic bounds)
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, TypeInfo)]
