@@ -67,10 +67,16 @@ jobs:
       - name: Redirect buck-out + store to /mnt, add swap
         run: |
           set -e
-          # The real fix (must succeed): keep buck-out + the CAS store off /.
+          # Keep buck-out + the CAS store off the free runner's ~14 GB `/` (the
+          # full build's buck-out is tens of GB). Use a BIND MOUNT, not a symlink:
+          # buck2's materializer resolves a symlinked buck-out inconsistently under
+          # rebuck2 (sources land where rustc can't read them -> "couldn't read
+          # src/lib.rs"); a bind mount is transparent — buck2 sees a real dir
+          # backed by /mnt (~70 GB).
           sudo mkdir -p /mnt/buck-out /mnt/rebuck2
-          sudo chown "$(id -u):$(id -g)" /mnt/buck-out /mnt/rebuck2
-          ln -s /mnt/buck-out buck-out
+          mkdir -p buck-out
+          sudo mount --bind /mnt/buck-out buck-out
+          sudo chown -R "$(id -u):$(id -g)" buck-out /mnt/rebuck2
           # Bonus swap for local rustc peaks — best-effort: the runner may already
           # have an active /mnt/swapfile, so use a fresh name and never fail here.
           ( sudo fallocate -l 6G /mnt/rebuck-swap \
