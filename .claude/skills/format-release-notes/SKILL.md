@@ -178,7 +178,7 @@ Each subagent should:
 3. For SDK / API pages: signature, parameters, return type, examples, error cases.
 4. For config guides: each new flag/env var, default, when to set it, interaction with existing config.
 5. For engineering docs: motivation, design alternatives considered, architectural impact, links to relevant code.
-6. Cross-link back to the release notes file (`../../release-notes-<VERSION>.md`).
+6. Cross-link back to the release notes file (`docs/release-notes/release-notes-<VERSION>.md`).
 7. Pass `npx markdownlint-cli` cleanly — same disable rules as the release notes file when verbatim content is included.
 
 **After subagents finish:** verify each file actually exists and has substantive content (subagent summaries describe intent, not output). Update the release notes' `## Links and references` buckets to point at the newly created files using relative paths (`docs/release-notes/<VERSION>/...`).
