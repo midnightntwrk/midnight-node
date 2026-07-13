@@ -9,7 +9,8 @@ use frame_support::{
 use frame_system::EnsureRoot;
 use pallet_balances::AccountData;
 use sidechain_domain::byte_string::SizedByteString;
-use sp_core::{H256, blake2_256};
+use sp_core::H256;
+use sp_crypto_hashing::blake2_256;
 use sp_runtime::{
 	BuildStorage,
 	traits::{BlakeTwo256, IdentityLookup},
