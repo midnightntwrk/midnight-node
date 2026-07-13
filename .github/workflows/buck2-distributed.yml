@@ -79,58 +79,6 @@ jobs:
             cxx = /usr/local/bin/wasm-cc.sh
             ar = /usr/local/bin/wasm-ar.sh
 
-      # Non-hermetic build scripts must run on the driver, not a worker.
-      #
-      # A cargo build script probes the host (openssl version, compiler
-      # features), shells out to cc/cmake, and reads absolute system paths
-      # (/usr/bin/clang, /usr/include/openssl) that aren't declared buck inputs.
-      # Dispatched to a remote worker its environment diverges and it misbehaves:
-      # openssl-sys's version probe misdetects, so `openssl` then references ffi
-      # symbols absent at that version (EVP_DigestSqueeze, …); secp256k1-sys's
-      # vendored wasm C compile fails. All of them succeed run locally.
-      #
-      # So build the build-script-run closure locally first (--prefer-local),
-      # then the main distributed build reuses their cached outputs by action
-      # hash while the hermetic rustc/cxx compiles it feeds still distribute.
-      # Split by platform so each build script is configured exactly as the main
-      # build configures it (host third-party under linux-x86_64, wasm-deps under
-      # wasm32) — a config-matched output is what makes the main build cache-hit.
-      - name: buck2 pre-build (non-hermetic build scripts, local)
-        run: |
-          set -o pipefail
-          # The build-script-run rule has no default output (only [out_dir] /
-          # [rustc_flags] sub-targets), so the build script only executes when
-          # an [out_dir] sub-target is built. --local-only forces the driver
-          # (--prefer-local is only a hint the hybrid executor may still race to
-          # a worker). set -f keeps the shell from globbing the [out_dir] suffix.
-          set -f
-          # Only the crates whose build scripts are non-hermetic in a way that
-          # breaks under RE: openssl(-sys) probes the host openssl version, and
-          # secp256k1-sys compiles vendored wasm C. Other build scripts (protoc
-          # codegen for sc-network/litep2p, etc.) build fine distributed and are
-          # left alone -- forcing them local would need their own host tooling.
-          HOST_BS=$(buck2 uquery "root//third-party:" | grep -E 'build-script-run$' | grep -E 'openssl-[0-9]' | sed 's/$/[out_dir]/' || true)
-          WASM_BS=$(buck2 uquery "root//wasm-deps:" | grep -E 'build-script-run$' | grep -E 'secp256k1-sys' | sed 's/$/[out_dir]/' || true)
-          [ -n "$HOST_BS" ] && buck2 build --local-only \
-            --target-platforms root//platforms:linux-x86_64 $HOST_BS 2>&1 | tee prebuild-host.log
-          [ -n "$WASM_BS" ] && buck2 build --local-only \
-            --target-platforms root//platforms:wasm32v1-none $WASM_BS 2>&1 | tee prebuild-wasm.log
-
-      # TEMP DEBUG: surface the real clang diagnostic for the secp256k1 wasm
-      # compile that cc-rs swallows (wasm-cc.sh writes wasm-cc-fail.log into the
-      # action CWD under buck-out during the --local-only pre-build above).
-      - name: DEBUG dump wasm-cc diagnostic
-        if: always()
-        run: |
-          echo "=== wasm-cc-fail.log files under buck-out ==="
-          found=$(find buck-out -name wasm-cc-fail.log 2>/dev/null)
-          if [ -n "$found" ]; then
-            for f in $found; do echo "--- $f ---"; cat "$f"; done
-          else
-            echo "(no diagnostic captured under buck-out)"
-            find / -name wasm-cc-fail.log 2>/dev/null | head
-          fi
-
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
       # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
       #

@@ -29,12 +29,5 @@ rc=$?
 if [ "$rc" -ne 0 ]; then
   printf 'wasm-cc.sh: %s exited %d\ncmd: %s %s\n%s\n' \
     "$CLANG" "$rc" "$CLANG" "$*" "$err" >&2
-  # TEMP DEBUG: cc-rs captures the compiler's stderr and, on failure, reprints
-  # only its own one-liner -- clang's real diagnostic is lost. Write it into the
-  # action's CWD (under buck-out, the real materialization root that survives a
-  # local/driver build -- unlike /tmp, which rebuck2's local executor sandboxes).
-  # A follow-up step greps buck-out for it. Best-effort.
-  printf 'wasm-cc.sh: %s exited %d\ncmd: %s %s\n%s\n' \
-    "$CLANG" "$rc" "$CLANG" "$*" "$err" >>wasm-cc-fail.log 2>/dev/null || true
 fi
 exit "$rc"
