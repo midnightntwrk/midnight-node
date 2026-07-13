@@ -14,4 +14,4 @@ so it tracks the git-8.2 storage-core's sha2 0.11 bump automatically, and the
 hard-fork state-migration helpers serialize-round-trip across the (now
 distinct) L7/L8/L9 storage arenas instead of reinterpreting arena keys in place.
 
-PR: TODO
+PR: https://github.com/midnightntwrk/midnight-node/pull/1869

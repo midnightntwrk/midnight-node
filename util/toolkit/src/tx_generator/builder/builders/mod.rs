@@ -16,7 +16,6 @@ pub mod ledger_8;
 pub mod ledger_9;
 pub use ledger_9::*;
 
-
 // Conversion impls for encoded zswap types to ledger types.
 // These live here (not in common/) because common/ is compiled once per ledger
 // version, which would cause E0119 conflicts wherever versions share types.
