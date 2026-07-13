@@ -390,7 +390,6 @@ async fn contract_ops() {
 /// message using the secret key as a private witness, then asserts the key does
 /// not appear anywhere in the serialized transactions.
 #[tokio::test]
-#[ignore = "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"]
 async fn bboard_private_witness_not_leaked() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);
@@ -498,7 +497,6 @@ async fn bboard_private_witness_not_leaked() {
 /// Counter contract E2E ported from `midnight-contracts`: deploy, then `increment()`,
 /// exercising the full compile -> prove -> submit -> on-chain verify pipeline.
 #[tokio::test]
-#[ignore = "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"]
 async fn counter_increment_e2e() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);
