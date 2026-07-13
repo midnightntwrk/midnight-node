@@ -135,6 +135,8 @@ impl<D: DB> Ledger<D> {
 	/// Returns the applied stage classification and the per-transaction
 	/// `Event<D>` stream the ledger emitted. `TransactionResult::Failure`
 	/// produces no events and returns an error, matching the prior semantics.
+	// The return tuple carries the applied-stage classification alongside the ledger event stream.
+	#[allow(clippy::type_complexity)]
 	pub(crate) fn apply_verified_transaction<S: SignatureKind<D>>(
 		sp: Sp<Self, D>,
 		api: &Api,
@@ -233,6 +235,8 @@ impl<D: DB> Ledger<D> {
 	/// Returns the new ledger snapshot together with the `Event<D>` stream the
 	/// ledger emitted for the system transaction (`ParamChange`,
 	/// `DustInitialUtxo`, dust-generation events, etc.).
+	// The return tuple carries the new ledger snapshot alongside the ledger event stream.
+	#[allow(clippy::type_complexity)]
 	pub(crate) fn apply_system_tx(
 		sp: Sp<Self, D>,
 		tx: &SystemTransaction,
