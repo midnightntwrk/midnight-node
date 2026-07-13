@@ -17,7 +17,7 @@ Upstream template (**v5**): <https://github.com/midnightntwrk/midnight-network-o
 ## 2. Fetch This Release
 
 ```bash
-gh release view TAG --repo midnightntwrk/midnight-node --json body,publishedAt,tagName
+gh release view $TAG --repo midnightntwrk/midnight-node --json body,publishedAt,tagName
 ```
 
 If that fails, try without `--repo` (assumes current repo). Store the body, date, and tag.
@@ -42,7 +42,7 @@ List releases with `gh release list --repo midnightntwrk/midnight-node --limit 5
 Fetch **all** prior release bodies in parallel:
 
 ```bash
-gh release view PRIOR_TAG --repo midnightntwrk/midnight-node --json body
+gh release view $PRIOR_TAG --repo midnightntwrk/midnight-node --json body
 ```
 
 Extract all PR numbers (pattern: `#\d+` or `/pull/\d+`) from **every** prior release body and combine them into a single set. These PRs will be **excluded** from the current notes — they were already announced in a previous pre-release or release.
@@ -258,7 +258,7 @@ After writing, run `npx markdownlint-cli release-notes-VERSION.md` to verify. Fi
 After writing the file, ask the user if they want to update the GitHub release body with the formatted notes:
 
 ```bash
-gh release edit TAG --repo midnightntwrk/midnight-node --notes-file release-notes-VERSION.md
+gh release edit $TAG --repo midnightntwrk/midnight-node --notes-file release-notes-VERSION.md
 ```
 
 Do NOT run this without explicit user confirmation.
