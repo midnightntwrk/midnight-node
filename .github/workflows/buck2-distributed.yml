@@ -91,7 +91,7 @@ jobs:
         run: |
           clang --version | head -1
           cd "$RUNNER_TEMP"
-          curl -sL https://crates.io/api/v1/crates/secp256k1-sys/0.10.1/download | tar xz
+          curl -sL https://static.crates.io/crates/secp256k1-sys/secp256k1-sys-0.10.1.crate | tar xz
           cd secp256k1-sys-0.10.1
           echo "=== running the wasm.c compile via wasm-cc.sh ==="
           /usr/local/bin/wasm-cc.sh -O3 -ffunction-sections -fdata-sections \
