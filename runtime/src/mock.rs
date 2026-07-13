@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloc::vec::Vec;
 use authority_selection_inherents::{
 	AriadneInherentDataProvider, AuthoritySelectionInputs, CommitteeMember, MaybeFromCandidateKeys,
 	RegisterValidatorSignedMessage, filter_trustless_candidates_registrations,
@@ -32,7 +33,6 @@ use sp_runtime::{
 	key_types::{AURA, GRANDPA},
 	traits::{BlakeTwo256, IdentifyAccount, IdentityLookup, OpaqueKeys},
 };
-use sp_std::vec::Vec;
 use std::cmp::max;
 
 use crate::CurrencyWaiver;

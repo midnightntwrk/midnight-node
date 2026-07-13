@@ -1,0 +1,265 @@
+name: Rebuild Chainspec (Bot Action)
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to rebuild chainspec for"
+        required: true
+      networks:
+        description: 'Space-separated network names (e.g., "qanet preview")'
+        required: true
+      version:
+        description: 'Optional node image version (e.g., "0.22.0") — sets --NODE_IMAGE on earthly'
+        required: false
+
+jobs:
+  rebuild-chainspec:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/bot rebuild-chainspec'))
+    runs-on: [self-hosted, "tier:medium"]
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check user permission
+        if: github.event_name == 'issue_comment'
+        id: check_permission
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const association = context.payload.comment.author_association;
+            if (!['MEMBER', 'OWNER'].includes(association)) {
+              core.setFailed(`User ${context.actor} is not an org member or owner (association: ${association})`);
+              return;
+            }
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.actor
+            });
+            const allowed = ['admin', 'write'].includes(permission.permission);
+            if (!allowed) {
+              core.setFailed(`User ${context.actor} does not have write permission`);
+            }
+
+      - name: Add reaction to comment
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            })
+
+      - name: Parse comment args
+        if: github.event_name == 'issue_comment'
+        id: parse_comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const comment = context.payload.comment.body;
+            const match = comment.match(/\/bot rebuild-chainspec\s+(.+)/);
+            if (!match) {
+              core.setFailed('No networks specified. Usage: /bot rebuild-chainspec [-v <version>] <network1> <network2> ...');
+              return;
+            }
+            const args = match[1].trim();
+
+            // Extract optional -v <version>
+            const versionMatch = args.match(/-v\s+(\S+)/);
+            const version = versionMatch ? versionMatch[1] : '';
+            // Remove -v <version> from args to get networks
+            const networksStr = args.replace(/-v\s+\S+/, '').trim();
+
+            const networks = networksStr.split(/\s+/).filter(Boolean);
+            if (networks.length === 0) {
+              core.setFailed('No networks specified. Usage: /bot rebuild-chainspec [-v <version>] <network1> <network2> ...');
+              return;
+            }
+            core.setOutput('networks', networks.join(' '));
+            core.setOutput('version', version);
+
+      - name: Get PR branch
+        id: pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+        with:
+          script: |
+            const prNumber = context.eventName === 'workflow_dispatch'
+              ? process.env.PR_NUMBER
+              : context.issue.number;
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            if (pr.data.head.repo === null || pr.data.head.repo.fork) {
+              core.setFailed('Bot commands are not allowed on fork PRs for security reasons');
+              return;
+            }
+            core.setOutput('ref', pr.data.head.ref);
+            core.setOutput('sha', pr.data.head.sha);
+            core.setOutput('number', prNumber);
+
+      - name: Checkout PR branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: true
+          ref: ${{ steps.pr.outputs.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Validate networks
+        env:
+          NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
+        run: |
+          ALLOWED="$(find res -iname '*.toml' -exec basename {} .toml \; | grep -v -e '^default$' -e '^Cargo$' | sort)"
+          for network in $NETWORKS; do
+            if ! echo "$ALLOWED" | grep -qx "$network"; then
+              echo "::error::Unknown network: $network. Allowed: $(echo $ALLOWED | tr '\n' ' ')"
+              exit 1
+            fi
+          done
+
+      - name: Setup Earthly
+        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      - name: Login to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+
+      - name: Run rebuild-chainspec
+        env:
+          EARTHLY_CONFIG: .earthly/config.yml
+          NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || steps.parse_comment.outputs.version }}
+        run: |
+          mkdir -p "$HOME"/.cargo
+          echo "[net]" >> "$HOME"/.cargo/config
+          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
+
+          NODE_IMAGE="+node-image"
+          if [ -n "$VERSION" ]; then
+            NODE_IMAGE="midnightntwrk/midnight-node:$VERSION"
+            echo "Using node image: $NODE_IMAGE"
+          fi
+
+          # Split networks and run earthly for each
+          for network in $NETWORKS; do
+            echo "Rebuilding chainspec for network: $network"
+            earthly -P +rebuild-chainspec --NETWORK="$network" --NODE_IMAGE="$NODE_IMAGE"
+          done
+
+      - name: Commit and push changes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        id: commit
+        env:
+          NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Check if there are changes
+            const { execSync } = require('child_process');
+            const status = execSync('git status --porcelain').toString();
+
+            if (!status.trim()) {
+              core.exportVariable('CHANGES_MADE', 'false');
+              console.log('No changes to commit');
+              return;
+            }
+
+            // Get changed files in res/ directories
+            const changedFiles = status.split('\n')
+              .filter(line => line.trim())
+              .map(line => line.substring(3))
+              .filter(file => file.startsWith('res/') && file.includes('chain-spec'));
+
+            if (changedFiles.length === 0) {
+              core.exportVariable('CHANGES_MADE', 'false');
+              console.log('No chainspec changes to commit');
+              return;
+            }
+
+            // Prepare file additions
+            const additions = changedFiles.map(filePath => {
+              const contents = fs.readFileSync(filePath);
+              return {
+                path: filePath,
+                contents: contents.toString('base64')
+              };
+            });
+
+            // Get current HEAD
+            const headOid = execSync('git rev-parse HEAD').toString().trim();
+
+            // Get networks for commit message
+            const networks = process.env.NETWORKS;
+
+            // Create commit via GraphQL API
+            const result = await github.graphql(`
+              mutation($input: CreateCommitOnBranchInput!) {
+                createCommitOnBranch(input: $input) {
+                  commit {
+                    oid
+                  }
+                }
+              }
+            `, {
+              input: {
+                branch: {
+                  repositoryNameWithOwner: '${{ github.repository }}',
+                  branchName: '${{ steps.pr.outputs.ref }}'
+                },
+                message: {
+                  headline: `chore: rebuild chainspec for ${networks}`
+                },
+                expectedHeadOid: headOid,
+                fileChanges: {
+                  additions: additions
+                }
+              }
+            });
+
+            console.log('Commit created:', result.createCommitOnBranch.commit.oid);
+            core.exportVariable('CHANGES_MADE', 'true');
+
+      - name: Post success comment
+        if: env.CHANGES_MADE == 'true'
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
+        with:
+          message: |
+            :white_check_mark: Chainspec rebuild complete! Changes have been committed.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post no-changes comment
+        if: env.CHANGES_MADE == 'false'
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
+        with:
+          message: |
+            :white_check_mark: Chainspec rebuild complete. No changes detected.
+          pr-number: ${{ steps.pr.outputs.number }}
+
+      - name: Post failure comment
+        if: failure()
+        uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3.0.1
+        with:
+          message: |
+            :x: Chainspec rebuild failed. Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+          pr-number: ${{ steps.pr.outputs.number }}

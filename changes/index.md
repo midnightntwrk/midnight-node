@@ -1,6 +1,12 @@
 Git tag: [{{ release_tag }}](https://github.com/midnightntwrk/midnight-node/tree/{{ release_tag }})
 
-## Docker Images
-
-[Node](https://github.com/midnight-ntwrk/artifacts/pkgs/container/midnight-node): `docker pull {{ node_docker_image }}`
-[Toolkit](https://github.com/midnight-ntwrk/artifacts/pkgs/container/midnight-node-toolkit): `docker pull {{ toolkit_docker_image }}`
+## Components
+{{#if node_version}}
+- 📦 `node-{{ node_version }}`
+{{/if}}
+{{#if toolkit_version}}
+- 🧰 `toolkit-{{ toolkit_version }}`
+{{/if}}
+{{#if runtime_version}}
+- ⚙️ `runtime-{{ runtime_version }}`
+{{/if}}

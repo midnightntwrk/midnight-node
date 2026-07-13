@@ -1,6 +1,6 @@
+use crate::cli_parsers as cli;
 use clap::Args;
 use midnight_node_ledger_helpers::{DefaultDB, DerivationPath, Role, ShieldedWallet, WalletSeed};
-use midnight_node_toolkit::cli_parsers as cli;
 #[derive(Args)]
 pub struct ShowViewingKeyArgs {
 	/// Target network
@@ -15,7 +15,9 @@ pub struct ShowViewingKeyArgs {
 pub fn execute(args: ShowViewingKeyArgs) -> String {
 	let derivation_path = DerivationPath::default_for_role(Role::Zswap);
 
-	ShieldedWallet::<DefaultDB>::from_path(args.seed, &derivation_path).viewing_key(&args.network)
+	ShieldedWallet::<DefaultDB>::from_path(args.seed, &derivation_path)
+		.expect("invalid Zswap derivation path")
+		.viewing_key(&args.network)
 }
 
 #[cfg(test)]

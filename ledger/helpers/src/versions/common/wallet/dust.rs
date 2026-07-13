@@ -1,21 +1,29 @@
+use derive_where::derive_where;
 use thiserror::Error;
 
 use super::super::{
-	DB, DerivationPath, DeriveSeed, Deserializable, DustLocalState, DustNullifier, DustOutput,
-	DustParameters, DustPublicKey, DustSecretKey, DustSpend, Event, EventReplayError, HRP_CONSTANT,
-	HRP_CREDENTIAL_DUST, HashSet, IntoWalletAddress, LedgerParameters, MnLedgerDustSpendError,
-	ProofPreimageMarker, QualifiedDustOutput, Role, Serializable, ShortTaggedDeserializeError,
-	Tagged, Timestamp, WalletAddress, WalletSeed, short_tagged_deserialize, short_tagged_serialize,
+	ArenaKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable, DustLocalState,
+	DustNullifier, DustOutput, DustParameters, DustPublicKey, DustSecretKey, DustSpend, Event,
+	EventReplayError, HRP_CONSTANT, HRP_CREDENTIAL_DUST, HashSet, IntoWalletAddress,
+	LedgerParameters, Loader, MnLedgerDustSpendError, ProofPreimageMarker, QualifiedDustOutput,
+	Role, Serializable, Sp, Storable, Tagged, Timestamp, WalletAddress, WalletSeed,
+	deserialize_untagged, mn_ledger_serialize as serialize, mn_ledger_storage as storage,
+	serialize_untagged,
 };
 
-#[derive(Debug, Clone)]
+pub type DustSpendResult<D> = (Vec<DustSpend<ProofPreimageMarker, D>>, Sp<DustLocalState<D>, D>);
+
+#[derive(Debug, Storable)]
+#[derive_where(Clone)]
+#[storable(db = D)]
+#[tag = "dust-wallet"]
 pub struct DustWallet<D: DB> {
 	pub public_key: DustPublicKey,
-	secret_key: Option<DustSecretKey>,
-	pub dust_local_state: Option<DustLocalState<D>>,
+	secret_key: Option<Sp<DustSecretKey, D>>,
+	pub dust_local_state: Option<Sp<DustLocalState<D>, D>>,
 	// We track the UTXOs we spent, to avoid spending the same UTXO twice in one batch of TXs.
 	// This set is cleared in `process_ttls`, because that is called when a new block is produced.
-	spent_utxos: HashSet<DustNullifier>,
+	spent_utxos: HashSet<DustNullifier, D>,
 }
 
 impl<D: DB> DeriveSeed for DustWallet<D> {}
@@ -29,7 +37,7 @@ impl<D: DB> IntoWalletAddress for DustWallet<D> {
 			.unwrap_or_else(|err| panic!("Error while bech32 parsing: {err}"));
 
 		let address = DustAddress { public_key: self.public_key };
-		let data = short_tagged_serialize(&address);
+		let data = serialize_untagged(&address).expect("failed to serialize dust address");
 		WalletAddress::new(hrp, data)
 	}
 }
@@ -38,9 +46,9 @@ impl<D: DB> DustWallet<D> {
 	fn from_seed(derived_seed: [u8; 32], params: Option<&LedgerParameters>) -> Self {
 		let secret_key = DustSecretKey::derive_secret_key(&derived_seed);
 		let public_key = secret_key.clone().into();
-		let dust_local_state = params.map(|p| DustLocalState::new(p.dust));
+		let dust_local_state = params.map(|p| Sp::new(DustLocalState::new(p.dust)));
 		let spent_utxos = HashSet::new();
-		Self { public_key, secret_key: Some(secret_key), dust_local_state, spent_utxos }
+		Self { public_key, secret_key: Some(Sp::new(secret_key)), dust_local_state, spent_utxos }
 	}
 
 	pub fn default(root_seed: WalletSeed, params: Option<&LedgerParameters>) -> Self {
@@ -55,24 +63,30 @@ impl<D: DB> DustWallet<D> {
 		root_seed: WalletSeed,
 		path: &DerivationPath,
 		params: Option<&LedgerParameters>,
-	) -> Self {
+	) -> Result<Self, DerivationPathError> {
+		path.validate_role(&[Role::Dust])?;
 		let derived_seed = Self::derive_seed(root_seed, path);
-
-		Self::from_seed(derived_seed, params)
+		Ok(Self::from_seed(derived_seed, params))
 	}
 
-	pub fn replay_events(&mut self, events: &[Event<D>]) -> Result<(), EventReplayError> {
+	pub fn replay_events<'a>(
+		&mut self,
+		events: impl IntoIterator<Item = &'a Event<D>>,
+	) -> Result<(), EventReplayError>
+	where
+		D: 'a,
+	{
 		if let Some(state) = self.dust_local_state.as_mut()
 			&& let Some(sk) = self.secret_key.as_ref()
 		{
-			*state = state.clone().replay_events(sk, events)?;
+			*state = Sp::new(state.replay_events(sk, events)?);
 		}
 		Ok(())
 	}
 
 	pub fn process_ttls(&mut self, tblock: Timestamp) {
 		if let Some(state) = self.dust_local_state.as_mut() {
-			*state = state.clone().process_ttls(tblock);
+			*state = Sp::new(state.process_ttls(tblock));
 		}
 		self.spent_utxos = HashSet::new()
 	}
@@ -82,7 +96,7 @@ impl<D: DB> DustWallet<D> {
 		amount: u128,
 		ctime: Timestamp,
 		params: &DustParameters,
-	) -> Result<Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendError> {
+	) -> Result<DustSpendResult<D>, DustSpendError> {
 		let Some(original_state) = self.dust_local_state.as_ref() else {
 			return Err(DustSpendError::MissingLocalState);
 		};
@@ -107,17 +121,22 @@ impl<D: DB> DustWallet<D> {
 			let (new_state, spend) = state
 				.spend(sk, &qdo, v_fee, ctime)
 				.map_err(|e| DustSpendError::Internal(Box::new(e)))?;
-			state = new_state;
+			state = Sp::new(new_state);
 			spends.push(spend);
 			remaining_amount -= v_fee;
 			if remaining_amount == 0 {
 				break;
 			}
 		}
-		Ok(spends)
+		Ok((spends, state))
 	}
 
-	pub fn mark_spent(&mut self, spends: &[DustSpend<ProofPreimageMarker, D>]) {
+	pub fn mark_spent(
+		&mut self,
+		spends: &[DustSpend<ProofPreimageMarker, D>],
+		updated_state: Sp<DustLocalState<D>, D>,
+	) {
+		self.dust_local_state = Some(updated_state);
 		for spend in spends {
 			self.spent_utxos = self.spent_utxos.insert(spend.old_nullifier);
 		}
@@ -136,7 +155,7 @@ pub enum DustAddressParseError {
 	InvalidHrpPrefix,
 	InvalidHrpCredential,
 	AddressNotDust,
-	Deserialize(ShortTaggedDeserializeError),
+	Deserialize(std::io::Error),
 }
 
 impl<D: DB> TryFrom<&WalletAddress> for DustWallet<D> {
@@ -162,14 +181,42 @@ impl<D: DB> TryFrom<&WalletAddress> for DustWallet<D> {
 			return Err(DustAddressParseError::AddressNotDust);
 		}
 
-		let dust_address: DustAddress =
-			short_tagged_deserialize(data).map_err(DustAddressParseError::Deserialize)?;
+		let dust_address: DustAddress = deserialize_untagged(&mut data.as_slice())
+			.map_err(DustAddressParseError::Deserialize)?;
 		Ok(DustWallet {
 			public_key: dust_address.public_key,
 			secret_key: None,
 			dust_local_state: None,
 			spent_utxos: HashSet::new(),
 		})
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{DerivationPath, DustWallet, Role, WalletSeed};
+	use crate::DefaultDB;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::from([0u8; 32])
+	}
+
+	#[test]
+	fn from_path_accepts_dust_role() {
+		let path = DerivationPath::default_for_role(Role::Dust);
+		let _wallet = DustWallet::<DefaultDB>::from_path(test_seed(), &path, None).unwrap();
+	}
+
+	#[test]
+	fn from_path_rejects_zswap_role() {
+		let path = DerivationPath::default_for_role(Role::Zswap);
+		assert!(DustWallet::<DefaultDB>::from_path(test_seed(), &path, None).is_err());
+	}
+
+	#[test]
+	fn from_path_rejects_unshielded_role() {
+		let path = DerivationPath::default_for_role(Role::UnshieldedExternal);
+		assert!(DustWallet::<DefaultDB>::from_path(test_seed(), &path, None).is_err());
 	}
 }
 

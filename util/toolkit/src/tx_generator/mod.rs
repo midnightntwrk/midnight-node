@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,27 +11,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use midnight_node_ledger_helpers::*;
-use std::{path::Path, sync::Arc};
-use subxt::{OnlineClient, PolkadotConfig};
 use thiserror::Error;
 
-use crate::{
-	ProofType, SignatureType,
-	client::MidnightNodeClient,
-	indexer::Indexer,
-	remote_prover::RemoteProofServer,
-	sender::Sender,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
-};
+use crate::serde_def::SourceTransactions;
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub mod builder;
 pub mod destination;
 pub mod source;
 
-use builder::{BuildTxs, Builder, DynamicError};
+use builder::{
+	Builder, DynamicError, ProverConfig, build_fork_aware_context_cached_with_schemes,
+	ensure_ecdsa_supported,
+};
 use destination::{Destination, SendTxs, SendTxsToFile, SendTxsToUrl};
-use source::{GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError};
+use source::{
+	FetchCacheConfig, GetTxs, GetTxsFromFile, GetTxsFromUrl, Source, SourceError,
+	create_file_wallet_cache,
+};
 
 #[derive(Debug, Error)]
 pub enum TxGeneratorError {
@@ -48,26 +45,17 @@ pub struct DestinationError {
 	source: subxt::Error,
 }
 
-pub struct TxGenerator<S: SignatureKind<DefaultDB>, P: ProofKind<DefaultDB> + Send + Sync + 'static>
-where
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
-	pub source: Box<dyn GetTxs<S, P>>,
-	pub destinations: Vec<Box<dyn SendTxs<S, P>>>,
-	pub builder: Box<dyn BuildTxs<Error = DynamicError>>,
-	pub prover: Arc<dyn ProofProvider<DefaultDB>>,
+pub struct TxGenerator {
+	pub source: Box<dyn GetTxs>,
+	pub destinations: Vec<Box<dyn SendTxs>>,
+	pub builder_config: Builder,
+	pub prover_config: ProverConfig,
+	pub fetch_cache_config: FetchCacheConfig,
+	pub ledger_state_db: String,
+	pub dry_run: bool,
 }
 
-impl<
-	S: SignatureKind<DefaultDB> + Tagged + Send + Sync + 'static,
-	P: ProofKind<DefaultDB> + Send + Sync + 'static + std::fmt::Debug,
-> TxGenerator<S, P>
-where
-	<P as ProofKind<DefaultDB>>::Pedersen: Send + Sync,
-	<P as ProofKind<DefaultDB>>::LatestProof: Send + Sync,
-	<P as ProofKind<DefaultDB>>::Proof: Send + Sync,
-	Transaction<S, P, PedersenRandomness, DefaultDB>: Tagged,
-{
+impl TxGenerator {
 	pub async fn new(
 		src: Source,
 		dest: Destination,
@@ -75,125 +63,175 @@ where
 		proof_server: Option<String>,
 		dry_run: bool,
 	) -> Result<Self, TxGeneratorError> {
+		let fetch_cache_config = src.fetch_cache.clone();
+		let ledger_state_db = src.ledger_state_db.clone();
 		let source = Self::source(src, dry_run).await?;
 		let destinations = Self::destinations(dest, dry_run).await?;
-		let builder = builder.to_builder(dry_run);
-		let prover = Self::prover(proof_server, dry_run);
+		if dry_run {
+			log::info!("Dry-run: Builder type: {:?}", &builder);
+		}
+		let prover_config = Self::prover_config(proof_server, dry_run);
 
-		Ok(Self { source, destinations, builder, prover })
+		Ok(Self {
+			source,
+			destinations,
+			builder_config: builder,
+			prover_config,
+			fetch_cache_config,
+			ledger_state_db,
+			dry_run,
+		})
 	}
 
-	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs<S, P>>, SourceError> {
-		if let Some(ref src_files) = src.src_files {
+	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
+		let base: Box<dyn GetTxs> = if let Some(ref src_files) = src.src_files {
 			if dry_run {
-				println!("Dry-run: Source transactions from file(s): {:?}", &src_files);
+				log::info!("Dry-run: Source transactions from file(s): {:?}", &src_files);
 				return Ok(Box::new(()));
 			}
-			let path = Path::new(&src_files[0]);
-			let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-			let source: Box<dyn GetTxs<S, P>> =
-				Box::new(GetTxsFromFile::new(src_files.clone(), extension.to_string()));
-			Ok(source)
-		} else if let Some(url) = src.src_url {
+			Box::new(GetTxsFromFile::new(
+				src_files.clone(),
+				src.dust_warp,
+				src.ignore_block_context,
+			))
+		} else if let Some(ref url) = src.src_url {
 			if dry_run {
-				println!("Dry-run: Source transactions from url: {:?}", &url);
+				log::info!("Dry-run: Source transactions from url: {:?}", &url);
 				return Ok(Box::new(()));
 			}
-			let midnight_node_client = MidnightNodeClient::new(&url).await?;
-			let indexer =
-				Arc::new(Indexer::<S, P>::new(midnight_node_client, src.fetch_concurrency).await?);
-			let source: Box<dyn GetTxs<S, P>> = Box::new(GetTxsFromUrl::new(indexer));
-			Ok(source)
+			Box::new(GetTxsFromUrl::new(
+				url,
+				src.fetch_concurrency,
+				src.fetch_compute_concurrency
+					.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get())),
+				src.dust_warp,
+				src.fetch_only_cached,
+				src.fetch_cache,
+			))
 		} else {
-			Err(SourceError::InvalidSourceArgs(src))
-		}
+			return Err(SourceError::InvalidSourceArgs(src));
+		};
+
+		Ok(base)
 	}
 
 	async fn destinations(
 		dest: Destination,
 		dry_run: bool,
-	) -> Result<Vec<Box<dyn SendTxs<S, P>>>, DestinationError> {
+	) -> Result<Vec<Box<dyn SendTxs>>, DestinationError> {
 		if let Some(ref dest_file) = dest.dest_file {
 			if dry_run {
-				println!("Dry-run: Destination file: {:?}", &dest_file);
-				if dest.to_bytes {
-					println!("Dry-run: Destination file-format: bytes");
-				} else {
-					println!("Dry-run: Destination file-format: json");
-				}
+				log::info!("Dry-run: Destination file: {:?}", &dest_file);
 				return Ok(vec![Box::new(())]);
 			}
-			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToFile::new(dest_file.clone(), dest.to_bytes));
+			let destination: Box<dyn SendTxs> = Box::new(SendTxsToFile::new(dest_file.clone()));
 
 			return Ok(vec![destination]);
 		}
 
 		// ------ accept multiple urls ------
 		let mut dests = vec![];
-		for url in dest.dest_urls {
-			if dry_run {
-				println!("Dry-run: Destination RPC: {:?}", &url);
-				println!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
-				continue;
-			}
-			let api = OnlineClient::<PolkadotConfig>::from_insecure_url(url.clone()).await?;
-			let sender = Arc::new(Sender::<S, P>::new(api, url));
-			let destination: Box<dyn SendTxs<S, P>> =
-				Box::new(SendTxsToUrl::new(sender, dest.rate));
-
-			dests.push(destination);
+		if dry_run {
+			log::info!("Dry-run: Destination RPC(s): {:?}", &dest.dest_urls);
+			log::info!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
+
+		let destination: Box<dyn SendTxs> =
+			Box::new(SendTxsToUrl::new(dest.dest_urls.clone(), dest.rate, dest.no_watch_progress));
+
+		dests.push(destination);
 
 		Ok(dests)
 	}
 
-	pub fn prover(
-		proof_server: Option<String>,
-		dry_run: bool,
-	) -> Arc<dyn ProofProvider<DefaultDB>> {
+	pub fn prover_config(proof_server: Option<String>, dry_run: bool) -> ProverConfig {
 		if let Some(url) = proof_server {
 			if dry_run {
-				println!("Dry-run: remove prover: {url}");
+				log::info!("Dry-run: remote prover: {url}");
 			}
-			Arc::new(RemoteProofServer::new(url))
+			ProverConfig::Remote(url)
 		} else {
 			if dry_run {
-				println!("Dry-run: local prover (no proof server)");
+				log::info!("Dry-run: local prover (no proof server)");
 			}
-			Arc::new(LocalProofServer::new())
+			ProverConfig::Local
 		}
 	}
 
 	pub async fn get_txs(
 		&self,
-	) -> Result<SourceTransactions<S, P>, Box<dyn std::error::Error + Send + Sync>> {
+	) -> Result<SourceTransactions, Box<dyn std::error::Error + Send + Sync>> {
 		self.source.get_txs().await
 	}
 
 	pub async fn send_txs(
 		&self,
-		txs: &DeserializedTransactionsWithContext<S, P>,
+		txs: &SerializedTxBatches,
 	) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let sends_txs_futs: Vec<_> =
 			self.destinations.iter().map(|dest| dest.send_txs(txs)).collect();
 
-		// send transactions concurrently; no waiting needed for prev async calls
 		let results = futures::future::join_all(sends_txs_futs).await;
 
-		for result in results.iter() {
+		let mut any_failed = false;
+		for result in results {
 			if let Err(e) = result {
-				println!("ERROR: {e}");
+				eprintln!("ERROR: {e}");
+				any_failed = true;
 			}
 		}
 
+		if any_failed {
+			return Err("one or more destination tasks failed".into());
+		}
 		Ok(())
 	}
 
 	pub async fn build_txs(
 		&self,
-		received_txs: &SourceTransactions<SignatureType, ProofType>,
-	) -> Result<DeserializedTransactionsWithContext<SignatureType, ProofType>, DynamicError> {
-		self.builder.build_txs_from(received_txs.clone(), self.prover.clone()).await
+		received_txs: &SourceTransactions,
+	) -> Result<SerializedTxBatches, DynamicError> {
+		let seeds = self
+			.builder_config
+			.relevant_wallet_seeds()
+			.map_err(|e| DynamicError { error: e.into() })?;
+		let schemes = self
+			.builder_config
+			.relevant_wallet_schemes()
+			.map_err(|e| DynamicError { error: e.into() })?;
+
+		// Guard: ECDSA unshielded identities are only representable from ledger 9. Reject early with
+		// a clear CLI error instead of letting the loud panic fire deep in context construction.
+		ensure_ecdsa_supported(received_txs.ledger_version(), &schemes)?;
+
+		let fork_ctx = if seeds.is_empty() {
+			None
+		} else {
+			let wallet_cache =
+				create_file_wallet_cache(&self.ledger_state_db, &self.fetch_cache_config);
+			let t = std::time::Instant::now();
+			let ctx = build_fork_aware_context_cached_with_schemes(
+				&seeds,
+				received_txs,
+				wallet_cache.as_deref(),
+				&schemes,
+			)
+			.await;
+			log::debug!("[perf] build_fork_aware_context_cached took {:?}", t.elapsed());
+			Some(ctx)
+		};
+
+		let t = std::time::Instant::now();
+		let builder = self.builder_config.clone().to_versioned_builder(
+			fork_ctx,
+			&self.prover_config,
+			self.dry_run,
+		)?;
+		log::debug!("[perf] to_versioned_builder took {:?}", t.elapsed());
+
+		let t = std::time::Instant::now();
+		let result = builder.build_txs_from(received_txs.clone()).await;
+		log::debug!("[perf] build_txs_from took {:?}", t.elapsed());
+		result
 	}
 }

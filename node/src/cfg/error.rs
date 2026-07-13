@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -24,4 +24,6 @@ pub enum CfgError {
 	SerdeJsonError(#[from] serde_json::Error),
 	#[error("error getting keys from config struct: {0}")]
 	GetKeysError(serde_json::Error),
+	#[error("missing field type documentation for '{0}'")]
+	MissingFieldType(String),
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # This file is part of midnight-node.
-# Copyright (C) 2025 Midnight Foundation
+# Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
@@ -19,16 +19,20 @@ set -euxo pipefail
 # Source the mainchain env
 . /shared/mc.env
 
+export STORAGE_SEPARATION=unified
+
 ./midnight-node \
   --chain=/shared/chain-spec.json \
   --validator \
   --node-key=0000000000000000000000000000000000000000000000000000000000000005 \
+  --port=30337 \
+  --public-addr=/dns/midnight-node-5/tcp/30337/p2p/12D3KooWSuTq6MG9gPt7qZqLFKkYrfxMewTZhj9nmRHJkPwzWDG2 \
   --bootnodes="/dns/midnight-node-1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp" \
   --base-path=/data \
   --keystore-path=/keystore \
   --unsafe-rpc-external \
   --rpc-methods=Unsafe \
-  --rpc-port=9937 \
+  --rpc-port=9944 \
   --rpc-cors=all \
   --prometheus-port=9619 \
   --prometheus-external \

@@ -1,0 +1,3 @@
+src/networks/local-env/configurations/genesis/**/*.json
+src/networks/well-known/**/mocked-config/**
+src/networks/well-known/**/res/mock-bridge-data/*.json

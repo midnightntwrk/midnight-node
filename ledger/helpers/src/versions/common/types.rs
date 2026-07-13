@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -19,25 +19,52 @@ use super::super::{
 };
 use bip39::Mnemonic;
 use derive_where::derive_where;
-use itertools::Itertools;
-use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
+use rand::RngCore;
 use std::str::FromStr;
 use std::{
 	collections::HashMap,
+	fmt,
 	marker::PhantomData,
 	time::{SystemTime, UNIX_EPOCH},
 };
+use subxt_signer::{SecretUri, SecretUriError, sr25519};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+/// Wallet seed for HD key derivation (BIP-32/44). Holds 16, 32, or 64 bytes
+/// of seed material from which all wallet keys are derived.
+///
+/// # Security: no `Default` implementation
+///
+/// `WalletSeed` intentionally does not implement [`Default`]. A previous
+/// implementation returned `Medium([0; 32])` — an all-zero seed that would
+/// produce predictable wallet keys. Removed per Least Authority audit
+/// finding A2-D (Feb 2026, PR #804).
+///
+/// ```compile_fail,E0599
+/// // WalletSeed must not implement Default — this must fail to compile.
+/// let _ = midnight_node_ledger_helpers::WalletSeed::default();
+/// ```
+#[derive(Clone, PartialEq, Eq, Hash, Zeroize, ZeroizeOnDrop, Storable, Serializable)]
+#[storable(base)]
 pub enum WalletSeed {
 	Short([u8; 16]),
 	Medium([u8; 32]),
 	Long([u8; 64]),
 }
 
-impl Default for WalletSeed {
-	fn default() -> Self {
-		Self::Medium([0; 32])
+impl fmt::Debug for WalletSeed {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		match self {
+			Self::Short(_) => write!(f, "WalletSeed::Short(REDACTED)"),
+			Self::Medium(_) => write!(f, "WalletSeed::Medium(REDACTED)"),
+			Self::Long(_) => write!(f, "WalletSeed::Long(REDACTED)"),
+		}
+	}
+}
+
+impl fmt::Display for WalletSeed {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "REDACTED")
 	}
 }
 
@@ -55,15 +82,15 @@ pub enum WalletSeedError {
 	LazyHexLengthTooLong(usize),
 }
 
+/// Convert a `Vec<u8>` to a fixed-size array, mapping failure to [`WalletSeedError::InvalidLength`].
+fn try_into_seed_array<const N: usize>(bytes: Vec<u8>) -> Result<[u8; N], WalletSeedError> {
+	bytes.try_into().map_err(|v: Vec<u8>| WalletSeedError::InvalidLength(v.len()))
+}
+
 impl WalletSeed {
 	pub fn try_from_hex_str(value: &str) -> Result<Self, WalletSeedError> {
 		let bytes = hex::decode(value)?;
-		match bytes.len() {
-			16 => Ok(Self::Short(bytes.try_into().unwrap())),
-			32 => Ok(Self::Medium(bytes.try_into().unwrap())),
-			64 => Ok(Self::Long(bytes.try_into().unwrap())),
-			len => Err(WalletSeedError::InvalidLength(len)),
-		}
+		bytes.as_slice().try_into()
 	}
 
 	/// Allow decoding from seeds in the form e.g. 00..01
@@ -72,6 +99,11 @@ impl WalletSeed {
 		let parts: Vec<_> = value.split("..").collect();
 		if parts.len() != 2 {
 			return Err(WalletSeedError::LazyHexTwoPartsOnly);
+		}
+
+		let hex_len = parts[0].len() + parts[1].len();
+		if hex_len > 128 {
+			return Err(WalletSeedError::LazyHexLengthTooLong(hex_len / 2));
 		}
 
 		let mut seed = hex::decode(parts[0])?;
@@ -86,8 +118,8 @@ impl WalletSeed {
 		};
 
 		match total_len {
-			l if l <= 32 => Ok(Self::Medium(extend_to(32).try_into().unwrap())),
-			l if l <= 64 => Ok(Self::Long(extend_to(64).try_into().unwrap())),
+			l if l <= 32 => Ok(Self::Medium(try_into_seed_array(extend_to(32))?)),
+			l if l <= 64 => Ok(Self::Long(try_into_seed_array(extend_to(64))?)),
 			len => Err(WalletSeedError::LazyHexLengthTooLong(len)),
 		}
 	}
@@ -112,6 +144,19 @@ impl From<[u8; 32]> for WalletSeed {
 	}
 }
 
+impl TryFrom<&[u8]> for WalletSeed {
+	type Error = WalletSeedError;
+
+	fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+		match value.len() {
+			16 => Ok(Self::Short(value.try_into().unwrap())),
+			32 => Ok(Self::Medium(value.try_into().unwrap())),
+			64 => Ok(Self::Long(value.try_into().unwrap())),
+			len => Err(WalletSeedError::InvalidLength(len)),
+		}
+	}
+}
+
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum WalletSeedParseError {
 	#[error("failed to parse as any type: hex: {0}, lazy_hex: {1}, mnemonic: {2}")]
@@ -124,23 +169,66 @@ impl FromStr for WalletSeed {
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		let s = s.trim();
 
-		let mut errs = vec![];
+		let hex_err = match Self::try_from_hex_str(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
+		let lazy_err = match Self::try_from_lazy_hex(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
+		let mnemonic_err = match Self::try_from_mnemonic(s) {
+			Ok(seed) => return Ok(seed),
+			Err(e) => e,
+		};
 
-		match Self::try_from_hex_str(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
-		match Self::try_from_lazy_hex(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
-		match Self::try_from_mnemonic(s) {
-			Ok(seed) => return Ok(seed),
-			Err(e) => errs.push(e),
-		}
+		Err(WalletSeedParseError::FailedToParseAny(hex_err, lazy_err, mnemonic_err))
+	}
+}
 
-		let errs: (_, _, _) = errs.into_iter().collect_tuple().unwrap();
-		Err(WalletSeedParseError::FailedToParseAny(errs.0, errs.1, errs.2))
+pub struct Keypair(pub sr25519::Keypair);
+
+#[derive(Debug, thiserror::Error)]
+pub enum KeypairParseError {
+	#[error("Falied to decode secret as hex")]
+	HexParseFailed(#[from] hex::FromHexError),
+	#[error("Secret key bytes length != 32")]
+	LengthCheckFailed,
+	#[error("Secret URI parse error: {0}")]
+	UriParseFailed(#[from] SecretUriError),
+	#[error("Subxt signer error: {0}")]
+	SubxtSignerError(#[from] sr25519::Error),
+	#[error("Subxt error: {0}")]
+	SubxtError(#[from] subxt::Error),
+	#[error("BIP error: {0}")]
+	BipError(#[from] bip39::Error),
+}
+
+impl From<sr25519::Keypair> for Keypair {
+	fn from(val: sr25519::Keypair) -> Self {
+		Keypair(val)
+	}
+}
+
+impl FromStr for Keypair {
+	type Err = KeypairParseError;
+	fn from_str(key_str: &str) -> Result<Self, Self::Err> {
+		let key_str = key_str.trim();
+		// Supports seed phrases
+		if key_str.contains('/') {
+			let uri = SecretUri::from_str(key_str)?;
+			Ok(sr25519::Keypair::from_uri(&uri)?.into())
+		} else if key_str.contains(' ') {
+			let phrase = Mnemonic::parse(key_str)?;
+			Ok(sr25519::Keypair::from_phrase(&phrase, None)?.into())
+		} else {
+			// Parse hex-encoded private key (32-byte sr25519 mini secret key)
+			let hex_str = key_str.strip_prefix("0x").unwrap_or(key_str);
+			let seed_bytes = hex::decode(hex_str)?;
+			let secret_key: [u8; 32] =
+				seed_bytes.try_into().map_err(|_| KeypairParseError::LengthCheckFailed)?;
+			Ok(Keypair(sr25519::Keypair::from_secret_key(secret_key)?))
+		}
 	}
 }
 
@@ -174,8 +262,10 @@ impl MaintenanceUpdateBuilder {
 		self.addresses_vec.push(*addr);
 	}
 
-	pub fn add_addresses(&mut self, addrs: &[ContractAddress], counters: Vec<MaintenanceCounter>) {
-		(0..addrs.len()).for_each(|i| self.add_address(&addrs[i], counters[i]));
+	pub fn add_addresses(&mut self, addrs: &[ContractAddress], counters: &[MaintenanceCounter]) {
+		for (addr, &counter) in addrs.iter().zip(counters.iter()) {
+			self.add_address(addr, counter);
+		}
 	}
 
 	pub fn increase_counter(&mut self, addr: ContractAddress) {
@@ -222,6 +312,12 @@ impl From<Segment> for u16 {
 			Segment::Guaranteed => 0,
 			Segment::Fallible => 1,
 		}
+	}
+}
+
+impl From<Segment> for Option<u16> {
+	fn from(val: Segment) -> Self {
+		Some(val.into())
 	}
 }
 
@@ -284,33 +380,31 @@ where
 	pub block_context: BlockContext,
 }
 
+/// Generates a default `BlockContext` with the current timestamp and a random parent block hash.
+/// Used by the toolkit when no explicit block context is provided.
+pub(crate) fn default_block_context() -> BlockContext {
+	let now = SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.expect("Time went backwards")
+		.as_secs();
+	let delay: u64 = 0;
+	let ttl = now + delay;
+	let timestamp = Timestamp::from_secs(ttl);
+
+	let mut parent_hash_bytes = [0u8; 32];
+	rand::rngs::OsRng.fill_bytes(&mut parent_hash_bytes);
+	super::make_block_context(timestamp, HashOutput(parent_hash_bytes), timestamp)
+}
+
 impl<S: SignatureKind<D>, P: ProofKind<D>, D: DB> TransactionWithContext<S, P, D>
 where
 	Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 {
 	pub fn new(
 		tx: Transaction<S, P, PureGeneratorPedersen, D>,
-		parent_block_hash_seed: Option<u64>,
+		block_context: Option<BlockContext>,
 	) -> Self {
-		let now = SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.expect("Time went backwards")
-			.as_secs();
-		let delay: u64 = 0;
-		let ttl = now + delay;
-		let timestamp = Timestamp::from_secs(ttl);
-
-		// In case `parent_block_hash_seed` wasn't specified, a randmon one is chosen
-		let parent_block_hash_seed =
-			parent_block_hash_seed.unwrap_or_else(|| rand::thread_rng().r#gen());
-
-		// Calculate a deterministic `parent_block_hash` based on the seed
-		let mut rng = SmallRng::seed_from_u64(parent_block_hash_seed);
-		let mut array = [0u8; 32];
-		rng.fill_bytes(&mut array);
-		let parent_block_hash = HashOutput(array);
-
-		let block_context = BlockContext { tblock: timestamp, tblock_err: 30, parent_block_hash };
+		let block_context = block_context.unwrap_or_else(default_block_context);
 
 		Self { tx: SerdeTransaction::Midnight(tx), block_context }
 	}
@@ -530,5 +624,103 @@ mod tests {
 			lazy_hex.parse::<WalletSeed>(),
 			Err(WalletSeedParseError::FailedToParseAny(_, WalletSeedError::InvalidHex(_), _))
 		));
+	}
+
+	#[test]
+	fn debug_output_does_not_contain_seed_bytes() {
+		let seed = WalletSeed::Medium([0xAB; 32]);
+		let debug_str = format!("{:?}", seed);
+		assert!(debug_str.contains("REDACTED"), "Debug output should contain redaction marker");
+		assert!(!debug_str.contains("ab"), "Debug output must not contain hex-encoded seed bytes");
+		assert!(debug_str.contains("Medium"), "Debug output should identify the variant");
+	}
+
+	#[test]
+	fn debug_output_redacts_all_variants() {
+		let short = format!("{:?}", WalletSeed::Short([0xFF; 16]));
+		let medium = format!("{:?}", WalletSeed::Medium([0xFF; 32]));
+		let long = format!("{:?}", WalletSeed::Long([0xFF; 64]));
+		assert!(short.contains("Short(REDACTED)"));
+		assert!(medium.contains("Medium(REDACTED)"));
+		assert!(long.contains("Long(REDACTED)"));
+		for s in [&short, &medium, &long] {
+			assert!(!s.contains("255"), "Debug must not leak byte values");
+		}
+	}
+
+	#[test]
+	fn lazy_hex_rejects_oversized_input_before_allocation() {
+		let long_hex = "aa".repeat(70);
+		let oversized = format!("{}..{}", long_hex, "bb".repeat(10));
+		let result = WalletSeed::try_from_lazy_hex(&oversized);
+		assert!(
+			matches!(result, Err(WalletSeedError::LazyHexLengthTooLong(_))),
+			"oversized input should be rejected"
+		);
+	}
+
+	#[test]
+	fn lazy_hex_accepts_boundary_128_hex_chars() {
+		let head = "00".repeat(30);
+		let tail = "01".repeat(2);
+		let input = format!("{}..{}", head, tail);
+		assert!(WalletSeed::try_from_lazy_hex(&input).is_ok());
+	}
+
+	#[test]
+	fn add_addresses_with_zip_truncates_on_mismatch() {
+		use super::MaintenanceUpdateBuilder;
+		let mut builder = MaintenanceUpdateBuilder::new(0, 0, 0);
+		let addrs = vec![
+			super::ContractAddress(super::HashOutput([1u8; 32])),
+			super::ContractAddress(super::HashOutput([2u8; 32])),
+			super::ContractAddress(super::HashOutput([3u8; 32])),
+		];
+		let counters = vec![10u32, 20u32];
+		builder.add_addresses(&addrs, &counters);
+		assert_eq!(builder.addresses_map.len(), 2, "zip should stop at shorter slice");
+		assert_eq!(builder.addresses_vec.len(), 2);
+	}
+
+	#[test]
+	fn add_addresses_empty_inputs() {
+		use super::MaintenanceUpdateBuilder;
+		let mut builder = MaintenanceUpdateBuilder::new(0, 0, 0);
+		builder.add_addresses(&[], &[]);
+		assert!(builder.addresses_map.is_empty());
+		assert!(builder.addresses_vec.is_empty());
+	}
+
+	#[test]
+	fn wallet_seed_works_as_hashmap_key() {
+		use std::collections::HashMap;
+		let seed1 = WalletSeed::Medium([1u8; 32]);
+		let seed2 = WalletSeed::Medium([2u8; 32]);
+		let mut map = HashMap::new();
+		map.insert(seed1.clone(), "wallet1");
+		map.insert(seed2.clone(), "wallet2");
+		assert_eq!(map.get(&seed1), Some(&"wallet1"));
+		assert_eq!(map.get(&seed2), Some(&"wallet2"));
+		assert_eq!(map.len(), 2);
+	}
+
+	#[test]
+	fn default_block_context_has_non_zero_parent_hash() {
+		let ctx = super::default_block_context();
+		let default_hash: super::HashOutput = Default::default();
+		assert_ne!(
+			ctx.parent_block_hash, default_hash,
+			"parent_block_hash should not be all zeros"
+		);
+	}
+
+	#[test]
+	fn default_block_context_produces_unique_parent_hashes() {
+		let ctx1 = super::default_block_context();
+		let ctx2 = super::default_block_context();
+		assert_ne!(
+			ctx1.parent_block_hash, ctx2.parent_block_hash,
+			"successive calls should produce different parent hashes"
+		);
 	}
 }

@@ -1,11 +1,14 @@
+use crate::client::MidnightNodeClient;
+use crate::toolkit_js;
+use crate::toolkit_js::{EncodedZswapLocalState, RelativePath};
+use crate::tx_generator::builder::build_fork_aware_context_cached;
+use crate::tx_generator::source::{Source, create_file_wallet_cache};
+use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
 use midnight_node_ledger_helpers::{
-	CoinPublicKey, DefaultDB, LedgerContext, WalletSeed, WalletState,
+	CoinPublicKey, DefaultDB, LedgerParameters, WalletSeed, WalletState, deserialize, serialize,
 };
-use midnight_node_toolkit::toolkit_js::{EncodedZswapLocalState, RelativePath};
-use midnight_node_toolkit::tx_generator::source::Source;
-use midnight_node_toolkit::{ProofType, SignatureType, toolkit_js};
-use midnight_node_toolkit::{cli_parsers as cli, tx_generator::TxGenerator};
+use std::io::Write;
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -16,41 +19,40 @@ pub enum JsCommand {
 }
 
 #[derive(Args, Debug)]
-pub struct SourceWallet {
-	#[command(flatten)]
-	source: Option<Source>,
-	/// Seed for the source wallet zswap state
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	wallet_seed: Option<WalletSeed>,
-}
-
-#[derive(Args, Debug)]
 pub struct CircuitCommandArgs {
 	#[command(flatten)]
-	source_wallet: SourceWallet,
+	pub source: Source,
+
+	/// Seed for the source wallet zswap state
+	#[arg(long, value_parser = cli::wallet_seed_decode)]
+	pub wallet_seed: Option<WalletSeed>,
 
 	#[command(flatten)]
-	toolkit_js: toolkit_js::ToolkitJs,
+	pub toolkit_js: toolkit_js::ToolkitJs,
 
 	#[command(flatten)]
-	circuit_call: toolkit_js::CircuitArgs,
+	pub circuit_call: toolkit_js::CircuitArgs,
+
+	/// Custom serialized ledger parameters, otherwise the latest will be fetched.
+	#[arg(long)]
+	pub custom_ledger_parameters: Option<String>,
 
 	/// Dry-run - don't generate intent, just print out settings
 	#[arg(long, global = true)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
 pub struct DeployCommandArgs {
 	#[command(flatten)]
-	toolkit_js: toolkit_js::ToolkitJs,
+	pub toolkit_js: toolkit_js::ToolkitJs,
 
 	#[command(flatten)]
-	deploy: toolkit_js::DeployArgs,
+	pub deploy: toolkit_js::DeployArgs,
 
 	/// Dry-run - don't generate intent, just print out settings
 	#[arg(long, global = true)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
@@ -83,7 +85,7 @@ pub struct MaintainCircuitCommandArgs {
 pub struct GenerateIntentArgs {
 	/// Supported commands
 	#[clap(subcommand)]
-	js_command: JsCommand,
+	pub js_command: JsCommand,
 }
 
 pub async fn fetch_zswap_state(
@@ -92,10 +94,12 @@ pub async fn fetch_zswap_state(
 	coin_public: CoinPublicKey,
 	dry_run: bool,
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
-	let source = TxGenerator::<SignatureType, ProofType>::source(source, dry_run).await?;
+	let ledger_state_db = source.ledger_state_db.clone();
+	let fetch_cache = source.fetch_cache.clone();
+	let source = TxGenerator::source(source, dry_run).await?;
 	if dry_run {
-		println!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
-		println!("Dry-run: attributing to coin-public {:?}", coin_public);
+		log::info!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
+		log::info!("Dry-run: attributing to coin-public {:?}", coin_public);
 		return Ok(EncodedZswapLocalState::from_zswap_state(
 			WalletState::<DefaultDB>::default(),
 			coin_public,
@@ -103,36 +107,74 @@ pub async fn fetch_zswap_state(
 	}
 
 	let received_tx = source.get_txs().await?;
-	let network_id = received_tx.network();
-	let context = LedgerContext::new_from_wallet_seeds(network_id, &[wallet_seed]);
-	for block in received_tx.blocks {
-		context.update_from_block(block.transactions, block.context, block.state_root.clone());
-	}
-	let wallet = context.wallet_from_seed(wallet_seed);
-	let zswap_local_state = wallet.shielded.state;
+	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
+	let fork_ctx = build_fork_aware_context_cached(
+		&[wallet_seed.clone()],
+		&received_tx,
+		wallet_cache.as_deref(),
+	)
+	.await;
 
-	Ok(EncodedZswapLocalState::from_zswap_state(zswap_local_state, coin_public))
+	Ok(fork_ctx.dispatch(
+		|ctx| {
+			let seed_v7 =
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(
+					wallet_seed.clone(),
+				);
+			let cpk_v7 =
+				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_coin_public_key(
+					coin_public,
+				);
+			crate::commands::fork::ledger_7::generate_intent::fetch_zswap_state_from_context(
+				&ctx, seed_v7, cpk_v7,
+			)
+		},
+		|ctx| {
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+					wallet_seed.clone(),
+				);
+			let cpk_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_coin_public_key(
+					coin_public,
+				);
+			crate::commands::fork::ledger_8::generate_intent::fetch_zswap_state_from_context(
+				&ctx, seed_v8, cpk_v8,
+			)
+		},
+		|ctx| {
+			crate::commands::fork::ledger_9::generate_intent::fetch_zswap_state_from_context(
+				&ctx,
+				wallet_seed.clone(),
+				coin_public,
+			)
+		},
+	))
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum GenerateIntentError {
 	#[error("missing transaction source")]
 	MissingSource,
+	#[error("missing source url")]
+	MissingSourceUrl,
 	#[error("failed to create temporary dir for toolkit-js file interop")]
 	FailedToCreateTempDir(std::io::Error),
+	#[error("failed to decode ledger parameters: {0}")]
+	DecodeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
+	#[error("failed to deserialize ledger parameters: {0}")]
+	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
 }
 
 pub async fn execute(
 	args: GenerateIntentArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	println!("Executing generate-intent");
-	let temp_dir = tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?;
-
+	log::info!("Executing generate-intent");
 	match args.js_command {
 		JsCommand::Deploy(args) => {
 			if args.dry_run {
-				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
-				println!("Dry-run: generate deploy intent: {:?}", &args.deploy);
+				log::info!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				log::info!("Dry-run: generate deploy intent: {:?}", &args.deploy);
 				return Ok(());
 			}
 			let command = toolkit_js::Command::Deploy(args.deploy);
@@ -140,18 +182,17 @@ pub async fn execute(
 		},
 		JsCommand::Circuit(args) => {
 			if args.dry_run {
-				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
-				println!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
+				log::info!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				log::info!("Dry-run: generate circuit call intent: {:?}", &args.circuit_call);
 			}
-			let input_zswap_state = if args.source_wallet.wallet_seed.is_some() {
-				let Some(source) = args.source_wallet.source else {
-					println!("wallet_seed is present, but source is missing!");
-					return Err(GenerateIntentError::MissingSource.into());
-				};
-				println!("getting input zswap...");
+
+			let input_zswap_state = if args.circuit_call.input_zswap_state.is_some() {
+				args.circuit_call.input_zswap_state.clone()
+			} else if let Some(wallet_seed) = args.wallet_seed {
+				log::info!("getting input zswap...");
 				let encoded_zswap_state = fetch_zswap_state(
-					source,
-					args.source_wallet.wallet_seed.unwrap(),
+					args.source.clone(),
+					wallet_seed,
 					args.circuit_call.coin_public,
 					args.dry_run,
 				)
@@ -159,6 +200,8 @@ pub async fn execute(
 				if args.dry_run {
 					return Ok(());
 				}
+				let temp_dir =
+					tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?.keep();
 				let (mut encoded_zswap_file, encoded_zswap_path) =
 					tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
 				serde_json::to_writer(&mut encoded_zswap_file, &encoded_zswap_state)?;
@@ -169,14 +212,46 @@ pub async fn execute(
 			if args.dry_run {
 				return Ok(());
 			}
-			let command =
-				toolkit_js::Command::Circuit { args: args.circuit_call, input_zswap_state };
+
+			let ledger_parameters =
+				if let Some(serialized_parameters) = args.custom_ledger_parameters {
+					let bytes = hex::decode(&serialized_parameters.replace("0x", ""))
+						.map_err(|e| GenerateIntentError::DecodeLedgerParameters(e.into()))?;
+					let parameters: LedgerParameters = deserialize(&mut &bytes[..])
+						.map_err(|e| GenerateIntentError::DeserializeLedgerParameters(e.into()))?;
+					parameters
+				} else {
+					let Some(rpc_url) = args.source.src_url else {
+						eprintln!("missing required --src-url argument");
+						return Err(GenerateIntentError::MissingSourceUrl.into());
+					};
+
+					let client = MidnightNodeClient::new(&rpc_url, None).await?;
+					client.get_ledger_parameters().await?
+				};
+
+			let temp_dir =
+				tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?.keep();
+			let (mut encoded_parameters_file, encoded_parameters_path) =
+				tempfile::NamedTempFile::new_in(temp_dir)?.keep()?;
+			encoded_parameters_file
+				.write_all(
+					&serialize(&ledger_parameters).expect("Unable to serialize ledger parameters"),
+				)
+				.expect("failed to write file");
+			let ledger_parameters_path = RelativePath(encoded_parameters_path);
+
+			let command = toolkit_js::Command::Circuit {
+				args: args.circuit_call,
+				input_zswap_state,
+				ledger_parameters: ledger_parameters_path,
+			};
 			args.toolkit_js.execute(command)?;
 		},
 		JsCommand::MaintainContract(args) => {
 			if args.dry_run {
-				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
-				println!("Dry-run: generate maintain contract intent: {:?}", &args.maintain);
+				log::info!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				log::info!("Dry-run: generate maintain contract intent: {:?}", &args.maintain);
 				return Ok(());
 			}
 			let command =
@@ -185,8 +260,8 @@ pub async fn execute(
 		},
 		JsCommand::MaintainCircuit(args) => {
 			if args.dry_run {
-				println!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
-				println!("Dry-run: generate maintain circuit intent: {:?}", &args.maintain);
+				log::info!("Dry-run: toolkit-js path: {:?}", &args.toolkit_js.path);
+				log::info!("Dry-run: generate maintain circuit intent: {:?}", &args.maintain);
 				return Ok(());
 			}
 			let command =
@@ -199,16 +274,17 @@ pub async fn execute(
 
 /// Make sure to build toolkit-js before running these tests - this can be done with the earthly
 /// target:
-/// $ earthly --secret GITHUB_TOKEN=<github-token-here> +toolkit-js-prep-local
+/// $ earthly +toolkit-js-prep-local
 ///
 /// Test data is checked-in - to re-generate it, run:
 /// $ earthly -P +rebuild-genesis-state-undeployed
 #[cfg(test)]
 mod test {
-	use clap::Parser as _;
-	use midnight_node_ledger_helpers::{Serializable, SigningKey};
+	use midnight_node_ledger_helpers::{INITIAL_PARAMETERS, Serializable, SigningKey, serialize};
+	use std::path::PathBuf;
 
-	use crate::{Cli, run_command};
+	use crate::cli::{Cli, run_command};
+	use clap::Parser;
 
 	use std::fs;
 
@@ -218,9 +294,29 @@ mod test {
 		hex::encode(&bytes)
 	}
 
+	fn toolkit_js_prerequisites_ready() -> bool {
+		let toolkit_js_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../toolkit-js");
+		let required_paths = [
+			toolkit_js_dir.join("dist/bin.js"),
+			toolkit_js_dir.join("test/contract/managed/counter"),
+			toolkit_js_dir.join("node_modules/@tsconfig/node24/tsconfig.json"),
+		];
+
+		if let Some(missing) = required_paths.iter().find(|path| !path.exists()) {
+			eprintln!("Skipping generate-intent toolkit-js tests: missing {}", missing.display());
+			return false;
+		}
+
+		true
+	}
+
 	#[tokio::test]
 	async fn test_generate_deploy() {
-		// as this is inside util/toolkit, current dir should move a few directories up
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
@@ -257,7 +353,11 @@ mod test {
 
 	#[tokio::test]
 	async fn test_generate_circuit_call() {
-		// as this is inside util/toolkit, current dir should move a few directories up
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
@@ -272,6 +372,7 @@ mod test {
 				.unwrap()
 				.trim()
 				.to_string();
+		let custom_ledger_parameters = hex::encode(serialize(&INITIAL_PARAMETERS).unwrap()); //to_hex(&INITIAL_PARAMETERS);
 
 		let args = vec![
 			"midnight-node-toolkit",
@@ -299,6 +400,8 @@ mod test {
 			&output_zswap_state,
 			"--output-result",
 			&output_result,
+			"--custom-ledger-parameters",
+			&custom_ledger_parameters,
 			"--contract-address",
 			&contract_address_hex,
 			"increment",
@@ -315,7 +418,11 @@ mod test {
 
 	#[tokio::test]
 	async fn test_generate_maintain_contract() {
-		// as this is inside util/toolkit, current dir should move a few directories up
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();
@@ -349,6 +456,7 @@ mod test {
 			&contract_address_hex,
 			"--signing",
 			&signing_key_hex,
+			"--new-authority",
 			&signing_key_hex,
 		];
 		let cli = Cli::parse_from(args);
@@ -360,6 +468,10 @@ mod test {
 	#[tokio::test]
 	#[ignore = "test failing intermittently - reason unknown"]
 	async fn test_generate_maintain_circuit() {
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
 		// as this is inside util/toolkit, current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
@@ -407,7 +519,11 @@ mod test {
 
 	#[tokio::test]
 	async fn test_generate_maintain_remove_circuit() {
-		// as this is inside util/toolkit, current dir should move a few directories up
+		if !toolkit_js_prerequisites_ready() {
+			return;
+		}
+
+		// as this is inside util/toolkit, the current dir should move a few directories up
 		let toolkit_js_path = "../toolkit-js".to_string();
 		let config = format!("{toolkit_js_path}/test/contract/contract.config.ts");
 		let out_dir = tempfile::tempdir().unwrap();

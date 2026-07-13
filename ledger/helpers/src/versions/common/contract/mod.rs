@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,36 +11,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
 use std::{any::Any, sync::Arc};
 
+use async_trait::async_trait;
+
 use super::super::{
-	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
-	Intent, LedgerContext, Op, PedersenRandomness, ProofPreimageMarker, Resolver, ResultModeGather,
-	ResultModeVerify, Signature, Sp, StdRng, Transcripts,
+	AlignedValue, BuilderContext, ContractAddress, ContractCallPrototype, ContractDeploy,
+	ContractOperation, DB, Intent, LedgerParameters, Op, PedersenRandomness, ProofPreimageMarker,
+	Resolver, ResultModeGather, ResultModeVerify, Signature, Sp, StdRng, Transcripts,
 };
 
 // Re-export types needed by submodules
 pub use super::super::{
-	ChargedState, ContractMaintenanceAuthority, ContractState, DUST_EXPECTED_FILES, DustResolver,
-	EntryPointBuf, FetchMode, HashMapStorage, HistoricMerkleTree_check_root,
-	HistoricMerkleTree_insert, Key, KeyLocation, MerkleTree, MidnightDataProvider, OutputMode,
-	PUBLIC_PARAMS, PreTranscript, QueryContext, Rng, StateValue, ValueReprAlignedValue,
-	VerifyingKey, key, leaf_hash, partition_transcripts, stval, verifier_key,
+	ChargedState, ContractMaintenanceAuthority, ContractOperationVersion, ContractState,
+	DUST_EXPECTED_FILES, DustResolver, EntryPointBuf, FetchMode, HashMapStorage,
+	HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key, KeyLocation, MerkleTree,
+	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PreTranscript, QueryContext, Rng, StateValue,
+	ValueReprAlignedValue, VerifyingKey, key, leaf_hash, partition_transcripts, stval,
+	verifier_key,
 };
 
 #[cfg(feature = "test-utils")]
 pub use super::super::test_resolver;
 
 mod call;
-mod contracts;
 mod deploy;
+#[cfg(feature = "can-panic")]
 mod maintenance;
+#[cfg(feature = "can-panic")]
+mod merkle_tree;
 
 pub use call::*;
-pub use contracts::*;
 pub use deploy::*;
+#[cfg(feature = "can-panic")]
 pub use maintenance::*;
+#[cfg(feature = "can-panic")]
+pub use merkle_tree::*;
 
 #[async_trait]
 pub trait Contract<D: DB + Clone>: Send + Sync {
@@ -49,23 +55,28 @@ pub trait Contract<D: DB + Clone>: Send + Sync {
 		commitee: &[VerifyingKey],
 		commitee_threshold: u32,
 		rng: &mut StdRng,
-	) -> ContractDeploy<D>;
+	) -> Result<ContractDeploy<D>, std::io::Error>;
 
 	fn resolver(&self) -> &'static Resolver;
 
+	/// Build the call transcripts against a pre-fetched contract state and ledger parameters.
+	///
+	/// State is fetched by the async caller (via [`BuilderContext`]) and passed in, keeping this
+	/// method synchronous and free of any backend dependency.
 	fn transcript(
 		&self,
 		key: &str,
 		input: &Box<dyn Any + Send + Sync>,
 		address: &ContractAddress,
-		context: Arc<LedgerContext<D>>,
+		contract_state: &ContractState<D>,
+		parameters: &LedgerParameters,
 	) -> (AlignedValue, Vec<AlignedValue>, Vec<Transcripts<D>>);
 
 	fn operation(
 		&self,
 		key: &str,
 		address: &ContractAddress,
-		context: Arc<LedgerContext<D>>,
+		contract_state: &ContractState<D>,
 	) -> Sp<ContractOperation, D>;
 
 	fn program_with_results(
@@ -79,16 +90,17 @@ pub trait Contract<D: DB + Clone>: Send + Sync {
 		key: &'static str,
 		input: &Box<dyn Any + Send + Sync>,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		contract_state: &ContractState<D>,
+		parameters: &LedgerParameters,
 	) -> ContractCallPrototype<D>;
 }
 
 #[async_trait]
-pub trait BuildContractAction<D: DB + Clone>: Send + Sync {
+pub trait BuildContractAction<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
 }

@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 
 use authority_selection_inherents::CommitteeMember;
 
-use midnight_primitives_beefy::BeefyStakes;
+use midnight_primitives_beefy::{BEEFY_LOG_TARGET, BeefyStakes};
 use pallet_beefy_mmr::{Config as BeefyMmrConfig, Pallet as BeefyMmrPallet};
 use pallet_mmr::Config as MmrConfig;
 
@@ -16,17 +16,15 @@ use sp_consensus_beefy::{
 	OnNewValidatorSet, ValidatorSetId, ecdsa_crypto::AuthorityId as BeefyId, mmr::BeefyAuthoritySet,
 };
 
+use alloc::vec::Vec;
 use sp_core::H256;
 use sp_runtime::traits::Convert;
-use sp_std::vec::Vec;
 
 type CommitteeInfoOf<T> = CommitteeInfo<
 	<T as SessionValidatorMngConfig>::ScEpochNumber,
 	<T as SessionValidatorMngConfig>::CommitteeMember,
 	<T as SessionValidatorMngConfig>::MaxValidators,
 >;
-
-pub const BEEFY_LOG_TARGET: &str = "midnight-beefy";
 
 pub fn current_beefy_stakes(validators: Option<Vec<BeefyId>>) -> BeefyStakes<BeefyId> {
 	let current_validators = validators.unwrap_or(
@@ -137,12 +135,11 @@ fn compute_beefy_stakes(
 		if let Some(pos) = position {
 			let _ = committee_members.remove(pos);
 			beefy_with_stakes.push((
-				validator, // default stake
-				1,
+				validator, 1, // default stake
 			));
 		} else {
-			log::warn!("🥩 No match found for {validator}, setting stake to 0");
-			beefy_with_stakes.push((validator, 0));
+			log::warn!(target: BEEFY_LOG_TARGET, "🥩 No match found for {validator}, still setting stake to 1");
+			beefy_with_stakes.push((validator, 1));
 		}
 	}
 

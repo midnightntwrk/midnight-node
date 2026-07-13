@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,18 +13,25 @@
 
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
+use crate::aura_to_babe_migration_keystore::AuraToBabeMigrationKeystore;
+use crate::backend::{create_database_source, open_paritydb};
+use crate::cfg::midnight_cfg::StorageSeparation;
+use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
+	cfg::midnight_cfg::MidnightCfg,
 	extensions::ExtensionsFactory,
 	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
 	main_chain_follower::DataSources,
+	metrics_push::{MetricsPushConfig, run_metrics_push_task},
 	rpc::{BeefyDeps, GrandpaDeps},
+	subscription_bounds::{SubscriptionMetrics, SubscriptionTracker},
 };
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
 use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
+use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
-use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
@@ -32,9 +39,9 @@ use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
 use sc_executor::RuntimeVersionOf;
 use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
+use sc_service::DatabaseSource;
 use sc_service::{
 	BuildGenesisBlock, Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError,
-	resolve_state_version_from_wasm,
 };
 use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
@@ -43,25 +50,55 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
+use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
+use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
 use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
-use sp_runtime::{
-	BuildStorage,
-	traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero},
-};
+use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero};
 use sp_runtime::{Digest, DigestItem};
 use std::{
 	marker::PhantomData,
+	path::PathBuf,
 	sync::{Arc, Mutex},
 	time::Duration,
 };
 use time_source::SystemTimeSource;
 
 pub struct StorageInit {
+	pub separation: StorageSeparation,
+	/// Used only when separation == 'separate'
+	pub db_path: PathBuf,
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,
+}
+
+/// Based on `sc_chain_spec::resolve_state_version_from_wasm`, but returns the full
+/// `RuntimeVersion` so we can read `spec_version` from the chainspec WASM blob rather
+/// than from the compiled-in native runtime constant.
+fn resolve_runtime_version_from_wasm<E, H>(
+	storage: &Storage,
+	executor: &E,
+) -> sp_blockchain::Result<sp_version::RuntimeVersion>
+where
+	E: RuntimeVersionOf,
+	H: HashT,
+{
+	let wasm = storage.top.get(sp_core::storage::well_known_keys::CODE).ok_or_else(|| {
+		sp_blockchain::Error::VersionInvalid(
+			"Runtime missing from initial storage, could not read runtime version.".into(),
+		)
+	})?;
+	let mut ext = sp_state_machine::BasicExternalities::new_empty();
+	let code_fetcher = sp_core::traits::WrappedRuntimeCode(wasm.as_slice().into());
+	let runtime_code = sp_core::traits::RuntimeCode {
+		code_fetcher: &code_fetcher,
+		heap_pages: None,
+		hash: <H as HashT>::hash(wasm).encode(),
+	};
+	RuntimeVersionOf::runtime_version(executor, &mut ext, &runtime_code)
+		.map_err(|e| sp_blockchain::Error::VersionInvalid(e.to_string()))
 }
 
 pub struct GenesisBlockBuilder<Block: BlockT, B, E> {
@@ -76,14 +113,12 @@ pub struct GenesisBlockBuilder<Block: BlockT, B, E> {
 impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> GenesisBlockBuilder<Block, B, E> {
 	/// Constructs a new instance of [`GenesisBlockBuilder`].
 	pub fn new(
-		build_genesis_storage: &dyn BuildStorage,
+		genesis_storage: Storage,
 		commit_genesis_state: bool,
 		backend: Arc<B>,
 		executor: E,
 		genesis_extrinsics: Vec<Vec<u8>>,
 	) -> sp_blockchain::Result<Self> {
-		let genesis_storage =
-			build_genesis_storage.build_storage().map_err(sp_blockchain::Error::Storage)?;
 		Ok(Self {
 			genesis_storage,
 			commit_genesis_state,
@@ -117,13 +152,18 @@ impl<Block: BlockT, B: Backend<Block>, E: RuntimeVersionOf> BuildGenesisBlock<Bl
 			extrinsics.push(extrinsic);
 		}
 
-		let genesis_state_version =
-			resolve_state_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
+		let runtime_version =
+			resolve_runtime_version_from_wasm::<_, HashingFor<Block>>(&genesis_storage, &executor)?;
+		let genesis_state_version = runtime_version.state_version();
 		let mut op = backend.begin_operation()?;
 		let state_root =
 			op.set_genesis_state(genesis_storage, commit_genesis_state, genesis_state_version)?;
-		let genesis_block =
-			construct_genesis_block::<Block>(state_root, genesis_state_version, extrinsics);
+		let genesis_block = construct_genesis_block::<Block>(
+			state_root,
+			genesis_state_version,
+			extrinsics,
+			runtime_version.spec_version,
+		);
 
 		Ok((genesis_block, op))
 	}
@@ -134,6 +174,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 	state_root: Block::Hash,
 	state_version: StateVersion,
 	extrinsics: Vec<<Block as BlockT>::Extrinsic>,
+	spec_version: u32,
 ) -> Block {
 	let extrinsics_root =
 		<<<Block as BlockT>::Header as HeaderT>::Hashing as HashT>::ordered_trie_root(
@@ -142,10 +183,7 @@ pub fn construct_genesis_block<Block: BlockT>(
 		);
 
 	let block_digest = Digest {
-		logs: vec![DigestItem::Consensus(
-			midnight_node_runtime::VERSION_ID,
-			midnight_node_runtime::VERSION.spec_version.encode(),
-		)],
+		logs: vec![DigestItem::Consensus(midnight_node_runtime::VERSION_ID, spec_version.encode())],
 	};
 
 	Block::new(
@@ -165,15 +203,17 @@ pub fn construct_genesis_block<Block: BlockT>(
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	frame_benchmarking::benchmarking::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge_hf::HostFunctions,
+	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
 );
 /// Otherwise we only use the default Substrate host functions.
 #[cfg(not(feature = "runtime-benchmarks"))]
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_bridge_hf::HostFunctions,
+	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
+	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the
@@ -181,19 +221,21 @@ pub type HostFunctions = (
 pub type RuntimeExecutor = sc_executor::WasmExecutor<HostFunctions>;
 
 pub(crate) type FullClient = sc_service::TFullClient<Block, RuntimeApi, RuntimeExecutor>;
-type FullBackend = sc_service::TFullBackend<Block>;
+pub(crate) type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
 /// The minimum period of blocks on which justifications will be
 /// imported and generated.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
+type TransactionPool = FilteringTransactionPool<Block, FullClient>;
+
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
 	sc_consensus::DefaultImportQueue<Block>,
-	sc_transaction_pool::TransactionPoolWrapper<Block, FullClient>,
+	TransactionPool,
 	(
 		sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
 		sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
@@ -201,26 +243,57 @@ type MidnightService = sc_service::PartialComponents<
 		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
 		Option<Telemetry>,
 		DataSources,
-		Option<McFollowerMetrics>,
 	),
 >;
+
+#[allow(clippy::result_large_err)]
+fn parse_genesis_extrinsic_values(
+	values: &[serde_json::Value],
+) -> Result<Vec<Vec<u8>>, ServiceError> {
+	values
+		.iter()
+		.map(|v| {
+			let s = v
+				.as_str()
+				.ok_or(ServiceError::Other(format!("extrinsic not a string: {v:?}")))?;
+			hex::decode(s).map_err(|e| {
+				ServiceError::Other(format!("error decoding extrinsic as hex: {s:?}. Error: {e}"))
+			})
+		})
+		.collect()
+}
 
 #[allow(clippy::result_large_err)]
 pub fn new_partial(
 	config: &Configuration,
 	epoch_config: MainchainEpochConfig,
-	data_sources: DataSources,
+	midnight_cfg: MidnightCfg,
 	storage_config: StorageInit,
+	tx_filter_config: TxFilterConfig,
 ) -> Result<MidnightService, ServiceError> {
-	let _mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
+	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
+	let midnight_metrics =
+		MidnightDataSourceMetrics::register_warn_errors(config.prometheus_registry());
+	// Build the genesis storage once (reused for the genesis block builder below)
+	// and recover the cNIGHT follower genesis from it — the cnight-observation
+	// pallet genesis is baked into every chainspec, so the separate cnight-genesis
+	// file is only a fallback.
+	let genesis_storage = config
+		.chain_spec
+		.as_storage_builder()
+		.build_storage()
+		.map_err(sp_blockchain::Error::Storage)?;
+	let cnight_follower_genesis =
+		crate::main_chain_follower::cnight_follower_genesis_from_storage(&genesis_storage);
 
-	// Init Ledger DB
-	let parity_db_path = config.base_path.path().join("ledger_storage");
-	midnight_node_ledger::init_storage_paritydb(
-		&parity_db_path,
-		&storage_config.genesis_state,
-		storage_config.cache_size,
-	);
+	let data_sources = tokio::task::block_in_place(|| {
+		config.tokio_handle.block_on(create_cached_main_chain_follower_data_sources(
+			midnight_cfg.clone(),
+			cnight_follower_genesis,
+			mc_follower_metrics.clone(),
+			midnight_metrics.clone(),
+		))
+	})?;
 
 	let telemetry = config
 		.telemetry_endpoints
@@ -234,32 +307,29 @@ pub fn new_partial(
 		.transpose()?;
 
 	let executor = sc_service::new_wasm_executor(&config.executor);
-	let backend = sc_service::new_db_backend(config.db_config())?;
 
-	let genesis_extrinsics: Result<Vec<Vec<u8>>, ServiceError> = config
-		.chain_spec
-		.properties()
-		.get("genesis_extrinsics")
-		.ok_or(ServiceError::Other("missing genesis extrinsics in chain spec".into()))?
-		.as_array()
-		.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?
-		.iter()
-		.map(|v| {
-			v.as_str()
-				.ok_or(ServiceError::Other(format!("extrinsic not a string: {v:?}")))
-				.map(|v| v.to_string())
-		})
-		.take_while(Result::is_ok)
-		.map(|v| {
-			let s = v.unwrap();
-			hex::decode(&s).map_err(|e| {
-				ServiceError::Other(format!("error decoding extrinsic as hex: {s:?}. Error: {e}"))
-			})
-		})
-		.collect();
+	let mut db_config = config.db_config();
+	let DatabaseSource::ParityDb { path: db_path } = db_config.source else {
+		panic!("Midnight node support only parity-db as a backend");
+	};
+
+	let (parity_db_instance, ledger_storage_db, require_create) =
+		open_paritydb(&db_path, &storage_config)?;
+	db_config.source = create_database_source(parity_db_instance, require_create)?;
+	let backend = sc_service::new_db_backend(db_config)?;
+
+	let genesis_extrinsics = parse_genesis_extrinsic_values(
+		config
+			.chain_spec
+			.properties()
+			.get("genesis_extrinsics")
+			.ok_or(ServiceError::Other("missing genesis extrinsics in chain spec".into()))?
+			.as_array()
+			.ok_or(ServiceError::Other("genesis_extrinsics is not a vec".into()))?,
+	);
 
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
-		config.chain_spec.as_storage_builder(),
+		genesis_storage,
 		true,
 		backend.clone(),
 		executor.clone(),
@@ -299,7 +369,8 @@ pub fn new_partial(
 				},
 			});
 
-	let ledger_storage = LedgerStorage::new(parity_db_path, storage_config.cache_size);
+	let ledger_storage =
+		LedgerStorage { db: ledger_storage_db, cache_size: storage_config.cache_size };
 
 	client
 		.execution_extensions()
@@ -324,6 +395,11 @@ pub fn new_partial(
 	.with_prometheus(config.prometheus_registry())
 	.build();
 
+	let transaction_pool = {
+		let metrics = FilteringMetrics::new(config.prometheus_registry());
+		FilteringTransactionPool::new(tx_filter_config, transaction_pool, client.clone(), metrics)
+	};
+
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
 		client.clone(),
 		GRANDPA_JUSTIFICATION_PERIOD,
@@ -342,10 +418,12 @@ pub fn new_partial(
 	let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 		.map_err(sp_blockchain::Error::from)?;
 
-	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
-
 	let time_source = Arc::new(SystemTimeSource);
-	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
+	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source)
+		.map_err(|e| {
+			log::error!(target: "midnight", "Incoherent consensus timing configuration: {e}");
+			ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
+		})?;
 
 	let import_queue = partner_chains_aura_import_queue::import_queue::<
 		AuraPair,
@@ -365,8 +443,8 @@ pub fn new_partial(
 			data_sources.mc_hash.clone(),
 			data_sources.authority_selection.clone(),
 			data_sources.cnight_observation.clone(),
-			data_sources.governed_map.clone(),
 			data_sources.federated_authority_observation.clone(),
+			data_sources.bridge.clone(),
 		),
 		spawner: &task_manager.spawn_essential_handle(),
 		registry: config.prometheus_registry(),
@@ -390,7 +468,6 @@ pub fn new_partial(
 			beefy_rpc_links,
 			telemetry,
 			data_sources,
-			mc_follower_metrics,
 		),
 	};
 
@@ -398,16 +475,22 @@ pub fn new_partial(
 }
 
 /// Builds a new service for a full client.
+#[allow(clippy::too_many_arguments)]
 pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
 	config: Configuration,
 	epoch_config: MainchainEpochConfig,
-	data_sources: DataSources,
+	midnight_cfg: MidnightCfg,
 	storage_monitor_params: sc_storage_monitor::StorageMonitorParams,
+	memory_monitor_params: crate::memory_monitor::MemoryMonitorParams,
 	storage_config: StorageInit,
-) -> Result<TaskManager, ServiceError> {
+	metrics_push_config: Option<MetricsPushConfig>,
+	hwbench: Option<sc_sysinfo::HwBench>,
+	tx_filter_config: TxFilterConfig,
+	max_finality_subscriptions: u32,
+) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	let new_partial_components =
-		new_partial(&config, epoch_config.clone(), data_sources.clone(), storage_config)?;
+		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
 
 	let sc_service::PartialComponents {
 		client,
@@ -425,7 +508,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				beefy_rpc_links,
 				mut telemetry,
 				data_sources,
-				_mc_follower_metrics_opt,
 			),
 	} = new_partial_components;
 
@@ -484,12 +566,16 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			client: client.clone(),
 			transaction_pool: transaction_pool.clone(),
 			spawn_handle: task_manager.spawn_handle(),
+			spawn_essential_handle: task_manager.spawn_essential_handle(),
 			import_queue,
 			block_announce_validator_builder: None,
 			warp_sync_config: Some(WarpSyncConfig::WithProvider(warp_sync)),
 			block_relay: None,
 			metrics,
 		})?;
+
+	// Capture peer_id before network is moved
+	let peer_id = network.local_peer_id().to_base58();
 
 	if config.offchain_worker.enabled {
 		task_manager.spawn_handle().spawn(
@@ -498,7 +584,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			sc_offchain::OffchainWorkers::new(sc_offchain::OffchainWorkerOptions {
 				runtime_api_provider: client.clone(),
 				is_validator: config.role.is_authority(),
-				keystore: Some(keystore_container.keystore()),
+				keystore: Some(AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore())),
 				offchain_db: backend.offchain_storage(),
 				transaction_pool: Some(OffchainTransactionPoolFactory::new(
 					transaction_pool.clone(),
@@ -525,7 +611,13 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let name = config.network.node_name.clone();
 	let enable_grandpa = !config.disable_grandpa;
 	let prometheus_registry = config.prometheus_registry().cloned();
+	let prometheus_registry_for_push = prometheus_registry.clone();
 	let shared_voter_state = SharedVoterState::empty();
+
+	let subscription_metrics =
+		prometheus_registry.as_ref().and_then(|r| SubscriptionMetrics::register(r).ok());
+	let subscription_tracker =
+		SubscriptionTracker::new(max_finality_subscriptions, subscription_metrics);
 
 	let rpc_extensions_builder = {
 		let client = client.clone();
@@ -536,7 +628,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let justification_stream = grandpa_link.justification_stream();
 		let main_chain_follower_data_sources = data_sources.clone();
 		let epoch_config = epoch_config.clone();
+		let network_for_rpc = network.clone();
+		let system_rpc_tx_for_rpc = system_rpc_tx.clone();
+		let subscription_tracker = subscription_tracker.clone();
 
+		#[allow(clippy::result_large_err)]
 		move |subscription_executor: SubscriptionTaskExecutor| {
 			let grandpa = GrandpaDeps {
 				shared_voter_state: shared_voter_state.clone(),
@@ -564,6 +660,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				time_source: Arc::new(SystemTimeSource),
 				main_chain_epoch_config: epoch_config.clone(),
 				backend: backend.clone(),
+				network: network_for_rpc.clone(),
+				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
+				subscription_tracker: subscription_tracker.clone(),
 			};
 			crate::rpc::create_full(deps).map_err(Into::into)
 		}
@@ -572,7 +671,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	let _rpc_handlers = sc_service::spawn_tasks(sc_service::SpawnTasksParams {
 		network: network.clone(),
 		client: client.clone(),
-		keystore: keystore_container.keystore(),
+		keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
 		task_manager: &mut task_manager,
 		transaction_pool: transaction_pool.clone(),
 		rpc_builder: Box::new(rpc_extensions_builder),
@@ -582,7 +681,30 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		sync_service: sync_service.clone(),
 		config,
 		telemetry: telemetry.as_mut(),
+		tracing_execute_block: None,
 	})?;
+
+	if let Some(hwbench) = hwbench {
+		sc_sysinfo::print_hwbench(&hwbench);
+		match MIDNIGHT_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {
+			Err(err) if role.is_authority() => {
+				log::warn!(
+					"⚠️  The hardware does not meet the minimal requirements {} for role 'Authority'.",
+					err
+				);
+			},
+			_ => {},
+		}
+
+		if let Some(ref mut telemetry) = telemetry {
+			let telemetry_handle = telemetry.handle();
+			task_manager.spawn_handle().spawn(
+				"telemetry_hwbench",
+				None,
+				sc_sysinfo::initialize_hwbench_telemetry(telemetry_handle, hwbench),
+			);
+		}
+	}
 
 	if role.is_authority() {
 		let basic_authorship_proposer_factory = sc_basic_authorship::ProposerFactory::new(
@@ -599,7 +721,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);
 		let inherent_config =
-			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source);
+			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source)
+				.map_err(|e| {
+					log::error!(target: "midnight", "Incoherent consensus timing configuration: {e}");
+					ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
+				})?;
 
 		let aura = sc_partner_chains_consensus_aura::start_aura::<
 			AuraPair,
@@ -626,12 +752,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				data_sources.mc_hash.clone(),
 				data_sources.authority_selection.clone(),
 				data_sources.cnight_observation.clone(),
-				data_sources.governed_map.clone(),
 				data_sources.federated_authority_observation.clone(),
+				data_sources.bridge.clone(),
 			),
 			force_authoring,
 			backoff_authoring_blocks,
-			keystore: keystore_container.keystore(),
+			keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
 			sync_oracle: sync_service.clone(),
 			justification_sync_link: sync_service.clone(),
 			block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
@@ -645,6 +771,15 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		task_manager
 			.spawn_essential_handle()
 			.spawn_blocking("aura", Some("block-authoring"), aura);
+
+		task_manager.spawn_handle().spawn(
+			"committee-membership-watch",
+			None,
+			crate::committee_membership::watch(
+				client.clone(),
+				AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
+			),
+		);
 	}
 
 	if enable_grandpa {
@@ -693,7 +828,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				None,
 				MmrGadget::start(
 					client.clone(),
-					backend,
+					backend.clone(),
 					sp_mmr_primitives::INDEXING_PREFIX.to_vec(),
 				),
 			);
@@ -703,7 +838,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			// FIXME #1578 make this available through chainspec
 			gossip_duration: Duration::from_millis(333),
 			justification_generation_period: GRANDPA_JUSTIFICATION_PERIOD,
-			name: Some(name),
+			name: Some(name.clone()),
 			observer_enabled: false,
 			keystore,
 			local_role: role,
@@ -748,5 +883,88 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		.map_err(|e| ServiceError::Application(e.into()))?;
 	}
 
-	Ok(task_manager)
+	crate::memory_monitor::MemoryMonitorService::try_spawn(
+		memory_monitor_params,
+		&task_manager.spawn_essential_handle(),
+	)
+	.map_err(|e| ServiceError::Application(e.into()))?;
+
+	// Spawn Prometheus metrics push task if configured
+	if let Some(mut push_config) = metrics_push_config {
+		if let Some(registry) = prometheus_registry_for_push {
+			// Fill in node identity from the Configuration and network
+			push_config.peer_id = peer_id.clone();
+			push_config.node_name = name.clone();
+
+			task_manager.spawn_handle().spawn(
+				"prometheus-push",
+				None,
+				run_metrics_push_task(registry, push_config),
+			);
+		} else {
+			log::warn!(
+				"Prometheus push endpoint configured but no Prometheus registry available. \
+				 Enable Prometheus with --prometheus-port to use push functionality."
+			);
+		}
+	}
+
+	Ok((task_manager, backend))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn parse_genesis_extrinsics_valid_hex() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::String("cafebabe".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values).unwrap();
+		assert_eq!(result, vec![vec![0xde, 0xad, 0xbe, 0xef], vec![0xca, 0xfe, 0xba, 0xbe]]);
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_non_string_first_position() {
+		let values = vec![serde_json::json!(42), serde_json::Value::String("deadbeef".into())];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("extrinsic not a string"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_non_string_middle_position() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::Null,
+			serde_json::Value::String("cafebabe".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("extrinsic not a string"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_invalid_hex_last_position() {
+		let values = vec![
+			serde_json::Value::String("deadbeef".into()),
+			serde_json::Value::String("cafebabe".into()),
+			serde_json::Value::String("not_valid_hex".into()),
+		];
+		let result = parse_genesis_extrinsic_values(&values);
+		assert!(result.is_err());
+		let err = result.unwrap_err().to_string();
+		assert!(err.contains("error decoding extrinsic as hex"), "unexpected error: {err}");
+	}
+
+	#[test]
+	fn parse_genesis_extrinsics_empty_array() {
+		let values: Vec<serde_json::Value> = vec![];
+		let result = parse_genesis_extrinsic_values(&values).unwrap();
+		assert!(result.is_empty());
+	}
 }

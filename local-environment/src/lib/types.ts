@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -15,6 +15,12 @@
 export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
+  /**
+   * Snapshot URI (http:// or https://) to fork the well-known network from.
+   * Required on the first bring-up of a well-known network; later runs can
+   * omit it to reuse existing restored data plus generated mock-authorities
+   * output.
+   */
   fromSnapshot?: string;
 }
 
@@ -27,6 +33,8 @@ export interface ImageUpgradeOptions extends RunOptions {
   includePattern?: string;
   /** regex to exclude services */
   excludePattern?: string;
+  /** time (ms) to wait before starting any service rollout default 30000 */
+  waitBeforeMs?: number;
   /** time (ms) to wait between each service rollout default 5000 */
   waitBetweenMs?: number;
   /** max seconds to wait for a service to report healthy after restart default 180 */
@@ -35,28 +43,59 @@ export interface ImageUpgradeOptions extends RunOptions {
   requireHealthy?: boolean;
 }
 
-export interface RuntimeUpgradeOptions extends RunOptions {
+export interface RuntimeUpgradeBaseOptions extends RunOptions {
   /** absolute or relative path to the runtime wasm artifact */
   wasmPath: string;
-  /** sudo key URI used to submit the upgrade (defaults to env/"//Alice") */
-  sudoUri?: string;
-  /** how many blocks to wait before submitting the sudo upgrade */
-  delayBlocks?: number;
   /** skip bringing up docker-compose before submitting the upgrade */
   skipRun?: boolean;
   /** websocket endpoint for the node under upgrade (default ws://localhost:9944) */
   rpcUrl?: string;
 }
 
-export interface SnapshotOptions {
-  /** name of the bootnode statefulset to snapshot */
-  bootnodeStatefulSet?: string;
-  /** optional pvc name override */
-  pvcName?: string;
-  /** s3 uri that receives the archive */
-  s3Uri?: string;
-  /** container image used to perform the snapshot */
-  snapshotImage?: string;
-  /** timeout window in minutes */
-  timeoutMinutes?: number;
+export interface FederatedRuntimeUpgradeOptions
+  extends RuntimeUpgradeBaseOptions {
+  /** URIs for council members who will propose/vote to approve the motion */
+  councilUris: string[];
+  /** URIs for technical committee members who will propose/vote to approve the motion */
+  techCommitteeUris: string[];
+  /** URI used to close the federated motion and apply the authorized upgrade */
+  motionExecutorUri: string;
+  /**
+   * Use `system.authorizeUpgradeWithoutChecks` instead of `system.authorizeUpgrade`,
+   * skipping the runtime-side `SpecVersionNeedsToIncrease` check. Intended for
+   * local rehearsals where the candidate wasm shares a spec_version with the
+   * running runtime; production upgrades should leave this off so the check
+   * still catches real version-bump regressions.
+   */
+  allowSameVersion?: boolean;
+}
+
+/**
+ * Options for the two-phase `full-upgrade` command: image rollout followed by
+ * governance runtime upgrade. Inherits both option sets; there are no field
+ * conflicts because both ImageUpgradeOptions and FederatedRuntimeUpgradeOptions
+ * extend RunOptions.
+ */
+export interface FullUpgradeOptions
+  extends ImageUpgradeOptions,
+    FederatedRuntimeUpgradeOptions {}
+
+export const WELL_KNOWN_NAMESPACES = [
+  "devnet",
+  "preview",
+  "preprod",
+  "mainnet",
+  "qanet",
+  "testnet-02",
+] as const;
+export type WellKnownNamespace = (typeof WELL_KNOWN_NAMESPACES)[number];
+export type Namespace = WellKnownNamespace | "local-env";
+export function assertWellKnownNamespace(
+  ns: string,
+): asserts ns is WellKnownNamespace {
+  if (!WELL_KNOWN_NAMESPACES.includes(ns as WellKnownNamespace)) {
+    throw new Error(
+      `Unknown namespace '${ns}'. Expected one of ${WELL_KNOWN_NAMESPACES.join(", ")}`,
+    );
+  }
 }

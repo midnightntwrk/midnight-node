@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,8 +13,8 @@
 
 use crate::FederatedAuthorityObservationDataSource;
 use midnight_primitives_federated_authority_observation::{
-	AuthorityMemberPublicKey, FederatedAuthorityData, FederatedAuthorityObservationConfig,
-	ed25519_to_mainchain_member,
+	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
+	FederatedAuthorityObservationConfig, ed25519_to_mainchain_member,
 };
 use sidechain_domain::McBlockHash;
 use sp_core::sr25519::Public;
@@ -63,16 +63,22 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		let charlie_mainchain = ed25519_to_mainchain_member(Ed25519Keyring::Charlie.public());
 
 		Ok(FederatedAuthorityData {
-			council_authorities: vec![
-				(dave, dave_mainchain),
-				(eve, eve_mainchain),
-				(ferdie, ferdie_mainchain),
-			],
-			technical_committee_authorities: vec![
-				(alice, alice_mainchain),
-				(bob, bob_mainchain),
-				(charlie, charlie_mainchain),
-			],
+			council_authorities: AuthoritiesData {
+				authorities: vec![
+					(dave, dave_mainchain),
+					(eve, eve_mainchain),
+					(ferdie, ferdie_mainchain),
+				],
+				round: 0,
+			},
+			technical_committee_authorities: AuthoritiesData {
+				authorities: vec![
+					(alice, alice_mainchain),
+					(bob, bob_mainchain),
+					(charlie, charlie_mainchain),
+				],
+				round: 0,
+			},
 			mc_block_hash: mc_block_hash.clone(),
 		})
 	}

@@ -1,10 +1,17 @@
-FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:891544b0b3a6aae4e26901cfea4c21a0cb5bf02472c488167f971ec67be7465d
 # ntp to keep correct time
 # curl to enable compose healthchecks
-RUN apt-get update -qq \
-    && apt-get upgrade -y -qq \
-    && apt-get install -y -qq ca-certificates curl procps strace gdb vim jq tree \
-    && rm -rf /var/lib/apt/lists/*
+# Package versions are tied to the base image — update when bumping the base digest
+RUN microdnf -y install \
+  ca-certificates-2025.2.76 \
+  curl-minimal-8.15.0 \
+  procps-ng-3.3.17 \
+  strace-6.12 \
+  gdb-16.3 \
+  vim-enhanced-9.1.1591 \
+  jq-1.7.1 \
+  tree-1.8.0 && \
+  microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
 ENV RUNTIME_PATH=/midnight_node_runtime.compact.compressed.wasm
 
@@ -14,6 +21,6 @@ RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*
   rm -rf /node
 COPY util/upgrader/bin/entrypoint.sh /entrypoint.sh
 
-RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser && passwd -l appuser
+RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
 USER appuser
 ENTRYPOINT ["/entrypoint.sh"]

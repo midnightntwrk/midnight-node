@@ -1,0 +1,7 @@
+# Trivy ignore file for false positives
+# See: https://trivy.dev/docs/latest/configuration/filtering/#trivyignore
+
+# The FROM tools-${TARGETARCH} syntax is valid BuildKit for multi-arch builds.
+# tools-amd64 and tools-arm64 are internal build stages defined in the same
+# Dockerfile, not external images that need hash pinning.
+AVD-DS-0001

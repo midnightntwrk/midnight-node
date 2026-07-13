@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,11 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use alloc::vec::Vec;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info::prelude::string::String;
 use scale_info_derive::TypeInfo;
-use sp_runtime::Vec;
-use sp_std::vec;
 
 pub const PERSISTENT_HASH_BYTES: usize = 32;
 pub type Hash = [u8; PERSISTENT_HASH_BYTES];
@@ -69,6 +68,10 @@ pub enum Op {
 	Deploy { address: Vec<u8> },
 	Maintain { address: Vec<u8> },
 	ClaimRewards { value: u128 },
+	// New variants MUST be appended at the end: `Op` is SCALE-encoded across the
+	// `get_decoded_transaction` runtime-API boundary, so the variant indices are wire-significant.
+	// Appending keeps existing indices stable (an older decoder simply never sees the new index).
+	ClaimBridgeTransfer { value: u128 },
 }
 
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]
@@ -78,21 +81,6 @@ pub struct Tx {
 	pub identifiers: Vec<Vec<u8>>,
 	pub has_fallible_coins: bool,
 	pub has_guaranteed_coins: bool,
-}
-
-/// A scale friendly version of mn_ledger::onchain_runtime::context::BlockContext
-/// that can be used to pass across the host interface.
-#[derive(Encode, Decode, DecodeWithMemTracking, Clone, Debug, TypeInfo, Eq, PartialEq)]
-pub struct BlockContext {
-	pub tblock: u64,
-	pub tblock_err: u32,
-	pub parent_block_hash: Vec<u8>,
-}
-
-impl Default for BlockContext {
-	fn default() -> Self {
-		BlockContext { tblock: 0, tblock_err: 0, parent_block_hash: vec![0u8; 32] }
-	}
 }
 
 pub type StorageCost = u128;
@@ -276,11 +264,6 @@ pub struct BenchmarkClaimMintTxBuilder {
 	pub wallet_seed: Vec<u8>,
 	pub claim_amount: u128,
 	pub token: Vec<u8>,
-}
-
-pub enum TransactionValidationWasCached {
-	Yes,
-	No,
 }
 
 pub type SegmentId = u16;

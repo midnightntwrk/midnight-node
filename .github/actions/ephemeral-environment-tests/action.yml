@@ -35,11 +35,8 @@ outputs: {}
 runs:
   using: "composite"
   steps:
-    - name: Checkout code
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-
     - name: Docker Login
-      uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1  #v3.5.0
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
       with:
         registry: ghcr.io
         username: ntwrk-bot
@@ -50,7 +47,7 @@ runs:
 
     - name: Deploy ephemeral environment
       run: |
-        cd local-env
+        cd local-env || exit 1
         npm install
         npm run run:qanet
       shell: bash

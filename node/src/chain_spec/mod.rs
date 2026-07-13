@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,39 +11,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::cfg::addresses::Addresses;
-use midnight_node_ledger_helpers::mn_ledger_serialize::tagged_deserialize;
+use midnight_node_ledger_helpers::fork::raw_block_data::{RawTransaction, SerializedTxBatches};
 use midnight_node_res::networks::MidnightNetwork;
 use serde_valid::Validate as _;
 
-use midnight_node_ledger_helpers::{
-	BlockContext, DefaultDB, ProofMarker, Signature as LedgerSignature, TransactionWithContext,
-	serialize,
-};
+use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
-	AccountId, BeefyConfig, Block, CNightObservationCall, CNightObservationConfig, CouncilConfig,
-	CouncilMembershipConfig, CrossChainPublic, FederatedAuthorityObservationConfig, MidnightCall,
-	MidnightConfig, MidnightSystemCall, RuntimeCall, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, Signature, SudoConfig,
-	TechnicalCommitteeConfig, TechnicalCommitteeMembershipConfig, TimestampCall,
-	UncheckedExtrinsic, WASM_BINARY, opaque::SessionKeys,
+	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
+	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
+	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
+	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
+	SidechainConfig, Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
+	TechnicalCommitteeMembershipConfig, TimestampCall, UncheckedExtrinsic, WASM_BINARY,
+	opaque::SessionKeys,
 };
 
 use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
-use sidechain_domain::MainchainAddress;
+use sidechain_domain::{AssetName, MainchainAddress, McTxHash};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
+use sp_partner_chains_bridge::{
+	MainChainScripts as BridgeMainChainScripts, SubminimalTransfersConfig,
+};
 use sp_runtime::traits::{IdentifyAccount, One, Verify};
-use sp_session_validator_management::MainChainScripts;
 use std::{fmt, str::FromStr};
+
+/// Parse asset name from config - accepts either hex-encoded string or plain UTF-8 string.
+/// If the string is valid hex, it decodes it as hex bytes.
+/// Otherwise, it treats the string as UTF-8 and uses its bytes directly.
+fn parse_asset_name(s: &str) -> AssetName {
+	// Try to decode as hex first
+	if let Ok(asset_name) = AssetName::decode_hex(s) {
+		return asset_name;
+	}
+	// Fall back to treating as UTF-8 string - convert to hex and decode
+	let hex_string = hex::encode(s.as_bytes());
+	AssetName::decode_hex(&hex_string).expect("UTF-8 to hex conversion should always succeed")
+}
 
 pub enum ChainSpecInitError {
 	Missing(String),
 	ParseError(String),
 	Serialization(String),
+	GenesisStateError(midnight_node_ledger::ledger_9::storage::GetRootError),
 }
 
 impl fmt::Display for ChainSpecInitError {
@@ -53,6 +66,9 @@ impl fmt::Display for ChainSpecInitError {
 			ChainSpecInitError::ParseError(msg) => write!(f, "ChainSpec Parse error: {msg}"),
 			ChainSpecInitError::Serialization(msg) => {
 				write!(f, "ChainSpec Serialization error: {msg}")
+			},
+			ChainSpecInitError::GenesisStateError(msg) => {
+				write!(f, "ChainSpec GenesisState error: {msg}")
 			},
 		}
 	}
@@ -105,41 +121,14 @@ pub fn runtime_wasm() -> &'static [u8] {
 	WASM_BINARY.expect("Runtime wasm not available")
 }
 
-pub fn read_mainchain_scripts_from_addresses_json(
-	path: &str,
-) -> Result<MainChainScripts, ChainSpecInitError> {
-	let addresses = Addresses::load(path)
-		.map_err(|e| ChainSpecInitError::ParseError(format!("{e} while trying to load {path}")))?;
-
-	let err = |var: &str| {
-		ChainSpecInitError::ParseError(format!("Failed to parse {var} from addresses_json"))
-	};
-
-	Ok(MainChainScripts {
-		committee_candidate_address: addresses
-			.addresses
-			.committee_candidate_validator
-			.parse()
-			.map_err(|_| err("committee_candidate_validator"))?,
-		d_parameter_policy_id: addresses
-			.policy_ids
-			.d_parameter
-			.parse()
-			.map_err(|_| err("d_parameter"))?,
-		permissioned_candidates_policy_id: addresses
-			.policy_ids
-			.permissioned_candidates
-			.parse()
-			.map_err(|_| err("permissioned_candidates"))?,
-	})
-}
-
 pub fn get_chainspec_extrinsics(
 	genesis_block: &[u8],
 	observed_utxos_cnight: &ObservedUtxos,
+	genesis_remark: Option<&[u8]>,
 ) -> Vec<String> {
-	let txs: Vec<TransactionWithContext<LedgerSignature, ProofMarker, DefaultDB>> =
-		tagged_deserialize(&mut &genesis_block[..]).expect("Failed deserializing genesis block");
+	let genesis_block: SerializedTxBatches =
+		serde_json::from_slice(genesis_block).expect("failed to deseriailzed genesis block");
+	let txs: Vec<_> = genesis_block.batches.into_iter().flatten().collect();
 
 	let mut extrinsics: Vec<String> = Vec::with_capacity(txs.len());
 
@@ -147,17 +136,13 @@ pub fn get_chainspec_extrinsics(
 
 	for tx in txs {
 		match tx.tx {
-			midnight_node_ledger_helpers::SerdeTransaction::Midnight(transaction) => {
-				let serialized_tx =
-					serialize(&transaction).expect("failed to serialize transaction");
+			RawTransaction::Midnight(midnight_tx) => {
 				let extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::Midnight(
-					MidnightCall::send_mn_transaction { midnight_tx: serialized_tx },
+					MidnightCall::send_mn_transaction { midnight_tx },
 				));
 				extrinsics.push(hex::encode(extrinsic.encode()));
 			},
-			midnight_node_ledger_helpers::SerdeTransaction::System(system_transaction) => {
-				let midnight_system_tx =
-					serialize(&system_transaction).expect("failed to serialize system transaction");
+			RawTransaction::System(midnight_system_tx) => {
 				let extrinsic = UncheckedExtrinsic::new_bare(RuntimeCall::MidnightSystem(
 					MidnightSystemCall::send_mn_system_transaction { midnight_system_tx },
 				));
@@ -165,20 +150,41 @@ pub fn get_chainspec_extrinsics(
 			},
 		}
 		if let Some(ref block_context) = block_context {
-			if block_context.tblock != tx.block_context.tblock {
+			if block_context.tblock != tx.context.tblock {
 				panic!("Transactions in genesis block contain differing block contexts");
 			}
 		} else {
-			block_context = Some(tx.block_context);
+			block_context = Some(tx.context);
 		}
 	}
 
 	// Add Timestamp Set extrinsic
+	let timestamp_millis = if let Some(ctx) = block_context {
+		ctx.tblock.to_secs() * 1000
+	} else {
+		// No txs in genesis block (mainnet case): read timestamp from cardano-tip.json
+		use crate::genesis::CardanoTipConfig;
+		let tip: CardanoTipConfig = serde_json::from_str(
+			&std::fs::read_to_string("res/mainnet/cardano-tip.json")
+				.expect("failed to read res/mainnet/cardano-tip.json for genesis timestamp"),
+		)
+		.expect("failed to parse res/mainnet/cardano-tip.json");
+		tip.timestamp.parse::<u64>().expect("invalid timestamp in cardano-tip.json") * 1000
+	};
 	let timestamp_extrinsic =
 		UncheckedExtrinsic::new_bare(RuntimeCall::Timestamp(TimestampCall::set {
-			now: block_context.expect("missing block context").tblock.to_secs() * 1000,
+			now: timestamp_millis,
 		}));
 	extrinsics.push(hex::encode(timestamp_extrinsic.encode()));
+
+	// Add System::remark extrinsic with genesis message (if configured)
+	if let Some(remark) = genesis_remark {
+		let remark_extrinsic =
+			UncheckedExtrinsic::new_bare(RuntimeCall::System(SystemCall::remark {
+				remark: remark.to_vec(),
+			}));
+		extrinsics.push(hex::encode(remark_extrinsic.encode()));
+	}
 
 	// Add CNight extrinsic
 	if !observed_utxos_cnight.utxos.is_empty() {
@@ -198,9 +204,10 @@ pub fn get_chainspec_properties(
 	genesis_block: &[u8],
 	genesis_state: &[u8],
 	observed_utxos_cnight: &ObservedUtxos,
+	genesis_remark: Option<&[u8]>,
 ) -> serde_json::map::Map<String, serde_json::Value> {
 	serde_json::json!({
-		"genesis_extrinsics": get_chainspec_extrinsics(genesis_block, observed_utxos_cnight),
+		"genesis_extrinsics": get_chainspec_extrinsics(genesis_block, observed_utxos_cnight, genesis_remark),
 		"genesis_state": hex::encode(genesis_state),
 	})
 	.as_object()
@@ -221,6 +228,7 @@ pub fn chain_config<T: MidnightNetwork>(genesis: T) -> Result<ChainSpec, ChainSp
 			genesis.genesis_block(),
 			genesis.genesis_state(),
 			&genesis.cnight_genesis().observed_utxos,
+			genesis.message_config().as_ref().map(|m| m.message.as_bytes()),
 		))
 		.with_genesis_config(genesis_config(genesis)?);
 
@@ -256,16 +264,15 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.collect(),
 			genesis_block: Some(One::one()),
 		},
-		governed_map: pallet_governed_map::GenesisConfig {
-			main_chain_scripts: genesis.main_chain_scripts().into(),
-			_marker: std::marker::PhantomData,
-		},
 		grandpa: Default::default(),
-		sudo: SudoConfig { key: genesis.root_key().map(|k| k.into()) },
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: genesis.network_id(),
-			genesis_state_key: midnight_node_ledger::get_root(genesis.genesis_state()),
+			genesis_state_key: midnight_node_ledger::ledger_9::storage::get_root(
+				genesis.genesis_state(),
+				Some(&genesis.network_id()),
+			)
+			.map_err(ChainSpecInitError::GenesisStateError)?,
 		},
 		session: SessionConfig {
 			initial_validators: authority_keys
@@ -347,6 +354,72 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				.members_mainchain
 				.clone(),
 			..Default::default()
+		},
+		bridge: {
+			let ics_config = genesis.ics_config();
+			let reserve_config = genesis.reserve_config();
+			let bridge_config = genesis.c2m_bridge_config();
+			BridgeConfig {
+				main_chain_scripts: if ics_config
+					.illiquid_circulation_supply_validator_address
+					.is_empty()
+				{
+					None
+				} else {
+					Some(BridgeMainChainScripts {
+						token_policy_id: ics_config.asset.policy_id,
+						token_asset_name: parse_asset_name(&ics_config.asset.asset_name),
+						illiquid_circulation_supply_validator_address: MainchainAddress::from_str(
+							&ics_config.illiquid_circulation_supply_validator_address,
+						)
+						.expect("Failed to decode illiquid_circulation_supply_validator_address"),
+						reserve_validator_address: MainchainAddress::from_str(
+							&reserve_config.reserve_validator_address,
+						)
+						.expect("Failed to decode reserve_validator_address"),
+					})
+				},
+				initial_checkpoint: bridge_config.initial_data_checkpoint.map(|s| {
+					McTxHash::decode_hex(&s)
+						.expect("Failed to decode Bridge initial_data_checkpoint")
+				}),
+				_marker: Default::default(),
+			}
+		},
+		c2m_bridge: {
+			let bridge_config = genesis.c2m_bridge_config();
+			C2MBridgeConfig {
+				subminimal_transfers_config: SubminimalTransfersConfig {
+					subminimal_transfers_flush_threshold: bridge_config
+						.subminimal_transfers_flush_threshold,
+				},
+				approved_txs: bridge_config
+					.approved_txs
+					.iter()
+					.map(|s| {
+						McTxHash::decode_hex(s).expect("Failed to decode c2m approved_txs entry")
+					})
+					.collect(),
+				_marker: Default::default(),
+			}
+		},
+		system_parameters: {
+			let system_params = genesis.system_parameters_config();
+			let hash_bytes = system_params
+				.terms_and_conditions_hash_bytes()
+				.expect("Failed to parse terms_and_conditions hash");
+			let d_param: sidechain_domain::DParameter = system_params.d_parameter.clone().into();
+			SystemParametersConfig {
+				terms_and_conditions: pallet_system_parameters::TermsAndConditionsGenesisConfig {
+					hash: Some(H256::from(hash_bytes)),
+					url: Some(system_params.terms_and_conditions.url.clone()),
+				},
+				d_parameter: pallet_system_parameters::DParameterGenesisConfig {
+					num_permissioned_candidates: Some(d_param.num_permissioned_candidates),
+					num_registered_candidates: Some(d_param.num_registered_candidates),
+				},
+				_marker: Default::default(),
+			}
 		},
 	};
 

@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -80,11 +80,7 @@ impl sp_inherents::InherentDataProvider for FederatedAuthorityInherentDataProvid
 	) -> Result<(), sp_inherents::Error> {
 		inherent_data.put_data(
 			midnight_primitives_federated_authority_observation::INHERENT_IDENTIFIER,
-			&FederatedAuthorityData {
-				council_authorities: self.data.council_authorities.clone(),
-				technical_committee_authorities: self.data.technical_committee_authorities.clone(),
-				mc_block_hash: self.data.mc_block_hash.clone(),
-			},
+			&self.data,
 		)
 	}
 

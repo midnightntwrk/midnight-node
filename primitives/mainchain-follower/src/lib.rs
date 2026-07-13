@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -17,8 +17,7 @@ pub mod idp;
 
 pub use midnight_primitives_cnight_observation::{
 	CreateData, DeregistrationData, MidnightObservationTokenMovement, ObservedUtxo,
-	ObservedUtxoData, ObservedUtxoHeader, RedemptionCreateData, RedemptionSpendData,
-	RegistrationData, SpendData, UtxoIndexInTx,
+	ObservedUtxoData, ObservedUtxoHeader, RegistrationData, SpendData, UtxoIndexInTx,
 };
 
 #[cfg(feature = "std")]
@@ -30,17 +29,17 @@ pub mod data_source;
 #[cfg(feature = "std")]
 pub use {
 	data_source::{
-		CNightObservationDataSourceMock, FederatedAuthorityObservationDataSourceImpl,
-		FederatedAuthorityObservationDataSourceMock, MidnightCNightObservationDataSourceImpl,
+		CNightObservationDataSourceMock, CandidateDataSourceCached, CandidatesDataSourceImpl,
+		FederatedAuthorityObservationDataSourceImpl, FederatedAuthorityObservationDataSourceMock,
+		MidnightCNightObservationDataSourceImpl, get_epoch_for_block_hash,
+		metrics::MidnightDataSourceMetrics,
 	},
 	inherent_provider::*,
 	partner_chains_db_sync_data_sources,
-	sp_std::boxed::Box,
 };
 
 #[cfg(feature = "std")]
 pub mod inherent_provider {
-	use super::*;
 	use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 	use midnight_primitives_federated_authority_observation::{
 		FederatedAuthorityData, FederatedAuthorityObservationConfig,
@@ -56,7 +55,8 @@ pub mod inherent_provider {
 			config: &CNightAddresses,
 			start_position: &CardanoPosition,
 			current_tip: McBlockHash,
-			capacity: usize,
+			tx_capacity: usize,
+			utxo_overestimate: usize,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
 	}
 

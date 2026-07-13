@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,99 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use clap::{Args, Parser, Subcommand};
-use commands::{
-	contract_address::{self, ContractAddressArgs},
-	generate_genesis::{self, GenerateGenesisArgs},
-	generate_intent::{self, GenerateIntentArgs},
-	generate_sample_intent::{self, GenerateSampleIntentArgs},
-	generate_txs::{self, GenerateTxsArgs},
-	get_tx_from_context::{self, GetTxFromContextArgs},
-	random_address::{self, RandomAddressArgs},
-	send_intent::{self, SendIntentArgs},
-	show_address::{self, ShowAddressArgs},
-	show_seed::{self, ShowSeedArgs},
-	show_transaction::{self, ShowTransactionArgs},
-	show_viewing_key::{self, ShowViewingKeyArgs},
-	show_wallet::{self, ShowWalletArgs, ShowWalletResult},
-};
-use midnight_node_ledger_helpers::*;
+use clap::{Args, Parser};
+use midnight_node_toolkit::cli::{Cli, run_command};
 use std::{
 	error::Error,
 	fmt,
 	panic::{self, AssertUnwindSafe},
 };
-
-use midnight_node_toolkit::{
-	ProofType, SignatureType,
-	tx_generator::{TxGenerator, source::Source},
-};
-
-use crate::commands::{
-	contract_state::{self, ContractStateArgs},
-	dust_balance::{self, DustBalanceArgs, DustBalanceResult},
-	show_address::ShowAddress,
-	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
-};
-
-mod commands;
-mod utils;
-
-/// Node Toolkit for Midnight
-#[derive(Parser)]
-#[command(about, long_about, verbatim_doc_comment)]
-struct Cli {
-	#[command(subcommand)]
-	command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-	/// Generate transactions against a genesis tx file or a live node network.
-	///
-	/// How you choose to generate transactions will determine in which order they may be sent. For
-	/// context:
-	///
-	/// The ledger state is a merkle tree whose root changes after each transaction is
-	/// processed. A valid transaction must be generated against either the current ledger state merkle
-	/// tree root, or a past root. This means that if you generate a "tree" of transactions using a
-	/// known root of a node e.g. the genesis state, executing any other transactions on the node that
-	/// aren't included in your generated transaction tree will result in your generated transactions
-	/// failing.
-	GenerateTxs(GenerateTxsArgs),
-	/// Generates the genesis transaction and state, outputting them to file in the current working
-	/// directory. Genesis generation is seeded, so output is deterministic.
-	GenerateGenesis(GenerateGenesisArgs),
-	GenerateIntent(GenerateIntentArgs),
-	/// Generate Intent Files
-	GenerateSampleIntent(GenerateSampleIntentArgs),
-	/// Sends a custom contract (serialized intent .mn files )
-	SendIntent(SendIntentArgs),
-	/// Show the state of a wallet using it's seed
-	DustBalance(DustBalanceArgs),
-	/// Show the state of a wallet using it's seed
-	ShowWallet(ShowWalletArgs),
-	/// Show the address of a wallet using it's seed
-	ShowAddress(ShowAddressArgs),
-	/// Show the seed of a wallet
-	ShowSeed(ShowSeedArgs),
-	/// Show the viewing key of a shielded wallet using its seed
-	ShowViewingKey(ShowViewingKeyArgs),
-	/// Show the token type for a contract address + domain sep pair
-	ShowTokenType(ShowTokenTypeArgs),
-	/// Show the deserialized value of a serialized transaction
-	ShowTransaction(ShowTransactionArgs),
-	/// Show and save in a file the Contract Address included in a DeployContract tx
-	ContractAddress(ContractAddressArgs),
-	/// Show and save a Contract state
-	ContractState(ContractStateArgs),
-	/// Extract `Transaction` from `TransactionWithContext`
-	GetTxFromContext(GetTxFromContextArgs),
-	/// Generate a random `UserAddress` for a given `NetworkId`
-	RandomAddress(RandomAddressArgs),
-	/// Get the version information
-	Version,
-}
 
 #[derive(Args)]
 #[group(required = false, multiple = false)]
@@ -137,28 +51,65 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 			.build()
 			.unwrap()
 			.block_on(async {
-				// Initialize the logger.
-				structured_logger::Builder::with_level("info")
-					.with_default_writer(structured_logger::async_json::new_writer(
-						tokio::io::sink(),
-					))
-					.with_target_writer(
-						"midnight_node_toolkit*",
-						structured_logger::async_json::new_writer(tokio::io::stdout()),
-					)
-					.init();
-
-				// Initialize tracing (used by ledger to emit warnings)
-				let subscriber =
-					tracing_subscriber::fmt().with_max_level(tracing::Level::WARN).finish();
-				tracing::subscriber::set_global_default(subscriber)?;
-
 				let cli = Cli::parse();
+
+				// Build the log filter. RUST_LOG overrides CLI flags.
+				// CLI path uses with_regex(false) for prefix matching, where
+				// longer prefixes properly override shorter ones (e.g.
+				// midnight_node_toolkit::fetcher=info overrides midnight_node_toolkit=debug).
+				let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+					.unwrap_or_else(|_| {
+						let base =
+							if cli.quiet { "warn" } else { "warn,midnight_node_toolkit=info" };
+						let mut directives = base.to_string();
+						if cli.verbose {
+							directives += ",midnight_node_toolkit=debug";
+							directives += ",midnight_node_toolkit::fetcher=info";
+						}
+						if cli.verbose_fetch {
+							directives += ",midnight_node_toolkit::fetcher=debug";
+						}
+						if cli.verbose_ledger {
+							directives += ",midnight_ledger=debug";
+						}
+						tracing_subscriber::EnvFilter::builder()
+							.with_regex(false)
+							.parse_lossy(directives)
+					});
+
+				// Initialize unified logging (captures both `log` and `tracing` events).
+				if cli.log_json {
+					tracing_subscriber::fmt()
+						.json()
+						.with_env_filter(env_filter)
+						.with_writer(std::io::stderr)
+						.init();
+				} else {
+					// Plain format (no timestamp/level) keeps CLI output stable for trycmd README
+					// snapshots and matches historical `log` output users see in terminals.
+					tracing_subscriber::fmt()
+						.without_time()
+						.with_level(false)
+						.with_env_filter(env_filter)
+						.with_writer(std::io::stderr)
+						.with_target(cli.verbose)
+						.with_file(cli.verbose)
+						.with_line_number(cli.verbose)
+						.init();
+				}
+
+				if let Some(n) = cli.replay_concurrency {
+					rayon::ThreadPoolBuilder::new()
+						.num_threads(n)
+						.build_global()
+						.expect("failed to configure global rayon thread pool");
+					log::info!("Rayon global pool set to {} threads", n);
+				}
 
 				let res = run_command(cli.command).await;
 
 				if let Err(ref e) = res {
-					println!("{e}");
+					eprintln!("{e}");
 				}
 
 				return res;
@@ -177,126 +128,4 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		let err: Box<dyn std::error::Error + Send + Sync> = Box::new(PanicError(msg));
 		Err(err)
 	})
-}
-
-pub(crate) async fn run_command(
-	cmd: Commands,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	match cmd {
-		Commands::GenerateTxs(args) => {
-			generate_txs::execute(args).await?;
-			Ok(())
-		},
-		Commands::GenerateIntent(args) => {
-			generate_intent::execute(args).await?;
-			Ok(())
-		},
-		Commands::GenerateSampleIntent(args) => {
-			generate_sample_intent::execute(args).await;
-			Ok(())
-		},
-		Commands::SendIntent(args) => {
-			send_intent::execute(args).await?;
-			Ok(())
-		},
-		Commands::GenerateGenesis(args) => {
-			let generator = generate_genesis::execute(args).await?;
-			println!("The tx: {:#?}", generator.txs);
-			Ok(())
-		},
-		Commands::ShowWallet(args) => {
-			let result = show_wallet::execute(args).await?;
-			match result {
-				ShowWalletResult::Debug(result) => {
-					println!("{:#?}", result.wallet);
-					println!("Unshielded UTXOs: {:#?}", result.utxos)
-				},
-				ShowWalletResult::Json(json) => {
-					println!("{}", serde_json::to_string_pretty(&json)?);
-				},
-				ShowWalletResult::DryRun(()) => (),
-			}
-
-			Ok(())
-		},
-		Commands::ShowAddress(args) => {
-			let address = show_address::execute(args);
-			match address {
-				ShowAddress::Addresses(addresses) => {
-					println!("{}", serde_json::to_string_pretty(&addresses)?);
-				},
-				ShowAddress::SingleAddress(address) => println!("{address}"),
-			};
-
-			Ok(())
-		},
-		Commands::ShowSeed(args) => {
-			let seed = show_seed::execute(args);
-			println!("{}", seed);
-			Ok(())
-		},
-		Commands::ShowViewingKey(args) => {
-			let viewing_key = show_viewing_key::execute(args);
-			println!("{viewing_key}");
-			Ok(())
-		},
-		Commands::ShowTransaction(args) => {
-			let transaction_information = show_transaction::execute(args)?;
-
-			println!("{transaction_information}");
-			Ok(())
-		},
-		Commands::ContractAddress(args) => {
-			let address = contract_address::execute(args)?;
-			println!("{address}");
-			Ok(())
-		},
-		Commands::ContractState(args) => contract_state::execute(args).await,
-		Commands::GetTxFromContext(args) => {
-			let (serialized_tx, timestamp) = get_tx_from_context::execute(&args)?;
-			std::fs::write(args.dest_file, serialized_tx)?;
-			println!("{}", timestamp);
-			Ok(())
-		},
-		Commands::RandomAddress(args) => {
-			let address = random_address::execute(args);
-			println!("{}", address);
-
-			Ok(())
-		},
-		Commands::Version => {
-			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
-			let ledger_version =
-				find_dependency_version("mn-ledger").expect("missing ledger version");
-			let compactc_version = include_str!("../../toolkit-js/COMPACTC_VERSION").trim();
-
-			println!(
-				"Node: {}\nLedger: {}\nCompactc: {}",
-				node_version, ledger_version, compactc_version
-			);
-			return Ok(());
-		},
-		Commands::ShowTokenType(args) => {
-			let token_type = show_token_type::execute(args);
-			match token_type {
-				ShowTokenType::TokenTypes(token_types) => {
-					println!("{}", serde_json::to_string_pretty(&token_types)?);
-				},
-				ShowTokenType::SingleTokenType(ttype) => println!("{ttype}"),
-			};
-
-			Ok(())
-		},
-		Commands::DustBalance(args) => {
-			let result = dust_balance::execute(args).await?;
-			match result {
-				DustBalanceResult::Json(json) => {
-					println!("{}", serde_json::to_string_pretty(&json)?);
-				},
-				DustBalanceResult::DryRun(()) => (),
-			}
-
-			Ok(())
-		},
-	}
 }

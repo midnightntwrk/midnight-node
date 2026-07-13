@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,16 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod cli;
 pub mod cli_parsers;
 pub mod client;
+pub mod commands;
+pub mod fetcher;
 pub mod genesis_generator;
-pub mod indexer;
 pub mod progress;
 pub mod remote_prover;
 pub mod sender;
 pub mod serde_def;
 pub mod toolkit_js;
 pub mod tx_generator;
+pub mod utils;
 
 use progress::{Progress, Spin};
 use rand::{SeedableRng, rngs::StdRng};

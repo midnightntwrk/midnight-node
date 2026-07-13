@@ -1,0 +1,8 @@
+{
+  "mock": {
+    "chainId": "midnight_devnet",
+    "numValidators": 6,
+    "validatorServices": ["node1", "node2", "node3", "node4", "node5", "node6"],
+    "extraServices": []
+  }
+}

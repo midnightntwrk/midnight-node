@@ -8,7 +8,16 @@ on:
     # (which are not included by default for the "pull_request" trigger).
     # This is needed to allow skipping enforcement of the changelog in PRs with specific labels,
     # as defined in the (optional) "skipLabels" property.
-    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
+    paths-ignore:
+      - '.github/**'
+      - 'changes/**'
+      - 'docs/**'
+      - 'tests/**'
+      - '**/tests/**'
+      - '**/test/**'
+      - '**/*.test.ts'
+      - '**/tests.rs'
 
 jobs:
   check-changes:
@@ -19,37 +28,59 @@ jobs:
       contents: read
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef  #v3.6.0
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        if: >
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.fork == false
         with:
           registry: ghcr.io/midnight-ntwrk
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 #v5.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        with:
+          submodules: true
+
+      - name: Install Season
+        uses: ./.github/actions/install-season
+        with:
+          gh-token: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
       - name: Get PR details
         id: pr
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
-            # Fetch labels fresh using gh CLI - always safe
-            LABELS=$(gh pr view "${{ github.event.pull_request.number }}" --json labels | jq -c '[.labels[].name]')
-            echo "labels=$LABELS" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" == "merge_group" ]; then
-            PR_NUM=$(echo "${{ github.event.merge_group.head_ref }}" | sed -n 's/.*\/pr-\([0-9]*\)-.*/\1/p')
-            echo "number=$PR_NUM" >> $GITHUB_OUTPUT
-            LABELS=$(gh pr view "$PR_NUM" --json labels | jq -c '[.labels[].name]')
-            echo "labels=$LABELS" >> $GITHUB_OUTPUT
-          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PR title is untrusted input - only ever handle it via env, never inline
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            # Fetch labels fresh using gh CLI - always safe
+            LABELS=$(gh pr view "${{ github.event.pull_request.number }}" --json labels | jq -c '[.labels[].name]')
+            echo "labels=$LABELS" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" == "merge_group" ]; then
+            PR_NUM=$(echo "${{ github.event.merge_group.head_ref }}" | sed -n 's/.*\/pr-\([0-9]*\)-.*/\1/p')
+            echo "number=$PR_NUM" >> "$GITHUB_OUTPUT"
+            LABELS=$(gh pr view "$PR_NUM" --json labels | jq -c '[.labels[].name]')
+            echo "labels=$LABELS" >> "$GITHUB_OUTPUT"
+            PR_TITLE=$(gh pr view "$PR_NUM" --json title -q .title)
+          fi
+          # CI-only PRs ("ci:" / "ci(scope):" conventional-commit titles) don't need a change file
+          if printf '%s' "$PR_TITLE" | grep -qE '^ci(\([^)]*\))?:'; then
+            echo "ci_title=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ci_title=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Check changes can be rendered
-        run: docker run -v "$PWD/changes:/changes" ghcr.io/midnight-ntwrk/season:0.3.1 build /changes
+        if: >
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.fork == false
+        run: season build
 
       - name: Check changes files for link to PR
-        if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
+        if: ${{ steps.pr.outputs.ci_title != 'true' && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
@@ -61,33 +92,11 @@ jobs:
             echo "Changes file for PR $PR_NUMBER found: $FILENAME"
           fi
 
-      - name: Check changes files for JIRA links
-        if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-jira') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
+      - name: Check changes files for GitHub issue links
+        if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-jira') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-issue') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           FILENAME=$(grep -R 'changes' -e "pull/$PR_NUMBER" | head -1 | cut -d':' -f1)
-          echo "Checking if $FILENAME contains a link to a JIRA ticket - fail if it does not"
-          if [ ! -z "$FILENAME" ]; then grep -q "atlassian\.net" "$FILENAME"; fi
-
-      - name: Restore lychee cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  #v4.3.0
-        with:
-          path: .lycheecache
-          key: cache-lychee-${{ github.sha }}
-          restore-keys: cache-lychee-
-
-      - name: Run lychee
-        uses: lycheeverse/lychee-action@885c65f3dc543b57c898c8099f4e08c8afd178a2 #v2.6.1
-        with:
-          args: >
-            --base .
-            --cache
-            --max-cache-age 1d
-            --exclude-path ./ui/index.html
-            --exclude-path ./changes/index.md
-            --exclude '^https://github\.com/midnightntwrk/midnight-node/actions/workflows/nightly-build-check'
-            --exclude '^https://x\.com/MidnightNtwrk'
-            .
-        env:
-          GITHUB_TOKEN: ${{ secrets.GHP_TOKEN }}
+          echo "Checking if $FILENAME contains a link to a GitHub issue - fail if it does not"
+          if [ ! -z "$FILENAME" ]; then grep -qiE "github\.com/[^ ]+/issues/[0-9]+|(fixes|closes|resolves):?[[:space:]]+([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)?#[0-9]+" "$FILENAME"; fi

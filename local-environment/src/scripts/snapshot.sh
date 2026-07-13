@@ -1,6 +1,11 @@
+#!/usr/bin/env bash
 set -euo pipefail
 
 install_packages() {
+  if command -v microdnf >/dev/null 2>&1; then
+    microdnf install -y "$@" && return 0
+  fi
+
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update
     apt-get install -y "$@" && return 0
@@ -29,8 +34,7 @@ if [ ! -d /node ]; then
   exit 1
 fi
 
-yum -y makecache
-yum -y install tar zstd
+microdnf install -y tar zstd
 
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
 ARCHIVE_BASENAME="${BOOTNODE_NAME:-bootnode}-node-$TIMESTAMP"

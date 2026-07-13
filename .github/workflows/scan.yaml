@@ -1,0 +1,47 @@
+name: Scan
+permissions: {}
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "changes/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}   # so you can still run it manually
+  schedule:
+    - cron: "0 0 * * *"   # run daily at midnight UTC
+concurrency:
+  group: ${{ github.event_name != 'merge_group' && format('{0}-{1}', github.workflow, github.head_ref) || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  # needed to stop rate limiting of compact download.
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: write
+      security-events: write
+      statuses: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  #v7.0.0
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
+
+      - name: Scan code
+        if: steps.guard.outputs.hit != 'true'
+        uses: midnightntwrk/upload-sarif-github-action@37e5a0a03dc65fdbbab4cdc8ba264328c15e9657
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

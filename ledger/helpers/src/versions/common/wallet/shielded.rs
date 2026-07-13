@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 #![cfg(feature = "can-panic")]
 
 use super::super::{
-	CoinPublicKey, DB, DerivationPath, DeriveSeed, Deserializable, EncryptionPublicKey,
-	HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK, HashOutput,
-	IntoWalletAddress, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
+	CoinPublicKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable,
+	EncryptionPublicKey, HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK,
+	HashOutput, IntoWalletAddress, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
 	WalletState,
 };
 use bech32::{Bech32m, Hrp};
@@ -28,7 +28,7 @@ pub struct ShieldedWallet<D: DB + Clone> {
 	pub state: WalletState<D>,
 	pub coin_public_key: CoinPublicKey,
 	pub enc_public_key: EncryptionPublicKey,
-	secret_keys: Option<SecretKeys>,
+	pub(crate) secret_keys: Option<SecretKeys>,
 }
 
 impl<D: DB + Clone> DeriveSeed for ShieldedWallet<D> {}
@@ -43,7 +43,7 @@ impl<D: DB + Clone> IntoWalletAddress for ShieldedWallet<D> {
 		let mut enc_pub_key = Vec::new();
 		Serializable::serialize(&self.enc_public_key, &mut enc_pub_key)
 			.unwrap_or_else(|err| panic!("Error Serializing `enc_public_key`: {err}"));
-		let data = [&coin_pub_key[..], &[3, 0], &enc_pub_key[..]].concat();
+		let data = [&coin_pub_key[..], &enc_pub_key[..]].concat();
 
 		WalletAddress::new(hrp, data)
 	}
@@ -67,9 +67,13 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 		Self::from_seed(derived_seed)
 	}
 
-	pub fn from_path(root_seed: WalletSeed, path: &DerivationPath) -> Self {
+	pub fn from_path(
+		root_seed: WalletSeed,
+		path: &DerivationPath,
+	) -> Result<Self, DerivationPathError> {
+		path.validate_role(&[Role::Zswap])?;
 		let derived_seed = Self::derive_seed(root_seed, path);
-		Self::from_seed(derived_seed)
+		Ok(Self::from_seed(derived_seed))
 	}
 
 	pub fn from_pub_keys(
@@ -105,13 +109,42 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 	}
 }
 
+#[cfg(test)]
+mod tests {
+	use super::super::super::{DefaultDB, DerivationPath, Role, WalletSeed};
+	use super::ShieldedWallet;
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::from([0u8; 32])
+	}
+
+	#[test]
+	fn from_path_accepts_zswap_role() {
+		let path = DerivationPath::default_for_role(Role::Zswap);
+		let _wallet = ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).unwrap();
+	}
+
+	#[test]
+	fn from_path_rejects_dust_role() {
+		let path = DerivationPath::default_for_role(Role::Dust);
+		assert!(ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).is_err());
+	}
+
+	#[test]
+	fn from_path_rejects_unshielded_role() {
+		let path = DerivationPath::default_for_role(Role::UnshieldedExternal);
+		assert!(ShieldedWallet::<DefaultDB>::from_path(test_seed(), &path).is_err());
+	}
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ShieldedAddressParseError {
 	DecodeError(bech32::DecodeError),
 	InvalidHrpPrefix,
 	InvalidHrpCredential,
 	AddressNotShielded,
-	Other,
+	InvalidCoinKeyLen(usize),
+	EncryptionKeyDeserialize,
 }
 
 impl<D: DB + Clone> TryFrom<&WalletAddress> for ShieldedWallet<D> {
@@ -137,14 +170,17 @@ impl<D: DB + Clone> TryFrom<&WalletAddress> for ShieldedWallet<D> {
 			return Err(ShieldedAddressParseError::AddressNotShielded);
 		}
 
-		assert_eq!(data.len(), 66);
+		assert_eq!(data.len(), 64);
 		let coin_bytes = &data[..32];
-		assert_eq!(&data[32..34], &[3, 0]);
-		let mut enc_bytes = &data[34..];
+		let mut enc_bytes = &data[32..];
 
-		let coin_public_key = CoinPublicKey(HashOutput(coin_bytes.try_into().unwrap()));
+		let coin_public_key = CoinPublicKey(HashOutput(
+			coin_bytes
+				.try_into()
+				.map_err(|_| ShieldedAddressParseError::InvalidCoinKeyLen(coin_bytes.len()))?,
+		));
 		let enc_public_key: EncryptionPublicKey = Deserializable::deserialize(&mut enc_bytes, 0)
-			.unwrap_or_else(|err| panic!("Error deserializing `EncryptionPublicKey`: {err}"));
+			.map_err(|_| ShieldedAddressParseError::EncryptionKeyDeserialize)?;
 
 		Ok(Self::from_pub_keys(coin_public_key, enc_public_key))
 	}

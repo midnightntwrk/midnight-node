@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # This file is part of midnight-node.
-# Copyright (C) 2025 Midnight Foundation
+# Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
@@ -25,10 +25,10 @@ echo "CNight Policy ID              : `cat cnight_policy.hash`"
 # A single token must be attached to a valid registration.  Assume empty asset
 # name
 cardano-cli hash script \
-  --script-file auth_token_policy.plutus > auth_token.hash
-echo "Authentication token Policy ID: `cat auth_token.hash`"
+  --script-file mapping_validator.plutus > mapping_validator.hash
+echo "Mapping Validator Policy ID: `cat mapping_validator.hash`"
 
 # Address to observe for registrations
 cardano-cli address build \
-   --payment-script-file auth_token_policy.plutus > mapping_validator.addr
-echo "Mapping validator address     : `cat mapping_validator.addr`"
+   --payment-script-file mapping_validator.plutus > mapping_validator.addr
+echo "Mapping Validator address     : `cat mapping_validator.addr`"
