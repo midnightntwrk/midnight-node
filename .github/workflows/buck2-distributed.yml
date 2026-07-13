@@ -98,11 +98,17 @@ jobs:
       - name: buck2 pre-build (non-hermetic build scripts, local)
         run: |
           set -o pipefail
-          HOST_BS=$(buck2 uquery "root//third-party:" | grep -E 'build-script-run$' || true)
-          WASM_BS=$(buck2 uquery "root//wasm-deps:" | grep -E 'build-script-run$' || true)
-          [ -n "$HOST_BS" ] && buck2 build --prefer-local \
+          # The build-script-run rule has no default output (only [out_dir] /
+          # [rustc_flags] sub-targets), so the build script only executes when
+          # an [out_dir] sub-target is built. --local-only forces the driver
+          # (--prefer-local is only a hint the hybrid executor may still race to
+          # a worker). set -f keeps the shell from globbing the [out_dir] suffix.
+          set -f
+          HOST_BS=$(buck2 uquery "root//third-party:" | grep -E 'build-script-run$' | sed 's/$/[out_dir]/' || true)
+          WASM_BS=$(buck2 uquery "root//wasm-deps:" | grep -E 'build-script-run$' | sed 's/$/[out_dir]/' || true)
+          [ -n "$HOST_BS" ] && buck2 build --local-only \
             --target-platforms root//platforms:linux-x86_64 $HOST_BS 2>&1 | tee prebuild-host.log
-          [ -n "$WASM_BS" ] && buck2 build --prefer-local \
+          [ -n "$WASM_BS" ] && buck2 build --local-only \
             --target-platforms root//platforms:wasm32v1-none $WASM_BS 2>&1 | tee prebuild-wasm.log
 
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
