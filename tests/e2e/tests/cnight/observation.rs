@@ -472,10 +472,10 @@ async fn register_2_cardano_same_dust_address_production() {
         "UTXO owner does not match DUST address"
     );
 
-    let args = DustBalanceArgs {
+    let args = || DustBalanceArgs {
         source: Source {
             src_files: None,
-            src_url: Some(base_url),
+            src_url: Some(base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
             ignore_block_context: false,
@@ -485,18 +485,46 @@ async fn register_2_cardano_same_dust_address_production() {
             ledger_state_db: warmup_ledger_state_db(),
         },
         seed: SchemeSeed {
-            seed: midnight_wallet_seed,
+            seed: midnight_wallet_seed.clone(),
             scheme: UnshieldedSignatureScheme::Schnorr,
         },
         dry_run: false,
     };
 
-    let result = crate::gated_dust_balance(args)
+    // Both mints were observed by the time `await_cnight_observations`
+    // returned, but the *second* backing-night's DUST generation can take a
+    // few extra Midnight blocks to reflect in the ledger state that
+    // `dust_balance` reads. Poll until both sources appear.
+    const SOURCES_POLL_ATTEMPTS: u32 = 20;
+    const SOURCES_POLL_INTERVAL: Duration = Duration::from_secs(15);
+    let mut result = crate::gated_dust_balance(args())
         .await
         .expect("dust-balance error");
-
-    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
-        tracing::info!("Total dust balance: {}", total);
+    for attempt in 1..=SOURCES_POLL_ATTEMPTS {
+        let source_count = match &result {
+            DustBalanceResult::Json(DustBalanceJson { total, source, .. }) => {
+                tracing::info!(
+                    "dust-balance attempt {attempt}/{SOURCES_POLL_ATTEMPTS}: total={total}, \
+                     sources={}",
+                    source.len(),
+                );
+                source.len()
+            }
+            _ => 0,
+        };
+        if source_count >= 2 {
+            break;
+        }
+        if attempt < SOURCES_POLL_ATTEMPTS {
+            tracing::info!(
+                "dust-balance: only {source_count}/2 backing-night source(s) reflected yet; \
+                 re-querying in {SOURCES_POLL_INTERVAL:?}"
+            );
+            tokio::time::sleep(SOURCES_POLL_INTERVAL).await;
+            result = crate::gated_dust_balance(args())
+                .await
+                .expect("dust-balance error");
+        }
     }
 
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
