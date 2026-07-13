@@ -25,5 +25,11 @@ rc=$?
 if [ "$rc" -ne 0 ]; then
   printf 'wasm-cc.sh: %s exited %d\ncmd: %s %s\n%s\n' \
     "$CLANG" "$rc" "$CLANG" "$*" "$err" >&2
+  # cc-rs captures the compiler's stderr and, on failure, reprints only its own
+  # "command did not execute successfully" line -- not the child stderr -- so the
+  # above is lost. When WASM_CC_LOG is set, also append the real diagnostic to
+  # that file (survives on the driver for a forced-local build) for debugging.
+  [ -n "${WASM_CC_LOG:-}" ] && printf 'wasm-cc.sh: %s exited %d\ncmd: %s %s\n%s\n' \
+    "$CLANG" "$rc" "$CLANG" "$*" "$err" >>"$WASM_CC_LOG" 2>/dev/null
 fi
 exit "$rc"

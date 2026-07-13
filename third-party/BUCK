@@ -1849,7 +1849,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MINOR": "41",
         "CARGO_PKG_VERSION_PATCH": "0",
         "CARGO_PKG_VERSION_PRE": "",
-        "OPT_LEVEL": "3",
         "OUT_DIR": "$(location :aws-lc-sys-0.41-build-script-main-run[out_dir])",
     },
     features = ["prebuilt-nasm"],
@@ -1909,6 +1908,22 @@ buildscript_run(
         "OPT_LEVEL": "3",
     },
     features = ["prebuilt-nasm"],
+    platform = {
+        "linux-arm64": dict(
+            env = {
+                "AWS_LC_SYS_CMAKE_BUILDER": "1",
+                "CC": "/usr/bin/clang",
+                "CXX": "/usr/bin/clang++",
+            },
+        ),
+        "linux-x86_64": dict(
+            env = {
+                "AWS_LC_SYS_CMAKE_BUILDER": "1",
+                "CC": "/usr/bin/clang",
+                "CXX": "/usr/bin/clang++",
+            },
+        ),
+    },
     rustc_link_lib = True,
     rustc_link_search = True,
     version = "0.41.0",
@@ -40825,6 +40840,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
         "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
+        "WASM_CC_LOG": "/tmp/wasm-cc-fail.log",
     },
     features = [
         "alloc",
@@ -40926,6 +40942,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
         "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
+        "WASM_CC_LOG": "/tmp/wasm-cc-fail.log",
     },
     features = [
         "alloc",
@@ -41028,6 +41045,7 @@ buildscript_run(
         "CARGO_PKG_VERSION_PRE": "",
         "CFLAGS_wasm32v1_none": "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration",
         "OPT_LEVEL": "3",
+        "WASM_CC_LOG": "/tmp/wasm-cc-fail.log",
     },
     features = [
         "alloc",

@@ -79,6 +79,22 @@ jobs:
             cxx = /usr/local/bin/wasm-cc.sh
             ar = /usr/local/bin/wasm-ar.sh
 
+      # TEMP DEBUG: build just the secp256k1 wasm build-script LOCALLY on the
+      # driver. Forcing it local keeps /tmp/wasm-cc-fail.log (written by
+      # wasm-cc.sh via the WASM_CC_LOG fixup env) on this runner so we can read
+      # the real clang diagnostic that cc-rs swallows. If it builds here, the
+      # remote failure is worker-environment-specific, not the compile.
+      - name: DEBUG secp256k1 wasm build (forced local)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          buck2 build --target-platforms root//platforms:wasm32v1-none --prefer-local \
+            root//wasm-deps:secp256k1-sys-0.9-build-script-run 2>&1 | tee secp.log \
+            && echo "SECP LOCAL: BUILD OK (remote failure is env-specific)" \
+            || echo "SECP LOCAL: BUILD FAILED rc=$?"
+          echo "=== /tmp/wasm-cc-fail.log (real clang diagnostic) ==="
+          cat /tmp/wasm-cc-fail.log 2>/dev/null || echo "(no diagnostic file - compile did not reach wasm-cc.sh)"
+
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
       # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
       #

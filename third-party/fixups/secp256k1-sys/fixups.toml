@@ -8,6 +8,9 @@ cargo_env = true
 
 [buildscript.run.env]
 OPT_LEVEL = "3"
+# TEMP DEBUG: durable sink for the wasm cc diagnostic (cc-rs eats compiler
+# stderr). Read after a forced-local build. Remove with the workflow debug step.
+WASM_CC_LOG = "/tmp/wasm-cc-fail.log"
 # secp256k1-sys 0.10's build.rs emits wasm codegen flags (-mcpu=mvp
 # -mmutable-globals) but relies on cc-rs to add the clang target; cc-rs does NOT
 # recognise the `wasm32v1-none` rust target name, so no `--target` reaches clang
