@@ -93,17 +93,13 @@ jobs:
           cd "$RUNNER_TEMP"
           curl -sL https://static.crates.io/crates/secp256k1-sys/secp256k1-sys-0.10.1.crate | tar xz
           cd secp256k1-sys-0.10.1
-          echo "=== running the wasm.c compile via wasm-cc.sh (EXACT buck flags) ==="
-          /usr/local/bin/wasm-cc.sh -O3 -ffunction-sections -fdata-sections \
-            -mcpu=mvp -mmutable-globals \
-            -I depend/secp256k1/ -I depend/secp256k1/include -I depend/secp256k1/src \
-            -I wasm/wasm-sysroot -I wasm/wasm-sysroot -Wall -Wextra \
-            -DSECP256K1_API= -DENABLE_MODULE_ECDH=1 -DENABLE_MODULE_SCHNORRSIG=1 \
-            -DENABLE_MODULE_EXTRAKEYS=1 -DENABLE_MODULE_ELLSWIFT=1 '-Dprintf(...)=' \
-            -DECMULT_GEN_PREC_BITS=4 -DECMULT_WINDOW_SIZE=15 -DUSE_EXTERNAL_DEFAULT_CALLBACKS=1 \
-            -DENABLE_MODULE_RECOVERY=1 \
-            -Wno-error=implicit-function-declaration -c wasm/wasm.c -o /tmp/wasm.o \
-            && echo "COMPILE OK" || echo "COMPILE FAILED rc=$?"
+          FLAGS="-O3 -mcpu=mvp -mmutable-globals -I depend/secp256k1/ -I depend/secp256k1/include -I depend/secp256k1/src -I wasm/wasm-sysroot -Wall -Wextra -DSECP256K1_API= -DENABLE_MODULE_ELLSWIFT=1 -Werror=unused-command-line-argument -Wno-error=implicit-function-declaration"
+          echo "=== A: with --ld-path (buck adds this; expect FAIL) ==="
+          /usr/local/bin/wasm-cc.sh --ld-path=/bin/true -fno-sanitize=all $FLAGS -c wasm/wasm.c -o /tmp/a.o \
+            && echo "A: COMPILE OK" || echo "A: COMPILE FAILED rc=$?"
+          echo "=== B: same + -Qunused-arguments (the proposed fix; expect OK) ==="
+          /usr/local/bin/wasm-cc.sh -Qunused-arguments --ld-path=/bin/true -fno-sanitize=all $FLAGS -c wasm/wasm.c -o /tmp/b.o \
+            && echo "B: COMPILE OK" || echo "B: COMPILE FAILED rc=$?"
 
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
       # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
