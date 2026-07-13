@@ -64,10 +64,12 @@ jobs:
       # 10 GB of swap absorbs the spike. Cheap (~2 s) and driver-only.
       - name: Add swap
         run: |
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          # GitHub runners already have an active /swapfile (~4G), so add ours on
+          # /mnt (the large ~70G ephemeral disk) rather than / (busy + ~14G).
+          sudo fallocate -l 10G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
           free -h
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: gilescope/install-buck2@79ce03d0602320942c0a39bdf1c754fe19a85703 # latest
