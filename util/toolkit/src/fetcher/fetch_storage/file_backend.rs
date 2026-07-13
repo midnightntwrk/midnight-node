@@ -91,7 +91,9 @@ fn write_via_tmp_and_rename(path: &Path, data: &[u8]) -> io::Result<()> {
 
 fn read_wallet_height(path: &Path) -> Option<u64> {
 	let mut file = fs::File::open(path).ok()?;
-	let mut header = [0u8; 8];
+	// Header is `[version: u8][block_height: u64 LE]` (9 bytes); a stale/old-format file yields
+	// `None` from `block_height_from_header` (version mismatch), which callers treat as absent.
+	let mut header = [0u8; 9];
 	io::Read::read_exact(&mut file, &mut header).ok()?;
 	CachedWalletState::block_height_from_header(&header)
 }
@@ -200,7 +202,10 @@ impl WalletStateCaching for FileBackend {
 					match CachedWalletState::from_value_bytes(&data, seed_hash) {
 						Ok(cached) => Some(cached),
 						Err(e) => {
-							log::warn!("Failed to decode wallet state from file: {e}");
+							// Stale/old-format or corrupt entry: treat as a miss and evict the
+							// file so it is not retried on every run (mirrors delete_wallet_states).
+							log::warn!("Evicting undecodable wallet state file {path:?}: {e}");
+							let _ = fs::remove_file(&path);
 							None
 						},
 					}
