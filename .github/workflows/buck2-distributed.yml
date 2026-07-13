@@ -57,6 +57,18 @@ jobs:
       contents: read
       actions: write # driver publishes its mesh address as a run artifact
     steps:
+      # The driver runs the buck2 daemon + a co-worker + all local_only actions
+      # (build scripts, metadata gen, the final rustc links). On a 2-core / 7 GB
+      # free runner that peaks past RAM near the end of the build and the VM gets
+      # OOM-reclaimed mid-build (exit 143, "runner received a shutdown signal").
+      # 10 GB of swap absorbs the spike. Cheap (~2 s) and driver-only.
+      - name: Add swap
+        run: |
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: gilescope/install-buck2@79ce03d0602320942c0a39bdf1c754fe19a85703 # latest
       - uses: ./.github/actions/buck2-linux-toolchain
