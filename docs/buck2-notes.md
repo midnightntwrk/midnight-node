@@ -361,22 +361,37 @@ to workers (`remote:` in the buck summary). rustc/cxx compiles distribute cleanl
 
 **Toolchain portability.** The wasm blob build needs a wasm-capable clang and
 `wasm-opt` on every runner. `.github/actions/buck2-linux-toolchain` installs a
-pinned rustc (+ `wasm32v1-none`), `clang`/`lld`/`llvm`, and `binaryen`, and
-asserts `clang --print-targets` includes wasm. The macOS-dev-box paths in
-`toolchains/BUCK` (Homebrew LLVM, sysroot rust-lld) are configurable: the wasm
-`cc`/`cxx`/`ar` come from `read_config("wasm", …)` (driver sets `[wasm]` to
-`/usr/bin/clang` etc. via `buckconfig-extra`), and `toolchains/wasm-lld.sh`
+pinned rustc (+ `wasm32v1-none`), `clang`/`lld`/`llvm`, `protobuf-compiler`, and a
+pinned binaryen v130, and asserts `clang --print-targets` includes wasm. The wasm
+`cc`/`cxx`/`ar` come from `read_config("wasm", …)`; the macOS default in
+`toolchains/BUCK` is Homebrew LLVM, and CI overrides it with a **global** `-c
+wasm.cc=…` (`BUCK_WASM_CFG` on the build/test commands — a root-cell
+`.buckconfig.local` doesn't reach the `toolchains` cell). `toolchains/wasm-lld.sh`
 locates rust-lld via `rustc --print sysroot` (portable across OS/arch).
 
 **Infra tests.** The 5 tests needing Docker/devnet/Cardano carry a `ci-infra`
 label (`gen-first-party.py` `CI_INFRA_*` sets); CI runs `buck2 test root//...
 --exclude ci-infra`. Locally that is Pass 1460 / Fail 0.
 
-**Open (validate on first CI run):** buck2 is `gilescope/install-buck2` (stock
-`latest`) — pin a `facebook/buck2` release via the driver's `buck2-version` if a
-prelude bump breaks parse. Store persistence across runs (sharded CAS snapshot)
-is not yet wired — each run is a cold distributed build. rebuck2 is WIP (a
-dropped worker fails its in-flight actions).
+**Build correctness: DONE.** The full `node + toolkit + wasm blob` builds green on
+Linux — verified end-to-end in an `ubuntu:24.04` container (clang 18.1.3, matching
+CI) plus macOS unregressed. All five Linux root causes are fixed (see "Remaining
+blockers" below for the writeups).
+
+**CI reliability on free runners: the open edge.** The distributed CI distributes
+(thousands of remote actions, keyless mesh) but the *driver* job doesn't yet
+reliably finish the monolithic build+test: it gets VM-reclaimed ~20 min in (exit
+143, "runner received a shutdown signal" — not a build error), stalling on an
+`[re_upload]` to the CAS. Not disk (seen on a 145 GB/15 GB runner with room) and
+swap didn't help. This is the rebuck2-WIP + free-runner boundary: the driver holds
+all of buck-out (tens of GB, redirect it off `/` via a bind mount to the big disk)
++ the CAS store + all `local_only` work, and uploads every rlib over iroh P2P.
+Paths to close it: shard the build across several driver jobs; persist buck-out /
+a sharded CAS across runs (incremental, not cold); reduce driver local concurrency
+(`-j`); or rebuck2 throughput/robustness work (a dropped worker still fails its
+in-flight actions). buck2 is `gilescope/install-buck2` (stock `latest`) — pin a
+`facebook/buck2` release via the driver's `buck2-version` if a prelude bump breaks
+parse.
 
 ### Linux `-sys` / toolchain failures — root-caused + fixed
 
