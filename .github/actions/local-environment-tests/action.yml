@@ -98,14 +98,18 @@ runs:
         WALLET_INDEXER_IMAGE: ${{ inputs.wallet-indexer-image }}
         DOCKERHUB_USER: ${{ inputs.dockerhub-username }}
         DOCKERHUB_TOKEN: ${{ inputs.dockerhub-password }}
+      # Wrapped in retry-transient-ci.sh: retries only on a known-transient CI
+      # failure (buildkit recycled by a concurrent job, or a dropped ghcr push);
+      # genuine failures fail fast. See that script.
       run: |
         . ./.envrc
-        earthly -P \
-          --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
-          --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
-          +local-env-ci \
-          --NODE_IMAGE="$NODE_IMAGE" \
-          --TOOLKIT_IMAGE="$TOOLKIT_IMAGE" \
-          --INDEXER_API_IMAGE="$INDEXER_API_IMAGE" \
-          --CHAIN_INDEXER_IMAGE="$CHAIN_INDEXER_IMAGE" \
-          --WALLET_INDEXER_IMAGE="$WALLET_INDEXER_IMAGE"
+        ./.github/scripts/retry-transient-ci.sh \
+          earthly -P \
+            --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
+            --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+            +local-env-ci \
+            --NODE_IMAGE="$NODE_IMAGE" \
+            --TOOLKIT_IMAGE="$TOOLKIT_IMAGE" \
+            --INDEXER_API_IMAGE="$INDEXER_API_IMAGE" \
+            --CHAIN_INDEXER_IMAGE="$CHAIN_INDEXER_IMAGE" \
+            --WALLET_INDEXER_IMAGE="$WALLET_INDEXER_IMAGE"

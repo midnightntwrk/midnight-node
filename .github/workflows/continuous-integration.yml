@@ -171,30 +171,15 @@ jobs:
           echo "[net]" >> "$HOME"/.cargo/config
           echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
 
-          # Retry the earthly invocation up to 3 times. Buildkit's default
-          # response-header timeout for registry uploads (~30s in the
-          # underlying containerd resolver) isn't tunable via buildkitd.toml,
-          # and the self-hosted -> ghcr.io path occasionally drops a layer push
-          # with "timeout awaiting response headers". Earthly's cache means
-          # retries skip everything that already succeeded — they essentially
-          # only retry the failing push.
-          #
-          # No ::group:: wrapping — failures need to be visible by default in
-          # the GHA log, not collapsed.
+          # Retry the earthly invocation via the shared retry-transient-ci.sh.
+          # It absorbs the two transient CI failure classes — buildkitd recycled
+          # by a concurrent job, and dropped ghcr.io layer pushes ("timeout
+          # awaiting response headers"; buildkit's registry response-header
+          # timeout isn't tunable) — while failing fast on a genuine build error
+          # (earthly's cache means a retry only re-does the failing push anyway).
           . ./.envrc
-          for attempt in 1 2 3; do
-            echo "----- earthly attempt $attempt/3 -----"
-            if earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
-              exit 0
-            fi
-            echo "----- earthly attempt $attempt failed -----"
-            if [ $attempt -lt 3 ]; then
-              echo "sleeping 30s before retry"
-              sleep 30
-            fi
-          done
-          echo "earthly failed after 3 attempts"
-          exit 1
+          ./.github/scripts/retry-transient-ci.sh \
+            earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
