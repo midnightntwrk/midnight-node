@@ -56,3 +56,14 @@ runs:
         for t in clang clang++ llvm-ar wasm-opt; do
           echo "$t -> $(command -v "$t")"
         done
+
+    # Install the wasm CC/AR wrappers to a stable absolute path present on every
+    # runner. rebuck2 dispatches compile actions to workers, and the buck cc shim
+    # bakes the [wasm] cc path at analysis time on the driver — a $GITHUB_WORKSPACE
+    # path wouldn't necessarily resolve on the worker. /usr/local/bin is uniform.
+    - name: Install wasm toolchain wrappers
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo install -m755 toolchains/wasm-cc.sh /usr/local/bin/wasm-cc.sh
+        sudo install -m755 toolchains/wasm-ar.sh /usr/local/bin/wasm-ar.sh

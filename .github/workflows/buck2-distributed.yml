@@ -75,9 +75,9 @@ jobs:
           # resolve clang/llvm-ar from PATH.
           buckconfig-extra: |
             [wasm]
-            cc = ${{ github.workspace }}/toolchains/wasm-cc.sh
-            cxx = ${{ github.workspace }}/toolchains/wasm-cc.sh
-            ar = ${{ github.workspace }}/toolchains/wasm-ar.sh
+            cc = /usr/local/bin/wasm-cc.sh
+            cxx = /usr/local/bin/wasm-cc.sh
+            ar = /usr/local/bin/wasm-ar.sh
 
       - name: Diagnose runner arch + resolved platform
         run: |
