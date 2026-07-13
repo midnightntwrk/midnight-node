@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ pub struct MidnightCNightObservationInherentDataProvider {
 	pub next_cardano_position: CardanoPosition,
 }
 
-#[derive(thiserror::Error, sp_runtime::RuntimeDebug)]
+#[derive(thiserror::Error, Debug)]
 pub enum IDPCreationError {
 	#[error("Failed to read native token data from data source: {0:?}")]
 	DataSourceError(Box<dyn Error + Send + Sync>),
@@ -48,6 +48,8 @@ pub enum IDPCreationError {
 	InvalidOnchainStateCNight(String),
 	#[error("Auth token asset name is not a string")]
 	AuthTokenAssetNameNotString,
+	#[error("CNightObservationApi version not reported by runtime")]
+	CNightObservationApiUnavailable,
 }
 
 impl MidnightCNightObservationInherentDataProvider {
@@ -95,11 +97,20 @@ impl MidnightCNightObservationInherentDataProvider {
 		C::Api: CNightObservationApi<Block>,
 	{
 		let api = client.runtime_api();
-		let redemption_validator_address =
-			String::from_utf8(api.get_redemption_validator_address(parent_hash)?)?;
 		let mapping_validator_address =
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
-		let utxo_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
+		let tx_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
+
+		// The over-fetch quantity used when querying db-sync is consensus-affecting:
+		// validators must agree on it to produce identical inherents. The reduction
+		// from 64x to 4x is therefore gated on the on-chain `CNightObservationApi`
+		// version: v2+ runtimes use the new factor, older runtimes keep the legacy
+		// 64x used by node binaries that shipped against v1.
+		let api_version = api
+			.api_version::<dyn CNightObservationApi<Block>>(parent_hash)?
+			.ok_or(IDPCreationError::CNightObservationApiUnavailable)?;
+		let overestimate_factor: u32 = if api_version >= 2 { 4 } else { 64 };
+		let utxo_overestimate = tx_capacity.saturating_mul(overestimate_factor);
 
 		let (cnight_policy_id, cnight_asset_name) = api.get_cnight_token_identifier(parent_hash)?;
 		let auth_token_asset_name: String = api
@@ -110,7 +121,6 @@ impl MidnightCNightObservationInherentDataProvider {
 
 		let config = CNightAddresses {
 			mapping_validator_address,
-			redemption_validator_address,
 			auth_token_asset_name,
 			cnight_policy_id: cnight_policy_id.try_into().map_err(|_e| {
 				IDPCreationError::InvalidOnchainStateCNight("cnight_policy_id".to_string())
@@ -125,7 +135,8 @@ impl MidnightCNightObservationInherentDataProvider {
 				&config,
 				&cardano_position_start,
 				mc_hash,
-				utxo_capacity as usize,
+				tx_capacity as usize,
+				utxo_overestimate as usize,
 			)
 			.await
 			.map_err(IDPCreationError::DataSourceError)?;

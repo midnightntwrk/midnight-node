@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,29 +11,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use frame_support::{
-	assert_ok, inherent::InherentData, pallet_prelude::*, sp_runtime::traits::Dispatchable,
+	assert_noop, assert_ok,
+	inherent::InherentData,
+	pallet_prelude::*,
+	sp_runtime::traits::{BlakeTwo256, Dispatchable, Hash},
+	traits::Hooks,
 };
-use midnight_node_ledger::types::BlockContext;
+use frame_system::RawOrigin;
+use midnight_node_ledger::latest::types::BlockContext;
 use midnight_node_ledger_helpers::{
-	CNightGeneratesDustActionType, CNightGeneratesDustEvent, DefaultDB, DustPublicKey,
-	DustSecretKey, ProofMarker, Signature, SystemTransaction, TransactionWithContext, deserialize,
-	deserialize_untagged, serialize_untagged,
+	CNightGeneratesDustActionType, CNightGeneratesDustEvent, DustPublicKey, DustSecretKey,
+	SystemTransaction, deserialize, deserialize_untagged,
+	fork::raw_block_data::SerializedTxBatches, serialize_untagged,
 };
 use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 use midnight_primitives_cnight_observation::{
-	CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, INHERENT_IDENTIFIER,
-	MidnightObservationTokenMovement, TimestampUnixMillis,
+	CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes,
+	INHERENT_IDENTIFIER, InherentError, MidnightObservationTokenMovement, TimestampUnixMillis,
 };
 use midnight_primitives_mainchain_follower::{
 	CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
-	RedemptionCreateData, RedemptionSpendData, RegistrationData, SpendData, UtxoIndexInTx,
+	RegistrationData, SpendData, UtxoIndexInTx,
 };
 use pallet_cnight_observation::*;
 use pallet_cnight_observation_mock::mock::{
 	self, CNightObservation, RuntimeCall, RuntimeEvent, System, Test, new_test_ext,
 };
 use rand::prelude::*;
-use sidechain_domain::{McBlockHash, McTxHash};
+use sidechain_domain::{McBlockHash, McTxHash, UtxoId};
 use test_log::test;
 
 fn create_inherent(
@@ -125,7 +131,7 @@ fn extract_events(midnight_system_tx: &[u8]) -> Vec<CNightGeneratesDustEvent> {
 fn init_ledger_state() {
 	let block_context = get_block_context(UndeployedNetwork.genesis_block());
 	let path_buf = tempfile::tempdir().unwrap().keep();
-	let state_key = midnight_node_ledger::init_storage_paritydb(
+	let state_key = midnight_node_ledger::latest::storage::init_storage_paritydb_separate(
 		&path_buf,
 		UndeployedNetwork.genesis_state(),
 		1024 * 1024,
@@ -137,14 +143,21 @@ fn init_ledger_state() {
 }
 
 pub fn get_block_context(genesis_block: &[u8]) -> BlockContext {
-	let tx_with_context: Vec<TransactionWithContext<Signature, ProofMarker, DefaultDB>> =
-		deserialize(genesis_block)
-			.unwrap_or_else(|err| panic!("Can't deserialize genesis block: {err}"));
-	tx_with_context[0].block_context.clone().into()
+	let genesis_block: SerializedTxBatches =
+		serde_json::from_slice(genesis_block).expect("failed to deseriailzed genesis block");
+	let first_tx = genesis_block.batches.iter().flatten().next().unwrap();
+	first_tx.context.clone().into()
 }
 
 fn any_event<F: Fn(&RuntimeEvent) -> bool>(f: F) -> bool {
 	System::events().iter().any(|r| f(&r.event))
+}
+
+fn advance_block_and_reset_events() {
+	CNightObservation::on_finalize(System::block_number());
+	System::set_block_number(System::block_number() + 1);
+	frame_system::Pallet::<Test>::reset_events();
+	CNightObservation::on_initialize(System::block_number());
 }
 
 #[test]
@@ -274,132 +287,6 @@ fn asset_destroy_should_emit_valid_event_if_registered() {
 }
 
 #[test]
-fn redemption_create_should_emit_valid_event_if_registered() {
-	new_test_ext().execute_with(|| {
-		init_ledger_state();
-		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
-
-		let utxos = vec![
-			ObservedUtxo {
-				header: test_header(1, 2, 0, None),
-				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_reward_address,
-					dust_public_key: dust_public_key.clone(),
-				}),
-			},
-			ObservedUtxo {
-				header: test_header(2, 0, 0, None),
-				data: ObservedUtxoData::RedemptionCreate(RedemptionCreateData {
-					value: 100,
-					owner: cardano_reward_address,
-					utxo_tx_hash: tx_hash(1, 3),
-					utxo_tx_index: 0,
-				}),
-			},
-		];
-
-		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = CNightObservation::create_inherent(&inherent_data)
-			.expect("Expected to create inherent call");
-		let call = RuntimeCall::CNightObservation(call);
-		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
-
-		// Confirm the expected SystemTxCreateUtxo event was emitted
-		let found = frame_system::Pallet::<Test>::events().iter().any(|record| {
-			println!("found event: {record:?}");
-			if let mock::RuntimeEvent::MidnightSystem(
-				pallet_midnight_system::Event::SystemTransactionApplied(e),
-			) = &record.event
-			{
-				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
-				let dust_public_key_deser: DustPublicKey =
-					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
-				let events = extract_events(&e.serialized_system_transaction);
-				for event in events.iter() {
-					if event.action == CNightGeneratesDustActionType::Create
-						&& event.owner == dust_public_key_deser
-					{
-						return true;
-					}
-				}
-			}
-			false
-		});
-
-		assert!(found, "Could not find SystemTx event with correct owner");
-	});
-}
-
-#[test]
-fn redemption_destroy_should_emit_valid_event_if_registered() {
-	new_test_ext().execute_with(|| {
-		init_ledger_state();
-		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
-
-		let utxos = vec![
-			ObservedUtxo {
-				header: test_header(1, 2, 0, None),
-				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_reward_address,
-					dust_public_key: dust_public_key.clone(),
-				}),
-			},
-			ObservedUtxo {
-				header: test_header(2, 0, 0, None),
-				data: ObservedUtxoData::RedemptionCreate(RedemptionCreateData {
-					value: 100,
-					owner: cardano_reward_address,
-					utxo_tx_hash: tx_hash(2, 0),
-					utxo_tx_index: 0,
-				}),
-			},
-			ObservedUtxo {
-				header: test_header(2, 1, 0, None),
-				data: ObservedUtxoData::RedemptionSpend(RedemptionSpendData {
-					value: 100,
-					owner: cardano_reward_address,
-					utxo_tx_hash: tx_hash(2, 0),
-					utxo_tx_index: 0,
-					spending_tx_hash: tx_hash(2, 1),
-				}),
-			},
-		];
-
-		let inherent_data = create_inherent(utxos, test_position(3, 0));
-		let call = CNightObservation::create_inherent(&inherent_data)
-			.expect("Expected to create inherent call");
-		let call = RuntimeCall::CNightObservation(call);
-		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
-
-		// Confirm the expected SystemTxCreateUtxo event was emitted
-		let found = frame_system::Pallet::<Test>::events().iter().any(|record| {
-			println!("found event: {record:?}");
-			if let mock::RuntimeEvent::MidnightSystem(
-				pallet_midnight_system::Event::SystemTransactionApplied(e),
-			) = &record.event
-			{
-				println!("system tx detected: {e:?}");
-				println!("looking for owner: {:?}", &dust_public_key);
-				let dust_public_key_deser: DustPublicKey =
-					deserialize_untagged(&mut &dust_public_key.0[..]).unwrap();
-				let events = extract_events(&e.serialized_system_transaction);
-				for event in events.iter() {
-					if event.action == CNightGeneratesDustActionType::Destroy
-						&& event.owner == dust_public_key_deser
-					{
-						return true;
-					}
-				}
-			}
-			false
-		});
-
-		assert!(found, "Could not find SystemTx event with correct owner");
-	});
-}
-
-#[test]
 fn process_tokens_should_not_emit_valid_utxo_event_if_not_registered() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
@@ -466,10 +353,8 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		let stored: Vec<DustPublicKeyBytes> = Mappings::<Test>::get(cardano_reward_address)
-			.into_iter()
-			.map(|r| r.dust_public_key)
-			.collect();
+		let stored: Vec<DustPublicKeyBytes> =
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect();
 
 		assert_eq!(stored, vec![dust_public_key]);
 
@@ -502,9 +387,7 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		// Advance block and clear events
-		System::set_block_number(System::block_number() + 1);
-		frame_system::Pallet::<Test>::reset_events();
+		advance_block_and_reset_events();
 
 		let reg_header = test_header(4, 2, 0, None);
 
@@ -535,9 +418,7 @@ fn removing_duplicate_registration_results_in_valid_registration() {
 		// Registration is not emitted when a duplicate is received
 		assert!(!registration_found);
 
-		// Advance block and clear events
-		System::set_block_number(System::block_number() + 1);
-		frame_system::Pallet::<Test>::reset_events();
+		advance_block_and_reset_events();
 
 		let dereg_header = test_header(5, 0, 0, Some(tx_hash(4, 2)));
 
@@ -701,8 +582,7 @@ fn emits_registration_and_mapping_added_on_first_valid_registration() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key: dust_public_key.clone(),
-					utxo_tx_hash: reg_header.utxo_tx_hash,
-					utxo_index: reg_header.utxo_index.0,
+					utxo_id: UtxoId::new(reg_header.utxo_tx_hash.0, reg_header.utxo_index.0),
 				};
 
 				assert_eq!(m, &expected);
@@ -734,8 +614,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 		let call = RuntimeCall::CNightObservation(call);
 		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
 
-		System::set_block_number(System::block_number() + 1);
-		frame_system::Pallet::<Test>::reset_events();
+		advance_block_and_reset_events();
 
 		// make the removal UTXO reference the registration UTXO so the MappingEntry matches
 		let dereg_header = test_header(21, 0, 0, Some(reg_header.utxo_tx_hash));
@@ -771,8 +650,7 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 				let expected = MappingEntry {
 					cardano_reward_address,
 					dust_public_key: dust_public_key.clone(),
-					utxo_tx_hash: reg_header.utxo_tx_hash,
-					utxo_index: reg_header.utxo_index.0,
+					utxo_id: UtxoId::new(reg_header.utxo_tx_hash.0, reg_header.utxo_index.0),
 				};
 
 				assert_eq!(m, &expected);
@@ -1338,3 +1216,645 @@ fn emits_deregistration_and_mapping_removed_on_last_mapping_removed() {
 // 		assert_eq!(len_after_removal, None, "Key removed entirely from storage");
 // 	});
 // }
+
+#[test]
+fn duplicate_inherent_protection_works() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+		let utxos = vec![ObservedUtxo {
+			header: test_header(1, 2, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key: dust_public_key.clone(),
+			}),
+		}];
+
+		// First call succeeds
+		let inherent_data = create_inherent(utxos.clone(), test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		// Second call in same block fails
+		let call2 = Call::process_tokens {
+			utxos: utxos.clone(),
+			next_cardano_position: test_position(3, 0),
+		};
+		assert_noop!(
+			RuntimeCall::CNightObservation(call2).dispatch(RawOrigin::None.into()),
+			Error::<Test>::InherentAlreadyExecuted
+		);
+
+		advance_block_and_reset_events();
+
+		// Third call in new block succeeds
+		let utxos2 = vec![ObservedUtxo {
+			header: test_header(4, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key,
+			}),
+		}];
+		let inherent_data2 = create_inherent(utxos2, test_position(5, 0));
+		let call3 = CNightObservation::create_inherent(&inherent_data2).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call3).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let cardano_addr = cardano_reward_address(b"cardano1");
+		let invalid_dust_key = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
+
+		let create_utxo_tx_hash = tx_hash(1, 3);
+		let create_utxo_tx_index: u16 = 0;
+
+		let utxos = vec![
+			ObservedUtxo {
+				header: test_header(1, 2, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address: cardano_addr,
+					dust_public_key: invalid_dust_key,
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(2, 0, 0, None),
+				data: ObservedUtxoData::AssetCreate(CreateData {
+					value: 100,
+					owner: cardano_addr,
+					utxo_tx_hash: create_utxo_tx_hash,
+					utxo_tx_index: create_utxo_tx_index,
+				}),
+			},
+		];
+
+		let inherent_data = create_inherent(utxos, test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		// Verify registration succeeded — proves handle_create reached event construction,
+		// not the early "No valid dust registration" bail-out
+		assert!(
+			CNightObservation::is_registered(&cardano_addr),
+			"Registration must succeed so handle_create reaches event construction"
+		);
+
+		let nonce = BlakeTwo256::hash(
+			&[
+				b"asset_create".as_slice(),
+				&create_utxo_tx_hash.0[..],
+				&create_utxo_tx_index.to_be_bytes()[..],
+			]
+			.concat(),
+		);
+
+		assert!(
+			UtxoOwners::<Test>::get(nonce).is_none(),
+			"UtxoOwners should not contain an entry when event construction fails"
+		);
+
+		let system_tx_found = frame_system::Pallet::<Test>::events().iter().any(|record| {
+			matches!(
+				record.event,
+				mock::RuntimeEvent::MidnightSystem(
+					pallet_midnight_system::Event::SystemTransactionApplied(_)
+				)
+			)
+		});
+		assert!(!system_tx_found, "No SystemTransactionApplied event should be emitted");
+	});
+}
+
+#[test]
+fn asset_spend_without_create_should_not_emit_destroy_event() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+		let utxos = vec![
+			ObservedUtxo {
+				header: test_header(1, 2, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address,
+					dust_public_key: dust_public_key.clone(),
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(2, 1, 0, None),
+				data: ObservedUtxoData::AssetSpend(SpendData {
+					value: 100,
+					owner: cardano_reward_address,
+					utxo_tx_hash: tx_hash(99, 99),
+					utxo_tx_index: 0,
+					spending_tx_hash: tx_hash(2, 1),
+				}),
+			},
+		];
+
+		let inherent_data = create_inherent(utxos, test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		let destroy_found = frame_system::Pallet::<Test>::events().iter().any(|record| {
+			if let mock::RuntimeEvent::MidnightSystem(
+				pallet_midnight_system::Event::SystemTransactionApplied(e),
+			) = &record.event
+			{
+				let events = extract_events(&e.serialized_system_transaction);
+				events.iter().any(|ev| ev.action == CNightGeneratesDustActionType::Destroy)
+			} else {
+				false
+			}
+		});
+
+		assert!(
+			!destroy_found,
+			"No Destroy event should be emitted for a UTXO that was never created"
+		);
+	});
+}
+
+/// Dispatches `process_tokens` with empty UTXOs to set `NextCardanoPosition`,
+/// then advances the block so a subsequent dispatch can test the guards.
+fn establish_position(block_number: u32, tx_index_in_block: u32) {
+	let inherent = create_inherent(vec![], test_position(block_number, tx_index_in_block));
+	let call = CNightObservation::create_inherent(&inherent).unwrap();
+	assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	advance_block_and_reset_events();
+}
+
+#[test]
+fn position_regression_lower_block_number_is_rejected() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		establish_position(10, 5);
+
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(5, 0) };
+		assert_noop!(
+			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
+			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+#[test]
+fn position_equal_position_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		establish_position(10, 5);
+
+		let inherent = create_inherent(vec![], test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_regression_same_block_lower_tx_index_is_rejected() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		establish_position(10, 5);
+
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(10, 4) };
+		assert_noop!(
+			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
+			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+#[test]
+fn position_same_block_higher_tx_index_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		establish_position(10, 5);
+
+		let inherent = create_inherent(vec![], test_position(10, 6));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_forward_jump_within_window_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		establish_position(10, 5);
+
+		let inherent = create_inherent(vec![], test_position(510, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_excessive_jump_exceeding_window_is_accepted_with_warning() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		establish_position(10, 5);
+
+		let inherent =
+			create_inherent(vec![], test_position(10 + INITIAL_CARDANO_BLOCK_WINDOW_SIZE + 1, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_normal_sequential_advancement_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		establish_position(10, 5);
+
+		let inherent = create_inherent(vec![], test_position(11, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_advancement_from_default_zero_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let inherent = create_inherent(vec![], test_position(1, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_jump_exactly_at_window_boundary_is_accepted() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		establish_position(10, 5);
+
+		let inherent =
+			create_inherent(vec![], test_position(10 + INITIAL_CARDANO_BLOCK_WINDOW_SIZE, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+	});
+}
+
+#[test]
+fn position_guard_works_with_utxos_present() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+		// First dispatch: register a wallet and establish position
+		let utxos = vec![ObservedUtxo {
+			header: test_header(10, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key: dust_public_key.clone(),
+			}),
+		}];
+		let inherent = create_inherent(utxos, test_position(10, 5));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		// Regression with UTXOs present is still rejected
+		let utxos = vec![ObservedUtxo {
+			header: test_header(5, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key,
+			}),
+		}];
+		let call = Call::process_tokens { utxos, next_cardano_position: test_position(5, 0) };
+		assert_noop!(
+			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
+			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+/// While the v0 -> v1 MBM is still draining, `process_tokens` must short-circuit:
+/// reading only v1 mid-migration would silently corrupt registration state for any
+/// reward address whose v0 row hasn't been moved yet (e.g. a deregistration would
+/// no-op here and then re-appear as live once the migration completes).
+///
+/// This test forces `on_chain_storage_version` back to 0 to simulate a block where
+/// the MBM is mid-flight, then asserts that an inherent carrying real UTXOs:
+/// - leaves `NextCardanoPosition` unchanged,
+/// - writes nothing to `Mapping`,
+/// - emits no pallet events.
+/// After flipping the version to 1 (migration complete), the same call processes
+/// normally and updates state.
+#[test]
+fn process_tokens_skips_during_mbm_then_resumes() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// Simulate mid-MBM: storage version still at 0.
+		StorageVersion::new(0).put::<CNightObservation>();
+
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+		let utxos = vec![ObservedUtxo {
+			header: test_header(10, 0, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address,
+				dust_public_key: dust_public_key.clone(),
+			}),
+		}];
+
+		let position_before = NextCardanoPosition::<Test>::get();
+
+		let inherent = create_inherent(utxos.clone(), test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(
+			NextCardanoPosition::<Test>::get(),
+			position_before,
+			"NextCardanoPosition must not advance during MBM",
+		);
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
+			0,
+			"no Mapping rows must be written during MBM",
+		);
+		assert!(
+			!any_event(|e| matches!(
+				e,
+				RuntimeEvent::CNightObservation(_) | RuntimeEvent::MidnightSystem(_),
+			)),
+			"no pallet events must be emitted during MBM",
+		);
+
+		// Duplicate-inherent guard still holds during MBM: the gate runs after the
+		// `InherentExecutedThisBlock` check, so a second dispatch in the same block
+		// is rejected as before.
+		let dup = Call::process_tokens {
+			utxos: utxos.clone(),
+			next_cardano_position: test_position(10, 1),
+		};
+		assert_noop!(
+			RuntimeCall::CNightObservation(dup).dispatch(RawOrigin::None.into()),
+			Error::<Test>::InherentAlreadyExecuted,
+		);
+
+		advance_block_and_reset_events();
+
+		// Migration completes: storage version flips to 1; the next inherent
+		// processes the same UTXOs normally.
+		StorageVersion::new(1).put::<CNightObservation>();
+
+		let inherent = create_inherent(utxos, test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(NextCardanoPosition::<Test>::get(), test_position(10, 1));
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect::<Vec<_>>(),
+			vec![dust_public_key],
+		);
+	});
+}
+
+#[test]
+fn position_guards_hold_across_multiple_advances() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// Advance through 4 sequential positions
+		establish_position(10, 0);
+
+		let inherent = create_inherent(vec![], test_position(20, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let inherent = create_inherent(vec![], test_position(30, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		let inherent = create_inherent(vec![], test_position(40, 0));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		advance_block_and_reset_events();
+
+		// After 4 advances, regression to any prior position is rejected
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(30, 0) };
+		assert_noop!(
+			RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()),
+			Error::<Test>::CardanoPositionRegression
+		);
+	});
+}
+
+fn create_malformed_inherent() -> InherentData {
+	let mut inherent_data = InherentData::new();
+	inherent_data
+		.put_data(INHERENT_IDENTIFIER, &vec![0xFF_u8, 0xFE, 0xFD])
+		.expect("inherent data insertion should not fail");
+	inherent_data
+}
+
+#[test]
+fn create_inherent_with_malformed_data_returns_none() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let result = CNightObservation::create_inherent(&malformed);
+		assert!(result.is_none(), "create_inherent should return None on malformed data");
+	});
+}
+
+#[test]
+fn check_inherent_with_malformed_data_returns_error() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let call =
+			Call::process_tokens { utxos: vec![], next_cardano_position: test_position(1, 0) };
+		let result = CNightObservation::check_inherent(&call, &malformed);
+		assert_eq!(result, Err(InherentError::DecodeFailed));
+	});
+}
+
+#[test]
+fn is_inherent_required_with_malformed_data_returns_error() {
+	new_test_ext().execute_with(|| {
+		let malformed = create_malformed_inherent();
+		let result = CNightObservation::is_inherent_required(&malformed);
+		assert_eq!(result, Err(InherentError::DecodeFailed));
+	});
+}
+
+// One representative regression guard for the operator-facing panic shape in
+// `BuildGenesisConfig::build`. The four call sites use a byte-identical format
+// string differing only in the dotted field path and the destination bound;
+// `cnight_policy_id` is not exercised because its source type `[u8; 28]` makes
+// the panic at that site unreachable from chain-spec deserialization.
+#[test]
+fn build_panics_with_field_path_and_bound_when_mapping_validator_address_too_long() {
+	let over_length = "a".repeat(CARDANO_BECH32_ADDRESS_MAX_LENGTH as usize + 1);
+	let genesis = pallet_cnight_observation::GenesisConfig::<Test> {
+		config: pallet_cnight_observation::config::CNightGenesis {
+			addresses: CNightAddresses {
+				mapping_validator_address: over_length,
+				auth_token_asset_name: String::new(),
+				cnight_policy_id: [0u8; 28],
+				cnight_asset_name: String::new(),
+			},
+			..Default::default()
+		},
+		_marker: Default::default(),
+	};
+
+	let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+		sp_io::TestExternalities::default().execute_with(|| {
+			genesis.build();
+		});
+	}))
+	.expect_err("genesis build must panic on over-length mapping_validator_address");
+
+	let msg = payload
+		.downcast_ref::<String>()
+		.cloned()
+		.or_else(|| payload.downcast_ref::<&'static str>().map(|s| s.to_string()))
+		.expect("panic payload should be String or &'static str");
+
+	assert!(
+		msg.contains("cNightObservation.config.addresses.mapping_validator_address"),
+		"panic must name the chain-spec field path; got: {msg}"
+	);
+	assert!(
+		msg.contains(&format!("maximum {CARDANO_BECH32_ADDRESS_MAX_LENGTH}")),
+		"panic must name the destination bound; got: {msg}"
+	);
+}
+
+type BoundedAssetName = BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>;
+
+fn bounded_asset_name(bytes: &[u8]) -> BoundedAssetName {
+	BoundedAssetName::try_from(bytes.to_vec()).expect("asset name fits the bound")
+}
+
+// Oversized policy ids and asset names are unrepresentable in the call
+// arguments (`[u8; CNIGHT_POLICY_ID_LENGTH]` and a `BoundedVec`), so they are
+// rejected at decode time and need no dispatch-level tests.
+
+#[test]
+fn set_cnight_identifier_works() {
+	new_test_ext().execute_with(|| {
+		let policy_id = [0xAB; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = bounded_asset_name(b"staging-cnight");
+
+		assert_ok!(CNightObservation::set_cnight_identifier(
+			RawOrigin::Root.into(),
+			policy_id,
+			asset_name.clone(),
+		));
+
+		let (got_pid, got_name) = pallet_cnight_observation::CNightIdentifier::<Test>::get();
+		assert_eq!(got_pid.to_vec(), policy_id.to_vec());
+		assert_eq!(got_name, asset_name);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_requires_root() {
+	new_test_ext().execute_with(|| {
+		let policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let asset_name = bounded_asset_name(b"x");
+
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Signed(1).into(),
+				policy_id,
+				asset_name.clone(),
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(RawOrigin::None.into(), policy_id, asset_name,),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn set_cnight_identifier_rejects_non_ascii_asset_name() {
+	new_test_ext().execute_with(|| {
+		// Genesis validates asset names as ASCII-only strings and block authors
+		// convert them to `String` when building the inherent, so non-ASCII (and
+		// in particular non-UTF-8) bytes must be rejected.
+		let valid_policy_id = [0u8; CNIGHT_POLICY_ID_LENGTH as usize];
+		let non_utf8_asset_name = bounded_asset_name(&[0xFF, 0xFE]);
+		assert_noop!(
+			CNightObservation::set_cnight_identifier(
+				RawOrigin::Root.into(),
+				valid_policy_id,
+				non_utf8_asset_name,
+			),
+			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_works() {
+	new_test_ext().execute_with(|| {
+		let asset_name = bounded_asset_name(b"staging-auth-token");
+
+		assert_ok!(CNightObservation::set_auth_token_asset_name(
+			RawOrigin::Root.into(),
+			asset_name.clone(),
+		));
+
+		assert_eq!(
+			pallet_cnight_observation::MainChainAuthTokenAssetName::<Test>::get(),
+			asset_name,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_requires_root() {
+	new_test_ext().execute_with(|| {
+		let asset_name = bounded_asset_name(b"x");
+
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(
+				RawOrigin::Signed(1).into(),
+				asset_name.clone(),
+			),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::None.into(), asset_name),
+			sp_runtime::DispatchError::BadOrigin,
+		);
+	});
+}
+
+#[test]
+fn set_auth_token_asset_name_rejects_non_ascii_input() {
+	new_test_ext().execute_with(|| {
+		// Genesis validates this field as an ASCII-only string and block authors
+		// convert it to `String` when building the inherent, so non-ASCII (and in
+		// particular non-UTF-8) bytes must be rejected.
+		let non_utf8 = bounded_asset_name(&[0xFF, 0xFE]);
+		assert_noop!(
+			CNightObservation::set_auth_token_asset_name(RawOrigin::Root.into(), non_utf8),
+			pallet_cnight_observation::Error::<Test>::NonAsciiAssetName,
+		);
+	});
+}

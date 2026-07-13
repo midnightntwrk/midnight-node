@@ -1,57 +1,75 @@
 use super::super::tx_generator::{TxGenerator, source::Source};
-use crate::{ProofType, SignatureType, cli_parsers as cli};
+use crate::cli_parsers as cli;
+use crate::tx_generator::builder::build_fork_aware_context_cached;
+use crate::tx_generator::source::create_file_wallet_cache;
 use clap::Args;
-use midnight_node_ledger_helpers::{ContractAddress, LedgerContext, serialize};
+use midnight_node_ledger_helpers::ContractAddress;
 use std::{fs, path::Path};
 
 #[derive(Args)]
 pub struct ContractStateArgs {
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 	/// Contract Address
 	#[arg(long, value_parser = cli::contract_address_decode)]
-	contract_address: ContractAddress,
+	pub contract_address: ContractAddress,
 	/// Destination file to save the state
 	#[arg(long, short)]
-	dest_file: String,
+	pub dest_file: Option<String>,
 	/// Dry-run - don't fetch anything, just print out the settings
 	#[arg(long)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 pub async fn execute(
 	args: ContractStateArgs,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-	let source = TxGenerator::<SignatureType, ProofType>::source(args.source, args.dry_run)
+	let ledger_state_db = args.source.ledger_state_db.clone();
+	let fetch_cache = args.source.fetch_cache.clone();
+	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
 		.expect("failed to init tx source");
 
 	if args.dry_run {
-		println!("Dry-run: fetch contract state for address: {:?}", args.contract_address);
-		println!("Dry-run: write contract state to file: {:?}", args.dest_file);
+		log::info!("Dry-run: fetch contract state for address: {:?}", args.contract_address);
+		log::info!("Dry-run: write contract state to file: {:?}", args.dest_file);
 		return Ok(());
 	}
 
 	let blocks = source.get_txs().await?;
-	let network_id = blocks.network();
+	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
-	let context = LedgerContext::new(network_id);
-	for block in blocks.blocks {
-		context.update_from_block(block.transactions, block.context, block.state_root.clone());
+	let fork_ctx = build_fork_aware_context_cached(&[], &blocks, wallet_cache.as_deref()).await;
+
+	let serialized_state = fork_ctx.dispatch(
+		|ctx| {
+			crate::commands::fork::ledger_7::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)
+		},
+		|ctx| {
+			crate::commands::fork::ledger_8::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)
+		},
+		|ctx| {
+			crate::commands::fork::ledger_9::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)
+		},
+	)?;
+
+	if let Some(dest_file) = &args.dest_file {
+		let full_path = Path::new(dest_file);
+		if let Some(directory) = full_path.parent() {
+			fs::create_dir_all(directory).expect("failed to create directories");
+		}
+
+		fs::write(full_path, serialized_state).expect("failed to create file");
 	}
-
-	let state = context
-		.with_ledger_state(|ledger_state| ledger_state.index(args.contract_address))
-		.expect("contract state for address does not exist");
-
-	let serialized_state = serialize(&state)?;
-
-	let full_path = Path::new(&args.dest_file);
-	if let Some(directory) = full_path.parent() {
-		fs::create_dir_all(directory).expect("failed to create directories");
-	}
-
-	fs::write(full_path, serialized_state).expect("failed to create file");
 
 	Ok(())
 }

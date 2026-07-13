@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,17 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{any::type_name, cmp::Ordering, path::Path, sync::Arc};
+use std::{
+	any::type_name,
+	cmp::Ordering,
+	fs::{File, OpenOptions, TryLockError},
+	path::{Path, PathBuf},
+	sync::Arc,
+};
 
-use async_trait::async_trait;
 use core::fmt::Debug;
-use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use redb::{Database, Key, ReadableDatabase, TableDefinition, TypeName, Value};
 use serde::{Deserialize, Serialize};
 use subxt::utils::H256;
 use tokio::sync::RwLock;
 
-use super::{BlockData, FetchStorage};
+use super::FetchStorage;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlockKey {
@@ -31,41 +36,73 @@ pub struct BlockKey {
 
 /// Persistent [`FetchStorage`] backend using [redb](https://github.com/cberner/redb).
 ///
-/// Data is serialized as BSON. Uses `RwLock` for concurrent read access.
+/// Data is serialized with postcard. Uses `RwLock` for concurrent read access.
+/// An advisory file lock on a `<path>.lock` sidecar prevents concurrent toolkit
+/// processes from corrupting the cache.
 #[derive(Clone)]
-pub struct RedbBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D: DB> {
+pub struct RedbBackend {
 	pub db: Arc<RwLock<Database>>,
-	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<BlockData<S, P, D>>>,
+	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<RawBlockData>>,
 	pub highest_verified_table: TableDefinition<'static, [u8; 32], u64>,
+	// Held for the lifetime of the backend; lock is released when the file closes on drop.
+	_lock: Arc<File>,
 }
 
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> RedbBackend<S, P, D> {
-	/// Creates or opens a database at the given path. Will fail if open in another process.
+impl RedbBackend {
+	/// Creates or opens a database at the given path.
+	///
+	/// Takes an exclusive advisory lock on `<path>.lock` before opening redb. If another
+	/// toolkit process holds the lock, blocks until it is released, printing a notice the
+	/// first time the lock is contested.
 	pub fn new(path: impl AsRef<Path>) -> Self {
 		let p = path.as_ref();
 		if let Some(parent) = p.parent() {
 			std::fs::create_dir_all(parent)
 				.expect("failed to create parent dir for redb fetch cache");
 		}
+
+		let lock_path: PathBuf = {
+			let mut s = p.as_os_str().to_owned();
+			s.push(".lock");
+			s.into()
+		};
+		let lock_file = OpenOptions::new()
+			.read(true)
+			.write(true)
+			.create(true)
+			.truncate(false)
+			.open(&lock_path)
+			.unwrap_or_else(|e| {
+				panic!("failed to open redb cache lockfile '{}': {e}", lock_path.display())
+			});
+
+		match lock_file.try_lock() {
+			Ok(()) => {},
+			Err(TryLockError::WouldBlock) => {
+				eprintln!(
+					"waiting for lock on redb cache at {} (held by another toolkit process)...",
+					p.display()
+				);
+				lock_file.lock().unwrap_or_else(|e| {
+					panic!("failed to acquire lock on redb cache '{}': {e}", lock_path.display())
+				});
+			},
+			Err(TryLockError::Error(e)) => {
+				panic!("failed to lock redb cache '{}': {e}", lock_path.display());
+			},
+		}
+
 		Self {
-			db: Arc::new(RwLock::new(
-				Database::create(path).expect("failed to create database - is it already open?"),
-			)),
-			block_data_table: TableDefinition::new("block_data"),
+			db: Arc::new(RwLock::new(Database::create(path).expect("failed to create database"))),
+			block_data_table: TableDefinition::new("raw_block_data_v2"),
 			highest_verified_table: TableDefinition::new("highest_verified"),
+			_lock: Arc::new(lock_file),
 		}
 	}
 }
 
-#[async_trait]
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> FetchStorage<S, P, D>
-	for RedbBackend<S, P, D>
-{
-	async fn get_block_data(
-		&self,
-		chain_id: H256,
-		block_number: u64,
-	) -> Option<BlockData<S, P, D>> {
+impl FetchStorage for RedbBackend {
+	async fn get_block_data(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
 		let read_txn = self.db.read().await.begin_read().expect("failed to begin read txn");
 		let Ok(table) = read_txn.open_table(self.block_data_table) else { return None };
 		table
@@ -77,7 +114,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 		&self,
 		chain_id: H256,
 		range: impl Iterator<Item = u64> + Send,
-	) -> Vec<Option<BlockData<S, P, D>>> {
+	) -> Vec<Option<RawBlockData>> {
 		let read_txn = self.db.read().await.begin_read().expect("failed to begin read txn");
 		let Ok(table) = read_txn.open_table(self.block_data_table) else {
 			return std::iter::repeat_n(None, range.count()).collect();
@@ -93,12 +130,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 			.collect()
 	}
 
-	async fn insert_block_data(
-		&self,
-		chain_id: H256,
-		block_number: u64,
-		block: BlockData<S, P, D>,
-	) {
+	async fn insert_block_data(&self, chain_id: H256, block_number: u64, block: RawBlockData) {
 		// Can only open the table as writable from one thread
 		let write_txn = self.db.write().await.begin_write().expect("failed to begin write txn");
 		{
@@ -114,14 +146,15 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 	async fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, BlockData<S, P, D>)> + Send,
+		range: impl Iterator<Item = RawBlockData> + Send,
 	) {
 		// Can only open the table as writable from one thread
 		let write_txn = self.db.write().await.begin_write().expect("failed to begin write txn");
 		{
 			let mut table =
 				write_txn.open_table(self.block_data_table).expect("failed to open table");
-			for (block_number, block) in range {
+			for block in range {
+				let block_number = block.number;
 				table
 					.insert(BlockKey { chain_id, block_number }, block)
 					.expect("failed to insert block");
@@ -147,7 +180,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> Fetch
 	}
 }
 
-/// Wrapper type to handle keys and values using bincode serialization
+/// Wrapper type to handle keys and values using postcard serialization
 #[derive(Debug)]
 pub struct Serde<T>(pub T);
 
@@ -173,7 +206,7 @@ where
 	where
 		Self: 'a,
 	{
-		bson::deserialize_from_slice(&data).unwrap()
+		postcard::from_bytes(data).unwrap()
 	}
 
 	fn as_bytes<'a, 'b: 'a>(value: &'a Self::SelfType<'b>) -> Self::AsBytes<'a>
@@ -181,7 +214,7 @@ where
 		Self: 'a,
 		Self: 'b,
 	{
-		bson::serialize_to_vec(&value).unwrap()
+		postcard::to_allocvec(&value).unwrap()
 	}
 
 	fn type_name() -> TypeName {

@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -78,6 +78,9 @@ pub mod pallet {
 	/// Mainchain member identifiers for Technical Committee members
 	pub type TechnicalCommitteeMainchainMembers<T: Config> =
 		StorageValue<_, BoundedVec<MainchainMember, T::TechnicalCommitteeMaxMembers>, ValueQuery>;
+
+	#[pallet::storage]
+	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -163,10 +166,21 @@ pub mod pallet {
 		EmptyMembers,
 		/// Duplicate Members
 		DuplicatedMembers,
+		/// Only one inherent is allowed per block
+		InherentAlreadyExecuted,
 	}
 
 	#[pallet::hooks]
-	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
+			// Pre-account for on_finalize weight (storage write to reset inherent flag)
+			T::DbWeight::get().writes(1)
+		}
+
+		fn on_finalize(_n: BlockNumberFor<T>) {
+			InherentExecutedThisBlock::<T>::kill();
+		}
+	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
@@ -176,6 +190,7 @@ pub mod pallet {
 		DispatchClass::Mandatory
 		))]
 		#[allow(clippy::useless_conversion)]
+		#[allow(clippy::unwrap_in_result)] // bounded vec conversions are infallible; input already bounded
 		pub fn reset_members(
 			origin: OriginFor<T>,
 			council_authorities: BoundedVec<(T::AccountId, MainchainMember), T::CouncilMaxMembers>,
@@ -185,13 +200,22 @@ pub mod pallet {
 			>,
 		) -> DispatchResultWithPostInfo {
 			ensure_none(origin)?;
+			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
+			InherentExecutedThisBlock::<T>::put(true);
 
-			let (mut council_members, council_mainchain_members): (Vec<_>, Vec<_>) =
-				council_authorities.clone().into_iter().unzip();
-			let (mut technical_committee_members, technical_committee_mainchain_members): (
+			// Sort pairs by AccountId before unzipping to preserve the association
+			// between AccountId and MainchainMember
+			let mut council_pairs: Vec<_> = council_authorities.clone().into_inner();
+			council_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+			let (council_members, council_mainchain_members): (Vec<_>, Vec<_>) =
+				council_pairs.into_iter().unzip();
+
+			let mut tc_pairs: Vec<_> = technical_committee_authorities.clone().into_inner();
+			tc_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+			let (technical_committee_members, technical_committee_mainchain_members): (
 				Vec<_>,
 				Vec<_>,
-			) = technical_committee_authorities.clone().into_iter().unzip();
+			) = tc_pairs.into_iter().unzip();
 
 			let council_members_len = council_members.len() as u32;
 			let technical_committee_members_len = technical_committee_members.len() as u32;
@@ -222,7 +246,6 @@ pub mod pallet {
 					target: "federated-authority-observation",
 					"Council has duplicated members"
 				);
-				return early_return();
 			}
 
 			if council_mainchain_members.is_empty() {
@@ -247,7 +270,6 @@ pub mod pallet {
 					target: "federated-authority-observation",
 					"Technical Committee has duplicated members"
 				);
-				return early_return();
 			}
 
 			if technical_committee_mainchain_members.is_empty() {
@@ -261,8 +283,8 @@ pub mod pallet {
 			// ========== STATE CHANGE PHASE ==========
 			// All validations passed, now apply state changes
 
-			council_members.sort();
-			technical_committee_members.sort();
+			// council_members and technical_committee_members are already sorted
+			// from the pre-unzip sort above
 
 			let mut actual_weight = Weight::zero();
 

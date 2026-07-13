@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -11,30 +11,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
-use core::fmt::Debug;
-use midnight_node_ledger_helpers::{DB, ProofKind, SignatureKind, Tagged};
-use serde::{Deserialize, Serialize};
+use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use sqlx::{
 	PgPool, Row,
 	postgres::{PgPoolOptions, PgRow},
 };
 use subxt::utils::H256;
 
-use super::{BlockData, FetchStorage};
+use super::FetchStorage;
 
 /// Persistent [`FetchStorage`] backend using PostgreSQL.
 ///
-/// Data is serialized as BSON. Uses sqlx connection pooling.
+/// Block data uses postcard serialization. Uses sqlx connection pooling.
 #[derive(Clone)]
-pub struct PostgresBackend<S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug, D: DB> {
+pub struct PostgresBackend {
 	pool: PgPool,
-	_marker: std::marker::PhantomData<(S, P, D)>,
 }
 
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
-	PostgresBackend<S, P, D>
-{
+impl PostgresBackend {
 	/// Creates a new backend and initializes tables. Panics on connection failure.
 	pub async fn new(database_url: &str) -> Self {
 		let pool = PgPoolOptions::new()
@@ -43,7 +37,7 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
 			.await
 			.expect("failed to create database pool");
 
-		let backend = Self { pool, _marker: std::marker::PhantomData };
+		let backend = Self { pool };
 
 		backend.init_tables().await;
 		backend
@@ -51,17 +45,28 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
 
 	/// Creates a new backend with an existing connection pool.
 	pub async fn with_pool(pool: PgPool) -> Self {
-		let backend = Self { pool, _marker: std::marker::PhantomData };
+		let backend = Self { pool };
 
 		backend.init_tables().await;
 		backend
 	}
 
 	/// Creates required tables if they don't exist.
+	///
+	/// Uses a PostgreSQL advisory lock to prevent concurrent `CREATE TABLE IF NOT EXISTS`
+	/// from racing on the implicit composite type creation.
 	async fn init_tables(&self) {
+		let mut tx = self.pool.begin().await.expect("failed to begin transaction");
+
+		// Acquire a session-level advisory lock (released at end of transaction)
+		sqlx::query("SELECT pg_advisory_xact_lock(8675309)")
+			.execute(&mut *tx)
+			.await
+			.expect("failed to acquire advisory lock");
+
 		sqlx::query(
 			r#"
-            CREATE TABLE IF NOT EXISTS block_data (
+            CREATE TABLE IF NOT EXISTS raw_block_data_v2 (
                 chain_id BYTEA NOT NULL,
                 block_number BIGINT NOT NULL,
                 data BYTEA NOT NULL,
@@ -69,9 +74,9 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
             )
             "#,
 		)
-		.execute(&self.pool)
+		.execute(&mut *tx)
 		.await
-		.expect("failed to create block_data table");
+		.expect("failed to create raw_block_data_v2 table");
 
 		sqlx::query(
 			r#"
@@ -81,52 +86,27 @@ impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug>
             )
             "#,
 		)
-		.execute(&self.pool)
+		.execute(&mut *tx)
 		.await
 		.expect("failed to create highest_verified table");
 
-		// Create index for efficient range queries
-		sqlx::query(
-			r#"
-            CREATE INDEX IF NOT EXISTS idx_block_data_chain_number 
-            ON block_data (chain_id, block_number)
-            "#,
-		)
-		.execute(&self.pool)
-		.await
-		.expect("failed to create index");
+		tx.commit().await.expect("failed to commit init_tables transaction");
 	}
 
-	fn serialize_block_data(block: &BlockData<S, P, D>) -> Vec<u8>
-	where
-		BlockData<S, P, D>: Serialize,
-	{
-		bson::serialize_to_vec(block).expect("failed to serialize block data")
+	fn serialize_block_data(block: &RawBlockData) -> Vec<u8> {
+		postcard::to_allocvec(block).expect("failed to serialize block data")
 	}
 
-	fn deserialize_block_data(data: &[u8]) -> BlockData<S, P, D>
-	where
-		for<'a> BlockData<S, P, D>: Deserialize<'a>,
-	{
-		bson::deserialize_from_slice(data).expect("failed to deserialize block data")
+	fn deserialize_block_data(data: &[u8]) -> RawBlockData {
+		postcard::from_bytes(data).expect("failed to deserialize block data")
 	}
 }
 
-#[async_trait]
-impl<D: DB + Clone, S: SignatureKind<D> + Tagged, P: ProofKind<D> + Debug> FetchStorage<S, P, D>
-	for PostgresBackend<S, P, D>
-where
-	BlockData<S, P, D>: Serialize,
-	for<'a> BlockData<S, P, D>: Deserialize<'a>,
-{
-	async fn get_block_data(
-		&self,
-		chain_id: H256,
-		block_number: u64,
-	) -> Option<BlockData<S, P, D>> {
+impl FetchStorage for PostgresBackend {
+	async fn get_block_data(&self, chain_id: H256, block_number: u64) -> Option<RawBlockData> {
 		let result: Option<PgRow> = sqlx::query(
 			r#"
-            SELECT data FROM block_data 
+            SELECT data FROM raw_block_data_v2
             WHERE chain_id = $1 AND block_number = $2
             "#,
 		)
@@ -146,7 +126,7 @@ where
 		&self,
 		chain_id: H256,
 		range: impl Iterator<Item = u64> + Send,
-	) -> Vec<Option<BlockData<S, P, D>>> {
+	) -> Vec<Option<RawBlockData>> {
 		let block_numbers: Vec<u64> = range.collect();
 
 		if block_numbers.is_empty() {
@@ -160,7 +140,7 @@ where
 			r#"
             SELECT bd.data
             FROM UNNEST($2::BIGINT[]) WITH ORDINALITY AS bn(block_number, ord)
-            LEFT JOIN block_data bd ON bd.chain_id = $1 AND bd.block_number = bn.block_number
+            LEFT JOIN raw_block_data_v2 bd ON bd.chain_id = $1 AND bd.block_number = bn.block_number
             ORDER BY bn.ord
             "#,
 		)
@@ -178,19 +158,14 @@ where
 			.collect()
 	}
 
-	async fn insert_block_data(
-		&self,
-		chain_id: H256,
-		block_number: u64,
-		block: BlockData<S, P, D>,
-	) {
+	async fn insert_block_data(&self, chain_id: H256, block_number: u64, block: RawBlockData) {
 		let data = Self::serialize_block_data(&block);
 
 		sqlx::query(
 			r#"
-            INSERT INTO block_data (chain_id, block_number, data)
+            INSERT INTO raw_block_data_v2 (chain_id, block_number, data)
             VALUES ($1, $2, $3)
-            ON CONFLICT (chain_id, block_number) 
+            ON CONFLICT (chain_id, block_number)
             DO UPDATE SET data = EXCLUDED.data
             "#,
 		)
@@ -205,9 +180,9 @@ where
 	async fn insert_block_data_range(
 		&self,
 		chain_id: H256,
-		range: impl Iterator<Item = (u64, BlockData<S, P, D>)> + Send,
+		range: impl Iterator<Item = RawBlockData> + Send,
 	) {
-		let blocks: Vec<(u64, BlockData<S, P, D>)> = range.collect();
+		let blocks: Vec<RawBlockData> = range.collect();
 
 		if blocks.is_empty() {
 			return;
@@ -216,14 +191,15 @@ where
 		// Use a transaction for batch insert
 		let mut tx = self.pool.begin().await.expect("failed to begin transaction");
 
-		for (block_number, block) in blocks {
+		for block in blocks {
+			let block_number = block.number;
 			let data = Self::serialize_block_data(&block);
 
 			sqlx::query(
 				r#"
-                INSERT INTO block_data (chain_id, block_number, data)
+                INSERT INTO raw_block_data_v2 (chain_id, block_number, data)
                 VALUES ($1, $2, $3)
-                ON CONFLICT (chain_id, block_number) 
+                ON CONFLICT (chain_id, block_number)
                 DO UPDATE SET data = EXCLUDED.data
                 "#,
 			)
@@ -241,7 +217,7 @@ where
 	async fn get_highest_verified_block(&self, chain_id: H256) -> Option<u64> {
 		let result: Option<PgRow> = sqlx::query(
 			r#"
-            SELECT height FROM highest_verified 
+            SELECT height FROM highest_verified
             WHERE chain_id = $1
             "#,
 		)
@@ -261,7 +237,7 @@ where
 			r#"
             INSERT INTO highest_verified (chain_id, height)
             VALUES ($1, $2)
-            ON CONFLICT (chain_id) 
+            ON CONFLICT (chain_id)
             DO UPDATE SET height = EXCLUDED.height
             "#,
 		)

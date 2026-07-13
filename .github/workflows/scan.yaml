@@ -20,19 +20,28 @@ env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  build:
+  scan:
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: write
       contents: read
       pull-requests: write
       security-events: write
       statuses: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  #v6.0.1
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  #v7.0.0
+
+      - id: guard
+        uses: ./.github/actions/tree-cache-guard
 
       - name: Scan code
-        uses: midnightntwrk/upload-sarif-github-action/scan@7cbeb33c4a8f084beabe0fb223467ca9a7056ac0
+        if: steps.guard.outputs.hit != 'true'
+        uses: midnightntwrk/upload-sarif-github-action@37e5a0a03dc65fdbbab4cdc8ba264328c15e9657
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ./.github/actions/tree-cache-guard/save
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          key: ${{ steps.guard.outputs.key }}

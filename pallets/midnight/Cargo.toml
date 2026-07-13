@@ -20,6 +20,7 @@ frame-benchmarking = { workspace = true, optional = true}
 
 frame-support.workspace = true
 frame-system.workspace = true
+log.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
 sp-api.workspace = true
@@ -27,6 +28,7 @@ sp-runtime.workspace = true
 pallet-timestamp.workspace = true
 hex = { workspace = true, optional = true }
 sp-tracing = { workspace = true}
+sidechain-domain.workspace = true
 
 [dev-dependencies]
 sp-core.workspace = true
@@ -58,6 +60,7 @@ std = [
     #"pallet-block-rewards/std",
     "sp-tracing/std",
     "pallet-timestamp/std",
+    "sidechain-domain/std",
 ]
 experimental = []
 runtime-benchmarks = [

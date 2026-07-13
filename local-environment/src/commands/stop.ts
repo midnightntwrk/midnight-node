@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,51 +13,27 @@
 
 import path from "path";
 import { globSync } from "glob";
-import { existsSync } from "fs";
+import { existsSync, rmSync } from "fs";
 
 import { RunOptions } from "../lib/types";
 import { stopDockerCompose } from "../lib/docker";
-import { connectToPostgres } from "../lib/connectToPostgres";
-import { getSecrets } from "../lib/getSecretsForEnv";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
   loadEnvDefault,
   requiredImageVars,
 } from "../lib/localEnv";
-import { loadNetworkConfig } from "../lib/networkConfig";
 
 export async function stop(network: string, runOptions: RunOptions) {
-  // TODO: For now, we will run the local environment as a separate option. In the future, we will include it as an option to run local env pc resources, alongside midnight nodes of the chosen environment
   if (network === "local-env") {
-    console.log("Running environment with local Cardano/PC resources");
     stopLocalEnvironment(runOptions);
-  } else {
-    console.log(`Stop ${network} chain`);
-    stopEphemeralEnvironment(network, runOptions);
+    return;
   }
+  console.log(`Stop ${network} chain`);
+  stopWellKnownNetwork(network, runOptions);
 }
 
-async function stopEphemeralEnvironment(
-  namespace: string,
-  runOptions: RunOptions,
-) {
-  const networkConfig = loadNetworkConfig(namespace);
-  const dbsyncMode = networkConfig.dbsync.mode;
-
-  console.log(`🔌 Connecting to Kubernetes pods for namespace: ${namespace}`);
-  switch(dbsyncMode) {
-  case "public":
-    console.log("Skipping port-forward: DB marked as publicly reachable");
-  case "rds-proxy":
-    console.log("Skipping pod port-forward: DB will be proxied via RDS helper");
-  default:
-    await connectToPostgres(namespace);
-  }
-
-  console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
-  const envObject = getSecrets(namespace);
-
+function stopWellKnownNetwork(namespace: string, runOptions: RunOptions) {
   const searchPath = path.resolve(
     __dirname,
     "../networks",
@@ -74,7 +50,6 @@ async function stopEphemeralEnvironment(
     process.exit(1);
   }
 
-  // Prefer: <namespace>.network.yaml
   const preferred = candidates.find(
     (p) => path.basename(p) === `${namespace}.network.yaml`,
   );
@@ -87,7 +62,7 @@ async function stopEphemeralEnvironment(
 
   stopDockerCompose({
     composeFile,
-    env: { ...cleanEnv(process.env), ...envObject },
+    env: cleanEnv(process.env),
     profiles: runOptions.profiles,
   });
 }
@@ -121,7 +96,15 @@ function stopLocalEnvironment(runOptions: RunOptions) {
     profiles: runOptions.profiles,
   });
 
-  return;
+  // Clean up runtime-values folder (bind mount not removed by docker compose down --volumes)
+  const runtimeValuesPath = path.resolve(
+    __dirname,
+    "../networks/local-env/runtime-values",
+  );
+  if (existsSync(runtimeValuesPath)) {
+    rmSync(runtimeValuesPath, { recursive: true, force: true });
+    console.log("🧹 Cleaned up runtime-values");
+  }
 }
 
 // Helper to ensure no undefined values in env vars

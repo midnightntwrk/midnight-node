@@ -1,5 +1,19 @@
 VERSION 0.8
 
+# Scopes the cargo build directory (`/target`) so PRs running on the same
+# self-hosted runner host don't share `.rmeta` / `.rlib` artifacts via a
+# stable auto-generated cache id. Without scoping, an in-flight branch
+# that's changed a pallet's trait surface can leak its build into the
+# next PR's job and cause spurious E0046 trait/impl mismatches.
+#
+# Default is constant so local invocations share one cache. CI must
+# override this with a per-branch value (passed via `--build-arg
+# CACHE_KEY=<sanitized PR head ref>`). The Earthly builtin
+# EARTHLY_GIT_BRANCH is NOT a reliable source here because actions/checkout
+# leaves the workspace on the PR merge commit in detached-HEAD state, so
+# the builtin resolves to the literal string `HEAD` across every PR.
+ARG --global CACHE_KEY=local
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -75,6 +89,9 @@ generate-preprod-keys:
 generate-preprod-genesis-seeds:
     BUILD +generate-seeds --NETWORK=preprod --OUTPUT_FILE=preprod-genesis-seeds.json
 
+generate-stagenet-genesis-seeds:
+    BUILD +generate-seeds --NETWORK=stagenet --OUTPUT_FILE=stagenet-genesis-seeds.json
+
 generate-keys:
     # D_PERMISSIONED + D_REGISTERED should be at least as large as slotsPerEpoch
     ARG DEV=false
@@ -112,15 +129,14 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.92-trixie
+    FROM rust:1.95-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    RUN cargo install cargo-binstall --version 1.6.9
+    # RUN cargo install cargo-binstall --version 1.6.9
     COPY Cargo.toml deps.toml
     LET SUBXT_VERSION = "$(cat deps.toml | grep -m 1 subxt | sed 's/subxt *= *"\([^\"]*\)".*/\1/')"
-    RUN cargo binstall -y subxt-cli@${SUBXT_VERSION}
-    RUN cp /usr/local/cargo/bin/subxt /usr/local/bin/subxt
+    RUN cargo install subxt-cli@${SUBXT_VERSION} --locked
     ENTRYPOINT ["subxt"]
     SAVE IMAGE localhost/subxt
 
@@ -128,11 +144,11 @@ subxt:
 build-node-only:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay .
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
     ARG NATIVEARCH
 
-    RUN cargo build -p midnight-node --locked --release
+    RUN cargo auditable build -p midnight-node --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH
@@ -181,7 +197,8 @@ rebuild-sqlx:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -190,25 +207,52 @@ rebuild-sqlx:
 
 # rebuild-redemption-skeleton rebuilds the redemption skeleton contract using aiken
 rebuild-redemption-skeleton:
-    # aiken doesn't support arm yet.
-    FROM --platform=linux/amd64 node:22-trixie
-    # renovate: datasource=npm packageName=aiken-lang/aiken
-    ENV aiken_version=1.1.19
-    RUN npm install -g @aiken-lang/aiken@${aiken_version}
+    FROM +prep-no-copy
     COPY tests/redemption-skeleton .
     RUN aiken build --trace-level verbose
     SAVE ARTIFACT plutus.json AS LOCAL tests/src/plutus.json
 
 rebuild-genesis-state:
     ARG NETWORK
-    ARG GENERATE_TEST_TXS=true
+    ARG GENERATE_TEST_TXS=false
+    ARG FUND_FAUCET_WALLETS=true
     ARG RNG_SEED=0000000000000000000000000000000000000000000000000000000000000037
+    # Override with a pre-built registry image to skip rebuilding (e.g. in CI)
     ARG TOOLKIT_IMAGE=+toolkit-image
     FROM ${TOOLKIT_IMAGE}
     USER root
     ENV RUST_BACKTRACE=1
-    # Skips genesis generation if you do not have the secrets for the environment you're building for (expected)
+
+    # Compile simple-merkle-tree contract from source using compactc from toolkit-js
+    IF [ "$COMPILE_SIMPLE_MERKLE_TREE" = "true" ]
+        COPY ledger/test-data/simple-merkle-tree.compact /tmp/simple-merkle-tree.compact
+        WORKDIR /toolkit-js
+        RUN npx run-compactc /tmp/simple-merkle-tree.compact /test-static/simple-merkle-tree
+        WORKDIR /
+    ELSE
+        COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    END
+
+    # Skips faucet wallet funding if you do not have the secrets for the environment you're building for (expected)
+    # or if FUND_FAUCET_WALLETS=false (e.g., for mainnet)
     COPY --if-exists secrets/${NETWORK}-genesis-seeds.json /secrets/genesis-seeds.json
+
+    # Copy genesis config files. undeployed's configs live in res/dev; every other network
+    # uses res/<network>. Only deployed networks ship a cardano-tip.json (genesis-spawned
+    # nets like local have no live tip), so copy it only if present.
+    RUN mkdir -p /genesis-config
+    IF [ "${NETWORK}" = "undeployed" ]
+        COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+        COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
+        COPY res/dev/ics-config.json /genesis-config/ics-config.json
+        COPY res/dev/reserve-config.json /genesis-config/reserve-config.json
+    ELSE
+        COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+        COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
+        COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
+        COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
+        COPY --if-exists res/${NETWORK}/cardano-tip.json /genesis-config/cardano-tip.json
+    END
 
     # wallet-seed-3 is the wallet Lace uses for testing.
     # It is derived from the 24 word mnemonic: abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon diesel
@@ -223,10 +267,30 @@ rebuild-genesis-state:
         fi
 
     RUN mkdir -p /res/genesis
-    IF [ -f /secrets/genesis-seeds.json ]
+    # Generate genesis with or without faucet wallet funding
+    # - If FUND_FAUCET_WALLETS=true and seeds file exists: fund faucet wallets
+    # - If FUND_FAUCET_WALLETS=false: generate genesis without faucet wallet funding (e.g., mainnet)
+    # - If no seeds file and FUND_FAUCET_WALLETS=true: use existing genesis state
+    IF [ "${FUND_FAUCET_WALLETS}" = "true" ] && [ -f /secrets/genesis-seeds.json ]
         RUN /midnight-node-toolkit generate-genesis \
             --network ${NETWORK} \
-            --seeds-file /secrets/genesis-seeds.json
+            --seeds-file /secrets/genesis-seeds.json \
+            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --cnight-generates-dust-config /genesis-config/cnight-config.json \
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json
+        RUN cp out/genesis_*.mn /res/genesis/
+    ELSE IF [ "${FUND_FAUCET_WALLETS}" = "false" ]
+        RUN echo "Generating genesis without faucet wallet funding (FUND_FAUCET_WALLETS=false)"
+        # Only deployed networks pass a cardano-tip; genesis-spawned nets (local, undeployed)
+        # have no live tip, so add the flag only when the file is present.
+        RUN /midnight-node-toolkit generate-genesis \
+            --network ${NETWORK} \
+            --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --cnight-generates-dust-config /genesis-config/cnight-config.json \
+            --ics-config /genesis-config/ics-config.json \
+            --reserve-config /genesis-config/reserve-config.json \
+            $(if [ -f /genesis-config/cardano-tip.json ]; then echo "--cardano-tip-config /genesis-config/cardano-tip.json"; fi)
         RUN cp out/genesis_*.mn /res/genesis/
     ELSE
         RUN echo "No genesis seeds file found for ${NETWORK}, using existing genesis state"
@@ -240,7 +304,6 @@ rebuild-genesis-state:
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/contract_tx_1_deploy_${NETWORK}.mn \
-                --to-bytes \
                 contract-simple deploy \
                 --rng-seed "$RNG_SEED" \
             && /midnight-node-toolkit contract-address \
@@ -251,7 +314,6 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_1_deploy_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/contract_tx_2_store_${NETWORK}.mn \
-                --to-bytes \
                 contract-simple call \
                 --call-key store \
                 --rng-seed "$RNG_SEED" \
@@ -262,7 +324,6 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_2_store_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/contract_tx_3_check_${NETWORK}.mn \
-                --to-bytes \
                 contract-simple call \
                 --call-key check \
                 --rng-seed "$RNG_SEED" \
@@ -274,7 +335,6 @@ rebuild-genesis-state:
                 --src-file out/contract_tx_3_check_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/contract_tx_4_change_authority_${NETWORK}.mn \
-                --to-bytes \
                 contract-simple maintenance \
                 --rng-seed "$RNG_SEED" \
                 --contract-address $(cat out/contract_address_${NETWORK}.mn) \
@@ -291,7 +351,7 @@ rebuild-genesis-state:
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --dust-warp \
                 --dest-file out/zswap_undeployed.mn \
-                --to-bytes batches \
+                batches \
                 -n 1 \
                 -b 1 \
                 --rng-seed "$RNG_SEED" \
@@ -309,18 +369,12 @@ rebuild-genesis-state:
             && /midnight-node-toolkit generate-txs \
                 --src-file out/genesis_block_${NETWORK}.mn \
                 --dust-warp \
-                --dest-file out/serialized_tx_with_context.mn \
-                --to-bytes \
+                --dest-file out/serialized_tx.mn \
                 single-tx \
                 --unshielded-amount 500 \
                 --rng-seed "$RNG_SEED" \
                 --source-seed "0000000000000000000000000000000000000000000000000000000000000001" \
                 --destination-address $(cat out/dest_addr.mn) \
-            && /midnight-node-toolkit get-tx-from-context \
-                --network $NETWORK \
-                --src-file out/serialized_tx_with_context.mn \
-                --dest-file out/serialized_tx_no_context.mn \
-                --from-bytes \
             && cp out/serialized_* /res/test-tx-deserialize \
         ; fi
 
@@ -345,7 +399,6 @@ rebuild-genesis-state:
                 --intent-file /res/test-data/contract/counter/deploy.bin \
                 --compiled-contract-dir /toolkit-js/test/contract/managed/counter \
                 --rng-seed "$RNG_SEED" \
-                --to-bytes \
                 --dest-file /res/test-data/contract/counter/deploy_tx.mn \
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/counter/deploy_tx.mn \
@@ -376,7 +429,6 @@ rebuild-genesis-state:
                 --intent-file /res/test-data/contract/mint/deploy.bin \
                 --compiled-contract-dir /toolkit-js/mint/out \
                 --rng-seed "$RNG_SEED" \
-                --to-bytes \
                 --dest-file /res/test-data/contract/mint/deploy_tx.mn \
             && /midnight-node-toolkit contract-address \
                 --src-file /res/test-data/contract/mint/deploy_tx.mn \
@@ -399,74 +451,146 @@ rebuild-genesis-state:
     SAVE ARTIFACT --if-exists /res/genesis/genesis_state_undeployed.mn AS LOCAL util/toolkit/test-data/genesis/
     SAVE ARTIFACT --if-exists /res/test-data/contract/counter/* AS LOCAL util/toolkit/test-data/contract/counter/
     SAVE ARTIFACT --if-exists /res/test-data/contract/mint/* AS LOCAL util/toolkit/test-data/contract/mint/
+    SAVE ARTIFACT --if-exists /test-static/simple-merkle-tree/* AS LOCAL static/contracts/simple-merkle-tree/
 
 # rebuild-genesis-state-undeployed rebuilds the genesis ledger state for undeployed network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-undeployed:
     BUILD +rebuild-genesis-state \
-        --NETWORK=undeployed
+        --NETWORK=undeployed \
+        --GENERATE_TEST_TXS=true
+
+# rebuild-genesis-state-local rebuilds the genesis ledger state for the local network (local-environment).
+# The local network does not fund any faucet wallets at genesis - wallets are funded at runtime via the
+# cNIGHT->mNIGHT bridge. No chainspec update needed afterwards: local has no committed chain spec
+# (midnight-setup builds it at runtime).
+rebuild-genesis-state-local:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=local \
+        --FUND_FAUCET_WALLETS=false
 
 # rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-devnet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=devnet \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=devnet
 
-# rebuild-genesis-state-devnet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
-rebuild-genesis-state-node-dev-01:
+# rebuild-genesis-state-govnet rebuilds the genesis ledger state for govnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-govnet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=node-dev-01 \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=govnet
 
-# rebuild-genesis-state-qanet rebuilds the genesis ledger state for devnet network - this MUST be followed by updating the chainspecs for CI to pass!
+# rebuild-genesis-state-qanet rebuilds the genesis ledger state for qanet network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-qanet:
     BUILD +rebuild-genesis-state \
-        --NETWORK=qanet \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=qanet
 
 # rebuild-genesis-state-preview rebuilds the genesis ledger state for preview network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preview:
     BUILD +rebuild-genesis-state \
-        --NETWORK=preview \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=preview
 
 # rebuild-genesis-state-preprod rebuilds the genesis ledger state for preprod network - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-genesis-state-preprod:
     BUILD +rebuild-genesis-state \
-        --NETWORK=preprod \
-        --GENERATE_TEST_TXS=false
+        --NETWORK=preprod
+
+# rebuild-genesis-state-mainnet rebuilds the genesis ledger state for mainnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-mainnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=mainnet \
+        --FUND_FAUCET_WALLETS=false
+
+# rebuild-genesis-state-perfnet rebuilds the genesis ledger state for perfnet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-perfnet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=perfnet
+
+# rebuild-genesis-state-stagenet rebuilds the genesis ledger state for stagenet network - this MUST be followed by updating the chainspecs for CI to pass!
+rebuild-genesis-state-stagenet:
+    BUILD +rebuild-genesis-state \
+        --NETWORK=stagenet
 
 # rebuild-all-genesis-states rebuilds the genesis ledger state for all networks - this MUST be followed by updating the chainspecs for CI to pass!
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
+    BUILD +rebuild-genesis-state-local
     BUILD +rebuild-genesis-state-devnet
-    BUILD +rebuild-genesis-state-node-dev-01
-    BUILD +rebuild-genesis-state-qanet
-    BUILD +rebuild-genesis-state-preview
-    BUILD +rebuild-genesis-state-preprod
+    # Perfnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-perfnet
+    # Govnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-govnet
+    # QANet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-genesis-state-qanet
+    # Preview is not meant to be reset
+    #BUILD +rebuild-genesis-state-preview
+    # Preprod is not meant to be reset
+    #BUILD +rebuild-genesis-state-preprod
+    # Mainnet is not meant to be reset
+    #BUILD +rebuild-genesis-state-mainnet
 
 # rebuild-chainspec for a given NETWORK
+# Use DETERMINISTIC=true to build with srtool for reproducible WASM (slower but verifiable)
 rebuild-chainspec:
     ARG NETWORK
+    ARG DETERMINISTIC=false
     ARG NODE_IMAGE=+node-image
     FROM ${NODE_IMAGE}
     USER root
 
+    # Copy the `res` folder from local -
+    # We need to do this to use the correct config if running `FROM` a pre-built node image
+    COPY res res
+
+    # If DETERMINISTIC=true, use srtool-built WASM for reproducible builds
+    IF [ "$DETERMINISTIC" = "true" ]
+        COPY +srtool-build/midnight_node_runtime.compact.compressed.wasm /srtool-runtime.wasm
+        COPY +srtool-build/srtool-digest.json /srtool-digest.json
+        # Log the srtool build digest for verification
+        RUN echo "Using srtool-built runtime:" && cat /srtool-digest.json | jq -r '.runtimes.compressed'
+    END
+
     RUN CFG_PRESET=$NETWORK /midnight-node build-spec --disable-default-bootnode > res/$NETWORK/chain-spec.json
+
+    # If deterministic, replace the runtime code with srtool-built WASM
+    IF [ "$DETERMINISTIC" = "true" ]
+        # Write hex to file to avoid "Argument list too long" with large WASM blobs
+        RUN printf '0x' > /tmp/wasm-hex.txt && xxd -p /srtool-runtime.wasm | tr -d '\n' >> /tmp/wasm-hex.txt && \
+            jq --rawfile code /tmp/wasm-hex.txt '.genesis.runtimeGenesis.code = ($code | rtrimstr("\n"))' res/$NETWORK/chain-spec.json > res/$NETWORK/chain-spec-tmp.json && \
+            mv res/$NETWORK/chain-spec-tmp.json res/$NETWORK/chain-spec.json
+    END
 
     # create abridge chain-spec that is diff tools and github friendly:
     RUN cat res/$NETWORK/chain-spec.json | \
-      jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
+      jq '.genesis.runtimeGenesis.code = "<snipped>" | .properties.genesis_extrinsics = "<snipped>" | .properties.genesis_state = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.observed_utxos = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.mappings = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.utxo_owners = "<snipped>" | .genesis.runtimeGenesis.config.cNightObservation.config.system_tx = "<snipped>"' > res/$NETWORK/chain-spec-abridged.json
 
     RUN /midnight-node build-spec --chain=res/$NETWORK/chain-spec.json --raw --disable-default-bootnode > res/$NETWORK/chain-spec-raw.json
 
     SAVE ARTIFACT /res/$NETWORK/*.json AS LOCAL res/$NETWORK/
+    # Save srtool digest alongside chain-spec if deterministic build
+    IF [ "$DETERMINISTIC" = "true" ]
+        SAVE ARTIFACT /srtool-digest.json AS LOCAL res/$NETWORK/srtool-digest.json
+    END
 
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
+# Use DETERMINISTIC=true for reproducible srtool builds (slower but verifiable)
 rebuild-all-chainspecs:
-    BUILD +rebuild-chainspec --NETWORK=node-dev-01
-    BUILD +rebuild-chainspec --NETWORK=qanet
-    BUILD +rebuild-chainspec --NETWORK=preview
-    BUILD +rebuild-chainspec --NETWORK=preprod
+    BUILD +rebuild-chainspec --NETWORK=devnet
+    # Govnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=govnet
+    # QANet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=qanet
+    # Perfnet genesis is not meant to be rebuild in PR CI
+    #BUILD +rebuild-chainspec --NETWORK=perfnet
+    # Preview is not meant to be reset
+    #BUILD +rebuild-chainspec --NETWORK=preview
+    # Preprod is not meant to be reset
+    #BUILD +rebuild-chainspec --NETWORK=preprod
+    # Mainnet is not meant to be reset
+    #BUILD +rebuild-chainspec --NETWORK=mainnet --DETERMINISTIC=true
+
+# rebuild-chainspec-deterministic Rebuild chainspec with deterministic srtool WASM for a given NETWORK
+rebuild-chainspec-deterministic:
+    ARG NETWORK
+    BUILD +rebuild-chainspec --NETWORK=$NETWORK --DETERMINISTIC=true
 
 # rebuild-genesis Rebuild the initial ledger state genesis and chainspecs. Secrets required to rebuild prod/preprod geneses.
 rebuild-genesis:
@@ -483,104 +607,65 @@ ci:
     BUILD +audit
     BUILD +test
 
-# Precompiled midnight contracts for use in testing and for the toolkit.
-contract-precompile-image:
-    # The results of this image is platform independent so we don't need to build for all platforms.
-    BUILD +contract-precompile-image-single-platform
-
-contract-precompile-image-single-platform:
-    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
-    # Install unzip
-    RUN apt update && apt install unzip
-    # Install gh
-    RUN (type -p wget >/dev/null || (apt update && apt install wget -y)) \
-        && mkdir -p -m 755 /etc/apt/keyrings \
-        && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-        && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
-        && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-        && mkdir -p -m 755 /etc/apt/sources.list.d \
-        && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-        && apt update \
-        && apt install gh -y
-
-    # Fetch CompactC x86_64
-    COPY COMPACTC_VERSION .
-    RUN --secret GH_TOKEN set -e && \
-        VERSION=$(cat COMPACTC_VERSION) && \
-        RELEASE_TAG="compactc-v${VERSION}" && \
-        echo "Attempting to download compactc from release: ${RELEASE_TAG}" && \
-        if gh release download --repo midnight-ntwrk/artifacts "${RELEASE_TAG}" --pattern "*x86_64-unknown-linux-musl.zip" 2>/dev/null; then \
-            echo "Successfully downloaded from release"; \
-        elif gh api repos/midnight-ntwrk/artifacts/git/refs/tags/${RELEASE_TAG} >/dev/null 2>&1; then \
-            echo "ERROR: Tag '${RELEASE_TAG}' exists but has no release with binary assets." && \
-            echo "Available releases with binaries:" && \
-            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
-            exit 1; \
-        else \
-            echo "ERROR: No release or tag found for '${RELEASE_TAG}'" && \
-            echo "Available releases:" && \
-            gh release list --repo midnight-ntwrk/artifacts --limit 5 && \
-            exit 1; \
-        fi
-    RUN unzip compactc*.zip
-
-    COPY ledger/test-data/simple-merkle-tree.compact simple-merkle-tree.compact
-    RUN ./compactc simple-merkle-tree.compact simple-merkle-tree
-    # Keys should not have 0 size (but will have if we ran out of memory):
-    RUN [ -s /simple-merkle-tree/keys/check.prover ]
-    RUN [ -s /simple-merkle-tree/keys/check.verifier ]
-    RUN [ -s /simple-merkle-tree/keys/store.prover ]
-    RUN [ -s /simple-merkle-tree/keys/store.verifier ]
-
-    ENV PATH=$PATH:/bin
-    ENTRYPOINT [ "/bin/sh" ]
-
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
-    ENV IMAGE_TAG=$IMAGE_TAG
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    LABEL org.opencontainers.image.title=node-test-contract-precompiles
-    LABEL org.opencontainers.image.description="Midnight Test Contract Precompiles"
-    SAVE IMAGE --push $GHCR_REGISTRY/midnight-test-contract-precompiles:$IMAGE_TAG
-
-use-contract-precompile-image:
-    FROM debian:trixie-slim@sha256:a347fd7510ee31a84387619a492ad6c8eb0af2f2682b916ff3e643eb076f925a
-#    FROM +contract-precompile-image
-    COPY COMPACTC_VERSION .
-    ARG IMAGE_TAG=$(cat COMPACTC_VERSION)
-    FROM ghcr.io/midnight-ntwrk/midnight-test-contract-precompiles:$IMAGE_TAG
-    SAVE ARTIFACT /simple-merkle-tree AS LOCAL target/contracts/simple-merkle-tree
-
 # a common setup of the build environment (not designed to be called directly)
 node-ci-image:
     BUILD --platform=linux/arm64 +node-ci-image-single-platform
     BUILD --platform=linux/amd64 +node-ci-image-single-platform
 
 node-ci-image-single-platform:
+    LOCALLY
+    # The compact submodule's version embeds its git tree hash, computable only
+    # where the submodule's .git exists — i.e. on the host, not inside the Earthly
+    # build context (the COPY'd submodule has no .git). Compute both here so the
+    # build-vs-fetch decision below can compare them.
+    LET COMPACT_SUBMODULE_VERSION = "$(scripts/compact-submodule-version.sh)"
+    LET COMPACTC_VERSION = "$(cat COMPACTC_VERSION)"
     ARG NATIVEARCH
-    FROM rust:1.92-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
-    # Install build dependencies
-    RUN apt-get update -qq && \
-        apt-get upgrade -y -qq && \
-        apt-get install -y --no-install-recommends -qq \
-        build-essential \
+    # Install build dependencies. No `microdnf update`: AL2023 locks $releasever to the
+    # snapshot baked into the FROM digest above (system-release(releasever)), so these
+    # installs already resolve to pinned package versions — update would be a no-op.
+    # Security patches land by bumping the @sha256 digest (renovate datasource=docker),
+    # deliberate and reviewable, like every other pin in this file.
+    RUN microdnf -y install \
+        ca-certificates \
+        curl-minimal \
+        gcc \
+        gcc-c++ \
+        make \
         clang \
-        libssl-dev \
-        libpq-dev \
-        libsqlite3-dev \
+        openssl-devel \
+        libpq-devel \
+        sqlite-devel \
         openssl \
         protobuf-compiler \
-        pkg-config \
-        grcov \
-        openssh-client
+        pkgconfig \
+        openssh-clients \
+        git \
+        patch \
+        tar \
+        gzip \
+        xz \
+        docker \
+        jq && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
         # gcc-aarch64-linux-gnu \
         # libc6-dev-arm64-cross \
         # gcc-x86-64-linux-gnu \
         # crossbuild-essential-amd64 \
         # libc6-amd64-cross
 
-    RUN rustup target add wasm32v1-none aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
+    # Read Rust version from rust-toolchain.toml (single source of truth)
+    COPY rust-toolchain.toml .
+    ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+
+    # Install rust with minimal profile + only the components we need
+    RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
+    ENV PATH="/root/.cargo/bin:${PATH}"
+    RUN rustup component add clippy rustfmt
+
+    RUN rustup target add wasm32v1-none # aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
     RUN rustup component add rust-src rustfmt clippy llvm-tools-preview
 
     RUN git config --global url."https://github.com/".insteadOf "git@github.com:" \
@@ -589,25 +674,84 @@ node-ci-image-single-platform:
       && echo "[net]" >> .cargo/config.toml \
       && echo "git-fetch-with-cli = true" >> .cargo/config.toml
 
-    # Install cargo binstall:
-    # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-    RUN cargo install cargo-binstall --version 1.6.9
-    RUN cargo binstall --no-confirm cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef
+    # Install cargo binstall from pre-built release binary
+    RUN ARCH=$(uname -m) && \
+        curl -fsSL "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.6.9/cargo-binstall-${ARCH}-unknown-linux-gnu.tgz" -o binstall.tgz && \
+        tar -xzf binstall.tgz -C /root/.cargo/bin cargo-binstall && \
+        rm binstall.tgz
+    RUN cargo binstall --no-confirm --locked cargo-nextest cargo-llvm-cov cargo-audit cargo-deny cargo-chef cargo-auditable cargo-hack
 
-    # subwasm can be used to diff between runtimes
+    # Install cargo tools from source in a single layer, then clean up build artifacts
     # renovate: datasource=github-releases packageName=chevdor/subwasm
     ARG SUBWASM_VERSION=0.21.3
-    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION
-    RUN cargo install --locked cargo-shear --version 1.9.1
-    RUN cargo install sqlx-cli --no-default-features --features rustls,postgres
+    # renovate: datasource=crate packageName=aiken
+    ARG AIKEN_VERSION=1.1.19
+    RUN cargo install --locked --git https://github.com/chevdor/subwasm --tag v$SUBWASM_VERSION && \
+        cargo install --locked cargo-shear --version 1.9.1 && \
+        cargo install sqlx-cli --no-default-features --features rustls,postgres && \
+        cargo install aiken --version $AIKEN_VERSION --locked && \
+        rm -rf /root/.cargo/registry /root/.cargo/git
+
+    # Install gh CLI (use uname -m for reliable arch detection)
+    RUN ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then GH_ARCH="arm64"; else GH_ARCH="amd64"; fi && \
+        curl -fsSL "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_${GH_ARCH}.tar.gz" -o gh.tar.gz && \
+        tar -xzf gh.tar.gz && \
+        mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
+        rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
+
+    # Node.js + npm — pinned official binaries, NOT AL2023's microdnf nodejs (which is
+    # v18 and lacks the File API undici needs). +local-env-ci runs `npm ci`/`npm run`
+    # straight off this base image, so the version baked here is the one it uses.
+    # renovate: datasource=node-version packageName=node
+    ARG NODE_VERSION=24.18.0
+    RUN ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
+
+    # Docker compose-v2 plugin — needed by the +local-env-ci WITH DOCKER targets, whose
+    # `docker compose` calls run against earthly's injected docker CLI (which has no
+    # bundled plugin). uname -m (x86_64/aarch64) matches the release asset suffix directly.
+    # renovate: datasource=github-releases packageName=docker/compose
+    ARG COMPOSE_VERSION=v2.31.0
+    RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
+        curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
+          -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+    # compactc is exposed via COMPACT_HOME; when it is set, toolkit-js scripts honour
+    # it: `fetch-compactc` skips the download and `run-compactc` uses this compiler.
+    # When COMPACTC_VERSION matches the pinned submodule (version + tree hash), build
+    # compactc from source; otherwise COMPACTC_VERSION names a release we fetch the
+    # prebuilt binary for — either a plain/pre-release version (0.31.108, 0.30.0-rc.1)
+    # or a `<version>-<40-char-commit-sha>` dev build (see +compactc-fetch).
+    IF [ "$COMPACT_SUBMODULE_VERSION" = "$COMPACTC_VERSION" ]
+        COPY +compactc-bundle/compact-home /compact-home
+    ELSE
+        COPY (+compactc-fetch/compact-home --VERSION="$COMPACTC_VERSION") /compact-home
+    END
+    ENV COMPACT_HOME=/compact-home
+    ENV COMPACTC_VERSION="$COMPACTC_VERSION"
+
+    # Portability + compiler-version check (runs for both source and fetched builds;
+    # also the first run of a source bundle outside nix): compactc --version reports
+    # the bare semver with no tree-hash suffix, so compare against the version prefix.
+    RUN got="$(/compact-home/compactc --version)" && want="${COMPACTC_VERSION%%-*}" && \
+        test "$got" = "$want" || \
+        { echo "compactc $got != COMPACTC_VERSION prefix $want — bump the compact submodule or COMPACTC_VERSION"; exit 1; }
+
 
     ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
     ENV CARGO_TERM_COLOR=always
 
-    # SAVE IMAGE under the rust version used.
-    # We rebuild the image weekly to apply security patches.
-    ENV IMAGE_TAG="1.92"
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    # SAVE IMAGE under the rust version.
+    # Security patches land when the FROM @sha256 digest above is bumped (renovate);
+    # a rebuild on the same digest reproduces identical packages by design.
+    ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
+    LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
     SAVE IMAGE --push \
@@ -615,24 +759,28 @@ node-ci-image-single-platform:
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
+    # Read versions from files (multi-FROM so we don't depend on env vars propagating)
+    FROM alpine:3.20
+    COPY rust-toolchain.toml COMPACTC_VERSION .
     ARG NATIVEARCH
+    ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
+    ARG COMPACTC_VERSION=$(cat COMPACTC_VERSION)
+    # If you need to alter the CI image, here is where you can build it locally rather than
+    # referring to the pre-built image:
     # FROM --platform=$NATIVEPLATFORM +node-ci-image-single-platform
-    FROM midnightntwrk/midnight-node-ci:1.92-$NATIVEARCH
+    FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
-    # Used to add repository for nodejs
-    RUN apt-get update -qq \
-        && apt-get upgrade -y -qq \
-        && apt-get install -y -qq ca-certificates gnupg \
-        && rm -rf /var/lib/apt/lists/*
+    # ca-certificates and curl-minimal already present in the CI base image
 
     RUN cargo --version
+    RUN cargo binstall --no-confirm cargo-auditable
 
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-        metadata rustfmt.toml util tests relay COMPACTC_VERSION .
+        metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     RUN rustup show
     # This doesn't seem to prevent the downloading at a later point, but
@@ -643,10 +791,116 @@ prep:
     #   --target wasm32v1-none
     SAVE IMAGE --cache-hint
 
+# Builds compactc from the `compact/` submodule via nix (reusing
+# scripts/build-compactc.sh) and emits a self-contained COMPACT_HOME directory
+# (compactc + version-locked zkir/zkir-v3 + wrapper). This replaces the
+# prebuilt-binary download. Running nix inside the build keeps the Chez/Scheme
+# toolchain hidden; the IOG binary cache provides zkir prebuilt so it is not
+# compiled from source.
+compactc-bundle:
+    # Multi-arch index digest for nixos/nix:2.24.5 (linux/amd64 + linux/arm64).
+    # Pinning the index (not a per-arch manifest) lets +node-ci-image-single-platform
+    # build this target on both amd64 and arm64 CI runners. The arm64 child manifest
+    # is fb53f7a4116b… (unchanged from the previous pin); amd64 is c5ff76297bf9….
+    FROM nixos/nix@sha256:4ad79a0ab633944869a37921f096d35a3f2c7a0275d98b7bfa0cd3cba5a6b96e
+    # Append (don't clobber) so the base image's defaults (incl. cache.nixos.org)
+    # survive. `extra-` merges onto those defaults. sandbox=false because buildkit/
+    # podman containers usually lack the user namespaces nix's sandbox needs.
+    RUN mkdir -p /etc/nix && { \
+        echo "extra-experimental-features = nix-command flakes"; \
+        echo "sandbox = false"; \
+        echo "extra-substituters = https://cache.iog.io"; \
+        echo "extra-trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="; \
+      } >> /etc/nix/nix.conf
+    COPY compact /work/compact
+    COPY scripts/build-compactc.sh /work/scripts/build-compactc.sh
+    WORKDIR /work
+    # path: ref because the COPY'd submodule has no `.git` in the build context.
+    RUN COMPACTC_FLAKE_REF=path:/work/compact ./scripts/build-compactc.sh
+    # Dereference the nix store output into a self-contained bundle.
+    RUN store="$(readlink -f .compact-home/result)" && \
+        mkdir -p /compact-home/bin /compact-home/lib && \
+        cp -L "$store"/bin/* /compact-home/bin/ && \
+        cp -L "$store"/lib/* /compact-home/lib/ && \
+        printf '#!/usr/bin/env bash\nexport PATH=/compact-home/lib:$PATH\nexec /compact-home/bin/compactc.bin "$@"\n' > /compact-home/compactc && \
+        chmod +x /compact-home/compactc
+    SAVE ARTIFACT /compact-home
+
+compactc-fetch:
+    ARG VERSION
+    # Note: compactc >=0.30.0 releases are on LFDT-Minokawa/compact (older versions were on midnightntwrk/compact)
+    ARG COMPACT_REPO=LFDT-Minokawa/compact
+    ARG COMPACT_TAG_PREFIX=compactc-v
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
+    RUN apk add --no-cache curl unzip
+    # The tag/asset names depend on the kind of release VERSION names:
+    #   - a "dev build" published from an arbitrary commit carries that commit's full
+    #     40-char git SHA as its suffix (e.g. 0.31.108-73ebf...) and follows the
+    #     compactc-dev-<sha> / compactc_dev-<sha>_<arch> naming;
+    #   - a released or pre-release version (e.g. 0.31.108, 0.30.0-rc.1) follows the
+    #     conventional compactc-v<version> / compactc_v<version>_<arch> naming.
+    # Only a bare 40-char hex suffix selects the dev path, so semver pre-releases
+    # (-rc.N, -alpha, ...) keep their normal release naming.
+    RUN set -e && \
+        ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then COMPACTC_ARCH="aarch64"; else COMPACTC_ARCH="x86_64"; fi && \
+        SUFFIX="${VERSION#*-}" && \
+        if [ "$SUFFIX" != "$VERSION" ] && printf '%s' "$SUFFIX" | grep -Eq '^[0-9a-f]{40}$'; then \
+            TAG="compactc-dev-${SUFFIX}"; \
+            ASSET="compactc_dev-${SUFFIX}_${COMPACTC_ARCH}-unknown-linux-musl.zip"; \
+        else \
+            TAG="${COMPACT_TAG_PREFIX}${VERSION}"; \
+            ASSET="compactc_v${VERSION}_${COMPACTC_ARCH}-unknown-linux-musl.zip"; \
+        fi && \
+        URL="https://github.com/${COMPACT_REPO}/releases/download/${TAG}/${ASSET}" && \
+        mkdir -p /compact-home && \
+        echo "Downloading compactc: ${URL}" && \
+        curl -fsSL "${URL}" -o /tmp/compactc.zip && \
+        unzip /tmp/compactc.zip -d /compact-home && \
+        chmod +x /compact-home/compactc && \
+        rm /tmp/compactc.zip
+    SAVE ARTIFACT /compact-home
+
+# compactc-build-local builds and exports compactc to .compact-home
+compactc-build-local:
+    LOCALLY
+    COPY +compactc-bundle/compact-home .compact-home
+    # Fix path to artifacts from `/compact-home` to the cwd
+    RUN sed -i "s|/compact-home|${PWD}/.compact-home|g" .compact-home/compactc
+
+# compact-fetch-local fetches compactc releases - use arg inheritance to fetch other versions,
+# e.g:
+# earthly +compactc-fetch-local --VERSION=0.30.0-rc.1 --COMPACT_REPO=LFDT-Minokawa/compact --COMPACT_TAG_PREFIX=v
+compactc-fetch-local:
+    LOCALLY
+    COPY +compactc-fetch/compact-home .compact-home
+
+locally-test:
+    LOCALLY
+    RUN echo $PWD
+
 # Prepares Node Toolkit (JS) in time for testing
 toolkit-js-prep:
-    ARG NATIVEARCH
-    FROM node:22-trixie
+    FROM +prep-no-copy
+
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz perl-Digest-SHA && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 23 from official binaries (AL2023's nodejs is v18)
+    ARG NODE_VERSION=24.18.0
+    ARG TARGETARCH
+    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
+    # `tar` overlays rather than replaces, so leftover files from the base's older npm
+    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
+    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
+    RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
+        rm -rf /usr/local/lib/node_modules && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -654,20 +908,44 @@ toolkit-js-prep:
     ENV COMPACTC_VERSION=$COMPACTC_VERSION
 
     WORKDIR /toolkit-js
-    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm ci
+    RUN npm ci
     RUN npm run build
-    # Run npm compact script (includes fetch-compactc + compile steps)
-    # fetch-compactc uses GITHUB_TOKEN to download compactc from artifacts
-    RUN --secret GITHUB_TOKEN export GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) && npm run compact
+    # Compile compact contracts using the submodule-built compactc (via COMPACT_HOME).
+    RUN npm run compact
     # Verify keys were generated
     RUN ls -la ./test/contract/managed/counter/keys/ && [ -s ./test/contract/managed/counter/keys/increment.verifier ]
 
     SAVE ARTIFACT /toolkit-js
+    # Re-export the compactc bundle this image inherits from the CI base image
+    # (which selected build-vs-fetch per COMPACTC_VERSION). toolkit-image reuses
+    # this exact compiler — the one that just compiled the contracts above —
+    # rather than rebuilding from the submodule.
+    SAVE ARTIFACT /compact-home
 
 # toolkit-js-prep-local saves Node Toolkit (JS) build artifacts
 toolkit-js-prep-local:
-    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    FROM --platform=linux/amd64 +toolkit-js-prep
+    FROM +toolkit-js-prep
+
+    # The inherited /compact-home wrapper hardcodes the in-image absolute path
+    # (/compact-home/...), which breaks once the artifact is exported to the
+    # host. Replace it with a relocatable wrapper that resolves its own
+    # directory at runtime. Single-quoted printf args keep $(...) / $thisdir /
+    # $PATH / $@ literal so they're evaluated when compactc runs, not now.
+    # Handles both bundle layouts: nix (bin/ + lib/) and fetched zip (flat).
+    RUN printf '%s\n' \
+        '#!/usr/bin/env bash' \
+        'thisdir="$(cd "$(dirname "$0")" && pwd -P)"' \
+        'if [ -x "$thisdir/bin/compactc.bin" ]; then' \
+        '  export PATH="$thisdir/lib:$PATH"' \
+        '  exec "$thisdir/bin/compactc.bin" "$@"' \
+        'else' \
+        '  export PATH="$thisdir:$PATH"' \
+        '  exec "$thisdir/compactc.bin" "$@"' \
+        'fi' \
+        > /compact-home/compactc && \
+        chmod +x /compact-home/compactc
+
+    SAVE ARTIFACT /compact-home AS LOCAL ./.compact-home
     SAVE ARTIFACT /toolkit-js/node_modules AS LOCAL ./util/toolkit-js/node_modules
     SAVE ARTIFACT /toolkit-js/dist AS LOCAL ./util/toolkit-js/dist
     SAVE ARTIFACT /toolkit-js/test/contract/managed/counter AS LOCAL ./util/toolkit-js/test/contract/managed/counter
@@ -686,7 +964,8 @@ planner:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
     RUN cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
@@ -696,8 +975,6 @@ check-rust-prepare:
     # COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-
-    RUN apt-get update && apt-get install -y jq
 
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
@@ -709,34 +986,43 @@ check-rust:
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
-    	metadata rustfmt.toml util tests relay COMPACTC_VERSION .
+    	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     RUN cargo fmt --all -- --check
 
+    ENV CARGO_INCREMENTAL=0
+
+    # ensure runtime benchmark and try runtime features enable to check they compile.
+    # SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD speeds up the build by 2 minutes+.
+    RUN SKIP_FRAME_STORAGE_ACCESS_TEST_RUNTIME_WASM_BUILD=1 cargo clippy --workspace --all-targets --features runtime-benchmarks,try-runtime -- -D warnings
+
     ENV SKIP_WASM_BUILD=1
 
-    # ensure runtime benchmark feature enable to check they compile.
-    RUN cargo clippy --workspace --all-targets --features runtime-benchmarks -- -D warnings
+# check-feature-unification verifies each crate compiles without dev-deps,
+# catching issues where workspace feature unification masks missing dependencies.
+check-feature-unification:
+    FROM +check-rust-prepare
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    COPY --keep-ts --dir \
+        Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
+        ledger LICENSE node pallets primitives README.md res runtime \
+    	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
-    RUN status=0; \
-        for pkg in $(cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[].name'); do \
-            echo "===> Checking $pkg"; \
-            if ! cargo check -p "$pkg"; then \
-            echo "Failed: $pkg"; \
-            status=1; \
-            fi; \
-        done; \
-        exit $status
+    ENV SKIP_WASM_BUILD=1
+    ENV CARGO_INCREMENTAL=0
+    RUN cargo binstall --no-confirm cargo-hack
+    RUN cargo hack check --workspace --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
     ARG NODE_IMAGE
+    #=ghcr.io/midnight-ntwrk/midnight-node:latest
     FROM +subxt
     DO github.com/EarthBuild/lib+INSTALL_DIND
     COPY local-environment/check-health.sh /usr/local/bin/check-health.sh
 
-    WITH DOCKER --pull $NODE_IMAGE
+    WITH DOCKER --pull ${NODE_IMAGE}
       RUN docker run --env CFG_PRESET=dev -p 9944:9944 ${NODE_IMAGE} & \
           check-health.sh -t 30 -u http://localhost:9944 && \
           subxt metadata -f bytes > /image_metadata.scale && \
@@ -756,12 +1042,13 @@ test:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
     # Test
     RUN mkdir /test-artifacts
-    # Compile the tests to go as fast as possible on this machine:
-    ENV RUSTFLAGS="-C target-cpu=native"
+    # Note: debug and opt-level=1 OOM the linker (>24GB) due to large test binaries
+    ENV RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
@@ -769,14 +1056,36 @@ test:
     # Run all tests EXCEPT:
     # - Midnight Node Toolkit (depends on Node Toolkit (JS) npm packages from midnight-js)
     # - pallet-midnight fixture tests (depend on .mn files that need regenerating with Midnight Node Toolkit)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
-        --exclude midnight-node-toolkit \
-        -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
+    # - partner-chains-cardano-offchain are: 1) flaky, 2) long running, 3) test in partner-chains repo, 4) cover functionality used to e2e test partner-chains (non-production)
+    # Logs into Docker Hub INSIDE the nested dockerd (it inherits no host auth) so
+    # testcontainers pulls (postgres etc.) are authenticated. Bare `--secret NAME` is
+    # load-bearing: `--secret NAME=` binds an EMPTY secret-id and silently yields ""
+    # even when the CLI supplies the secret. CI always passes both --secret flags
+    # (empty on fork PRs → login skipped → anonymous, rate-limited). Local runs must
+    # supply them too: `earthly +test --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN=`
+    # (CLI-side `=` means supplied-but-empty, which is fine). The trailing
+    # `rm -f /root/.docker/config.json` keeps the login token out of the RUN's final
+    # snapshot, which buildkit may export to the remote cache on success.
+    WITH DOCKER
+        RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            if [ -n "$DOCKERHUB_TOKEN" ]; then \
+              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            fi && \
+            MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
+            --exclude midnight-node-toolkit \
+            --exclude partner-chains-cardano-offchain \
+            -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))' && \
+            rm -f /root/.docker/config.json
+    END
+
+    # RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --workspace --locked \
+    #     --exclude midnight-node-toolkit \
+    #     -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-$NATIVEARCH/html
+    # RUN cargo llvm-cov report --lcov --release --fail-under-regions 14 --ignore-filename-regex res/src/subxt_metadata.rs --output-path /test-artifacts-$NATIVEARCH/tests.lcov
 
     # AS /target is a temp cache, copy the results to /test-artifacts, otherwise earthly won't find them later
-    SAVE ARTIFACT ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
+    # SAVE ARTIFACT --if-exists ./test-artifacts-$NATIVEARCH AS LOCAL ./test-artifacts
 
 # Pallet fixture tests - runs pallet-midnight tests that depend on regenerated .mn fixtures
 # These tests do NOT require toolkit-js
@@ -785,60 +1094,140 @@ test-pallet-fixtures:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
-    # Compile the tests to go as fast as possible on this machine:
-    ENV RUSTFLAGS="-C target-cpu=native"
+    # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
+    # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
+    ENV SKIP_WASM_BUILD=1
+    ENV RUSTFLAGS="-C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
-    # Run pallet-midnight fixture tests only
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
-        -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
+    # Run pallet-midnight fixture tests in debug mode (compiles much faster)
+    WITH DOCKER
+        RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --locked \
+            -E 'test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/)'
+    END
+    # RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-pallet-fixtures-$NATIVEARCH/html
+    # RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-pallet-fixtures-$NATIVEARCH/tests.lcov
 
-    SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
+    # SAVE ARTIFACT ./test-artifacts-pallet-fixtures-$NATIVEARCH AS LOCAL ./test-artifacts-pallet-fixtures
 
 # Midnight Node Toolkit tests - requires Node Toolkit (JS) which depends on midnight-js npm packages
-test-toolkit:
+build-test-toolkit:
     ARG NATIVEARCH
-    ARG GITHUB_TOKEN
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE /target
+    # See top-of-file CACHE_KEY ARG for why this is scoped.
+    CACHE --id target-${CACHE_KEY} /target
 
-    # Add NodeSource repository with GPG verification
-    RUN mkdir -p /usr/share/keyrings && \
-        curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/nodesource.gpg && \
-        echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
+    RUN microdnf -y install tar gzip xz docker && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js
-    RUN apt-get update && \
-        apt-get install -y nodejs && \
-        rm -rf /var/lib/apt/lists/*
+    # Install Node.js 23 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
+    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
+    ARG NODE_VERSION=24.18.0
+    ARG TARGETARCH
+    # rm -rf node_modules first: this image inherits node/npm from the CI base, and
+    # `tar` overlays rather than replaces, so leftover files from the base's older npm
+    # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
+    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        rm -rf /usr/local/lib/node_modules && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version
 
     # Test
     RUN mkdir /test-artifacts-toolkit
     # Compile the tests to go as fast as possible on this machine:
-    ENV RUSTFLAGS="-C target-cpu=native"
+    ENV RUSTFLAGS="-C target-cpu=native -C debuginfo=1"
     COPY .envrc ./bin/.envrc
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
     # Extract Node Toolkit (JS)
-    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js util/toolkit-js
+    COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
     # Run Midnight Node Toolkit package tests only (requires toolkit-js)
-    RUN MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo llvm-cov nextest --profile ci --release --locked \
-        -E 'package(midnight-node-toolkit)'
-    RUN cargo llvm-cov report --html --release --output-dir /test-artifacts-toolkit-$NATIVEARCH/html
-    RUN cargo llvm-cov report --lcov --release --output-path /test-artifacts-toolkit-$NATIVEARCH/tests.lcov
+    COPY scripts/test-toolkit.sh /test-toolkit.sh
+    ENTRYPOINT ["/test-toolkit.sh"]
+    SAVE IMAGE
 
-    SAVE ARTIFACT ./test-artifacts-toolkit-$NATIVEARCH AS LOCAL ./test-artifacts-toolkit
+test-toolkit:
+    ARG NATIVEARCH
+    ARG NODE_IMAGE
+    ARG FORK_FROM_NODE_IMAGE
+    ARG RUN_COMPACT_CONTRACT_TESTS
+    FROM earthly/dind:alpine
+    RUN mkdir -p /artifacts
+
+    LET EXTRA_DOCKER_ENV=""
+    IF [ -n "$NODE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="-e NODE_IMAGE=$NODE_IMAGE"
+    END
+    IF [ -n "$FORK_FROM_NODE_IMAGE" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e FORK_FROM_NODE_IMAGE=$FORK_FROM_NODE_IMAGE"
+    END
+    IF [ -n "$RUN_COMPACT_CONTRACT_TESTS" ]
+        SET EXTRA_DOCKER_ENV="$EXTRA_DOCKER_ENV -e RUN_COMPACT_CONTRACT_TESTS=$RUN_COMPACT_CONTRACT_TESTS"
+    END
+
+    # The DinD daemon doesn't inherit Docker auth, so --pull is needed to
+    # pre-pull private GHCR images via Earthly's buildkit (which has auth).
+    # Without NODE_IMAGE, testcontainers pulls the public default itself.
+    # The optional docker login (see +test for the --secret semantics) authenticates
+    # Docker Hub pulls made by testcontainers INSIDE test-toolkit:latest — hence the
+    # /root/.docker mount + DOCKER_CONFIG, which hand the daemon login to the test
+    # container's docker_credential lookup. Empty secrets → anonymous (fork PRs/local).
+    IF [ -n "$NODE_IMAGE" ]
+        WITH DOCKER \
+                --load test-toolkit:latest=+build-test-toolkit \
+                --pull $NODE_IMAGE
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                if [ -n "$DOCKERHUB_TOKEN" ]; then \
+                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                fi && mkdir -p /root/.docker && \
+                docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /root/.docker:/root/.docker \
+                -e DOCKER_CONFIG=/root/.docker \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
+                test-toolkit:latest && \
+                rm -f /root/.docker/config.json
+        END
+    ELSE
+        WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
+            RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+                if [ -n "$DOCKERHUB_TOKEN" ]; then \
+                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                fi && mkdir -p /root/.docker && \
+                docker run \
+                --network=host \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /root/.docker:/root/.docker \
+                -e DOCKER_CONFIG=/root/.docker \
+                -v /artifacts:/test-artifacts-toolkit-$NATIVEARCH \
+                -e TESTCONTAINERS_HOST_OVERRIDE=localhost \
+                $EXTRA_DOCKER_ENV \
+                test-toolkit:latest && \
+                rm -f /root/.docker/config.json
+        END
+    END
+    SAVE ARTIFACT /artifacts AS LOCAL ./test-artifacts-toolkit
 
 build-prepare:
     # NOTE: This just uses recipe.json - no src files!
@@ -858,48 +1247,14 @@ build-prepare:
     # TODO: re-enable when chef is improved.
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --release --workspace --all-targets --recipe-path /recipe.json
 
-build-upgrader:
-    FROM +prep
-    ARG NATIVEARCH
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    RUN SKIP_WASM_BUILD=1 cargo build -p upgrader --locked --release \
-        && mv /target/release/upgrader /artifacts-$NATIVEARCH
-    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
-
 # build creates production ready binaries
 build:
-    ARG NATIVEARCH
-
-    FROM +prep
-
-    ARG EARTHLY_GIT_SHORT_HASH
-    ENV SUBSTRATE_CLI_GIT_COMMIT_HASH=$EARTHLY_GIT_SHORT_HASH
-    ENV CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true
-    ENV CC=clang
-    ENV CXX=clang++
-
-    WAIT
-        BUILD +build-upgrader
-        BUILD +build-fork
-        BUILD +build-undo
-    END
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    COPY +build-upgrader/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-    COPY +build-fork/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-    COPY +build-undo/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
-
-    # Already saved as local
-    SAVE ARTIFACT /artifacts-$NATIVEARCH
-
-build-normal:
     FROM +build-prepare
     # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     # CACHE /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay COMPACTC_VERSION .
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
 
     ARG NATIVEARCH
 
@@ -914,59 +1269,26 @@ build-normal:
 
     # Default build (no hardfork)
     RUN \
-        cargo build --workspace --locked --release
+        cargo auditable build --workspace --locked --release
 
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
-        && mv /target/release/upgrader /artifacts-$NATIVEARCH \
         && mv /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
-
-    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
-
-build-fork:
-    FROM +prep
-    # CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-    # CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # CACHE /target
-    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives res metadata runtime util tests relay .
-
-    ARG NATIVEARCH
-
-    RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
-
-    # Hardfork build
-    RUN HARDFORK_TEST=1 cargo build -p midnight-node-runtime  --locked --release
-    RUN mv /target/release/wbuild/midnight-node-runtime/*.wasm \
-        /artifacts-$NATIVEARCH/test
-
-    SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
-
-build-undo:
-    FROM +prep
-    ARG NATIVEARCH
-
-    RUN mkdir -p /artifacts-$NATIVEARCH/test && mkdir -p /artifacts-$NATIVEARCH/rollback
-    RUN rm -Rf /target/release/build/midnight-node-runtime-*
-    # Rollback build
-    RUN HARDFORK_TEST_ROLLBACK=1 cargo build --workspace --locked --release
-    RUN mv /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
-        /artifacts-$NATIVEARCH/rollback/midnight_node_runtime_rollback.compact.compressed.wasm
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
 build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests .
+    ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
     ARG NATIVEARCH
 
     # Build with runtime-benchmarks feature
     RUN \
-        cargo build --workspace --locked --release --features runtime-benchmarks
+        cargo auditable build --workspace --locked --release --features runtime-benchmarks
 
     RUN mkdir -p /artifacts-$NATIVEARCH \
         && mv /target/release/midnight-node /artifacts-$NATIVEARCH/midnight-node-benchmarks
@@ -975,33 +1297,89 @@ build-benchmarks:
 
 subwasm:
     ARG NATIVEARCH
-    FROM +build-normal
+    FROM +build
     # Saves testnet runtime as runtime_000.wasm
     RUN subwasm get wss://rpc.testnet.midnight.network/ \
         && subwasm diff ./runtime_000.wasm /artifacts-$NATIVEARCH/rollback/midnight_node_runtime_rollback.compact.compressed.wasm
 
+# srtool-build creates deterministic runtime WASM builds using srtool
+# This ensures reproducible builds across different environments
+# See: https://github.com/paritytech/srtool
+#
+# Note: srtool uses its own pinned Rust version (currently 1.93.0) for deterministic builds.
+# The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
+# reproducibility - srtool's environment is fixed and verified.
+srtool-build:
+    # renovate: datasource=docker packageName=paritytech/srtool
+    ARG SRTOOL_VERSION=0.18.4
+    # srtool 1.93.0 uses Rust 1.93.0 - this is intentional for determinism
+    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
+
+    # srtool expects source code in /build
+    WORKDIR /build
+
+    # Copy source code as root - include all workspace members referenced in Cargo.toml
+    USER root
+    COPY Cargo.lock Cargo.toml ./
+    # Include .sqlx for offline query validation (sqlx macros need this)
+    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
+    # Fix ownership for builder user
+    RUN chown -R builder:builder /build
+
+    # Set srtool environment variables
+    ENV PACKAGE=midnight-node-runtime
+    ENV RUNTIME_DIR=runtime
+
+    # Build the runtime deterministically as builder user
+    USER builder
+    # Run srtool build with --app flag to show all output, save JSON result
+    RUN --no-cache /srtool/build --app --json | tee /tmp/srtool-output.txt && \
+        tail -1 /tmp/srtool-output.txt > /build/srtool-digest.json
+
+    # Save artifacts
+    SAVE ARTIFACT /build/runtime/target/srtool/release/wbuild/midnight-node-runtime/*.wasm AS LOCAL artifacts/srtool/
+    SAVE ARTIFACT /build/srtool-digest.json AS LOCAL artifacts/srtool/
+
+# srtool-info displays information about the srtool build without building
+srtool-info:
+    ARG SRTOOL_VERSION=0.18.4
+    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
+    WORKDIR /build
+    USER root
+    COPY Cargo.lock Cargo.toml ./
+    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
+    RUN chown -R builder:builder /build
+    ENV PACKAGE=midnight-node-runtime
+    ENV RUNTIME_DIR=runtime
+    USER builder
+    RUN /srtool/info
+
 # node-image creates the Midnight Substrate Node's image
 node-image:
+    LOCALLY
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+
     ARG NATIVEARCH
-    ARG EARTHLY_GIT_SHORT_HASH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
     USER root
 
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN mkdir -p node
 
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node /
-    COPY +build-normal/artifacts-$NATIVEARCH/aiken-deployer /
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
+    COPY +build/artifacts-$NATIVEARCH/midnight-node /
+    COPY +build/artifacts-$NATIVEARCH/aiken-deployer /
+    COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
+    ENV GIT_CONTENT_HASH_SHORT="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
-    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
+    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
+    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
+    ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
@@ -1009,18 +1387,21 @@ node-image:
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY/midnight-node:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
     COPY res/ /artifacts-$NATIVEARCH/res/
-    COPY +build-normal/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
+    COPY +build/artifacts-$NATIVEARCH /artifacts-$NATIVEARCH
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
 
 # node-benchmarks-image creates the Midnight Substrate Node's image with runtime-benchmarks feature
 node-benchmarks-image:
+    LOCALLY
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+
     ARG NATIVEARCH
-    ARG EARTHLY_GIT_SHORT_HASH
     FROM DOCKERFILE -f ./images/node/Dockerfile .
     USER root
 
@@ -1032,9 +1413,9 @@ node-benchmarks-image:
     COPY node/Cargo.toml /node/
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-$NATIVEARCH"
-    ENV NODE_DEV_01_TAG="$(cat /version)-$EARTHLY_GIT_SHORT_HASH-node-dev-01"
+    ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
@@ -1042,70 +1423,71 @@ node-benchmarks-image:
     LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-benchmarks:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node-benchmarks:$NODE_DEV_01_TAG
+        $GHCR_REGISTRY/midnight-node-benchmarks:$IMAGE_TAG
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-benchmarks-$NATIVEARCH/
 
 # toolkit-image creates an image to run the midnight toolkit
 toolkit-image:
+    LOCALLY
+    LET CONTENT_HASH = "$(git rev-parse HEAD^{tree})"
+    LET CONTENT_HASH_SHORT = "$(git rev-parse HEAD^{tree} | cut -c1-12)"
+
     ARG NATIVEARCH
-    ARG EARTHLY_GIT_SHORT_HASH
+    # Set to false to skip toolkit-js
+    # toolkit-js is only needed when GENERATE_TEST_TXS=true
+    ARG INCLUDE_TOOLKIT_JS=true
     # Warning, seeing the same bug as recorded here: https://github.com/earthly/earthly/issues/932
     FROM DOCKERFILE --build-arg ARCH="$NATIVEARCH" -f ./images/toolkit/Dockerfile .
     USER root
 
-    RUN echo "deb [arch=$NATIVEARCH signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    # Install dependencies for Node.js (libxml2 pinned via base image digest, python3-pip not installed)
+    # Install shasum via perl-Digest-SHA for compactc
+    RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 perl-Digest-SHA && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js
-    RUN apt-get update && \
-        apt-get install -y nodejs && \
-        rm -rf /var/lib/apt/lists/*
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=24.18.0
+    RUN if [ "$NATIVEARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        node --version && npm --version && \
+        npm install -g npm@11.11.0 && npm --version
 
-    # Add toolkit-js
-    # We use `--platform=linux/amd64` here because compactc doesn't release for linux/arm64
-    COPY --platform=linux/amd64 +toolkit-js-prep/toolkit-js /toolkit-js
+    # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
+    IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
+        COPY +toolkit-js-prep/toolkit-js /toolkit-js
+        # compactc for run-compactc invocations from this image (e.g. genesis
+        # compiling simple-merkle-tree.compact). Reuse the SAME compiler the CI
+        # image selected per COMPACTC_VERSION (built or fetched) and that compiled
+        # the contracts in +toolkit-js-prep — no rebuild, no risk of a divergent
+        # compactc version between the CI and toolkit images.
+        COPY +toolkit-js-prep/compact-home /compact-home
+        ENV COMPACT_HOME=/compact-home
+    ELSE
+        RUN mkdir -p /toolkit-js
+    END
 
-    COPY +build-normal/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
 
     LET NODE_VERSION="$(cat node_version)"
+    ENV GIT_CONTENT_HASH="$CONTENT_HASH"
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-${NATIVEARCH}"
-    ENV NODE_DEV_01_TAG="${NODE_VERSION}-${EARTHLY_GIT_SHORT_HASH}-node-dev-01"
+    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
+    ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node-toolkit:$NODE_DEV_01_TAG
-
-# hardfork-test-upgrader-image creates the hardfork test upgrader tool image
-hardfork-test-upgrader-image:
-    ARG NATIVEARCH
-    ARG EARTHLY_GIT_SHORT_HASH
-    FROM DOCKERFILE -f ./images/hardfork-test-upgrader/Dockerfile .
-    USER root
-
-    COPY +build/artifacts-$NATIVEARCH/upgrader /
-    COPY +build/artifacts-$NATIVEARCH/test/* /
-    COPY +build/artifacts-$NATIVEARCH/rollback/* /
-
-    COPY node/Cargo.toml /node/
-    LET NODE_VERSION = "$(awk -F'\042' '/^version/ {print $2}' node/Cargo.toml)"
-
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV IMAGE_NAME=midnight-hardfork-test-upgrader
-    ENV IMAGE_TAG="$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH-$NATIVETARCH"
-
-    RUN mkdir -p /artifacts-$NATIVEARCH
-    RUN echo image tag=$IMAGE_NAME:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/hardfork_test_upgrader_image_tag
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    SAVE IMAGE --push \
-        $GHCR_REGISTRY/$IMAGE_NAME:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
-
-    SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
+        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
 
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
@@ -1118,23 +1500,72 @@ audit-rust:
 audit-npm:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM node:22-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
+
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=24.18.0
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        npm install -g npm@11.11.0 && \
+        node --version && npm --version
+
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
     RUN mkdir -p /scan_reports
-    RUN corepack enable
-    RUN --no-cache npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json \
-      && npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json
+    # npm audit exits non-zero when it finds vulns at/above --audit-level. Capture the
+    # JSON (written to stdout regardless of exit code) and ALWAYS produce the SARIF before
+    # propagating the audit's exit code — otherwise a finding both fails the build AND
+    # skips the SARIF upload (the workflow uploads on success()||failure() but only if the
+    # file exists), leaving a red check with no report. Gate on high is preserved via the
+    # final `exit`.
+    RUN --no-cache \
+        npm audit --audit-level high --json > npm-audit-${REPORT_NAME}.json; AUDIT_RC=$?; \
+        npx npm-audit-sarif -o /scan_reports/npm-audit-${REPORT_NAME}.sarif npm-audit-${REPORT_NAME}.json; \
+        exit $AUDIT_RC
     SAVE ARTIFACT /scan_reports/npm-audit-${REPORT_NAME}.sarif AS LOCAL scan_reports/npm-audit-${REPORT_NAME}.sarif
 
 audit-yarn:
     ARG DIRECTORY
     ARG REPORT_NAME
-    FROM node:22-trixie
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
+
+    # Install dependencies for Node.js (curl-minimal already in base image)
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
+
+    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=24.18.0
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        npm install -g npm@11.11.0 && \
+        node --version && npm --version
+
+    # Install and enable corepack for yarn support
+    RUN npm install -g corepack && corepack enable
+
     COPY metadata/static metadata/static
     COPY ${DIRECTORY} ${DIRECTORY}
     WORKDIR ${DIRECTORY}
-    RUN corepack enable
     RUN yarn install --immutable
     RUN mkdir -p /scan_reports
     RUN --no-cache OUTPUT="$(yarn npm audit --severity high --json)" && echo "${OUTPUT:-{}}" > npm-audit-${REPORT_NAME}.json \
@@ -1147,71 +1578,59 @@ audit-local-environment:
 audit-toolkit-js:
     BUILD +audit-npm --DIRECTORY=util/toolkit-js/ --REPORT_NAME=toolkit-js
 
-audit-ui:
-    BUILD +audit-yarn --DIRECTORY=ui/ --REPORT_NAME=ui
-
-audit-ui-tests:
-    BUILD +audit-yarn --DIRECTORY=ui/tests/ --REPORT_NAME=ui-tests
-
 # audit-nodejs checks for javascript security vulerabilities
 audit-nodejs:
     BUILD +audit-local-environment
     BUILD +audit-toolkit-js
-    BUILD +audit-ui
-    BUILD +audit-ui-tests
 
 # audit checks for security vulnerabilities
 audit:
     BUILD +audit-rust
     BUILD +audit-nodejs
 
-# partnerchains-dev contains tools for working with partner chains contracts on Cardano
-partnerchains-dev:
-    LET PARTNER_CHAINS_VERSION=1.5.0
-    LET CARDANO_VERSION=10.1.4
+# fix-lock-npm regenerates a single npm package-lock.json inside a container
+fix-lock-npm:
+    ARG DIRECTORY
+    FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:0051b1aa8e8023cd02ce41aace90dc05dcc68e9e85e44bb0abe46f25c3b2c962
 
-    ARG EARTHLY_GIT_SHORT_HASH
+    RUN microdnf -y install tar gzip xz && \
+        microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    FROM ubuntu:24.04
-    # Get node version for the image tag
-    COPY node/Cargo.toml /node/
-    RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > node_version
-    RUN rm -rf /node
-    LET NODE_VERSION = "$(cat node_version)"
-    LET IMAGE_TAG_SEMVER=$NODE_VERSION-$EARTHLY_GIT_SHORT_HASH
-    # Install necessary packages
-    RUN apt-get update -qq && apt-get install -y \
-        curl \
-        unzip \
-        nodejs \
-        bash \
-        jq \
-        socat \
-        && rm -rf /var/lib/apt/lists/*
+    # Keep in sync with audit-npm target
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=24.18.0
+    ARG TARGETARCH
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            NODE_ARCH="arm64"; \
+        else \
+            NODE_ARCH="x64"; \
+        fi && \
+        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
+        rm node.tar.xz && \
+        npm install -g npm@11.11.0 && \
+        node --version && npm --version
 
-    # Download cardano node (for cardano-cli)
-    RUN curl -L https://github.com/IntersectMBO/cardano-node/releases/download/${CARDANO_VERSION}/cardano-node-${CARDANO_VERSION}-linux.tar.gz -o cardano-node.tar.gz && \
-        mkdir cardano-node && \
-        tar -xzf cardano-node.tar.gz -C cardano-node --strip-components=1 && \
-        mv cardano-node/bin/cardano-cli . && \
-        rm -rf cardano-node cardano-node.tar.gz
+    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/
+    WORKDIR ${DIRECTORY}
+    RUN npm install
+    SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
 
-    # Download partner chains node
-    RUN curl -L https://github.com/input-output-hk/partner-chains/releases/download/v${PARTNER_CHAINS_VERSION}/partner-chains-node-v${PARTNER_CHAINS_VERSION}-x86_64-linux  -o partner-chains-node && \
-        chmod +x partner-chains-node
+# fix-lock-js regenerates all npm lockfiles
+fix-lock-js:
+    BUILD +fix-lock-npm --DIRECTORY=local-environment
+    BUILD +fix-lock-npm --DIRECTORY=util/toolkit-js
 
-    COPY +node-image/midnight-node /midnight-node
-    COPY scripts/partnerchains-dev/* /
+# fix-lock-rust regenerates Cargo.lock
+fix-lock-rust:
+    FROM +prep
+    RUN cargo generate-lockfile
+    SAVE ARTIFACT Cargo.lock AS LOCAL Cargo.lock
 
-    ENV CARDANO_NODE_SOCKET_PATH=/node.socket
-    ENV CARDANO_NODE_NETWORK_ID=2
-    ENV AS_INIT=1
-    ENV NODE_HOST=host.docker.internal
-
-    ENTRYPOINT ["/bin/bash", "--init-file", "serve.sh"]
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    LET IMAGE_TAG=${PARTNER_CHAINS_VERSION}-${CARDANO_VERSION}
-    SAVE IMAGE --push ghcr.io/midnight-ntwrk/partnerchains-dev:$IMAGE_TAG_SEMVER ghcr.io/midnight-ntwrk/partnerchains-dev:$IMAGE_TAG ghcr.io/midnight-ntwrk/partnerchains-dev:latest
+# fix-lock regenerates all lockfiles
+fix-lock:
+    BUILD +fix-lock-rust
+    BUILD +fix-lock-js
 
 # run-node-mocked Run a local node against a mock ariadne bridge.
 run-node-mocked:
@@ -1232,13 +1651,16 @@ testnet-sync-e2e:
 local-env-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests local-environment scripts .
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
-    RUN cargo test --test e2e_tests -- --test-threads=4 --nocapture
+    ENV RUSTFLAGS="-C debuginfo=1"
+    RUN cargo test --test e2e_tests -- --test-threads=6 --nocapture
 
 # compares chain parameters with testnet-02
 chain-params-check:
-    FROM alpine
+    FROM alpine@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4
     RUN apk add --no-cache curl jq
 
     COPY res/testnet-02/testnet-02.json ./
@@ -1269,20 +1691,28 @@ addresses-check:
 # start-local-env-latest starts up the local environment with the latest node image
 start-local-env-latest:
     LOCALLY
-    WITH DOCKER --load localhost/midnight-node:latest=+node-image
+    # Build both from-source images the local-env needs (node + toolkit — the latter runs
+    # the init-mnight-faucet bring-up job) and load them under
+    # fixed local tags.
+    WITH DOCKER \
+            --load localhost/midnight-node:latest=+node-image \
+            --load localhost/midnight-node-toolkit:latest=+toolkit-image
         # Ugly nested earthly call, but earthly complains if we use BUILD here
-        RUN earthly +start-local-env --NODE_IMAGE=localhost/midnight-node:latest
+        RUN earthly +start-local-env \
+            --NODE_IMAGE=localhost/midnight-node:latest \
+            --TOOLKIT_IMAGE=localhost/midnight-node-toolkit:latest
     END
 
 start-local-env:
     LOCALLY
     ARG NODE_IMAGE
+    ARG TOOLKIT_IMAGE
     ARG TARGETPLATFORM
     ARG USERARCH
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE npm run stop:local-env
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE npm run run:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env
 
 start-local-env-with-indexer:
     LOCALLY
@@ -1292,10 +1722,11 @@ start-local-env-with-indexer:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run stop:local-env -- -p withindexer
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env-with-indexer -- -p withindexer
 
 start-local-env-with-indexer-ci:
     LOCALLY
@@ -1305,9 +1736,240 @@ start-local-env-with-indexer-ci:
     ARG INDEXER_API_IMAGE
     ARG CHAIN_INDEXER_IMAGE
     ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+    # Tear down any stack left over from a previous run before starting a fresh
+    # one. Without this, named volumes (local-env_midnight-node-N-data, etc.)
+    # persist on shared CI hosts (e.g. self-hosted runners) and the new
+    # run boots validators with stale db state from the prior run — which
+    # breaks chain-indexer with "unsupported protocol version" when the
+    # genesis/runtime expectations disagree. The non-CI sibling target
+    # `+start-local-env-with-indexer` does this same down already.
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run stop:local-env -- -p withindexer
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=$NODE_IMAGE INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE INDEXER_API_IMAGE=$INDEXER_API_IMAGE TOOLKIT_IMAGE=$TOOLKIT_IMAGE npm run run:local-env-with-indexer -- -p withindexer
+
+
+# Runs the integration tests (stack → verify-finality → e2e → toolkit) in one RUN
+# inside earthly's nested dockerd, so each job gets its own netns and the
+# local-environment-tests job can drop the repo-wide host-port serialization. FROM +prep
+# for the in-place e2e `cargo test` (node/npm + the docker compose-v2 plugin ship in +prep);
+# the COPYs + MIDNIGHT_RESERVE_CONTRACTS_PATH + ARCHITECTURE=linux/$USERARCH below replicate
+# what the host LOCALLY path gets from .envrc/worktree (each was a real bring-up failure when
+# missing). Locally proven via the save→load twin +local-env-full-ci-localimg; this
+# registry-`--pull` form first runs in CI.
+local-env-ci:
+    FROM +prep
+    ARG NODE_IMAGE
+    ARG INDEXER_API_IMAGE
+    ARG CHAIN_INDEXER_IMAGE
+    ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
+    ARG USERARCH
+    # Fail early + kindly if any image ref is empty — otherwise `WITH DOCKER --pull` below
+    # gets an empty arg and dies with the opaque "invalid reference format".
+    RUN test -n "$NODE_IMAGE" && test -n "$TOOLKIT_IMAGE" && test -n "$INDEXER_API_IMAGE" \
+          && test -n "$CHAIN_INDEXER_IMAGE" && test -n "$WALLET_INDEXER_IMAGE" || { \
+        echo "+local-env-ci needs all five image refs, e.g.:"; \
+        echo "  earthly -P +local-env-ci \\"; \
+        echo "    --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag> \\"; \
+        echo "    --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag> \\"; \
+        echo "    --INDEXER_API_IMAGE=ghcr.io/midnight-ntwrk/indexer-api:<tag> \\"; \
+        echo "    --CHAIN_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/chain-indexer:<tag> \\"; \
+        echo "    --WALLET_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/wallet-indexer:<tag>"; \
+        echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
+        exit 1; }
+    # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
+    # WITH DOCKER `docker compose` calls need the plugin; earthly injects only the CLI).
+    COPY --dir local-environment .
+    COPY --dir midnight-reserve-contracts .
+    COPY --dir scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
+    # indexer/toolkit images into the authless DinD daemon. Public deps (cardano-node,
+    # db-sync, ogmios, kupo, yaci, postgres, nats) are pulled by compose inside DinD —
+    # hence the optional docker login below (see +test for the --secret semantics);
+    # empty secrets → anonymous pulls (fork PRs/local), rate-limited but functional.
+    WITH DOCKER \
+            --pull $NODE_IMAGE \
+            --pull $INDEXER_API_IMAGE \
+            --pull $CHAIN_INDEXER_IMAGE \
+            --pull $WALLET_INDEXER_IMAGE \
+            --pull $TOOLKIT_IMAGE
+        RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
+            if [ -n "$DOCKERHUB_TOKEN" ]; then \
+              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            fi && \
+            ROOT="$PWD" && \
+            cd local-environment && \
+            npm ci && \
+            ( ARCHITECTURE=linux/$USERARCH \
+              MIDNIGHT_RESERVE_CONTRACTS_PATH="$ROOT/midnight-reserve-contracts" \
+              MIDNIGHT_NODE_IMAGE=$NODE_IMAGE \
+              INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE \
+              INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
+              INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
+              TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
+              npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
+              if [ $rc -ne 0 ]; then \
+                echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
+                echo "--- midnight-setup ---" ; docker logs midnight-setup 2>&1 | tail -80 ; \
+                echo "--- contract-compiler ---" ; docker logs contract-compiler 2>&1 | tail -30 ; \
+                exit $rc ; \
+              fi ) && \
+            npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
+            echo "=== e2e suite ===" && \
+            ( cd "$ROOT/tests/e2e" && \
+              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+            echo "=== post-suite liveness check ===" && \
+            cd "$ROOT" && \
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
+            rm -f /root/.docker/config.json
+    END
+
+
+# local-env-full-ci-localimg: run the full integration tests (stack → verify-finality →
+# e2e → toolkit, one nested-dockerd RUN) with NO registry permissions. It injects the
+# node/indexer/toolkit images from local tarballs (docker save → load) instead of pulling
+# them from GHCR, so anyone without registry access — external contributors, a fresh
+# checkout, an air-gapped box — can reproduce the CI run end-to-end locally. It's the
+# permissionless twin of +local-env-ci (identical surface; that one --pulls in CI).
+# Build the tarballs first, e.g.:
+#   docker save <node> <chain-indexer> <wallet-indexer> <indexer-api> -o local-env-images.tar
+#   docker save <toolkit> -o toolkit-image.tar
+local-env-full-ci-localimg:
+    FROM +prep
+    ARG NODE_IMAGE
+    ARG INDEXER_API_IMAGE
+    ARG CHAIN_INDEXER_IMAGE
+    ARG WALLET_INDEXER_IMAGE
+    ARG TOOLKIT_IMAGE
+    ARG USERARCH
+    # node/npm + the docker compose-v2 plugin both ship in the +prep base image.
+    # +prep carries res/+tests/ but not local-environment/, scripts/, the submodule, or static/.
+    COPY --dir local-environment .
+    COPY --dir midnight-reserve-contracts .
+    COPY --dir scripts .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    # Pre-build the e2e binary as a cacheable layer (same flags as the run below).
+    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    COPY local-env-images.tar .
+    COPY toolkit-image.tar .
+    WITH DOCKER
+        RUN docker load -i local-env-images.tar && \
+            docker load -i toolkit-image.tar && \
+            ROOT="$PWD" && \
+            cd local-environment && \
+            npm ci && \
+            ( ARCHITECTURE=linux/$USERARCH \
+              MIDNIGHT_RESERVE_CONTRACTS_PATH="$ROOT/midnight-reserve-contracts" \
+              MIDNIGHT_NODE_IMAGE=$NODE_IMAGE \
+              INDEXER_CHAIN_IMAGE=$CHAIN_INDEXER_IMAGE \
+              INDEXER_WALLET_IMAGE=$WALLET_INDEXER_IMAGE \
+              INDEXER_API_IMAGE=$INDEXER_API_IMAGE \
+              TOOLKIT_IMAGE=$TOOLKIT_IMAGE \
+              npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
+              if [ $rc -ne 0 ]; then \
+                echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
+                echo "--- midnight-setup ---" ; docker logs midnight-setup 2>&1 | tail -80 ; \
+                echo "--- contract-compiler ---" ; docker logs contract-compiler 2>&1 | tail -30 ; \
+                exit $rc ; \
+              fi ) && \
+            npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
+            echo "=== e2e suite ===" && \
+            ( cd "$ROOT/tests/e2e" && \
+              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+            echo "=== post-suite liveness check ===" && \
+            cd "$ROOT" && \
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
+    END
+
+
+# local-env-oneshot: ZERO-ARG, permissionless, build-everything-and-run-everything. Unlike
+# +local-env-ci (--pulls published images; needs GHCR creds + tags) and
+# +local-env-full-ci-localimg (loads pre-saved tarballs; needs the images built + saved
+# first), this builds the node + toolkit (earthly `--load`, like +start-local-env-latest)
+# and the 3 indexer images (docker build of the submodule, in-sandbox), all under fixed
+# :local tags, then runs the full integration suite. Just: `earthly -P +local-env-oneshot`.
+# First run is long (node + toolkit + indexer + CI-image builds); earthly caches node/
+# toolkit/CI-image after (the in-sandbox indexer builds re-run each time — ephemeral DinD).
+local-env-oneshot:
+    FROM +prep
+    ARG USERARCH
+    COPY --dir local-environment midnight-reserve-contracts scripts indexer .
+    COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
+    ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    ENV RUSTFLAGS="-C debuginfo=1"
+    # Fail fast + kindly if the submodules aren't checked out: COPY of an empty submodule
+    # silently yields an empty dir, which would otherwise blow up later as "could not find
+    # indexer/...". Checked before the ~5-min e2e compile below. (CI always has them via
+    # checkout submodules:true; locally: git submodule update --init --recursive.)
+    RUN test -f indexer/indexer-api/Dockerfile && test -f midnight-reserve-contracts/aiken.toml || { \
+        echo "Submodules not checked out — indexer/ and/or midnight-reserve-contracts/ are empty."; \
+        echo "Run:  git submodule update --init --recursive"; \
+        exit 1; }
+    RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
+    # --load builds the node + toolkit images and loads them into the nested daemon under
+    # fixed :local tags (no registry). The 3 indexer images are built in-sandbox below.
+    WITH DOCKER \
+            --load ghcr.io/midnight-ntwrk/midnight-node:local=+node-image \
+            --load ghcr.io/midnight-ntwrk/midnight-node-toolkit:local=+toolkit-image
+        RUN ROOT="$PWD" && \
+            IRV=$(grep '^channel' indexer/rust-toolchain.toml | sed -r 's/.*"(.*)".*/\1/') && \
+            for pkg in indexer-api chain-indexer wallet-indexer; do \
+              docker build --build-arg RUST_VERSION="$IRV" --build-arg PROFILE=dev \
+                -t "midnightntwrk/$pkg:local" -f "indexer/$pkg/Dockerfile" indexer ; \
+            done && \
+            cd local-environment && \
+            npm ci && \
+            ( ARCHITECTURE=linux/$USERARCH \
+              MIDNIGHT_RESERVE_CONTRACTS_PATH="$ROOT/midnight-reserve-contracts" \
+              MIDNIGHT_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:local \
+              INDEXER_CHAIN_IMAGE=midnightntwrk/chain-indexer:local \
+              INDEXER_WALLET_IMAGE=midnightntwrk/wallet-indexer:local \
+              INDEXER_API_IMAGE=midnightntwrk/indexer-api:local \
+              TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:local \
+              npm run run:local-env-with-indexer -- -p withindexer ; rc=$? ; \
+              if [ $rc -ne 0 ]; then \
+                echo "=== STACK BRING-UP FAILED rc=$rc — diagnostic logs ===" ; \
+                echo "--- midnight-setup ---" ; docker logs midnight-setup 2>&1 | tail -80 ; \
+                echo "--- contract-compiler ---" ; docker logs contract-compiler 2>&1 | tail -30 ; \
+                exit $rc ; \
+              fi ) && \
+            npm run verify-finality:local-env -- --target-block 1 --timeout 300 && \
+            echo "=== awaiting init-mnight-faucet (funds dev wallet 0x..01) ===" && \
+            faucet_rc=$(docker wait init-mnight-faucet) && \
+            if [ "$faucet_rc" != 0 ]; then \
+              echo "=== init-mnight-faucet FAILED (exit $faucet_rc) ===" ; \
+              docker logs init-mnight-faucet 2>&1 | tail -60 ; \
+              exit 1 ; \
+            fi && \
+            echo "=== e2e suite ===" && \
+            ( cd "$ROOT/tests/e2e" && \
+              cargo test --test e2e_tests --no-default-features --features local -- --test-threads=6 --nocapture ) && \
+            echo "=== post-suite liveness check ===" && \
+            cd "$ROOT" && \
+            ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360
+    END
 
 
 stop-local-env:
@@ -1315,50 +1977,105 @@ stop-local-env:
     ARG USERARCH
     WORKDIR local-environment
     RUN npm ci
-    RUN ARCHITECTURE=$USERARCH MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
+    RUN ARCHITECTURE=linux/$USERARCH MIDNIGHT_RESERVE_CONTRACTS_PATH="$(cd .. && pwd)/midnight-reserve-contracts" MIDNIGHT_NODE_IMAGE=any/any npm run stop:local-env
 
-# node-e2e-test runs the node E2E tests using Earthly's container management
+
+# extract-node-artifacts pulls artifacts from a pre-built node image
+extract-node-artifacts:
+    ARG NODE_IMAGE
+    ARG NATIVEARCH
+    FROM ${NODE_IMAGE}
+    USER root
+    SAVE ARTIFACT /midnight-node AS LOCAL artifacts-$NATIVEARCH/midnight-node
+    SAVE ARTIFACT /aiken-deployer AS LOCAL artifacts-$NATIVEARCH/aiken-deployer
+    SAVE ARTIFACT /artifacts-$NATIVEARCH/* AS LOCAL artifacts-$NATIVEARCH/
+    SAVE ARTIFACT ./res/* AS LOCAL artifacts-$NATIVEARCH/res/
+
+# extract-toolkit-artifacts pulls artifacts from a pre-built toolkit image
+extract-toolkit-artifacts:
+    ARG TOOLKIT_IMAGE
+    ARG NATIVEARCH
+    FROM ${TOOLKIT_IMAGE}
+    USER root
+    SAVE ARTIFACT /midnight-node-toolkit AS LOCAL artifacts-$NATIVEARCH/midnight-node-toolkit
+
+# sync-mainnet-1000-snapshot generates a minimal cexplorer snapshot from a
+# cardano-db-sync postgres reachable via SOURCE_DSN. The snapshot is saved as
+# an artifact under static/sync-test/ so it can be reused by +sync-mainnet-1000
+# and consumed by CI without re-running the (heavy, db-sync-dependent) build.
 #
 # Usage:
-#   earthly +node-e2e-test
-#
-# This target:
-# 1. Runs the Playwright E2E tests against the local environment
-# 2. Saves all test artifacts to test-artifacts/e2e/node/
-#
-# Outputs:
-#   - test-artifacts/e2e/node/ - All test results, logs, and reports
-node-e2e-test:
-    ARG NATIVEARCH
+#   earthly +sync-mainnet-1000-snapshot --SOURCE_DSN=postgres://user:pass@host:5432/cexplorer
+sync-mainnet-1000-snapshot:
+    ARG SOURCE_DSN
+    ARG MIN_BLOCK_NO=13164005
+    ARG MAX_BLOCK_NO=13174340
+    ARG MIN_EPOCH=617
+    # postgres:17.4-alpine matches the loader image used by run-sync.sh and
+    # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
+    FROM postgres:17.4-alpine
+    RUN apk add --no-cache bash xz
+    WORKDIR /work
+    COPY scripts/sync-test/build-snapshot.sh ./
+    RUN --no-cache \
+        SOURCE_DSN="$SOURCE_DSN" \
+        MIN_BLOCK_NO=$MIN_BLOCK_NO \
+        MAX_BLOCK_NO=$MAX_BLOCK_NO \
+        MIN_EPOCH=$MIN_EPOCH \
+        OUTPUT=/work/snapshot.sql.xz \
+        bash ./build-snapshot.sh
+    SAVE ARTIFACT /work/snapshot.sql.xz snapshot.sql.xz AS LOCAL static/sync-test/snapshot.sql.xz
 
+# sync-mainnet-1000 runs a fresh midnight-node against a self-contained
+# postgres preloaded with a pre-built cardano-db-sync snapshot, and verifies
+# the node syncs the first 1000 blocks of Midnight Mainnet.
+#
+# The snapshot is NOT rebuilt here -- run +sync-mainnet-1000-snapshot first
+# (or fetch the artifact from a CI workflow) to populate
+# static/sync-test/snapshot.sql.xz.
+#
+# Requires:
+#   - static/sync-test/snapshot.sql.xz present locally
+#   - docker available locally (the target uses WITH DOCKER)
+#
+# Usage:
+#   earthly -P +sync-mainnet-1000
+sync-mainnet-1000:
     LOCALLY
-
-    RUN echo "🧪 Running Node E2E tests with Earthly:"
-
-    # Setup test environment
-    WORKDIR ui/tests
-
-    # Install dependencies
-    RUN yarn config set -H enableImmutableInstalls false
-    RUN yarn install
-
-    # Create test artifacts directory first
-    RUN mkdir -p test-artifacts/e2e/node
-
-    # Run the tests from the test artifacts directory to generate CTRF report there
-    RUN echo "🎯 Running Playwright + Testcontainers tests..." \
-      && NODE_PORT_WS=9933 DEBUG='testcontainers*' yarn test:node 2>&1 | tee reports/test-output.log || TEST_FAILED=true
-
-    # Save test results
-    RUN cp -r ./reports test-artifacts/e2e/node/ || true
-    RUN cp -r ./logs test-artifacts/e2e/node/ || true
-    # Check test results
-    RUN if [ "${TEST_FAILED:-false}" = true ]; then \
-        echo "❌ Tests failed"; \
-        exit 1; \
-    else \
-        echo "✅ Node E2E tests complete."; \
-    fi
+    # NODE_IMAGE may be either an earthly target reference (default `+node-image`,
+    # which is built and tagged locally as $NODE_IMAGE_TAG before running) or a
+    # docker image reference (e.g. `ghcr.io/midnight-ntwrk/midnight-node:tag`),
+    # which is pre-pulled by buildkit (so private-registry creds work) and used
+    # directly. The latter lets CI run the sync test against an already-built
+    # image without re-running +node-image.
+    ARG NODE_IMAGE=+node-image
+    ARG NODE_IMAGE_TAG=localhost/midnight-node:sync-test
+    ARG SYNC_UNTIL=1000
+    ARG SYNC_TIMEOUT_SECS=1800
+    # PRINT_LOGS=1 dumps the node and postgres container logs to stderr after
+    # the run finishes (success or failure). Useful for local debugging.
+    ARG PRINT_LOGS=0
+    IF echo "$NODE_IMAGE" | grep -q '^+'
+        WITH DOCKER --load $NODE_IMAGE_TAG=$NODE_IMAGE
+            RUN NODE_IMAGE=$NODE_IMAGE_TAG \
+                SNAPSHOT=static/sync-test/snapshot.sql.xz \
+                CFG_PRESET=mainnet \
+                SYNC_UNTIL=$SYNC_UNTIL \
+                SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+                PRINT_LOGS=$PRINT_LOGS \
+                ./scripts/sync-test/run-sync.sh
+        END
+    ELSE
+        WITH DOCKER --pull $NODE_IMAGE
+            RUN NODE_IMAGE=$NODE_IMAGE \
+                SNAPSHOT=static/sync-test/snapshot.sql.xz \
+                CFG_PRESET=mainnet \
+                SYNC_UNTIL=$SYNC_UNTIL \
+                SYNC_TIMEOUT_SECS=$SYNC_TIMEOUT_SECS \
+                PRINT_LOGS=$PRINT_LOGS \
+                ./scripts/sync-test/run-sync.sh
+        END
+    END
 
 #images Build all the images
 images:

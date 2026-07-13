@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -26,7 +26,26 @@ use sidechain_domain::McBlockHash;
 #[derive(Debug, Clone, clap::Parser)]
 pub struct RunMidnight {
 	#[clap(flatten)]
-	run: sc_cli::RunCmd,
+	pub run: sc_cli::RunCmd,
+
+	/// Disable automatic hardware benchmarks.
+	///
+	/// By default these benchmarks are automatically run at startup and measure
+	/// the CPU speed, the memory bandwidth and the disk speed.
+	///
+	/// The results are then printed in the logs, and also sent as part of
+	/// telemetry if telemetry is enabled.
+	#[arg(long)]
+	pub no_hardware_benchmarks: bool,
+
+	/// Rejects transactions that contain Deploy and Maintain Operations from being accepted to the transaction pool.
+	#[arg(long)]
+	pub filter_deploy_txs: bool,
+
+	/// Maximum number of concurrent finality RPC subscriptions (GRANDPA + BEEFY combined).
+	/// Connections that exceed this limit will have their subscription requests rejected.
+	#[arg(long, default_value_t = 512)]
+	pub rpc_max_finality_subscriptions: u32,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -40,13 +59,308 @@ pub struct Cli {
 
 #[derive(Debug, Parser)]
 pub struct CNightGenesisCmd {
-	/// The Cardano block hash assumed to be the latest for this query
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
 	#[arg(short, long)]
 	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing cNight addresses. Defaults to res/<CFG_PRESET>/cnight-addresses.json
 	#[arg(long)]
-	pub cnight_addresses: std::path::PathBuf,
-	#[arg(short, long, default_value = "cnight-genesis.json")]
-	pub output: std::path::PathBuf,
+	pub cnight_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the genesis config. Defaults to res/<CFG_PRESET>/cnight-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct FederatedAuthorityGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing federated authority addresses. Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the genesis config. Defaults to res/<CFG_PRESET>/federated-authority-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct PermissionedCandidatesGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing the permissioned candidates policy ID. Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to pc-chain-config.json file. Used to read security_parameter if CARDANO_SECURITY_PARAMETER env var is not set. Defaults to res/<CFG_PRESET>/pc-chain-config.json
+	#[arg(long = "pc-config")]
+	pub pc_config: Option<std::path::PathBuf>,
+
+	/// Output path for the genesis config. Defaults to res/<CFG_PRESET>/permissioned-candidates-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct GenesisConfigCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing cNight addresses. Defaults to res/<CFG_PRESET>/cnight-addresses.json
+	#[arg(long)]
+	pub cnight_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the cNight genesis config. Defaults to res/<CFG_PRESET>/cnight-config.json
+	#[arg(long)]
+	pub cnight_output: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing federated authority addresses. Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the federated authority genesis config. Defaults to res/<CFG_PRESET>/federated-authority-config.json
+	#[arg(long)]
+	pub federated_authority_output: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the permissioned candidates policy ID. Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to pc-chain-config.json file. Used to read security_parameter if CARDANO_SECURITY_PARAMETER env var is not set. Defaults to res/<CFG_PRESET>/pc-chain-config.json
+	#[arg(long = "pc-config")]
+	pub pc_config: Option<std::path::PathBuf>,
+
+	/// Output path for the permissioned candidates genesis config. Defaults to res/<CFG_PRESET>/permissioned-candidates-config.json
+	#[arg(long)]
+	pub permissioned_candidates_output: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing reserve addresses. Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long)]
+	pub reserve_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the reserve genesis config. Defaults to res/<CFG_PRESET>/reserve-config.json
+	#[arg(long)]
+	pub reserve_output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct ReserveGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing reserve addresses. Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long)]
+	pub reserve_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the reserve genesis config. Defaults to res/<CFG_PRESET>/reserve-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct IcsGenesisCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing ICS addresses. Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long)]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Output path for the ICS genesis config. Defaults to res/<CFG_PRESET>/ics-config.json
+	#[arg(short, long)]
+	pub output: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyLedgerStateGenesisCmd {
+	/// Path to the chain-spec-raw.json file to inspect
+	#[arg(long)]
+	pub chain_spec: std::path::PathBuf,
+
+	/// Path to cnight-config.json for DustState verification
+	#[arg(long)]
+	pub cnight_config: Option<std::path::PathBuf>,
+
+	/// Path to ledger-parameters-config.json for parameter verification
+	#[arg(long)]
+	pub ledger_parameters_config: Option<std::path::PathBuf>,
+
+	/// Network name (e.g., "mainnet", "qanet"). Used for network-specific checks like empty state
+	#[arg(long)]
+	pub network: Option<String>,
+
+	/// Path to cardano-tip.json containing the genesis timestamp (required for timestamp
+	/// verification)
+	#[arg(long)]
+	pub cardano_tip_config: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyCardanoTipFinalizedCmd {
+	/// The Cardano block hash to check for finalization.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to pc-chain-config.json file. Used to read security_parameter.
+	/// Defaults to res/<CFG_PRESET>/pc-chain-config.json
+	#[arg(long = "pc-config")]
+	pub pc_config: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing federated authority addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing ICS addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long = "ics-addresses")]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing permissioned candidates addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing reserve addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long = "reserve-addresses")]
+	pub reserve_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyFederatedAuthorityAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing federated authority addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/federated-authority-addresses.json
+	#[arg(long = "federated-auth-addresses")]
+	pub federated_authority_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyIcsAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing ICS addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/ics-addresses.json
+	#[arg(long = "ics-addresses")]
+	pub ics_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyGenesisMessageCmd {
+	/// Path to the chain-spec-raw.json file to inspect
+	#[arg(long)]
+	pub chain_spec: std::path::PathBuf,
+
+	/// Path to message-config.json containing the expected genesis remark message.
+	/// Defaults to res/<CFG_PRESET>/message-config.json
+	#[arg(long)]
+	pub message_config: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyGenesisTimestampCmd {
+	/// Path to the chain-spec-raw.json file to inspect
+	#[arg(long)]
+	pub chain_spec: std::path::PathBuf,
+
+	/// Path to cardano-tip.json containing the expected genesis timestamp.
+	/// Defaults to res/<CFG_PRESET>/cardano-tip.json
+	#[arg(long)]
+	pub cardano_tip_config: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyPermissionedCandidatesAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing permissioned candidates addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/permissioned-candidates-addresses.json
+	#[arg(long = "permissioned-candidates-addresses")]
+	pub permissioned_candidates_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct VerifyReserveAuthScriptCmd {
+	/// The Cardano block hash assumed to be the latest for this query.
+	///
+	/// Example: --cardano-tip 0x1234abcd...
+	#[arg(short, long)]
+	pub cardano_tip: McBlockHash,
+
+	/// Path to JSON file containing reserve addresses with compiled code.
+	/// Defaults to res/<CFG_PRESET>/reserve-addresses.json
+	#[arg(long = "reserve-addresses")]
+	pub reserve_addresses: Option<std::path::PathBuf>,
+
+	/// Path to JSON file containing the expected authorization policy ID.
+	/// Defaults to res/<CFG_PRESET>/authorization-addresses.json
+	#[arg(long = "authorization-addresses")]
+	pub authorization_addresses: Option<std::path::PathBuf>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -58,7 +372,7 @@ pub enum Subcommand {
 
 	/// Partner chain subcommands (smart contract registration etc.)
 	#[clap(flatten)]
-	PartnerChains(PartnerChainsSubcommand<MidnightRuntime, MidnightAddress>),
+	PartnerChains(PartnerChainsSubcommand<MidnightRuntime>),
 
 	/// Build a chain specification.
 	BuildSpec(sc_cli::BuildSpecCmd),
@@ -68,6 +382,77 @@ pub enum Subcommand {
 
 	/// Generate cNIGHT generates DUST genesis file. This file is an input to chain spec generation, and can be used to validate the correctness of any given chain spec
 	GenerateCNightGenesis(CNightGenesisCmd),
+
+	/// Generate ICS (Illiquid Circulation Supply) genesis file. This queries the ICS forever
+	/// contract on Cardano to determine the total cNIGHT locked, which will be allocated to
+	/// the Midnight treasury at genesis.
+	GenerateIcsGenesis(IcsGenesisCmd),
+
+	/// Generate reserve contract genesis file. This queries the reserve contract on Cardano
+	/// to determine the total cNIGHT locked.
+	GenerateReserveGenesis(ReserveGenesisCmd),
+
+	/// Generate Federed Authority Genesis file.
+	GenerateFederatedAuthorityGenesis(FederatedAuthorityGenesisCmd),
+
+	/// Generate Permissioned Candidates Genesis file. This file contains the initial permissioned candidates observed from the mainchain.
+	GeneratePermissionedCandidatesGenesis(PermissionedCandidatesGenesisCmd),
+
+	/// Generate all genesis config files (cNight, federated authority, and permissioned candidates) in a single command.
+	GenerateGenesisConfig(GenesisConfigCmd),
+
+	/// Verify a genesis state from chain-spec-raw.json. Validates LedgerState properties
+	/// including NIGHT supply invariance, DustState, empty state checks, and LedgerParameters.
+	VerifyLedgerStateGenesis(VerifyLedgerStateGenesisCmd),
+
+	/// Verify that a Cardano block hash is finalized (i.e., has enough confirmations based on
+	/// the security_parameter from pc-chain-config.json).
+	VerifyCardanoTipFinalized(VerifyCardanoTipFinalizedCmd),
+
+	/// Verify that all upgradable contracts (Federated Authority, ICS, Permissioned Candidates,
+	/// Reserve) use the expected authorization script. This runs all four verification commands
+	/// and checks that they all share the same authorization script.
+	VerifyAuthScript(VerifyAuthScriptCmd),
+
+	/// Verify that the federated authority contracts (Council, Technical Committee) use the
+	/// expected authorization script. This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyFederatedAuthorityAuthScript(VerifyFederatedAuthorityAuthScriptCmd),
+
+	/// Verify that the ICS (Illiquid Circulation Supply) validator contract uses the
+	/// expected authorization script. This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyIcsAuthScript(VerifyIcsAuthScriptCmd),
+
+	/// Verify that the permissioned candidates contract uses the expected authorization script.
+	/// This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyPermissionedCandidatesAuthScript(VerifyPermissionedCandidatesAuthScriptCmd),
+
+	/// Verify that the reserve validator contract uses the expected authorization script.
+	/// This checks:
+	/// 1. The compiled_code hash matches the policy_id
+	/// 2. The two_stage_policy_id is embedded in the compiled_code
+	/// 3. The authorization script observed on Cardano matches the expected value
+	VerifyReserveAuthScript(VerifyReserveAuthScriptCmd),
+
+	/// Verify that the genesis remark message in chain-spec-raw.json matches the expected
+	/// message from message-config.json. This checks:
+	/// 1. A System::remark extrinsic exists in genesis_extrinsics
+	/// 2. The remark content matches the expected message
+	VerifyGenesisMessage(VerifyGenesisMessageCmd),
+
+	/// Verify that the genesis timestamp in chain-spec-raw.json matches the expected
+	/// timestamp from cardano-tip.json. This checks:
+	/// 1. A Timestamp::set extrinsic exists in genesis_extrinsics
+	/// 2. The timestamp value matches cardano-tip.json (seconds * 1000 = milliseconds)
+	VerifyGenesisTimestamp(VerifyGenesisTimestampCmd),
 
 	/// Export blocks.
 	ExportBlocks(sc_cli::ExportBlocksCmd),
@@ -143,7 +528,3 @@ impl std::fmt::Display for NotImplementedError {
 	}
 }
 impl core::error::Error for NotImplementedError {}
-
-// TODO: this is used to sign block producer metadata. Do we have a better type for that?
-#[derive(serde::Deserialize, Encode)]
-pub struct MidnightBlockProducerMetadata;

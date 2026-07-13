@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use super::{
-	BuildOutput, CoinInfo, DB, InputInfo, LedgerContext, OfferInfo, OutputInfo, ProofPreimage,
-	Segment, StdRng, Transient, WalletSeed,
+	BuildOutput, BuilderContext, CoinInfo, DB, InputInfo, IntoWalletState, OfferInfo, OutputInfo,
+	ProofPreimage, Segment, StdRng, Transient, WalletSeed,
 };
 use std::sync::Arc;
 
@@ -23,36 +23,32 @@ pub struct TransientInfo<O, D> {
 	pub output: OutputInfo<D>,
 }
 
-pub trait BuildTransient<D: DB + Clone>: Send + Sync {
-	fn build(
-		&self,
-		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
-	) -> Transient<ProofPreimage, D>;
+pub trait BuildTransient<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
+	fn build(&self, rng: &mut StdRng, context: Arc<C>) -> Transient<ProofPreimage, D>;
 }
 
-impl<D: DB + Clone> BuildTransient<D> for TransientInfo<WalletSeed, WalletSeed> {
-	fn build(
-		&self,
-		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
-	) -> Transient<ProofPreimage, D> {
+impl<D: DB + Clone, C: BuilderContext<D>> BuildTransient<D, C>
+	for TransientInfo<WalletSeed, WalletSeed>
+{
+	fn build(&self, rng: &mut StdRng, context: Arc<C>) -> Transient<ProofPreimage, D> {
 		let inputs = vec![];
-		let outputs: Vec<Box<dyn BuildOutput<D>>> = vec![Box::new(self.output)];
+		let outputs: Vec<Box<dyn BuildOutput<D, C>>> = vec![Box::new(self.output.clone())];
 		let transients = vec![];
 
 		let mut offer_arg = OfferInfo { inputs, outputs, transients };
-		let offer = offer_arg.build(rng, context.clone());
+		let offer = offer_arg
+			.build(rng, context.clone())
+			.expect("offer build failed: arithmetic overflow");
 
 		context.with_wallets_from_seeds(
-			self.input.origin,
-			self.output.destination,
+			self.input.origin.clone(),
+			self.output.destination.clone(),
 			|_origin_wallet, destination_wallet| {
 				// Apply offer to `destination` to be able to spend later
 				let secret_keys = &destination_wallet.shielded.secret_keys();
 				let state = &destination_wallet.shielded.state;
 
-				let transient_state = state.apply(secret_keys, &offer);
+				let transient_state = state.apply(secret_keys, &offer).into_wallet_state();
 
 				//---------- Alternative #1
 				let coin_info = CoinInfo::new(rng, self.output.value, self.output.token_type);

@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-toolkit"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2024"
 license-file.workspace = true
 
@@ -11,45 +11,62 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-hardfork-test = []
-hardfork-test-rollback = []
+default = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
+compact-contract-tests = []
 
 [dependencies]
-midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils"] }
+midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
 midnight-node-metadata.workspace = true
+midnight-primitives-ics-observation = { workspace = true, default-features = true }
+midnight-primitives-reserve-observation = { workspace = true, default-features = true }
 subxt.workspace = true
 tokio.workspace = true
 hex = { workspace = true, features = ["std", "serde"] }
+sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-rand.workspace = true
+rand = "0.8.4"
 thiserror.workspace = true
 clap = { workspace = true, features = ["env", "derive"] }
 futures.workspace = true
 indicatif = "0.17.8"
 console = "0.15.8"
 backoff = { version = "0.4.0", features = ["tokio"] }
-log = { workspace = true, features = ["kv"] }
-structured-logger = "1.0.3"
-async-trait = "0.1.87"
+log = { workspace = true, features = ["kv_std"] }
+async-trait = "0.1.89"
 toml.workspace = true
-tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing.workspace = true
+tracing-subscriber.workspace = true
 tempfile.workspace = true
 parity-scale-codec = { workspace = true }
+scale-info.workspace = true
 sp-crypto-hashing.workspace = true
 subxt-signer.workspace = true
 async-channel = "2.5.0"
-num_cpus = "1.17.0"
-redb = "3.1.0"
-bson = { version = "3.1.0", features = ["serde"] }
+redb = "3.1.1"
+postcard = { version = "1.1", features = ["alloc"] }
+serde_bytes = "0.11"
+zstd = "0.13"
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres"] }
+strum.workspace = true
+rayon.workspace = true
+ogmios-client = { workspace = true, features = ["jsonrpsee-client"] }
+whisky.workspace = true
+sidechain-domain.workspace = true
+zeroize.workspace = true
+stacker.workspace = true
+semver.workspace = true
 
 [dev-dependencies]
+assert_matches.workspace = true
 test-case = "3.3.1"
 hex-literal.workspace = true
-trycmd = "0.15.10"
+trycmd = "1.2.0"
+testcontainers.workspace = true
+serde_yaml = "0.9"
+shellexpand = "3"
+test-log.workspace = true
 
 [lints]
 workspace = true

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # This file is part of midnight-node.
-# Copyright (C) 2025 Midnight Foundation
+# Copyright (C) Midnight Foundation
 # SPDX-License-Identifier: Apache-2.0
 # Licensed under the Apache License, Version 2.0 (the "License");
 # You may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ set -euxo pipefail
   --alice \
   --chain=/shared/chain-spec.json \
   --node-key=0000000000000000000000000000000000000000000000000000000000000001 \
+  --public-addr=/dns/midnight-node-1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp \
   --base-path=/data \
   --unsafe-rpc-external \
   --rpc-methods=Unsafe \

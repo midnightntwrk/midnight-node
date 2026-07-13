@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -148,6 +148,7 @@ parameter_types! {
 
 impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type WeightInfo = ();
 }
 
 impl mock_pallet::Config for Test {}
@@ -160,7 +161,11 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: UndeployedNetwork.id().to_string(),
-			genesis_state_key: midnight_node_ledger::get_root(UndeployedNetwork.genesis_state()),
+			genesis_state_key: midnight_node_ledger::ledger_9::storage::get_root(
+				UndeployedNetwork.genesis_state(),
+				Some(UndeployedNetwork.id()),
+			)
+			.unwrap(),
 		},
 	}
 	.build_storage()

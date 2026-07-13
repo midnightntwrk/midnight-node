@@ -1,12 +1,11 @@
 use crate::{
-	ProofType, SignatureType,
-	serde_def::{DeserializedTransactionsWithContext, SourceTransactions},
+	serde_def::SourceTransactions,
 	tx_generator::{
 		TxGenerator, TxGeneratorError, builder::Builder, destination::Destination, source::Source,
 	},
 };
 use clap::Args;
-use midnight_node_ledger_helpers::{ProofMarker, Signature};
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -24,21 +23,21 @@ pub enum GenerateTxsError {
 #[derive(Args)]
 pub struct GenerateTxsArgs {
 	#[clap(subcommand)]
-	builder: Builder,
+	pub builder: Builder,
 	#[command(flatten)]
-	source: Source,
+	pub source: Source,
 	#[command(flatten)]
-	destination: Destination,
+	pub destination: Destination,
 	// Proof Server Host
 	#[arg(long, short, global = true)]
-	proof_server: Option<String>,
+	pub proof_server: Option<String>,
 	/// Dry-run - don't generate any txs, just print out the settings
 	#[arg(long, global = true)]
-	dry_run: bool,
+	pub dry_run: bool,
 }
 
 pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
-	let generator = TxGenerator::<SignatureType, ProofType>::new(
+	let generator = TxGenerator::new(
 		args.source,
 		args.destination,
 		args.builder,
@@ -58,9 +57,9 @@ pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
 }
 
 async fn generate_txs(
-	generator: &TxGenerator<SignatureType, ProofType>,
-	received_txs: SourceTransactions<Signature, ProofMarker>,
-) -> Result<DeserializedTransactionsWithContext<Signature, ProofMarker>, GenerateTxsError> {
+	generator: &TxGenerator,
+	received_txs: SourceTransactions,
+) -> Result<SerializedTxBatches, GenerateTxsError> {
 	generator
 		.build_txs(&received_txs)
 		.await
@@ -68,8 +67,8 @@ async fn generate_txs(
 }
 
 async fn send_txs(
-	generator: &TxGenerator<SignatureType, ProofType>,
-	generated_txs: DeserializedTransactionsWithContext<Signature, ProofMarker>,
+	generator: &TxGenerator,
+	generated_txs: SerializedTxBatches,
 ) -> Result<(), GenerateTxsError> {
 	generator
 		.send_txs(&generated_txs)
@@ -79,20 +78,21 @@ async fn send_txs(
 
 #[cfg(test)]
 mod tests {
-	use std::str::FromStr;
+	use std::{path::Path, str::FromStr};
 
 	use super::*;
 	use crate::{
-		cli_parsers::contract_address_decode,
+		cli_parsers::{SchemeSeed, contract_address_decode},
 		t_token,
 		tx_generator::{
 			builder::{
-				BatchesArgs, ClaimRewardsArgs, ContractCall, ContractCallArgs, ContractDeployArgs,
-				SingleTxArgs,
+				BatchSingleTxArgs, ClaimKindArg, ClaimRewardsArgs, CoinSelectionStrategy,
+				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
 			},
 			source::FetchCacheConfig,
 		},
 	};
+	use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
 	use test_case::test_case;
 
@@ -111,15 +111,19 @@ mod tests {
 				source: Source {
 					src_url: None,
 					fetch_concurrency: 20,
+					fetch_compute_concurrency: None,
 					src_files: Some($src_files.map(resource_file).to_vec()),
 					dust_warp: true,
+					ignore_block_context: false,
+					fetch_only_cached: false,
 					fetch_cache: FetchCacheConfig::InMemory,
+					ledger_state_db: String::new(),
 				},
 				destination: Destination {
 					dest_urls: vec![],
 					rate: 1.0,
 					dest_file: Some("out.tx".to_string()),
-					to_bytes: true,
+					no_watch_progress: false,
 				},
 				proof_server: None,
 				dry_run: false,
@@ -130,12 +134,16 @@ mod tests {
 	// TODO: There should be expected transactions here, not just an OK state.
 	// We also need to define reaonsable errors
 	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
-		shielded_amount: Some(0),
-		shielded_token_type: t_token(),
-		unshielded_amount: Some(100),
-		unshielded_token_type: NIGHT,
-		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
-			.parse().unwrap(),
+		outputs: vec![],
+		shielded_amount: vec![0],
+		shielded_token_type: vec![t_token()],
+		unshielded_amount: vec![100],
+		unshielded_token_type: vec![NIGHT],
+		source_seed: SchemeSeed {
+			seed: "0000000000000000000000000000000000000000000000000000000000000001"
+				.parse().unwrap(),
+			scheme: UnshieldedSignatureScheme::Schnorr,
+		},
 		funding_seed: None,
 		destination_address: vec![
 			WalletAddress::from_str(
@@ -143,7 +151,9 @@ mod tests {
 			)
 			.unwrap(),
 		],
+		input_utxos: vec![],
 		rng_seed: None,
+		coin_selection: CoinSelectionStrategy::LargestFirst,
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"single-tx"
@@ -153,27 +163,16 @@ mod tests {
 		"send-tx"
 	)]
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+		funding_seed: SchemeSeed {
+			seed: "0000000000000000000000000000000000000000000000000000000000000001".parse().unwrap(),
+			scheme: UnshieldedSignatureScheme::Schnorr,
+		},
 		rng_seed:None,
-		amount: 500_000
+		amount: 500_000,
+		claim_kind: ClaimKindArg::Reward
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"claim-rewards-tx"
-	)]
-	#[test_case(test_fixture!(Builder::Batches(BatchesArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-		num_txs_per_batch: 1,
-		num_batches: 1,
-		concurrency: None,
-		rng_seed: None,
-		shielded_token_type: t_token(),
-		coin_amount: 100,
-		initial_unshielded_intent_value: 500_000_000_000_000,
-		unshielded_token_type: NIGHT,
-		enable_shielded: false,
-	}), ["genesis/genesis_block_undeployed.mn"]) =>
-	   matches Ok(..);
-		"batches-tx"
 	)]
 	#[test_case(test_fixture!(Builder::ContractSimple(
 	    ContractCall::Deploy(ContractDeployArgs {
@@ -201,8 +200,25 @@ mod tests {
 	#[tokio::test]
 	async fn test_generation(
 		args: GenerateTxsArgs,
-	) -> Result<DeserializedTransactionsWithContext<Signature, ProofMarker>, GenerateTxsError> {
-		let generator = TxGenerator::<SignatureType, ProofType>::new(
+	) -> Result<SerializedTxBatches, GenerateTxsError> {
+		let is_contract_builder = matches!(args.builder, Builder::ContractSimple(_));
+		if is_contract_builder {
+			let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
+				eprintln!(
+					"Skipping contract tx generation tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR is not set"
+				);
+				return Ok(SerializedTxBatches { batches: vec![] });
+			};
+			if !Path::new(&path).exists() {
+				eprintln!(
+					"Skipping contract tx generation tests: MIDNIGHT_LEDGER_TEST_STATIC_DIR does not exist: {}",
+					path
+				);
+				return Ok(SerializedTxBatches { batches: vec![] });
+			}
+		}
+
+		let generator = TxGenerator::new(
 			args.source,
 			args.destination,
 			args.builder,
@@ -214,5 +230,48 @@ mod tests {
 			generator.get_txs().await.map_err(|e| GenerateTxsError::GetTransactions(e))?;
 
 		super::generate_txs(&generator, received_txs).await
+	}
+
+	#[tokio::test]
+	async fn test_batch_single_tx() {
+		let dir = tempfile::tempdir().unwrap();
+		let transfers_file = dir.path().join("transfers.json");
+
+		let transfers_json = serde_json::json!([{
+			"source_seed": "0000000000000000000000000000000000000000000000000000000000000001",
+			"destination_address": "mn_addr_undeployed13h0e3c2m7rcfem6wvjljnyjmxy5rkg9kkwcldzt73ya5pv7c4p8skzgqwj",
+			"unshielded_amount": 100,
+		}]);
+		std::fs::write(&transfers_file, serde_json::to_string(&transfers_json).unwrap()).unwrap();
+
+		let args = test_fixture!(
+			Builder::BatchSingleTx(BatchSingleTxArgs {
+				transfers: TransferArgs {
+					transfers_file: Some(transfers_file.to_str().unwrap().to_string()),
+					transfers: None,
+				},
+				concurrency: Some(1),
+				coin_selection: CoinSelectionStrategy::LargestFirst,
+			}),
+			["genesis/genesis_block_undeployed.mn"]
+		);
+
+		let generator = TxGenerator::new(
+			args.source,
+			args.destination,
+			args.builder,
+			args.proof_server,
+			args.dry_run,
+		)
+		.await
+		.unwrap();
+
+		let received_txs = generator.get_txs().await.unwrap();
+		let serialized_tx_batches = super::generate_txs(&generator, received_txs).await.unwrap();
+
+		assert!(
+			!serialized_tx_batches.batches.is_empty(),
+			"batch-single-tx should generate one batch"
+		);
 	}
 }

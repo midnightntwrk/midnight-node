@@ -1,5 +1,5 @@
 // This file is part of midnight-node.
-// Copyright (C) 2025 Midnight Foundation
+// Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
 // Licensed under the Apache License, Version 2.0 (the "License");
 // You may not use this file except in compliance with the License.
@@ -13,20 +13,29 @@
 
 extern crate alloc;
 
+mod aura_to_babe_migration_keystore;
+pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
 pub mod cfg;
 pub mod chain_spec;
 pub mod cli;
-pub mod cnight_genesis;
 pub mod command;
+pub mod committee_membership;
 pub mod extensions;
+mod filtering_pool;
+pub mod genesis;
 pub mod inherent_data;
 pub mod main_chain_follower;
+pub mod memory_monitor;
 pub mod metrics_push;
+pub mod openrpc;
 pub mod partner_chains;
 pub mod payload;
+pub mod peer_info_rpc;
+pub mod reference_hardware;
 pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;
+pub mod subscription_bounds;
 mod util;
