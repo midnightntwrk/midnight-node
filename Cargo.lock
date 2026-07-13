@@ -7973,6 +7973,7 @@ dependencies = [
  "sp-api",
  "sp-block-builder",
  "sp-blockchain",
+ "sp-consensus",
  "sp-consensus-aura",
  "sp-consensus-beefy",
  "sp-consensus-grandpa",

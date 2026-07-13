@@ -18,6 +18,8 @@ use crate::backend::{create_database_source, open_paritydb};
 use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
+	batch_block_import::BatchVerifyBlockImport,
+	batch_verify::{BatchVerifier, BatchVerifyMetrics},
 	cfg::midnight_cfg::MidnightCfg,
 	extensions::ExtensionsFactory,
 	inherent_data::{CreateInherentDataConfig, ProposalCIDP, VerifierCIDP},
@@ -372,11 +374,15 @@ pub fn new_partial(
 	let ledger_storage =
 		LedgerStorage { db: ledger_storage_db, cache_size: storage_config.cache_size };
 
+	// Shared handle so the native batch-verification path (below) and the runtime's execution
+	// extensions observe the same ledger metrics and storage.
+	let ledger_metrics = Arc::new(Mutex::new(ledger_metrics));
+
 	client
 		.execution_extensions()
 		.set_extensions_factory(ExtensionsFactory::<Block>::new(
-			Arc::new(Mutex::new(ledger_metrics)),
-			ledger_storage,
+			ledger_metrics.clone(),
+			ledger_storage.clone(),
 		));
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
@@ -425,6 +431,22 @@ pub fn new_partial(
 			ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
 		})?;
 
+	// Batch proof verification for received blocks: wrap ONLY the import-queue block import (the
+	// received-block execution path). `justification_import` and the authoring block import
+	// (`other.0`) stay the raw grandpa import, so this leaves the `MidnightService` alias unchanged
+	// and keeps batch verification off the authored-block path (covered by the mempool ingress).
+	let batch_verifier = BatchVerifier::new(
+		client.clone(),
+		ledger_storage.clone(),
+		ledger_metrics.clone(),
+		BatchVerifyMetrics::new(config.prometheus_registry()),
+	);
+	let batch_block_import = BatchVerifyBlockImport::new(
+		grandpa_block_import.clone(),
+		batch_verifier,
+		midnight_cfg.batch_verify_block_import,
+	);
+
 	let import_queue = partner_chains_aura_import_queue::import_queue::<
 		AuraPair,
 		_,
@@ -434,7 +456,7 @@ pub fn new_partial(
 		_,
 		McHashInherentDigest,
 	>(ImportQueueParams {
-		block_import: grandpa_block_import.clone(),
+		block_import: batch_block_import,
 		justification_import: Some(Box::new(grandpa_block_import.clone())),
 		client: client.clone(),
 		create_inherent_data_providers: VerifierCIDP::new(
