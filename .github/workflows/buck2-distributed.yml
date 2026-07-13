@@ -57,21 +57,23 @@ jobs:
       contents: read
       actions: write # driver publishes its mesh address as a run artifact
     steps:
-      # The driver runs the buck2 daemon + a co-worker + all local_only actions
-      # (build scripts, metadata gen, the final rustc links). On a 2-core / 7 GB
-      # free runner that peaks past RAM near the end of the build and the VM gets
-      # OOM-reclaimed mid-build (exit 143, "runner received a shutdown signal").
-      # 10 GB of swap absorbs the spike. Cheap (~2 s) and driver-only.
-      - name: Add swap
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # The driver holds the whole build's buck-out (tens of GB) plus the rebuck2
+      # CAS store — both default onto the free runner's ~14 GB `/` and overflow it
+      # mid-build, and the VM gets reclaimed (exit 143, "runner received a shutdown
+      # signal" — not a build error). Redirect buck-out via a symlink and the
+      # store via the driver's `store` input to /mnt (~70 GB ephemeral disk). 6 GB
+      # swap on /mnt covers local rustc memory peaks (the driver also co-works).
+      - name: Redirect buck-out + store to /mnt, add swap
         run: |
-          # GitHub runners already have an active /swapfile (~4G), so add ours on
-          # /mnt (the large ~70G ephemeral disk) rather than / (busy + ~14G).
-          sudo fallocate -l 10G /mnt/swapfile
+          sudo mkdir -p /mnt/buck-out /mnt/rebuck2
+          sudo chown "$(id -u):$(id -g)" /mnt/buck-out /mnt/rebuck2
+          ln -s /mnt/buck-out buck-out
+          sudo fallocate -l 6G /mnt/swapfile
           sudo chmod 600 /mnt/swapfile
           sudo mkswap /mnt/swapfile
           sudo swapon /mnt/swapfile
-          free -h
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+          df -h / /mnt; free -h
       - uses: gilescope/install-buck2@79ce03d0602320942c0a39bdf1c754fe19a85703 # latest
       - uses: ./.github/actions/buck2-linux-toolchain
 
@@ -86,6 +88,9 @@ jobs:
           # local_only (they hit the network), and re-exec's local_enabled=False
           # rejects them. Hybrid runs local_only local, the rest via the mesh.
           execution-platforms: root//platforms:re-cache
+          # Keep the CAS store off the free runner's small `/` (see the disk
+          # redirect step above) — it grows to GBs and would overflow it.
+          store: /mnt/rebuck2
           # No cross-run store snapshot: the monolith is multi-GB (2.3 GB seen)
           # and blows the actions-cache budget. Each run is a cold build for now;
           # revisit with sharded-CAS persistence once the build is reliably green.
