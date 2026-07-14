@@ -19,6 +19,7 @@ use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
 	batch_block_import::BatchVerifyBlockImport,
+	batch_chain_api::{BatchVerify, MempoolBatchConfig, MempoolBatcher, MidnightChainApi},
 	batch_verify::{BatchVerifier, BatchVerifyMetrics},
 	cfg::midnight_cfg::MidnightCfg,
 	extensions::ExtensionsFactory,
@@ -35,7 +36,7 @@ use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
-use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
+use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider, UsageProvider};
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
@@ -265,6 +266,36 @@ fn parse_genesis_extrinsic_values(
 		.collect()
 }
 
+/// Reconstructs the transaction-pool [`sc_transaction_pool::Options`] from the CLI pool params,
+/// mirroring `sc_transaction_pool::TransactionPoolOptions::new_with_params` (whose result,
+/// `config.transaction_pool`, is otherwise opaque — it exposes no accessor). This honors
+/// `--pool-limit` / `--pool-kbytes` / `--tx-ban-seconds` for the custom `BasicPool` we build below.
+/// The CLI `--pool-type` is intentionally not applied: batch verification requires the SingleState
+/// pool, so the node always builds `BasicPool` regardless of the configured pool type.
+pub(crate) fn pool_options(
+	pool_limit: usize,
+	pool_kbytes: usize,
+	tx_ban_seconds: Option<u64>,
+	is_dev: bool,
+) -> sc_transaction_pool::Options {
+	let pool_bytes = pool_kbytes.saturating_mul(1024);
+	let mut options = sc_transaction_pool::Options::default();
+	options.ready.count = pool_limit;
+	options.ready.total_bytes = pool_bytes;
+	// The future queue is 1/10th of the ready queue, matching upstream `new_with_params`.
+	options.future.count = pool_limit / 10;
+	options.future.total_bytes = pool_bytes / 10;
+	options.ban_time = match tx_ban_seconds {
+		Some(seconds) => std::time::Duration::from_secs(seconds),
+		None if is_dev => std::time::Duration::from_secs(0),
+		None => std::time::Duration::from_secs(30 * 60),
+	};
+	options
+}
+
+/// Thin wrapper used by subcommands, which build (but never actively use) the pool: default pool
+/// limits are fine here. The running node uses [`new_partial_with_pool_options`] with the
+/// CLI-reconstructed limits.
 #[allow(clippy::result_large_err)]
 pub fn new_partial(
 	config: &Configuration,
@@ -272,6 +303,25 @@ pub fn new_partial(
 	midnight_cfg: MidnightCfg,
 	storage_config: StorageInit,
 	tx_filter_config: TxFilterConfig,
+) -> Result<MidnightService, ServiceError> {
+	new_partial_with_pool_options(
+		config,
+		epoch_config,
+		midnight_cfg,
+		storage_config,
+		tx_filter_config,
+		sc_transaction_pool::Options::default(),
+	)
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn new_partial_with_pool_options(
+	config: &Configuration,
+	epoch_config: MainchainEpochConfig,
+	midnight_cfg: MidnightCfg,
+	storage_config: StorageInit,
+	tx_filter_config: TxFilterConfig,
+	pool_options: sc_transaction_pool::Options,
 ) -> Result<MidnightService, ServiceError> {
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 	let midnight_metrics =
@@ -392,18 +442,64 @@ pub fn new_partial(
 
 	let select_chain = sc_consensus::LongestChain::new(backend.clone());
 
-	let transaction_pool = sc_transaction_pool::Builder::new(
-		task_manager.spawn_essential_handle(),
+	// Batch ZK-proof verification (mempool ingress + block import) shares one `BatchVerifier` and
+	// one metrics set — registering the same Prometheus metrics twice would fail.
+	let batch_verify_metrics = BatchVerifyMetrics::new(config.prometheus_registry());
+	let batch_verifier = BatchVerifier::new(
 		client.clone(),
-		config.role.is_authority().into(),
-	)
-	.with_options(config.transaction_pool.clone())
-	.with_prometheus(config.prometheus_registry())
-	.build();
+		ledger_storage.clone(),
+		ledger_metrics.clone(),
+		batch_verify_metrics.clone(),
+	);
 
+	// Build the transaction pool over the custom `MidnightChainApi`, mirroring
+	// `sc_transaction_pool`'s `SingleStateFullPool::new_full` (`FullChainApi` →
+	// `BasicPool::with_revalidation_type` with `RevalidationType::Full`) but wrapping the chain API
+	// so external Midnight submissions are batch-verified natively. With `batch_verify_mempool` off,
+	// `MidnightChainApi` delegates every call to the inner `FullChainApi`, so the pool behaves
+	// exactly as the stock pool. Pool limits come from `pool_options` (reconstructed from the CLI by
+	// `pool_options()`); the CLI `--pool-type` is not honored — batch verification requires this
+	// SingleState `BasicPool`.
 	let transaction_pool = {
-		let metrics = FilteringMetrics::new(config.prometheus_registry());
-		FilteringTransactionPool::new(tx_filter_config, transaction_pool, client.clone(), metrics)
+		let spawner = task_manager.spawn_essential_handle();
+		let prometheus = config.prometheus_registry();
+		let full_api =
+			Arc::new(sc_transaction_pool::FullChainApi::new(client.clone(), prometheus, &spawner));
+
+		let batcher = if midnight_cfg.batch_verify_mempool {
+			let verifier: Arc<dyn BatchVerify<_>> = Arc::new(batch_verifier.clone());
+			Some(MempoolBatcher::new(
+				&spawner,
+				verifier,
+				MempoolBatchConfig {
+					workers: midnight_cfg.batch_verify_workers,
+					target_batch_size: midnight_cfg.batch_verify_target_batch_size,
+					max_batch_size: midnight_cfg.batch_verify_max_batch_size,
+					max_age: std::time::Duration::from_millis(midnight_cfg.batch_verify_max_age_ms),
+					queue_capacity: midnight_cfg.batch_verify_queue_capacity,
+				},
+				batch_verify_metrics.clone(),
+			))
+		} else {
+			None
+		};
+
+		let midnight_api = Arc::new(MidnightChainApi::new(full_api, batcher));
+		let usage = client.usage_info().chain;
+		let pool = sc_transaction_pool::BasicPool::with_revalidation_type(
+			pool_options,
+			config.role.is_authority().into(),
+			midnight_api,
+			prometheus,
+			sc_transaction_pool::RevalidationType::Full,
+			spawner,
+			usage.best_number,
+			usage.best_hash,
+			usage.finalized_hash,
+		);
+
+		let metrics = FilteringMetrics::new(prometheus);
+		FilteringTransactionPool::new(tx_filter_config, pool, client.clone(), metrics)
 	};
 
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
@@ -435,12 +531,7 @@ pub fn new_partial(
 	// received-block execution path). `justification_import` and the authoring block import
 	// (`other.0`) stay the raw grandpa import, so this leaves the `MidnightService` alias unchanged
 	// and keeps batch verification off the authored-block path (covered by the mempool ingress).
-	let batch_verifier = BatchVerifier::new(
-		client.clone(),
-		ledger_storage.clone(),
-		ledger_metrics.clone(),
-		BatchVerifyMetrics::new(config.prometheus_registry()),
-	);
+	// Reuses the shared `batch_verifier` built above (same metrics registration).
 	let batch_block_import = BatchVerifyBlockImport::new(
 		grandpa_block_import.clone(),
 		batch_verifier,
@@ -509,10 +600,17 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	hwbench: Option<sc_sysinfo::HwBench>,
 	tx_filter_config: TxFilterConfig,
 	max_finality_subscriptions: u32,
+	pool_options: sc_transaction_pool::Options,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
-	let new_partial_components =
-		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
+	let new_partial_components = new_partial_with_pool_options(
+		&config,
+		epoch_config.clone(),
+		midnight_cfg,
+		storage_config,
+		tx_filter_config,
+		pool_options,
+	)?;
 
 	let sc_service::PartialComponents {
 		client,

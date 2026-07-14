@@ -16,6 +16,7 @@ extern crate alloc;
 mod aura_to_babe_migration_keystore;
 pub mod backend;
 pub mod batch_block_import;
+pub mod batch_chain_api;
 pub mod batch_verify;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;

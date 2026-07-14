@@ -93,7 +93,7 @@ impl BatchVerifier {
 	}
 
 	/// Runtime `spec_version` at `at`, via the `Core` runtime API.
-	fn spec_version_at(&self, at: BlockHash) -> Option<u32> {
+	pub fn spec_version_at(&self, at: BlockHash) -> Option<u32> {
 		match self.client.runtime_api().version(at) {
 			Ok(v) => Some(v.spec_version),
 			Err(e) => {
@@ -254,6 +254,12 @@ pub struct BatchVerifyMetrics {
 	txs_total: Option<Counter<U64>>,
 	queue_depth: Option<Gauge<U64>>,
 	queue_rejected_total: Option<Counter<U64>>,
+	/// Batches dispatched by the mempool worker, labelled by dispatch trigger (`k_target`/`tau`).
+	dispatch_reason: Option<CounterVec<U64>>,
+	/// Wall-clock time of a single aggregate batch-verification call (seconds).
+	batch_duration: Option<Histogram>,
+	/// Mempool batches that fell back to per-transaction runtime validation (unavailable).
+	fallback_total: Option<Counter<U64>>,
 }
 
 const OUTCOME_SUCCESS: &str = "success";
@@ -313,8 +319,46 @@ impl BatchVerifyMetrics {
 			)
 			.unwrap()
 		});
+		let dispatch_reason = {
+			let opts = Opts::new(
+				"midnight_batch_verify_dispatch_reason_total",
+				"Mempool batches dispatched, by trigger (k_target or tau)",
+			);
+			registry.map(|r| register(CounterVec::new(opts, &["trigger"]).unwrap(), r).unwrap())
+		};
+		let batch_duration = registry.map(|r| {
+			register(
+				Histogram::with_opts(HistogramOpts::new(
+					"midnight_batch_verify_duration_seconds",
+					"Wall-clock time of a single aggregate batch-verification call",
+				))
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
+		let fallback_total = registry.map(|r| {
+			register(
+				Counter::new(
+					"midnight_batch_verify_fallback_total",
+					"Mempool batches that fell back to per-transaction runtime validation",
+				)
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
 		let _ = OUTCOMES;
-		Self { batch_size, batches_total, txs_total, queue_depth, queue_rejected_total }
+		Self {
+			batch_size,
+			batches_total,
+			txs_total,
+			queue_depth,
+			queue_rejected_total,
+			dispatch_reason,
+			batch_duration,
+			fallback_total,
+		}
 	}
 
 	/// Records a completed batch verification call.
@@ -341,6 +385,27 @@ impl BatchVerifyMetrics {
 	/// Increments the count of submissions shed due to a full queue.
 	pub fn inc_queue_rejected(&self) {
 		if let Some(c) = &self.queue_rejected_total {
+			c.inc();
+		}
+	}
+
+	/// Records that a mempool batch was dispatched, labelled by its trigger (`k_target`/`tau`).
+	pub fn observe_dispatch(&self, trigger: &str) {
+		if let Some(c) = &self.dispatch_reason {
+			let _ = c.get_metric_with_label_values(&[trigger]).map(|m| m.inc());
+		}
+	}
+
+	/// Records the wall-clock duration (seconds) of one aggregate batch-verification call.
+	pub fn observe_batch_duration(&self, secs: f64) {
+		if let Some(h) = &self.batch_duration {
+			h.observe(secs);
+		}
+	}
+
+	/// Increments the count of mempool batches that fell back to per-transaction runtime validation.
+	pub fn inc_fallback(&self) {
+		if let Some(c) = &self.fallback_total {
 			c.inc();
 		}
 	}

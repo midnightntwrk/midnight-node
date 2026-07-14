@@ -66,6 +66,7 @@ use {
 	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
+		semantics::TransactionContext,
 		structure::{
 			CNightGeneratesDustActionType, CNightGeneratesDustEvent, ClaimKind, ContractAction,
 			MaintenanceUpdate, OutputInstructionUnshielded, ProofMarker, SignatureKind,
@@ -204,6 +205,64 @@ pub fn get_proof_result(tx_hash: &WrappedHash) -> Option<bool> {
 #[cfg(feature = "std")]
 pub fn proof_verification_cache_size() -> u64 {
 	PROOF_VERIFICATION_CACHE.entry_count()
+}
+
+/// Single-transaction crypto verifier run by the isolation fallback: returns `true` when the
+/// transaction's proofs verify on their own (a batch of one).
+#[cfg(feature = "std")]
+type IsolateVerifyFn<'a> = Box<dyn FnOnce() -> bool + 'a>;
+
+/// Cache-warming step run for a transaction whose proofs verified during isolation; returns the
+/// per-transaction validation result (the guaranteed-execution dry-run outcome).
+#[cfg(feature = "std")]
+type IsolateWarmFn<'a> = Box<dyn FnOnce() -> Result<(), LedgerApiError> + 'a>;
+
+/// One transaction's contribution to the isolation fallback, in input order.
+///
+/// The `verify`/`warm` closures are the testability seam: production builds them over the real
+/// ledger crypto (`batch_verify_proofs` of a single tx) and cache-warming (`warm_verified_tx`),
+/// while tests supply trivial stubs so the isolation/caching control-flow can be exercised without
+/// real crypto or ledger state.
+#[cfg(feature = "std")]
+enum FallbackItem<'a> {
+	/// Deserialization or the non-crypto `well_formed` checks already failed; error passes through.
+	Failed(LedgerApiError),
+	/// Passed the non-crypto checks; `verify` isolates the proof and `warm` warms the caches.
+	Ready { key: Hash, verify: IsolateVerifyFn<'a>, warm: IsolateWarmFn<'a> },
+}
+
+/// Isolates the offending transaction(s) after an aggregate batch verification failed.
+///
+/// Runs each ready transaction's single-tx `verify`; on success warms the caches via `warm` (which
+/// records `PROOF_VERIFICATION_CACHE = true`), on failure records `PROOF_VERIFICATION_CACHE = false`
+/// so downstream `get_verified_transaction` rejects the known-bad transaction. Returns one result
+/// per input transaction, in order.
+#[cfg(feature = "std")]
+fn isolate_fallback_results(items: Vec<FallbackItem<'_>>) -> Vec<Result<(), LedgerApiError>> {
+	let mut results = Vec::with_capacity(items.len());
+	for item in items {
+		match item {
+			FallbackItem::Failed(e) => results.push(Err(e)),
+			FallbackItem::Ready { key, verify, warm } => {
+				if verify() {
+					// Proof verified individually: warm the caches (warm records the `true` result).
+					results.push(warm());
+				} else {
+					// The isolated offender: cache `false` so downstream consumers reject it.
+					insert_proof_result(&WrappedHash(key), false);
+					log::warn!(
+						target: LOG_TARGET,
+						"batch: isolated invalid proof for {}",
+						hex::encode(key),
+					);
+					results.push(Err(LedgerApiError::Transaction(
+						types::TransactionError::Invalid(types::InvalidError::UnknownError),
+					)));
+				}
+			},
+		}
+	}
+	results
 }
 
 #[cfg(feature = "std")]
@@ -812,13 +871,44 @@ where
 
 		if !batch_ok {
 			if isolate_on_failure {
-				// Mempool-only fallback: verify each transaction individually to isolate the
-				// offender, caching `false` for the bad one and `true` for the good ones so
-				// downstream consumers can trust the cache. This is the sole remaining `todo!()`;
-				// mempool batch verification stays gated off until it lands (a bad proof in a
-				// public mempool would otherwise reach this panic).
-				let _ = (&ledger, &ctx, state_hash, &preps);
-				todo!("mempool batch-failure fallback: per-transaction isolation of the bad proof")
+				// Mempool fallback: the aggregate check over the whole batch failed, so ≥1 tx
+				// carries a bad proof. Verify each ready tx's proofs individually to isolate the
+				// offender(s), caching `false` for the bad one(s) and warming the caches for the
+				// good ones, so downstream consumers can trust the cache. O(n) individual
+				// verifications, incurred only on the rare bad-batch path.
+				let ledger_ref = &ledger;
+				let ctx_ref = &ctx;
+				let items: Vec<FallbackItem> = preps
+					.into_iter()
+					.map(|prep| match prep {
+						Prep::Failed(e) => FallbackItem::Failed(e),
+						Prep::Ready { key, tx, verified_tx } => {
+							let key_hash = key.0;
+							FallbackItem::Ready {
+								key: key_hash,
+								// A batch of one *is* an individual verify, and reuses the v9-only
+								// crypto already isolated in the `batch_verify` module.
+								verify: Box::new(move || {
+									super::batch_verify::batch_verify_proofs(
+										&[&tx.0],
+										&ctx_ref.ref_state,
+									)
+									.is_ok()
+								}),
+								warm: Box::new(move || {
+									Self::warm_verified_tx(
+										ledger_ref,
+										ctx_ref,
+										state_hash,
+										key,
+										verified_tx,
+									)
+								}),
+							}
+						},
+					})
+					.collect();
+				return Ok(isolate_fallback_results(items));
 			} else {
 				log::warn!(
 					target: LOG_TARGET,
@@ -836,34 +926,14 @@ where
 		for prep in preps {
 			match prep {
 				Prep::Failed(e) => results.push(Err(e)),
-				Prep::Ready { key, tx, verified_tx } => {
-					insert_proof_result(&key, true);
-
-					let strict_key = StrictTxValidationKey { state_hash, tx_hash: key.0 };
-					STRICT_TX_VALIDATION_CACHE.insert(strict_key, Arc::new(verified_tx.clone()));
-
-					// Dry-run the guaranteed segment against the batch's reference state.
-					match super::guaranteed_validation::validate_guaranteed_execution(
-						&ledger.state,
-						verified_tx,
+				Prep::Ready { key, verified_tx, .. } => {
+					results.push(Self::warm_verified_tx(
+						&ledger,
 						&ctx,
-					) {
-						Ok(()) => {
-							SOFT_TX_VALIDATION_CACHE
-								.insert(SoftTxValidationKey { tx_hash: key.0 }, Ok(()));
-							results.push(Ok(()));
-						},
-						Err(reason) => {
-							log::warn!(
-								target: LOG_TARGET,
-								"batch: guaranteed execution would fail for {}: {reason:?}",
-								hex::encode(tx.hash()),
-							);
-							results.push(Err(LedgerApiError::Transaction(
-								types::TransactionError::Invalid(reason.into()),
-							)));
-						},
-					}
+						state_hash,
+						key,
+						verified_tx,
+					));
 				},
 			}
 		}
@@ -876,6 +946,50 @@ where
 		);
 
 		Ok(results)
+	}
+
+	/// Warms the process-global caches for a transaction whose proofs have been verified (either by
+	/// the aggregate batch check or, on the fallback path, individually).
+	///
+	/// Records `PROOF_VERIFICATION_CACHE = true`, inserts the `VerifiedTransaction` into the STRICT
+	/// cache, dry-runs the guaranteed segment against the batch's reference state, and on success
+	/// inserts the SOFT-cache entry. Returns the per-transaction validation result: `Ok(())` when
+	/// the guaranteed dry-run passes, otherwise the `Invalid` error it would fail with. Shared by
+	/// the aggregate-success loop and the isolation fallback's good-transaction branch.
+	fn warm_verified_tx(
+		ledger: &Sp<Ledger<D>, D>,
+		ctx: &TransactionContext<D>,
+		state_hash: Hash,
+		key: WrappedHash,
+		verified_tx: VerifiedTransaction<D>,
+	) -> Result<(), LedgerApiError>
+	where
+		VerifiedTransaction<D>: Send + Sync + 'static,
+	{
+		insert_proof_result(&key, true);
+
+		let strict_key = StrictTxValidationKey { state_hash, tx_hash: key.0 };
+		STRICT_TX_VALIDATION_CACHE.insert(strict_key, Arc::new(verified_tx.clone()));
+
+		// Dry-run the guaranteed segment against the batch's reference state.
+		match super::guaranteed_validation::validate_guaranteed_execution(
+			&ledger.state,
+			verified_tx,
+			ctx,
+		) {
+			Ok(()) => {
+				SOFT_TX_VALIDATION_CACHE.insert(SoftTxValidationKey { tx_hash: key.0 }, Ok(()));
+				Ok(())
+			},
+			Err(reason) => {
+				log::warn!(
+					target: LOG_TARGET,
+					"batch: guaranteed execution would fail for {}: {reason:?}",
+					hex::encode(key.0),
+				);
+				Err(LedgerApiError::Transaction(types::TransactionError::Invalid(reason.into())))
+			},
+		}
 	}
 
 	pub fn get_decoded_transaction(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {
@@ -1475,6 +1589,71 @@ mod tests {
 	use super::*;
 	use base_crypto_local::cost_model::FixedPoint;
 	use coin_structure_local::coin::{ShieldedTokenType, UnshieldedTokenType};
+
+	#[test]
+	fn fallback_isolates_bad_proof_and_caches_outcomes() {
+		// Distinct keys so the shared process-global proof cache doesn't collide with other tests.
+		let good_ok = [0xD1u8; 32]; // proof verifies, guaranteed dry-run passes
+		let bad = [0xD2u8; 32]; // proof fails to verify
+		let good_gexec_fail = [0xD3u8; 32]; // proof verifies, guaranteed dry-run fails
+
+		// All start absent.
+		for k in [good_ok, bad, good_gexec_fail] {
+			assert_eq!(get_proof_result(&WrappedHash(k)), None, "key must start absent");
+		}
+
+		let invalid = || {
+			LedgerApiError::Transaction(types::TransactionError::Invalid(
+				types::InvalidError::UnknownError,
+			))
+		};
+
+		let items = vec![
+			// Verified proof, warm succeeds → Ok(()). Stub `warm` records the `true` cache entry
+			// (mirroring the real `warm_verified_tx`).
+			FallbackItem::Ready {
+				key: good_ok,
+				verify: Box::new(|| true),
+				warm: Box::new(move || {
+					insert_proof_result(&WrappedHash(good_ok), true);
+					Ok(())
+				}),
+			},
+			// Bad proof: `verify` fails, so `warm` must never run and the helper caches `false`.
+			FallbackItem::Ready {
+				key: bad,
+				verify: Box::new(|| false),
+				warm: Box::new(|| unreachable!("warm must not run for an isolated bad proof")),
+			},
+			// Verified proof but the guaranteed dry-run would fail → Err, cache still `true`.
+			FallbackItem::Ready {
+				key: good_gexec_fail,
+				verify: Box::new(|| true),
+				warm: Box::new(move || {
+					insert_proof_result(&WrappedHash(good_gexec_fail), true);
+					Err(invalid())
+				}),
+			},
+			// A prep-time failure passes through unchanged and writes no cache entry.
+			FallbackItem::Failed(LedgerApiError::NoLedgerState),
+		];
+
+		let results = isolate_fallback_results(items);
+
+		assert_eq!(results.len(), 4);
+		assert!(results[0].is_ok(), "verified + gexec-ok tx must be Ok");
+		assert!(results[1].is_err(), "isolated bad proof must be Err");
+		assert!(results[2].is_err(), "verified but gexec-fail tx must be Err");
+		assert!(
+			matches!(results[3], Err(LedgerApiError::NoLedgerState)),
+			"prep-failure must pass through unchanged"
+		);
+
+		// Per-tx proof-cache outcomes: good txs cached `true`, the isolated one cached `false`.
+		assert_eq!(get_proof_result(&WrappedHash(good_ok)), Some(true));
+		assert_eq!(get_proof_result(&WrappedHash(bad)), Some(false));
+		assert_eq!(get_proof_result(&WrappedHash(good_gexec_fail)), Some(true));
+	}
 
 	#[test]
 	fn proof_verification_cache_roundtrip() {
