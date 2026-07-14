@@ -58,3 +58,11 @@ genesis-wallets-devnet-e2e NODE_IMAGE TOOLKIT_IMAGE:
 indexer-api-e2e:
   @scripts/tests/indexer-api-e2e.sh
   @echo "✅ Indexer GraphQL API E2E test completed successfully."
+
+# Prime a proof-heavy chain and archive it for the batch-verify block-import benchmark (run once)
+batch-verify-perf-prime NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/batch-verify-perf/prime.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+
+# A/B benchmark block-import batch verification (off vs on) against the primed archive
+batch-verify-perf-bench NODE_IMAGE:
+  @scripts/tests/batch-verify-perf/benchmark.sh {{NODE_IMAGE}}
