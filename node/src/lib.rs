@@ -19,7 +19,6 @@ pub mod backend;
 pub mod benchmarking;
 pub mod cfg;
 pub mod chain_spec;
-
 pub mod cli;
 pub mod command;
 pub mod committee_membership;
