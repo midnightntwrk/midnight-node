@@ -27,7 +27,6 @@ export const requiredImageVars = [
   "YACI_STORE_IMAGE",
   "YACI_VIEWER_IMAGE",
   "ARCHITECTURE",
-  "ARCH",
 ];
 
 export const LOCAL_ENV_FILE_PATH = "../../.env.default";
@@ -92,16 +91,4 @@ export function loadEnvDefault(): Record<string, string> {
 
   const parsed = dotenv.parse(fs.readFileSync(envPath));
   return parsed;
-}
-
-/**
- * Derive ARCH (amd64/arm64) from ARCHITECTURE (linux/<arch>) when it isn't set
- * explicitly. .envrc exports both, but callers that set only ARCHITECTURE — e.g.
- * CI — still need ARCH for the arch-specific busybox mount in the local-env
- * compose file (configurations/busybox.${ARCH}).
- */
-export function ensureArch(env: Record<string, string>): void {
-  if (!env.ARCH && env.ARCHITECTURE) {
-    env.ARCH = env.ARCHITECTURE.replace(/^linux\//, "");
-  }
 }

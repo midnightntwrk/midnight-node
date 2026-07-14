@@ -1,8 +1,25 @@
 services:
+  busybox-init:
+    # The Cardano images lack sed/awk/grep, which the cardano-node and
+    # mint-cnight-supply entrypoints need. Copy an arch-matching busybox into the
+    # shared volume once at startup; using the multi-arch busybox image lets Docker
+    # fetch the right arch automatically, so no per-arch binaries are vendored.
+    container_name: busybox-init
+    image: busybox:1.35.0-uclibc
+    platform: ${ARCHITECTURE}
+    command: ["sh", "-c", "cp /bin/busybox /shared/busybox && chmod 0755 /shared/busybox"]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - shared-volume:/shared
+
   cardano-node-1:
     container_name: cardano-node-1
     image: ${CARDANO_IMAGE}
     platform: ${ARCHITECTURE}
+    depends_on:
+      busybox-init:
+        condition: service_completed_successfully
     healthcheck:
       test: "test -e /data/node.socket"
       interval: 20s
@@ -12,7 +29,6 @@ services:
     volumes:
       - cardano-node-1-data:/data
       - shared-volume:/shared
-      - ./configurations/busybox.${ARCH}:/busybox
       - ./configurations/cardano/entrypoint.sh:/entrypoint.sh
       - ./configurations/cardano/topology-pool1.json:/shared/node-1-topology.json
       - ./configurations/cardano/keys/cold.skey:/keys/cold.skey
@@ -94,7 +110,6 @@ services:
       - shared-volume:/shared
       - kupo-data:/data
       - cardano-node-1-data:/node-ipc
-      - ./configurations/busybox.${ARCH}:/busybox
     ports:
       - "${KUPO_PORT}:${KUPO_PORT}"
 
@@ -118,7 +133,6 @@ services:
       - shared-volume:/shared
       - ogmios-data:/data
       - cardano-node-1-data:/node-ipc
-      - ./configurations/busybox.${ARCH}:/busybox
     ports:
       - "${OGMIOS_PORT}:${OGMIOS_PORT}"
     healthcheck:
@@ -147,7 +161,6 @@ services:
       - shared-volume:/shared
       - db-sync-state-dir:/var/lib
       - cardano-node-1-data:/node-ipc
-      - ./configurations/busybox.${ARCH}:/busybox
       - ./configurations/db-sync/entrypoint.sh:/entrypoint.sh
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     command: >
@@ -527,8 +540,8 @@ services:
       - no-new-privileges:true
     volumes:
       - cardano-node-1-data:/data
+      - shared-volume:/shared
       - ./runtime-values:/runtime-values
-      - ./configurations/busybox.${ARCH}:/busybox
       - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
       - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
       - ./configurations/mint-cnight-supply/mint-cnight-supply.sh:/mint-cnight-supply.sh

@@ -22,7 +22,6 @@ import {
   getLocalEnvSecretVars,
   loadEnvDefault,
   requiredImageVars,
-  ensureArch,
 } from "../lib/localEnv";
 
 export async function stop(network: string, runOptions: RunOptions) {
@@ -80,8 +79,6 @@ function stopLocalEnvironment(runOptions: RunOptions) {
     ...localEnvSecretVars,
     ...cleanEnv(process.env),
   };
-
-  ensureArch(finalEnv);
 
   const missing = requiredImageVars.filter((key) => !finalEnv[key]);
   if (missing.length > 0) {
