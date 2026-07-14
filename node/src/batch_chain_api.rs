@@ -299,10 +299,10 @@ fn process_batch<Block: BlockT>(
 		let runtime_version = verifier.runtime_version(at);
 		let txs: Vec<Vec<u8>> = items.iter().map(|i| i.tx_bytes.clone()).collect();
 
-		let start = Instant::now();
+		// Duration is recorded inside `BatchVerifier::batch_verify` (which `verify` delegates to),
+		// so it is captured here for the mempool and equally on the block-import path.
 		let outcome =
 			verifier.verify(at, txs, /* isolate_on_failure */ true, MEMPOOL_TBLOCK_EXTRA_SECS);
-		metrics.observe_batch_duration(start.elapsed().as_secs_f64());
 
 		match outcome {
 			Ok(results) => {

@@ -205,6 +205,10 @@ impl BatchVerifier {
 		let tx_count = txs.len();
 		let mut ext = self.build_externalities();
 
+		// Time the aggregate crypto call itself (not the node-side state setup above). Recording
+		// here covers BOTH ingress paths, since the mempool's `BatchVerify::verify` delegates to
+		// this method and block import calls it directly.
+		let start = std::time::Instant::now();
 		let result = midnight_node_ledger::host_api::ledger_9::batch_verify_transactions(
 			&mut ext,
 			&state_key,
@@ -213,6 +217,7 @@ impl BatchVerifier {
 			spec_version,
 			isolate_on_failure,
 		);
+		self.metrics.observe_batch_duration(start.elapsed().as_secs_f64());
 
 		match result {
 			Ok(results) => {
