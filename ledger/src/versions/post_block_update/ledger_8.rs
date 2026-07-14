@@ -11,43 +11,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Ledger-8 post-block-update prevalidation.
+//! Ledger-8 post-block-update prevalidation after each transaction.
 //!
-//! Not supported on ledger 8; validation runs only at end-of-block `post_block_update`.
+//! Uses ledger 8's `LedgerState::prevalidate_post_block_update` to reject
+//! transactions that would fail end-of-block processing before they are applied.
 
 #![cfg(feature = "std")]
 
 use super::{
 	base_crypto_local::{
-		cost_model::{FixedPoint, NormalizedCost},
+		cost_model::{FixedPoint, NormalizedCost, SyntheticCost},
 		time::Timestamp,
 	},
-	common::types::LedgerApiError,
+	common::{LOG_TARGET, types::LedgerApiError},
+	helpers_local::compute_overall_fullness,
 	ledger_storage_local::db::DB,
-	mn_ledger_local::structure::LedgerState,
+	mn_ledger_local::{error::BlockLimitExceeded, structure::LedgerState},
 };
 
 pub fn prevalidate_post_block_update<D: DB>(
-	_state: &LedgerState<D>,
-	_block_fullness: &super::base_crypto_local::cost_model::SyntheticCost,
-	_block_limits: &super::base_crypto_local::cost_model::SyntheticCost,
-	_context: &str,
+	state: &LedgerState<D>,
+	block_fullness: &SyntheticCost,
+	block_limits: &SyntheticCost,
+	context: &str,
 ) -> Result<(), LedgerApiError> {
-	Ok(())
+	let normalized_fullness = (*block_fullness).normalize(*block_limits).ok_or_else(|| {
+		log::warn!(
+			target: LOG_TARGET,
+			"Ledger block limit exceeded in {context}: fullness={block_fullness:?}, limits={block_limits:?}"
+		);
+		LedgerApiError::BlockLimitExceededError
+	})?;
+	let overall_fullness = compute_overall_fullness(&normalized_fullness);
+	state
+		.prevalidate_post_block_update(normalized_fullness, overall_fullness)
+		.map_err(|_err: BlockLimitExceeded| LedgerApiError::BlockLimitExceededError)
 }
 
-/// Applies the end-of-block ledger update. Ledger 8 exposes only the fallible combined
-/// `post_block_update`; the caller has already clamped fullness to the block limits, so its
-/// internal limit check cannot fail here.
+/// Applies the end-of-block ledger update. Infallible on ledger 8: the only fallible step (the
+/// block-limit check) is factored out into [`prevalidate_post_block_update`], which runs after
+/// every transaction. The caller must pass fullness that has already been clamped to the block
+/// limits (see `clamp_and_normalize`).
 pub fn apply_post_block_update<D: DB>(
 	state: &LedgerState<D>,
 	tblock: Timestamp,
 	detailed_block_fullness: NormalizedCost,
 	overall_block_fullness: FixedPoint,
 ) -> LedgerState<D> {
-	state
-		.post_block_update(tblock, detailed_block_fullness, overall_block_fullness)
-		.unwrap_or_else(|_| {
-			panic!("apply_post_block_update: post_block_update failed despite clamped fullness")
-		})
+	state.apply_post_block_update(tblock, detailed_block_fullness, overall_block_fullness)
 }
