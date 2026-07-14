@@ -20,6 +20,7 @@ import {
   getLocalEnvSecretVars,
   loadEnvDefault,
   requiredImageVars,
+  ensureArch,
 } from "../lib/localEnv";
 import { assertWellKnownNamespace, RunOptions } from "../lib/types";
 import { runDockerCompose } from "../lib/docker";
@@ -221,6 +222,8 @@ async function runLocalEnvironment(runOptions: RunOptions) {
     ...env,
     ...cleanEnv(process.env),
   };
+
+  ensureArch(env);
 
   const missing = requiredImageVars.filter((key) => !env[key]);
   if (missing.length > 0) {
