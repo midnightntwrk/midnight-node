@@ -397,14 +397,9 @@ impl pallet_aura::Config for Runtime {
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }
 
-parameter_types! {
-	pub const EpochDuration: u64 = SLOTS_PER_EPOCH as u64;
-	pub const ExpectedBlockTime: u64 = SLOT_DURATION;
-}
-
 impl pallet_babe::Config for Runtime {
-	type EpochDuration = EpochDuration;
-	type ExpectedBlockTime = ExpectedBlockTime;
+	type EpochDuration = SidechainEpochDuration;
+	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
 	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
 	type DisabledValidators = ();
 	// TODO: Issue #1863
@@ -414,6 +409,15 @@ impl pallet_babe::Config for Runtime {
 	// Equivocation reporting is disabled, matching GRANDPA/BEEFY.
 	type KeyOwnerProof = sp_core::Void;
 	type EquivocationReportSystem = ();
+}
+
+/// BABE uses epoch lenght defined by pallet sidechain
+pub struct SidechainEpochDuration;
+
+impl Get<u64> for SidechainEpochDuration {
+	fn get() -> u64 {
+		Sidechain::slots_per_epoch().0.into()
+	}
 }
 
 pallet_partner_chains_session::impl_pallet_session_config!(Runtime);
@@ -1434,7 +1438,7 @@ impl_runtime_apis! {
 			let epoch_config = Babe::epoch_config().unwrap_or(BABE_GENESIS_EPOCH_CONFIG);
 			sp_consensus_babe::BabeConfiguration {
 				slot_duration: Babe::slot_duration(),
-				epoch_length: EpochDuration::get(),
+				epoch_length: SidechainEpochDuration::get(),
 				c: epoch_config.c,
 				authorities: Babe::authorities().to_vec(),
 				randomness: Babe::randomness(),
