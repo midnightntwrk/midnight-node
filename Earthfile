@@ -22,20 +22,9 @@ VERSION 0.8
 # daemon topology, at no cost (same-arch builds still share the cache).
 ARG --global CACHE_KEY=local
 
-# Enable the `kache` content-addressed rustc build cache (https://github.com/kunobi-ninja/kache).
-# It is installed and wired up as RUSTC_WRAPPER in `+prep-no-copy` (inherited by every
-# Rust-compiling target) and backed by a single shared `kache` CACHE mount those targets
-# declare. One id (not per-flavor) is safe and maximizes reuse: kache is content-addressed
-# (keys include normalized rustc flags), so check/debug/release entries coexist without
-# collision and identical host compiles — proc-macros, build scripts, identically-flagged
-# deps — are served across flavors instead of rebuilt. (Unlike `/target` above, which MUST
-# be scoped because cargo's fingerprints leak across branches.)
-# Set `--USE_KACHE=false` to build with a plain rustc and no wrapper.
-ARG --global USE_KACHE=true
-
-# Hermetic production build. When true, +build declares no CACHE mounts, bypasses kache
-# (RUSTC_WRAPPER unset), and compiles with --no-cache, so release artifacts are built from
-# scratch with nothing served from any cache. Defaults false (fast, fully-cached dev/CI builds).
+# Hermetic production build. When true, +build declares no CACHE mounts and compiles with
+# --no-cache, so release artifacts are built from scratch with nothing served from any cache.
+# Defaults false (fast, fully-cached dev/CI builds).
 # The main workflow sets --PROD=true when building pushed release images.
 ARG --global PROD=false
 
@@ -170,14 +159,13 @@ build-node-only:
     FROM +build-prepare
     ARG TARGETARCH
     # Same cache wiring as +build. This target builds a strict subset (-p midnight-node) of
-    # +build's --workspace, so sharing the cargo registry/git, the kache store, and the
-    # per-branch /target lets the two reuse each other's compiled artifacts. /target uses
-    # Earthly's default `locked` sharing: concurrent builds on the same CACHE_KEY serialize
-    # rather than clobber each other, and different branches get a different CACHE_KEY (see top
-    # of file) so they never share /target at all.
+    # +build's --workspace, so sharing the cargo registry/git and the per-branch /target
+    # lets the two reuse each other's compiled artifacts. /target uses Earthly's default
+    # `locked` sharing: concurrent builds on the same CACHE_KEY serialize rather than
+    # clobber each other, and different branches get a different CACHE_KEY (see top of
+    # file) so they never share /target at all.
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    CACHE --sharing shared --id kache /kache
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
@@ -234,10 +222,6 @@ rebuild-sqlx:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
-    # across all flavors — content-addressed keys isolate profiles, so sharing only
-    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
-    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -833,47 +817,6 @@ prep-no-copy:
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
 
-    # kache: content-addressed rustc build cache (https://github.com/kunobi-ninja/kache).
-    # Installed here so every target that `FROM +prep-no-copy` (incl. +prep, +build-prepare,
-    # +check-rust-prepare) inherits the wrapper. Keyed on actual compile inputs, so it shares
-    # compiled artifacts across the per-CACHE_KEY scoped `/target` dirs and across Earthly runs
-    # via the per-variant `kache-*` CACHE mounts the compile targets declare. Local-only (no S3),
-    # and KACHE_FALLBACK makes any kache error transparently fall back to plain rustc, so a kache
-    # problem can never break the build. Static-musl binary -> works in any Linux base image.
-    # renovate: datasource=github-releases packageName=kunobi-ninja/kache
-    ARG KACHE_VERSION=0.9.0
-    IF [ "$USE_KACHE" = "true" ]
-        RUN ARCH=$(uname -m) && \
-            BASE="https://github.com/kunobi-ninja/kache/releases/download/v${KACHE_VERSION}" && \
-            ASSET="kache-${ARCH}-unknown-linux-musl.tar.gz" && \
-            curl -fsSL "${BASE}/${ASSET}" -o /tmp/kache.tar.gz && \
-            curl -fsSL "${BASE}/${ASSET}.sha256" -o /tmp/kache.sha256 && \
-            echo "$(awk '{print $1}' /tmp/kache.sha256)  /tmp/kache.tar.gz" | sha256sum -c - && \
-            tar -xzf /tmp/kache.tar.gz -C /usr/local/bin kache && \
-            rm -f /tmp/kache.tar.gz /tmp/kache.sha256 && \
-            kache --version
-        ENV RUSTC_WRAPPER=kache
-        ENV KACHE_CACHE_DIR=/kache
-        ENV KACHE_LOCAL_ONLY=1
-        ENV KACHE_FALLBACK=1
-
-        # Make cargo-auditable compatible with kache as RUSTC_WRAPPER.
-        # `cargo auditable build` injects itself as RUSTC_WORKSPACE_WRAPPER (set to
-        # `current_exe()`), so cargo invokes the chain `kache <workspace-wrapper> <rustc> …`.
-        # kache only switches into its rustc-wrapper path when the wrapped binary's basename
-        # is rustc-family (`rustc*`/`clippy-driver`; see RustcCompiler::recognizes) — a plain
-        # `cargo-auditable` basename falls through to clap and dies with
-        # "unrecognized subcommand '/…/cargo-auditable'". Rename the real binary to a
-        # rustc-prefixed name (so RUSTC_WORKSPACE_WRAPPER resolves to `…/rustc-auditable`,
-        # which kache recognises and runs in its double-wrapper mode) and keep a
-        # `cargo-auditable` symlink so the `cargo auditable` subcommand is still found on PATH.
-        # cargo-auditable picks its mode from argv[1]/CARGO_AUDITABLE_ORIG_ARGS, not its own
-        # name, so the rename is transparent to it.
-        RUN ca="$(command -v cargo-auditable)" && dir="$(dirname "$ca")" && \
-            mv "$ca" "$dir/rustc-auditable" && \
-            ln -s rustc-auditable "$dir/cargo-auditable"
-    END
-
 prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
@@ -1063,10 +1006,6 @@ planner:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
-    # across all flavors — content-addressed keys isolate profiles, so sharing only
-    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
-    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1079,10 +1018,6 @@ check-rust-prepare:
     # COPY +planner/recipe.json /recipe.json
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
-    # across all flavors — content-addressed keys isolate profiles, so sharing only
-    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
-    CACHE --sharing shared --id kache /kache
 
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
@@ -1091,10 +1026,6 @@ check-rust:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
-    # across all flavors — content-addressed keys isolate profiles, so sharing only
-    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
-    CACHE --sharing shared --id kache /kache
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -1116,10 +1047,6 @@ check-feature-unification:
     FROM +check-rust-prepare
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
-    # across all flavors — content-addressed keys isolate profiles, so sharing only
-    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
-    CACHE --sharing shared --id kache /kache
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -1158,10 +1085,6 @@ test:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
-    # across all flavors — content-addressed keys isolate profiles, so sharing only
-    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
-    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1215,10 +1138,6 @@ test-pallet-fixtures:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
-    # across all flavors — content-addressed keys isolate profiles, so sharing only
-    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
-    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1247,10 +1166,6 @@ build-test-toolkit:
     FROM +prep
     CACHE --sharing shared --id cargo-git /usr/local/cargo/git
     CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    # Shared kache store (see USE_KACHE, top of file): persists across runs. One id
-    # across all flavors — content-addressed keys isolate profiles, so sharing only
-    # adds hits (proc-macros, build scripts, identical deps), never wrong ones.
-    CACHE --sharing shared --id kache /kache
     # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
     ARG TARGETARCH
     CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
@@ -1383,14 +1298,12 @@ build:
     FROM +build-prepare
     ARG TARGETARCH
     # Caching is gated on PROD (see top of file). Dev/CI builds (PROD=false) mount cargo
-    # registry/git, the content-addressed kache store, and a per-branch-scoped /target dir so
-    # cargo's incremental fingerprinting can skip unchanged crates across runs (kache still backs
-    # the compile units it does have to rebuild). A PROD=true release build declares none of them,
+    # registry/git and a per-branch-scoped /target dir so cargo's incremental fingerprinting
+    # can skip unchanged crates across runs. A PROD=true release build declares none of them,
     # so it compiles from scratch with nothing served from any cache.
     IF [ "$PROD" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        CACHE --sharing shared --id kache /kache
         # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
         CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
@@ -1410,9 +1323,9 @@ build:
 
     # Default build (no hardfork)
     IF [ "$PROD" = "true" ]
-        # Hermetic release build: bypass the kache RUSTC_WRAPPER and force a full recompile
-        # (--no-cache) so nothing is reused from Earthly's layer cache either.
-        RUN --no-cache RUSTC_WRAPPER= cargo auditable build --workspace --locked --release
+        # Hermetic release build: force a full recompile (--no-cache) so nothing is
+        # reused from Earthly's layer cache either.
+        RUN --no-cache cargo auditable build --workspace --locked --release
     ELSE
         RUN \
             cargo auditable build --workspace --locked --release
@@ -1430,8 +1343,6 @@ build:
 
 build-benchmarks:
     FROM +build-prepare
-    # Shared kache store (see USE_KACHE, top of file); one id across all flavors.
-    CACHE --sharing shared --id kache /kache
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
