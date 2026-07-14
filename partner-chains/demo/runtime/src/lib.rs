@@ -886,9 +886,7 @@ impl_runtime_apis! {
 			SessionCommitteeManagement::current_committee_storage().as_pair()
 		}
 		fn get_next_committee() -> Option<(ScEpochNumber, Vec<CommitteeMember<CrossChainPublic, SessionKeys>>)> {
-			// The committee becoming active at the next rotation is the queued one; NextCommittee
-			// is selected but not yet handed to pallet_session.
-			Some(SessionCommitteeManagement::queued_committee_storage().as_pair())
+			SessionCommitteeManagement::next_committee_storage()?.as_pair()
 		}
 		fn get_next_unset_epoch_number() -> sidechain_domain::ScEpochNumber {
 			SessionCommitteeManagement::get_next_unset_epoch_number()

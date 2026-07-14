@@ -154,9 +154,10 @@ sp_api::decl_runtime_apis! {
 		#[changed_in(2)]
 		/// Returns next committee
 		fn get_next_committee() -> Option<(ScEpochNumber, sp_std::vec::Vec<CommitteeMember::AuthorityId>)>;
-		/// Returns the committee that will become active at the next session rotation, i.e. the
-		/// validator set queued in the session machinery. The epoch number is the epoch the
-		/// committee was selected for.
+		/// Returns the committee selected by the inherent for the upcoming epoch. The epoch
+		/// number is the epoch the committee was selected for. This matches the pre-v2 API
+		/// contract; the committee queued in `pallet_session` is tracked separately in
+		/// [`QueuedCommittee`] storage.
 		fn get_next_committee() -> Option<(ScEpochNumber, sp_std::vec::Vec<CommitteeMember>)>;
 
 		#[changed_in(2)]
