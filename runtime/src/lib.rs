@@ -373,6 +373,8 @@ impl frame_system::Config for Runtime {
 	type SingleBlockMigrations = (
 		// Needed if chain is upgradeing from before PC 1.6
 		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
+		// Initializes the ActiveCommittee storage added in v2
+		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -1699,7 +1701,9 @@ impl_runtime_apis! {
 			SessionCommitteeManagement::current_committee_storage().as_pair()
 		}
 		fn get_next_committee() -> Option<(ScEpochNumber, sidechain_domain::Vec<authority_selection_inherents::CommitteeMember<CrossChainPublic, opaque::SessionKeys>>)>  {
-			Some(SessionCommitteeManagement::next_committee_storage()?.as_pair())
+			// The committee becoming active at the next rotation is the queued one; NextCommittee
+			// is selected but not yet handed to pallet_session.
+			Some(SessionCommitteeManagement::queued_committee_storage().as_pair())
 		}
 		fn get_next_unset_epoch_number() -> sidechain_domain::ScEpochNumber {
 			SessionCommitteeManagement::get_next_unset_epoch_number()

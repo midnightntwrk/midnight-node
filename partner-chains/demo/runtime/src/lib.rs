@@ -282,8 +282,10 @@ impl frame_system::Config for Runtime {
 	type OnSetCode = ();
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
-	type SingleBlockMigrations =
-		(pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,);
+	type SingleBlockMigrations = (
+		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
+		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
+	);
 	type MultiBlockMigrator = ();
 	type PreInherents = ();
 	type PostInherents = ();
@@ -884,7 +886,9 @@ impl_runtime_apis! {
 			SessionCommitteeManagement::current_committee_storage().as_pair()
 		}
 		fn get_next_committee() -> Option<(ScEpochNumber, Vec<CommitteeMember<CrossChainPublic, SessionKeys>>)> {
-			Some(SessionCommitteeManagement::next_committee_storage()?.as_pair())
+			// The committee becoming active at the next rotation is the queued one; NextCommittee
+			// is selected but not yet handed to pallet_session.
+			Some(SessionCommitteeManagement::queued_committee_storage().as_pair())
 		}
 		fn get_next_unset_epoch_number() -> sidechain_domain::ScEpochNumber {
 			SessionCommitteeManagement::get_next_unset_epoch_number()

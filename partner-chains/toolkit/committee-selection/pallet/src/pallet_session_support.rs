@@ -1,6 +1,11 @@
 //! Implements [pallet_session::SessionManager] and [pallet_session::ShouldEndSession] for [crate::Pallet].
 //!
-//! This implementation has lag of one additional PC epoch when applying committees to sessions.
+//! This implementation has lag of one additional PC epoch when applying committees to sessions:
+//! stock `pallet_session` only applies a validator set returned from `SessionManager::new_session`
+//! at the *following* rotation. To keep the on-chain view accurate, a rotation moves
+//! [crate::NextCommittee] (selected) to [crate::QueuedCommittee] (handed to `pallet_session`,
+//! pending application) and promotes the previously queued committee to [crate::CurrentCommittee]
+//! (the effective validator set of the session that just started).
 //!
 //! To use it, wire [crate::Pallet] in runtime configuration of [`pallet_session`], and enable
 //! `pallet_session`'s `historical` feature with the runtime implementing
@@ -115,9 +120,11 @@ where
 {
 	fn should_end_session(n: BlockNumberFor<T>) -> bool {
 		let current_epoch_number = T::current_epoch_number();
-		let current_committee_epoch = crate::Pallet::<T>::current_committee_storage().epoch;
+		// The queued committee is the most recently rotated one, so its epoch determines
+		// whether a rotation is due for the current epoch.
+		let queued_committee_epoch = crate::Pallet::<T>::queued_committee_storage().epoch;
 		let next_committee_is_defined = crate::Pallet::<T>::next_committee().is_some();
-		if current_epoch_number > current_committee_epoch {
+		if current_epoch_number > queued_committee_epoch {
 			if next_committee_is_defined {
 				info!("Session manager: should_end_session({n:?}) = true");
 				true
@@ -136,7 +143,7 @@ where
 #[cfg(test)]
 mod tests {
 	use crate::{
-		CommitteeInfo, CurrentCommittee, NextCommittee,
+		CommitteeInfo, NextCommittee, QueuedCommittee,
 		mock::{mock_pallet::CurrentEpoch, *},
 		tests::increment_epoch,
 	};
@@ -148,17 +155,17 @@ mod tests {
 
 	#[test]
 	fn should_end_session_if_last_one_ended_late_and_new_committee_is_defined() {
-		let current_committee_epoch = 100;
-		let current_committee = ids_and_keys_fn(&[ALICE]);
+		let queued_committee_epoch = 100;
+		let queued_committee = ids_and_keys_fn(&[ALICE]);
 		let next_committee_epoch = 102;
 		let next_committee = ids_and_keys_fn(&[BOB]);
 
 		new_test_ext().execute_with(|| {
-			CurrentCommittee::<Test>::put(CommitteeInfo {
-				epoch: current_committee_epoch,
-				committee: current_committee,
+			QueuedCommittee::<Test>::put(CommitteeInfo {
+				epoch: queued_committee_epoch,
+				committee: queued_committee,
 			});
-			CurrentEpoch::<Test>::set(current_committee_epoch + 2);
+			CurrentEpoch::<Test>::set(queued_committee_epoch + 2);
 			assert!(!Manager::should_end_session(IRRELEVANT));
 			NextCommittee::<Test>::put(CommitteeInfo {
 				epoch: next_committee_epoch,
@@ -209,16 +216,33 @@ mod tests {
 	fn ends_one_session_per_epoch_and_applies_committee_next_session() {
 		new_test_ext().execute_with(|| {
 			assert_eq!(Session::current_index(), 0);
+			// At genesis the current and the queued committee coincide.
 			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 0);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, 0);
 			increment_epoch();
 			set_validators_directly(&[CHARLIE, DAVE], 1).unwrap();
 
 			// Single session ends at the epoch boundary: the committee is rotated and queued,
 			// but stock pallet_session only applies a queued validator-set from the next session,
-			// so CHARLIE and DAVE are not active yet (one-epoch application lag).
+			// so CHARLIE and DAVE are not active yet (one-epoch application lag). The current
+			// committee keeps tracking the validator set actually applied by pallet_session.
 			advance_one_block();
 			assert_eq!(Session::current_index(), 1);
 			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, 1);
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().committee,
+				ids_and_keys_fn(&[CHARLIE, DAVE])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			// The current committee's epoch is stamped with the epoch it serves in.
 			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 1);
 
 			// No additional session is forced within the epoch: the committee is not applied faster.
@@ -226,16 +250,25 @@ mod tests {
 				advance_one_block();
 				assert_eq!(Session::current_index(), 1);
 				assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
-				assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 1);
+				assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, 1);
+				assert_eq!(
+					SessionCommitteeManagement::current_committee_storage().committee,
+					ids_and_keys_fn(&[ALICE, BOB])
+				);
 			}
 
 			// Only the next epoch change ends another session, which applies the committee
-			// queued at the previous boundary.
+			// queued at the previous boundary. The current committee follows.
 			increment_epoch();
 			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
 			advance_one_block();
 			assert_eq!(Session::current_index(), 2);
 			assert_eq!(Session::validators(), vec![CHARLIE.authority_id, DAVE.authority_id]);
+			assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, 2);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[CHARLIE, DAVE])
+			);
 			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 2);
 		});
 	}

@@ -46,5 +46,22 @@
 //! part of the same runtime upgrade. The only requirement for the new type
 //! `T::CommitteeMember` is to implement the trait `From<(T::AuthorityId, T::AuthorityKeys)>`.
 
+//! ## V2
+//!
+//! ### Changes
+//!
+//! This version adds the `QueuedCommittee` storage. Stock `pallet_session` applies a validator
+//! set provided at rotation only one session later, so a rotation now moves `NextCommittee`
+//! (selected) to `QueuedCommittee` (queued in `pallet_session`) and promotes the previously
+//! queued committee to `CurrentCommittee`. `CurrentCommittee` thereby keeps its original
+//! meaning: the committee whose keys form the effective validator set of the current session.
+//!
+//! ### Migration from V1
+//!
+//! Migration logic is provided by the `migrations::v2::V1ToV2Migration` migration. It
+//! initializes `QueuedCommittee` with the value of `CurrentCommittee`, which under the v1
+//! session integration was both the active and the queued validator set.
+
 pub mod v0;
 pub mod v1;
+pub mod v2;

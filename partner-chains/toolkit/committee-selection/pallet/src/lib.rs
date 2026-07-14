@@ -55,7 +55,7 @@ pub mod pallet {
 	use sp_std::fmt::Display;
 	use sp_std::{ops::Add, vec::Vec};
 
-	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 	#[pallet::pallet]
 	#[pallet::storage_version(STORAGE_VERSION)]
@@ -155,6 +155,13 @@ pub mod pallet {
 		}
 	}
 
+	/// The committee whose keys form the effective validator set of the current session, i.e.
+	/// the committee actively producing blocks.
+	///
+	/// Its `epoch` field is the epoch in which the committee became active (stamped at
+	/// promotion from [`QueuedCommittee`]). Because stock `pallet_session` applies a validator
+	/// set provided at rotation only one session later (see [`crate::pallet_session_support`]),
+	/// this is one epoch after the epoch the committee was selected for.
 	#[pallet::storage]
 	pub type CurrentCommittee<T: Config> = StorageValue<
 		_,
@@ -162,6 +169,21 @@ pub mod pallet {
 		ValueQuery,
 	>;
 
+	/// The most recently rotated committee, queued in the session machinery. It becomes the
+	/// effective validator set — and is promoted to [`CurrentCommittee`] — at the next session
+	/// rotation.
+	///
+	/// This is the anchor of the selection pipeline: the inherent selects [`NextCommittee`] for
+	/// the epoch following this committee's epoch.
+	#[pallet::storage]
+	pub type QueuedCommittee<T: Config> = StorageValue<
+		_,
+		CommitteeInfo<T::ScEpochNumber, T::CommitteeMember, T::MaxValidators>,
+		ValueQuery,
+	>;
+
+	/// The committee selected by the inherent for the upcoming epoch. It is moved to
+	/// [`QueuedCommittee`] at the next session rotation.
 	#[pallet::storage]
 	pub type NextCommittee<T: Config> = StorageValue<
 		_,
@@ -197,7 +219,10 @@ pub mod pallet {
 			provide_committee_accounts::<T>(&initial_authorities);
 			let committee_info =
 				CommitteeInfo { epoch: T::ScEpochNumber::zero(), committee: initial_authorities };
-			CurrentCommittee::<T>::put(committee_info);
+			CurrentCommittee::<T>::put(committee_info.clone());
+			// The genesis committee is both the active and the queued validator set of the
+			// session machinery until the first rotation.
+			QueuedCommittee::<T>::put(committee_info);
 			MainChainScriptsConfiguration::<T>::put(self.main_chain_scripts.clone());
 		}
 	}
@@ -212,10 +237,14 @@ pub mod pallet {
 		// Note: If chain is started during handover phase, it will wait until new epoch to produce the first block.
 		fn on_initialize(block_nr: BlockNumberFor<T>) -> Weight {
 			if block_nr.is_one() {
+				let epoch = T::current_epoch_number();
 				CurrentCommittee::<T>::mutate(|committee| {
-					committee.epoch = T::current_epoch_number();
+					committee.epoch = epoch;
 				});
-				T::DbWeight::get().reads_writes(2, 1)
+				QueuedCommittee::<T>::mutate(|committee| {
+					committee.epoch = epoch;
+				});
+				T::DbWeight::get().reads_writes(3, 2)
 			} else {
 				Weight::zero()
 			}
@@ -233,7 +262,7 @@ pub mod pallet {
 			if NextCommittee::<T>::exists() {
 				None
 			} else {
-				let for_epoch_number = CurrentCommittee::<T>::get().epoch + One::one();
+				let for_epoch_number = QueuedCommittee::<T>::get().epoch + One::one();
 				let (authority_selection_inputs, selection_inputs_hash) =
 					Self::inherent_data_to_authority_selection_inputs(data);
 				if let Some(validators) =
@@ -241,12 +270,12 @@ pub mod pallet {
 				{
 					Some(Call::set { validators, for_epoch_number, selection_inputs_hash })
 				} else {
-					let current_committee = CurrentCommittee::<T>::get();
-					let current_committee_epoch = current_committee.epoch;
+					let queued_committee = QueuedCommittee::<T>::get();
+					let queued_committee_epoch = queued_committee.epoch;
 					warn!(
-						"Committee for epoch {for_epoch_number} is the same as for epoch {current_committee_epoch}"
+						"Committee for epoch {for_epoch_number} is the same as for epoch {queued_committee_epoch}"
 					);
-					let validators = current_committee.committee;
+					let validators = queued_committee.committee;
 					Some(Call::set { validators, for_epoch_number, selection_inputs_hash })
 				}
 			}
@@ -271,7 +300,7 @@ pub mod pallet {
 						// This is code is executed before the committee rotation, so the NextCommittee should be used.
 						let committee_info = NextCommittee::<T>::get()
 							// Needed only for verification of the block no 1, before any `set` call is executed.
-							.unwrap_or_else(CurrentCommittee::<T>::get);
+							.unwrap_or_else(QueuedCommittee::<T>::get);
 						committee_info.committee
 					});
 
@@ -323,7 +352,7 @@ pub mod pallet {
 			selection_inputs_hash: SizedByteString<32>,
 		) -> DispatchResult {
 			ensure_none(origin)?;
-			let expected_epoch_number = CurrentCommittee::<T>::get().epoch + One::one();
+			let expected_epoch_number = QueuedCommittee::<T>::get().epoch + One::one();
 			ensure!(for_epoch_number == expected_epoch_number, Error::<T>::InvalidEpoch);
 			ensure!(!NextCommittee::<T>::exists(), Error::<T>::NextCommitteeAlreadySet);
 			let len = validators.len();
@@ -365,10 +394,13 @@ pub mod pallet {
 		pub fn get_next_unset_epoch_number() -> T::ScEpochNumber {
 			NextCommittee::<T>::get()
 				.map(|next_committee| next_committee.epoch + One::one())
-				.unwrap_or(CurrentCommittee::<T>::get().epoch + One::one())
+				.unwrap_or(QueuedCommittee::<T>::get().epoch + One::one())
 		}
 
 		/// Returns current committee member for an index, repeating them in a round-robin fashion if needed.
+		///
+		/// The index refers to the committee whose keys form the effective validator set of the
+		/// current session, so it is consistent with e.g. the AURA authority index.
 		pub fn get_current_authority_round_robin(index: usize) -> Option<T::CommitteeMember> {
 			let committee = CurrentCommittee::<T>::get().committee;
 			if committee.is_empty() {
@@ -378,10 +410,17 @@ pub mod pallet {
 			committee.get(index % committee.len() as usize).cloned()
 		}
 
-		/// Returns current committee from storage.
+		/// Returns current committee from storage. See [`CurrentCommittee`].
 		pub fn current_committee_storage()
 		-> CommitteeInfo<T::ScEpochNumber, T::CommitteeMember, T::MaxValidators> {
 			CurrentCommittee::<T>::get()
+		}
+
+		/// Returns the queued committee from storage, i.e. the committee that becomes active at
+		/// the next session rotation. See [`QueuedCommittee`].
+		pub fn queued_committee_storage()
+		-> CommitteeInfo<T::ScEpochNumber, T::CommitteeMember, T::MaxValidators> {
+			QueuedCommittee::<T>::get()
 		}
 
 		/// Returns next committee from storage.
@@ -423,12 +462,19 @@ pub mod pallet {
 			T::select_authorities(authority_selection_inputs, sidechain_epoch).map(|c| c.to_vec())
 		}
 
-		/// If [NextCommittee] is defined, it moves its value to [CurrentCommittee] storage.
-		/// Returns the value taken from [NextCommittee].
+		/// Rotates the committees one step: [QueuedCommittee] — whose keys the session machinery
+		/// applies as the effective validator set at this rotation — is promoted to
+		/// [CurrentCommittee] with its epoch stamped to the epoch it starts serving in, and, if
+		/// [NextCommittee] is defined, its value is moved to [QueuedCommittee]. Returns the value
+		/// taken from [NextCommittee].
 		pub fn rotate_committee_to_next_epoch() -> Option<Vec<T::CommitteeMember>> {
+			let mut promoted = QueuedCommittee::<T>::get();
+			promoted.epoch = T::current_epoch_number();
+			CurrentCommittee::<T>::put(promoted);
+
 			let next_committee = NextCommittee::<T>::take()?;
 
-			CurrentCommittee::<T>::put(next_committee.clone());
+			QueuedCommittee::<T>::put(next_committee.clone());
 
 			let validators = next_committee.committee.to_vec();
 			let len = validators.len();

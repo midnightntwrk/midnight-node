@@ -242,13 +242,21 @@ mod committee_rotation_tests {
 			// rotate the committee
 			assert_eq!(rotate_committee(), Some(vec![ALICE.authority_id]));
 
-			// verify that the committee storage is set
+			// the rotated committee is queued (the session machinery applies it one session
+			// later), while the current committee is the previously queued one
 			assert_eq!(
-				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				SessionCommitteeManagement::queued_committee_storage().committee.clone(),
 				ids_and_keys_fn(&[ALICE])
 			);
-
-			// verify that the committee epoch is advanced
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().epoch,
+				current_epoch_number()
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			// the promoted committee's epoch is stamped with the epoch it starts serving in
 			assert_eq!(
 				SessionCommitteeManagement::current_committee_storage().epoch,
 				current_epoch_number()
@@ -256,6 +264,19 @@ mod committee_rotation_tests {
 
 			// verify that the next committee is not set
 			assert_eq!(SessionCommitteeManagement::next_committee(), None);
+
+			// the next rotation promotes the queued committee to the current one
+			set_validators_through_inherents(&[BOB]);
+			increment_epoch();
+			assert_eq!(rotate_committee(), Some(vec![BOB.authority_id]));
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().epoch,
+				current_epoch_number()
+			);
 		});
 	}
 
@@ -300,10 +321,11 @@ mod committee_rotation_tests {
 				current_epoch - 2
 			);
 
-			// the first block after 3 epochs rotates to the next committee (Alice)
+			// the first block after 3 epochs rotates to the next committee (Alice), which is
+			// queued for application at the following session
 			assert_eq!(rotate_committee(), Some(vec![ALICE.authority_id]));
 			assert_eq!(
-				SessionCommitteeManagement::current_committee_storage().epoch,
+				SessionCommitteeManagement::queued_committee_storage().epoch,
 				current_epoch - 2
 			);
 
@@ -315,8 +337,18 @@ mod committee_rotation_tests {
 			);
 			assert_eq!(rotate_committee(), Some(vec![CHARLIE.authority_id]));
 			assert_eq!(
-				SessionCommitteeManagement::current_committee_storage().epoch,
+				SessionCommitteeManagement::queued_committee_storage().epoch,
 				current_epoch - 1
+			);
+			// Alice, promoted from the queue, is now the current committee, stamped with the
+			// epoch it starts serving in (the catch-up happens within the current epoch)
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().epoch,
+				current_epoch
 			);
 
 			// in the third block the committee rotates to Dave
@@ -326,6 +358,12 @@ mod committee_rotation_tests {
 				current_epoch
 			);
 			assert_eq!(rotate_committee(), Some(vec![DAVE.authority_id]));
+			assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, current_epoch);
+			// Charlie, promoted from the queue, serves in the same (current) epoch
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[CHARLIE])
+			);
 			assert_eq!(
 				SessionCommitteeManagement::current_committee_storage().epoch,
 				current_epoch
@@ -389,6 +427,16 @@ fn get_authority_round_robin_works() {
 			SessionCommitteeManagement::get_current_authority_round_robin(2),
 			Some(ALICE.ids_and_keys())
 		);
+		// A rotation queues the new committee; the current committee — the one the session
+		// machinery keeps active for this session — is unchanged.
+		assert!(rotate_committee().is_some());
+		assert_eq!(
+			SessionCommitteeManagement::get_current_authority_round_robin(0),
+			Some(ALICE.ids_and_keys())
+		);
+		// A second rotation promotes the queued committee to the current one.
+		set_validators_through_inherents(&[BOB]);
+		increment_epoch();
 		assert!(rotate_committee().is_some());
 		assert_eq!(
 			SessionCommitteeManagement::get_current_authority_round_robin(0),

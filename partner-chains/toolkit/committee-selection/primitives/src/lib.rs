@@ -146,13 +146,17 @@ sp_api::decl_runtime_apis! {
 		#[changed_in(2)]
 		/// Returns current committee
 		fn get_current_committee() -> (ScEpochNumber, sp_std::vec::Vec<CommitteeMember::AuthorityId>);
-		/// Returns current committee
+		/// Returns the committee whose keys form the effective validator set of the current
+		/// session, i.e. the committee actively producing blocks. The epoch number is the
+		/// epoch in which the committee became active.
 		fn get_current_committee() -> (ScEpochNumber, sp_std::vec::Vec<CommitteeMember>);
 
 		#[changed_in(2)]
 		/// Returns next committee
 		fn get_next_committee() -> Option<(ScEpochNumber, sp_std::vec::Vec<CommitteeMember::AuthorityId>)>;
-		/// Returns next committee
+		/// Returns the committee that will become active at the next session rotation, i.e. the
+		/// validator set queued in the session machinery. The epoch number is the epoch the
+		/// committee was selected for.
 		fn get_next_committee() -> Option<(ScEpochNumber, sp_std::vec::Vec<CommitteeMember>)>;
 
 		#[changed_in(2)]
