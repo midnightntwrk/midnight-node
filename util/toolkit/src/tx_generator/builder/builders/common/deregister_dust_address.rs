@@ -17,7 +17,7 @@ use super::ledger_helpers_local::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB,
 	DustRegistrationBuilder, FromContext, IntentInfo, NIGHT, ProofProvider, Segment,
 	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
-	UtxoSpendInfo, Wallet,
+	UtxoSpendInfo, WalletSeed,
 };
 use async_trait::async_trait;
 
@@ -41,9 +41,9 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 pub struct DeregisterDustAddressBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
-	seed: String,
+	seed: WalletSeed,
 	rng_seed: Option<[u8; 32]>,
-	funding_seed: String,
+	funding_seed: WalletSeed,
 }
 
 impl<C: BuilderContext<DefaultDB>> DeregisterDustAddressBuilder<C> {
@@ -52,12 +52,18 @@ impl<C: BuilderContext<DefaultDB>> DeregisterDustAddressBuilder<C> {
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		use super::type_convert::convert_wallet_seed;
+
+		// Only the seed values are stored; their schemes are applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (wallet_seed, _) = args.wallet_seed.resolve();
+		let (funding_seed, _) = args.funding_seed.resolve();
 		Self {
 			context,
 			prover,
-			seed: args.wallet_seed,
+			seed: convert_wallet_seed(wallet_seed),
 			rng_seed: args.rng_seed,
-			funding_seed: args.funding_seed,
+			funding_seed: convert_wallet_seed(funding_seed),
 		}
 	}
 }
@@ -72,8 +78,8 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> 
 	) -> Result<SerializedTxBatches, Self::Error> {
 		let spin = Spin::new("building deregister dust address transaction...");
 
-		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
-		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
+		let seed = self.seed.clone();
+		let funding_seed = self.funding_seed.clone();
 
 		let context = self.context.clone();
 
@@ -140,7 +146,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> 
 		// Deregistration: pass dust_address: None instead of Some(dust_address)
 		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			tx_info.add_dust_registration(DustRegistrationBuilder {
-				signing_key: wallet.unshielded.signing_key().clone(),
+				wallet: wallet.unshielded.clone(),
 				dust_address: None,
 				allow_fee_payment: 0,
 			});

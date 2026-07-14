@@ -1,5 +1,5 @@
 {
-  "name": "@midnight-ntwrk/node-toolkit-compact-0.30",
+  "name": "@midnight-ntwrk/node-toolkit-compact-0.30.0",
   "version": "0.1.0",
   "license": "Apache-2.0",
   "description": "Interface gateway between Rust `midnight-node-toolkit` and TS `@midnight-ntwrk` packages",
