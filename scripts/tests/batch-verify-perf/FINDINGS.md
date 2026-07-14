@@ -71,6 +71,24 @@ midnight_batch_verify_fallback_total                   0    (always 0 on a synce
      counter — so block-import skip-rate is still not observable via metrics. Use
      `txs_total` vs the chain's proof-tx count as the coverage signal.
 
+4. **Per-midnight-tx crypto metrics (new — the fix for the OFF-side gap).**
+   `midnight_batch_verify_duration_seconds` only records on the ON path, so it
+   has nothing to diff against. The ledger now records the ZK crypto on **both**
+   paths at transaction granularity, via `ledger_proof_verify_duration_seconds` /
+   `ledger_proof_verify_txs_total` (label `mode`), in `LedgerMetrics`:
+   - `mode="inline"` — per-tx `well_formed` **with proofs** in
+     `get_verified_transaction` (the OFF/cold-cache path).
+   - `mode="batch"` — the aggregate `batch_verify_proofs` call (ON crypto).
+   - `mode="batch_prep"` — per-tx `well_formed` **without proofs** on the batch
+     path (the non-crypto work both paths pay).
+   Both families land in the same registry (the batch-path externalities and the
+   runtime execution path share one `LedgerMetricsExt`). `benchmark.sh` scrapes
+   them from both runs and reports per-tx `full-verify` and `crypto-only`
+   speedups (per-tx = `_sum / _txs_total`). This sidesteps the wall-clock noise
+   floor: even when the sync-time delta is 0 within noise, the crypto delta is
+   measured directly. The OFF verification path is unchanged — the inline
+   `well_formed` is only wrapped in a timer.
+
 ## The DUST-output ceiling (verified)
 
 `batch-single-tx` builds every spec against one static snapshot with no coin/DUST

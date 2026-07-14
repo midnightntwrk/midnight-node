@@ -463,7 +463,8 @@ where
 
 		// Use cached VerifiedTransaction if available
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
-		let verified_tx = Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key)?;
+		let (verified_tx, inline_proof_verify) =
+			Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key)?;
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Building tx context (elapsed_ms={})",
@@ -621,6 +622,11 @@ where
 
 			metrics.observe_txs_processing_time(elapsed_time, tx_type);
 			metrics.observe_txs_size(tx_size as f64, tx_type);
+			// Records the OFF-path per-tx baseline only when this call actually ran the ZK crypto
+			// inline (cold proof cache); a batch-warmed or strict-cache hit yields `None`.
+			if let Some(pv) = inline_proof_verify {
+				metrics.observe_inline_proof_verify(pv.as_secs_f64());
+			}
 		}
 		log::trace!(
 			target: LOG_TARGET,
@@ -797,7 +803,7 @@ where
 	/// Returns one `Result<(), LedgerApiError>` per input transaction (in order); the outer `Err`
 	/// signals a batch-wide failure (setup error, or a fail-fast aggregate failure).
 	pub fn batch_verify_transactions(
-		externalities: &mut dyn Externalities,
+		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
 		txs_serialized: &[Vec<u8>],
 		block_context: BlockContext,
@@ -831,6 +837,11 @@ where
 			Ready { key: WrappedHash, tx: Transaction<S, D>, verified_tx: VerifiedTransaction<D> },
 		}
 
+		// Accumulate the per-tx non-crypto `well_formed` time (proofs deferred). Reported below as
+		// `mode="batch_prep"` so the ON path's crypto cost can be compared against the inline path's
+		// fused `well_formed`-with-proofs cost on equal terms.
+		let mut prep_elapsed = std::time::Duration::ZERO;
+		let mut prep_count: u64 = 0;
 		let mut preps: Vec<Prep<S, D>> = Vec::with_capacity(txs_serialized.len());
 		for tx_serialized in txs_serialized {
 			let tx = match api.tagged_deserialize::<Transaction<S, D>>(tx_serialized) {
@@ -847,7 +858,11 @@ where
 			strictness.verify_contract_proofs = false;
 			strictness.verify_native_proofs = false;
 
-			match tx.0.well_formed(&ctx.ref_state, strictness, ctx.block_context.tblock) {
+			let wf_start = Instant::now();
+			let wf_result = tx.0.well_formed(&ctx.ref_state, strictness, ctx.block_context.tblock);
+			prep_elapsed += wf_start.elapsed();
+			prep_count += 1;
+			match wf_result {
 				Ok(verified_tx) => preps.push(Prep::Ready { key, tx, verified_tx }),
 				Err(e) => {
 					log::warn!(target: LOG_TARGET, "batch: transaction malformed: {e}");
@@ -867,7 +882,21 @@ where
 			})
 			.collect();
 
+		// Time only the aggregate crypto (`mode="batch"`); `ready_txs.len()` normalizes it per-tx.
+		let crypto_start = Instant::now();
 		let batch_ok = super::batch_verify::batch_verify_proofs(&ready_txs, &ctx.ref_state).is_ok();
+		let crypto_elapsed = crypto_start.elapsed();
+		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
+			// Skip a batch with no ready txs (all malformed): it does no crypto, so recording a
+			// zero sample would only dilute the per-tx average.
+			if !ready_txs.is_empty() {
+				metrics
+					.observe_batch_proof_verify(crypto_elapsed.as_secs_f64(), ready_txs.len() as u64);
+			}
+			if prep_count > 0 {
+				metrics.observe_batch_prep_verify(prep_elapsed.as_secs_f64(), prep_count);
+			}
+		}
 
 		if !batch_ok {
 			if isolate_on_failure {
@@ -1258,12 +1287,17 @@ where
 	/// - Checks the strict cache (keyed by state_hash + tx_hash)
 	/// - On hit: returns cached VerifiedTransaction
 	/// - On miss: calls well_formed(), caches result in both caches, returns it
+	/// Returns the transaction's `VerifiedTransaction` together with the wall-clock time spent
+	/// running the ZK crypto **inline**, if any. The duration is `Some` only on the OFF/cold-cache
+	/// path — where `well_formed` verified the proofs itself — and `None` on a strict-cache hit or a
+	/// proof-cache hit (crypto deferred). Callers record `Some` as the `mode="inline"` proof-verify
+	/// metric, the per-transaction baseline the batched cost is compared against.
 	fn get_verified_transaction(
 		ledger: &Ledger<D>,
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
-	) -> Result<VerifiedTransaction<D>, LedgerApiError>
+	) -> Result<(VerifiedTransaction<D>, Option<std::time::Duration>), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -1274,7 +1308,7 @@ where
 		// Check strict cache
 		if let Some(cached) = STRICT_TX_VALIDATION_CACHE.get(&strict_key) {
 			if let Some(vt) = cached.downcast_ref::<VerifiedTransaction<D>>() {
-				return Ok(vt.clone());
+				return Ok((vt.clone(), None));
 			}
 			// Downcast failed - fall through to recompute
 			log::warn!(target: LOG_TARGET, "VerifiedTransaction cache downcast failed");
@@ -1295,6 +1329,8 @@ where
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
 		let mut strictness = mn_ledger_local::verify::WellFormedStrictness::default();
+		// `true` only on the `None` branch below, where `well_formed` runs the ZK crypto itself.
+		let mut verifies_proofs_inline = false;
 		match get_proof_result(tx_hash) {
 			Some(true) => {
 				// Equivalent to `WellFormedStrictness::defer_proofs()`, spelled out via the public
@@ -1314,6 +1350,7 @@ where
 				)));
 			},
 			None => {
+				verifies_proofs_inline = true;
 				log::error!(
 					target: LOG_TARGET,
 					"proof-verification cache miss for {}: verifying inline (slow). Proofs should \
@@ -1323,6 +1360,7 @@ where
 			},
 		}
 
+		let wf_start = Instant::now();
 		let verified_tx = tx
 			.0
 			.well_formed(&ctx.ref_state, strictness, ctx.block_context.tblock)
@@ -1333,11 +1371,14 @@ where
 				);
 				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
 			})?;
+		// Only the `None` branch actually ran the ZK crypto; the deferred-proof branch just did the
+		// cheap non-crypto checks, so it is not an inline proof-verification sample.
+		let inline_proof_verify = verifies_proofs_inline.then(|| wf_start.elapsed());
 
 		// Cache in strict cache (soft cache is managed by do_validate_transaction)
 		STRICT_TX_VALIDATION_CACHE.insert(strict_key, Arc::new(verified_tx.clone()));
 
-		Ok(verified_tx)
+		Ok((verified_tx, inline_proof_verify))
 	}
 
 	/// Validates a transaction for the mempool using the soft cache.
@@ -1364,8 +1405,10 @@ where
 
 		// Cache miss: transaction is entering the mempool or being re-validated
 		let tx_hash_hex = hex::encode(tx.hash());
+		// The inline proof-verify duration (`.1`) is recorded on the block-import path
+		// (`apply_transaction`); the mempool path is not instrumented here.
 		let verified_tx = match Self::get_verified_transaction(ledger, tx, block_context, tx_hash) {
-			Ok(vt) => vt,
+			Ok((vt, _)) => vt,
 			Err(e) => {
 				log::warn!(
 					target: LOG_TARGET,
@@ -1432,7 +1475,8 @@ where
 			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
-		let verified_tx = Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
+		// Inline proof-verify timing (`.1`) is recorded on the block-import path, not here.
+		let (verified_tx, _) = Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 

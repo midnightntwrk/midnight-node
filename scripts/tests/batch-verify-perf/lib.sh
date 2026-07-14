@@ -146,14 +146,19 @@ restore_volume() {
     busybox sh -c "cd /data && gzip -dc /in/$(basename "$tar") | tar xf -"
 }
 
-# Scrape the batch-verify counters (summary lines only, dropping histogram
-# buckets and HELP/TYPE comments). The metrics carry labels
-# (e.g. `midnight_batch_verify_batches_total{outcome="success",chain="undeployed"} 3`),
+# Scrape the verification counters (summary lines only, dropping histogram
+# buckets and HELP/TYPE comments). Captures two metric families:
+#   - `midnight_batch_verify_*` : node-side batch coverage/counters (ON only).
+#   - `ledger_proof_verify_*`   : ledger-side per-tx crypto time, labelled by
+#     `mode` (inline / batch / batch_prep) — present on both the OFF and ON runs,
+#     so the two paths can be compared at midnight-transaction granularity.
+# The metrics carry labels
+# (e.g. `ledger_proof_verify_duration_seconds_sum{mode="inline",chain="undeployed"} 0.1`),
 # so match the name prefix, not a name-then-space.
 scrape_batch_metrics() {
   local prom_url="$1"
   curl -sf --max-time 3 "$prom_url" 2>/dev/null \
-    | grep -E '^midnight_batch_verify_' | grep -vE '_bucket|^#' || true
+    | grep -E '^(midnight_batch_verify_|ledger_proof_verify_)' | grep -vE '_bucket|^#' || true
 }
 
 # Sum the values of a batch-verify metric across its label sets, from a scraped
@@ -170,6 +175,17 @@ metric_sumf() {
   local file="$1" name="$2"
   awk -v n="midnight_batch_verify_${name}" '
     $1 ~ "^"n"([{ ]|$)" { s += $NF } END { printf "%.6f", s+0 }' "$file" 2>/dev/null
+}
+
+# Sum a `mode`-labelled ledger metric across its remaining label sets.
+#   metric_mode <file> <full-metric-name> <mode>
+# e.g. metric_mode metrics-false.txt ledger_proof_verify_duration_seconds_sum inline
+# Matches the exact metric name at the start of the token and the `mode="…"` label
+# anywhere in the line, so it is robust to other labels (chain=…) and their order.
+metric_mode() {
+  local file="$1" name="$2" mode="$3"
+  awk -v n="$name" -v m="mode=\"$mode\"" '
+    index($1, n) == 1 && index($0, m) > 0 { s += $NF } END { printf "%.6f", s + 0 }' "$file" 2>/dev/null
 }
 
 # gen_seeds <count> <base>: print <count> distinct 32-byte hex seeds

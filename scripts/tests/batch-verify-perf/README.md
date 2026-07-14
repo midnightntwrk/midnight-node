@@ -73,12 +73,33 @@ ON  (batch verify)     : 92s
 delta (off - on)       : 122s
 speedup (off / on)     : 2.33x
 
---- batch-verify counters on the ON run (must be > 0, else it fell back) ---
-midnight_batch_verify_batches_total 33
-midnight_batch_verify_txs_total 812
-midnight_batch_verify_fallback_total 0
+ON batch coverage      : batches=33 txs_total=812 (chain load proof-txs=800), avg 24.6 txs/batch
+ON crypto time         : 41.2 ms/batch  (1.360s total over 33 batches)
+
+--- per-midnight-tx proof verification (crypto, OFF inline vs ON batched) ---
+  OFF inline           :   50.000 ms/tx   (812 txs, well_formed WITH proofs)
+  ON  batched          :   12.000 ms/tx   (812 txs = 10.000 crypto + 2.000 prep)
+  full-verify speedup  : 4.17x   (50.000 -> 12.000 ms/tx)
+  crypto-only speedup  : 4.80x   (48.000 -> 10.000 ms/tx)
 ...
 ```
+
+**Wall-clock vs per-tx.** The top block is end-to-end full-sync time; at dev
+scale it is dominated by peer-connect + the 6 s AURA cadence + DB writes, so it
+often can't resolve the verification delta. The **per-midnight-tx** block is the
+tx-granular signal — it reads the ledger-side `ledger_proof_verify_*` metrics
+(labelled by `mode`), which record the ZK crypto directly on both runs:
+
+- **OFF run** → `mode="inline"`: one per-tx `well_formed` **with proofs** (cold
+  proof cache — the OFF/inline path).
+- **ON run** → `mode="batch"`: one aggregate `batch_verify_proofs` call, plus
+  `mode="batch_prep"`: the per-tx `well_formed` **without proofs** (the non-crypto
+  work both paths pay).
+
+Per-tx cost = `_sum / _txs_total`. `full-verify` compares OFF's fused
+`well_formed` against ON's `batch + prep`; `crypto-only` subtracts the shared
+non-crypto cost to isolate the ZK verification speedup. This needs a node built
+from this branch (the metrics don't exist in older images).
 
 The `midnight_batch_verify_*` counters confirm the batch path actually engaged
 on the ON run. If `batches_total` is 0, the node silently fell back to inline

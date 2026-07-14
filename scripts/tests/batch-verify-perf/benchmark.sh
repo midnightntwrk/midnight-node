@@ -206,14 +206,58 @@ if [ "$DUR_CNT" -gt 0 ]; then
 else
   echo "ON crypto time         : (duration_seconds not recorded — needs the instrumented node build)"
 fi
+
+# --- per-midnight-tx proof verification (the tx-granular OFF-vs-ON signal) ---
+# Wall-clock sync time is swamped by peer-connect + AURA cadence + DB writes, so
+# compare the ZK crypto directly at transaction granularity via the ledger-side
+# `ledger_proof_verify_*` metrics (labelled by mode), which record on BOTH runs:
+#   OFF run -> mode="inline"     : per-tx well_formed WITH proofs (cold cache).
+#   ON  run -> mode="batch"      : per-aggregate-call crypto (batch_verify_proofs).
+#              mode="batch_prep" : per-tx well_formed WITHOUT proofs (non-crypto).
+# Per-tx cost = _sum / _txs_total. Adding ON's batch_prep makes the ON figure
+# apples-to-apples with OFF's fused well_formed; subtracting it isolates crypto.
+OFF_METRICS="$ARTIFACTS_DIR/metrics-false.txt"
+PV_DUR=ledger_proof_verify_duration_seconds_sum
+PV_TXS=ledger_proof_verify_txs_total
+off_inline_sum="$(metric_mode "$OFF_METRICS" "$PV_DUR" inline)"
+off_inline_txs="$(metric_mode "$OFF_METRICS" "$PV_TXS" inline)"
+on_batch_sum="$(metric_mode "$ON_METRICS" "$PV_DUR" batch)"
+on_batch_txs="$(metric_mode "$ON_METRICS" "$PV_TXS" batch)"
+on_prep_sum="$(metric_mode "$ON_METRICS" "$PV_DUR" batch_prep)"
+on_prep_txs="$(metric_mode "$ON_METRICS" "$PV_TXS" batch_prep)"
+echo
+echo "--- per-midnight-tx proof verification (crypto, OFF inline vs ON batched) ---"
+awk -v ois="$off_inline_sum" -v oit="$off_inline_txs" \
+    -v obs="$on_batch_sum"   -v obt="$on_batch_txs" \
+    -v ops="$on_prep_sum"    -v opt="$on_prep_txs" 'BEGIN {
+  if (oit <= 0 || obt <= 0) {
+    print "  (insufficient samples — needs a node built from this branch that records"
+    print "   ledger_proof_verify_* on both the OFF and ON runs)"
+    exit
+  }
+  off_tx  = ois / oit;                 # OFF per-tx: well_formed WITH proofs (crypto + non-crypto)
+  on_cryp = obs / obt;                 # ON  per-tx: aggregate crypto share
+  on_prep = (opt > 0) ? ops / opt : 0; # ON  per-tx: non-crypto well_formed
+  on_tx   = on_cryp + on_prep;         # ON  per-tx: full verify, comparable to off_tx
+  off_cryp = off_tx - on_prep;         # OFF per-tx crypto (subtract the shared non-crypto cost)
+  printf "  OFF inline           : %8.3f ms/tx   (%d txs, well_formed WITH proofs)\n", off_tx*1000, oit
+  printf "  ON  batched          : %8.3f ms/tx   (%d txs = %.3f crypto + %.3f prep)\n", on_tx*1000, obt, on_cryp*1000, on_prep*1000
+  printf "  full-verify speedup  : %.2fx   (%.3f -> %.3f ms/tx)\n", off_tx/on_tx, off_tx*1000, on_tx*1000
+  if (off_cryp > 0 && on_cryp > 0)
+    printf "  crypto-only speedup  : %.2fx   (%.3f -> %.3f ms/tx)\n", off_cryp/on_cryp, off_cryp*1000, on_cryp*1000
+}'
+
 if [ "$BATCHES" -gt 0 ] && [ "$TXS" -ge "$PROOF_TXS" ]; then
   echo "  ✅ block-import batched every proof-tx (txs_total >= load proof-txs) — no inline fallback"
 else
   echo "  ⚠️  txs_total ($TXS) < load proof-txs ($PROOF_TXS): some blocks skipped batching"
   echo "     (BatchVerifyError::Unavailable) and inline-verified — investigate before trusting timing."
 fi
-echo "  note: block-import records no duration_seconds/fallback_total (mempool-only);"
-echo "        batch size is capped at the funder's DUST-output count, so batches stay small."
-echo "--- raw ON batch-verify counters ---"
+echo "  note: fallback_total is mempool-only (always 0 on a syncer); batch size is"
+echo "        capped at the funder's DUST-output count, so batches stay small — the"
+echo "        per-tx crypto speedup above needs many proof-txs/block to be large."
+echo "--- raw ON verify counters ---"
 cat "$ON_METRICS" 2>/dev/null || echo "(none scraped)"
+echo "--- raw OFF verify counters ---"
+cat "$OFF_METRICS" 2>/dev/null || echo "(none scraped)"
 echo "═══════════════════════════════════════════════════════════════════"
