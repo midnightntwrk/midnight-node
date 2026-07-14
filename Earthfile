@@ -1445,21 +1445,20 @@ node-image:
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
-    SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
-    # Hermetic marker, pushed only for PROD=true builds. main.yml's "already exists" dedup
-    # check keys off this tag rather than $IMAGE_TAG: continuous-integration.yml's PR builds
-    # always run PROD=false and legitimately publish under the plain $IMAGE_TAG/$IMAGE_TAG_DEV
-    # tags too (its downstream jobs consume node_image_tag_no_dev), so those can't be trusted
-    # as "hermetically built" on their own. This marker only ever exists once a genuine
-    # PROD=true build has run for this tree, so a prior non-hermetic build (PR CI, or a
-    # PROD=false manual dispatch) can never cause a real release push to skip its hermetic
-    # rebuild.
+    # The clean canonical tag ($IMAGE_TAG) and the moving `latest` pointer are reserved for
+    # hermetic (PROD=true) builds only. Because a cached (PROD=false) build never publishes the
+    # clean tag, its existence for a tree proves a hermetic build produced it — so main.yml's
+    # "already exists" dedup keys off it directly (no separate marker needed), and a non-hermetic
+    # build can never occupy or mask a release image's tag. Cached builds publish ONLY the -dev tag.
     IF [ "$PROD" = "true" ]
-        SAVE IMAGE --push $GHCR_REGISTRY/midnight-node:$(cat /version)-hermetic-$CONTENT_HASH_SHORT-$NATIVEARCH
+        SAVE IMAGE --push \
+            $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
+            $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
+            $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
+    ELSE
+        SAVE IMAGE --push \
+            $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
+            $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG_DEV
     END
 
     # Re-export build artifacts which contain wasm
@@ -1555,21 +1554,21 @@ toolkit-image:
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
+    ENV IMAGE_TAG_DEV="${NODE_VERSION}-dev-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
-    SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
-    # Hermetic marker, pushed only for PROD=true builds. main.yml's "already exists" dedup
-    # check keys off this tag rather than $IMAGE_TAG: continuous-integration.yml's PR builds
-    # always run PROD=false and legitimately publish under the plain $IMAGE_TAG too (its
-    # downstream jobs consume toolkit_image_tag), so that tag can't be trusted as
-    # "hermetically built" on its own. This marker only ever exists once a genuine PROD=true
-    # build has run for this tree, so a prior non-hermetic build (PR CI, or a PROD=false
-    # manual dispatch) can never cause a real release push to skip its hermetic rebuild.
+    # The clean canonical tag ($IMAGE_TAG) and the moving `latest` pointer are reserved for
+    # hermetic (PROD=true) builds only; cached (PROD=false) builds publish ONLY the -dev tag,
+    # so a non-hermetic build can never mask a release image. Mirrors node-image above.
     IF [ "$PROD" = "true" ]
-        SAVE IMAGE --push $GHCR_REGISTRY/midnight-node-toolkit:${NODE_VERSION}-hermetic-${CONTENT_HASH_SHORT}-${NATIVEARCH}
+        SAVE IMAGE --push \
+            $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
+            $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
+            $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
+    ELSE
+        SAVE IMAGE --push \
+            $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG_DEV \
+            $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG_DEV
     END
 
 # audit-rust checks for rust security vulnerabilities

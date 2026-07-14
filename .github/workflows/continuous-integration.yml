@@ -41,7 +41,6 @@ jobs:
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
-      node_image_tag_no_dev: ${{ steps.image_tags.outputs.node_image_tag_no_dev }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
@@ -125,8 +124,7 @@ jobs:
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "node_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
-          echo "node_image_tag_no_dev=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+          echo "toolkit_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
@@ -269,7 +267,7 @@ jobs:
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "node_image_tag=${version}-dev-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
+          echo "toolkit_image_tag=${version}-dev-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
@@ -333,7 +331,7 @@ jobs:
       - name: Compute combined image tags
         id: tags
         env:
-          NODE_AMD64_TAG: ${{ needs.run.outputs.node_image_tag_no_dev }}
+          NODE_AMD64_TAG: ${{ needs.run.outputs.node_image_tag }}
           TOOLKIT_AMD64_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
         run: |
           node_amd64="$NODE_AMD64_TAG"

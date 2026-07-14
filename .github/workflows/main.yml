@@ -91,19 +91,16 @@ jobs:
           CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
           IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
-          # The hermetic marker (see Earthfile) is only ever pushed by a PROD=true build.
-          # continuous-integration.yml's PR builds always run PROD=false and legitimately
-          # publish under the plain IMAGE_TAG too, so that tag alone can't prove a hermetic
-          # build already exists for this tree — checking the marker instead means a prior
-          # non-hermetic build (PR CI, or a PROD=false manual dispatch) can never cause this
-          # (hermetic, push-triggered) build to be skipped.
-          IMAGE_TAG_HERMETIC="${VERSION}-hermetic-${CONTENT_HASH}"
+          # The clean canonical tag ($IMAGE_TAG) is only ever pushed by a PROD=true (hermetic)
+          # build — continuous-integration.yml's PROD=false PR/merge builds publish only -dev
+          # tags (see Earthfile) — so its existence for this tree proves a hermetic build has
+          # already run, and this (hermetic, push-triggered) build can safely skip.
           printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
           IMAGES_EXIST=false
           if [ "$FORCE_REBUILD" != "true" ]; then
-            NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG_HERMETIC}-amd64" > /dev/null 2>&1 && echo true || echo false)
-            TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG_HERMETIC}-amd64" > /dev/null 2>&1 && echo true || echo false)
+            NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64" > /dev/null 2>&1 && echo true || echo false)
+            TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64" > /dev/null 2>&1 && echo true || echo false)
             if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
               IMAGES_EXIST=true
             fi
@@ -294,19 +291,16 @@ jobs:
           CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
           IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
-          # The hermetic marker (see Earthfile) is only ever pushed by a PROD=true build.
-          # continuous-integration.yml's PR builds always run PROD=false and legitimately
-          # publish under the plain IMAGE_TAG too, so that tag alone can't prove a hermetic
-          # build already exists for this tree — checking the marker instead means a prior
-          # non-hermetic build (PR CI, or a PROD=false manual dispatch) can never cause this
-          # (hermetic, push-triggered) build to be skipped.
-          IMAGE_TAG_HERMETIC="${VERSION}-hermetic-${CONTENT_HASH}"
+          # The clean canonical tag ($IMAGE_TAG) is only ever pushed by a PROD=true (hermetic)
+          # build — continuous-integration.yml's PROD=false PR/merge builds publish only -dev
+          # tags (see Earthfile) — so its existence for this tree proves a hermetic build has
+          # already run, and this (hermetic, push-triggered) build can safely skip.
           printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
           IMAGES_EXIST=false
           if [ "$FORCE_REBUILD" != "true" ]; then
-            NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG_HERMETIC}-arm64" > /dev/null 2>&1 && echo true || echo false)
-            TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG_HERMETIC}-arm64" > /dev/null 2>&1 && echo true || echo false)
+            NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64" > /dev/null 2>&1 && echo true || echo false)
+            TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64" > /dev/null 2>&1 && echo true || echo false)
             if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
               IMAGES_EXIST=true
             fi
