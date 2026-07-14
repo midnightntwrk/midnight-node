@@ -370,7 +370,7 @@ fn success_validity(runtime_version: u32, tx_bytes: &[u8]) -> TransactionValidit
 fn tx_validation_cache_key(runtime_version: u32, tx_bytes: &[u8]) -> [u8; 32] {
 	let mut input = runtime_version.to_le_bytes().to_vec();
 	input.extend_from_slice(tx_bytes);
-	let hash16 = sp_core::twox_128(&input);
+	let hash16 = sp_crypto_hashing::twox_128(&input);
 	let mut out = [0u8; 32];
 	out[..16].copy_from_slice(&hash16);
 	out

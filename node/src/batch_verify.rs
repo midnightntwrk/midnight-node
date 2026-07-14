@@ -42,7 +42,7 @@ use prometheus_endpoint::{
 use sc_client_api::StorageProvider;
 use sp_api::{Core, ProvideRuntimeApi};
 use sp_core::storage::StorageKey;
-use sp_core::twox_128;
+use sp_crypto_hashing::twox_128;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use sp_state_machine::BasicExternalities;
 use std::sync::{Arc, Mutex};
