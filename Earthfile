@@ -1450,6 +1450,17 @@ node-image:
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
         $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
+    # Hermetic marker, pushed only for PROD=true builds. main.yml's "already exists" dedup
+    # check keys off this tag rather than $IMAGE_TAG: continuous-integration.yml's PR builds
+    # always run PROD=false and legitimately publish under the plain $IMAGE_TAG/$IMAGE_TAG_DEV
+    # tags too (its downstream jobs consume node_image_tag_no_dev), so those can't be trusted
+    # as "hermetically built" on their own. This marker only ever exists once a genuine
+    # PROD=true build has run for this tree, so a prior non-hermetic build (PR CI, or a
+    # PROD=false manual dispatch) can never cause a real release push to skip its hermetic
+    # rebuild.
+    IF [ "$PROD" = "true" ]
+        SAVE IMAGE --push $GHCR_REGISTRY/midnight-node:$(cat /version)-hermetic-$CONTENT_HASH_SHORT-$NATIVEARCH
+    END
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
@@ -1550,6 +1561,16 @@ toolkit-image:
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
         $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
+    # Hermetic marker, pushed only for PROD=true builds. main.yml's "already exists" dedup
+    # check keys off this tag rather than $IMAGE_TAG: continuous-integration.yml's PR builds
+    # always run PROD=false and legitimately publish under the plain $IMAGE_TAG too (its
+    # downstream jobs consume toolkit_image_tag), so that tag can't be trusted as
+    # "hermetically built" on its own. This marker only ever exists once a genuine PROD=true
+    # build has run for this tree, so a prior non-hermetic build (PR CI, or a PROD=false
+    # manual dispatch) can never cause a real release push to skip its hermetic rebuild.
+    IF [ "$PROD" = "true" ]
+        SAVE IMAGE --push $GHCR_REGISTRY/midnight-node-toolkit:${NODE_VERSION}-hermetic-${CONTENT_HASH_SHORT}-${NATIVEARCH}
+    END
 
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
