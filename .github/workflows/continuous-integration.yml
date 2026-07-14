@@ -915,9 +915,22 @@ jobs:
     permissions:
       contents: read
       actions: write
-    name: Startup E2E in dev mode
+    # One leg per genesis ledger version, in parallel. Each leg is its own
+    # required status check ("Startup E2E in dev mode (ledger-N)"); the
+    # main-protection ruleset must require both.
+    name: Startup E2E in dev mode (${{ matrix.ledger }})
     needs: run
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ledger: ledger-9
+            genesis: ledger9
+          - ledger: ledger-8
+            genesis: ledger8
+    env:
+      STARTUP_GENESIS: ${{ matrix.genesis }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
@@ -925,6 +938,8 @@ jobs:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
+        with:
+          matrix-key: ${{ matrix.ledger }}
       - uses: ./.github/actions/reusable-e2e-tests
         if: steps.guard.outputs.hit != 'true'
         with:

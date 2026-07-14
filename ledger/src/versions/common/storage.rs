@@ -75,6 +75,18 @@ impl core::fmt::Display for GetRootError {
 	}
 }
 
+/// The `LedgerState` serialization tag for this ledger version, e.g.
+/// `ledger-state[v13]` (ledgers 7 and 8 - they share a wire format) or
+/// `ledger-state[v18]` (ledger 9). A tagged genesis blob carries this
+/// verbatim, so it lets the bootstrap pick the right deserializer before
+/// touching the body (see [`crate::genesis_version`]).
+#[cfg(feature = "std")]
+pub fn genesis_ledger_state_tag() -> std::borrow::Cow<'static, str> {
+	use super::ledger_storage_local::DefaultDB;
+	use super::midnight_serialize_local::Tagged;
+	<super::mn_ledger_local::structure::LedgerState<DefaultDB> as Tagged>::tag()
+}
+
 pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRootError> {
 	// Get empty state key
 	use super::api::Ledger;

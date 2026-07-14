@@ -14,4 +14,11 @@ so it tracks the git-8.2 storage-core's sha2 0.11 bump automatically, and the
 hard-fork state-migration helpers serialize-round-trip across the (now
 distinct) L7/L8/L9 storage arenas instead of reinterpreting arena keys in place.
 
+The Ledger-8 guaranteed-segment validation shim now calls 8.2's
+`apply_guaranteed_only` (matching the Ledger-9 shim) instead of dry-running the
+full `apply()`. Under the old path, mempool/pre-dispatch validation executed the
+fallible segment even though acceptance depends only on the guaranteed segment -
+an avoidable validation-cost/DoS vector that the 8.2 split-phase API exists to
+close.
+
 PR: https://github.com/midnightntwrk/midnight-node/pull/1869
