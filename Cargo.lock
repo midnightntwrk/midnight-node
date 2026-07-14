@@ -8189,6 +8189,7 @@ dependencies = [
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-session-info",
  "pallet-aura",
+ "pallet-authorship",
  "pallet-babe",
  "pallet-beefy",
  "pallet-beefy-mmr",

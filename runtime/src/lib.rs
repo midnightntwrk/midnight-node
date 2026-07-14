@@ -113,7 +113,6 @@ mod mock;
 /// epochs. The epoch length must divide 24h evenly.
 pub const SLOTS_PER_EPOCH: u32 = 300;
 
-pub mod authorship;
 pub mod beefy;
 pub mod check_call_filter;
 mod constants;
@@ -393,6 +392,11 @@ impl pallet_aura::Config for Runtime {
 	type MaxAuthorities = MaxAuthorities;
 	type AllowMultipleBlocksPerSlot = ConstBool<false>;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+}
+
+impl pallet_authorship::Config for Runtime {
+	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, Aura>;
+	type EventHandler = ();
 }
 
 impl pallet_babe::Config for Runtime {
@@ -1055,13 +1059,18 @@ mod runtime {
 
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
+
+	// Authorship must be before Session (polkadot-sdk hook order).
+	#[runtime::pallet_index(9)]
+	pub type Authorship = pallet_authorship::Pallet<Runtime>;
+
 	#[runtime::pallet_index(30)]
 	#[runtime::disable_call]
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards = 9,
+	//BlockRewards: pallet_block_rewards = 10,
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
