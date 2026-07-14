@@ -251,7 +251,7 @@ pub mod pallet {
 		PayoutMinted(PayoutDetails),
 		/// Payout was claimed.
 		ClaimRewards(ClaimRewardsDetails),
-		/// Unshielded Tokens Trasfers
+		/// Unshielded Tokens Transfers
 		UnshieldedTokens(UnshieldedTokensDetails),
 		/// Partial Success.
 		TxPartialSuccess(TxAppliedDetails),
