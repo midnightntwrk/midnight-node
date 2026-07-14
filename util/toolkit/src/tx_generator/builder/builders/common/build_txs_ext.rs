@@ -16,7 +16,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use super::ledger_helpers_local::{
-	BuildIntent, BuilderContext, DefaultDB, FromContext, ProofProvider, StandardTrasactionInfo,
+	BuildIntent, BuilderContext, DefaultDB, FromContext, ProofProvider, StandardTransactionInfo,
 	WalletSeed,
 };
 
@@ -33,11 +33,11 @@ pub trait BuildTxsExt<C: BuilderContext<DefaultDB>> {
 	fn prover(&self) -> &Arc<dyn ProofProvider<DefaultDB>>;
 
 	/// Returns a tuple of the context and the StandardTransactionInfo.
-	fn context_and_tx_info(&self) -> (Arc<C>, StandardTrasactionInfo<DefaultDB, C>) {
+	fn context_and_tx_info(&self) -> (Arc<C>, StandardTransactionInfo<DefaultDB, C>) {
 		let context = self.context().clone();
 		let prover = self.prover().clone();
 		let tx_info =
-			StandardTrasactionInfo::new_from_context(context.clone(), prover, self.rng_seed());
+			StandardTransactionInfo::new_from_context(context.clone(), prover, self.rng_seed());
 
 		(context, tx_info)
 	}

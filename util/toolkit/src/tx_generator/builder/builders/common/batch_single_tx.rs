@@ -15,7 +15,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use super::ledger_helpers_local::{
 	BuilderContext, CoinSelectionStrategy, DefaultDB, FromContext as _, ProofProvider,
-	ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo,
+	ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTransactionInfo,
 	TransactionWithContext, UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError,
 	WalletAddress,
 };
@@ -96,7 +96,7 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 		);
 
 		let mut tx_info =
-			StandardTrasactionInfo::new_from_context(context.clone(), prover, rng_seed);
+			StandardTransactionInfo::new_from_context(context.clone(), prover, rng_seed);
 
 		if let Some(amount) = spec.unshielded_amount {
 			let hash = parse_hash_output(spec.unshielded_token_type.as_deref());

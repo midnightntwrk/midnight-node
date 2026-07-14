@@ -20,7 +20,7 @@ use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, BuilderContext,
 	CoinSelectionStrategy, DefaultDB, FromContext as _, InputInfo, IntentInfo, OfferInfo,
 	OutputInfo, ProofProvider, Segment, ShieldedCoinSelectionError, ShieldedTokenType,
-	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
+	StandardTransactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
 	UtxoId, UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletSeed,
 };
 use super::output_spec::{
@@ -144,7 +144,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 		let funding_seed = self.funding_seed.clone().unwrap_or(self.source_seed.clone());
 
 		// - Transaction info
-		let mut tx_info = StandardTrasactionInfo::new_from_context(
+		let mut tx_info = StandardTransactionInfo::new_from_context(
 			context.clone(),
 			self.prover.clone(),
 			self.rng_seed,

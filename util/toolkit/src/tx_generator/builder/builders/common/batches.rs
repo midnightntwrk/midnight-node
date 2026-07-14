@@ -15,7 +15,7 @@ use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, CoinSelectionStrategy,
 	DefaultDB, FromContext, InputInfo, IntentInfo, LedgerContext, OfferInfo, OutputInfo,
 	ProofProvider, Segment, SerdeTransaction, ShieldedCoinSelectionError, ShieldedTokenType,
-	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
+	StandardTransactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
 	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 };
 use async_trait::async_trait;
@@ -270,7 +270,7 @@ impl BuildTxs for BatchesBuilder {
 		let block_context = context_arc.latest_block_context();
 
 		// - Transaction info
-		let mut tx_info = StandardTrasactionInfo::new_from_context(
+		let mut tx_info = StandardTransactionInfo::new_from_context(
 			context_arc.clone(),
 			prover_arc.clone(),
 			self.rng_seed,
@@ -379,7 +379,7 @@ impl BuildTxs for BatchesBuilder {
 					let tx_chan = tx_chan.clone();
 
 					// - Transaction info
-					let mut tx_info = StandardTrasactionInfo::new_from_context(
+					let mut tx_info = StandardTransactionInfo::new_from_context(
 						context_arc.clone(),
 						prover_arc.clone(),
 						None,
