@@ -1701,7 +1701,7 @@ impl_runtime_apis! {
 			SessionCommitteeManagement::current_committee_storage().as_pair()
 		}
 		fn get_next_committee() -> Option<(ScEpochNumber, sidechain_domain::Vec<authority_selection_inherents::CommitteeMember<CrossChainPublic, opaque::SessionKeys>>)>  {
-			SessionCommitteeManagement::next_committee_storage()?.as_pair()
+			Some(SessionCommitteeManagement::next_committee_storage()?.as_pair())
 		}
 		fn get_next_unset_epoch_number() -> sidechain_domain::ScEpochNumber {
 			SessionCommitteeManagement::get_next_unset_epoch_number()
