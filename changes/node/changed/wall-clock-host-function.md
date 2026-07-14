@@ -10,5 +10,5 @@ Rollout note: a node must have this host function registered before running a ru
 calls it. An old node importing/validating with a new runtime would fail to resolve the
 `wall_clock::now_millis` wasm import — upgrade nodes with (or before) the runtime.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1877
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1856

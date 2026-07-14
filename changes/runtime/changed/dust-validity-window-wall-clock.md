@@ -16,5 +16,5 @@ on-chain timestamp via `pre_dispatch`).
 The now-unused `MaxSkippedSlots` storage item (and its default) was removed. This is a
 metadata change; rebuild runtime metadata.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1877
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1856
