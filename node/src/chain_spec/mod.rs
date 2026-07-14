@@ -256,6 +256,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 	let config = RuntimeGenesisConfig {
 		system: Default::default(),
 		aura: Default::default(),
+		babe: Default::default(),
 		beefy: BeefyConfig {
 			authorities: genesis
 				.initial_authorities()
