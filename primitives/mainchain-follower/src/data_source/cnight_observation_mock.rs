@@ -177,12 +177,12 @@ mod tests {
 		};
 
 		let result1 = mock
-			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100)
+			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100, 100)
 			.await
 			.unwrap();
 
 		let result2 = mock
-			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100)
+			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100, 100)
 			.await
 			.unwrap();
 
@@ -214,12 +214,12 @@ mod tests {
 		};
 
 		let result1 = mock
-			.get_utxos_up_to_capacity(&config, &start1, McBlockHash([0u8; 32]), 100)
+			.get_utxos_up_to_capacity(&config, &start1, McBlockHash([0u8; 32]), 100, 100)
 			.await
 			.unwrap();
 
 		let result2 = mock
-			.get_utxos_up_to_capacity(&config, &start2, McBlockHash([0u8; 32]), 100)
+			.get_utxos_up_to_capacity(&config, &start2, McBlockHash([0u8; 32]), 100, 100)
 			.await
 			.unwrap();
 
