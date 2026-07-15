@@ -298,6 +298,12 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 // slot time set to 6s
 pub const SLOT_DURATION: u64 = 6 * 1000;
 
+pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
+	sp_consensus_babe::BabeEpochConfiguration {
+		c: (1, 4),
+		allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
+	};
+
 /// The version information used to identify this runtime when compiled natively.
 #[cfg(feature = "std")]
 pub fn native_version() -> NativeVersion {
@@ -389,6 +395,29 @@ impl pallet_aura::Config for Runtime {
 	type MaxAuthorities = MaxAuthorities;
 	type AllowMultipleBlocksPerSlot = ConstBool<false>;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+}
+
+impl pallet_babe::Config for Runtime {
+	type EpochDuration = SidechainEpochDuration;
+	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
+	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
+	type DisabledValidators = ();
+	// TODO: Issue #1863
+	type WeightInfo = ();
+	type MaxAuthorities = MaxAuthorities;
+	type MaxNominators = ConstU32<5>;
+	// Equivocation reporting is disabled, matching GRANDPA/BEEFY.
+	type KeyOwnerProof = sp_core::Void;
+	type EquivocationReportSystem = ();
+}
+
+/// BABE uses epoch lenght defined by pallet sidechain
+pub struct SidechainEpochDuration;
+
+impl Get<u64> for SidechainEpochDuration {
+	fn get() -> u64 {
+		Sidechain::slots_per_epoch().0.into()
+	}
 }
 
 pallet_partner_chains_session::impl_pallet_session_config!(Runtime);
@@ -1007,6 +1036,10 @@ mod runtime {
 	#[runtime::pallet_index(6)]
 	pub type MidnightSystem = pallet_midnight_system::Pallet<Runtime>;
 
+	// BABE consensus. Introduced ahead of a future AURA→BABE flip; not active.
+	#[runtime::pallet_index(7)]
+	pub type Babe = pallet_babe::Pallet<Runtime>;
+
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
 	#[runtime::pallet_index(30)]
@@ -1397,6 +1430,47 @@ impl_runtime_apis! {
 
 		fn authorities() -> Vec<AuraId> {
 			pallet_aura::Authorities::<Runtime>::get().into_inner()
+		}
+	}
+
+	impl sp_consensus_babe::BabeApi<Block> for Runtime {
+		fn configuration() -> sp_consensus_babe::BabeConfiguration {
+			let epoch_config = Babe::epoch_config().unwrap_or(BABE_GENESIS_EPOCH_CONFIG);
+			sp_consensus_babe::BabeConfiguration {
+				slot_duration: Babe::slot_duration(),
+				epoch_length: SidechainEpochDuration::get(),
+				c: epoch_config.c,
+				authorities: Babe::authorities().to_vec(),
+				randomness: Babe::randomness(),
+				allowed_slots: epoch_config.allowed_slots,
+			}
+		}
+
+		fn current_epoch_start() -> sp_consensus_babe::Slot {
+			Babe::current_epoch_start()
+		}
+
+		fn current_epoch() -> sp_consensus_babe::Epoch {
+			Babe::current_epoch()
+		}
+
+		fn next_epoch() -> sp_consensus_babe::Epoch {
+			Babe::next_epoch()
+		}
+
+		fn generate_key_ownership_proof(
+			_slot: sp_consensus_babe::Slot,
+			_authority_id: sp_consensus_babe::AuthorityId,
+		) -> Option<sp_consensus_babe::OpaqueKeyOwnershipProof> {
+			// Equivocation reporting is disabled, so no proof can be generated.
+			None
+		}
+
+		fn submit_report_equivocation_unsigned_extrinsic(
+			_equivocation_proof: sp_consensus_babe::EquivocationProof<<Block as BlockT>::Header>,
+			_key_owner_proof: sp_consensus_babe::OpaqueKeyOwnershipProof,
+		) -> Option<()> {
+			None
 		}
 	}
 
