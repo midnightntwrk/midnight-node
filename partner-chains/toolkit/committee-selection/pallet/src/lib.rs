@@ -158,10 +158,10 @@ pub mod pallet {
 	/// The committee whose keys form the effective validator set of the current session, i.e.
 	/// the committee actively producing blocks.
 	///
-	/// Its `epoch` field is the epoch in which the committee became active (stamped at
-	/// promotion from [`QueuedCommittee`]). Because stock `pallet_session` applies a validator
-	/// set provided at rotation only one session later (see [`crate::pallet_session_support`]),
-	/// this is one epoch after the epoch the committee was selected for.
+	/// Its `epoch` field is stamped at promotion from [`QueuedCommittee`] with the committee's
+	/// selection epoch + 1: the epoch it was due to start serving. In normal operation this is
+	/// the epoch the committee is actively serving in; after skipped epochs (catch-up), the
+	/// recovered committees keep unique, consecutive labels in recovery order.
 	#[pallet::storage]
 	pub type CurrentCommittee<T: Config> = StorageValue<
 		_,
@@ -465,12 +465,22 @@ pub mod pallet {
 
 		/// Rotates the committees one step: [QueuedCommittee] — whose keys the session machinery
 		/// applies as the effective validator set at this rotation — is promoted to
-		/// [CurrentCommittee] with its epoch stamped to the epoch it starts serving in, and, if
-		/// [NextCommittee] is defined, its value is moved to [QueuedCommittee]. Returns the value
-		/// taken from [NextCommittee].
+		/// [CurrentCommittee] with its epoch stamped to the epoch it was due to start serving
+		/// (its selection epoch + 1), and, if [NextCommittee] is defined, its value is moved to
+		/// [QueuedCommittee]. Returns the value taken from [NextCommittee].
 		pub fn rotate_committee_to_next_epoch() -> Option<Vec<T::CommitteeMember>> {
+			// The committee queued at the previous rotation has just become the effective
+			// validator set; promote it even if there is no new committee to queue. `get`
+			// rather than `take`: the queued value must remain in place as the anchor of the
+			// selection pipeline (see [QueuedCommittee]).
+			//
+			// The promoted committee is stamped with its selection epoch + 1: the epoch it was
+			// due to start serving. In normal operation this is the epoch the rotation happens
+			// in, but after skipped epochs (catch-up rotations in consecutive blocks) it keeps
+			// each recovered committee's label unique and in recovery order, instead of
+			// collapsing them all onto the current epoch.
 			let mut promoted = QueuedCommittee::<T>::get();
-			promoted.epoch = T::current_epoch_number();
+			promoted.epoch = promoted.epoch + One::one();
 			CurrentCommittee::<T>::put(promoted);
 
 			let next_committee = NextCommittee::<T>::take()?;

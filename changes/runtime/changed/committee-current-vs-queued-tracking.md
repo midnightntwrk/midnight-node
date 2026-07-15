@@ -16,11 +16,16 @@ keys form the effective validator set of the current session — and the
 `SessionValidatorManagementApi` is unchanged in shape and semantics:
 
 - `get_current_committee` returns the committee actively producing blocks. At
-  promotion the committee's epoch is stamped with the epoch it starts serving
-  in, so the reported epoch matches the epoch the committee is active in (as
-  before the `pallet_session` migration), not the epoch it was selected for.
-- `get_next_committee` returns the committee that becomes active at the next
-  rotation (the queued one), labeled with the epoch it was selected for.
+  promotion the committee's epoch is stamped with its selection epoch + 1 —
+  the epoch it was due to start serving — so in normal operation the reported
+  epoch matches the epoch the committee is active in (as before the
+  `pallet_session` migration). After skipped epochs, catch-up rotations keep
+  each recovered committee's label unique and in recovery order instead of
+  collapsing them onto the current epoch.
+- `get_next_committee` is unchanged: it returns the committee selected by the
+  inherent for the upcoming epoch, labeled with its selection epoch (the
+  pre-v2 contract). The committee queued in `pallet_session` is internal
+  `QueuedCommittee` storage.
 
 Selection bookkeeping (`should_end_session`, the committee-selection inherent,
 `get_next_unset_epoch_number`) is anchored on `QueuedCommittee`, preserving the

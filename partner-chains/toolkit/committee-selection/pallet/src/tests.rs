@@ -328,6 +328,17 @@ mod committee_rotation_tests {
 				SessionCommitteeManagement::queued_committee_storage().epoch,
 				current_epoch - 2
 			);
+			// Each committee promoted during catch-up is stamped with its selection epoch + 1,
+			// keeping the recovered committees' labels unique and in recovery order instead of
+			// collapsing them all onto the current epoch.
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee.clone(),
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().epoch,
+				current_epoch - 2
+			);
 
 			// in the second block the committee  rotates to Charlie
 			set_validators_through_inherents(&[CHARLIE]);
@@ -340,15 +351,15 @@ mod committee_rotation_tests {
 				SessionCommitteeManagement::queued_committee_storage().epoch,
 				current_epoch - 1
 			);
-			// Alice, promoted from the queue, is now the current committee, stamped with the
-			// epoch it starts serving in (the catch-up happens within the current epoch)
+			// Alice, promoted from the queue, is now the current committee, labeled with the
+			// next epoch in recovery order
 			assert_eq!(
 				SessionCommitteeManagement::current_committee_storage().committee.clone(),
 				ids_and_keys_fn(&[ALICE])
 			);
 			assert_eq!(
 				SessionCommitteeManagement::current_committee_storage().epoch,
-				current_epoch
+				current_epoch - 1
 			);
 
 			// in the third block the committee rotates to Dave
@@ -359,7 +370,8 @@ mod committee_rotation_tests {
 			);
 			assert_eq!(rotate_committee(), Some(vec![DAVE.authority_id]));
 			assert_eq!(SessionCommitteeManagement::queued_committee_storage().epoch, current_epoch);
-			// Charlie, promoted from the queue, serves in the same (current) epoch
+			// Charlie, promoted from the queue, closes the catch-up: its label reaches the
+			// current epoch
 			assert_eq!(
 				SessionCommitteeManagement::current_committee_storage().committee.clone(),
 				ids_and_keys_fn(&[CHARLIE])

@@ -148,7 +148,8 @@ sp_api::decl_runtime_apis! {
 		fn get_current_committee() -> (ScEpochNumber, sp_std::vec::Vec<CommitteeMember::AuthorityId>);
 		/// Returns the committee whose keys form the effective validator set of the current
 		/// session, i.e. the committee actively producing blocks. The epoch number is the
-		/// epoch in which the committee became active.
+		/// epoch the committee was due to start serving (its selection epoch + 1), which in
+		/// normal operation is the epoch it is active in.
 		fn get_current_committee() -> (ScEpochNumber, sp_std::vec::Vec<CommitteeMember>);
 
 		#[changed_in(2)]
