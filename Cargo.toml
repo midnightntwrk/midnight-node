@@ -84,18 +84,31 @@ zswap = { version = "=7.0.3", package = "midnight-zswap" }
 # transient-crypto 2.2.0's new tagged-IR trait methods.
 zkir = { version = "^2.2.0", package = "midnight-zkir" }
 
-# Ledger 8 (compatible with layout-v2)
-# coin-structure and transient-crypto (2.x) share versions with L7 so reuse those entries.
-mn-ledger-8 = { version = "=8.1.0", package = "midnight-ledger" }
-ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db"] }
-onchain-runtime-ledger-8 = { version = "=3.1.0", package = "midnight-onchain-runtime" }
-zswap-ledger-8 = { version = "=8.1.0", package = "midnight-zswap" }
+# Ledger 8 (8.2.0-rc.1, compatible with layout-v2) — sourced from the git tag, not crates.io.
+# 8.2.0-rc.1 is unpublished and the raw tag carries path deps, so the *whole* L8 companion set
+# must resolve from the same git rev to unify types: a mixed crates.io/git graph forks a crate
+# like midnight-storage-core 1.2.0 into two source-incompatible copies (E0277: trait `DB` not
+# satisfied). Consequently L8 no longer shares coin-structure/base-crypto/transient-crypto/
+# serialize with L7 — each gets a dedicated `-ledger-8` entry pinned to the tag.
+mn-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-ledger" }
+zswap-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-zswap" }
+onchain-runtime-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-onchain-runtime" }
+ledger-storage-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-storage", features = ["parity-db"] }
+coin-structure-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-coin-structure" }
+base-crypto-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-base-crypto" }
+transient-crypto-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-transient-crypto" }
+serialize-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-serialize" }
+# The workspace `zkir` (2.2.0) is bound to the 3.x-crypto stack and can't prove against L8's
+# transient-crypto 2.1.0. Take zkir 2.1.0 from the same tag so L8's proving stack is self-consistent.
+zkir-ledger-8 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.2.0-rc.1", package = "midnight-zkir" }
 
 # Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
-# storage shares versions with L8 so reuses that entry. coin-structure and
-# transient-crypto went semver-major in L9 so get their own entries. The workspace `zkir`
-# (midnight-zkir 2.2.0) serves all of L7/L8/L9.
+# midnight-ledger-v9 uses registry deps, so its storage resolves to crates.io 2.0.1; L8 moved to
+# the git tag for 8.2, so the two no longer share a storage entry — L9 keeps its own crates.io one.
+# coin-structure and transient-crypto went semver-major in L9 so get their own entries. The
+# workspace `zkir` (midnight-zkir 2.2.0) serves all of L7/L8/L9.
 mn-ledger-9 = { version = "=1.0.0", package = "midnight-ledger-v9" }
+ledger-storage-ledger-9 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db"] }
 onchain-runtime-ledger-9 = { version = "=4.0.0", package = "midnight-onchain-runtime" }
 zswap-ledger-9 = { version = "=9.0.0", package = "midnight-zswap" }
 coin-structure-ledger-9 = { version = "=3.0.0", package = "midnight-coin-structure" }

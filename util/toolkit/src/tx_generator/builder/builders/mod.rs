@@ -11,17 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod ledger_9;
-pub use ledger_9::*;
-
 pub mod ledger_7;
 pub mod ledger_8;
+pub mod ledger_9;
+pub use ledger_9::*;
 
 // Conversion impls for encoded zswap types to ledger types.
 // These live here (not in common/) because common/ is compiled once per ledger
 // version, which would cause E0119 conflicts wherever versions share types.
-// Ledger 9 uses coin-structure 3.x; ledgers 7 and 8 share coin-structure 2.x,
-// so there are exactly two impl sets.
+// Ledger 9 uses coin-structure 3.x; ledger 7 uses crates.io coin-structure 2.x; ledger 8 uses
+// git-8.2 coin-structure 2.x (a distinct family since the 8.2 move). So there are three impl sets.
 use crate::toolkit_js::encoded_zswap_local_state::{
 	EncodedOutput, EncodedQualifiedShieldedCoinInfo, EncodedRecipient,
 };
@@ -29,6 +28,13 @@ use midnight_node_ledger_helpers::ledger_7::{
 	CoinInfo as CoinInfoV2, CoinPublicKey as CoinPublicKeyV2, ContractAddress as ContractAddressV2,
 	Nonce as NonceV2, QualifiedInfo as QualifiedInfoV2, Recipient as RecipientV2,
 	ShieldedTokenType as ShieldedTokenTypeV2,
+};
+// L8's coin-structure (git-8.2) is now a distinct family from L7's (crates.io), so it needs its
+// own conversion impls with its own base-crypto `HashOutput` (git-8.2 1.0.0).
+use midnight_node_ledger_helpers::ledger_8::{
+	CoinInfo as CoinInfoL8, CoinPublicKey as CoinPublicKeyL8, ContractAddress as ContractAddressL8,
+	HashOutput as HashOutputL8, Nonce as NonceL8, QualifiedInfo as QualifiedInfoL8,
+	Recipient as RecipientL8, ShieldedTokenType as ShieldedTokenTypeL8,
 };
 use midnight_node_ledger_helpers::ledger_9::{
 	CoinInfo, CoinPublicKey, ContractAddress, HashOutput, Nonce, QualifiedInfo, Recipient,
@@ -39,14 +45,14 @@ use midnight_node_ledger_helpers::ledger_9::{
 // coin-structure 2.x and 3.x (the same invariant type_convert.rs relies on),
 // so conversion is direct byte reconstruction.
 macro_rules! impl_encoded_zswap_conversions {
-	($Recipient:ident, $CoinPublicKey:ident, $ContractAddress:ident,
+	($HashOutput:ident, $Recipient:ident, $CoinPublicKey:ident, $ContractAddress:ident,
 	 $CoinInfo:ident, $Nonce:ident, $ShieldedTokenType:ident, $QualifiedInfo:ident) => {
 		impl From<&EncodedRecipient> for $Recipient {
 			fn from(value: &EncodedRecipient) -> Self {
 				if value.is_left {
-					$Recipient::User($CoinPublicKey(HashOutput(value.left.0.0.0)))
+					$Recipient::User($CoinPublicKey($HashOutput(value.left.0.0.0)))
 				} else {
-					$Recipient::Contract($ContractAddress(HashOutput(value.right.0.0.0)))
+					$Recipient::Contract($ContractAddress($HashOutput(value.right.0.0.0)))
 				}
 			}
 		}
@@ -54,8 +60,8 @@ macro_rules! impl_encoded_zswap_conversions {
 		impl From<&EncodedOutput> for $CoinInfo {
 			fn from(value: &EncodedOutput) -> Self {
 				$CoinInfo {
-					nonce: $Nonce(HashOutput(value.coin_info.nonce)),
-					type_: $ShieldedTokenType(HashOutput(value.coin_info.color)),
+					nonce: $Nonce($HashOutput(value.coin_info.nonce)),
+					type_: $ShieldedTokenType($HashOutput(value.coin_info.color)),
 					value: value.coin_info.value,
 				}
 			}
@@ -64,8 +70,8 @@ macro_rules! impl_encoded_zswap_conversions {
 		impl From<&EncodedQualifiedShieldedCoinInfo> for $CoinInfo {
 			fn from(value: &EncodedQualifiedShieldedCoinInfo) -> Self {
 				$CoinInfo {
-					nonce: $Nonce(HashOutput(value.nonce)),
-					type_: $ShieldedTokenType(HashOutput(value.color)),
+					nonce: $Nonce($HashOutput(value.nonce)),
+					type_: $ShieldedTokenType($HashOutput(value.color)),
 					value: value.value,
 				}
 			}
@@ -79,7 +85,9 @@ macro_rules! impl_encoded_zswap_conversions {
 	};
 }
 
+// L7 shares base-crypto (1.1.0) with L9, so both use L9's `HashOutput`.
 impl_encoded_zswap_conversions!(
+	HashOutput,
 	RecipientV2,
 	CoinPublicKeyV2,
 	ContractAddressV2,
@@ -89,6 +97,7 @@ impl_encoded_zswap_conversions!(
 	QualifiedInfoV2
 );
 impl_encoded_zswap_conversions!(
+	HashOutput,
 	Recipient,
 	CoinPublicKey,
 	ContractAddress,
@@ -96,4 +105,15 @@ impl_encoded_zswap_conversions!(
 	Nonce,
 	ShieldedTokenType,
 	QualifiedInfo
+);
+// L8 (git-8.2) uses its own base-crypto `HashOutput` (1.0.0).
+impl_encoded_zswap_conversions!(
+	HashOutputL8,
+	RecipientL8,
+	CoinPublicKeyL8,
+	ContractAddressL8,
+	CoinInfoL8,
+	NonceL8,
+	ShieldedTokenTypeL8,
+	QualifiedInfoL8
 );

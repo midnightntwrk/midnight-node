@@ -12,22 +12,23 @@ use crate::ledger_9::{
 	UnshieldedWallet, Wallet, WalletSeed, WalletState, default_storage,
 };
 
+/// Move a storage-pointer value from ledger-8 storage into ledger-9 storage.
+///
+/// L8 (git-8.2 storage-core) and L9 (crates.io storage-core) no longer share a storage arena, so
+/// this serializes `t1` in the L8 format, deserializes it as `T2` in the L9 format, and allocates
+/// the result into L9 storage. Hence the `Serializable`/`Deserializable` bounds.
 pub fn old_to_new_sp<T1, T2>(
-	mut t1: crate::ledger_8::Sp<T1, Db8>,
+	t1: crate::ledger_8::Sp<T1, Db8>,
 ) -> Result<crate::ledger_9::Sp<T2, Db9>, std::io::Error>
 where
-	T1: crate::ledger_8::Storable<Db8> + crate::ledger_8::Tagged,
-	T2: crate::ledger_9::Storable<Db9> + crate::ledger_9::Tagged,
+	T1: crate::ledger_8::Storable<Db8> + crate::ledger_8::Serializable + crate::ledger_8::Tagged,
+	T2: crate::ledger_9::Storable<Db9> + crate::ledger_9::Deserializable + crate::ledger_9::Tagged,
 {
-	t1.persist();
-	let old_root = t1.as_typed_key().key;
-	// Both ArenaKey types are the same type (unified via midnight-storage-core patch).
-	let new_arena_key: crate::ledger_9::ArenaKey = old_root;
-	let new_root = crate::ledger_9::mn_ledger_storage::arena::TypedArenaKey::<
-		T2,
-		<Db8 as crate::ledger_9::DB>::Hasher,
-	>::from(new_arena_key);
-	default_storage::<Db9>().arena.get_lazy(&new_root)
+	// L8 (git-8.2 storage-core) and L9 (crates.io storage-core) no longer share a storage arena,
+	// so the old in-place arena-key reinterpret is invalid. Move the value across by serializing in
+	// the L8 format and deserializing in L9, then allocate it into L9 storage.
+	let value: T2 = old_to_new_ser(&*t1)?;
+	Ok(default_storage::<Db9>().arena.alloc(value))
 }
 
 /// Serialize with ledger-8 format, deserialize with ledger-9 format (tagged).
@@ -52,14 +53,18 @@ pub fn old_to_new_ser_untagged<
 	crate::ledger_9::deserialize_untagged(&mut &t_bytes[..])
 }
 
-/// Convert a ledger-8 BlockContext to a ledger-9 BlockContext.
+/// Convert a ledger-8 `BlockContext` to a ledger-9 one.
 ///
+/// L8 and L9 base-crypto diverged (1.0.0 vs 1.1.0), so the `Timestamp` and `HashOutput` fields are
+/// distinct types and are rebuilt by value rather than moved.
 pub fn block_context_8_to_9(ctx8: &crate::ledger_8::BlockContext) -> BlockContext9 {
+	use crate::ledger_9::base_crypto::time::Timestamp;
+	// L8/L9 base-crypto diverged (1.0.0 vs 1.1.0), so timestamps are rebuilt by value.
 	BlockContext9 {
-		tblock: ctx8.tblock,
+		tblock: Timestamp::from_secs(ctx8.tblock.to_secs()),
 		tblock_err: ctx8.tblock_err,
 		parent_block_hash: HashOutput9(ctx8.parent_block_hash.0),
-		last_block_time: ctx8.last_block_time,
+		last_block_time: Timestamp::from_secs(ctx8.last_block_time.to_secs()),
 	}
 }
 
@@ -67,7 +72,7 @@ pub fn fork_context_8_to_9(
 	context8: LedgerContext8<Db8>,
 ) -> Result<LedgerContext9<Db9>, std::io::Error> {
 	let ledger_state_8 = context8.ledger_state.lock().expect("failed to lock ledger state");
-	let ledger_state: crate::ledger_9::Sp<LedgerState8<Db8>, Db8> =
+	let ledger_state: crate::ledger_9::Sp<LedgerState8<Db9>, Db9> =
 		old_to_new_sp(ledger_state_8.clone())?;
 
 	let mut wallets = HashMap::new();
@@ -89,7 +94,7 @@ pub fn fork_context_8_to_9(
 					.expect("wallet seed different length between versions")
 			}),
 			shielded: ShieldedWallet {
-				state: (*old_to_new_sp::<_, WalletState<Db8>>(crate::ledger_8::Sp::new(
+				state: (*old_to_new_sp::<_, WalletState<Db9>>(crate::ledger_8::Sp::new(
 					v.shielded.state.clone(),
 				))?)
 				.clone(),
@@ -101,7 +106,7 @@ pub fn fork_context_8_to_9(
 				v.unshielded.clone(),
 			))?)
 			.clone(),
-			dust: (*old_to_new_sp::<_, DustWallet<Db8>>(crate::ledger_8::Sp::new(v.dust.clone()))?)
+			dust: (*old_to_new_sp::<_, DustWallet<Db9>>(crate::ledger_8::Sp::new(v.dust.clone()))?)
 				.clone(),
 		};
 		let new_key: WalletSeed = old_to_new_ser_untagged(&k)?;

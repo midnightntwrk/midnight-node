@@ -477,7 +477,7 @@ pub trait Ledger9Bridge {
 	/// drops new version's storage and initializes normal storage.
 	/// Returns true if storage was (re)initialized, false if already correct.
 	fn ensure_storage_initialized(&mut self) -> bool {
-		use ledger_storage_ledger_8::storage::try_get_default_storage;
+		use ledger_storage_ledger_9::storage::try_get_default_storage;
 
 		let unified = is_unified(*self);
 

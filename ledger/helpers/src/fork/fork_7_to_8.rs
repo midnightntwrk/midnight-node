@@ -12,22 +12,23 @@ use crate::ledger_8::{
 	Timestamp as Timestamp8, UnshieldedWallet, Wallet, WalletSeed, WalletState, default_storage,
 };
 
+/// Move a storage-pointer value from ledger-7 storage into ledger-8 storage.
+///
+/// L7 (crates.io storage-core) and L8 (git-8.2 storage-core) no longer share a storage arena, so
+/// this serializes `t1` in the L7 format, deserializes it as `T2` in the L8 format, and allocates
+/// the result into L8 storage. Hence the `Serializable`/`Deserializable` bounds.
 pub fn old_to_new_sp<T1, T2>(
-	mut t1: crate::ledger_7::Sp<T1, Db7>,
+	t1: crate::ledger_7::Sp<T1, Db7>,
 ) -> Result<crate::ledger_8::Sp<T2, Db8>, std::io::Error>
 where
-	T1: crate::ledger_7::Storable<Db7>,
-	T2: crate::ledger_8::Storable<Db8> + crate::ledger_8::Tagged,
+	T1: crate::ledger_7::Storable<Db7> + crate::ledger_7::Serializable + crate::ledger_7::Tagged,
+	T2: crate::ledger_8::Storable<Db8> + crate::ledger_8::Deserializable + crate::ledger_8::Tagged,
 {
-	t1.persist();
-	let old_root = t1.as_typed_key().key;
-	// Both ArenaKey types are the same type (unified via midnight-storage-core patch).
-	let new_arena_key: crate::ledger_8::ArenaKey = old_root;
-	let new_root = crate::ledger_8::mn_ledger_storage::arena::TypedArenaKey::<
-		T2,
-		<Db8 as crate::ledger_8::DB>::Hasher,
-	>::from(new_arena_key);
-	default_storage::<Db8>().arena.get_lazy(&new_root)
+	// L7 (crates.io storage-core) and L8 (git-8.2 storage-core) no longer share a storage arena,
+	// so move the value across by serializing in the L7 format and deserializing in L8, then
+	// allocate it into L8 storage. (Previously this reinterpreted the arena key in place.)
+	let value: T2 = old_to_new_ser(&*t1)?;
+	Ok(default_storage::<Db8>().arena.alloc(value))
 }
 
 /// Serialize with ledger-7 format, deserialize with ledger-8 format (tagged).

@@ -158,18 +158,24 @@ impl RawBlockData {
 }
 
 /// A single serialized transaction ready for sending or file output.
+///
+/// `C` is the target ledger version's `BlockContext` (defaults to the current,
+/// ledger-9, type). Every ledger version serializes `BlockContext` through the
+/// same `SerdeBlockContext` bridge, so the JSON wire shape is version-agnostic
+/// and the context can be deserialized directly as the version the caller
+/// needs, e.g. `SerializedTx<ledger_8::BlockContext>`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SerializedTx {
+pub struct SerializedTx<C = BlockContext> {
 	/// Serialized `Transaction` — the payload for `send_mn_transaction`.
 	pub tx: RawTransaction,
 	/// Serialized `BlockContext`
-	pub context: BlockContext,
+	pub context: C,
 	/// Transaction hash for logging.
 	#[serde(with = "hex_or_bytes_32")]
 	pub tx_hash: [u8; 32],
 }
 
-impl SerializedTx {
+impl<C> SerializedTx<C> {
 	pub fn tx_byte_len(&self) -> usize {
 		match &self.tx {
 			RawTransaction::Midnight(tx) => tx.len(),

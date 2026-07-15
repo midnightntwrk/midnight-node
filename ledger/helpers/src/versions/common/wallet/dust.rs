@@ -194,8 +194,8 @@ impl<D: DB> TryFrom<&WalletAddress> for DustWallet<D> {
 
 #[cfg(test)]
 mod tests {
+	use super::storage::DefaultDB;
 	use super::{DerivationPath, DustWallet, Role, WalletSeed};
-	use crate::DefaultDB;
 
 	fn test_seed() -> WalletSeed {
 		WalletSeed::from([0u8; 32])
