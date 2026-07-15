@@ -309,6 +309,43 @@ fn subminimal_state_resets_after_flush_and_accumulates_again() {
 }
 
 #[test]
+fn subminimal_flush_failure_preserves_accumulator() {
+	new_test_ext().execute_with(|| {
+		set_flush_threshold(179);
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		// Ledger rejects the flush system tx (e.g. block full).
+		mock_pallet::FailExecution::<Test>::put(true);
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		// Flush failed: no system tx, no event — the accumulated 180 cNIGHT
+		// must still be on the books, not silently discarded.
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+		assert!(subminimal_events().is_empty());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 2, sum: 180 }
+		);
+
+		// Executor recovers; the next subminimal transfer retries the flush
+		// carrying the full accumulated amount.
+		mock_pallet::FailExecution::<Test>::put(false);
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 0, sum: 0 }
+		);
+		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
+		assert_eq!(
+			subminimal_events(),
+			vec![Event::SubminimalFlushTransfer {
+				amount: 270,
+				count: 3,
+				midnight_tx_hash: [0u8; 32],
+			}],
+		);
+	})
+}
+
+#[test]
 fn subminimal_invalid_recipient_accumulates_not_unlocks() {
 	new_test_ext().execute_with(|| {
 		// `handle_incoming_transfer` routes by amount before recipient kind,

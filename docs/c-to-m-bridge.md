@@ -21,7 +21,7 @@ The Cardano-to-Midnight (C2M) bridge conceptually allows transferring NIGHT from
   - These are `User Transfers`.
 - Subminimal Transfers (a special case of `User Transfers`; does not apply to `Reserve Transfers`)
   - If a Cardano transaction locks less cNIGHT than fees would consume (the user would not be able to claim anything), the bridge accumulates this amount in internal storage instead of executing a Midnight transaction.
-  - Once the accumulated amount exceeds a configurable threshold, the Midnight Treasury is credited with the accumulated amount.
+  - Once the accumulated amount exceeds a configurable threshold, the Midnight Treasury is credited with the accumulated amount. If crediting fails at that block (e.g. the block is full), the accumulator is retained and the flush retried on the next subminimal transfer.
   - These are `Subminimal Transfers Flushes`.
 - Invalid Transfers (a special case of `User Transfers`; does not apply to `Reserve Transfers`)
   - Beyond invalid amounts, a transfer can have invalid transaction metadata. The UI should help prevent such cases, but on Cardano nothing prevents the owner of cNIGHT from spending it in an arbitrary transaction.

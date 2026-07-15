@@ -31,8 +31,16 @@ pub mod mock_pallet {
 	#[pallet::storage]
 	pub type TransfersCount<T: Config> = StorageValue<_, u8, ValueQuery>;
 
+	/// When set, `execute_system_transaction` fails, simulating a ledger-level
+	/// rejection (e.g. `BlockLimitExceededError`).
+	#[pallet::storage]
+	pub type FailExecution<T: Config> = StorageValue<_, bool, ValueQuery>;
+
 	impl<T> MidnightSystemTransactionExecutor for Pallet<T> {
 		fn execute_system_transaction(tx: Vec<u8>) -> Result<Hash, DispatchError> {
+			if FailExecution::<Test>::get() {
+				return Err(DispatchError::Other("mock: system transaction rejected"));
+			}
 			let bounded_vec: BoundedVec<u8, MaxTxLength> = tx.clone().try_into().unwrap();
 			Transfers::<Test>::append(bounded_vec);
 			let count = TransfersCount::<Test>::get();
