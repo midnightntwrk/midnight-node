@@ -109,10 +109,8 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 #[cfg(test)]
 mod mock;
 
-/// Handover phase is 1/6th length of an epoch.
-/// With committee size 5 we would like any validator to have two slots for signing certificates.
-/// 5 * 2 * 6 = 60
-/// (Needs to multiply cleanly into 24h)
+/// Number of slots per partner-chain epoch: 300 slots of 6-second blocks give 30-minute
+/// epochs. The epoch length must divide 24h evenly.
 pub const SLOTS_PER_EPOCH: u32 = 300;
 
 pub mod authorship;

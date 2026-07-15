@@ -229,12 +229,13 @@ pub mod pallet {
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-		// Only reason for this hook is to set the genesis committee as the committee for first block's epoch.
-		// If it wouldn't be set, the should_end_session() function would return true at the 2nd block,
-		// thus denying handover phase to genesis committee, which would break the chain. With this hook,
-		// should_end_session() returns true at 1st block and changes committee to the same one, thus allowing
-		// handover phase to happen. After having proper chain initialization procedure this probably won't be needed anymore.
-		// Note: If chain is started during handover phase, it will wait until new epoch to produce the first block.
+		// At genesis both committees are stored with epoch 0 (see `genesis_build`). This hook
+		// re-stamps them with the actual current epoch at block 1 so that:
+		// - `create_inherent` selects the committee for `current_epoch + 1` rather than epoch 1, and
+		// - `should_end_session` (which compares `QueuedCommittee.epoch` against the current epoch)
+		//   stays false until the first real epoch boundary, instead of forcing a session rotation
+		//   on every block while the epoch counter catches up from 0.
+		// With a proper chain-initialization procedure this would not be needed.
 		fn on_initialize(block_nr: BlockNumberFor<T>) -> Weight {
 			if block_nr.is_one() {
 				let epoch = T::current_epoch_number();
