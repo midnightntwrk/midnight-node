@@ -51,6 +51,16 @@ pub const DEFAULT_WINDOW_SIZE: u32 = 100_000;
 /// forward.
 const REFRESH_THRESHOLD: u32 = 10_000;
 
+/// Maximum Cardano block span pulled per `bulk_pull` while warming or sliding
+/// the cache forward. A far-behind node (cold start, or after a lag) would
+/// otherwise pull `[from_block, target_end]` (up to the whole `window_size`)
+/// in a single query: a multi-minute db-sync scan that stalls block import.
+/// Splitting the range into chunks of this many blocks bounds each query's
+/// span and lets the catch-up make committed, resumable progress. This is a
+/// cache-warming detail only; the union of chunks covers the same range, so
+/// it never changes what a consensus inherent observes.
+const REFRESH_CHUNK_BLOCKS: u32 = 5_000;
+
 /// Errors that can arise while bulk-pulling cNIGHT observation events.
 #[derive(thiserror::Error, Debug)]
 pub enum BulkPullError {
@@ -417,27 +427,50 @@ impl RefreshContext {
 			"refresh kicked off: pulling [{from_block}, {target_end}] (was end={old_end}); trim behind {new_window_start}"
 		);
 		let t0 = std::time::Instant::now();
-		let (start, end) = (
-			CardanoPosition::min_for_block(from_block),
-			CardanoPosition::max_for_block(target_end),
-		);
-		// Warming the cache means pulling a whole multi-block window, so the per-query
-		// limit is the wide `LARGE_LIMIT` rather than the per-block over-fetch bound.
-		let extension =
-			bulk_pull(&self.pool, &self.cnight_addresses, &start, &end, LARGE_LIMIT).await?;
-		{
-			let mut events_guard =
-				self.all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
-			slide_events(&mut events_guard, extension, new_window_start);
+		// Pull the range in bounded block-span chunks instead of one giant query.
+		// When a node is far behind tip (cold start, or after a lag) the span
+		// `[from_block, target_end]` can be hundreds of thousands of blocks, and a
+		// single `bulk_pull` over it is a multi-minute db-sync scan that stalls
+		// block import. Chunking bounds each query's span (and so its duration) and
+		// commits progress after every chunk, so an interrupted catch-up resumes
+		// from the last committed block. Cache-warming only: the union of chunks
+		// covers the same range, so no inherent payload changes.
+		let mut chunk_from = from_block;
+		loop {
+			let chunk_end = chunk_from
+				.saturating_add(REFRESH_CHUNK_BLOCKS.saturating_sub(1))
+				.min(target_end);
+			let (start, end) = (
+				CardanoPosition::min_for_block(chunk_from),
+				CardanoPosition::max_for_block(chunk_end),
+			);
+			// Warming the cache means pulling a whole multi-block window, so the per-query
+			// limit is the wide `LARGE_LIMIT` rather than the per-block over-fetch bound.
+			let extension =
+				bulk_pull(&self.pool, &self.cnight_addresses, &start, &end, LARGE_LIMIT).await?;
+			{
+				let mut events_guard = self
+					.all_events
+					.write()
+					.map_err(|e| format!("all_events write poisoned: {e}"))?;
+				slide_events(&mut events_guard, extension, new_window_start);
+			}
+			// Commit progress after each chunk. The window start's final value is
+			// known up front; the end advances chunk by chunk so a failure mid
+			// catch-up resumes from here on the next refresh.
+			*self
+				.snapshot_start_block
+				.write()
+				.map_err(|e| format!("snapshot_start_block write poisoned: {e}"))? = Some(new_window_start);
+			*self
+				.snapshot_end_block
+				.write()
+				.map_err(|e| format!("snapshot_end_block write poisoned: {e}"))? = Some(chunk_end);
+			if chunk_end >= target_end {
+				break;
+			}
+			chunk_from = chunk_end.saturating_add(1);
 		}
-		*self
-			.snapshot_start_block
-			.write()
-			.map_err(|e| format!("snapshot_start_block write poisoned: {e}"))? = Some(new_window_start);
-		*self
-			.snapshot_end_block
-			.write()
-			.map_err(|e| format!("snapshot_end_block write poisoned: {e}"))? = Some(target_end);
 		log::info!(
 			target: "cnight::sliding-window",
 			"refresh done: window now [{new_window_start}, {target_end}] (took {:?})",
