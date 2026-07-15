@@ -179,7 +179,8 @@ Networks other than `dev` require AWS access for genesis rebuilds. Contact the n
 - DO NOT use Co-authored-by lines for LLM tools (e.g., `Co-Authored-By: Claude <noreply@anthropic.com>`)
   - Instead: append "Assisted-by: AGENT_NAME:MODEL_VERSION"
   - Example: "Assisted-by: Claude:claude-4.7-opus"
-- When creating PRs, add the `ai-assisted` label
+- When creating PRs, add the `bot:ai-assisted` label
+  - Remove the deprecated `ai-assisted` label (without `bot:` prefix) if found
 
 **No force pushing:** Never use `git push --force` or `git push --force-with-lease`. Reviewers must re-review all commits after force pushes, and it disrupts the review process. If you need to make corrections:
 - Create a new commit with the fix (e.g., `chore: fix typo in change file`)
