@@ -622,8 +622,12 @@ where
 
 			metrics.observe_txs_processing_time(elapsed_time, tx_type);
 			metrics.observe_txs_size(tx_size as f64, tx_type);
-			// Records the OFF-path per-tx baseline only when this call actually ran the ZK crypto
-			// inline (cold proof cache); a batch-warmed or strict-cache hit yields `None`.
+			// Fallback recording of the OFF-path per-tx baseline (`mode="inline"`). For the normal
+			// unsigned `send_mn_transaction` flow this is `None`: FRAME runs `pre_dispatch`
+			// (`validate_guaranteed_execution`) before dispatching the call, so the inline crypto has
+			// already happened and been recorded there, leaving `get_verified_transaction` here a
+			// strict-cache hit. This still records `Some` for any path that reaches
+			// `apply_transaction` without a preceding `pre_dispatch` (e.g. direct application in tests).
 			if let Some(pv) = inline_proof_verify {
 				metrics.observe_inline_proof_verify(pv.as_secs_f64());
 			}
@@ -759,7 +763,7 @@ where
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 
 		// Perform dry-run validation with caching
-		let was_cached =
+		let (was_cached, inline_proof_verify) =
 			Self::do_validate_guaranteed_execution(&ledger, &tx, &block_context, &cache_key)?;
 
 		// Write Prometheus metrics
@@ -768,6 +772,16 @@ where
 				metrics.inc_tx_validation_cache_hit("strict");
 			} else {
 				metrics.inc_tx_validation_cache_miss();
+			}
+
+			// Records the OFF-path per-tx baseline (`mode="inline"`) only when this call actually ran
+			// the ZK crypto inline (cold proof cache). `send_mn_transaction` is unsigned, so during
+			// `execute_block` FRAME runs this `pre_dispatch` BEFORE the call's `apply_transaction`;
+			// the crypto therefore happens here and warms the STRICT cache, leaving
+			// `apply_transaction`'s `get_verified_transaction` a cache hit (`None`). Recording here is
+			// what makes the inline baseline observable on the OFF block-import path.
+			if let Some(pv) = inline_proof_verify {
+				metrics.observe_inline_proof_verify(pv.as_secs_f64());
 			}
 
 			// Report current cache sizes
@@ -1456,13 +1470,17 @@ where
 	/// version-specific `guaranteed_validation` module) to validate that the
 	/// transaction can enter a block.
 	///
-	/// Returns `true` if validation was served from the strict cache, `false` otherwise.
+	/// Returns whether validation was served from the strict cache, together with the wall-clock time
+	/// spent running the ZK crypto inline (`Some` only on a cold-cache miss where
+	/// `get_verified_transaction` verified proofs itself — see its docs). The caller
+	/// (`validate_guaranteed_execution`) records the duration as the `mode="inline"` proof-verify
+	/// metric: this pre-dispatch path is where the OFF block-import path actually runs the crypto.
 	fn do_validate_guaranteed_execution(
 		ledger: &Ledger<D>,
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
-	) -> Result<bool, LedgerApiError>
+	) -> Result<(bool, Option<std::time::Duration>), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -1475,8 +1493,8 @@ where
 			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
-		// Inline proof-verify timing (`.1`) is recorded on the block-import path, not here.
-		let (verified_tx, _) = Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
+		let (verified_tx, inline_proof_verify) =
+			Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
@@ -1485,7 +1503,7 @@ where
 			verified_tx,
 			&ctx,
 		) {
-			Ok(()) => Ok(was_cached),
+			Ok(()) => Ok((was_cached, inline_proof_verify)),
 			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
