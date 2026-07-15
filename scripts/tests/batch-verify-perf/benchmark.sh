@@ -15,12 +15,20 @@
 
 # Phase 2 of the batch-verify block-import perf harness: A/B benchmark.
 #
-#   ./benchmark.sh NODE_IMAGE
+#   ./benchmark.sh NODE_IMAGE     # docker mode: run the given node image
+#   ./benchmark.sh                # local mode: run a locally-built node binary
+#                                 #   (NODE_BIN, default target/release/midnight-node)
 #
 # Restores the archive built by prime.sh into a non-authoring *producer*, then
 # full-syncs a fresh *node-under-test* from it twice -- once with
 # BATCH_VERIFY_BLOCK_IMPORT=false, once =true -- and reports the sync time for
 # each. The delta is the batch-verification speedup on the block-import path.
+#
+# Two run modes, chosen exactly like scripts/tests/toolkit-tokens-minter-e2e.sh:
+# passing a node image runs containers; passing nothing runs the local binary as
+# host processes (the image base's glibc is too old for a freshly-built host
+# binary, so local mode never containerises it). Both modes share the polling,
+# metrics-scrape and reporting logic below; only how a node is launched differs.
 
 set -euo pipefail
 
@@ -29,9 +37,24 @@ BV_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$BV_DIR/lib.sh"
 
 NODE_IMAGE="${1:-${NODE_IMAGE:-}}"
-[ -n "$NODE_IMAGE" ] || die "usage: benchmark.sh NODE_IMAGE"
-require_cmds
-ensure_network
+if [ -n "$NODE_IMAGE" ]; then
+  MODE=docker
+  log "🧱 mode: docker  (node image: $NODE_IMAGE)"
+else
+  MODE=local
+  [ -x "$NODE_BIN" ] || die "local mode: node binary not found/executable at '$NODE_BIN' \
+-- build it (\`cargo build --release\`) or set NODE_BIN=<path>"
+  log "🧱 mode: local   (node binary: $NODE_BIN)"
+  log "ℹ️  local mode reuses the existing archive; its genesis must match this binary's \
+dev chainspec (re-prime with the same binary if the syncer can't find the producer's chain)."
+fi
+
+if [ "$MODE" = docker ]; then
+  require_cmds docker curl
+  ensure_network
+else
+  require_cmds curl tar
+fi
 [ -f "$ARCHIVE_TAR" ] || die "archive missing: $ARCHIVE_TAR -- run prime.sh first"
 
 # Target height: recorded by prime.sh, overridable via TARGET_HEIGHT env.
@@ -41,54 +64,188 @@ if [ -f "$ARCHIVE_META" ]; then
 fi
 log "🎯 target sync height: $TARGET_HEIGHT"
 
+PRODUCER_PID=""
+SYNCER_PID=""
 cleanup() {
-  rm_container "$SYNCER_CONTAINER"
-  rm_container "$PRODUCER_CONTAINER"
-  rm_volume "$SYNCER_VOLUME"
+  if [ "$MODE" = docker ]; then
+    rm_container "$SYNCER_CONTAINER"
+    rm_container "$PRODUCER_CONTAINER"
+    rm_volume "$SYNCER_VOLUME"
+  else
+    [ -n "$SYNCER_PID" ]   && kill "$SYNCER_PID"   2>/dev/null || true
+    [ -n "$PRODUCER_PID" ] && kill "$PRODUCER_PID" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
-# --- producer: restore + start once (serves the immutable blocks 1..N) ------
-log "📦 restoring producer base_path from archive"
-restore_volume "$PRODUCER_VOLUME" "$ARCHIVE_TAR"
+# --- mode-aware node runners ------------------------------------------------
+# Each pair (docker vs local) launches the same node with the same effective
+# config; only the transport differs (container on a docker network vs. host
+# process on localhost). In local mode the dev preset's `args` array is replaced
+# by the CLI (config layering: preset < cli), so the producer must re-supply the
+# preset's authoring flags itself; BASE_PATH is an env override read separately
+# from that array, so it still points the node at the restored dir.
 
+start_producer() {
+  if [ "$MODE" = docker ]; then
+    log "📦 restoring producer base_path from archive (docker volume)"
+    restore_volume "$PRODUCER_VOLUME" "$ARCHIVE_TAR"
+    log "🚀 starting producer container (seeds the network with the primed chain)"
+    rm_container "$PRODUCER_CONTAINER"
+    docker run -d --rm \
+      --name "$PRODUCER_CONTAINER" \
+      --network "$NETWORK_NAME" \
+      -p "${PRODUCER_RPC_HOST_PORT}:9944" \
+      -v "$PRODUCER_VOLUME":"$BASE_PATH_IN" \
+      -e CFG_PRESET=dev \
+      "$NODE_IMAGE" >/dev/null
+  else
+    log "📦 restoring producer base_path from archive (host dir $PRODUCER_DIR)"
+    host_restore_dir "$PRODUCER_DIR" "$ARCHIVE_TAR"
+    log "🚀 starting producer (local binary, logs -> $PRODUCER_LOG)"
+    # Replicates the container's `CFG_PRESET=dev` + dev-preset `args` (see
+    # res/cfg/dev.toml) plus explicit ports so it never collides with the syncer.
+    # CWD = repo root so the preset's relative res/ paths resolve; BASE_PATH env
+    # points it at the restored dir (proven equivalent to the container).
+    (
+      cd "$REPO_ROOT"
+      export CFG_PRESET=dev BASE_PATH="$PRODUCER_DIR"
+      exec "$NODE_BIN" \
+        --dev \
+        --node-key "$DEV_NODE_KEY" \
+        --rpc-external --rpc-cors=all --rpc-port "$PRODUCER_RPC_HOST_PORT" \
+        --prometheus-external --prometheus-port "$PRODUCER_PROM_PORT" \
+        --port "$PRODUCER_P2P_PORT" \
+        --state-pruning archive --blocks-pruning archive \
+        >"$PRODUCER_LOG" 2>&1
+    ) &
+    PRODUCER_PID=$!
+  fi
+}
+
+# Print the producer's startup log (for peer-id extraction / diagnostics).
+producer_log() {
+  if [ "$MODE" = docker ]; then docker logs "$PRODUCER_CONTAINER" 2>&1
+  else cat "$PRODUCER_LOG" 2>/dev/null; fi
+}
+
+# Launch a fresh syncer (node-under-test). $1 = flag (false|true), $2 = node key.
+start_syncer() {
+  local flag="$1" node_key="$2"
+  if [ "$MODE" = docker ]; then
+    rm_container "$SYNCER_CONTAINER"
+    rm_volume "$SYNCER_VOLUME"
+    docker volume create "$SYNCER_VOLUME" >/dev/null
+    local tuning=() v
+    for v in BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE \
+             BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY; do
+      [ -n "${!v:-}" ] && tuning+=( -e "$v=${!v}" )
+    done
+    # CFG_PRESET=dev keeps the mock main-chain-follower config; the explicit run
+    # args replace the preset's `--dev ...` (so no dev keys / no authoring) and
+    # make this a plain full-sync node whose import queue runs the batch verifier.
+    docker run -d --rm \
+      --name "$SYNCER_CONTAINER" \
+      --network "$NETWORK_NAME" \
+      -p "${SYNCER_RPC_HOST_PORT}:9944" \
+      -p "${SYNCER_PROM_HOST_PORT}:9615" \
+      -v "$SYNCER_VOLUME":"$BASE_PATH_IN" \
+      -e CFG_PRESET=dev \
+      -e WIPE_CHAIN_STATE=true \
+      -e "BATCH_VERIFY_BLOCK_IMPORT=$flag" \
+      "${tuning[@]}" \
+      "$NODE_IMAGE" \
+        --chain "$CHAIN" \
+        --node-key "$node_key" \
+        --base-path "$BASE_PATH_IN" \
+        --bootnodes "$BOOTNODE" \
+        --sync full \
+        --no-mdns \
+        --rpc-external --rpc-cors=all --rpc-port 9944 \
+        --prometheus-external --prometheus-port 9615 \
+        --state-pruning archive --blocks-pruning archive >/dev/null
+  else
+    rm -rf "$SYNCER_DIR"
+    mkdir -p "$SYNCER_DIR"
+    (
+      cd "$REPO_ROOT"
+      export CFG_PRESET=dev WIPE_CHAIN_STATE=true BATCH_VERIFY_BLOCK_IMPORT="$flag"
+      export BASE_PATH="$SYNCER_DIR"
+      local v
+      for v in BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE \
+               BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY; do
+        [ -n "${!v:-}" ] && export "$v=${!v}"
+      done
+      exec "$NODE_BIN" \
+        --chain "$CHAIN" \
+        --node-key "$node_key" \
+        --base-path "$SYNCER_DIR" \
+        --bootnodes "$BOOTNODE" \
+        --sync full \
+        --no-mdns \
+        --rpc-external --rpc-cors=all --rpc-port "$SYNCER_RPC_HOST_PORT" \
+        --prometheus-external --prometheus-port "$SYNCER_PROM_HOST_PORT" \
+        --port "$SYNCER_P2P_PORT" \
+        --state-pruning archive --blocks-pruning archive \
+        >"$SYNCER_LOG" 2>&1
+    ) &
+    SYNCER_PID=$!
+  fi
+}
+
+# True while the current syncer is still running.
+syncer_alive() {
+  if [ "$MODE" = docker ]; then
+    docker ps --format '{{.Names}}' | grep -q "^${SYNCER_CONTAINER}$"
+  else
+    [ -n "$SYNCER_PID" ] && kill -0 "$SYNCER_PID" 2>/dev/null
+  fi
+}
+
+# Last lines of the current syncer's log, for failure diagnostics.
+syncer_logs_tail() {
+  if [ "$MODE" = docker ]; then docker logs --tail 80 "$SYNCER_CONTAINER" 2>&1 || true
+  else tail -n 80 "$SYNCER_LOG" 2>/dev/null || true; fi
+}
+
+# Tear the current syncer down and (local mode) wait for it to release its ports
+# before the next leg reuses them.
+stop_syncer() {
+  if [ "$MODE" = docker ]; then
+    rm_container "$SYNCER_CONTAINER"
+  else
+    [ -n "$SYNCER_PID" ] && kill "$SYNCER_PID" 2>/dev/null || true
+    [ -n "$SYNCER_PID" ] && wait "$SYNCER_PID" 2>/dev/null || true
+    SYNCER_PID=""
+  fi
+}
+
+# --- producer: restore + start once (serves the immutable blocks 1..N) ------
 # The producer keeps the dev preset, so it authors past N -- harmless, since the
 # syncer targets a fixed height and blocks 1..N are immutable history it serves.
-log "🚀 starting producer (seeds the network with the primed chain)"
-rm_container "$PRODUCER_CONTAINER"
-docker run -d --rm \
-  --name "$PRODUCER_CONTAINER" \
-  --network "$NETWORK_NAME" \
-  -p "${PRODUCER_RPC_HOST_PORT}:9944" \
-  -v "$PRODUCER_VOLUME":"$BASE_PATH_IN" \
-  -e CFG_PRESET=dev \
-  "$NODE_IMAGE" >/dev/null
+start_producer
 
 log "⏳ waiting for producer to load the archive (best >= $TARGET_HEIGHT)"
-wait_for_unfinalized_block "http://localhost:${PRODUCER_RPC_HOST_PORT}" "$TARGET_HEIGHT" 180
+if ! wait_for_unfinalized_block "http://localhost:${PRODUCER_RPC_HOST_PORT}" "$TARGET_HEIGHT" 180; then
+  producer_log | tail -80 >&2 || true
+  die "producer did not reach height $TARGET_HEIGHT"
+fi
 
 # Build the bootnode multiaddr from the producer's actual peer id (logged at
 # startup), so we never depend on a hard-coded node-key -> peer-id mapping.
-PEER_ID="$(docker logs "$PRODUCER_CONTAINER" 2>&1 \
-  | grep -oE 'Local node identity is: 12D3[A-Za-z0-9]+' | head -1 | awk '{print $NF}')"
+PEER_ID="$(producer_log | grep -oE 'Local node identity is: 12D3[A-Za-z0-9]+' | head -1 | awk '{print $NF}')"
 [ -n "$PEER_ID" ] || die "could not read producer peer id from logs"
-BOOTNODE="/dns4/${PRODUCER_CONTAINER}/tcp/${P2P_PORT}/p2p/${PEER_ID}"
+if [ "$MODE" = docker ]; then
+  BOOTNODE="/dns4/${PRODUCER_CONTAINER}/tcp/${P2P_PORT}/p2p/${PEER_ID}"
+else
+  BOOTNODE="/ip4/127.0.0.1/tcp/${PRODUCER_P2P_PORT}/p2p/${PEER_ID}"
+fi
 log "🔗 bootnode: $BOOTNODE"
 
 # --- one A/B leg: full-sync a fresh node-under-test, time it ---------------
 RESULT_SECS=0
 run_sync() { # $1 = flag (false|true)
   local flag="$1"
-  rm_container "$SYNCER_CONTAINER"
-  rm_volume "$SYNCER_VOLUME"
-  docker volume create "$SYNCER_VOLUME" >/dev/null
-
-  # forward any optional batch-verify tuning knobs that are set in the env
-  local tuning=() v
-  for v in BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE \
-           BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY; do
-    [ -n "${!v:-}" ] && tuning+=( -e "$v=${!v}" )
-  done
 
   # A fresh random node key per run: reusing one peer id across rapid
   # teardown/reconnect cycles makes the producer reject the returning peer
@@ -99,29 +256,7 @@ run_sync() { # $1 = flag (false|true)
   local t0 t0_ms t1_ms
   t0=$(date +%s)        # coarse, for the watchdog/stall checks
   t0_ms=$(date +%s%3N)  # precise, for the reported sync time
-  # CFG_PRESET=dev keeps the mock main-chain-follower config; the explicit run
-  # args replace the preset's `--dev ...` (so no dev keys / no authoring) and
-  # make this a plain full-sync node whose import queue runs the batch verifier.
-  docker run -d --rm \
-    --name "$SYNCER_CONTAINER" \
-    --network "$NETWORK_NAME" \
-    -p "${SYNCER_RPC_HOST_PORT}:9944" \
-    -p "${SYNCER_PROM_HOST_PORT}:9615" \
-    -v "$SYNCER_VOLUME":"$BASE_PATH_IN" \
-    -e CFG_PRESET=dev \
-    -e WIPE_CHAIN_STATE=true \
-    -e "BATCH_VERIFY_BLOCK_IMPORT=$flag" \
-    "${tuning[@]}" \
-    "$NODE_IMAGE" \
-      --chain "$CHAIN" \
-      --node-key "$node_key" \
-      --base-path "$BASE_PATH_IN" \
-      --bootnodes "$BOOTNODE" \
-      --sync full \
-      --no-mdns \
-      --rpc-external --rpc-cors=all --rpc-port 9944 \
-      --prometheus-external --prometheus-port 9615 \
-      --state-pruning archive --blocks-pruning archive >/dev/null
+  start_syncer "$flag" "$node_key"
 
   local rpc="http://localhost:${SYNCER_RPC_HOST_PORT}"
   local last=0 last_progress now h
@@ -129,21 +264,21 @@ run_sync() { # $1 = flag (false|true)
   while :; do
     now=$(date +%s)
     (( now - t0 > SYNC_TIMEOUT_SECS )) \
-      && { docker logs --tail 80 "$SYNCER_CONTAINER" >&2 || true; die "sync timeout (flag=$flag) at height $last"; }
-    docker ps --format '{{.Names}}' | grep -q "^${SYNCER_CONTAINER}$" \
-      || { docker logs --tail 80 "$SYNCER_CONTAINER" >&2 || true; die "syncer exited early (flag=$flag) at height $last"; }
+      && { syncer_logs_tail >&2; die "sync timeout (flag=$flag) at height $last"; }
+    syncer_alive \
+      || { syncer_logs_tail >&2; die "syncer exited early (flag=$flag) at height $last"; }
     h="$(best_height "$rpc")"; h="${h:-0}"
     if (( h > last )); then last=$h; last_progress=$now; log "  [flag=$flag] best #$last"; fi
     if (( last >= TARGET_HEIGHT )); then t1_ms=$(date +%s%3N); break; fi
     (( now - last_progress > STALL_TIMEOUT_SECS )) \
-      && { docker logs --tail 80 "$SYNCER_CONTAINER" >&2 || true; die "sync stalled at #$last (flag=$flag)"; }
+      && { syncer_logs_tail >&2; die "sync stalled at #$last (flag=$flag)"; }
     sleep "$POLL_INTERVAL_SECS"
   done
 
-  # capture metrics while the container is still up
+  # capture metrics while the node is still up
   scrape_batch_metrics "http://localhost:${SYNCER_PROM_HOST_PORT}/metrics" \
     > "$ARTIFACTS_DIR/metrics-${flag}.txt" || true
-  rm_container "$SYNCER_CONTAINER"
+  stop_syncer
   RESULT_SECS=$(awk -v a="$t0_ms" -v b="$t1_ms" 'BEGIN { printf "%.1f", (b - a) / 1000 }')
 }
 
@@ -173,7 +308,11 @@ ON_MIN="$(printf '%s\n' "${ON_TIMES[@]}" | awk 'NR==1{m=$1} $1<m{m=$1} END{print
 # --- report (stdout) -------------------------------------------------------
 echo
 echo "═══════════════ batch-verify block-import benchmark ═══════════════"
-printf 'node image             : %s\n' "$NODE_IMAGE"
+if [ "$MODE" = docker ]; then
+  printf 'node image             : %s\n' "$NODE_IMAGE"
+else
+  printf 'node binary (local)    : %s\n' "$NODE_BIN"
+fi
 printf 'blocks synced          : %s   (repeats: %s)\n' "$TARGET_HEIGHT" "$REPEATS"
 printf 'OFF (inline verify)    : %s   [%s]\n' "$(stats "${OFF_TIMES[@]}")" "${OFF_TIMES[*]}"
 printf 'ON  (batch verify)     : %s   [%s]\n' "$(stats "${ON_TIMES[@]}")" "${ON_TIMES[*]}"

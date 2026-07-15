@@ -60,6 +60,37 @@ PRODUCER_RPC_HOST_PORT="${PRODUCER_RPC_HOST_PORT:-9945}"
 SYNCER_RPC_HOST_PORT="${SYNCER_RPC_HOST_PORT:-9944}"
 SYNCER_PROM_HOST_PORT="${SYNCER_PROM_HOST_PORT:-9615}"
 
+# --- local (host-process) mode -------------------------------------------
+# When benchmark.sh is invoked WITHOUT a node image it runs the node from a
+# locally-built binary as host processes instead of containers (see the mode
+# split in benchmark.sh, mirroring scripts/tests/toolkit-tokens-minter-e2e.sh).
+# The image's base is amazonlinux 2023 (glibc 2.34); a binary built on a newer
+# host won't run inside it, so local mode never containerises the local binary —
+# it runs it directly on the host, where its own glibc is available.
+#
+# Repo root (…/scripts/tests/batch-verify-perf → three up). Needed because the
+# `dev` preset (res/cfg/dev.toml) references its chainspec/genesis/mock files by
+# RELATIVE path, so the local binary must run with the repo root as its CWD.
+REPO_ROOT="${REPO_ROOT:-$(cd "$BV_DIR/../../.." && pwd)}"
+# Locally-built node binary used in local mode. Release by default (this is a
+# perf harness); override with NODE_BIN=… (e.g. target/debug/midnight-node) when
+# you only need to check that the metrics appear.
+NODE_BIN="${NODE_BIN:-$REPO_ROOT/target/release/midnight-node}"
+# Fixed dev-preset node key → stable producer peer id (matches res/cfg/dev.toml).
+DEV_NODE_KEY="${DEV_NODE_KEY:-0000000000000000000000000000000000000000000000000000000000000001}"
+# Host base-paths + logs for the two local nodes (kept under artifacts for debugging).
+LOCAL_WORK_DIR="${LOCAL_WORK_DIR:-$ARTIFACTS_DIR/local}"
+PRODUCER_DIR="${PRODUCER_DIR:-$LOCAL_WORK_DIR/producer}"
+SYNCER_DIR="${SYNCER_DIR:-$LOCAL_WORK_DIR/syncer}"
+PRODUCER_LOG="${PRODUCER_LOG:-$LOCAL_WORK_DIR/producer.log}"
+SYNCER_LOG="${SYNCER_LOG:-$LOCAL_WORK_DIR/syncer.log}"
+# Distinct host ports so producer and syncer processes never collide. RPC/prom
+# reuse the docker host mappings (so downstream URLs are identical); only the P2P
+# ports are local-mode-only.
+PRODUCER_PROM_PORT="${PRODUCER_PROM_PORT:-9616}" # producer prom (unused; kept off 9615)
+PRODUCER_P2P_PORT="${PRODUCER_P2P_PORT:-30334}"
+SYNCER_P2P_PORT="${SYNCER_P2P_PORT:-30335}"
+
 # --- prime workload tunables ----------------------------------------------
 # The proof-heavy chain is built in two steps (see prime.sh):
 #   1. fan-out: one-or-more `single-tx` calls split the genesis shielded balance
@@ -106,8 +137,9 @@ log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 require_cmds() {
-  local c
-  for c in docker curl; do
+  local cmds=("$@") c
+  [ "${#cmds[@]}" -eq 0 ] && cmds=(docker curl)
+  for c in "${cmds[@]}"; do
     command -v "$c" >/dev/null 2>&1 || die "missing required command: $c"
   done
 }
@@ -144,6 +176,17 @@ restore_volume() {
     -v "$vol":/data \
     -v "$(dirname "$tar")":/in \
     busybox sh -c "cd /data && gzip -dc /in/$(basename "$tar") | tar xf -"
+}
+
+# host_restore_dir <dir> <host-tar.gz>: the local-mode analogue of restore_volume —
+# recreate a host directory and extract the archived base_path into it (the tarball
+# root is the base_path contents, i.e. chains/…). Uses GNU tar's -z.
+host_restore_dir() {
+  local dir="$1" tar="$2"
+  [ -f "$tar" ] || die "archive not found: $tar (run prime.sh first)"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  tar xzf "$tar" -C "$dir"
 }
 
 # Scrape the verification counters (summary lines only, dropping histogram

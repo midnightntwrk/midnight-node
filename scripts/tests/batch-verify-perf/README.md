@@ -62,6 +62,35 @@ just batch-verify-perf-prime <NODE_IMAGE> <TOOLKIT_IMAGE>
 just batch-verify-perf-bench <NODE_IMAGE>
 ```
 
+### Benchmarking a locally-built node (no image rebuild)
+
+`benchmark.sh` picks its run mode the same way `toolkit-tokens-minter-e2e.sh`
+does: pass a node image and it runs containers; pass **nothing** and it runs a
+locally-built binary as **host processes** (producer + syncer on localhost),
+against the same existing archive. This is the fast inner loop when iterating on
+node-side changes — build once, benchmark without waiting on a CI image.
+
+```bash
+cargo build --release                 # or: cargo build  +  NODE_BIN=target/debug/midnight-node
+cd scripts/tests/batch-verify-perf
+./benchmark.sh                         # local mode — uses target/release/midnight-node
+NODE_BIN=/path/to/midnight-node ./benchmark.sh   # explicit binary
+```
+
+Notes for local mode:
+
+- The image base (amazonlinux 2023, glibc 2.34) is older than a typical dev
+  host, so a freshly-built host binary can't run *inside* the image — hence host
+  processes rather than a layered image.
+- The binary runs with the repo root as its CWD because the `dev` preset
+  (`res/cfg/dev.toml`) references its chainspec/genesis/mock files by relative
+  path.
+- It **reuses the existing archive**, whose genesis must match the local
+  binary's `dev` chainspec. If the syncer can't find the producer's chain,
+  re-prime with a matching build.
+- Host base-paths and logs land under `artifacts/local/` (`producer.log`,
+  `syncer.log`) for debugging.
+
 ### Example output
 
 ```
