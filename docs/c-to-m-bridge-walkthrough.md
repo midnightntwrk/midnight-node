@@ -106,7 +106,7 @@ Four things you *do* (steps 1, 2, 3, 5) and one thing you *wait for* (step 4).
 
 | # | Requirement | Notes |
 |---|-------------|-------|
-| 1 | **The `midnight-node-toolkit` binary** | Build from this repo: `cargo build --release -p midnight-node-toolkit` → `target/release/midnight-node-toolkit`. Or use the published `midnight-node-toolkit` Docker image. Used here for `show-address`, `root-call`, `show-wallet`, and the claim. |
+| 1 | **The `midnight-node-toolkit` binary** | Build from this repo: `cargo build --release -p midnight-node-toolkit` → `target/release/midnight-node-toolkit`. Or use the published `midnight-node-toolkit` Docker image. Used here for `show-address`, `root-call`, `show-wallet`, and the claim. **⚠️ Build from `main` (or at least commit `fd0ae836`, #1766) — the claimable-balance fields `show-wallet` reports in Steps 5–6 were added there and are *not* on `release/node-2.0.0`.** |
 | 2 | **A Midnight wallet seed** (32-byte hex) | This is your *recipient identity* on Midnight and the thing that later claims. Any 32-byte hex works, e.g. `0000…0001`. Keep it — you need the same seed in Step 1 (derive) and Step 6 (claim). |
 | 3 | **A Cardano *Preview* wallet** with cNIGHT + ADA, and its payment signing-key file | Stagenet follows **Cardano Preview**. The wallet must hold some Stagenet cNIGHT (policy `d2dbff…`, empty asset name) plus a little ADA for fees/min-UTXO. The signing key is a standard `*.skey` JSON. Get cNIGHT from the [Midnight faucet](https://midnight-faucet.nethermind.dev/) and Preview ADA from the [Cardano testnets faucet](https://docs.cardano.org/cardano-testnets/tools/faucet). |
 | 4 | **`cardano-cli` + a Cardano *Preview* node socket** | You build, sign, and submit the lock with `cardano-cli`, which needs `CARDANO_NODE_SOCKET_PATH` pointed at a running **Preview** node (that's what lets you read the tx hash *before* submitting — the whole point of the ordering). *If you instead use the one-shot toolkit `bridge-transfer`, you need an Ogmios endpoint following Preview — `wss://ogmios.devnet.midnight.network` (WebSocket, `wss://`) — rather than a node socket.* |
@@ -353,7 +353,8 @@ When it lands, the observing block contains:
   ```
 
   Watch `claimable_bridge_transfers` go from `0` to your post-fee amount
-  (`46_550_000`).
+  (`46_550_000`). If `show-wallet` doesn't print this field, your toolkit predates
+  `fd0ae836` (#1766) — rebuild from `main` (see requirement 1).
 
 - **Or watch events** in Polkadot-JS Apps (*Network → Explorer*, or *chain state*)
   for the `c2mBridge.UserTransfer` event with your `mc_tx_hash`.
