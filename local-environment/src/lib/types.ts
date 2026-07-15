@@ -29,6 +29,12 @@ export interface RunOptions {
    * Mutually exclusive with fromSnapshot.
    */
   fromGenesis?: boolean;
+  /**
+   * Extra docker-compose override file(s) applied after the generated genesis
+   * override (from-genesis mode only) — e.g. to enable the node's mock
+   * main-chain follower for fully local runs.
+   */
+  composeOverride?: string[];
 }
 
 export interface ImageUpgradeOptions extends RunOptions {

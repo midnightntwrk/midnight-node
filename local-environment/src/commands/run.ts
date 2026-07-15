@@ -37,6 +37,7 @@ import {
   mockOverridePath,
   MOCKED_CONFIG_DIRNAME,
 } from "../lib/mockComposeOverride";
+import { generateGenesisComposeOverride } from "../lib/genesisComposeOverride";
 
 /**
  * Bring up a network locally:
@@ -46,6 +47,12 @@ import {
  *   with --from-genesis — there is no k8s-backed path.
  */
 export async function run(network: string, runOptions: RunOptions) {
+  if (runOptions.composeOverride?.length && !runOptions.fromGenesis) {
+    throw new Error(
+      "--compose-override is only supported together with --from-genesis.",
+    );
+  }
+
   if (network === "local-env") {
     console.log("Running environment with local Cardano/PC resources");
     await runLocalEnvironment(runOptions);
@@ -65,7 +72,9 @@ export async function run(network: string, runOptions: RunOptions) {
 
 async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
   if (runOptions.fromGenesis && runOptions.fromSnapshot) {
-    throw new Error("--from-genesis and --from-snapshot are mutually exclusive.");
+    throw new Error(
+      "--from-genesis and --from-snapshot are mutually exclusive.",
+    );
   }
 
   const composeFile = resolveComposeFile(namespace);
@@ -82,7 +91,7 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
   }
 
   if (runOptions.fromGenesis) {
-    await runFromGenesis(composeFile, env, runOptions);
+    await runFromGenesis(namespace, composeFile, env, runOptions);
     return;
   }
 
@@ -154,8 +163,13 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
  * (validator seed phrases, a main-chain data source) via env/--env-file, so
  * report anything left unset up front rather than letting the chain come up
  * silently unable to produce blocks.
+ *
+ * The provided seed phrases are wired into node keystores via a generated
+ * compose override: the node only imports keys from *_SEED_FILE paths, not
+ * from the SEED_PHRASE env var the base compose files pass.
  */
 async function runFromGenesis(
+  namespace: string,
   composeFile: string,
   env: Record<string, string>,
   runOptions: RunOptions,
@@ -169,15 +183,44 @@ async function runFromGenesis(
     );
   }
 
+  const { overridePath, seededServices, missingSeedVars } =
+    generateGenesisComposeOverride({
+      composeFile,
+      network: namespace,
+      env,
+    });
+  if (seededServices.length === 0) {
+    throw new Error(
+      `From-genesis mode needs at least one validator seed phrase, but none of the seed env vars are set (${Object.values(missingSeedVars).join(", ")}). Provide them via --env-file or the environment. Only holders of the network's genesis authority keys can produce blocks from genesis.`,
+    );
+  }
+  console.log(
+    `Generated genesis-mode override: ${overridePath} (seeded: ${seededServices.join(", ")})`,
+  );
+  const missing = Object.entries(missingSeedVars);
+  if (missing.length > 0) {
+    console.warn(
+      `⚠️  No seed phrase for: ${missing.map(([svc, v]) => `${svc} (${v})`).join(", ")}. These validators start with empty keystores and cannot author blocks.`,
+    );
+  }
+
   const unsetVars = collectUnsetComposeVars(composeFile, env);
   if (unsetVars.length > 0) {
     console.warn(
-      `⚠️  Env vars referenced by the compose file but not set: ${unsetVars.join(", ")}. From-genesis mode mocks nothing — validator seeds and a main-chain data source must be provided via --env-file or the environment for the chain to produce blocks.`,
+      `⚠️  Env vars referenced by the compose file but not set: ${unsetVars.join(", ")}. From-genesis mode mocks nothing — a main-chain data source must be provided (db-sync connection strings, or a --compose-override enabling the node's mock follower) for the chain to run.`,
     );
+  }
+
+  const extraOverrides = runOptions.composeOverride ?? [];
+  for (const override of extraOverrides) {
+    if (!fs.existsSync(override)) {
+      throw new Error(`--compose-override file not found: ${override}`);
+    }
   }
 
   await runDockerCompose({
     composeFile,
+    extraComposeFiles: [overridePath, ...extraOverrides],
     env,
     profiles: runOptions.profiles,
     detach: true,
@@ -185,7 +228,7 @@ async function runFromGenesis(
 }
 
 /** Env var names referenced by the compose file ($VAR or ${VAR...}) that are unset or blank in env. */
-function collectUnsetComposeVars(
+export function collectUnsetComposeVars(
   composeFile: string,
   env: Record<string, string>,
 ): string[] {
