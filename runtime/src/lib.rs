@@ -75,6 +75,8 @@ use sp_consensus_beefy::{
 };
 use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_partner_chains_bridge::{BridgeDataCheckpoint, MainChainScripts as BridgeMainChainScripts};
+#[cfg(feature = "runtime-benchmarks")]
+use sp_partner_chains_bridge::{BridgeTransferV1, TransferRecipient};
 use sp_runtime::SaturatedConversion;
 use sp_runtime::traits::StaticLookup;
 
@@ -278,10 +280,10 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 001_000_000,
+	spec_version: 002_000_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 3,
+	transaction_version: 4,
 	system_version: 1,
 };
 
@@ -295,6 +297,12 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 //       Attempting to do so will brick block production.
 // slot time set to 6s
 pub const SLOT_DURATION: u64 = 6 * 1000;
+
+pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
+	sp_consensus_babe::BabeEpochConfiguration {
+		c: (1, 4),
+		allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
+	};
 
 /// The version information used to identify this runtime when compiled natively.
 #[cfg(feature = "std")]
@@ -387,6 +395,29 @@ impl pallet_aura::Config for Runtime {
 	type MaxAuthorities = MaxAuthorities;
 	type AllowMultipleBlocksPerSlot = ConstBool<false>;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+}
+
+impl pallet_babe::Config for Runtime {
+	type EpochDuration = SidechainEpochDuration;
+	type ExpectedBlockTime = ConstU64<SLOT_DURATION>;
+	type EpochChangeTrigger = pallet_babe::ExternalTrigger;
+	type DisabledValidators = ();
+	// TODO: Issue #1863
+	type WeightInfo = ();
+	type MaxAuthorities = MaxAuthorities;
+	type MaxNominators = ConstU32<5>;
+	// Equivocation reporting is disabled, matching GRANDPA/BEEFY.
+	type KeyOwnerProof = sp_core::Void;
+	type EquivocationReportSystem = ();
+}
+
+/// BABE uses epoch lenght defined by pallet sidechain
+pub struct SidechainEpochDuration;
+
+impl Get<u64> for SidechainEpochDuration {
+	fn get() -> u64 {
+		Sidechain::slots_per_epoch().0.into()
+	}
 }
 
 pallet_partner_chains_session::impl_pallet_session_config!(Runtime);
@@ -905,18 +936,58 @@ impl pallet_partner_chains_bridge::Config for Runtime {
 	type Recipient = BridgeRecipient;
 	type TransferHandler = C2MBridge;
 	type MaxTransfersPerBlock = BridgeMaxTransfersPerBlock;
-	type WeightInfo = pallet_partner_chains_bridge::weights::SubstrateWeight<Runtime>;
+	type WeightInfo = weights::pallet_partner_chains_bridge::WeightInfo<Runtime>;
 	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
+	type BenchmarkHelper = MidnightBridgeBenchmarkHelper;
+}
+
+/// Registers a `LedgerStorageExt` on the current externalities (via a host fn)
+/// so the `C2MBridge` transfer handler can resolve `LedgerApi` calls during benchmark dispatch.
+#[cfg(feature = "runtime-benchmarks")]
+pub struct MidnightBridgeBenchmarkHelper;
+
+#[cfg(feature = "runtime-benchmarks")]
+impl pallet_partner_chains_bridge::benchmarking::BenchmarkHelper<Runtime>
+	for MidnightBridgeBenchmarkHelper
+{
+	fn transfers(
+		n: u32,
+	) -> BoundedVec<BridgeTransferV1<BridgeRecipient>, BridgeMaxTransfersPerBlock> {
+		midnight_node_ledger::types::active_ledger_bridge::register_benchmark_ledger_storage();
+		let _ = midnight_node_ledger::types::active_ledger_bridge::ensure_storage_initialized();
+		let transfers = (1..=n)
+			.map(|i| {
+				let bytes = i.to_le_bytes();
+				let mut buf = [0u8; 32];
+				buf[0..4].copy_from_slice(&bytes[0..4]);
+
+				let mc_tx_hash = sidechain_domain::McTxHash(buf);
+
+				pallet_c2m_bridge::ApprovedMcTxHashes::<Runtime>::insert(mc_tx_hash, ());
+
+				// UserTransfer is the most expensive (and common) case, so it is used for the benchmark
+				let recipient = TransferRecipient::Address {
+					recipient: BridgeRecipient(BoundedVec::truncate_from(buf.to_vec())),
+				};
+
+				BridgeTransferV1 { amount: 1000, mc_tx_hash, recipient }
+			})
+			.collect();
+
+		BoundedVec::truncate_from(transfers)
+	}
+
+	fn data_checkpoint() -> sp_partner_chains_bridge::BridgeDataCheckpoint {
+		<() as pallet_partner_chains_bridge::benchmarking::BenchmarkHelper<Runtime>>::data_checkpoint()
+	}
 }
 
 /// Provider for the minimum bridge transfer amount from the Midnight ledger.
 pub struct MidnightMinBridgeAmount;
 impl pallet_c2m_bridge::pallet::MinBridgeAmountProvider for MidnightMinBridgeAmount {
 	fn get_c_to_m_bridge_min_amount()
-	-> Result<pallet_c2m_bridge::Stars, midnight_node_ledger::types::active_version::LedgerApiError>
-	{
-		Ok(pallet_c2m_bridge::Stars::from(Midnight::get_c_to_m_bridge_min_amount()?))
+	-> Result<u128, midnight_node_ledger::types::active_version::LedgerApiError> {
+		Midnight::get_c_to_m_bridge_min_amount()
 	}
 }
 
@@ -925,6 +996,7 @@ impl pallet_c2m_bridge::Config for Runtime {
 	/// Provides access to the ledger's `c_to_m_bridge_min_amount` parameter.
 	type MinBridgeAmountProvider = MidnightMinBridgeAmount;
 	type GovernanceOrigin = EnsureRoot<Self::AccountId>;
+	type WeightInfo = weights::pallet_c2m_bridge::WeightInfo<Runtime>;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -963,6 +1035,10 @@ mod runtime {
 	pub type Midnight = pallet_midnight::Pallet<Runtime>;
 	#[runtime::pallet_index(6)]
 	pub type MidnightSystem = pallet_midnight_system::Pallet<Runtime>;
+
+	// BABE consensus. Introduced ahead of a future AURA→BABE flip; not active.
+	#[runtime::pallet_index(7)]
+	pub type Babe = pallet_babe::Pallet<Runtime>;
 
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
@@ -1202,6 +1278,8 @@ mod benches {
 		[pallet_federated_authority_observation, FederatedAuthorityObservation]
 		[pallet_system_parameters, SystemParameters]
 		[pallet_cnight_observation, CNightObservation]
+		[pallet_c2m_bridge, C2MBridge]
+		[pallet_partner_chains_bridge, Bridge]
 	);
 }
 
@@ -1352,6 +1430,47 @@ impl_runtime_apis! {
 
 		fn authorities() -> Vec<AuraId> {
 			pallet_aura::Authorities::<Runtime>::get().into_inner()
+		}
+	}
+
+	impl sp_consensus_babe::BabeApi<Block> for Runtime {
+		fn configuration() -> sp_consensus_babe::BabeConfiguration {
+			let epoch_config = Babe::epoch_config().unwrap_or(BABE_GENESIS_EPOCH_CONFIG);
+			sp_consensus_babe::BabeConfiguration {
+				slot_duration: Babe::slot_duration(),
+				epoch_length: SidechainEpochDuration::get(),
+				c: epoch_config.c,
+				authorities: Babe::authorities().to_vec(),
+				randomness: Babe::randomness(),
+				allowed_slots: epoch_config.allowed_slots,
+			}
+		}
+
+		fn current_epoch_start() -> sp_consensus_babe::Slot {
+			Babe::current_epoch_start()
+		}
+
+		fn current_epoch() -> sp_consensus_babe::Epoch {
+			Babe::current_epoch()
+		}
+
+		fn next_epoch() -> sp_consensus_babe::Epoch {
+			Babe::next_epoch()
+		}
+
+		fn generate_key_ownership_proof(
+			_slot: sp_consensus_babe::Slot,
+			_authority_id: sp_consensus_babe::AuthorityId,
+		) -> Option<sp_consensus_babe::OpaqueKeyOwnershipProof> {
+			// Equivocation reporting is disabled, so no proof can be generated.
+			None
+		}
+
+		fn submit_report_equivocation_unsigned_extrinsic(
+			_equivocation_proof: sp_consensus_babe::EquivocationProof<<Block as BlockT>::Header>,
+			_key_owner_proof: sp_consensus_babe::OpaqueKeyOwnershipProof,
+		) -> Option<()> {
+			None
 		}
 	}
 

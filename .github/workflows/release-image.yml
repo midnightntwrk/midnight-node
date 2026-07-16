@@ -108,7 +108,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
 
         with:
           registry: ghcr.io
@@ -116,13 +116,13 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Checkout repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
           ref: ${{ inputs.ref }}
@@ -236,14 +236,14 @@ jobs:
       # --- GHCR attestations ---
       - name: Attest node release image (GHCR)
         if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node
           subject-digest: ${{ steps.ghcr-digests-node.outputs.digest }}
 
       - name: Attest toolkit release image (GHCR)
         if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.ghcr-digests-toolkit.outputs.digest }}
@@ -299,14 +299,14 @@ jobs:
       # --- GHCR midnightntwrk attestations ---
       - name: Attest node release image (GHCR midnightntwrk)
         if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.midnightntwrk-digests-node.outputs.digest }}
 
       - name: Attest toolkit release image (GHCR midnightntwrk)
         if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-digests-toolkit.outputs.digest }}
@@ -377,14 +377,14 @@ jobs:
       # --- Docker Hub attestations ---
       - name: Attest node release image (Docker Hub)
         if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.dockerhub-digests-node.outputs.digest }}
 
       - name: Attest toolkit release image (Docker Hub)
         if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests-toolkit.outputs.digest }}
@@ -405,7 +405,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
           ref: ${{ inputs.ref }}
@@ -414,7 +414,7 @@ jobs:
       # We can remove this once merged to main - useful for now for testing against main branch
       # ./.github/actions/install-season
       - name: Checkout node repo (for install-season action)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           path: ./midnight-node-ci
 
@@ -572,6 +572,11 @@ jobs:
   archive-changes:
     needs: [validate-inputs, prepare-release, finalize-release]
     if: ${{ !cancelled() && !failure() }}
+    # Caps the called workflow's GITHUB_TOKEN — archive-and-bump opens a PR
+    # with a signed commit, so it needs contents + pull-requests write.
+    permissions:
+      contents: write
+      pull-requests: write
     uses: ./.github/workflows/archive-changes.yml
     with:
       ref: ${{ inputs.ref }}
@@ -601,7 +606,7 @@ jobs:
         platform: [amd64, arm64]
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -667,13 +672,13 @@ jobs:
 
       - name: Attest node release binary
         if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ steps.extract-node.outputs.node_release }}
 
       - name: Attest toolkit release binary
         if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ steps.extract-toolkit.outputs.toolkit_release }}
 
@@ -747,7 +752,7 @@ jobs:
           done
 
       - name: Attest checksums file
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: SHA256SUMS
 
