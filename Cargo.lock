@@ -7886,7 +7886,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -8140,7 +8140,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "subxt 0.50.0",
  "walkdir",
@@ -8204,7 +8204,6 @@ dependencies = [
  "pallet-migrations",
  "pallet-mmr",
  "pallet-partner-chains-bridge",
- "pallet-partner-chains-session",
  "pallet-preimage",
  "pallet-scheduler",
  "pallet-session",
@@ -10595,22 +10594,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-partner-chains-session"
-version = "1.8.1"
-dependencies = [
- "frame-support",
- "frame-system",
- "impl-trait-for-tuples",
- "log",
- "pallet-session",
- "parity-scale-codec",
- "scale-info",
- "sp-runtime",
- "sp-staking",
- "sp-std",
-]
-
-[[package]]
 name = "pallet-preimage"
 version = "49.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2606#660acefe66599a3e54363797007befcb01bd610b"
@@ -10685,13 +10668,11 @@ dependencies = [
 name = "pallet-session-validator-management"
 version = "1.8.1"
 dependencies = [
- "derive-new",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
  "pallet-balances",
- "pallet-partner-chains-session",
  "pallet-session",
  "parity-scale-codec",
  "scale-info",
@@ -10701,6 +10682,7 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-session-validator-management",
+ "sp-staking",
  "sp-std",
 ]
 
@@ -11148,7 +11130,7 @@ dependencies = [
  "ogmios-client",
  "pallet-balances",
  "pallet-partner-chains-bridge",
- "pallet-partner-chains-session",
+ "pallet-session",
  "pallet-session-validator-management",
  "pallet-sidechain",
  "parity-scale-codec",
@@ -11240,6 +11222,7 @@ dependencies = [
  "partner-chains-demo-runtime",
  "partner-chains-mock-data-sources",
  "partner-chains-node-commands",
+ "pretty_assertions",
  "sc-basic-authorship",
  "sc-cli",
  "sc-client-api",
@@ -11299,7 +11282,6 @@ dependencies = [
  "pallet-balances",
  "pallet-grandpa",
  "pallet-partner-chains-bridge",
- "pallet-partner-chains-session",
  "pallet-session",
  "pallet-session-validator-management",
  "pallet-sidechain",
@@ -11309,6 +11291,7 @@ dependencies = [
  "pallet-transaction-payment-rpc-runtime-api",
  "parity-scale-codec",
  "plutus",
+ "pretty_assertions",
  "scale-info",
  "serde",
  "serde_json",
