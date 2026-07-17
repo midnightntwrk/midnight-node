@@ -16,10 +16,9 @@ use crate::ContractVerifyingKeyBytes;
 pub use super::make_block_context;
 pub use super::{
 	SignatureVerifyingKey, SigningKeyEcdsa, TransactionSignature as Signature,
-	TransactionSigningKey, VerifyingKeyEcdsa, contract_operation_new, contract_operation_version,
-	maintenance_verifying_key, signature_verifying_key, signature_verifying_key_ecdsa,
-	transaction_signature, transaction_signature_ecdsa, transaction_signing_key,
-	transaction_signing_key_ecdsa,
+	TransactionSigningKey, VerifyingKeyEcdsa, contract_operation_new, maintenance_verifying_key,
+	signature_verifying_key, signature_verifying_key_ecdsa, transaction_signature,
+	transaction_signature_ecdsa, transaction_signing_key, transaction_signing_key_ecdsa,
 };
 pub use super::{
 	base_crypto::{

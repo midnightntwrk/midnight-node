@@ -94,16 +94,19 @@ pub mod ledger_7 {
 	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
 	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
 	pub fn contract_operation_versioned_verifier_key(
-		vk: transient_crypto::proofs::VerifierKey,
-	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
-		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
+		vk: Vec<u8>,
+	) -> Result<mn_ledger::structure::ContractOperationVersionedVerifierKey, std::io::Error> {
+		let vk: transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
+		Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk))
 	}
 
 	/// The verifier-key slot version for this ledger generation, used when *removing*
 	/// a key (the entry point alone doesn't say which slot the key lives in).
 	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
 	/// `contract_operation_versioned_verifier_key` above.
-	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+	pub fn contract_operation_version_of(
+		_op: &onchain_runtime::state::ContractOperation,
+	) -> mn_ledger::structure::ContractOperationVersion {
 		mn_ledger::structure::ContractOperationVersion::V3
 	}
 
@@ -209,16 +212,19 @@ pub mod ledger_8 {
 	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
 	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
 	pub fn contract_operation_versioned_verifier_key(
-		vk: transient_crypto::proofs::VerifierKey,
-	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
-		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
+		vk: Vec<u8>,
+	) -> Result<mn_ledger::structure::ContractOperationVersionedVerifierKey, std::io::Error> {
+		let vk: transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
+		Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk))
 	}
 
 	/// The verifier-key slot version for this ledger generation, used when *removing*
 	/// a key (the entry point alone doesn't say which slot the key lives in).
 	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
 	/// `contract_operation_versioned_verifier_key` above.
-	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+	pub fn contract_operation_version_of(
+		_op: &onchain_runtime::state::ContractOperation,
+	) -> mn_ledger::structure::ContractOperationVersion {
 		mn_ledger::structure::ContractOperationVersion::V3
 	}
 
@@ -333,23 +339,41 @@ pub mod ledger_9 {
 	}
 
 	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
-	/// Ledger 9 stores newly deployed verifier keys in the `v3` slot (`ContractOperation::new`
-	/// above), which is the `V4` (zk-stdlib v2) variant taking the 3.x
-	/// `transient_crypto::proofs::VerifierKey` this module deserializes. The `V3` variant is
-	/// reserved for legacy 2.x (`transient_crypto_old`) keys.
+	/// Ledger 9 accepts either a legacy 2.x (`v6`) key, stored in the `V3` slot via the
+	/// crate-level (non-ledger-9-aliased) `transient_crypto` — the same 2.x
+	/// `midnight-transient-crypto` build `op.v2` uses in `contract_operation_new` above —
+	/// or a 3.x/zk-stdlib-v2 (`v7`) key, stored in the `V4` slot. The tag on the key file
+	/// itself says which, mirroring the dispatch in `contract_operation_new`.
 	pub fn contract_operation_versioned_verifier_key(
-		vk: transient_crypto::proofs::VerifierKey,
-	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
-		mn_ledger::structure::ContractOperationVersionedVerifierKey::V4(vk)
+		vk: Vec<u8>,
+	) -> Result<mn_ledger::structure::ContractOperationVersionedVerifierKey, std::io::Error> {
+		let tag = peek_tag(&mut std::io::Cursor::new(&vk))?;
+		match tag.as_str() {
+			"verifier-key[v6]" => {
+				let vk: ::transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
+				Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk))
+			},
+			"verifier-key[v7]" => {
+				let vk: transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
+				Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V4(vk))
+			},
+			_ => panic!("unknown verifier key tag: '{tag}'"),
+		}
 	}
 
-	/// The verifier-key slot version for this ledger generation, used when *removing*
-	/// a key (the entry point alone doesn't say which slot the key lives in). Ledger 9
-	/// stores newly deployed/upserted keys in the `V4` slot, so removals must target
-	/// `V4` to match `contract_operation_versioned_verifier_key` above; targeting `V3`
-	/// would miss the key and fail with `VerifierKeyNotFound`.
-	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
-		mn_ledger::structure::ContractOperationVersion::V4
+	/// The verifier-key slot version an *existing* contract operation's key actually lives
+	/// in (the entry point alone doesn't say which slot). Ledger 9 keys can land in either
+	/// `V3` (legacy 2.x/v6) or `V4` (3.x/v7, preferred if somehow both are set) depending on
+	/// what compiled the circuit; removals must target whichever slot is populated, or they
+	/// fail with `VerifierKeyNotFound`.
+	pub fn contract_operation_version_of(
+		op: &onchain_runtime::state::ContractOperation,
+	) -> mn_ledger::structure::ContractOperationVersion {
+		if op.v3.is_some() {
+			mn_ledger::structure::ContractOperationVersion::V4
+		} else {
+			mn_ledger::structure::ContractOperationVersion::V3
+		}
 	}
 
 	pub fn signature_verifying_key(
