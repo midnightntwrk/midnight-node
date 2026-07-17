@@ -1,5 +1,5 @@
 use crate::InherentDigest;
-use futures::FutureExt;
+use futures::{FutureExt, future};
 use sp_consensus::{Environment, ProposeArgs, Proposer};
 use sp_runtime::traits::Block as BlockT;
 use sp_runtime::{Digest, DigestItem};
@@ -13,6 +13,7 @@ pub struct PartnerChainsProposerFactory<B: BlockT, E: Environment<B>, ID> {
 }
 
 impl<B: BlockT, E: Environment<B>, ID> PartnerChainsProposerFactory<B, E, ID> {
+	/// Creates a new factory wrapping the proposer environment `env`.
 	pub fn new(env: E) -> Self {
 		Self { env, phantom_data: PhantomData }
 	}
@@ -49,7 +50,10 @@ impl<B: BlockT, P: Proposer<B>, ID: InherentDigest> Proposer<B>
 	for PartnerChainsProposer<B, P, ID>
 {
 	type Error = <P as Proposer<B>>::Error;
-	type Proposal = <P as Proposer<B>>::Proposal;
+	type Proposal = future::Either<
+		<P as Proposer<B>>::Proposal,
+		future::Ready<Result<sp_consensus::Proposal<B>, Self::Error>>,
+	>;
 
 	fn propose(self, args: ProposeArgs<B>) -> Self::Proposal {
 		let ProposeArgs {
@@ -60,19 +64,27 @@ impl<B: BlockT, P: Proposer<B>, ID: InherentDigest> Proposer<B>
 			storage_proof_recorder,
 			extra_extensions,
 		} = args;
+		let mut inherent_logs = match ID::from_inherent_data(&inherent_data) {
+			Ok(logs) => logs,
+			Err(e) => {
+				// Fail this proposal instead of panicking the authorship task: the next
+				// slot gets a fresh chance with newly created inherent data.
+				return future::Either::Right(future::ready(Err(sp_consensus::Error::Other(
+					format!("Failed to create inherent digest from inherent data: {e}").into(),
+				)
+				.into())));
+			},
+		};
 		let mut logs: Vec<DigestItem> = Vec::from(inherent_digests.logs());
-		// It is a programmatic error to try to propose a block that has inherent data from which declared InherentDigest cannot be created.
-		let mut inherent_logs = ID::from_inherent_data(&inherent_data)
-			.expect("InherentDigest can be created from inherent data");
 		logs.append(&mut inherent_logs);
-		self.proposer.propose(ProposeArgs {
+		future::Either::Left(self.proposer.propose(ProposeArgs {
 			inherent_data,
 			inherent_digests: Digest { logs },
 			max_duration,
 			block_size_limit,
 			storage_proof_recorder,
 			extra_extensions,
-		})
+		}))
 	}
 }
 
@@ -112,7 +124,25 @@ mod tests {
 		fn value_from_digest(
 			_digests: &[DigestItem],
 		) -> Result<Self::Value, Box<dyn Error + Send + Sync>> {
-			todo!()
+			unimplemented!()
+		}
+	}
+
+	struct FailingInherentDigest;
+
+	impl InherentDigest for FailingInherentDigest {
+		type Value = ();
+
+		fn from_inherent_data(
+			_inherent_data: &InherentData,
+		) -> Result<Vec<DigestItem>, Box<dyn Error + Send + Sync>> {
+			Err("no digest for you".into())
+		}
+
+		fn value_from_digest(
+			_digests: &[DigestItem],
+		) -> Result<Self::Value, Box<dyn Error + Send + Sync>> {
+			unimplemented!()
 		}
 	}
 
@@ -155,15 +185,32 @@ mod tests {
 			TestProposer { expected_digest: Digest { logs: vec![other_item(), expected_item()] } };
 		let proposer: PartnerChainsProposer<Block, TestProposer, TestInherentDigest> =
 			PartnerChainsProposer::new(test_proposer);
-		let proposal = proposer
-			.propose(ProposeArgs {
-				inherent_data,
-				inherent_digests,
-				max_duration: std::time::Duration::from_secs(0),
-				block_size_limit: None,
-				..Default::default()
-			})
-			.into_inner();
+		let proposal = futures::executor::block_on(proposer.propose(ProposeArgs {
+			inherent_data,
+			inherent_digests,
+			max_duration: std::time::Duration::from_secs(0),
+			block_size_limit: None,
+			..Default::default()
+		}));
 		assert!(proposal.is_ok());
+	}
+
+	#[test]
+	fn inherent_digest_failure_fails_proposal_without_panicking() {
+		let test_proposer = TestProposer { expected_digest: Digest { logs: vec![] } };
+		let proposer: PartnerChainsProposer<Block, TestProposer, FailingInherentDigest> =
+			PartnerChainsProposer::new(test_proposer);
+		let proposal = futures::executor::block_on(proposer.propose(ProposeArgs {
+			inherent_data: InherentData::new(),
+			inherent_digests: Digest { logs: vec![] },
+			max_duration: std::time::Duration::from_secs(0),
+			block_size_limit: None,
+			..Default::default()
+		}));
+		let error = match proposal {
+			Err(error) => error.to_string(),
+			Ok(_) => panic!("proposal should fail"),
+		};
+		assert!(error.contains("no digest for you"), "unexpected error: {error}");
 	}
 }

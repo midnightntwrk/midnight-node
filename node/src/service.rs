@@ -34,11 +34,10 @@ use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
-use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
+use sc_consensus_aura::{SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
 use sc_executor::RuntimeVersionOf;
-use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
 use sc_service::DatabaseSource;
 use sc_service::{
 	BuildGenesisBlock, Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError,
@@ -53,9 +52,9 @@ use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
+use sc_partner_chains_consensus::PartnerChainsProposerFactory;
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
-use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
 use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero};
 use sp_runtime::{Digest, DigestItem};
 use std::{
@@ -65,6 +64,19 @@ use std::{
 	time::Duration,
 };
 use time_source::SystemTimeSource;
+
+/// [`sc_partner_chains_consensus::SlotExtractor`] reading the slot from the Aura
+/// pre-runtime digest.
+pub struct AuraSlotExtractor;
+
+impl sc_partner_chains_consensus::SlotExtractor<Block> for AuraSlotExtractor {
+	fn extract_slot(header: &<Block as BlockT>::Header) -> Result<sp_consensus_aura::Slot, String> {
+		sc_consensus_aura::find_pre_digest::<Block, <AuraPair as sp_core::crypto::Pair>::Signature>(
+			header,
+		)
+		.map_err(|e| e.to_string())
+	}
+}
 
 pub struct StorageInit {
 	pub separation: StorageSeparation,
@@ -230,6 +242,9 @@ const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
 type TransactionPool = FilteringTransactionPool<Block, FullClient>;
 
+type GrandpaBlockImport =
+	sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>;
+
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
@@ -237,7 +252,7 @@ type MidnightService = sc_service::PartialComponents<
 	sc_consensus::DefaultImportQueue<Block>,
 	TransactionPool,
 	(
-		sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>,
+		GrandpaBlockImport,
 		sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
 		sc_consensus_beefy::BeefyVoterLinks<Block, BeefyId>,
 		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
@@ -425,19 +440,36 @@ pub fn new_partial(
 			ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
 		})?;
 
-	let import_queue = partner_chains_aura_import_queue::import_queue::<
-		AuraPair,
+	let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
+
+	let aura_verifier = sc_consensus_aura::build_verifier::<AuraPair, _, _, _>(
+		sc_consensus_aura::BuildVerifierParams {
+			client: client.clone(),
+			create_inherent_data_providers: move |_parent_hash, ()| async move {
+				let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+				let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+					*timestamp,
+					slot_duration,
+				);
+				Ok((slot, timestamp))
+			},
+			check_for_equivocation: Default::default(),
+			telemetry: telemetry.as_ref().map(|x| x.handle()),
+			compatibility_mode: Default::default(),
+		},
+	);
+
+	let verifier = sc_partner_chains_consensus::PartnerChainsVerifier::<
 		_,
 		_,
 		_,
 		_,
-		_,
+		AuraSlotExtractor,
 		McHashInherentDigest,
-	>(ImportQueueParams {
-		block_import: grandpa_block_import.clone(),
-		justification_import: Some(Box::new(grandpa_block_import.clone())),
-		client: client.clone(),
-		create_inherent_data_providers: VerifierCIDP::new(
+	>::new(
+		aura_verifier,
+		client.clone(),
+		VerifierCIDP::new(
 			inherent_config,
 			client.clone(),
 			data_sources.mc_hash.clone(),
@@ -446,12 +478,15 @@ pub fn new_partial(
 			data_sources.federated_authority_observation.clone(),
 			data_sources.bridge.clone(),
 		),
-		spawner: &task_manager.spawn_essential_handle(),
-		registry: config.prometheus_registry(),
-		check_for_equivocation: Default::default(),
-		telemetry: telemetry.as_ref().map(|x| x.handle()),
-		compatibility_mode: Default::default(),
-	})?;
+	);
+
+	let import_queue = sc_consensus::import_queue::BasicQueue::new(
+		verifier,
+		Box::new(grandpa_block_import.clone()),
+		Some(Box::new(grandpa_block_import.clone())),
+		&task_manager.spawn_essential_handle(),
+		config.prometheus_registry(),
+	);
 
 	let partial_components = sc_service::PartialComponents {
 		client: client.clone(),
@@ -727,44 +762,33 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 					ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
 				})?;
 
-		let aura = sc_partner_chains_consensus_aura::start_aura::<
-			AuraPair,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			McHashInherentDigest,
-		>(StartAuraParams {
-			slot_duration: sc_slot_config.slot_duration,
-			client: client.clone(),
-			select_chain,
-			block_import,
-			proposer_factory,
-			create_inherent_data_providers: ProposalCIDP::new(
-				inherent_config,
-				client.clone(),
-				data_sources.mc_hash.clone(),
-				data_sources.authority_selection.clone(),
-				data_sources.cnight_observation.clone(),
-				data_sources.federated_authority_observation.clone(),
-				data_sources.bridge.clone(),
-			),
-			force_authoring,
-			backoff_authoring_blocks,
-			keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
-			sync_oracle: sync_service.clone(),
-			justification_sync_link: sync_service.clone(),
-			block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
-			max_block_proposal_slot_portion: None,
-			telemetry: telemetry.as_ref().map(|x| x.handle()),
-			compatibility_mode: Default::default(),
-		})?;
+		let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
+			StartAuraParams {
+				slot_duration: sc_slot_config.slot_duration,
+				client: client.clone(),
+				select_chain,
+				block_import,
+				proposer_factory,
+				create_inherent_data_providers: ProposalCIDP::new(
+					inherent_config,
+					client.clone(),
+					data_sources.mc_hash.clone(),
+					data_sources.authority_selection.clone(),
+					data_sources.cnight_observation.clone(),
+					data_sources.federated_authority_observation.clone(),
+					data_sources.bridge.clone(),
+				),
+				force_authoring,
+				backoff_authoring_blocks,
+				keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
+				sync_oracle: sync_service.clone(),
+				justification_sync_link: sync_service.clone(),
+				block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
+				max_block_proposal_slot_portion: None,
+				telemetry: telemetry.as_ref().map(|x| x.handle()),
+				compatibility_mode: Default::default(),
+			},
+		)?;
 
 		// the AURA authoring task is considered essential, i.e. if it
 		// fails we take down the service with it.
