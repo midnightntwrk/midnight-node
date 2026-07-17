@@ -222,8 +222,13 @@ fn new_test_ext() -> sp_io::TestExternalities {
 /// Rewrites storage to the exact shape a chain running the pre-upgrade runtime would have:
 /// old-shaped committees, old-shaped `NextKeys`/`QueuedKeys` and `KeyOwner` entries only for the
 /// old key types.
-fn seed_old_state(current: &OldCommitteeInfo, next: Option<&OldCommitteeInfo>) {
+fn seed_old_state(
+	current: &OldCommitteeInfo,
+	queued: &OldCommitteeInfo,
+	next: Option<&OldCommitteeInfo>,
+) {
 	frame_support::storage::unhashed::put(&crate::CurrentCommittee::<Test>::hashed_key(), current);
+	frame_support::storage::unhashed::put(&crate::QueuedCommittee::<Test>::hashed_key(), queued);
 	match next {
 		Some(next) => {
 			frame_support::storage::unhashed::put(&crate::NextCommittee::<Test>::hashed_key(), next)
@@ -255,7 +260,11 @@ fn seed_old_state(current: &OldCommitteeInfo, next: Option<&OldCommitteeInfo>) {
 #[test]
 fn upgrades_committees_session_keys_and_storage_version() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[BOB])));
+		seed_old_state(
+			&old_committee(5, &[ALICE, BOB]),
+			&old_committee(5, &[ALICE, BOB]),
+			Some(&old_committee(6, &[BOB])),
+		);
 
 		Migration::on_runtime_upgrade();
 
@@ -267,6 +276,10 @@ fn upgrades_committees_session_keys_and_storage_version() {
 
 		assert_committees_eq(
 			&crate::CurrentCommittee::<Test>::get(),
+			&new_committee(5, &[ALICE, BOB]),
+		);
+		assert_committees_eq(
+			&crate::QueuedCommittee::<Test>::get(),
 			&new_committee(5, &[ALICE, BOB]),
 		);
 		assert_committees_eq(
@@ -301,7 +314,7 @@ fn upgrades_committees_session_keys_and_storage_version() {
 #[test]
 fn handles_missing_next_committee() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), None);
+		seed_old_state(&old_committee(5, &[ALICE, BOB]), &old_committee(4, &[ALICE]), None);
 
 		Migration::on_runtime_upgrade();
 
@@ -310,6 +323,7 @@ fn handles_missing_next_committee() {
 			&crate::CurrentCommittee::<Test>::get(),
 			&new_committee(5, &[ALICE, BOB]),
 		);
+		assert_committees_eq(&crate::QueuedCommittee::<Test>::get(), &new_committee(4, &[ALICE]));
 		assert!(crate::NextCommittee::<Test>::get().is_none());
 	});
 }
@@ -342,7 +356,11 @@ fn is_noop_when_storage_version_is_not_from() {
 #[test]
 fn try_runtime_hooks_pass() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[BOB])));
+		seed_old_state(
+			&old_committee(5, &[ALICE, BOB]),
+			&old_committee(5, &[ALICE, BOB]),
+			Some(&old_committee(6, &[BOB])),
+		);
 
 		Migration::try_on_runtime_upgrade(true).expect("pre/post upgrade hooks should pass");
 

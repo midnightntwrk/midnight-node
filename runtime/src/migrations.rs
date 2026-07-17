@@ -76,7 +76,7 @@ pub mod authority_keys {
 	fn assert_migration_is_wirable() {
 		fn assert_impls_on_runtime_upgrade<M: frame_support::traits::OnRuntimeUpgrade>() {}
 		assert_impls_on_runtime_upgrade::<
-			AuthorityKeysMigration<Runtime, LegacyCommitteeMember, LegacySessionKeys, 1, 2>,
+			AuthorityKeysMigration<Runtime, LegacyCommitteeMember, LegacySessionKeys, 2, 3>,
 		>();
 	}
 }

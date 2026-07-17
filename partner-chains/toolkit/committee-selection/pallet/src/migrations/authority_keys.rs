@@ -51,8 +51,8 @@
 //! 		Runtime,
 //! 		LegacyCommitteeMember,
 //! 		LegacyAuthorityKeys,
-//! 		1, // pallet on-chain storage version before the migration (at wiring time)
-//! 		2, // pallet on-chain storage version after the migration (at wiring time)
+//! 		2, // pallet on-chain storage version before the migration (at wiring time)
+//! 		3, // pallet on-chain storage version after the migration (at wiring time)
 //! 	>,
 //! 	// ...other migrations
 //! );
@@ -132,7 +132,7 @@ where
 {
 	fn on_runtime_upgrade() -> sp_runtime::Weight {
 		// `translate` always reads the value; it writes only when the value was present.
-		let mut weight = T::DbWeight::get().reads(2);
+		let mut weight = T::DbWeight::get().reads(3);
 
 		let current_translated =
 			crate::CurrentCommittee::<T>::translate::<OldCommitteeInfo<T, OldCommitteeMember>, _>(
@@ -140,6 +140,15 @@ where
 			)
 			.expect("Decoding of the old value must succeed");
 		if current_translated.is_some() {
+			weight = weight.saturating_add(T::DbWeight::get().writes(1));
+		}
+
+		let queued_translated = crate::QueuedCommittee::<T>::translate::<
+			OldCommitteeInfo<T, OldCommitteeMember>,
+			_,
+		>(|old| old.map(upgrade_committee_info::<T, OldCommitteeMember>))
+		.expect("Decoding of the old value must succeed");
+		if queued_translated.is_some() {
 			weight = weight.saturating_add(T::DbWeight::get().writes(1));
 		}
 
@@ -179,13 +188,18 @@ where
 
 	#[cfg(feature = "try-runtime")]
 	fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
-		// `CurrentCommittee`/`NextCommittee` `.get()` decodes as `T::CommitteeMember`, i.e. the
-		// post-upgrade shape — but at this point the on-chain bytes are still `OldCommitteeMember`.
-		// The same applies to `pallet_session`'s `NextKeys`/`QueuedKeys`, which still hold
-		// `OldAuthorityKeys` bytes, so all values are read through `unhashed` with the old types.
+		// `CurrentCommittee`/`QueuedCommittee`/`NextCommittee` `.get()` decodes as
+		// `T::CommitteeMember`, i.e. the post-upgrade shape — but at this point the on-chain
+		// bytes are still `OldCommitteeMember`. The same applies to `pallet_session`'s
+		// `NextKeys`/`QueuedKeys`, which still hold `OldAuthorityKeys` bytes, so all values are
+		// read through `unhashed` with the old types.
 		let current: OldCommitteeInfo<T, OldCommitteeMember> =
 			frame_support::storage::unhashed::get_or_default(
 				&crate::CurrentCommittee::<T>::hashed_key(),
+			);
+		let queued: OldCommitteeInfo<T, OldCommitteeMember> =
+			frame_support::storage::unhashed::get_or_default(
+				&crate::QueuedCommittee::<T>::hashed_key(),
 			);
 		let next: Option<OldCommitteeInfo<T, OldCommitteeMember>> =
 			frame_support::storage::unhashed::get(&crate::NextCommittee::<T>::hashed_key());
@@ -209,14 +223,15 @@ where
 				&pallet_session::QueuedKeys::<T>::hashed_key(),
 			);
 
-		Ok((current, next, next_keys, queued_keys).encode())
+		Ok((current, queued, next, next_keys, queued_keys).encode())
 	}
 
 	#[cfg(feature = "try-runtime")]
 	fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
 		use frame_support::ensure;
 
-		let (old_current, old_next, old_next_keys, old_queued_keys): (
+		let (old_current, old_queued, old_next, old_next_keys, old_queued_keys): (
+			OldCommitteeInfo<T, OldCommitteeMember>,
 			OldCommitteeInfo<T, OldCommitteeMember>,
 			Option<OldCommitteeInfo<T, OldCommitteeMember>>,
 			Vec<(T::ValidatorId, OldAuthorityKeys)>,
@@ -231,6 +246,14 @@ where
 			committee_fingerprint::<T, OldCommitteeMember>(&old_current.committee)
 				== new_committee_fingerprint::<T>(&new_current.committee),
 			"current committee membership should be preserved"
+		);
+
+		let new_queued = crate::QueuedCommittee::<T>::get();
+		ensure!(old_queued.epoch == new_queued.epoch, "queued epoch should be preserved");
+		ensure!(
+			committee_fingerprint::<T, OldCommitteeMember>(&old_queued.committee)
+				== new_committee_fingerprint::<T>(&new_queued.committee),
+			"queued committee membership should be preserved"
 		);
 
 		let new_next = crate::NextCommittee::<T>::get();

@@ -31,12 +31,11 @@ type Ctx = LedgerContext<DefaultDB>;
 
 /// Compute wallet seeds for a batches configuration without constructing a full builder.
 pub fn compute_batches_seeds(
-	funding_seed: &str,
+	funding_seed: &WalletSeed,
 	num_txs_per_batch: usize,
 	num_batches: usize,
 ) -> Result<Vec<WalletSeed>, &'static str> {
-	let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(funding_seed);
-	let inputs_wallet_seeds = vec![funding_seed];
+	let inputs_wallet_seeds = vec![funding_seed.clone()];
 
 	let mut wallet_seed_str =
 		String::from("0000000000000000000000000000000000000000000000000000000000000010");
@@ -58,7 +57,7 @@ pub fn compute_batches_seeds(
 pub struct BatchesBuilder {
 	context: Arc<Ctx>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
-	funding_seed: String,
+	funding_seed: WalletSeed,
 	num_txs_per_batch: usize,
 	num_batches: usize,
 	concurrency: Option<usize>,
@@ -77,11 +76,16 @@ impl BatchesBuilder {
 		context: Arc<Ctx>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
-		use super::type_convert::{convert_shielded_token_type, convert_unshielded_token_type};
+		use super::type_convert::{
+			convert_shielded_token_type, convert_unshielded_token_type, convert_wallet_seed,
+		};
+		// Only the seed value is stored; its scheme is applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (funding_seed, _) = args.funding_seed.resolve();
 		Self {
 			context,
 			prover,
-			funding_seed: args.funding_seed,
+			funding_seed: convert_wallet_seed(funding_seed),
 			num_txs_per_batch: args.num_txs_per_batch,
 			num_batches: args.num_batches,
 			concurrency: args.concurrency,
@@ -241,7 +245,7 @@ impl BuildTxs for BatchesBuilder {
 		// --------------------------------------------------------------
 		let spin = Spin::new("generating initial tx...");
 		// - Calculate the funding `WalletSeed` (can be more than one)
-		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
+		let funding_seed = self.funding_seed.clone();
 		let inputs_wallet_seeds = vec![funding_seed.clone()];
 
 		// - Calculate `WalletSeed` to be funded

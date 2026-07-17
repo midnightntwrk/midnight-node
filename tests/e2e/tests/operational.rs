@@ -141,12 +141,13 @@ async fn consolidate_faucet() {
 /// branch is exercised. Expects `Ok(_)` — that proves the Postgres
 /// connection, fetch+cache write path, and dust derivation all work.
 /// Opt-in via `cargo test --ignored dust_balance_smoke`.
-#[cfg(feature = "qanet")]
+#[cfg(any(feature = "qanet", feature = "devnet"))]
 #[e2e_test(flavor = "multi_thread", worker_threads = 16)]
 #[ignore = "wiring smoke test for Postgres-backed fetch cache; \
             opt-in with `cargo test --ignored dust_balance_smoke`"]
 async fn dust_balance_smoke() {
-    use midnight_node_ledger_helpers::WalletSeed;
+    use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
+    use midnight_node_toolkit::cli_parsers::SchemeSeed;
     use midnight_node_toolkit::commands::dust_balance::{self, DustBalanceArgs};
     use midnight_node_toolkit::tx_generator::source::Source;
 
@@ -168,7 +169,10 @@ async fn dust_balance_smoke() {
             fetch_cache: crate::fetch_cache_config(),
             ledger_state_db: String::new(),
         },
-        seed,
+        seed: SchemeSeed {
+            seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -192,12 +196,12 @@ async fn dust_balance_smoke() {
 /// the I/O side on a single OS thread.
 ///
 /// Opt-in via `cargo test --ignored dust_balance_smoke_many`.
-#[cfg(feature = "qanet")]
+#[cfg(any(feature = "qanet", feature = "devnet"))]
 #[e2e_test(flavor = "multi_thread", worker_threads = 16)]
 #[ignore = "wiring smoke test for batched dust_balance; \
             opt-in with `cargo test --ignored dust_balance_smoke_many`"]
 async fn dust_balance_smoke_many() {
-    use midnight_node_ledger_helpers::WalletSeed;
+    use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
     use midnight_node_toolkit::commands::dust_balance::{
         self, DustBalanceJson, DustBalanceManyArgs, DustBalanceResult,
     };
@@ -244,7 +248,12 @@ async fn dust_balance_smoke_many() {
             fetch_cache: crate::fetch_cache_config(),
             ledger_state_db,
         },
-        seeds: seeds.clone(),
+        // These deterministic smoke-test wallets are all Schnorr NIGHT identities.
+        seeds: seeds
+            .iter()
+            .cloned()
+            .map(|s| (s, UnshieldedSignatureScheme::Schnorr))
+            .collect(),
         dry_run: false,
     };
 

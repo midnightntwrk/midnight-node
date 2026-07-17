@@ -28,7 +28,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildUtxoOutput<D, C> for UtxoOutputIn
 	fn build(&self, context: Arc<C>) -> UtxoOutput {
 		context.with_wallet_from_seed(self.owner.clone(), |wallet| UtxoOutput {
 			value: self.value,
-			owner: wallet.unshielded.signing_key().verifying_key().into(),
+			owner: wallet.unshielded.user_address,
 			type_: self.token_type,
 		})
 	}
