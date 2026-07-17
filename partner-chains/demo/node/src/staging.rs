@@ -3,7 +3,7 @@ use crate::chain_spec::*;
 use authority_selection_inherents::CommitteeMember;
 use partner_chains_demo_runtime::{
 	AccountId, AuraConfig, BalancesConfig, BridgeConfig, GrandpaConfig, RuntimeGenesisConfig,
-	SessionCommitteeManagementConfig, SessionConfig, SidechainConfig, SudoConfig, SystemConfig,
+	SessionCommitteeManagementConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
 use sc_service::ChainType;
 use sidechain_domain::*;
@@ -130,16 +130,8 @@ pub fn staging_genesis(
 			key: root_key,
 		},
 		transaction_payment: Default::default(),
-		session: SessionConfig {
-			initial_validators: initial_authorities
-				.iter()
-				.map(|authority_keys| {
-					(authority_keys.cross_chain.clone().into(), authority_keys.session.clone())
-				})
-				.collect(),
-		},
+		session: Default::default(),
 		sidechain: SidechainConfig { genesis_utxo, ..Default::default() },
-		pallet_session: Default::default(),
 		session_committee_management: SessionCommitteeManagementConfig {
 			initial_authorities: initial_authorities
 				.into_iter()

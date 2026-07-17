@@ -73,14 +73,14 @@ regenerate_configs() {
 
   echo "Genesis hashes: byron=$byron_hash shelley=$shelley_hash alonzo=$alonzo_hash conway=$conway_hash"
 
-  /busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/node-1-config.json.base > /shared/node-1-config.json.base.byron
-  /busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/db-sync-config.json.base > /shared/db-sync-config.json.base.byron
-  /busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/node-1-config.json.base.byron > /shared/node-1-config.base.shelley
-  /busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/db-sync-config.json.base.byron > /shared/db-sync-config.base.shelley
-  /busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/node-1-config.base.shelley > /shared/node-1-config.json.base.conway
-  /busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/db-sync-config.base.shelley > /shared/db-sync-config.json.base.conway
-  /busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/node-1-config.json.base.conway > /shared/node-1-config.json
-  /busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/db-sync-config.json.base.conway > /shared/db-sync-config.json
+  /shared/busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/node-1-config.json.base > /shared/node-1-config.json.base.byron
+  /shared/busybox sed "s/\"ByronGenesisHash\": \"[^\"]*\"/\"ByronGenesisHash\": \"$byron_hash\"/" /shared/db-sync-config.json.base > /shared/db-sync-config.json.base.byron
+  /shared/busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/node-1-config.json.base.byron > /shared/node-1-config.base.shelley
+  /shared/busybox sed "s/\"ShelleyGenesisHash\": \"[^\"]*\"/\"ShelleyGenesisHash\": \"$shelley_hash\"/" /shared/db-sync-config.json.base.byron > /shared/db-sync-config.base.shelley
+  /shared/busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/node-1-config.base.shelley > /shared/node-1-config.json.base.conway
+  /shared/busybox sed "s/\"AlonzoGenesisHash\": \"[^\"]*\"/\"AlonzoGenesisHash\": \"$alonzo_hash\"/" /shared/db-sync-config.base.shelley > /shared/db-sync-config.json.base.conway
+  /shared/busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/node-1-config.json.base.conway > /shared/node-1-config.json
+  /shared/busybox sed "s/\"ConwayGenesisHash\": \"[^\"]*\"/\"ConwayGenesisHash\": \"$conway_hash\"/" /shared/db-sync-config.json.base.conway > /shared/db-sync-config.json
 }
 
 # If /shared/cardano.ready exists from a previous run, skip prep work and just start the node.
@@ -102,7 +102,6 @@ if [ -f /shared/cardano.ready ]; then
 fi
 
 chmod 600 /keys/*
-chmod +x /busybox
 chmod 777 /shared
 chmod 777 /runtime-values
 
@@ -124,15 +123,15 @@ echo "$target_time" > /shared/cardano.start
 byron_startTime=$target_time
 shelley_systemStart=$(date --utc +"%Y-%m-%dT%H:%M:%SZ" --date="@$target_time")
 
-/busybox sed "s/\"startTime\": [0-9]*/\"startTime\": $byron_startTime/" /shared/byron/genesis.json.base > /shared/byron/genesis.json
+/shared/busybox sed "s/\"startTime\": [0-9]*/\"startTime\": $byron_startTime/" /shared/byron/genesis.json.base > /shared/byron/genesis.json
 echo "Updated startTime value in Byron genesis.json to: $byron_startTime"
 
-/busybox sed "s/\"systemStart\": \"[^\"]*\"/\"systemStart\": \"$shelley_systemStart\"/" /shared/shelley/genesis.json.base > /shared/shelley/genesis.json
+/shared/busybox sed "s/\"systemStart\": \"[^\"]*\"/\"systemStart\": \"$shelley_systemStart\"/" /shared/shelley/genesis.json.base > /shared/shelley/genesis.json
 echo "Updated systemStart value in Shelley genesis.json to: $shelley_systemStart"
 
 extract_value() {
     local key=$1
-    /busybox awk -F':|,' '/"'$key'"/ {print $2}' /shared/shelley/genesis.json.base
+    /shared/busybox awk -F':|,' '/"'$key'"/ {print $2}' /shared/shelley/genesis.json.base
 }
 
 echo "Parsing vars from Shelley genesis.json..."
@@ -217,7 +216,7 @@ for i in {1..30}; do
   cardano-cli latest query utxo --output-text --testnet-magic 42 --address "${genesis_address}" > /tmp/genesis_utxo.txt
   
   # Check if we got any UTXOs (more than just header lines)
-  utxo_count=$(cat /tmp/genesis_utxo.txt | /busybox awk 'NR>2 { count++ } END { print count+0 }')
+  utxo_count=$(cat /tmp/genesis_utxo.txt | /shared/busybox awk 'NR>2 { count++ } END { print count+0 }')
   if [ "$utxo_count" -gt 0 ]; then
     echo "Found $utxo_count UTXO(s)"
     break
@@ -230,8 +229,8 @@ done
 cat /tmp/genesis_utxo.txt
 
 # Extract the UTXO (skip header lines)
-tx_in1=$(cat /tmp/genesis_utxo.txt | /busybox awk 'NR==3 { print $1 "#" $2 }')
-tx_in_amount=$(cat /tmp/genesis_utxo.txt | /busybox awk 'NR==3 { print $3 }')
+tx_in1=$(cat /tmp/genesis_utxo.txt | /shared/busybox awk 'NR==3 { print $1 "#" $2 }')
+tx_in_amount=$(cat /tmp/genesis_utxo.txt | /shared/busybox awk 'NR==3 { print $3 }')
 
 echo "Using genesis UTXO: $tx_in1 with amount: $tx_in_amount"
 
@@ -321,12 +320,12 @@ echo $new_address > /shared/FUNDED_ADDRESS
 echo "Created /shared/FUNDED_ADDRESS with value: $new_address"
 
 echo "Querying and saving the first UTXO details for Dave address to /shared/dave.utxo:"
-cardano-cli latest query utxo --testnet-magic 42 --address "${dave_address}" | /busybox awk 'NR>2 { print $1 "#" $2; exit }' > /shared/dave.utxo
+cardano-cli latest query utxo --testnet-magic 42 --address "${dave_address}" | /shared/busybox awk 'NR>2 { print $1 "#" $2; exit }' > /shared/dave.utxo
 echo "UTXO details for Dave saved in /shared/dave.utxo."
 cat /shared/dave.utxo
 
 echo "Querying and saving the first UTXO details for Eve address to /shared/eve.utxo:"
-cardano-cli latest query utxo --testnet-magic 42 --address "${eve_address}" | /busybox awk 'NR>2 { print $1 "#" $2; exit }' > /shared/eve.utxo
+cardano-cli latest query utxo --testnet-magic 42 --address "${eve_address}" | /shared/busybox awk 'NR>2 { print $1 "#" $2; exit }' > /shared/eve.utxo
 echo "UTXO details for Eve saved in /shared/eve.utxo."
 cat /shared/eve.utxo
 

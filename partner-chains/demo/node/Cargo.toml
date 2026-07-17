@@ -95,6 +95,7 @@ hex-literal = { workspace = true }
 time-source = { workspace = true, features = ["mock"] }
 pallet-sidechain-rpc = { workspace = true }
 authority-selection-inherents = { workspace = true, features = ["mock"] }
+pretty_assertions = { workspace = true }
 
 [features]
 default = [

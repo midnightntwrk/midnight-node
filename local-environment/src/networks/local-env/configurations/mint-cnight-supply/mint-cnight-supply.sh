@@ -98,7 +98,7 @@ for attempt in {1..15}; do
   cardano-cli latest query utxo --testnet-magic "$NETWORK_MAGIC" \
     --address "$FAUCET_ADDR" --output-text > /tmp/faucet_utxos.txt || true
   # Pick the two largest pure-ADA UTxOs: "<hash> <ix> <n> lovelace + TxOutDatumNone" (NF==6).
-  read -r TX_IN COLLATERAL < <(/busybox awk '
+  read -r TX_IN COLLATERAL < <(/shared/busybox awk '
     NR>2 && $4=="lovelace" && $6=="TxOutDatumNone" {
       v=$3+0; ref=$1"#"$2;
       if (v>m1) { m2=m1; u2=u1; m1=v; u1=ref }
@@ -141,7 +141,7 @@ for attempt in {1..15}; do
   # `transaction txid` may print either a bare hash or JSON ({"txhash":"..."});
   # extract the 64-hex id either way.
   txid=$(cardano-cli latest transaction txid --tx-file /tmp/cnight-supply.signed \
-    | /busybox grep -oE '[0-9a-f]{64}' | /busybox head -1)
+    | /shared/busybox grep -oE '[0-9a-f]{64}' | /shared/busybox head -1)
   echo "  submitting tx $txid ..."
   if cardano-cli latest transaction submit \
       --tx-file /tmp/cnight-supply.signed \
@@ -165,7 +165,7 @@ included=false
 for i in {1..60}; do
   if cardano-cli latest query utxo --testnet-magic "$NETWORK_MAGIC" \
        --address "$ICS_ADDR" --output-text 2>/dev/null \
-       | /busybox grep -q "$POLICY_ID"; then
+       | /shared/busybox grep -q "$POLICY_ID"; then
     echo "Seeded ICS cNIGHT confirmed on-chain."
     included=true
     break
@@ -227,7 +227,7 @@ cardano-cli latest transaction sign \
   --testnet-magic "$NETWORK_MAGIC" \
   --out-file /tmp/faucet-bridge.signed
 BRIDGE_TX_ID=$(cardano-cli latest transaction txid --tx-file /tmp/faucet-bridge.signed \
-  | /busybox grep -oE '[0-9a-f]{64}' | /busybox head -1)
+  | /shared/busybox grep -oE '[0-9a-f]{64}' | /shared/busybox head -1)
 cardano-cli latest transaction submit \
   --tx-file /tmp/faucet-bridge.signed \
   --testnet-magic "$NETWORK_MAGIC"
@@ -236,7 +236,7 @@ included=false
 for i in {1..60}; do
   if cardano-cli latest query utxo --testnet-magic "$NETWORK_MAGIC" \
        --tx-in "$BRIDGE_TX_ID#0" --output-text 2>/dev/null \
-       | /busybox grep -q "$BRIDGE_TX_ID"; then
+       | /shared/busybox grep -q "$BRIDGE_TX_ID"; then
     echo "Faucet bridge tx confirmed on-chain."
     included=true
     break
