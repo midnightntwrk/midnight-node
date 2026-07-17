@@ -30,11 +30,12 @@ pub mod pallet {
 	/// placeholder ref-time/proof-size pending the user's benchmark run.
 	pub const PER_LEDGER_EVENT_WEIGHT: Weight = Weight::from_parts(5_000_000, 4096);
 
-	/// Worst-case ledger-event count a single system transaction can deposit,
-	/// anchored to the 50 MB `bytesChurned` ceiling at ~4 KiB per event. Bounds the
-	/// pre-dispatch weight declaration so the post-dispatch actual weight (which
-	/// reflects the real event count) never exceeds it.
-	pub const MAX_SYSTEM_TX_LEDGER_EVENTS: u64 = 50_000_000 / 4096;
+	/// Worst-case ledger events a single system transaction can deposit, sized to
+	/// fit the governance-motion proof envelope (~1 MB / ~4 KiB per event). Bounds
+	/// the pre-dispatch weight so a governed system tx stays within a motion's
+	/// weight bound; the post-dispatch actual weight reflects the real count.
+	/// Distinct from the per-block 50 MB benchmark ceiling in pallet-midnight.
+	pub const MAX_SYSTEM_TX_LEDGER_EVENTS: u64 = 200;
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
