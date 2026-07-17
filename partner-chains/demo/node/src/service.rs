@@ -8,17 +8,16 @@ use partner_chains_db_sync_data_sources::McFollowerMetrics;
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use partner_chains_demo_runtime::{self, RuntimeApi, opaque::Block};
 use sc_client_api::BlockBackend;
-use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
+use sc_consensus_aura::{SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::{GrandpaPruningFilter, SharedVoterState};
 pub use sc_executor::WasmExecutor;
-use sc_partner_chains_consensus_aura::import_queue as partner_chains_aura_import_queue;
+use sc_partner_chains_consensus::PartnerChainsProposerFactory;
 use sc_service::{Configuration, TaskManager, WarpSyncConfig, error::Error as ServiceError};
 use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
-use sp_partner_chains_consensus_aura::block_proposal::PartnerChainsProposerFactory;
 use sp_runtime::traits::Block as BlockT;
 use std::{sync::Arc, time::Duration};
 use time_source::SystemTimeSource;
@@ -34,6 +33,19 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 /// The minimum period of blocks on which justifications will be
 /// imported and generated.
 const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
+
+/// [`sc_partner_chains_consensus::SlotExtractor`] reading the slot from the Aura
+/// pre-runtime digest.
+pub struct AuraSlotExtractor;
+
+impl sc_partner_chains_consensus::SlotExtractor<Block> for AuraSlotExtractor {
+	fn extract_slot(header: &<Block as BlockT>::Header) -> Result<sp_consensus_aura::Slot, String> {
+		sc_consensus_aura::find_pre_digest::<Block, <AuraPair as sp_core::crypto::Pair>::Signature>(
+			header,
+		)
+		.map_err(|e| e.to_string())
+	}
+}
 
 /// This function provides dependencies of [partner_chains_node_commands::PartnerChainsSubcommand].
 /// It is not mandatory to have such a dedicated function, [new_partial] could be enough,
@@ -148,31 +160,51 @@ pub fn new_partial(
 		.map_err(|err| ServiceError::Application(err.into()))?;
 	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
 
-	let import_queue = partner_chains_aura_import_queue::import_queue::<
-		AuraPair,
+	let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
+
+	let aura_verifier = sc_consensus_aura::build_verifier::<AuraPair, _, _, _>(
+		sc_consensus_aura::BuildVerifierParams {
+			client: client.clone(),
+			create_inherent_data_providers: move |_parent_hash, ()| async move {
+				let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+				let slot = sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+					*timestamp,
+					slot_duration,
+				);
+				Ok((slot, timestamp))
+			},
+			check_for_equivocation: Default::default(),
+			telemetry: telemetry.as_ref().map(|x| x.handle()),
+			compatibility_mode: Default::default(),
+		},
+	);
+
+	let verifier = sc_partner_chains_consensus::PartnerChainsVerifier::<
 		_,
 		_,
 		_,
 		_,
-		_,
+		AuraSlotExtractor,
 		McHashInherentDigest,
-	>(ImportQueueParams {
-		block_import: grandpa_block_import.clone(),
-		justification_import: Some(Box::new(grandpa_block_import.clone())),
-		client: client.clone(),
-		create_inherent_data_providers: VerifierCIDP::new(
+	>::new(
+		aura_verifier,
+		client.clone(),
+		VerifierCIDP::new(
 			inherent_config,
 			client.clone(),
 			data_sources.mc_hash.clone(),
 			data_sources.authority_selection.clone(),
 			data_sources.bridge.clone(),
 		),
-		spawner: &task_manager.spawn_essential_handle(),
-		registry: config.prometheus_registry(),
-		check_for_equivocation: Default::default(),
-		telemetry: telemetry.as_ref().map(|x| x.handle()),
-		compatibility_mode: Default::default(),
-	})?;
+	);
+
+	let import_queue = sc_consensus::import_queue::BasicQueue::new(
+		verifier,
+		Box::new(grandpa_block_import.clone()),
+		Some(Box::new(grandpa_block_import.clone())),
+		&task_manager.spawn_essential_handle(),
+		config.prometheus_registry(),
+	);
 
 	Ok(sc_service::PartialComponents {
 		client,
@@ -330,42 +362,31 @@ pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as 
 			.map_err(|err| ServiceError::Application(err.into()))?;
 		let inherent_config =
 			CreateInherentDataConfig::new(mc_epoch_config, sc_slot_config.clone(), time_source);
-		let aura = sc_partner_chains_consensus_aura::start_aura::<
-			AuraPair,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			_,
-			McHashInherentDigest,
-		>(StartAuraParams {
-			slot_duration: sc_slot_config.slot_duration,
-			client: client.clone(),
-			select_chain,
-			block_import,
-			proposer_factory,
-			create_inherent_data_providers: ProposalCIDP::new(
-				inherent_config,
-				client.clone(),
-				data_sources.mc_hash.clone(),
-				data_sources.authority_selection.clone(),
-				data_sources.bridge.clone(),
-			),
-			force_authoring,
-			backoff_authoring_blocks,
-			keystore: keystore_container.keystore(),
-			sync_oracle: sync_service.clone(),
-			justification_sync_link: sync_service.clone(),
-			block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
-			max_block_proposal_slot_portion: None,
-			telemetry: telemetry.as_ref().map(|x| x.handle()),
-			compatibility_mode: Default::default(),
-		})?;
+		let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
+			StartAuraParams {
+				slot_duration: sc_slot_config.slot_duration,
+				client: client.clone(),
+				select_chain,
+				block_import,
+				proposer_factory,
+				create_inherent_data_providers: ProposalCIDP::new(
+					inherent_config,
+					client.clone(),
+					data_sources.mc_hash.clone(),
+					data_sources.authority_selection.clone(),
+					data_sources.bridge.clone(),
+				),
+				force_authoring,
+				backoff_authoring_blocks,
+				keystore: keystore_container.keystore(),
+				sync_oracle: sync_service.clone(),
+				justification_sync_link: sync_service.clone(),
+				block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
+				max_block_proposal_slot_portion: None,
+				telemetry: telemetry.as_ref().map(|x| x.handle()),
+				compatibility_mode: Default::default(),
+			},
+		)?;
 
 		// the AURA authoring task is considered essential, i.e. if it
 		// fails we take down the service with it.

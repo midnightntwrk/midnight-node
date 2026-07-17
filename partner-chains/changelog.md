@@ -13,6 +13,7 @@ session in order to make `pallet_session` use authorities with less delay.
 
 ## Removed
 
+* `sc-partner-chains-consensus-aura` and `sp-partner-chains-consensus-aura`.
 * `pallet-partner-chains-session` has been removed. Partner Chains should use only the stock Substrate session pallet
 * `PalletSessionSupport` type provided by `pallet-session-validator-management`. The `SessionManager` and `ShouldEndSession`
   implementations were moved directly to the `Pallet` type instead.
