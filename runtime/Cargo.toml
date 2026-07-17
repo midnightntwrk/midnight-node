@@ -21,6 +21,7 @@ frame-system.workspace = true
 frame-try-runtime = { workspace = true, optional = true }
 frame-executive.workspace = true
 pallet-aura.workspace = true
+pallet-authorship.workspace = true
 pallet-babe.workspace = true
 pallet-beefy.workspace = true
 pallet-beefy-mmr.workspace = true
@@ -116,6 +117,7 @@ std = [
     "frame-system/std",
     "frame-try-runtime/std",
     "pallet-aura/std",
+    "pallet-authorship/std",
     "pallet-babe/std",
     "pallet-beefy/std",
     "pallet-beefy-mmr/std",
@@ -205,6 +207,7 @@ try-runtime = [
     "frame-system/try-runtime",
     "frame-support/try-runtime",
     "pallet-aura/try-runtime",
+    "pallet-authorship/try-runtime",
     "pallet-babe/try-runtime",
     "pallet-beefy/try-runtime",
     "pallet-beefy-mmr/try-runtime",

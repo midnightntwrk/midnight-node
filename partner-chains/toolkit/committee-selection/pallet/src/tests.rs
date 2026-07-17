@@ -421,46 +421,6 @@ mod committee_rotation_tests {
 	}
 }
 
-#[test]
-fn get_authority_round_robin_works() {
-	new_test_ext().execute_with(|| {
-		initialize_first_committee();
-		set_validators_through_inherents(&[BOB]);
-		increment_epoch();
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(0),
-			Some(ALICE.ids_and_keys())
-		);
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(1),
-			Some(BOB.ids_and_keys())
-		);
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(2),
-			Some(ALICE.ids_and_keys())
-		);
-		// A rotation queues the new committee; the current committee — the one the session
-		// machinery keeps active for this session — is unchanged.
-		assert!(rotate_committee().is_some());
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(0),
-			Some(ALICE.ids_and_keys())
-		);
-		// A second rotation promotes the queued committee to the current one.
-		set_validators_through_inherents(&[BOB]);
-		increment_epoch();
-		assert!(rotate_committee().is_some());
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(0),
-			Some(BOB.ids_and_keys())
-		);
-		assert_eq!(
-			SessionCommitteeManagement::get_current_authority_round_robin(1),
-			Some(BOB.ids_and_keys())
-		);
-	});
-}
-
 pub(crate) fn increment_epoch() {
 	mock_pallet::CurrentEpoch::<Test>::put(current_epoch_number() + 1);
 }

@@ -398,19 +398,6 @@ pub mod pallet {
 				.unwrap_or(QueuedCommittee::<T>::get().epoch + One::one())
 		}
 
-		/// Returns current committee member for an index, repeating them in a round-robin fashion if needed.
-		///
-		/// The index refers to the committee whose keys form the effective validator set of the
-		/// current session, so it is consistent with e.g. the AURA authority index.
-		pub fn get_current_authority_round_robin(index: usize) -> Option<T::CommitteeMember> {
-			let committee = CurrentCommittee::<T>::get().committee;
-			if committee.is_empty() {
-				return None;
-			}
-
-			committee.get(index % committee.len() as usize).cloned()
-		}
-
 		/// Returns current committee from storage. See [`CurrentCommittee`].
 		pub fn current_committee_storage()
 		-> CommitteeInfo<T::ScEpochNumber, T::CommitteeMember, T::MaxValidators> {
