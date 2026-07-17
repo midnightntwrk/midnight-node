@@ -1,8 +1,25 @@
 services:
+  busybox-init:
+    # The Cardano images lack sed/awk/grep, which the cardano-node and
+    # mint-cnight-supply entrypoints need. Copy an arch-matching busybox into the
+    # shared volume once at startup; using the multi-arch busybox image lets Docker
+    # fetch the right arch automatically, so no per-arch binaries are vendored.
+    container_name: busybox-init
+    image: busybox:1.35.0-uclibc
+    platform: ${ARCHITECTURE}
+    command: ["sh", "-c", "cp /bin/busybox /shared/busybox && chmod 0755 /shared/busybox"]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - shared-volume:/shared
+
   cardano-node-1:
     container_name: cardano-node-1
     image: ${CARDANO_IMAGE}
     platform: ${ARCHITECTURE}
+    depends_on:
+      busybox-init:
+        condition: service_completed_successfully
     healthcheck:
       test: "test -e /data/node.socket"
       interval: 20s
@@ -12,7 +29,6 @@ services:
     volumes:
       - cardano-node-1-data:/data
       - shared-volume:/shared
-      - ./configurations/busybox:/busybox
       - ./configurations/cardano/entrypoint.sh:/entrypoint.sh
       - ./configurations/cardano/topology-pool1.json:/shared/node-1-topology.json
       - ./configurations/cardano/keys/cold.skey:/keys/cold.skey
@@ -70,6 +86,7 @@ services:
       - ${MIDNIGHT_RESERVE_CONTRACTS_PATH}:/contracts
       - ./configurations/contract-compiler/.env:/.env
       - ./configurations/contract-compiler/compile-contracts.sh:/compile-contracts.sh
+      - ../../../../res/local/permissioned-candidates-config.json:/permissioned-candidates-config.json
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -93,7 +110,6 @@ services:
       - shared-volume:/shared
       - kupo-data:/data
       - cardano-node-1-data:/node-ipc
-      - ./configurations/busybox:/busybox
     ports:
       - "${KUPO_PORT}:${KUPO_PORT}"
 
@@ -117,7 +133,6 @@ services:
       - shared-volume:/shared
       - ogmios-data:/data
       - cardano-node-1-data:/node-ipc
-      - ./configurations/busybox:/busybox
     ports:
       - "${OGMIOS_PORT}:${OGMIOS_PORT}"
     healthcheck:
@@ -131,11 +146,10 @@ services:
   db-sync:
     container_name: db-sync
     image: ${DBSYNC_IMAGE}
-    # The ONLY hardcoded-amd64 service: cardano-db-sync publishes a single-arch
-    # (amd64) image, so on arm64 hosts it runs under emulation. Every other service
-    # is multi-arch and uses ${ARCHITECTURE} to run native. Drop this pin if/when
-    # db-sync ships an arm64 image.
-    platform: linux/amd64
+    # ${DBSYNC_IMAGE} is a temporary multi-arch branch build (see .env.default); the
+    # stable db-sync release is amd64-only. ${ARCHITECTURE} runs it native on both
+    # arches — swap in the multi-arch release tag once db-sync ships one.
+    platform: ${ARCHITECTURE}
     depends_on:
       cardano-node-1:
         condition: service_healthy
@@ -147,7 +161,6 @@ services:
       - shared-volume:/shared
       - db-sync-state-dir:/var/lib
       - cardano-node-1-data:/node-ipc
-      - ./configurations/busybox:/busybox
       - ./configurations/db-sync/entrypoint.sh:/entrypoint.sh
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     command: >
@@ -222,7 +235,7 @@ services:
       APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
-      APP__APPLICATION__NETWORK_ID: "undeployed"
+      APP__APPLICATION__NETWORK_ID: "local"
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/chain-indexer/running"]
       start_interval: "5s"
@@ -365,6 +378,7 @@ services:
       - midnight-node-2-data:/data
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-2/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-2/keystore:/keystore
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
@@ -395,8 +409,12 @@ services:
       - midnight-node-3-data:/data
       - shared-volume:/shared
       - ./configurations/midnight-nodes/midnight-node-3/entrypoint.sh:/entrypoint.sh
+      - ./configurations/midnight-nodes/midnight-node-3/seeds:/seeds
     environment:
       DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+      AURA_SEED_FILE: "/seeds/aura.seed"
+      CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed"
+      GRANDPA_SEED_FILE: "/seeds/grandpa.seed"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator
@@ -485,6 +503,8 @@ services:
         condition: service_healthy
       contract-compiler:
         condition: service_completed_successfully
+      mint-cnight-supply:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     user: "0:0"
@@ -506,6 +526,51 @@ services:
       - GOVERNANCE_AUTHORITY=e8c300330fe315531ca89d4a2e7d0c80211bc70b473b1ed4979dff2b
       - OGMIOS_PORT=${OGMIOS_PORT}
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
+
+  mint-cnight-supply:
+    container_name: mint-cnight-supply
+    image: ${CARDANO_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      cardano-node-1:
+        condition: service_healthy
+      contract-compiler:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - cardano-node-1-data:/data
+      - shared-volume:/shared
+      - ./runtime-values:/runtime-values
+      - ./configurations/cardano/keys/funded_address.skey:/keys/funded_address.skey
+      - ./configurations/cardano/keys/funded_address.vkey:/keys/funded_address.vkey
+      - ./configurations/mint-cnight-supply/mint-cnight-supply.sh:/mint-cnight-supply.sh
+      - ../../../../res/:/res/
+    environment:
+      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+    entrypoint: ["/bin/bash", "/mint-cnight-supply.sh"]
+
+  init-mnight-faucet:
+    container_name: init-mnight-faucet
+    image: ${TOOLKIT_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+      midnight-node-1:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    user: "0:0"
+    environment:
+      - NODE_HOST=midnight-node-1
+      - NODE_PORT=9933
+      - FAUCET_MARKER_FILE=/runtime-values/mnight-faucet-ready
+    volumes:
+      - ./runtime-values:/runtime-values
+      - ./configurations/init-mnight-faucet/init-mnight-faucet.sh:/init-mnight-faucet.sh
+    entrypoint: ["/bin/bash", "/init-mnight-faucet.sh"]
+    restart: "no"
 
 volumes:
   cardano-node-1-data: {}

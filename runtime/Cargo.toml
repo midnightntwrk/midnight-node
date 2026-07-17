@@ -21,6 +21,8 @@ frame-system.workspace = true
 frame-try-runtime = { workspace = true, optional = true }
 frame-executive.workspace = true
 pallet-aura.workspace = true
+pallet-authorship.workspace = true
+pallet-babe.workspace = true
 pallet-beefy.workspace = true
 pallet-beefy-mmr.workspace = true
 pallet-grandpa.workspace = true
@@ -36,6 +38,7 @@ pallet-federated-authority.workspace = true
 sp-api.workspace = true
 sp-block-builder.workspace = true
 sp-consensus-aura.workspace = true
+sp-consensus-babe.workspace = true
 sp-consensus-beefy.workspace = true
 sp-consensus-grandpa.workspace = true
 sp-consensus-slots.workspace = true
@@ -70,7 +73,6 @@ pallet-partner-chains-bridge.workspace = true
 pallet-sidechain.workspace = true
 pallet-session.workspace = true
 pallet-session-validator-management.workspace = true
-pallet-partner-chains-session.workspace = true
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-slots.workspace = true
 
@@ -115,6 +117,8 @@ std = [
     "frame-system/std",
     "frame-try-runtime/std",
     "pallet-aura/std",
+    "pallet-authorship/std",
+    "pallet-babe/std",
     "pallet-beefy/std",
     "pallet-beefy-mmr/std",
     "pallet-grandpa/std",
@@ -138,6 +142,7 @@ std = [
     "sp-block-builder/std",
     #"sp-block-rewards/std",
     "sp-consensus-aura/std",
+    "sp-consensus-babe/std",
     "sp-consensus-beefy/std",
     "sp-consensus-grandpa/std",
     "sp-consensus-slots/std",
@@ -159,7 +164,6 @@ std = [
     "pallet-sidechain/std",
     "pallet-session/std",
     "pallet-session-validator-management/std",
-    "pallet-partner-chains-session/std",
     "pallet-tx-pause/std",
     "sidechain-domain/std",
     "sidechain-slots/std",
@@ -203,6 +207,8 @@ try-runtime = [
     "frame-system/try-runtime",
     "frame-support/try-runtime",
     "pallet-aura/try-runtime",
+    "pallet-authorship/try-runtime",
+    "pallet-babe/try-runtime",
     "pallet-beefy/try-runtime",
     "pallet-beefy-mmr/try-runtime",
     "pallet-grandpa/try-runtime",
