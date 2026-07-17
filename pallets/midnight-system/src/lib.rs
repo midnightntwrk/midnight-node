@@ -25,6 +25,17 @@ pub mod pallet {
 
 	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
 
+	/// Per-ledger-event deposit cost (one `frame_system::Events` state-trie write).
+	/// Sized from the `pallet-midnight` `bench_block_full_of_events` guardrail;
+	/// placeholder ref-time/proof-size pending the user's benchmark run.
+	pub const PER_LEDGER_EVENT_WEIGHT: Weight = Weight::from_parts(5_000_000, 4096);
+
+	/// Worst-case ledger-event count a single system transaction can deposit,
+	/// anchored to the 50 MB `bytesChurned` ceiling at ~4 KiB per event. Bounds the
+	/// pre-dispatch weight declaration so the post-dispatch actual weight (which
+	/// reflects the real event count) never exceeds it.
+	pub const MAX_SYSTEM_TX_LEDGER_EVENTS: u64 = 50_000_000 / 4096;
+
 	#[pallet::event]
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
@@ -117,11 +128,17 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight((ConfigurableSystemTxWeight::<T>::get(), DispatchClass::Operational))]
+		// Pre-dispatch weight bounds the base system-tx weight plus the worst-case
+		// ledger-event deposit allowance; the actual event count refines it below.
+		#[pallet::weight((
+			ConfigurableSystemTxWeight::<T>::get()
+				.saturating_add(PER_LEDGER_EVENT_WEIGHT.saturating_mul(MAX_SYSTEM_TX_LEDGER_EVENTS)),
+			DispatchClass::Operational,
+		))]
 		pub fn send_mn_system_transaction(
 			origin: OriginFor<T>,
 			midnight_system_tx: Vec<u8>,
-		) -> DispatchResult {
+		) -> DispatchResultWithPostInfo {
 			ensure_root(origin)?;
 			ensure!(
 				LedgerApi::is_governance_allowed_system_tx(&midnight_system_tx),
@@ -131,7 +148,7 @@ pub mod pallet {
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 			let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
 
-			let (hash, ledger_events) =
+			let (tx_hash, ledger_events) =
 				<T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
 					let result = LedgerApi::apply_system_transaction(
 						&state_key,
@@ -140,6 +157,8 @@ pub mod pallet {
 						runtime_version,
 					)
 					.map_err(Error::<T>::from)?;
+					// First tuple element is the new state key written back by
+					// `mut_ledger_state`; the tx hash and events ride out as the payload.
 					Ok::<(Vec<u8>, (Hash, Vec<LedgerEvent>)), Error<T>>((
 						result.state_root,
 						(result.tx_hash, result.events),
@@ -148,17 +167,21 @@ pub mod pallet {
 
 			Self::deposit_event(Event::<T>::SystemTransactionApplied(
 				super::SystemTransactionApplied {
-					hash,
+					hash: tx_hash,
 					serialized_system_transaction: midnight_system_tx,
 				},
 			));
 
+			let ledger_event_count = ledger_events.len() as u64;
 			// One runtime event per ledger event
 			for ledger_event in ledger_events {
 				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
 			}
 
-			Ok(())
+			// Refine to the base weight plus the events actually deposited.
+			let actual_weight = ConfigurableSystemTxWeight::<T>::get()
+				.saturating_add(PER_LEDGER_EVENT_WEIGHT.saturating_mul(ledger_event_count));
+			Ok(Some(actual_weight).into())
 		}
 	}
 
@@ -167,7 +190,7 @@ pub mod pallet {
 			serialized_system_transaction: Vec<u8>,
 		) -> Result<Hash, DispatchError> {
 			// Apply the System transaction
-			let (hash, ledger_events) =
+			let (tx_hash, ledger_events) =
 				<T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
 					let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 					let block_context =
@@ -179,6 +202,8 @@ pub mod pallet {
 						runtime_version,
 					)
 					.map_err(Error::<T>::from)?;
+					// First tuple element is the new state key written back by
+					// `mut_ledger_state`; the tx hash and events ride out as the payload.
 					Ok::<(Vec<u8>, (Hash, Vec<LedgerEvent>)), Error<T>>((
 						result.state_root,
 						(result.tx_hash, result.events),
@@ -187,7 +212,7 @@ pub mod pallet {
 
 			// Emit System Transaction for the indexer
 			Self::deposit_event(Event::<T>::SystemTransactionApplied(
-				super::SystemTransactionApplied { hash, serialized_system_transaction },
+				super::SystemTransactionApplied { hash: tx_hash, serialized_system_transaction },
 			));
 
 			// One runtime event per ledger event
@@ -195,7 +220,7 @@ pub mod pallet {
 				Self::deposit_event(Event::<T>::LedgerEvent(ledger_event));
 			}
 
-			Ok(hash)
+			Ok(tx_hash)
 		}
 	}
 }

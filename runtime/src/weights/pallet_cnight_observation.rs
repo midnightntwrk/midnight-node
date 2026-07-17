@@ -96,4 +96,14 @@ impl<T: frame_system::Config> pallet_cnight_observation::weights::WeightInfo for
 		Weight::from_parts(10_000_000, 0)
 			.saturating_add(T::DbWeight::get().writes(1))
 	}
+	/// Per-event ledger-event deposit cost (one state-trie write into
+	/// `frame_system::Events` per event). Provisional figure mirroring the
+	/// pallet's `SubstrateWeight` placeholder; pending the user's
+	/// `bench_block_full_of_events` run (DI-PRICE-HOLD), which regenerates
+	/// this file with the measured per-event cost.
+	fn ledger_event_deposit(n: u32, ) -> Weight {
+		Weight::from_parts(5_000_000, 4096)
+			.saturating_mul(n.into())
+			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
+	}
 }

@@ -2,8 +2,9 @@
 use crate::ledger_7::Bridge;
 use crate::{
 	common::types::{
-		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
-		TransactionDetails, Tx,
+		GasCost, Hash, SystemTransactionAppliedStateRoot,
+		SystemTransactionAppliedStateRootWithEvents, TransactionAppliedStateRoot,
+		TransactionAppliedStateRootWithEvents, TransactionDetails, Tx,
 	},
 	ledger_7::{BlockContext, types::LedgerApiError},
 };
@@ -123,6 +124,15 @@ pub trait LedgerBridge {
 
 	/*
 	 * apply_transaction()
+	 *
+	 * The unversioned and `#[version(2)]` functions return the events-free
+	 * `TransactionAppliedStateRoot`, byte-identical to a pre-ledger-events binary;
+	 * `#[version(3)]` carries the events. WASM always calls the latest host-function
+	 * version its imports declare, so this split guards the reverse direction: an old
+	 * (events-free) runtime on a new binary decodes the events-free shape instead of
+	 * silently truncating the events-carrying one. (A new runtime on an old binary
+	 * fails at instantiation on the missing `#[version(3)]` import, not via a silent
+	 * decode.)
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -150,6 +160,7 @@ pub trait LedgerBridge {
 				runtime_version,
 			)
 		}
+		.map(Into::into)
 	}
 
 	#[version(2)]
@@ -179,6 +190,36 @@ pub trait LedgerBridge {
 				runtime_version,
 			)
 		}
+		.map(Into::into)
+	}
+
+	#[version(3)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRootWithEvents, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+				true,
+				runtime_version,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+				true,
+				runtime_version,
+			)
+		}
 	}
 
 	fn apply_system_transaction(
@@ -188,6 +229,33 @@ pub trait LedgerBridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		_runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+		.map(Into::into)
+	}
+
+	#[version(2)]
+	fn apply_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>>
+	{
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::apply_system_transaction(
 				*self,

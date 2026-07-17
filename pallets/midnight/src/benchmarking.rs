@@ -25,10 +25,16 @@ use midnight_node_ledger::types::{LedgerEvent, LedgerEventSource};
 /// tagged `content_tagged_bytes`).
 const BENCH_EVENT_PAYLOAD_BYTES: usize = 4 * 1024;
 
-/// Upper bound on the number of ledger events deposited in a single block for
-/// the worst-case benchmark. `MAX_BENCH_EVENTS * BENCH_EVENT_PAYLOAD_BYTES`
-/// (~1 MiB) tracks the `bytes_churned` block ceiling.
-const MAX_BENCH_EVENTS: u32 = 256;
+/// The `bytesChurned` per-block ceiling from the shipped network configs
+/// (`res/*/ledger-parameters-config.json`). Event volume is transitively bounded
+/// by this limit, so the worst-case block the guardrail fills must approximate it.
+const BYTES_CHURNED_CEILING: usize = 50_000_000;
+
+/// Upper bound on the number of ledger events deposited in a single block for the
+/// worst-case benchmark, anchored to the real `bytesChurned` ceiling:
+/// `MAX_BENCH_EVENTS * BENCH_EVENT_PAYLOAD_BYTES` ≈ 50 MB, the effective ceiling a
+/// block can carry — not the ~1 MiB the guardrail previously exercised.
+const MAX_BENCH_EVENTS: u32 = (BYTES_CHURNED_CEILING / BENCH_EVENT_PAYLOAD_BYTES) as u32;
 
 /// Build `count` synthetic `LedgerEvent`s with worst-case-sized opaque
 /// payloads. The payload bytes are not a decodable event — this benchmark

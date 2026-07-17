@@ -57,8 +57,37 @@ pub struct LedgerEvent {
 	pub content_tagged_bytes: Vec<u8>,
 }
 
+// The events-free structs are the return shape of the original (unversioned) host
+// functions. Their SCALE encoding must stay byte-identical to a node binary built
+// before the ledger-events change, so an old (events-free) runtime running on a new
+// binary decodes them without a truncated-buffer failure. The events-carrying shape
+// lives in the sibling `*WithEvents` structs, returned only by the bumped
+// host-function version.
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct TransactionAppliedStateRoot {
+	pub state_root: Vec<u8>,
+	pub tx_hash: Hash,
+	pub all_applied: bool,
+	pub call_addresses: Vec<Vec<u8>>,
+	pub deploy_addresses: Vec<Vec<u8>>,
+	pub maintain_addresses: Vec<Vec<u8>>,
+	pub claim_rewards: Vec<u128>,
+	pub unshielded_utxos_created: Vec<UtxoInfo>,
+	pub unshielded_utxos_spent: Vec<UtxoInfo>,
+}
+
+#[derive(Encode, Decode, DecodeWithMemTracking)]
+pub struct SystemTransactionAppliedStateRoot {
+	pub state_root: Vec<u8>,
+	pub tx_hash: Hash,
+	pub tx_type: String,
+}
+
+// The events-carrying return shape. Field order mirrors the events-free struct with
+// `events` appended last, so a decoder for the old shape reading this buffer stops
+// before `events`; both are only ever decoded against their own host-function version.
+#[derive(Encode, Decode, DecodeWithMemTracking)]
+pub struct TransactionAppliedStateRootWithEvents {
 	pub state_root: Vec<u8>,
 	pub tx_hash: Hash,
 	pub all_applied: bool,
@@ -72,11 +101,37 @@ pub struct TransactionAppliedStateRoot {
 }
 
 #[derive(Encode, Decode, DecodeWithMemTracking)]
-pub struct SystemTransactionAppliedStateRoot {
+pub struct SystemTransactionAppliedStateRootWithEvents {
 	pub state_root: Vec<u8>,
 	pub tx_hash: Hash,
 	pub tx_type: String,
 	pub events: Vec<LedgerEvent>,
+}
+
+impl From<TransactionAppliedStateRootWithEvents> for TransactionAppliedStateRoot {
+	fn from(value: TransactionAppliedStateRootWithEvents) -> Self {
+		TransactionAppliedStateRoot {
+			state_root: value.state_root,
+			tx_hash: value.tx_hash,
+			all_applied: value.all_applied,
+			call_addresses: value.call_addresses,
+			deploy_addresses: value.deploy_addresses,
+			maintain_addresses: value.maintain_addresses,
+			claim_rewards: value.claim_rewards,
+			unshielded_utxos_created: value.unshielded_utxos_created,
+			unshielded_utxos_spent: value.unshielded_utxos_spent,
+		}
+	}
+}
+
+impl From<SystemTransactionAppliedStateRootWithEvents> for SystemTransactionAppliedStateRoot {
+	fn from(value: SystemTransactionAppliedStateRootWithEvents) -> Self {
+		SystemTransactionAppliedStateRoot {
+			state_root: value.state_root,
+			tx_hash: value.tx_hash,
+			tx_type: value.tx_type,
+		}
+	}
 }
 
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]
@@ -314,5 +369,42 @@ mod tests {
 		let bytes = event.encode();
 		let decoded = LedgerEvent::decode(&mut &bytes[..]).expect("decode");
 		assert_eq!(decoded, event);
+	}
+
+	// PR1849-TC-21: the events-free struct returned by the old host-function version
+	// encodes as the shared leading fields with no trailing `events` — i.e. it is a
+	// strict prefix of the events-carrying struct, which appends the `events` Vec last.
+	// This is what lets an old node binary's return decode under the new runtime.
+	#[test]
+	fn old_version_transaction_encoding_is_events_free_prefix() {
+		let with_empty_events = TransactionAppliedStateRootWithEvents {
+			state_root: vec![1, 2, 3],
+			tx_hash: [9u8; 32],
+			all_applied: true,
+			call_addresses: vec![vec![4, 5]],
+			deploy_addresses: vec![],
+			maintain_addresses: vec![],
+			claim_rewards: vec![42],
+			unshielded_utxos_created: vec![],
+			unshielded_utxos_spent: vec![],
+			events: vec![],
+		};
+		let old_bytes = TransactionAppliedStateRoot {
+			state_root: vec![1, 2, 3],
+			tx_hash: [9u8; 32],
+			all_applied: true,
+			call_addresses: vec![vec![4, 5]],
+			deploy_addresses: vec![],
+			maintain_addresses: vec![],
+			claim_rewards: vec![42],
+			unshielded_utxos_created: vec![],
+			unshielded_utxos_spent: vec![],
+		}
+		.encode();
+		let new_bytes = with_empty_events.encode();
+		// The events-carrying encoding with an empty `events` is the old encoding plus
+		// one trailing compact-zero length byte for the empty Vec.
+		assert_eq!(&new_bytes[..old_bytes.len()], &old_bytes[..]);
+		assert_eq!(new_bytes[old_bytes.len()..], [0u8]);
 	}
 }

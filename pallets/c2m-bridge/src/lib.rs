@@ -253,11 +253,19 @@ pub mod pallet {
 			sp_crypto_hashing::blake2_256(&data)
 		}
 
+		/// Serialize and execute a system transaction, depositing `make_event` on success.
+		///
+		/// Returns `true` iff the system transaction executed successfully. Callers that
+		/// consumed pending accounting state before calling MUST branch on this: on
+		/// `false` the state was not committed on-chain, so it must be left intact for a
+		/// later retry rather than dropped.
+		#[must_use]
 		fn execute_serialized_tx<F>(
 			result: Result<Vec<u8>, LedgerApiError>,
 			make_event: F,
 			description: &str,
-		) where
+		) -> bool
+		where
 			F: FnOnce([u8; 32]) -> Event<T>,
 		{
 			match result {
@@ -270,17 +278,20 @@ pub mod pallet {
 							log::debug!("Executed system transaction for {}", description);
 							let event = make_event(tx_hash);
 							Self::deposit_event(event);
+							true
 						},
 						Err(e) => {
 							log::error!(
 								"Failed to execute system transaction for {}: {e:?}",
 								description
 							);
+							false
 						},
 					}
 				},
 				Err(e) => {
 					log::error!("Failed to serialize transaction for {}: {e:?}", description);
+					false
 				},
 			}
 		}
@@ -293,7 +304,7 @@ pub mod pallet {
 			let sum = sum.saturating_add(transfer.amount);
 			let count = count.saturating_add(1);
 			if sum > config.subminimal_transfers_flush_threshold {
-				Self::execute_serialized_tx(
+				let flushed = Self::execute_serialized_tx(
 					LedgerApi::construct_unlock_to_treasury_system_tx(sum.into()),
 					|midnight_tx_hash| Event::SubminimalFlushTransfer {
 						amount: sum,
@@ -302,7 +313,13 @@ pub mod pallet {
 					},
 					&alloc::format!("subminimal transfers flush of total {}", sum),
 				);
-				SubminimalTransfers::<T>::kill();
+				if flushed {
+					SubminimalTransfers::<T>::kill();
+				} else {
+					// The flush did not commit on-chain — retain the accumulated
+					// balance so a later block retries rather than losing it.
+					SubminimalTransfers::<T>::put(SubminimalTransfersState { count, sum });
+				}
 			} else {
 				SubminimalTransfers::<T>::put(SubminimalTransfersState { count, sum });
 			}
@@ -321,7 +338,9 @@ pub mod pallet {
 		}
 
 		fn handle_invalid_transfer(mc_tx_hash: McTxHash, amount: u64) {
-			Self::execute_serialized_tx(
+			// Advisory: no replay-protected state is consumed here, so there is nothing
+			// to retain on failure — the treasury redirect is fire-and-forget.
+			let _ = Self::execute_serialized_tx(
 				LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
 				|midnight_tx_hash| Event::InvalidTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Invalid' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
@@ -329,7 +348,9 @@ pub mod pallet {
 		}
 
 		fn handle_reserve_transfer(mc_tx_hash: McTxHash, amount: u64) {
-			Self::execute_serialized_tx(
+			// Advisory: no replay-protected state is consumed here, so there is nothing
+			// to retain on failure — the reserve distribution is fire-and-forget.
+			let _ = Self::execute_serialized_tx(
 				LedgerApi::construct_distribute_reserve_system_tx(amount.into()),
 				|midnight_tx_hash| Event::ReserveTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Reserve' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
@@ -342,7 +363,9 @@ pub mod pallet {
 			match ApprovedMcTxHashes::<T>::take(mc_tx_hash) {
 				None => {
 					// Not pre-approved by governance — redirect funds to the Treasury.
-					Self::execute_serialized_tx(
+					// Advisory: `take` consumed no approval on this arm (there was none),
+					// so there is nothing to restore on failure — fire-and-forget.
+					let _ = Self::execute_serialized_tx(
 						LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
 						|midnight_tx_hash| Event::UnapprovedTransfer {
 							mc_tx_hash,
@@ -360,7 +383,7 @@ pub mod pallet {
 				},
 				Some(_) => {
 					let nonce = Self::generate_nonce();
-					Self::execute_serialized_tx(
+					let executed = Self::execute_serialized_tx(
 						LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
 							amount.into(),
 							recipient.as_bytes(),
@@ -379,6 +402,12 @@ pub mod pallet {
 							mc_tx_hash
 						),
 					);
+					if !executed {
+						// Execution did not commit — restore the approval so the transfer
+						// can be retried on a later block. Single-use protection still
+						// holds: a succeeded call leaves the approval consumed.
+						ApprovedMcTxHashes::<T>::insert(mc_tx_hash, ());
+					}
 				},
 			}
 		}
