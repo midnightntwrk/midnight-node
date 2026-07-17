@@ -1,5 +1,5 @@
-//! Scaffolding shared by the unit tests of [`crate::PartnerChainsVerifier`] and
-//! [`crate::PartnerChainsBlockImport`], and by the contract tests in `tests/`.
+//! Scaffolding for the unit tests of [`crate::PartnerChainsVerifier`] and
+//! [`crate::PartnerChainsBlockImport`], and for the Aura/BABE contract canaries.
 
 use crate::{InherentDigest, SlotExtractor};
 use parity_scale_codec::{Decode, Encode};
@@ -22,7 +22,7 @@ pub(crate) const TEST_SLOT: u64 = 7;
 /// Pre-runtime digest ID standing in for a Partner Chains inherent digest (e.g. `mcsh`).
 const TEST_DIGEST_ID: [u8; 4] = *b"pcsh";
 /// Value [`TestInherentDigest`] extracts from every header.
-pub const TEST_DIGEST_VALUE: u32 = 42;
+pub(crate) const TEST_DIGEST_VALUE: u32 = 42;
 
 pub(crate) struct TestSlotExtractor;
 
@@ -33,7 +33,7 @@ impl SlotExtractor<Block> for TestSlotExtractor {
 }
 
 /// Stand-in for a Partner Chains inherent digest (e.g. the mainchain reference hash).
-pub struct TestInherentDigest;
+pub(crate) struct TestInherentDigest;
 
 impl InherentDigest for TestInherentDigest {
 	type Value = u32;

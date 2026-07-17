@@ -124,9 +124,9 @@ impl<Inner, B: BlockT> PartnerChainsBodyRestore<Inner, B> {
 impl<Inner, B> BlockImport<B> for PartnerChainsBodyRestore<Inner, B>
 where
 	B: BlockT,
-	Inner: BlockImport<B> + Send + Sync,
+	Inner: BlockImport<B, Error = ConsensusError> + Send + Sync,
 {
-	type Error = Inner::Error;
+	type Error = ConsensusError;
 
 	async fn check_block(&self, block: BlockCheckParams<B>) -> Result<ImportResult, Self::Error> {
 		self.inner.check_block(block).await
@@ -136,8 +136,20 @@ where
 		&self,
 		mut block: BlockImportParams<B>,
 	) -> Result<ImportResult, Self::Error> {
-		if let Ok(body) = block.remove_intermediate::<Vec<B::Extrinsic>>(BODY_INTERMEDIATE_KEY) {
-			block.body = Some(body);
+		match block.remove_intermediate::<Vec<B::Extrinsic>>(BODY_INTERMEDIATE_KEY) {
+			Ok(body) => block.body = Some(body),
+			// Expected when the outer wrapper did not stash a body (header-only /
+			// warp-sync import, or a mis-composed pipeline with no PartnerChainsBlockImport).
+			Err(ConsensusError::NoIntermediate) => {},
+			// Intermediate present under our key but wrong type — fail loudly rather than
+			// silently importing a body-less block.
+			Err(err) => {
+				log::error!(
+					target: "partner-chains-consensus",
+					"Partner Chains body intermediate has unexpected type: {err}"
+				);
+				return Err(err);
+			},
 		}
 		self.inner.import_block(block).await
 	}

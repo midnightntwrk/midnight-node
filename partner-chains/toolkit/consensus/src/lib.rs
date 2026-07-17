@@ -18,12 +18,16 @@
 mod block_import;
 mod block_proposal;
 mod inherent_check;
-mod inherent_digest;
-#[cfg(any(test, feature = "test-support"))]
-pub mod test_support;
 mod verifier;
 
 pub use block_import::{PartnerChainsBlockImport, PartnerChainsBodyRestore};
 pub use block_proposal::{PartnerChainsProposer, PartnerChainsProposerFactory};
-pub use inherent_digest::InherentDigest;
+pub use sp_partner_chains_consensus::InherentDigest;
 pub use verifier::{PartnerChainsVerifier, SlotExtractor};
+
+#[cfg(test)]
+mod aura_verifier_contract;
+#[cfg(test)]
+mod babe_block_import_contract;
+#[cfg(test)]
+mod test_support;

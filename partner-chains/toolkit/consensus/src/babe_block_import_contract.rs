@@ -20,6 +20,10 @@
 //! PartnerChainsBlockImport<BabeBlockImport<Probe<PartnerChainsBodyRestore<Client>>>>
 //! ```
 
+use crate::{
+	InherentDigest, PartnerChainsBlockImport, PartnerChainsBodyRestore, SlotExtractor,
+	test_support::{TEST_DIGEST_VALUE, TestInherentDigest},
+};
 use parity_scale_codec::Encode;
 use sc_block_builder::BlockBuilderBuilder;
 use sc_client_api::BlockBackend;
@@ -28,10 +32,6 @@ use sc_consensus::block_import::{
 };
 use sc_consensus_babe::{BabeIntermediate, BabeLink, INTERMEDIATE_KEY};
 use sc_consensus_epochs::descendent_query;
-use sc_partner_chains_consensus::{
-	InherentDigest, PartnerChainsBlockImport, PartnerChainsBodyRestore, SlotExtractor,
-	test_support::{TEST_DIGEST_VALUE, TestInherentDigest},
-};
 use sc_transaction_pool_api::{OffchainTransactionPoolFactory, RejectAllTxPool};
 use sp_blockchain::HeaderBackend;
 use sp_consensus::{BlockOrigin, Error as ConsensusError};

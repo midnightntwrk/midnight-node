@@ -18,13 +18,13 @@ workspace = true
 async-trait.workspace = true
 futures.workspace = true
 log.workspace = true
-parity-scale-codec = { workspace = true, optional = true, default-features = true }
 sc-consensus = { workspace = true, default-features = true }
 sp-api = { workspace = true, default-features = true }
 sp-block-builder = { workspace = true, default-features = true }
 sp-consensus.workspace = true
 sp-consensus-slots = { workspace = true, default-features = true }
 sp-inherents = { workspace = true, default-features = true }
+sp-partner-chains-consensus.workspace = true
 sp-runtime = { workspace = true, default-features = true }
 
 [dev-dependencies]
@@ -47,17 +47,6 @@ sp-tracing = { workspace = true, default-features = true }
 sp-version = { workspace = true, default-features = true }
 substrate-test-runtime-client = { workspace = true }
 tokio.workspace = true
-
-[features]
-test-support = ["dep:parity-scale-codec"]
-
-[[test]]
-name = "aura_verifier_contract"
-required-features = ["test-support"]
-
-[[test]]
-name = "babe_block_import_contract"
-required-features = ["test-support"]
 
 [lib]
 doctest = false

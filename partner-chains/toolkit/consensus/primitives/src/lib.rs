@@ -1,3 +1,5 @@
+//! Partner Chains consensus primitives.
+
 /// Defines parts of inherent data that should be included in header digest
 pub trait InherentDigest {
 	/// Rust type of the inherent digest value

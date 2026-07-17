@@ -4,7 +4,8 @@ This crate provides the consensus components used by Partner Chains nodes to att
 Partner Chains inherent data to block headers and validate it during block import,
 without forking the block production gadget. Items provided:
 
-* `InherentDigest` — maps inherent data to block header digest items and back
+* `InherentDigest` — re-exported from `sp-partner-chains-consensus`; maps inherent data to
+  block header digest items and back
 * `PartnerChainsProposerFactory` — wraps a `Proposer` so that each produced block header
   contains the `InherentDigest` items
 
@@ -27,11 +28,10 @@ consensus gadget checks inherents. Two wrappers cover the two cases:
 
 Both wrappers rely on the wrapped component checking inherents *only* when the body is
 present — an implicit contract with the consensus implementation, not something the
-`Verifier`/`BlockImport` traits guarantee. It is pinned by integration tests against the
-real consensus components: `tests/aura_verifier_contract.rs` (the `sc_consensus_aura`
-verifier) and `tests/babe_block_import_contract.rs` (the `sc_consensus_babe` block
-import); re-check the contract when upgrading polkadot-sdk or wrapping a different
-consensus stack.
+`Verifier`/`BlockImport` traits guarantee. It is pinned by contract canaries against the
+real consensus components: `src/aura_verifier_contract.rs` (the `sc_consensus_aura`
+verifier) and `src/babe_block_import_contract.rs` (the `sc_consensus_babe` block import);
+re-check the contract when upgrading polkadot-sdk or wrapping a different consensus stack.
 
 See `service.rs` in the `node` crate for usage.
 

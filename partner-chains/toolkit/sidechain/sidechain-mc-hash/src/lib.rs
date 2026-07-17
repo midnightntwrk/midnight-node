@@ -15,8 +15,9 @@
 //!
 //! # Prerequisites
 //!
-//! This feature uses the [InherentDigest] mechanism from [sc_partner_chains_consensus] crate for storing inherent
-//! data in the block header. Your node must use the [PartnerChainsProposer] defined by that crate for this feature to work.
+//! This feature uses the [InherentDigest] mechanism from [sp_partner_chains_consensus] for storing inherent
+//! data in the block header. Your node must use the [PartnerChainsProposer] from `sc-partner-chains-consensus`
+//! for this feature to work.
 //!
 //! # Adding to the node
 //!
@@ -171,11 +172,11 @@
 #![warn(missing_docs)]
 use crate::McHashInherentError::StableBlockNotFound;
 use async_trait::async_trait;
-use sc_partner_chains_consensus::InherentDigest;
 use sidechain_domain::{byte_string::ByteString, *};
 use sp_blockchain::HeaderBackend;
 use sp_consensus_slots::{Slot, SlotDuration};
 use sp_inherents::{InherentData, InherentDataProvider, InherentIdentifier};
+use sp_partner_chains_consensus::InherentDigest;
 use sp_runtime::{
 	DigestItem,
 	traits::{Block as BlockT, Header as HeaderT, Zero},

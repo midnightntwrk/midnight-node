@@ -14640,6 +14640,7 @@ dependencies = [
  "sp-externalities",
  "sp-inherents",
  "sp-keystore",
+ "sp-partner-chains-consensus",
  "sp-runtime",
  "sp-state-machine",
  "sp-timestamp",
@@ -15962,6 +15963,7 @@ dependencies = [
  "sp-consensus",
  "sp-consensus-slots",
  "sp-inherents",
+ "sp-partner-chains-consensus",
  "sp-runtime",
  "sp-timestamp",
  "thiserror 2.0.18",
@@ -16925,6 +16927,14 @@ dependencies = [
  "sp-inherents",
  "sp-runtime",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "sp-partner-chains-consensus"
+version = "1.8.1"
+dependencies = [
+ "sp-inherents",
+ "sp-runtime",
 ]
 
 [[package]]

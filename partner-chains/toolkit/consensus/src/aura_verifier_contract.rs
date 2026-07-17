@@ -18,14 +18,14 @@
 //! Aura verifier (without [`PartnerChainsVerifier`]) around a client recording
 //! `BlockBuilderApi::check_inherents` calls.
 
-use sc_block_builder::BlockBuilderBuilder;
-use sc_client_api::backend::AuxStore;
-use sc_consensus::block_import::{BlockImportParams, ForkChoiceStrategy};
-use sc_consensus::import_queue::Verifier;
-use sc_partner_chains_consensus::{
+use crate::{
 	InherentDigest, PartnerChainsVerifier, SlotExtractor,
 	test_support::{TEST_DIGEST_VALUE, TestInherentDigest},
 };
+use sc_block_builder::BlockBuilderBuilder;
+use sc_client_api::backend::AuxStore;
+use sc_consensus::block_import::{BlockImportParams, ForkChoiceStrategy, StateAction};
+use sc_consensus::import_queue::Verifier;
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_block_builder::BlockBuilder as BlockBuilderApi;
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
@@ -604,4 +604,31 @@ async fn standard_aura_verifier_skips_inherent_check_without_body() {
 		!check_inherents_called.load(Ordering::SeqCst),
 		"Aura must not call check_inherents for a header-only block"
 	);
+}
+
+#[tokio::test]
+async fn skip_execution_checks_bypasses_partner_chains_check_and_delegates_to_aura() {
+	// Pins the warp-sync / gap-sync short-circuit in PartnerChainsVerifier: when the
+	// import skips execution, the wrapper must hand the block (body included) to the
+	// inner Aura verifier and must not run the Partner Chains inherent check. Aura
+	// itself short-circuits the same way; if either side starts requiring a full
+	// inherent check here, warp sync for new nodes wedges.
+	let client = Arc::new(substrate_test_runtime_client::new());
+	let keystore: KeystorePtr = Arc::new(sp_keystore::testing::MemoryKeystore::new());
+	let alice = generate_key(&keystore, "//Alice");
+	let slot = latest_slot_of(&client, &alice);
+	let recorded = Arc::new(Mutex::new(Vec::new()));
+	let verifier = partner_chains_aura_verifier(client.clone(), recorded.clone());
+
+	let mut block = sealed_block(&client, &keystore, slot, true, &alice);
+	block.state_action = StateAction::Skip;
+	let verified = verifier.verify(block).await.expect("skip-execution verification succeeds");
+
+	assert!(verified.body.is_some(), "body must be preserved through the short-circuit");
+	assert!(
+		recorded.lock().unwrap().is_empty(),
+		"the Partner Chains check must not run when execution checks are skipped"
+	);
+	// Aura's short-circuit sets fork choice from with_state() (false for StateAction::Skip).
+	assert_eq!(verified.fork_choice, Some(ForkChoiceStrategy::Custom(false)));
 }
