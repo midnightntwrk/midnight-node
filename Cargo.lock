@@ -3046,7 +3046,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5687,7 +5687,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -7341,9 +7341,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.18.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a860605968fce16869fd239cf4237a82f3ac470723415db603b0e8b6c8d4fb9"
+checksum = "0b6180140927ee907000b0aa540091f6ea512ead4447c92b8fc35bc72788a5a6"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -8587,7 +8587,7 @@ dependencies = [
  "figment",
  "itertools 0.14.0",
  "log",
- "lru 0.18.0",
+ "lru 0.18.1",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
  "parity-scale-codec",
@@ -8793,7 +8793,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.18.0",
+ "lru 0.18.1",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
  "midnight-circuits 6.2.1",
@@ -8828,7 +8828,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.18.0",
+ "lru 0.18.1",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
  "midnight-circuits 7.2.1",
@@ -11206,7 +11206,7 @@ dependencies = [
  "hex-literal 1.1.0",
  "itertools 0.14.0",
  "log",
- "lru 0.18.0",
+ "lru 0.18.1",
  "pallet-sidechain-rpc",
  "partner-chains-plutus-data",
  "pretty_assertions",
@@ -12467,7 +12467,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -12487,7 +12487,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -15757,11 +15757,12 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.18.0"
+version = "3.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd5414fad8e6907dbdd5bc441a50ae8d6e26151a03b1de04d89a5576de61d01f"
+checksum = "76a5c54c7310e7b8b9577c286d7e399ddd876c3e12b3ed917a8aabc4b96e9e8c"
 dependencies = [
  "base64 0.22.1",
+ "bs58",
  "chrono",
  "hex",
  "indexmap 1.9.3",
@@ -15776,9 +15777,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.18.0"
+version = "3.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3db8978e608f1fe7357e211969fd9abdcae80bac1ba7a3369bb7eb6b404eb65"
+checksum = "84d57bc0c8b9a17920c178daa6bb924850d54a9c97ab45194bb8c17ad66bb660"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
