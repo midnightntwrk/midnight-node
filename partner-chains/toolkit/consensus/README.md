@@ -35,4 +35,4 @@ consensus stack.
 
 See `service.rs` in the `node` crate for usage.
 
-License: Apache-2.0
+License: GPL-3.0-or-later WITH Classpath-exception-2.0
