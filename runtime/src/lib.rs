@@ -280,7 +280,10 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 002_000_000,
+	// Bumped from 002_000_000: this runtime changes the `System.Events` ABI (the new
+	// `LedgerEvent` variants) and adds a versioned ledger host function, so it must
+	// carry a distinct runtime identity rather than shipping under the base 2.0.0 tag.
+	spec_version: 002_001_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,

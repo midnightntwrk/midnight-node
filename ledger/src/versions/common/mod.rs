@@ -82,8 +82,8 @@ use {
 
 use crate::common::types::{
 	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, LedgerEvent,
-	LedgerEventSource, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
-	TransactionDetails, Tx, WrappedHash,
+	LedgerEventSource, Op, SystemTransactionAppliedStateRootWithEvents,
+	TransactionAppliedStateRootWithEvents, TransactionDetails, Tx, WrappedHash,
 };
 
 use super::BlockContext;
@@ -319,7 +319,7 @@ where
 		block_context: BlockContext,
 		should_skip_failed_segments: bool,
 		runtime_version: u32,
-	) -> Result<TransactionAppliedStateRoot, LedgerApiError>
+	) -> Result<TransactionAppliedStateRootWithEvents, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -431,7 +431,7 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
-		let mut event = TransactionAppliedStateRoot {
+		let mut event = TransactionAppliedStateRootWithEvents {
 			state_root: api.tagged_serialize(&new_ledger.as_typed_key())?,
 			tx_hash,
 			all_applied,
@@ -530,7 +530,7 @@ where
 		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
-	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+	) -> Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError> {
 		// Gather metrics for Prometheus
 		let start_system_tx_processing_time = Instant::now();
 		let tx_size = tx_serialized.len();
@@ -548,7 +548,7 @@ where
 		let (mut ledger, ledger_events) =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
-		let event = SystemTransactionAppliedStateRoot {
+		let event = SystemTransactionAppliedStateRootWithEvents {
 			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
 			tx_hash,
 			tx_type: tx_type.to_string(),
