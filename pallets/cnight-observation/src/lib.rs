@@ -580,7 +580,18 @@ pub mod pallet {
 					Some(CNightGeneratesDustEventSerialized(event_bytes))
 				},
 				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
+					match e {
+						LedgerApiError::Deserialization(DeserializationError::DustPublicKey) => {
+							log::debug!(
+								"Skipping AssetCreate for registration with out-of-Fr-range DustPublicKey: {e:?}"
+							);
+						},
+						_ => {
+							log::warn!(
+								"Unable to construct CNightGeneratesDustEvent for AssetCreate: {e:?}"
+							);
+						},
+					}
 					None
 				},
 			}
@@ -618,7 +629,18 @@ pub mod pallet {
 			match event {
 				Ok(event_bytes) => Some(CNightGeneratesDustEventSerialized(event_bytes)),
 				Err(e) => {
-					log::error!("Fatal: Unable to construct CNightGeneratesDustEvent: {e:?}");
+					match e {
+						LedgerApiError::Deserialization(DeserializationError::DustPublicKey) => {
+							log::debug!(
+								"Skipping AssetSpend for registration with out-of-Fr-range DustPublicKey: {e:?}"
+							);
+						},
+						_ => {
+							log::warn!(
+								"Unable to construct CNightGeneratesDustEvent for AssetSpend: {e:?}"
+							);
+						},
+					}
 					None
 				},
 			}

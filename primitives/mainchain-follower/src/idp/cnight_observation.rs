@@ -13,7 +13,11 @@
 
 //! Native Token Observation Inherent Data Provider
 
-use crate::{MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo};
+use crate::{
+	MidnightCNightObservationDataSource, MidnightObservationTokenMovement, ObservedUtxo,
+	ObservedUtxoData,
+};
+use midnight_node_ledger::latest::api::dust_public_key_is_valid;
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CNightObservationApi, CardanoPosition, INHERENT_IDENTIFIER, InherentError,
 	TimestampUnixMillis,
@@ -141,8 +145,46 @@ impl MidnightCNightObservationInherentDataProvider {
 			.await
 			.map_err(IDPCreationError::DataSourceError)?;
 
-		Ok(Self { utxos: observed_utxos.utxos, next_cardano_position: observed_utxos.end })
+		// At CNightObservationApi v3+, drop registration UTXOs whose DustPublicKey
+		// payload is structurally valid (length ≤ 33) but out of range for the
+		// Bls12-381 Fr scalar field. The check is consensus-affecting because the
+		// inherent payload changes, so it is gated on the runtime API version —
+		// matching the v1 → v2 over-fetch-factor gate above. At v2 and earlier the
+		// legacy pass-through is preserved so old-runtime + new-binary pairings
+		// stay consensus-equivalent across the upgrade window.
+		let mut utxos = observed_utxos.utxos;
+		filter_invalid_dust_public_key_registrations(&mut utxos, api_version);
+
+		Ok(Self { utxos, next_cardano_position: observed_utxos.end })
 	}
+}
+
+/// Drops registration UTXOs whose DustPublicKey payload is out of range for the
+/// Bls12-381 Fr scalar field, gated on `api_version >= 3`.
+///
+/// Extracted as a free function so the consensus-affecting filter can be unit-
+/// tested without instantiating a full `ProvideRuntimeApi<Block>` mock.
+/// Non-registration UTXOs (AssetCreate, AssetSpend, Deregistration) always
+/// pass through unchanged. Ordering is preserved via `Vec::retain`.
+fn filter_invalid_dust_public_key_registrations(utxos: &mut Vec<ObservedUtxo>, api_version: u32) {
+	if api_version < 3 {
+		return;
+	}
+	utxos.retain(|utxo| match &utxo.data {
+		ObservedUtxoData::Registration(reg) => {
+			let valid = dust_public_key_is_valid(&reg.dust_public_key.0);
+			if !valid {
+				log::debug!(
+					"Dropping registration with out-of-Fr-range DustPublicKey: \
+					 cardano_reward_address={} dust_public_key_bytes={}",
+					hex::encode(reg.cardano_reward_address.0),
+					hex::encode(reg.dust_public_key.0.as_slice()),
+				);
+			}
+			valid
+		},
+		_ => true,
+	});
 }
 
 #[async_trait::async_trait]
@@ -172,5 +214,175 @@ impl sp_inherents::InherentDataProvider for MidnightCNightObservationInherentDat
 		let error = InherentError::decode(&mut error).ok()?;
 
 		Some(Err(sp_inherents::Error::Application(Box::from(error))))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	//! Unit tests for the IDP-level DustPublicKey filter. The filter logic is
+	//! factored out as a free function so these tests do not need a full
+	//! `ProvideRuntimeApi<Block>` mock — the runtime-API-version gate is the
+	//! only parameter that matters for the filter's decision.
+	//!
+	//! The "valid" fixture takes the canonical path the production code uses:
+	//! the zero scalar is in Fr and round-trips through
+	//! `<DustPublicKey as Deserializable>::deserialize` cleanly. The fixture
+	//! is asserted against the production validator so any future encoding
+	//! change surfaces here as a loud test failure rather than silently
+	//! flipping the test's truth condition.
+
+	use super::filter_invalid_dust_public_key_registrations;
+	use crate::{ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, UtxoIndexInTx};
+	use midnight_node_ledger::latest::api::dust_public_key_is_valid;
+	use midnight_primitives_cnight_observation::{
+		CARDANO_REWARD_ADDRESS_LENGTH, CardanoPosition, CardanoRewardAddressBytes, CreateData,
+		DustPublicKeyBytes, RegistrationData, SpendData, TimestampUnixMillis,
+	};
+	use sidechain_domain::{McBlockHash, McTxHash};
+
+	fn header(index: u16) -> ObservedUtxoHeader {
+		ObservedUtxoHeader {
+			tx_position: CardanoPosition {
+				block_number: 1,
+				block_hash: McBlockHash([0u8; 32]),
+				block_timestamp: TimestampUnixMillis(0),
+				tx_index_in_block: index as u32,
+			},
+			tx_hash: McTxHash([index as u8; 32]),
+			utxo_tx_hash: McTxHash([index as u8; 32]),
+			utxo_index: UtxoIndexInTx(index),
+		}
+	}
+
+	fn registration(idx: u16, dust_public_key: DustPublicKeyBytes) -> ObservedUtxo {
+		ObservedUtxo {
+			header: header(idx),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address: CardanoRewardAddressBytes(
+					[idx as u8; CARDANO_REWARD_ADDRESS_LENGTH],
+				),
+				dust_public_key,
+			}),
+		}
+	}
+
+	fn asset_create(idx: u16) -> ObservedUtxo {
+		ObservedUtxo {
+			header: header(idx),
+			data: ObservedUtxoData::AssetCreate(CreateData {
+				value: 100,
+				owner: CardanoRewardAddressBytes([idx as u8; CARDANO_REWARD_ADDRESS_LENGTH]),
+				utxo_tx_hash: McTxHash([idx as u8; 32]),
+				utxo_tx_index: idx,
+			}),
+		}
+	}
+
+	fn asset_spend(idx: u16) -> ObservedUtxo {
+		ObservedUtxo {
+			header: header(idx),
+			data: ObservedUtxoData::AssetSpend(SpendData {
+				value: 100,
+				owner: CardanoRewardAddressBytes([idx as u8; CARDANO_REWARD_ADDRESS_LENGTH]),
+				utxo_tx_hash: McTxHash([idx as u8; 32]),
+				utxo_tx_index: idx,
+				spending_tx_hash: McTxHash([0xaa; 32]),
+			}),
+		}
+	}
+
+	/// 33-byte vector with leading byte 0xff — value above the Bls12-381 Fr
+	/// modulus, so `dust_public_key_is_valid` rejects it.
+	fn invalid_dust_public_key() -> DustPublicKeyBytes {
+		let bytes = vec![0xffu8; 33];
+		debug_assert!(!dust_public_key_is_valid(&bytes));
+		DustPublicKeyBytes(bytes.try_into().unwrap())
+	}
+
+	/// Valid DustPublicKey byte vector. The zero scalar is in Fr and rounds
+	/// through `<DustPublicKey as Deserializable>::deserialize` cleanly; the
+	/// helper asserts the fixture is accepted by the production validator so
+	/// any future encoding change surfaces here as a loud test failure.
+	///
+	/// The `DustPublicKeyBytes` envelope is `BoundedVec<u8, ConstU32<33>>` —
+	/// it tolerates both the 32-byte zero-scalar encoding used here and the
+	/// 33-byte canonical wire encoding produced by operator registrations.
+	/// Using the 32-byte form keeps the fixture independent of any
+	/// `DustSecretKey::derive_secret_key` helper while still exercising the
+	/// production validator's Fr-range branch.
+	fn valid_dust_public_key() -> DustPublicKeyBytes {
+		let bytes = vec![0u8; 32];
+		assert!(
+			dust_public_key_is_valid(&bytes),
+			"fixture must be a valid DustPublicKey — update encoding if this regresses"
+		);
+		DustPublicKeyBytes(bytes.try_into().unwrap())
+	}
+
+	#[test]
+	fn filter_passes_through_at_api_version_2() {
+		let mut utxos = vec![
+			registration(1, valid_dust_public_key()),
+			registration(2, invalid_dust_public_key()),
+			asset_create(3),
+		];
+		let before_len = utxos.len();
+		filter_invalid_dust_public_key_registrations(&mut utxos, 2);
+		assert_eq!(utxos.len(), before_len, "v2 must preserve legacy pass-through");
+	}
+
+	#[test]
+	fn filter_drops_invalid_registration_at_api_version_3() {
+		let mut utxos = vec![
+			registration(1, valid_dust_public_key()),
+			registration(2, invalid_dust_public_key()),
+			registration(3, valid_dust_public_key()),
+		];
+		filter_invalid_dust_public_key_registrations(&mut utxos, 3);
+		assert_eq!(utxos.len(), 2, "invalid registration must be dropped");
+		assert!(matches!(utxos[0].data, ObservedUtxoData::Registration(_)));
+		assert!(matches!(utxos[1].data, ObservedUtxoData::Registration(_)));
+		// Plan I-3 (drop-log emission at `debug` severity, no `Fatal` substring,
+		// includes the cardano_reward_address hex) is deferred: the test target
+		// here does not install a `tracing` / `test_log` subscriber, and the
+		// plan flagged the log-capture assertion as best-effort. The contract
+		// is pinned by inspection of `filter_invalid_dust_public_key_registrations`
+		// — the `retain` predicate emits a single `log::debug!` line per drop.
+	}
+
+	#[test]
+	fn filter_is_per_utxo_and_variant_scoped() {
+		let mut utxos =
+			vec![asset_spend(1), registration(2, invalid_dust_public_key()), asset_create(3)];
+		filter_invalid_dust_public_key_registrations(&mut utxos, 3);
+		assert_eq!(utxos.len(), 2, "only the registration must be dropped");
+		assert!(matches!(utxos[0].data, ObservedUtxoData::AssetSpend(_)));
+		assert!(matches!(utxos[1].data, ObservedUtxoData::AssetCreate(_)));
+	}
+
+	#[test]
+	fn filter_preserves_ordering() {
+		let mut utxos = vec![
+			registration(1, valid_dust_public_key()),
+			registration(2, valid_dust_public_key()),
+			registration(3, valid_dust_public_key()),
+			registration(4, invalid_dust_public_key()),
+			registration(5, valid_dust_public_key()),
+			registration(6, valid_dust_public_key()),
+			registration(7, valid_dust_public_key()),
+		];
+		filter_invalid_dust_public_key_registrations(&mut utxos, 3);
+		assert_eq!(utxos.len(), 6, "exactly one registration must be dropped");
+		// Original positions 1..3 and 5..7 — confirm the cardano reward
+		// address byte (set to the index in the helper) still increases
+		// monotonically with one gap at the removed entry.
+		let mut last: Option<u8> = None;
+		for utxo in &utxos {
+			if let ObservedUtxoData::Registration(reg) = &utxo.data {
+				let idx = reg.cardano_reward_address.0[0];
+				assert!(last.is_none_or(|prev| idx > prev), "ordering not preserved");
+				last = Some(idx);
+			}
+		}
 	}
 }

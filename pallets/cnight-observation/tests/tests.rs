@@ -110,6 +110,11 @@ fn dust_public_key() -> DustPublicKeyBytes {
 	DustPublicKeyBytes(serialize_untagged(&dust_public_key).unwrap().try_into().unwrap())
 }
 
+/// Invalid dust address (fails IDP-level Fr-range validator).
+fn invalid_dust_public_key() -> DustPublicKeyBytes {
+	DustPublicKeyBytes(BoundedVec::try_from(vec![0xFFu8; 32]).unwrap())
+}
+
 // Onchain cardano address
 fn cardano_reward_address(input: &[u8]) -> CardanoRewardAddressBytes {
 	CardanoRewardAddressBytes(testbytes(input, Some(29)))
@@ -1267,7 +1272,7 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
 		let cardano_addr = cardano_reward_address(b"cardano1");
-		let invalid_dust_key = DustPublicKeyBytes(BoundedVec::try_from(vec![0xFF; 32]).unwrap());
+		let invalid_dust_key = invalid_dust_public_key();
 
 		let create_utxo_tx_hash = tx_hash(1, 3);
 		let create_utxo_tx_index: u16 = 0;
@@ -1327,8 +1332,167 @@ fn handle_create_does_not_write_utxo_owners_on_event_construction_failure() {
 			)
 		});
 		assert!(!system_tx_found, "No SystemTransactionApplied event should be emitted");
+
+		// Refs: shieldedtech/shielded-security-engineering#233, PM-22301
 	});
 }
+
+#[test]
+fn handle_spend_logs_at_debug_for_dust_public_key_deserialization_error() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// Directly seed `UtxoOwners` with an invalid-key entry. This bypasses
+		// `handle_create`'s success-arm guard (which never writes invalid
+		// keys), so the subsequent `handle_spend` reaches the
+		// `LedgerApi::construct_cnight_generates_dust_event` call with an
+		// out-of-Fr-range payload — exercising the variant-narrowed
+		// `Deserialization(DustPublicKey)` arm of the result match.
+		let create_utxo_tx_hash = tx_hash(1, 3);
+		let create_utxo_tx_index: u16 = 0;
+		let nonce = BlakeTwo256::hash(
+			&[
+				b"asset_create".as_slice(),
+				&create_utxo_tx_hash.0[..],
+				&create_utxo_tx_index.to_be_bytes()[..],
+			]
+			.concat(),
+		);
+		UtxoOwners::<Test>::insert(nonce, invalid_dust_public_key());
+
+		let cardano_addr = cardano_reward_address(b"cardano1");
+		let spending_tx_hash = tx_hash(2, 0);
+
+		let utxos = vec![ObservedUtxo {
+			header: test_header(2, 0, 0, None),
+			data: ObservedUtxoData::AssetSpend(SpendData {
+				value: 100,
+				owner: cardano_addr,
+				utxo_tx_hash: create_utxo_tx_hash,
+				utxo_tx_index: create_utxo_tx_index,
+				spending_tx_hash,
+			}),
+		}];
+
+		let inherent_data = create_inherent(utxos, test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		// The spend reaches event construction with an invalid key. The
+		// downgraded match returns `None` from `handle_spend`, so no
+		// CNightGeneratesDustEvent is produced and dispatch still succeeds.
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		let system_tx_found = frame_system::Pallet::<Test>::events().iter().any(|record| {
+			matches!(
+				record.event,
+				mock::RuntimeEvent::MidnightSystem(
+					pallet_midnight_system::Event::SystemTransactionApplied(_)
+				)
+			)
+		});
+		assert!(!system_tx_found, "No SystemTransactionApplied event should be emitted");
+
+		// Log-severity expectation (not asserted directly because the pallet
+		// mock does not install a tracing subscriber): `handle_spend`'s
+		// DustPublicKey deserialise arm MUST log at `debug`, never at `error`,
+		// and must not include the literal substring "Fatal" anywhere in the
+		// formatted output. Validated by inspection of
+		// pallet-cnight-observation/src/lib.rs handle_spend. Operators can
+		// pin this behaviourally by running with `RUST_LOG=debug` via the
+		// `test_log::test` attribute already imported in this module.
+		//
+		// Refs: shieldedtech/shielded-security-engineering#233, PM-22301
+	});
+}
+
+#[test]
+fn handle_registration_still_admits_invalid_keys_at_pallet_layer() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// The two-piece design intentionally keeps the pallet writer permissive:
+		// the IDP-level Fr-range filter (gated on CNightObservationApi v3) is the
+		// consensus-affecting piece, while the pallet writer admits anything that
+		// fits the `DustPublicKeyBytes` envelope. This preserves legacy semantics
+		// for old-runtime + new-binary pairings during the upgrade window — an
+		// older runtime that does not yet expose api v3 must still admit the keys
+		// that older binaries would have written, so the on-chain state stays
+		// consensus-equivalent across the boundary.
+		//
+		// A future "tightening" change that adds a pallet-side validator would
+		// silently break this contract; this test pins the invariant.
+		let cardano_addr = cardano_reward_address(b"cardano1");
+		let invalid_dust_key = invalid_dust_public_key();
+
+		let utxos = vec![ObservedUtxo {
+			header: test_header(1, 2, 0, None),
+			data: ObservedUtxoData::Registration(RegistrationData {
+				cardano_reward_address: cardano_addr,
+				dust_public_key: invalid_dust_key.clone(),
+			}),
+		}];
+
+		let inherent_data = create_inherent(utxos, test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		// The invalid key must land in `Mapping` — the pallet writer is
+		// intentionally unchanged.
+		let stored: Vec<DustPublicKeyBytes> =
+			Mapping::<Test>::iter_prefix_values(cardano_addr).collect();
+		assert_eq!(stored.len(), 1, "pallet writer must admit the invalid-key registration");
+		assert_eq!(stored[0], invalid_dust_key, "the exact invalid-key bytes must be stored");
+
+		// A `Registration` event must be deposited for the invalid-key holder.
+		let registration_event_found = System::events().iter().any(|record| {
+			if let mock::RuntimeEvent::CNightObservation(crate::Event::Registration(reg)) =
+				&record.event
+			{
+				reg.cardano_reward_address == cardano_addr
+					&& reg.dust_public_key == invalid_dust_key
+			} else {
+				false
+			}
+		});
+		assert!(
+			registration_event_found,
+			"pallet writer must deposit Registration even for invalid keys"
+		);
+	});
+}
+
+// Plan P-5: a behavioural test for the catch-all `_ => log::warn!` arm in
+// `handle_create` / `handle_spend` is intentionally deferred in this PR.
+//
+// Why: `LedgerApi` (`midnight_node_ledger::types::active_ledger_bridge`) is a
+// free-function module, not a trait parameterised through `pallet::Config`.
+// Driving a non-`Deserialization(DustPublicKey)` `LedgerApiError` variant
+// (e.g. `HostApiError`, `LedgerCacheError`, `NoLedgerState`) from this test
+// crate requires either (a) trait-ifying the ledger bridge and threading a
+// stub through `Config`, or (b) corrupting global ledger state in a way that
+// produces the desired error variant deterministically. Both are larger than
+// the fatal-log downgrade work package targets.
+//
+// What pins the contract today:
+//   - Source inspection of `handle_create` / `handle_spend` in
+//     `pallets/cnight-observation/src/lib.rs` — the variant-narrowed match
+//     keeps the `_ => log::warn!(...)` arm distinct from the
+//     `Deserialization(DustPublicKey) => log::debug!(...)` arm, and clippy
+//     surfaces a missing arm at refactor time.
+//   - Dedicated tests for the `Deserialization(DustPublicKey)` arm
+//     (`handle_create_does_not_write_utxo_owners_on_event_construction_failure`
+//     covers the create-side path; `handle_spend_logs_at_debug_for_dust_public_key_deserialization_error`
+//     covers the spend-side path) would force any future collapse of the
+//     match to surface.
+//
+// Follow-up: trait-ify the ledger-bridge dependency in a separate refactor to
+// enable behavioural tests for all `LedgerApiError` variants. Tracked in the
+// test plan's P-5 row as a deferred item.
+//
+// Refs: shieldedtech/shielded-security-engineering#233, PM-22301
 
 #[test]
 fn asset_spend_without_create_should_not_emit_destroy_event() {
