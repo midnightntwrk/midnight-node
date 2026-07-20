@@ -226,26 +226,29 @@ transitively, a matching `@midnight-ntwrk/compact-runtime`). To let one toolkit 
 different `compactc` versions, each supported version has its own sibling workspace that pins that line:
 
 ```
-compact-0.29/   → @midnight-ntwrk/compact-js* 2.4.3
-compact-0.30/   → @midnight-ntwrk/compact-js* 2.5.0
-compact-0.31/   → @midnight-ntwrk/compact-js* 2.5.1
+compact-0.29.0/     → @midnight-ntwrk/compact-js* 2.4.3   (public npm)
+compact-0.30.0/     → @midnight-ntwrk/compact-js* 2.5.0   (public npm)
+compact-0.31.0/     → @midnight-ntwrk/compact-js* 2.5.1   (public npm)
+compact-0.33.0/     → @midnight-ntwrk/compact-js* 2.5.5-rc.6 (public npm)
 ```
 
-The root package depends on every variant (`@midnight-ntwrk/node-toolkit-compact-<major>.<minor>`). At runtime,
-`src/compactc-resolver.ts` reads `COMPACTC_VERSION`, picks the matching variant, and installs a module-resolution
-hook that redirects **every** `@midnight-ntwrk/compact-js*` / `@midnight-ntwrk/compact-runtime` import — including
-the transitive ones reached while a `contract.config.ts` is loaded — to that variant's pinned copy. `src/bin.ts`
-(the CLI) and `test/setup-compactc-resolver.ts` (the tests) both use this single resolver, so tests exercise the
-same dispatch as production.
+The root package depends on every variant (`@midnight-ntwrk/node-toolkit-compact-<major>.<minor>.<patch>`). At
+runtime, `src/compactc-resolver.ts` reads `COMPACTC_VERSION`, picks the matching variant, and installs a
+module-resolution hook that redirects **every** `@midnight-ntwrk/compact-js*` / `@midnight-ntwrk/compact-runtime`
+import — including the transitive ones reached while a `contract.config.ts` is loaded — to that variant's pinned
+copy. `src/bin.ts` (the CLI) and `test/setup-compactc-resolver.ts` (the tests) both use this single resolver, so
+tests exercise the same dispatch as production.
 
-`COMPACTC_VERSION` accepts either `<major>.<minor>` or the full `<major>.<minor>.<patch>` form; dispatch is on
-`<major>.<minor>` only, since `compact-js` is patch-stable within a minor line.
+Dispatch is on the full `<major>.<minor>.<patch>` version, since a `compactc` patch can ship a contract format
+that expects a different `@midnight-ntwrk/compact-js` patch. `COMPACTC_VERSION` may also carry a trailing
+build/tree-hash suffix (e.g. `0.31.0-6587676a9bb2`, the form stored in the root `COMPACTC_VERSION` file); only the
+leading `<major>.<minor>.<patch>` is matched.
 
 ### Adding support for a new `compactc` version
 
-1. **Create the variant workspace.** Copy an existing one, e.g. `cp -r compact-0.31 compact-<major>.<minor>`.
+1. **Create the variant workspace.** Copy an existing one, e.g. `cp -r compact-0.31.0 compact-<major>.<minor>.<patch>`.
    In its `package.json`:
-   - set `"name"` to `@midnight-ntwrk/node-toolkit-compact-<major>.<minor>`;
+   - set `"name"` to `@midnight-ntwrk/node-toolkit-compact-<major>.<minor>.<patch>`;
    - pin `@midnight-ntwrk/compact-js`, `@midnight-ntwrk/compact-js-command`, and `@midnight-ntwrk/compact-js-node`
      to the line that targets the new `compactc`;
    - align the `@effect/*` versions (`@effect/cli`, `@effect/platform-node`) with what that `compact-js` line
@@ -259,8 +262,8 @@ same dispatch as production.
    default baked into the resolver.
 
 3. **Depend on the variant** from the root `package.json` `dependencies`
-   (`"@midnight-ntwrk/node-toolkit-compact-<major>.<minor>": "^0.1.0"`). The `compact-*` workspaces glob picks it
-   up automatically.
+   (`"@midnight-ntwrk/node-toolkit-compact-<major>.<minor>.<patch>": "^0.1.0"`). The `compact-*` workspaces glob
+   picks it up automatically.
 
 4. **Add the concrete patch version** to `DEFAULT_VERSIONS` in `scripts/test-all-compactc.sh`.
 
@@ -272,7 +275,7 @@ same dispatch as production.
    ```
 
 To drop an old version, reverse these steps: remove it from `SUPPORTED_COMPACTC_VERSIONS`, the root dependency,
-and the test script, then delete the `compact-<major>.<minor>/` workspace.
+and the test script, then delete the `compact-<major>.<minor>.<patch>/` workspace.
 
 > [!IMPORTANT]
 > The CLI option surface can change between `compactc`/`compact-js-command` versions. For example, the global

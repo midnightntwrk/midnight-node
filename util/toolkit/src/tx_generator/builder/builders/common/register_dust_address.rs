@@ -4,7 +4,7 @@ use super::ledger_helpers_local::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB,
 	DustRegistrationBuilder, DustWallet, FromContext, IntentInfo, NIGHT, ProofProvider, Segment,
 	StandardTrasactionInfo, Timestamp, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
-	UtxoSpendInfo, Wallet, WalletAddress, WalletSeed,
+	UtxoSpendInfo, WalletAddress, WalletSeed,
 };
 use async_trait::async_trait;
 
@@ -18,9 +18,9 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 pub struct RegisterDustAddressBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
-	seed: String,
+	seed: WalletSeed,
 	rng_seed: Option<[u8; 32]>,
-	funding_seed: Option<String>,
+	funding_seed: Option<WalletSeed>,
 	destination_dust: Option<WalletAddress>,
 }
 
@@ -30,12 +30,18 @@ impl<C: BuilderContext<DefaultDB>> RegisterDustAddressBuilder<C> {
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		use super::type_convert::convert_wallet_seed;
+
+		// Only the seed values are stored; their schemes are applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (wallet_seed, _) = args.wallet_seed.resolve();
+		let funding_seed = args.funding_seed.map(|s| convert_wallet_seed(s.resolve().0));
 		Self {
 			context,
 			prover,
-			seed: args.wallet_seed,
+			seed: convert_wallet_seed(wallet_seed),
 			rng_seed: args.rng_seed,
-			funding_seed: args.funding_seed,
+			funding_seed,
 			destination_dust: args
 				.destination_dust
 				.as_ref()
@@ -80,9 +86,8 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 	) -> Result<SerializedTxBatches, Self::Error> {
 		let spin = Spin::new("building register dust address transaction...");
 
-		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
-		let funding_seed =
-			self.funding_seed.as_ref().map(|s| Wallet::<DefaultDB>::wallet_seed_decode(s));
+		let seed = self.seed.clone();
+		let funding_seed = self.funding_seed.clone();
 
 		let context = self.context.clone();
 
@@ -164,7 +169,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 				},
 			);
 			tx_info.add_dust_registration(DustRegistrationBuilder {
-				signing_key: wallet.unshielded.signing_key().clone(),
+				wallet: wallet.unshielded.clone(),
 				dust_address: Some(destination_dust),
 				allow_fee_payment,
 			});

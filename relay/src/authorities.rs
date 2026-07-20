@@ -3,7 +3,7 @@
 use midnight_primitives_beefy::{BEEFY_LOG_TARGET, BeefyStake, BeefyStakes};
 use rs_merkle::proof_tree::ProofNode;
 use sp_consensus_beefy::{ValidatorSet, ecdsa_crypto::Public as EcdsaPublic};
-use sp_core::keccak_256;
+use sp_crypto_hashing::keccak_256;
 use subxt::utils::to_hex;
 
 use crate::{BeefyId, BeefySignedCommitment, Error, justification::BeefyStakesInfo};
