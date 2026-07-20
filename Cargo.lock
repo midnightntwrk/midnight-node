@@ -7888,6 +7888,7 @@ dependencies = [
 name = "midnight-node"
 version = "2.0.0"
 dependencies = [
+ "async-channel 1.9.0",
  "async-trait",
  "authority-selection-inherents",
  "blake2b_simd",
@@ -7955,6 +7956,7 @@ dependencies = [
  "sc-executor",
  "sc-keystore",
  "sc-network",
+ "sc-network-sync",
  "sc-offchain",
  "sc-partner-chains-consensus-aura",
  "sc-rpc",
@@ -7978,6 +7980,7 @@ dependencies = [
  "sp-api",
  "sp-block-builder",
  "sp-blockchain",
+ "sp-consensus",
  "sp-consensus-aura",
  "sp-consensus-beefy",
  "sp-consensus-grandpa",
