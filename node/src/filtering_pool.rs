@@ -112,7 +112,7 @@ where
 					false
 				}
 			},
-			Op::Call { .. } | Op::ClaimRewards { .. } => false,
+			Op::Call { .. } | Op::ClaimRewards { .. } | Op::ClaimBridgeTransfer { .. } => false,
 		})
 	}
 

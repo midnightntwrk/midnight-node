@@ -21,8 +21,8 @@ use midnight_node_runtime::{
 	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
 	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
 	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
-	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig,
-	SidechainConfig, Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
+	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SidechainConfig,
+	Signature, SystemCall, SystemParametersConfig, TechnicalCommitteeConfig,
 	TechnicalCommitteeMembershipConfig, TimestampCall, UncheckedExtrinsic, WASM_BINARY,
 	opaque::SessionKeys,
 };
@@ -256,6 +256,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 	let config = RuntimeGenesisConfig {
 		system: Default::default(),
 		aura: Default::default(),
+		babe: Default::default(),
 		beefy: BeefyConfig {
 			authorities: genesis
 				.initial_authorities()
@@ -274,13 +275,9 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			)
 			.map_err(ChainSpecInitError::GenesisStateError)?,
 		},
-		session: SessionConfig {
-			initial_validators: authority_keys
-				.iter()
-				.cloned()
-				.map(|keys| (keys.cross_chain.into(), keys.session))
-				.collect::<Vec<_>>(),
-		},
+		// Session keys are registered by `session_committee_management` genesis via
+		// `SessionInterface::set_keys`, not duplicated here.
+		session: Default::default(),
 		sidechain: SidechainConfig {
 			genesis_utxo: std::str::FromStr::from_str(genesis.genesis_utxo())
 				.expect("failed to convert genesis_utxo"),
@@ -296,7 +293,6 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			main_chain_scripts: genesis.main_chain_scripts().into(),
 		},
 		tx_pause: Default::default(),
-		pallet_session: Default::default(),
 		c_night_observation: CNightObservationConfig {
 			config: cnight_genesis,
 			_marker: Default::default(),
@@ -393,6 +389,13 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 					subminimal_transfers_flush_threshold: bridge_config
 						.subminimal_transfers_flush_threshold,
 				},
+				approved_txs: bridge_config
+					.approved_txs
+					.iter()
+					.map(|s| {
+						McTxHash::decode_hex(s).expect("Failed to decode c2m approved_txs entry")
+					})
+					.collect(),
 				_marker: Default::default(),
 			}
 		},

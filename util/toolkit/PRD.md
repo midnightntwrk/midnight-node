@@ -355,7 +355,10 @@ The most load-bearing scripts:
 | `toolkit-maintenance-e2e.sh` | Contract maintenance updates (entrypoint upserts/removals, authority rotation). |
 | `toolkit-update-ledger-parameters-e2e.sh` | Federated-authority ledger parameter update, end-to-end. |
 | `toolkit-tokens-minter-e2e.sh` | Token-minter contract variants. |
-| `toolkit-multi-dest-e2e.sh` | Multi-destination transaction send. |
+
+The multi-destination-send no-hang check moved to the Rust e2e suite as
+`operational::toolkit_multi_dest_send_does_not_hang` (runs against the local-env,
+funded by the cNIGHT bridge), replacing the former `toolkit-multi-dest-e2e.sh`.
 
 Because these scripts exercise the same CLI users invoke by hand, any
 regression in a user-facing command also breaks CI — which gives the
