@@ -116,7 +116,8 @@ pub fn load_authorization_addresses(
 	Ok(addresses)
 }
 
-/// Query the two-stage UTxO and extract the authorization script from the datum
+/// Query the two-stage UTxO and extract the authorization script from the datum.
+/// Excludes outputs of failing script transactions (tx.valid_contract).
 pub async fn get_authorization_script_from_datum(
 	pool: &PgPool,
 	two_stage_policy_id: &PolicyId,
@@ -139,6 +140,7 @@ pub async fn get_authorization_script_from_datum(
 			JOIN multi_asset ma ON ma.id = ma_tx_out.ident
 		WHERE ma.policy = $1
 			AND ma.name = $2
+			AND tx.valid_contract = true
 			AND block.block_no <= $3
 		ORDER BY block.block_no DESC, tx.block_index DESC
 		LIMIT 1

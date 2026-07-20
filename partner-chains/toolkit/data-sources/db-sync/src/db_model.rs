@@ -356,6 +356,7 @@ pub(crate) async fn get_stake_distribution(
 }
 
 /// Returns the token data of the given policy at the given slot.
+/// Excludes outputs of failing script transactions (tx.valid_contract).
 #[cfg(feature = "candidate-source")]
 pub(crate) async fn get_token_utxo_for_epoch(
 	pool: &Pool<Postgres>,
@@ -380,6 +381,7 @@ pub(crate) async fn get_token_utxo_for_epoch(
         LEFT JOIN datum                 ON tx_out.data_hash = datum.hash
         WHERE multi_asset.policy = $1
 		AND multi_asset.name = $2
+        AND origin_tx.valid_contract = true
         AND origin_block.epoch_no <= $3
         ORDER BY tx_block_no DESC, origin_tx.block_index DESC
         LIMIT 1";
@@ -791,6 +793,10 @@ pub(crate) async fn get_bridge_txs(
 
 	// TODO: improve query by using metadata.ident "cache" and tx, tx_out, ma_tx_out,
 	// tx_metadata and tx_in ids boundaries. https://github.com/midnightntwrk/partner-chains/issues/26
+	//
+	// tx.valid_contract = true: failing script transactions are never observed as
+	// transfers, even if their collateral return moves tokens to the bridge address.
+	// Tokens stranded that way stay locked on purpose.
 	let mut query_builder = QueryBuilder::new(&format!(
 		"
 		WITH
@@ -814,6 +820,7 @@ pub(crate) async fn get_bridge_txs(
 			    JOIN relevant_txs ON relevant_txs.tx_id = tx.id
 			    LEFT JOIN tx_metadata ON tx_metadata.tx_id = tx.id AND tx_metadata.key = $5
 			WHERE block.block_no <= $6
+				AND tx.valid_contract = true
 				AND {checkpoint_limit}) AS bridge_tx_totals
 		WHERE bridge_out > bridge_in OR reserve_in > reserve_out
 		ORDER BY block_number, tx_ix
