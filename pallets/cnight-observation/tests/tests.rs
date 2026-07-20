@@ -1781,7 +1781,7 @@ fn build_panics_with_invalid_error_when_mapping_validator_address_has_bad_prefix
 fn build_panics_when_mapping_key_has_wrong_network() {
 	// header: upper nibble 14 (reward key hash), lower nibble 1 (mainnet).
 	let mut key_bytes = vec![(14u8 << 4) | 1u8];
-	key_bytes.extend(std::iter::repeat(0u8).take(28));
+	key_bytes.extend([0u8; 28]);
 	let key = CardanoRewardAddressBytes(key_bytes.try_into().unwrap());
 	let mut mappings = BTreeMap::new();
 	mappings.insert(key, Vec::new());

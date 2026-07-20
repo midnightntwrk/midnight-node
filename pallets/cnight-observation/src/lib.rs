@@ -332,9 +332,15 @@ pub mod pallet {
 			// panic names the chain-spec field path (matching the camelCase JSON keys the
 			// operator edits) and reads the cap from the destination BoundedVec type, so a
 			// startup-failure log points directly at the offending field.
-			MainChainMappingValidatorAddress::<T>::set(
+			// An empty `mapping_validator_address` is the unset default (mock and default
+			// runtime genesis); store it unvalidated as before. A non-empty address must
+			// pass CIP-19 structural validation.
+			let mapping_validator_address = &self.config.addresses.mapping_validator_address;
+			MainChainMappingValidatorAddress::<T>::set(if mapping_validator_address.is_empty() {
+				BoundedCardanoAddress::default()
+			} else {
 				Pallet::<T>::validate_mapping_validator_address(
-					self.config.addresses.mapping_validator_address.as_bytes().to_vec(),
+					mapping_validator_address.as_bytes().to_vec(),
 				)
 				.unwrap_or_else(|e| {
 					panic!(
@@ -342,8 +348,8 @@ pub mod pallet {
 						 is invalid: {e:?} (max length {})",
 						BoundedCardanoAddress::bound(),
 					)
-				}),
-			);
+				})
+			});
 
 			CNightIdentifier::<T>::set((
 				self.config.addresses.cnight_policy_id.to_vec().try_into().unwrap_or_else(
@@ -398,15 +404,14 @@ pub mod pallet {
 			let expected_network =
 				expected_network_from_bech32_hrp(&self.config.addresses.mapping_validator_address);
 			for addr in self.config.mappings.keys() {
-				if let Some(expected_network) = expected_network {
-					if let Err(e) =
+				if let Some(expected_network) = expected_network
+					&& let Err(e) =
 						CardanoRewardAddressBytes::try_new(addr.0.to_vec(), expected_network)
-					{
-						panic!(
-							"genesis: cNightObservation.config.mappings contains an invalid \
-							 reward-address key: {e}"
-						);
-					}
+				{
+					panic!(
+						"genesis: cNightObservation.config.mappings contains an invalid \
+						 reward-address key: {e}"
+					);
 				}
 			}
 
