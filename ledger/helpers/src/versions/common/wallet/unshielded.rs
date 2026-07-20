@@ -418,18 +418,9 @@ mod tests {
 		}
 		// (uniform_bytes, expected 32-byte unshielded address hex)
 		let cases: [([u8; 32], &str); 3] = [
-			(
-				[0x01; 32],
-				"1139359859a68b29bec3120d85691f21a56593a27d4ee15c10aa059d0699eb3e",
-			),
-			(
-				[0x02; 32],
-				"9dd08a454c354133504bddd366db239ea169db8454ebffb9b7718662b6a6e73d",
-			),
-			(
-				[0x04; 32],
-				"7b62f3aeaf1e9df17474a4ab2dcd4b6ca4d832499d88b3b60fb2a35d69d02933",
-			),
+			([0x01; 32], "1139359859a68b29bec3120d85691f21a56593a27d4ee15c10aa059d0699eb3e"),
+			([0x02; 32], "9dd08a454c354133504bddd366db239ea169db8454ebffb9b7718662b6a6e73d"),
+			([0x04; 32], "7b62f3aeaf1e9df17474a4ab2dcd4b6ca4d832499d88b3b60fb2a35d69d02933"),
 		];
 
 		for (uniform_bytes, expected) in cases {
