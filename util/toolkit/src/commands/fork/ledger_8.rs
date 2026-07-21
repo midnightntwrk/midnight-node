@@ -23,8 +23,26 @@ pub mod inner {
 	pub mod dust_balance;
 	pub mod generate_intent;
 	pub mod night_pools;
+	pub mod replay_check;
 	pub mod serde_convert;
 	pub mod show_transaction;
 	pub mod show_wallet;
 }
 pub use inner::*;
+
+/// Replay-check predicate registry for ledger 8 (current mainnet tip). Both
+/// entries are illustrative examples; real vulnerability predicates land here.
+///
+/// Predicates that must compile against *every* ledger generation live in
+/// `common/replay_check.rs`; predicates that use ledger-8-only APIs are
+/// defined in this file, below `pub use inner::*;`, where
+/// `midnight_node_ledger_helpers::ledger_8` can be imported directly (it is
+/// the same module `inner::ledger_helpers_local` resolves to, so the types
+/// line up). See the "Adding a predicate" section of the `replay_check`
+/// module docs for a worked example.
+pub fn predicates() -> Vec<Box<dyn replay_check::Predicate>> {
+	vec![
+		Box::new(replay_check::ZswapFirstFreeMonotonic),
+		Box::new(replay_check::TxNetworkIdMatches),
+	]
+}

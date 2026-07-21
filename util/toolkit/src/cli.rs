@@ -9,6 +9,7 @@ use crate::commands::{
 	generate_sample_intent::{self, GenerateSampleIntentArgs},
 	generate_txs::{self, GenerateTxsArgs},
 	random_address::{self, RandomAddressArgs},
+	replay_check::{self, ReplayCheckArgs, ReplayCheckResult},
 	root_call::{self, RootCallArgs},
 	runtime_upgrade::{self, RuntimeUpgradeArgs},
 	send_intent::{self, SendIntentArgs},
@@ -75,6 +76,10 @@ pub enum Commands {
 	ContractState(ContractStateArgs),
 	/// Generate a random `UserAddress` for a given `NetworkId`
 	RandomAddress(RandomAddressArgs),
+	/// Replay the chain and test every block, its intermediate ledger states, and its
+	/// transactions against a registry of predicates (e.g. to scan history for known
+	/// vulnerabilities). Exits non-zero if any predicate reports a violation.
+	ReplayCheck(ReplayCheckArgs),
 	/// Update the ledger parameters
 	UpdateLedgerParameters(UpdateLedgerParametersArgs),
 	/// Perform a runtime upgrade through federated governance
@@ -270,6 +275,33 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			}
 
 			Ok(())
+		},
+		Commands::ReplayCheck(args) => {
+			let result = replay_check::execute(args).await?;
+			let report = match result {
+				ReplayCheckResult::Human(report) => {
+					println!("{report}");
+					report
+				},
+				ReplayCheckResult::Json(report) => {
+					println!("{}", serde_json::to_string_pretty(&report)?);
+					report
+				},
+				ReplayCheckResult::ListHuman(listing) => {
+					println!("{listing}");
+					return Ok(());
+				},
+				ReplayCheckResult::ListJson(listing) => {
+					println!("{}", serde_json::to_string_pretty(&listing)?);
+					return Ok(());
+				},
+				ReplayCheckResult::DryRun(()) => return Ok(()),
+			};
+			if report.violations.is_empty() {
+				Ok(())
+			} else {
+				Err(format!("replay-check found {} violation(s)", report.violations.len()).into())
+			}
 		},
 		Commands::RuntimeUpgrade(args) => {
 			runtime_upgrade::execute(args).await?;

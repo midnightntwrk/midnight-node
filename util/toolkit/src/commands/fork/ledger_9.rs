@@ -23,8 +23,19 @@ pub mod inner {
 	pub mod dust_balance;
 	pub mod generate_intent;
 	pub mod night_pools;
+	pub mod replay_check;
 	pub mod serde_convert;
 	pub mod show_transaction;
 	pub mod show_wallet;
 }
 pub use inner::*;
+
+/// Replay-check predicate registry for ledger 9. Empty for now
+/// (dispatch-ready): v9 predicates land here once mainnet forks.
+///
+/// Version-agnostic predicates live in `common/replay_check.rs`; predicates
+/// using ledger-9-only APIs go in this file, below `pub use inner::*;` — see
+/// the "Adding a predicate" section of the `replay_check` module docs.
+pub fn predicates() -> Vec<Box<dyn replay_check::Predicate>> {
+	Vec::new()
+}

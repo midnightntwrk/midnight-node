@@ -21,6 +21,7 @@ pub mod generate_intent;
 pub mod generate_sample_intent;
 pub mod generate_txs;
 pub mod random_address;
+pub mod replay_check;
 pub mod root_call;
 pub mod runtime_upgrade;
 pub mod send_intent;
