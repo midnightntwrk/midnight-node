@@ -639,6 +639,20 @@ pub mod pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
+		/// Record observed Cardano token movements on Midnight.
+		///
+		/// This call is the payload of the cNIGHT observation inherent: the block
+		/// author injects the observed UTXOs and the next Cardano position
+		/// through `create_inherent`, and every other node re-derives the same
+		/// data and compares it in `check_inherent`. The observation is therefore
+		/// a consensus-checked fact rather than a user-submitted transaction —
+		/// the call requires no origin and runs at most once per block.
+		///
+		/// # Errors
+		///
+		/// Returns [`Error::TooManyUtxos`] if `utxos` exceeds the per-block
+		/// capacity, or [`Error::InherentAlreadyExecuted`] if the inherent has
+		/// already run in this block.
 		#[pallet::call_index(0)]
 		#[pallet::weight((T::WeightInfo::process_tokens(CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE)), DispatchClass::Mandatory))]
 		pub fn process_tokens(
