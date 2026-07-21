@@ -378,6 +378,7 @@ impl frame_system::Config for Runtime {
 		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
 		// Initializes the QueuedCommittee storage added in v2
 		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
+		// See migrations::authority_keys when opaque::SessionKeys changes shape.
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
