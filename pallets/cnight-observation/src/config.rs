@@ -70,8 +70,11 @@ mod mappings_serde {
 					access.next_entry::<String, Vec<MappingEntryGenesis>>()?
 				{
 					let bytes: Vec<u8> = hex::decode(&key).map_err(serde::de::Error::custom)?;
+					let byte_len = bytes.len();
 					let addr = CardanoRewardAddressBytes::try_from(bytes).map_err(|_| {
-						serde::de::Error::custom("invalid CardanoRewardAddressBytes length")
+						serde::de::Error::custom(alloc::format!(
+							"invalid CardanoRewardAddressBytes length: expected 29 bytes, found {byte_len}"
+						))
 					})?;
 					map.insert(addr, value);
 				}

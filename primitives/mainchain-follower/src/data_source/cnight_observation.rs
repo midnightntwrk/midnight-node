@@ -62,8 +62,6 @@ pub enum MidnightCNightObservationDataSourceError {
 	MissingBlockReference(McBlockHash),
 	#[error("Error querying database: {0}")]
 	DBQueryError(#[from] sqlx::error::Error),
-	#[error("Error extracting network id from Cardano address")]
-	CardanoNetworkError(String),
 	#[error("Invalid value for mapping validator address")]
 	MappingValidatorInvalidAddress(String),
 }
@@ -82,6 +80,16 @@ pub enum RegistrationDatumDecodeError {
 	DustAddressNotBytes,
 	#[error("Dust address invalid length")]
 	DustAddressInvalidLength(usize),
+}
+
+/// Build the 29-byte CIP-19 reward address for an already-valid stake credential
+/// on the given network. It is always 29 bytes; a mismatch would be an internal bug.
+fn reward_address_bytes(credential: &Credential, cardano_network: u8) -> CardanoRewardAddressBytes {
+	RewardAddress::new(cardano_network, credential)
+		.to_address()
+		.to_bytes()
+		.try_into()
+		.expect("reward address constructed from a valid credential is always 29 bytes")
 }
 
 pub struct MidnightCNightObservationDataSourceImpl {
@@ -218,14 +226,12 @@ impl MidnightCNightObservationDataSourceImpl {
 				},
 			};
 
-			let reward_address = RewardAddress::new(cardano_network, &credential);
-			// Unwrap here is OK - we know the reward_address is always 29 bytes
-			let cardano_address = reward_address.to_address().to_bytes().try_into().unwrap();
+			let cardano_reward_address = reward_address_bytes(&credential, cardano_network);
 
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::Registration(RegistrationData {
-					cardano_reward_address: CardanoRewardAddressBytes(cardano_address),
+					cardano_reward_address,
 					dust_public_key,
 				}),
 			};
@@ -271,14 +277,12 @@ impl MidnightCNightObservationDataSourceImpl {
 				},
 			};
 
-			let reward_address = RewardAddress::new(cardano_network, &credential);
-			// Unwrap here is OK - we know the reward_address is always 29 bytes
-			let cardano_address = reward_address.to_address().to_bytes().try_into().unwrap();
+			let cardano_reward_address = reward_address_bytes(&credential, cardano_network);
 
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::Deregistration(DeregistrationData {
-					cardano_reward_address: CardanoRewardAddressBytes(cardano_address),
+					cardano_reward_address,
 					dust_public_key,
 				}),
 			};
@@ -327,8 +331,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				// credential so they can't be mapped to a reward address — skip silently.
 				continue;
 			};
-			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
-			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
+			let owner = reward_address_bytes(&base_address.stake_cred(), cardano_network);
 
 			let utxo = ObservedUtxo {
 				header,
@@ -384,8 +387,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				// credential so they can't be mapped to a reward address — skip silently.
 				continue;
 			};
-			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
-			let owner = reward_address.to_address().to_bytes().try_into().unwrap();
+			let owner = reward_address_bytes(&base_address.stake_cred(), cardano_network);
 
 			let utxo = ObservedUtxo {
 				header,

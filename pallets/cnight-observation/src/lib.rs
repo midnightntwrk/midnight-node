@@ -113,6 +113,27 @@ pub mod pallet {
 
 	pub type BoundedCardanoAddress = BoundedVec<u8, ConstU32<CARDANO_BECH32_ADDRESS_MAX_LENGTH>>;
 
+	/// CIP-19 network id for Cardano mainnet (reward-address network nibble).
+	const CARDANO_NETWORK_MAINNET: u8 = 1;
+	/// CIP-19 network id for Cardano testnets (preview / preprod / local).
+	const CARDANO_NETWORK_TESTNET: u8 = 0;
+
+	/// Derive the expected CIP-19 network id from a Cardano Bech32 address's human-
+	/// readable prefix: `addr_test...` (and `stake_test...`) are testnet, `addr...`
+	/// (and `stake...`) are mainnet. Returns `None` when the prefix is neither, so
+	/// genesis reward-address network validation is skipped rather than enforced
+	/// against a guessed network. The `_test` prefix must be checked first because
+	/// `addr` / `stake` are prefixes of `addr_test` / `stake_test`.
+	fn expected_network_from_bech32_hrp(address: &str) -> Option<u8> {
+		if address.starts_with("addr_test") || address.starts_with("stake_test") {
+			Some(CARDANO_NETWORK_TESTNET)
+		} else if address.starts_with("addr") || address.starts_with("stake") {
+			Some(CARDANO_NETWORK_MAINNET)
+		} else {
+			None
+		}
+	}
+
 	#[derive(
 		Debug,
 		Clone,
@@ -177,6 +198,8 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// A Cardano Wallet address was sent, but was longer than expected
 		MaxCardanoAddrLengthExceeded,
+		/// The mapping-validator address is not a well-formed Cardano Bech32 address
+		InvalidMappingValidatorAddress,
 		/// A Cardano asset name contained non-ASCII bytes
 		NonAsciiAssetName,
 		/// Only one inherent is allowed per block
@@ -309,22 +332,24 @@ pub mod pallet {
 			// panic names the chain-spec field path (matching the camelCase JSON keys the
 			// operator edits) and reads the cap from the destination BoundedVec type, so a
 			// startup-failure log points directly at the offending field.
-			MainChainMappingValidatorAddress::<T>::set(
-				self.config
-					.addresses
-					.mapping_validator_address
-					.as_bytes()
-					.to_vec()
-					.try_into()
-					.unwrap_or_else(|v: Vec<u8>| {
-						panic!(
-							"genesis: cNightObservation.config.addresses.mapping_validator_address \
-							 length {} bytes exceeds maximum {}",
-							v.len(),
-							BoundedCardanoAddress::bound(),
-						)
-					}),
-			);
+			// An empty `mapping_validator_address` is the unset default (mock and default
+			// runtime genesis); store it unvalidated as before. A non-empty address must
+			// pass CIP-19 structural validation.
+			let mapping_validator_address = &self.config.addresses.mapping_validator_address;
+			MainChainMappingValidatorAddress::<T>::set(if mapping_validator_address.is_empty() {
+				BoundedCardanoAddress::default()
+			} else {
+				Pallet::<T>::validate_mapping_validator_address(
+					mapping_validator_address.as_bytes().to_vec(),
+				)
+				.unwrap_or_else(|e| {
+					panic!(
+						"genesis: cNightObservation.config.addresses.mapping_validator_address \
+						 is invalid: {e:?} (max length {})",
+						BoundedCardanoAddress::bound(),
+					)
+				})
+			});
 
 			CNightIdentifier::<T>::set((
 				self.config.addresses.cnight_policy_id.to_vec().try_into().unwrap_or_else(
@@ -369,6 +394,26 @@ pub mod pallet {
 						)
 					}),
 			);
+
+			// The serde deserializer for `mappings` can only check key length (it has
+			// no network context), so enforce the CIP-19 address type + network id
+			// here, where the expected network is derivable from the Bech32 HRP of
+			// the mapping-validator address (`addr...` = mainnet, `addr_test...` =
+			// testnet). Genesis fail-fast: an invalid reward-address key panics
+			// rather than starting the chain with an unbridgeable mapping.
+			let expected_network =
+				expected_network_from_bech32_hrp(&self.config.addresses.mapping_validator_address);
+			for addr in self.config.mappings.keys() {
+				if let Some(expected_network) = expected_network
+					&& let Err(e) =
+						CardanoRewardAddressBytes::try_new(addr.0.to_vec(), expected_network)
+				{
+					panic!(
+						"genesis: cNightObservation.config.mappings contains an invalid \
+						 reward-address key: {e}"
+					);
+				}
+			}
 
 			for (addr, entries) in &self.config.mappings {
 				for entry in entries {
@@ -431,6 +476,22 @@ pub mod pallet {
 	}
 
 	impl<T: Config> Pallet<T> {
+		/// Structural validator for the mapping-validator address, which is a Shelley
+		/// payment address rather than a reward address and so cannot use the reward
+		/// `try_new`. Checks the bytes are a UTF-8 Cardano Bech32 address within the
+		/// bounded length, returning a specific error to distinguish malformed from
+		/// merely over-long.
+		fn validate_mapping_validator_address(
+			address: Vec<u8>,
+		) -> Result<BoundedCardanoAddress, Error<T>> {
+			let text = core::str::from_utf8(&address)
+				.map_err(|_| Error::<T>::InvalidMappingValidatorAddress)?;
+			if expected_network_from_bech32_hrp(text).is_none() {
+				return Err(Error::<T>::InvalidMappingValidatorAddress);
+			}
+			address.try_into().map_err(|_| Error::<T>::MaxCardanoAddrLengthExceeded)
+		}
+
 		fn get_data_from_inherent_data(
 			data: &InherentData,
 		) -> Result<Option<MidnightObservationTokenMovement>, InherentError> {
@@ -765,12 +826,9 @@ pub mod pallet {
 			address: Vec<u8>,
 		) -> DispatchResult {
 			ensure_root(origin)?;
-			MainChainMappingValidatorAddress::<T>::set(
-				address
-					.clone()
-					.try_into()
-					.map_err(|_| Error::<T>::MaxCardanoAddrLengthExceeded)?,
-			);
+			MainChainMappingValidatorAddress::<T>::set(Self::validate_mapping_validator_address(
+				address,
+			)?);
 
 			Ok(())
 		}
