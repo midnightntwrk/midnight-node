@@ -122,6 +122,12 @@ pub struct Cli {
 	#[arg(long, global = true, env = "MN_REPLAY_CONCURRENCY")]
 	pub replay_concurrency: Option<usize>,
 
+	/// Node RPC request timeout in seconds. Defaults to 60. Raise this on slow
+	/// hardware or a loaded node, where heavy requests (e.g. metadata fetches)
+	/// can exceed the default.
+	#[arg(long, global = true, env = "MN_RPC_REQUEST_TIMEOUT")]
+	pub rpc_request_timeout: Option<u64>,
+
 	#[command(subcommand)]
 	pub command: Commands,
 }

@@ -14,6 +14,8 @@ use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 pub enum LedgerParametersError {
 	#[error("Subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
+	#[error("subxt_rpc error: {0}")]
+	RpcClientError(#[from] subxt::rpcs::Error),
 	#[error("online client error: {0}")]
 	OnlineClientError(#[from] subxt::error::OnlineClientError),
 	#[error("online client at block error: {0}")]
@@ -156,7 +158,8 @@ pub struct UpdateLedgerParametersArgs {
 
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
 	// Create a new API client
-	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
+	let rpc_client = crate::client::rpc_client_with_timeout(&args.rpc_url).await?;
+	let api = OnlineClient::<SubstrateConfig>::from_rpc_client(rpc_client).await?;
 
 	let bytes = match args.parameters {
 		Some(parameters) => {

@@ -21,6 +21,9 @@ midnight-node-metadata.workspace = true
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
 subxt.workspace = true
+# Same version subxt builds its default client from; used to construct the
+# jsonrpsee client directly so the request timeout is configurable.
+jsonrpsee = { workspace = true, features = ["async-client", "client-ws-transport-tls"] }
 tokio.workspace = true
 hex = { workspace = true, features = ["std", "serde"] }
 sha2.workspace = true

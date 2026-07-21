@@ -27,6 +27,8 @@ pub enum RuntimeUpgradeError {
 	IoError(#[from] std::io::Error),
 	#[error("subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
+	#[error("subxt_rpc error: {0}")]
+	RpcClientError(#[from] subxt::rpcs::Error),
 	#[error("online client error: {0}")]
 	OnlineClientError(#[from] subxt::error::OnlineClientError),
 	#[error("online client at block error: {0}")]
@@ -78,7 +80,8 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 	log::info!("Code hash: 0x{}", hex::encode(code_hash));
 
 	// Step 3: Build System::authorize_upgrade call and encode it
-	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
+	let rpc_client = crate::client::rpc_client_with_timeout(&args.rpc_url).await?;
+	let api = OnlineClient::<SubstrateConfig>::from_rpc_client(rpc_client).await?;
 	let authorize_upgrade_call =
 		dynamic::tx("System", "authorize_upgrade", vec![dynamic::Value::from_bytes(&code_hash)]);
 	let encoded_call = api.tx().await?.call_data(&authorize_upgrade_call)?;

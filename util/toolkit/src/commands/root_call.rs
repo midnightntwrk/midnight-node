@@ -143,7 +143,8 @@ pub async fn execute(args: RootCallArgs) -> Result<(), Box<dyn std::error::Error
 
 	// Connect to the node
 	log::info!("Connecting to node at {}", args.rpc_url);
-	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
+	let rpc_client = crate::client::rpc_client_with_timeout(&args.rpc_url).await?;
+	let api = OnlineClient::<SubstrateConfig>::from_rpc_client(rpc_client).await?;
 
 	// Execute the governance flow
 	execute_governance_call(&api, &encoded_call, &council_keypairs, &tc_keypairs).await?;
