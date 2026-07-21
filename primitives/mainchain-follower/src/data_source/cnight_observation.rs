@@ -24,8 +24,7 @@ use cardano_serialization_lib::{
 	ScriptHash,
 };
 use midnight_primitives_cnight_observation::{
-	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, CardanoRewardAddressError,
-	DustPublicKeyBytes, ObservedUtxos,
+	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
 };
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
@@ -63,8 +62,6 @@ pub enum MidnightCNightObservationDataSourceError {
 	MissingBlockReference(McBlockHash),
 	#[error("Error querying database: {0}")]
 	DBQueryError(#[from] sqlx::error::Error),
-	#[error("Invalid Cardano reward address: {0}")]
-	InvalidRewardAddress(CardanoRewardAddressError),
 	#[error("Invalid value for mapping validator address")]
 	MappingValidatorInvalidAddress(String),
 }
@@ -85,14 +82,14 @@ pub enum RegistrationDatumDecodeError {
 	DustAddressInvalidLength(usize),
 }
 
-/// Validate the bytes emitted by `cardano-serialization-lib`'s `RewardAddress`
-/// against CIP-19 before wrapping them.
-fn decode_reward_address(
-	reward_address_bytes: Vec<u8>,
-	cardano_network: u8,
-) -> Result<CardanoRewardAddressBytes, MidnightCNightObservationDataSourceError> {
-	CardanoRewardAddressBytes::try_new(reward_address_bytes, cardano_network)
-		.map_err(MidnightCNightObservationDataSourceError::InvalidRewardAddress)
+/// Build the 29-byte CIP-19 reward address for an already-valid stake credential
+/// on the given network. It is always 29 bytes; a mismatch would be an internal bug.
+fn reward_address_bytes(credential: &Credential, cardano_network: u8) -> CardanoRewardAddressBytes {
+	RewardAddress::new(cardano_network, credential)
+		.to_address()
+		.to_bytes()
+		.try_into()
+		.expect("reward address constructed from a valid credential is always 29 bytes")
 }
 
 pub struct MidnightCNightObservationDataSourceImpl {
@@ -229,17 +226,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				},
 			};
 
-			let reward_address = RewardAddress::new(cardano_network, &credential);
-			let cardano_reward_address = match decode_reward_address(
-				reward_address.to_address().to_bytes(),
-				cardano_network,
-			) {
-				Ok(addr) => addr,
-				Err(e) => {
-					log::error!("Rejected registration reward address: {e} ({header:?})");
-					continue;
-				},
-			};
+			let cardano_reward_address = reward_address_bytes(&credential, cardano_network);
 
 			let utxo = ObservedUtxo {
 				header,
@@ -290,17 +277,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				},
 			};
 
-			let reward_address = RewardAddress::new(cardano_network, &credential);
-			let cardano_reward_address = match decode_reward_address(
-				reward_address.to_address().to_bytes(),
-				cardano_network,
-			) {
-				Ok(addr) => addr,
-				Err(e) => {
-					log::error!("Rejected deregistration reward address: {e} ({header:?})");
-					continue;
-				},
-			};
+			let cardano_reward_address = reward_address_bytes(&credential, cardano_network);
 
 			let utxo = ObservedUtxo {
 				header,
@@ -354,17 +331,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				// credential so they can't be mapped to a reward address — skip silently.
 				continue;
 			};
-			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
-			let owner = match decode_reward_address(
-				reward_address.to_address().to_bytes(),
-				cardano_network,
-			) {
-				Ok(addr) => addr,
-				Err(e) => {
-					log::error!("Rejected asset-create owner reward address: {e} ({header:?})");
-					continue;
-				},
-			};
+			let owner = reward_address_bytes(&base_address.stake_cred(), cardano_network);
 
 			let utxo = ObservedUtxo {
 				header,
@@ -420,17 +387,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				// credential so they can't be mapped to a reward address — skip silently.
 				continue;
 			};
-			let reward_address = RewardAddress::new(cardano_network, &base_address.stake_cred());
-			let owner = match decode_reward_address(
-				reward_address.to_address().to_bytes(),
-				cardano_network,
-			) {
-				Ok(addr) => addr,
-				Err(e) => {
-					log::error!("Rejected asset-spend owner reward address: {e} ({header:?})");
-					continue;
-				},
-			};
+			let owner = reward_address_bytes(&base_address.stake_cred(), cardano_network);
 
 			let utxo = ObservedUtxo {
 				header,
