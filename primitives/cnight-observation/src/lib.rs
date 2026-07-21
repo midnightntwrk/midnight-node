@@ -554,8 +554,9 @@ mod tests {
 	#[test]
 	fn try_new_rejects_wrong_address_type() {
 		// Type nibble 0 (Shelley base) with a mainnet network nibble: correct
-		// length and network, but not a reward-account type.
-		let header = (0 << 4) | MAINNET;
+		// length and network, but not a reward-account type. The type nibble is
+		// zero, so the header byte is just the mainnet network nibble.
+		let header = MAINNET;
 		let bytes = reward_address_with_header(header);
 		assert_eq!(
 			CardanoRewardAddressBytes::try_new(bytes, MAINNET),
