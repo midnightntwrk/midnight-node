@@ -42,9 +42,17 @@ docker run -d --rm \
 
 wait_for_unfinalized_block http://localhost:9944 1
 
+# All 20 pre-funded undeployed wallets (see the undeployed seeds block in the
+# Earthfile): seeds 0x..01-0x..03, the Lace test wallet, and 0x..04-0x..19.
+LACE_SEED="a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9"
+SEEDS="$LACE_SEED"
+for i in $(seq 1 19); do
+  SEEDS="$SEEDS $(printf '%064d' "$i")"
+done
+
 # Run wallets check script
 echo "📦 Running genesis wallets tests..."
-TOOLKIT_IMAGE="$TOOLKIT_IMAGE" NETWORK="$NETWORK" NODE_CONTAINER="$NODE_CONTAINER" bash ./scripts/genesis_wallets_test.sh || TEST_FAILED=true
+SEEDS="$SEEDS" TOOLKIT_IMAGE="$TOOLKIT_IMAGE" NETWORK="$NETWORK" NODE_CONTAINER="$NODE_CONTAINER" bash ./scripts/genesis_wallets_test.sh || TEST_FAILED=true
 
 # Teardown node
 echo "🛑 Cleaning up..."
