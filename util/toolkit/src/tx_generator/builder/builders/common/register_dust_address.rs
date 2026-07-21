@@ -50,32 +50,6 @@ impl<C: BuilderContext<DefaultDB>> RegisterDustAddressBuilder<C> {
 	}
 }
 
-/// Compute the retroactive DUST available from generationless NIGHT UTXOs.
-///
-/// NIGHT UTXOs that have never had a registered DUST address accrue virtual DUST
-/// over time that can be used to pay for self DUST address registration.
-/// This function computes the total available DUST using the same formula as the ledger's `generationless_fee_availability`.
-async fn generationless_fee_availability<C: BuilderContext<DefaultDB>>(
-	context: &C,
-	seed: WalletSeed,
-	now: Timestamp,
-) -> u128 {
-	let dust_params = context.ledger_parameters().await.dust;
-	context
-		.unshielded_utxos(seed)
-		.await
-		.into_iter()
-		.filter(|(utxo, _ctime)| utxo.type_ == NIGHT)
-		.map(|(utxo, ctime)| {
-			let vfull = utxo.value.saturating_mul(dust_params.night_dust_ratio.into());
-			let rate = utxo.value.saturating_mul(dust_params.generation_decay_rate.into());
-
-			let dt = u128::try_from((now - ctime).as_seconds()).unwrap_or(0);
-			u128::clamp(dt.saturating_mul(rate), 0, vfull)
-		})
-		.fold(0u128, |a, b| a.saturating_add(b))
-}
-
 #[async_trait]
 impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 	type Error = Infallible;
@@ -97,20 +71,55 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 			self.rng_seed,
 		);
 
-		let inputs: Vec<UtxoSpendInfo<WalletSeed>> = context
+		let now = context.latest_block_context().await.tblock;
+		let dust_params = context.ledger_parameters().await.dust;
+
+		// Retroactive DUST a generationless NIGHT UTXO has accrued by `now` —
+		// the per-UTXO term of the ledger's `generationless_fee_availability`.
+		let accrued_dust = |value: u128, ctime: Timestamp| {
+			let vfull = value.saturating_mul(dust_params.night_dust_ratio.into());
+			let rate = value.saturating_mul(dust_params.generation_decay_rate.into());
+			let dt = u128::try_from((now - ctime).as_seconds()).unwrap_or(0);
+			u128::clamp(dt.saturating_mul(rate), 0, vfull)
+		};
+
+		let mut inputs: Vec<(UtxoSpendInfo<WalletSeed>, u128)> = context
 			.unshielded_utxos(seed.clone())
 			.await
 			.into_iter()
-			.map(|(utxo, _ctime)| utxo)
-			.filter(|utxo| utxo.type_ == NIGHT)
-			.map(|utxo| UtxoSpendInfo {
-				value: utxo.value,
-				owner: seed.clone(),
-				token_type: NIGHT,
-				intent_hash: Some(utxo.intent_hash),
-				output_number: Some(utxo.output_no),
+			.filter(|(utxo, _ctime)| utxo.type_ == NIGHT)
+			.map(|(utxo, ctime)| {
+				let accrued = accrued_dust(utxo.value, ctime);
+				(
+					UtxoSpendInfo {
+						value: utxo.value,
+						owner: seed.clone(),
+						token_type: NIGHT,
+						intent_hash: Some(utxo.intent_hash),
+						output_number: Some(utxo.output_no),
+					},
+					accrued,
+				)
 			})
 			.collect();
+
+		// The ledger only credits retroactive DUST from NIGHT inputs in the intent's
+		// *guaranteed* unshielded offer, and the guaranteed segment's time-to-dismiss
+		// budget only fits a single input — so sort the dust-richest UTXO to the
+		// front, where it becomes the guaranteed spend that funds the registration.
+		inputs.sort_by(|(_, a), (_, b)| b.cmp(a));
+
+		// Self-funding allowance: exactly the retroactive DUST of the guaranteed
+		// input. Requesting more than the ledger credits for the constructed tx
+		// fails validation with InsufficientDustForRegistrationFee.
+		let allow_fee_payment = if funding_seed.is_none() {
+			inputs.first().map(|(_, accrued)| *accrued).unwrap_or(0)
+		} else {
+			0
+		};
+
+		let inputs: Vec<UtxoSpendInfo<WalletSeed>> =
+			inputs.into_iter().map(|(input, _)| input).collect();
 
 		let mut outputs: VecDeque<Box<dyn BuildUtxoOutput<DefaultDB, C>>> = inputs
 			.iter()
@@ -151,14 +160,6 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 		let boxed_intent: Box<dyn BuildIntent<DefaultDB, C>> = Box::new(intent_info);
 		tx_info.add_intent(Segment::Fallible.into(), boxed_intent);
 
-		// Compute allow_fee_payment for self-funding when no funding seed is provided
-		let allow_fee_payment = if funding_seed.is_none() {
-			let now = context.latest_block_context().await.tblock;
-			generationless_fee_availability(context.as_ref(), seed.clone(), now).await
-		} else {
-			0
-		};
-
 		context.with_wallet_from_seed(seed.clone(), |wallet| {
 			let destination_dust = self.destination_dust.clone().map_or(
 				wallet.dust.public_key,
@@ -178,7 +179,11 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 		tx_info.set_funding_seeds(funding_seed.into_iter().collect());
 		tx_info.use_mock_proofs_for_fees(true);
 
-		let tx = tx_info.prove().await.expect("Balancing TX failed");
+		let tx = tx_info.prove().await.expect(
+			"Balancing TX failed. For self-funded registration the fee is limited to the \
+			 retroactive DUST of the wallet's dust-richest NIGHT UTXO — consolidate NIGHT into \
+			 fewer UTXOs, wait for more DUST to accrue, or pass --funding-seed",
+		);
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 

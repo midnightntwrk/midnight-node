@@ -255,6 +255,84 @@ async fn register_dust_address() {
 	.await;
 }
 
+/// Regression test for #1896: self-funded `register-dust-address` (no
+/// `--funding-seed`) must succeed when the wallet holds more than one NIGHT
+/// UTXO. The fee allowance draws on the retroactive DUST of every UTXO, so all
+/// NIGHT inputs must sit in the offer the ledger credits for it.
+#[tokio::test]
+async fn register_dust_address_self_funded_multi_utxo() {
+	let url = node_ws_url().await;
+
+	const WALLET_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000053";
+
+	let unshielded_address = {
+		let cli = Cli::parse_from([
+			"midnight-node-toolkit",
+			"show-address",
+			"--network",
+			"undeployed",
+			"--seed",
+			WALLET_SEED,
+			"--unshielded",
+		]);
+		match cli.command {
+			Commands::ShowAddress(args) => match show_address::execute(args) {
+				show_address::ShowAddress::SingleAddress(addr) => addr,
+				show_address::ShowAddress::Addresses(_) => panic!("should not reach this arm"),
+			},
+			_ => unreachable!(),
+		}
+	};
+
+	// Fund the fresh wallet with 4 separate NIGHT UTXOs (a single
+	// `--unshielded-amount` broadcasts to every destination). Values are large
+	// so one block of retroactive DUST accrual (value * generation_decay_rate
+	// * dt) comfortably exceeds the registration fee, keeping the test
+	// insensitive to block timing.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		"0000000000000000000000000000000000000000000000000000000000000001",
+		"--unshielded-amount",
+		"10000000000000",
+		"--destination-address",
+		&unshielded_address,
+		"--destination-address",
+		&unshielded_address,
+		"--destination-address",
+		&unshielded_address,
+		"--destination-address",
+		&unshielded_address,
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// Let a few blocks pass so `now - utxo_ctime > 0`: retroactive DUST accrues
+	// with block time, and registering in the same block as the funding leaves a
+	// zero fee allowance no matter the UTXO values.
+	tokio::time::sleep(Duration::from_secs(20)).await;
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"register-dust-address",
+		"--wallet-seed",
+		WALLET_SEED,
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+}
+
 #[tokio::test]
 async fn contract_ops() {
 	if !ledger_test_artifacts_ready() {
