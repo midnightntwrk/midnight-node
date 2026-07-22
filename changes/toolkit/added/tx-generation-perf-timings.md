@@ -9,5 +9,5 @@ balancing loop (`pay_fees`, including the iteration count), real PLONK proving
 `RUST_LOG=debug`) to see the breakdown; a report script can grep for `[perf]` lines and
 aggregate per-phase trend lines across a run.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/TODO
+PR: https://github.com/midnightntwrk/midnight-node/pull/1912
 Issue: https://github.com/shieldedtech/midnight-performance/issues/292
