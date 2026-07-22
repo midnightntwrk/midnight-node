@@ -50,6 +50,7 @@ sc-client-api.workspace = true
 sc-network.workspace = true
 sc-utils.workspace = true
 sp-consensus-aura.workspace = true
+sp-consensus-babe.workspace = true
 sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true
 sp-state-machine.workspace = true

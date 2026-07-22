@@ -44,6 +44,9 @@ pub mod authority_keys {
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_runtime::impl_opaque_keys;
 
+	pub const FROM_VERSION: u16 = 2;
+	pub const TO_VERSION: u16 = 3;
+
 	impl_opaque_keys! {
 		#[derive(MaxEncodedLen, PartialOrd, Ord)]
 		pub struct LegacySessionKeys {
@@ -54,7 +57,8 @@ pub mod authority_keys {
 
 	impl From<LegacySessionKeys> for SessionKeys {
 		fn from(old: LegacySessionKeys) -> Self {
-			SessionKeys { aura: old.aura, grandpa: old.grandpa }
+			let babe_from_aura = old.aura.clone().into_inner().into();
+			SessionKeys { aura: old.aura, grandpa: old.grandpa, babe: babe_from_aura }
 		}
 	}
 
@@ -76,7 +80,13 @@ pub mod authority_keys {
 	fn assert_migration_is_wirable() {
 		fn assert_impls_on_runtime_upgrade<M: frame_support::traits::OnRuntimeUpgrade>() {}
 		assert_impls_on_runtime_upgrade::<
-			AuthorityKeysMigration<Runtime, LegacyCommitteeMember, LegacySessionKeys, 2, 3>,
+			AuthorityKeysMigration<
+				Runtime,
+				LegacyCommitteeMember,
+				LegacySessionKeys,
+				FROM_VERSION,
+				TO_VERSION,
+			>,
 		>();
 	}
 }
