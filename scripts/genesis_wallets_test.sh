@@ -26,7 +26,7 @@ fi
 
 if [[ -z $NODE_CONTAINER ]]; then
     echo "Missing NODE_CONTAINER variable, defaulting to 'midnight-node-genesis'"
-    NETWORK="midnight-node-genesis"
+    NODE_CONTAINER="midnight-node-genesis"
 fi
 
 seeds=("0000000000000000000000000000000000000000000000000000000000000001" "0000000000000000000000000000000000000000000000000000000000000002" "0000000000000000000000000000000000000000000000000000000000000003" "0000000000000000000000000000000000000000000000000000000000000004")
@@ -35,9 +35,21 @@ check_seeds() {
     local success=true
     
     echo "Checking seeds using command: $command"
-    for seed in ${seeds[@]}; do
-        output=$(docker run --network $NETWORK $TOOLKIT_IMAGE $command --seed $seed --src-url ws://${NODE_CONTAINER}:9944)
-        
+    for seed in "${seeds[@]}"; do
+        if ! output=$(docker run --network "$NETWORK" "$TOOLKIT_IMAGE" $command --seed "$seed" --src-url "ws://${NODE_CONTAINER}:9944"); then
+            echo "Toolkit '$command' failed for seed $seed"
+            success=false
+            continue
+        fi
+
+        # A successful run must still contain the UTXO report — anything else
+        # (e.g. an output-format change) is a failure, not a funded wallet.
+        if ! echo "$output" | grep -q "Unshielded UTXOs:"; then
+            echo "No 'Unshielded UTXOs' report in output for seed $seed"
+            success=false
+            continue
+        fi
+
         # Check if coins field is empty using grep
         if echo "$output" | grep -q "Unshielded UTXOs: \[[[:space:]]*\]"; then
             echo "Wallet for seed $seed has an empty UTXOs list"
