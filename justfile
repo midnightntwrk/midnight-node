@@ -31,10 +31,6 @@ toolkit-contracts-e2e NODE_IMAGE TOOLKIT_IMAGE:
   @scripts/tests/toolkit-contracts-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Contracts E2E test completed successfully."
 
-toolkit-ecdsa-e2e NODE_IMAGE TOOLKIT_IMAGE:
-  @scripts/tests/toolkit-ecdsa-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
-  @echo "✅ Toolkit ECDSA E2E test completed successfully."
-
 toolkit-mint-e2e NODE_IMAGE="" TOOLKIT_IMAGE="":
   @scripts/tests/toolkit-mint-e2e.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
   @echo "✅ Toolkit Mint E2E test completed successfully."

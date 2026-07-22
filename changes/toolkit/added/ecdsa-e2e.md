@@ -2,9 +2,10 @@
 
 # ECDSA toolkit end-to-end coverage
 
-Adds an end-to-end test (`scripts/tests/toolkit-ecdsa-e2e.sh`, `just toolkit-ecdsa-e2e`, and a
-matching CI job) that exercises the toolkit's ledger-9 ECDSA unshielded-signature support against
-a live `dev` node (whose genesis is built on ledger 9, so the ECDSA scheme is accepted on-chain).
+Adds an end-to-end test (`ecdsa_contract_committees_e2e` in `util/toolkit/tests/toolkit_e2e.rs`,
+run as part of the workspace test suite) that exercises the toolkit's ledger-9 ECDSA
+unshielded-signature support against a `dev` node (whose genesis is built on ledger 9, so the ECDSA
+scheme is accepted on-chain).
 
 Because every submitted transaction runs the ledger's `Transaction::well_formed` — i.e. the real
 `signature_verify` — the test confirms end-to-end that:
