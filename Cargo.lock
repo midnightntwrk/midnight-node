@@ -7979,6 +7979,7 @@ dependencies = [
  "sp-block-builder",
  "sp-blockchain",
  "sp-consensus-aura",
+ "sp-consensus-babe",
  "sp-consensus-beefy",
  "sp-consensus-grandpa",
  "sp-core",

@@ -28,6 +28,9 @@ use authority_selection_inherents::{
 	RegistrationDataError, StakeError, select_authorities, validate_permissioned_candidate_data,
 };
 
+use crate::migrations::authority_keys::{
+	FROM_VERSION, LegacyCommitteeMember, LegacySessionKeys, TO_VERSION,
+};
 pub use frame_support::{
 	BoundedVec, PalletId, StorageValue,
 	genesis_builder_helper::{build_state, get_preset},
@@ -59,9 +62,12 @@ use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
 pub use pallet_session_validator_management::{self, Config};
+use pallet_session_validator_management::{
+	CommitteeInfo, CurrentCommittee, migrations::authority_keys::UpgradeCommitteeMember,
+};
 pub use pallet_timestamp::Call as TimestampCall;
 pub use pallet_version::VERSION_ID;
-use parity_scale_codec::Encode;
+use parity_scale_codec::{Decode, Encode};
 use sidechain_domain::{
 	DParameter, MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData,
 	ScEpochNumber, ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
@@ -166,7 +172,7 @@ pub mod opaque {
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_core::{ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -218,6 +224,7 @@ pub mod opaque {
 		pub struct SessionKeys {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
+			pub babe: Babe,
 			// todo: add the beefy
 			// pub beefy: Beefy,
 		}
@@ -229,7 +236,11 @@ pub mod opaque {
 			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into() })
+			let babe = match keys.find(BABE) {
+				Some(raw_babe) => sr25519::Public::from_raw(raw_babe.try_into().ok()?),
+				None => aura,
+			};
+			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
 		}
 	}
 
@@ -280,7 +291,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
-	system_version: 1,
+	system_version: 3,
 };
 
 /// This determines the average expected block time that we are targeting.
@@ -380,6 +391,13 @@ impl frame_system::Config for Runtime {
 		// Initializes the QueuedCommittee storage added in v2
 		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
 		// See migrations::authority_keys when opaque::SessionKeys changes shape.
+		pallet_session_validator_management::migrations::authority_keys::AuthorityKeysMigration<
+			Runtime,
+			LegacyCommitteeMember,
+			LegacySessionKeys,
+			{ FROM_VERSION }, // pallet on-chain storage version before the migration (at wiring time)
+			{ TO_VERSION },   // pallet on-chain storage version after the migration (at wiring time)
+		>,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -615,6 +633,56 @@ pub fn log_if_d_param_below_permissioned_candidates(
 			 See https://github.com/midnightntwrk/midnight-node/issues/1481"
 		);
 	}
+}
+
+/// Committee info in the current on-chain shape.
+type CurrentCommitteeInfo =
+	CommitteeInfo<ScEpochNumber, CommitteeMember<CrossChainPublic, SessionKeys>, MaxAuthorities>;
+/// Committee info in the pre-[`AuthorityKeysMigration`](migrations::authority_keys) shape.
+type LegacyCommitteeInfo = CommitteeInfo<ScEpochNumber, LegacyCommitteeMember, MaxAuthorities>;
+
+/// Upgrade a legacy-shaped committee info to the current shape by upgrading each member.
+fn upgrade_committee_info(old: LegacyCommitteeInfo) -> CurrentCommitteeInfo {
+	CommitteeInfo {
+		epoch: old.epoch,
+		committee: BoundedVec::truncate_from(
+			old.committee.into_iter().map(|member| member.upgrade()).collect(),
+		),
+	}
+}
+
+/// Storage key of `pallet-session-validator-management`'s `CurrentCommittee` value.
+pub fn current_committee_storage_key() -> Vec<u8> {
+	CurrentCommittee::<Runtime>::hashed_key().to_vec()
+}
+
+/// Storage key of `pallet-session-validator-management`'s on-chain storage version.
+pub fn session_committee_storage_version_key() -> Vec<u8> {
+	frame_support::traits::StorageVersion::storage_key::<SessionCommitteeManagement>().to_vec()
+}
+
+/// Decode `CurrentCommittee` from raw state bytes, upgrading the legacy (pre-babe) shape when the
+/// pallet's on-chain storage version is still below [`migrations::authority_keys::TO_VERSION`].
+///
+/// `committee_bytes` / `version_bytes` are the raw values at
+/// [`current_committee_storage_key`] / [`session_committee_storage_version_key`]
+pub fn decode_current_committee(
+	committee_bytes: &[u8],
+	mut version_bytes: &[u8],
+) -> (ScEpochNumber, Vec<CommitteeMember<CrossChainPublic, SessionKeys>>) {
+	let on_chain_version = frame_support::traits::StorageVersion::decode(&mut version_bytes)
+		.ok()
+		.unwrap_or(frame_support::traits::StorageVersion::new(0));
+	let is_legacy = on_chain_version < frame_support::traits::StorageVersion::new(TO_VERSION);
+
+	let info = if is_legacy {
+		LegacyCommitteeInfo::decode(&mut &committee_bytes[..])
+			.ok()
+			.map(upgrade_committee_info)
+	} else {
+		CurrentCommitteeInfo::decode(&mut &committee_bytes[..]).ok()
+	};
+	info.unwrap_or_default().as_pair()
 }
 
 impl pallet_session_validator_management::Config for Runtime {
@@ -2196,5 +2264,70 @@ mod tests {
 			.collect();
 
 		candidates
+	}
+
+	/// Tests for the storage-version-gated committee decode in
+	/// `get_current_committee`/`get_next_committee`.
+	///
+	/// Reproduces the two relevant states by pairing the pallet's on-chain storage version with
+	/// matching committee bytes: below `TO_VERSION` (migration not run) the readers decode the
+	/// legacy shape and upgrade it; at/above `TO_VERSION` they decode the current shape.
+	mod committee_decode_fallback {
+		use crate::migrations::authority_keys::{FROM_VERSION, TO_VERSION};
+		use crate::mock::{TestKeys, alice};
+		use crate::opaque::SessionKeys;
+		use crate::{
+			CrossChainPublic, CurrentCommitteeInfo, LegacyCommitteeInfo, LegacyCommitteeMember,
+			LegacySessionKeys, decode_current_committee,
+		};
+		use authority_selection_inherents::CommitteeMember;
+		use frame_support::BoundedVec;
+		use frame_support::traits::StorageVersion;
+		use pallet_session_validator_management::migrations::authority_keys::UpgradeCommitteeMember;
+		use parity_scale_codec::Encode;
+		use sidechain_domain::ScEpochNumber;
+		use sp_core::Pair;
+
+		/// A committee member encoded in the pre-migration (aura + grandpa, no babe) shape.
+		fn legacy_member(keys: &TestKeys) -> LegacyCommitteeMember {
+			CommitteeMember::permissioned(
+				keys.cross_chain.public(),
+				LegacySessionKeys { aura: keys.aura.public(), grandpa: keys.grandpa.public() },
+			)
+		}
+
+		/// The same member as `AuthorityKeysMigration` would leave it (babe derived from aura).
+		fn upgraded_member(keys: &TestKeys) -> CommitteeMember<CrossChainPublic, SessionKeys> {
+			legacy_member(keys).upgrade()
+		}
+
+		// `decode_current_committee` is the client-facing helper (used by the node's
+		// committee-membership watcher). It takes the raw state bytes directly, so these tests need
+		// no externalities.
+
+		#[test]
+		fn decode_current_committee_upgrades_legacy_bytes_below_to_version() {
+			let epoch = ScEpochNumber(5);
+			let legacy = LegacyCommitteeInfo {
+				epoch,
+				committee: BoundedVec::truncate_from(vec![legacy_member(&alice())]),
+			};
+			let version = StorageVersion::new(FROM_VERSION).encode();
+			let (got_epoch, committee) = decode_current_committee(&legacy.encode(), &version);
+			assert_eq!(got_epoch, epoch);
+			assert_eq!(committee, vec![upgraded_member(&alice())]);
+		}
+
+		#[test]
+		fn decode_current_committee_reads_current_bytes_at_to_version() {
+			let epoch = ScEpochNumber(6);
+			let committee = vec![upgraded_member(&alice())];
+			let current = CurrentCommitteeInfo {
+				epoch,
+				committee: BoundedVec::truncate_from(committee.clone()),
+			};
+			let version = StorageVersion::new(TO_VERSION).encode();
+			assert_eq!(decode_current_committee(&current.encode(), &version), (epoch, committee));
+		}
 	}
 }
