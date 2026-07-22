@@ -10,7 +10,7 @@ All are setup as validators and are expect to produce blocks. In other words the
   see [midnight-setup](../../../../../res/local/permissioned-candidates-config.json) related file,
   this node should fall back to its AURA keys, keys of this node match `//Bob` SURI
 - `midnight-node-3` does have BABE configured on Cardano (BABE equals AURA),
-  this node is using seeds files that are used to insert keys to keystore on the node startup,
+  this node is using seeds files (env variables `<key_type>_SEED_FILE` are used to set their paths) that are used to insert keys to keystore on the node startup,
   there is no BABE seed file (so it should fallback to AURA)
 - `midnight-node-4` does not have BABE configured on Cardano, but it has BABE key in the keystore (which equals AURA key)
 - `midnight-node-5` is a node that has both keys configured,
