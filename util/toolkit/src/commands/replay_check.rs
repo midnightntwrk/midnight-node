@@ -19,6 +19,7 @@
 //! [`Predicate`]: crate::commands::fork::ledger_8::replay_check::Predicate
 
 use core::fmt::Display;
+use std::time::Duration;
 
 use clap::Args;
 use midnight_node_ledger_helpers::fork::{
@@ -26,9 +27,17 @@ use midnight_node_ledger_helpers::fork::{
 	raw_block_data::{LedgerVersion, RawBlockData},
 };
 use serde::Serialize;
+use subxt::utils::H256;
 
+use crate::client::MidnightNodeClient;
 use crate::commands::fork::{ledger_7, ledger_8, ledger_9};
+use crate::fetcher::{
+	fetch_single_block,
+	fetch_storage::{self, FetchStorage},
+	fetch_task::FetchTask,
+};
 use crate::progress::Progress;
+use crate::tx_generator::source::FetchCacheConfig;
 use crate::{TxGenerator, source::Source};
 
 #[derive(Args)]
@@ -53,6 +62,13 @@ pub struct ReplayCheckArgs {
 	/// Stop replaying after this block number
 	#[arg(long)]
 	pub to_block: Option<u64>,
+	/// After the initial sync, keep following the chain tip: poll the node for
+	/// newly finalized blocks and run the predicates on each as it arrives
+	/// (including across ledger-version forks). Runs until interrupted; Ctrl-C
+	/// prints the accumulated report, with the exit code reflecting any
+	/// violations found. Transient RPC failures are retried indefinitely.
+	#[arg(long, conflicts_with_all = ["src_files", "fetch_only_cached", "to_block"])]
+	pub watch: bool,
 	/// Output the report as JSON
 	#[arg(long)]
 	pub json: bool,
@@ -283,6 +299,19 @@ pub async fn execute_with_registries(
 		});
 	}
 
+	// `--dust-warp` injects a synthetic wall-clock block into the replay set,
+	// which would corrupt a faithful history scan. Reject it up front (the flag
+	// is only reachable here because `Source` is shared across subcommands).
+	if args.source.dust_warp {
+		return Err("replay-check does not support --dust-warp: it would inject a \
+			 synthetic wall-clock block into the replayed history"
+			.into());
+	}
+
+	// `--watch` needs to keep talking to the node after the initial sync.
+	let src_url = args.source.src_url.clone();
+	let fetch_cache = args.source.fetch_cache.clone();
+
 	// Construct the source eagerly so source-argument validation runs before
 	// the dry-run short circuit (see `dust_balance::execute_many`).
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
@@ -291,6 +320,7 @@ pub async fn execute_with_registries(
 		log::info!("Dry-run: replay-check with fail_fast={}", args.fail_fast);
 		log::info!("Dry-run: predicate filter: {:?}", args.predicate);
 		log::info!("Dry-run: block bounds: {:?}..={:?}", args.from_block, args.to_block);
+		log::info!("Dry-run: watch: {}", args.watch);
 		return Ok(ReplayCheckResult::DryRun(()));
 	}
 
@@ -302,14 +332,6 @@ pub async fn execute_with_registries(
 		blocks = &blocks[..blocks.partition_point(|b| b.number <= to)];
 	}
 
-	// Split into per-ledger-version runs, mirroring `replay_blocks`
-	// (`tx_generator/builder/mod.rs`).
-	let fork_7_to_8_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger7);
-	let (l7_blocks, l8_and_l9_blocks) = blocks.split_at(fork_7_to_8_idx);
-	let fork_8_to_9_idx =
-		l8_and_l9_blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger8);
-	let (l8_blocks, l9_blocks) = l8_and_l9_blocks.split_at(fork_8_to_9_idx);
-
 	// Seedless context: predicates inspect ledger state, not wallets, so
 	// per-block wallet/dust work is skipped entirely.
 	let fork_ctx = ForkAwareLedgerContext::new(
@@ -317,11 +339,103 @@ pub async fn execute_with_registries(
 		&source_blocks.network_id,
 	);
 
+	let opts = ScanOpts {
+		registries: &registries,
+		from_block: args.from_block,
+		fail_fast: args.fail_fast,
+	};
+	let mut report = ReplayCheckReport {
+		blocks_scanned: 0,
+		blocks_observed: 0,
+		aborted: false,
+		violations: Vec::new(),
+	};
+
 	let progress = Progress::new(blocks.len(), "replay-check: replaying blocks");
-	let mut violations: Vec<Violation> = Vec::new();
-	let mut blocks_scanned = 0u64;
-	let mut blocks_observed = 0u64;
-	let mut aborted = false;
+	let fork_ctx = replay_partitioned(fork_ctx, blocks, &opts, Some(&progress), &mut report)?;
+	progress.finish(format!(
+		"replay-check: {} block(s) replayed, {} violation(s)",
+		report.blocks_scanned,
+		report.violations.len()
+	));
+
+	if args.watch && !report.aborted {
+		let src_url = src_url.ok_or("--watch requires an RPC source (--src-url)")?;
+		let next_block = blocks.iter().map(|b| b.number).max().map_or(0, |n| n + 1);
+		let last_tblock_secs = blocks.iter().max_by_key(|b| b.number).map_or(0, |b| b.tblock_secs);
+		log::info!(
+			"initial sync complete: {} block(s) replayed, {} violation(s); following the chain tip (Ctrl-C for report)",
+			report.blocks_scanned,
+			report.violations.len()
+		);
+		match fetch_cache {
+			FetchCacheConfig::InMemory => {
+				watch_tip(
+					fetch_storage::InMemory::default(),
+					&src_url,
+					fork_ctx,
+					next_block,
+					last_tblock_secs,
+					&opts,
+					&mut report,
+				)
+				.await?
+			},
+			FetchCacheConfig::Redb { filename } => {
+				watch_tip(
+					fetch_storage::redb_backend::RedbBackend::new(&filename),
+					&src_url,
+					fork_ctx,
+					next_block,
+					last_tblock_secs,
+					&opts,
+					&mut report,
+				)
+				.await?
+			},
+			FetchCacheConfig::Postgres { database_url } => {
+				watch_tip(
+					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
+					&src_url,
+					fork_ctx,
+					next_block,
+					last_tblock_secs,
+					&opts,
+					&mut report,
+				)
+				.await?
+			},
+		}
+	}
+
+	Ok(if args.json { ReplayCheckResult::Json(report) } else { ReplayCheckResult::Human(report) })
+}
+
+/// Scan configuration shared by the initial replay and the watch loop.
+struct ScanOpts<'a> {
+	registries: &'a PredicateRegistries,
+	from_block: Option<u64>,
+	fail_fast: bool,
+}
+
+/// Replay `blocks` through `fork_ctx`, splitting them into per-ledger-version
+/// runs (mirroring `replay_blocks` in `tx_generator/builder/mod.rs`) and
+/// forking the context at each version boundary. Violations and counters
+/// accumulate into `report`; the (possibly forked) context is returned so a
+/// caller can keep applying later blocks — the watch loop relies on this, and
+/// gets fork transitions at the live tip for free.
+fn replay_partitioned(
+	fork_ctx: ForkAwareLedgerContext,
+	blocks: &[RawBlockData],
+	opts: &ScanOpts<'_>,
+	progress: Option<&Progress>,
+	report: &mut ReplayCheckReport,
+) -> Result<ForkAwareLedgerContext, Box<dyn std::error::Error + Send + Sync>> {
+	let fork_7_to_8_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger7);
+	let (l7_blocks, l8_and_l9_blocks) = blocks.split_at(fork_7_to_8_idx);
+	let fork_8_to_9_idx =
+		l8_and_l9_blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger8);
+	let (l8_blocks, l9_blocks) = l8_and_l9_blocks.split_at(fork_8_to_9_idx);
 
 	// Run one ledger version's blocks through its `observe_blocks` driver.
 	macro_rules! run_version {
@@ -330,58 +444,185 @@ pub async fn execute_with_registries(
 				$ctx,
 				$blocks,
 				$predicates,
-				args.from_block,
-				args.fail_fast,
-				&progress,
-				&mut violations,
+				opts.from_block,
+				opts.fail_fast,
+				progress,
+				&mut report.violations,
 			)?;
-			blocks_scanned += outcome.blocks_applied;
-			blocks_observed += outcome.blocks_observed;
-			aborted |= outcome.aborted;
+			report.blocks_scanned += outcome.blocks_applied;
+			report.blocks_observed += outcome.blocks_observed;
+			report.aborted |= outcome.aborted;
 		}};
 	}
 
-	match fork_ctx {
+	Ok(match fork_ctx {
 		ForkAwareLedgerContext::Ledger7(ctx7) => {
-			run_version!(ledger_7, &ctx7, l7_blocks, &registries.ledger_7);
-			if !l8_blocks.is_empty() && !aborted {
+			run_version!(ledger_7, &ctx7, l7_blocks, &opts.registries.ledger_7);
+			if (l8_blocks.is_empty() && l9_blocks.is_empty()) || report.aborted {
+				ForkAwareLedgerContext::Ledger7(ctx7)
+			} else {
 				let ctx8 =
 					fork_context_7_to_8(ctx7).map_err(|e| format!("fork 7 to 8 failed: {e}"))?;
-				run_version!(ledger_8, &ctx8, l8_blocks, &registries.ledger_8);
-				if !l9_blocks.is_empty() && !aborted {
+				run_version!(ledger_8, &ctx8, l8_blocks, &opts.registries.ledger_8);
+				if l9_blocks.is_empty() || report.aborted {
+					ForkAwareLedgerContext::Ledger8(ctx8)
+				} else {
 					let ctx9 = fork_context_8_to_9(ctx8)
 						.map_err(|e| format!("fork 8 to 9 failed: {e}"))?;
-					run_version!(ledger_9, &ctx9, l9_blocks, &registries.ledger_9);
+					run_version!(ledger_9, &ctx9, l9_blocks, &opts.registries.ledger_9);
+					ForkAwareLedgerContext::Ledger9(ctx9)
 				}
 			}
 		},
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
-			run_version!(ledger_8, &ctx8, l8_blocks, &registries.ledger_8);
-			if !l9_blocks.is_empty() && !aborted {
+			if !l7_blocks.is_empty() {
+				return Err("ledger 7 blocks cannot be applied to a ledger 8 context".into());
+			}
+			run_version!(ledger_8, &ctx8, l8_blocks, &opts.registries.ledger_8);
+			if l9_blocks.is_empty() || report.aborted {
+				ForkAwareLedgerContext::Ledger8(ctx8)
+			} else {
 				let ctx9 =
 					fork_context_8_to_9(ctx8).map_err(|e| format!("fork 8 to 9 failed: {e}"))?;
-				run_version!(ledger_9, &ctx9, l9_blocks, &registries.ledger_9);
+				run_version!(ledger_9, &ctx9, l9_blocks, &opts.registries.ledger_9);
+				ForkAwareLedgerContext::Ledger9(ctx9)
 			}
 		},
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
-			run_version!(ledger_9, &ctx9, l9_blocks, &registries.ledger_9);
+			if !l7_blocks.is_empty() || !l8_blocks.is_empty() {
+				return Err("pre-ledger-9 blocks cannot be applied to a ledger 9 context".into());
+			}
+			run_version!(ledger_9, &ctx9, l9_blocks, &opts.registries.ledger_9);
+			ForkAwareLedgerContext::Ledger9(ctx9)
 		},
+	})
+}
+
+/// Poll cadence while idling at the chain tip (mainnet block time is 6s).
+const WATCH_POLL_INTERVAL: Duration = Duration::from_secs(6);
+
+/// Follow the chain tip: fetch each newly finalized block as it lands, apply
+/// it to the context, and run the predicates on it. Newly found violations
+/// are logged immediately; the accumulated `report` is what the caller prints
+/// on exit.
+///
+/// Returns on Ctrl-C, or — under `--fail-fast` — at the first violation.
+/// Transient RPC failures (node restarts, dropped connections) are retried
+/// with a fresh client indefinitely; replay failures (state-root mismatch,
+/// undecodable transaction) are fatal.
+async fn watch_tip<S: FetchStorage + Clone + 'static>(
+	storage: S,
+	src_url: &str,
+	mut fork_ctx: ForkAwareLedgerContext,
+	mut next_block: u64,
+	mut last_tblock_secs: u64,
+	opts: &ScanOpts<'_>,
+	report: &mut ReplayCheckReport,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+	let mut client = MidnightNodeClient::new(src_url, None).await?;
+	let chain_id = client.get_block_one_hash().await?;
+	let mut finalized = client.get_finalized_height().await?;
+	log::info!("watch: following finalized blocks from #{next_block} (tip: #{finalized})");
+
+	loop {
+		if next_block > finalized {
+			// Idle at tip: wait, then re-poll the finalized height.
+			tokio::select! {
+				_ = tokio::signal::ctrl_c() => {
+					log::info!("watch: interrupted");
+					return Ok(());
+				},
+				_ = tokio::time::sleep(WATCH_POLL_INTERVAL) => {},
+			}
+			match client.get_finalized_height().await {
+				Ok(height) => finalized = height,
+				Err(e) => {
+					log::warn!("watch: failed to poll finalized height ({e}); reconnecting");
+					let Some(new_client) = reconnect(src_url).await else {
+						log::info!("watch: interrupted");
+						return Ok(());
+					};
+					client = new_client;
+				},
+			}
+			continue;
+		}
+
+		let fetched = tokio::select! {
+			_ = tokio::signal::ctrl_c() => {
+				log::info!("watch: interrupted");
+				return Ok(());
+			},
+			result = fetch_block_at(&client, chain_id, next_block, &storage) => result,
+		};
+		let mut block = match fetched {
+			Ok(block) => block,
+			Err(e) => {
+				log::warn!("watch: failed to fetch block #{next_block} ({e}); reconnecting");
+				let Some(new_client) = reconnect(src_url).await else {
+					log::info!("watch: interrupted");
+					return Ok(());
+				};
+				client = new_client;
+				continue;
+			},
+		};
+		// Same fixup as `read_blocks_from_cache`: the previous block's
+		// timestamp is not part of the fetched block data.
+		block.last_block_time_secs = last_tblock_secs;
+
+		let violations_before = report.violations.len();
+		fork_ctx = replay_partitioned(fork_ctx, std::slice::from_ref(&block), opts, None, report)?;
+		for violation in &report.violations[violations_before..] {
+			log::error!("violation: {violation}");
+		}
+		// At the tip every block gets a line (one per ~6s); during a long
+		// catch-up only every 1000th, to keep the log readable.
+		if next_block >= finalized || next_block.is_multiple_of(1000) {
+			log::info!(
+				"watch: block #{next_block} ok ({} tx, {} violation(s) total)",
+				block.transactions.len(),
+				report.violations.len()
+			);
+		}
+		if report.aborted {
+			return Ok(());
+		}
+		last_tblock_secs = block.tblock_secs;
+		next_block += 1;
 	}
+}
 
-	progress.finish(format!(
-		"replay-check: {blocks_scanned} block(s) replayed, {} violation(s)",
-		violations.len()
-	));
+/// Fetch one block by height: resolve its hash, then fetch (cache-first,
+/// caching the result). Used by the watch loop for post-sync blocks.
+async fn fetch_block_at<S: FetchStorage + Clone + 'static>(
+	client: &MidnightNodeClient,
+	chain_id: H256,
+	number: u64,
+	storage: &S,
+) -> Result<RawBlockData, Box<dyn std::error::Error + Send + Sync>> {
+	let hashes = FetchTask::fetch_block_hashes(client, &[number]).await?;
+	Ok(fetch_single_block(chain_id, number, hashes[0], Some(client), storage).await?)
+}
 
-	let report = ReplayCheckReport { blocks_scanned, blocks_observed, aborted, violations };
-	Ok(if args.json { ReplayCheckResult::Json(report) } else { ReplayCheckResult::Human(report) })
+/// Reconnect to the node, retrying indefinitely (a watcher should survive
+/// node restarts). Returns `None` if interrupted with Ctrl-C while retrying.
+async fn reconnect(src_url: &str) -> Option<MidnightNodeClient> {
+	loop {
+		tokio::select! {
+			_ = tokio::signal::ctrl_c() => return None,
+			result = MidnightNodeClient::new(src_url, None) => match result {
+				Ok(client) => return Some(client),
+				Err(e) => log::warn!("watch: reconnect failed ({e}); retrying"),
+			},
+		}
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::commands::fork::ledger_9::replay_check::{BlockObservation, Predicate};
-	use crate::tx_generator::source::FetchCacheConfig;
 
 	/// Test data
 	fn td(filepath: &str) -> String {
@@ -410,6 +651,7 @@ mod tests {
 			list_predicates: false,
 			from_block: None,
 			to_block: None,
+			watch: false,
 			json: false,
 			dry_run: false,
 		}

@@ -193,7 +193,7 @@ pub fn observe_blocks(
 	predicates: &[Box<dyn Predicate>],
 	from_block: Option<u64>,
 	fail_fast: bool,
-	progress: &Progress,
+	progress: Option<&Progress>,
 	violations: &mut Vec<Violation>,
 ) -> Result<ObserveOutcome, Box<dyn std::error::Error + Send + Sync>> {
 	let mut outcome = ObserveOutcome { blocks_applied: 0, blocks_observed: 0, aborted: false };
@@ -215,7 +215,9 @@ pub fn observe_blocks(
 			)
 			.map_err(|e| format!("failed to apply block {}: {e}", block.number))?;
 		outcome.blocks_applied += 1;
-		progress.inc(1);
+		if let Some(progress) = progress {
+			progress.inc(1);
+		}
 
 		if let Some(pre_state) = pre_state {
 			let post_state = snapshot_state(ctx);

@@ -21,7 +21,8 @@ midnight-node-metadata.workspace = true
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
 subxt.workspace = true
-tokio.workspace = true
+# `signal` on top of the workspace features: replay-check --watch handles Ctrl-C.
+tokio = { workspace = true, features = ["signal"] }
 hex = { workspace = true, features = ["std", "serde"] }
 sha2.workspace = true
 serde = { workspace = true, features = ["derive"] }
