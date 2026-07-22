@@ -753,20 +753,37 @@ impl Builder {
 					}
 				}
 			},
-			Builder::ContractSimple(call) => match call {
-				ContractCall::Deploy(args) => {
-					for s in &args.authority_seeds {
-						let (seed, scheme) = s.resolve();
-						mark(seed, scheme)?;
-					}
-				},
-				ContractCall::Maintenance(args) => {
-					for s in args.authority_seeds.iter().chain(&args.new_authority_seeds) {
-						let (seed, scheme) = s.resolve();
-						mark(seed, scheme)?;
-					}
-				},
-				ContractCall::Call(_) => {},
+			Builder::ContractSimple(call) => {
+				// The contract funding seed is always the Schnorr identity
+				// (`UnshieldedWallet::default`). `relevant_wallet_seeds` folds it into the same
+				// context set as the committee seeds, and the context/cache keys wallets by seed
+				// alone — so mark it Schnorr here. Without this, reusing the funding seed as an
+				// `ecdsa:` committee member (`--funding-seed X --authority-seed ecdsa:X`) slips
+				// past the guard and silently rebuilds the funding wallet as ECDSA.
+				let funding = match call {
+					ContractCall::Deploy(args) => &args.funding_seed,
+					ContractCall::Call(args) => &args.funding_seed,
+					ContractCall::Maintenance(args) => &args.funding_seed,
+				};
+				mark(
+					Wallet::<DefaultDB>::wallet_seed_decode(funding),
+					UnshieldedSignatureScheme::Schnorr,
+				)?;
+				match call {
+					ContractCall::Deploy(args) => {
+						for s in &args.authority_seeds {
+							let (seed, scheme) = s.resolve();
+							mark(seed, scheme)?;
+						}
+					},
+					ContractCall::Maintenance(args) => {
+						for s in args.authority_seeds.iter().chain(&args.new_authority_seeds) {
+							let (seed, scheme) = s.resolve();
+							mark(seed, scheme)?;
+						}
+					},
+					ContractCall::Call(_) => {},
+				}
 			},
 			Builder::ContractCustom(_) | Builder::Send => {},
 		}
@@ -1699,6 +1716,44 @@ mod tests {
 		builder
 			.relevant_wallet_schemes()
 			.expect_err("same seed requested under two different schemes must be rejected");
+	}
+
+	#[test]
+	fn relevant_wallet_schemes_rejects_funding_seed_reused_as_ecdsa_authority() {
+		// The contract funding seed is always the Schnorr identity, but it is folded into the same
+		// context set as the committee seeds (see `relevant_wallet_seeds`). Reusing it as an
+		// `ecdsa:` committee member must be rejected by the cross-scheme guard, not silently
+		// rebuilt as an ECDSA wallet (which would fund from the wrong on-chain identity).
+		let seed = "0000000000000000000000000000000000000000000000000000000000000042";
+		let builder = Builder::ContractSimple(ContractCall::Deploy(ContractDeployArgs {
+			funding_seed: seed.to_string(),
+			authority_seeds: vec![format!("ecdsa:{seed}").parse().unwrap()],
+			authority_threshold: None,
+			rng_seed: None,
+		}));
+
+		builder
+			.relevant_wallet_schemes()
+			.expect_err("funding seed reused as an ECDSA committee member must be rejected");
+	}
+
+	#[test]
+	fn relevant_wallet_schemes_allows_distinct_contract_committee() {
+		// A distinct ECDSA committee member alongside the Schnorr funding seed is legitimate: only
+		// the ECDSA authority is recorded, and the funding seed stays (implicitly) Schnorr.
+		let funding = "0000000000000000000000000000000000000000000000000000000000000042";
+		let authority = "0000000000000000000000000000000000000000000000000000000000000043";
+		let builder = Builder::ContractSimple(ContractCall::Deploy(ContractDeployArgs {
+			funding_seed: funding.to_string(),
+			authority_seeds: vec![format!("ecdsa:{authority}").parse().unwrap()],
+			authority_threshold: None,
+			rng_seed: None,
+		}));
+
+		let schemes = builder
+			.relevant_wallet_schemes()
+			.expect("distinct funding + ECDSA committee is fine");
+		assert_eq!(schemes.len(), 1, "only the ECDSA authority should be recorded");
 	}
 
 	#[test]
