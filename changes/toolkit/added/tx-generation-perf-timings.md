@@ -9,5 +9,11 @@ balancing loop (`pay_fees`, including the iteration count), real PLONK proving
 `RUST_LOG=debug`) to see the breakdown; a report script can grep for `[perf]` lines and
 aggregate per-phase trend lines across a run.
 
+`batch-single-tx` builds many transfers concurrently on one thread, so each transfer's
+future is wrapped in a `transfer{index=N, total=M}` tracing span; every `[perf]` line
+above is emitted from within that span, letting a report script correlate all five
+phase timings back to the same tx even though they interleave with other transfers'
+output.
+
 PR: https://github.com/midnightntwrk/midnight-node/pull/1912
 Issue: https://github.com/shieldedtech/midnight-performance/issues/292
