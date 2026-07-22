@@ -325,11 +325,28 @@ mod tests {
 	use super::super::super::WalletSeed;
 	use super::{UnshieldedSignatureScheme, UnshieldedWallet};
 
-	// `common` is compiled once per ledger generation. ECDSA is real only on ledger 9; on 7/8 the
-	// key types are `unimplemented!()` stubs that panic when touched (see `ecdsa_unimpl.rs`), so
-	// ECDSA bodies must compile everywhere but run only on 9. `LEDGER_VERSION` lives in the
-	// enclosing version module (`lib.rs`), four modules up.
+	// `common` is compiled once per ledger generation. ECDSA is real from ledger 9 onward; on
+	// pre-9 generations the key types are `unimplemented!()` stubs that panic when touched (see
+	// `ecdsa_unimpl.rs`), so ECDSA bodies must compile everywhere but run only on 9+.
+	// `LEDGER_VERSION` lives in the enclosing version module (`lib.rs`), four modules up.
 	const LEDGER_GENERATION: u32 = super::super::super::super::LEDGER_VERSION;
+
+	/// First ledger generation with ECDSA unshielded-signature support.
+	const ECDSA_MIN_GENERATION: u32 = 9;
+
+	/// Guard for the ECDSA-only tests below. ECDSA is a ledger-9+ feature; on older generations
+	/// the pre-9 dependency stubs can't run it. Returns `true` (and logs a visible SKIP line, so
+	/// the run isn't a silent green pass) when the current generation predates ECDSA support.
+	fn skip_pre_ecdsa(test: &str) -> bool {
+		if LEDGER_GENERATION < ECDSA_MIN_GENERATION {
+			eprintln!(
+				"SKIP {test}: ledger generation {LEDGER_GENERATION} predates ECDSA support (needs >= {ECDSA_MIN_GENERATION})"
+			);
+			true
+		} else {
+			false
+		}
+	}
 
 	/// Fixed, arbitrary root seed — stable so the golden vector is reproducible.
 	fn seed() -> WalletSeed {
@@ -350,7 +367,7 @@ mod tests {
 	/// produces verifiable signatures.
 	#[test]
 	fn ecdsa_wallet_serialization_roundtrip() {
-		if LEDGER_GENERATION != 9 {
+		if skip_pre_ecdsa("ecdsa_wallet_serialization_roundtrip") {
 			return;
 		}
 		use super::super::super::{deserialize, serialize};
@@ -374,7 +391,7 @@ mod tests {
 	/// a committee member authorize maintenance/deploy with ECDSA.
 	#[test]
 	fn ecdsa_maintenance_verifying_key_matches_scheme() {
-		if LEDGER_GENERATION != 9 {
+		if skip_pre_ecdsa("ecdsa_maintenance_verifying_key_matches_scheme") {
 			return;
 		}
 		use super::super::super::maintenance_verifying_key_ecdsa;
@@ -391,7 +408,7 @@ mod tests {
 	/// no official vector to pin the whole path against. `seed()` is arbitrary but stable.
 	#[test]
 	fn ecdsa_address_golden_vector() {
-		if LEDGER_GENERATION != 9 {
+		if skip_pre_ecdsa("ecdsa_address_golden_vector") {
 			return;
 		}
 		const EXPECTED_ECDSA_ADDRESS_HEX: &str =
@@ -413,7 +430,7 @@ mod tests {
 	/// interop with the Wallet SDK's derivation.
 	#[test]
 	fn ecdsa_address_mip0003_conformance() {
-		if LEDGER_GENERATION != 9 {
+		if skip_pre_ecdsa("ecdsa_address_mip0003_conformance") {
 			return;
 		}
 		// (uniform_bytes, expected 32-byte unshielded address hex)
