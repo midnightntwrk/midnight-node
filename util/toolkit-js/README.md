@@ -229,7 +229,7 @@ different `compactc` versions, each supported version has its own sibling worksp
 compact-0.29.0/     → @midnight-ntwrk/compact-js* 2.4.3   (public npm)
 compact-0.30.0/     → @midnight-ntwrk/compact-js* 2.5.0   (public npm)
 compact-0.31.0/     → @midnight-ntwrk/compact-js* 2.5.1   (public npm)
-compact-0.33.0/     → @midnight-ntwrk/compact-js* 2.5.5-rc.6 (public npm)
+compact-0.33.0/     → @midnight-ntwrk/compact-js* 2.5.5-rc.7 (public npm)
 ```
 
 The root package depends on every variant (`@midnight-ntwrk/node-toolkit-compact-<major>.<minor>.<patch>`). At
