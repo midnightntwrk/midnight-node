@@ -52,6 +52,7 @@ use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
+use midnight_primitives_consensus_engine::ActiveEngine;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
@@ -396,7 +397,7 @@ impl pallet_aura::Config for Runtime {
 }
 
 impl pallet_authorship::Config for Runtime {
-	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, Aura>;
+	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
 	type EventHandler = ();
 }
 
@@ -531,7 +532,7 @@ impl pallet_beefy_mmr::Config for Runtime {
 impl pallet_timestamp::Config for Runtime {
 	/// A timestamp: milliseconds since the unix epoch.
 	type Moment = u64;
-	type OnTimestampSet = Aura;
+	type OnTimestampSet = ConsensusEngine;
 	type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
 	type WeightInfo = weights::pallet_timestamp::WeightInfo<Runtime>;
 }
@@ -660,7 +661,10 @@ impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
 
 impl pallet_sidechain::Config for Runtime {
 	fn current_slot_number() -> ScSlotNumber {
-		ScSlotNumber(*pallet_aura::CurrentSlot::<Self>::get())
+		match ConsensusEngine::active_engine() {
+			ActiveEngine::Aura => ScSlotNumber(*pallet_aura::CurrentSlot::<Self>::get()),
+			ActiveEngine::Babe => ScSlotNumber(*pallet_babe::CurrentSlot::<Self>::get()),
+		}
 	}
 	type OnNewEpoch = LogBeneficiaries;
 }
@@ -940,6 +944,15 @@ impl pallet_throttle::Config for Runtime {
 	type WindowSize = WindowSize;
 }
 
+impl pallet_consensus_engine::Config for Runtime {
+	// Some state transitions are governance-driven: federated-authority motions dispatch approved
+	// calls as root.
+	type GovernanceOrigin = EnsureRoot<AccountId>;
+	type EpochDuration = SidechainEpochDuration;
+	// Unit weights for now. Issue #1863.
+	type WeightInfo = ();
+}
+
 parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
 }
@@ -1132,6 +1145,10 @@ mod runtime {
 	// Throttling
 	#[runtime::pallet_index(51)]
 	pub type Throttle = pallet_throttle::Pallet<Runtime>;
+
+	// Consensus engine transition state machine
+	#[runtime::pallet_index(52)]
+	pub type ConsensusEngine = pallet_consensus_engine::Pallet<Runtime>;
 }
 
 /// The address format for describing accounts.
@@ -1755,6 +1772,12 @@ impl_runtime_apis! {
 	impl midnight_primitives_session_info::SessionInfoApi<Block> for Runtime {
 		fn current_session_index() -> u32 {
 			Session::current_index()
+		}
+	}
+
+	impl midnight_primitives_consensus_engine::ConsensusEngineApi<Block> for Runtime {
+		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
+			ConsensusEngine::active_engine()
 		}
 	}
 
