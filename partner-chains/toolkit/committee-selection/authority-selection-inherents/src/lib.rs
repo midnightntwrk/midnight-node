@@ -87,6 +87,19 @@ impl<AuthorityId, AuthorityKeys> CommitteeMember<AuthorityId, AuthorityKeys> {
 	pub fn permissioned(id: AuthorityId, keys: AuthorityKeys) -> Self {
 		Self::Permissioned { id, keys }
 	}
+
+	/// Maps the authority keys, preserving the member variant and id
+	pub fn map_authority_keys<NewKeys>(
+		self,
+		f: impl Fn(AuthorityKeys) -> NewKeys,
+	) -> CommitteeMember<AuthorityId, NewKeys> {
+		match self {
+			Self::Permissioned { id, keys } => CommitteeMember::Permissioned { id, keys: f(keys) },
+			Self::Registered { id, keys, stake_pool_pub_key } => {
+				CommitteeMember::Registered { id, keys: f(keys), stake_pool_pub_key }
+			},
+		}
+	}
 }
 
 impl<AuthorityId: Clone, AuthorityKeys: Clone> CommitteeMemberT
