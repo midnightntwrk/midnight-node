@@ -565,10 +565,18 @@ async fn counter_increment_e2e() {
 ///
 /// Proves:
 ///   1. ECDSA unshielded address derivation is wired and distinct from Schnorr for the same seed.
-///   2. A contract can be deployed with an ECDSA contract-maintenance committee.
+///   2. A contract can be deployed with an ECDSA contract-maintenance committee, and the contract
+///      is actually indexed on-chain afterwards (see the closing `contract-state` fetch — it
+///      replays the real blocks and fails if the deploy did not apply, not merely finalize).
 ///   3. A maintenance update signed by an ECDSA-only committee is accepted.
 ///   4. A maintenance update signed by a mixed Schnorr+ECDSA committee is accepted (per-member
 ///      scheme dispatch), and authority rotations persist across sequential updates.
+///
+/// Note on assertion strength: signature validity is enforced at mempool time —
+/// `validate_unsigned` runs `LedgerApi::validate_transaction` against current on-chain state — so a
+/// bad ECDSA or cross-scheme signature is rejected before inclusion and surfaces as a `run_cli`
+/// panic. The closing `contract-state` fetch additionally confirms on-chain application of the
+/// deploy. (`send`/finalization alone does not prove apply-time success, hence the explicit fetch.)
 #[tokio::test]
 async fn ecdsa_contract_committees_e2e() {
 	// Committee members only ever sign maintenance updates, so they need no on-chain funds; fees
@@ -652,6 +660,7 @@ async fn ecdsa_contract_committees_e2e() {
 			_ => unreachable!(),
 		}
 	};
+	assert!(!contract_address.is_empty(), "deploy must produce a contract address");
 
 	run_cli(&[
 		"generate-txs",
@@ -716,6 +725,21 @@ async fn ecdsa_contract_committees_e2e() {
 		"-s",
 		url,
 		"-d",
+		url,
+	])
+	.await;
+
+	// Confirm on-chain application (not just finalization): replay the real blocks and read the
+	// contract state by address. `get_contract_state` does `ledger_state.index(addr).expect(..)`,
+	// so this panics — failing the test — if the deploy never actually landed on-chain. It also
+	// parses `contract_address`, so a malformed deploy address is caught here too.
+	run_cli(&[
+		"contract-state",
+		"--fetch-cache",
+		"inmemory",
+		"--contract-address",
+		&contract_address,
+		"-s",
 		url,
 	])
 	.await;
