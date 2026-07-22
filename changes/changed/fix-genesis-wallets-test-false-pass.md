@@ -6,3 +6,5 @@ treats a failing or report-less toolkit invocation as a test failure instead
 of silently counting the seed as funded.
 
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1905
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/1916
