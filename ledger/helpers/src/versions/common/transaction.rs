@@ -168,6 +168,8 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 		let delay = self.context.ledger_parameters().await.global_ttl;
 		let ttl = now + delay;
 
+		let build_offer_intents_start = std::time::Instant::now();
+
 		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self
 			.guaranteed_offer
 			.as_mut()
@@ -198,6 +200,8 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			intents = intents.insert(*segment_id, intent);
 		}
 
+		log::debug!("[perf] build_offer_intents took {:?}", build_offer_intents_start.elapsed());
+
 		let network_id = self.context.network_id().await;
 
 		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
@@ -226,8 +230,9 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 	) -> Result<FinalizedTransaction<D>> {
 		let mut missing_dust = 0;
 		let dust_params = self.context.ledger_parameters().await.dust;
+		let balance_start = std::time::Instant::now();
 
-		for _ in 0..10 {
+		for iteration in 1..=10 {
 			let (spends, updated_states) =
 				self.gather_dust_spends(missing_dust, now, &dust_params)?;
 			let mut paid_tx = tx.clone();
@@ -240,6 +245,11 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 					missing_dust += dust;
 				} else {
 					self.confirm_dust_spends(&spends, updated_states)?;
+					log::debug!(
+						"[perf] pay_fees balance_iters={} took {:?}",
+						iteration,
+						balance_start.elapsed()
+					);
 					return self.prove_tx(paid_tx).await;
 				}
 			} else {
@@ -249,10 +259,19 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 					missing_dust += dust;
 				} else {
 					self.confirm_dust_spends(&spends, updated_states)?;
+					log::debug!(
+						"[perf] pay_fees balance_iters={} took {:?}",
+						iteration,
+						balance_start.elapsed()
+					);
 					return Ok(proven_tx);
 				}
 			}
 		}
+		log::debug!(
+			"[perf] pay_fees balance_iters=10 (exhausted) took {:?}",
+			balance_start.elapsed()
+		);
 		Err("Could not balance TX".into())
 	}
 
@@ -261,11 +280,14 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 		let resolver = self.context.resolver().await;
 		let parameters = self.context.ledger_parameters().await;
 		let mut rng = self.rng.split();
-		Ok(self
+		let prove_start = std::time::Instant::now();
+		let proven = self
 			.prover
 			.prove(tx, rng.split(), resolver, parameters.cost_model.runtime_cost_model.clone())
 			.await
-			.seal(rng))
+			.seal(rng);
+		log::debug!("[perf] prove_tx took {:?}", prove_start.elapsed());
+		Ok(proven)
 	}
 
 	#[cfg(feature = "erase-proof")]
