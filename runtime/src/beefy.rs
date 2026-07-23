@@ -33,6 +33,8 @@ pub fn current_beefy_stakes(validators: Option<Vec<BeefyId>>) -> BeefyStakes<Bee
 		pallet_beefy::pallet::Authorities::<Runtime>::get().to_vec(),
 	);
 
+	// `pallet_beefy::Authorities` is the validator set effectively applied by `pallet_session`,
+	// which corresponds to the current (active) committee.
 	let current_committee = SessionValidatorMngPallet::<Runtime>::current_committee_storage();
 
 	compute_beefy_stakes(current_validators, current_committee)
@@ -42,28 +44,30 @@ pub fn next_beefy_stakes(next_validators: Option<Vec<BeefyId>>) -> Option<BeefyS
 	let next_validators =
 		next_validators.unwrap_or(pallet_beefy::pallet::NextAuthorities::<Runtime>::get().to_vec());
 
-	SessionValidatorMngPallet::<Runtime>::next_committee_storage().map(|committee| {
-		let beefy_stakes = compute_beefy_stakes(next_validators, committee);
+	// `pallet_beefy::NextAuthorities` is the validator set queued in `pallet_session`, which
+	// corresponds to the queued committee, not to `NextCommittee` (selected, but not yet handed
+	// to `pallet_session`).
+	let queued_committee = SessionValidatorMngPallet::<Runtime>::queued_committee_storage();
+	let beefy_stakes = compute_beefy_stakes(next_validators, queued_committee);
 
-		let result = pallet_beefy_mmr::pallet::BeefyNextAuthorities::<Runtime>::get();
+	let result = pallet_beefy_mmr::pallet::BeefyNextAuthorities::<Runtime>::get();
 
-		// This is mostly during first run of the chain, where BeefyNextAuthorities was not set.
-		if result.keyset_commitment.0 == [0u8; 32] {
-			let current_validator_set_id = pallet_beefy::pallet::ValidatorSetId::<Runtime>::get();
+	// This is mostly during first run of the chain, where BeefyNextAuthorities was not set.
+	if result.keyset_commitment.0 == [0u8; 32] {
+		let current_validator_set_id = pallet_beefy::pallet::ValidatorSetId::<Runtime>::get();
 
-			// increment by 1
-			let next_set_id = current_validator_set_id + 1;
+		// increment by 1
+		let next_set_id = current_validator_set_id + 1;
 
-			let next_authority_set = compute_authority_set(next_set_id, beefy_stakes.clone());
+		let next_authority_set = compute_authority_set(next_set_id, beefy_stakes.clone());
 
-			pallet_beefy_mmr::pallet::BeefyNextAuthorities::<Runtime>::put(&next_authority_set);
-			log::debug!(
-				"🥩 Out-of-session update on the \"Next\" authority set: {next_authority_set:?}"
-			);
-		}
+		pallet_beefy_mmr::pallet::BeefyNextAuthorities::<Runtime>::put(&next_authority_set);
+		log::debug!(
+			"🥩 Out-of-session update on the \"Next\" authority set: {next_authority_set:?}"
+		);
+	}
 
-		beefy_stakes
-	})
+	Some(beefy_stakes)
 }
 
 pub fn compute_current_authority_set(
