@@ -117,6 +117,7 @@ state_filename="contract_state.mn"
 
 mint_intent_filename="mint.bin"
 mint_zswap_filename="mint_zswap.json"
+mint_events_filename="mint_events.json"
 
 coin_public=$(
     toolkit show-address \
@@ -170,11 +171,19 @@ toolkit \
     --output-intent "$outdir/$mint_intent_filename" \
     --output-private-state "$outdir/tmp.json" \
     --output-zswap-state "$outdir/$mint_zswap_filename" \
+    --output-events "$outdir/$mint_events_filename" \
     --coin-public "$coin_public" \
     mint \
     "$nonce" \
     "$domain_sep" \
     1000
+
+test -f "$tempdir/$mint_intent_filename"
+test -f "$tempdir/$mint_zswap_filename"
+
+events_output=$(jq . "$tempdir/$mint_events_filename")
+echo "Events emitted: $events_output"
+test -f "$tempdir/$mint_events_filename" && test -n "$events_output"
 
 shielded_destination=$(
     toolkit show-address \
