@@ -311,6 +311,11 @@ pub mod ledger_9 {
 	mod common;
 	pub use common::*;
 
+	// Ledger-9-only ECDSA wallet tests (not in shared `common`); see the module docs.
+	// `can-panic`-gated: the whole `common::wallet` module (hence `UnshieldedWallet`) is.
+	#[cfg(all(test, feature = "can-panic"))]
+	mod ecdsa_wallet_tests;
+
 	pub use mn_ledger::structure::{
 		Signature as TransactionSignature, SignatureVerifyingKey,
 		SigningKey as TransactionSigningKey,

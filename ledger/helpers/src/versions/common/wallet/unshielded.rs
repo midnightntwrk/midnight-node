@@ -159,7 +159,8 @@ impl UnshieldedWallet {
 		}
 	}
 
-	fn from_bytes_ecdsa(derived_seed: [u8; 32]) -> Self {
+	// `pub(crate)` for `ledger_9::ecdsa_wallet_tests`, which feeds uniform bytes in without HD.
+	pub(crate) fn from_bytes_ecdsa(derived_seed: [u8; 32]) -> Self {
 		let sk = SigningKeyEcdsa::from_bytes(&derived_seed)
 			.unwrap_or_else(|err| panic!("Error calculating the ECDSA `SigningKey`: {err}"));
 		let vk = sk.verifying_key();
@@ -211,15 +212,16 @@ impl UnshieldedWallet {
 
 	/// The verifying key wrapped in this ledger generation's contract-maintenance-authority key
 	/// type, dispatched by scheme. Used to build/deploy contract-maintenance committees.
-	pub fn maintenance_verifying_key(&self) -> MaintenanceVerifyingKey {
+	/// Returns `None` for an address-only wallet (no key material to authorize maintenance with).
+	pub fn maintenance_verifying_key(&self) -> Option<MaintenanceVerifyingKey> {
 		match &self.keys {
 			Some(UnshieldedWalletKeys::Schnorr { verifying_key, .. }) => {
-				maintenance_verifying_key(verifying_key.clone())
+				Some(maintenance_verifying_key(verifying_key.clone()))
 			},
 			Some(UnshieldedWalletKeys::Ecdsa { verifying_key, .. }) => {
-				maintenance_verifying_key_ecdsa(verifying_key.clone())
+				Some(maintenance_verifying_key_ecdsa(verifying_key.clone()))
 			},
-			None => panic!("Missing verifying key for the `UnshieldedWallet`"),
+			None => None,
 		}
 	}
 
@@ -262,7 +264,9 @@ impl UnshieldedWallet {
 
 	/// Test-only access to the raw ECDSA key material, so tests can drive sign/verify against the
 	/// wallet's actual keypair. `None` for non-ECDSA or address-only wallets.
+	// Only used by `ledger_9::ecdsa_wallet_tests`; unused on the pre-9 copies of `common`.
 	#[cfg(test)]
+	#[allow(dead_code)]
 	pub(crate) fn ecdsa_keys(&self) -> Option<(&VerifyingKeyEcdsa, &SigningKeyEcdsa)> {
 		match &self.keys {
 			Some(UnshieldedWalletKeys::Ecdsa { verifying_key, signing_key: Some(sk) }) => {
@@ -319,36 +323,15 @@ impl From<UserAddress> for UnshieldedWallet {
 	}
 }
 
-// `derive_seed`/`DerivationPath` require the `can-panic` feature (see `hd.rs`).
+// `new`/`default` derive via HD (`derive_seed`, see `hd.rs`), which needs `can-panic`. ECDSA-only
+// tests live in `ledger_9::ecdsa_wallet_tests` — `common` compiles once per generation, so putting
+// them here would report a misleading `ledger_7::…::ecdsa_… ok` where they can't actually run.
 #[cfg(all(test, feature = "can-panic"))]
 mod tests {
 	use super::super::super::WalletSeed;
 	use super::{UnshieldedSignatureScheme, UnshieldedWallet};
 
-	// `common` is compiled once per ledger generation. ECDSA is real from ledger 9 onward; on
-	// pre-9 generations the key types are `unimplemented!()` stubs that panic when touched (see
-	// `ecdsa_unimpl.rs`), so ECDSA bodies must compile everywhere but run only on 9+.
-	// `LEDGER_VERSION` lives in the enclosing version module (`lib.rs`), four modules up.
-	const LEDGER_GENERATION: u32 = super::super::super::super::LEDGER_VERSION;
-
-	/// First ledger generation with ECDSA unshielded-signature support.
-	const ECDSA_MIN_GENERATION: u32 = 9;
-
-	/// Guard for the ECDSA-only tests below. ECDSA is a ledger-9+ feature; on older generations
-	/// the pre-9 dependency stubs can't run it. Returns `true` (and logs a visible SKIP line, so
-	/// the run isn't a silent green pass) when the current generation predates ECDSA support.
-	fn skip_pre_ecdsa(test: &str) -> bool {
-		if LEDGER_GENERATION < ECDSA_MIN_GENERATION {
-			eprintln!(
-				"SKIP {test}: ledger generation {LEDGER_GENERATION} predates ECDSA support (needs >= {ECDSA_MIN_GENERATION})"
-			);
-			true
-		} else {
-			false
-		}
-	}
-
-	/// Fixed, arbitrary root seed — stable so the golden vector is reproducible.
+	/// Fixed, arbitrary root seed — stable so derivations are reproducible.
 	fn seed() -> WalletSeed {
 		WalletSeed::Short([0x42; 16])
 	}
@@ -360,90 +343,5 @@ mod tests {
 			UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Schnorr).user_address,
 			UnshieldedWallet::default(seed()).user_address,
 		);
-	}
-
-	/// An ECDSA `UnshieldedWallet` survives a tagged (`unshielded-wallet[v2]`) serialization
-	/// round-trip: the address and full keypair are preserved, and the restored signing key still
-	/// produces verifiable signatures.
-	#[test]
-	fn ecdsa_wallet_serialization_roundtrip() {
-		if skip_pre_ecdsa("ecdsa_wallet_serialization_roundtrip") {
-			return;
-		}
-		use super::super::super::{deserialize, serialize};
-
-		let wallet = UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa);
-		let bytes = serialize(&wallet).expect("serialize ECDSA wallet");
-		let restored: UnshieldedWallet = deserialize(&bytes[..]).expect("deserialize ECDSA wallet");
-
-		assert_eq!(restored.user_address, wallet.user_address);
-
-		let (orig_vk, _) = wallet.ecdsa_keys().expect("original has ECDSA keys");
-		let (vk, sk) = restored.ecdsa_keys().expect("restored keeps ECDSA keys");
-		assert_eq!(vk, orig_vk, "verifying key must survive the round-trip");
-
-		let msg = b"post-roundtrip signing";
-		assert!(vk.verify(msg, &sk.sign(msg)), "restored signing key must still sign verifiably");
-	}
-
-	/// An ECDSA wallet's contract-maintenance verifying key is the ECDSA variant built from its
-	/// verifying key — proves `maintenance_verifying_key()` dispatches by scheme, which is what lets
-	/// a committee member authorize maintenance/deploy with ECDSA.
-	#[test]
-	fn ecdsa_maintenance_verifying_key_matches_scheme() {
-		if skip_pre_ecdsa("ecdsa_maintenance_verifying_key_matches_scheme") {
-			return;
-		}
-		use super::super::super::maintenance_verifying_key_ecdsa;
-
-		let wallet = UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa);
-		let (vk, _) = wallet.ecdsa_keys().expect("ECDSA wallet has key material");
-		assert!(wallet.maintenance_verifying_key() == maintenance_verifying_key_ecdsa(vk.clone()));
-	}
-
-	/// Golden vector / regression anchor for ECDSA address derivation over the *full HD path*
-	/// (root seed → `m/44'/2400'/0'/4/0` leaf → key → address) on ledger 9. This value is
-	/// self-generated: the published MIP-0003 vectors exercise the uniform-bytes→key→address steps
-	/// (see [`ecdsa_address_mip0003_conformance`]) but not the root-seed→leaf HD mapping, so there is
-	/// no official vector to pin the whole path against. `seed()` is arbitrary but stable.
-	#[test]
-	fn ecdsa_address_golden_vector() {
-		if skip_pre_ecdsa("ecdsa_address_golden_vector") {
-			return;
-		}
-		const EXPECTED_ECDSA_ADDRESS_HEX: &str =
-			"953cab8c90974f2b9e6d03d6932be3488a27fa83c76790cb7116fa1980c81512";
-
-		let actual = hex::encode(
-			UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address.0.0,
-		);
-
-		assert_eq!(actual, EXPECTED_ECDSA_ADDRESS_HEX);
-	}
-
-	/// MIP-0003 conformance for the ECDSA address *formula* — `SHA-256("midnight:ecdsa:" ‖
-	/// compressed-SEC1-vk)` applied to `UserAddress::from(ecdsa::VerifyingKey)`. The vectors come
-	/// from the official `midnight-wallet` `spec-reference` reference implementation and generator
-	/// (authored by the MIP author); each `uniform_bytes` is fed *directly* as the secp256k1 scalar
-	/// (i.e. it is the HD-path leaf output, NOT a root wallet seed) — which is exactly what
-	/// [`UnshieldedWallet::from_bytes_ecdsa`] consumes. Pinning these guarantees byte-for-byte
-	/// interop with the Wallet SDK's derivation.
-	#[test]
-	fn ecdsa_address_mip0003_conformance() {
-		if skip_pre_ecdsa("ecdsa_address_mip0003_conformance") {
-			return;
-		}
-		// (uniform_bytes, expected 32-byte unshielded address hex)
-		let cases: [([u8; 32], &str); 3] = [
-			([0x01; 32], "1139359859a68b29bec3120d85691f21a56593a27d4ee15c10aa059d0699eb3e"),
-			([0x02; 32], "9dd08a454c354133504bddd366db239ea169db8454ebffb9b7718662b6a6e73d"),
-			([0x04; 32], "7b62f3aeaf1e9df17474a4ab2dcd4b6ca4d832499d88b3b60fb2a35d69d02933"),
-		];
-
-		for (uniform_bytes, expected) in cases {
-			let actual =
-				hex::encode(UnshieldedWallet::from_bytes_ecdsa(uniform_bytes).user_address.0.0);
-			assert_eq!(actual, expected, "uniform bytes {uniform_bytes:02x?}");
-		}
 	}
 }

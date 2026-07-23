@@ -95,7 +95,13 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 				.insert(b"store"[..].into(), store_op.clone())
 				.insert(b"check"[..].into(), check_op.clone()),
 			maintenance_authority: ContractMaintenanceAuthority {
-				committee: commitee.iter().map(|w| w.maintenance_verifying_key()).collect(),
+				committee: commitee
+					.iter()
+					.map(|w| {
+						w.maintenance_verifying_key()
+							.expect("committee member must carry key material")
+					})
+					.collect(),
 				threshold: commitee_threshold,
 				counter: 0,
 			},

@@ -63,7 +63,10 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for Maintena
 						committee: info
 							.new_committee
 							.iter()
-							.map(|w| w.maintenance_verifying_key())
+							.map(|w| {
+								w.maintenance_verifying_key()
+									.expect("committee member must carry key material")
+							})
 							.collect(),
 						threshold: info.threshold,
 						counter: info.counter,

@@ -628,6 +628,12 @@ async fn ecdsa_contract_committees_e2e() {
 	let deploy_file = tempdir.path().join("ecdsa_contract_deploy.mn");
 	let deploy_file_str = deploy_file.to_string_lossy().to_string();
 
+	// The contract address is derived from this rng seed, so a fixed seed collides with an
+	// already-deployed contract on a re-run against a persistent node. Randomize per run; log it so
+	// a failure stays reproducible.
+	let deploy_rng_seed = hex::encode(rand::random::<[u8; 32]>());
+	eprintln!("ecdsa_contract_committees_e2e: deploy rng-seed = {deploy_rng_seed}");
+
 	// 2. Deploy contract-simple with an ECDSA maintenance committee, then send it.
 	run_cli(&[
 		"generate-txs",
@@ -638,7 +644,7 @@ async fn ecdsa_contract_committees_e2e() {
 		"contract-simple",
 		"deploy",
 		"--rng-seed",
-		RNG_SEED,
+		&deploy_rng_seed,
 		"--authority-seed",
 		&format!("ecdsa:{ECDSA_AUTH_1}"),
 		"-s",

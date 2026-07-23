@@ -224,13 +224,19 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 			})?;
 
 		let mut committee = self.current_committee.clone();
-		let mut committee_verifying_keys: Vec<MaintenanceVerifyingKey> =
-			committee.iter().map(|w| w.maintenance_verifying_key()).collect();
+		let mut committee_verifying_keys: Vec<MaintenanceVerifyingKey> = committee
+			.iter()
+			.map(|w| {
+				w.maintenance_verifying_key().expect("committee member must carry key material")
+			})
+			.collect();
 
 		// The funding wallet is Schnorr (its seed is a plain, scheme-less flag). Add it to the
 		// signing set when it is itself a member of the on-chain committee.
 		let funding_wallet = UnshieldedWallet::default(self.funding_seed());
-		let funding_verifying_key = funding_wallet.maintenance_verifying_key();
+		let funding_verifying_key = funding_wallet
+			.maintenance_verifying_key()
+			.expect("funding wallet always has key material");
 		if !committee_verifying_keys.contains(&funding_verifying_key)
 			&& contract_state.maintenance_authority.committee.contains(&funding_verifying_key)
 		{
