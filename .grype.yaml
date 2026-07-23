@@ -11,17 +11,6 @@ ignore:
   # TODO: Remove this ignore once npm releases a version with the fix
   - vulnerability: GHSA-7h2j-956f-4vf2
 
-  # GHSA-23hp-3jrh-7fpw (CVE-2026-59873): node-tar "Gzip Bomb" DoS
-  # Disclosed: 2026-07-20 (GitHub Advisory DB), fix available in tar@7.5.19
-  # Location: bundled inside the npm CLI (node_modules/npm/node_modules/tar@7.5.9);
-  # cannot be bumped independently until the Node/npm base image ships an npm that
-  # bundles tar >= 7.5.19.
-  # Risk: DoS only (not RCE) - unbounded decompression exhausts disk when extracting
-  # an untrusted archive.
-  # Toolkit exposure: Low - the toolkit does not extract untrusted TAR archives at runtime.
-  # TODO: Remove this ignore once the base image's bundled npm ships tar >= 7.5.19.
-  - vulnerability: GHSA-23hp-3jrh-7fpw
-
   # wasmtime 35.0.0 critical vulnerability (transitive via polkadot-sdk polkadot-stable2509)
   # sc-executor-wasmtime pins wasmtime; cannot be bumped without upgrading polkadot-sdk
   # After checking the advistory description: https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-jhxm-h53p-jm7w
