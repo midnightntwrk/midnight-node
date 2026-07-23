@@ -283,11 +283,14 @@ impl IndexerContext<DefaultDB> {
 		// Keyed by (intent_hash, output_index) so a later spend removes the matching created UTXO.
 		let mut utxos: HashMap<(Vec<u8>, u32), (Utxo, Timestamp)> = HashMap::new();
 		// The indexer merges the backlog with a progress heartbeat whose first tick is immediate,
-		// so a progress sentinel can arrive *before* the backlog is fully streamed. Don't stop on
-		// the first progress; instead track the highest transaction id we've applied and stop only
-		// once it reaches the sentinel's `highest_transaction_id` (mirrors the shielded
-		// `highest_checked >= highest` guard). Ids are 1-based, so an address with no transactions
-		// reports `highest_transaction_id == 0` and we stop on the first progress.
+		// so a progress sentinel (carrying `highest_transaction_id`) usually arrives *before* the
+		// backlog is fully streamed. Track the highest transaction id we've applied and stop once it
+		// reaches that target (mirrors the shielded `highest_checked >= highest` guard). We test the
+		// target in both branches: in `Transaction`, so a backlog that catches up to an already-known
+		// target stops immediately; and in `Progress`, as the fallback for when the target isn't known
+		// yet (or later grows) — without the `Transaction`-branch check a drained wallet would idle
+		// until the next 30s heartbeat. Ids are 1-based, so an address with no transactions reports
+		// `highest_transaction_id == 0` and we stop on the first progress.
 		let mut highest_applied_transaction_id = 0u64;
 		let mut last_scanned = 0u64;
 		let mut last_target = 0u64;
@@ -317,6 +320,11 @@ impl IndexerContext<DefaultDB> {
 					}
 					for u in &spent {
 						utxos.remove(&(u.intent_hash.clone(), u.output_index));
+					}
+					// Backlog has caught up to a target an earlier heartbeat already reported: stop
+					// now instead of idling until the next 30s heartbeat re-runs the check below.
+					if last_target > 0 && highest_applied_transaction_id >= last_target {
+						break;
 					}
 				},
 				// Caught up once we've applied every transaction the indexer knows for this address.

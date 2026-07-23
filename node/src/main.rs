@@ -18,5 +18,11 @@
 use midnight_node::command;
 
 fn main() -> sc_cli::Result<()> {
+	// Pin the process-wide rustls default CryptoProvider. Both `ring` (via sqlx) and `aws-lc-rs`
+	// (via reqwest) are compiled in, so rustls can't auto-select a default and would panic the
+	// first time a default-provider consumer runs (e.g. an outbound `wss://` connection).
+	// Idempotent: ignore the error if a provider is somehow already installed.
+	let _ = rustls::crypto::ring::default_provider().install_default();
+
 	command::run()
 }

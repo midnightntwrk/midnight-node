@@ -61,6 +61,7 @@ sidechain-domain.workspace = true
 zeroize.workspace = true
 stacker.workspace = true
 semver.workspace = true
+rustls.workspace = true
 
 [dev-dependencies]
 assert_matches.workspace = true

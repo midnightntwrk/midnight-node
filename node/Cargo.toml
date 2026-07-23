@@ -153,6 +153,7 @@ derive-new.workspace = true
 
 sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
 tokio.workspace = true
+rustls.workspace = true
 blake2b_simd = "1.0"
 
 # FilteringTransactionPool feature dependency
