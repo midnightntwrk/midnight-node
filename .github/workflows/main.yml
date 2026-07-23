@@ -14,11 +14,6 @@ on:
         required: false
         type: boolean
         default: false
-      prod:
-        description: "Hermetic build (all caches off) — slower, fully reproducible"
-        required: false
-        type: boolean
-        default: false
 
 # no top level default permissions for security reasons
 permissions: {}
@@ -31,8 +26,6 @@ jobs:
       IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
     env:
       FORCE_COLOR: 1
-      # Hermetic (cache-free) build for pushed release images; opt-in for manual dispatch. See Earthfile.
-      PROD: ${{ github.event_name == 'push' && 'true' || inputs.prod || 'false' }}
     permissions:
       contents: write
       packages: write
@@ -91,10 +84,6 @@ jobs:
           CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
           IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
-          # The clean canonical tag ($IMAGE_TAG) is only ever pushed by a PROD=true (hermetic)
-          # build — continuous-integration.yml's PROD=false PR/merge builds publish only -dev
-          # tags (see Earthfile) — so its existence for this tree proves a hermetic build has
-          # already run, and this (hermetic, push-triggered) build can safely skip.
           printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
           IMAGES_EXIST=false
@@ -133,9 +122,9 @@ jobs:
         run: |
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
-          # --PROD gates the hermetic, cache-free release build (see Earthfile).
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --PROD="$PROD" +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --PROD="$PROD" +toolkit-image
+          # --CI=true enables the build caches (see Earthfile).
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --CI=true +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --CI=true +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -256,8 +245,6 @@ jobs:
     runs-on: ubuntu-latest-8-core-arm64
     env:
       FORCE_COLOR: 1
-      # Hermetic (cache-free) build for pushed release images; opt-in for manual dispatch. See Earthfile.
-      PROD: ${{ github.event_name == 'push' && 'true' || inputs.prod || 'false' }}
     permissions:
       contents: write
       packages: write
@@ -291,10 +278,6 @@ jobs:
           CONTENT_HASH=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           VERSION=$(grep -m1 'version =' node/Cargo.toml | awk '{print $3}' | tr -d '"')
           IMAGE_TAG="${VERSION}-${CONTENT_HASH}"
-          # The clean canonical tag ($IMAGE_TAG) is only ever pushed by a PROD=true (hermetic)
-          # build — continuous-integration.yml's PROD=false PR/merge builds publish only -dev
-          # tags (see Earthfile) — so its existence for this tree proves a hermetic build has
-          # already run, and this (hermetic, push-triggered) build can safely skip.
           printf "IMAGE_TAG=%s\n" "${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
           IMAGES_EXIST=false
@@ -324,9 +307,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          # --PROD gates the hermetic, cache-free release build (see Earthfile).
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --PROD="$PROD" +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --PROD="$PROD" +toolkit-image
+          # --CI=true enables the build caches (see Earthfile).
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --CI=true +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --CI=true +toolkit-image
 
       - name: Get image digests
         id: digests

@@ -41,6 +41,7 @@ jobs:
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
+      node_image_tag_no_dev: ${{ steps.image_tags.outputs.node_image_tag_no_dev }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
@@ -124,7 +125,8 @@ jobs:
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "node_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+          echo "node_image_tag_no_dev=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+          echo "toolkit_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
@@ -178,7 +180,7 @@ jobs:
           . ./.envrc
           for attempt in 1 2 3; do
             echo "----- earthly attempt $attempt/3 -----"
-            if earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
+            if earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --CI=true +images; then
               exit 0
             fi
             echo "----- earthly attempt $attempt failed -----"
@@ -267,7 +269,7 @@ jobs:
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "node_image_tag=${version}-dev-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-dev-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
+          echo "toolkit_image_tag=${version}-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
@@ -292,7 +294,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --CI=true +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -331,7 +333,7 @@ jobs:
       - name: Compute combined image tags
         id: tags
         env:
-          NODE_AMD64_TAG: ${{ needs.run.outputs.node_image_tag }}
+          NODE_AMD64_TAG: ${{ needs.run.outputs.node_image_tag_no_dev }}
           TOOLKIT_AMD64_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
         run: |
           node_amd64="$NODE_AMD64_TAG"

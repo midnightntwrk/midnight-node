@@ -22,11 +22,11 @@ VERSION 0.8
 # daemon topology, at no cost (same-arch builds still share the cache).
 ARG --global CACHE_KEY=local
 
-# Hermetic production build. When true, +build declares no CACHE mounts and compiles with
-# --no-cache, so release artifacts are built from scratch with nothing served from any cache.
-# Defaults false (fast, fully-cached dev/CI builds).
-# The main workflow sets --PROD=true when building pushed release images.
-ARG --global PROD=false
+# CI build. When true, +build declares the cargo registry/git and per-branch /target CACHE
+# mounts, so cargo's incremental fingerprinting can reuse artifacts across runs. Defaults
+# false (no CACHE mounts — a clean, from-scratch build). The main and continuous-integration
+# workflows set --CI=true so their image builds use the caches.
+ARG --global CI=false
 
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
@@ -1297,11 +1297,11 @@ build-prepare:
 build:
     FROM +build-prepare
     ARG TARGETARCH
-    # Caching is gated on PROD (see top of file). Dev/CI builds (PROD=false) mount cargo
-    # registry/git and a per-branch-scoped /target dir so cargo's incremental fingerprinting
-    # can skip unchanged crates across runs. A PROD=true release build declares none of them,
-    # so it compiles from scratch with nothing served from any cache.
-    IF [ "$PROD" != "true" ]
+    # Caching is gated on CI (see top of file). CI builds (CI=true) mount the cargo
+    # registry/git caches and a per-branch-scoped /target dir so cargo's incremental
+    # fingerprinting can skip unchanged crates across runs. A plain build (CI=false)
+    # declares none of them and compiles from scratch.
+    IF [ "$CI" = "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
         # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
@@ -1322,17 +1322,12 @@ build:
     # ENV CXX_X86_64_UNKNOWN_LINUX_GNU=x86_64-unknown-linux-gnu-g++=g++
 
     # Default build (no hardfork)
-    IF [ "$PROD" = "true" ]
-        # Hermetic release build: force a full recompile (--no-cache) so nothing is
-        # reused from Earthly's layer cache either.
-        RUN --no-cache cargo auditable build --workspace --locked --release
-    ELSE
-        RUN \
-            cargo auditable build --workspace --locked --release
-    END
+    RUN \
+        cargo auditable build --workspace --locked --release
 
-    # cp (not mv) so the linked binaries stay in the now-persistent /target cache; otherwise
-    # cargo would re-link every binary on the next run even when its inputs are unchanged.
+    # cp (not mv) so the linked binaries stay in the /target cache when it is mounted
+    # (CI=true); otherwise cargo would re-link every binary on the next run even when its
+    # inputs are unchanged.
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && cp /target/release/midnight-node /artifacts-$NATIVEARCH \
         && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
@@ -1445,21 +1440,11 @@ node-image:
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
-    # The clean canonical tag ($IMAGE_TAG) and the moving `latest` pointer are reserved for
-    # hermetic (PROD=true) builds only. Because a cached (PROD=false) build never publishes the
-    # clean tag, its existence for a tree proves a hermetic build produced it — so main.yml's
-    # "already exists" dedup keys off it directly (no separate marker needed), and a non-hermetic
-    # build can never occupy or mask a release image's tag. Cached builds publish ONLY the -dev tag.
-    IF [ "$PROD" = "true" ]
-        SAVE IMAGE --push \
-            $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
-            $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
-            $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
-    ELSE
-        SAVE IMAGE --push \
-            $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-            $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG_DEV
-    END
+    SAVE IMAGE --push \
+        $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
+        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
+        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
@@ -1554,22 +1539,12 @@ toolkit-image:
     ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
-    ENV IMAGE_TAG_DEV="${NODE_VERSION}-dev-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
     RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
-    # The clean canonical tag ($IMAGE_TAG) and the moving `latest` pointer are reserved for
-    # hermetic (PROD=true) builds only; cached (PROD=false) builds publish ONLY the -dev tag,
-    # so a non-hermetic build can never mask a release image. Mirrors node-image above.
-    IF [ "$PROD" = "true" ]
-        SAVE IMAGE --push \
-            $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
-            $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-            $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
-    ELSE
-        SAVE IMAGE --push \
-            $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG_DEV \
-            $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG_DEV
-    END
+    SAVE IMAGE --push \
+        $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
+        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
 
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
