@@ -181,7 +181,7 @@ toolkit \
 test -f "$tempdir/$mint_intent_filename"
 test -f "$tempdir/$mint_zswap_filename"
 
-events_output=$(jq "$tempdir/$mint_events_filename")
+events_output=$(jq . "$tempdir/$mint_events_filename")
 echo "Events emitted: $events_output"
 test -f "$tempdir/$mint_events_filename" && test -n "$events_output"
 
