@@ -52,7 +52,10 @@ use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
-use sc_partner_chains_consensus::PartnerChainsProposerFactory;
+use crate::consensus_engine_dispatch::{DispatchImportQueue, RuntimeEngineResolver};
+use sc_partner_chains_consensus::{
+	PartnerChainsBlockImport, PartnerChainsBodyRestore, PartnerChainsProposerFactory,
+};
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
 use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero};
@@ -245,11 +248,19 @@ type TransactionPool = FilteringTransactionPool<Block, FullClient>;
 type GrandpaBlockImport =
 	sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>;
 
+/// Import queue that dispatches between the AURA and BABE pipelines per the consensus-engine state.
+type MidnightImportQueue = DispatchImportQueue<
+	Block,
+	RuntimeEngineResolver<FullClient>,
+	sc_consensus::DefaultImportQueue<Block>,
+	sc_consensus::DefaultImportQueue<Block>,
+>;
+
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
-	sc_consensus::DefaultImportQueue<Block>,
+	MidnightImportQueue,
 	TransactionPool,
 	(
 		GrandpaBlockImport,
@@ -258,6 +269,7 @@ type MidnightService = sc_service::PartialComponents<
 		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
 		Option<Telemetry>,
 		DataSources,
+		sc_consensus_babe::BabeLink<Block>,
 	),
 >;
 
@@ -412,7 +424,12 @@ pub fn new_partial(
 
 	let transaction_pool = {
 		let metrics = FilteringMetrics::new(config.prometheus_registry());
-		FilteringTransactionPool::new(tx_filter_config, transaction_pool, client.clone(), metrics)
+		Arc::new(FilteringTransactionPool::new(
+			tx_filter_config,
+			transaction_pool,
+			client.clone(),
+			metrics,
+		))
 	};
 
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
@@ -470,7 +487,7 @@ pub fn new_partial(
 		aura_verifier,
 		client.clone(),
 		VerifierCIDP::new(
-			inherent_config,
+			inherent_config.clone(),
 			client.clone(),
 			data_sources.mc_hash.clone(),
 			data_sources.authority_selection.clone(),
@@ -480,12 +497,76 @@ pub fn new_partial(
 		),
 	);
 
-	let import_queue = sc_consensus::import_queue::BasicQueue::new(
+	let aura_import_queue = sc_consensus::import_queue::BasicQueue::new(
 		verifier,
 		Box::new(grandpa_block_import.clone()),
 		Some(Box::new(grandpa_block_import.clone())),
 		&task_manager.spawn_essential_handle(),
 		config.prometheus_registry(),
+	);
+
+	// BABE import pipeline (post-flip). Composed as the partner-chains "sandwich"
+	// `PartnerChainsBlockImport<BabeBlockImport<PartnerChainsBodyRestore<GrandpaBlockImport>>>`: the
+	// outer layer runs the body-gated inherent check, withholding the body from BABE so BABE's own
+	// (redundant) inherent check is skipped while its header-based epoch/equivocation logic still
+	// runs; the body is then restored for the GRANDPA import beneath.
+	let babe_config = sc_consensus_babe::configuration(&*client)?;
+	let babe_slot_duration = babe_config.slot_duration();
+	let (babe_block_import, babe_link) = sc_consensus_babe::block_import(
+		babe_config.clone(),
+		PartnerChainsBodyRestore::new(grandpa_block_import.clone()),
+		client.clone(),
+		move |_parent, ()| async move {
+			let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+			let slot =
+				sp_consensus_babe::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+					*timestamp,
+					babe_slot_duration,
+				);
+			Ok((slot, timestamp))
+		},
+		select_chain.clone(),
+		OffchainTransactionPoolFactory::new(transaction_pool.clone()),
+	)?;
+
+	let babe_block_import = PartnerChainsBlockImport::<
+		_,
+		_,
+		_,
+		Block,
+		AuraSlotExtractor,
+		McHashInherentDigest,
+	>::new(
+		babe_block_import,
+		client.clone(),
+		VerifierCIDP::new(
+			inherent_config.clone(),
+			client.clone(),
+			data_sources.mc_hash.clone(),
+			data_sources.authority_selection.clone(),
+			data_sources.cnight_observation.clone(),
+			data_sources.federated_authority_observation.clone(),
+			data_sources.bridge.clone(),
+		),
+	);
+
+	let (babe_import_queue, _babe_worker_handle) =
+		sc_consensus_babe::import_queue(sc_consensus_babe::ImportQueueParams {
+			link: babe_link.clone(),
+			block_import: babe_block_import,
+			justification_import: None,
+			client: client.clone(),
+			slot_duration: babe_slot_duration,
+			spawner: &task_manager.spawn_essential_handle(),
+			registry: config.prometheus_registry(),
+			telemetry: telemetry.as_ref().map(|x| x.handle()),
+		})?;
+
+	// Route each block to the AURA or BABE queue by the engine active at its parent.
+	let import_queue = DispatchImportQueue::new(
+		Arc::new(RuntimeEngineResolver::new(client.clone())),
+		aura_import_queue,
+		babe_import_queue,
 	);
 
 	let partial_components = sc_service::PartialComponents {
@@ -495,7 +576,7 @@ pub fn new_partial(
 		import_queue,
 		keystore_container,
 		select_chain,
-		transaction_pool: Arc::new(transaction_pool),
+		transaction_pool,
 		other: (
 			grandpa_block_import,
 			grandpa_link,
@@ -503,6 +584,7 @@ pub fn new_partial(
 			beefy_rpc_links,
 			telemetry,
 			data_sources,
+			babe_link,
 		),
 	};
 
@@ -543,6 +625,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				beefy_rpc_links,
 				mut telemetry,
 				data_sources,
+				_babe_link,
 			),
 	} = new_partial_components;
 
