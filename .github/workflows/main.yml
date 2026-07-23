@@ -122,9 +122,8 @@ jobs:
         run: |
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
-          # --CI=true enables the build caches (see Earthfile).
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --CI=true +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --CI=true +toolkit-image
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -307,9 +306,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          # --CI=true enables the build caches (see Earthfile).
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push --CI=true +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push --CI=true +toolkit-image
+          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
       - name: Get image digests
         id: digests
