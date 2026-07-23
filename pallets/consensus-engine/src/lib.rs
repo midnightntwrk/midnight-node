@@ -196,6 +196,11 @@ pub mod pallet {
 			EngineState::<T>::get().active_engine()
 		}
 
+		/// Whether block authors should attach a BABE `SecondaryPlain` pre-runtime digest.
+		pub fn should_emit_babe_preruntime_digest() -> bool {
+			matches!(EngineState::<T>::get(), State::ArmedBabe | State::ScheduledFlip)
+		}
+
 		/// Sets `GenesisSlot` to a non-zero sentinel so pallet-babe's `initialize`
 		/// does not self-initialize a genesis epoch and deposit a bogus `NextEpochData`
 		/// digest into a header we cannot retract.
