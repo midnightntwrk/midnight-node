@@ -2,6 +2,6 @@
     "reserve_validator_address": "addr_test1wraevj382xaeeww85mg5whg75j3evzpq5re33zpkgagzgfsgag5wv",
     "asset": {
         "policy_id": "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
-        "asset_name": "NIGHT"
+        "asset_name": ""
     }
 }

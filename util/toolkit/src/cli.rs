@@ -15,6 +15,7 @@ use crate::commands::{
 	show_address::{self, ShowAddress, ShowAddressArgs},
 	show_block::{self, ShowBlockArgs, ShowBlockValue},
 	show_ledger_parameters::{self, ShowLedgerParametersArgs},
+	show_night_pools::{self, ShowNightPoolsArgs},
 	show_seed::{self, ShowSeedArgs},
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
 	show_transaction::{self, ShowTransactionArgs},
@@ -56,6 +57,8 @@ pub enum Commands {
 	ShowAddress(ShowAddressArgs),
 	/// Show the ledger parameters
 	ShowLedgerParameters(ShowLedgerParametersArgs),
+	/// Show the NIGHT pools (Reserved / Locked / Unlocked) from a network's LedgerState
+	ShowNightPools(ShowNightPoolsArgs),
 	/// Show the seed of a wallet
 	ShowSeed(ShowSeedArgs),
 	/// Show the viewing key of a shielded wallet using its seed
@@ -179,6 +182,10 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			} else {
 				println!("{:#?}", result);
 			}
+			Ok(())
+		},
+		Commands::ShowNightPools(args) => {
+			show_night_pools::execute(args).await?;
 			Ok(())
 		},
 		Commands::UpdateLedgerParameters(args) => {

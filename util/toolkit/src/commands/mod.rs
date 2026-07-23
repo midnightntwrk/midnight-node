@@ -27,6 +27,7 @@ pub mod send_intent;
 pub mod show_address;
 pub mod show_block;
 pub mod show_ledger_parameters;
+pub mod show_night_pools;
 pub mod show_seed;
 pub mod show_token_type;
 pub mod show_transaction;

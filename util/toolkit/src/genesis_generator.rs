@@ -154,12 +154,31 @@ impl GenesisGenerator {
 			return Err(GenesisGeneratorError::InvalidPoolsAmounts("Reserve is empty".to_string()));
 		}
 
+		let funded_seeds_amount = funding
+			.unshielded_mint_amount
+			.checked_mul(funding.unshielded_num_funding_outputs as u128)
+			.and_then(|x| x.checked_mul(seeds.map(|ss| ss.len() as u128).unwrap_or(0)))
+			.ok_or_else(|| {
+				GenesisGeneratorError::InvalidPoolsAmounts(
+					"Pool for funded seeds exceeds u128".to_string(),
+				)
+			})?;
+
+		// Reserve is increased according to funded seeds configuration, because
+		// funding is implemented as block rewards payout to the seeds.
+		let reserve_plus_funded_seeds =
+			reserve_pool.checked_add(funded_seeds_amount).ok_or_else(|| {
+				GenesisGeneratorError::InvalidPoolsAmounts(
+					"Reserve Pool plus pool for funded seeds exceeds u128".to_string(),
+				)
+			})?;
+
 		let locked_pool = MAX_SUPPLY
-			.checked_sub(reserve_pool)
+			.checked_sub(reserve_plus_funded_seeds)
 			.and_then(|x| x.checked_sub(treasury))
 			.ok_or_else(|| {
 				log::error!(
-					"Treasury = {treasury} and Reserve = {reserve_pool} exceed MAX_SUPPLY = {MAX_SUPPLY}!"
+					"Treasury = {treasury} and Reserve plus funded seeds = {reserve_plus_funded_seeds} exceed MAX_SUPPLY = {MAX_SUPPLY}!"
 				);
 				GenesisGeneratorError::InvalidPoolsAmounts(
 					"Tresury and Reserve exceed MAX_SUPPLY".to_string(),
@@ -181,7 +200,7 @@ impl GenesisGenerator {
 			network_id,
 			original_parameters.clone(),
 			locked_pool,
-			reserve_pool,
+			reserve_plus_funded_seeds,
 			treasury,
 		)
 		.map_err(SystemTransactionError::from)?;
@@ -296,12 +315,7 @@ impl GenesisGenerator {
 		// And now reward it to each wallet.
 		let mut night_distribution_instructions = vec![];
 		for wallet in wallets.iter() {
-			let target_address = wallet
-				.unshielded
-				.verifying_key
-				.clone()
-				.ok_or(GenesisGeneratorError::MissingVerifyingKey)?
-				.into();
+			let target_address = wallet.unshielded.user_address;
 			for _ in 0..funding.unshielded_num_funding_outputs {
 				night_distribution_instructions.push(OutputInstructionUnshielded {
 					amount: funding.unshielded_mint_amount,
@@ -351,18 +365,18 @@ impl GenesisGenerator {
 		let unsigned_claim: ClaimRewardsTransaction<(), DefaultDB> = ClaimRewardsTransaction {
 			network_id: self.state.network_id.clone(),
 			value: rewards,
-			owner: signature_verifying_key(wallet.unshielded.verifying_key.clone().unwrap()),
+			owner: wallet.unshielded.verifying_key(),
 			nonce: rng.r#gen(),
 			signature: (),
 			kind: ClaimKind::Reward,
 		};
-		let signature = wallet.unshielded.signing_key().sign(rng, &unsigned_claim.data_to_sign());
+		let signature = wallet.unshielded.sign(rng, &unsigned_claim.data_to_sign());
 		let signed_claim = ClaimRewardsTransaction {
 			network_id: unsigned_claim.network_id,
 			value: unsigned_claim.value,
 			owner: unsigned_claim.owner,
 			nonce: unsigned_claim.nonce,
-			signature: transaction_signature(signature),
+			signature,
 			kind: unsigned_claim.kind,
 		};
 		Transaction::ClaimRewards(signed_claim)
@@ -440,7 +454,7 @@ impl GenesisGenerator {
 				unproven_tx,
 				rng.clone(),
 				&DEFAULT_RESOLVER,
-				&self.state.parameters.cost_model.runtime_cost_model,
+				self.state.parameters.cost_model.runtime_cost_model.clone(),
 			)
 			.await;
 
@@ -582,17 +596,20 @@ impl GenesisGenerator {
 		rng: &mut StdRng,
 		timestamp: Timestamp,
 	) {
-		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+		let mut signing_keys = vec![];
 		let mut registrations = vec![];
+		// Build the registrations unsigned first: under ledger 9-rc.3 the registration
+		// fields are part of `data_to_sign`, so the intent must already carry the
+		// dust_actions before we compute the bytes to sign.
 		for wallet in wallets {
-			let signature = wallet.unshielded.signing_key().sign(rng, &data_to_sign);
-			let night_key = wallet.unshielded.verifying_key.unwrap();
+			signing_keys.push(wallet.unshielded.transaction_signing_key());
+			let night_key = wallet.unshielded.verifying_key();
 			let dust_address = wallet.dust.public_key;
 			registrations.push(DustRegistration {
-				night_key: signature_verifying_key(night_key),
+				night_key,
 				dust_address: Some(Sp::new(dust_address)),
 				allow_fee_payment: 0,
-				signature: Some(Sp::new(transaction_signature(signature))),
+				signature: None,
 			});
 		}
 		if registrations.is_empty() {
@@ -604,6 +621,26 @@ impl GenesisGenerator {
 			ctime: timestamp,
 		};
 		intent.dust_actions = Some(Sp::new(dust_actions));
+
+		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+		let signed = intent
+			.dust_actions
+			.as_ref()
+			.unwrap()
+			.registrations
+			.iter()
+			.zip(signing_keys.iter())
+			.map(|(reg, sk)| {
+				let mut reg = (*reg).clone();
+				reg.signature = Some(Sp::new(sk.sign(rng, &data_to_sign)));
+				reg
+			})
+			.collect::<Vec<_>>();
+		intent.dust_actions = Some(Sp::new(DustActions {
+			spends: Array::new(),
+			registrations: signed.into(),
+			ctime: timestamp,
+		}));
 	}
 
 	fn apply_standard_tx(&mut self, tx: Transaction, block_context: &BlockContext) -> Result<()> {
@@ -803,16 +840,14 @@ mod test {
 		.await
 		.unwrap();
 
-		// Pools should reflect the actual config value minus amount taken for funded seeds.
-		let expected_reserve: u128 = reserve_config_amount - MINT_AMOUNT;
-		let expected_locked = MAX_SUPPLY - reserve_config_amount; // no ICS config, so treasury = 0
+		let expected_locked = MAX_SUPPLY - reserve_config_amount - MINT_AMOUNT;
 		assert_eq!(
 			genesis.state.locked_pool, expected_locked,
-			"locked_pool should be MAX_SUPPLY minus reserve"
+			"locked_pool should be MAX_SUPPLY minus reserve minus funded seeds"
 		);
 		assert_eq!(
-			genesis.state.reserve_pool, expected_reserve,
-			"reserve_pool should equal reserve config total_amount minus funded seeds"
+			genesis.state.reserve_pool, reserve_config_amount,
+			"reserve_pool should equal reserve config total_amount"
 		);
 	}
 

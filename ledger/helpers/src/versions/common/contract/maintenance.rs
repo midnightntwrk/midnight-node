@@ -33,7 +33,7 @@ pub struct ContractMaintenanceAuthorityInfo {
 
 pub enum UpdateInfo {
 	ReplaceAuthority(ContractMaintenanceAuthorityInfo),
-	VerifierKeyRemove(EntryPointBuf),
+	VerifierKeyRemove(EntryPointBuf, ContractOperationVersion),
 	VerifierKeyInsert(EntryPointBuf, ContractOperationVersionedVerifierKey),
 }
 
@@ -67,8 +67,8 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for Maintena
 						counter: info.counter,
 					})
 				},
-				UpdateInfo::VerifierKeyRemove(k) => {
-					SingleUpdate::VerifierKeyRemove(k.clone(), ContractOperationVersion::V3)
+				UpdateInfo::VerifierKeyRemove(k, version) => {
+					SingleUpdate::VerifierKeyRemove(k.clone(), version.clone())
 				},
 				UpdateInfo::VerifierKeyInsert(k, new_key) => {
 					SingleUpdate::VerifierKeyInsert(k.clone(), new_key.clone())

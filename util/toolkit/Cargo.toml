@@ -17,6 +17,7 @@ erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
 # `--no-default-features` to build the toolkit without the indexer GraphQL client (and without
 # needing the indexer submodule's schema at compile time).
 indexer-client = ["midnight-node-ledger-helpers/indexer-client"]
+compact-contract-tests = []
 
 [dependencies]
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }

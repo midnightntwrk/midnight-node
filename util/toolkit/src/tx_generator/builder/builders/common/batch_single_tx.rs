@@ -77,12 +77,13 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 	> {
 		use super::type_convert::*;
 
-		let source_seed =
-			convert_wallet_seed(spec.source_seed.parse().expect("invalid source_seed hex"));
+		// The scheme half of each resolved pair is applied at context build time (see
+		// `Builder::relevant_wallet_schemes`); here we only need the seed value.
+		let (source_seed, _) = spec.resolve_source();
+		let source_seed = convert_wallet_seed(source_seed);
 		let funding_seed = spec
-			.funding_seed
-			.as_ref()
-			.map(|s| convert_wallet_seed(s.parse().expect("invalid funding_seed hex")))
+			.resolve_funding()
+			.map(|(s, _)| convert_wallet_seed(s))
 			.unwrap_or(source_seed.clone());
 
 		let rng_seed: Option<[u8; 32]> = spec.rng_seed.as_ref().map(|s| {
@@ -150,12 +151,12 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 			);
 		}
 
-		let tx = tokio::task::spawn_blocking(move || {
-			tokio::runtime::Handle::current().block_on(tx_info.prove())
-		})
-		.await
-		.expect("proving task panicked")
-		.map_err(|e| BatchTransferError::ProvingFailed(format!("{e}")))?;
+		// Proving now self-offloads onto the blocking pool (see `ProofProvider::prove`), so await it
+		// directly rather than wrapping it in a second `spawn_blocking`.
+		let tx = tx_info
+			.prove()
+			.await
+			.map_err(|e| BatchTransferError::ProvingFailed(format!("{e}")))?;
 
 		Ok(TransactionWithContext::new(tx, None))
 	}

@@ -40,8 +40,11 @@ impl<C: Contract<D>, D: DB + Clone, BC: BuilderContext<D>> BuildContractAction<D
 		let resolver = self.type_.resolver();
 		context.update_resolver(resolver).await;
 
-		let contract_deploy =
-			self.type_.deploy(&self.committee, self.committee_threshold, rng).await;
+		let contract_deploy = self
+			.type_
+			.deploy(&self.committee, self.committee_threshold, rng)
+			.await
+			.expect("Failed to construct contract deploy");
 
 		println!("CONTRACT ADDRESS: {:?}", contract_deploy.address());
 
