@@ -54,10 +54,13 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
+use crate::consensus_engine_dispatch::{DispatchImportQueue, RuntimeEngineResolver};
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
-use sc_partner_chains_consensus::PartnerChainsProposerFactory;
+use sc_partner_chains_consensus::{
+	PartnerChainsBlockImport, PartnerChainsBodyRestore, PartnerChainsProposerFactory,
+};
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
 use sp_runtime::traits::{Block as BlockT, Hash as HashT, HashingFor, Header as HeaderT, Zero};
@@ -80,6 +83,21 @@ impl sc_partner_chains_consensus::SlotExtractor<Block> for AuraSlotExtractor {
 			header,
 		)
 		.map_err(|e| e.to_string())
+	}
+}
+
+/// [`sc_partner_chains_consensus::SlotExtractor`] reading the slot from the BABE pre-runtime
+/// digest. Used by the BABE import pipeline (post-flip blocks carry a BABE pre-digest, not an
+/// AURA one, so [`AuraSlotExtractor`] cannot read them).
+pub struct BabeSlotExtractor;
+
+impl sc_partner_chains_consensus::SlotExtractor<Block> for BabeSlotExtractor {
+	fn extract_slot(
+		header: &<Block as BlockT>::Header,
+	) -> Result<sp_consensus_slots::Slot, String> {
+		sc_consensus_babe::find_pre_digest::<Block>(header)
+			.map(|pre_digest| pre_digest.slot())
+			.map_err(|e| e.to_string())
 	}
 }
 
@@ -248,11 +266,19 @@ type TransactionPool = FilteringTransactionPool<Block, FullClient>;
 type GrandpaBlockImport =
 	sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>;
 
+/// Import queue that dispatches between the AURA and BABE pipelines per the consensus-engine state.
+type MidnightImportQueue = DispatchImportQueue<
+	Block,
+	RuntimeEngineResolver<FullClient>,
+	sc_consensus::DefaultImportQueue<Block>,
+	sc_consensus::DefaultImportQueue<Block>,
+>;
+
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
-	sc_consensus::DefaultImportQueue<Block>,
+	MidnightImportQueue,
 	TransactionPool,
 	(
 		GrandpaBlockImport,
@@ -264,6 +290,14 @@ type MidnightService = sc_service::PartialComponents<
 		// Shared warp ledger-sync recovery gate (gates block import + authoring until the arena is
 		// recovered). Created in `new_partial` so it can wrap the import queue's block import.
 		Arc<crate::warp_ledger_sync::oracle::RecoveryGate>,
+		sc_consensus_babe::BabeLink<Block>,
+		// Raw BABE block import (sharing `BabeLink`'s epoch tree) for the BABE authoring worker.
+		// Boxed because the concrete type embeds an unnameable CIDP closure.
+		sc_consensus::BoxBlockImport<Block>,
+		// Handle to the BABE import queue's `answer_requests` task. It must be kept alive for the
+		// service's lifetime: dropping it closes the request channel, ending that *essential* task
+		// and taking the whole service down with it.
+		sc_consensus_babe::BabeWorkerHandle<Block>,
 	),
 >;
 
@@ -413,7 +447,12 @@ pub fn new_partial(
 
 	let transaction_pool = {
 		let metrics = FilteringMetrics::new(config.prometheus_registry());
-		FilteringTransactionPool::new(tx_filter_config, transaction_pool, client.clone(), metrics)
+		Arc::new(FilteringTransactionPool::new(
+			tx_filter_config,
+			transaction_pool,
+			client.clone(),
+			metrics,
+		))
 	};
 
 	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
@@ -481,7 +520,7 @@ pub fn new_partial(
 		aura_verifier,
 		client.clone(),
 		VerifierCIDP::new(
-			inherent_config,
+			inherent_config.clone(),
 			client.clone(),
 			data_sources.mc_hash.clone(),
 			data_sources.authority_selection.clone(),
@@ -491,13 +530,94 @@ pub fn new_partial(
 		),
 	);
 
-	let import_queue = sc_consensus::import_queue::BasicQueue::new(
+	let aura_import_queue = sc_consensus::import_queue::BasicQueue::new(
 		verifier,
 		// Warp ledger-sync: gate post-warp block imports until the arena is recovered + verified.
 		Box::new(gated_block_import),
 		Some(Box::new(grandpa_block_import.clone())),
 		&task_manager.spawn_essential_handle(),
 		config.prometheus_registry(),
+	);
+
+	// BABE import pipeline (post-flip). Composed as the partner-chains "sandwich"
+	// `PartnerChainsBlockImport<BabeBlockImport<PartnerChainsBodyRestore<GrandpaBlockImport>>>`: the
+	// outer layer runs the body-gated inherent check, withholding the body from BABE so BABE's own
+	// (redundant) inherent check is skipped while its header-based epoch/equivocation logic still
+	// runs; the body is then restored for the GRANDPA import beneath.
+	let babe_config = sc_consensus_babe::configuration(&*client)?;
+	let babe_slot_duration = babe_config.slot_duration();
+	let (babe_block_import, babe_link) = sc_consensus_babe::block_import(
+		babe_config.clone(),
+		PartnerChainsBodyRestore::new(grandpa_block_import.clone()),
+		client.clone(),
+		move |_parent, ()| async move {
+			let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+			let slot =
+				sp_consensus_babe::inherents::InherentDataProvider::from_timestamp_and_slot_duration(
+					*timestamp,
+					babe_slot_duration,
+				);
+			Ok((slot, timestamp))
+		},
+		select_chain.clone(),
+		OffchainTransactionPoolFactory::new(transaction_pool.clone()),
+	)?;
+
+	// The BABE authoring worker imports its own blocks through the *same* partner-chains sandwich as
+	// the import queue — not the raw `BabeBlockImport`. `BabeBlockImport::import_block` always runs
+	// its own body-gated inherent check against inherent data built from the minimal CIDP above
+	// (timestamp + slot only, no Partner Chains inherents), which panics on a block carrying the
+	// committee `set` inherent. Wrapping it in `PartnerChainsBlockImport` runs the real check with
+	// the full `VerifierCIDP` and withholds the body from BABE, so BABE's redundant check is skipped.
+	// A clone of the raw import shares `babe_link`'s epoch tree with the import-queue instance.
+	let babe_authoring_block_import: sc_consensus::BoxBlockImport<Block> = Box::new(
+		PartnerChainsBlockImport::<_, _, _, Block, BabeSlotExtractor, McHashInherentDigest>::new(
+			babe_block_import.clone(),
+			client.clone(),
+			VerifierCIDP::new(
+				inherent_config.clone(),
+				client.clone(),
+				data_sources.mc_hash.clone(),
+				data_sources.authority_selection.clone(),
+				data_sources.cnight_observation.clone(),
+				data_sources.federated_authority_observation.clone(),
+				data_sources.bridge.clone(),
+			),
+		),
+	);
+
+	let babe_block_import =
+		PartnerChainsBlockImport::<_, _, _, Block, BabeSlotExtractor, McHashInherentDigest>::new(
+			babe_block_import,
+			client.clone(),
+			VerifierCIDP::new(
+				inherent_config.clone(),
+				client.clone(),
+				data_sources.mc_hash.clone(),
+				data_sources.authority_selection.clone(),
+				data_sources.cnight_observation.clone(),
+				data_sources.federated_authority_observation.clone(),
+				data_sources.bridge.clone(),
+			),
+		);
+
+	let (babe_import_queue, babe_worker_handle) =
+		sc_consensus_babe::import_queue(sc_consensus_babe::ImportQueueParams {
+			link: babe_link.clone(),
+			block_import: babe_block_import,
+			justification_import: None,
+			client: client.clone(),
+			slot_duration: babe_slot_duration,
+			spawner: &task_manager.spawn_essential_handle(),
+			registry: None,  //config.prometheus_registry(),
+			telemetry: None, //telemetry.as_ref().map(|x| x.handle()),
+		})?;
+
+	// Route each block to the AURA or BABE queue by the engine active at its parent.
+	let import_queue = DispatchImportQueue::new(
+		Arc::new(RuntimeEngineResolver::new(client.clone())),
+		aura_import_queue,
+		babe_import_queue,
 	);
 
 	let partial_components = sc_service::PartialComponents {
@@ -507,7 +627,7 @@ pub fn new_partial(
 		import_queue,
 		keystore_container,
 		select_chain,
-		transaction_pool: Arc::new(transaction_pool),
+		transaction_pool,
 		other: (
 			grandpa_block_import,
 			grandpa_link,
@@ -516,6 +636,9 @@ pub fn new_partial(
 			telemetry,
 			data_sources,
 			recovery_gate,
+			babe_link,
+			babe_authoring_block_import,
+			babe_worker_handle,
 		),
 	};
 
@@ -561,6 +684,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				mut telemetry,
 				data_sources,
 				warp_ledger_recovery_gate,
+				babe_link,
+				babe_authoring_block_import,
+				babe_worker_handle,
 			),
 	} = new_partial_components;
 
@@ -834,23 +960,18 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		}
 	}
 
-	if role.is_authority() {
-		let basic_authorship_proposer_factory = sc_basic_authorship::ProposerFactory::new(
-			task_manager.spawn_handle(),
-			client.clone(),
-			transaction_pool.clone(),
-			prometheus_registry.as_ref(),
-			telemetry.as_ref().map(|x| x.handle()),
-		);
-		let proposer_factory: PartnerChainsProposerFactory<_, _, McHashInherentDigest> =
-			PartnerChainsProposerFactory::new(basic_authorship_proposer_factory);
-		// Attach a BABE `SecondaryPlain` pre-runtime digest to authored blocks while the flip to
-		// BABE is armed.
-		let proposer_factory = crate::armed_babe_proposer::ArmedBabeProposerFactory::new(
-			proposer_factory,
-			client.clone(),
-		);
+	// The BABE import queue (built in `new_partial` for every role) spawns an essential
+	// `babe-worker` task whose lifetime is tied to `babe_worker_handle`. We don't serve BABE
+	// epoch-data requests, but the handle must outlive the service or that task ends and takes the
+	// node down. Park it in a task that lives until shutdown.
+	task_manager
+		.spawn_handle()
+		.spawn("babe-worker-handle-keepalive", Some("babe"), async move {
+			let _babe_worker_handle = babe_worker_handle;
+			futures::future::pending::<()>().await;
+		});
 
+	if role.is_authority() {
 		let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);
@@ -862,24 +983,52 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 					ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
 				})?;
 
-		let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
+		// A `ProposalCIDP` supplies the partner-chains inherents plus the slot/timestamp both slot
+		// workers require. Each worker gets its own instance.
+		let make_proposal_cidp = || {
+			ProposalCIDP::new(
+				inherent_config.clone(),
+				client.clone(),
+				data_sources.mc_hash.clone(),
+				data_sources.authority_selection.clone(),
+				data_sources.cnight_observation.clone(),
+				data_sources.federated_authority_observation.clone(),
+				data_sources.bridge.clone(),
+			)
+		};
+
+		// --- AURA authoring worker (active before the consensus flip) ---
+		let aura_proposer_factory = {
+			let basic = sc_basic_authorship::ProposerFactory::new(
+				task_manager.spawn_handle(),
+				client.clone(),
+				transaction_pool.clone(),
+				prometheus_registry.as_ref(),
+				telemetry.as_ref().map(|x| x.handle()),
+			);
+			let pc: PartnerChainsProposerFactory<_, _, McHashInherentDigest> =
+				PartnerChainsProposerFactory::new(basic);
+			// Attach a BABE `SecondaryPlain` pre-runtime digest to authored blocks while the flip to
+			// BABE is armed, so verifiers already expect them at the flip.
+			crate::armed_babe_proposer::ArmedBabeProposerFactory::new(pc, client.clone())
+		};
+
+		let aura_worker = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
 			StartAuraParams {
 				slot_duration: sc_slot_config.slot_duration,
 				client: client.clone(),
-				select_chain,
+				select_chain: select_chain.clone(),
 				block_import,
-				proposer_factory,
-				create_inherent_data_providers: ProposalCIDP::new(
-					inherent_config,
+				proposer_factory: aura_proposer_factory,
+				// Gate authoring to the AURA state so the AURA worker cannot author on a `Babe`
+				// parent during the flip handover (the supervisor also drops it at the flip).
+				create_inherent_data_providers: crate::babe_authoring::EngineGuardCidp::new(
 					client.clone(),
-					data_sources.mc_hash.clone(),
-					data_sources.authority_selection.clone(),
-					data_sources.cnight_observation.clone(),
-					data_sources.federated_authority_observation.clone(),
-					data_sources.bridge.clone(),
+					midnight_primitives_consensus_engine::ActiveEngine::Aura,
+					make_proposal_cidp(),
 				),
 				force_authoring,
-				backoff_authoring_blocks,
+				backoff_authoring_blocks: backoff_authoring_blocks.clone(),
 				keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
 				// Wrapping oracle: keeps AURA from authoring until the warp-recovered ledger is
 				// verified; a no-op passthrough on full sync.
@@ -895,11 +1044,54 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			},
 		)?;
 
-		// the AURA authoring task is considered essential, i.e. if it
-		// fails we take down the service with it.
-		task_manager
-			.spawn_essential_handle()
-			.spawn_blocking("aura", Some("block-authoring"), aura);
+		// --- BABE authoring worker (active after the consensus flip) ---
+		// No ArmedBabe shim here: the BABE slot worker adds its own pre-runtime digest.
+		let babe_proposer_factory: PartnerChainsProposerFactory<_, _, McHashInherentDigest> =
+			PartnerChainsProposerFactory::new(sc_basic_authorship::ProposerFactory::new(
+				task_manager.spawn_handle(),
+				client.clone(),
+				transaction_pool.clone(),
+				prometheus_registry.as_ref(),
+				telemetry.as_ref().map(|x| x.handle()),
+			));
+
+		let babe_worker = sc_consensus_babe::start_babe(sc_consensus_babe::BabeParams {
+			keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
+			client: client.clone(),
+			select_chain,
+			env: babe_proposer_factory,
+			block_import: babe_authoring_block_import,
+			sync_oracle: sync_service.clone(),
+			justification_sync_link: sync_service.clone(),
+			// Gate authoring to the BABE state (symmetric with the AURA worker's guard).
+			create_inherent_data_providers: crate::babe_authoring::EngineGuardCidp::new(
+				client.clone(),
+				midnight_primitives_consensus_engine::ActiveEngine::Babe,
+				make_proposal_cidp(),
+			),
+			force_authoring,
+			backoff_authoring_blocks,
+			babe_link: babe_link.clone(),
+			block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
+			max_block_proposal_slot_portion: None,
+			telemetry: telemetry.as_ref().map(|x| x.handle()),
+		})?;
+
+		// A single supervisor drives AURA, then hands off to BABE at the flip (see
+		// `babe_authoring`). Only one engine authors at a time, so they never fork the chain.
+		let authoring_supervisor = crate::babe_authoring::run_authoring_supervisor(
+			client.clone(),
+			babe_link,
+			aura_worker,
+			babe_worker,
+		);
+
+		// Authoring is essential: if it stops, the service goes down with it.
+		task_manager.spawn_essential_handle().spawn_blocking(
+			"authoring-supervisor",
+			Some("block-authoring"),
+			authoring_supervisor,
+		);
 
 		task_manager.spawn_handle().spawn(
 			"committee-membership-watch",
