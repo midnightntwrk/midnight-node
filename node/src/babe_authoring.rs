@@ -27,12 +27,14 @@
 use futures::StreamExt;
 use midnight_node_runtime::opaque::Block;
 use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
-use sc_client_api::BlockchainEvents;
-use sc_consensus_babe::BabeLink;
+use parity_scale_codec::Encode;
+use sc_client_api::{AuxStore, BlockchainEvents};
+use sc_consensus_babe::{BabeBlockWeight, BabeLink, aux_schema::block_weight_key};
 use sc_consensus_epochs::descendent_query;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
 use sp_consensus_babe::BabeApi;
+use sp_inherents::CreateInherentDataProviders;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::future::Future;
 use std::sync::Arc;
@@ -41,12 +43,13 @@ const LOG_TARGET: &str = "babe-authoring";
 
 type Hash = <Block as BlockT>::Hash;
 
-/// Trait bundle for a client the supervisor can query and subscribe to.
+/// Trait bundle for a client the supervisor can query, subscribe to, and write aux data on.
 pub trait SupervisorClient:
 	ProvideRuntimeApi<Block>
 	+ HeaderBackend<Block>
 	+ HeaderMetadata<Block, Error = sp_blockchain::Error>
 	+ BlockchainEvents<Block>
+	+ AuxStore
 	+ Send
 	+ Sync
 	+ 'static
@@ -58,10 +61,58 @@ impl<C> SupervisorClient for C where
 		+ HeaderBackend<Block>
 		+ HeaderMetadata<Block, Error = sp_blockchain::Error>
 		+ BlockchainEvents<Block>
+		+ AuxStore
 		+ Send
 		+ Sync
 		+ 'static
 {
+}
+
+/// Wraps a [`CreateInherentDataProviders`], refusing to produce inherent data unless the consensus
+/// engine active at the parent block matches `expected`.
+///
+/// A slot worker whose CIDP returns an error skips that slot (a single warn, no block). Gating each
+/// authoring worker's CIDP to its own engine keeps the AURA worker from authoring on a `Babe`-state
+/// parent (and vice-versa) during the flip handover window, closing the dual-production race — the
+/// supervisor still drops the AURA worker at the flip; this only guards the brief overlap.
+pub struct EngineGuardCidp<C, Inner> {
+	client: Arc<C>,
+	expected: ActiveEngine,
+	inner: Inner,
+}
+
+impl<C, Inner> EngineGuardCidp<C, Inner> {
+	pub fn new(client: Arc<C>, expected: ActiveEngine, inner: Inner) -> Self {
+		Self { client, expected, inner }
+	}
+}
+
+#[async_trait::async_trait]
+impl<C, Inner> CreateInherentDataProviders<Block, ()> for EngineGuardCidp<C, Inner>
+where
+	C: ProvideRuntimeApi<Block> + Send + Sync + 'static,
+	C::Api: ConsensusEngineApi<Block>,
+	Inner: CreateInherentDataProviders<Block, ()> + Send + Sync,
+{
+	type InherentDataProviders = Inner::InherentDataProviders;
+
+	async fn create_inherent_data_providers(
+		&self,
+		parent: Hash,
+		extra_args: (),
+	) -> Result<Self::InherentDataProviders, Box<dyn std::error::Error + Send + Sync>> {
+		// Read the engine before any `.await` so the runtime `ApiRef` is not held across it.
+		let engine = active_engine_at(&*self.client, parent);
+		if engine != self.expected {
+			return Err(format!(
+				"consensus engine active at parent {parent:?} is {engine:?}, not {:?}; \
+				 skipping authoring this slot",
+				self.expected,
+			)
+			.into());
+		}
+		self.inner.create_inherent_data_providers(parent, extra_args).await
+	}
 }
 
 /// The engine active in the state of `hash`, defaulting to AURA when the query fails (the safe
@@ -168,9 +219,20 @@ where
 		.shared_data()
 		.reset(parent_hash, at, number, current.into(), next.into());
 
+	// Bootstrap the flip block's cumulative BABE chain weight to 0. The flip block was imported
+	// through the AURA pipeline, which records no BABE block weight, so the first BABE block (its
+	// child) would fail to import with "Parent block ... has no associated weight". This mirrors the
+	// warp-sync bootstrap (`import_state`), which likewise resets the weight to 0 at the sync point.
+	let weight_key = block_weight_key(at);
+	let weight_value = (0 as BabeBlockWeight).encode();
+	let no_delete: &[&[u8]] = &[];
+	client
+		.insert_aux(&[(weight_key.as_slice(), weight_value.as_slice())], no_delete)
+		.map_err(|e| e.to_string())?;
+
 	log::info!(
 		target: LOG_TARGET,
-		"seeded BABE epoch tree at flip block #{number} ({at:?}): epochs {current_index} and {next_index}",
+		"seeded BABE epoch tree and zero chain-weight at flip block #{number} ({at:?}): epochs {current_index} and {next_index}",
 	);
 	Ok(())
 }

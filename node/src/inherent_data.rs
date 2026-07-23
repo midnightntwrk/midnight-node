@@ -363,9 +363,21 @@ pub fn slot_from_predigest(
 ) -> Result<Option<Slot>, Box<dyn Error + Send + Sync>> {
 	if header.number().is_zero() {
 		// genesis block doesn't have a slot
-		Ok(None)
-	} else {
-		Ok(Some(find_pre_digest::<Block, <AuraPair as Pair>::Signature>(header)?))
+		return Ok(None);
+	}
+	// Across the AURA→BABE migration a block's parent may carry either digest: pre-flip (and the
+	// flip block) have an AURA pre-digest, post-flip BABE blocks have a BABE one. Try AURA first,
+	// then fall back to BABE, so the parent slot resolves regardless of the engine that authored it.
+	match find_pre_digest::<Block, <AuraPair as Pair>::Signature>(header) {
+		Ok(slot) => Ok(Some(slot)),
+		Err(aura_err) => match sc_consensus_babe::find_pre_digest::<Block>(header) {
+			Ok(babe_pre_digest) => Ok(Some(babe_pre_digest.slot())),
+			Err(babe_err) => Err(format!(
+				"no AURA or BABE pre-runtime digest in header #{:?}: aura: {aura_err}; babe: {babe_err}",
+				header.number(),
+			)
+			.into()),
+		},
 	}
 }
 

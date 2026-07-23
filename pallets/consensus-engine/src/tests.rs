@@ -204,6 +204,9 @@ fn flip_fires_at_the_last_slot_of_the_epoch() {
 		assert_eq!(EngineState::<Test>::get(), State::Babe);
 		assert_eq!(ConsensusEngine::active_engine(), ActiveEngine::Babe);
 		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1500));
+		// `CurrentSlot` is the flip block's own slot (the last pre-BABE slot), not the genesis slot,
+		// so pallet-babe's `OnTimestampSet` slot check passes for this block.
+		assert_eq!(pallet_babe::CurrentSlot::<Test>::get(), Slot::from(1499));
 		assert_eq!(pallet_babe::EpochIndex::<Test>::get(), 0);
 	});
 }
@@ -249,6 +252,7 @@ fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 
 		assert_eq!(EngineState::<Test>::get(), State::Babe);
 		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1800));
+		assert_eq!(pallet_babe::CurrentSlot::<Test>::get(), Slot::from(1799));
 	});
 }
 
