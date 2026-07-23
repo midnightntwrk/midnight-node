@@ -295,6 +295,19 @@ pub mod pallet {
 		/// `slot` is the last slot of the ending epoch (the current block's slot).
 		/// BABE's genesis is the first slot of the next epoch, so its epoch
 		/// boundaries stay aligned with the sidechain epochs.
+		/// Bootstrap `pallet-babe`'s epoch-0 state at the flip and enter `State::Babe`.
+		///
+		/// `slot` is the last slot of the ending epoch; BABE's genesis slot is the first slot of the
+		/// next epoch, so BABE epochs stay aligned with the sidechain epochs. This replaces the
+		/// `u64::MAX` sentinel `GenesisSlot` (set at arming to suppress premature self-init) with the
+		/// real genesis slot and resets the epoch index and randomness for epoch 0.
+		///
+		/// Authorities are deliberately *not* set here. `pallet-babe` is wired as a `pallet_session`
+		/// `OneSessionHandler`, which keeps `Authorities`/`NextAuthorities` in sync with the
+		/// committee's BABE keys independently of whether BABE was ever active — so they already
+		/// hold the current committee at the flip (this does not assume any AURA-period BABE
+		/// activity). `EpochConfig` likewise comes from genesis. The node bootstraps its epoch tree
+		/// from `BabeApi::current_epoch`/`next_epoch`, which the state set here makes correct.
 		fn migrate_to_babe(slot: Slot) {
 			let babe_genesis_slot = Self::next_epoch_start(slot);
 
@@ -333,10 +346,6 @@ pub mod pallet {
 				slot,
 				babe_genesis_slot,
 			);
-
-			// This will prevent each last-of-epoch block to be committeed,
-			// but doesn't stop the chain completly.
-			panic!("Issue #1742 adds BABE keys to the runtime");
 		}
 
 		fn current_slot_from_aura_digest() -> Option<Slot> {

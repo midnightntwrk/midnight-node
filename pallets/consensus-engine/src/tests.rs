@@ -315,7 +315,6 @@ fn schedule_flip_is_rejected_unless_armed() {
 }
 
 #[test]
-#[should_panic(expected = "Issue #1742 adds BABE keys to the runtime")]
 fn flip_fires_at_the_last_slot_of_the_epoch() {
 	new_test_ext().execute_with(|| {
 		put_engine_state(State::ScheduledFlip);
@@ -340,6 +339,14 @@ fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
 		// the flip without it would permanently halt authoring.
 		start_block_at_slot(1499);
 		on_initialize();
+
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
+		assert_eq!(ConsensusEngine::active_engine(), ActiveEngine::Babe);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1500));
+		// `CurrentSlot` is the flip block's own slot (the last pre-BABE slot), not the genesis slot,
+		// so pallet-babe's `OnTimestampSet` slot check passes for this block.
+		assert_eq!(pallet_babe::CurrentSlot::<Test>::get(), Slot::from(1499));
+		assert_eq!(pallet_babe::EpochIndex::<Test>::get(), 0);
 	});
 }
 
@@ -447,7 +454,6 @@ fn flip_does_not_run_on_penultimate_or_first_slot_of_next_epoch() {
 }
 
 #[test]
-#[should_panic(expected = "Issue #1742 adds BABE keys to the runtime")]
 fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 	new_test_ext().execute_with(|| {
 		put_engine_state(State::ScheduledFlip);
@@ -456,6 +462,10 @@ fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 		// next epoch's last slot (1799), where completing it panics (Issue #1742).
 		start_block_with_babe_pre_digest(1799);
 		on_initialize();
+
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1800));
+		assert_eq!(pallet_babe::CurrentSlot::<Test>::get(), Slot::from(1799));
 	});
 }
 
