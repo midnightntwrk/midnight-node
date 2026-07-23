@@ -28,9 +28,11 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::future::try_join_all;
 use tokio::time::timeout;
 
 use super::super::{
@@ -65,6 +67,10 @@ const PROGRESS_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 /// silence genuinely means "no more events" (e.g. a chain with no dust events at all), and there
 /// is no heartbeat to race, so this needs no margin over the server's progress interval.
 const DUST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How often [`SyncProgress::log_until_done`] emits a one-line sync-progress heartbeat while
+/// [`IndexerContext::init_wallets`] drains the subscriptions.
+const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
 /// An indexer-backed [`BuilderContext`].
 ///
@@ -111,11 +117,19 @@ impl<D: DB + Clone> IndexerContext<D> {
 impl IndexerContext<DefaultDB> {
 	/// Connect to the indexer and sync each seed's wallet to the chain tip.
 	///
-	/// For each seed this: derives the Zswap viewing key, opens a session (`connect`), drains the
-	/// shielded / unshielded / dust subscriptions applying their updates, then releases the session
-	/// (`disconnect`). The resulting synced [`Wallet`] and its unshielded UTXOs are stored for the
-	/// [`BuilderContext`] reads. There is no toolkit-side cache in this PR — each call re-drains to
-	/// tip (fast, since the indexer pre-filters relevant transactions).
+	/// Seeds are synced concurrently, and within each seed the shielded / unshielded / dust
+	/// subscriptions are drained concurrently too: the work is network-bound (indexer WS round-trips
+	/// and server-side scanning), so overlapping the waits collapses the wall-clock time from the
+	/// sum of the three streams down to roughly the slowest one. `IndexerClient` supports this —
+	/// every method takes `&self`, uses a cloneable `reqwest::Client`, and opens a fresh independent
+	/// WebSocket per subscription. A background ticker logs a progress heartbeat every
+	/// [`PROGRESS_LOG_INTERVAL`] while the drain runs.
+	///
+	/// Each seed derives the Zswap viewing key, opens a session (`connect`), drains the
+	/// subscriptions applying their updates, then releases the session (`disconnect`). The resulting
+	/// synced [`Wallet`]s and their unshielded UTXOs are stored for the [`BuilderContext`] reads.
+	/// There is no toolkit-side cache in this PR — each call re-drains to tip (fast, since the
+	/// indexer pre-filters relevant transactions).
 	pub async fn init_wallets(&self, seeds: &[WalletSeed]) -> Result<(), BoxError> {
 		let block = self.client.latest_block().await?;
 		// The indexer serves the chain's `LedgerParameters` as a tagged blob; fall back to the
@@ -127,53 +141,95 @@ impl IndexerContext<DefaultDB> {
 			});
 		let tip_time = Timestamp::from_secs(block.timestamp);
 
-		for seed in seeds {
-			let mut wallet = Wallet {
-				root_seed: Some(seed.clone()),
-				shielded: ShieldedWallet::default(seed.clone()),
-				unshielded: UnshieldedWallet::default(seed.clone()),
-				dust: DustWallet::default(seed.clone(), Some(&params)),
-			};
+		let progress = SyncProgress { wallets: seeds.len(), ..Default::default() };
 
-			self.sync_shielded(&mut wallet).await?;
-			let unshielded_utxos = self.sync_unshielded(&wallet).await?;
-			self.sync_dust(&mut wallet, tip_time).await?;
+		// Drain every seed (and its three streams) concurrently, racing the work against the
+		// progress ticker. `log_until_done` loops forever; it is dropped the moment the work arm
+		// resolves (on success or the first error), so the `select!` yields the work's result.
+		let synced = {
+			let work = try_join_all(
+				seeds.iter().map(|seed| self.sync_wallet(seed, &params, tip_time, &progress)),
+			);
+			tokio::select! {
+				result = work => result?,
+				_ = progress.log_until_done() => unreachable!("progress ticker loops until dropped"),
+			}
+		};
 
-			self.wallets
-				.lock()
-				.expect("IndexerContext wallets lock poisoned")
-				.insert(seed.clone(), wallet);
-			self.unshielded
-				.lock()
-				.expect("IndexerContext unshielded lock poisoned")
-				.insert(seed.clone(), unshielded_utxos);
+		// Locks are taken only for the quick inserts, never held across the network work above.
+		let mut wallets = self.wallets.lock().expect("IndexerContext wallets lock poisoned");
+		let mut unshielded =
+			self.unshielded.lock().expect("IndexerContext unshielded lock poisoned");
+		for (seed, wallet, utxos) in synced {
+			wallets.insert(seed.clone(), wallet);
+			unshielded.insert(seed, utxos);
 		}
 
 		Ok(())
 	}
 
+	/// Build the wallet for `seed` and sync its shielded / unshielded / dust streams concurrently.
+	///
+	/// The three sub-syncs borrow disjoint fields of the freshly-built [`Wallet`]
+	/// (`&mut shielded`, `&unshielded`, `&mut dust`), so [`tokio::try_join!`] can overlap their
+	/// network waits on this single task. Returns the seed, the synced wallet, and its reconciled
+	/// unshielded UTXOs for the caller to store.
+	async fn sync_wallet(
+		&self,
+		seed: &WalletSeed,
+		params: &LedgerParameters,
+		tip_time: Timestamp,
+		progress: &SyncProgress,
+	) -> Result<(WalletSeed, Wallet<DefaultDB>, Vec<(Utxo, Timestamp)>), BoxError> {
+		let mut wallet = Wallet {
+			root_seed: Some(seed.clone()),
+			shielded: ShieldedWallet::default(seed.clone()),
+			unshielded: UnshieldedWallet::default(seed.clone()),
+			dust: DustWallet::default(seed.clone(), Some(params)),
+		};
+
+		// Disjoint field borrows are what let the three sub-syncs run concurrently on one task.
+		let Wallet { shielded, unshielded, dust, .. } = &mut wallet;
+		let (_, unshielded_utxos, _) = tokio::try_join!(
+			self.sync_shielded(shielded, progress),
+			self.sync_unshielded(unshielded, progress),
+			self.sync_dust(dust, tip_time, progress),
+		)?;
+
+		Ok((seed.clone(), wallet, unshielded_utxos))
+	}
+
 	/// Drain `shieldedTransactions`, fast-forwarding the wallet's zswap merkle tree with each
 	/// gap-filling collapsed update and applying every relevant transaction's offers, until the
 	/// indexer reports it has checked all known state for this wallet.
-	async fn sync_shielded(&self, wallet: &mut Wallet<DefaultDB>) -> Result<(), BoxError> {
-		let viewing_key = wallet.shielded.viewing_key(&self.network_id);
+	async fn sync_shielded(
+		&self,
+		shielded: &mut ShieldedWallet<DefaultDB>,
+		progress: &SyncProgress,
+	) -> Result<(), BoxError> {
+		let viewing_key = shielded.viewing_key(&self.network_id);
 		let session_id = self.client.connect(&viewing_key, None).await?;
 
-		let result = self.drain_shielded(wallet, &session_id).await;
+		let result = self.drain_shielded(shielded, &session_id, progress).await;
 
 		// Always release the session, even on error, to avoid leaking indexer sessions.
 		if let Err(e) = self.client.disconnect(&session_id).await {
 			log::warn!("indexer: disconnect failed: {e}");
 		}
-		result
+		result?;
+		progress.shielded.finish();
+		Ok(())
 	}
 
 	async fn drain_shielded(
 		&self,
-		wallet: &mut Wallet<DefaultDB>,
+		shielded: &mut ShieldedWallet<DefaultDB>,
 		session_id: &str,
+		progress: &SyncProgress,
 	) -> Result<(), BoxError> {
 		let mut stream = self.client.shielded_transactions(session_id, 0).await?;
+		let mut last_scanned = 0u64;
+		let mut last_target = 0u64;
 		loop {
 			let event = match timeout(PROGRESS_IDLE_TIMEOUT, stream.next()).await {
 				Ok(Some(Ok(event))) => event,
@@ -190,8 +246,7 @@ impl IndexerContext<DefaultDB> {
 				ShieldedEvent::Relevant { raw_transaction, result, collapsed_update, .. } => {
 					if let Some(update_bytes) = collapsed_update {
 						let update: MerkleTreeCollapsedUpdate = deserialize(&update_bytes[..])?;
-						wallet.shielded.state = wallet
-							.shielded
+						shielded.state = shielded
 							.state
 							.apply_collapsed_update(&update)
 							.map_err(|e| format!("apply zswap collapsed update: {e:?}"))?;
@@ -199,11 +254,13 @@ impl IndexerContext<DefaultDB> {
 
 					let tx: MnTx = deserialize(&raw_transaction[..])?;
 					let offers = relevant_offers(&tx, result);
-					wallet.update_state_from_offers(&offers);
+					shielded.apply_offers(&offers);
 				},
 				ShieldedEvent::Progress {
 					highest_end_index, highest_checked_end_index, ..
 				} => {
+					progress.shielded.advance_scanned(&mut last_scanned, highest_checked_end_index);
+					progress.shielded.advance_target(&mut last_target, highest_end_index);
 					// Caught up once the indexer has checked every known output for relevance.
 					if highest_checked_end_index >= highest_end_index {
 						break;
@@ -217,9 +274,10 @@ impl IndexerContext<DefaultDB> {
 	/// Drain `unshieldedTransactions` for the wallet's address, reconciling created vs spent UTXOs.
 	async fn sync_unshielded(
 		&self,
-		wallet: &Wallet<DefaultDB>,
+		unshielded: &UnshieldedWallet,
+		progress: &SyncProgress,
 	) -> Result<Vec<(Utxo, Timestamp)>, BoxError> {
-		let address = wallet.unshielded.address(&self.network_id).to_bech32();
+		let address = unshielded.address(&self.network_id).to_bech32();
 		let mut stream = self.client.unshielded_transactions(&address, 0).await?;
 
 		// Keyed by (intent_hash, output_index) so a later spend removes the matching created UTXO.
@@ -231,6 +289,8 @@ impl IndexerContext<DefaultDB> {
 		// `highest_checked >= highest` guard). Ids are 1-based, so an address with no transactions
 		// reports `highest_transaction_id == 0` and we stop on the first progress.
 		let mut highest_applied_transaction_id = 0u64;
+		let mut last_scanned = 0u64;
+		let mut last_target = 0u64;
 		loop {
 			let event = match timeout(PROGRESS_IDLE_TIMEOUT, stream.next()).await {
 				Ok(Some(Ok(event))) => event,
@@ -247,8 +307,11 @@ impl IndexerContext<DefaultDB> {
 				UnshieldedEvent::Transaction { transaction_id, created, spent } => {
 					highest_applied_transaction_id =
 						highest_applied_transaction_id.max(transaction_id);
+					progress
+						.unshielded
+						.advance_scanned(&mut last_scanned, highest_applied_transaction_id);
 					for u in &created {
-						let utxo = build_utxo(u, wallet.unshielded.user_address)?;
+						let utxo = build_utxo(u, unshielded.user_address)?;
 						let ctime = Timestamp::from_secs(u.ctime.unwrap_or(0));
 						utxos.insert((u.intent_hash.clone(), u.output_index), (utxo, ctime));
 					}
@@ -258,6 +321,7 @@ impl IndexerContext<DefaultDB> {
 				},
 				// Caught up once we've applied every transaction the indexer knows for this address.
 				UnshieldedEvent::Progress { highest_transaction_id } => {
+					progress.unshielded.advance_target(&mut last_target, highest_transaction_id);
 					if highest_applied_transaction_id >= highest_transaction_id {
 						break;
 					}
@@ -267,6 +331,7 @@ impl IndexerContext<DefaultDB> {
 
 		let mut utxos: Vec<(Utxo, Timestamp)> = utxos.into_values().collect();
 		utxos.sort_by(|a, b| a.0.cmp(&b.0));
+		progress.unshielded.finish();
 		Ok(utxos)
 	}
 
@@ -275,11 +340,14 @@ impl IndexerContext<DefaultDB> {
 	/// to this wallet by secret key, exactly as the local replay path does.
 	async fn sync_dust(
 		&self,
-		wallet: &mut Wallet<DefaultDB>,
+		dust: &mut DustWallet<DefaultDB>,
 		tip_time: Timestamp,
+		progress: &SyncProgress,
 	) -> Result<(), BoxError> {
 		let mut stream = self.client.dust_ledger_events(1).await?;
 		let mut events: Vec<Event<DefaultDB>> = Vec::new();
+		let mut last_scanned = 0u64;
+		let mut last_target = 0u64;
 		loop {
 			let item = match timeout(DUST_IDLE_TIMEOUT, stream.next()).await {
 				Ok(Some(Ok(item))) => item,
@@ -287,6 +355,8 @@ impl IndexerContext<DefaultDB> {
 				Ok(None) => break,
 				Err(_) => break,
 			};
+			progress.dust.advance_scanned(&mut last_scanned, item.id);
+			progress.dust.advance_target(&mut last_target, item.max_id);
 			let event: Event<DefaultDB> = deserialize(&item.raw[..])?;
 			events.push(event);
 			// `id`/`maxId` are 1-based and `maxId` is the highest known event: stop once reached.
@@ -295,11 +365,100 @@ impl IndexerContext<DefaultDB> {
 			}
 		}
 
-		wallet
-			.update_dust_from_tx(&events)
-			.map_err(|e| format!("replay dust events: {e:?}"))?;
-		wallet.dust.process_ttls(tip_time);
+		dust.replay_events(&events).map_err(|e| format!("replay dust events: {e:?}"))?;
+		dust.process_ttls(tip_time);
+		progress.dust.finish();
 		Ok(())
+	}
+}
+
+/// Shared, thread-safe sync-progress counters for one [`IndexerContext::init_wallets`] run.
+///
+/// Every stream folds its own monotonically-increasing frontier into these aggregate totals (see
+/// [`StreamProgress::advance_scanned`]), so the numbers sum across all concurrent seeds without any
+/// per-wallet bookkeeping. [`log_until_done`](Self::log_until_done) snapshots them on a timer.
+#[derive(Default)]
+struct SyncProgress {
+	/// Number of wallets (seeds) being synced; `3 * wallets` is the total stream count.
+	wallets: usize,
+	shielded: StreamProgress,
+	unshielded: StreamProgress,
+	dust: StreamProgress,
+}
+
+/// Aggregated frontier for one stream kind (shielded / unshielded / dust) across all seeds.
+#[derive(Default)]
+struct StreamProgress {
+	/// Sum of each seed's latest scanned frontier.
+	scanned: AtomicU64,
+	/// Sum of each seed's latest reported target (0 for a stream until the indexer reports one).
+	target: AtomicU64,
+	/// Number of this stream's seeds that have finished draining.
+	done: AtomicU64,
+}
+
+impl StreamProgress {
+	/// Fold a newly-observed scanned frontier into the shared total.
+	///
+	/// `last` is this stream's previously-contributed value; only the positive delta `now - *last`
+	/// is added, so repeated reports and concurrent seeds sum correctly and never double-count.
+	/// Non-increasing values are ignored (the frontiers are monotonic).
+	fn advance_scanned(&self, last: &mut u64, now: u64) {
+		if now > *last {
+			self.scanned.fetch_add(now - *last, Ordering::Relaxed);
+			*last = now;
+		}
+	}
+
+	/// As [`advance_scanned`](Self::advance_scanned), but for the target frontier.
+	fn advance_target(&self, last: &mut u64, now: u64) {
+		if now > *last {
+			self.target.fetch_add(now - *last, Ordering::Relaxed);
+			*last = now;
+		}
+	}
+
+	/// Mark one seed's stream of this kind as fully drained.
+	fn finish(&self) {
+		self.done.fetch_add(1, Ordering::Relaxed);
+	}
+
+	/// Render `scanned/target`, showing `…` for the target until the indexer reports one.
+	fn display(&self) -> String {
+		let scanned = self.scanned.load(Ordering::Relaxed);
+		let target = self.target.load(Ordering::Relaxed);
+		if target == 0 { format!("{scanned}/…") } else { format!("{scanned}/{target}") }
+	}
+}
+
+impl SyncProgress {
+	/// Log a one-line progress heartbeat every [`PROGRESS_LOG_INTERVAL`] until the future is
+	/// dropped. Loops forever by design — the caller races it against the sync work in a `select!`
+	/// and drops it once the work finishes.
+	async fn log_until_done(&self) {
+		let mut ticker = tokio::time::interval(PROGRESS_LOG_INTERVAL);
+		// The first `interval` tick is immediate; skip it so the first line lands one interval in
+		// (and fast syncs that finish under `PROGRESS_LOG_INTERVAL` log nothing at all).
+		ticker.tick().await;
+		loop {
+			ticker.tick().await;
+			let n = self.wallets;
+			let streams = 3 * n;
+			let done = self.shielded.done.load(Ordering::Relaxed)
+				+ self.unshielded.done.load(Ordering::Relaxed)
+				+ self.dust.done.load(Ordering::Relaxed);
+			// `info` under the toolkit's log namespace: the default toolkit filter shows
+			// `midnight_node_toolkit=info` but only `warn` for other crates, so this target keeps
+			// the heartbeat visible by default without promoting it to a (misleading) warning.
+			log::info!(
+				target: "midnight_node_toolkit::indexer",
+				"indexer: syncing {n} wallet(s) — shielded {}, unshielded {}, dust {} \
+				 ({done}/{streams} streams caught up)",
+				self.shielded.display(),
+				self.unshielded.display(),
+				self.dust.display(),
+			);
+		}
 	}
 }
 

@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::super::{
-	DB, IntoWalletState, LedgerState, Storable, Utxo, WalletSeed,
+	DB, LedgerState, Storable, Utxo, WalletSeed,
 	mn_ledger::{error::EventReplayError, events::Event},
 	onchain_runtime::context::BlockContext,
 	zswap::Offer,
@@ -46,11 +46,7 @@ impl<D: DB + Clone> Wallet<D> {
 	}
 
 	pub fn update_state_from_offers<P: Storable<D>>(&mut self, offers: &[Offer<P, D>]) {
-		let secret_keys = self.shielded.secret_keys().clone();
-		for offer in offers {
-			self.shielded.state =
-				self.shielded.state.apply(&secret_keys, offer).into_wallet_state();
-		}
+		self.shielded.apply_offers(offers);
 
 		// // TODO UNSHIELDED
 		// if let Transaction::ClaimRewards(ref authorized_mint) = tx {

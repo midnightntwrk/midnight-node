@@ -16,8 +16,8 @@
 use super::super::{
 	CoinPublicKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable,
 	EncryptionPublicKey, HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK,
-	HashOutput, IntoWalletAddress, Role, SecretKeys, Seed, Serializable, WalletAddress, WalletSeed,
-	WalletState,
+	HashOutput, IntoWalletAddress, IntoWalletState, Offer, Role, SecretKeys, Seed, Serializable,
+	Storable, WalletAddress, WalletSeed, WalletState,
 };
 use bech32::{Bech32m, Hrp};
 use derive_where::derive_where;
@@ -106,6 +106,17 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 			.expect("encryption secret key can be serialized");
 
 		bech32::encode::<Bech32m>(hrp, &data).expect("viewing key can be bech32 encoded")
+	}
+
+	/// Apply a batch of relevant zswap offers to this wallet's local state, spending/receiving coins
+	/// under its secret keys. Lives here (rather than on [`super::Wallet`]) so callers that only hold
+	/// a `&mut` to the shielded sub-wallet — e.g. the indexer sync draining the three sub-wallets
+	/// concurrently — can drive it without borrowing the whole `Wallet`.
+	pub fn apply_offers<P: Storable<D>>(&mut self, offers: &[Offer<P, D>]) {
+		let secret_keys = self.secret_keys().clone();
+		for offer in offers {
+			self.state = self.state.apply(&secret_keys, offer).into_wallet_state();
+		}
 	}
 }
 
