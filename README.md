@@ -176,6 +176,8 @@ that we are still in the process of being release. As such:
   - [Signing Runbook](docs/security/signing-runbook.md) - Operational procedures for signing
 - [Operations](docs/operations/release-checklist.md) - Release checklist with security verification steps
 - [Cardano-to-Midnight bridge](docs/c-to-m-bridge.md) - Summary of Cardano-to-Midnight bridge
+  - [Happy Path walkthrough](docs/c-to-m-bridge-walkthrough.md) - End-to-end Stagenet walkthrough: lock cNIGHT, observe, claim mNIGHT
+  - [Enabling the bridge](docs/c-to-m-bridge-enabling.md) - Check whether the bridge is enabled and switch it on via governance
 
 ## Prerequisites
 

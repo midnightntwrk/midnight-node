@@ -164,16 +164,6 @@ cleanPackages() {
         || echo "::warning::The command [sudo apt-get clean] failed"
 }
 
-# Remove Docker images, containers, volumes, and build cache.
-# Ubuntu 22 runners have docker images already installed.
-cleanDocker() {
-    echo "=> Removing the following docker images:"
-    sudo docker image ls
-    echo "=> Removing docker images, containers, volumes, and build cache..."
-    sudo docker system prune -af || true
-    sudo docker builder prune -af || true
-}
-
 # Remove Swap storage
 cleanSwap() {
     sudo swapoff -a || true
@@ -185,7 +175,10 @@ cleanSwap() {
 echo "Initial disk space:"
 df -h /
 # cleanPackages - slow and doesn't free much.
-cleanDocker
+# cleanDocker removed: ubuntu-24.04 runners ship ~no preinstalled docker images
+# (actions/runner-images#12625), and pruning raced the build now that this
+# script runs backgrounded. Log usage so we can verify that stays true.
+sudo docker system df || true
 cleanSwap
 removeUnusedFilesAndDirs
 echo "Final disk space:"
