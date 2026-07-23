@@ -36,6 +36,15 @@ type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 type DustSpendStates<D> = HashMap<WalletSeed, Sp<DustLocalState<D>, D>>;
 type GatheredDustSpends<D> = (Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendStates<D>);
 
+/// Log target for the `[perf]` phase-timing records emitted while building transactions.
+///
+/// These records live in this helper crate but exist to instrument the toolkit's tx
+/// generation, so we tag them with the toolkit's target rather than this crate's. That way
+/// `midnight-node-toolkit --verbose` (which raises `midnight_node_toolkit=debug`) surfaces
+/// them alongside the toolkit's own `[perf]` lines, without also unmuting this crate's other
+/// (noisy, full-transaction) debug output.
+pub(super) const PERF_TARGET: &str = "midnight_node_toolkit";
+
 pub trait FromContext<D: DB + Clone, C: BuilderContext<D>> {
 	fn new_from_context(
 		context: Arc<C>,
@@ -200,7 +209,11 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			intents = intents.insert(*segment_id, intent);
 		}
 
-		log::debug!("[perf] build_offer_intents took {:?}", build_offer_intents_start.elapsed());
+		log::debug!(
+			target: PERF_TARGET,
+			"[perf] build_offer_intents took {:?}",
+			build_offer_intents_start.elapsed()
+		);
 
 		let network_id = self.context.network_id().await;
 
@@ -246,6 +259,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 				} else {
 					self.confirm_dust_spends(&spends, updated_states)?;
 					log::debug!(
+						target: PERF_TARGET,
 						"[perf] pay_fees balance_iters={} took {:?}",
 						iteration,
 						balance_start.elapsed()
@@ -260,6 +274,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 				} else {
 					self.confirm_dust_spends(&spends, updated_states)?;
 					log::debug!(
+						target: PERF_TARGET,
 						"[perf] pay_fees balance_iters={} took {:?}",
 						iteration,
 						balance_start.elapsed()
@@ -269,6 +284,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			}
 		}
 		log::debug!(
+			target: PERF_TARGET,
 			"[perf] pay_fees balance_iters=10 (exhausted) took {:?}",
 			balance_start.elapsed()
 		);
@@ -286,7 +302,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			.prove(tx, rng.split(), resolver, parameters.cost_model.runtime_cost_model.clone())
 			.await
 			.seal(rng);
-		log::debug!("[perf] prove_tx took {:?}", prove_start.elapsed());
+		log::debug!(target: PERF_TARGET, "[perf] prove_tx took {:?}", prove_start.elapsed());
 		Ok(proven)
 	}
 
