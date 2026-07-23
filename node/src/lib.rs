@@ -15,6 +15,7 @@ extern crate alloc;
 
 pub mod armed_babe_proposer;
 mod aura_to_babe_migration_keystore;
+pub mod babe_authoring;
 pub mod babe_key_readiness;
 pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
@@ -24,6 +25,7 @@ pub mod chain_spec;
 pub mod cli;
 pub mod command;
 pub mod committee_membership;
+pub mod consensus_engine_dispatch;
 pub mod extensions;
 mod filtering_pool;
 pub mod genesis;
