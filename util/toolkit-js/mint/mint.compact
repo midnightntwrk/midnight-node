@@ -7,5 +7,10 @@ export ledger round: Counter;
 export circuit mint(nonce: Bytes<32>, domainSep: Bytes<32>, amount: Uint<64>): [] {
     const coin = ShieldedCoinInfo { nonce:  disclose(nonce), color: tokenType(disclose(domainSep), kernel.self()), value: disclose(amount) };
     kernel.mintShielded(disclose(domainSep), disclose(amount));
+    emit(ShieldedMint {
+      commitment: disclose(nonce),
+      domainSep: disclose(domainSep),
+      amount: some<Uint<128>>(disclose(amount)),
+    });
     createZswapOutput(coin, left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()));
 }
