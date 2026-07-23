@@ -178,8 +178,8 @@ toolkit \
     "$domain_sep" \
     1000
 
-test -f "$outdir/$mint_intent_filename"
-test -f "$outdir/$mint_zswap_filename"
+test -f "$tempdir/$mint_intent_filename"
+test -f "$tempdir/$mint_zswap_filename"
 
 events_output=$(jq "$tempdir/$mint_events_filename")
 echo "Events emitted: $events_output"
