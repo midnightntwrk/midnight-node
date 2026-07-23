@@ -192,15 +192,19 @@ fn schedule_flip_is_no_op_unless_armed() {
 }
 
 #[test]
-#[should_panic(expected = "Issue #1742 adds BABE keys to the runtime")]
 fn flip_fires_at_the_last_slot_of_the_epoch() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
 
-		// The last slot of the epoch (1499 for a 300-slot epoch) attempts the flip.
-		// Completing it panics until real BABE authorities are wired in (Issue #1742).
+		// The last slot of the epoch (1499 for a 300-slot epoch) commits the flip: the engine
+		// enters `Babe`, and pallet-babe's epoch-0 genesis slot is the next epoch's first slot.
 		start_block_at_slot(1499);
 		on_initialize();
+
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
+		assert_eq!(ConsensusEngine::active_engine(), ActiveEngine::Babe);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1500));
+		assert_eq!(pallet_babe::EpochIndex::<Test>::get(), 0);
 	});
 }
 
@@ -235,14 +239,16 @@ fn flip_does_not_run_on_penultimate_or_first_slot_of_next_epoch() {
 }
 
 #[test]
-#[should_panic(expected = "Issue #1742 adds BABE keys to the runtime")]
 fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
-		// The epoch's last slot (1499) was skipped; the flip waits and fires at the
-		// next epoch's last slot (1799), where completing it panics (Issue #1742).
+		// The epoch's last slot (1499) was skipped; the flip waits and commits at the next epoch's
+		// last slot (1799), with BABE genesis slot 1800.
 		start_block_at_slot(1799);
 		on_initialize();
+
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1800));
 	});
 }
 
