@@ -753,38 +753,7 @@ impl Builder {
 					}
 				}
 			},
-			Builder::ContractSimple(call) => {
-				// The contract funding seed is always the Schnorr identity
-				// (`UnshieldedWallet::default`). `relevant_wallet_seeds` folds it into the same
-				// context set as the committee seeds, and the context/cache keys wallets by seed
-				// alone — so mark it Schnorr here. Without this, reusing the funding seed as an
-				// `ecdsa:` committee member (`--funding-seed X --authority-seed ecdsa:X`) slips
-				// past the guard and silently rebuilds the funding wallet as ECDSA.
-				let funding = match call {
-					ContractCall::Deploy(args) => &args.funding_seed,
-					ContractCall::Call(args) => &args.funding_seed,
-					ContractCall::Maintenance(args) => &args.funding_seed,
-				};
-				mark(
-					Wallet::<DefaultDB>::wallet_seed_decode(funding),
-					UnshieldedSignatureScheme::Schnorr,
-				)?;
-				match call {
-					ContractCall::Deploy(args) => {
-						for s in &args.authority_seeds {
-							let (seed, scheme) = s.resolve();
-							mark(seed, scheme)?;
-						}
-					},
-					ContractCall::Maintenance(args) => {
-						for s in args.authority_seeds.iter().chain(&args.new_authority_seeds) {
-							let (seed, scheme) = s.resolve();
-							mark(seed, scheme)?;
-						}
-					},
-					ContractCall::Call(_) => {},
-				}
-			},
+			Builder::ContractSimple(call) => return contract_call_wallet_schemes(call),
 			Builder::ContractCustom(_) | Builder::Send => {},
 		}
 		Ok(schemes)
@@ -1065,6 +1034,55 @@ pub type WalletSchemes = HashMap<WalletSeed, UnshieldedSignatureScheme>;
 /// Resolve the scheme for `seed`, defaulting to Schnorr.
 fn scheme_of(schemes: &WalletSchemes, seed: &WalletSeed) -> UnshieldedSignatureScheme {
 	schemes.get(seed).copied().unwrap_or_default()
+}
+
+/// Scheme map for a `contract-simple` call's wallets (funding + committee members). Shared by
+/// [`Builder::relevant_wallet_schemes`] and `generate-sample-intent`, which builds contract intents
+/// outside the `Builder` flow but needs the same pre-ledger-9 [`ensure_ecdsa_supported`] guard. The
+/// funding seed is marked Schnorr so reusing it as an `ecdsa:` committee member is rejected, not
+/// silently rebuilt as ECDSA (the context/cache keys wallets by seed alone).
+pub fn contract_call_wallet_schemes(call: &ContractCall) -> Result<WalletSchemes, &'static str> {
+	let mut schemes = WalletSchemes::new();
+	let mut seen: HashMap<WalletSeed, UnshieldedSignatureScheme> = HashMap::new();
+	let mut mark = |seed: WalletSeed,
+	                scheme: UnshieldedSignatureScheme|
+	 -> Result<(), &'static str> {
+		if let Some(previous) = seen.insert(seed.clone(), scheme) {
+			if previous != scheme {
+				return Err(
+					"the same seed was requested under both Schnorr and ECDSA schemes in one build; each seed must use a single scheme",
+				);
+			}
+			return Ok(());
+		}
+		if scheme == UnshieldedSignatureScheme::Ecdsa {
+			schemes.insert(seed, scheme);
+		}
+		Ok(())
+	};
+
+	let funding = match call {
+		ContractCall::Deploy(args) => &args.funding_seed,
+		ContractCall::Call(args) => &args.funding_seed,
+		ContractCall::Maintenance(args) => &args.funding_seed,
+	};
+	mark(Wallet::<DefaultDB>::wallet_seed_decode(funding), UnshieldedSignatureScheme::Schnorr)?;
+	match call {
+		ContractCall::Deploy(args) => {
+			for s in &args.authority_seeds {
+				let (seed, scheme) = s.resolve();
+				mark(seed, scheme)?;
+			}
+		},
+		ContractCall::Maintenance(args) => {
+			for s in args.authority_seeds.iter().chain(&args.new_authority_seeds) {
+				let (seed, scheme) = s.resolve();
+				mark(seed, scheme)?;
+			}
+		},
+		ContractCall::Call(_) => {},
+	}
+	Ok(schemes)
 }
 
 /// Reject ECDSA seeds on a pre-ledger-9 source with a clear CLI error, rather than letting the
@@ -1754,6 +1772,28 @@ mod tests {
 			.relevant_wallet_schemes()
 			.expect("distinct funding + ECDSA committee is fine");
 		assert_eq!(schemes.len(), 1, "only the ECDSA authority should be recorded");
+	}
+
+	#[test]
+	fn contract_call_wallet_schemes_guards_generate_sample_intent_path() {
+		// `generate-sample-intent` builds contract intents outside the `Builder` flow and calls
+		// `contract_call_wallet_schemes` directly. It must surface an `ecdsa:` committee member so the
+		// pre-ledger-9 guard fires there too (rather than panicking in the ECDSA stubs).
+		let funding = "0000000000000000000000000000000000000000000000000000000000000042";
+		let authority = "0000000000000000000000000000000000000000000000000000000000000043";
+		let call = ContractCall::Deploy(ContractDeployArgs {
+			funding_seed: funding.to_string(),
+			authority_seeds: vec![format!("ecdsa:{authority}").parse().unwrap()],
+			authority_threshold: None,
+			rng_seed: None,
+		});
+
+		let schemes = contract_call_wallet_schemes(&call)
+			.expect("distinct funding + ECDSA committee is fine");
+		assert_eq!(schemes.len(), 1, "only the ECDSA authority should be recorded");
+		ensure_ecdsa_supported(LedgerVersion::Ledger7, &schemes)
+			.expect_err("an ECDSA committee on a pre-ledger-9 source must be rejected");
+		assert!(ensure_ecdsa_supported(LedgerVersion::Ledger9, &schemes).is_ok());
 	}
 
 	#[test]
