@@ -17,6 +17,8 @@ mod prepare_configuration;
 mod register;
 mod rotate_keys;
 mod runtime_bindings;
+/// Offline session-key generation from a runtime wasm blob.
+pub mod runtime_wasm;
 mod select_utxo;
 mod setup_main_chain_state;
 mod start_node;

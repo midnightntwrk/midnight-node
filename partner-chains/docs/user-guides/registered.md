@@ -311,6 +311,18 @@ Prerequisites:
 3. The wizard updates `partner-chains-public-keys.json` with the new public keys (the `partner_chains_key` stays unchanged) and asks you to select a registration UTXO, exactly like the register-1 wizard.
 4. If your SPO cold signing key is available on the machine (or passed with `--mainchain-signing-key-file`), the wizard signs and submits the updated registration in one go. Otherwise it prints a ready-to-run `register2` command to be executed on the cold machine, after which you continue with the unchanged register-2/register-3 wizards.
 
+#### Registering keys for a future runtime upgrade (offline mode)
+
+When a runtime upgrade changes the session key set (for example replacing AURA with BABE), candidates must register the new keys *before* the upgrade activates — but `author_rotateKeys` executes the currently active runtime, so it can only generate the current key set. For this case the wizard supports an offline mode driven by the published wasm of the future runtime:
+
+```
+./partner-chains-node wizards rotate-keys --runtime-wasm <path-to-runtime.compact.compressed.wasm>
+```
+
+In this mode the node does not need to be running and no RPC is used. The wizard executes the session-keys API of the provided wasm directly, writing the generated seeds into the node keystore exactly as `author_rotateKeys` would, and prints the blake2-256 hash of the wasm file — **verify it against the announced runtime upgrade hash before registering the keys**. The published runtime wasm thereby acts as the source of truth for the expected key set.
+
+Key types that the provided runtime does not know are kept from the existing keys file. Committee selection on the active runtime requires every key type it knows and ignores extra ones, so registering this union keeps the candidate valid both before and after the upgrade.
+
 ---
 **NOTE**
 

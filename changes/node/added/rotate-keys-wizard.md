@@ -16,6 +16,16 @@ signing key and payment signing key available to the wizard) and staged, where
 it prints a ready-to-run `register2` command for the cold machine, mirroring
 the existing register1/2/3 split.
 
+The wizard also supports an offline mode (`--runtime-wasm <path>`) that executes
+the session-keys API of a provided runtime wasm blob directly (no node RPC
+needed), writing the generated seeds into the node keystore. This allows
+generating and registering session keys for a future runtime upgrade in
+advance: the published wasm acts as the source of truth for the expected key
+set (its blake2-256 hash is printed for verification against the announced
+upgrade), and key types unknown to the provided runtime are carried over from
+the existing keys file so the registration stays valid for the currently
+active runtime as well.
+
 This supersedes the approach proposed in the archived upstream PR
 https://github.com/input-output-hk/partner-chains/pull/924.
 

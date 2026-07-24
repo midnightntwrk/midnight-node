@@ -56,6 +56,7 @@ fn rotate_keys_cmd(
 		node_url: node_url.map(String::from),
 		mainchain_signing_key_file: mainchain_signing_key_file.map(String::from),
 		payment_signing_key_file: payment_signing_key_file.map(String::from),
+		runtime_wasm: None,
 	}
 }
 
@@ -247,7 +248,7 @@ fn final_warnings_io() -> Vec<MockIO> {
 			"⚠️ The new session keys take effect only after the updated registration is observed on Cardano and a committee using it is selected: registrations included in mainchain epoch N become effective in epoch N+2.",
 		),
 		MockIO::eprint(
-			"⚠️ 'author_rotateKeys' adds new keys to the node keystore without deleting the previous ones. Keep the old keys in the keystore until the last committee selected with them has finished.",
+			"⚠️ Key rotation adds new keys to the node keystore without deleting the previous ones. Keep the old keys in the keystore until the last committee selected with them has finished.",
 		),
 	]
 }
@@ -504,6 +505,191 @@ fn refusing_to_overwrite_keys_file_aborts_before_any_on_chain_action() {
 	result.expect_err("should return error");
 	// keys file is left untouched
 	verify_json!(mock_context, KEYS_FILE_PATH, generated_keys_file_content());
+}
+
+mod offline_runtime_wasm {
+	use super::*;
+	use crate::runtime_wasm::WasmSessionKeys;
+
+	const WASM_PATH: &str = "future-runtime.compact.compressed.wasm";
+	const KEYSTORE_PATH: &str = "/path/to/data/keystore";
+	const OLD_AURA_HEX: &str = "df883ee0648f33b6103017b61be702017742d501b8fe73b1d69ca0157460b777";
+
+	fn new_babe_hex() -> String {
+		"cc".repeat(32)
+	}
+
+	// The future runtime replaces AURA with BABE: it generates babe+gran keys, while the
+	// keys file still holds aura+gran of the active runtime.
+	fn wasm_session_keys() -> WasmSessionKeys {
+		WasmSessionKeys {
+			code_hash: [0xcd; 32],
+			opaque: vec![1, 2, 3],
+			keys: vec![
+				(KeyTypeId(*b"babe"), [0xcc; 32].to_vec()),
+				(KeyTypeId(*b"gran"), [0xbb; 32].to_vec()),
+			],
+		}
+	}
+
+	fn offline_intro_io() -> Vec<MockIO> {
+		vec![
+			MockIO::print("⚙️ Rotating session keys of a registered committee candidate"),
+			MockIO::print(&format!(
+				"This wizard generates fresh session keys OFFLINE using the runtime wasm file {WASM_PATH} and re-registers the candidate with them. The cross-chain identity key is never rotated.",
+			)),
+			MockIO::enewline(),
+		]
+	}
+
+	fn offline_generation_io() -> Vec<MockIO> {
+		vec![
+			MockIO::generate_session_keys_from_wasm(
+				WASM_PATH,
+				KEYSTORE_PATH,
+				Ok(wasm_session_keys()),
+			),
+			MockIO::eprint(&format!(
+				"#️⃣ Runtime code hash (blake2-256): 0x{} - verify it against the announced runtime upgrade",
+				"cd".repeat(32)
+			)),
+			MockIO::eprint("🔑 New session keys (opaque): 0x010203"),
+			MockIO::eprint(
+				"ℹ️ Key types [aura] are not present in the provided runtime; their current keys were kept so the registration remains valid for the active runtime.",
+			),
+		]
+	}
+
+	fn expected_merged_keys_file_content() -> String {
+		serde_json::to_string_pretty(&PermissionedCandidateKeys {
+			partner_chains_key: ByteString(
+				hex!("031e75acbf45ef8df98bbe24b19b28fff807be32bf88838c30c0564d7bec5301f6").to_vec(),
+			),
+			keys: [
+				("aura".to_string(), ByteString(hex::decode(OLD_AURA_HEX).unwrap())),
+				("babe".to_string(), ByteString([0xcc; 32].to_vec())),
+				("gran".to_string(), ByteString([0xbb; 32].to_vec())),
+			]
+			.into_iter()
+			.collect(),
+		})
+		.unwrap()
+	}
+
+	fn merged_write_keys_file_io() -> Vec<MockIO> {
+		vec![
+			MockIO::prompt_yes_no(
+				"keys file partner-chains-public-keys.json exists - overwrite it?",
+				false,
+				true,
+			),
+			MockIO::eprint(
+				"🔑 The following public keys were generated and saved to the partner-chains-public-keys.json file:",
+			),
+			MockIO::print(&expected_merged_keys_file_content()),
+			MockIO::enewline(),
+		]
+	}
+
+	fn merged_staged_mode_output_io() -> Vec<MockIO> {
+		vec![
+			MockIO::prompt_yes_no(
+				"Is your SPO cold signing key available on this machine?",
+				false,
+				false,
+			),
+			MockIO::print(
+				"Run the following command to generate signatures on the next step. It has to be executed on the machine with your SPO cold signing key.",
+			),
+			MockIO::print(""),
+			MockIO::print(&format!(
+				"<mock executable> wizards register2 \\
+--genesis-utxo {GENESIS_UTXO} \\
+--registration-utxo {REGISTRATION_UTXO} \\
+--partner-chain-pub-key {PARTNER_CHAINS_KEY} \\
+--partner-chain-signature {PC_SIGNATURE} \\
+--keys aura:{OLD_AURA_HEX} \\
+--keys babe:{} \\
+--keys gran:{}",
+				new_babe_hex(),
+				new_gran_hex()
+			)),
+		]
+	}
+
+	#[test]
+	fn happy_path_staged_mode_with_future_runtime_wasm() {
+		let mock_context = MockIOContext::new()
+			.with_json_file(CHAIN_CONFIG_FILE_PATH, chain_config_content())
+			.with_json_file(RESOURCES_CONFIG_FILE_PATH, resource_config_content())
+			.with_json_file(KEYS_FILE_PATH, generated_keys_file_content())
+			.with_file(ECDSA_KEY_PATH, ECDSA_KEY_FILE_CONTENT)
+			.with_file(PAYMENT_VKEY_PATH, PAYMENT_VKEY_CONTENT)
+			.with_expected_io(
+				vec![
+					offline_intro_io(),
+					load_base_path_io(),
+					offline_generation_io(),
+					merged_write_keys_file_io(),
+					select_utxo_io(),
+					merged_staged_mode_output_io(),
+					final_warnings_io(),
+				]
+				.into_iter()
+				.flatten()
+				.collect::<Vec<MockIO>>(),
+			);
+
+		let mut cmd = rotate_keys_cmd(None, None, None);
+		cmd.runtime_wasm = Some(WASM_PATH.into());
+		let result = cmd.run(&mock_context);
+		result.expect("should succeed");
+		verify_json!(
+			mock_context,
+			KEYS_FILE_PATH,
+			json!({
+				"partner_chains_key": PARTNER_CHAINS_KEY,
+				"keys": {
+					"aura": format!("0x{OLD_AURA_HEX}"),
+					"babe": format!("0x{}", new_babe_hex()),
+					"gran": format!("0x{}", new_gran_hex()),
+				}
+			})
+		);
+	}
+}
+
+mod merge_with_existing_keys {
+	use super::*;
+
+	fn key(id: &[u8; 4], byte: u8) -> CandidateKeyParam {
+		CandidateKeyParam::new(*id, [byte; 32].to_vec())
+	}
+
+	#[test]
+	fn new_keys_win_and_unknown_types_are_carried_over() {
+		let existing = vec![key(b"aura", 0x01), key(b"gran", 0x02)];
+		let new_keys = vec![key(b"babe", 0x03), key(b"gran", 0x04)];
+		let (merged, carried_over) = merge_with_existing_keys(existing, new_keys);
+		assert_eq!(
+			merged.iter().map(CandidateKeyParam::to_string).collect::<Vec<_>>(),
+			vec![
+				format!("aura:{}", "01".repeat(32)),
+				format!("babe:{}", "03".repeat(32)),
+				format!("gran:{}", "04".repeat(32)),
+			]
+		);
+		assert_eq!(carried_over, vec!["aura".to_string()]);
+	}
+
+	#[test]
+	fn identical_key_sets_produce_no_carry_over() {
+		let existing = vec![key(b"aura", 0x01), key(b"gran", 0x02)];
+		let new_keys = vec![key(b"aura", 0x03), key(b"gran", 0x04)];
+		let (merged, carried_over) = merge_with_existing_keys(existing, new_keys);
+		assert_eq!(merged.len(), 2);
+		assert!(carried_over.is_empty());
+	}
 }
 
 mod candidate_key_params_from_decoded {

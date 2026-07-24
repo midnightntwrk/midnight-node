@@ -35,6 +35,12 @@ colored = { workspace = true }
 ogmios-client = { workspace = true, features = ["jsonrpsee-client"] }
 jsonrpsee = { workspace = true, features = ["http-client"] }
 parity-scale-codec = { workspace = true }
+sc-executor = { workspace = true }
+sc-keystore = { workspace = true }
+sp-crypto-hashing = { workspace = true, features = ["std"] }
+sp-io = { workspace = true, features = ["std"] }
+sp-keystore = { workspace = true, features = ["std"] }
+sp-state-machine = { workspace = true, features = ["std"] }
 tokio = { workspace = true }
 partner-chains-cardano-offchain = { workspace = true }
 plutus = { workspace = true }

@@ -2,6 +2,7 @@ use crate::cmd_traits::*;
 use crate::config::{ConfigFile, ServiceConfig};
 use crate::io::IOContext;
 use crate::ogmios::{OgmiosRequest, OgmiosResponse};
+use crate::runtime_wasm::WasmSessionKeys;
 use crate::substrate_rpc::{SubstrateRpcRequest, SubstrateRpcResponse};
 use anyhow::anyhow;
 use partner_chains_cardano_offchain::await_tx::FixedDelayRetries;
@@ -72,6 +73,11 @@ pub enum MockIO {
 		url: &'static str,
 		req: SubstrateRpcRequest,
 		res: anyhow::Result<SubstrateRpcResponse>,
+	},
+	WasmSessionKeysGeneration {
+		wasm_path: &'static str,
+		keystore_path: &'static str,
+		res: anyhow::Result<WasmSessionKeys>,
 	},
 }
 
@@ -178,6 +184,15 @@ impl MockIO {
 		res: anyhow::Result<SubstrateRpcResponse>,
 	) -> Self {
 		Self::SubstrateRPC { url, req, res }
+	}
+
+	#[track_caller]
+	pub fn generate_session_keys_from_wasm(
+		wasm_path: &'static str,
+		keystore_path: &'static str,
+		res: anyhow::Result<WasmSessionKeys>,
+	) -> Self {
+		Self::WasmSessionKeysGeneration { wasm_path, keystore_path, res }
 	}
 
 	#[track_caller]
@@ -727,6 +742,28 @@ impl IOContext for MockIOContext {
 				res
 			},
 			other => panic!("Unexpected substrate node RPC request, expected: {other:?}"),
+		})
+	}
+
+	fn generate_session_keys_from_wasm(
+		&self,
+		wasm_path: &str,
+		keystore_path: &str,
+	) -> anyhow::Result<WasmSessionKeys> {
+		let next = self.pop_next_action(&format!(
+			"generate_session_keys_from_wasm(wasm_path = {wasm_path}, keystore_path = {keystore_path})"
+		));
+		next.print_mock_location_on_panic(|next| match next {
+			MockIO::WasmSessionKeysGeneration {
+				wasm_path: expected_wasm_path,
+				keystore_path: expected_keystore_path,
+				res,
+			} => {
+				assert_eq!(wasm_path, expected_wasm_path, "Unexpected runtime wasm path");
+				assert_eq!(keystore_path, expected_keystore_path, "Unexpected keystore path");
+				res
+			},
+			other => panic!("Unexpected wasm session keys generation, expected: {other:?}"),
 		})
 	}
 

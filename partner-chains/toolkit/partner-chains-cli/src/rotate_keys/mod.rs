@@ -43,73 +43,109 @@ pub struct RotateKeysCmd {
 	/// provided, the value from the resources configuration is used.
 	#[arg(long)]
 	payment_signing_key_file: Option<String>,
+	/// Path to a runtime wasm file (optionally compressed, e.g. '*.compact.compressed.wasm')
+	/// used to generate the session keys OFFLINE instead of calling the node RPC. Use this to
+	/// generate and register keys for a future runtime upgrade in advance: the published wasm
+	/// is the source of truth for the expected key set, and keys of types the provided runtime
+	/// does not know are kept from the existing keys file so the registration stays valid for
+	/// the currently active runtime as well.
+	#[arg(long)]
+	runtime_wasm: Option<String>,
 }
 
 impl CmdRun for RotateKeysCmd {
 	fn run<C: IOContext>(&self, context: &C) -> anyhow::Result<()> {
 		context.print("⚙️ Rotating session keys of a registered committee candidate");
-		context.print(
-			"This wizard generates fresh session keys on a RUNNING partner chain node and re-registers the candidate with them. The cross-chain identity key is never rotated.",
-		);
-		context.print(
-			"The node must accept the 'author_rotateKeys' RPC call. It is allowed by default for localhost connections; otherwise the node must be run with '--rpc-methods=unsafe'.",
-		);
+		if let Some(wasm_path) = &self.runtime_wasm {
+			context.print(&format!(
+				"This wizard generates fresh session keys OFFLINE using the runtime wasm file {wasm_path} and re-registers the candidate with them. The cross-chain identity key is never rotated.",
+			));
+		} else {
+			context.print(
+				"This wizard generates fresh session keys on a RUNNING partner chain node and re-registers the candidate with them. The cross-chain identity key is never rotated.",
+			);
+			context.print(
+				"The node must accept the 'author_rotateKeys' RPC call. It is allowed by default for localhost connections; otherwise the node must be run with '--rpc-methods=unsafe'.",
+			);
+		}
 		context.enewline();
 
 		let genesis_utxo = load_chain_config_field(context, &config_fields::GENESIS_UTXO)?;
 		let node_data_base_path =
 			config_fields::SUBSTRATE_NODE_DATA_BASE_PATH.load_or_prompt_and_save(context);
 
-		let GeneratedKeysFileContent { partner_chains_key, .. } = read_generated_keys(context)
-			.map_err(|e| {
+		let GeneratedKeysFileContent { partner_chains_key, keys: existing_keys } =
+			read_generated_keys(context).map_err(|e| {
 				context.eprint(&format!(
 					"⚠️ The keys file `{KEYS_FILE_PATH}` is missing or invalid. Please run the `generate-keys` command first"
 				));
 				anyhow!(e)
 			})?;
 
-		let ecdsa_pair = get_ecdsa_pair_from_file(
-			context,
-			&keystore_path(&node_data_base_path),
-			&partner_chains_key.to_hex_string(),
-		)
-		.map_err(|e| {
-			context.eprint(&format!("⚠️ Failed to read partner chain key from the keystore: {e}"));
-			anyhow!(e)
-		})?;
+		let keystore = keystore_path(&node_data_base_path);
+		let ecdsa_pair =
+			get_ecdsa_pair_from_file(context, &keystore, &partner_chains_key.to_hex_string())
+				.map_err(|e| {
+					context.eprint(&format!(
+						"⚠️ Failed to read partner chain key from the keystore: {e}"
+					));
+					anyhow!(e)
+				})?;
 		if AsRef::<[u8]>::as_ref(&ecdsa_pair.public()) != partner_chains_key.0.as_slice() {
 			return Err(anyhow!(
 				"the partner chain key in `{KEYS_FILE_PATH}` does not match the key present in the keystore"
 			));
 		}
 
-		let node_url = match &self.node_url {
-			Some(url) => url.clone(),
-			None => config_fields::SUBSTRATE_NODE_RPC_URL
-				.prompt_with_default_from_file_and_save(context),
-		};
+		let keys = if let Some(wasm_path) = &self.runtime_wasm {
+			let generated = context.generate_session_keys_from_wasm(wasm_path, &keystore)?;
+			context.eprint(&format!(
+				"#️⃣ Runtime code hash (blake2-256): 0x{} - verify it against the announced runtime upgrade",
+				hex::encode(generated.code_hash)
+			));
+			context.eprint(&format!(
+				"🔑 New session keys (opaque): 0x{}",
+				hex::encode(&generated.opaque)
+			));
+			let new_keys = candidate_key_params_from_decoded(generated.keys)?;
+			let (keys, carried_over) = merge_with_existing_keys(existing_keys, new_keys);
+			if !carried_over.is_empty() {
+				context.eprint(&format!(
+					"ℹ️ Key types [{}] are not present in the provided runtime; their current keys were kept so the registration remains valid for the active runtime.",
+					carried_over.join(", ")
+				));
+			}
+			keys
+		} else {
+			let node_url = match &self.node_url {
+				Some(url) => url.clone(),
+				None => config_fields::SUBSTRATE_NODE_RPC_URL
+					.prompt_with_default_from_file_and_save(context),
+			};
 
-		context.eprint(&format!("⚙️ Rotating session keys via {node_url}"));
-		let SubstrateRpcResponse::RotatedKeys(rotated_keys_blob) =
-			context.substrate_rpc(&node_url, SubstrateRpcRequest::AuthorRotateKeys)?
-		else {
-			return Err(anyhow!("unexpected node response to 'author_rotateKeys'"));
-		};
-		context.eprint(&format!(
-			"🔑 New session keys (opaque): 0x{}",
-			hex::encode(&rotated_keys_blob)
-		));
+			context.eprint(&format!("⚙️ Rotating session keys via {node_url}"));
+			let SubstrateRpcResponse::RotatedKeys(rotated_keys_blob) =
+				context.substrate_rpc(&node_url, SubstrateRpcRequest::AuthorRotateKeys)?
+			else {
+				return Err(anyhow!("unexpected node response to 'author_rotateKeys'"));
+			};
+			context.eprint(&format!(
+				"🔑 New session keys (opaque): 0x{}",
+				hex::encode(&rotated_keys_blob)
+			));
 
-		let SubstrateRpcResponse::DecodedKeys(decoded) = context.substrate_rpc(
-			&node_url,
-			SubstrateRpcRequest::DecodeSessionKeys { encoded: rotated_keys_blob },
-		)?
-		else {
-			return Err(anyhow!("unexpected node response to 'state_call'"));
+			let SubstrateRpcResponse::DecodedKeys(decoded) = context.substrate_rpc(
+				&node_url,
+				SubstrateRpcRequest::DecodeSessionKeys { encoded: rotated_keys_blob },
+			)?
+			else {
+				return Err(anyhow!("unexpected node response to 'state_call'"));
+			};
+			let decoded = decoded.ok_or_else(|| {
+				anyhow!("the node runtime could not decode the rotated session keys")
+			})?;
+			candidate_key_params_from_decoded(decoded)?
 		};
-		let decoded = decoded
-			.ok_or_else(|| anyhow!("the node runtime could not decode the rotated session keys"))?;
-		let keys = candidate_key_params_from_decoded(decoded)?;
 
 		write_keys_file(context, &partner_chains_key, &keys)?;
 
@@ -186,7 +222,7 @@ impl CmdRun for RotateKeysCmd {
 			"⚠️ The new session keys take effect only after the updated registration is observed on Cardano and a committee using it is selected: registrations included in mainchain epoch N become effective in epoch N+2.",
 		);
 		context.eprint(
-			"⚠️ 'author_rotateKeys' adds new keys to the node keystore without deleting the previous ones. Keep the old keys in the keystore until the last committee selected with them has finished.",
+			"⚠️ Key rotation adds new keys to the node keystore without deleting the previous ones. Keep the old keys in the keystore until the last committee selected with them has finished.",
 		);
 		Ok(())
 	}
@@ -214,6 +250,29 @@ fn candidate_key_params_from_decoded(
 	}
 	keys.sort_by_key(|key| key.0.id);
 	Ok(keys)
+}
+
+/// Merges freshly generated keys with the keys already present in the keys file: newly
+/// generated keys win on their key type, keys of types unknown to the generating runtime
+/// are kept. Keeping them matters when the keys were generated by a future runtime whose
+/// key set differs from the active one: committee selection requires every key type the
+/// active runtime knows, while extra key types are ignored, so registering the union keeps
+/// the candidate valid both before and after the runtime upgrade.
+/// Returns the merged keys and the carried-over key types.
+fn merge_with_existing_keys(
+	existing: Vec<CandidateKeyParam>,
+	new_keys: Vec<CandidateKeyParam>,
+) -> (Vec<CandidateKeyParam>, Vec<String>) {
+	let new_ids: BTreeSet<[u8; 4]> = new_keys.iter().map(|key| key.0.id).collect();
+	let carried_over: Vec<CandidateKeyParam> =
+		existing.into_iter().filter(|key| !new_ids.contains(&key.0.id)).collect();
+	let carried_over_ids = carried_over
+		.iter()
+		.map(|key| String::from_utf8_lossy(&key.0.id).to_string())
+		.collect();
+	let mut keys = [new_keys, carried_over].concat();
+	keys.sort_by_key(|key| key.0.id);
+	(keys, carried_over_ids)
 }
 
 /// Overwrites the public keys file with the rotated session keys, keeping the cross-chain
