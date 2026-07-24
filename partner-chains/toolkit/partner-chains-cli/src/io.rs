@@ -1,6 +1,7 @@
 use crate::cmd_traits::*;
 use crate::config::{ConfigFile, ServiceConfig};
 use crate::ogmios::{OgmiosRequest, OgmiosResponse, ogmios_request};
+use crate::substrate_rpc::{SubstrateRpcRequest, SubstrateRpcResponse};
 use anyhow::{Context, anyhow};
 use inquire::InquireError;
 use inquire::error::InquireResult;
@@ -49,6 +50,11 @@ pub trait IOContext {
 		config: &ServiceConfig,
 		req: OgmiosRequest,
 	) -> anyhow::Result<OgmiosResponse>;
+	fn substrate_rpc(
+		&self,
+		url: &str,
+		req: SubstrateRpcRequest,
+	) -> anyhow::Result<SubstrateRpcResponse>;
 	fn offchain_impl(&self, ogmios_config: &ServiceConfig) -> anyhow::Result<Self::Offchain>;
 	fn config_file_path(&self, file: ConfigFile) -> String;
 
@@ -193,6 +199,14 @@ impl IOContext for DefaultCmdRunContext {
 		req: OgmiosRequest,
 	) -> anyhow::Result<OgmiosResponse> {
 		ogmios_request(config, req)
+	}
+
+	fn substrate_rpc(
+		&self,
+		url: &str,
+		req: SubstrateRpcRequest,
+	) -> anyhow::Result<SubstrateRpcResponse> {
+		crate::substrate_rpc::substrate_rpc(url, Duration::from_secs(60), req)
 	}
 
 	fn offchain_impl(&self, ogmios_config: &ServiceConfig) -> anyhow::Result<Self::Offchain> {

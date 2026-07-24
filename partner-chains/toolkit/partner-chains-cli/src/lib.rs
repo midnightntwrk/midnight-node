@@ -15,10 +15,12 @@ mod ogmios;
 mod permissioned_candidates;
 mod prepare_configuration;
 mod register;
+mod rotate_keys;
 mod runtime_bindings;
 mod select_utxo;
 mod setup_main_chain_state;
 mod start_node;
+mod substrate_rpc;
 
 #[cfg(test)]
 mod tests;
@@ -72,6 +74,10 @@ pub enum Command<T: PartnerChainRuntime + Send + Sync> {
 	Register2(register::register2::Register2Cmd),
 	/// The final step of registering as a committee candidate, not using cold keys.
 	Register3(register::register3::Register3Cmd),
+	/// Rotates the session keys of a running node and re-registers the committee candidate
+	/// with the new keys. The cross-chain identity key is preserved. Requires a running node
+	/// that accepts the `author_rotateKeys` RPC call.
+	RotateKeys(rotate_keys::RotateKeysCmd),
 	/// Deregister from the candidates set. This command requires chain config file present in the running directory.
 	Deregister(deregister::DeregisterCmd),
 }
@@ -88,6 +94,7 @@ impl<T: PartnerChainRuntime + Send + Sync> Command<T> {
 			Command::Register1(cmd) => cmd.run(context),
 			Command::Register2(cmd) => cmd.run(context),
 			Command::Register3(cmd) => cmd.run(context),
+			Command::RotateKeys(cmd) => cmd.run(context),
 			Command::Deregister(cmd) => cmd.run(context),
 		}
 	}
@@ -120,7 +127,8 @@ const HELP_EXAMPLES: &str = r#"
 ║   3. register2             : complete registration with cold keys              ║
 ║   4. register3             : finalize registration                             ║
 ║   5. start-node            : start the validator node                          ║
-║   6. deregister            : cancel registration                               ║
+║   6. rotate-keys           : rotate session keys and re-register               ║
+║   7. deregister            : cancel registration                               ║
 ║                                                                                ║
 ║   Note: This sequence assumes that the chain-spec.json and                     ║
 ║         pc-chain-config.json files have been obtained from                     ║

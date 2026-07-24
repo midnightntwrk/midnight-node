@@ -73,7 +73,7 @@ impl CmdRun for Register2Cmd {
 	}
 }
 
-fn get_stake_pool_cold_skey<C: IOContext>(
+pub(crate) fn get_stake_pool_cold_skey<C: IOContext>(
 	context: &C,
 	keys_path: &str,
 ) -> Result<StakePoolSigningKeyParam, anyhow::Error> {

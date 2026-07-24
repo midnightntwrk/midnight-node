@@ -437,6 +437,15 @@ pub(crate) mod config_fields {
 			_marker: PhantomData,
 		};
 
+	pub(crate) const SUBSTRATE_NODE_RPC_URL: ConfigFieldDefinition<'static, String> =
+		ConfigFieldDefinition {
+			config_file: ConfigFile::Resources,
+			path: &["substrate_node_rpc_url"],
+			name: "URL of the partner chain node RPC endpoint",
+			default: Some("http://localhost:9944"),
+			_marker: PhantomData,
+		};
+
 	pub(crate) const CARDANO_PAYMENT_VERIFICATION_KEY_FILE: ConfigFieldDefinition<'static, String> =
 		ConfigFieldDefinition {
 			config_file: ConfigFile::Resources,

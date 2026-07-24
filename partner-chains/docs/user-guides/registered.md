@@ -295,6 +295,31 @@ The wizard sets the required environment variables and starts the node.
 
 Registration is effective after 1-2 Cardano epochs. After the waiting period, the partner chain node is registered on the partner chain and is a selection option for the consensus committee.
 
+### Optional: rotate session keys
+
+The rotate-keys wizard generates a fresh set of session keys on a **running** node and re-registers the candidate with them. It is the recommended way to periodically rotate consensus keys (all session keys declared by the runtime, e.g. AURA and GRANDPA) without changing the cross-chain identity key, which is never rotated.
+
+Prerequisites:
+
+- the node is running and syncing, with its RPC endpoint reachable from the machine running the wizard,
+- the node accepts the `author_rotateKeys` RPC call — this is allowed by default for localhost connections; otherwise the node must be started with `--rpc-methods=unsafe` (not recommended on publicly reachable endpoints),
+- Ogmios is running and synced (same requirement as for registration),
+- the `pc-chain-config.json` and `partner-chains-public-keys.json` files are present in the working directory.
+
+1. Start the wizard: `./partner-chains-node wizards rotate-keys`.
+2. The wizard calls `author_rotateKeys` on the node, which generates new session keys in the node keystore, and decodes them using the runtime itself — so the key set always matches what the runtime expects, with no toolkit configuration.
+3. The wizard updates `partner-chains-public-keys.json` with the new public keys (the `partner_chains_key` stays unchanged) and asks you to select a registration UTXO, exactly like the register-1 wizard.
+4. If your SPO cold signing key is available on the machine (or passed with `--mainchain-signing-key-file`), the wizard signs and submits the updated registration in one go. Otherwise it prints a ready-to-run `register2` command to be executed on the cold machine, after which you continue with the unchanged register-2/register-3 wizards.
+
+---
+**NOTE**
+
+- The new keys take effect only after the updated registration is observed on Cardano and a committee using it is selected: registrations included in Cardano epoch N become effective in epoch N+2.
+- `author_rotateKeys` adds new keys to the node keystore without deleting the previous ones. Keep the old keys in the keystore until the last committee selected with them has finished, otherwise the node will fail to produce or finalize blocks during the transition.
+- The cross-chain identity key is never rotated by this wizard. Changing it means changing the candidate's identity: deregister and register again with newly generated keys instead.
+
+---
+
 ### 7. Optional: deregister from the partner chain
 
 To deregister from the list of block producer candidates, you need to run the deregister wizard.

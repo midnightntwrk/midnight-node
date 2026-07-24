@@ -46,55 +46,84 @@ impl CmdRun for Register3Cmd {
 			anyhow::anyhow!("Chain config missing or invalid")
 		})?;
 
-		context.print("To proceed with the next command, a payment signing key is required. Please note that this key will not be stored or communicated over the network.");
-
-		let cardano_payment_signing_key_path = config_fields::CARDANO_PAYMENT_SIGNING_KEY_FILE
-			.prompt_with_default_from_file_and_save(context);
-
-		let payment_signing_key =
-			get_mc_payment_signing_key_from_file(&cardano_payment_signing_key_path, context)?;
-		let ogmios_configuration = establish_ogmios_configuration(context)?;
-		let candidate_registration = CandidateRegistration {
-			stake_ownership: AdaBasedStaking {
-				pub_key: self.spo_public_key.clone(),
-				signature: self.spo_signature.clone(),
-			},
-			partner_chain_pub_key: self.partner_chain_pub_key.clone(),
-			partner_chain_signature: self.partner_chain_signature.clone(),
-			own_pkh: payment_signing_key.to_pub_key_hash(),
-			registration_utxo: self.registration_utxo,
-			keys: CandidateKeys(self.keys.iter().cloned().map(Into::into).collect()),
-		};
-		let offchain = context.offchain_impl(&ogmios_configuration)?;
-
-		let runtime = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
-		runtime
-			.block_on(offchain.register(
-				self.common_arguments.retries(),
-				self.genesis_utxo,
-				&candidate_registration,
-				&payment_signing_key,
-			))
-			.map_err(|e| anyhow::anyhow!("Candidate registration failed: {e:?}!"))?;
-
-		if context.prompt_yes_no("Show registration status?", true) {
-			context.print("The registration status will be queried from a db-sync instance for which a valid connection string is required. Please note that this db-sync instance needs to be up and synced with the main chain.");
-			let current_mc_epoch_number = get_current_mainchain_epoch(context).map_err(|e| {
-				context.eprint(format!("Unable to derive current mainchain epoch: {}", e).as_str());
-				anyhow::anyhow!("{}", e)
-			})?;
-			let mc_epoch_number_to_query = current_mc_epoch_number.next().next();
-			prepare_mc_follower_env(context)?;
-			context.print(&format!("Registrations status for epoch {mc_epoch_number_to_query}:"));
-			show_registration_status(
-				context,
-				mc_epoch_number_to_query,
-				self.spo_public_key.clone(),
-			)?;
-		}
-
-		Ok(())
+		submit_candidate_registration(
+			context,
+			&self.common_arguments,
+			self.genesis_utxo,
+			self.registration_utxo,
+			&self.partner_chain_pub_key,
+			&self.partner_chain_signature,
+			&self.spo_public_key,
+			&self.spo_signature,
+			&self.keys,
+			None,
+		)
 	}
+}
+
+/// Prompts for the payment signing key (unless `payment_signing_key_path_override` is given),
+/// builds the [CandidateRegistration] and submits it to Cardano, optionally showing the
+/// resulting registration status.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn submit_candidate_registration<C: IOContext>(
+	context: &C,
+	common_arguments: &crate::CommonArguments,
+	genesis_utxo: UtxoId,
+	registration_utxo: UtxoId,
+	partner_chain_pub_key: &SidechainPublicKey,
+	partner_chain_signature: &SidechainSignature,
+	spo_public_key: &StakePoolPublicKey,
+	spo_signature: &MainchainSignature,
+	keys: &[CandidateKeyParam],
+	payment_signing_key_path_override: Option<&str>,
+) -> anyhow::Result<()> {
+	context.print("To proceed with the next command, a payment signing key is required. Please note that this key will not be stored or communicated over the network.");
+
+	let cardano_payment_signing_key_path = match payment_signing_key_path_override {
+		Some(path) => path.to_string(),
+		None => config_fields::CARDANO_PAYMENT_SIGNING_KEY_FILE
+			.prompt_with_default_from_file_and_save(context),
+	};
+
+	let payment_signing_key =
+		get_mc_payment_signing_key_from_file(&cardano_payment_signing_key_path, context)?;
+	let ogmios_configuration = establish_ogmios_configuration(context)?;
+	let candidate_registration = CandidateRegistration {
+		stake_ownership: AdaBasedStaking {
+			pub_key: spo_public_key.clone(),
+			signature: spo_signature.clone(),
+		},
+		partner_chain_pub_key: partner_chain_pub_key.clone(),
+		partner_chain_signature: partner_chain_signature.clone(),
+		own_pkh: payment_signing_key.to_pub_key_hash(),
+		registration_utxo,
+		keys: CandidateKeys(keys.iter().cloned().map(Into::into).collect()),
+	};
+	let offchain = context.offchain_impl(&ogmios_configuration)?;
+
+	let runtime = tokio::runtime::Runtime::new().map_err(|e| anyhow::anyhow!(e))?;
+	runtime
+		.block_on(offchain.register(
+			common_arguments.retries(),
+			genesis_utxo,
+			&candidate_registration,
+			&payment_signing_key,
+		))
+		.map_err(|e| anyhow::anyhow!("Candidate registration failed: {e:?}!"))?;
+
+	if context.prompt_yes_no("Show registration status?", true) {
+		context.print("The registration status will be queried from a db-sync instance for which a valid connection string is required. Please note that this db-sync instance needs to be up and synced with the main chain.");
+		let current_mc_epoch_number = get_current_mainchain_epoch(context).map_err(|e| {
+			context.eprint(format!("Unable to derive current mainchain epoch: {}", e).as_str());
+			anyhow::anyhow!("{}", e)
+		})?;
+		let mc_epoch_number_to_query = current_mc_epoch_number.next().next();
+		prepare_mc_follower_env(context)?;
+		context.print(&format!("Registrations status for epoch {mc_epoch_number_to_query}:"));
+		show_registration_status(context, mc_epoch_number_to_query, spo_public_key.clone())?;
+	}
+
+	Ok(())
 }
 
 fn prepare_mc_follower_env<C: IOContext>(context: &C) -> anyhow::Result<()> {

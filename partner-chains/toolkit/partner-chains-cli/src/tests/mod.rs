@@ -2,6 +2,7 @@ use crate::cmd_traits::*;
 use crate::config::{ConfigFile, ServiceConfig};
 use crate::io::IOContext;
 use crate::ogmios::{OgmiosRequest, OgmiosResponse};
+use crate::substrate_rpc::{SubstrateRpcRequest, SubstrateRpcResponse};
 use anyhow::anyhow;
 use partner_chains_cardano_offchain::await_tx::FixedDelayRetries;
 use partner_chains_cardano_offchain::cardano_keys::CardanoPaymentSigningKey;
@@ -26,20 +27,52 @@ pub(crate) mod runtime;
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum MockIO {
-	RunCommand { expected_cmd: String, output: anyhow::Result<String> },
+	RunCommand {
+		expected_cmd: String,
+		output: anyhow::Result<String>,
+	},
 	Print(String),
 	EPrint(String),
-	Prompt { prompt: String, default: Option<String>, input: String },
-	PromptYN { prompt: String, default: bool, choice: bool },
-	PromptMultiOption { prompt: String, options: Vec<String>, choice: String },
+	Prompt {
+		prompt: String,
+		default: Option<String>,
+		input: String,
+	},
+	PromptYN {
+		prompt: String,
+		default: bool,
+		choice: bool,
+	},
+	PromptMultiOption {
+		prompt: String,
+		options: Vec<String>,
+		choice: String,
+	},
 	NewTmpDir,
-	ListDirectory { path: String, result: Option<Vec<String>> },
-	DeleteFile { path: String },
-	SetEnvVar { key: String, value: String },
+	ListDirectory {
+		path: String,
+		result: Option<Vec<String>>,
+	},
+	DeleteFile {
+		path: String,
+	},
+	SetEnvVar {
+		key: String,
+		value: String,
+	},
 	SystemTimeNow(Timestamp),
 	Group(Vec<MockIO>),
 	WithFileLocation(&'static str, u32, Box<MockIO>),
-	OgmiosRPC { addr: &'static str, req: OgmiosRequest, res: anyhow::Result<OgmiosResponse> },
+	OgmiosRPC {
+		addr: &'static str,
+		req: OgmiosRequest,
+		res: anyhow::Result<OgmiosResponse>,
+	},
+	SubstrateRPC {
+		url: &'static str,
+		req: SubstrateRpcRequest,
+		res: anyhow::Result<SubstrateRpcResponse>,
+	},
 }
 
 impl MockIO {
@@ -136,6 +169,15 @@ impl MockIO {
 		res: anyhow::Result<OgmiosResponse>,
 	) -> Self {
 		Self::OgmiosRPC { addr, req, res }
+	}
+
+	#[track_caller]
+	pub fn substrate_rpc(
+		url: &'static str,
+		req: SubstrateRpcRequest,
+		res: anyhow::Result<SubstrateRpcResponse>,
+	) -> Self {
+		Self::SubstrateRPC { url, req, res }
 	}
 
 	#[track_caller]
@@ -669,6 +711,22 @@ impl IOContext for MockIOContext {
 				res
 			},
 			other => panic!("Unexpected Ogmios RPC request, expected: {other:?}"),
+		})
+	}
+
+	fn substrate_rpc(
+		&self,
+		url: &str,
+		req: SubstrateRpcRequest,
+	) -> anyhow::Result<SubstrateRpcResponse> {
+		let next = self.pop_next_action(&format!("substrate_rpc(url = {url}, req = {req:?})"));
+		next.print_mock_location_on_panic(|next| match next {
+			MockIO::SubstrateRPC { url: expected_url, req: expected_req, res } => {
+				assert_eq!(url, expected_url, "Unexpected substrate node RPC url");
+				assert_eq!(req, expected_req, "Unexpected substrate node RPC request");
+				res
+			},
+			other => panic!("Unexpected substrate node RPC request, expected: {other:?}"),
 		})
 	}
 
