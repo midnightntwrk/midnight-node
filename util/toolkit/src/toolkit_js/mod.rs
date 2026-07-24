@@ -106,6 +106,9 @@ pub struct CircuitArgs {
 	/// A file path of where the invoked circuit result data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	pub output_result: Option<RelativePath>,
+	/// A file path where contract log events emitted during circuit execution should be written as JSON.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	pub output_events: Option<RelativePath>,
 	/// Name of the circuit to invoke
 	pub circuit_id: String,
 	/// Arguments to pass to the circuit
@@ -213,6 +216,11 @@ pub enum ToolkitJsError {
 	ToolkitJsOutputReadError(std::io::Error),
 	#[error("toolkit-js exited with {status}\nstdout: {stdout}\nstderr: {stderr}")]
 	NonZeroExit { status: std::process::ExitStatus, stdout: String, stderr: String },
+	#[error(
+		"--output-events requires compactc version >= 0.33.0 (the compact-js events API), \
+		 but {version} is configured"
+	)]
+	OutputEventsUnsupported { version: semver::Version },
 }
 
 impl ToolkitJs {
@@ -225,6 +233,17 @@ impl ToolkitJs {
 		let mut version = self.compactc_version.clone();
 		version.pre = semver::Prerelease::EMPTY;
 		semver::VersionReq::parse("<0.31.0").unwrap().matches(&version)
+	}
+
+	/// `true` if the pinned compactc supports the `--output-events` flag on the circuit
+	/// command, added alongside the compact-js events API in the 0.33.0 line.
+	///
+	/// As with [`Self::needs_legacy_network_flag`], the pre-release suffix is stripped before
+	/// comparison, so that e.g. `0.33.0-rc.1` is treated as `0.33.0`.
+	fn supports_output_events(&self) -> bool {
+		let mut version = self.compactc_version.clone();
+		version.pre = semver::Prerelease::EMPTY;
+		semver::VersionReq::parse(">=0.33.0").unwrap().matches(&version)
 	}
 
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
@@ -338,6 +357,18 @@ impl ToolkitJs {
 		if let Some(ref output_result) = output_result {
 			cmd_args.extend_from_slice(&["--output-result", &output_result]);
 		}
+		let output_events = args.output_events.map(|s| s.absolute());
+		if let Some(ref output_events) = output_events {
+			// Fail early with a clear message rather than forwarding an unrecognized flag to an
+			// older toolkit-js, where `@effect/cli` would absorb it into the trailing variadic
+			// circuit args and produce a confusing "Invalid number of arguments" error.
+			if !self.supports_output_events() {
+				return Err(ToolkitJsError::OutputEventsUnsupported {
+					version: self.compactc_version.clone(),
+				});
+			}
+			cmd_args.extend_from_slice(&["--output-events", &output_events]);
+		}
 		// Add positional args
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
 		cmd_args.extend(args.call_args.iter().map(|s| s.as_str()));
@@ -348,6 +379,9 @@ impl ToolkitJs {
 			args.output_private_state,
 			args.output_zswap_state
 		);
+		if let Some(ref output_events) = output_events {
+			log::info!("written events log: {output_events}");
+		}
 		Ok(())
 	}
 
@@ -460,5 +494,30 @@ impl ToolkitJs {
 			});
 		}
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn toolkit_js_with_version(version: &str) -> ToolkitJs {
+		ToolkitJs { path: String::new(), compactc_version: version.parse().unwrap() }
+	}
+
+	#[test]
+	fn supports_output_events_from_0_33_0() {
+		// The events API landed in the 0.33.0 line.
+		assert!(toolkit_js_with_version("0.33.0").supports_output_events());
+		assert!(toolkit_js_with_version("0.34.0").supports_output_events());
+		// Pre-release suffixes must be stripped, otherwise `0.33.0-rc.1 >= 0.33.0` is false.
+		assert!(toolkit_js_with_version("0.33.0-rc.1").supports_output_events());
+	}
+
+	#[test]
+	fn supports_output_events_rejects_older_versions() {
+		assert!(!toolkit_js_with_version("0.31.0").supports_output_events());
+		assert!(!toolkit_js_with_version("0.30.0").supports_output_events());
+		assert!(!toolkit_js_with_version("0.29.0").supports_output_events());
 	}
 }

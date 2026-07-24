@@ -194,6 +194,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 	{
 		use rayon::prelude::*;
 		log::debug!(
+			target: super::transaction::PERF_TARGET,
 			"[perf] flushing {} events for {} wallets",
 			events.len(),
 			self.wallets.lock().expect("lock").len(),
