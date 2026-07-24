@@ -12,5 +12,5 @@ guaranteed offer and requests exactly its availability. UTXOs already backing DU
 generation are excluded via the new `BuilderContext::backs_dust_generation`. Balancing
 failures return an actionable error instead of panicking.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/XXXX
+PR: https://github.com/midnightntwrk/midnight-node/pull/1922
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1896
