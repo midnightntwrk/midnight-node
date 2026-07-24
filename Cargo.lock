@@ -8116,6 +8116,8 @@ dependencies = [
  "midnight-onchain-runtime 2.0.1",
  "midnight-onchain-runtime 3.1.0",
  "midnight-onchain-runtime 4.0.0",
+ "midnight-onchain-state 3.0.0",
+ "midnight-onchain-state 4.0.0",
  "midnight-serialize",
  "midnight-storage 1.1.1",
  "midnight-storage 2.0.1",

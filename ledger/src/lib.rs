@@ -27,11 +27,6 @@ pub mod json;
 #[cfg(feature = "std")]
 mod utils;
 
-/// v8 -> v9 ledger state translation table (ported from midnight-ledger PR #539),
-/// consumed by the v8->v9 storage migration host function.
-#[cfg(feature = "std")]
-pub mod state_translation_v8_to_v9;
-
 pub mod host_api;
 
 #[path = "versions"]

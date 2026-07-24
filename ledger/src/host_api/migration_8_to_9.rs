@@ -33,7 +33,7 @@
 use crate::ledger_8::api::Ledger as Ledger8;
 use crate::ledger_9::api::Ledger as Ledger9;
 use crate::ledger_9::types::{DeserializationError, LedgerApiError, SerializationError};
-use crate::state_translation_v8_to_v9::StateTranslationTable;
+use midnight_node_ledger_helpers::state_translation_v8_to_v9::StateTranslationTable;
 
 use base_crypto::cost_model::CostDuration;
 use ledger_storage_ledger_8 as storage;

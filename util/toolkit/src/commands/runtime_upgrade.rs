@@ -66,8 +66,15 @@ pub enum RuntimeUpgradeError {
 /// the old runtime (e.g. the `System.CodeUpdated` event in the apply block) is
 /// unreliable. The raw JSON spec_version has no such dependency.
 async fn spec_version(rpc: &RpcClient) -> Result<u32, RuntimeUpgradeError> {
+	// Query at the FINALIZED head, not the best block. A downstream toolkit fetch
+	// (`fetcher::fetch_all`) only reads up to `get_finalized_height()`, so a
+	// hardfork must be observed as *finalized* before we report success —
+	// otherwise the toolkit won't see the ledger-9 blocks yet and would build a
+	// transaction at the old ledger version.
+	let finalized_hash: serde_json::Value =
+		rpc.request("chain_getFinalizedHead", rpc_params![]).await?;
 	let version: serde_json::Value =
-		rpc.request("state_getRuntimeVersion", rpc_params![]).await?;
+		rpc.request("state_getRuntimeVersion", rpc_params![finalized_hash]).await?;
 	Ok(version.get("specVersion").and_then(|v| v.as_u64()).unwrap_or(0) as u32)
 }
 
@@ -149,10 +156,10 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 		.await
 		.map_err(|_| RuntimeUpgradeError::ApplyFinalizeTimeout)??;
 
-	// Step 6: Confirm the upgrade enacted by polling for the spec_version bump.
-	// The new code takes effect on the block after the apply block, so poll a few
-	// block times.
-	for _ in 0..20 {
+	// Step 6: Confirm the upgrade enacted by polling for the spec_version bump at
+	// the finalized head. The new code takes effect on the block after the apply
+	// block, and finality lags the best block by a few blocks, so allow ~2min.
+	for _ in 0..40 {
 		tokio::time::sleep(Duration::from_secs(3)).await;
 		let cur = spec_version(&rpc_client).await?;
 		if cur > pre_spec_version {
