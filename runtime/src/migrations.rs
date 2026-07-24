@@ -21,31 +21,23 @@ pub mod authority_keys {
 	//! Scaffolding for migrating [`crate::opaque::SessionKeys`] with
 	//! [`pallet_session_validator_management::migrations::authority_keys::AuthorityKeysMigration`].
 	//!
-	//! There is no pending `AuthorityKeys` shape change yet (`SessionKeys` is still aura + grandpa),
-	//! so nothing here is wired into `SingleBlockMigrations`. When a change lands (e.g. adding beefy):
-	//!
 	//! 1. Update [`LegacySessionKeys`] and its `From` impl to match the pre-upgrade shape.
-	//! 2. Add `authority_keys::AuthorityKeysMigration<Runtime, LegacyCommitteeMember, LegacySessionKeys, FROM, TO>`
-	//!    to `SingleBlockMigrations`, with `FROM`/`TO` matching the pallet's on-chain storage
-	//!    version **at the moment this migration is wired in** (see
-	//!    [`pallet_session_validator_management::pallet::Pallet`]'s `#[pallet::storage_version]`).
-	//! 3. After the upgrade that runs this migration has landed on all live networks, remove the
-	//!    migration from `SingleBlockMigrations` **before** any genesis reset (devnet/qanet wipe) that
-	//!    builds state at the post-migration pallet version with the new `AuthorityKeys` shape. If the
-	//!    migration is still wired while on-chain storage remains at `FROM` but genesis already stores
-	//!    new-shaped committee bytes, the next upgrade will run `translate::<OldCommitteeInfo, _>(...)`
-	//!    and panic.
+	//! 2. Add `authority_keys::MigrateAddBabeSessionKeys` to `SingleBlockMigrations`.
+	//! 3. After the upgrade that runs this migration has landed on all live networks,
+	//!    `MigrateAddBabeSessionKeys` can be removed.
 	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
 	use alloc::vec::Vec;
 	use authority_selection_inherents::CommitteeMember;
+	use frame_support::{
+		traits::{OnRuntimeUpgrade, UncheckedOnRuntimeUpgrade},
+		weights::Weight,
+	};
+	use pallet_consensus_engine::AddBabeSessionKeysMigrated;
 	use pallet_session_validator_management::migrations::authority_keys::{
-		AuthorityKeysMigration, UpgradeCommitteeMember,
+		InnerMigrateAuthorityKeys, UpgradeCommitteeMember,
 	};
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_runtime::impl_opaque_keys;
-
-	pub const FROM_VERSION: u16 = 2;
-	pub const TO_VERSION: u16 = 3;
 
 	impl_opaque_keys! {
 		#[derive(MaxEncodedLen, PartialOrd, Ord)]
@@ -73,20 +65,34 @@ pub mod authority_keys {
 		}
 	}
 
-	// Trait bounds are not enforced on type aliases, so instantiating a bounded function is
-	// needed to actually prove at compile time that the scaffolding above satisfies the
-	// migration's requirements (`Keys = AuthorityKeys`, key types convertible, etc.).
-	#[allow(dead_code)]
-	fn assert_migration_is_wirable() {
-		fn assert_impls_on_runtime_upgrade<M: frame_support::traits::OnRuntimeUpgrade>() {}
-		assert_impls_on_runtime_upgrade::<
-			AuthorityKeysMigration<
-				Runtime,
-				LegacyCommitteeMember,
-				LegacySessionKeys,
-				FROM_VERSION,
-				TO_VERSION,
-			>,
-		>();
+	const LOG_TARGET: &str = "runtime::migration::add-babe-session-keys";
+
+	/// The pallet migration logic itself.
+	type Inner = InnerMigrateAuthorityKeys<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
+
+	/// Adds the BABE key to the committee's stored `SessionKeys`, exactly once per chain.
+	pub struct MigrateAddBabeSessionKeys;
+
+	impl OnRuntimeUpgrade for MigrateAddBabeSessionKeys {
+		fn on_runtime_upgrade() -> Weight {
+			let db = <Runtime as frame_system::Config>::DbWeight::get();
+			if AddBabeSessionKeysMigrated::<Runtime>::get() {
+				log::info!(target: LOG_TARGET, "already applied (guard set); skipping");
+				return db.reads(1);
+			}
+			log::info!(target: LOG_TARGET, "adding BABE key to committee SessionKeys");
+			let weight = <Inner as UncheckedOnRuntimeUpgrade>::on_runtime_upgrade();
+			AddBabeSessionKeysMigrated::<Runtime>::put(true);
+			weight.saturating_add(db.reads_writes(1, 1))
+		}
+
+		#[cfg(feature = "try-runtime")]
+		fn post_upgrade(_state: alloc::vec::Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
+			frame_support::ensure!(
+				AddBabeSessionKeysMigrated::<Runtime>::get(),
+				"add-babe-session-keys: guard not set after migration"
+			);
+			Ok(())
+		}
 	}
 }

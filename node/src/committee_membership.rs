@@ -22,10 +22,11 @@
 
 use futures::StreamExt;
 use midnight_node_runtime::{
-	current_committee_storage_key, decode_current_committee, opaque::Block,
-	session_committee_storage_version_key,
+	add_babe_session_keys_migrated_storage_key, current_committee_storage_key,
+	decode_current_committee, opaque::Block,
 };
 use midnight_primitives_session_info::SessionInfoApi;
+use parity_scale_codec::Decode;
 use sc_client_api::{Backend, BlockchainEvents, StorageProvider};
 use sp_api::ProvideRuntimeApi;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
@@ -70,16 +71,17 @@ where
 		}
 		last_session = Some(session_index);
 
-		// Read `CurrentCommittee` and the pallet's on-chain storage version straight from state,
-		// then let the runtime decode them in the shape matching that version.
-		let version_bytes = match client
-			.storage(block_hash, &StorageKey(session_committee_storage_version_key()))
+		// Read `CurrentCommittee` and the consensus-engine add-babe-session-keys migration guard
+		// straight from state, then let the runtime decode the committee in the shape matching
+		// whether that migration has run.
+		let migrated_bytes = match client
+			.storage(block_hash, &StorageKey(add_babe_session_keys_migrated_storage_key()))
 		{
 			Ok(bytes) => bytes.unwrap_or_default(),
 			Err(err) => {
 				log::error!(
 					target: LOG_TARGET,
-					"Failed to read committee storage version at {block_hash:?}: {err}",
+					"Failed to read add-babe-session-keys migration guard at {block_hash:?}: {err}",
 				);
 				continue;
 			},
@@ -96,8 +98,11 @@ where
 				},
 			};
 
-		let (_epoch, committee) =
-			decode_current_committee(committee_bytes.0.as_slice(), version_bytes.0.as_slice());
+		// A missing or undecodable guard means the add-babe-session-keys migration has not run, so
+		// the committee is still in the legacy shape.
+		let migrated = bool::decode(&mut migrated_bytes.0.as_slice()).unwrap_or(false);
+
+		let (_epoch, committee) = decode_current_committee(committee_bytes.0.as_slice(), migrated);
 
 		let local_aura_keys: Vec<AuraId> = keystore
 			.sr25519_public_keys(AURA_KEY_TYPE)

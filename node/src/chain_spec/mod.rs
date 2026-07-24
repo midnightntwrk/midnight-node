@@ -261,6 +261,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		system: Default::default(),
 		aura: Default::default(),
 		babe: Default::default(),
+		consensus_engine: Default::default(),
 		beefy: BeefyConfig {
 			authorities: genesis
 				.initial_authorities()
