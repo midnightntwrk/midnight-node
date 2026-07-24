@@ -635,3 +635,113 @@ impl<D: DB> TranslationTable<D> for StateTranslationTable {
 		),
 	];
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use storage::db::InMemoryDB;
+
+	fn translate_to_completion(
+		v8: ledger_v8::structure::LedgerState<InMemoryDB>,
+	) -> ledger_v9::structure::LedgerState<InMemoryDB> {
+		let tl_state = TypedTranslationState::<
+			ledger_v8::structure::LedgerState<InMemoryDB>,
+			ledger_v9::structure::LedgerState<InMemoryDB>,
+			StateTranslationTable,
+			InMemoryDB,
+		>::start(Sp::new(v8))
+		.expect("Failed to start translation");
+
+		let cost = CostDuration::from_picoseconds(1_000_000_000_000);
+		let finished = tl_state.run(cost).expect("Translation failed");
+
+		finished
+			.result()
+			.expect("Failed to get result")
+			.expect("Translation did not complete")
+			.deref()
+			.clone()
+	}
+
+	/// Every `TranslationId` a table entry requires must itself be in the table,
+	/// or translation errors at runtime the first time the entry is needed.
+	#[test]
+	fn table_is_closed() {
+		<StateTranslationTable as TranslationTable<InMemoryDB>>::assert_closure();
+	}
+
+	/// The `TABLE` hardcodes tag string literals. If a tag on either the v8 or v9
+	/// side drifts (e.g. an rc bump changes a `#[tag]`), the literal no longer
+	/// matches what `T::tag()` produces and the migration silently mis-dispatches.
+	/// Rebuild every expected ID from the node's actual crate types and compare.
+	#[test]
+	fn table_tags_match_types() {
+		use storage::merkle_patricia_trie::{MerklePatriciaTrie, Node};
+		use storage::storable::SizeAnn;
+
+		type V8Ann = ledger_v8::annotation::NightAnn;
+		type V9Ann = ledger_v9::annotation::NightAnn;
+		type V8Contract = onchain_state_v8::state::ContractState<InMemoryDB>;
+		type V9Contract = onchain_state_v9::state::ContractState<InMemoryDB>;
+
+		let expected: Vec<(Cow<'static, str>, Cow<'static, str>)> = vec![
+			(
+				ledger_v8::structure::LedgerState::<InMemoryDB>::tag(),
+				ledger_v9::structure::LedgerState::<InMemoryDB>::tag(),
+			),
+			(
+				ledger_v8::structure::LedgerParameters::tag(),
+				ledger_v9::structure::LedgerParameters::tag(),
+			),
+			(V8Contract::tag(), V9Contract::tag()),
+			(
+				MerklePatriciaTrie::<V8Contract, InMemoryDB, V8Ann>::tag(),
+				MerklePatriciaTrie::<V9Contract, InMemoryDB, V9Ann>::tag(),
+			),
+			(
+				Node::<V8Contract, InMemoryDB, V8Ann>::tag(),
+				Node::<V9Contract, InMemoryDB, V9Ann>::tag(),
+			),
+			(u128::tag(), u128::tag()),
+			(
+				MerklePatriciaTrie::<u128, InMemoryDB, SizeAnn>::tag(),
+				MerklePatriciaTrie::<u128, InMemoryDB, V9Ann>::tag(),
+			),
+			(
+				Node::<u128, InMemoryDB, SizeAnn>::tag(),
+				Node::<u128, InMemoryDB, V9Ann>::tag(),
+			),
+		];
+
+		let actual: Vec<_> = <StateTranslationTable as TranslationTable<InMemoryDB>>::TABLE
+			.iter()
+			.map(|(id, _)| (id.0.clone(), id.1.clone()))
+			.collect();
+
+		assert_eq!(actual, expected);
+	}
+
+	/// End-to-end smoke test: a default v8 `LedgerState` translates to v9,
+	/// preserving the tag-stable pools and picking up the new v9 default
+	/// `min_block_price`, and survives a v9 serialize round-trip.
+	#[test]
+	fn empty_state_translates_and_round_trips() {
+		let v8 = ledger_v8::structure::LedgerState::<InMemoryDB>::new("test-network");
+		let v9 = translate_to_completion(v8.clone());
+
+		assert_eq!(v9.network_id, v8.network_id);
+		assert_eq!(v9.reserve_pool, v8.reserve_pool);
+		assert_eq!(v9.locked_pool, v8.locked_pool);
+		assert_eq!(v9.block_reward_pool, v8.block_reward_pool);
+		assert_eq!(
+			v9.parameters.min_block_price,
+			ledger_v9::structure::INITIAL_PARAMETERS.min_block_price,
+		);
+
+		let mut buf = Vec::new();
+		serialize::tagged_serialize(&v9, &mut buf).expect("v9 serialize");
+		let v9_rt: ledger_v9::structure::LedgerState<InMemoryDB> =
+			serialize::tagged_deserialize(&mut &buf[..]).expect("v9 deserialize");
+		assert_eq!(v9_rt.network_id, v9.network_id);
+	}
+}
