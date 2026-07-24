@@ -34,6 +34,14 @@ pub fn unlock_to_treasury_system_tx(_amount: u128) -> Result<SystemTransaction, 
 	)))
 }
 
+/// The ledger-8 runtime pays block rewards to the treasury via this system tx.
+/// Retained so the current (ledger-9) node can execute the ledger-8 WASM across
+/// the 8->9 hardfork boundary — the ledger-8 runtime imports the corresponding
+/// `construct_distribute_treasury_system_tx` host function (removed for v9).
+pub fn distribute_treasury_system_tx(amount: u128) -> Result<SystemTransaction, LedgerApiError> {
+	Ok(SystemTransaction::PayBlockRewardsToTreasury { amount })
+}
+
 pub fn is_unlock_to_treasury_system_tx(_tx: &SystemTransaction) -> bool {
 	false
 }

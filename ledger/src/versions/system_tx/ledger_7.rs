@@ -37,3 +37,8 @@ pub fn unlock_to_treasury_system_tx(_amount: u128) -> Result<SystemTransaction, 
 pub fn is_unlock_to_treasury_system_tx(_tx: &SystemTransaction) -> bool {
 	false
 }
+
+/// Not applicable to ledger-7 (only the ledger-8 bridge exposes this host fn).
+pub fn distribute_treasury_system_tx(_amount: u128) -> Result<SystemTransaction, LedgerApiError> {
+	Err(LedgerApiError::HostApiError)
+}
