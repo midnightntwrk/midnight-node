@@ -65,17 +65,29 @@ pub enum RuntimeUpgradeError {
 /// client's metadata switches to the new runtime, so decoding anything encoded by
 /// the old runtime (e.g. the `System.CodeUpdated` event in the apply block) is
 /// unreliable. The raw JSON spec_version has no such dependency.
-async fn spec_version(rpc: &RpcClient) -> Result<u32, RuntimeUpgradeError> {
-	// Query at the FINALIZED head, not the best block. A downstream toolkit fetch
-	// (`fetcher::fetch_all`) only reads up to `get_finalized_height()`, so a
-	// hardfork must be observed as *finalized* before we report success —
-	// otherwise the toolkit won't see the ledger-9 blocks yet and would build a
-	// transaction at the old ledger version.
-	let finalized_hash: serde_json::Value =
-		rpc.request("chain_getFinalizedHead", rpc_params![]).await?;
+/// (finalized_height, spec_version at the finalized head).
+///
+/// We track both because `state_getRuntimeVersion(finalized)` reports the code
+/// *stored at* that block — which flips to the new runtime already at the
+/// `apply_authorized_upgrade` block, even though that block *executed* under the
+/// old runtime (its `MNSV` digest — how the toolkit fetcher classifies a block's
+/// ledger version — is still the old spec). The first block that actually
+/// executes the new runtime is `apply + 1`. So "spec flipped at the finalized
+/// head" is one block early; callers must additionally wait for the finalized
+/// height to advance past that point before the fetcher will see a ledger-9 block.
+async fn finalized_state(rpc: &RpcClient) -> Result<(u64, u32), RuntimeUpgradeError> {
+	let hash: serde_json::Value = rpc.request("chain_getFinalizedHead", rpc_params![]).await?;
+	let header: serde_json::Value =
+		rpc.request("chain_getHeader", rpc_params![hash.clone()]).await?;
 	let version: serde_json::Value =
-		rpc.request("state_getRuntimeVersion", rpc_params![finalized_hash]).await?;
-	Ok(version.get("specVersion").and_then(|v| v.as_u64()).unwrap_or(0) as u32)
+		rpc.request("state_getRuntimeVersion", rpc_params![hash]).await?;
+	let height = header
+		.get("number")
+		.and_then(|n| n.as_str())
+		.and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+		.unwrap_or(0);
+	let spec = version.get("specVersion").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+	Ok((height, spec))
 }
 
 #[derive(Args)]
@@ -135,8 +147,8 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 	let apply_upgrade_call =
 		dynamic::tx("System", "apply_authorized_upgrade", vec![dynamic::Value::from_bytes(&code)]);
 
-	let pre_spec_version = spec_version(&rpc_client).await?;
-	log::info!("Pre-upgrade spec_version: {pre_spec_version}");
+	let (_, pre_spec_version) = finalized_state(&rpc_client).await?;
+	log::info!("Pre-upgrade spec_version (finalized): {pre_spec_version}");
 
 	// Wait only for finalization — NOT `wait_for_finalized_success`, which eagerly
 	// decodes the block's events. `apply_authorized_upgrade` swaps the on-chain
@@ -156,17 +168,31 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 		.await
 		.map_err(|_| RuntimeUpgradeError::ApplyFinalizeTimeout)??;
 
-	// Step 6: Confirm the upgrade enacted by polling for the spec_version bump at
-	// the finalized head. The new code takes effect on the block after the apply
-	// block, and finality lags the best block by a few blocks, so allow ~2min.
-	for _ in 0..40 {
+	// Step 6: Confirm the upgrade is not just applied but *executing* at a
+	// finalized block. `state_getRuntimeVersion(finalized)` reports the stored
+	// code, which flips to the new runtime already at the apply block — but that
+	// block's `MNSV` execution-version digest (how the fetcher classifies it) is
+	// still the old spec. The first block that runs the new runtime is apply+1.
+	// So: note the finalized height where the stored spec first exceeds pre, then
+	// wait for the finalized height to advance past it (apply+1 finalized). Only
+	// then will a downstream `fetch` see a ledger-9-classified block.
+	let mut flip_height: Option<u64> = None;
+	for _ in 0..60 {
 		tokio::time::sleep(Duration::from_secs(3)).await;
-		let cur = spec_version(&rpc_client).await?;
-		if cur > pre_spec_version {
-			log::info!(
-				"Runtime upgrade completed successfully! spec_version {pre_spec_version} -> {cur}"
-			);
-			return Ok(());
+		let (height, spec) = finalized_state(&rpc_client).await?;
+		if spec > pre_spec_version {
+			match flip_height {
+				None => flip_height = Some(height),
+				Some(h0) if height > h0 => {
+					log::info!(
+						"Runtime upgrade completed successfully! spec_version {pre_spec_version} -> {spec}; \
+						 new runtime executing since finalized #{}, now finalized #{height}",
+						h0 + 1,
+					);
+					return Ok(());
+				},
+				_ => {},
+			}
 		}
 	}
 
