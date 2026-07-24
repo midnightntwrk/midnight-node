@@ -783,13 +783,6 @@ impl pallet_midnight_system::Config for Runtime {
 	type LedgerBlockContextProvider = Midnight;
 }
 
-pub struct ValidatorSet;
-impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
-	fn get() -> BoundedVec<AuraId, MaxAuthorities> {
-		pallet_aura::Authorities::<Runtime>::get()
-	}
-}
-
 /// Configure the pallet-upgrade in pallets/upgrade.
 impl pallet_version::Config for Runtime {
 	type WeightInfo = pallet_version::VersionWeight<Runtime>;
@@ -1821,7 +1814,7 @@ impl_runtime_apis! {
 		fn get_sidechain_status() -> SidechainStatus {
 			SidechainStatus {
 				epoch: Sidechain::current_epoch_number(),
-				slot: ScSlotNumber(*pallet_aura::CurrentSlot::<Runtime>::get()),
+				slot: <Self as pallet_sidechain::Config>::current_slot_number(),
 				slots_per_epoch: Sidechain::slots_per_epoch().0,
 			}
 		}

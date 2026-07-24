@@ -18,7 +18,7 @@ use clap::Parser;
 use crate::cfg::Cfg;
 use midnight_node_runtime::opaque::SessionKeys;
 use parity_scale_codec::Encode;
-use partner_chains_cli::{AURA, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
+use partner_chains_cli::{AURA, BABE, CROSS_CHAIN, CreateChainSpecConfig, GRANDPA, KeyDefinition};
 use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
 use sc_cli::SubstrateCli;
 use sidechain_domain::McBlockHash;
@@ -504,7 +504,7 @@ impl PartnerChainRuntime for MidnightRuntime {
 
 	fn key_definitions() -> Vec<KeyDefinition<'static>> {
 		// TODO: BEEFY(follow up pr)
-		vec![AURA, GRANDPA, CROSS_CHAIN]
+		vec![AURA, BABE, GRANDPA, CROSS_CHAIN]
 	}
 }
 

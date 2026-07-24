@@ -48,6 +48,9 @@ pub struct PermissionedCandidatesAddresses {
 pub struct PermissionedCandidateEntry {
 	/// AURA public key (32 bytes, hex with 0x prefix)
 	pub aura_pub_key: String,
+	/// BABE public key (32 bytes, hex with 0x prefix)
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub babe_pub_key: Option<String>,
 	/// GRANDPA public key (32 bytes, hex with 0x prefix)
 	pub grandpa_pub_key: String,
 	/// Sidechain/cross-chain public key (33 bytes compressed, hex with 0x prefix)
@@ -89,6 +92,7 @@ where
 
 /// Key type identifiers used in CandidateKeys
 const AURA: KeyTypeId = KeyTypeId(*b"aura");
+const BABE: KeyTypeId = KeyTypeId(*b"babe");
 const GRANDPA: KeyTypeId = KeyTypeId(*b"gran");
 const CROSS_CHAIN: KeyTypeId = KeyTypeId(*b"crch");
 // BEEFY uses the same key as cross-chain for now
@@ -134,6 +138,7 @@ pub async fn generate_permissioned_candidates_genesis(
 	for candidate in permissioned_candidates {
 		// Extract keys from CandidateKeys
 		let aura_key = candidate.keys.find(AURA).map(|k| format!("0x{}", hex::encode(k)));
+		let babe_key = candidate.keys.find(BABE).map(|k| format!("0x{}", hex::encode(k)));
 		let grandpa_key = candidate.keys.find(GRANDPA).map(|k| format!("0x{}", hex::encode(k)));
 		let sidechain_key = format!("0x{}", hex::encode(&candidate.sidechain_public_key.0));
 		// BEEFY key - try to find it, otherwise use sidechain key
@@ -147,6 +152,7 @@ pub async fn generate_permissioned_candidates_genesis(
 		if let (Some(aura), Some(grandpa)) = (aura_key, grandpa_key) {
 			entries.push(PermissionedCandidateEntry {
 				aura_pub_key: aura,
+				babe_pub_key: babe_key,
 				grandpa_pub_key: grandpa,
 				sidechain_pub_key: sidechain_key,
 				beefy_pub_key: beefy_key,
