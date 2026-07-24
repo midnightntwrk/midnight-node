@@ -1,0 +1,124 @@
+// This file is part of midnight-node.
+// Copyright (C) 2025-2026 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Host-side v8 -> v9 ledger state translation, driven by
+//! [`crate::state_translation_v8_to_v9::StateTranslationTable`].
+//!
+//! The on-chain pallet stores only the arena root of the ledger state
+//! (`pallet_midnight::StateKey`, a `tagged_serialize`d `TypedArenaKey<Ledger>`);
+//! the `LedgerState` itself lives in the process-global ledger arena (parity-db).
+//! When the runtime upgrades from a ledger-8 runtime (spec < 2_000_000) to a
+//! ledger-9 runtime (spec >= 2_000_000), the on-chain migration
+//! (`pallet_midnight::migrations`) calls [`Ledger9Bridge::migrate_state_v8_to_v9`]
+//! which lands here: it reads the v8 arena root, walks the v8 `LedgerState`
+//! translating it into a v9 `LedgerState`, re-persists it, and returns the new v9
+//! arena root for the pallet to store back into `StateKey`.
+//!
+//! v8 and v9 share one storage crate (`ledger-storage-ledger-8`,
+//! midnight-storage 2.0.1) and hence one arena, so the translation reads and
+//! writes the same parity-db instance the pre-fork ledger-8 blocks populated.
+
+use crate::ledger_8::api::Ledger as Ledger8;
+use crate::ledger_9::api::Ledger as Ledger9;
+use crate::ledger_9::types::{DeserializationError, LedgerApiError, SerializationError};
+use crate::state_translation_v8_to_v9::StateTranslationTable;
+
+use base_crypto::cost_model::CostDuration;
+use ledger_storage_ledger_8 as storage;
+use midnight_serialize::{tagged_deserialize, tagged_serialize};
+use storage::{
+	arena::{Sp, TypedArenaKey},
+	db::DB,
+	state_translation::TypedTranslationState,
+	storage::default_storage,
+};
+
+type LedgerState8<D> = mn_ledger_8::structure::LedgerState<D>;
+type LedgerState9<D> = mn_ledger_9::structure::LedgerState<D>;
+
+const LOG_TARGET: &str = "midnight::ledger::migration_8_to_9";
+
+/// Picoseconds granted to each `TypedTranslationState::run` step. The migration
+/// is single-block (it must complete within one host call), so we loop over
+/// `run` with a generous per-step budget until the translation reports a result.
+/// One second of picoseconds per step comfortably drains dev/undeployed-sized
+/// state in a couple of iterations; the loop cap is a runaway backstop only.
+const RUN_BUDGET_PS: u64 = 1_000_000_000_000;
+const MAX_STEPS: usize = 100_000;
+
+/// Translate the ledger state referenced by a v8 arena root (`state_key_v8`,
+/// the pallet's `StateKey` bytes) into a v9 ledger state, persist it, and return
+/// the new v9 arena root to store back into `StateKey`.
+pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+	// 1. Decode the v8 arena root and load the v8 ledger wrapper from the arena.
+	let key8: TypedArenaKey<Ledger8<D>, D::Hasher> =
+		tagged_deserialize(&mut &state_key_v8[..]).map_err(|e| {
+			log::error!(target: LOG_TARGET, "failed to deserialize v8 state key: {e:?}");
+			LedgerApiError::Deserialization(DeserializationError::TypedArenaKey)
+		})?;
+	let ledger8: Sp<Ledger8<D>, D> = default_storage::<D>().arena.get_lazy(&key8).map_err(|e| {
+		log::error!(target: LOG_TARGET, "failed to load v8 ledger from arena: {e:?}");
+		LedgerApiError::NoLedgerState
+	})?;
+
+	// 2. Run the state translation table over the inner v8 `LedgerState`.
+	let input: Sp<LedgerState8<D>, D> = Sp::new(ledger8.state.clone());
+	let mut tl = TypedTranslationState::<
+		LedgerState8<D>,
+		LedgerState9<D>,
+		StateTranslationTable,
+		D,
+	>::start(input)
+	.map_err(|e| {
+		log::error!(target: LOG_TARGET, "failed to start v8->v9 translation: {e:?}");
+		LedgerApiError::HostApiError
+	})?;
+
+	let run_budget = CostDuration::from_picoseconds(RUN_BUDGET_PS);
+	let mut steps = 0usize;
+	let state9: Sp<LedgerState9<D>, D> = loop {
+		steps += 1;
+		if steps > MAX_STEPS {
+			log::error!(target: LOG_TARGET, "v8->v9 translation did not converge in {MAX_STEPS} steps");
+			return Err(LedgerApiError::HostApiError);
+		}
+		tl = tl.run(run_budget).map_err(|e| {
+			log::error!(target: LOG_TARGET, "v8->v9 translation step failed: {e:?}");
+			LedgerApiError::HostApiError
+		})?;
+		if let Some(result) = tl.result().map_err(|e| {
+			log::error!(target: LOG_TARGET, "v8->v9 translation result failed: {e:?}");
+			LedgerApiError::HostApiError
+		})? {
+			break result;
+		}
+	};
+	log::info!(target: LOG_TARGET, "v8->v9 ledger state translation complete in {steps} step(s)");
+
+	// 3. Wrap the translated state in the v9 ledger wrapper, persist it, and
+	//    flush the arena so the new root is durable before the pallet stores it.
+	let ledger9 = Ledger9::new((*state9).clone());
+	let mut sp9: Sp<Ledger9<D>, D> = default_storage::<D>().arena.alloc(ledger9);
+	sp9.persist();
+	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+
+	// 4. Serialize the new v9 arena root for the pallet to store in `StateKey`.
+	let mut bytes = Vec::new();
+	tagged_serialize(&sp9.as_typed_key(), &mut bytes).map_err(|e| {
+		log::error!(target: LOG_TARGET, "failed to serialize v9 state key: {e:?}");
+		LedgerApiError::Serialization(SerializationError::TypedArenaKey)
+	})?;
+	Ok(bytes)
+}
