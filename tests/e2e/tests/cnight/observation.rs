@@ -8,7 +8,7 @@ use midnight_node_metadata::midnight_metadata_latest::c_night_observation::event
 };
 use midnight_node_toolkit::cli_parsers::SchemeSeed;
 use midnight_node_toolkit::commands::dust_balance::{
-    self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
+    DustBalanceArgs, DustBalanceJson, DustBalanceResult,
 };
 use midnight_node_toolkit::tx_generator::source::Source;
 use std::collections::HashMap;
