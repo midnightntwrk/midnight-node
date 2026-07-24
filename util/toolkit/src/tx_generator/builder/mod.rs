@@ -1309,17 +1309,6 @@ pub(crate) fn replay_blocks(
 		l8_and_l9_blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger8);
 	let (l8_blocks, l9_blocks) = l8_and_l9_blocks.split_at(fork_8_to_9_idx);
 
-	log::info!(
-		target: "hardfork_debug",
-		"replay_blocks: total={} l7={} l8={} l9={} initial_ctx={:?} last_block_ver={:?}",
-		blocks.len(),
-		l7_blocks.len(),
-		l8_blocks.len(),
-		l9_blocks.len(),
-		fork_ctx.version(),
-		blocks.last().map(|b| b.ledger_version()),
-	);
-
 	// Replay each version's blocks in order, forking the context across the
 	// 7->8 and 8->9 boundaries as needed. The 8->9 fork performs a real state
 	// translation (see `fork_context_8_to_9`) so post-hardfork transactions are
