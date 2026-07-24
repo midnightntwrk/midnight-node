@@ -602,6 +602,12 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 		})
 	}
 
+	async fn backs_dust_generation(&self, utxo: &Utxo) -> bool {
+		self.with_ledger_state(|ledger_state| {
+			ledger_state.dust.generation.night_indices.contains_key(&utxo.initial_nonce())
+		})
+	}
+
 	async fn zswap_state(&self) -> ZswapChainState<D> {
 		self.with_ledger_state(|ledger_state| (*ledger_state.zswap).clone())
 	}
