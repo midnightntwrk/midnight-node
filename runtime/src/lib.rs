@@ -277,7 +277,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	spec_version: 002_001_000,
-	impl_version: 0,
+	impl_version: 1,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
 	system_version: 1,
@@ -1647,7 +1647,12 @@ impl_runtime_apis! {
 			seed: Option<Vec<u8>>,
 		) -> sp_session::OpaqueGeneratedSessionKeys {
 			// despite being named "generate" this function also adds generated keys to local keystore
-			let _ = CrossChainKey::generate(&owner, seed.clone());
+			// The cross-chain key is the node's permanent partner-chain identity: generate it only
+			// if the keystore does not have one yet, so that `author_rotateKeys` rotates consensus
+			// keys without changing the identity the candidate is registered with on Cardano.
+			if <CrossChainPublic as sp_runtime::RuntimeAppPublic>::all().is_empty() {
+				let _ = CrossChainKey::generate(&owner, seed.clone());
+			}
 			SessionKeys::generate(&owner, seed).into()
 		}
 
@@ -1937,6 +1942,28 @@ mod tests {
 		assert!(
 			whitelist.contains("26aa394eea5630e07c48ae0c9558cef780d41e5e16056765bc8461851072c9d7")
 		);
+	}
+
+	// `author_rotateKeys` must rotate consensus keys without touching the cross-chain
+	// identity key the candidate is registered with on Cardano.
+	#[test]
+	fn generate_session_keys_preserves_existing_cross_chain_key() {
+		use sp_keystore::{Keystore, KeystoreExt, testing::MemoryKeystore};
+		use sp_session::runtime_decl_for_session_keys::SessionKeysV2;
+
+		let keystore = std::sync::Arc::new(MemoryKeystore::new());
+		let mut ext = sp_io::TestExternalities::default();
+		ext.register_extension(KeystoreExt(keystore.clone()));
+		ext.execute_with(|| {
+			let first = crate::Runtime::generate_session_keys(vec![], None);
+			let second = crate::Runtime::generate_session_keys(vec![], None);
+			assert_ne!(first.keys, second.keys, "consensus session keys must rotate");
+			assert_eq!(
+				keystore.ecdsa_public_keys(crate::CROSS_CHAIN).len(),
+				1,
+				"cross-chain key must be generated once and preserved on rotation"
+			);
+		});
 	}
 
 	// The set committee takes effect next session. Committee can be set for 1 session in advance.

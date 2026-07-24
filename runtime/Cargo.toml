@@ -97,6 +97,7 @@ runtime-common.workspace = true
 
 [dev-dependencies]
 sp-io.workspace = true
+sp-keystore = { workspace = true, features = ["std"] }
 sp-consensus-slots.workspace = true
 plutus.workspace = true
 serde.workspace = true
