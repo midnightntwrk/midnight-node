@@ -15,7 +15,7 @@
 
 use crate::{
 	cfg::{Cfg, midnight_cfg::StorageSeparation},
-	cli::{self, Cli, RunMidnight, Subcommand},
+	cli::{Cli, RunMidnight, Subcommand},
 	filtering_pool::TxFilterConfig,
 	genesis::{
 		creation::{
@@ -35,10 +35,10 @@ use crate::{
 			verify_reserve_auth_script,
 		},
 	},
+	reference_hardware::MIDNIGHT_REFERENCE_HARDWARE,
 	service::{self, StorageInit},
 };
 use clap::Parser;
-use frame_benchmarking_cli::SUBSTRATE_REFERENCE_HARDWARE;
 use midnight_node_runtime::Block;
 use midnight_primitives_cnight_observation::CNightAddresses;
 use midnight_primitives_federated_authority_observation::FederatedAuthorityAddresses;
@@ -46,7 +46,13 @@ use sc_cli::{CliConfiguration, LoggerBuilder, RunCmd, SubstrateCli};
 use sc_keystore::LocalKeystore;
 use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
-use sp_core::{ByteArray, Pair, offchain::KeyTypeId};
+use sp_core::{
+	ByteArray, Pair,
+	crypto::key_types::{
+		AURA as AURA_KEY_TYPE, BABE as BABE_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE,
+	},
+	offchain::KeyTypeId,
+};
 use sp_keystore::KeystorePtr;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -61,6 +67,20 @@ pub(crate) fn safe_exit(code: i32) -> ! {
 	let _ = std::io::stdout().lock().flush();
 	let _ = std::io::stderr().lock().flush();
 	std::process::exit(code)
+}
+
+/// Refuse to run chain-affecting operations when the binary was built with
+/// `--features runtime-benchmarks`. The benchmarking runtime relaxes origin
+/// checks and exposes helper extrinsics, so it must never be used against a
+/// real chain. The `benchmark` subcommand bypasses this guard.
+fn bail_if_runtime_benchmarks(context: &str) {
+	if cfg!(feature = "runtime-benchmarks") {
+		eprintln!(
+			"error: this binary was built with `--features runtime-benchmarks` and must not be used for {context}. \
+			 Rebuild without that feature, or use the `benchmark` subcommand."
+		);
+		safe_exit(1);
+	}
 }
 
 /// Parse and run command line arguments
@@ -152,12 +172,13 @@ fn decode_genesis_state(
 }
 
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
-	let run_cmd: RunCmd = cfg
-		.substrate_cfg
-		.clone()
-		.into_run_cmd(&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?)?;
+	bail_if_runtime_benchmarks("running a node");
 	let run_midnight = RunMidnight::try_parse_from(cfg.substrate_cfg.clone().argv())
 		.map_err(|e| sc_cli::Error::Input(format!("invalid node run arguments: {e}")))?;
+	let run_cmd: RunCmd = cfg.substrate_cfg.clone().apply_overrides_to_run_cmd(
+		run_midnight.run.clone(),
+		&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?,
+	)?;
 	let tx_filter_config = if run_midnight.filter_deploy_txs {
 		TxFilterConfig::enabled()
 	} else {
@@ -208,10 +229,21 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
-		keystore
-			.insert(KeyTypeId(*b"aura"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("AURA pubkey: {}", &keypair.public())
+	}
+
+	if let Some(seed_file) = &cfg.midnight_cfg.babe_seed_file {
+		let seed = std::fs::read_to_string(seed_file).map_err(|e| {
+			sc_cli::Error::Input(format!(
+				"error when reading BABE seed file at {seed_file}. Error: {e}"
+			))
+		})?;
+		let seed = seed.trim();
+		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
+			.map_err(|e| sc_cli::Error::Input(format!("Invalid BABE seed: {e}")))?;
+		keystore.insert(BABE_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		log::info!("BABE pubkey: {}", &keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.grandpa_seed_file {
@@ -223,9 +255,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
-		keystore
-			.insert(KeyTypeId(*b"gran"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+		keystore.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("GRANDPA pubkey: {}", &keypair.public())
 	}
 
@@ -262,7 +292,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			.then(|| {
 				config.database.path().map(|database_path| {
 					let _ = std::fs::create_dir_all(database_path);
-					sc_sysinfo::gather_hwbench(Some(database_path), &SUBSTRATE_REFERENCE_HARDWARE)
+					sc_sysinfo::gather_hwbench(Some(database_path), &MIDNIGHT_REFERENCE_HARDWARE)
 				})
 			})
 			.flatten();
@@ -377,6 +407,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 	match subcommand {
 		Subcommand::Key(ref cmd) => cmd.run(&cfg),
 		Subcommand::PartnerChains(cmd) => {
+			bail_if_runtime_benchmarks("the partner-chains subcommand");
 			let midnight_cfg = cfg.midnight_cfg.clone();
 			let make_dependencies = |config: sc_service::Configuration| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)
@@ -391,11 +422,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
-			partner_chains_node_commands::run::<_, _, _, _, cli::MidnightBlockProducerMetadata, _, _>(
-				&cfg,
-				make_dependencies,
-				cmd.clone(),
-			)
+			partner_chains_node_commands::run::<_, _, _, _, _>(&cfg, make_dependencies, cmd.clone())
 		},
 		Subcommand::BuildSpec(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
@@ -417,6 +444,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			})
 		},
 		Subcommand::ExportBlocks(ref cmd) => {
+			bail_if_runtime_benchmarks("exporting blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
@@ -445,6 +473,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			})
 		},
 		Subcommand::ImportBlocks(ref cmd) => {
+			bail_if_runtime_benchmarks("importing blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
@@ -464,6 +493,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			runner.sync_run(|config| cmd.run(config.database))
 		},
 		Subcommand::Revert(ref cmd) => {
+			bail_if_runtime_benchmarks("reverting blocks");
 			let runner = cfg.create_runner(cmd)?;
 			runner.async_run(|config| {
 				let storage_config = storage_init_from_chain_spec(&config, cache_size, separation)?;
@@ -585,7 +615,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						)
 					},
 					BenchmarkCmd::Machine(cmd) => {
-						cmd.run(&config, SUBSTRATE_REFERENCE_HARDWARE.clone())
+						cmd.run(&config, MIDNIGHT_REFERENCE_HARDWARE.clone())
 					},
 				}
 			})
@@ -1529,8 +1559,8 @@ mod tests {
 		chain_spec_genesis: &[u8],
 		compiled_genesis: &[u8],
 	) -> sc_cli::Result<()> {
-		let spec_hash = sp_core::hashing::blake2_256(chain_spec_genesis);
-		let compiled_hash = sp_core::hashing::blake2_256(compiled_genesis);
+		let spec_hash = sp_crypto_hashing::blake2_256(chain_spec_genesis);
+		let compiled_hash = sp_crypto_hashing::blake2_256(compiled_genesis);
 		if spec_hash != compiled_hash {
 			return Err(sc_cli::Error::Input(format!(
 				"genesis state mismatch: chain spec genesis hash {} differs from compiled default {}",

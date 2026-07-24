@@ -21,7 +21,6 @@ thiserror = { workspace = true, optional = true }
 cardano-serialization-lib = { workspace = true, optional = true }
 sqlx = { version = "0.8.5",  optional = true,  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal", "json"]}
 db-sync-sqlx = { workspace = true, optional = true }
-derive-new.workspace = true
 partner-chains-db-sync-data-sources = { default-features = false, workspace = true, optional = true }
 scale-info.workspace = true
 log.workspace = true
@@ -37,6 +36,7 @@ tokio = { workspace = true, features = ["full"], optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"]}
+serde_json = { workspace = true }
 
 [features]
 default = ["std"]

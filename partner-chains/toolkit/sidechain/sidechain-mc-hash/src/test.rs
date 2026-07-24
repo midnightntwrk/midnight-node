@@ -1,7 +1,7 @@
 mod inherent_digest_tests {
 	use crate::mock::*;
 	use crate::*;
-	use sp_partner_chains_consensus_aura::inherent_digest::InherentDigest;
+	use sp_partner_chains_consensus::InherentDigest;
 
 	#[tokio::test]
 	async fn from_inherent_data_works() {
@@ -25,6 +25,17 @@ mod inherent_digest_tests {
 			.expect("value_from_digest should not fail");
 
 		assert_eq!(result, McBlockHash([42; 32]))
+	}
+
+	#[tokio::test]
+	async fn value_from_digest_rejects_duplicate_mc_hash_entries() {
+		let first = DigestItem::PreRuntime(MC_HASH_DIGEST_ID, vec![7; 32]);
+		let second = DigestItem::PreRuntime(MC_HASH_DIGEST_ID, vec![8; 32]);
+
+		let err = McHashInherentDigest::value_from_digest(&[first, second])
+			.expect_err("duplicate MC hash digests must be rejected");
+
+		assert_eq!(err.to_string(), "Multiple main chain block hashes in digest");
 	}
 }
 
@@ -151,5 +162,136 @@ mod validation_tests {
 			Default::default(),
 			Digest { logs: McHashInherentDigest::from_mc_block_hash(mc_hash) },
 		)
+	}
+
+	/// Convenience: a small synthetic MainchainBlock with the given hash.
+	fn make_block(hash: McBlockHash) -> MainchainBlock {
+		MainchainBlock {
+			number: McBlockNumber(5),
+			hash,
+			slot: McSlotNumber(50),
+			epoch: McEpochNumber(1),
+			timestamp: 500,
+		}
+	}
+
+	#[tokio::test]
+	async fn stable_reference_verifies() {
+		let slot_duration = SlotDuration::from_millis(1000);
+		let mc_block_hash = McBlockHash([7; 32]);
+		let block = make_block(mc_block_hash.clone());
+
+		let data_source = MockMcHashDataSource::new(vec![block.clone()], vec![]);
+
+		let provider = McHashInherentDataProvider::new_verification(
+			mock_header(McBlockHash([8; 32])),
+			None,
+			Slot::from(30),
+			mc_block_hash.clone(),
+			slot_duration,
+			&data_source,
+		)
+		.await
+		.expect("a stable reference should verify");
+
+		assert_eq!(provider.mc_hash(), mc_block_hash);
+		assert_eq!(provider.mc_block(), block.number);
+	}
+
+	#[tokio::test]
+	async fn unstable_block_with_fresh_tip_rejects_as_invalid() {
+		let slot_duration = SlotDuration::from_millis(1000);
+		let mc_block_hash = McBlockHash([7; 32]);
+		let unstable = make_block(mc_block_hash.clone());
+
+		let data_source = MockMcHashDataSource::new(vec![], vec![unstable]);
+		// Our Cardano tip looks fresh, so an unstable reference is a dishonest one.
+		data_source.set_tip_fresh_responses([true]);
+
+		let verified_block_slot = Slot::from(30);
+		let err = McHashInherentDataProvider::new_verification(
+			mock_header(McBlockHash([8; 32])),
+			None,
+			verified_block_slot,
+			mc_block_hash.clone(),
+			slot_duration,
+			&data_source,
+		)
+		.await
+		.unwrap_err();
+
+		let timestamp = verified_block_slot.timestamp(slot_duration).unwrap();
+		assert_eq!(
+			err.to_string(),
+			McStateReferenceInvalid(mc_block_hash, verified_block_slot, timestamp).to_string()
+		);
+	}
+
+	#[tokio::test]
+	async fn unstable_block_with_stale_tip_awaits_cardano() {
+		let slot_duration = SlotDuration::from_millis(1000);
+		let mc_block_hash = McBlockHash([7; 32]);
+		let unstable = make_block(mc_block_hash.clone());
+
+		let data_source = MockMcHashDataSource::new(vec![], vec![unstable]);
+		// Our Cardano tip looks stale, so we cannot yet rule the reference out: the caller
+		// should back off and retry rather than treat it as invalid.
+		data_source.set_tip_fresh_responses([false]);
+
+		let err = McHashInherentDataProvider::new_verification(
+			mock_header(McBlockHash([8; 32])),
+			None,
+			Slot::from(30),
+			mc_block_hash.clone(),
+			slot_duration,
+			&data_source,
+		)
+		.await
+		.unwrap_err();
+
+		assert_eq!(err.to_string(), AwaitingCardanoData(mc_block_hash).to_string());
+	}
+
+	#[tokio::test]
+	async fn unknown_block_with_unhealthy_cardano_awaits_cardano() {
+		let slot_duration = SlotDuration::from_millis(1000);
+		let mc_block_hash = McBlockHash([7; 32]);
+
+		let data_source = MockMcHashDataSource::new(vec![], vec![]);
+		// Unknown reference while our Cardano view is unhealthy: hold off rather than reject.
+		data_source.set_cardano_ok_responses([false]);
+
+		let err = McHashInherentDataProvider::new_verification(
+			mock_header(McBlockHash([8; 32])),
+			None,
+			Slot::from(30),
+			mc_block_hash.clone(),
+			slot_duration,
+			&data_source,
+		)
+		.await
+		.unwrap_err();
+
+		assert_eq!(err.to_string(), AwaitingCardanoData(mc_block_hash).to_string());
+	}
+
+	#[tokio::test]
+	async fn unknown_block_when_cardano_is_ok_is_rejected() {
+		let err = McHashInherentDataProvider::new_verification(
+			mock_header(McBlockHash([8; 32])),
+			None,
+			Slot::from(30),
+			McBlockHash([7; 32]),
+			SlotDuration::from_millis(1000),
+			&MockMcHashDataSource::new(vec![], vec![]),
+		)
+		.await
+		.unwrap_err();
+
+		assert_eq!(
+			err.to_string(),
+			McStateReferenceInvalid(McBlockHash([7; 32]), Slot::from(30), Timestamp::new(30000))
+				.to_string()
+		);
 	}
 }

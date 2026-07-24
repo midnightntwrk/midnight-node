@@ -46,15 +46,9 @@ pub fn pc_create_chain_spec(config: &CreateChainSpecConfig<SessionKeys>) -> serd
 		grandpa: partner_chains_demo_runtime::GrandpaConfig::default(),
 		sudo: partner_chains_demo_runtime::SudoConfig::default(),
 		transaction_payment: Default::default(),
-		session: config.pallet_partner_chains_session_config(),
+		session: Default::default(),
 		sidechain: config.pallet_sidechain_config(SlotsPerEpoch::default()),
-		pallet_session: Default::default(),
 		session_committee_management: config.pallet_session_validator_management_config(),
-		governed_map: config.governed_map_config(),
-		test_helper_pallet: partner_chains_demo_runtime::TestHelperPalletConfig {
-			participation_data_release_period: 30,
-			..Default::default()
-		},
 		bridge: config.bridge_config(),
 	};
 	let genesis_json = serde_json::to_value(runtime_genesis_config)

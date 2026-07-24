@@ -10,3 +10,12 @@ max-threads = 1
 [[profile.ci.overrides]]
 filter = "test(generate_intent)"
 test-group = "toolkit-js"
+
+# Contract E2E tests all fund from the same FUNDING_SEED against a shared node
+# container; running them in parallel races on that wallet's UTXOs. Keep them serial.
+[test-groups.contract-e2e]
+max-threads = 1
+
+[[profile.ci.overrides]]
+filter = "test(bboard_private_witness_not_leaked) | test(counter_increment_e2e)"
+test-group = "contract-e2e"

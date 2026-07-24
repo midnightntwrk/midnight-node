@@ -1,11 +1,14 @@
 use super::ledger_helpers_local::{
-	self, ContractAddress, DefaultDB, serialize, serialize_untagged,
+	self, ContractAddress, DefaultDB, HashOutput, serialize, serialize_untagged,
 };
 
 pub fn get_contract_state(
 	context: &ledger_helpers_local::context::LedgerContext<DefaultDB>,
-	contract_address: ContractAddress,
+	contract_address: midnight_node_ledger_helpers::ContractAddress,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+	// ContractAddress is a HashOutput newtype in both coin-structure 2.x and 3.x;
+	// identity when compiled as ledger_9.
+	let contract_address = ContractAddress(HashOutput(contract_address.0.0));
 	let state = context
 		.with_ledger_state(|ledger_state| ledger_state.index(contract_address))
 		.expect("contract state for address does not exist");

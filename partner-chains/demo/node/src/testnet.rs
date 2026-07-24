@@ -1,9 +1,8 @@
 use crate::chain_spec::*;
 use authority_selection_inherents::CommitteeMember;
 use partner_chains_demo_runtime::{
-	AccountId, AuraConfig, BalancesConfig, BridgeConfig, GovernedMapConfig, GrandpaConfig,
-	RuntimeGenesisConfig, SessionCommitteeManagementConfig, SessionConfig, SidechainConfig,
-	SudoConfig, SystemConfig, TestHelperPalletConfig,
+	AccountId, AuraConfig, BalancesConfig, BridgeConfig, GrandpaConfig, RuntimeGenesisConfig,
+	SessionCommitteeManagementConfig, SidechainConfig, SudoConfig, SystemConfig,
 };
 use sc_service::ChainType;
 use sidechain_domain::*;
@@ -183,34 +182,18 @@ pub fn testnet_genesis(
 			key: root_key,
 		},
 		transaction_payment: Default::default(),
-		session: SessionConfig {
-			initial_validators: initial_authorities
-				.iter()
-				.map(|authority_keys| {
-					(authority_keys.cross_chain.clone().into(), authority_keys.session.clone())
-				})
-				.collect(),
-		},
+		session: Default::default(),
 		sidechain: SidechainConfig {
 			genesis_utxo,
 			slots_per_epoch: SlotsPerEpoch::read_from_env()?,
 			..Default::default()
 		},
-		pallet_session: Default::default(),
 		session_committee_management: SessionCommitteeManagementConfig {
 			initial_authorities: initial_authorities
 				.into_iter()
 				.map(|keys| CommitteeMember::permissioned(keys.cross_chain, keys.session))
 				.collect(),
 			main_chain_scripts: sp_session_validator_management::MainChainScripts::read_from_env()?,
-		},
-		governed_map: GovernedMapConfig {
-			main_chain_scripts: Some(sp_governed_map::MainChainScriptsV1::read_from_env()?),
-			..Default::default()
-		},
-		test_helper_pallet: TestHelperPalletConfig {
-			participation_data_release_period: 30,
-			..Default::default()
 		},
 		bridge: BridgeConfig {
 			main_chain_scripts: Some(sp_partner_chains_bridge::MainChainScripts::read_from_env()?),
