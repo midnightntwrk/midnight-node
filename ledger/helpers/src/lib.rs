@@ -49,6 +49,9 @@ pub mod ledger_7 {
 
 	/// Ledger generation implemented by this module.
 	pub const LEDGER_VERSION: u32 = 7;
+	/// The contract-maintenance-authority verifying-key type for this generation. Pre-ledger-9
+	/// ledgers have no dedicated maintenance-key enum, so it is the plain signature verifying key.
+	pub type MaintenanceVerifyingKey = SignatureVerifyingKey;
 	/// Workspace dependency name of the ledger crate backing this module.
 	pub const CRATE_NAME: &str = "mn-ledger";
 	pub use {
@@ -168,6 +171,9 @@ pub mod ledger_8 {
 
 	/// Ledger generation implemented by this module.
 	pub const LEDGER_VERSION: u32 = 8;
+	/// The contract-maintenance-authority verifying-key type for this generation. Pre-ledger-9
+	/// ledgers have no dedicated maintenance-key enum, so it is the plain signature verifying key.
+	pub type MaintenanceVerifyingKey = SignatureVerifyingKey;
 	/// Workspace dependency name of the ledger crate backing this module.
 	pub const CRATE_NAME: &str = "mn-ledger-8";
 	pub use {
@@ -286,6 +292,9 @@ pub mod ledger_9 {
 
 	/// Ledger generation implemented by this module.
 	pub const LEDGER_VERSION: u32 = 9;
+	/// The contract-maintenance-authority verifying-key type for this generation: from ledger 9 the
+	/// ledger carries a dedicated Schnorr/ECDSA maintenance-key enum.
+	pub type MaintenanceVerifyingKey = ContractMaintenanceVerifyingKey;
 	/// Workspace dependency name of the ledger crate backing this module.
 	pub const CRATE_NAME: &str = "mn-ledger-9";
 	pub use {
@@ -306,6 +315,11 @@ pub mod ledger_9 {
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
+
+	// Ledger-9-only ECDSA wallet tests (not in shared `common`); see the module docs.
+	// `can-panic`-gated: the whole `common::wallet` module (hence `UnshieldedWallet`) is.
+	#[cfg(all(test, feature = "can-panic"))]
+	mod ecdsa_wallet_tests;
 
 	pub use mn_ledger::structure::{
 		Signature as TransactionSignature, SignatureVerifyingKey,
