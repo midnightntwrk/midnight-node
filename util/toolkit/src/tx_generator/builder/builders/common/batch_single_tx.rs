@@ -23,6 +23,7 @@ use super::output_spec::{ShieldedOutputSpec, UnshieldedOutputSpec};
 use super::single_tx::{MAX_GUARANTEED_OUTPUTS, build_shielded_offer, build_unshielded_intents};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
+use tracing::Instrument as _;
 
 use crate::{Progress, serde_def::SourceTransactions, tx_generator::builder::BatchSingleTxArgs};
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
@@ -193,11 +194,13 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 		let futures: Vec<_> = self
 			.transfers
 			.iter()
-			.map(|spec| {
+			.enumerate()
+			.map(|(i, spec)| {
 				let context = self.context.clone();
 				let prover = self.prover.clone();
 				let spec = spec.clone();
 				let coin_selection = self.coin_selection;
+				let index = i + 1;
 				async move {
 					let result =
 						Self::build_single_transfer(context, prover, &spec, coin_selection)
@@ -213,6 +216,11 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 							});
 					result
 				}
+				// Tags every nested `[perf]` phase log (select/build_offer/pay_fees/prove_tx/
+				// serialize, emitted from single_tx.rs/transaction.rs/tx_serialization.rs) with
+				// this transfer's index, so a report script can correlate per-phase timings back
+				// to a single tx even though transfers build concurrently on one thread.
+				.instrument(tracing::debug_span!("transfer", index, total = num_transfers))
 			})
 			.collect();
 		let mut stream = futures::stream::iter(futures).buffered(self.concurrency);
