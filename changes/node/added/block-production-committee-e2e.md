@@ -20,5 +20,5 @@ Adds the supporting `MidnightClient` helpers (`get_epoch_committee`,
 `+local-env-ci` runs it as the final step (after the suite + health check) so it
 analyses the most blocks — bounded to the newest 200.
 
-PR: (added when the PR is opened)
+PR: https://github.com/midnightntwrk/midnight-node/pull/1926
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1759
