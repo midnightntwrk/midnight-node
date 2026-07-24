@@ -22,6 +22,8 @@ use std::time::Duration;
 use subxt::extrinsics::ExtrinsicEvents;
 use subxt::rpcs::{RpcClient, rpc_params};
 use subxt::tx::TransactionProgress;
+use subxt::config::substrate::{DigestItem, SubstrateHeader};
+use subxt::ext::codec::Decode;
 use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
@@ -61,6 +63,36 @@ pub struct AriadneParametersResponse {
     pub permissioned_candidates: Option<Vec<serde_json::Value>>,
     /// Map of candidate registrations
     pub candidate_registrations: serde_json::Value,
+}
+
+/// One member of a sidechain epoch committee (from `sidechain_getEpochCommittee`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EpochCommitteeMember {
+    /// Sidechain (cross-chain) public key, hex `0x…`.
+    pub sidechain_pub_key: String,
+}
+
+/// Response of `sidechain_getEpochCommittee` — the ordered committee for a
+/// sidechain epoch (AURA walks this list by `slot % len`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EpochCommitteeResponse {
+    /// The sidechain epoch this committee serves.
+    pub sidechain_epoch: u64,
+    /// Ordered committee members (may repeat when a member holds >1 seat).
+    pub committee: Vec<EpochCommitteeMember>,
+}
+
+/// Digest-derived facts about one block, used by the block-production audit.
+#[derive(Debug, Clone)]
+pub struct BlockDigestInfo {
+    /// Block number.
+    pub number: u64,
+    /// Parent block hash (its committee is the one that produced this block).
+    pub parent_hash: H256,
+    /// AURA slot from the `PreRuntime` digest (None if absent, e.g. genesis).
+    pub aura_slot: Option<u64>,
 }
 
 /// C-to-M bridge data from all `Bridge::handle_transfers` calls of one block.
@@ -1095,6 +1127,125 @@ impl MidnightClient {
     pub async fn get_current_epoch(&self) -> Result<u64, Box<dyn std::error::Error>> {
         let status = self.get_sidechain_status().await?;
         Ok(status.epoch)
+    }
+
+    // ========== Block-production / committee audit helpers ==========
+
+    /// The ordered committee for a sidechain epoch via `sidechain_getEpochCommittee`.
+    pub async fn get_epoch_committee(
+        &self,
+        sc_epoch: u64,
+    ) -> Result<EpochCommitteeResponse, Box<dyn std::error::Error>> {
+        Ok(self
+            .rpc_client
+            .request("sidechain_getEpochCommittee", rpc_params![sc_epoch])
+            .await?)
+    }
+
+    /// Current sidechain `(epoch, slot)` read straight from `sidechain_getStatus`
+    /// (raw JSON — the response is `{ sidechain: { epoch, slot, .. }, .. }`).
+    pub async fn get_sidechain_epoch_and_slot(
+        &self,
+    ) -> Result<(u64, u64), Box<dyn std::error::Error>> {
+        let v: serde_json::Value = self
+            .rpc_client
+            .request("sidechain_getStatus", rpc_params![])
+            .await?;
+        let epoch = v["sidechain"]["epoch"]
+            .as_u64()
+            .ok_or("sidechain_getStatus: missing sidechain.epoch")?;
+        let slot = v["sidechain"]["slot"]
+            .as_u64()
+            .ok_or("sidechain_getStatus: missing sidechain.slot")?;
+        Ok((epoch, slot))
+    }
+
+    /// Current mainchain (Cardano) epoch from `sidechain_getStatus`.
+    pub async fn get_mainchain_epoch(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        let v: serde_json::Value = self
+            .rpc_client
+            .request("sidechain_getStatus", rpc_params![])
+            .await?;
+        v["mainchain"]["epoch"]
+            .as_u64()
+            .ok_or_else(|| "sidechain_getStatus: missing mainchain.epoch".into())
+    }
+
+    /// Decode a block's number, parent hash and AURA slot from its header digest.
+    pub async fn get_block_digest_info(
+        &self,
+        block_hash: H256,
+    ) -> Result<BlockDigestInfo, Box<dyn std::error::Error>> {
+        let header: SubstrateHeader<H256> = self
+            .rpc_client
+            .request("chain_getHeader", rpc_params![block_hash])
+            .await?;
+        let aura_slot = header.digest.logs.iter().find_map(|log| match log {
+            DigestItem::PreRuntime(engine, data) if *engine == *b"aura" => data
+                .get(0..8)
+                .and_then(|b| b.try_into().ok())
+                .map(u64::from_le_bytes),
+            _ => None,
+        });
+        Ok(BlockDigestInfo {
+            number: header.number,
+            parent_hash: header.parent_hash,
+            aura_slot,
+        })
+    }
+
+    /// `aura.authorities` (the ordered list AURA walks) at a block, as `0x…` hex keys.
+    ///
+    /// Decodes the raw storage bytes as `Vec<[u8; 32]>` (a `BoundedVec<AuraId>`
+    /// SCALE-encodes identically) rather than the generated `Public` type, which
+    /// doesn't implement `Encode`/`AsRef` for extracting the inner bytes.
+    pub async fn get_aura_authorities_hex_at(
+        &self,
+        block_hash: H256,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let at = self.online_client().at_block(block_hash).await?;
+        let fetched = at
+            .storage()
+            .try_fetch(mn_meta::storage().aura().authorities(), ())
+            .await?;
+        let Some(value) = fetched else {
+            return Ok(vec![]);
+        };
+        let authorities = <Vec<[u8; 32]>>::decode(&mut value.bytes())?;
+        Ok(authorities
+            .iter()
+            .map(|key| format!("0x{}", hex::encode(key)))
+            .collect())
+    }
+
+    /// `session.validators` length at a block.
+    pub async fn get_session_validators_len_at(
+        &self,
+        block_hash: H256,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let at = self.online_client().at_block(block_hash).await?;
+        let decoded = at
+            .storage()
+            .try_fetch(mn_meta::storage().session().validators(), ())
+            .await?
+            .map(|v| v.decode())
+            .transpose()?;
+        Ok(decoded.map(|validators| validators.len()).unwrap_or(0))
+    }
+
+    /// `session.currentIndex` at a block.
+    pub async fn get_session_index_at(
+        &self,
+        block_hash: H256,
+    ) -> Result<u32, Box<dyn std::error::Error>> {
+        let at = self.online_client().at_block(block_hash).await?;
+        let decoded = at
+            .storage()
+            .try_fetch(mn_meta::storage().session().current_index(), ())
+            .await?
+            .map(|v| v.decode())
+            .transpose()?;
+        Ok(decoded.unwrap_or(0))
     }
 
     /// Wait until the sidechain reaches a specific epoch.

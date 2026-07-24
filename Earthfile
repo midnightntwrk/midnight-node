@@ -1834,6 +1834,10 @@ local-env-ci:
             echo "=== post-suite liveness check ===" && \
             cd "$ROOT" && \
             ./local-environment/check-health.sh -u http://localhost:9933 -b 50 -t 360 && \
+            echo "=== block-production / committee audit (runs last, over the most blocks) ===" && \
+            ( cd "$ROOT/tests/e2e" && \
+              cargo test --test e2e_tests --no-default-features --features local -- --ignored block_production --nocapture ) && \
+            cd "$ROOT" && \
             rm -f /root/.docker/config.json
     END
 
