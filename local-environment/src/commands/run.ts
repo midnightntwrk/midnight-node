@@ -37,6 +37,7 @@ import {
   mockOverridePath,
   MOCKED_CONFIG_DIRNAME,
 } from "../lib/mockComposeOverride";
+import { writeForkManifest } from "../lib/forkManifest";
 
 /**
  * Bring up a network locally:
@@ -73,6 +74,15 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     } else {
       console.warn(`⚠️  Env file not found: ${envFilePath}`);
     }
+  }
+
+  // Fail before the (potentially hours-long) snapshot restore rather than at
+  // compose interpolation time. Fork mode has no .envrc fallback: consumers
+  // running from a sparse checkout must provide the image explicitly.
+  if (!env.NODE_IMAGE) {
+    throw new Error(
+      `NODE_IMAGE is not set. Export it or pass an --env-file, e.g. NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag>`,
+    );
   }
 
   let overridePath: string;
@@ -132,6 +142,13 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     profiles: runOptions.profiles,
     detach: true,
   });
+
+  const manifestPath = writeForkManifest({
+    namespace,
+    composeFile,
+    env,
+  });
+  console.log(`Fork manifest written: ${manifestPath}`);
 }
 
 function assertReusableForkState(
