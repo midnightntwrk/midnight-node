@@ -74,6 +74,27 @@ impl core::fmt::Display for GetRootError {
 	}
 }
 
+/// Returns true if `genesis_state` is a tagged-serialized `LedgerState` of *this*
+/// ledger version (i.e. its `midnight:ledger-state[vN]:` header tag matches this
+/// version's `LedgerState::tag()`).
+///
+/// Used to pick the correct version-specific seeder for the genesis arena when a
+/// node boots on a chain-spec produced by an older runtime (e.g. the ledger 8->9
+/// hardfork, where a ledger-9 node starts from a ledger-8 `ledger-state[v13]`
+/// genesis before the runtime upgrade migrates it to v9).
+#[cfg(feature = "std")]
+pub fn genesis_matches_this_version(genesis_state: &[u8]) -> bool {
+	use super::ledger_storage_local::DefaultDB;
+	let tag = <super::mn_ledger_local::structure::LedgerState<DefaultDB> as Tagged>::tag();
+	// The tagged header is `midnight:{tag}:` at the very start of the payload; a
+	// substring search over the header region is robust to the exact global-tag
+	// prefix while staying anchored (tags like `ledger-state[v13]` are unique).
+	let head_len = genesis_state.len().min(64);
+	genesis_state[..head_len]
+		.windows(tag.len())
+		.any(|w| w == tag.as_bytes())
+}
+
 pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRootError> {
 	// Get empty state key
 	use super::api::Ledger;

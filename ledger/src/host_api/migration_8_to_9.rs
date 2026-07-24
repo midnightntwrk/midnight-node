@@ -122,3 +122,42 @@ pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, Led
 	})?;
 	Ok(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use ledger_storage_ledger_8::db::InMemoryDB;
+
+	/// Dev-only: verify that seeding a v8 genesis blob with *this* crate's
+	/// ledger_8 `Ledger` wrapper reproduces the exact arena root a ledger-8 node
+	/// (e.g. release 1.0.1) stored in the chain-spec as `genesisStateKey`. If the
+	/// wrapper serialization drifted, the seeded root wouldn't match and block
+	/// execution after boot would fail to find the state. Runs only when the two
+	/// blob paths are provided via env (extracted from a fork-from chain-spec).
+	#[test]
+	fn v8_genesis_seed_root_matches_chainspec_key() {
+		let (Ok(gs_path), Ok(key_path)) =
+			(std::env::var("HF_GENESIS_STATE"), std::env::var("HF_GENESIS_KEY"))
+		else {
+			eprintln!("skipping: set HF_GENESIS_STATE and HF_GENESIS_KEY to run");
+			return;
+		};
+		let genesis = std::fs::read(gs_path).expect("read genesis_state");
+		let expected = std::fs::read(key_path).expect("read genesisStateKey");
+
+		let state: LedgerState8<InMemoryDB> =
+			midnight_serialize::tagged_deserialize(&mut &genesis[..]).expect("deserialize v8 state");
+		let ledger = Ledger8::<InMemoryDB>::new(state);
+		let mut sp = default_storage::<InMemoryDB>().arena.alloc(ledger);
+		sp.persist();
+		let mut got = Vec::new();
+		tagged_serialize(&sp.as_typed_key(), &mut got).expect("serialize key");
+
+		assert_eq!(
+			got, expected,
+			"seeded v8 root must match the chain-spec genesisStateKey \n got={} \n exp={}",
+			hex::encode(&got),
+			hex::encode(&expected),
+		);
+	}
+}
