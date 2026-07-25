@@ -42,6 +42,11 @@ pub struct SendBatchError {
 	pub failed_count: usize,
 }
 
+/// How many finalized blocks to scan backwards when the watch stream timed out
+/// without reporting finality. Covers the whole watch window (best-block +
+/// finalization timeouts) with margin at 6-second blocks.
+const FINALIZED_FALLBACK_SCAN_DEPTH: u32 = 64;
+
 #[derive(Debug, Error)]
 pub enum SenderError {
 	#[error(
@@ -289,6 +294,17 @@ impl Sender {
 		Ok((tx_hashes, Progress { url: client.url.clone(), tx_progress }))
 	}
 
+	/// Read a duration override (in seconds) from the environment, falling back
+	/// to `default`. Lets slow or fault-injected environments stretch the send
+	/// watch phases without a CLI change (see #1853/#1854).
+	fn duration_from_env(var: &str, default: Duration) -> Duration {
+		std::env::var(var)
+			.ok()
+			.and_then(|v| v.parse::<u64>().ok())
+			.map(Duration::from_secs)
+			.unwrap_or(default)
+	}
+
 	async fn wait_for_best_block(
 		mut progress: Progress,
 	) -> (
@@ -301,7 +317,8 @@ impl Sender {
 			SenderError,
 		>,
 	) {
-		const BEST_BLOCK_TIMEOUT: Duration = Duration::from_secs(30);
+		let best_block_timeout =
+			Self::duration_from_env("MN_SEND_BEST_BLOCK_TIMEOUT", Duration::from_secs(30));
 
 		let mut last_status: &'static str = "<none>";
 		let wait_future = async {
@@ -336,18 +353,18 @@ impl Sender {
 			})
 		};
 
-		match tokio::time::timeout(BEST_BLOCK_TIMEOUT, wait_future).await {
+		match tokio::time::timeout(best_block_timeout, wait_future).await {
 			Ok(result) => (progress, result),
 			Err(_) => {
 				log::warn!(
 					url = progress.url;
 					"Timeout waiting for best block after {} seconds",
-					BEST_BLOCK_TIMEOUT.as_secs()
+					best_block_timeout.as_secs()
 				);
 				let err = SenderError::FailedToReachBestBlock {
 					last_status: format!(
 						"{last_status} (no terminal status after {}s)",
-						BEST_BLOCK_TIMEOUT.as_secs()
+						best_block_timeout.as_secs()
 					),
 				};
 				(progress, Err(err))
@@ -363,29 +380,87 @@ impl Sender {
 			OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
 		>,
 	> {
-		const FINALIZED_TIMEOUT: Duration = Duration::from_secs(60);
+		let finalized_timeout =
+			Self::duration_from_env("MN_SEND_FINALIZED_TIMEOUT", Duration::from_secs(60));
 
 		let url = progress.url.clone();
 		let wait_future = async {
 			while let Some(prog) = progress.tx_progress.next().await {
-				if let Ok(TransactionStatus::InFinalizedBlock(info)) = prog {
-					return Some(info);
+				match prog {
+					Ok(TransactionStatus::InFinalizedBlock(info)) => return Some(info),
+					// A fork retraction: the block that carried the tx fell off
+					// the best chain. The tx normally returns to the pool for
+					// re-inclusion, so keep watching — and make the retraction
+					// visible, since it is the precursor of the lost-tx failure
+					// mode (#1854).
+					Ok(TransactionStatus::NoLongerInBestBlock) => {
+						log::warn!(
+							url = progress.url;
+							"tx retracted from best block; watching for re-inclusion"
+						);
+					},
+					_ => {},
 				}
 			}
 			None
 		};
 
-		match tokio::time::timeout(FINALIZED_TIMEOUT, wait_future).await {
+		match tokio::time::timeout(finalized_timeout, wait_future).await {
 			Ok(result) => result,
 			Err(_) => {
 				log::warn!(
 					url = url;
 					"Timeout waiting for finalization after {} seconds",
-					FINALIZED_TIMEOUT.as_secs()
+					finalized_timeout.as_secs()
 				);
 				None
 			},
 		}
+	}
+
+	/// Check the finalized chain directly for an extrinsic, newest block first,
+	/// up to `max_depth` blocks below the finalized head.
+	///
+	/// The watch stream can lose track of a tx across a fork retraction: the
+	/// tx is re-included and finalized in a different block, but the stream
+	/// never reports it and the watcher times out (#1854). The chain itself is
+	/// the source of truth, so consult it before declaring a landed tx failed.
+	pub async fn find_in_finalized_chain(
+		client: &MidnightNodeClient,
+		extrinsic_hash_hex: &str,
+		max_depth: u32,
+	) -> Option<String> {
+		let mut hash = match client.rpc.chain_get_finalized_head().await {
+			Ok(h) => h,
+			Err(e) => {
+				log::warn!("finalized-chain check: failed to get finalized head: {e}");
+				return None;
+			},
+		};
+
+		for _ in 0..max_depth {
+			let block = match client.rpc.chain_get_block(Some(hash)).await {
+				Ok(Some(b)) => b,
+				Ok(None) => return None,
+				Err(e) => {
+					log::warn!("finalized-chain check: failed to fetch block: {e}");
+					return None;
+				},
+			};
+
+			for ext in &block.block.extrinsics {
+				let ext_hash = format!("0x{}", hex::encode(sp_crypto_hashing::blake2_256(&ext.0)));
+				if ext_hash == extrinsic_hash_hex {
+					return Some(hash_to_str(hash));
+				}
+			}
+
+			if block.block.header.number == 0 {
+				return None;
+			}
+			hash = block.block.header.parent_hash;
+		}
+		None
 	}
 
 	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) -> Result<(), SenderError> {
@@ -419,14 +494,42 @@ impl Sender {
 		);
 
 		let finalized = Self::wait_for_finalized(progress).await;
-		let message = if finalized.is_some() { "FINALIZED" } else { "FAILED_TO_FINALIZE" };
+		let finalized_block_hash = match &finalized {
+			Some(info) => Some(hash_to_str(info.block_hash())),
+			// The watch stream said nothing — but the tx may have been
+			// re-included after a retraction and finalized in a block the
+			// stream never reported (#1854). Ask the chain before failing.
+			None => {
+				let client = self.clients.iter().find(|c| c.url == url);
+				match client {
+					Some(handle) => {
+						Self::find_in_finalized_chain(
+							&handle.client,
+							&tx_hashes.extrinsic_hash,
+							FINALIZED_FALLBACK_SCAN_DEPTH,
+						)
+						.await
+					},
+					None => None,
+				}
+			},
+		};
+
+		let message = if finalized_block_hash.is_some() {
+			if finalized.is_some() { "FINALIZED" } else { "FINALIZED_AFTER_RETRACTION" }
+		} else {
+			"FAILED_TO_FINALIZE"
+		};
+		let display_block_hash = finalized_block_hash
+			.clone()
+			.unwrap_or_else(|| hash_to_str(best_block.block_hash()));
 		log::info!(
 			url = &url,
 			extrinsic_hash = &tx_hashes.extrinsic_hash,
 			midnight_tx_hash = &tx_hashes.midnight_tx_hash,
-			block_hash = hash_to_str(best_block.block_hash()).as_str();
+			block_hash = display_block_hash.as_str();
 			"{message}"
 		);
-		if finalized.is_some() { Ok(()) } else { Err(SenderError::FailedToFinalize) }
+		if finalized_block_hash.is_some() { Ok(()) } else { Err(SenderError::FailedToFinalize) }
 	}
 }
