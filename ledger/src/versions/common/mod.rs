@@ -97,6 +97,13 @@ pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
 pub struct StrictTxValidationKey {
 	state_hash: Hash,
 	tx_hash: Hash,
+	/// The `well_formed` verdict cached under this key depends on `tblock` (the DUST
+	/// validity-window upper bound: a tx is malformed with `OutOfDustValidityWindow`
+	/// when its `ctime > tblock`). The mempool validation path deliberately inflates
+	/// `tblock` by up to `MaxSkippedSlots + 1` slots, so a verdict computed there must
+	/// NOT be reused at block-application time, which uses the true block-time `tblock`.
+	/// Including `tblock` in the key keeps those two verdicts separate. See issue #1924.
+	tblock: u64,
 }
 #[derive(PartialEq, Eq, Hash)]
 pub struct SoftTxValidationKey {
@@ -941,8 +948,11 @@ where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let state_hash = ledger.state.state_hash();
-		let strict_key =
-			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
+		let strict_key = StrictTxValidationKey {
+			state_hash: state_hash.0.into(),
+			tx_hash: tx_hash.0,
+			tblock: block_context.tblock,
+		};
 
 		// Check strict cache
 		if let Some(cached) = STRICT_TX_VALIDATION_CACHE.get(&strict_key) {
@@ -1063,8 +1073,11 @@ where
 
 		// Check strict cache to determine if this is a cache hit
 		let state_hash = ledger.state.state_hash();
-		let strict_key =
-			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
+		let strict_key = StrictTxValidationKey {
+			state_hash: state_hash.0.into(),
+			tx_hash: tx_hash.0,
+			tblock: block_context.tblock,
+		};
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
 		let verified_tx = Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
@@ -1309,5 +1322,195 @@ mod tests {
 		if let Ok(tx) = super::super::system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
+	}
+
+	// =====================================================================
+	// Regression tests for issue #1924:
+	//   "Incorrect `tblock` used when running `well_formed` for first
+	//    transaction in block."
+	//
+	// The strict tx-validation cache was keyed by (state_hash, tx_hash) only.
+	// The cached `well_formed` verdict ALSO depends on `tblock` (a tx is
+	// malformed with `OutOfDustValidityWindow` when `ctime > tblock`). The
+	// mempool path inflates `tblock` by up to `MaxSkippedSlots + 1` slots; that
+	// inflated "valid" verdict then leaked into block application (which uses
+	// the true, lower, block-time `tblock`). Result: the first tx in a block
+	// could be accepted by a cache-warm authoring node yet rejected by a
+	// cache-cold importer/indexer — a consensus divergence and sync stall.
+	//
+	// The fix adds `tblock` to `StrictTxValidationKey`.
+	// =====================================================================
+
+	/// Structural guard (runs under every ledger version): the cache key must
+	/// treat two entries that differ only in `tblock` as distinct.
+	#[test]
+	fn strict_cache_key_includes_tblock() {
+		use std::collections::HashSet;
+
+		let state_hash: Hash = [7u8; 32];
+		let tx_hash: Hash = [9u8; 32];
+
+		let k_low = StrictTxValidationKey { state_hash, tx_hash, tblock: 100 };
+		let k_high = StrictTxValidationKey { state_hash, tx_hash, tblock: 112 };
+		assert!(k_low != k_high, "keys differing only in tblock must be distinct");
+
+		let mut set = HashSet::new();
+		assert!(set.insert(StrictTxValidationKey { state_hash, tx_hash, tblock: 100 }));
+		// Different tblock -> a new, distinct entry.
+		assert!(set.insert(StrictTxValidationKey { state_hash, tx_hash, tblock: 112 }));
+		// Identical key -> duplicate, rejected by the set.
+		assert!(!set.insert(StrictTxValidationKey { state_hash, tx_hash, tblock: 100 }));
+		assert_eq!(set.len(), 2, "distinct tblocks must produce distinct cache entries");
+	}
+
+	/// Loads the undeployed-genesis ledger plus the real DEPLOY_TX fixture and
+	/// its natural block context. Mirrors the setup used by the api-layer tests.
+	#[cfg(feature = "std")]
+	fn load_genesis_and_deploy_tx() -> (
+		Ledger<ledger_storage_local::DefaultDB>,
+		Transaction<TransactionSignature, ledger_storage_local::DefaultDB>,
+		Vec<u8>,
+		BlockContext,
+	) {
+		use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
+		use midnight_node_res::undeployed::transactions::DEPLOY_TX;
+		use mn_ledger_local::structure::LedgerState;
+
+		sp_tracing::try_init_simple();
+		let api = api::new();
+
+		let (tx_bytes, raw_ctx) = helpers_local::extract_tx_with_context(DEPLOY_TX);
+		let block_context: BlockContext = raw_ctx.into();
+		let tx = api
+			.tagged_deserialize::<Transaction<TransactionSignature, ledger_storage_local::DefaultDB>>(
+				&tx_bytes,
+			)
+			.expect("failed to deserialize DEPLOY_TX fixture");
+
+		let genesis = UndeployedNetwork.genesis_state();
+		let state: LedgerState<ledger_storage_local::DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(genesis)
+				.expect("failed to deserialize undeployed genesis");
+		let ledger = Ledger::new(state);
+
+		(ledger, tx, tx_bytes, block_context)
+	}
+
+	/// Deterministic proof that a cached verified-tx entry is partitioned by
+	/// `tblock`: after caching at the natural tblock, the entry is visible under
+	/// that exact (state, tx, tblock) key and NOT under any other tblock.
+	#[cfg(feature = "std")]
+	#[test]
+	fn strict_cache_entry_is_partitioned_by_tblock() {
+		if super::super::CRATE_NAME != crate::latest::CRATE_NAME {
+			return;
+		}
+		type Db = ledger_storage_local::DefaultDB;
+
+		let (ledger, tx, tx_bytes, block_context) = load_genesis_and_deploy_tx();
+		let natural = block_context.tblock;
+		let other = natural.wrapping_add(4242);
+
+		let key = Bridge::<TransactionSignature, Db>::tx_validation_cache_key(1, &tx_bytes);
+		let state_hash: Hash = ledger.state.state_hash().0.into();
+		let tx_hash: Hash = key.0;
+
+		// Populate the strict cache through the real code path.
+		let vt = Bridge::<TransactionSignature, Db>::get_verified_transaction(
+			&ledger,
+			&tx,
+			&block_context,
+			&key,
+		);
+		assert!(vt.is_ok(), "DEPLOY_TX must be well-formed at its natural tblock: {:?}", vt.err());
+
+		// Present under the exact (state, tx, tblock) key ...
+		assert!(
+			STRICT_TX_VALIDATION_CACHE
+				.get(&StrictTxValidationKey { state_hash, tx_hash, tblock: natural })
+				.is_some(),
+			"verified tx must be cached under its (state, tx, tblock) key"
+		);
+		// ... and NOT shared with a different tblock.
+		assert!(
+			STRICT_TX_VALIDATION_CACHE
+				.get(&StrictTxValidationKey { state_hash, tx_hash, tblock: other })
+				.is_none(),
+			"a cache entry must not be reused across different tblock values (#1924)"
+		);
+	}
+
+	/// End-to-end #1924 repro through `get_verified_transaction`: a verdict
+	/// computed at a high (mempool-inflated) tblock must NOT be reused at a low
+	/// (block-application) tblock where the tx is out of its DUST validity
+	/// window. Pre-fix the cache leaks the stale "valid" verdict; post-fix the
+	/// low-tblock lookup misses and `well_formed` is recomputed, rejecting it.
+	#[cfg(feature = "std")]
+	#[test]
+	fn strict_cache_does_not_leak_high_tblock_verdict_to_low_tblock() {
+		use mn_ledger_local::verify::WellFormedStrictness;
+
+		if super::super::CRATE_NAME != crate::latest::CRATE_NAME {
+			return;
+		}
+		type Db = ledger_storage_local::DefaultDB;
+
+		let (ledger, tx, tx_bytes, block_context) = load_genesis_and_deploy_tx();
+		let natural = block_context.tblock;
+
+		// --- Prove the boundary is REAL via direct well_formed (no cache). ---
+		// Sanity: valid at its natural tblock.
+		let ctx_hi = ledger.get_transaction_context(block_context.clone()).expect("hi ctx");
+		let direct_hi = tx.0.well_formed(
+			&ctx_hi.ref_state,
+			WellFormedStrictness::default(),
+			ctx_hi.block_context.tblock,
+		);
+		assert!(direct_hi.is_ok(), "sanity: well-formed at natural tblock: {:?}", direct_hi.err());
+
+		// Find a tblock below the tx's ctime (out of the DUST validity window).
+		// Failure condition is `ctime > tblock`, so scan progressively earlier
+		// times (all large, no underflow) until `well_formed` rejects.
+		let low_ctx = [3_600u64, 86_400, 604_800, 2_592_000, 15_552_000, 31_536_000, 63_072_000]
+			.into_iter()
+			.find_map(|delta| {
+				let cand = natural.saturating_sub(delta).max(1);
+				let cctx = BlockContext { tblock: cand, ..block_context.clone() };
+				let ctx = ledger.get_transaction_context(cctx.clone()).expect("lo ctx");
+				let res = tx.0.well_formed(
+					&ctx.ref_state,
+					WellFormedStrictness::default(),
+					ctx.block_context.tblock,
+				);
+				res.is_err().then_some(cctx)
+			})
+			.expect(
+				"no tblock below natural rejected DEPLOY_TX; if the fixture is not DUST-time \
+				 sensitive, choose a DUST-spending tx for this test",
+			);
+
+		// --- The #1924 regression, through the cache. ---
+		let key = Bridge::<TransactionSignature, Db>::tx_validation_cache_key(1, &tx_bytes);
+
+		// 1) Mempool-style validation at the higher natural tblock -> caches Ok.
+		let hi = Bridge::<TransactionSignature, Db>::get_verified_transaction(
+			&ledger,
+			&tx,
+			&block_context,
+			&key,
+		);
+		assert!(hi.is_ok(), "populate at high tblock: {:?}", hi.err());
+
+		// 2) Block-application-style validation at the true, lower tblock.
+		//    Pre-fix: (state, tx)-only key hits -> returns the stale Ok (WRONG).
+		//    Post-fix: tblock-aware key misses -> well_formed recomputed -> Err.
+		let lo = Bridge::<TransactionSignature, Db>::get_verified_transaction(
+			&ledger, &tx, &low_ctx, &key,
+		);
+		assert!(
+			lo.is_err(),
+			"#1924 REGRESSION: strict cache leaked a high-tblock verdict into a low-tblock \
+			 (block-application) check — tx wrongly accepted"
+		);
 	}
 }
