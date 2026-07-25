@@ -11,4 +11,5 @@ environment overrides (`MN_SEND_BEST_BLOCK_TIMEOUT`,
 `MN_SEND_FINALIZED_TIMEOUT`, seconds) for slow or fault-injected
 environments.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1927
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1854
