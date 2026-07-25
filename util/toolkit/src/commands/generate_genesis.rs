@@ -37,6 +37,39 @@ struct CardanoTipConfig {
 	timestamp: String,
 }
 
+/// Parse `wallet-seed-N` entries in numeric order (`wallet-seed-10` after `wallet-seed-9`).
+/// Keys that do not match `wallet-seed-*` sort after all numeric keys, lexicographically.
+fn parse_wallet_seeds_from_json(
+	seeds_json: &serde_json::Value,
+) -> Result<Vec<WalletSeed>, Box<dyn std::error::Error + Send + Sync>> {
+	let obj = seeds_json
+		.as_object()
+		.ok_or("seeds file must be a JSON object")?;
+
+	let wallet_seed_key_index =
+		|key: &str| key.strip_prefix("wallet-seed-").and_then(|s| s.parse::<u32>().ok());
+
+	let mut entries: Vec<(&String, &serde_json::Value)> = obj.iter().collect();
+	entries.sort_by(|(ka, _), (kb, _)| {
+		match (wallet_seed_key_index(ka), wallet_seed_key_index(kb)) {
+			(Some(a), Some(b)) => a.cmp(&b),
+			(Some(_), None) => std::cmp::Ordering::Less,
+			(None, Some(_)) => std::cmp::Ordering::Greater,
+			(None, None) => ka.cmp(kb),
+		}
+	});
+
+	entries
+		.into_iter()
+		.map(|(_k, v)| {
+			let wallet_seed_str =
+				v.as_str().ok_or("seeds file object value was not a string")?;
+			WalletSeed::try_from_hex_str(wallet_seed_str)
+				.map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { format!("{e}").into() })
+		})
+		.collect()
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct GenerateGenesisArgs {
 	/// Seed for genesis block generation
@@ -99,23 +132,9 @@ pub async fn execute(
 	let seeds: Option<Vec<WalletSeed>> = if let Some(seeds_file) = args.seeds_file {
 		let seeds_str = std::fs::read_to_string(&seeds_file)?;
 		let seeds_json: serde_json::Value = serde_json::from_str(&seeds_str)?;
-		let parsed_seeds: Result<Vec<WalletSeed>, Box<dyn std::error::Error + Send + Sync>> =
-			seeds_json
-				.as_object()
-				.unwrap()
-				.iter()
-				.map(|(_k, v)| {
-					let wallet_seed_str =
-						v.as_str().ok_or("seeds file object value was not a string")?;
-					let wallet_seed = WalletSeed::try_from_hex_str(wallet_seed_str)?;
-					Ok(wallet_seed)
-				})
-				.collect();
-		log::info!(
-			"Funding {} faucet wallets",
-			parsed_seeds.as_ref().map(|s| s.len()).unwrap_or(0)
-		);
-		Some(parsed_seeds?)
+		let parsed_seeds = parse_wallet_seeds_from_json(&seeds_json)?;
+		log::info!("Funding {} faucet wallets", parsed_seeds.len());
+		Some(parsed_seeds)
 	} else {
 		log::info!("No seeds file provided - skipping faucet wallet funding");
 		None
@@ -237,7 +256,7 @@ fn serialize_and_write<T: Serializable + Tagged>(
 
 #[cfg(test)]
 mod test {
-	use super::serialize_and_write;
+	use super::{parse_wallet_seeds_from_json, serialize_and_write};
 	use crate::cli::{Cli, run_command};
 	use crate::{DefaultDB, LedgerState};
 	use clap::Parser;
@@ -246,6 +265,39 @@ mod test {
 		env::temp_dir,
 		fs::{self, remove_file},
 	};
+
+	#[test]
+	fn parse_wallet_seeds_sorts_wallet_seed_n_numerically() {
+		use midnight_node_ledger_helpers::WalletSeed;
+		let j = serde_json::json!({
+			"wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003",
+			"wallet-seed-10": "000000000000000000000000000000000000000000000000000000000000000b",
+			"wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002",
+		});
+		let seeds = parse_wallet_seeds_from_json(&j).unwrap();
+		assert_eq!(seeds.len(), 3);
+		assert_eq!(
+			seeds[0],
+			WalletSeed::try_from_hex_str(
+				"0000000000000000000000000000000000000000000000000000000000000002"
+			)
+			.unwrap()
+		);
+		assert_eq!(
+			seeds[1],
+			WalletSeed::try_from_hex_str(
+				"0000000000000000000000000000000000000000000000000000000000000003"
+			)
+			.unwrap()
+		);
+		assert_eq!(
+			seeds[2],
+			WalletSeed::try_from_hex_str(
+				"000000000000000000000000000000000000000000000000000000000000000b"
+			)
+			.unwrap()
+		);
+	}
 
 	#[test]
 	fn test_serialize_and_write() {
