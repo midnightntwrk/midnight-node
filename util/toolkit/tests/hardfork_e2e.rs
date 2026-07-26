@@ -18,6 +18,7 @@ mod common;
 use clap::Parser;
 use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_node_toolkit::cli::{Cli, run_command};
+use midnight_node_toolkit::client::DEFAULT_RPC_REQUEST_TIMEOUT;
 use std::{process::Command, time::Duration};
 use testcontainers::{
 	GenericImage, ImageExt,
@@ -45,7 +46,7 @@ async fn run_cli(args: &[&str]) {
 		std::iter::once("midnight-node-toolkit").chain(args.iter().copied()).collect();
 	eprintln!("[hardfork_e2e] running CLI: {full_args:?}");
 	let cli = Cli::parse_from(full_args);
-	if let Err(e) = run_command(cli.command).await {
+	if let Err(e) = run_command(cli.command, DEFAULT_RPC_REQUEST_TIMEOUT).await {
 		eprintln!("[hardfork_e2e] CLI command failed: {e}");
 		eprintln!("[hardfork_e2e] error debug: {e:?}");
 		panic!("CLI command failed: {e}");

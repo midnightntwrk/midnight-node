@@ -106,14 +106,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 					log::info!("Rayon global pool set to {} threads", n);
 				}
 
+				let rpc_request_timeout = cli
+					.rpc_request_timeout
+					.map(std::time::Duration::from_secs)
+					.unwrap_or(midnight_node_toolkit::client::DEFAULT_RPC_REQUEST_TIMEOUT);
 				if let Some(secs) = cli.rpc_request_timeout {
-					midnight_node_toolkit::client::set_rpc_request_timeout(
-						std::time::Duration::from_secs(secs),
-					);
 					log::info!("RPC request timeout set to {secs}s");
 				}
 
-				let res = run_command(cli.command).await;
+				let res = run_command(cli.command, rpc_request_timeout).await;
 
 				if let Err(ref e) = res {
 					eprintln!("{e}");

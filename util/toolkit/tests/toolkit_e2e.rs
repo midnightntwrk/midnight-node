@@ -23,6 +23,7 @@ use common::{
 };
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
+	client::DEFAULT_RPC_REQUEST_TIMEOUT,
 	commands::{contract_address, show_address},
 	tx_generator::builder::FUNDING_SEED,
 };
@@ -105,7 +106,9 @@ async fn run_cli(args: &[&str]) {
 	let full_args: Vec<&str> =
 		std::iter::once("midnight-node-toolkit").chain(args.iter().copied()).collect();
 	let cli = Cli::parse_from(full_args);
-	run_command(cli.command).await.expect("CLI command failed");
+	run_command(cli.command, DEFAULT_RPC_REQUEST_TIMEOUT)
+		.await
+		.expect("CLI command failed");
 }
 
 const RNG_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";

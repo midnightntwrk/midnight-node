@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
 use thiserror::Error;
 
 use crate::serde_def::SourceTransactions;
@@ -56,17 +57,20 @@ pub struct TxGenerator {
 }
 
 impl TxGenerator {
+	/// Build a generator. `rpc_request_timeout` is the per-request RPC timeout
+	/// applied to every client the source and destinations create.
 	pub async fn new(
 		src: Source,
 		dest: Destination,
 		builder: Builder,
 		proof_server: Option<String>,
 		dry_run: bool,
+		rpc_request_timeout: Duration,
 	) -> Result<Self, TxGeneratorError> {
 		let fetch_cache_config = src.fetch_cache.clone();
 		let ledger_state_db = src.ledger_state_db.clone();
-		let source = Self::source(src, dry_run).await?;
-		let destinations = Self::destinations(dest, dry_run).await?;
+		let source = Self::source(src, dry_run, rpc_request_timeout).await?;
+		let destinations = Self::destinations(dest, dry_run, rpc_request_timeout).await?;
 		if dry_run {
 			log::info!("Dry-run: Builder type: {:?}", &builder);
 		}
@@ -83,7 +87,13 @@ impl TxGenerator {
 		})
 	}
 
-	pub async fn source(src: Source, dry_run: bool) -> Result<Box<dyn GetTxs>, SourceError> {
+	/// Build the transaction source. `rpc_request_timeout` is only used when
+	/// the source is a url (RPC fetch).
+	pub async fn source(
+		src: Source,
+		dry_run: bool,
+		rpc_request_timeout: Duration,
+	) -> Result<Box<dyn GetTxs>, SourceError> {
 		let base: Box<dyn GetTxs> = if let Some(ref src_files) = src.src_files {
 			if dry_run {
 				log::info!("Dry-run: Source transactions from file(s): {:?}", &src_files);
@@ -107,6 +117,7 @@ impl TxGenerator {
 				src.dust_warp,
 				src.fetch_only_cached,
 				src.fetch_cache,
+				rpc_request_timeout,
 			))
 		} else {
 			return Err(SourceError::InvalidSourceArgs(src));
@@ -118,6 +129,7 @@ impl TxGenerator {
 	async fn destinations(
 		dest: Destination,
 		dry_run: bool,
+		rpc_request_timeout: Duration,
 	) -> Result<Vec<Box<dyn SendTxs>>, DestinationError> {
 		if let Some(ref dest_file) = dest.dest_file {
 			if dry_run {
@@ -136,8 +148,12 @@ impl TxGenerator {
 			log::info!("Dry-run: Destination rate: {:?} TPS", &dest.rate);
 		}
 
-		let destination: Box<dyn SendTxs> =
-			Box::new(SendTxsToUrl::new(dest.dest_urls.clone(), dest.rate, dest.no_watch_progress));
+		let destination: Box<dyn SendTxs> = Box::new(SendTxsToUrl::new(
+			dest.dest_urls.clone(),
+			dest.rate,
+			dest.no_watch_progress,
+			rpc_request_timeout,
+		));
 
 		dests.push(destination);
 

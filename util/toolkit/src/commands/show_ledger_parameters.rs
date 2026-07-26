@@ -90,11 +90,14 @@ pub struct LedgerParametersResult {
 	pub serialized: String,
 }
 
+/// Run the show-ledger-parameters command. `rpc_request_timeout` is the
+/// per-request RPC timeout applied when reading the parameters from a node.
 pub async fn execute(
 	args: ShowLedgerParametersArgs,
+	rpc_request_timeout: std::time::Duration,
 ) -> Result<LedgerParametersResult, LedgerParametersError> {
 	let base = if let Some(rpc_url) = args.read_from_rpc_url {
-		let client = MidnightNodeClient::new(&rpc_url, None).await?;
+		let client = MidnightNodeClient::new(&rpc_url, None, rpc_request_timeout).await?;
 		let parameters = client.get_ledger_parameters().await?;
 		parameters
 	} else {
@@ -193,7 +196,9 @@ mod test {
 	#[tokio::test]
 	async fn test_ledger_default_params() {
 		let default_params = ShowLedgerParametersArgs::default();
-		let result = execute(default_params.clone()).await.expect("failed to execute command");
+		let result = execute(default_params.clone(), crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("failed to execute command");
 
 		let initial_params = INITIAL_PARAMETERS;
 		let serialized =
@@ -213,7 +218,9 @@ mod test {
 			c_to_m_bridge_min_amount: Some(2000),
 			..ShowLedgerParametersArgs::default()
 		};
-		let result_new_params = execute(new_params).await.expect("failed to execute command");
+		let result_new_params = execute(new_params, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("failed to execute command");
 		assert_eq!(result_new_params.parameters.c_to_m_bridge_min_amount, 2000);
 		assert_ne!(result_new_params.parameters, initial_params);
 		assert_ne!(result_new_params.serialized, initial_params_serialized);
@@ -230,7 +237,9 @@ mod test {
 			base_parameters: Some(base_parameters),
 			..ShowLedgerParametersArgs::default()
 		};
-		let result_new_params = execute(new_params).await.expect("failed to execute command");
+		let result_new_params = execute(new_params, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("failed to execute command");
 		assert_eq!(result_new_params.parameters.cardano_to_midnight_bridge_fee_basis_points, 600);
 		assert_eq!(result_new_params.parameters.c_to_m_bridge_min_amount, 2000);
 	}
@@ -244,7 +253,9 @@ mod test {
 			dust_grace_period: Some(7200),
 			..ShowLedgerParametersArgs::default()
 		};
-		let result = execute(new_params).await.expect("failed to execute command");
+		let result = execute(new_params, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("failed to execute command");
 
 		// Verify the dust_grace_period was overridden
 		assert_eq!(result.parameters.dust.dust_grace_period, Duration::from_secs(7200));

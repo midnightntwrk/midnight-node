@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use midnight_node_toolkit::{
 	cli_parsers,
+	client::DEFAULT_RPC_REQUEST_TIMEOUT,
 	commands::{
 		contract_address::{self, ContractAddressArgs},
 		contract_state::{self, ContractStateArgs},
@@ -351,7 +352,7 @@ impl ToolkitTestHelper {
 				dry_run: false,
 			}),
 		};
-		generate_intent::execute(args).await?;
+		generate_intent::execute(args, DEFAULT_RPC_REQUEST_TIMEOUT).await?;
 
 		Ok(DeployOutput { intent, private_state, zswap_state })
 	}
@@ -398,7 +399,7 @@ impl ToolkitTestHelper {
 				dry_run: false,
 			}),
 		};
-		generate_intent::execute(args).await?;
+		generate_intent::execute(args, DEFAULT_RPC_REQUEST_TIMEOUT).await?;
 
 		Ok(CircuitOutput {
 			intent: out_intent,
@@ -434,7 +435,7 @@ impl ToolkitTestHelper {
 			},
 			dry_run: false,
 		};
-		send_intent::execute(args).await?;
+		send_intent::execute(args, DEFAULT_RPC_REQUEST_TIMEOUT).await?;
 
 		Ok(output)
 	}
@@ -450,7 +451,7 @@ impl ToolkitTestHelper {
 			proof_server: None,
 			dry_run: false,
 		};
-		generate_txs::execute(args).await?;
+		generate_txs::execute(args, DEFAULT_RPC_REQUEST_TIMEOUT).await?;
 		Ok(())
 	}
 
@@ -478,7 +479,7 @@ impl ToolkitTestHelper {
 			dest_file: Some(path_to_string(dest_file)),
 			dry_run: false,
 		};
-		contract_state::execute(args).await
+		contract_state::execute(args, DEFAULT_RPC_REQUEST_TIMEOUT).await
 	}
 
 	pub fn show_transaction(

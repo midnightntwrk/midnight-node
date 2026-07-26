@@ -118,14 +118,18 @@ pub async fn read_blocks_from_cache(
 	Ok(blocks)
 }
 
+/// Fetch all blocks, serving from `fetch_storage` where possible.
+/// `rpc_request_timeout` is applied to every RPC request made by the clients
+/// this spawns.
 pub async fn fetch_all(
 	url: &str,
 	num_workers: usize,
 	num_compute_workers: usize,
 	fetch_only_cache: bool,
 	fetch_storage: impl FetchStorage + Clone + 'static,
+	rpc_request_timeout: Duration,
 ) -> Result<Vec<RawBlockData>, FetchError> {
-	let client = MidnightNodeClient::new(&url, None).await?;
+	let client = MidnightNodeClient::new(&url, None, rpc_request_timeout).await?;
 	let chain_id = client.get_block_one_hash().await.map_err(|e| Into::<FetchError>::into(e))?;
 	if fetch_only_cache {
 		let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
@@ -138,16 +142,28 @@ pub async fn fetch_all(
 
 		Ok(blocks)
 	} else {
-		fetch_from_rpc(url, chain_id, num_workers, num_compute_workers, fetch_storage).await
+		fetch_from_rpc(
+			url,
+			chain_id,
+			num_workers,
+			num_compute_workers,
+			fetch_storage,
+			rpc_request_timeout,
+		)
+		.await
 	}
 }
 
+/// Fetch blocks from the node over RPC with a worker pool.
+/// `rpc_request_timeout` is applied to every RPC request made by the clients
+/// this spawns (one per fetch worker).
 pub async fn fetch_from_rpc(
 	url: &str,
 	chain_id: H256,
 	num_workers: usize,
 	num_compute_workers: usize,
 	fetch_storage: impl FetchStorage + Clone + 'static,
+	rpc_request_timeout: Duration,
 ) -> Result<Vec<RawBlockData>, FetchError> {
 	if std::env::var("MN_SYNC_CACHE").is_ok() {
 		panic!(
@@ -156,7 +172,7 @@ pub async fn fetch_from_rpc(
 	}
 
 	let t_rpc_total = std::time::Instant::now();
-	let client = MidnightNodeClient::new(&url, None).await?;
+	let client = MidnightNodeClient::new(&url, None, rpc_request_timeout).await?;
 	let finalized_height =
 		client.get_finalized_height().await.map_err(|e| Into::<FetchError>::into(e))?;
 	let max_height = finalized_height + 1;
@@ -212,7 +228,7 @@ pub async fn fetch_from_rpc(
 		let fetch_storage = fetch_storage.clone();
 		let url = url.to_string();
 		join_set.spawn(async move {
-			let Ok(client) = MidnightNodeClient::new(&url, None).await else {
+			let Ok(client) = MidnightNodeClient::new(&url, None, rpc_request_timeout).await else {
 				log::warn!(
 					"fetch worker {worker_id} could not connect to {url}, exiting. \
 					 This may be due to connection limits on the remote node."
