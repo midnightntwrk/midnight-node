@@ -42,10 +42,20 @@ pub struct SendBatchError {
 	pub failed_count: usize,
 }
 
-/// How many finalized blocks to scan backwards when the watch stream timed out
-/// without reporting finality. Covers the whole watch window (best-block +
-/// finalization timeouts) with margin at 6-second blocks.
-const FINALIZED_FALLBACK_SCAN_DEPTH: u32 = 64;
+/// Minimum number of finalized blocks to scan backwards when the watch stream
+/// timed out without reporting finality. The effective depth scales with the
+/// configured finalization timeout (see [`Sender::finalized_fallback_scan_depth`]):
+/// a longer wait lets the finalized head advance further past the block that
+/// carried the tx, so a fixed window would miss it.
+const FINALIZED_FALLBACK_MIN_SCAN_DEPTH: u32 = 64;
+
+/// Expected block production interval, used to convert the finalization
+/// timeout into a scan depth.
+const EXPECTED_BLOCK_SECONDS: u64 = 6;
+
+/// Extra blocks scanned beyond the timeout-derived depth, covering finality
+/// lag and the retraction/re-inclusion window.
+const FINALIZED_FALLBACK_SCAN_MARGIN: u32 = 16;
 
 #[derive(Debug, Error)]
 pub enum SenderError {
@@ -418,6 +428,17 @@ impl Sender {
 		}
 	}
 
+	/// Scan depth for the finalized-chain fallback, scaled to the configured
+	/// finalization timeout: while the watcher waited out the timeout on a dead
+	/// branch, the finalized head advanced ~timeout/block_time blocks past the
+	/// block that re-included the tx.
+	fn finalized_fallback_scan_depth(finalized_timeout: Duration) -> u32 {
+		let timeout_blocks =
+			u32::try_from(finalized_timeout.as_secs() / EXPECTED_BLOCK_SECONDS).unwrap_or(u32::MAX);
+		FINALIZED_FALLBACK_MIN_SCAN_DEPTH
+			.max(timeout_blocks.saturating_add(FINALIZED_FALLBACK_SCAN_MARGIN))
+	}
+
 	/// Check the finalized chain directly for an extrinsic, newest block first,
 	/// up to `max_depth` blocks below the finalized head.
 	///
@@ -503,10 +524,14 @@ impl Sender {
 				let client = self.clients.iter().find(|c| c.url == url);
 				match client {
 					Some(handle) => {
+						let finalized_timeout = Self::duration_from_env(
+							"MN_SEND_FINALIZED_TIMEOUT",
+							Duration::from_secs(60),
+						);
 						Self::find_in_finalized_chain(
 							&handle.client,
 							&tx_hashes.extrinsic_hash,
-							FINALIZED_FALLBACK_SCAN_DEPTH,
+							Self::finalized_fallback_scan_depth(finalized_timeout),
 						)
 						.await
 					},
@@ -531,5 +556,27 @@ impl Sender {
 			"{message}"
 		);
 		if finalized_block_hash.is_some() { Ok(()) } else { Err(SenderError::FailedToFinalize) }
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn fallback_scan_depth_keeps_minimum_for_default_timeout() {
+		// 60s / 6s = 10 blocks + 16 margin = 26, below the 64 floor.
+		assert_eq!(Sender::finalized_fallback_scan_depth(Duration::from_secs(60)), 64);
+	}
+
+	#[test]
+	fn fallback_scan_depth_scales_with_long_timeouts() {
+		// 600s / 6s = 100 blocks + 16 margin — a fixed 64 would miss the tx.
+		assert_eq!(Sender::finalized_fallback_scan_depth(Duration::from_secs(600)), 116);
+	}
+
+	#[test]
+	fn fallback_scan_depth_saturates_on_absurd_timeouts() {
+		assert_eq!(Sender::finalized_fallback_scan_depth(Duration::from_secs(u64::MAX)), u32::MAX);
 	}
 }
