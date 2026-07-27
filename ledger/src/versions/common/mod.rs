@@ -904,7 +904,7 @@ where
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
 		let tblock = if let Some(tc) = tblock_correction
-			&& tc.disable_after < block_context.tblock
+			&& block_context.tblock < tc.disable_after
 		{
 			ctx.block_context.tblock + DurationLedger::from_secs(tc.offset as i128)
 		} else {
