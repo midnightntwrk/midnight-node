@@ -296,3 +296,18 @@ impl LedgerStorageExt {
 		LedgerStorageExt(storage)
 	}
 }
+
+#[derive(Debug, Clone)]
+pub struct TBlockCorrection {
+	pub offset: i64,
+	pub disable_after: u64,
+}
+
+sp_externalities::decl_extension! {
+	/// The `TBlockCorrectionExt`` extension to share TBlock correction config with Ledger native code
+	/// See:
+	/// - https://github.com/midnightntwrk/midnight-node/issues/1924
+	/// - https://github.com/shieldedtech/shielded-security-engineering/issues/557
+	#[derive(Debug)]
+	pub struct TBlockCorrectionExt(TBlockCorrection);
+}

@@ -12,7 +12,8 @@
 // limitations under the License.
 
 use midnight_primitives_ledger::{
-	LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt,
+	LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt, TBlockCorrection,
+	TBlockCorrectionExt,
 };
 use sc_client_api::execution_extensions::ExtensionsFactory as ExtensionsFactoryT;
 use sp_externalities::Extensions;
@@ -26,6 +27,7 @@ use std::{
 pub struct ExtensionsFactory<Block> {
 	ledger_metrics: Arc<Mutex<Option<LedgerMetrics>>>,
 	ledger_storage: LedgerStorage,
+	tblock_correction: TBlockCorrection,
 	_marker: PhantomData<Block>,
 }
 
@@ -33,8 +35,9 @@ impl<Block> ExtensionsFactory<Block> {
 	pub fn new(
 		ledger_metrics: Arc<Mutex<Option<LedgerMetrics>>>,
 		ledger_storage: LedgerStorage,
+		tblock_correction: TBlockCorrection,
 	) -> Self {
-		Self { ledger_metrics, ledger_storage, _marker: Default::default() }
+		Self { ledger_metrics, ledger_storage, tblock_correction, _marker: Default::default() }
 	}
 }
 
@@ -51,6 +54,7 @@ where
 
 		exts.register(LedgerMetricsExt::new(self.ledger_metrics.clone()));
 		exts.register(LedgerStorageExt::new(self.ledger_storage.clone()));
+		exts.register(TBlockCorrectionExt(self.tblock_correction.clone()));
 
 		exts
 	}
