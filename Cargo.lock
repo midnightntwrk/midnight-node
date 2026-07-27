@@ -3046,7 +3046,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.117",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5687,7 +5687,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -7341,9 +7341,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.18.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a860605968fce16869fd239cf4237a82f3ac470723415db603b0e8b6c8d4fb9"
+checksum = "0b6180140927ee907000b0aa540091f6ea512ead4447c92b8fc35bc72788a5a6"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -7886,7 +7886,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -7956,7 +7956,7 @@ dependencies = [
  "sc-keystore",
  "sc-network",
  "sc-offchain",
- "sc-partner-chains-consensus-aura",
+ "sc-partner-chains-consensus",
  "sc-rpc",
  "sc-rpc-api",
  "sc-service",
@@ -7991,7 +7991,6 @@ dependencies = [
  "sp-keystore",
  "sp-mmr-primitives",
  "sp-partner-chains-bridge",
- "sp-partner-chains-consensus-aura",
  "sp-runtime",
  "sp-session-validator-management",
  "sp-session-validator-management-query",
@@ -8140,7 +8139,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "subxt 0.50.0",
  "walkdir",
@@ -8186,15 +8185,18 @@ dependencies = [
  "midnight-primitives",
  "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
+ "midnight-primitives-consensus-engine",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-session-info",
  "pallet-aura",
+ "pallet-authorship",
  "pallet-babe",
  "pallet-beefy",
  "pallet-beefy-mmr",
  "pallet-c2m-bridge",
  "pallet-cnight-observation",
  "pallet-collective",
+ "pallet-consensus-engine",
  "pallet-federated-authority",
  "pallet-federated-authority-observation",
  "pallet-grandpa",
@@ -8204,7 +8206,6 @@ dependencies = [
  "pallet-migrations",
  "pallet-mmr",
  "pallet-partner-chains-bridge",
- "pallet-partner-chains-session",
  "pallet-preimage",
  "pallet-scheduler",
  "pallet-session",
@@ -8540,6 +8541,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-primitives-consensus-engine"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api",
+]
+
+[[package]]
 name = "midnight-primitives-federated-authority-observation"
 version = "0.1.0"
 dependencies = [
@@ -8585,7 +8595,7 @@ dependencies = [
  "figment",
  "itertools 0.14.0",
  "log",
- "lru 0.18.0",
+ "lru 0.18.1",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
  "parity-scale-codec",
@@ -8789,7 +8799,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.18.0",
+ "lru 0.18.1",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
  "midnight-circuits 6.2.1",
@@ -8824,7 +8834,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.18.0",
+ "lru 0.18.1",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
  "midnight-circuits 7.2.1",
@@ -10397,6 +10407,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-consensus-engine"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "midnight-primitives-consensus-engine",
+ "pallet-aura",
+ "pallet-babe",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-consensus-aura",
+ "sp-consensus-babe",
+ "sp-consensus-slots",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "pallet-federated-authority"
 version = "0.1.0"
 dependencies = [
@@ -10598,22 +10629,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-partner-chains-session"
-version = "1.8.1"
-dependencies = [
- "frame-support",
- "frame-system",
- "impl-trait-for-tuples",
- "log",
- "pallet-session",
- "parity-scale-codec",
- "scale-info",
- "sp-runtime",
- "sp-staking",
- "sp-std",
-]
-
-[[package]]
 name = "pallet-preimage"
 version = "49.0.0"
 source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2606#660acefe66599a3e54363797007befcb01bd610b"
@@ -10688,22 +10703,22 @@ dependencies = [
 name = "pallet-session-validator-management"
 version = "1.8.1"
 dependencies = [
- "derive-new",
  "frame-benchmarking",
  "frame-support",
  "frame-system",
  "log",
  "pallet-balances",
- "pallet-partner-chains-session",
  "pallet-session",
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
+ "sp-application-crypto",
  "sp-core",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2606)",
  "sp-io",
  "sp-runtime",
  "sp-session-validator-management",
+ "sp-staking",
  "sp-std",
 ]
 
@@ -11151,7 +11166,7 @@ dependencies = [
  "ogmios-client",
  "pallet-balances",
  "pallet-partner-chains-bridge",
- "pallet-partner-chains-session",
+ "pallet-session",
  "pallet-session-validator-management",
  "pallet-sidechain",
  "parity-scale-codec",
@@ -11206,7 +11221,7 @@ dependencies = [
  "hex-literal 1.1.0",
  "itertools 0.14.0",
  "log",
- "lru 0.18.0",
+ "lru 0.18.1",
  "pallet-sidechain-rpc",
  "partner-chains-plutus-data",
  "pretty_assertions",
@@ -11243,6 +11258,7 @@ dependencies = [
  "partner-chains-demo-runtime",
  "partner-chains-mock-data-sources",
  "partner-chains-node-commands",
+ "pretty_assertions",
  "sc-basic-authorship",
  "sc-cli",
  "sc-client-api",
@@ -11252,7 +11268,7 @@ dependencies = [
  "sc-consensus-grandpa-rpc",
  "sc-executor",
  "sc-network",
- "sc-partner-chains-consensus-aura",
+ "sc-partner-chains-consensus",
  "sc-rpc",
  "sc-service",
  "sc-telemetry",
@@ -11270,7 +11286,6 @@ dependencies = [
  "sp-inherents",
  "sp-io",
  "sp-partner-chains-bridge",
- "sp-partner-chains-consensus-aura",
  "sp-runtime",
  "sp-session-validator-management",
  "sp-session-validator-management-query",
@@ -11302,7 +11317,6 @@ dependencies = [
  "pallet-balances",
  "pallet-grandpa",
  "pallet-partner-chains-bridge",
- "pallet-partner-chains-session",
  "pallet-session",
  "pallet-session-validator-management",
  "pallet-sidechain",
@@ -11312,6 +11326,7 @@ dependencies = [
  "pallet-transaction-payment-rpc-runtime-api",
  "parity-scale-codec",
  "plutus",
+ "pretty_assertions",
  "scale-info",
  "serde",
  "serde_json",
@@ -11356,6 +11371,7 @@ dependencies = [
  "sidechain-mc-hash",
  "sp-partner-chains-bridge",
  "sp-timestamp",
+ "tokio",
 ]
 
 [[package]]
@@ -12467,7 +12483,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -12487,7 +12503,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -14637,39 +14653,38 @@ dependencies = [
 ]
 
 [[package]]
-name = "sc-partner-chains-consensus-aura"
+name = "sc-partner-chains-consensus"
 version = "1.8.1"
 dependencies = [
  "async-trait",
  "futures",
  "log",
  "parity-scale-codec",
- "parking_lot 0.12.5",
  "sc-block-builder",
  "sc-client-api",
  "sc-consensus",
  "sc-consensus-aura",
- "sc-consensus-slots",
- "sc-keystore",
+ "sc-consensus-babe",
+ "sc-consensus-epochs",
  "sc-network-test",
- "sc-telemetry",
+ "sc-transaction-pool-api",
  "sp-api",
- "sp-application-crypto",
  "sp-block-builder",
  "sp-blockchain",
  "sp-consensus",
  "sp-consensus-aura",
+ "sp-consensus-babe",
  "sp-consensus-slots",
- "sp-core",
+ "sp-externalities",
  "sp-inherents",
- "sp-keyring",
  "sp-keystore",
- "sp-partner-chains-consensus-aura",
+ "sp-partner-chains-consensus",
  "sp-runtime",
+ "sp-state-machine",
  "sp-timestamp",
  "sp-tracing",
+ "sp-version",
  "substrate-test-runtime-client",
- "tempfile",
  "tokio",
 ]
 
@@ -15757,11 +15772,12 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.18.0"
+version = "3.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd5414fad8e6907dbdd5bc441a50ae8d6e26151a03b1de04d89a5576de61d01f"
+checksum = "76a5c54c7310e7b8b9577c286d7e399ddd876c3e12b3ed917a8aabc4b96e9e8c"
 dependencies = [
  "base64 0.22.1",
+ "bs58",
  "chrono",
  "hex",
  "indexmap 1.9.3",
@@ -15776,9 +15792,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.18.0"
+version = "3.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3db8978e608f1fe7357e211969fd9abdcae80bac1ba7a3369bb7eb6b404eb65"
+checksum = "84d57bc0c8b9a17920c178daa6bb924850d54a9c97ab45194bb8c17ad66bb660"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -15980,12 +15996,13 @@ dependencies = [
  "async-trait",
  "derive-new",
  "log",
+ "sc-partner-chains-consensus",
  "sidechain-domain",
  "sp-blockchain",
  "sp-consensus",
  "sp-consensus-slots",
  "sp-inherents",
- "sp-partner-chains-consensus-aura",
+ "sp-partner-chains-consensus",
  "sp-runtime",
  "sp-timestamp",
  "thiserror 2.0.18",
@@ -16952,13 +16969,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "sp-partner-chains-consensus-aura"
+name = "sp-partner-chains-consensus"
 version = "1.8.1"
 dependencies = [
- "futures",
- "sp-blockchain",
- "sp-consensus",
- "sp-consensus-slots",
  "sp-inherents",
  "sp-runtime",
 ]
