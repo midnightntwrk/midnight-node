@@ -271,6 +271,7 @@ fn schedule_flip_is_rejected_unless_armed() {
 fn flip_fires_at_the_last_slot_of_the_epoch() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
+		seed_babe_authorities();
 
 		// The last slot of the epoch (1499 for a 300-slot epoch) attempts the flip.
 		// The flip block must carry a matching BABE pre-digest. Completing the flip
@@ -285,6 +286,7 @@ fn flip_fires_at_the_last_slot_of_the_epoch() {
 fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
+		seed_babe_authorities();
 
 		// An epoch-end AURA block without a BABE pre-digest must be rejected: committing
 		// the flip without it would permanently halt authoring.
@@ -294,9 +296,31 @@ fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
 }
 
 #[test]
+fn flip_postpones_when_babe_authorities_empty() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ScheduledFlip);
+		// Default Authorities is empty — postpone even when the digest is present.
+		assert!(pallet_babe::Authorities::<Test>::get().is_empty());
+		start_block_with_babe_pre_digest(1499);
+		on_initialize();
+		assert_eq!(EngineState::<Test>::get(), State::ScheduledFlip);
+
+		// Once Authorities is populated, the next epoch-end flip proceeds
+		// (and currently panics on Issue #1742 after migrate).
+		seed_babe_authorities();
+		start_block_with_babe_pre_digest(1799);
+		let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+			on_initialize();
+		}));
+		assert!(result.is_err());
+	});
+}
+
+#[test]
 fn flip_does_not_run_mid_epoch() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
+		seed_babe_authorities();
 		// A mid-epoch block does not trigger the flip (no panic, state unchanged),
 		// even when it carries a BABE pre-digest.
 		start_block_with_babe_pre_digest(1400);
@@ -310,6 +334,7 @@ fn flip_does_not_run_mid_epoch() {
 fn flip_does_not_run_on_penultimate_or_first_slot_of_next_epoch() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
+		seed_babe_authorities();
 		// Don't flip at the penultimate slot.
 		start_block_with_babe_pre_digest(1498);
 		on_initialize();
@@ -329,6 +354,7 @@ fn flip_does_not_run_on_penultimate_or_first_slot_of_next_epoch() {
 fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
+		seed_babe_authorities();
 		// The epoch's last slot (1499) was skipped; the flip waits and fires at the
 		// next epoch's last slot (1799), where completing it panics (Issue #1742).
 		start_block_with_babe_pre_digest(1799);

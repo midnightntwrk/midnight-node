@@ -111,6 +111,16 @@ impl pallet_consensus_engine::Config for Test {
 	type WeightInfo = ();
 }
 
+/// Seed a non-empty `pallet-babe::Authorities` set so the flip is allowed to commit.
+pub fn seed_babe_authorities() {
+	use frame_support::WeakBoundedVec;
+	use sp_core::sr25519;
+	let id = sp_consensus_babe::AuthorityId::from(sr25519::Public::from_raw([1u8; 32]));
+	let authorities =
+		WeakBoundedVec::try_from(vec![(id, 1u64)]).expect("one authority fits MaxAuthorities");
+	pallet_babe::Authorities::<Test>::put(authorities);
+}
+
 /// Start a new block whose header carries exactly the given digest `logs`.
 pub fn start_block_with_logs(logs: Vec<DigestItem>) {
 	let number = System::block_number() + 1;

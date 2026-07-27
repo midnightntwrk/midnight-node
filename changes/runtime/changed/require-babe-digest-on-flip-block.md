@@ -2,20 +2,15 @@
 
 # Harden BABE pre-digest checks and consensus-engine transition calls
 
-The consensus-engine pallet now hard-rejects (assert):
-- any BABE pre-runtime digest while still in `State::Aura` (not only the
-  canonical AURA-then-matching-BABE shape). Reordered or malformed digests
-  previously bypassed the guard while `pallet-babe` still consumed the first
-  BABE digest and could deposit an unretractable `NextEpochData` pre-arming;
-- an epoch-boundary flip candidate that lacks a matching BABE `SecondaryPlain`
-  pre-runtime digest (committing without it would permanently halt the chain);
-- any transition-window block (`ArmedBabe`/`ScheduledFlip`) whose BABE digest is
-  present but malformed (wrong slot, ordering, or duplicates). Absence remains
-  allowed so older binaries can still author until upgraded.
-
-`arm_babe` / `schedule_flip` now return `Error::InvalidEngineState` when called
-from the wrong `EngineState` (previously a silent no-op that looked like success
-to governance).
+The consensus-engine pallet now:
+- rejects any BABE pre-runtime digest in `State::Aura`;
+- requires a matching BABE `SecondaryPlain` pre-runtime digest on the
+  epoch-boundary flip block;
+- rejects malformed BABE digests during `ArmedBabe`/`ScheduledFlip` (wrong slot,
+  ordering, or duplicates; absence remains allowed for older binaries);
+- returns `Error::InvalidEngineState` from `arm_babe` / `schedule_flip` when
+  called from the wrong `EngineState`;
+- postpones the flip while `pallet-babe::Authorities` is empty.
 
 PR:
 Issue:

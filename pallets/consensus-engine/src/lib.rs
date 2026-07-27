@@ -29,10 +29,10 @@
 //!
 //! Once scheduled, the pallet performs the flip at the last block of the epoch.
 //! That flip block must carry a matching BABE `PreRuntimeDigest`; without it the
-//! block is rejected on import (a hard assert), so a digest-less epoch-end block
-//! can never become the flip — which would permanently halt authoring after the
-//! transition. During `ArmedBabe`/`ScheduledFlip`, BABE digests are optional, but
-//! any present digest must match the AURA slot (unique, after AURA). If the last
+//! block is rejected on import. During `ArmedBabe`/`ScheduledFlip`, BABE digests
+//! are optional, but any present digest must match the AURA slot (unique, after
+//! AURA). The flip is also postponed while `pallet-babe::Authorities` is empty
+//! (session has not yet populated BABE keys after a runtime upgrade). If the last
 //! slot of an epoch is empty, migration is postponed to a later epoch-end block.
 //! The migration initializes pallet-babe state and transitions to the final state
 //! `Babe`. The first block of the next epoch is authored with BABE.
@@ -168,8 +168,18 @@ pub mod pallet {
 							Self::has_aura_pre_digest_before_babe_pre_digest(),
 							"BABE pre-runtime digest required on flip block",
 						);
-						Self::migrate_to_babe(slot);
-						EngineState::<T>::put(State::Babe);
+						// Postpone while session has not yet filled BABE authorities.
+						if pallet_babe::Authorities::<T>::get().is_empty() {
+							log::warn!(
+								target: "consensus-engine",
+								"Scheduled flip at last slot {:?} postponed: pallet-babe Authorities \
+								is empty (waiting for session rotation).",
+								slot,
+							);
+						} else {
+							Self::migrate_to_babe(slot);
+							EngineState::<T>::put(State::Babe);
+						}
 					}
 				},
 				State::Babe => {},
