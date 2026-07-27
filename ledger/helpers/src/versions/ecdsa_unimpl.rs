@@ -30,7 +30,9 @@ use super::midnight_serialize::{Deserializable, Serializable, Tagged};
 use std::borrow::Cow;
 use std::io;
 
-#[derive(Clone, Debug)]
+// Mirrors the real `base_crypto::ecdsa::VerifyingKey` trait surface (which derives these), so
+// generic/test code comparing verifying keys type-checks against all three generations.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifyingKeyEcdsa;
 
 #[derive(Clone, Debug)]
