@@ -57,6 +57,24 @@ const EXPECTED_BLOCK_SECONDS: u64 = 6;
 /// lag and the retraction/re-inclusion window.
 const FINALIZED_FALLBACK_SCAN_MARGIN: u32 = 16;
 
+/// The finalized-chain fallback scan could not run to completion, so the
+/// tx's finality is unknown rather than refuted.
+#[derive(Debug, Error)]
+pub enum FinalityScanError {
+	#[error("failed to fetch the finalized head: {0}")]
+	FinalizedHead(subxt::rpcs::Error),
+	#[error("failed to fetch finalized block {hash}: {source}")]
+	FetchBlock {
+		hash: String,
+		#[source]
+		source: subxt::rpcs::Error,
+	},
+	#[error("finalized block {hash} not returned by the node")]
+	MissingBlock { hash: String },
+	#[error("extrinsic hash {hash} is not valid hex")]
+	InvalidTargetHash { hash: String },
+}
+
 #[derive(Debug, Error)]
 pub enum SenderError {
 	#[error(
@@ -69,6 +87,16 @@ pub enum SenderError {
 	FailedToReachBestBlock { last_status: String },
 	#[error("tx reached best block but was not finalized within timeout")]
 	FailedToFinalize,
+	#[error(
+		"tx reached best block, the finalization watch timed out, and the \
+		 finalized-chain check could not complete: {source}. Finality is UNKNOWN — \
+		 the tx may have landed; do not treat this exit as proof of failure for \
+		 at-most-once operations."
+	)]
+	FinalityUnverified {
+		#[source]
+		source: FinalityScanError,
+	},
 	#[error("runtime reported tx invalid: {message}")]
 	InvalidTransaction { message: String },
 	#[error("tx was dropped from the pool: {message}")]
@@ -446,42 +474,52 @@ impl Sender {
 	/// tx is re-included and finalized in a different block, but the stream
 	/// never reports it and the watcher times out (#1854). The chain itself is
 	/// the source of truth, so consult it before declaring a landed tx failed.
+	///
+	/// `Ok(Some(hash))` means the extrinsic is finalized in `hash`; `Ok(None)`
+	/// means the scan completed and the extrinsic is definitively absent from
+	/// the window; `Err` means the scan could not complete (RPC failure), so
+	/// finality is unknown — callers must not read it as absence.
 	pub async fn find_in_finalized_chain(
 		client: &MidnightNodeClient,
 		extrinsic_hash_hex: &str,
 		max_depth: u32,
-	) -> Option<String> {
-		let mut hash = match client.rpc.chain_get_finalized_head().await {
-			Ok(h) => h,
-			Err(e) => {
-				log::warn!("finalized-chain check: failed to get finalized head: {e}");
-				return None;
-			},
-		};
+	) -> Result<Option<String>, FinalityScanError> {
+		let target = hex::decode(extrinsic_hash_hex.trim_start_matches("0x")).map_err(|_| {
+			FinalityScanError::InvalidTargetHash { hash: extrinsic_hash_hex.to_string() }
+		})?;
+
+		let mut hash = client
+			.rpc
+			.chain_get_finalized_head()
+			.await
+			.map_err(FinalityScanError::FinalizedHead)?;
 
 		for _ in 0..max_depth {
 			let block = match client.rpc.chain_get_block(Some(hash)).await {
 				Ok(Some(b)) => b,
-				Ok(None) => return None,
+				Ok(None) => {
+					return Err(FinalityScanError::MissingBlock { hash: hash_to_str(hash) });
+				},
 				Err(e) => {
-					log::warn!("finalized-chain check: failed to fetch block: {e}");
-					return None;
+					return Err(FinalityScanError::FetchBlock {
+						hash: hash_to_str(hash),
+						source: e,
+					});
 				},
 			};
 
 			for ext in &block.block.extrinsics {
-				let ext_hash = format!("0x{}", hex::encode(sp_crypto_hashing::blake2_256(&ext.0)));
-				if ext_hash == extrinsic_hash_hex {
-					return Some(hash_to_str(hash));
+				if sp_crypto_hashing::blake2_256(&ext.0)[..] == target[..] {
+					return Ok(Some(hash_to_str(hash)));
 				}
 			}
 
 			if block.block.header.number == 0 {
-				return None;
+				return Ok(None);
 			}
 			hash = block.block.header.parent_hash;
 		}
-		None
+		Ok(None)
 	}
 
 	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) -> Result<(), SenderError> {
@@ -515,11 +553,13 @@ impl Sender {
 		);
 
 		let finalized = Self::wait_for_finalized(progress).await;
-		let finalized_block_hash = match &finalized {
-			Some(info) => Some(hash_to_str(info.block_hash())),
+		let (finalized_block_hash, scan_error) = match &finalized {
+			Some(info) => (Some(hash_to_str(info.block_hash())), None),
 			// The watch stream said nothing — but the tx may have been
 			// re-included after a retraction and finalized in a block the
 			// stream never reported (#1854). Ask the chain before failing.
+			// A scan that cannot complete is tracked separately from a scan
+			// that completes without a match: only the latter refutes finality.
 			None => {
 				let client = self.clients.iter().find(|c| c.url == url);
 				match client {
@@ -528,20 +568,35 @@ impl Sender {
 							"MN_SEND_FINALIZED_TIMEOUT",
 							Duration::from_secs(60),
 						);
-						Self::find_in_finalized_chain(
+						match Self::find_in_finalized_chain(
 							&handle.client,
 							&tx_hashes.extrinsic_hash,
 							Self::finalized_fallback_scan_depth(finalized_timeout),
 						)
 						.await
+						{
+							Ok(found) => (found, None),
+							Err(e) => {
+								log::warn!(
+									url = &url;
+									"finalized-chain check inconclusive: {e}"
+								);
+								(None, Some(e))
+							},
+						}
 					},
-					None => None,
+					None => (None, None),
 				}
 			},
 		};
 
 		let message = if finalized_block_hash.is_some() {
 			if finalized.is_some() { "FINALIZED" } else { "FINALIZED_AFTER_RETRACTION" }
+		} else if scan_error.is_some() {
+			// Neither confirmed nor refuted: the watch timed out AND the
+			// chain could not be consulted. Distinct from FAILED_TO_FINALIZE
+			// so at-most-once callers don't read it as proof of absence.
+			"FINALITY_UNVERIFIED"
 		} else {
 			"FAILED_TO_FINALIZE"
 		};
@@ -555,7 +610,11 @@ impl Sender {
 			block_hash = display_block_hash.as_str();
 			"{message}"
 		);
-		if finalized_block_hash.is_some() { Ok(()) } else { Err(SenderError::FailedToFinalize) }
+		match (finalized_block_hash.is_some(), scan_error) {
+			(true, _) => Ok(()),
+			(false, Some(source)) => Err(SenderError::FinalityUnverified { source }),
+			(false, None) => Err(SenderError::FailedToFinalize),
+		}
 	}
 }
 

@@ -779,7 +779,9 @@ async fn finalized_chain_scan_finds_real_extrinsic() {
 	let ext = block.block.extrinsics.first().expect("finalized block has no extrinsics");
 	let ext_hash = format!("0x{}", hex::encode(sp_crypto_hashing::blake2_256(&ext.0)));
 
-	let found = Sender::find_in_finalized_chain(&client, &ext_hash, 64).await;
+	let found = Sender::find_in_finalized_chain(&client, &ext_hash, 64)
+		.await
+		.expect("scan against a live node must complete");
 	assert!(found.is_some(), "scan should find an extrinsic taken from the finalized head");
 
 	let missing = Sender::find_in_finalized_chain(
@@ -787,6 +789,7 @@ async fn finalized_chain_scan_finds_real_extrinsic() {
 		"0x0000000000000000000000000000000000000000000000000000000000000000",
 		64,
 	)
-	.await;
+	.await
+	.expect("scan against a live node must complete");
 	assert!(missing.is_none(), "scan must not claim an unknown extrinsic hash");
 }
