@@ -17,5 +17,5 @@ test-group = "toolkit-js"
 max-threads = 1
 
 [[profile.ci.overrides]]
-filter = "test(bboard_private_witness_not_leaked) | test(counter_increment_e2e) | test(welcome_e2e) | test(tic_tac_toe_e2e)"
+filter = "test(bboard_private_witness_not_leaked) | test(counter_increment_e2e) | test(welcome_e2e) | test(tic_tac_toe_e2e) | test(ecdsa_contract_committees_e2e)"
 test-group = "contract-e2e"

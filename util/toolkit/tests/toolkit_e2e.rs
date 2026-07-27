@@ -666,14 +666,15 @@ async fn tic_tac_toe_e2e() {
 
 	// Player X is the funding wallet; player O is a distinct wallet (the constructor
 	// asserts the two keys differ).
-	const PLAYER_O_SEED: &str =
-		"0000000000000000000000000000000000000000000000000000000000000002";
+	const PLAYER_O_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000002";
 	let player_x = helper.show_address_coin_public(FUNDING_SEED);
 	let player_o = helper.show_address_coin_public(PLAYER_O_SEED);
 
 	let source = helper.load_contract_file("tic-tac-toe/tic_tac_toe.compact");
-	let compiled_dir =
-		helper.compile_contract(&source, "tic-tac-toe").await.expect("contract compilation failed");
+	let compiled_dir = helper
+		.compile_contract(&source, "tic-tac-toe")
+		.await
+		.expect("contract compilation failed");
 
 	let config_content = helper.load_template(
 		"tic-tac-toe/config.template.ts",
@@ -694,13 +695,13 @@ async fn tic_tac_toe_e2e() {
 
 	// X wins the middle row (3-4-5). Each entry is (circuit, args, is_player_o).
 	let calls: Vec<(&str, Vec<&str>, bool)> = vec![
-		("make_move", vec!["4"], false),               // X center
-		("make_move", vec!["0"], true),                // O top-left
-		("make_move", vec!["3"], false),               // X mid-left
-		("make_move", vec!["1"], true),                // O top-middle
-		("make_move", vec!["5"], false),               // X mid-right -> X wins
+		("make_move", vec!["4"], false),                   // X center
+		("make_move", vec!["0"], true),                    // O top-left
+		("make_move", vec!["3"], false),                   // X mid-left
+		("make_move", vec!["1"], true),                    // O top-middle
+		("make_move", vec!["5"], false),                   // X mid-right -> X wins
 		("verify_game_state", vec!["1", "1", "5"], false), // turn=X, status=x_wins, moves=5
-		("verify_winner", vec!["1"], false),           // winner=X
+		("verify_winner", vec!["1"], false),               // winner=X
 	];
 
 	let mut prev_private = deploy.private_state.clone();
@@ -723,7 +724,204 @@ async fn tic_tac_toe_e2e() {
 			.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
 			.await
 			.unwrap_or_else(|e| panic!("send {circuit} intent failed: {e}"));
-		helper.submit_tx(&tx).await.unwrap_or_else(|e| panic!("submit {circuit} tx failed: {e}"));
+		helper
+			.submit_tx(&tx)
+			.await
+			.unwrap_or_else(|e| panic!("submit {circuit} tx failed: {e}"));
 		prev_private = out.private_state;
 	}
+}
+
+/// End-to-end coverage for ledger-9 ECDSA unshielded-signature support in the toolkit
+/// (<https://github.com/midnightntwrk/midnight-node/issues/1542>), ported from the former
+/// `scripts/tests/toolkit-ecdsa-e2e.sh`. Runs against the shared `dev` node, whose genesis is
+/// built on ledger 9, so the ECDSA scheme is accepted on-chain — the ledger runs the real
+/// `signature_verify` in `Transaction::well_formed` on every submitted tx.
+///
+/// Proves:
+///   1. ECDSA unshielded address derivation is wired and distinct from Schnorr for the same seed.
+///   2. A contract can be deployed with an ECDSA contract-maintenance committee, and the contract
+///      is actually indexed on-chain afterwards (see the closing `contract-state` fetch — it
+///      replays the real blocks and fails if the deploy did not apply, not merely finalize).
+///   3. A maintenance update signed by an ECDSA-only committee is accepted.
+///   4. A maintenance update signed by a mixed Schnorr+ECDSA committee is accepted (per-member
+///      scheme dispatch), and authority rotations persist across sequential updates.
+///
+/// Note on assertion strength: signature validity is enforced at mempool time —
+/// `validate_unsigned` runs `LedgerApi::validate_transaction` against current on-chain state — so a
+/// bad ECDSA or cross-scheme signature is rejected before inclusion and surfaces as a `run_cli`
+/// panic. The closing `contract-state` fetch additionally confirms on-chain application of the
+/// deploy. (`send`/finalization alone does not prove apply-time success, hence the explicit fetch.)
+#[tokio::test]
+async fn ecdsa_contract_committees_e2e() {
+	// Committee members only ever sign maintenance updates, so they need no on-chain funds; fees
+	// are paid by the default (Schnorr) funding seed. Keep every seed distinct so the toolkit's
+	// shared cross-scheme guard never sees one seed requested under two schemes in one invocation.
+	const ECDSA_AUTH_1: &str = "1000000000000000000000000000000000000000000000000000000000000001";
+	const SCHNORR_AUTH_2: &str = "2000000000000000000000000000000000000000000000000000000000000002";
+	const ECDSA_AUTH_3: &str = "3000000000000000000000000000000000000000000000000000000000000003";
+
+	// --- 1. ECDSA unshielded address derivation (no node required) ------------------------------
+	let unshielded_address = |seed: &str| {
+		let cli = Cli::parse_from([
+			"midnight-node-toolkit",
+			"show-address",
+			"--network",
+			"undeployed",
+			"--seed",
+			seed,
+			"--unshielded",
+		]);
+		match cli.command {
+			Commands::ShowAddress(args) => match show_address::execute(args) {
+				show_address::ShowAddress::SingleAddress(addr) => addr,
+				show_address::ShowAddress::Addresses(_) => panic!("expected a single address"),
+			},
+			_ => unreachable!(),
+		}
+	};
+
+	// Same seed, different scheme => different NIGHT identity, hence a different address.
+	let schnorr_address = unshielded_address(ECDSA_AUTH_1);
+	let ecdsa_address = unshielded_address(&format!("ecdsa:{ECDSA_AUTH_1}"));
+	assert_ne!(
+		schnorr_address, ecdsa_address,
+		"ECDSA and Schnorr addresses must differ for the same seed"
+	);
+	assert!(
+		ecdsa_address.starts_with("mn_addr"),
+		"unexpected ECDSA unshielded address HRP: {ecdsa_address}"
+	);
+
+	// --- 2-4. Deploy + maintenance need the contract test artifacts and a live node -------------
+	if !ledger_test_artifacts_ready() {
+		return;
+	}
+	let url = node_ws_url().await;
+
+	let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+	let deploy_file = tempdir.path().join("ecdsa_contract_deploy.mn");
+	let deploy_file_str = deploy_file.to_string_lossy().to_string();
+
+	// The contract address is derived from this rng seed, so a fixed seed collides with an
+	// already-deployed contract on a re-run against a persistent node. Randomize per run; log it so
+	// a failure stays reproducible.
+	let deploy_rng_seed = hex::encode(rand::random::<[u8; 32]>());
+	eprintln!("ecdsa_contract_committees_e2e: deploy rng-seed = {deploy_rng_seed}");
+
+	// 2. Deploy contract-simple with an ECDSA maintenance committee, then send it.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"--dest-file",
+		&deploy_file_str,
+		"contract-simple",
+		"deploy",
+		"--rng-seed",
+		&deploy_rng_seed,
+		"--authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_1}"),
+		"-s",
+		url,
+	])
+	.await;
+
+	let contract_address = {
+		let cli = Cli::parse_from([
+			"midnight-node-toolkit",
+			"contract-address",
+			"--src-file",
+			&deploy_file_str,
+		]);
+		match cli.command {
+			Commands::ContractAddress(args) => {
+				contract_address::execute(args).expect("failed to get contract address")
+			},
+			_ => unreachable!(),
+		}
+	};
+	assert!(!contract_address.is_empty(), "deploy must produce a contract address");
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		&format!("--src-file={deploy_file_str}"),
+		"send",
+		"-d",
+		url,
+	])
+	.await;
+
+	// 3. Maintenance #1: the ECDSA authority rotates to a mixed Schnorr+ECDSA committee. The
+	//    initial authority counter is 0.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"contract-simple",
+		"maintenance",
+		"--rng-seed",
+		RNG_SEED,
+		"--contract-address",
+		&contract_address,
+		"--counter",
+		"0",
+		"--authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_1}"),
+		"--new-authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_1}"),
+		"--new-authority-seed",
+		&format!("schnorr:{SCHNORR_AUTH_2}"),
+		"--threshold",
+		"2",
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// 4. Maintenance #2: the mixed committee (one ECDSA + one Schnorr signature in a single
+	//    update) rotates to a fresh ECDSA committee. The previous rotation bumped the counter to 1.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"contract-simple",
+		"maintenance",
+		"--rng-seed",
+		RNG_SEED,
+		"--contract-address",
+		&contract_address,
+		"--counter",
+		"1",
+		"--authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_1}"),
+		"--authority-seed",
+		&format!("schnorr:{SCHNORR_AUTH_2}"),
+		"--new-authority-seed",
+		&format!("ecdsa:{ECDSA_AUTH_3}"),
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// Confirm on-chain application (not just finalization): replay the real blocks and read the
+	// contract state by address. `get_contract_state` does `ledger_state.index(addr).expect(..)`,
+	// so this panics — failing the test — if the deploy never actually landed on-chain. It also
+	// parses `contract_address`, so a malformed deploy address is caught here too.
+	run_cli(&[
+		"contract-state",
+		"--fetch-cache",
+		"inmemory",
+		"--contract-address",
+		&contract_address,
+		"-s",
+		url,
+	])
+	.await;
 }
