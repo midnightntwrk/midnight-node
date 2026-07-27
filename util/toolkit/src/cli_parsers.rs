@@ -430,4 +430,65 @@ mod tests {
 		let res = hex_ledger_untagged_decode::<HashOutput>("not-valid-hex!!");
 		assert!(res.is_err(), "invalid hex should be rejected");
 	}
+
+	// `SchemeSeed::from_str` — the single Schnorr-vs-ECDSA decision point. The toolkit-js
+	// `ecdsa:`-rejection guard and the whole unshielded-scheme dispatch key off it, so its
+	// behaviour is pinned here: exact lowercase `schnorr:`/`ecdsa:` prefixes, a bare seed
+	// defaulting to Schnorr (historical `--seed` compatibility), and any other prefix a hard
+	// error — never a silent downgrade of an intended-ECDSA seed to Schnorr.
+
+	const TEST_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";
+
+	#[test]
+	fn scheme_seed_bare_defaults_to_schnorr() {
+		let parsed: SchemeSeed = TEST_SEED.parse().expect("bare seed should parse");
+		assert_eq!(parsed.scheme, UnshieldedSignatureScheme::Schnorr);
+	}
+
+	#[test]
+	fn scheme_seed_schnorr_prefix() {
+		let parsed: SchemeSeed = format!("schnorr:{TEST_SEED}")
+			.parse()
+			.expect("schnorr-prefixed seed should parse");
+		assert_eq!(parsed.scheme, UnshieldedSignatureScheme::Schnorr);
+		// The prefix is stripped: the resolved seed matches the bare form.
+		let bare: SchemeSeed = TEST_SEED.parse().unwrap();
+		assert_eq!(parsed.seed, bare.seed);
+	}
+
+	#[test]
+	fn scheme_seed_ecdsa_prefix() {
+		let parsed: SchemeSeed =
+			format!("ecdsa:{TEST_SEED}").parse().expect("ecdsa-prefixed seed should parse");
+		assert_eq!(parsed.scheme, UnshieldedSignatureScheme::Ecdsa);
+		let bare: SchemeSeed = TEST_SEED.parse().unwrap();
+		assert_eq!(parsed.seed, bare.seed);
+	}
+
+	#[test]
+	fn scheme_seed_rejects_wrong_case_prefix_never_downgrades() {
+		// The critical safety property: a mis-cased ECDSA prefix must be a hard error, NOT a
+		// silent fall-through to Schnorr (which would deploy a Schnorr authority for an
+		// intended-ECDSA seed). Guard against a future `to_lowercase()`/`starts_with` refactor.
+		for input in [format!("ECDSA:{TEST_SEED}"), format!("Ecdsa:{TEST_SEED}")] {
+			assert!(
+				matches!(input.parse::<SchemeSeed>(), Err(SchemeSeedParseError::UnknownScheme(_))),
+				"wrong-case ECDSA prefix must be rejected, not downgraded to Schnorr: {input}"
+			);
+		}
+	}
+
+	#[test]
+	fn scheme_seed_rejects_unknown_and_padded_prefix() {
+		for input in [
+			format!("foo:{TEST_SEED}"),
+			format!(" ecdsa:{TEST_SEED}"),
+			format!("SCHNORR:{TEST_SEED}"),
+		] {
+			assert!(
+				matches!(input.parse::<SchemeSeed>(), Err(SchemeSeedParseError::UnknownScheme(_))),
+				"unrecognized scheme prefix must be rejected: {input}"
+			);
+		}
+	}
 }
