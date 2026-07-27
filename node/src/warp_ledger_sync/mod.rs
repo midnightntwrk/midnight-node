@@ -56,8 +56,8 @@ pub(crate) const LOG_TARGET: &str = "midnight-ledger-sync";
 /// client read it by raw key.
 pub(crate) fn state_key_storage_key() -> StorageKey {
 	let mut key = Vec::with_capacity(32);
-	key.extend_from_slice(&sp_core::twox_128(b"Midnight"));
-	key.extend_from_slice(&sp_core::twox_128(b"StateKey"));
+	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"Midnight"));
+	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"StateKey"));
 	StorageKey(key)
 }
 

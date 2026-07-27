@@ -248,7 +248,8 @@ impl FaucetManager {
         if candidates.is_empty() {
             panic!(
                 "FaucetManager: no live UTXO >= {} lovelace left at {} to replace a stale \
-                 worker. Faucet needs top-up or re-prime.",
+                 worker. Either top up the faucet (send more tADA to this address) or re-prime \
+                 it (re-split its balance into fresh large worker UTXOs).",
                 need.max(MIN_WORKER_LOVELACE),
                 self.faucet.address_as_bech32(),
             );

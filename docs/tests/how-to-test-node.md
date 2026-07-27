@@ -373,10 +373,10 @@ only (annotated below):
 ```bash
 just toolkit-e2e <NODE_IMG> <TOOLKIT_IMG>
 just toolkit-update-ledger-parameters-e2e <NODE_IMG> <TOOLKIT_IMG>
-just toolkit-maintenance-e2e <NODE_IMG> <TOOLKIT_IMG>      # CI-disabled (LEDGER9-TOOLKIT-JS)
-just toolkit-contracts-e2e <NODE_IMG> <TOOLKIT_IMG>        # CI-disabled (LEDGER9-TOOLKIT-JS)
-just toolkit-mint-e2e <NODE_IMG> <TOOLKIT_IMG>             # CI-disabled (LEDGER9-TOOLKIT-JS)
-just toolkit-tokens-minter-e2e [<NODE_IMG> <TOOLKIT_IMG>]  # CI-disabled (LEDGER9-TOOLKIT-JS)
+just toolkit-maintenance-e2e <NODE_IMG> <TOOLKIT_IMG>
+just toolkit-contracts-e2e <NODE_IMG> <TOOLKIT_IMG>
+just toolkit-mint-e2e <NODE_IMG> <TOOLKIT_IMG>
+just toolkit-tokens-minter-e2e [<NODE_IMG> <TOOLKIT_IMG>]
 just startup-dev-e2e <NODE_IMG>
 just startup-qanet-e2e <NODE_IMG>                          # not scheduled by CI; manual / reusable-action only
 just genesis-wallets-undeployed-e2e <NODE_IMG> <TOOLKIT_IMG>

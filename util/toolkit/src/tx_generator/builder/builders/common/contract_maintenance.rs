@@ -13,12 +13,11 @@
 
 use super::ledger_helpers_local::{
 	BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuilderContext, ContractAddress,
-	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo,
+	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo, ContractOperationVersion,
 	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo,
-	MaintenanceUpdateInfo, OfferInfo, ProofProvider, SigningKey, TransactionWithContext,
-	UnshieldedWallet, UpdateInfo, VerifierKey, VerifyingKey, Wallet, WalletSeed,
-	contract_operation_versioned_verifier_key, deserialize, maintenance_verifying_key,
-	serialize_untagged,
+	MaintenanceUpdateInfo, MaintenanceVerifyingKey, OfferInfo, ProofProvider,
+	TransactionWithContext, UnshieldedWallet, UpdateInfo, Wallet, WalletSeed,
+	contract_operation_version_of, contract_operation_versioned_verifier_key, serialize_untagged,
 };
 use async_trait::async_trait;
 use std::{path::PathBuf, sync::Arc};
@@ -33,8 +32,8 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 pub struct ContractMaintenanceBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
-	current_committee: Vec<SigningKey>,
-	new_committee: Vec<SigningKey>,
+	current_committee: Vec<UnshieldedWallet>,
+	new_committee: Vec<UnshieldedWallet>,
 	upsert_entrypoints: Vec<PathBuf>,
 	remove_entrypoints: Vec<String>,
 	threshold: Option<u32>,
@@ -50,25 +49,22 @@ impl<C: BuilderContext<DefaultDB>> ContractMaintenanceBuilder<C> {
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
-		use super::type_convert::{convert_contract_address, convert_wallet_seed};
+		use super::type_convert::{convert_contract_address, convert_scheme, convert_wallet_seed};
 
-		let commitee_seeds: Vec<WalletSeed> =
-			args.authority_seeds.iter().map(|s| convert_wallet_seed(s.clone())).collect();
-		let new_commitee_seeds: Vec<WalletSeed> = args
-			.new_authority_seeds
-			.iter()
-			.map(|s| convert_wallet_seed(s.clone()))
-			.collect();
+		// Each committee member carries its own signature scheme (Schnorr or ledger-9 ECDSA); the
+		// pre-ledger-9 ECDSA guard runs earlier via `Builder::relevant_wallet_schemes`.
+		let build_committee = |seeds: &[crate::cli_parsers::SchemeSeed]| -> Vec<UnshieldedWallet> {
+			seeds
+				.iter()
+				.map(|s| {
+					let (seed, scheme) = s.resolve();
+					UnshieldedWallet::new(convert_wallet_seed(seed), convert_scheme(scheme))
+				})
+				.collect()
+		};
 
-		let current_committee = commitee_seeds
-			.iter()
-			.map(|s| UnshieldedWallet::default(s.clone()).signing_key().clone())
-			.collect();
-
-		let new_committee = new_commitee_seeds
-			.iter()
-			.map(|s| UnshieldedWallet::default(s.clone()).signing_key().clone())
-			.collect();
+		let current_committee = build_committee(&args.authority_seeds);
+		let new_committee = build_committee(&args.new_authority_seeds);
 
 		Self {
 			context,
@@ -107,16 +103,16 @@ impl<C: BuilderContext<DefaultDB>> BuildTxsExt<C> for ContractMaintenanceBuilder
 impl<C: BuilderContext<DefaultDB>> ContractMaintenanceBuilder<C> {
 	fn create_intent_info(
 		&self,
-		committee: Vec<SigningKey>,
-		entrypoints_to_remove: Vec<EntryPointBuf>,
+		committee: Vec<UnshieldedWallet>,
+		entrypoints_to_remove: Vec<(EntryPointBuf, ContractOperationVersion)>,
 		entrypoints_to_insert: Vec<(EntryPointBuf, ContractOperationVersionedVerifierKey)>,
 	) -> Box<dyn BuildIntent<DefaultDB, C>> {
 		log::info!("Create intent info for Maintenance");
 
 		let mut updates = vec![];
 
-		for entrypoint in entrypoints_to_remove {
-			updates.push(UpdateInfo::VerifierKeyRemove(entrypoint));
+		for (entrypoint, version) in entrypoints_to_remove {
+			updates.push(UpdateInfo::VerifierKeyRemove(entrypoint, version));
 		}
 
 		for (entrypoint, key) in entrypoints_to_insert {
@@ -176,15 +172,10 @@ pub enum ContractMaintenanceBuilderError {
 }
 
 fn check_committee(
-	provided_committee: &[VerifyingKey],
+	provided_committee: &[MaintenanceVerifyingKey],
 	authority: &ContractMaintenanceAuthority,
 ) -> Result<(), ContractMaintenanceBuilderError> {
-	if !provided_committee
-		.iter()
-		.cloned()
-		.map(maintenance_verifying_key)
-		.all(|c| authority.committee.contains(&c))
-	{
+	if !provided_committee.iter().all(|c| authority.committee.contains(c)) {
 		let provided_committee_display: Vec<String> = provided_committee
 			.iter()
 			.map(|v| hex::encode(serialize_untagged(&v).unwrap()))
@@ -233,37 +224,38 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 			})?;
 
 		let mut committee = self.current_committee.clone();
-		let mut committee_verifying_keys: Vec<_> =
-			committee.iter().map(|s| s.verifying_key()).collect();
+		let mut committee_verifying_keys: Vec<MaintenanceVerifyingKey> = committee
+			.iter()
+			.map(|w| {
+				w.maintenance_verifying_key().expect("committee member must carry key material")
+			})
+			.collect();
 
-		let funding_signing_key =
-			UnshieldedWallet::default(self.funding_seed()).signing_key().clone();
-		let funding_verifying_key = funding_signing_key.verifying_key();
+		// The funding wallet is Schnorr (its seed is a plain, scheme-less flag). Add it to the
+		// signing set when it is itself a member of the on-chain committee.
+		let funding_wallet = UnshieldedWallet::default(self.funding_seed());
+		let funding_verifying_key = funding_wallet
+			.maintenance_verifying_key()
+			.expect("funding wallet always has key material");
 		if !committee_verifying_keys.contains(&funding_verifying_key)
-			&& contract_state
-				.maintenance_authority
-				.committee
-				.contains(&maintenance_verifying_key(funding_verifying_key.clone()))
+			&& contract_state.maintenance_authority.committee.contains(&funding_verifying_key)
 		{
-			committee.push(funding_signing_key.clone());
+			committee.push(funding_wallet);
 			committee_verifying_keys.push(funding_verifying_key);
 		}
 
 		check_committee(&committee_verifying_keys, &contract_state.maintenance_authority)?;
 
-		// Check remove entrypoints
-		let mut entrypoints_to_remove: Vec<_> = self
-			.remove_entrypoints
-			.iter()
-			.map(|e| EntryPointBuf(e.as_bytes().into()))
-			.collect();
-		let existing_entrypoints: Vec<_> = contract_state.operations.keys().collect();
-		for entrypoint in &entrypoints_to_remove {
-			if !existing_entrypoints.contains(entrypoint) {
-				return Err(ContractMaintenanceBuilderError::RemovingMissingEntrypoint(
-					String::from_utf8_lossy(&entrypoint.0).to_string(),
-				));
-			}
+		// Check remove entrypoints. The version (which slot the existing key lives in) is
+		// looked up per-entrypoint rather than assumed, since on ledger 9 a key can be in
+		// either the legacy `V3` (v6) or `V4` (v7) slot depending on what compiled it.
+		let mut entrypoints_to_remove = vec![];
+		for e in &self.remove_entrypoints {
+			let entrypoint = EntryPointBuf(e.as_bytes().into());
+			let op = contract_state.operations.get(&entrypoint).ok_or_else(|| {
+				ContractMaintenanceBuilderError::RemovingMissingEntrypoint(e.clone())
+			})?;
+			entrypoints_to_remove.push((entrypoint, contract_operation_version_of(&op)));
 		}
 
 		let mut entrypoints_to_insert = vec![];
@@ -280,18 +272,20 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 			let key_bytes =
 				std::fs::read(&p).map_err(ContractMaintenanceBuilderError::VerifierKeyLoadError)?;
 
-			let key: VerifierKey = deserialize(&mut &key_bytes[..])
+			// The maintenance-update variant is version- (and, on ledger 9, key-format-)
+			// dependent: pre-ledger-9 ledgers expose only `V3` (2.x key), while ledger 9
+			// accepts either a legacy 2.x key (`V3`) or a 3.x/zk-stdlib-v2 key (`V4`) and
+			// picks the right one by peeking the key file's tag.
+			// `contract_operation_versioned_verifier_key` selects the right variant/type
+			// for the active ledger generation.
+			let versioned_key = contract_operation_versioned_verifier_key(key_bytes)
 				.map_err(|e| ContractMaintenanceBuilderError::DeserializationError(p.clone(), e))?;
 
-			if existing_entrypoints.contains(&entrypoint) {
-				entrypoints_to_remove.push(entrypoint.clone());
+			if let Some(op) = contract_state.operations.get(&entrypoint) {
+				entrypoints_to_remove
+					.push((entrypoint.clone(), contract_operation_version_of(&op)));
 			}
-			// The maintenance-update variant is version-dependent: pre-ledger-9 ledgers expose
-			// only `V3` (2.x key), while ledger 9 stores newly deployed keys in the `V4`
-			// (zk-stdlib v2 / 3.x) slot. `contract_operation_versioned_verifier_key` selects the
-			// right variant for the active ledger generation.
-			entrypoints_to_insert
-				.push((entrypoint, contract_operation_versioned_verifier_key(key)));
+			entrypoints_to_insert.push((entrypoint, versioned_key));
 		}
 
 		if entrypoints_to_remove.is_empty()

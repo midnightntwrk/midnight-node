@@ -2,9 +2,11 @@ use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::{self, Settings};
 use midnight_node_e2e::e2e_test;
+use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
     Deregistration, Registration,
 };
+use midnight_node_toolkit::cli_parsers::SchemeSeed;
 use midnight_node_toolkit::commands::dust_balance::{
     self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
 };
@@ -470,10 +472,10 @@ async fn register_2_cardano_same_dust_address_production() {
         "UTXO owner does not match DUST address"
     );
 
-    let args = DustBalanceArgs {
+    let args = || DustBalanceArgs {
         source: Source {
             src_files: None,
-            src_url: Some(base_url),
+            src_url: Some(base_url.clone()),
             fetch_concurrency: crate::fetch_concurrency(),
             dust_warp: true,
             ignore_block_context: false,
@@ -482,16 +484,47 @@ async fn register_2_cardano_same_dust_address_production() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
-    let result = crate::gated_dust_balance(args)
+    // Both mints were observed by the time `await_cnight_observations`
+    // returned, but the *second* backing-night's DUST generation can take a
+    // few extra Midnight blocks to reflect in the ledger state that
+    // `dust_balance` reads. Poll until both sources appear.
+    const SOURCES_POLL_ATTEMPTS: u32 = 20;
+    const SOURCES_POLL_INTERVAL: Duration = Duration::from_secs(15);
+    let mut result = crate::gated_dust_balance(args())
         .await
         .expect("dust-balance error");
-
-    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
-        tracing::info!("Total dust balance: {}", total);
+    for attempt in 1..=SOURCES_POLL_ATTEMPTS {
+        let source_count = match &result {
+            DustBalanceResult::Json(DustBalanceJson { total, source, .. }) => {
+                tracing::info!(
+                    "dust-balance attempt {attempt}/{SOURCES_POLL_ATTEMPTS}: total={total}, \
+                     sources={}",
+                    source.len(),
+                );
+                source.len()
+            }
+            _ => 0,
+        };
+        if source_count >= 2 {
+            break;
+        }
+        if attempt < SOURCES_POLL_ATTEMPTS {
+            tracing::info!(
+                "dust-balance: only {source_count}/2 backing-night source(s) reflected yet; \
+                 re-querying in {SOURCES_POLL_INTERVAL:?}"
+            );
+            tokio::time::sleep(SOURCES_POLL_INTERVAL).await;
+            result = crate::gated_dust_balance(args())
+                .await
+                .expect("dust-balance error");
+        }
     }
 
     assert!(matches!(result, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > 0));
@@ -628,7 +661,10 @@ async fn cnight_produces_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -661,7 +697,10 @@ async fn cnight_produces_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -802,7 +841,10 @@ async fn deregister_from_dust_production() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1394,7 +1436,10 @@ async fn register_twice_with_same_cardano_address() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1420,7 +1465,10 @@ async fn register_twice_with_same_cardano_address() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed2,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed2,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1617,7 +1665,10 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1650,7 +1701,10 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1768,7 +1822,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1839,7 +1896,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed2,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed2,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1910,7 +1970,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -1943,7 +2006,10 @@ async fn deregister_first_mapping() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2037,7 +2103,10 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2108,7 +2177,10 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2286,7 +2358,10 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2327,7 +2402,10 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2495,7 +2573,10 @@ async fn spend_cnight_producing_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed.clone(),
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed.clone(),
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2536,7 +2617,10 @@ async fn spend_cnight_producing_dust() {
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
         },
-        seed: midnight_wallet_seed,
+        seed: SchemeSeed {
+            seed: midnight_wallet_seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
         dry_run: false,
     };
 
@@ -2551,4 +2635,84 @@ async fn spend_cnight_producing_dust() {
     assert!(
         matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total < *balance)
     );
+}
+
+#[e2e_test]
+async fn two_utxo_with_only_one_dust_producing() {
+    let settings = Settings::default();
+    let cardano_client = CardanoClient::new(settings.ogmios_client, settings.constants).await;
+    let address_bech32 = cardano_client.address_as_bech32();
+    tracing::info!("New Cardano wallet created: {:?}", address_bech32);
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 6_000_000).await;
+    // for minting cNIGHT tokens
+    faucet.request_tokens(&address_bech32, 7_000_000).await;
+
+    let midnight_wallet_seed = MidnightClient::new_seed();
+    let dust_hex = MidnightClient::new_dust_hex(midnight_wallet_seed);
+    tracing::info!(
+        "Registering Cardano wallet {} with DUST address {}",
+        address_bech32,
+        dust_hex
+    );
+
+    let amount = 100;
+    let tx_id = cardano_client
+        .mint_tokens(amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    tracing::info!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(tx_id));
+
+    let cnight_utxo = match cardano_client
+        .find_utxo_by_tx_id(&cardano_client.address_as_bech32(), hex::encode(tx_id))
+        .await
+    {
+        Some(cnight_utxo) => cnight_utxo,
+        None => panic!("No cNIGHT UTXO found after minting"),
+    };
+
+    let prefix = b"asset_create";
+    let nonce =
+        MidnightClient::calculate_nonce(prefix, cnight_utxo.transaction.id, cnight_utxo.index);
+    tracing::info!("Calculated nonce for cNIGHT UTXO: {}", nonce);
+
+    let register_tx_id = cardano_client
+        .register(&dust_hex, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to register tx")
+        .transaction
+        .id;
+    tracing::info!(
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
+    );
+
+    let cnight_utxo_new = cardano_client
+        .rotate_cnight(&cnight_utxo)
+        .await
+        .expect("Failed to rotate cNight UTxO");
+    tracing::info!(
+        "Rotated cNIGHT UTXO: {}",
+        &hex::encode(&cnight_utxo_new.transaction.id)
+    );
+
+    let cnight_new = match cardano_client
+        .find_utxo_by_tx_id(
+            &cardano_client.address_as_bech32(),
+            hex::encode(&cnight_utxo_new.transaction.id),
+        )
+        .await
+    {
+        Some(cnight_new) => cnight_new,
+        None => panic!("No cNIGHT UTXO found after rotation"),
+    };
+
+    let prefix2 = b"asset_create";
+    let nonce_new =
+        MidnightClient::calculate_nonce(prefix2, cnight_new.transaction.id, cnight_new.index);
+    tracing::info!("Calculated nonce for cNIGHT UTXO: {}", nonce_new);
 }
