@@ -99,8 +99,6 @@ pub struct StrictTxValidationKey {
 	state_hash: Hash,
 	tx_hash: Hash,
 	block_context_tblock: u64,
-	block_context_tblock_err: u32,
-	block_context_parent_block_hash: Vec<u8>,
 }
 #[derive(PartialEq, Eq, Hash)]
 pub struct SoftTxValidationKey {
@@ -891,8 +889,6 @@ where
 			state_hash: state_hash.0.into(),
 			tx_hash: tx_hash.0,
 			block_context_tblock: block_context.tblock,
-			block_context_tblock_err: block_context.tblock_err,
-			block_context_parent_block_hash: block_context.parent_block_hash.clone(),
 		};
 
 		// Check strict cache
@@ -1031,8 +1027,6 @@ where
 			state_hash: state_hash.0.into(),
 			tx_hash: tx_hash.0,
 			block_context_tblock: block_context.tblock,
-			block_context_tblock_err: block_context.tblock_err,
-			block_context_parent_block_hash: block_context.parent_block_hash.clone(),
 		};
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
