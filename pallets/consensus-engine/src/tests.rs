@@ -48,11 +48,38 @@ fn arm_babe_from_baseline() {
 }
 
 #[test]
-#[should_panic(expected = "Unique BABE pre-runtime digest present after AURA in state 'Aura'")]
+#[should_panic(expected = "BABE pre-runtime digest present in state 'Aura'")]
 fn baseline_rejects_blocks_with_babe_pre_digest() {
 	new_test_ext().execute_with(|| {
 		// Default state is `Aura`; a block carrying a BABE pre-digest is rejected.
 		start_block_with_babe_pre_digest(100);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest present in state 'Aura'")]
+fn baseline_rejects_babe_before_aura() {
+	new_test_ext().execute_with(|| {
+		start_block_with_logs(vec![babe_pre_digest(100), aura_pre_digest(100)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest present in state 'Aura'")]
+fn baseline_rejects_babe_only() {
+	new_test_ext().execute_with(|| {
+		start_block_with_logs(vec![babe_pre_digest(100)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest present in state 'Aura'")]
+fn baseline_rejects_mismatched_babe_slot() {
+	new_test_ext().execute_with(|| {
+		start_block_with_logs(vec![aura_pre_digest(100), babe_pre_digest(101)]);
 		on_initialize();
 	});
 }

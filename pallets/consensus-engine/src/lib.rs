@@ -137,15 +137,13 @@ pub mod pallet {
 		/// authoritative slot while AURA is producing).
 		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
 			match EngineState::<T>::get() {
-				// Before arming, the node must not emit BABE pre-digests. A block
-				// carrying one would let `pallet-babe` self-initialize its genesis
-				// epoch prematurely (see `arm_babe_storage`), so reject it. This
-				// is deterministic — every node reads the same header — so a
-				// misbehaving author's block is rejected on import, not just locally.
+				// Before arming, reject any BABE pre-digest. `pallet-babe` (lower
+				// pallet index) runs first and, while `GenesisSlot == 0`, would
+				// consume the first BABE digest and deposit `NextEpochData`.
 				State::Aura => {
 					assert!(
-						!Self::has_aura_pre_digest_before_babe_pre_digest(),
-						"Unique BABE pre-runtime digest present after AURA in state 'Aura'",
+						!Self::has_any_babe_pre_digest(),
+						"BABE pre-runtime digest present in state 'Aura'",
 					);
 				},
 				State::ArmedBabe => {
