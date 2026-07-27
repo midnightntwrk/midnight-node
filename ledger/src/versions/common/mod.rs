@@ -157,6 +157,44 @@ lazy_static! {
 			.build();
 }
 
+/// Capacity of the proof-verified state cache (the A/B-tested proof-cache tier).
+#[cfg(feature = "std")]
+const PROOF_VERIFIED_STATE_CACHE_CAPACITY: u64 = 2000;
+
+#[cfg(feature = "std")]
+lazy_static! {
+	/// Runtime A/B flag for the `RevalidationReference`-based proof cache.
+	///
+	/// Enable with `MN_PROOF_CACHE=1` (also accepts `true`/`on`). Off by default, so the two
+	/// code paths (full re-verification vs. proof-cached revalidation) can be compared on the
+	/// *same* binary without a recompile. Read once at first use.
+	static ref PROOF_CACHE_ENABLED: bool = matches!(
+		std::env::var("MN_PROOF_CACHE").ok().as_deref().map(str::to_ascii_lowercase).as_deref(),
+		Some("1") | Some("true") | Some("on")
+	);
+
+	/// Proof-verified state cache: `tx_hash -> LedgerState` at which full ZK verification last
+	/// succeeded for that transaction.
+	///
+	/// ZK proof verification is stateless (a pure function of the tx's proof, its verifier key
+	/// and public inputs), but the strict cache is keyed by `(state_hash, tx_hash)` and so
+	/// misses for every tx after the first in a block. On such a miss we instead revalidate
+	/// against `RevalidationReference { previously_validated_state, new_state }`: this skips the
+	/// (stateless) proof math and only re-runs the state-dependent checks whose sub-state
+	/// actually changed between the two states — e.g. a rotated verifier key makes `op_check`
+	/// re-run and re-verify that proof against the new key, preserving correctness.
+	///
+	/// Storing the *real* prior state (not the current one) is what makes this sound: feeding
+	/// two copies of the current state to `RevalidationReference` would make every comparison
+	/// equal and skip all state-dependent checks. Type-erased (`Arc<dyn Any>`) for the same
+	/// generic-`D` reason as the strict cache.
+	static ref PROOF_VERIFIED_STATE_CACHE: Cache<Hash, Arc<dyn Any + Send + Sync>> =
+		Cache::builder()
+			.max_capacity(PROOF_VERIFIED_STATE_CACHE_CAPACITY)
+			.time_to_idle(TX_VALIDATION_CACHE_TTI)
+			.build();
+}
+
 #[cfg(feature = "std")]
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
 	_phantom: core::marker::PhantomData<(S, D)>,
@@ -939,12 +977,13 @@ where
 	) -> Result<VerifiedTransaction<D>, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
+		mn_ledger_local::structure::LedgerState<D>: Send + Sync + 'static,
 	{
 		let state_hash = ledger.state.state_hash();
 		let strict_key =
 			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
 
-		// Check strict cache
+		// 1. Strict cache (exact state + tx): return the cached VerifiedTransaction as-is.
 		if let Some(cached) = STRICT_TX_VALIDATION_CACHE.get(&strict_key) {
 			if let Some(vt) = cached.downcast_ref::<VerifiedTransaction<D>>() {
 				return Ok(vt.clone());
@@ -953,21 +992,62 @@ where
 			log::warn!(target: LOG_TARGET, "VerifiedTransaction cache downcast failed");
 		}
 
-		// Cache miss: compute VerifiedTransaction
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
-		let verified_tx =
+
+		// Full verification (incl. the stateless ZK proof math) against the current reference
+		// state. Used on a proof-cache miss (tier 3) and whenever the flag is off.
+		let full_verify = || {
 			tx.0.well_formed(
 				&ctx.ref_state,
 				mn_ledger_local::verify::WellFormedStrictness::default(),
 				ctx.block_context.tblock,
 			)
 			.map_err(|e| {
-				log::warn!(
-					target: LOG_TARGET,
-					"Transaction malformed: {e}",
-				);
+				log::warn!(target: LOG_TARGET, "Transaction malformed: {e}");
 				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
-			})?;
+			})
+		};
+
+		// 2. Proof cache (A/B-gated by MN_PROOF_CACHE). If this tx's proofs were already
+		//    verified against some earlier state, revalidate against that state so the stateless
+		//    proof math is skipped and only genuinely-changed state-dependent checks re-run.
+		//    Falls back to full verification (tier 3) on a miss or when the flag is off.
+		let verified_tx = if *PROOF_CACHE_ENABLED {
+			let prev_state = PROOF_VERIFIED_STATE_CACHE.get(&tx_hash.0).and_then(|cached| {
+				cached.downcast_ref::<mn_ledger_local::structure::LedgerState<D>>().cloned()
+			});
+			match prev_state {
+				Some(previously_validated_state) => {
+					let revalidation_ref = mn_ledger_local::verify::RevalidationReference {
+						previously_validated_state,
+						new_state: ctx.ref_state.clone(),
+					};
+					log::trace!(
+						target: LOG_TARGET,
+						"Proof cache hit — revalidating without proof re-verification",
+					);
+					tx.0.well_formed(
+						&revalidation_ref,
+						mn_ledger_local::verify::WellFormedStrictness::default(),
+						ctx.block_context.tblock,
+					)
+					.map_err(|e| {
+						log::warn!(target: LOG_TARGET, "Transaction malformed (revalidation): {e}");
+						LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
+					})?
+				},
+				None => {
+					let vt = full_verify()?;
+					// Record the state these proofs were verified against so future
+					// revalidations can diff against it.
+					PROOF_VERIFIED_STATE_CACHE.insert(tx_hash.0, Arc::new(ctx.ref_state.clone()));
+					vt
+				},
+			}
+		} else {
+			// 3. Flag off: original behavior — full well_formed (incl. ZK proofs) on each miss.
+			full_verify()?
+		};
 
 		// Cache in strict cache (soft cache is managed by do_validate_transaction)
 		STRICT_TX_VALIDATION_CACHE.insert(strict_key, Arc::new(verified_tx.clone()));

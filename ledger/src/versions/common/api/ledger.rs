@@ -369,6 +369,134 @@ mod tests {
 		assert_apply_transaction(&api, &mut ledger, &serialized_tx, &block_context.into());
 	}
 
+	// Verifies the MN_PROOF_CACHE path: `get_verified_transaction` must return the same
+	// accept/reject verdict when it takes the proof-cache revalidation branch
+	// (RevalidationReference{prev, now}) as a full `well_formed`. Run with `MN_PROOF_CACHE=1`
+	// to exercise the revalidation branch; the equivalence assertion holds with the flag off
+	// too (both branches then do full verification).
+	#[test]
+	fn proof_cache_revalidation_matches_full_verification() {
+		use super::super::super::Bridge;
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let api = Api::new();
+		let mut ledger = prepare_ledger();
+
+		let (deploy_tx, deploy_bc) = extract_tx_with_context(DEPLOY_TX);
+		let (store_tx, store_bc) = extract_tx_with_context(STORE_TX);
+		let (check_tx_raw, check_bc_raw) = extract_tx_with_context(CHECK_TX);
+		let (maint_tx, maint_bc) = extract_tx_with_context(MAINTENANCE_TX);
+
+		// Build S1 = genesis + deploy + store (CHECK is well-formed here).
+		assert_apply_transaction(&api, &mut ledger, &deploy_tx, &deploy_bc.into());
+		assert_apply_transaction(&api, &mut ledger, &store_tx, &store_bc.into());
+
+		let check_bc: BlockContext = check_bc_raw.into();
+		let check: Transaction<Signature, DefaultDB> =
+			api.tagged_deserialize(&check_tx_raw).expect("deserialize check tx");
+		let runtime_version = 1u32;
+		let tx_hash =
+			Bridge::<Signature, DefaultDB>::tx_validation_cache_key(runtime_version, &check_tx_raw);
+
+		// Tier 3 (miss): full verification against S1; populates PROOF_VERIFIED_CACHE[check]=S1.
+		let r1 = Bridge::<Signature, DefaultDB>::get_verified_transaction(
+			&ledger, &check, &check_bc, &tx_hash,
+		);
+		assert!(r1.is_ok(), "CHECK should be well-formed at S1: {r1:?}");
+
+		// Advance to S2 = S1 + check + maintenance (state_hash changes; maintenance may rotate
+		// the contract verifier key).
+		assert_apply_transaction(&api, &mut ledger, &check_tx_raw, &check_bc);
+		assert_apply_transaction(&api, &mut ledger, &maint_tx, &maint_bc.into());
+
+		// Tier 2 (proof-cache hit -> RevalidationReference{S1, S2}) when the flag is on.
+		let reval = Bridge::<Signature, DefaultDB>::get_verified_transaction(
+			&ledger, &check, &check_bc, &tx_hash,
+		);
+
+		// Ground truth: full verification against S2.
+		let tx_ctx = ledger.get_transaction_context(check_bc.clone()).unwrap();
+		let full = check.0.well_formed(
+			&tx_ctx.ref_state,
+			mn_ledger_local::verify::WellFormedStrictness::default(),
+			tx_ctx.block_context.tblock,
+		);
+
+		assert_eq!(
+			reval.is_ok(),
+			full.is_ok(),
+			"proof-cache revalidation verdict must match full verification (full_ok={})",
+			full.is_ok()
+		);
+	}
+
+	// Exercises the `RevalidationReference` path DIRECTLY, bypassing the `MN_PROOF_CACHE` env gate
+	// that `get_verified_transaction` reads once per process. The higher-level equivalence test
+	// only takes the revalidation branch when the whole test binary runs with the flag set; this
+	// one builds the same `{previously_validated_state, new_state}` pair the proof-cache tier would
+	// and calls `well_formed` on it unconditionally, so CI covers the revalidation path (proof math
+	// skipped) regardless of environment.
+	#[test]
+	fn revalidation_reference_matches_full_verification() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let api = Api::new();
+		let mut ledger = prepare_ledger();
+
+		let (deploy_tx, deploy_bc) = extract_tx_with_context(DEPLOY_TX);
+		let (store_tx, store_bc) = extract_tx_with_context(STORE_TX);
+		let (check_tx_raw, check_bc_raw) = extract_tx_with_context(CHECK_TX);
+		let (maint_tx, maint_bc) = extract_tx_with_context(MAINTENANCE_TX);
+
+		// S1 = genesis + deploy + store (CHECK is well-formed here).
+		assert_apply_transaction(&api, &mut ledger, &deploy_tx, &deploy_bc.into());
+		assert_apply_transaction(&api, &mut ledger, &store_tx, &store_bc.into());
+
+		let check_bc: BlockContext = check_bc_raw.into();
+		let check: Transaction<Signature, DefaultDB> =
+			api.tagged_deserialize(&check_tx_raw).expect("deserialize check tx");
+
+		// Capture S1 — the state the proofs are verified against.
+		let s1 = ledger.get_transaction_context(check_bc.clone()).unwrap().ref_state;
+
+		// Advance to S2 = S1 + check + maintenance (state_hash changes; maintenance may rotate
+		// the contract verifier key).
+		assert_apply_transaction(&api, &mut ledger, &check_tx_raw, &check_bc);
+		assert_apply_transaction(&api, &mut ledger, &maint_tx, &maint_bc.into());
+		let s2_ctx = ledger.get_transaction_context(check_bc.clone()).unwrap();
+		let s2 = s2_ctx.ref_state.clone();
+		let tblock = s2_ctx.block_context.tblock;
+
+		// Revalidation path: stateless proof math skipped, only changed sub-state re-checked.
+		let reval = check.0.well_formed(
+			&mn_ledger_local::verify::RevalidationReference {
+				previously_validated_state: s1,
+				new_state: s2.clone(),
+			},
+			mn_ledger_local::verify::WellFormedStrictness::default(),
+			tblock,
+		);
+
+		// Ground truth: full verification (incl. proofs) against S2.
+		let full = check.0.well_formed(
+			&s2,
+			mn_ledger_local::verify::WellFormedStrictness::default(),
+			tblock,
+		);
+
+		assert_eq!(
+			reval.is_ok(),
+			full.is_ok(),
+			"revalidation verdict must match full verification (full_ok={})",
+			full.is_ok()
+		);
+		assert!(reval.is_ok(), "CHECK must stay well-formed at S2 via revalidation: {reval:?}");
+	}
+
 	#[test]
 	fn should_get_contract_state() {
 		if CRATE_NAME != crate::latest::CRATE_NAME {
