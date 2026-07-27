@@ -129,6 +129,12 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type EngineState<T: Config> = StorageValue<_, State, ValueQuery>;
 
+	#[pallet::error]
+	pub enum Error<T> {
+		/// The call requires a different [`EngineState`] than the one currently set.
+		InvalidEngineState,
+	}
+
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		/// Drives the automatic, non-governance part of the state machine each block.
@@ -176,32 +182,31 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		/// Arm the flip to BABE: move `Aura` to `ArmedBabe`.
 		///
-		/// Governance-gated. A no-op unless the engine is currently `Aura`.
+		/// Governance-gated. Fails with [`Error::InvalidEngineState`] unless the
+		/// engine is currently `Aura`.
 		#[pallet::call_index(0)]
 		#[pallet::weight(<T as Config>::WeightInfo::arm_babe())]
 		pub fn arm_babe(origin: OriginFor<T>) -> DispatchResult {
 			T::GovernanceOrigin::ensure_origin(origin)?;
-			if EngineState::<T>::get() == State::Aura {
-				// Pre-seed BABE before the node starts emitting BABE pre-digests, so
-				// pallet-babe does not prematurely self-initialize its genesis epoch.
-				Self::set_sentinel_babe_genesis_slot();
-				EngineState::<T>::put(State::ArmedBabe);
-			}
+			ensure!(EngineState::<T>::get() == State::Aura, Error::<T>::InvalidEngineState);
+			// Pre-seed BABE before the node starts emitting BABE pre-digests, so
+			// pallet-babe does not prematurely self-initialize its genesis epoch.
+			Self::set_sentinel_babe_genesis_slot();
+			EngineState::<T>::put(State::ArmedBabe);
 			Ok(())
 		}
 
 		/// Schedule the flip to BABE: move `ArmedBabe` to `ScheduledFlip`.
 		///
-		/// Governance-gated. A no-op unless the engine is currently `ArmedBabe`.
-		/// The flip itself commits automatically at the next epoch boundary; see
-		/// [`Hooks::on_initialize`].
+		/// Governance-gated. Fails with [`Error::InvalidEngineState`] unless the
+		/// engine is currently `ArmedBabe`. The flip itself commits automatically at
+		/// the next epoch boundary; see [`Hooks::on_initialize`].
 		#[pallet::call_index(1)]
 		#[pallet::weight(<T as Config>::WeightInfo::schedule_flip())]
 		pub fn schedule_flip(origin: OriginFor<T>) -> DispatchResult {
 			T::GovernanceOrigin::ensure_origin(origin)?;
-			if EngineState::<T>::get() == State::ArmedBabe {
-				EngineState::<T>::put(State::ScheduledFlip);
-			}
+			ensure!(EngineState::<T>::get() == State::ArmedBabe, Error::<T>::InvalidEngineState);
+			EngineState::<T>::put(State::ScheduledFlip);
 			Ok(())
 		}
 	}

@@ -13,7 +13,7 @@
 
 //! Tests for the consensus-engine pallet.
 
-use crate::{State, mock::*, pallet::EngineState};
+use crate::{Error, State, mock::*, pallet::EngineState};
 use frame_support::{assert_noop, assert_ok, traits::Hooks};
 use midnight_primitives_consensus_engine::ActiveEngine;
 use sp_consensus_slots::Slot;
@@ -211,7 +211,10 @@ fn arm_babe_is_rejected_from_other_states() {
 	new_test_ext().execute_with(|| {
 		for state in [State::ArmedBabe, State::ScheduledFlip, State::Babe] {
 			EngineState::<Test>::put(state);
-			assert_ok!(ConsensusEngine::arm_babe(RuntimeOrigin::root()));
+			assert_noop!(
+				ConsensusEngine::arm_babe(RuntimeOrigin::root()),
+				Error::<Test>::InvalidEngineState
+			);
 			assert_eq!(EngineState::<Test>::get(), state);
 			// The arm hook only fires on the real Aura -> ArmedBabe transition, so BABE
 			// is never pre-seeded from these states.
@@ -250,11 +253,14 @@ fn schedule_flip_requires_governance_origin() {
 }
 
 #[test]
-fn schedule_flip_is_no_op_unless_armed() {
+fn schedule_flip_is_rejected_unless_armed() {
 	new_test_ext().execute_with(|| {
 		for state in [State::Aura, State::ScheduledFlip, State::Babe] {
 			EngineState::<Test>::put(state);
-			assert_ok!(ConsensusEngine::schedule_flip(RuntimeOrigin::root()));
+			assert_noop!(
+				ConsensusEngine::schedule_flip(RuntimeOrigin::root()),
+				Error::<Test>::InvalidEngineState
+			);
 			assert_eq!(EngineState::<Test>::get(), state);
 		}
 	});

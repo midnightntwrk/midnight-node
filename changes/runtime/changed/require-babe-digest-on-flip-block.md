@@ -1,6 +1,6 @@
 #runtime #consensus
 
-# Harden BABE pre-digest checks for the AURA→BABE transition
+# Harden BABE pre-digest checks and consensus-engine transition calls
 
 The consensus-engine pallet now hard-rejects (assert):
 - any BABE pre-runtime digest while still in `State::Aura` (not only the
@@ -12,6 +12,10 @@ The consensus-engine pallet now hard-rejects (assert):
 - any transition-window block (`ArmedBabe`/`ScheduledFlip`) whose BABE digest is
   present but malformed (wrong slot, ordering, or duplicates). Absence remains
   allowed so older binaries can still author until upgraded.
+
+`arm_babe` / `schedule_flip` now return `Error::InvalidEngineState` when called
+from the wrong `EngineState` (previously a silent no-op that looked like success
+to governance).
 
 PR:
 Issue:
