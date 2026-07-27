@@ -129,6 +129,48 @@ fn babe_pre_digest_is_allowed_once_armed() {
 }
 
 #[test]
+fn armed_allows_aura_only_blocks() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ArmedBabe);
+		// Old binaries may omit the BABE digest; that is still valid during the armed window.
+		start_block_at_slot(100);
+		on_initialize();
+		assert_eq!(EngineState::<Test>::get(), State::ArmedBabe);
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest must match AURA slot during transition")]
+fn armed_rejects_mismatched_babe_slot() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ArmedBabe);
+		start_block_with_logs(vec![aura_pre_digest(100), babe_pre_digest(101)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest must match AURA slot during transition")]
+fn scheduled_rejects_mismatched_babe_slot() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ScheduledFlip);
+		// Mid-epoch: flip does not run, but a mismatched BABE digest is still rejected.
+		start_block_with_logs(vec![aura_pre_digest(1400), babe_pre_digest(1401)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest must match AURA slot during transition")]
+fn armed_rejects_babe_before_aura() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ArmedBabe);
+		start_block_with_logs(vec![babe_pre_digest(100), aura_pre_digest(100)]);
+		on_initialize();
+	});
+}
+
+#[test]
 fn arm_babe_requires_governance_origin() {
 	new_test_ext().execute_with(|| {
 		assert_noop!(ConsensusEngine::arm_babe(RuntimeOrigin::signed(1)), DispatchError::BadOrigin);
@@ -198,7 +240,21 @@ fn flip_fires_at_the_last_slot_of_the_epoch() {
 		EngineState::<Test>::put(State::ScheduledFlip);
 
 		// The last slot of the epoch (1499 for a 300-slot epoch) attempts the flip.
-		// Completing it panics until real BABE authorities are wired in (Issue #1742).
+		// The flip block must carry a matching BABE pre-digest. Completing the flip
+		// panics until real BABE authorities are wired in (Issue #1742).
+		start_block_with_babe_pre_digest(1499);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest required on flip block")]
+fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ScheduledFlip);
+
+		// An epoch-end AURA block without a BABE pre-digest must be rejected: committing
+		// the flip without it would permanently halt authoring.
 		start_block_at_slot(1499);
 		on_initialize();
 	});
@@ -208,8 +264,9 @@ fn flip_fires_at_the_last_slot_of_the_epoch() {
 fn flip_does_not_run_mid_epoch() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
-		// A mid-epoch block does not trigger the flip (no panic, state unchanged).
-		start_block_at_slot(1400);
+		// A mid-epoch block does not trigger the flip (no panic, state unchanged),
+		// even when it carries a BABE pre-digest.
+		start_block_with_babe_pre_digest(1400);
 		on_initialize();
 
 		assert_eq!(EngineState::<Test>::get(), State::ScheduledFlip);
@@ -221,14 +278,14 @@ fn flip_does_not_run_on_penultimate_or_first_slot_of_next_epoch() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
 		// Don't flip at the penultimate slot.
-		start_block_at_slot(1498);
+		start_block_with_babe_pre_digest(1498);
 		on_initialize();
 		assert_eq!(EngineState::<Test>::get(), State::ScheduledFlip);
 
 		// The last slot of the epoch (1499) produced no block; the first block of
 		// the next epoch lands at 1500. The flip must NOT execute — we only flip on
 		// a block seen exactly at an epoch's last slot.
-		start_block_at_slot(1500);
+		start_block_with_babe_pre_digest(1500);
 		on_initialize();
 		assert_eq!(EngineState::<Test>::get(), State::ScheduledFlip);
 	});
@@ -241,7 +298,7 @@ fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 		EngineState::<Test>::put(State::ScheduledFlip);
 		// The epoch's last slot (1499) was skipped; the flip waits and fires at the
 		// next epoch's last slot (1799), where completing it panics (Issue #1742).
-		start_block_at_slot(1799);
+		start_block_with_babe_pre_digest(1799);
 		on_initialize();
 	});
 }

@@ -145,8 +145,9 @@ pub fn start_block_at_slot(slot: u64) {
 	start_block_with_logs(vec![aura_pre_digest(slot)]);
 }
 
-/// Start a new block whose header carries a BABE pre-runtime digest (alongside
-/// the AURA one, at the same slot), simulating a node that emits BABE digests too early.
+/// Start a new block whose header carries a BABE pre-runtime digest alongside
+/// the AURA one at the same slot — the shape nodes emit once armed, and the
+/// shape required of the flip block.
 pub fn start_block_with_babe_pre_digest(slot: u64) {
 	start_block_with_logs(vec![aura_pre_digest(slot), babe_pre_digest(slot)]);
 }

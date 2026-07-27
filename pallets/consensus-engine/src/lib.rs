@@ -28,9 +28,14 @@
 //! information is not available in the runtime, so we rely on a manual action here.
 //!
 //! Once scheduled, the pallet performs the flip at the last block of the epoch.
-//! If the last slot of epoch is empty, then migration is postponed to the last block of the epoch.
-//! The 'migration' is supposed to initialize pallet-babe state and transits to the final state `Babe`.
-//! The first block of the next epoch is authored with BABE.
+//! That flip block must carry a matching BABE `PreRuntimeDigest`; without it the
+//! block is rejected on import (a hard assert), so a digest-less epoch-end block
+//! can never become the flip — which would permanently halt authoring after the
+//! transition. During `ArmedBabe`/`ScheduledFlip`, BABE digests are optional, but
+//! any present digest must match the AURA slot (unique, after AURA). If the last
+//! slot of an epoch is empty, migration is postponed to a later epoch-end block.
+//! The migration initializes pallet-babe state and transitions to the final state
+//! `Babe`. The first block of the next epoch is authored with BABE.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -102,7 +107,8 @@ pub mod pallet {
 		Aura,
 		/// A flip to BABE has been armed but not yet scheduled. Node is supposed to add PreRuntimeDigest of BABE Secondary Plain slots in this state.
 		ArmedBabe,
-		/// The flip to BABE is armed to take effect at the last block of an epoch.
+		/// The flip to BABE is armed to take effect at the last block of an epoch
+		/// that carries a matching BABE pre-runtime digest.
 		/// Blocks are still produced with AURA until the flip actually commits.
 		ScheduledFlip,
 		/// The post flip state, migration happened, consensus is BABE.
@@ -142,15 +148,27 @@ pub mod pallet {
 						"Unique BABE pre-runtime digest present after AURA in state 'Aura'",
 					);
 				},
+				State::ArmedBabe => {
+					// Digests are optional during the armed window (old binaries), but any
+					// present BABE pre-digest must match the AURA slot.
+					Self::assert_babe_pre_digest_matches_aura_if_present();
+				},
 				State::ScheduledFlip => {
+					Self::assert_babe_pre_digest_matches_aura_if_present();
 					if let Some(slot) = Self::current_slot_from_aura_digest()
 						&& Self::is_last_slot_of_epoch(slot)
 					{
+						// Flip block must carry a BABE SecondaryPlain pre-digest at the
+						// same slot as AURA; otherwise reject the block.
+						assert!(
+							Self::has_aura_pre_digest_before_babe_pre_digest(),
+							"BABE pre-runtime digest required on flip block",
+						);
 						Self::migrate_to_babe(slot);
 						EngineState::<T>::put(State::Babe);
 					}
 				},
-				_ => {},
+				State::Babe => {},
 			}
 			<T as Config>::WeightInfo::on_initialize()
 		}
@@ -246,6 +264,28 @@ pub mod pallet {
 				.logs
 				.iter()
 				.find_map(AuraCompatibleDigestItem::<()>::as_aura_pre_digest)
+		}
+
+		/// Reject malformed BABE digests during the AURA→BABE transition.
+		///
+		/// Absence is allowed (an old binary may not emit them yet). Presence must be
+		/// exactly one BABE pre-digest after AURA at the same slot — the shape
+		/// [`has_aura_pre_digest_before_babe_pre_digest`] detects.
+		fn assert_babe_pre_digest_matches_aura_if_present() {
+			if Self::has_any_babe_pre_digest() {
+				assert!(
+					Self::has_aura_pre_digest_before_babe_pre_digest(),
+					"BABE pre-runtime digest must match AURA slot during transition",
+				);
+			}
+		}
+
+		/// Whether the current block's digest carries any BABE pre-runtime digest.
+		fn has_any_babe_pre_digest() -> bool {
+			frame_system::Pallet::<T>::digest()
+				.logs
+				.iter()
+				.any(|log| log.as_babe_pre_digest().is_some())
 		}
 
 		/// Returns `true` when the current block's digest carries exactly one BABE
