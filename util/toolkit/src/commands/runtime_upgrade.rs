@@ -53,9 +53,7 @@ pub enum RuntimeUpgradeError {
 	CodeUpdateNotFound,
 	#[error("timed out waiting for the apply_authorized_upgrade transaction to finalize")]
 	ApplyFinalizeTimeout,
-	#[error(
-		"runtime upgrade did not enact: spec_version stayed at {0} after applying the code"
-	)]
+	#[error("runtime upgrade did not enact: spec_version stayed at {0} after applying the code")]
 	UpgradeNotEnacted(u32),
 }
 

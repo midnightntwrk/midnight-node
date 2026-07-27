@@ -106,9 +106,7 @@ impl<
 		cache: &TranslationCache<D>,
 	) -> io::Result<Option<MerklePatriciaTrie<B, D, AnnB>>> {
 		let tls = Self::child_translations(source);
-		Ok(Some(MerklePatriciaTrie(try_resopt!(
-			cache.resolve(&tls[0].0, tls[0].1.as_child())
-		))))
+		Ok(Some(MerklePatriciaTrie(try_resopt!(cache.resolve(&tls[0].0, tls[0].1.as_child())))))
 	}
 }
 
@@ -141,16 +139,15 @@ impl<
 		let self_tl = tls[1].clone();
 		match source {
 			merkle_patricia_trie::Node::Empty => vec![],
-			merkle_patricia_trie::Node::Branch { children, .. } => children
-				.iter()
-				.map(|child| (self_tl.clone(), child.upcast()))
-				.collect(),
+			merkle_patricia_trie::Node::Branch { children, .. } => {
+				children.iter().map(|child| (self_tl.clone(), child.upcast())).collect()
+			},
 			merkle_patricia_trie::Node::Extension { child, .. } => {
 				vec![(self_tl, child.upcast())]
-			}
+			},
 			merkle_patricia_trie::Node::MidBranchLeaf { value, child, .. } => {
 				vec![(entry_tl, value.upcast()), (self_tl, child.upcast())]
-			}
+			},
 			merkle_patricia_trie::Node::Leaf { value, .. } => vec![(entry_tl, value.upcast())],
 		}
 	}
@@ -168,19 +165,12 @@ impl<
 				for (child, new_child) in tls.iter().zip(new_children.iter_mut()) {
 					*new_child = try_resopt!(cache.resolve(&child.0, child.1.as_child()));
 				}
-				let ann = new_children
-					.iter()
-					.fold(AnnB::empty(), |acc, x| {
-						acc.append(&merkle_patricia_trie::Node::<B, D, AnnB>::ann(x))
-					});
-				merkle_patricia_trie::Node::Branch {
-					ann,
-					children: Box::new(new_children),
-				}
-			}
-			merkle_patricia_trie::Node::Extension {
-				compressed_path, ..
-			} => {
+				let ann = new_children.iter().fold(AnnB::empty(), |acc, x| {
+					acc.append(&merkle_patricia_trie::Node::<B, D, AnnB>::ann(x))
+				});
+				merkle_patricia_trie::Node::Branch { ann, children: Box::new(new_children) }
+			},
+			merkle_patricia_trie::Node::Extension { compressed_path, .. } => {
 				let child: Sp<merkle_patricia_trie::Node<B, D, AnnB>, D> =
 					try_resopt!(cache.resolve(&tls[0].0, tls[0].1.as_child()));
 				let ann = merkle_patricia_trie::Node::<B, D, AnnB>::ann(&child);
@@ -189,12 +179,12 @@ impl<
 					compressed_path: compressed_path.clone(),
 					child,
 				}
-			}
+			},
 			merkle_patricia_trie::Node::Leaf { .. } => {
 				let value = try_resopt!(cache.resolve(&tls[0].0, tls[0].1.as_child()));
 				let ann = AnnB::from_value(&value);
 				merkle_patricia_trie::Node::Leaf { ann, value }
-			}
+			},
 			merkle_patricia_trie::Node::MidBranchLeaf { .. } => {
 				let value = try_resopt!(cache.resolve(&tls[0].0, tls[0].1.as_child()));
 				let child: Sp<merkle_patricia_trie::Node<B, D, AnnB>, D> =
@@ -202,7 +192,7 @@ impl<
 				let ann = AnnB::from_value(&value)
 					.append(&merkle_patricia_trie::Node::<B, D, AnnB>::ann(&child));
 				merkle_patricia_trie::Node::MidBranchLeaf { ann, value, child }
-			}
+			},
 		}))
 	}
 }
@@ -272,11 +262,7 @@ impl<D: DB>
 	for LedgerStateTl
 {
 	fn required_translations() -> Vec<TranslationId> {
-		vec![
-			Ids::parameters::<D>(),
-			Ids::bridge_receiving_mpt::<D>(),
-			Ids::contract_mpt::<D>(),
-		]
+		vec![Ids::parameters::<D>(), Ids::bridge_receiving_mpt::<D>(), Ids::contract_mpt::<D>()]
 	}
 
 	fn child_translations(
@@ -284,10 +270,7 @@ impl<D: DB>
 	) -> Vec<(TranslationId, Sp<dyn Any + Send + Sync, D>)> {
 		vec![
 			(Ids::parameters::<D>(), source.parameters.upcast()),
-			(
-				Ids::bridge_receiving_mpt::<D>(),
-				source.bridge_receiving.mpt.upcast(),
-			),
+			(Ids::bridge_receiving_mpt::<D>(), source.bridge_receiving.mpt.upcast()),
 			(Ids::contract_mpt::<D>(), source.contract.mpt.upcast()),
 		]
 	}
@@ -316,25 +299,16 @@ impl<D: DB>
 			network_id: source.network_id.clone(),
 			parameters: parameters.force_downcast(),
 			locked_pool: source.locked_pool,
-			bridge_receiving: Map {
-				mpt: bridge_recv_mpt.force_downcast(),
-				key_type: PhantomData,
-			},
+			bridge_receiving: Map { mpt: bridge_recv_mpt.force_downcast(), key_type: PhantomData },
 			reserve_pool: source.reserve_pool,
 			block_reward_pool: source.block_reward_pool,
 			unclaimed_block_rewards: Map {
 				mpt: recast(&source.unclaimed_block_rewards.mpt)?,
 				key_type: PhantomData,
 			},
-			treasury: Map {
-				mpt: recast(&source.treasury.mpt)?,
-				key_type: PhantomData,
-			},
+			treasury: Map { mpt: recast(&source.treasury.mpt)?, key_type: PhantomData },
 			zswap: recast(&source.zswap)?,
-			contract: Map {
-				mpt: contract_mpt.force_downcast(),
-				key_type: PhantomData,
-			},
+			contract: Map { mpt: contract_mpt.force_downcast(), key_type: PhantomData },
 			utxo: recast(&source.utxo)?,
 			replay_protection: recast(&source.replay_protection)?,
 			dust: recast(&source.dust)?,
@@ -347,8 +321,11 @@ impl<D: DB>
 struct LedgerParametersTl;
 
 impl<D: DB>
-	DirectTranslation<ledger_v8::structure::LedgerParameters, ledger_v9::structure::LedgerParameters, D>
-	for LedgerParametersTl
+	DirectTranslation<
+		ledger_v8::structure::LedgerParameters,
+		ledger_v9::structure::LedgerParameters,
+		D,
+	> for LedgerParametersTl
 {
 	fn required_translations() -> Vec<TranslationId> {
 		Vec::new()
@@ -410,8 +387,8 @@ impl<D: DB>
 			global_ttl: source.global_ttl,
 			cost_dimension_min_ratio: source.cost_dimension_min_ratio,
 			price_adjustment_a_parameter: source.price_adjustment_a_parameter,
-			cardano_to_midnight_bridge_fee_basis_points:
-				source.cardano_to_midnight_bridge_fee_basis_points,
+			cardano_to_midnight_bridge_fee_basis_points: source
+				.cardano_to_midnight_bridge_fee_basis_points,
 			c_to_m_bridge_min_amount: source.c_to_m_bridge_min_amount,
 			// NEW IN v9 — placeholder; the production value should match the
 			// value chosen for the hardfork.
@@ -494,9 +471,7 @@ impl<D: DB>
 			.maintenance_authority
 			.committee
 			.iter()
-			.map(|vk| {
-				onchain_state_v9::state::ContractMaintenanceVerifyingKey::Schnorr(vk.clone())
-			})
+			.map(|vk| onchain_state_v9::state::ContractMaintenanceVerifyingKey::Schnorr(vk.clone()))
 			.collect();
 		let maintenance_authority = onchain_state_v9::state::ContractMaintenanceAuthority {
 			committee: committee_v9,
@@ -513,10 +488,7 @@ impl<D: DB>
 			.clone(),
 			operations,
 			maintenance_authority,
-			balance: HashMap(Map {
-				mpt: recast(&source.balance.0.mpt)?,
-				key_type: PhantomData,
-			}),
+			balance: HashMap(Map { mpt: recast(&source.balance.0.mpt)?, key_type: PhantomData }),
 		}))
 	}
 }
@@ -529,10 +501,7 @@ impl<D: DB> TranslationTable<D> for StateTranslationTable {
 	const TABLE: &[(TranslationId, &dyn TypelessTranslation<D>)] = &[
 		// Top-level
 		(
-			TranslationId(
-				Cow::Borrowed("ledger-state[v13]"),
-				Cow::Borrowed("ledger-state[v18]"),
-			),
+			TranslationId(Cow::Borrowed("ledger-state[v13]"), Cow::Borrowed("ledger-state[v18]")),
 			&DirectSpTranslation::<_, _, LedgerStateTl, _>(PhantomData),
 		),
 		// LedgerParameters
@@ -545,10 +514,7 @@ impl<D: DB> TranslationTable<D> for StateTranslationTable {
 		),
 		// ContractState
 		(
-			TranslationId(
-				Cow::Borrowed("contract-state[v6]"),
-				Cow::Borrowed("contract-state[v8]"),
-			),
+			TranslationId(Cow::Borrowed("contract-state[v6]"), Cow::Borrowed("contract-state[v8]")),
 			&DirectSpTranslation::<_, _, ContractStateTl, _>(PhantomData),
 		),
 		// `contract` MPT in LedgerState — entries are ContractState
@@ -707,10 +673,7 @@ mod tests {
 				MerklePatriciaTrie::<u128, InMemoryDB, SizeAnn>::tag(),
 				MerklePatriciaTrie::<u128, InMemoryDB, V9Ann>::tag(),
 			),
-			(
-				Node::<u128, InMemoryDB, SizeAnn>::tag(),
-				Node::<u128, InMemoryDB, V9Ann>::tag(),
-			),
+			(Node::<u128, InMemoryDB, SizeAnn>::tag(), Node::<u128, InMemoryDB, V9Ann>::tag()),
 		];
 
 		let actual: Vec<_> = <StateTranslationTable as TranslationTable<InMemoryDB>>::TABLE

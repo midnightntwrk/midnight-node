@@ -1158,7 +1158,9 @@ where
 		api.tagged_serialize(&system_tx)
 	}
 
-	pub fn construct_distribute_treasury_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
+	pub fn construct_distribute_treasury_system_tx(
+		amount: u128,
+	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let system_tx = super::system_tx::distribute_treasury_system_tx(amount)?;
 		api.tagged_serialize(&system_tx)

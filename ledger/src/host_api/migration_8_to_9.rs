@@ -63,8 +63,8 @@ const MAX_STEPS: usize = 100_000;
 /// the new v9 arena root to store back into `StateKey`.
 pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
 	// 1. Decode the v8 arena root and load the v8 ledger wrapper from the arena.
-	let key8: TypedArenaKey<Ledger8<D>, D::Hasher> =
-		tagged_deserialize(&mut &state_key_v8[..]).map_err(|e| {
+	let key8: TypedArenaKey<Ledger8<D>, D::Hasher> = tagged_deserialize(&mut &state_key_v8[..])
+		.map_err(|e| {
 			log::error!(target: LOG_TARGET, "failed to deserialize v8 state key: {e:?}");
 			LedgerApiError::Deserialization(DeserializationError::TypedArenaKey)
 		})?;
@@ -75,16 +75,14 @@ pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, Led
 
 	// 2. Run the state translation table over the inner v8 `LedgerState`.
 	let input: Sp<LedgerState8<D>, D> = Sp::new(ledger8.state.clone());
-	let mut tl = TypedTranslationState::<
-		LedgerState8<D>,
-		LedgerState9<D>,
-		StateTranslationTable,
-		D,
-	>::start(input)
-	.map_err(|e| {
-		log::error!(target: LOG_TARGET, "failed to start v8->v9 translation: {e:?}");
-		LedgerApiError::HostApiError
-	})?;
+	let mut tl =
+		TypedTranslationState::<LedgerState8<D>, LedgerState9<D>, StateTranslationTable, D>::start(
+			input,
+		)
+		.map_err(|e| {
+			log::error!(target: LOG_TARGET, "failed to start v8->v9 translation: {e:?}");
+			LedgerApiError::HostApiError
+		})?;
 
 	let run_budget = CostDuration::from_picoseconds(RUN_BUDGET_PS);
 	let mut steps = 0usize;
@@ -146,7 +144,8 @@ mod tests {
 		let expected = std::fs::read(key_path).expect("read genesisStateKey");
 
 		let state: LedgerState8<InMemoryDB> =
-			midnight_serialize::tagged_deserialize(&mut &genesis[..]).expect("deserialize v8 state");
+			midnight_serialize::tagged_deserialize(&mut &genesis[..])
+				.expect("deserialize v8 state");
 		let ledger = Ledger8::<InMemoryDB>::new(state);
 		let mut sp = default_storage::<InMemoryDB>().arena.alloc(ledger);
 		sp.persist();
@@ -154,7 +153,8 @@ mod tests {
 		tagged_serialize(&sp.as_typed_key(), &mut got).expect("serialize key");
 
 		assert_eq!(
-			got, expected,
+			got,
+			expected,
 			"seeded v8 root must match the chain-spec genesisStateKey \n got={} \n exp={}",
 			hex::encode(&got),
 			hex::encode(&expected),
