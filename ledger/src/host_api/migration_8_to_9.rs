@@ -62,7 +62,10 @@ const MAX_STEPS: usize = 100_000;
 /// the pallet's `StateKey` bytes) into a v9 ledger state, persist it, and return
 /// the new v9 arena root to store back into `StateKey`.
 pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+	let t_total = std::time::Instant::now();
+
 	// 1. Decode the v8 arena root and load the v8 ledger wrapper from the arena.
+	let t_load = std::time::Instant::now();
 	let key8: TypedArenaKey<Ledger8<D>, D::Hasher> = tagged_deserialize(&mut &state_key_v8[..])
 		.map_err(|e| {
 			log::error!(target: LOG_TARGET, "failed to deserialize v8 state key: {e:?}");
@@ -72,8 +75,10 @@ pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, Led
 		log::error!(target: LOG_TARGET, "failed to load v8 ledger from arena: {e:?}");
 		LedgerApiError::NoLedgerState
 	})?;
+	log::debug!(target: LOG_TARGET, "[perf] migrate_state_v8_to_v9 load took {:?}", t_load.elapsed());
 
 	// 2. Run the state translation table over the inner v8 `LedgerState`.
+	let t_translate = std::time::Instant::now();
 	let input: Sp<LedgerState8<D>, D> = Sp::new(ledger8.state.clone());
 	let mut tl =
 		TypedTranslationState::<LedgerState8<D>, LedgerState9<D>, StateTranslationTable, D>::start(
@@ -103,14 +108,24 @@ pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, Led
 			break result;
 		}
 	};
-	log::info!(target: LOG_TARGET, "v8->v9 ledger state translation complete in {steps} step(s)");
+	log::info!(
+		target: LOG_TARGET,
+		"v8->v9 ledger state translation complete in {steps} step(s), {:?}",
+		t_translate.elapsed()
+	);
 
 	// 3. Wrap the translated state in the v9 ledger wrapper, persist it, and
 	//    flush the arena so the new root is durable before the pallet stores it.
+	let t_persist = std::time::Instant::now();
 	let ledger9 = Ledger9::new((*state9).clone());
 	let mut sp9: Sp<Ledger9<D>, D> = default_storage::<D>().arena.alloc(ledger9);
 	sp9.persist();
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+	log::debug!(
+		target: LOG_TARGET,
+		"[perf] migrate_state_v8_to_v9 persist+flush took {:?}",
+		t_persist.elapsed()
+	);
 
 	// 4. Serialize the new v9 arena root for the pallet to store in `StateKey`.
 	let mut bytes = Vec::new();
@@ -118,6 +133,8 @@ pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, Led
 		log::error!(target: LOG_TARGET, "failed to serialize v9 state key: {e:?}");
 		LedgerApiError::Serialization(SerializationError::TypedArenaKey)
 	})?;
+
+	log::debug!(target: LOG_TARGET, "[perf] migrate_state_v8_to_v9 took {:?}", t_total.elapsed());
 	Ok(bytes)
 }
 

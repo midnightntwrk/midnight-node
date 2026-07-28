@@ -86,6 +86,7 @@ pub fn fork_context_8_to_9(
 		>::start(ledger_state_8.clone())?;
 		// Single-shot: a generous per-step budget drains the whole state in a
 		// couple of iterations; the step cap is only a runaway backstop.
+		// 1_000_000_000_000 pico-seconds == 1 second
 		let budget = CostDuration::from_picoseconds(1_000_000_000_000);
 		let mut steps = 0usize;
 		loop {
