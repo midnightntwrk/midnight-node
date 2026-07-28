@@ -97,16 +97,23 @@ impl MidnightNodeClient {
 		&self,
 		at: Option<HashFor<MidnightNodeClientConfig>>,
 	) -> Result<Option<Vec<u8>>, ClientError> {
+		let at_block = match at {
+			Some(hash) => self.api.at_block(hash).await?,
+			None => self.api.at_current_block().await?,
+		};
+		Self::state_root_from(&at_block).await
+	}
+
+	/// Fetch the Midnight state root via an existing at-block handle.
+	pub async fn state_root_from(
+		at_block: &subxt::client::OnlineClientAtBlock<MidnightNodeClientConfig>,
+	) -> Result<Option<Vec<u8>>, ClientError> {
 		// Use a raw storage query to avoid IncompatibleCodegen errors when the
 		// toolkit is compiled against a different runtime version than the node.
 		// The storage key is stable: twox_128("Midnight") ++ twox_128("StateKey").
 		let key =
 			[sp_crypto_hashing::twox_128(b"Midnight"), sp_crypto_hashing::twox_128(b"StateKey")]
 				.concat();
-		let at_block = match at {
-			Some(hash) => self.api.at_block(hash).await?,
-			None => self.api.at_current_block().await?,
-		};
 		let storage = at_block.storage();
 		let raw = match storage.fetch_raw(key).await {
 			Ok(bytes) => Some(bytes),

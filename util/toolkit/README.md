@@ -133,6 +133,8 @@ The toolkit implements a caching mechanism to avoid fetching the entire chain ea
 - `redb:<filename>` - persists fetched transactions to disk. Toolkit process must have exclusive access to this file
 - `postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]` - persists fetched transactions to a postgres database. Supports concurrent readers/writers.
 
+Wallet state reconstructed during block replay is checkpointed per seed in `--ledger-state-db` (`MN_LEDGER_CACHE_DB`), so repeat queries only replay new blocks. During a long replay a checkpoint is saved periodically (default every 300s, tune with `MN_REPLAY_CHECKPOINT_SECS`), so an interrupted run resumes from the last checkpoint instead of genesis.
+
 #### Generate Zswap & Unshielded Utxos batches
 - Query from chain, generate, and send to chain:
 ```console

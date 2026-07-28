@@ -1080,14 +1080,16 @@ fn inject_cached_wallets(
 		wallet_state_cache::inject_wallet_from_cache(ctx, state, seed, scheme, ledger_state)
 			.unwrap_or_else(|e| {
 				panic!(
-					"failed to inject wallet at height {}: {} — clear caches and retry",
+					"failed to inject wallet at height {}: {} - clear caches and retry",
 					at_height, e
 				)
 			});
 	}
 }
 
-/// Create the initial fork-aware context, either cold (genesis) or warm (snapshot restore).
+/// Create the initial fork-aware context, either cold (genesis) or warm
+/// (snapshot restore). Returns the context plus whether `cached` wallets were
+/// already injected here (ledger-8 warm restore).
 async fn initialize_context(
 	received_tx: &SourceTransactions,
 	uncached_seeds: &[WalletSeed],
@@ -1095,41 +1097,81 @@ async fn initialize_context(
 	storage: &dyn WalletStateCaching,
 	chain_id: H256,
 	schemes: &WalletSchemes,
-) -> ForkAwareLedgerContext {
+	cached: &[(WalletSeed, CachedWalletState)],
+) -> (ForkAwareLedgerContext, bool) {
 	if start_height == 0 {
 		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
 			.iter()
 			.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
 			.collect();
-		timed!(
+		let ctx = timed!(
 			"new_from_wallet_seeds (cold)",
 			ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes(
 				received_tx.ledger_version(),
 				&received_tx.network_id,
 				&seeds_with_schemes,
 			)
-		)
-	} else {
-		let snapshot = timed!(
-			"storage.get_ledger_snapshot",
-			storage.get_ledger_snapshot(chain_id, start_height).await
-		)
-		.unwrap_or_else(|| {
-			panic!("ledger snapshot missing at height {} — clear caches and retry", start_height)
-		});
+		);
+		return (ctx, false);
+	}
 
-		let (ctx, _, _) = timed!(
-			"restore_context_from_ledger_snapshot",
-			wallet_state_cache::restore_context_from_ledger_snapshot(&snapshot)
-		)
-		.unwrap_or_else(|e| {
-			panic!(
-				"failed to restore ledger snapshot at height {}: {} — clear caches and retry",
-				start_height, e
+	let snapshot = timed!(
+		"storage.get_ledger_snapshot",
+		storage.get_ledger_snapshot(chain_id, start_height).await
+	)
+	.unwrap_or_else(|| {
+		panic!("ledger snapshot missing at height {} - clear caches and retry", start_height)
+	});
+	log::info!(
+		"restoring {:?} ledger snapshot at block {} (skipping replay of everything before it)",
+		snapshot.ledger_version,
+		start_height
+	);
+
+	match snapshot.ledger_version {
+		LedgerVersion::Ledger8 => {
+			let (ctx, ledger_state, _) = timed!(
+				"restore_context_from_ledger_snapshot_8",
+				wallet_state_cache::restore_context_from_ledger_snapshot_8(&snapshot)
 			)
-		});
-
-		ForkAwareLedgerContext::Ledger9(ctx)
+			.unwrap_or_else(|e| {
+				panic!(
+					"failed to restore ledger snapshot at height {}: {} - clear caches and retry",
+					start_height, e
+				)
+			});
+			// All cached wallets share `start_height` (caller-enforced on pre-9
+			// chains); inject them all here.
+			for (seed, state) in cached {
+				wallet_state_cache::inject_wallet_from_cache_8(
+					&ctx,
+					state,
+					seed,
+					scheme_of(schemes, seed),
+					&ledger_state,
+				)
+				.unwrap_or_else(|e| {
+					panic!(
+						"failed to inject wallet at height {}: {} - clear caches and retry",
+						start_height, e
+					)
+				});
+			}
+			(ForkAwareLedgerContext::Ledger8(ctx), true)
+		},
+		_ => {
+			let (ctx, _, _) = timed!(
+				"restore_context_from_ledger_snapshot",
+				wallet_state_cache::restore_context_from_ledger_snapshot(&snapshot)
+			)
+			.unwrap_or_else(|e| {
+				panic!(
+					"failed to restore ledger snapshot at height {}: {} - clear caches and retry",
+					start_height, e
+				)
+			});
+			(ForkAwareLedgerContext::Ledger9(ctx), false)
+		},
 	}
 }
 
@@ -1144,6 +1186,65 @@ const DUST_BATCH_SIZE: usize = 1000;
 /// `log::debug!`; this throttle is what users see by default during a
 /// multi-hour replay so it doesn't look like the process has hung.
 const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Default interval between mid-replay wallet-cache checkpoints, bounding how
+/// much work an interrupted run loses. Override with `MN_REPLAY_CHECKPOINT_SECS`.
+const REPLAY_CHECKPOINT_INTERVAL_DEFAULT_SECS: u64 = 300;
+
+fn replay_checkpoint_interval() -> std::time::Duration {
+	static SECS: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+	std::time::Duration::from_secs(*SECS.get_or_init(|| {
+		std::env::var("MN_REPLAY_CHECKPOINT_SECS")
+			.ok()
+			.and_then(|s| s.parse().ok())
+			.unwrap_or(REPLAY_CHECKPOINT_INTERVAL_DEFAULT_SECS)
+	}))
+}
+
+pub(crate) struct ReplayCheckpoint<'a> {
+	storage: &'a dyn WalletStateCaching,
+	chain_id: H256,
+	seeds: &'a [WalletSeed],
+}
+
+impl ReplayCheckpoint<'_> {
+	fn save(&self, ctx: &LedgerContext<DefaultDB>, block_height: u64, schemes: &WalletSchemes) {
+		self.blocking_save(block_height, |cp| {
+			save_cache_ledger9(ctx, cp.seeds, cp.chain_id, block_height, cp.storage, schemes)
+		});
+	}
+
+	/// Ledger-8 twin of [`Self::save`].
+	fn save_8(
+		&self,
+		ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
+		block_height: u64,
+		schemes: &WalletSchemes,
+	) {
+		self.blocking_save(block_height, |cp| {
+			save_cache_ledger8(ctx, cp.seeds, cp.chain_id, block_height, cp.storage, schemes)
+		});
+	}
+
+	fn blocking_save<'s, F, Fut>(&'s self, block_height: u64, save: F)
+	where
+		F: FnOnce(&'s Self) -> Fut,
+		Fut: std::future::Future<Output = ()>,
+	{
+		let Ok(handle) = tokio::runtime::Handle::try_current() else { return };
+		if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::CurrentThread {
+			// `block_in_place` would panic (unit tests run current-thread).
+			log::debug!("skipping mid-replay checkpoint on current-thread runtime");
+			return;
+		}
+		let t = std::time::Instant::now();
+		tokio::task::block_in_place(|| handle.block_on(save(self)));
+		log::info!(
+			"replay checkpoint saved at block {block_height} in {:.1}s (interrupting is now safe: the next run resumes here)",
+			t.elapsed().as_secs_f32()
+		);
+	}
+}
 
 fn replay_blocks_7(
 	ctx: &midnight_node_ledger_helpers::ledger_7::context::LedgerContext<Db7>,
@@ -1186,10 +1287,14 @@ fn replay_blocks_7(
 fn replay_blocks_8(
 	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[RawBlockData],
+	schemes: &WalletSchemes,
+	checkpoint: Option<&ReplayCheckpoint<'_>>,
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
 
 	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
+	let mut last_checkpoint_at = std::time::Instant::now();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
 		events.extend(apply_block_8(ctx, block));
@@ -1199,6 +1304,32 @@ fn replay_blocks_8(
 			ctx.update_dust_from_events(events.as_slice());
 			events.clear();
 			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// Mid-replay checkpoint: see the note in `replay_blocks_9`.
+		if let Some(cp) = checkpoint {
+			if !is_last && last_checkpoint_at.elapsed() >= replay_checkpoint_interval() {
+				if !events.is_empty() {
+					ctx.update_dust_from_events(events.as_slice());
+					events.clear();
+				}
+				ctx.update_dust_from_block(&block_context_from_raw_8(block));
+				cp.save_8(ctx, block.number, schemes);
+				last_checkpoint_at = std::time::Instant::now();
+			}
+		}
+
+		// See note in `replay_blocks_7`: heartbeat must be evaluated every
+		// iteration, not gated on the event-flush condition, so sparse
+		// chains still get a "still alive" signal at the 30 s cadence.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log::info!(
+				"replay progress: {}/{} blocks ({:.1}%)",
+				i + 1,
+				total,
+				(i + 1) as f64 / total as f64 * 100.0,
+			);
+			last_info_at = std::time::Instant::now();
 		}
 	}
 
@@ -1212,11 +1343,13 @@ fn replay_blocks_9(
 	blocks_sorted_by_height: &[RawBlockData],
 	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
+	checkpoint: Option<&ReplayCheckpoint<'_>>,
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_9::Event<Db9>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
 	let mut last_info_at = std::time::Instant::now();
+	let mut last_checkpoint_at = std::time::Instant::now();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
 		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
@@ -1237,7 +1370,26 @@ fn replay_blocks_9(
 		if events.len() >= DUST_BATCH_SIZE || is_last {
 			ctx.update_dust_from_events(events.as_slice());
 			events.clear();
-			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+			log::debug!("[perf] replay_blocks_9 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// Checkpoint only at a consistent point (all cached wallets injected)
+		// and never on the last block (the caller saves the final state).
+		if let Some(cp) = checkpoint {
+			if !is_last
+				&& remaining.is_empty()
+				&& last_checkpoint_at.elapsed() >= replay_checkpoint_interval()
+			{
+				// Flush dust events and advance the dust TTL window first,
+				// mirroring the end-of-replay contract.
+				if !events.is_empty() {
+					ctx.update_dust_from_events(events.as_slice());
+					events.clear();
+				}
+				ctx.update_dust_from_block(&block_context_from_raw_9(block));
+				cp.save(ctx, block.number, schemes);
+				last_checkpoint_at = std::time::Instant::now();
+			}
 		}
 
 		// See note in `replay_blocks_7`: heartbeat must be evaluated every
@@ -1275,6 +1427,16 @@ pub(crate) fn replay_blocks(
 	cached: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
+	replay_blocks_with_checkpoint(fork_ctx, blocks, cached, schemes, None)
+}
+
+pub(crate) fn replay_blocks_with_checkpoint(
+	fork_ctx: ForkAwareLedgerContext,
+	blocks: &[RawBlockData],
+	cached: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
+	checkpoint: Option<&ReplayCheckpoint<'_>>,
+) -> ForkAwareLedgerContext {
 	if !blocks.is_empty() && !cached.is_empty() {
 		log::info!(
 			"Replaying {} blocks after cache checkpoint ({}..)",
@@ -1304,19 +1466,23 @@ pub(crate) fn replay_blocks(
 				ForkAwareLedgerContext::Ledger7(ctx7)
 			} else {
 				let ctx8 = fork_context_7_to_8(ctx7).expect("fork 7 to 8 failed");
-				replay_blocks_8(&ctx8, l8_blocks);
+				replay_blocks_8(&ctx8, l8_blocks, schemes, checkpoint);
 				ForkAwareLedgerContext::Ledger8(ctx8)
 			}
 		},
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger8 context");
-			replay_blocks_8(&ctx8, l8_blocks);
+			assert!(
+				cached.is_empty(),
+				"cached wallets must be injected at restore time on a Ledger8 context"
+			);
+			replay_blocks_8(&ctx8, l8_blocks, schemes, checkpoint);
 			ForkAwareLedgerContext::Ledger8(ctx8)
 		},
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger9 context");
 			assert!(l8_blocks.is_empty(), "Ledger8 blocks with Ledger9 context");
-			replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
+			replay_blocks_9(&ctx9, l9_blocks, cached, schemes, checkpoint);
 			ForkAwareLedgerContext::Ledger9(ctx9)
 		},
 	};
@@ -1368,8 +1534,42 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	};
 
 	// 1. Load cache and partition wallets.
-	let (uncached_seeds, cached) =
+	let (mut uncached_seeds, mut cached) =
 		load_and_partition_cache(wallet_seeds, chain_id, storage, schemes).await;
+	if !cached.is_empty() {
+		log::info!(
+			"wallet cache: {} seed(s) cached (heights {:?}), {} uncached",
+			cached.len(),
+			cached.iter().map(|(_, ws)| ws.block_height).collect::<Vec<_>>(),
+			uncached_seeds.len(),
+		);
+	} else {
+		log::info!(
+			"wallet cache: no cached state for the requested seed(s) - replaying from genesis (a checkpoint will be saved for next time)"
+		);
+	}
+
+	// Mid-replay injection of stale cached wallets only exists on the ledger-9
+	// path; on a pre-9 chain the cache is only usable when every wallet can be
+	// injected at the snapshot restore point.
+	let chain_is_pre_9 = received_tx
+		.blocks
+		.iter()
+		.rev()
+		.find(|b| b.number > 0 || received_tx.blocks.len() == 1)
+		.map(|b| b.ledger_version() != LedgerVersion::Ledger9)
+		.unwrap_or(false);
+	if chain_is_pre_9 && !cached.is_empty() {
+		let same_height = uncached_seeds.is_empty()
+			&& cached.windows(2).all(|w| w[0].1.block_height == w[1].1.block_height);
+		if !same_height {
+			log::warn!(
+				"wallet cache: pre-ledger-9 chain with mixed cache heights or uncached seeds; replaying from genesis for all seeds"
+			);
+			uncached_seeds = wallet_seeds.to_vec();
+			cached.clear();
+		}
+	}
 
 	// 2. Compute start height.
 	let start_height = if !uncached_seeds.is_empty() {
@@ -1379,9 +1579,19 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	};
 
 	// 3. Initialize context (cold genesis or warm snapshot restore).
-	let fork_ctx =
-		initialize_context(received_tx, &uncached_seeds, start_height, storage, chain_id, schemes)
-			.await;
+	let (fork_ctx, cached_consumed) = initialize_context(
+		received_tx,
+		&uncached_seeds,
+		start_height,
+		storage,
+		chain_id,
+		schemes,
+		&cached,
+	)
+	.await;
+	if cached_consumed {
+		cached.clear();
+	}
 
 	// 4. Determine blocks to replay.
 	//
@@ -1424,8 +1634,10 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		&real_blocks[i..]
 	};
 
-	// 5. Replay with mid-replay wallet injection.
-	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached, schemes);
+	// 5. Replay with mid-replay wallet injection and periodic checkpoints.
+	let checkpoint = ReplayCheckpoint { storage, chain_id, seeds: wallet_seeds };
+	let fork_ctx =
+		replay_blocks_with_checkpoint(fork_ctx, blocks, &cached, schemes, Some(&checkpoint));
 
 	// 6. Save updated cache. `blocks.last()` is sound here because
 	// step 4 already excluded the dust-warp synthetic (`number = 0`)
@@ -1494,18 +1706,88 @@ async fn try_save_cache_v2(
 	storage: &dyn WalletStateCaching,
 	schemes: &WalletSchemes,
 ) {
-	let ctx = match fork_ctx {
-		ForkAwareLedgerContext::Ledger9(ctx) => ctx,
-		ForkAwareLedgerContext::Ledger8(_) => {
-			log::debug!("Skipping cache save: context is still on ledger 8");
-			return;
+	match fork_ctx {
+		ForkAwareLedgerContext::Ledger9(ctx) => {
+			save_cache_ledger9(ctx, wallet_seeds, chain_id, block_height, storage, schemes).await
+		},
+		ForkAwareLedgerContext::Ledger8(ctx) => {
+			save_cache_ledger8(ctx, wallet_seeds, chain_id, block_height, storage, schemes).await
 		},
 		ForkAwareLedgerContext::Ledger7(_) => {
-			log::debug!("Skipping cache save: context is still on ledger 7");
+			log::warn!(
+				"Skipping wallet cache save: chain is still on ledger 7 at block {block_height} \
+				 (snapshots are only supported from ledger 8); the next run will replay from genesis"
+			);
+		},
+	}
+}
+
+/// Ledger-8 twin of [`save_cache_ledger9`].
+async fn save_cache_ledger8(
+	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
+	wallet_seeds: &[WalletSeed],
+	chain_id: H256,
+	block_height: u64,
+	storage: &dyn WalletStateCaching,
+	schemes: &WalletSchemes,
+) {
+	let t = std::time::Instant::now();
+	let snapshot = match wallet_state_cache::create_ledger_snapshot_8(ctx, block_height) {
+		Ok(s) => s,
+		Err(e) => {
+			log::warn!("Failed to create ledger snapshot: {}", e);
 			return;
 		},
 	};
+	log::debug!("[perf] create_ledger_snapshot_8 took {:?}", t.elapsed());
 
+	storage.set_ledger_snapshot(chain_id, snapshot).await;
+
+	let wallet_snapshots: Vec<_> = wallet_seeds
+		.iter()
+		.filter_map(|seed| {
+			match wallet_state_cache::create_wallet_snapshot_8(
+				ctx,
+				seed,
+				scheme_of(schemes, seed),
+				block_height,
+			) {
+				Ok(ws) => Some(ws),
+				Err(e) => {
+					log::warn!("Failed to create wallet snapshot: {}", e);
+					None
+				},
+			}
+		})
+		.collect();
+
+	if !wallet_snapshots.is_empty() {
+		storage.set_wallet_states(chain_id, &wallet_snapshots).await;
+	}
+
+	// GC: keep heights referenced by all cached wallets (cross-process safe)
+	let mut keep_heights = storage.get_all_cached_wallet_heights(chain_id).await;
+	if !keep_heights.contains(&block_height) {
+		keep_heights.push(block_height);
+	}
+	storage.gc_ledger_snapshots(chain_id, &keep_heights).await;
+
+	log::info!(
+		"Saved per-wallet cache at block {} ({} wallets, 1 ledger snapshot)",
+		block_height,
+		wallet_snapshots.len()
+	);
+}
+
+/// Persist the ledger snapshot + per-wallet states at `block_height`.
+async fn save_cache_ledger9(
+	ctx: &LedgerContext<DefaultDB>,
+	wallet_seeds: &[WalletSeed],
+	chain_id: H256,
+	block_height: u64,
+	storage: &dyn WalletStateCaching,
+	schemes: &WalletSchemes,
+) {
 	// Save ledger snapshot
 	let t = std::time::Instant::now();
 	let snapshot = match wallet_state_cache::create_ledger_snapshot(ctx, block_height) {

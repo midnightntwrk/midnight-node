@@ -127,7 +127,7 @@ impl ComputeTask {
 	}
 
 	pub(crate) async fn extract_data(block: &FetchedBlock) -> Result<RawBlockData, ComputeError> {
-		let header = block.block.block_header().await?;
+		let header = &block.header;
 		let spec_version = header
 			.digest
 			.logs
@@ -202,28 +202,32 @@ impl ComputeTask {
 		// automatically resolves the correct schema for this block's spec version.
 		let extrinsics = block.block.extrinsics().from_bytes(block.raw_body.clone()).await;
 
-		let events = block
-			.block
-			.events()
-			.fetch()
-			.await
-			.unwrap_or_else(|err| panic!("Error while fetching the events: {}", err));
+		let decoded: Vec<(u32, M::Call)> = extrinsics
+			.iter()
+			.filter_map(Result::ok)
+			.filter_map(|ext| {
+				let index = ext.index() as u32;
+				ext.decode_call_data_as::<M::Call>().ok().map(|call| (index, call))
+			})
+			.collect();
 
-		for ext in extrinsics.iter().filter_map(Result::ok) {
-			let Ok(call) = ext.decode_call_data_as::<M::Call>() else {
-				continue;
-			};
-			if let Some(ts) = M::timestamp_set(&call) {
+		let events = block
+			.events
+			.as_ref()
+			.map(|bytes| block.block.events().from_bytes(bytes.clone()));
+
+		for (ext_index, call) in &decoded {
+			if let Some(ts) = M::timestamp_set(call) {
 				if timestamp_ms.is_some() {
 					panic!("this block has two timestamps");
 				}
 				timestamp_ms = Some(ts);
-			} else if let Some(bytes) = M::send_mn_transaction(&call) {
+			} else if let Some(bytes) = M::send_mn_transaction(call) {
 				transactions.push(RawTransaction::Midnight(bytes));
 			} else if block_number == 0 {
 				// Genesis block: extract system transactions from extrinsics directly
 				// (genesis has no events since events are emitted during block execution)
-				if let Some(bytes) = M::send_mn_system_transaction(&call) {
+				if let Some(bytes) = M::send_mn_system_transaction(call) {
 					transactions.push(RawTransaction::System(bytes));
 				}
 			}
@@ -234,9 +238,9 @@ impl ComputeTask {
 			// - Governance-wrapped calls (FederatedAuthority::motion_dispatch)
 			// - CNightObservation-triggered system transactions
 			// - Any future wrapper patterns
-			let ext_index = ext.index() as u32;
+			let Some(events) = &events else { continue };
 			for ev in events.iter().filter_map(Result::ok) {
-				if ev.phase() != subxt::events::Phase::ApplyExtrinsic(ext_index) {
+				if ev.phase() != subxt::events::Phase::ApplyExtrinsic(*ext_index) {
 					continue;
 				}
 				if let Some(Ok(event)) = ev.decode_fields_as::<M::SystemTransactionAppliedEvent>() {

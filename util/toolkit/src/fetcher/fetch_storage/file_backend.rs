@@ -348,6 +348,8 @@ mod tests {
 		use crate::fetcher::wallet_state_cache::SerializableBlockContext;
 		LedgerSnapshot {
 			block_height,
+			ledger_version:
+				midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion::Ledger9,
 			ledger_state_bytes: vec![0xAA; 1024],
 			latest_block_context: SerializableBlockContext {
 				tblock_secs: 1234567890,
