@@ -331,9 +331,13 @@ impl<D: DB + Clone> LedgerContext<D> {
 		super::serialize(&sp.as_typed_key()).ok()
 	}
 
-	/// Genesis blocks skip balancing. `replay` additionally skips proof and
-	/// signature verification - only sound for finalized history whose outcome
-	/// is verified against the on-chain state root.
+	/// Genesis blocks skip balancing. `replay` additionally skips proof,
+	/// signature and balancing re-verification - only sound for finalized
+	/// history whose outcome is verified against the on-chain state root.
+	/// Balancing must not be re-checked here: replayed transactions are
+	/// verified proof-erased, and fee calculation for unproven transactions
+	/// estimates the size instead of using the real proof-carrying one, so a
+	/// faithful on-chain transaction can false-fail the dust balance check.
 	fn strictness_for(block_context: &BlockContext, replay: bool) -> WellFormedStrictness {
 		let mut strictness: WellFormedStrictness = Default::default();
 		if block_context.parent_block_hash == Default::default() {
@@ -343,6 +347,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 			strictness.verify_native_proofs = false;
 			strictness.verify_contract_proofs = false;
 			strictness.verify_signatures = false;
+			strictness.enforce_balancing = false;
 		}
 		strictness
 	}
