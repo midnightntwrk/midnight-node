@@ -18,6 +18,7 @@ import { imageUpgrade } from "./commands/imageUpgrade";
 import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { fullUpgrade } from "./commands/fullUpgrade";
 import { verifyFinality } from "./commands/verifyFinality";
+import { blockStats } from "./commands/blockStats";
 import {
   RunOptions,
   ImageUpgradeOptions,
@@ -205,6 +206,82 @@ program
         targetBlock,
         timeoutMs: timeoutSec * 1_000,
         nodeOverrides: nodeOverrides.length > 0 ? nodeOverrides : undefined,
+      });
+    },
+  );
+
+program
+  .command("block-stats [network]")
+  .option(
+    "-b, --blocks <number>",
+    "Number of finalized blocks to collect before summarizing",
+    "1000",
+  )
+  .option(
+    "-o, --out-file <path>",
+    "Where to write the JSON summary (default: cwd)",
+  )
+  .option(
+    "-n, --node <name=url>",
+    "Override compose discovery: probe the given name=url endpoint(s). Repeatable.",
+    (value: string, prev: string[] = []) => [...prev, value],
+    [] as string[],
+  )
+  .option(
+    "--sc-slots-per-epoch <number>",
+    "Override sidechain slots-per-epoch (default: derived from sidechain_getStatus, else 5)",
+  )
+  .option(
+    "--mc-epoch-ms <number>",
+    "Cardano epoch duration in ms for epoch mapping (default 60000)",
+  )
+  .description(
+    "Collect per-validator block-production and per-epoch committee/seat stats over " +
+      "N finalized blocks; assert authorship/rotation invariants and auto-detect " +
+      "permissioned candidate-set changes. Validators are auto-discovered from the " +
+      "named network's compose file (io.midnight.role=validator).",
+  )
+  .action(
+    async (
+      network: string | undefined,
+      cliOpts: {
+        blocks: string;
+        outFile?: string;
+        node: string[];
+        scSlotsPerEpoch?: string;
+        mcEpochMs?: string;
+      },
+    ) => {
+      const blocks = Number.parseInt(cliOpts.blocks, 10);
+      if (!Number.isFinite(blocks) || blocks <= 0) {
+        throw new Error(`Invalid --blocks: ${cliOpts.blocks}`);
+      }
+      const parsePositive = (v: string | undefined, flag: string) => {
+        if (v === undefined) return undefined;
+        const n = Number.parseInt(v, 10);
+        if (!Number.isFinite(n) || n <= 0) {
+          throw new Error(`Invalid ${flag}: ${v}`);
+        }
+        return n;
+      };
+      const nodeOverrides = cliOpts.node.map((spec) => {
+        const idx = spec.indexOf("=");
+        if (idx <= 0 || idx === spec.length - 1) {
+          throw new Error(
+            `Invalid --node spec '${spec}': expected name=url (e.g. node-1=http://localhost:9933)`,
+          );
+        }
+        return { name: spec.slice(0, idx), url: spec.slice(idx + 1) };
+      });
+      await blockStats(network, {
+        blocks,
+        outFile: cliOpts.outFile,
+        nodeOverrides: nodeOverrides.length > 0 ? nodeOverrides : undefined,
+        scSlotsPerEpoch: parsePositive(
+          cliOpts.scSlotsPerEpoch,
+          "--sc-slots-per-epoch",
+        ),
+        mcEpochMs: parsePositive(cliOpts.mcEpochMs, "--mc-epoch-ms"),
       });
     },
   );
