@@ -20,13 +20,15 @@ use async_trait::async_trait;
 use super::super::{
 	BuilderContext, ContractAddress, ContractMaintenanceAuthority, ContractOperationVersion,
 	ContractOperationVersionedVerifierKey, DB, EntryPointBuf, Intent, MaintenanceUpdate,
-	PedersenRandomness, ProofPreimageMarker, Signature, SigningKey, SingleUpdate, StdRng,
-	maintenance_verifying_key, transaction_signature,
+	PedersenRandomness, ProofPreimageMarker, Signature, SingleUpdate, StdRng, UnshieldedWallet,
 };
 use super::BuildContractAction;
 
+/// A committee member is a full [`UnshieldedWallet`] rather than a bare Schnorr key, so its
+/// signature scheme (Schnorr or ledger-9 ECDSA) travels with it: the verifying key and the
+/// signature are produced via the wallet's scheme-agnostic accessors.
 pub struct ContractMaintenanceAuthorityInfo {
-	pub new_committee: Vec<SigningKey>,
+	pub new_committee: Vec<UnshieldedWallet>,
 	pub threshold: u32,
 	pub counter: u32,
 }
@@ -39,7 +41,7 @@ pub enum UpdateInfo {
 
 pub struct MaintenanceUpdateInfo {
 	pub address: ContractAddress,
-	pub committee: Vec<SigningKey>,
+	pub committee: Vec<UnshieldedWallet>,
 	pub updates: Vec<UpdateInfo>,
 	pub counter: u32,
 }
@@ -61,7 +63,10 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for Maintena
 						committee: info
 							.new_committee
 							.iter()
-							.map(|s| maintenance_verifying_key(s.verifying_key()))
+							.map(|w| {
+								w.maintenance_verifying_key()
+									.expect("committee member must carry key material")
+							})
 							.collect(),
 						threshold: info.threshold,
 						counter: info.counter,
@@ -78,11 +83,12 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildContractAction<D, C> for Maintena
 
 		let mut update = MaintenanceUpdate::new(self.address, updates, self.counter);
 
-		// Sign with existing committee
+		// Sign with existing committee. `UnshieldedWallet::sign` already returns this generation's
+		// wrapped signature type (Schnorr or ECDSA), so no per-scheme wrapping is needed here.
 		let data_to_sign = update.data_to_sign();
-		for (idx, key) in self.committee.iter().enumerate() {
-			let signature = key.sign(rng, &data_to_sign);
-			update = update.add_signature(idx as u32, transaction_signature(signature))
+		for (idx, wallet) in self.committee.iter().enumerate() {
+			let signature = wallet.sign(rng, &data_to_sign);
+			update = update.add_signature(idx as u32, signature)
 		}
 
 		intent.add_maintenance_update(update)
