@@ -68,6 +68,18 @@ pub enum MidnightCNightObservationDataSourceError {
 	MappingValidatorInvalidAddress(String),
 }
 
+/// db-sync stores native-asset quantities as a signed `BIGINT`. cNIGHT outputs are
+/// always non-negative; a negative value means db-sync is corrupt or forged. Halt
+/// loudly — a bare `as u128` would sign-extend (`-1` → ~1.8e19) straight into DUST
+/// minting, so failing the node here is strictly safer than producing wrong consensus.
+fn checked_asset_quantity(quantity: i64) -> u128 {
+	u128::try_from(quantity).unwrap_or_else(|_| {
+		panic!(
+			"negative cNIGHT asset quantity {quantity} from db-sync — data source corrupt or forged"
+		)
+	})
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum RegistrationDatumDecodeError {
 	#[error("Cardano credential not bytes")]
@@ -107,7 +119,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
-		utxo_overestimate: usize,
+		max_utxos: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Resolve current_tip -> CardanoPosition. This must preserve the historic
 		// replay semantics: query through the block's Cardano tip and only then
@@ -121,18 +133,18 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		drop(_block_timer);
 		let end = end.increment();
 
-		// The over-fetch bound is consensus-affecting and runtime-supplied, so it
-		// must flow into the SQL row limit (see `bulk_pull`) rather than a fixed
-		// client-side constant.
-		let utxos =
-			bulk_pull(&self.pool, config, start_position, &end, utxo_overestimate).await?;
-		let (result, _full_window) = truncate_to_tx_capacity(
-			utxos,
-			tx_capacity,
-			start_position,
-			end,
-		);
-		Ok(result)
+		// This single query serves exactly one inherent, so fetch only one
+		// envelope's worth plus a sentinel row. Anything past `max_utxos` is
+		// discarded by `truncate_to_tx_capacity` anyway; a subquery returning the
+		// full `max_utxos + 1` rows flags the range row-limited
+		// (`complete = false`), holding the cursor short of the tip. Each category
+		// query is `ORDER BY (block_no, block_index, ...) LIMIT n`, so this prefix
+		// holds the same first-`max_utxos` rows the old whole-range pull did:
+		// byte-identical inherent, far less resident. The cache path still pulls
+		// whole windows with `LARGE_LIMIT`; both truncate to the same envelope.
+		let (utxos, complete) =
+			bulk_pull(&self.pool, config, start_position, &end, max_utxos.saturating_add(1)).await?;
+		Ok(truncate_to_tx_capacity(utxos, tx_capacity, max_utxos, complete, start_position, end))
 	}
 }
 );
@@ -333,7 +345,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::AssetCreate(CreateData {
-					value: row.quantity as u128,
+					value: checked_asset_quantity(row.quantity),
 					owner,
 					utxo_tx_hash: McTxHash(row.tx_hash.0),
 					utxo_tx_index: row.utxo_index.0,
@@ -390,7 +402,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			let utxo = ObservedUtxo {
 				header,
 				data: ObservedUtxoData::AssetSpend(SpendData {
-					value: row.quantity as u128,
+					value: checked_asset_quantity(row.quantity),
 					owner,
 					utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
 					utxo_tx_index: row.utxo_index.0,
@@ -402,5 +414,24 @@ impl MidnightCNightObservationDataSourceImpl {
 		}
 
 		Ok(utxos)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn checked_asset_quantity_accepts_non_negative() {
+		assert_eq!(checked_asset_quantity(0), 0);
+		assert_eq!(checked_asset_quantity(1), 1);
+		assert_eq!(checked_asset_quantity(i64::MAX), i64::MAX as u128);
+	}
+
+	#[test]
+	#[should_panic(expected = "negative cNIGHT asset quantity")]
+	fn checked_asset_quantity_panics_on_negative() {
+		// A bare `as u128` would sign-extend -1 to ~1.8e19 and mint it as DUST.
+		let _ = checked_asset_quantity(-1);
 	}
 }
