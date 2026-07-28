@@ -78,14 +78,14 @@ sc-basic-authorship.workspace = true
 substrate-frame-rpc-system.workspace = true
 
 # These dependencies are used for runtime benchmarking
-frame-benchmarking = {workspace = true, optional = true}
-frame-benchmarking-cli = {workspace = true, default-features = true }
+frame-benchmarking = { workspace = true, optional = true }
+frame-benchmarking-cli = { workspace = true, default-features = true }
 pallet-staking = { workspace = true, features = ["std"], optional = true }
 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
 midnight-node-ledger = { workspace = true, default-features = true }
-midnight-node-ledger-helpers = {workspace = true, default-features = true, features = ["fixed-point-custom-serde"] }
+midnight-node-ledger-helpers = { workspace = true, default-features = true, features = ["fixed-point-custom-serde"] }
 midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
 midnight-primitives-beefy = { workspace = true, default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
@@ -93,7 +93,7 @@ midnight-primitives = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
 midnight-primitives-federated-authority-observation = { workspace = true, default-features = true }
 midnight-primitives-system-parameters = { workspace = true, default-features = true }
-midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
+midnight-primitives-cnight-observation = { workspace = true, default-features = true }
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
 midnight-primitives-session-info = { workspace = true, default-features = true }
@@ -102,13 +102,17 @@ pallet-midnight-rpc = { workspace = true, default-features = true }
 pallet-system-parameters = { workspace = true, default-features = true }
 pallet-system-parameters-rpc = { workspace = true, default-features = true }
 pallet-throttle = { workspace = true, default-features = true }
-pallet-cnight-observation = { workspace = true, default-features = true}
-pallet-cnight-observation-mock = { workspace = true, default-features = true}
+pallet-cnight-observation = { workspace = true, default-features = true }
+pallet-cnight-observation-mock = { workspace = true, default-features = true }
 
-# CLI-specific dependencies
-# try-runtime-cli = { optional = true, workspace = true }
-# The deprecated `try-runtime` subcommand and `try-runtime-cli` crate has been completely removed.
-# If you are not already, you should be using the standalone CLI at https://github.com/paritytech/try-runtime-cli.
+# In-tree `try-runtime` subcommand. The standalone `try-runtime-cli` only links
+# `sp_io::SubstrateHostFunctions` and so cannot resolve Midnight's custom
+# `ledger_*_bridge` host functions. We embed a minimal dry-run path that uses
+# the node's full `service::HostFunctions` tuple. The snapshot reader is
+# inlined (see `try_runtime.rs`) rather than pulling `frame-remote-externalities`,
+# which perturbs the workspace's `rand_core` resolution and breaks
+# `pallas-wallet` (and the rest of the workspace) at lock-resolution time.
+frame-try-runtime = { workspace = true, optional = true, features = ["std"] }
 
 thiserror = "1.0.50"
 log.workspace = true
@@ -151,7 +155,7 @@ documented.workspace = true
 shell-words = "1.1.1"
 derive-new.workspace = true
 
-sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
+sqlx = { version = "0.8.5", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"] }
 tokio.workspace = true
 blake2b_simd = "1.0"
 
@@ -182,6 +186,7 @@ runtime-benchmarks = [
 try-runtime = [
     "midnight-node-runtime/try-runtime",
     "pallet-staking/try-runtime",
+    "frame-try-runtime",
 ]
 experimental = [
     #"sp-block-rewards",

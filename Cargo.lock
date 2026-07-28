@@ -7899,6 +7899,7 @@ dependencies = [
  "frame-benchmarking-cli",
  "frame-support",
  "frame-system",
+ "frame-try-runtime",
  "futures",
  "hex",
  "hostname",

@@ -1295,6 +1295,59 @@ build-benchmarks:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts-benchmarks
 
+# try-runtime-build builds midnight-node with the `try-runtime` feature and
+# exports both the binary and the runtime WASM, ready for use by the in-tree
+# `midnight-node try-runtime` dry-run subcommand.
+try-runtime-build:
+    FROM +prep
+    ARG NATIVEARCH
+
+    RUN cargo auditable build -p midnight-node --locked --release --features try-runtime
+
+    RUN mkdir -p /artifacts-try-runtime-$NATIVEARCH/midnight-node-runtime \
+        && mv /target/release/midnight-node /artifacts-try-runtime-$NATIVEARCH/ \
+        && cp /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
+              /artifacts-try-runtime-$NATIVEARCH/midnight-node-runtime/
+
+    SAVE ARTIFACT /artifacts-try-runtime-$NATIVEARCH AS LOCAL artifacts-try-runtime
+
+# try-runtime-dry-run pulls a live snapshot for $NETWORK from $URI, then runs
+# the in-tree `midnight-node try-runtime` subcommand against it using the WASM
+# from `+try-runtime-build`.
+#
+# Snapshot creation is marked --no-cache so each run reflects current state.
+try-runtime-dry-run:
+    FROM +try-runtime-build
+    ARG NATIVEARCH
+
+    # renovate: datasource=github-releases packageName=paritytech/try-runtime-cli
+    ARG TRY_RUNTIME_CLI_VERSION=v0.10.1
+    RUN cargo install --git https://github.com/paritytech/try-runtime-cli \
+        --tag $TRY_RUNTIME_CLI_VERSION --locked try-runtime-cli
+
+    ARG --required NETWORK
+    ARG --required URI
+
+    # NB: --uri takes <URI>... (multi-value); use the equals form so the
+    # positional snapshot path is not consumed as another URI.
+    RUN --no-cache try-runtime create-snapshot --uri="$URI" "$NETWORK.snap"
+
+    RUN /artifacts-try-runtime-$NATIVEARCH/midnight-node try-runtime \
+            --snap "$NETWORK.snap" \
+            --runtime "/artifacts-try-runtime-$NATIVEARCH/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm" \
+            --checks all
+
+    SAVE ARTIFACT "$NETWORK.snap" AS LOCAL "artifacts-try-runtime/$NETWORK.snap"
+
+try-runtime-dry-run-preview:
+    BUILD +try-runtime-dry-run --NETWORK=preview --URI=wss://rpc.preview.midnight.network
+
+try-runtime-dry-run-preprod:
+    BUILD +try-runtime-dry-run --NETWORK=preprod --URI=wss://rpc.preprod.midnight.network
+
+try-runtime-dry-run-mainnet:
+    BUILD +try-runtime-dry-run --NETWORK=mainnet --URI=wss://rpc.mainnet.midnight.network
+
 subwasm:
     ARG NATIVEARCH
     FROM +build

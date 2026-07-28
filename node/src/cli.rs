@@ -476,6 +476,12 @@ pub enum Subcommand {
 
 	/// Db meta columns information.
 	ChainInfo(sc_cli::ChainInfoCmd),
+
+	/// Dry-run a runtime upgrade against a snapshot. Replaces the standalone
+	/// `try-runtime` binary, which cannot resolve Midnight's custom host
+	/// functions (e.g. `ledger_*_bridge::ensure_storage_initialized`).
+	#[cfg(feature = "try-runtime")]
+	TryRuntime(crate::try_runtime::TryRuntimeCmd),
 }
 
 #[derive(Clone, Debug)]

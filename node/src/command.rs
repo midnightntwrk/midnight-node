@@ -90,6 +90,13 @@ pub fn run() -> sc_cli::Result<()> {
 
 	match Cli::try_parse() {
 		Ok(cli) => {
+			// skip `get_cfg` so it works from any cwd
+			#[cfg(feature = "try-runtime")]
+			if let Subcommand::TryRuntime(ref cmd) = cli.subcommand {
+				sc_cli::LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("info".to_string()))
+					.init()?;
+				return cmd.run();
+			}
 			let cfg = get_cfg(false)?;
 			run_subcommand(cli.subcommand, cfg)
 		},
@@ -624,6 +631,10 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 			let runner = cfg.create_runner(cmd)?;
 			runner.sync_run(|config| cmd.run::<Block>(&config))
 		},
+		// `Subcommand::TryRuntime` is intercepted in `run()` before this match,
+		// since it needs neither chain spec nor midnight cfg.
+		#[cfg(feature = "try-runtime")]
+		Subcommand::TryRuntime(_) => unreachable!(),
 		Subcommand::GenerateCNightGenesis(ref cmd) => {
 			// Init logging
 			LoggerBuilder::new(std::env::var("RUST_LOG").unwrap_or("".to_string())).init()?;

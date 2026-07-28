@@ -1190,7 +1190,13 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,);
+pub type Migrations = (
+	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
+	migrations::session_pallet_swap::SessionV0ToV1,
+	migrations::session_pallet_swap::HistoricalInitV1,
+	migrations::bridge_reserve_validator::MigrateMainChainScripts,
+	migrations::babe_epoch_config::InitBabeEpochConfig,
+);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where
@@ -1739,12 +1745,85 @@ impl_runtime_apis! {
 
 	#[cfg(feature = "try-runtime")]
 	impl frame_try_runtime::TryRuntime<Block> for Runtime {
+		// MBM-aware variant of `Executive::try_runtime_upgrade`.
+		//
+		// Upstream's `try_runtime_upgrade` asserts each pallet's on-chain
+		// storage version inside the macro-generated `post_upgrade`, immediately
+		// after `on_runtime_upgrade`. For pallets migrated via
+		// MultiBlockMigrations (e.g. pallet-cnight-observation v0→v1), the
+		// on-chain version is only bumped by a later MBM `step()`, so the
+		// assert fires too early and the dry-run panics.
+		//
+		// We sandwich the full upstream check between MBM drains:
+		//
+		// 1. Run pallet-migrations.on_runtime_upgrade directly to onboard the
+		//    MBM queue (sets Cursor to migration 0).
+		// 2. Drain MBM. SteppedMigration `pre_upgrade`/`post_upgrade` run
+		//    inside `step()` under `feature = "try-runtime"`; failures panic.
+		//    MBM-driven pallets now have their on-chain versions bumped.
+		// 3. Run the full `Executive::try_runtime_upgrade(checks)`. All
+		//    per-pallet pre/upgrade/post (including the storage-version
+		//    assertion), `try_decode_entire_state`, and `try_state` checks run
+		//    exactly as upstream intends — and now succeed because step 2
+		//    bumped versions for MBM-driven pallets.
+		// 4. `Executive::try_runtime_upgrade` re-ran pallet-migrations.on_runtime_upgrade
+		//    in step 3, which set the cursor again on the (now-Historic)
+		//    migration. Drain a second time — pallet-migrations' Historic
+		//    check skips already-completed migrations, so this is typically a
+		//    single iteration.
+		//
+		// Safety: running on_runtime_upgrade twice (step 1+2 onboard +
+		// step 3 inside executive) is safe because every non-trivial
+		// on_runtime_upgrade hook in this runtime is idempotent
+		// (VersionedMigration-style version guard or LedgerApi initialisation
+		// check). Any future migration that does not follow this pattern
+		// would need a different approach.
 		fn on_runtime_upgrade(checks: frame_try_runtime::UpgradeCheckSelect) -> (Weight, Weight) {
-			// NOTE: intentional unwrap: we don't want to propagate the error backwards, and want to
-			// have a backtrace here. If any of the pre/post migration checks fail, we shall stop
-			// right here and right now.
-			let weight = Executive::try_runtime_upgrade(checks).unwrap();
-			(weight, BlockWeights::get().max_block)
+			use frame_support::{migrations::MultiStepMigrator, traits::OnRuntimeUpgrade};
+
+			let drain_mbm = |label: &'static str| -> (Weight, u32) {
+				let mut w = Weight::zero();
+				let limit = 10_000u32;
+				let mut iter = 0u32;
+				while <Runtime as frame_system::Config>::MultiBlockMigrator::ongoing() {
+					assert!(iter < limit, "MBM did not drain within {} iterations ({})", limit, label);
+					w = w.saturating_add(
+						<Runtime as frame_system::Config>::MultiBlockMigrator::step(),
+					);
+					iter += 1;
+				}
+				(w, iter)
+			};
+
+			// 1. Onboard MBMs by priming pallet-migrations directly.
+			let onboard_w =
+				<pallet_migrations::Pallet<Runtime> as OnRuntimeUpgrade>::on_runtime_upgrade();
+
+			// 2. Drain MBM — applies the real migration work, bumps versions.
+			let (drain1_w, drain1_iter) = drain_mbm("pre-executive drain");
+
+			// 3. Full upstream try_runtime_upgrade — every per-pallet pre/post
+			//    and state-level check runs, version asserts now pass.
+			let exec_w = Executive::try_runtime_upgrade(checks)
+				.expect("try_runtime_upgrade failed");
+
+			// 4. Clean up the cursor re-set by executive's pallet-migrations
+			//    on_runtime_upgrade pass.
+			let (drain2_w, drain2_iter) = drain_mbm("post-executive drain");
+
+			log::info!(
+				target: "try-runtime",
+				"🚚 MBM drained in {} + {} step(s)",
+				drain1_iter, drain2_iter,
+			);
+
+			(
+				onboard_w
+					.saturating_add(drain1_w)
+					.saturating_add(exec_w)
+					.saturating_add(drain2_w),
+				BlockWeights::get().max_block,
+			)
 		}
 
 		fn execute_block(
