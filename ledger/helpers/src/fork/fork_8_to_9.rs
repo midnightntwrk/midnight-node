@@ -91,10 +91,7 @@ pub fn fork_context_8_to_9(
 		loop {
 			steps += 1;
 			if steps > 100_000 {
-				return Err(std::io::Error::new(
-					std::io::ErrorKind::Other,
-					"v8->v9 state translation did not converge",
-				));
+				return Err(std::io::Error::other("v8->v9 state translation did not converge"));
 			}
 			tl = tl.run(budget)?;
 			if let Some(result) = tl.result()? {
