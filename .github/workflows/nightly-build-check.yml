@@ -34,7 +34,7 @@ jobs:
         run: cat ./Cargo.toml
 
       - name: Free disk space
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Run check
         run: |
