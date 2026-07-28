@@ -261,7 +261,11 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let events = self.apply_txs_collect_events(txs, block_context, state_root.is_some())?;
+		// Relaxed verification requires the root check to cover the applied
+		// transactions: when `state` overrides the ledger (genesis), the root is
+		// computed over the override, not the tx effects, so verify fully.
+		let root_verified = state_root.is_some() && state.is_none();
+		let events = self.apply_txs_collect_events(txs, block_context, root_verified)?;
 
 		// Genesis block: overwrite ledger state with the canonical genesis state,
 		// since constructor params aren't directly observable from genesis txs.
