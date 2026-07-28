@@ -27,5 +27,5 @@ Wallet-state cache:
 - Mid-replay checkpoints (default 5 min, `MN_REPLAY_CHECKPOINT_SECS`) make
   interrupted replays resume from the last checkpoint.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1938
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1937
