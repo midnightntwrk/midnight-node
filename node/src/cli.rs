@@ -479,7 +479,7 @@ pub enum Subcommand {
 
 	/// Dry-run a runtime upgrade against a snapshot. Replaces the standalone
 	/// `try-runtime` binary, which cannot resolve Midnight's custom host
-	/// functions (e.g. `ledger_8_bridge::ensure_storage_initialized`).
+	/// functions (e.g. `ledger_*_bridge::ensure_storage_initialized`).
 	#[cfg(feature = "try-runtime")]
 	TryRuntime(crate::try_runtime::TryRuntimeCmd),
 }
