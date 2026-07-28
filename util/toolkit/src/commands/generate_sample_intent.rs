@@ -1,6 +1,9 @@
 use crate::tx_generator::{
 	TxGenerator,
-	builder::{ContractCall, ProverConfig, build_fork_aware_context_cached},
+	builder::{
+		ContractCall, ProverConfig, build_fork_aware_context_cached, contract_call_wallet_schemes,
+		ensure_ecdsa_supported,
+	},
 	source::{Source, create_file_wallet_cache},
 };
 use clap::Args;
@@ -58,6 +61,12 @@ pub async fn execute(args: GenerateSampleIntentArgs, rpc_request_timeout: Durati
 	let fork_ctx =
 		build_fork_aware_context_cached(&seeds, &received_txs, wallet_cache.as_deref()).await;
 	let version = fork_ctx.version();
+
+	// Same pre-ledger-9 ECDSA guard as the `generate-txs`/`send-intent` path: reject an `ecdsa:`
+	// committee seed on a pre-9 source here too, rather than panicking deep in the ECDSA stubs.
+	let schemes = contract_call_wallet_schemes(&args.contract_call)
+		.expect("failed to resolve wallet schemes");
+	ensure_ecdsa_supported(version, &schemes).expect("ECDSA committee unsupported on this ledger");
 
 	if matches!(prover_config, ProverConfig::Remote(_)) {
 		panic!("remote prover is not supported for intent generation");

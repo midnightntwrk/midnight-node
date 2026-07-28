@@ -7,6 +7,7 @@ members = [
     "node",
     "pallets/midnight",
     "pallets/c2m-bridge",
+    "pallets/consensus-engine",
     "pallets/cnight-observation",
     "pallets/cnight-observation/mock",
     "pallets/midnight-system",
@@ -20,6 +21,7 @@ members = [
     "primitives/midnight",
     "primitives/ledger",
     "primitives/session-info",
+    "primitives/consensus-engine",
     "primitives/system-parameters",
     "res",
     "runtime",
@@ -124,6 +126,7 @@ pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", def
 pallet-version = { path = "pallets/version", default-features = false }
 pallet-system-parameters = { path = "pallets/system-parameters", default-features = false }
 pallet-throttle = { path = "pallets/throttle", default-features = false }
+pallet-consensus-engine = { path = "pallets/consensus-engine", default-features = false }
 pallet-system-parameters-rpc = { path = "pallets/system-parameters/rpc", default-features = true }
 pallet-federated-authority = { path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
@@ -138,6 +141,7 @@ midnight-primitives-cnight-observation = { path = "primitives/cnight-observation
 midnight-primitives-ics-observation = { path = "primitives/ics-observation", default-features = false }
 midnight-primitives-reserve-observation = { path = "primitives/reserve-observation", default-features = false }
 midnight-primitives-session-info = { path = "primitives/session-info", default-features = false }
+midnight-primitives-consensus-engine = { path = "primitives/consensus-engine", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
 midnight-primitives-system-parameters = { path = "primitives/system-parameters", default-features = false }
 
