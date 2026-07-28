@@ -12,4 +12,4 @@ and `verify_winner` circuits.
 Exercises Map- and Counter-backed on-chain state, `ownPublicKey()`-based turn
 validation across two wallets, and a witness-free contract config.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1898
+PR: https://github.com/midnightntwrk/midnight-node/pull/1940

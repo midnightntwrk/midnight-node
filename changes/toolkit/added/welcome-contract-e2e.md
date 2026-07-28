@@ -15,4 +15,4 @@ The welcome constructor is simplified from the upstream
 `Vector<5000, Maybe<Opaque<"string">>>` to a small fixed vector of plain
 strings, which the toolkit's CLI arguments can express.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1898
+PR: https://github.com/midnightntwrk/midnight-node/pull/1940
