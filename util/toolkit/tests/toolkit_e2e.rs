@@ -598,6 +598,7 @@ async fn welcome_e2e() {
 		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
 		.await
 		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, organizer_sk, "welcome deploy");
 	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
 	let welcome_addr =
 		helper.contract_address(&deploy_tx).expect("contract address extraction failed");
@@ -623,20 +624,53 @@ async fn welcome_e2e() {
 		.send_intent(&add.intent, &compiled_dir, FUNDING_SEED, Some(&add.zswap_state))
 		.await
 		.expect("send add_participant intent failed");
+	helper.assert_secret_not_in_tx(&add_tx, organizer_sk, "add_participant()");
 	helper.submit_tx(&add_tx).await.expect("submit add_participant tx failed");
 
-	// Check in the just-added participant.
+	// Exercise the other organizer-authorized circuit and verify its witness stays private.
 	let state_2 = helper.work_dir.path().join("welcome_state_2.mn");
 	helper
 		.contract_state(&welcome_addr, &state_2)
+		.await
+		.expect("contract state fetch failed");
+	let add_organizer = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_2,
+			&add.private_state,
+			&welcome_addr,
+			CircuitCall { circuit_id: "add_organizer", call_args: &[&coin_public] },
+		)
+		.await
+		.expect("generate add_organizer intent failed");
+	let add_organizer_tx = helper
+		.send_intent(
+			&add_organizer.intent,
+			&compiled_dir,
+			FUNDING_SEED,
+			Some(&add_organizer.zswap_state),
+		)
+		.await
+		.expect("send add_organizer intent failed");
+	helper.assert_secret_not_in_tx(&add_organizer_tx, organizer_sk, "add_organizer()");
+	helper
+		.submit_tx(&add_organizer_tx)
+		.await
+		.expect("submit add_organizer tx failed");
+
+	// Check in the just-added participant.
+	let state_3 = helper.work_dir.path().join("welcome_state_3.mn");
+	helper
+		.contract_state(&welcome_addr, &state_3)
 		.await
 		.expect("contract state fetch failed");
 	let check_in = helper
 		.generate_intent_circuit(
 			&config_file,
 			&coin_public,
-			&state_2,
-			&add.private_state,
+			&state_3,
+			&add_organizer.private_state,
 			&welcome_addr,
 			CircuitCall { circuit_id: "check_in", call_args: &[participant] },
 		)
@@ -647,6 +681,29 @@ async fn welcome_e2e() {
 		.await
 		.expect("send check_in intent failed");
 	helper.submit_tx(&check_in_tx).await.expect("submit check_in tx failed");
+
+	// Read the post-call state and prove that check_in persisted its ledger mutation.
+	let state_4 = helper.work_dir.path().join("welcome_state_4.mn");
+	helper
+		.contract_state(&welcome_addr, &state_4)
+		.await
+		.expect("contract state fetch failed");
+	let verify = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_4,
+			&check_in.private_state,
+			&welcome_addr,
+			CircuitCall { circuit_id: "verify_checked_in", call_args: &[participant] },
+		)
+		.await
+		.expect("generate verify_checked_in intent failed");
+	let verify_tx = helper
+		.send_intent(&verify.intent, &compiled_dir, FUNDING_SEED, Some(&verify.zswap_state))
+		.await
+		.expect("send verify_checked_in intent failed");
+	helper.submit_tx(&verify_tx).await.expect("submit verify_checked_in tx failed");
 }
 
 /// Tic-tac-toe contract E2E ported from `midnight-contracts`: deploy a two-player game,

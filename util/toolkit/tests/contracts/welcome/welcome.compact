@@ -1,3 +1,18 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 pragma language_version >= 0.14.0;
 
 import CompactStandardLibrary;
@@ -19,19 +34,19 @@ export ledger checked_in_participants: Set<Opaque<"string">>;
 // Simplified from upstream `Vector<5000, Maybe<Opaque<"string">>>` (unexpressible via the
 // toolkit's CLI args) to a small fixed vector of plain strings; seed via `add_participant`.
 constructor(initial_eligible_participants: Vector<1, Opaque<"string">>) {
-  organizer_pks.insert(public_key(local_sk_or_error()));
+  organizer_pks.insert(local_pk_or_error());
   for (const participant of disclose(initial_eligible_participants)) {
     eligible_participants.insert(participant);
   }
 }
 
 export circuit add_participant(participant: Opaque<"string">): [] {
-  assert (organizer_pks.member(public_key(local_sk_or_error())), "Not an organizer");
+  assert (organizer_pks.member(local_pk_or_error()), "Not an organizer");
   eligible_participants.insert(disclose(participant));
 }
 
 export circuit add_organizer(organizer_pk: Bytes<32>): [] {
-  assert (organizer_pks.member(public_key(local_sk_or_error())), "Not an organizer");
+  assert (organizer_pks.member(local_pk_or_error()), "Not an organizer");
   organizer_pks.insert(disclose(organizer_pk));
 }
 
@@ -43,10 +58,14 @@ export circuit check_in(participant: Opaque<"string">): [] {
   set_local_id(p);
 }
 
-circuit local_sk_or_error(): Bytes<32> {
-  const maybe_sk = disclose(local_sk());
-  assert (maybe_sk.is_some, "No secret key found");
-  return maybe_sk.value;
+export circuit verify_checked_in(participant: Opaque<"string">): [] {
+  assert (checked_in_participants.member(disclose(participant)), "Participant not checked in");
+}
+
+circuit local_pk_or_error(): Bytes<32> {
+  const maybe_sk = local_sk();
+  assert (disclose(maybe_sk.is_some), "No secret key found");
+  return disclose(public_key(maybe_sk.value));
 }
 
 export circuit public_key(sk: Bytes<32>): Bytes<32> {
