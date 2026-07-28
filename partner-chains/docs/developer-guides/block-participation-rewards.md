@@ -102,8 +102,7 @@ and verification IDP stack of the node.
 
 The runtime should implement the `BlockProductionLogApi` runtime API to expose the current block producer to the
 inherent data provider via the `get_author` method. This method's implementation depends on the consensus used by
-the partner chain. If the consensus mechanism used is Aura, the function `get_current_authority_round_robin`
-exposed by the Session Validator Management pallet should be used, which applies the same round-robin algorithm.
+the partner chain. Block producer information should be retrieved via the `pallet_authorship` pallet.
 
 #### Address Associations
 

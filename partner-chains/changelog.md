@@ -13,6 +13,7 @@ session in order to make `pallet_session` use authorities with less delay.
 
 ## Removed
 
+* `sc-partner-chains-consensus-aura` and `sp-partner-chains-consensus-aura`.
 * `pallet-partner-chains-session` has been removed. Partner Chains should use only the stock Substrate session pallet
 * `PalletSessionSupport` type provided by `pallet-session-validator-management`. The `SessionManager` and `ShouldEndSession`
   implementations were moved directly to the `Pallet` type instead.
@@ -20,6 +21,15 @@ session in order to make `pallet_session` use authorities with less delay.
 ## Fixed
 
 ## Added
+
+* Added `partner-chains-node smart-contracts upsert-script` command for inserting and updating versioned scripts.
+* `cross_chain_app` module in `sidechain_domain`, implementing the cross-chain key
+types using Substrate's `app_crypto` macro. This should be a drop-in replacement
+for the analogous cross-chain key types that previously had to be defined by each
+Partner Chain separately for use in `pallet_session_validator_management` and
+other pallets that use cross-chain keys.
+* `sp_sidechain::GetEpochDurationApi` runtime API
+* Reusable migration `AuthorityKeysMigration` in `pallet_session_validator_management`
 
 # v1.8.1
 
