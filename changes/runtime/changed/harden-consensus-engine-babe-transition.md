@@ -15,5 +15,5 @@ The consensus-engine pallet now:
   flip when absent (upgraded networks never ran Babe genesis, and
   `Babe::current_epoch()` / `next_epoch()` expect it).
 
-PR:
-Issue:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1929
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1935
