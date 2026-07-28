@@ -435,10 +435,10 @@ descendant). Only the crates whose *own* source changed vs. that rc source (`<ta
 re-isolating; unchanged crates keep their published rc tags (they reference changed siblings
 by version, which our patches redirect). Changed set:
 
-All 6 are pinned to a **single** isolate commit (`rev = 98ba4c7a…`, the tip of the ledger branch
+All 7 are pinned to a **single** isolate commit (`rev = cd54fd2f…`, the tip of the ledger branch
 `js/batch-verification-isolated`) — they're all workspace members of that one commit with their
 `path=` deps stripped, so every patch resolves its package as a member of the same commit;
-inter-crate deps among the 6 route registry→patch→same rev. (The ledger repo's own
+inter-crate deps among the 7 route registry→patch→same rev. (The ledger repo's own
 `scripts/isolate.py` produces *one crate per tag* for crates.io publishing; that per-crate split
 isn't needed for our patching — one commit suffices.)
 
@@ -454,17 +454,46 @@ refs under `js/batch-verification/` (a ref can't be both a file and a directory)
 | midnight-onchain-state    | onchain-state/    | changed (state.rs) |
 | midnight-zkir             | zkir/             | changed (ir.rs) |
 | midnight-zkir-v3          | zkir-v3/          | newly required: ledger `test-utilities` now pulls `dep:zkir_v3`, and `ledger/helpers` enables that feature |
+| midnight-ledger-static    | static/           | `static/version` moved 9→10 (new Dust ZKIR-v3 artifacts) with no package-version bump, so the crates.io 9.0.0 copy would bake a stale `version!()` into the data-provider key paths |
 
 Unchanged, on published rc tags: coin-structure, base-crypto, base-crypto-derive,
 onchain-vm, onchain-runtime, serialize (+ transient-crypto-old 2.2.0, untouched).
+`base-crypto`, `onchain-runtime`, `storage` and `storage-core` *did* change on the branch, but
+only cosmetically (clippy `needless_borrow` fixes, a `#[allow]`, a semver-compatible `reqwest`
+bump) — no API movement, so they stay on their rc tags / crates.io copies. `storage`/`storage-core`
+additionally *must not* be patched: L8 resolves them from crates.io and a git patch would collide.
 Side effect: `transient-crypto`/`zkir`/`zkir-v3` bumped `midnight-circuits ^7.2.1→^7.2.2`
-and `midnight-zk-stdlib ^2.3.1→^2.3.3` (both on crates.io, resolve automatically).
+and `midnight-zk-stdlib ^2.3.1→^2.3.3`, and `base-crypto` bumped `reqwest ^0.13.0→^0.13.4`.
 
-**Current state.** The single isolate commit `97919373` is pushed to the ledger remote branch
-`js/batch-verification-isolated`, and the node `[patch.crates-io]` pins the 6 crates by `rev`
-to that commit over `https://github.com/midnightntwrk/midnight-ledger`. No tags. This is
-shareable/CI-ready — no `file://`, no machine-local dependency. The commit stays reachable as
-long as the `js/batch-verification-isolated` branch exists on the remote (don't delete it).
+**The midnight-zk stack also has to be patched here.** The ledger branch redirects
+`midnight-proofs`/`-curves`/`-circuits`/`-zk-stdlib` to the `midnight-zk` branch
+`irakoton/batch-verify` (which is where `batch_verify(.., identify_failures)` and the
+failing-index reporting live) via its *own* `[patch.crates-io]`. A dependency's patch table is
+ignored — only the root workspace's counts — so the node repeats those four redirects, pinned by
+`rev` to `ae7b9aeb…`, the commit the ledger branch's own lockfile resolved. Only the `^7.2.2` /
+`^0.8.1` / `^0.3.1` / `^2.3.3` requirements match the patch; `zkir`'s `-v1` aliases
+(`midnight-circuits ^6.2.1` etc.) keep resolving from crates.io. Two of the midnight-zk branch's
+deps (`blake2b_halo2`, `sha3-circuit`) are themselves git deps — fine, since they hang off a git
+dependency rather than a patch.
+
+**Current state.** The single isolate commit `cd54fd2f` (ledger branch tip `2509be25`) is pushed
+to the ledger remote branch `js/batch-verification-isolated`, and the node `[patch.crates-io]`
+pins the 7 crates by `rev` to that commit over
+`https://github.com/midnightntwrk/midnight-ledger`. No tags. This is shareable/CI-ready — no
+`file://`, no machine-local dependency. The commit stays reachable as long as the
+`js/batch-verification-isolated` branch exists on the remote (don't delete it).
+
+**Dust proving keys: use the bundled artifacts, not the published ones.** The branch's
+`ledger/static/dust/spend.*.sha256` expect `d058526b…`/`6ecb69fc…`/`41264553…`, but
+`https://srs.midnight.network/dust/10/spend.*` serves `b9e39102…`/`3e8d4fbd…`/`d2ad8f21…`, and
+there is **no plan to publish** the new ZKIR-v3 Dust artifacts for this branch. So anything that
+*fetches* Dust keys through `MidnightDataProvider`/`DUST_EXPECTED_FILES` (i.e. `ledger/helpers`, so
+proving-side tests and the toolkit) will fail the hash check; those paths need to source the keys
+from the crate's bundled `ledger/static/dust/*` instead of the data provider.
+
+Node-side *verification* is unaffected either way: `SPEND_VK` comes from
+`include_bytes!("../static/dust/spend.verifier")`. And `zswap/10/*` is byte-identical to
+`zswap/9/*`, so the `static/version` bump is a no-op for L7/L8/L9 zswap keys.
 
 **To regenerate after the ledger branch moves** — the `js/batch-verification-isolated` branch is
 kept **append-only** (each isolate commit is parented on the previous one, so pushes fast-forward;
@@ -478,8 +507,57 @@ no force-push). Steps:
 3. Re-parent that snapshot onto the current `-isolated` tip so it appends:
    `APPEND=$(git commit-tree "$(git rev-parse ISO_NEW^{tree})" -p origin/js/batch-verification-isolated -m "isolate <newsha>")`
 4. Fast-forward push (no force): `git push origin "$APPEND:refs/heads/js/batch-verification-isolated"`
-5. Update the `rev` for the 6 crates in the node `Cargo.toml` to `$APPEND` and `cargo update` them.
+5. Update the `rev` for the 7 crates in the node `Cargo.toml` to `$APPEND`, and re-check the ledger
+   branch's root `Cargo.toml` `[patch.crates-io]` + `Cargo.lock` in case the midnight-zk pin moved.
+6. Re-resolve the lock. Prefer the *minimal* path: bump only what the branch actually forces with
+   `cargo update -p <pkg>@<old> --precise <new>` (last time: `reqwest 0.13.3 → 0.13.4`), then let
+   `cargo metadata` re-resolve the changed `rev`s on its own. A blanket
+   `cargo update -p midnight-ledger-v9 -p …` re-resolves far more widely and *downgrades*
+   unrelated transitive picks to whatever older version is already in the lock — notably
+   `bip39`'s `rand_core 0.6.4 → 0.4.2`, which breaks `pallas-wallet` (its rand-0.8 RNG no longer
+   satisfies `Mnemonic::generate_in_with`) and shows up as an unrelated-looking build failure in
+   `midnight-beefy-relay`. If you hit that, check `git diff Cargo.lock` for downgraded
+   dependency edges, not just changed package versions.
 
 The commit is **not reproducible by SHA** (commit timestamps differ per run), so the `rev` changes
 every regeneration. (The ledger repo's `scripts/isolate.py` is the per-crate/push-tags alternative
 used for real crates.io releases.)
+
+## New on the branch, not yet used here: localised batch failures
+
+`ledger/src/structure.rs` now calls `VerifierKey::batch_verify_with_failures(.., identify_failures)`
+and, on rejection, returns `MalformedTransaction::InvalidProofBatch { failed_indices }` — the
+positions of the bad proofs within the transaction's `collect_proof_evidence()` sequence.
+
+Our mempool path (`isolate_on_failure = true`) still isolates the offender by re-verifying every
+ready transaction as a batch-of-one (`isolate_fallback_results`). Because we concatenate evidence
+per transaction in input order, the reported indices could be mapped straight back to the offending
+transactions instead, turning an O(n) re-verification into a single aggregate call. Worth doing, but
+it needs `batch_verify_proofs` to return the indices rather than `Err(())`, plus a per-tx
+evidence-length table — deliberately left out of the dependency bump.
+
+Jegor also added `Intent::collect_dust_proof_evidence` (dust-only evidence collection). Purely
+additive; we don't need it for the current batch shape.
+
+## Fallout of the midnight-zk bump: static fixture txs need regenerating
+
+`cargo test -p midnight-node-ledger --lib` (run with `-p midnight-node-e2e` too, so
+`midnight-node-ledger-helpers/can-panic` is unified on — on its own the crate doesn't compile its
+own lib tests) goes 99/99 → 96/99 across the bump. The three failures are all
+`InvalidProof(Invalid proof)` on the committed fixture transactions:
+
+- `ledger_9::common::api::ledger::tests::should_apply_transaction`
+- `ledger_9::common::api::ledger::tests::should_get_contract_state`
+- `ledger_9::common::api::transaction::tests::should_validate_transaction`
+
+They deserialize `res/test-contract/contract_tx_{1..4}_*_undeployed.mn` and run the real
+`well_formed`. The `irakoton/batch-verify` midnight-zk branch changes the proof system itself
+(`nb_arith_cols` on `ZkStdLibArch`, plus `sha3-circuit`/`blake2b_halo2` moving to git revs), so
+proofs produced under the old architecture no longer verify. The ledger repo hit the same thing and
+had to recompute its own precompile verifier hashes (`21234ede` micro-dao, `2509be25`
+simple-merkle-tree).
+
+Fix is to regenerate the fixtures, not to change pins: `earthly -P +rebuild-genesis-state-undeployed`
+(Earthfile ~line 300 builds `res/test-contract/contract_tx_*_undeployed.mn` with the toolkit right
+after genesis). If that regeneration needs Dust proving keys it will hit the artifact gap above, and
+has to take them from the crate's bundled `ledger/static/dust/*` rather than `srs.midnight.network`.
