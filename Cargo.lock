@@ -11374,6 +11374,7 @@ dependencies = [
  "sidechain-mc-hash",
  "sp-partner-chains-bridge",
  "sp-timestamp",
+ "tokio",
 ]
 
 [[package]]
