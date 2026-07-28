@@ -132,7 +132,7 @@ program
       ?.map((s: string) => s.trim())
       .filter(Boolean);
     const opts: ImageUpgradeOptions = {
-      imageEnvVar: cliOpts.imageEnv ?? "NODE_IMAGE",
+      imageEnvVar: cliOpts.imageEnv,
       includePattern: cliOpts.include,
       excludePattern: cliOpts.exclude,
       profiles,
@@ -364,7 +364,7 @@ program
 
     const opts: FullUpgradeOptions = {
       // image-upgrade surface
-      imageEnvVar: cliOpts.imageEnv ?? "NODE_IMAGE",
+      imageEnvVar: cliOpts.imageEnv,
       includePattern: cliOpts.include,
       excludePattern: cliOpts.exclude,
       waitBeforeMs: cliOpts.waitBefore,

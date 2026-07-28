@@ -20,6 +20,7 @@
     "image-upgrade:preview": "ts-node src/index.ts image-upgrade preview",
     "image-upgrade:preprod": "ts-node src/index.ts image-upgrade preprod",
     "image-upgrade:mainnet": "ts-node src/index.ts image-upgrade mainnet",
+    "image-upgrade:local-env": "ts-node src/index.ts image-upgrade local-env",
     "stop:qanet": "ts-node src/index.ts stop qanet",
     "stop:devnet": "ts-node src/index.ts stop devnet",
     "stop:govnet": "ts-node src/index.ts stop govnet",
@@ -44,6 +45,7 @@
     "full-upgrade:preview": "ts-node src/index.ts full-upgrade preview",
     "full-upgrade:preprod": "ts-node src/index.ts full-upgrade preprod",
     "full-upgrade:mainnet": "ts-node src/index.ts full-upgrade mainnet",
+    "full-upgrade:local-env": "ts-node src/index.ts full-upgrade local-env",
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
     "help": "ts-node src/index.ts -h"

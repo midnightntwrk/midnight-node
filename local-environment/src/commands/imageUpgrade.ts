@@ -12,12 +12,17 @@
 // limitations under the License.
 
 import path from "path";
-import fs, { existsSync } from "fs";
-import { globSync } from "glob";
+import fs from "fs";
 import { parse } from "dotenv";
 import { spawn } from "child_process";
 import { ImageUpgradeOptions } from "../lib/types";
 import { mockOverridePath } from "../lib/mockComposeOverride";
+import { resolveComposeFile } from "../lib/resolveCompose";
+import {
+  loadEnvDefault,
+  getLocalEnvSecretVars,
+  generateSecretsIfMissing,
+} from "../lib/localEnv";
 
 // Command functionality we can depend on
 import { run } from "./run";
@@ -32,7 +37,12 @@ export async function imageUpgrade(
   namespace: string,
   opts: ImageUpgradeOptions,
 ) {
-  const imageEnvVar = opts.imageEnvVar ?? "NODE_IMAGE";
+  // local-env pins its validator image via MIDNIGHT_NODE_IMAGE (not NODE_IMAGE),
+  // and only the `midnight-node-*` validators should roll — never the Cardano /
+  // indexer sidecars.
+  const isLocalEnv = namespace === "local-env";
+  const imageEnvVar =
+    opts.imageEnvVar ?? (isLocalEnv ? "MIDNIGHT_NODE_IMAGE" : "NODE_IMAGE");
   // The image we start from
   const fromTag = requireString(process.env.NODE_IMAGE, "NODE_IMAGE");
   // The image to upgrade/ rollout
@@ -42,7 +52,14 @@ export async function imageUpgrade(
   const healthTimeoutSec = opts.healthTimeoutSec ?? 180;
   const requireHealthy = opts.requireHealthy ?? true;
 
+  // local-env's compose references ports/images/passwords from `.env.default`
+  // and the generated secret files (exactly what `run` loads). Merge them as a
+  // base so our OWN `docker compose` calls (`config --services`, per-service
+  // `up`) resolve — otherwise only the initial `run()` had them.
+  if (isLocalEnv) generateSecretsIfMissing();
   let env: Record<string, string> = {
+    ...(isLocalEnv ? loadEnvDefault() : {}),
+    ...(isLocalEnv ? getLocalEnvSecretVars() : {}),
     ...(process.env as Record<string, string>),
   };
 
@@ -57,6 +74,9 @@ export async function imageUpgrade(
 
   console.log(`Ensuring network is up with starting tag ${fromTag}`);
   env[imageEnvVar] = fromTag;
+  // `run()` resolves the image from process.env, so pin the FROM tag there too
+  // (the local `env` object above only affects the later per-service rollout).
+  if (isLocalEnv) process.env[imageEnvVar] = fromTag;
 
   await run(namespace, {
     profiles: opts.profiles,
@@ -64,7 +84,7 @@ export async function imageUpgrade(
     fromSnapshot: opts.fromSnapshot,
   });
 
-  const composeFile = resolveNetworkCompose(namespace);
+  const composeFile = resolveComposeFile(namespace);
   // For well-known networks `run()` writes a mock-mode override; layer it onto
   // every subsequent docker-compose call so recreated validators keep the
   // mock env (USE_MAIN_CHAIN_FOLLOWER_MOCK, *_SEED_FILE, ...) and the seeds
@@ -75,7 +95,19 @@ export async function imageUpgrade(
     ? [composeFile, overridePath]
     : [composeFile];
 
-  const services = opts.services ?? (await listServices(composeFiles, env));
+  let services = opts.services ?? (await listServices(composeFiles, env));
+  // Restrict which services roll. On local-env, default to the validators so we
+  // never recreate Cardano/db-sync/indexer sidecars.
+  const includePattern =
+    opts.includePattern ?? (isLocalEnv ? "^midnight-node-" : undefined);
+  if (includePattern) {
+    const re = new RegExp(includePattern);
+    services = services.filter((s) => re.test(s));
+  }
+  if (opts.excludePattern) {
+    const re = new RegExp(opts.excludePattern);
+    services = services.filter((s) => !re.test(s));
+  }
   if (!services.length) {
     throw new Error(
       "No services discovered to roll out. Provide ImageUpgradeOptions.services explicitly or check your compose file.",
@@ -131,32 +163,6 @@ export async function imageUpgrade(
   console.log(
     `\n Rollout complete! All selected services are now on ${toTag}.`,
   );
-}
-
-function resolveNetworkCompose(namespace: string): string {
-  const searchPath = path.resolve(
-    __dirname,
-    "../networks",
-    "well-known",
-    namespace,
-    "*.network.yaml",
-  );
-  const candidates = globSync(searchPath);
-
-  if (candidates.length === 0) {
-    throw new Error(`No .network.yaml file found for namespace '${namespace}'`);
-  }
-
-  const preferred = candidates.find(
-    (p) => path.basename(p) === `${namespace}.network.yaml`,
-  );
-  const composeFile = preferred || candidates[0];
-
-  if (!existsSync(composeFile)) {
-    throw new Error(`Resolved file not found: ${composeFile}`);
-  }
-
-  return composeFile;
 }
 
 function fileFlags(composeFiles: string[]): string[] {
