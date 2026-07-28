@@ -154,6 +154,11 @@ pub fn deserialize_transactions(
 		.iter()
 		.enumerate()
 		.map(|(i, raw)| match block.ledger_version {
+			LedgerVersion::Ledger9 => {
+				use crate::commands::fork::ledger_9::show_transaction::ShowTransaction;
+				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
+				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
+			},
 			LedgerVersion::Ledger8 => {
 				use crate::commands::fork::ledger_8::show_transaction::ShowTransaction;
 				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;

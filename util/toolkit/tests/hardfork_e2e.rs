@@ -54,6 +54,7 @@ async fn run_cli(args: &[&str]) {
 }
 
 #[test_log::test(tokio::test)]
+#[ignore = "Migration to Ledger v9 is not yet supported. Issue #1580."]
 async fn hardfork_single_tx() {
 	// 1. Generate chain-spec from fork-from node
 	let (old_name, old_tag) = test_image("midnight-node-fork-from");

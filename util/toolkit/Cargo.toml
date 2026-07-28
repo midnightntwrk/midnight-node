@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-toolkit"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2024"
 license-file.workspace = true
 
@@ -13,6 +13,7 @@ path = "src/main.rs"
 [features]
 default = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
+compact-contract-tests = []
 
 [dependencies]
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
@@ -54,8 +55,11 @@ ogmios-client = { workspace = true, features = ["jsonrpsee-client"] }
 whisky.workspace = true
 sidechain-domain.workspace = true
 zeroize.workspace = true
+stacker.workspace = true
+semver.workspace = true
 
 [dev-dependencies]
+assert_matches.workspace = true
 test-case = "3.3.1"
 hex-literal.workspace = true
 trycmd = "1.2.0"

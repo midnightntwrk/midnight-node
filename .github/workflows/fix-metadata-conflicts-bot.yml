@@ -106,7 +106,7 @@ jobs:
             core.setOutput('base', pr.data.base.ref);
 
       - name: Checkout PR branch
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: true
           ref: ${{ steps.pr.outputs.sha }}
@@ -123,6 +123,7 @@ jobs:
         env:
           STRATEGY: ${{ steps.parse.outputs.strategy }}
           BASE_BRANCH: ${{ steps.pr.outputs.base }}
+          PR_REF: ${{ steps.pr.outputs.ref }}
         run: |
           set +e  # Don't exit on error
 
@@ -193,7 +194,7 @@ jobs:
           git commit -m "chore: merge $BASE_BRANCH and resolve metadata conflicts ($strategy_desc)"
 
           # Push the merge commit
-          git push origin "HEAD:refs/heads/${{ steps.pr.outputs.ref }}"
+          git push origin "HEAD:refs/heads/${PR_REF}"
 
           echo "RESULT=resolved" >> "$GITHUB_ENV"
           # Replace newlines with comma-space for display

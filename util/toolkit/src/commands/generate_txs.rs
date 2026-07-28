@@ -82,16 +82,17 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		cli_parsers::contract_address_decode,
+		cli_parsers::{SchemeSeed, contract_address_decode},
 		t_token,
 		tx_generator::{
 			builder::{
-				BatchSingleTxArgs, BatchesArgs, ClaimRewardsArgs, CoinSelectionStrategy,
+				BatchSingleTxArgs, ClaimKindArg, ClaimRewardsArgs, CoinSelectionStrategy,
 				ContractCall, ContractCallArgs, ContractDeployArgs, SingleTxArgs, TransferArgs,
 			},
 			source::FetchCacheConfig,
 		},
 	};
+	use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
 	use test_case::test_case;
 
@@ -133,12 +134,16 @@ mod tests {
 	// TODO: There should be expected transactions here, not just an OK state.
 	// We also need to define reaonsable errors
 	#[test_case(test_fixture!(Builder::SingleTx(SingleTxArgs {
-		shielded_amount: Some(0),
-		shielded_token_type: t_token(),
-		unshielded_amount: Some(100),
-		unshielded_token_type: NIGHT,
-		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
-			.parse().unwrap(),
+		outputs: vec![],
+		shielded_amount: vec![0],
+		shielded_token_type: vec![t_token()],
+		unshielded_amount: vec![100],
+		unshielded_token_type: vec![NIGHT],
+		source_seed: SchemeSeed {
+			seed: "0000000000000000000000000000000000000000000000000000000000000001"
+				.parse().unwrap(),
+			scheme: UnshieldedSignatureScheme::Schnorr,
+		},
 		funding_seed: None,
 		destination_address: vec![
 			WalletAddress::from_str(
@@ -158,28 +163,16 @@ mod tests {
 		"send-tx"
 	)]
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+		funding_seed: SchemeSeed {
+			seed: "0000000000000000000000000000000000000000000000000000000000000001".parse().unwrap(),
+			scheme: UnshieldedSignatureScheme::Schnorr,
+		},
 		rng_seed:None,
-		amount: 500_000
+		amount: 500_000,
+		claim_kind: ClaimKindArg::Reward
 	}), ["genesis/genesis_block_undeployed.mn"]) =>
 	   matches Ok(..);
 		"claim-rewards-tx"
-	)]
-	#[test_case(test_fixture!(Builder::Batches(BatchesArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-		num_txs_per_batch: 1,
-		num_batches: 1,
-		concurrency: None,
-		rng_seed: None,
-		shielded_token_type: t_token(),
-		coin_amount: 100,
-		initial_unshielded_intent_value: 50_000_000_000_000,
-		unshielded_token_type: NIGHT,
-		enable_shielded: false,
-		coin_selection: CoinSelectionStrategy::LargestFirst,
-	}), ["genesis/genesis_block_undeployed.mn"]) =>
-	   matches Ok(..);
-		"batches-tx"
 	)]
 	#[test_case(test_fixture!(Builder::ContractSimple(
 	    ContractCall::Deploy(ContractDeployArgs {

@@ -9,7 +9,7 @@ env:
 on:
   merge_group:
   pull_request:
-    branches: [ "**" ]
+    branches: ["**"]
     paths-ignore:
       - "changes/**"
   workflow_dispatch:
@@ -33,12 +33,15 @@ jobs:
       contents: read
     # TEST PR — points at the new self-hosted runner pool to validate end-to-end
     # build performance. Revert before merge.
-    runs-on: [self-hosted, "tier:large"]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     env:
       FORCE_COLOR: 1
     outputs:
       sha: ${{ steps.get_sha.outputs.sha }}
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
+      node_image_tag_no_dev: ${{ steps.image_tags.outputs.node_image_tag_no_dev }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
@@ -54,7 +57,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -73,22 +76,19 @@ jobs:
           echo "--- updated .earthly/config.yml ---"
           cat .earthly/config.yml
 
-      # Self-hosted runners share a persistent HOME (/opt/actions-runner) across
-      # every runner slot on the host, making ~/.docker/config.json shared
-      # mutable state. Concurrent jobs' `docker login` (read-modify-write) race
-      # and clobber each other's registry entries — e.g. a Docker Hub login
-      # wiping the ghcr.io entry — leaving the build's push with no GHCR creds
-      # (anonymous token -> 403). Pin DOCKER_CONFIG to the per-slot runner temp
-      # dir so each job gets an isolated docker config that docker/login-action
-      # writes to and earthly reads from (earthly honors DOCKER_CONFIG). Set via
-      # $GITHUB_ENV in a step because runner.temp is unavailable in job-level env.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Pin DOCKER_CONFIG to a per-job temp dir so concurrent jobs get isolated
+      # docker auth and can't clobber each other's registry logins mid-build
+      # (which would otherwise drop a registry credential and 403 the push).
+      # docker/login-action writes here and earthly reads it (earthly honors
+      # DOCKER_CONFIG). Set via $GITHUB_ENV because runner.temp is unavailable
+      # in job-level env.
+      - name: Isolate docker config
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -98,8 +98,13 @@ jobs:
       # images that resolve to docker.io. With --push, earthly tries to write
       # inline cache back to the midnightntwrk Docker Hub namespace and fails
       # auth without this login.
+      # Non-fatal: the +images push targets ghcr.io only (authed by the GHCR
+      # login above) and the docker.io base images are public, so the build
+      # still pulls + pushes without these creds. Dependabot runs don't have
+      # the DOCKERHUB_* secrets, so this step would otherwise hard-fail there.
       - name: Login to Docker Hub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        continue-on-error: true
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -120,6 +125,7 @@ jobs:
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
           echo "node_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+          echo "node_image_tag_no_dev=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
           echo "toolkit_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
@@ -250,12 +256,12 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -312,6 +318,72 @@ jobs:
           name: Test artifacts (arm64)
           path: test-artifacts-arm64/
 
+  # Combine the per-platform images (`<tag>-amd64`, `<tag>-arm64`) pushed by
+  # `run` and `run-arm64` under a single multi-arch tag.
+  push-combined-manifest:
+    name: Push combined multi-arch manifest
+    needs: [run, run-arm64]
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout node repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Compute combined image tags
+        id: tags
+        env:
+          NODE_AMD64_TAG: ${{ needs.run.outputs.node_image_tag_no_dev }}
+          TOOLKIT_AMD64_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
+        run: |
+          node_amd64="$NODE_AMD64_TAG"
+          toolkit_amd64="$TOOLKIT_AMD64_TAG"
+          node_combined="${node_amd64%-amd64}"
+          toolkit_combined="${toolkit_amd64%-amd64}"
+          node_arm64="${node_combined}-arm64"
+          toolkit_arm64="${toolkit_combined}-arm64"
+          {
+            echo "node_combined=${node_combined}"
+            echo "node_amd64=${node_amd64}"
+            echo "node_arm64=${node_arm64}"
+            echo "toolkit_combined=${toolkit_combined}"
+            echo "toolkit_amd64=${toolkit_amd64}"
+            echo "toolkit_arm64=${toolkit_arm64}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Push combined manifest for midnight-node
+        env:
+          IMAGE: ghcr.io/midnightntwrk/midnight-node
+          COMBINED_TAG: ${{ steps.tags.outputs.node_combined }}
+          AMD64_TAG: ${{ steps.tags.outputs.node_amd64 }}
+          ARM64_TAG: ${{ steps.tags.outputs.node_arm64 }}
+        run: |
+          docker buildx imagetools create \
+            -t "${IMAGE}:${COMBINED_TAG}" \
+            "${IMAGE}:${AMD64_TAG}" \
+            "${IMAGE}:${ARM64_TAG}"
+          docker buildx imagetools inspect "${IMAGE}:${COMBINED_TAG}"
+
+      - name: Push combined manifest for midnight-node-toolkit
+        env:
+          IMAGE: ghcr.io/midnightntwrk/midnight-node-toolkit
+          COMBINED_TAG: ${{ steps.tags.outputs.toolkit_combined }}
+          AMD64_TAG: ${{ steps.tags.outputs.toolkit_amd64 }}
+          ARM64_TAG: ${{ steps.tags.outputs.toolkit_arm64 }}
+        run: |
+          docker buildx imagetools create \
+            -t "${IMAGE}:${COMBINED_TAG}" \
+            "${IMAGE}:${AMD64_TAG}" \
+            "${IMAGE}:${ARM64_TAG}"
+          docker buildx imagetools inspect "${IMAGE}:${COMBINED_TAG}"
 
   check-unused-deps:
     permissions:
@@ -323,7 +395,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -353,7 +425,7 @@ jobs:
 
   rebuild-genesis:
     name: Check Genesis Rebuild
-    needs: [ run ]
+    needs: [run]
     permissions:
       id-token: write
       contents: read
@@ -364,7 +436,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -380,7 +452,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -425,7 +497,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -441,7 +513,7 @@ jobs:
 
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
@@ -471,12 +543,14 @@ jobs:
       actions: write
     name: Test Toolkit
     needs: [run]
-    runs-on: [self-hosted, "tier:large"]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     env:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -490,9 +564,9 @@ jobs:
           github-token: ${{ github.token }}
           use-cache: false
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. runner.temp is not available in job-level env, so set it here.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Isolate docker config per job — see the matching step in the `run` job.
+      # runner.temp is not available in job-level env, so set it here.
+      - name: Isolate docker config
         if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
@@ -500,7 +574,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -509,16 +583,20 @@ jobs:
       # Earthfile FROMs midnightntwrk/midnight-node-ci and other docker.io
       # images; earthly pushes inline cache back to those repos under --push,
       # which needs Docker Hub auth.
+      # Non-fatal: pushes target ghcr.io and the docker.io base images are
+      # public, so the build proceeds without these creds (e.g. Dependabot runs,
+      # which don't have the DOCKERHUB_* secrets).
       - name: Login to Docker Hub
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        continue-on-error: true
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
       # but no certs are provisioned on the runner. Append tls_enabled: false
@@ -533,6 +611,10 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          # Optional in-DinD Docker Hub login for +test-toolkit's testcontainers
+          # pulls (empty on fork PRs → anonymous, rate-limited).
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           # Self-hosted-runner-specific: runner systemd unit has PrivateTmp=true.
           # Force earthly's tempdir to live under $RUNNER_TEMP which is
@@ -547,9 +629,9 @@ jobs:
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
           # +test-toolkit pulls in +build-test-toolkit's `target-${CACHE_KEY}`
-          # cache mount. Pass the PR ref so it's scoped per-branch on this
-          # shared self-hosted runner — see +test's `Run build` step for the
-          # full rationale and why EARTHLY_GIT_BRANCH is unsafe here.
+          # cache mount. Pass the PR ref so the cache is scoped per-branch — see
+          # +test's `Run build` step for the full rationale and why
+          # EARTHLY_GIT_BRANCH is unsafe here.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
@@ -563,7 +645,10 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --strict $PUSH_FLAG \
+          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
+            --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
+            --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
+            -P --strict $PUSH_FLAG \
             --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
             +test-toolkit \
               --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${NODE_IMAGE_TAG}" \
@@ -583,7 +668,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -609,7 +694,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -635,7 +720,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -661,7 +746,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -683,11 +768,11 @@ jobs:
       contents: read
       actions: write
     name: Toolkit Unshielded Token E2E
-    needs: [ run ]
+    needs: [run]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -713,7 +798,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -726,7 +811,7 @@ jobs:
           use-cache: false
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -743,59 +828,62 @@ jobs:
         with:
           key: ${{ steps.guard.outputs.key }}
 
-  mainnet-sync-test:
-    permissions:
-      contents: read
-      packages: read
-    name: Mainnet Sync (1000 blocks)
-    needs: [run]
-    runs-on: [self-hosted, "tier:medium"]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+  # Migration to Ledger v9 is not yet supported. Issue #1580.
+  # mainnet-sync-test:
+  #   continue-on-error: true
+  #   permissions:
+  #     contents: read
+  #     packages: read
+  #   name: Mainnet Sync (1000 blocks)
+  #   needs: [run]
+  #   runs-on: [self-hosted, "tier:medium"]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. runner.temp is not available in job-level env, so set it here.
-      - name: Isolate docker config (self-hosted shared HOME)
-        run: |
-          mkdir -p "$RUNNER_TEMP/.docker"
-          echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
-      - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 #v4.1.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+  #     # Isolate docker config per runner slot — see the matching step in the
+  #     # `run` job. runner.temp is not available in job-level env, so set it here.
+  #     - name: Isolate docker config (self-hosted shared HOME)
+  #       run: |
+  #         mkdir -p "$RUNNER_TEMP/.docker"
+  #         echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
-      - name: Sync first 1000 blocks of mainnet
-        env:
-          NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          SNAPSHOT: static/sync-test/snapshot.sql.xz
-          CFG_PRESET: mainnet
-          SYNC_UNTIL: "1000"
-          SYNC_TIMEOUT_SECS: "1800"
-        run: bash scripts/sync-test/run-sync.sh
+  #     - name: Login to GHCR
+  #       uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+  #       with:
+  #         registry: ghcr.io
+  #         username: MidnightCI
+  #         password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
-      - name: Print sync logs
-        if: always()
-        run: |
-          echo "::group::midnight-node.log"
-          cat /tmp/midnight-node.log 2>/dev/null || echo "(no node log)"
-          echo "::endgroup::"
-          echo "::group::midnight-pg.log"
-          cat /tmp/midnight-pg.log 2>/dev/null || echo "(no postgres log)"
-          echo "::endgroup::"
+  #     - name: Sync first 1000 blocks of mainnet
+  #       env:
+  #         NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+  #         SNAPSHOT: static/sync-test/snapshot.sql.xz
+  #         CFG_PRESET: mainnet
+  #         SYNC_UNTIL: "1000"
+  #         SYNC_TIMEOUT_SECS: "1800"
+  #       run: bash scripts/sync-test/run-sync.sh
 
-      - name: Upload sync logs on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
-        with:
-          name: mainnet-sync-logs
-          path: |
-            /tmp/midnight-node.log
-            /tmp/midnight-pg.log
-          if-no-files-found: ignore
+  #     - name: Print sync logs
+  #       if: always()
+  #       run: |
+  #         echo "::group::midnight-node.log"
+  #         cat /tmp/midnight-node.log 2>/dev/null || echo "(no node log)"
+  #         echo "::endgroup::"
+  #         echo "::group::midnight-pg.log"
+  #         cat /tmp/midnight-pg.log 2>/dev/null || echo "(no postgres log)"
+  #         echo "::endgroup::"
+
+  #     - name: Upload sync logs on failure
+  #       if: failure()
+  #       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
+  #       with:
+  #         name: mainnet-sync-logs
+  #         path: |
+  #           /tmp/midnight-node.log
+  #           /tmp/midnight-pg.log
+  #         if-no-files-found: ignore
 
   toolkit-contracts-e2e:
     permissions:
@@ -806,7 +894,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
           submodules: true
       - id: guard
@@ -832,7 +920,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -856,10 +944,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
 
       - name: Login to GHCR
-        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 #v4.0.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -879,7 +967,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -909,7 +997,7 @@ jobs:
       wallet_indexer_image: ${{ steps.image_meta.outputs.wallet_indexer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -950,11 +1038,11 @@ jobs:
 
       - name: Free disk space
         if: steps.image_meta.outputs.skip_build != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@3235f8901fd37ffed0052b276cec25a362fb82e9 #v2.77.7
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 #v2.83.2
         with:
           tool: just
 
@@ -1019,17 +1107,16 @@ jobs:
   local-environment-tests:
     name: Local Environment Tests
     if: (github.event_name == 'pull_request' && github.event.pull_request.merged == false) || github.event_name == 'merge_group'
-    needs: [ run, build-indexer-images ]
-    runs-on: [self-hosted, "tier:medium"]
-    # The local-env stack (kupo, ogmios, db-sync, indexers, postgres, nats,
-    # cardano-node, ...) binds fixed ports on 0.0.0.0 — 1442, 1337, 8088,
-    # 4222, 5432, 30000, 32000 — so concurrent jobs on the same self-hosted
-    # runner host collide. Serialize across the whole repo with a fixed
-    # concurrency group; queue rather than cancel so a long-running stack
-    # actually finishes (the next PR's job picks up when this one is done).
-    concurrency:
-      group: local-environment-tests-self-hosted
-      cancel-in-progress: false
+    needs: [run, build-indexer-images]
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:medium"]') }}
+    # No concurrency group: the local-env stack now runs INSIDE earthly's nested dockerd
+    # (+local-env-ci), which gives each invocation its own network namespace. The stack
+    # no longer binds fixed host ports (1442/1337/8088/4222/5432/30000/32000/9933-9944),
+    # so concurrent PRs on the same self-hosted host can't collide — the repo-wide
+    # `local-environment-tests-self-hosted` serialization is gone. Concurrency is now
+    # RAM-bounded (the shared buildkit/RAM pool), which earthly queues, not hard-serialized.
     permissions:
       pull-requests: write
       packages: read
@@ -1037,18 +1124,18 @@ jobs:
       actions: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      # Isolate docker config per runner slot — see the matching step in the
-      # `run` job. The concurrency group only serializes this job against itself;
-      # other self-hosted jobs on the same host can still clobber the shared
-      # ~/.docker. Inherited by the composite action's docker login and pulls.
-      - name: Isolate docker config (self-hosted shared HOME)
+      # Isolate docker config per job — see the matching step in the `run` job.
+      # This job runs concurrently, so per-job isolation matters: multiple
+      # instances log in at once and would otherwise clobber each other's docker
+      # auth. Inherited by the composite action's docker login and earthly --pull.
+      - name: Isolate docker config
         if: steps.guard.outputs.hit != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/.docker"
@@ -1068,6 +1155,24 @@ jobs:
           sha: ${{ needs.run.outputs.sha }}
           tests: premerge
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          # Empty on fork PRs → the in-DinD docker login is skipped and public
+          # images (postgres, kupo, …) fall back to anonymous, rate-limited pulls.
+          dockerhub-username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+
+      # Defensive cleanup of an orphaned local-env stack for this job, so leaked
+      # stacks can't accumulate and fill the host disk. Scoped to this job's own
+      # compose project so it never touches other jobs on the host. The project
+      # name derives from runner-provided env (with RUNNER_NAME as fallback).
+      - name: Tear down this job's local-env stack (defensive)
+        if: always()
+        shell: bash
+        run: |
+          proj="local-env-r${RUNNER_SLOT:-${RUNNER_NAME##*-}}"
+          docker ps -aq --filter "label=com.docker.compose.project=${proj}" \
+            | xargs -r docker rm -f || true
+          docker volume ls -q --filter "label=com.docker.compose.project=${proj}" \
+            | xargs -r docker volume rm -f || true
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -1089,7 +1194,7 @@ jobs:
   #     contents: read
   #   steps:
   #     - name: Checkout
-  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
   #
   #     - name: Get Version and git commit
   #       id: meta

@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use super::{
-	BuildInput, BuildOutput, BuildTransient, DB, Delta, Input, LedgerContext, Offer, Output,
+	BuildInput, BuildOutput, BuildTransient, BuilderContext, DB, Delta, Input, Offer, Output,
 	ProofPreimage, ShieldedTokenType, StdRng, Transient,
 };
 use std::{collections::HashMap, collections::hash_map::Entry, sync::Arc};
@@ -35,17 +35,17 @@ pub enum OfferBuildError {
 }
 
 #[derive(Default)]
-pub struct OfferInfo<D: DB + Clone> {
-	pub inputs: Vec<Box<dyn BuildInput<D>>>,
-	pub outputs: Vec<Box<dyn BuildOutput<D>>>,
-	pub transients: Vec<Box<dyn BuildTransient<D>>>,
+pub struct OfferInfo<D: DB + Clone, C: BuilderContext<D>> {
+	pub inputs: Vec<Box<dyn BuildInput<D, C>>>,
+	pub outputs: Vec<Box<dyn BuildOutput<D, C>>>,
+	pub transients: Vec<Box<dyn BuildTransient<D, C>>>,
 }
 
-impl<D: DB + Clone> OfferInfo<D> {
+impl<D: DB + Clone, C: BuilderContext<D>> OfferInfo<D, C> {
 	pub fn build(
 		&mut self,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 	) -> Result<Offer<ProofPreimage, D>, OfferBuildError> {
 		let (inputs, inputs_balance) = self.build_inputs(rng, context.clone())?;
 		let (outputs, outputs_balance) = self.build_outputs(rng, context.clone())?;
@@ -65,7 +65,7 @@ impl<D: DB + Clone> OfferInfo<D> {
 	fn build_inputs(
 		&mut self,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 	) -> Result<(Vec<Input<ProofPreimage, D>>, TokensBalance), OfferBuildError> {
 		self.inputs.iter_mut().try_fold(
 			(Vec::new(), TokensBalance::default()),
@@ -89,7 +89,7 @@ impl<D: DB + Clone> OfferInfo<D> {
 	pub fn build_outputs(
 		&self,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 	) -> Result<(Vec<Output<ProofPreimage, D>>, TokensBalance), OfferBuildError> {
 		self.outputs.iter().try_fold(
 			(Vec::new(), TokensBalance::default()),
@@ -113,7 +113,7 @@ impl<D: DB + Clone> OfferInfo<D> {
 	pub fn build_transients(
 		&self,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<C>,
 	) -> Vec<Transient<ProofPreimage, D>> {
 		self.transients
 			.iter()
@@ -171,14 +171,14 @@ impl<D: DB + Clone> OfferInfo<D> {
 
 #[cfg(test)]
 mod tests {
-	use super::super::{DefaultDB, HashOutput};
+	use super::super::{DefaultDB, HashOutput, LedgerContext};
 	use super::*;
 
 	fn token_a() -> ShieldedTokenType {
 		ShieldedTokenType(HashOutput([0u8; 32]))
 	}
 
-	type TestOfferInfo = OfferInfo<DefaultDB>;
+	type TestOfferInfo = OfferInfo<DefaultDB, LedgerContext<DefaultDB>>;
 
 	#[test]
 	fn calculate_deltas_normal_values() {

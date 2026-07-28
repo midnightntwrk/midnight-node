@@ -122,7 +122,6 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
-	use super::base_crypto_local::signatures::Signature;
 	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
 
 	let res = set_default_storage(|| {
@@ -136,7 +135,7 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
+	alloc_with_initial_state::<super::TransactionSignature, ParityDb>(genesis_state)
 }
 
 #[cfg(feature = "std")]
@@ -157,7 +156,6 @@ pub fn init_storage_paritydb_unified<
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
-	use super::base_crypto_local::signatures::Signature;
 	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
 
 	let res = set_default_storage(|| {
@@ -168,5 +166,7 @@ pub fn init_storage_paritydb_unified<
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	alloc_with_initial_state::<Signature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(genesis_state)
+	alloc_with_initial_state::<super::TransactionSignature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(
+		genesis_state,
+	)
 }

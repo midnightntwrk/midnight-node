@@ -341,8 +341,8 @@ pub mod pallet {
 			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 
-			let state_root = LedgerApi::post_block_update(&state_key, block_context.clone())
-				.expect("Post block update failed");
+			let state_root = LedgerApi::apply_post_block_update(&state_key, block_context.clone())
+				.expect("FATAL: Apply post block update failed");
 
 			StateKey::<T>::put(state_root);
 
@@ -439,6 +439,7 @@ pub mod pallet {
 	}
 
 	#[pallet::validate_unsigned]
+	#[allow(deprecated)]
 	impl<T: Config> ValidateUnsigned for Pallet<T> {
 		type Call = Call<T>;
 		fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {

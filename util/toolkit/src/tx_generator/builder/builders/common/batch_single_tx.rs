@@ -14,14 +14,16 @@
 use std::{collections::HashMap, sync::Arc};
 
 use super::ledger_helpers_local::{
-	CoinSelectionStrategy, DefaultDB, FromContext as _, LedgerContext, ProofProvider,
+	BuilderContext, CoinSelectionStrategy, DefaultDB, FromContext as _, ProofProvider,
 	ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError,
 	WalletAddress,
 };
+use super::output_spec::{ShieldedOutputSpec, UnshieldedOutputSpec};
 use super::single_tx::{MAX_GUARANTEED_OUTPUTS, build_shielded_offer, build_unshielded_intents};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
+use tracing::Instrument as _;
 
 use crate::{Progress, serde_def::SourceTransactions, tx_generator::builder::BatchSingleTxArgs};
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
@@ -38,18 +40,18 @@ enum BatchTransferError {
 	ProvingFailed(String),
 }
 
-pub struct BatchSingleTxBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct BatchSingleTxBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	transfers: Vec<TransferSpec>,
 	concurrency: usize,
 	coin_selection: CoinSelectionStrategy,
 }
 
-impl BatchSingleTxBuilder {
+impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 	pub fn new(
 		args: BatchSingleTxArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		let coin_selection = args.coin_selection;
@@ -62,7 +64,7 @@ impl BatchSingleTxBuilder {
 	}
 
 	async fn build_single_transfer(
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 		spec: &TransferSpec,
 		coin_selection: CoinSelectionStrategy,
@@ -76,12 +78,13 @@ impl BatchSingleTxBuilder {
 	> {
 		use super::type_convert::*;
 
-		let source_seed =
-			convert_wallet_seed(spec.source_seed.parse().expect("invalid source_seed hex"));
+		// The scheme half of each resolved pair is applied at context build time (see
+		// `Builder::relevant_wallet_schemes`); here we only need the seed value.
+		let (source_seed, _) = spec.resolve_source();
+		let source_seed = convert_wallet_seed(source_seed);
 		let funding_seed = spec
-			.funding_seed
-			.as_ref()
-			.map(|s| convert_wallet_seed(s.parse().expect("invalid funding_seed hex")))
+			.resolve_funding()
+			.map(|(s, _)| convert_wallet_seed(s))
 			.unwrap_or(source_seed.clone());
 
 		let rng_seed: Option<[u8; 32]> = spec.rng_seed.as_ref().map(|s| {
@@ -109,12 +112,11 @@ impl BatchSingleTxBuilder {
 			let intents = build_unshielded_intents(
 				context.clone(),
 				source_seed.clone(),
-				vec![dest_wallet],
-				amount,
-				token_type,
+				vec![UnshieldedOutputSpec { wallet: dest_wallet, amount, token_type }],
 				&[],
 				coin_selection,
-			)?;
+			)
+			.await?;
 			tx_info.set_intents(intents);
 		}
 
@@ -129,9 +131,7 @@ impl BatchSingleTxBuilder {
 			let offer = build_shielded_offer(
 				context,
 				source_seed,
-				vec![dest_wallet],
-				amount,
-				token_type,
+				vec![ShieldedOutputSpec { wallet: dest_wallet, amount, token_type }],
 				coin_selection,
 			)?;
 
@@ -152,12 +152,12 @@ impl BatchSingleTxBuilder {
 			);
 		}
 
-		let tx = tokio::task::spawn_blocking(move || {
-			tokio::runtime::Handle::current().block_on(tx_info.prove())
-		})
-		.await
-		.expect("proving task panicked")
-		.map_err(|e| BatchTransferError::ProvingFailed(format!("{e}")))?;
+		// Proving now self-offloads onto the blocking pool (see `ProofProvider::prove`), so await it
+		// directly rather than wrapping it in a second `spawn_blocking`.
+		let tx = tx_info
+			.prove()
+			.await
+			.map_err(|e| BatchTransferError::ProvingFailed(format!("{e}")))?;
 
 		Ok(TransactionWithContext::new(tx, None))
 	}
@@ -175,7 +175,7 @@ fn parse_hash_output(hex_str: Option<&str>) -> midnight_node_ledger_helpers::Has
 }
 
 #[async_trait]
-impl BuildTxs for BatchSingleTxBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 	type Error = BatchSingleTxError;
 
 	async fn build_txs_from(
@@ -194,11 +194,13 @@ impl BuildTxs for BatchSingleTxBuilder {
 		let futures: Vec<_> = self
 			.transfers
 			.iter()
-			.map(|spec| {
+			.enumerate()
+			.map(|(i, spec)| {
 				let context = self.context.clone();
 				let prover = self.prover.clone();
 				let spec = spec.clone();
 				let coin_selection = self.coin_selection;
+				let index = i + 1;
 				async move {
 					let result =
 						Self::build_single_transfer(context, prover, &spec, coin_selection)
@@ -214,6 +216,11 @@ impl BuildTxs for BatchSingleTxBuilder {
 							});
 					result
 				}
+				// Tags every nested `[perf]` phase log (select/build_offer/pay_fees/prove_tx/
+				// serialize, emitted from single_tx.rs/transaction.rs/tx_serialization.rs) with
+				// this transfer's index, so a report script can correlate per-phase timings back
+				// to a single tx even though transfers build concurrently on one thread.
+				.instrument(tracing::debug_span!("transfer", index, total = num_transfers))
 			})
 			.collect();
 		let mut stream = futures::stream::iter(futures).buffered(self.concurrency);

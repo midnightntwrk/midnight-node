@@ -191,6 +191,7 @@ pub mod benchmarking;
 
 /// Weight types and default weight values
 pub mod weights;
+pub use weights::WeightInfo;
 
 use frame_support::pallet_prelude::*;
 pub use pallet::*;

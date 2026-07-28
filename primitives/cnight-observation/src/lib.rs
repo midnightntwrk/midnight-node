@@ -200,6 +200,31 @@ impl CardanoPosition {
 		self.tx_index_in_block += 1;
 		self
 	}
+
+	/// Lowest position within `block_number` (tx index 0). Only
+	/// `(block_number, tx_index_in_block)` are significant when used as a
+	/// range bound; `block_hash`/`block_timestamp` are placeholders.
+	pub fn min_for_block(block_number: u32) -> Self {
+		Self {
+			block_hash: McBlockHash([0u8; 32]),
+			block_number,
+			block_timestamp: Default::default(),
+			tx_index_in_block: 0,
+		}
+	}
+
+	/// Highest position within `block_number`. `tx_index_in_block` is
+	/// `i32::MAX` so it survives the `as i32` cast in the SQL bind path
+	/// without underflowing to `-1`. Like [`Self::min_for_block`], the
+	/// `block_hash`/`block_timestamp` are placeholders.
+	pub fn max_for_block(block_number: u32) -> Self {
+		Self {
+			block_hash: McBlockHash([0u8; 32]),
+			block_number,
+			block_timestamp: Default::default(),
+			tx_index_in_block: u32::try_from(i32::MAX).expect("i32::MAX is non-negative"),
+		}
+	}
 }
 
 impl PartialOrd for CardanoPosition {

@@ -130,7 +130,20 @@ pub async fn fetch_zswap_state(
 			)
 		},
 		|ctx| {
+			let seed_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
+					wallet_seed.clone(),
+				);
+			let cpk_v8 =
+				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_coin_public_key(
+					coin_public,
+				);
 			crate::commands::fork::ledger_8::generate_intent::fetch_zswap_state_from_context(
+				&ctx, seed_v8, cpk_v8,
+			)
+		},
+		|ctx| {
+			crate::commands::fork::ledger_9::generate_intent::fetch_zswap_state_from_context(
 				&ctx,
 				wallet_seed.clone(),
 				coin_public,

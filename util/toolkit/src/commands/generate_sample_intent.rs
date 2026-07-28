@@ -1,6 +1,9 @@
 use crate::tx_generator::{
 	TxGenerator,
-	builder::{ContractCall, ProverConfig, build_fork_aware_context_cached},
+	builder::{
+		ContractCall, ProverConfig, build_fork_aware_context_cached, contract_call_wallet_schemes,
+		ensure_ecdsa_supported,
+	},
 	source::{Source, create_file_wallet_cache},
 };
 use clap::Args;
@@ -56,18 +59,34 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 		build_fork_aware_context_cached(&seeds, &received_txs, wallet_cache.as_deref()).await;
 	let version = fork_ctx.version();
 
+	// Same pre-ledger-9 ECDSA guard as the `generate-txs`/`send-intent` path: reject an `ecdsa:`
+	// committee seed on a pre-9 source here too, rather than panicking deep in the ECDSA stubs.
+	let schemes = contract_call_wallet_schemes(&args.contract_call)
+		.expect("failed to resolve wallet schemes");
+	ensure_ecdsa_supported(version, &schemes).expect("ECDSA committee unsupported on this ledger");
+
 	if matches!(prover_config, ProverConfig::Remote(_)) {
 		panic!("remote prover is not supported for intent generation");
 	}
 
 	match version {
+		LedgerVersion::Ledger9 => {
+			let context = Arc::new(fork_ctx.into_ledger9().expect("expected ledger 9 context"));
+			let prover: Arc<
+				dyn midnight_node_ledger_helpers::ledger_9::ProofProvider<
+						midnight_node_ledger_helpers::ledger_9::DefaultDB,
+					>,
+			> = Arc::new(midnight_node_ledger_helpers::ledger_9::LocalProofServer::new());
+
+			execute_with_builders_v9(args.contract_call, context, prover, &args.dest_dir).await;
+		},
 		LedgerVersion::Ledger8 => {
 			let context = Arc::new(fork_ctx.into_ledger8().expect("expected ledger 8 context"));
 			let prover: Arc<
-				dyn midnight_node_ledger_helpers::ProofProvider<
-						midnight_node_ledger_helpers::DefaultDB,
+				dyn midnight_node_ledger_helpers::ledger_8::ProofProvider<
+						midnight_node_ledger_helpers::ledger_8::DefaultDB,
 					>,
-			> = Arc::new(midnight_node_ledger_helpers::LocalProofServer::new());
+			> = Arc::new(midnight_node_ledger_helpers::ledger_8::LocalProofServer::new());
 
 			execute_with_builders_v8(args.contract_call, context, prover, &args.dest_dir).await;
 		},
@@ -84,29 +103,73 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	}
 }
 
-async fn execute_with_builders_v8(
+async fn execute_with_builders_v9(
 	contract_call: ContractCall,
 	context: Arc<
-		midnight_node_ledger_helpers::context::LedgerContext<
-			midnight_node_ledger_helpers::DefaultDB,
+		midnight_node_ledger_helpers::ledger_9::context::LedgerContext<
+			midnight_node_ledger_helpers::ledger_9::DefaultDB,
 		>,
 	>,
 	prover: Arc<
-		dyn midnight_node_ledger_helpers::ProofProvider<midnight_node_ledger_helpers::DefaultDB>,
+		dyn midnight_node_ledger_helpers::ledger_9::ProofProvider<
+				midnight_node_ledger_helpers::ledger_9::DefaultDB,
+			>,
 	>,
 	dest_dir: &str,
 ) {
-	use crate::tx_generator::builder::builders::{
+	use crate::tx_generator::builder::builders::ledger_9::{
 		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
 	};
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile + Send>, &str) = match contract_call
-	{
-		ContractCall::Deploy(a) => {
-			(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
-		},
-		ContractCall::Call(a) => (Box::new(ContractCallBuilder::new(a, context, prover)), "call"),
-		ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+	type Ctx = midnight_node_ledger_helpers::ledger_9::context::LedgerContext<
+		midnight_node_ledger_helpers::ledger_9::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
+
+	builder
+		.generate_intent_file(dest_dir, partial_file_name)
+		.await
+		.expect("failed to generate intent file");
+}
+
+async fn execute_with_builders_v8(
+	contract_call: ContractCall,
+	context: Arc<
+		midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
+			midnight_node_ledger_helpers::ledger_8::DefaultDB,
+		>,
+	>,
+	prover: Arc<
+		dyn midnight_node_ledger_helpers::ledger_8::ProofProvider<
+				midnight_node_ledger_helpers::ledger_8::DefaultDB,
+			>,
+	>,
+	dest_dir: &str,
+) {
+	use crate::tx_generator::builder::builders::ledger_8::{
+		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
 	};
+	type Ctx = midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
+		midnight_node_ledger_helpers::ledger_8::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
 
 	builder
 		.generate_intent_file(dest_dir, partial_file_name)
@@ -131,14 +194,19 @@ async fn execute_with_builders_v7(
 	use crate::tx_generator::builder::builders::ledger_7::{
 		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
 	};
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile + Send>, &str) = match contract_call
-	{
-		ContractCall::Deploy(a) => {
-			(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
-		},
-		ContractCall::Call(a) => (Box::new(ContractCallBuilder::new(a, context, prover)), "call"),
-		ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
-	};
+	type Ctx = midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
+		midnight_node_ledger_helpers::ledger_7::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
 
 	builder
 		.generate_intent_file(dest_dir, partial_file_name)

@@ -15,7 +15,7 @@ pub mod multi_asset_cache;
 pub mod queries;
 mod types;
 
-pub use multi_asset_cache::MultiAssetCache;
+pub use multi_asset_cache::{MultiAssetCache, resolve_multi_asset_id};
 pub use queries::cnight_observation::*;
 pub use queries::federated_authority_observation::*;
 pub use types::*;

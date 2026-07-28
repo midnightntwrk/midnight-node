@@ -2,23 +2,116 @@ use crate::config::{self, Constants, OgmiosClientSettings};
 use aiken_contracts_lib::{
     FederatedOpsCandidate, GovernanceMember, build_federated_ops_datum,
     build_federated_ops_redeemer, build_governance_redeemer, build_versioned_multisig_datum,
+    convert_cost_models,
 };
 use bip39::{Language, Mnemonic, MnemonicType};
-use ogmios_client::OgmiosClientError;
-use ogmios_client::jsonrpsee::client_for_url;
+use ogmios_client::jsonrpsee::{OgmiosClients, client_for_url};
 use ogmios_client::query_ledger_state::{OgmiosTip, QueryLedgerState};
+use ogmios_client::query_network::{QueryNetwork, ShelleyGenesisConfigurationResponse};
 use ogmios_client::transactions::{SubmitTransactionResponse, Transactions};
-use ogmios_client::types::OgmiosUtxo;
-use std::time::Duration;
+use ogmios_client::types::{OgmiosTx, OgmiosUtxo};
+use ogmios_client::{OgmiosClient, OgmiosClientError, OgmiosParams};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::time::sleep;
 use whisky::csl::{
     Address, Bip32PrivateKey, Credential, EnterpriseAddress, NetworkInfo, PrivateKey, RewardAddress,
 };
 use whisky::data::{constr0, constr1};
 use whisky::{
-    Asset, Budget, LanguageVersion, Network, OfflineTxEvaluator, TxBuilder, WData, WError,
-    WRedeemer, Wallet, WalletType,
+    Asset, Budget, LanguageVersion, Network, OfflineTxEvaluator, Protocol, TxBuilder,
+    TxBuilderParam, UTxO, UtxoInput, UtxoOutput, WData, WError, WRedeemer, Wallet, WalletType,
 };
+
+const OGMIOS_MAX_ATTEMPTS: u32 = 5;
+
+/// Classify an ogmios error as retriable: dead WS task, request timeout,
+/// connect failure, or busy mempool. Returns the base delay (the retry
+/// loops scale it linearly per attempt), a log label, whether to evict the
+/// cached client, and whether a failed SubmitTx may still have been
+/// accepted — true only where the request could have reached the node with
+/// the response lost, not for never-sent or definitively rejected classes.
+fn retry_delay_for(e: &OgmiosClientError) -> Option<(Duration, &'static str, bool, bool)> {
+    let OgmiosClientError::RequestError(s) = e else {
+        return None;
+    };
+    if s.contains("background task closed") {
+        Some((Duration::from_secs(2), "WS transient", true, true))
+    } else if s.contains("Request timeout") {
+        Some((Duration::from_secs(5), "request timeout", true, true))
+    } else if s.starts_with("connect:") {
+        Some((Duration::from_secs(5), "connect failed", false, false))
+    } else if s.contains("MempoolTxTooSlow") {
+        Some((Duration::from_secs(5), "node mempool busy", false, false))
+    } else {
+        None
+    }
+}
+
+/// Detects a rejection for already-consumed inputs, in both the
+/// ledger-level and mempool-level wordings. Used to recognize the
+/// re-submission of an ambiguously-failed tx as accepted, and by the
+/// faucet to spot a worker UTXO spent by a concurrent run sharing the
+/// wallet.
+pub fn is_inputs_spent_error(e: &OgmiosClientError) -> bool {
+    let OgmiosClientError::RequestError(s) = e else {
+        return false;
+    };
+    let s = s.to_lowercase();
+    s.contains("unknown utxo reference")
+        || s.contains("unknownoutputreferences")
+        || s.contains("all inputs are spent")
+}
+
+/// Compute a tx id locally, for when a submission was accepted but its
+/// response was lost in transit.
+fn local_tx_id(tx_bytes: &[u8]) -> Option<[u8; 32]> {
+    let hash_hex = whisky::calculate_tx_hash(&hex::encode(tx_bytes)).ok()?;
+    hex::decode(hash_hex).ok()?.try_into().ok()
+}
+
+/// Detects the "ogmios response was missing a required field" parse failure — typically the
+/// local devnet's `protocolParameters` omitting `plutus:v2`. Distinct from transport flakes:
+/// we won't get a different answer by retrying.
+fn is_partial_params_error(e: &OgmiosClientError) -> bool {
+    matches!(e, OgmiosClientError::ResponseError(s) if s.contains("missing field"))
+}
+
+thread_local! {
+    /// Per-test-runtime cache of ogmios clients, keyed by base URL.
+    ///
+    /// Every ogmios request used to build a brand-new `client_for_url` — a
+    /// fresh WebSocket (`wss://`) connection plus its jsonrpsee background
+    /// task — use it for a single query, then drop it. The cNIGHT observation
+    /// nightly polls ogmios every ~2s across up to 16 concurrent faucet
+    /// workers for hours; that churned thousands of short-lived connections.
+    /// Under load the server-side idle-killer FIN'd them faster than the
+    /// dropped clients tore them down, leaking sockets in `CLOSE-WAIT` and
+    /// ballooning the test process's memory until the tokio runtime thrashed
+    /// and the run hung well past its timeout.
+    ///
+    /// jsonrpsee clients are built to be long-lived and to multiplex
+    /// concurrent requests over one connection, so we build one per URL and
+    /// reuse it. The cache is **thread-local, not process-global**: each
+    /// `#[e2e_test]` expands to `#[tokio::test]`, which gives every test its
+    /// own current-thread runtime that is dropped at test end (see the note in
+    /// `tests/lib.rs`), and a `WsClient`'s background task is owned by the
+    /// runtime that built it. A shared global cache would let one test's
+    /// runtime own a connection that other concurrent/later tests reuse, then
+    /// kill it underneath them when that test finishes — forcing retries and
+    /// risking a re-`SubmitTx` of an already-accepted transaction. Because
+    /// libtest runs each test on its own OS thread, a thread-local cache is
+    /// built and torn down with the test, so a connection always lives exactly
+    /// as long as the runtime driving it, while still being reused across the
+    /// many polling calls within a single test. A client whose background task
+    /// dies ("background task closed") is evicted by
+    /// [`CardanoClient::invalidate_ogmios_client`] so the next request
+    /// transparently rebuilds it.
+    static OGMIOS_CLIENTS: RefCell<HashMap<String, Arc<OgmiosClients>>> =
+        RefCell::new(HashMap::new());
+}
 
 #[derive(Debug)]
 pub enum GetUtxoError {
@@ -39,6 +132,7 @@ pub enum OgmiosRequest {
     QueryTip,
     QueryUtxo { address: String },
     SubmitTx { tx_bytes: Vec<u8> },
+    QueryShelleyGenesisConfig,
 }
 
 #[derive(Debug)]
@@ -46,6 +140,7 @@ pub enum OgmiosResponse {
     QueryTip(OgmiosTip),
     QueryUtxo(Vec<OgmiosUtxo>),
     SubmitTx(SubmitTransactionResponse),
+    QueryShelleyGenesisConfig(ShelleyGenesisConfigurationResponse),
 }
 
 pub struct CardanoClient {
@@ -54,13 +149,14 @@ pub struct CardanoClient {
     pub wallet: Wallet,
     pub network: Network,
     pub network_info: NetworkInfo,
+    pub protocol: Protocol,
 }
 
 impl CardanoClient {
     pub async fn new(ogmios_settings: OgmiosClientSettings, constants: Constants) -> Self {
         let wallet = Self::create_wallet();
         Self::print_addresses(&wallet, &Self::network_info(&ogmios_settings.network));
-        Self::from_wallet(ogmios_settings, constants, wallet)
+        Self::from_wallet(ogmios_settings, constants, wallet).await
     }
 
     pub async fn new_from_funded(
@@ -68,23 +164,164 @@ impl CardanoClient {
         constants: Constants,
     ) -> Self {
         let wallet = Self::wallet_for_funded(constants.payments.funded_address_skey_cbor.as_str());
-        Self::from_wallet(ogmios_settings, constants, wallet)
+        Self::from_wallet(ogmios_settings, constants, wallet).await
     }
 
-    fn from_wallet(
+    async fn from_wallet(
         ogmios_settings: OgmiosClientSettings,
         constants: Constants,
         wallet: Wallet,
     ) -> Self {
         let network_info = Self::network_info(&ogmios_settings.network);
+        let (network, protocol) = Self::fetch_chain_params(&ogmios_settings, &constants).await;
 
         Self {
             ogmios_settings: ogmios_settings.clone(),
             constants,
             wallet,
-            network: ogmios_settings.network,
+            network,
             network_info,
+            protocol,
         }
+    }
+
+    /// Return a shared ogmios client for `base_url`, building (and caching)
+    /// one on first use. The returned `Arc` can be used concurrently from
+    /// many tasks on this runtime — jsonrpsee multiplexes requests over the
+    /// single connection. See [`OGMIOS_CLIENTS`] for why this replaced the
+    /// old connection-per-request pattern and why the cache is thread-local.
+    async fn shared_ogmios_client(
+        base_url: &str,
+        timeout: Duration,
+    ) -> Result<Arc<OgmiosClients>, String> {
+        // Never hold the `RefCell` borrow across the `.await` below — clone
+        // the cached `Arc` out and drop the borrow before building.
+        if let Some(client) = OGMIOS_CLIENTS.with(|c| c.borrow().get(base_url).cloned()) {
+            return Ok(client);
+        }
+        let client = Arc::new(client_for_url(base_url, timeout).await?);
+        OGMIOS_CLIENTS.with(|c| {
+            c.borrow_mut()
+                .insert(base_url.to_string(), Arc::clone(&client))
+        });
+        Ok(client)
+    }
+
+    /// Evict the cached client for `base_url` so the next request rebuilds it.
+    /// Called when a request fails with a transport-terminal error
+    /// ("background task closed"): jsonrpsee marks that client dead forever,
+    /// so reusing it would just fail every subsequent request.
+    fn invalidate_ogmios_client(base_url: &str) {
+        OGMIOS_CLIENTS.with(|c| {
+            c.borrow_mut().remove(base_url);
+        });
+    }
+
+    async fn fetch_chain_params(
+        config: &OgmiosClientSettings,
+        constants: &Constants,
+    ) -> (Network, Protocol) {
+        let mut last_err = None;
+        for attempt in 1..=OGMIOS_MAX_ATTEMPTS {
+            match Self::fetch_chain_params_once(config).await {
+                Ok(v) => return v,
+                Err(e) => match retry_delay_for(&e) {
+                    Some((delay, label, rebuild_client, _)) => {
+                        if rebuild_client {
+                            Self::invalidate_ogmios_client(&config.base_url);
+                        }
+                        let delay = delay * attempt;
+                        tracing::info!(
+                            "ogmios protocol-params query: {} on attempt {}/{}; retry in {:?}",
+                            label,
+                            attempt,
+                            OGMIOS_MAX_ATTEMPTS,
+                            delay,
+                        );
+                        last_err = Some(e);
+                        sleep(delay).await;
+                    }
+                    None if is_partial_params_error(&e) => {
+                        return Self::fallback_chain_params(constants, &e);
+                    }
+                    None => panic!("Failed to query protocol parameters: {:?}", e),
+                },
+            }
+        }
+        panic!(
+            "Failed to query protocol parameters after {} attempts: {:?}",
+            OGMIOS_MAX_ATTEMPTS,
+            last_err.unwrap(),
+        );
+    }
+
+    /// Some environments (e.g. the local devnet's ogmios) return a `queryLedgerState/
+    /// protocolParameters` response without all three Plutus cost-model versions, which the
+    /// strongly-typed `ogmios-client` deserializer rejects whole. When that happens we fall
+    /// back to the cost models baked into `Constants` and whisky's default fee/size params —
+    /// fine for local dev where the node runs with mainnet-default protocol params anyway.
+    fn fallback_chain_params(
+        constants: &Constants,
+        err: &OgmiosClientError,
+    ) -> (Network, Protocol) {
+        tracing::info!(
+            "ogmios returned incomplete protocol params ({:?}); falling back to \
+             Constants.cost_model + whisky defaults (intended for local dev)",
+            err,
+        );
+        (
+            Network::Custom(constants.cost_model.clone()),
+            Protocol::default(),
+        )
+    }
+
+    async fn fetch_chain_params_once(
+        config: &OgmiosClientSettings,
+    ) -> Result<(Network, Protocol), OgmiosClientError> {
+        let client = Self::shared_ogmios_client(
+            &config.base_url,
+            Duration::from_secs(config.timeout_seconds),
+        )
+        .await
+        .map_err(|e| OgmiosClientError::RequestError(format!("connect: {}", e)))?;
+        let params = client.query_protocol_parameters().await?;
+
+        let network = Network::Custom(convert_cost_models(&params.plutus_cost_models));
+
+        let price_mem = *params.script_execution_prices.memory.numer() as f64
+            / *params.script_execution_prices.memory.denom() as f64;
+        let price_step = *params.script_execution_prices.cpu.numer() as f64
+            / *params.script_execution_prices.cpu.denom() as f64;
+        let protocol = Protocol {
+            min_fee_a: params.min_fee_coefficient as u64,
+            min_fee_b: params.min_fee_constant.lovelace,
+            max_tx_size: params.max_transaction_size.bytes,
+            max_val_size: params.max_value_size.bytes,
+            coins_per_utxo_size: params.min_utxo_deposit_coefficient,
+            key_deposit: params.stake_credential_deposit.lovelace,
+            pool_deposit: params.stake_pool_deposit.lovelace,
+            max_collateral_inputs: params.max_collateral_inputs as i32,
+            collateral_percent: params.collateral_percentage as f64,
+            min_fee_ref_script_cost_per_byte: params.min_fee_reference_scripts.base as u64,
+            price_mem,
+            price_step,
+            ..Default::default()
+        };
+
+        Ok((network, protocol))
+    }
+
+    /// Build a fresh whisky `TxBuilder` pre-loaded with the protocol params we fetched from
+    /// ogmios. Use this instead of `TxBuilder::new_core()` so fee / size / utxo-min computation
+    /// matches the connected network (preview, preprod, mainnet, etc.) rather than whisky's
+    /// hard-coded mainnet defaults.
+    fn new_tx_builder(&self) -> TxBuilder {
+        TxBuilder::new(TxBuilderParam {
+            evaluator: None,
+            fetcher: None,
+            submitter: None,
+            params: Some(self.protocol.clone()),
+        })
     }
 
     fn network_info(network: &Network) -> NetworkInfo {
@@ -163,11 +400,11 @@ impl CardanoClient {
 
     pub async fn fund_wallet(
         &self,
-        tx_in: &OgmiosUtxo,
+        tx_ins: &[OgmiosUtxo],
         tx_out_addr: &str,
         assets: Vec<Asset>,
     ) -> Option<OgmiosUtxo> {
-        let tx_id_hex = match self.send(tx_in, tx_out_addr, assets).await {
+        let tx_id_hex = match self.send(tx_ins, tx_out_addr, assets).await {
             Ok(response) => hex::encode(response.transaction.id),
             Err(e) => panic!("Failed to send assets: {:?}", e),
         };
@@ -195,32 +432,197 @@ impl CardanoClient {
         config: &OgmiosClientSettings,
         req: OgmiosRequest,
     ) -> Result<OgmiosResponse, OgmiosClientError> {
-        let client = client_for_url(
+        let mut last_err = None;
+        // Set once a SubmitTx attempt fails retriably: the tx may have been
+        // accepted with the response lost, so a later consumed-inputs
+        // rejection of the re-submission is converted into success below.
+        let mut submit_outcome_unknown = false;
+        for attempt in 1..=OGMIOS_MAX_ATTEMPTS {
+            match Self::ogmios_request_once(config, req.clone()).await {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    if submit_outcome_unknown && is_inputs_spent_error(&e) {
+                        if let OgmiosRequest::SubmitTx { tx_bytes } = &req {
+                            if let Some(id) = local_tx_id(tx_bytes) {
+                                tracing::warn!(
+                                    "ogmios request: SubmitTx re-submission rejected for \
+                                     consumed inputs after an earlier ambiguous failure — \
+                                     treating the original submission as accepted \
+                                     (tx_id=0x{})",
+                                    hex::encode(id),
+                                );
+                                return Ok(OgmiosResponse::SubmitTx(SubmitTransactionResponse {
+                                    transaction: OgmiosTx { id },
+                                }));
+                            }
+                        }
+                    }
+                    match retry_delay_for(&e) {
+                        Some((delay, label, rebuild_client, ambiguous)) => {
+                            if rebuild_client {
+                                Self::invalidate_ogmios_client(&config.base_url);
+                            }
+                            if ambiguous && matches!(req, OgmiosRequest::SubmitTx { .. }) {
+                                submit_outcome_unknown = true;
+                            }
+                            let delay = delay * attempt;
+                            tracing::info!(
+                                "ogmios request: {} on attempt {}/{}; retry in {:?}",
+                                label,
+                                attempt,
+                                OGMIOS_MAX_ATTEMPTS,
+                                delay,
+                            );
+                            last_err = Some(e);
+                            sleep(delay).await;
+                        }
+                        None => return Err(e),
+                    }
+                }
+            }
+        }
+        Err(last_err.unwrap())
+    }
+
+    async fn ogmios_request_once(
+        config: &OgmiosClientSettings,
+        req: OgmiosRequest,
+    ) -> Result<OgmiosResponse, OgmiosClientError> {
+        let client = Self::shared_ogmios_client(
             &config.base_url,
             Duration::from_secs(config.timeout_seconds),
         )
         .await
-        .expect("Failed to connecto to ogmios");
+        .map_err(|e| OgmiosClientError::RequestError(format!("connect: {}", e)))?;
         match req {
             OgmiosRequest::QueryTip => {
-                let ledger_state = client.get_tip().await.expect("Failed to get chain tip");
-                Ok(OgmiosResponse::QueryTip(ledger_state))
+                let tip = client.get_tip().await?;
+                Ok(OgmiosResponse::QueryTip(tip))
             }
             OgmiosRequest::QueryUtxo { address } => {
-                let utxos = client
-                    .query_utxos(&[address])
-                    .await
-                    .expect("Failed to get utxos");
+                let utxos = client.query_utxos(&[address]).await?;
                 Ok(OgmiosResponse::QueryUtxo(utxos))
             }
             OgmiosRequest::SubmitTx { tx_bytes } => {
-                let response = client.submit_transaction(&tx_bytes).await;
-                match response {
-                    Err(e) => Err(e),
-                    Ok(res) => Ok(OgmiosResponse::SubmitTx(res)),
+                let response = client.submit_transaction(&tx_bytes).await?;
+                Ok(OgmiosResponse::SubmitTx(response))
+            }
+            OgmiosRequest::QueryShelleyGenesisConfig => {
+                let config = client.shelley_genesis_configuration().await?;
+                Ok(OgmiosResponse::QueryShelleyGenesisConfig(config))
+            }
+        }
+    }
+
+    /// Query Ogmios for the current Cardano tip block height
+    /// (`queryNetwork/blockHeight`). This returns the *block* number, not the
+    /// slot number — the security parameter `k` is measured in blocks, so
+    /// block height is the correct unit for stability comparisons.
+    async fn query_block_height(client: &impl OgmiosClient) -> Result<u64, OgmiosClientError> {
+        client
+            .request("queryNetwork/blockHeight", OgmiosParams::empty_by_name())
+            .await
+    }
+
+    /// Fetch the Cardano security parameter (k) from the Shelley genesis
+    /// configuration. The Midnight mainchain follower only processes Cardano
+    /// blocks that are >= k blocks behind the tip; the stability barrier in
+    /// `tests/lib.rs` uses this to know how long to wait before observation
+    /// assertions can succeed.
+    pub async fn cardano_security_parameter(
+        ogmios_settings: &OgmiosClientSettings,
+    ) -> Result<u32, OgmiosClientError> {
+        let response =
+            Self::ogmios_request(ogmios_settings, OgmiosRequest::QueryShelleyGenesisConfig).await?;
+        match response {
+            OgmiosResponse::QueryShelleyGenesisConfig(config) => Ok(config.security_parameter),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type for QueryShelleyGenesisConfig".into(),
+            )),
+        }
+    }
+
+    /// Snapshot the Cardano tip, but only after it has advanced past the
+    /// initial reading by `REQUIRED_ADVANCE` blocks. Use this when you've
+    /// just submitted a transaction and need a tip that's guaranteed to
+    /// be past the tx's landing block (`current_block_height` alone is
+    /// racy: a tx submitted milliseconds before this call is still in
+    /// the mempool, so the immediate tip doesn't include it).
+    ///
+    /// We wait for 2 blocks (not 1) because Cardano's mempool ordering
+    /// is non-deterministic — a freshly submitted tx may slip into
+    /// either `baseline + 1` or `baseline + 2` depending on whether
+    /// the block producer's mempool snapshot beat ours. Two blocks of
+    /// advance gives us a safe upper bound on the landing block.
+    ///
+    /// Polls every 2s until either (a) tip advances by ≥2 blocks, or
+    /// (b) the wait budget is exhausted (in which case the latest known
+    /// tip is returned — downstream waits will catch a genuinely slow
+    /// chain). The budget absorbs the block-interval tail at degraded
+    /// block rates.
+    pub async fn snapshot_tip_after_advance(ogmios_settings: &OgmiosClientSettings) -> Option<u64> {
+        const POLL_INTERVAL: Duration = Duration::from_secs(2);
+        const WAIT_BUDGET: Duration = Duration::from_secs(600);
+        const REQUIRED_ADVANCE: u64 = 2;
+        let baseline = Self::current_block_height(ogmios_settings).await?;
+        let start = Instant::now();
+        let mut latest = baseline;
+        while start.elapsed() < WAIT_BUDGET {
+            sleep(POLL_INTERVAL).await;
+            if let Some(now) = Self::current_block_height(ogmios_settings).await {
+                latest = now;
+                if now >= baseline + REQUIRED_ADVANCE {
+                    return Some(now);
                 }
             }
         }
+        Some(latest)
+    }
+
+    /// Returns the current Cardano tip block height. Retries on transient
+    /// errors (connection refused, broken pipe, etc.) — Ogmios occasionally
+    /// flakes during high-concurrency test runs, and a single hiccup
+    /// shouldn't abort a multi-hour await target snapshot. Returns `None`
+    /// only after exhausting the retry budget.
+    pub async fn current_block_height(ogmios_settings: &OgmiosClientSettings) -> Option<u64> {
+        const MAX_ATTEMPTS: u32 = 5;
+        const RETRY_DELAY: Duration = Duration::from_secs(2);
+        for attempt in 1..=MAX_ATTEMPTS {
+            let result = async {
+                let client = Self::shared_ogmios_client(
+                    &ogmios_settings.base_url,
+                    Duration::from_secs(ogmios_settings.timeout_seconds),
+                )
+                .await
+                .map_err(|e| format!("connect: {e}"))?;
+                Self::query_block_height(&*client)
+                    .await
+                    .map_err(|e| format!("query: {e}"))
+            }
+            .await;
+            match result {
+                Ok(h) => return Some(h),
+                Err(e) => {
+                    // A failed request may have poisoned the shared client
+                    // (dead WS background task); evict it so the next attempt
+                    // rebuilds rather than reusing a connection stuck forever.
+                    Self::invalidate_ogmios_client(&ogmios_settings.base_url);
+                    if attempt < MAX_ATTEMPTS {
+                        tracing::warn!(
+                            "current_block_height: attempt {attempt}/{MAX_ATTEMPTS} failed: {e}; \
+                             retrying in {RETRY_DELAY:?}"
+                        );
+                        sleep(RETRY_DELAY).await;
+                    } else {
+                        tracing::warn!(
+                            "current_block_height: exhausted {MAX_ATTEMPTS} attempts; \
+                             last error: {e}"
+                        );
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub async fn utxos(&self) -> Vec<OgmiosUtxo> {
@@ -272,11 +674,9 @@ impl CardanoClient {
             Asset::new_from_str(&mapping_validator_policy_id, "1"),
         ];
         let minting_script = config::mapping_validator_cbor_double_encoding();
-        let network = Network::Custom(self.constants.cost_model.clone());
-
-        let mut tx_builder = TxBuilder::new_core();
+        let mut tx_builder = self.new_tx_builder();
         tx_builder
-            .network(network.clone())
+            .network(self.network.clone())
             .set_evaluator(Box::new(OfflineTxEvaluator::new()))
             .tx_in(
                 &hex::encode(tx_in.transaction.id),
@@ -352,16 +752,25 @@ impl CardanoClient {
         let mapping_validator_policy_id = config::mapping_validator_policy_id();
         let send_assets = vec![Asset::new_from_str("lovelace", "2000000")];
         let minting_script = config::mapping_validator_cbor_double_encoding();
-        let network = Network::Custom(self.constants.cost_model.clone());
         let mapping_validator_cbor = config::mapping_validator_cbor_double_encoding();
         let register_asset_tx_vector = Self::build_asset_vector(register_tx);
-        tracing::info!("Register tx assets: {:?}", register_asset_tx_vector);
+        tracing::info!(
+            "Register tx assets: [{}]",
+            register_asset_tx_vector
+                .iter()
+                .map(|a| format!("{}={}", a.unit(), a.quantity()))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
         let script_hash = whisky::get_script_hash(&mapping_validator_cbor, LanguageVersion::V2);
-        tracing::info!("Mapping validator script hash: {:?}", script_hash);
+        match &script_hash {
+            Ok(h) => tracing::info!("Mapping validator script hash: 0x{h}"),
+            Err(e) => tracing::warn!("Mapping validator script hash unavailable: {e:?}"),
+        }
 
-        let mut tx_builder = TxBuilder::new_core();
+        let mut tx_builder = self.new_tx_builder();
         tx_builder
-            .network(network.clone())
+            .network(self.network.clone())
             .set_evaluator(Box::new(OfflineTxEvaluator::new()))
             .tx_in(
                 &hex::encode(tx_in.transaction.id),
@@ -442,13 +851,11 @@ impl CardanoClient {
 
     pub async fn mint_tokens(
         &self,
-        amount: i32,
+        amount: u64,
         collateral_utxo: &OgmiosUtxo,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let policy_id = config::cnight_token_policy_id();
         let minting_script = config::cnight_token_cbor_double_encoding();
-        let network = Network::Custom(self.constants.cost_model.clone());
-
         let payment_addr = self.address_as_bech32();
 
         let request = OgmiosRequest::QueryUtxo {
@@ -480,9 +887,9 @@ impl CardanoClient {
             Asset::new_from_str(&policy_id, amount.to_string().as_str()),
         ];
 
-        let mut tx_builder = whisky::TxBuilder::new_core();
+        let mut tx_builder = self.new_tx_builder();
         tx_builder
-            .network(network.clone())
+            .network(self.network.clone())
             .set_evaluator(Box::new(OfflineTxEvaluator::new()))
             .tx_in(
                 &input_tx_hash,
@@ -511,14 +918,42 @@ impl CardanoClient {
             .complete_sync(None)
             .unwrap();
 
-        let signed_tx = self.wallet.sign_tx(&tx_builder.tx_hex());
+        // Diagnostic: log the mint's spend input so a downstream "All
+        // inputs are spent" failure can be correlated against parallel
+        // register/mint submissions that may be claiming the same UTXO.
+        tracing::info!(
+            "  mint_tokens input: {input_tx_hash}#{input_index} (collateral: {}#{})",
+            hex::encode(collateral_utxo.transaction.id),
+            collateral_utxo.index,
+        );
+        let tx_hex = tx_builder.tx_hex();
+        let tx_fingerprint: String = tx_hex.chars().take(32).collect();
+        tracing::info!(
+            "  mint_tokens tx_hex prefix: {tx_fingerprint}... (len={})",
+            tx_hex.len()
+        );
+
+        let signed_tx = self.wallet.sign_tx(&tx_hex);
         let tx_bytes = hex::decode(signed_tx.unwrap()).expect("Failed to decode hex string");
         let request = OgmiosRequest::SubmitTx { tx_bytes };
-        let response = Self::ogmios_request(&self.ogmios_settings, request)
-            .await
-            .unwrap();
+        let response = match Self::ogmios_request(&self.ogmios_settings, request).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(
+                    "Ogmios mint_tokens SubmitTx failed: {e}\n  input: {input_tx_hash}#{input_index}\n  tx_hex prefix: {tx_fingerprint}... (len={})",
+                    tx_hex.len()
+                );
+                panic!("Ogmios mint_tokens SubmitTx failed: {e:?}");
+            }
+        };
         match response {
-            OgmiosResponse::SubmitTx(res) => Ok(res),
+            OgmiosResponse::SubmitTx(res) => {
+                tracing::info!(
+                    "  mint_tokens submitted: tx_id=0x{}",
+                    hex::encode(res.transaction.id)
+                );
+                Ok(res)
+            }
             _ => Err(OgmiosClientError::RequestError(
                 "Unexpected response type".into(),
             )),
@@ -533,10 +968,9 @@ impl CardanoClient {
         let input_tx_hash = hex::encode(utxo.transaction.id);
         let input_index = utxo.index;
         let input_assets = &Self::build_asset_vector(utxo);
-        let network: Network = Network::Custom(self.constants.cost_model.clone());
-        let mut tx_builder = whisky::TxBuilder::new_core();
+        let mut tx_builder = self.new_tx_builder();
         tx_builder
-            .network(network.clone())
+            .network(self.network.clone())
             .set_evaluator(Box::new(OfflineTxEvaluator::new()))
             .tx_in(
                 &input_tx_hash,
@@ -564,52 +998,211 @@ impl CardanoClient {
 
     pub async fn send(
         &self,
-        tx_in: &OgmiosUtxo,
+        tx_ins: &[OgmiosUtxo],
         tx_out_addr: &str,
         assets: Vec<Asset>,
     ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
         let payment_addr = self.address_as_bech32();
         tracing::info!(
-            "Sending assets from {} to address: {}",
+            "Sending assets from {} ({} input UTXOs) to address: {}",
             payment_addr,
-            tx_out_addr
+            tx_ins.len(),
+            tx_out_addr,
         );
+        // Diagnostic: log each input UTXO ref so a downstream "All inputs
+        // are spent / already included" failure can be correlated against
+        // (a) earlier submissions in this run, (b) another parallel test
+        // claiming the same faucet worker, or (c) stale UTXOs left in the
+        // faucet wallet from a prior run.
+        let inputs_fmt: Vec<String> = tx_ins
+            .iter()
+            .map(|u| format!("{}#{}", hex::encode(u.transaction.id), u.index))
+            .collect();
+        for r in &inputs_fmt {
+            tracing::info!("  send input: {r}");
+        }
 
-        let input_tx_hash = hex::encode(tx_in.transaction.id);
-
-        let address_as_bech32 = tx_out_addr.to_string();
-        let mut tx_builder = TxBuilder::new_core();
-        tx_builder
-            .tx_in(
-                &input_tx_hash,
+        let mut tx_builder = self.new_tx_builder();
+        for tx_in in tx_ins {
+            tx_builder.tx_in(
+                &hex::encode(tx_in.transaction.id),
                 tx_in.index.into(),
                 &Self::build_asset_vector(tx_in),
-                address_as_bech32.as_str(),
-            )
-            .tx_out(address_as_bech32.as_str(), &assets)
+                payment_addr.as_str(),
+            );
+        }
+        tx_builder
+            .tx_out(tx_out_addr, &assets)
             .change_address(&payment_addr)
             .complete_sync(None)
             .unwrap();
+        // Diagnostic fingerprint of the constructed (unsigned) tx body.
+        // The full body is too long for normal logs but the prefix is
+        // sufficient to spot identical txs being built twice (retry path
+        // or two tests racing on the same inputs).
+        let tx_hex = tx_builder.tx_hex();
+        let tx_fingerprint: String = tx_hex.chars().take(32).collect();
+        tracing::info!(
+            "  send tx_hex prefix: {tx_fingerprint}... (len={})",
+            tx_hex.len()
+        );
 
-        let signed_tx = self
-            .wallet
-            .sign_tx(&tx_builder.tx_hex())
-            .expect("Failed to sign tx");
+        let signed_tx = self.wallet.sign_tx(&tx_hex).expect("Failed to sign tx");
         let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
         let request = OgmiosRequest::SubmitTx { tx_bytes };
-        let response = Self::ogmios_request(&self.ogmios_settings, request)
-            .await
-            .unwrap();
+        let response = match Self::ogmios_request(&self.ogmios_settings, request).await {
+            Ok(r) => r,
+            Err(e) => {
+                // Returned (not panicked) so the faucet can retry a send
+                // whose worker UTXO was spent by a concurrent run.
+                tracing::error!(
+                    "Ogmios SubmitTx failed: {e}\n  inputs ({}): [{}]\n  tx_hex prefix: {tx_fingerprint}... (len={})",
+                    inputs_fmt.len(),
+                    inputs_fmt.join(", "),
+                    tx_hex.len(),
+                );
+                return Err(e);
+            }
+        };
         match response {
-            OgmiosResponse::SubmitTx(res) => Ok(res),
+            OgmiosResponse::SubmitTx(res) => {
+                tracing::info!(
+                    "  send submitted: tx_id=0x{}",
+                    hex::encode(res.transaction.id)
+                );
+                Ok(res)
+            }
             _ => Err(OgmiosClientError::RequestError(
                 "Unexpected response type".into(),
             )),
         }
     }
 
+    pub async fn consolidate_utxos(
+        &self,
+        batch_size: usize,
+    ) -> Result<Vec<String>, OgmiosClientError> {
+        let payment_addr = self.address_as_bech32();
+        let utxos = self.utxos().await;
+        tracing::info!(
+            "Consolidating {} UTXOs at {} (batch size {})",
+            utxos.len(),
+            payment_addr,
+            batch_size
+        );
+
+        let mut tx_ids = Vec::new();
+        for (i, chunk) in utxos.chunks(batch_size).enumerate() {
+            if chunk.len() < 2 {
+                tracing::info!("Batch {}: skipping (only {} UTXO)", i, chunk.len());
+                continue;
+            }
+
+            let mut tx_builder = self.new_tx_builder();
+            for utxo in chunk {
+                tx_builder.tx_in(
+                    &hex::encode(utxo.transaction.id),
+                    utxo.index.into(),
+                    &Self::build_asset_vector(utxo),
+                    payment_addr.as_str(),
+                );
+            }
+            tx_builder
+                .change_address(&payment_addr)
+                .complete_sync(None)
+                .unwrap();
+
+            let signed_tx = self
+                .wallet
+                .sign_tx(&tx_builder.tx_hex())
+                .expect("Failed to sign tx");
+            let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
+            let request = OgmiosRequest::SubmitTx { tx_bytes };
+            let response = Self::ogmios_request(&self.ogmios_settings, request).await?;
+            match response {
+                OgmiosResponse::SubmitTx(res) => {
+                    let tx_id_hex = hex::encode(res.transaction.id);
+                    tracing::info!(
+                        "Batch {}: consolidated {} UTXOs in tx {}",
+                        i,
+                        chunk.len(),
+                        tx_id_hex
+                    );
+                    tx_ids.push(tx_id_hex);
+                }
+                _ => {
+                    return Err(OgmiosClientError::RequestError(
+                        "Unexpected response type".into(),
+                    ));
+                }
+            }
+        }
+
+        if let Some(last) = tx_ids.last() {
+            self.find_utxo_by_tx_id(&payment_addr, last.clone()).await;
+            let after = self.utxos().await;
+            tracing::info!(
+                "Consolidation complete: {} UTXOs -> {} UTXOs ({} txs submitted)",
+                utxos.len(),
+                after.len(),
+                tx_ids.len()
+            );
+        }
+
+        Ok(tx_ids)
+    }
+
+    /// Poll Ogmios until `tx_id` has produced a UTXO at `address`,
+    /// confirming the tx has been included in a Cardano block (not just
+    /// accepted into the mempool). This is a **cheap** wait — typically
+    /// 20–60s on Preview, one Cardano block — NOT a full stability wait.
+    ///
+    /// Use this between dependent submission phases to avoid mempool
+    /// collisions: e.g. between `register(...)` and `mint_tokens(...)`
+    /// when whisky's tx-funding would otherwise pick the same wallet
+    /// UTXO that register is consuming in the mempool, and Cardano
+    /// rejects the second tx with "All inputs are spent".
+    ///
+    /// Returns `Err` on timeout with the tx_id + address in the message
+    /// so CI failures point directly at the missing inclusion.
+    pub async fn wait_for_tx_inclusion(
+        &self,
+        tx_id: &[u8; 32],
+        address: &str,
+        max_wait: Duration,
+    ) -> Result<(), OgmiosClientError> {
+        let tx_id_hex = hex::encode(tx_id);
+        let start = std::time::Instant::now();
+        let poll_interval = Duration::from_secs(5);
+        tracing::info!(
+            "wait_for_tx_inclusion: polling for tx 0x{tx_id_hex} at {address} (timeout {max_wait:?})"
+        );
+        loop {
+            if self
+                .find_utxo_by_tx_id(address, tx_id_hex.clone())
+                .await
+                .is_some()
+            {
+                tracing::info!(
+                    "wait_for_tx_inclusion: tx 0x{tx_id_hex} included after {:?}",
+                    start.elapsed()
+                );
+                return Ok(());
+            }
+            if start.elapsed() > max_wait {
+                return Err(OgmiosClientError::RequestError(format!(
+                    "wait_for_tx_inclusion timed out: tx 0x{tx_id_hex} not found at {address} within {max_wait:?}"
+                )));
+            }
+            tokio::time::sleep(poll_interval).await;
+        }
+    }
+
     pub async fn find_utxo_by_tx_id(&self, address: &str, tx_id_hex: String) -> Option<OgmiosUtxo> {
-        const MAX_ATTEMPTS: u32 = 10;
+        // 240 x 2s = 8 min, ~14 Preview blocks at the degraded ~34s/block
+        // rate — absorbs the block-interval tail past the typical
+        // 1-2 block inclusion.
+        const MAX_ATTEMPTS: u32 = 240;
         const PAUSE: Duration = Duration::from_secs(2);
         let tx_id_bytes = hex::decode(tx_id_hex.clone()).expect("invalid hex tx_id");
         let request = OgmiosRequest::QueryUtxo {
@@ -636,6 +1229,98 @@ impl CardanoClient {
         None
     }
 
+    pub async fn find_utxos_by_tx_id(&self, address: &str, tx_id_hex: String) -> Vec<OgmiosUtxo> {
+        const MAX_ATTEMPTS: u32 = 240;
+        const PAUSE: Duration = Duration::from_secs(2);
+        let tx_id_bytes = hex::decode(&tx_id_hex).expect("invalid hex tx_id");
+        let request = OgmiosRequest::QueryUtxo {
+            address: address.to_string(),
+        };
+
+        for _ in 0..MAX_ATTEMPTS {
+            let response = Self::ogmios_request(&self.ogmios_settings, request.clone())
+                .await
+                .unwrap();
+            let utxos = match response {
+                OgmiosResponse::QueryUtxo(utxos) => utxos,
+                _ => vec![],
+            };
+            let matches: Vec<_> = utxos
+                .into_iter()
+                .filter(|u| u.transaction.id.as_ref() == tx_id_bytes.as_slice())
+                .collect();
+            if !matches.is_empty() {
+                return matches;
+            }
+            sleep(PAUSE).await;
+        }
+        vec![]
+    }
+
+    pub async fn split_to_self(
+        &self,
+        candidate_utxos: &[OgmiosUtxo],
+        n_outputs: usize,
+        lovelace_per_output: u64,
+    ) -> Result<[u8; 32], OgmiosClientError> {
+        const SELECTION_THRESHOLD_LOVELACE: u64 = 5_000_000;
+        let payment_addr = self.address_as_bech32();
+        let candidates: Vec<UTxO> = candidate_utxos.iter().map(Self::to_whisky_utxo).collect();
+
+        let mut tx_builder = self.new_tx_builder();
+        let output_assets = vec![Asset::new_from_str(
+            "lovelace",
+            &lovelace_per_output.to_string(),
+        )];
+        for _ in 0..n_outputs {
+            tx_builder.tx_out(&payment_addr, &output_assets);
+        }
+        // whisky's auto fee calc under-pays severely for multi-input txs (observed ~4x on
+        // Preview). Override with a worst-case fee derived from the protocol params we fetched
+        // from ogmios: enough to cover anything up to max_tx_size plus a small cushion. The
+        // change UTXO absorbs the leftover.
+        let prime_fee = self.protocol.min_fee_a * self.protocol.max_tx_size as u64
+            + self.protocol.min_fee_b
+            + 100_000;
+        tx_builder
+            .change_address(&payment_addr)
+            .select_utxos_from(&candidates, SELECTION_THRESHOLD_LOVELACE)
+            .set_fee(&prime_fee.to_string())
+            .complete_sync(None)
+            .unwrap();
+
+        let signed_tx = self
+            .wallet
+            .sign_tx(&tx_builder.tx_hex())
+            .expect("Failed to sign split tx");
+        let tx_bytes = hex::decode(signed_tx).expect("Failed to decode hex string");
+        let request = OgmiosRequest::SubmitTx { tx_bytes };
+        let response = Self::ogmios_request(&self.ogmios_settings, request).await?;
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res.transaction.id),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+
+    fn to_whisky_utxo(u: &OgmiosUtxo) -> UTxO {
+        UTxO {
+            input: UtxoInput {
+                output_index: u.index as u32,
+                tx_hash: hex::encode(u.transaction.id),
+            },
+            output: UtxoOutput {
+                address: u.address.clone(),
+                amount: Self::build_asset_vector(u),
+                data_hash: None,
+                plutus_data: None,
+                script_ref: None,
+                script_hash: None,
+            },
+        }
+    }
+
     /// Query all UTxOs at a given address
     pub async fn query_utxos(&self, address: &str) -> Vec<OgmiosUtxo> {
         let request = OgmiosRequest::QueryUtxo {
@@ -659,9 +1344,18 @@ impl CardanoClient {
             .iter()
             .flat_map(|(policy_id, tokens)| {
                 let policy_hex = hex::encode(policy_id);
-                tokens
-                    .iter()
-                    .map(move |token| Asset::new_from_str(&policy_hex, &token.amount.to_string()))
+                tokens.iter().map(move |token| {
+                    // Cardano "unit" = policy_id || asset_name (both hex,
+                    // concatenated). Passing only `policy_hex` produced an
+                    // empty asset name on the output side, which caused
+                    // ledger to reject split_to_self with "in and out value
+                    // not conserved" whenever the faucet's UTXOs held a
+                    // named native token (e.g. leftover "Reward token" from
+                    // a prior cNIGHT mint cycle): input asset name was
+                    // "Reward token", change output asset name was "".
+                    let unit = format!("{}{}", policy_hex, hex::encode(&token.name));
+                    Asset::new_from_str(&unit, &token.amount.to_string())
+                })
             })
             .collect();
 
@@ -675,7 +1369,7 @@ impl CardanoClient {
     pub async fn is_utxo_unspent_for_3_blocks(&self, address: &str, tx_id: &str) -> bool {
         // Get the current block number (slot) as the starting point
         const SLOTS_NUMBER: u64 = 3;
-        const LIMIT: i32 = 5;
+        const LIMIT: i32 = 50;
         let response = Self::ogmios_request(&self.ogmios_settings, OgmiosRequest::QueryTip)
             .await
             .unwrap();
@@ -821,11 +1515,9 @@ impl CardanoClient {
             Asset::new_from_str(policy_id, "1"),        // The governance NFT
         ];
 
-        let network = Network::Custom(self.constants.cost_model.clone());
-
-        let mut tx_builder = TxBuilder::new_core();
+        let mut tx_builder = self.new_tx_builder();
         tx_builder
-            .network(network.clone())
+            .network(self.network.clone())
             .set_evaluator(Box::new(OfflineTxEvaluator::new()))
             // Add regular input for fees
             .tx_in(
@@ -960,11 +1652,9 @@ impl CardanoClient {
             Asset::new_from_str(policy_id, "1"),
         ];
 
-        let network = Network::Custom(self.constants.cost_model.clone());
-
-        let mut tx_builder = TxBuilder::new_core();
+        let mut tx_builder = self.new_tx_builder();
         tx_builder
-            .network(network.clone())
+            .network(self.network.clone())
             .set_evaluator(Box::new(OfflineTxEvaluator::new()))
             .tx_in(
                 &hex::encode(tx_in.transaction.id),
@@ -1052,10 +1742,9 @@ impl CardanoClient {
         let input_index = utxo.index;
         let input_assets = &Self::build_asset_vector(utxo);
 
-        let network: Network = Network::Custom(self.constants.cost_model.clone());
-        let mut tx_builder = whisky::TxBuilder::new_core();
+        let mut tx_builder = self.new_tx_builder();
         tx_builder
-            .network(network.clone())
+            .network(self.network.clone())
             .set_evaluator(Box::new(OfflineTxEvaluator::new()))
             .tx_in(
                 &input_tx_hash,
@@ -1080,4 +1769,160 @@ impl CardanoClient {
             )),
         }
     }
+    /// Build and sign — but do not submit — a Cardano bridge transfer that
+    /// sends cNight to the ICS validator address with metadata identifying the
+    /// target Midnight address. Pair with `submit_tx` to publish.
+    pub async fn make_bridge_transfer(
+        &self,
+        cnight_utxo: &OgmiosUtxo,
+        payment_utxo: &OgmiosUtxo,
+        ics_address: &str,
+        amount: u64,
+        recipient: BridgeTransferRecipient,
+    ) -> Result<SignedBridgeTransaction, OgmiosClientError> {
+        const BRIDGE_METADATUM_LABEL: u64 = 6_500_973;
+        let policy_id = config::cnight_token_policy_id();
+        let network = Network::Custom(self.constants.cost_model.clone());
+        let payment_addr = self.address_as_bech32();
+
+        let estimated_fee_and_required_change = 250_000 + 1_500_000;
+        let send_assets = vec![
+            Asset::new_from_str(
+                "lovelace",
+                &(cnight_utxo.value.lovelace + payment_utxo.value.lovelace
+                    - estimated_fee_and_required_change)
+                    .to_string(),
+            ),
+            Asset::new_from_str(&policy_id, &amount.to_string()),
+        ];
+
+        let mut unsigned_tx_hex = TxBuilder::new_core()
+            .network(network)
+            .set_evaluator(Box::new(OfflineTxEvaluator::new()))
+            .tx_in(
+                &hex::encode(cnight_utxo.transaction.id),
+                cnight_utxo.index.into(),
+                &Self::build_asset_vector(cnight_utxo),
+                &payment_addr,
+            )
+            .tx_in(
+                &hex::encode(payment_utxo.transaction.id),
+                payment_utxo.index.into(),
+                &Self::build_asset_vector(payment_utxo),
+                &payment_addr,
+            )
+            .tx_in_collateral(
+                &hex::encode(payment_utxo.transaction.id),
+                payment_utxo.index.into(),
+                &Self::build_asset_vector(payment_utxo),
+                &payment_addr,
+            )
+            .tx_out(ics_address, &send_assets)
+            .tx_out_inline_datum_value(&WData::JSON(
+                serde_json::json!({"constructor": 0, "fields": []}).to_string(),
+            ))
+            .metadata_value(
+                &BRIDGE_METADATUM_LABEL.to_string(),
+                BRIDGE_ADDRESS_METADATUM_PLACEHOLDER_JSON,
+            )
+            .change_address(&payment_addr)
+            .complete_sync(None)
+            .unwrap()
+            .tx_hex();
+
+        if let BridgeTransferRecipient::Address(address) = &recipient {
+            unsigned_tx_hex = replace_with_bytes_metadatum(
+                &unsigned_tx_hex,
+                BRIDGE_METADATUM_LABEL,
+                address.as_slice(),
+            )
+            .expect("Failed to swap placeholder for bytes metadatum on bridge transfer tx");
+        }
+
+        let signed_tx_hex = self
+            .wallet
+            .sign_tx(&unsigned_tx_hex)
+            .expect("Failed to sign bridge transfer tx");
+        // Compute the Cardano tx id from the signed body. Using `FixedTransaction`
+        // preserves the original CBOR byte ordering, so the hash matches what
+        // the node will report when the tx lands.
+        let fixed_tx = whisky::csl::FixedTransaction::from_hex(&signed_tx_hex)
+            .expect("Failed to parse signed bridge transfer as FixedTransaction");
+        let tx_id: [u8; 32] = fixed_tx
+            .transaction_hash()
+            .to_bytes()
+            .try_into()
+            .expect("Cardano tx hash must be 32 bytes");
+        let signed_tx_bytes = hex::decode(&signed_tx_hex).expect("Failed to decode signed tx hex");
+        Ok(SignedBridgeTransaction {
+            tx_id,
+            signed_tx_bytes,
+        })
+    }
+
+    /// Submit an already built and signed Cardano transaction (CBOR bytes) via Ogmios.
+    pub async fn submit_tx(
+        &self,
+        signed_tx_bytes: Vec<u8>,
+    ) -> Result<SubmitTransactionResponse, OgmiosClientError> {
+        let request = OgmiosRequest::SubmitTx {
+            tx_bytes: signed_tx_bytes,
+        };
+        let response = Self::ogmios_request(&self.ogmios_settings, request)
+            .await
+            .unwrap();
+        match response {
+            OgmiosResponse::SubmitTx(res) => Ok(res),
+            _ => Err(OgmiosClientError::RequestError(
+                "Unexpected response type".into(),
+            )),
+        }
+    }
+}
+
+/// A Cardano transaction that has been built and signed but not yet submitted
+/// to the network. Carries both the wire bytes (for `submit_tx`) and the tx hash.
+pub struct SignedBridgeTransaction {
+    /// 32-byte Cardano tx id (blake2b-256 of the transaction body).
+    pub tx_id: [u8; 32],
+    /// CBOR-encoded signed transaction, ready to hand to Ogmios.
+    pub signed_tx_bytes: Vec<u8>,
+}
+
+pub enum BridgeTransferRecipient {
+    Address([u8; 32]),
+    /// For testing handling of transfers with invalid recipient
+    Invalid,
+}
+
+/// Whiskey can't encode bytes metadatum. This value is put as metadatum item,
+/// to allow proper fee calculation. Later CSL code replaces this placeholder.
+const BRIDGE_ADDRESS_METADATUM_PLACEHOLDER_JSON: &str = "\"placeholderplaceholderplaceholde\"";
+
+/// Replace metadatum item with bytes metadatum using pure CSL.
+fn replace_with_bytes_metadatum(
+    unsigned_tx_hex: &str,
+    label: u64,
+    bytes: &[u8],
+) -> Result<String, whisky::csl::JsError> {
+    use whisky::csl;
+
+    let bytes_metadatum = csl::TransactionMetadatum::new_bytes(bytes.to_vec())?;
+    let mut list = csl::MetadataList::new();
+    list.add(&bytes_metadatum);
+    let list_metadatum = csl::TransactionMetadatum::new_list(&list);
+
+    let mut metadata = csl::GeneralTransactionMetadata::new();
+    metadata.insert(&csl::BigNum::from(label), &list_metadatum);
+
+    let mut aux_data = csl::AuxiliaryData::new();
+    aux_data.set_metadata(&metadata);
+    let aux_hash = csl::hash_auxiliary_data(&aux_data);
+
+    let tx = csl::Transaction::from_hex(unsigned_tx_hex)?;
+    let mut body = tx.body();
+    body.set_auxiliary_data_hash(&aux_hash);
+
+    let new_tx = csl::Transaction::new(&body, &tx.witness_set(), Some(aux_data));
+    Ok(new_tx.to_hex())
 }

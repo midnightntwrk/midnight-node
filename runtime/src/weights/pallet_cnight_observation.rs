@@ -80,4 +80,20 @@ impl<T: frame_system::Config> pallet_cnight_observation::weights::WeightInfo for
 			.saturating_add(T::DbWeight::get().writes((1_u64).saturating_mul(n.into())))
 			.saturating_add(Weight::from_parts(0, 2475).saturating_mul(n.into()))
 	}
+	/// Storage: `CNightObservation::CNightIdentifier` (r:0 w:1)
+	/// Proof: `CNightObservation::CNightIdentifier` (`max_values`: Some(1), `max_size`: None, mode: `Measured`)
+	///
+	/// Placeholder until benchmarked: single storage write.
+	fn set_cnight_identifier() -> Weight {
+		Weight::from_parts(10_000_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1))
+	}
+	/// Storage: `CNightObservation::MainChainAuthTokenAssetName` (r:0 w:1)
+	/// Proof: `CNightObservation::MainChainAuthTokenAssetName` (`max_values`: Some(1), `max_size`: None, mode: `Measured`)
+	///
+	/// Placeholder until benchmarked: single storage write.
+	fn set_auth_token_asset_name() -> Weight {
+		Weight::from_parts(10_000_000, 0)
+			.saturating_add(T::DbWeight::get().writes(1))
+	}
 }

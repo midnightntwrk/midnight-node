@@ -13,8 +13,8 @@
 
 use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
 use super::ledger_helpers_local::{
-	BuildContractAction, BuildInput, BuildIntent, BuildOutput, CallInfo, ContractAddress,
-	DefaultDB, IntentInfo, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider,
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuilderContext, CallInfo,
+	ContractAddress, DefaultDB, IntentInfo, MerkleTreeContract, OfferInfo, ProofProvider,
 	TransactionWithContext, Wallet, WalletSeed,
 };
 use crate::{
@@ -27,8 +27,8 @@ use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 const CONTRACT_INPUT: u32 = 12;
 
-pub struct ContractCallBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct ContractCallBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	call_key: &'static str,
 	funding_seed: String,
@@ -36,10 +36,10 @@ pub struct ContractCallBuilder {
 	rng_seed: Option<[u8; 32]>,
 }
 
-impl ContractCallBuilder {
+impl<C: BuilderContext<DefaultDB>> ContractCallBuilder<C> {
 	pub fn new(
 		args: ContractCallArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		let call_key: &'static str = Box::leak(args.call_key.into_boxed_str());
@@ -56,9 +56,9 @@ impl ContractCallBuilder {
 }
 
 #[async_trait]
-impl IntentToFile for ContractCallBuilder {}
+impl<C: BuilderContext<DefaultDB>> IntentToFile<C> for ContractCallBuilder<C> {}
 
-impl BuildTxsExt for ContractCallBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxsExt<C> for ContractCallBuilder<C> {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -67,7 +67,7 @@ impl BuildTxsExt for ContractCallBuilder {
 		self.rng_seed
 	}
 
-	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+	fn context(&self) -> &Arc<C> {
 		&self.context
 	}
 
@@ -76,12 +76,12 @@ impl BuildTxsExt for ContractCallBuilder {
 	}
 }
 
-impl CreateIntentInfo for ContractCallBuilder {
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
+impl<C: BuilderContext<DefaultDB>> CreateIntentInfo<C> for ContractCallBuilder<C> {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB, C>> {
 		log::info!("Create intent info for contract call");
 
 		// - Contract Calls
-		let call_contract: Box<dyn BuildContractAction<DefaultDB>> = Box::new(CallInfo {
+		let call_contract: Box<dyn BuildContractAction<DefaultDB, C>> = Box::new(CallInfo {
 			type_: MerkleTreeContract::new(),
 			address: self.contract_address,
 			key: self.call_key,
@@ -89,7 +89,7 @@ impl CreateIntentInfo for ContractCallBuilder {
 			_marker: PhantomData,
 		});
 
-		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![call_contract];
+		let actions: Vec<Box<dyn BuildContractAction<DefaultDB, C>>> = vec![call_contract];
 
 		// - Intents
 		let intent_info = IntentInfo {
@@ -103,7 +103,7 @@ impl CreateIntentInfo for ContractCallBuilder {
 }
 
 #[async_trait]
-impl BuildTxs for ContractCallBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractCallBuilder<C> {
 	type Error = Infallible;
 
 	async fn build_txs_from(
@@ -118,10 +118,10 @@ impl BuildTxs for ContractCallBuilder {
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB, C>>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB, C>>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };

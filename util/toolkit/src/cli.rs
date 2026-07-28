@@ -15,6 +15,7 @@ use crate::commands::{
 	show_address::{self, ShowAddress, ShowAddressArgs},
 	show_block::{self, ShowBlockArgs, ShowBlockValue},
 	show_ledger_parameters::{self, ShowLedgerParametersArgs},
+	show_night_pools::{self, ShowNightPoolsArgs},
 	show_seed::{self, ShowSeedArgs},
 	show_token_type::{self, ShowTokenType, ShowTokenTypeArgs},
 	show_transaction::{self, ShowTransactionArgs},
@@ -56,6 +57,8 @@ pub enum Commands {
 	ShowAddress(ShowAddressArgs),
 	/// Show the ledger parameters
 	ShowLedgerParameters(ShowLedgerParametersArgs),
+	/// Show the NIGHT pools (Reserved / Locked / Unlocked) from a network's LedgerState
+	ShowNightPools(ShowNightPoolsArgs),
 	/// Show the seed of a wallet
 	ShowSeed(ShowSeedArgs),
 	/// Show the viewing key of a shielded wallet using its seed
@@ -181,6 +184,10 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			}
 			Ok(())
 		},
+		Commands::ShowNightPools(args) => {
+			show_night_pools::execute(args).await?;
+			Ok(())
+		},
 		Commands::UpdateLedgerParameters(args) => {
 			update_ledger_parameters::execute(args).await?;
 			Ok(())
@@ -230,13 +237,15 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::Version => {
 			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
-			let ledger_version =
-				find_dependency_version("mn-ledger").expect("missing ledger version");
+			let ledger_generation = midnight_node_ledger_helpers::latest::LEDGER_VERSION;
+			let ledger_semver =
+				find_dependency_version(midnight_node_ledger_helpers::latest::CRATE_NAME)
+					.expect("missing ledger version");
 			let compactc_version = include_str!("../../../COMPACTC_VERSION").trim();
 
 			println!(
-				"Node: {}\nLedger: {}\nCompactc: {}",
-				node_version, ledger_version, compactc_version
+				"Node: {}\nLedger: {} ({})\nCompactc: {}",
+				node_version, ledger_generation, ledger_semver, compactc_version
 			);
 			return Ok(());
 		},

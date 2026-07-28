@@ -5,7 +5,7 @@ use midnight_primitives::BridgeRecipient;
 use pallet_partner_chains_bridge::TransferHandler;
 use sidechain_domain::McTxHash;
 use sp_partner_chains_bridge::*;
-use sp_runtime::{BoundedVec, DispatchError};
+use sp_runtime::{BoundedVec, BuildStorage, DispatchError};
 
 fn sort_hashes(mut v: Vec<McTxHash>) -> Vec<McTxHash> {
 	v.sort_by_key(|h| h.0);
@@ -203,6 +203,201 @@ fn subminimal_transfer_handling() {
 	})
 }
 
+fn set_flush_threshold(threshold: u64) {
+	pallet::SubminimalTransfersConfiguration::<Test>::set(SubminimalTransfersConfig {
+		subminimal_transfers_flush_threshold: threshold,
+	});
+}
+
+fn subminimal_events() -> Vec<Event<Test>> {
+	frame_system::Pallet::<Test>::read_events_for_pallet::<Event<Test>>()
+}
+
+#[test]
+fn subminimal_no_flush_just_below_threshold() {
+	new_test_ext().execute_with(|| {
+		// sum = 180, threshold = 181 → 180 > 181 is false, no flush.
+		set_flush_threshold(181);
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 2, sum: 180 }
+		);
+		assert!(subminimal_events().is_empty());
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+	})
+}
+
+#[test]
+fn subminimal_no_flush_at_exact_threshold() {
+	new_test_ext().execute_with(|| {
+		// sum = 180, threshold = 180 → strict `sum > threshold` is false, no flush.
+		set_flush_threshold(180);
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 2, sum: 180 }
+		);
+		assert!(subminimal_events().is_empty());
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+	})
+}
+
+#[test]
+fn subminimal_flushes_just_above_threshold() {
+	new_test_ext().execute_with(|| {
+		// sum = 180, threshold = 179 → 180 > 179 is true, flush.
+		set_flush_threshold(179);
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 0, sum: 0 }
+		);
+		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
+		assert_eq!(
+			subminimal_events(),
+			vec![Event::SubminimalFlushTransfer {
+				amount: 180,
+				count: 2,
+				midnight_tx_hash: [0u8; 32],
+			}],
+		);
+	})
+}
+
+#[test]
+fn subminimal_state_resets_after_flush_and_accumulates_again() {
+	new_test_ext().execute_with(|| {
+		set_flush_threshold(180);
+		// Accumulate to (count=2, sum=180) — no flush at strict equality.
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 2, sum: 180 }
+		);
+		// 3rd transfer pushes sum to 270 > 180 → flush, storage reset.
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 0, sum: 0 }
+		);
+		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
+
+		// New subminimal after a flush must restart the accumulator from zero,
+		// not inherit any residue from the prior cycle.
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+		// Still only the flush from the first cycle — the 4th transfer must
+		// not have produced a second system tx.
+		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
+		assert_eq!(
+			subminimal_events(),
+			vec![Event::SubminimalFlushTransfer {
+				amount: 270,
+				count: 3,
+				midnight_tx_hash: [0u8; 32],
+			}],
+		);
+	})
+}
+
+#[test]
+fn subminimal_invalid_recipient_accumulates_not_unlocks() {
+	new_test_ext().execute_with(|| {
+		// `handle_incoming_transfer` routes by amount before recipient kind,
+		// so a subminimal `Invalid` transfer accumulates rather than emitting
+		// `InvalidTransfer` / `UnlockToTreasury`.
+		set_flush_threshold(1_000);
+		let transfer = BridgeTransferV1 {
+			amount: 90,
+			mc_tx_hash: McTxHash([42; 32]),
+			recipient: TransferRecipient::Invalid,
+		};
+		C2MBridge::handle_incoming_transfer(transfer);
+
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+		assert!(subminimal_events().is_empty());
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+	})
+}
+
+#[test]
+fn subminimal_unapproved_user_accumulates_not_unlocks() {
+	new_test_ext().execute_with(|| {
+		// Same routing argument as the invalid-recipient case: an addressed
+		// subminimal with no governance approval must accumulate, not emit
+		// `UnapprovedTransfer`.
+		set_flush_threshold(1_000);
+		let transfer = BridgeTransferV1 {
+			amount: 90,
+			mc_tx_hash: McTxHash([7; 32]),
+			recipient: TransferRecipient::Address { recipient: recipient() },
+		};
+		assert!(!pallet::ApprovedMcTxHashes::<Test>::contains_key(transfer.mc_tx_hash));
+		C2MBridge::handle_incoming_transfer(transfer);
+
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+		assert!(subminimal_events().is_empty());
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+	})
+}
+
+#[test]
+fn regular_transfer_does_not_disturb_subminimal_accumulator() {
+	new_test_ext().execute_with(|| {
+		set_flush_threshold(1_000);
+		// Seed the accumulator.
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+
+		// A regular approved User transfer interleaves; it must take the
+		// regular path (system tx + UserTransfer event) and leave the
+		// subminimal accumulator untouched.
+		let tx = addressed_transfer();
+		approve(tx.mc_tx_hash);
+		C2MBridge::handle_incoming_transfer(tx);
+		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+
+		// Next subminimal continues accumulating from where it left off.
+		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 2, sum: 180 }
+		);
+		// Still just the one regular system tx — no flush.
+		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
+		assert_eq!(
+			subminimal_events(),
+			vec![Event::UserTransfer {
+				mc_tx_hash: McTxHash([1; 32]),
+				amount: 100,
+				recipient: recipient(),
+				midnight_tx_hash: [0u8; 32],
+			}],
+		);
+	})
+}
+
 fn batch(hashes: Vec<McTxHash>) -> BoundedVec<McTxHash, ConstU32<MAX_APPROVALS_PER_BATCH>> {
 	BoundedVec::try_from(hashes).expect("batch exceeds bound")
 }
@@ -240,4 +435,42 @@ fn add_approved_mc_tx_hashes_inserts_unique_entries() {
 			sort_hashes(vec![h1, h2, h3])
 		);
 	})
+}
+
+#[test]
+fn genesis_initializes_approved_mc_tx_hashes() {
+	let h1 = McTxHash([7; 32]);
+	let h2 = McTxHash([8; 32]);
+
+	let mut ext: sp_io::TestExternalities = {
+		let mut storage = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
+		pallet::GenesisConfig::<Test> { approved_txs: vec![h1, h2], ..Default::default() }
+			.assimilate_storage(&mut storage)
+			.unwrap();
+		storage.into()
+	};
+
+	ext.execute_with(|| {
+		assert_eq!(sort_hashes(C2MBridge::get_approved_mc_tx_hashes()), sort_hashes(vec![h1, h2]));
+	})
+}
+
+#[test]
+fn genesis_config_approved_txs_is_optional() {
+	// Absent field deserializes to an empty vec.
+	let config: pallet::GenesisConfig<Test> = serde_json::from_str(
+		r#"{"subminimalTransfersConfig":{"subminimal_transfers_flush_threshold":0},"marker":null}"#,
+	)
+	.expect("approved_txs must be optional");
+	assert!(config.approved_txs.is_empty());
+}
+
+#[test]
+fn genesis_config_approved_txs_are_hex_encoded() {
+	// Present field is an array of hex strings (not an array of numbers).
+	let config: pallet::GenesisConfig<Test> = serde_json::from_str(
+		r#"{"subminimalTransfersConfig":{"subminimal_transfers_flush_threshold":0},"approvedTxs":["0x0101010101010101010101010101010101010101010101010101010101010101"],"marker":null}"#,
+	)
+	.expect("hex string array must deserialize");
+	assert_eq!(config.approved_txs, vec![McTxHash([1; 32])]);
 }
