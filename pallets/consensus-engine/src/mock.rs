@@ -18,10 +18,12 @@ use frame_support::{
 	traits::{ConstBool, ConstU32, ConstU64},
 };
 use frame_system::EnsureRoot;
-use parity_scale_codec::Encode;
+use parity_scale_codec::{Decode, Encode};
 use sp_consensus_aura::AURA_ENGINE_ID;
 use sp_consensus_babe::BABE_ENGINE_ID;
-use sp_consensus_babe::digests::{PreDigest as BabePreDigest, SecondaryPlainPreDigest};
+use sp_consensus_babe::digests::{
+	PreDigest as BabePreDigest, PrimaryPreDigest, SecondaryPlainPreDigest,
+};
 use sp_consensus_slots::Slot;
 use sp_core::H256;
 use sp_runtime::{
@@ -148,6 +150,23 @@ pub fn babe_pre_digest(slot: u64) -> DigestItem {
 		BabePreDigest::SecondaryPlain(SecondaryPlainPreDigest {
 			authority_index: 0,
 			slot: Slot::from(slot),
+		})
+		.encode(),
+	)
+}
+
+/// A BABE `Primary` pre-runtime digest item for `slot`, carrying a (dummy,
+/// unverified) VRF signature — the variant the transition must reject, since
+/// nothing verifies VRF material while blocks import through the AURA pipeline.
+pub fn babe_primary_pre_digest(slot: u64) -> DigestItem {
+	let vrf_signature = sp_core::sr25519::vrf::VrfSignature::decode(&mut &[0u8; 96][..])
+		.expect("zeroed bytes decode as a VRF signature");
+	DigestItem::PreRuntime(
+		BABE_ENGINE_ID,
+		BabePreDigest::Primary(PrimaryPreDigest {
+			authority_index: 0,
+			slot: Slot::from(slot),
+			vrf_signature,
 		})
 		.encode(),
 	)

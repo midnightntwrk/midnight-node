@@ -125,6 +125,13 @@ fn babe_only_is_not_detected() {
 }
 
 #[test]
+fn primary_babe_digest_is_not_detected() {
+	// Only `SecondaryPlain` is a valid transition digest: a `Primary` digest at
+	// the matching slot carries VRF material no one verified (AURA import).
+	assert!(!aura_before_babe(vec![aura_pre_digest(100), babe_primary_pre_digest(100)]));
+}
+
+#[test]
 fn babe_before_aura_is_not_detected() {
 	assert!(!aura_before_babe(vec![babe_pre_digest(100), aura_pre_digest(100)]));
 }
@@ -292,6 +299,32 @@ fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
 		// the flip without it would permanently halt authoring.
 		start_block_at_slot(1499);
 		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest must match AURA slot during transition")]
+fn armed_rejects_primary_babe_digest() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ArmedBabe);
+		// Matching slot, but the wrong variant: Primary carries unverified VRF material.
+		start_block_with_logs(vec![aura_pre_digest(100), babe_primary_pre_digest(100)]);
+		on_initialize();
+	});
+}
+
+#[test]
+fn flip_postpones_epoch_end_block_without_digest_while_authorities_empty() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ScheduledFlip);
+		assert!(pallet_babe::Authorities::<Test>::get().is_empty());
+
+		// While waiting for the session rotation to populate BABE authorities, an
+		// epoch-end block from an old binary (AURA digest only) must take the
+		// postpone path, not be rejected for the missing flip marker.
+		start_block_at_slot(1499);
+		on_initialize();
+		assert_eq!(EngineState::<Test>::get(), State::ScheduledFlip);
 	});
 }
 

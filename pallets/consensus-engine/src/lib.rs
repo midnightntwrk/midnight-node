@@ -30,10 +30,13 @@
 //! Once scheduled, the pallet performs the flip at the last block of the epoch.
 //! That flip block must carry a matching BABE `PreRuntimeDigest`; without it the
 //! block is rejected on import. During `ArmedBabe`/`ScheduledFlip`, BABE digests
-//! are optional, but any present digest must match the AURA slot (unique, after
-//! AURA). The flip is also postponed while `pallet-babe::Authorities` is empty
-//! (session has not yet populated BABE keys after a runtime upgrade). If the last
-//! slot of an epoch is empty, migration is postponed to a later epoch-end block.
+//! are optional, but any present digest must be `SecondaryPlain` and match the
+//! AURA slot (unique, after AURA) — `Primary`/`SecondaryVRF` are rejected, since
+//! their VRF material is never client-verified while blocks import through the
+//! AURA pipeline. The flip is postponed while `pallet-babe::Authorities` is empty
+//! (session has not yet populated BABE keys after a runtime upgrade); while
+//! waiting, epoch-end blocks are not required to carry the flip marker. If the
+//! last slot of an epoch is empty, migration is postponed to a later epoch-end block.
 //! The migration initializes pallet-babe state and transitions to the final state
 //! `Babe`. The first block of the next epoch is authored with BABE.
 
@@ -60,7 +63,7 @@ pub mod pallet {
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives_consensus_engine::ActiveEngine;
 	use sp_consensus_aura::digests::CompatibleDigestItem as AuraCompatibleDigestItem;
-	use sp_consensus_babe::digests::CompatibleDigestItem as _;
+	use sp_consensus_babe::digests::{CompatibleDigestItem as _, PreDigest};
 	use sp_consensus_slots::Slot;
 
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(0);
@@ -168,13 +171,11 @@ pub mod pallet {
 					if let Some(slot) = Self::current_slot_from_aura_digest()
 						&& Self::is_last_slot_of_epoch(slot)
 					{
-						// Flip block must carry a BABE SecondaryPlain pre-digest at the
-						// same slot as AURA; otherwise reject the block.
-						assert!(
-							Self::has_aura_pre_digest_before_babe_pre_digest(),
-							"BABE pre-runtime digest required on flip block",
-						);
 						// Postpone while session has not yet filled BABE authorities.
+						// Checked before the flip-marker requirement so that, while
+						// waiting for the session rotation, an epoch-end block from an
+						// old binary (no BABE digest) postpones instead of being
+						// rejected.
 						if pallet_babe::Authorities::<T>::get().is_empty() {
 							log::warn!(
 								target: "consensus-engine",
@@ -183,6 +184,13 @@ pub mod pallet {
 								slot,
 							);
 						} else {
+							// The block committing the flip must carry a BABE
+							// SecondaryPlain pre-digest at the same slot as AURA;
+							// otherwise reject the block.
+							assert!(
+								Self::has_aura_pre_digest_before_babe_pre_digest(),
+								"BABE pre-runtime digest required on flip block",
+							);
 							Self::migrate_to_babe(slot);
 							EngineState::<T>::put(State::Babe);
 						}
@@ -319,14 +327,14 @@ pub mod pallet {
 		}
 
 		/// Returns `true` when the current block's digest carries exactly one BABE
-		/// pre-runtime digest, that digest appears *after* an AURA pre-runtime digest,
-		/// and its slot matches that AURA digest's slot.
+		/// `SecondaryPlain` pre-runtime digest, that digest appears *after* an AURA
+		/// pre-runtime digest, and its slot matches that AURA digest's slot.
 		///
 		/// This is the shape a node emits while still on AURA once it has begun
 		/// signalling BABE secondary slots at the same slot — the situation the
 		/// `State::Aura` guard rejects. Any other arrangement returns `false`: no BABE
-		/// digest, a BABE digest before any AURA digest, a slot mismatch, or more than
-		/// one BABE digest.
+		/// digest, a BABE digest before any AURA digest, a slot mismatch, more than
+		/// one BABE digest, or a non-`SecondaryPlain` variant.
 		pub(crate) fn has_aura_pre_digest_before_babe_pre_digest() -> bool {
 			let mut aura_slot = None;
 			let mut babe_present = false;
@@ -337,6 +345,15 @@ pub mod pallet {
 				};
 
 				if let Some(babe) = log.as_babe_pre_digest() {
+					// Only `SecondaryPlain` is a valid transition digest. `Primary` and
+					// `SecondaryVRF` carry VRF material that is never verified while
+					// blocks still import through the AURA pipeline, yet pallet-babe
+					// would consume the unverified VRF output for its randomness
+					// accumulation (`on_finalize` trusts the client to have verified it).
+					if !matches!(babe, PreDigest::SecondaryPlain(_)) {
+						// Non-SecondaryPlain BABE pre-digest
+						return false;
+					}
 					if let Some(slot) = aura_slot {
 						if babe.slot() != slot {
 							// BABE slot different to AURA slot
