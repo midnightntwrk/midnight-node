@@ -384,7 +384,8 @@ pub async fn fetch_from_rpc(
 				let fetched = counters.fetched_rpc.load(Ordering::Relaxed);
 				let span = total_span.load(Ordering::Relaxed);
 				let jobs = total_jobs.load(Ordering::Relaxed);
-				let rate = (fetched - last_fetched) as f64 / last_tick.elapsed().as_secs_f64();
+				let rate =
+					fetched.saturating_sub(last_fetched) as f64 / last_tick.elapsed().as_secs_f64();
 				last_fetched = fetched;
 				last_tick = std::time::Instant::now();
 

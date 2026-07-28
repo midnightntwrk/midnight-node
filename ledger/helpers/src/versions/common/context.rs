@@ -154,19 +154,23 @@ impl<D: DB + Clone> LedgerContext<D> {
 
 	/// Apply all transactions in a block to the ledger, returning events without
 	/// processing wallets. Also applies `post_block_update` (fee adjustments).
+	///
+	/// `root_verified` must only be true when the caller checks the resulting
+	/// state root against the chain (`verify_state_root`).
 	fn apply_txs_collect_events<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		txs: &[SerdeTransaction<S, P, D>],
 		block_context: &BlockContext,
+		root_verified: bool,
 	) -> Result<Vec<Event<D>>, LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
 		let mut total_cost = SyntheticCost::ZERO;
 		let mut all_events: Vec<Event<D>> = Vec::new();
-		// Replay of finalized history: skip crypto re-verification. Correctness
-		// is still checked per block against the on-chain state root.
-		let strictness = Self::strictness_for(block_context, true);
+		// Crypto re-verification of finalized history is skipped only when the
+		// per-block state-root check will catch any divergence.
+		let strictness = Self::strictness_for(block_context, root_verified);
 		for tx in txs {
 			let (events, cost) =
 				self.update_from_tx_with_strictness(tx, block_context, strictness)?;
@@ -257,7 +261,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let events = self.apply_txs_collect_events(txs, block_context)?;
+		let events = self.apply_txs_collect_events(txs, block_context, state_root.is_some())?;
 
 		// Genesis block: overwrite ledger state with the canonical genesis state,
 		// since constructor params aren't directly observable from genesis txs.
