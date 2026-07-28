@@ -14,7 +14,7 @@
 //! Test mock for the consensus-engine pallet.
 
 use frame_support::{
-	derive_impl,
+	derive_impl, parameter_types,
 	traits::{ConstBool, ConstU32, ConstU64},
 };
 use frame_system::EnsureRoot;
@@ -104,10 +104,19 @@ impl pallet_babe::Config for Test {
 	type EquivocationReportSystem = ();
 }
 
+parameter_types! {
+	pub TestBabeEpochConfig: sp_consensus_babe::BabeEpochConfiguration =
+		sp_consensus_babe::BabeEpochConfiguration {
+			c: (1, 4),
+			allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
+		};
+}
+
 impl pallet_consensus_engine::Config for Test {
 	// Only root drives state transitions in the mock, mirroring the runtime's governance origin.
 	type GovernanceOrigin = EnsureRoot<u64>;
 	type EpochDuration = ConstU64<EPOCH_DURATION>;
+	type EpochConfiguration = TestBabeEpochConfig;
 	type WeightInfo = ();
 }
 

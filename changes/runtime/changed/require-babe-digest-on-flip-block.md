@@ -10,7 +10,10 @@ The consensus-engine pallet now:
   ordering, or duplicates; absence remains allowed for older binaries);
 - returns `Error::InvalidEngineState` from `arm_babe` / `schedule_flip` when
   called from the wrong `EngineState`;
-- postpones the flip while `pallet-babe::Authorities` is empty.
+- postpones the flip while `pallet-babe::Authorities` is empty;
+- writes `BABE_GENESIS_EPOCH_CONFIG` into `pallet-babe::EpochConfig` at the
+  flip when absent (upgraded networks never ran Babe genesis, and
+  `Babe::current_epoch()` / `next_epoch()` expect it).
 
 PR:
 Issue:

@@ -942,11 +942,17 @@ impl pallet_throttle::Config for Runtime {
 	type WindowSize = WindowSize;
 }
 
+parameter_types! {
+	pub BabeEpochConfigurationValue: sp_consensus_babe::BabeEpochConfiguration =
+		BABE_GENESIS_EPOCH_CONFIG;
+}
+
 impl pallet_consensus_engine::Config for Runtime {
 	// Some state transitions are governance-driven: federated-authority motions dispatch approved
 	// calls as root.
 	type GovernanceOrigin = EnsureRoot<AccountId>;
 	type EpochDuration = SidechainEpochDuration;
+	type EpochConfiguration = BabeEpochConfigurationValue;
 	// Unit weights for now. Issue #1863.
 	type WeightInfo = ();
 }

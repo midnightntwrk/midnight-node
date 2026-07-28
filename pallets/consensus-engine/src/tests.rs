@@ -363,6 +363,45 @@ fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 }
 
 #[test]
+fn migrate_to_babe_writes_epoch_config_when_absent() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ScheduledFlip);
+		seed_babe_authorities();
+		// Upgrade-path shape: Babe genesis never ran, so EpochConfig is unset.
+		assert!(pallet_babe::EpochConfig::<Test>::get().is_none());
+
+		start_block_with_babe_pre_digest(1499);
+		let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+			on_initialize();
+		}));
+		assert!(result.is_err(), "flip still panics on Issue #1742");
+
+		assert_eq!(pallet_babe::EpochConfig::<Test>::get(), Some(TestBabeEpochConfig::get()));
+	});
+}
+
+#[test]
+fn migrate_to_babe_preserves_existing_epoch_config() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ScheduledFlip);
+		seed_babe_authorities();
+
+		let existing = sp_consensus_babe::BabeEpochConfiguration {
+			c: (2, 5),
+			allowed_slots: sp_consensus_babe::AllowedSlots::PrimarySlots,
+		};
+		pallet_babe::EpochConfig::<Test>::put(existing.clone());
+
+		start_block_with_babe_pre_digest(1499);
+		let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+			on_initialize();
+		}));
+
+		assert_eq!(pallet_babe::EpochConfig::<Test>::get(), Some(existing));
+	});
+}
+
+#[test]
 fn on_initialize_is_a_no_op_in_stable_states() {
 	new_test_ext().execute_with(|| {
 		for state in [State::Aura, State::ArmedBabe, State::Babe] {

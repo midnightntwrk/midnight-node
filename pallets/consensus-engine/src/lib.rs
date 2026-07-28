@@ -83,6 +83,12 @@ pub mod pallet {
 		#[pallet::constant]
 		type EpochDuration: Get<u64>;
 
+		/// BABE epoch configuration written into `pallet_babe::EpochConfig` at the
+		/// flip when absent. Genesis networks get this from Babe genesis build;
+		/// upgraded networks never ran that path, and `Babe::current_epoch()` /
+		/// `next_epoch()` expect the value.
+		type EpochConfiguration: Get<sp_consensus_babe::BabeEpochConfiguration>;
+
 		/// Weight information for this pallet's extrinsics.
 		type WeightInfo: WeightInfo;
 	}
@@ -258,6 +264,17 @@ pub mod pallet {
 
 			pallet_babe::Randomness::<T>::put(BABE_GENESIS_RANDOMNESS);
 			pallet_babe::NextRandomness::<T>::put(BABE_GENESIS_RANDOMNESS);
+
+			// Upgraded networks never ran Babe genesis, so `EpochConfig` is unset.
+			// `Babe::current_epoch()` / `next_epoch()` expect it (used by the node
+			// at the flip to seed the epoch tree).
+			if pallet_babe::EpochConfig::<T>::get().is_none() {
+				pallet_babe::EpochConfig::<T>::put(T::EpochConfiguration::get());
+				log::info!(
+					target: "consensus-engine",
+					"Wrote pallet-babe EpochConfig (absent on upgraded networks).",
+				);
+			}
 
 			log::info!(
 				target: "consensus-engine",
