@@ -26,10 +26,17 @@
 //! It is a single-block migration: the host call translates the whole state in
 //! one shot (a few milliseconds for dev/undeployed-sized state). It is wired
 //! into [`crate::Migrations`](../../../runtime/src/lib.rs) via
-//! [`VersionedMigration`], so it runs exactly once, when a ledger-8 runtime
-//! (pallet-midnight storage version 1) upgrades to this ledger-9 runtime
-//! (storage version 2). A chain whose genesis is already ledger-9 starts at
-//! storage version 2 and never runs it.
+//! [`VersionedMigration`], so it runs at most once, when a runtime at
+//! pallet-midnight storage version 1 upgrades to this runtime (storage version
+//! 2). A chain whose genesis is already ledger-9 starts at storage version 2
+//! and never runs it.
+//!
+//! Storage version 1 does not, however, imply the *ledger* state is still v8:
+//! the 2.0.0 runtime already ran ledger-9 yet shipped pallet-midnight at storage
+//! version 1 (it had no v1->v2 migration), so a network upgrading 2.0.0 -> this
+//! runtime triggers this migration over an already-v9 state. The host function
+//! detects that case and no-ops (returns the `StateKey` unchanged), so the only
+//! effect on that path is the storage-version bump to 2.
 
 #[cfg(feature = "try-runtime")]
 extern crate alloc;
@@ -53,9 +60,12 @@ impl<T: Config> UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2<T> {
 		// The host function reads the v8 arena root, translates the referenced
 		// `LedgerState` to v9, re-persists it, and returns the new v9 root
 		// together with the synthetic cost (picoseconds) it charged the
-		// translation against the ledger's deterministic cost model.
-		// Failure here is unrecoverable: the chain would be left pointing at a
-		// v8 state a ledger-9 runtime cannot read, so we abort the upgrade.
+		// translation against the ledger's deterministic cost model. If the
+		// state is already v9 (e.g. a 2.0.0 -> this-runtime upgrade), it no-ops
+		// and returns the `state_key` unchanged with zero cost.
+		// A genuine failure here is unrecoverable: the chain would be left
+		// pointing at a v8 state a ledger-9 runtime cannot read, so we abort the
+		// upgrade.
 		let (new_state_key, consumed_cost_ps) = LedgerApi::migrate_state_v8_to_v9(&state_key)
 			.expect("FATAL: ledger v8->v9 state migration failed");
 

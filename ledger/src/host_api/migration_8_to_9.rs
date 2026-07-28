@@ -69,10 +69,35 @@ const MAX_STEPS: usize = 100_000;
 /// the synthetic cost, in picoseconds, the translation consumed against the
 /// ledger's deterministic cost model — for the pallet to charge as this
 /// migration's weight.
+///
+/// If `state_key_v8` already references a ledger-9 state this is a no-op: it
+/// returns the key unchanged with zero cost (see the idempotency guard below).
 pub fn migrate_state_v8_to_v9<D: DB>(
 	state_key_v8: &[u8],
 ) -> Result<(Vec<u8>, u64), LedgerApiError> {
 	let t_total = std::time::Instant::now();
+
+	// 0. Idempotency guard: no-op if the state is already ledger-9.
+	//
+	// The pallet gates this behind `VersionedMigration<1, 2>`, but the on-chain
+	// pallet-midnight storage version is not a faithful proxy for the ledger
+	// version. The 2.0.0 runtime (spec 2_000_000) already runs ledger-9 yet
+	// shipped pallet-midnight at storage version 1 (it had no v1->v2 migration),
+	// so a network upgrading 2.0.0 -> this runtime still triggers this migration
+	// even though its `StateKey` already points at a v9 arena root. Feeding that
+	// v9 root to the v8 decode below would fail on the tag mismatch and abort the
+	// upgrade (the pallet `expect`s success), bricking the chain. Detect it by
+	// the root's serialized tag — `TypedArenaKey`'s tag embeds the `LedgerState`
+	// version (`storage-key(midnight:ledger-state[vN]:...)`), so a successful
+	// tagged decode as a v9 key is a reliable, arena-free discriminator — and
+	// return the key unchanged with zero synthetic cost.
+	if tagged_deserialize::<TypedArenaKey<Ledger9<D>, D::Hasher>>(&mut &state_key_v8[..]).is_ok() {
+		log::info!(
+			target: LOG_TARGET,
+			"StateKey already references a ledger-9 state; skipping v8->v9 translation (no-op)"
+		);
+		return Ok((state_key_v8.to_vec(), 0));
+	}
 
 	// 1. Decode the v8 arena root and load the v8 ledger wrapper from the arena.
 	let t_load = std::time::Instant::now();
