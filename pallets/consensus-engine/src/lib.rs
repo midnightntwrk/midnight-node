@@ -37,6 +37,9 @@
 //! (session has not yet populated BABE keys after a runtime upgrade); while
 //! waiting, epoch-end blocks are not required to carry the flip marker. If the
 //! last slot of an epoch is empty, migration is postponed to a later epoch-end block.
+//! After the flip (`Babe`) the check is mirrored: AURA pre-runtime digests are
+//! rejected, so a stray one cannot hijack slot/author extraction from a block that
+//! BABE authored.
 //! The migration initializes pallet-babe state and transitions to the final state
 //! `Babe`. The first block of the next epoch is authored with BABE.
 
@@ -196,7 +199,19 @@ pub mod pallet {
 						}
 					}
 				},
-				State::Babe => {},
+				// After the flip, reject any AURA pre-digest. Nothing consuming a
+				// post-flip block expects one: `pallet-aura` would still track its
+				// slot, `slot_from_predigest`-style helpers that try AURA first would
+				// resolve an author-chosen slot instead of the real BABE slot, and
+				// `polkadot-js`'s `extractAuthor` attributes the block to the first
+				// pre-runtime digest it can decode — so an AURA digest placed before
+				// the BABE one misattributes authorship to `slot % n_authorities`.
+				State::Babe => {
+					assert!(
+						!Self::has_any_aura_pre_digest(),
+						"AURA pre-runtime digest present in state 'Babe'",
+					);
+				},
 			}
 			<T as Config>::WeightInfo::on_initialize()
 		}
@@ -324,6 +339,14 @@ pub mod pallet {
 				.logs
 				.iter()
 				.any(|log| log.as_babe_pre_digest().is_some())
+		}
+
+		/// Whether the current block's digest carries any AURA pre-runtime digest.
+		fn has_any_aura_pre_digest() -> bool {
+			frame_system::Pallet::<T>::digest()
+				.logs
+				.iter()
+				.any(|log| AuraCompatibleDigestItem::<()>::as_aura_pre_digest(log).is_some())
 		}
 
 		/// Returns `true` when the current block's digest carries exactly one BABE

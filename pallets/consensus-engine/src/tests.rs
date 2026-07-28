@@ -437,13 +437,56 @@ fn migrate_to_babe_preserves_existing_epoch_config() {
 #[test]
 fn on_initialize_is_a_no_op_in_stable_states() {
 	new_test_ext().execute_with(|| {
-		for state in [State::Aura, State::ArmedBabe, State::Babe] {
+		for state in [State::Aura, State::ArmedBabe] {
 			EngineState::<Test>::put(state);
 			// Even at an epoch's last slot, non-scheduled states never flip.
 			start_block_at_slot(1499);
 			on_initialize();
 			assert_eq!(EngineState::<Test>::get(), state);
 		}
+
+		// Post-flip blocks carry a BABE digest only (an AURA one is rejected).
+		EngineState::<Test>::put(State::Babe);
+		start_block_with_logs(vec![babe_pre_digest(1499)]);
+		on_initialize();
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
+	});
+}
+
+#[test]
+#[should_panic(expected = "AURA pre-runtime digest present in state 'Babe'")]
+fn babe_rejects_aura_pre_digest_before_babe() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::Babe);
+		// The misattribution shape: `polkadot-js` extractAuthor takes the first
+		// decodable pre-runtime digest, so a leading AURA digest would credit
+		// `slot % n_authorities` instead of the real BABE author.
+		start_block_with_logs(vec![aura_pre_digest(1500), babe_pre_digest(1500)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "AURA pre-runtime digest present in state 'Babe'")]
+fn babe_rejects_aura_pre_digest_after_babe() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::Babe);
+		// Position-independent: helpers that look AURA up first (e.g. the node's
+		// parent-slot resolution) are fooled wherever the digest sits.
+		start_block_with_logs(vec![babe_pre_digest(1500), aura_pre_digest(9999)]);
+		on_initialize();
+	});
+}
+
+#[test]
+fn babe_accepts_babe_only_block_with_unrelated_digest() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::Babe);
+		// What BABE actually authors: its own pre-digest plus partner-chains' own
+		// digest item, which must not be mistaken for an AURA one.
+		start_block_with_logs(vec![babe_pre_digest(1500), unrelated_pre_digest()]);
+		on_initialize();
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
 	});
 }
 
