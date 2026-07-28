@@ -52,16 +52,26 @@ const LOG_TARGET: &str = "midnight::ledger::migration_8_to_9";
 
 /// Picoseconds granted to each `TypedTranslationState::run` step. The migration
 /// is single-block (it must complete within one host call), so we loop over
-/// `run` with a generous per-step budget until the translation reports a result.
-/// One second of picoseconds per step comfortably drains dev/undeployed-sized
-/// state in a couple of iterations; the loop cap is a runaway backstop only.
-const RUN_BUDGET_PS: u64 = 1_000_000_000_000;
+/// `run` with a per-step budget until the translation reports a result.
+///
+/// This budget also doubles as the quantization granularity of the synthetic
+/// cost reported back to the pallet (see `consumed_cost_ps` below): `run`
+/// doesn't return unused budget, so every completed step is charged in full.
+/// 10ms keeps that over-approximation small relative to real translation
+/// costs while still comfortably draining dev/undeployed-sized state in a
+/// handful of iterations; the loop cap is a runaway backstop only.
+const RUN_BUDGET_PS: u64 = 10_000_000_000;
 const MAX_STEPS: usize = 100_000;
 
 /// Translate the ledger state referenced by a v8 arena root (`state_key_v8`,
-/// the pallet's `StateKey` bytes) into a v9 ledger state, persist it, and return
-/// the new v9 arena root to store back into `StateKey`.
-pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+/// the pallet's `StateKey` bytes) into a v9 ledger state, persist it, and
+/// return the new v9 arena root (to store back into `StateKey`) together with
+/// the synthetic cost, in picoseconds, the translation consumed against the
+/// ledger's deterministic cost model — for the pallet to charge as this
+/// migration's weight.
+pub fn migrate_state_v8_to_v9<D: DB>(
+	state_key_v8: &[u8],
+) -> Result<(Vec<u8>, u64), LedgerApiError> {
 	let t_total = std::time::Instant::now();
 
 	// 1. Decode the v8 arena root and load the v8 ledger wrapper from the arena.
@@ -108,9 +118,16 @@ pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, Led
 			break result;
 		}
 	};
+	// Every completed `run` call before the last one must have exhausted its
+	// full `RUN_BUDGET_PS` — otherwise `tl.result()` would already have been
+	// `Some` and the loop would have stopped there. Only the final call may
+	// have used less. `steps * RUN_BUDGET_PS` is therefore a deterministic
+	// upper bound on the synthetic cost actually consumed, accurate to one
+	// `RUN_BUDGET_PS` quantum.
+	let consumed_cost_ps = steps as u64 * RUN_BUDGET_PS;
 	log::info!(
 		target: LOG_TARGET,
-		"v8->v9 ledger state translation complete in {steps} step(s), {:?}",
+		"v8->v9 ledger state translation complete in {steps} step(s), {:?}, {consumed_cost_ps}ps synthetic cost",
 		t_translate.elapsed()
 	);
 
@@ -135,7 +152,7 @@ pub fn migrate_state_v8_to_v9<D: DB>(state_key_v8: &[u8]) -> Result<Vec<u8>, Led
 	})?;
 
 	log::debug!(target: LOG_TARGET, "[perf] migrate_state_v8_to_v9 took {:?}", t_total.elapsed());
-	Ok(bytes)
+	Ok((bytes, consumed_cost_ps))
 }
 
 #[cfg(test)]

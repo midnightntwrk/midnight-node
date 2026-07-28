@@ -505,11 +505,14 @@ pub trait Ledger9Bridge {
 	///
 	/// Called by `pallet_midnight`'s v8->v9 storage migration during the runtime
 	/// upgrade that crosses into ledger-9. `state_key` is the pallet's `StateKey`
-	/// (a v8 arena root); the returned bytes are the new v9 arena root to store back.
+	/// (a v8 arena root); returns the new v9 arena root to store back, together
+	/// with the synthetic cost (picoseconds) the translation consumed against
+	/// the ledger's cost model, for the pallet to charge as this migration's
+	/// weight.
 	fn migrate_state_v8_to_v9(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
-	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+	) -> AllocateAndReturnByCodec<Result<(Vec<u8>, u64), LedgerApiError>> {
 		// Ensure the ledger arena is initialized before translating. The migration
 		// runs in the Executive migrations tuple, before pallet_midnight's
 		// on_initialize/on_runtime_upgrade have (re)initialized storage this block.

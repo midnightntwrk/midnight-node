@@ -51,21 +51,30 @@ impl<T: Config> UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2<T> {
 		let state_key = StateKey::<T>::get();
 
 		// The host function reads the v8 arena root, translates the referenced
-		// `LedgerState` to v9, re-persists it, and returns the new v9 root.
+		// `LedgerState` to v9, re-persists it, and returns the new v9 root
+		// together with the synthetic cost (picoseconds) it charged the
+		// translation against the ledger's deterministic cost model.
 		// Failure here is unrecoverable: the chain would be left pointing at a
 		// v8 state a ledger-9 runtime cannot read, so we abort the upgrade.
-		let new_state_key = LedgerApi::migrate_state_v8_to_v9(&state_key)
+		let (new_state_key, consumed_cost_ps) = LedgerApi::migrate_state_v8_to_v9(&state_key)
 			.expect("FATAL: ledger v8->v9 state migration failed");
 
 		StateKey::<T>::put(new_state_key);
 		log::info!(
 			target: "midnight::migration",
-			"ledger v8->v9 state migration complete; StateKey re-pointed to v9 root"
+			"ledger v8->v9 state migration complete; StateKey re-pointed to v9 root ({consumed_cost_ps}ps synthetic cost)"
 		);
 
-		// The heavy translation runs natively in the host call; on-chain this is
-		// a single `StateKey` read + write.
-		T::DbWeight::get().reads_writes(1, 1)
+		// The translation runs natively in the host call, so the pallet-side
+		// read/write above is negligible next to it; report the ledger's own
+		// synthetic cost as `ref_time` instead. This is the same 1:1 mapping
+		// `pallet_midnight::get_tx_weight` uses for ordinary transactions
+		// (ledger picoseconds -> `Weight` ref_time), and that cost model
+		// already prices the arena reads/writes the translation performs, so
+		// no separate `DbWeight` charge is added on top. `proof_size` is 0:
+		// this chain doesn't build a PoV. Capped at the block's max weight,
+		// since a pathological state could in principle exceed it.
+		Weight::from_parts(consumed_cost_ps, 0).min(T::BlockWeights::get().max_block)
 	}
 
 	#[cfg(feature = "try-runtime")]
