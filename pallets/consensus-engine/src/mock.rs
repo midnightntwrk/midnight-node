@@ -36,7 +36,7 @@ use crate as pallet_consensus_engine;
 /// Epoch length shared by pallet-babe and the consensus-engine pallet in the mock.
 const EPOCH_DURATION: u64 = 300;
 /// Slot duration in milliseconds used by the AURA/BABE/timestamp mock configs.
-const SLOT_DURATION: u64 = 6000;
+pub const SLOT_DURATION: u64 = 6000;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 

@@ -279,9 +279,18 @@ pub mod pallet {
 		fn migrate_to_babe(slot: Slot) {
 			let babe_genesis_slot = Self::next_epoch_start(slot);
 
-			// BABE and sidechain epochs boundaries should align
+			// `GenesisSlot` is the first slot of the *next* epoch so BABE and sidechain epoch
+			// boundaries align (the first full BABE epoch, epoch 0, starts there).
 			pallet_babe::GenesisSlot::<T>::put(babe_genesis_slot);
-			pallet_babe::CurrentSlot::<T>::put(babe_genesis_slot);
+			// `CurrentSlot` must be *this* block's slot, not the genesis slot: this flip block is
+			// the last pre-BABE block (slot `slot`), and the timestamp inherent runs after this
+			// hook in the same block — by then the engine is BABE, so `OnTimestampSet` dispatches
+			// to pallet-babe, which asserts `CurrentSlot == timestamp_slot`. Setting it a slot
+			// ahead would panic on the flip block itself and reject it. It momentarily sits one
+			// slot below `GenesisSlot`, which is fine — the first BABE block (`slot + 1`) advances
+			// it to `GenesisSlot`. (pallet-babe's `initialize` derives the same value from this
+			// block's BABE pre-digest, so setting it here is order-independent.)
+			pallet_babe::CurrentSlot::<T>::put(slot);
 			pallet_babe::EpochIndex::<T>::put(0);
 
 			pallet_babe::Randomness::<T>::put(BABE_GENESIS_RANDOMNESS);

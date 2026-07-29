@@ -14,7 +14,10 @@
 //! Tests for the consensus-engine pallet.
 
 use crate::{Error, State, mock::*, pallet::EngineState};
-use frame_support::{assert_noop, assert_ok, traits::Hooks};
+use frame_support::{
+	assert_noop, assert_ok,
+	traits::{Hooks, OnTimestampSet},
+};
 use midnight_primitives_consensus_engine::ActiveEngine;
 use sp_consensus_slots::Slot;
 use sp_runtime::DispatchError;
@@ -611,3 +614,30 @@ fn malformed_items_are_not_detected_as_the_transition_shape() {
 	]));
 }
 
+<<<<<<< HEAD
+=======
+#[test]
+fn flip_leaves_babe_current_slot_matching_the_flip_block_timestamp() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ScheduledFlip);
+		seed_babe_authorities();
+
+		start_block_with_babe_pre_digest(1499);
+		let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+			on_initialize();
+		}));
+
+		// `GenesisSlot` aligns BABE's epoch 0 with the next sidechain epoch...
+		assert_eq!(pallet_babe::GenesisSlot::<Test>::get(), Slot::from(1500));
+		// ...but `CurrentSlot` must stay this block's slot: the timestamp inherent runs
+		// after `on_initialize` in the same block, and pallet-babe asserts
+		// `CurrentSlot == timestamp_slot`.
+		assert_eq!(pallet_babe::CurrentSlot::<Test>::get(), Slot::from(1499));
+
+		// The engine is BABE by the time the timestamp inherent executes, so
+		// pallet-babe's hook must accept the flip block rather than reject it.
+		EngineState::<Test>::put(State::Babe);
+		<ConsensusEngine as OnTimestampSet<u64>>::on_timestamp_set(1499 * SLOT_DURATION);
+	});
+}
+>>>>>>> f4ab7614f7 (fix(consensus-engine): set babe CurrentSlot to the flip block's slot so OnTimestampSet accepts it)
