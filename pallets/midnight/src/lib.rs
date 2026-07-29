@@ -439,6 +439,7 @@ pub mod pallet {
 	}
 
 	#[pallet::validate_unsigned]
+	#[allow(deprecated)]
 	impl<T: Config> ValidateUnsigned for Pallet<T> {
 		type Call = Call<T>;
 		fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {

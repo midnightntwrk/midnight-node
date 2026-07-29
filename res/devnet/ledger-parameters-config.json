@@ -140,7 +140,9 @@
       "read_time_batched_4k": 2000000,
       "read_time_synchronous_4k": 85000000
     },
-    "parallelism_factor": 4,
+    "validation_factor": 0.25,
+    "guaranteed_factor": 1.0,
+    "fallible_factor": 1.0,
     "baseline_cost": {
       "readTime": 0,
       "computeTime": 100000000,

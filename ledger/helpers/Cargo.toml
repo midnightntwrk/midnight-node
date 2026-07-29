@@ -4,8 +4,14 @@ version = "0.1.0"
 edition = "2024"
 license-file.workspace = true
 
+# Resolves ledger dependency versions from Cargo.lock at build time (see build.rs).
+# cargo_metadata 0.15.4 is already in the lock graph, so this adds no new packages.
+[build-dependencies]
+cargo_metadata = "0.15"
+
 [dependencies]
 hex.workspace = true
+sha2.workspace = true
 
 mn-ledger = { workspace = true, features = ["proving"] }
 base-crypto = { workspace = true }
@@ -16,7 +22,6 @@ ledger-storage = { workspace = true }
 transient-crypto = { workspace = true }
 zswap = { workspace = true }
 zkir = { workspace = true }
-zkir-2-1 = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 
@@ -45,7 +50,6 @@ derive-where.workspace = true
 serde = { workspace = true, features = ["derive"] }
 bech32 = "0.11.0"
 bip39 = "2.2.2"
-toml.workspace = true
 subxt.workspace = true
 subxt-signer.workspace = true
 serde_json.workspace = true

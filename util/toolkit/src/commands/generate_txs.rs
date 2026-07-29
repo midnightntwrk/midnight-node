@@ -82,7 +82,7 @@ mod tests {
 
 	use super::*;
 	use crate::{
-		cli_parsers::contract_address_decode,
+		cli_parsers::{SchemeSeed, contract_address_decode},
 		t_token,
 		tx_generator::{
 			builder::{
@@ -92,6 +92,7 @@ mod tests {
 			source::FetchCacheConfig,
 		},
 	};
+	use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
 	use test_case::test_case;
 
@@ -138,8 +139,11 @@ mod tests {
 		shielded_token_type: vec![t_token()],
 		unshielded_amount: vec![100],
 		unshielded_token_type: vec![NIGHT],
-		source_seed: "0000000000000000000000000000000000000000000000000000000000000001"
-			.parse().unwrap(),
+		source_seed: SchemeSeed {
+			seed: "0000000000000000000000000000000000000000000000000000000000000001"
+				.parse().unwrap(),
+			scheme: UnshieldedSignatureScheme::Schnorr,
+		},
 		funding_seed: None,
 		destination_address: vec![
 			WalletAddress::from_str(
@@ -159,7 +163,10 @@ mod tests {
 		"send-tx"
 	)]
 	#[test_case(test_fixture!(Builder::ClaimRewards(ClaimRewardsArgs {
-		funding_seed: "0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+		funding_seed: SchemeSeed {
+			seed: "0000000000000000000000000000000000000000000000000000000000000001".parse().unwrap(),
+			scheme: UnshieldedSignatureScheme::Schnorr,
+		},
 		rng_seed:None,
 		amount: 500_000,
 		claim_kind: ClaimKindArg::Reward

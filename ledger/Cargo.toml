@@ -43,7 +43,6 @@ hex = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 lazy_static = { workspace = true, optional = true }
 moka = { version = "0.11.3", optional = true }
-toml = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 midnight-node-ledger-helpers = { workspace = true, optional = true }
 scale-info.workspace = true
@@ -90,7 +89,6 @@ std = [
     "coin-structure-ledger-9",
     "transient-crypto-ledger-9",
     "sha2",
-    "toml",
     "midnight-node-ledger-helpers",
     "derive-where"
 ]

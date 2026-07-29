@@ -11,10 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::ContractVerifyingKeyBytes;
+
 pub use super::make_block_context;
 pub use super::{
-	TransactionSignature as Signature, contract_operation_new, maintenance_verifying_key,
-	signature_verifying_key, transaction_signature, transaction_signing_key,
+	MaintenanceVerifyingKey, SignatureVerifyingKey, SigningKeyEcdsa,
+	TransactionSignature as Signature, TransactionSigningKey, VerifyingKeyEcdsa,
+	contract_operation_new, maintenance_verifying_key, maintenance_verifying_key_ecdsa,
+	signature_verifying_key, signature_verifying_key_ecdsa, transaction_signature,
+	transaction_signature_ecdsa, transaction_signing_key, transaction_signing_key_ecdsa,
 };
 pub use super::{
 	base_crypto::{
@@ -25,7 +30,10 @@ pub use super::{
 		fab::AlignedValue,
 		hash::{HashOutput, PERSISTENT_HASH_BYTES, persistent_commit, persistent_hash},
 		rng::SplittableRng,
-		signatures::{SigningKey, VerifyingKey},
+		signatures::{
+			SigningKey, SigningKey as SigningKeySchnorr, VerifyingKey,
+			VerifyingKey as VerifyingKeySchnorr,
+		},
 		time::{Duration, Timestamp},
 	},
 	coin_structure::{
@@ -87,7 +95,7 @@ pub use super::{
 		},
 		transcript::Transcript,
 	},
-	test_utilities_local::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver, verifier_key},
+	test_utilities_local::{PUBLIC_PARAMS, Pk, ProofServerProvider, test_resolver},
 	transient_crypto::{
 		commitment::{Pedersen, PedersenRandomness, PureGeneratorPedersen},
 		curve::Fr,
@@ -184,6 +192,18 @@ pub async fn ir_source(resolver: &Resolver, name: &'static str) -> Option<Vec<u8
 		.await
 		.ok()??;
 	Some(material.ir_source)
+}
+
+/// Resolves a circuit's verifier key by name.
+pub async fn verifier_key(
+	resolver: &Resolver,
+	name: &'static str,
+) -> Option<ContractVerifyingKeyBytes> {
+	let material = resolver
+		.resolve_key(KeyLocation(std::borrow::Cow::Borrowed(name)))
+		.await
+		.ok()??;
+	Some(ContractVerifyingKeyBytes(material.verifier_key))
 }
 
 /// Serializes a mn_ledger::serialize-able type into bytes

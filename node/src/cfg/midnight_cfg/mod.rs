@@ -49,6 +49,11 @@ pub struct MidnightCfg {
 	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
 	pub aura_seed_file: Option<String>,
 
+	/// Path to file containing a secret string to use as the BABE seed (32 bytes)
+	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
+	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
+	pub babe_seed_file: Option<String>,
+
 	/// Path to file containing a secret string to use as the GRANDPA seed (32 bytes)
 	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
 	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase

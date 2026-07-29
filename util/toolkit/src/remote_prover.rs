@@ -34,25 +34,41 @@ impl<D: DB + Clone> ProofProvider<D> for RemoteProofServer {
 		&self,
 		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 		_rng: StdRng,
-		resolver: &Resolver,
-		cost_model: &CostModel,
+		resolver: &'static Resolver,
+		cost_model: CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D> {
 		log::info!("Proof server URL: {}", self.url);
 
-		let backoff = ExponentialBackoff {
-			max_elapsed_time: Some(PROOF_SERVER_TIMEOUT),
-			..ExponentialBackoff::default()
-		};
+		let url = self.url.clone();
+		// This `spawn_blocking` is a `!Send` bridge, NOT a CPU offload: remote proving is I/O-bound,
+		// but `ProofServerProvider`'s `tx.prove` is `!Send` (the same RPITIT `Resolver::resolve_key`
+		// reason as local proving), so the future must be built and driven on a single thread. We do
+		// that inside the closure via a fresh current-thread runtime; `.await`ing the handle yields
+		// the calling worker. Capture `url`/`tx`/`resolver` (`&'static`)/`cost_model` — not `&self`.
+		tokio::task::spawn_blocking(move || {
+			let rt = tokio::runtime::Builder::new_current_thread()
+				.enable_all()
+				.build()
+				.expect("failed to build remote proving runtime");
+			rt.block_on(async move {
+				let backoff = ExponentialBackoff {
+					max_elapsed_time: Some(PROOF_SERVER_TIMEOUT),
+					..ExponentialBackoff::default()
+				};
 
-		retry(backoff, || async {
-			let provider = ProofServerProvider { base_url: self.url.clone().into(), resolver };
-			tx.prove(provider, cost_model).await.map_err(|e| {
-				log::warn!("proof server proving failed, retrying: {e}");
-				backoff::Error::transient(e)
+				retry(backoff, || async {
+					let provider = ProofServerProvider { base_url: url.clone().into(), resolver };
+					tx.prove(provider, &cost_model).await.map_err(|e| {
+						log::warn!("proof server proving failed, retrying: {e}");
+						backoff::Error::transient(e)
+					})
+				})
+				.await
+				.unwrap_or_else(|err| panic!("Failed to prove via remote proof server: {:?}", err))
 			})
 		})
 		.await
-		.unwrap_or_else(|err| panic!("Failed to prove via remote proof server: {:?}", err))
+		.expect("remote proving task panicked")
 	}
 }
 
@@ -67,8 +83,8 @@ impl<D: DB + Clone> midnight_node_ledger_helpers::ledger_8::ProofProvider<D> for
 			D,
 		>,
 		_rng: StdRng,
-		resolver: &midnight_node_ledger_helpers::ledger_8::Resolver,
-		cost_model: &midnight_node_ledger_helpers::ledger_8::CostModel,
+		resolver: &'static midnight_node_ledger_helpers::ledger_8::Resolver,
+		cost_model: midnight_node_ledger_helpers::ledger_8::CostModel,
 	) -> midnight_node_ledger_helpers::ledger_8::Transaction<
 		midnight_node_ledger_helpers::ledger_8::Signature,
 		midnight_node_ledger_helpers::ledger_8::ProofMarker,
@@ -82,12 +98,13 @@ impl<D: DB + Clone> midnight_node_ledger_helpers::ledger_8::ProofProvider<D> for
 			..ExponentialBackoff::default()
 		};
 
+		// ledger8 is Send, and we're remote-proving, so we await directly here.
 		retry(backoff, || async {
 			let provider = midnight_node_ledger_helpers::ledger_8::ProofServerProvider {
 				base_url: self.url.clone().into(),
 				resolver,
 			};
-			tx.prove(provider, cost_model).await.map_err(|e| {
+			tx.prove(provider, &cost_model).await.map_err(|e| {
 				log::warn!("proof server proving failed, retrying: {e}");
 				backoff::Error::transient(e)
 			})

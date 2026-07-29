@@ -1,5 +1,5 @@
 use crate::cli_parsers::{self as cli};
-use crate::{DefaultDB, IntoWalletAddress, ShieldedWallet, UnshieldedWallet, WalletSeed};
+use crate::{DefaultDB, IntoWalletAddress, ShieldedWallet, UnshieldedWallet};
 use clap::Args;
 use hex::ToHex;
 use midnight_node_ledger_helpers::{DustWallet, serialize, serialize_untagged};
@@ -10,9 +10,12 @@ pub struct ShowAddressArgs {
 	/// Target network
 	#[arg(long)]
 	pub network: String,
-	/// Wallet seed
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	pub seed: WalletSeed,
+	/// Wallet seed. Bare seed selects Schnorr; prefix with `ecdsa:` for an ECDSA identity
+	/// (ledger 9+), e.g. `--seed ecdsa:<seed>`. The scheme only affects the
+	/// unshielded/verifying-key/user-address outputs; shielded, dust and coin keys are
+	/// scheme-independent.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub seed: cli::SchemeSeed,
 	#[command(flatten)]
 	pub specific_address: SpecificAddressTypeArgs,
 }
@@ -70,9 +73,12 @@ pub enum ShowAddress {
 }
 
 pub fn execute(args: ShowAddressArgs) -> ShowAddress {
-	let shielded_wallet = ShieldedWallet::<DefaultDB>::default(args.seed.clone());
-	let unshielded_wallet = UnshieldedWallet::default(args.seed.clone());
-	let dust_wallet = DustWallet::<DefaultDB>::default(args.seed.clone(), None);
+	let (seed, scheme) = args.seed.resolve();
+	let shielded_wallet = ShieldedWallet::<DefaultDB>::default(seed.clone());
+	// The unshielded identity is scheme-specific; the other sub-wallets derive from the seed
+	// alone and are unchanged between the Schnorr and ECDSA schemes.
+	let unshielded_wallet = UnshieldedWallet::new(seed.clone(), scheme);
+	let dust_wallet = DustWallet::<DefaultDB>::default(seed.clone(), None);
 
 	let all = Addresses {
 		shielded: shielded_wallet.address(&args.network).to_bech32(),
@@ -83,7 +89,7 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 		coin_public_tagged: serialize(&shielded_wallet.coin_public_key)
 			.expect("failed to serialize CoinPublicKey")
 			.encode_hex(),
-		verifying_key: serialize_untagged(&unshielded_wallet.verifying_key.unwrap())
+		verifying_key: serialize_untagged(&unshielded_wallet.verifying_key())
 			.expect("failed to serialize VerifyingKey")
 			.encode_hex(),
 		user_address: unshielded_wallet.user_address.0.0.encode_hex(),
@@ -120,6 +126,7 @@ pub fn execute(args: ShowAddressArgs) -> ShowAddress {
 #[cfg(test)]
 mod test {
 	use super::*;
+	use crate::WalletSeed;
 
 	#[test]
 	fn test_shielded_address() {
@@ -128,10 +135,13 @@ mod test {
 
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: "testnet".to_string(),
-			seed: WalletSeed::try_from_hex_str(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-			)
-			.unwrap(),
+			seed: cli::SchemeSeed {
+				seed: WalletSeed::try_from_hex_str(
+					"0000000000000000000000000000000000000000000000000000000000000001",
+				)
+				.unwrap(),
+				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+			},
 			specific_address,
 		};
 
@@ -150,10 +160,13 @@ mod test {
 
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: "testnet".to_string(),
-			seed: WalletSeed::try_from_hex_str(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-			)
-			.unwrap(),
+			seed: cli::SchemeSeed {
+				seed: WalletSeed::try_from_hex_str(
+					"0000000000000000000000000000000000000000000000000000000000000001",
+				)
+				.unwrap(),
+				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+			},
 			specific_address,
 		};
 
@@ -168,14 +181,50 @@ mod test {
 	fn test_all() {
 		let args: ShowAddressArgs = ShowAddressArgs {
 			network: "testnet".to_string(),
-			seed: WalletSeed::try_from_hex_str(
-				"0000000000000000000000000000000000000000000000000000000000000001",
-			)
-			.unwrap(),
+			seed: cli::SchemeSeed {
+				seed: WalletSeed::try_from_hex_str(
+					"0000000000000000000000000000000000000000000000000000000000000001",
+				)
+				.unwrap(),
+				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+			},
 			specific_address: Default::default(),
 		};
 
 		let address = super::execute(args);
 		assert!(matches!(address, ShowAddress::Addresses(_)));
+	}
+
+	#[test]
+	fn schnorr_and_ecdsa_yield_distinct_unshielded_identities() {
+		let hex = "0000000000000000000000000000000000000000000000000000000000000001";
+		let unshielded_for = |ecdsa: bool| {
+			let seed = WalletSeed::try_from_hex_str(hex).unwrap();
+			let scheme = if ecdsa {
+				midnight_node_ledger_helpers::UnshieldedSignatureScheme::Ecdsa
+			} else {
+				midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr
+			};
+			let seed = cli::SchemeSeed { seed, scheme };
+			match super::execute(ShowAddressArgs {
+				network: "testnet".to_string(),
+				seed,
+				specific_address: SpecificAddressTypeArgs {
+					unshielded: true,
+					..Default::default()
+				},
+			}) {
+				ShowAddress::SingleAddress(addr) => addr,
+				ShowAddress::Addresses(_) => panic!("expected a single unshielded address"),
+			}
+		};
+
+		let schnorr = unshielded_for(false);
+		let ecdsa = unshielded_for(true);
+
+		// Same seed, different scheme → different NIGHT identity, hence a different address.
+		assert_ne!(schnorr, ecdsa, "Schnorr and ECDSA must give distinct unshielded addresses");
+		assert!(schnorr.starts_with("mn_addr"), "unexpected schnorr unshielded hrp: {schnorr}");
+		assert!(ecdsa.starts_with("mn_addr"), "unexpected ecdsa unshielded hrp: {ecdsa}");
 	}
 }

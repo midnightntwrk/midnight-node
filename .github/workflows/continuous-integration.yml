@@ -57,7 +57,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -88,7 +88,7 @@ jobs:
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -104,7 +104,7 @@ jobs:
       # the DOCKERHUB_* secrets, so this step would otherwise hard-fail there.
       - name: Login to Docker Hub
         continue-on-error: true
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -256,12 +256,12 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -329,10 +329,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
 
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -395,7 +395,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -436,7 +436,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -452,7 +452,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -497,7 +497,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -513,7 +513,7 @@ jobs:
 
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
@@ -550,7 +550,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -574,7 +574,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -589,14 +589,14 @@ jobs:
       - name: Login to Docker Hub
         if: steps.guard.outputs.hit != 'true'
         continue-on-error: true
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
       # but no certs are provisioned on the runner. Append tls_enabled: false
@@ -668,7 +668,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -694,7 +694,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -720,19 +720,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   if: steps.guard.outputs.hit != 'true'
-      #   with:
-      #     just-command: toolkit-maintenance-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-maintenance-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -747,19 +746,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      #"LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   if: steps.guard.outputs.hit != 'true'
-      #   with:
-      #     just-command: toolkit-mint-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-mint-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -774,19 +772,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   if: steps.guard.outputs.hit != 'true'
-      #   with:
-      #     just-command: toolkit-tokens-minter-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-tokens-minter-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -801,7 +798,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -814,7 +811,7 @@ jobs:
           use-cache: false
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -842,7 +839,7 @@ jobs:
   #   runs-on: [self-hosted, "tier:medium"]
   #   steps:
   #     - name: Checkout
-  #       uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
 
 
   #     # Isolate docker config per runner slot — see the matching step in the
@@ -853,7 +850,7 @@ jobs:
   #         echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
   #     - name: Login to GHCR
-  #       uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+  #       uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
   #       with:
   #         registry: ghcr.io
   #         username: MidnightCI
@@ -897,19 +894,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # 6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
         with:
           submodules: true
       - id: guard
         uses: ./.github/actions/tree-cache-guard
-      # "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"
-      # - uses: ./.github/actions/reusable-e2e-tests
-      #   if: steps.guard.outputs.hit != 'true'
-      #   with:
-      #     just-command: toolkit-contracts-e2e
-      #     node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-      #     toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
-      #     ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      - uses: ./.github/actions/reusable-e2e-tests
+        if: steps.guard.outputs.hit != 'true'
+        with:
+          just-command: toolkit-contracts-e2e
+          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
@@ -924,7 +920,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -948,10 +944,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
 
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -971,7 +967,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
       - id: guard
@@ -1001,7 +997,7 @@ jobs:
       wallet_indexer_image: ${{ steps.image_meta.outputs.wallet_indexer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -1042,11 +1038,11 @@ jobs:
 
       - name: Free disk space
         if: steps.image_meta.outputs.skip_build != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 #v2.81.11
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 #v2.83.2
         with:
           tool: just
 
@@ -1128,7 +1124,7 @@ jobs:
       actions: write
     steps:
       - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
         with:
           submodules: true
 
@@ -1198,7 +1194,7 @@ jobs:
   #     contents: read
   #   steps:
   #     - name: Checkout
-  #       uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
   #
   #     - name: Get Version and git commit
   #       id: meta

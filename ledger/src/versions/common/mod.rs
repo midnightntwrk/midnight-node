@@ -473,11 +473,19 @@ where
 						start_tx_processing_time.elapsed().as_millis()
 					);
 				},
-				TransactionOperation::ClaimRewards { value, .. } => {
+				TransactionOperation::ClaimRewards { value } => {
 					event.claim_rewards.push(value);
 					log::trace!(
 						target: LOG_TARGET,
 						"⏱️  Tx op: ClaimRewards (elapsed_ms={})",
+						start_tx_processing_time.elapsed().as_millis()
+					);
+				},
+				TransactionOperation::ClaimBridgeTransfer { value } => {
+					event.claim_rewards.push(value);
+					log::trace!(
+						target: LOG_TARGET,
+						"⏱️  Tx op: ClaimBridgeTransfer (elapsed_ms={})",
 						start_tx_processing_time.elapsed().as_millis()
 					);
 				},
@@ -673,6 +681,9 @@ where
 					Op::Maintain { address: api.tagged_serialize(&address)? }
 				},
 				TransactionOperation::ClaimRewards { value } => Op::ClaimRewards { value },
+				TransactionOperation::ClaimBridgeTransfer { value } => {
+					Op::ClaimBridgeTransfer { value }
+				},
 			};
 			acc.push(a);
 			Ok::<_, LedgerApiError>(acc)
@@ -870,6 +881,13 @@ where
 										SingleUpdate::VerifierKeyRemove(..) => {
 											cd.inc_verifier_key_remove();
 										},
+										// Ledger 9+ adds IrInsert/IrRemove (on-chain IR maintenance).
+										// This match is shared across ledger versions, so the variants
+										// can't be named here (they don't exist in L7/L8's SingleUpdate);
+										// they're not yet broken out in ContractCallsDetails telemetry.
+										// TODO: support IrInsert/IrRemove
+										#[allow(unreachable_patterns)]
+										_ => {},
 									}
 								}
 							},

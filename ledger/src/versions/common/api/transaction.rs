@@ -29,9 +29,9 @@ use ledger_storage_local::arena::Sp;
 use mn_ledger_local::{
 	error::MalformedTransaction,
 	structure::{
-		ClaimRewardsTransaction, ContractAction, IntentHash, OutputInstructionUnshielded,
-		ProofKind, ProofMarker, SignatureKind, StandardTransaction, Transaction as Tx, Utxo,
-		UtxoOutput, UtxoSpend,
+		ClaimKind, ClaimRewardsTransaction, ContractAction, IntentHash,
+		OutputInstructionUnshielded, ProofKind, ProofMarker, SignatureKind, StandardTransaction,
+		Transaction as Tx, Utxo, UtxoOutput, UtxoSpend,
 	},
 };
 use std::borrow::Borrow;
@@ -88,9 +88,10 @@ where
 		InnerTx::tag_unique_factor()
 	}
 }
-pub enum ContractActionExt<P: ProofKind<D>, D: DB> {
+enum ContractActionExt<P: ProofKind<D>, D: DB> {
 	ContractAction(Box<ContractAction<P, D>>),
 	ClaimRewards { value: u128 },
+	ClaimBridgeTransfer { value: u128 },
 }
 
 struct UtxoOutputInfo {
@@ -247,8 +248,14 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 					}
 				})
 				.collect(),
-			Tx::ClaimRewards(ClaimRewardsTransaction { value, .. }) => {
-				vec![ContractActionExt::ClaimRewards { value: *value }]
+			Tx::ClaimRewards(ClaimRewardsTransaction { value, kind, .. }) => {
+				let action = match kind {
+					ClaimKind::Reward => ContractActionExt::ClaimRewards { value: *value },
+					ClaimKind::CardanoBridge => {
+						ContractActionExt::ClaimBridgeTransfer { value: *value }
+					},
+				};
+				vec![action]
 			},
 		};
 
@@ -266,6 +273,9 @@ impl<S: SignatureKind<D>, D: DB> Transaction<S, D> {
 				},
 			},
 			ContractActionExt::ClaimRewards { value } => Operation::ClaimRewards { value },
+			ContractActionExt::ClaimBridgeTransfer { value } => {
+				Operation::ClaimBridgeTransfer { value }
+			},
 		})
 	}
 
@@ -418,6 +428,7 @@ pub enum Operation {
 	Deploy { address: ContractAddress },
 	Maintain { address: ContractAddress },
 	ClaimRewards { value: u128 },
+	ClaimBridgeTransfer { value: u128 },
 }
 
 // grcov-excl-start
