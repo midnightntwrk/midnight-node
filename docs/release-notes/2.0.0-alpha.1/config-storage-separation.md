@@ -87,6 +87,17 @@ If the node instead fails with an `IncompatibleColumnConfig` error, `ledger_stor
 is missing and there is nothing to migrate from. Restore it, or fall back to the
 resync below.
 
+### `unified` databases created before 2.1.0
+
+2.1.0 btree-indexes the ledger columns in `unified` mode; earlier releases left them
+unindexed, which would have prevented ledger garbage collection from ever running
+against them. Nodes already written without an index cannot be re-indexed in place,
+so **a `unified` database from an earlier release will not start on 2.1.0** — it fails
+with an `IncompatibleColumnConfig` error. Delete the chain data directory and resync,
+or switch back to `separate` before upgrading.
+
+`separate` databases are unaffected: their layout is unchanged.
+
 ### `unified` → `separate`
 
 Not supported. Restarting in `separate` mode on a `unified` database fails

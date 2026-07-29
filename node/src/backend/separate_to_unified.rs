@@ -23,13 +23,12 @@
 //!
 //! Two things stand in the way of just opening the database in the new mode:
 //!
-//! 1. `separate` mode reserves the trailing ledger columns in the Substrate
-//!    database with the ledger's own column options (btree index, compression)
-//!    even though it never writes to them, while `unified` mode leaves them at
-//!    ParityDb's defaults. ParityDb compares the requested column options
-//!    against the on-disk metadata and refuses to open on any difference.
-//!    Because those columns are provably empty in a `separate` database,
-//!    rewriting the metadata is safe.
+//! 1. The two modes configure the trailing ledger columns slightly differently
+//!    (see [`super::custom_parity_db::column_options`]), and ParityDb refuses to
+//!    open a database whose on-disk column options differ from the requested
+//!    ones at all. Because those columns are provably empty in a `separate`
+//!    database — it keeps ledger nodes elsewhere — rewriting the metadata is
+//!    safe.
 //! 2. The ledger nodes themselves have to be copied across.
 //!
 //! Both happen here, before the node's long-lived ParityDb handle is created.
@@ -54,6 +53,7 @@ use std::path::{Path, PathBuf};
 use midnight_storage_core::db::paritydb::NUM_COLUMNS as NUM_COLUMNS_LEDGER;
 
 use super::custom_parity_db::{NUM_COLUMNS, NUM_COLUMNS_POLKADOT};
+use crate::cfg::midnight_cfg::StorageSeparation;
 
 /// Marker recording an import that has started but not finished. Written as a
 /// sibling of the source directory, e.g. `<base-path>/ledger_storage.importing`.
@@ -114,7 +114,7 @@ pub fn import_if_pending(
 		return Ok(());
 	}
 
-	let stale_layout = separate_layout_metadata(paritydb_path, unified_config)?;
+	let stale_layout = separate_layout_metadata(paritydb_path)?;
 	if stale_layout.is_none() && !interrupted {
 		log::debug!(
 			"Ignoring {} — the unified database's ledger columns are already authoritative.",
@@ -193,28 +193,47 @@ pub fn import_if_pending(
 /// column count differs (handled by the metadata-upgrade path in
 /// [`super::open_paritydb`]), or whose ledger columns already match the unified
 /// layout.
-fn separate_layout_metadata(
-	paritydb_path: &Path,
-	unified_config: &parity_db::Options,
-) -> Result<Option<([u8; 32], u32)>, Error> {
+///
+/// The ledger columns must match one of those two layouts *exactly*. "Anything
+/// other than unified" is not good enough: a `unified` database written before
+/// the ledger columns were btree-indexed also fails to match, and rewriting its
+/// metadata would put an empty btree in front of nodes stored outside one,
+/// losing every one of them. Refuse instead.
+fn separate_layout_metadata(paritydb_path: &Path) -> Result<Option<([u8; 32], u32)>, Error> {
 	let Some(metadata) = parity_db::Options::load_metadata(paritydb_path)? else {
 		return Ok(None);
 	};
-	if metadata.columns.len() != unified_config.columns.len() {
+	let separate =
+		super::custom_parity_db::column_options(paritydb_path, StorageSeparation::Separate);
+	let unified =
+		super::custom_parity_db::column_options(paritydb_path, StorageSeparation::Unified);
+	if metadata.columns.len() != unified.columns.len() {
 		return Ok(None);
 	}
 
-	if (NUM_COLUMNS_POLKADOT as usize..NUM_COLUMNS as usize)
-		.all(|c| metadata.columns[c] == unified_config.columns[c])
-	{
+	let ledger_columns = NUM_COLUMNS_POLKADOT as usize..NUM_COLUMNS as usize;
+	let matches = |expected: &parity_db::Options| {
+		ledger_columns.clone().all(|c| metadata.columns[c] == expected.columns[c])
+	};
+
+	if matches(&unified) {
 		return Ok(None);
+	}
+	if !matches(&separate) {
+		return Err(Error::Unsupported(format!(
+			"the ledger columns of the parity-db at {} match neither the `separate` nor the \
+			 `unified` layout. A `unified` database created before those columns were \
+			 btree-indexed reads like this, and its ledger nodes cannot be re-indexed in \
+			 place — delete the chain data directory and resync.",
+			paritydb_path.display(),
+		)));
 	}
 
 	// Rewriting metadata is only defensible for the ledger columns, which a
 	// `separate` database provably never wrote to. A mismatch anywhere else is
 	// something this migration does not understand.
-	if let Some(c) = (0..NUM_COLUMNS_POLKADOT as usize)
-		.find(|&c| metadata.columns[c] != unified_config.columns[c])
+	if let Some(c) =
+		(0..NUM_COLUMNS_POLKADOT as usize).find(|&c| metadata.columns[c] != unified.columns[c])
 	{
 		return Err(Error::Unsupported(format!(
 			"parity-db at {} has an unexpected configuration for Substrate column {c}; \
@@ -281,7 +300,6 @@ fn sibling(path: &Path, suffix: &str) -> Result<PathBuf, Error> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::cfg::midnight_cfg::StorageSeparation;
 	use tempfile::TempDir;
 
 	/// Populates `path` the way `separate` mode would: a three-column ledger
@@ -304,6 +322,28 @@ mod tests {
 
 	fn config(path: &Path, separation: StorageSeparation) -> parity_db::Options {
 		super::super::custom_parity_db::column_options(path, separation)
+	}
+
+	/// The `unified` layout from before the ledger columns were btree-indexed:
+	/// ParityDb defaults on all three.
+	fn legacy_unified_config(path: &Path) -> parity_db::Options {
+		let mut options = config(path, StorageSeparation::Unified);
+		for c in NUM_COLUMNS_POLKADOT as usize..NUM_COLUMNS as usize {
+			options.columns[c] = Default::default();
+		}
+		options
+	}
+
+	/// Number of entries in a ledger column of the given database. Only possible
+	/// because both layouts btree-index these columns.
+	fn ledger_column_len(options: &parity_db::Options, column: u8) -> usize {
+		let db = parity_db::Db::open(options).unwrap();
+		let mut entries = db.iter(column).unwrap();
+		let mut count = 0;
+		while entries.next().unwrap().is_some() {
+			count += 1;
+		}
+		count
 	}
 
 	/// Creates a Substrate ParityDb in `separate` layout holding one recognisable
@@ -335,20 +375,28 @@ mod tests {
 		assert!(base.path().join("ledger_storage.migrated").is_dir());
 		assert!(!base.path().join("ledger_storage.importing").exists());
 
-		let db = parity_db::Db::open(&unified).unwrap();
-		assert_eq!(db.get(0, b"substrate-meta").unwrap().as_deref(), Some(&b"intact"[..]));
-		for i in [0u32, 42, 299] {
-			assert_eq!(
-				db.get(NUM_COLUMNS_POLKADOT, &node_key(i)).unwrap(),
-				Some(vec![i as u8; 48]),
-				"ledger node {i} should have been copied",
-			);
-			assert_eq!(
-				db.get(NUM_COLUMNS_POLKADOT + 1, &node_key(i)).unwrap().as_deref(),
-				Some(&1u32.to_le_bytes()[..]),
-				"gc root count for {i} should have been copied",
-			);
+		{
+			let db = parity_db::Db::open(&unified).unwrap();
+			assert_eq!(db.get(0, b"substrate-meta").unwrap().as_deref(), Some(&b"intact"[..]));
+			for i in [0u32, 42, 299] {
+				assert_eq!(
+					db.get(NUM_COLUMNS_POLKADOT, &node_key(i)).unwrap(),
+					Some(vec![i as u8; 48]),
+					"ledger node {i} should have been copied",
+				);
+				assert_eq!(
+					db.get(NUM_COLUMNS_POLKADOT + 1, &node_key(i)).unwrap().as_deref(),
+					Some(&1u32.to_le_bytes()[..]),
+					"gc root count for {i} should have been copied",
+				);
+			}
 		}
+
+		// Migrated-into columns have to be iterable, not just readable by key:
+		// ledger GC walks them with `get_roots`/`scan`, which ParityDb only
+		// supports on a btree-indexed column.
+		assert_eq!(ledger_column_len(&unified, NUM_COLUMNS_POLKADOT), 300);
+		assert_eq!(ledger_column_len(&unified, NUM_COLUMNS_POLKADOT + 1), 300);
 	}
 
 	#[test]
@@ -392,6 +440,40 @@ mod tests {
 			db.get(NUM_COLUMNS_POLKADOT, &node_key(7)).unwrap().as_deref(),
 			Some(&b"current"[..]),
 			"existing unified ledger data must not be overwritten",
+		);
+	}
+
+	/// A `unified` database from before the ledger columns were btree-indexed
+	/// cannot be migrated: rewriting its metadata would put an empty btree in
+	/// front of nodes stored outside one, so every node would read as missing.
+	/// It has to be refused, not "upgraded".
+	#[test]
+	fn refuses_a_unified_database_with_unindexed_ledger_columns() {
+		let base = TempDir::new().unwrap();
+		let paritydb = base.path().join("paritydb");
+		let ledger = base.path().join("ledger_storage");
+
+		let legacy = legacy_unified_config(&paritydb);
+		let db = parity_db::Db::open_or_create(&legacy).unwrap();
+		db.commit_changes(vec![(
+			NUM_COLUMNS_POLKADOT,
+			parity_db::Operation::Set(node_key(7), b"unindexed".to_vec()),
+		)])
+		.unwrap();
+		drop(db);
+		seed_source(&ledger, 10);
+
+		let unified = config(&paritydb, StorageSeparation::Unified);
+		let err = import_if_pending(&paritydb, &unified, &ledger).unwrap_err();
+		assert!(matches!(err, Error::Unsupported(_)), "got {err:?}");
+
+		// Refusing means refusing to touch anything.
+		assert!(ledger.is_dir(), "source should be left in place");
+		let db = parity_db::Db::open(&legacy).unwrap();
+		assert_eq!(
+			db.get(NUM_COLUMNS_POLKADOT, &node_key(7)).unwrap().as_deref(),
+			Some(&b"unindexed"[..]),
+			"the legacy database must still be readable under its own layout",
 		);
 	}
 

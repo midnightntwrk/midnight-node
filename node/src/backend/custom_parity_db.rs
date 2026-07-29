@@ -60,12 +60,22 @@ pub(crate) const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 /// Column layout of the Substrate ParityDb instance for the given storage mode.
 ///
 /// The trailing [`NUM_COLUMNS_LEDGER`] columns belong to the Midnight Ledger.
-/// `Separate` mode reserves them with the ledger's own options even though it
-/// keeps ledger nodes in a database of their own; `Unified` mode leaves them at
-/// ParityDb's defaults, which is the layout its ledger nodes are written with.
-/// ParityDb rejects any difference between these options and the ones recorded
-/// on disk, which is what makes switching modes a migration — see
-/// [`super::separate_to_unified`].
+/// Both modes give them the ledger's own options, which btree-index all three —
+/// `midnight_storage_core`'s `get_roots`, `size` and `scan` iterate them, and
+/// ParityDb only supports iterating an indexed column.
+///
+/// They differ in one flag: `Separate` compresses the node column, `Unified`
+/// does not. `Separate` never writes to these columns — it keeps ledger nodes in
+/// a database of their own — so the flag is inert there, a historical artifact
+/// of reserving the columns. `Unified` does store nodes here and mirrors the
+/// standalone ledger database's layout, which is uncompressed, so the bytes are
+/// identical on both sides of a migration. Compressing them would be a separate
+/// decision needing its own migration.
+///
+/// Keeping the layouts distinguishable is also load-bearing: ParityDb rejects
+/// any difference between these options and the ones recorded on disk, and that
+/// rejection is what stops an unsupported mode change from opening a database
+/// whose ledger nodes are somewhere else. See [`super::separate_to_unified`].
 pub fn column_options(path: &std::path::Path, separation: StorageSeparation) -> parity_db::Options {
 	let mut config = parity_db::Options::with_columns(path, NUM_COLUMNS);
 
@@ -94,13 +104,11 @@ pub fn column_options(path: &std::path::Path, separation: StorageSeparation) -> 
 	tx_col.uniform = true;
 
 	// Set init options for ParityDb backend
-	if separation == StorageSeparation::Separate {
-		midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
-			&mut config,
-			NUM_COLUMNS_POLKADOT,
-			true,
-		);
-	}
+	midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
+		&mut config,
+		NUM_COLUMNS_POLKADOT,
+		separation == StorageSeparation::Separate,
+	);
 
 	config
 }
