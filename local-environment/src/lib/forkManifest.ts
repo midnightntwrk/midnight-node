@@ -59,7 +59,9 @@ export function writeForkManifest(options: ForkManifestOptions): string {
     `MIDNIGHT_FORK_VALIDATORS=${validators.map((v) => v.name).join(",")}`,
   ];
   for (const v of validators) {
-    lines.push(`MIDNIGHT_FORK_${envKey(v.name)}_WS=ws://${v.name}:${v.rpcPort}`);
+    lines.push(
+      `MIDNIGHT_FORK_${envKey(v.name)}_WS=ws://${v.name}:${v.rpcPort}`,
+    );
     lines.push(
       `MIDNIGHT_FORK_${envKey(v.name)}_WS_HOST=ws://localhost:${v.hostRpcPort}`,
     );
@@ -72,7 +74,11 @@ export function writeForkManifest(options: ForkManifestOptions): string {
 }
 
 export function forkManifestPath(namespace: string): string {
-  return path.resolve(__dirname, "../../artifacts", `${namespace}.manifest.env`);
+  return path.resolve(
+    __dirname,
+    "../../artifacts",
+    `${namespace}.manifest.env`,
+  );
 }
 
 function resolveComposeNetworkName(composeFile: string): string {
