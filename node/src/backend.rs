@@ -59,14 +59,17 @@ pub fn open_paritydb(
 			},
 			Err(e @ parity_db::Error::IncompatibleColumnConfig { .. }) => {
 				return Err(sp_blockchain::Error::Backend(format!(
-					"Failed to open parity-db: {e}. This usually means the \
-					 `storage_separation` config option was changed between runs. \
+					"Failed to open parity-db: {e}\n\n\
+					 YOU MUST WIPE THE CHAIN DATA AND RESYNC FROM GENESIS.\n\n\
+					 Either this database was already running `storage_separation = \
+					 \"unified\"`, in which case its ledger columns predate the btree index \
+					 they now need and cannot be indexed in place; or \
+					 `storage_separation` was changed between runs. \
 					 `separate` -> `unified` is migrated in place, but only while the \
-					 ledger storage directory it is migrated from ({}) is still present. \
-					 `unified` -> `separate` is not supported at all. It can also mean this \
-					 is a `unified` database from before the ledger columns were \
-					 btree-indexed, which cannot be re-indexed in place. In every case, to \
-					 get from here, delete the chain data directory and resync.",
+					 ledger storage directory it is migrated from ({}) is still present, \
+					 and `unified` -> `separate` is never supported. \
+					 There is no in-place repair for any of these — delete the chain data \
+					 directory and resync from genesis or a trusted snapshot.",
 					storage_config.db_path.display(),
 				)));
 			},
