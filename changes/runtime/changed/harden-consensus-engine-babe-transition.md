@@ -14,6 +14,12 @@ The consensus-engine pallet now:
   variant, whose VRF material is never client-verified while blocks import
   through the AURA pipeline), is rejected on import, so nodes must be updated to
   emit the digest before governance arms the flip;
+- keys all of these digest checks on the pre-runtime item's engine id rather than
+  on a successful decode. `DigestItem::as_babe_pre_digest`/`as_aura_pre_digest`
+  decode with `DecodeAll` and yield `None` both for undecodable payloads and for
+  valid payloads with trailing bytes, while `pallet-babe`/`pallet-aura` read the
+  same items with plain `Decode` and consume them — so such items used to slip
+  past the guards while still taking effect on-chain, and are now rejected;
 - returns `Error::InvalidEngineState` from `arm_babe` / `schedule_flip` when
   called from the wrong `EngineState`;
 - postpones the flip while `pallet-babe::Authorities` is empty;

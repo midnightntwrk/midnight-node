@@ -64,7 +64,9 @@ pub mod pallet {
 	use frame_support::traits::OnTimestampSet;
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives_consensus_engine::ActiveEngine;
+	use sp_consensus_aura::AURA_ENGINE_ID;
 	use sp_consensus_aura::digests::CompatibleDigestItem as AuraCompatibleDigestItem;
+	use sp_consensus_babe::BABE_ENGINE_ID;
 	use sp_consensus_babe::digests::{CompatibleDigestItem as _, PreDigest};
 	use sp_consensus_slots::Slot;
 
@@ -159,7 +161,7 @@ pub mod pallet {
 				// consume the first BABE digest and deposit `NextEpochData`.
 				State::Aura => {
 					assert!(
-						!Self::has_any_babe_pre_digest(),
+						!Self::has_pre_runtime_for(BABE_ENGINE_ID),
 						"BABE pre-runtime digest present in state 'Aura'",
 					);
 				},
@@ -205,7 +207,7 @@ pub mod pallet {
 				// the BABE one misattributes authorship to `slot % n_authorities`.
 				State::Babe => {
 					assert!(
-						!Self::has_any_aura_pre_digest(),
+						!Self::has_pre_runtime_for(AURA_ENGINE_ID),
 						"AURA pre-runtime digest present in state 'Babe'",
 					);
 				},
@@ -316,41 +318,63 @@ pub mod pallet {
 				.find_map(AuraCompatibleDigestItem::<()>::as_aura_pre_digest)
 		}
 
-		/// Whether the current block's digest carries any BABE pre-runtime digest.
-		fn has_any_babe_pre_digest() -> bool {
+		/// Whether the current block's digest carries a pre-runtime item for
+		/// `engine_id`, **regardless of whether its payload decodes**.
+		///
+		/// Presence must be keyed on the engine id, not on a successful decode:
+		/// `DigestItem::as_babe_pre_digest` (and its AURA counterpart) decode with
+		/// `DecodeAll`, so they return `None` both for undecodable payloads *and* for a
+		/// valid payload carrying trailing bytes. `pallet-babe` and `pallet-aura` read
+		/// the same items with plain `Decode`, which ignores trailing bytes — so an
+		/// item those pallets happily consume would otherwise look absent here.
+		fn has_pre_runtime_for(engine_id: ConsensusEngineId) -> bool {
 			frame_system::Pallet::<T>::digest()
 				.logs
 				.iter()
-				.any(|log| log.as_babe_pre_digest().is_some())
+				.any(|log| matches!(log.as_pre_runtime(), Some((id, _)) if id == engine_id))
 		}
 
-		/// Whether the current block's digest carries any AURA pre-runtime digest.
-		fn has_any_aura_pre_digest() -> bool {
-			frame_system::Pallet::<T>::digest()
-				.logs
-				.iter()
-				.any(|log| AuraCompatibleDigestItem::<()>::as_aura_pre_digest(log).is_some())
-		}
-
-		/// Returns `true` when the current block's digest carries exactly one BABE
-		/// `SecondaryPlain` pre-runtime digest, that digest appears *after* an AURA
-		/// pre-runtime digest, and its slot matches that AURA digest's slot.
+		/// Returns `true` when the current block's digest carries exactly one AURA and
+		/// exactly one BABE pre-runtime item, both decode exactly, the BABE one is a
+		/// `SecondaryPlain` variant appearing *after* the AURA one, and their slots
+		/// match.
 		///
 		/// This is the shape a node emits while still on AURA once it has begun
-		/// signalling BABE secondary slots at the same slot — the situation the
-		/// `State::Aura` guard rejects. Any other arrangement returns `false`: no BABE
-		/// digest, a BABE digest before any AURA digest, a slot mismatch, more than
-		/// one BABE digest, or a non-`SecondaryPlain` variant.
+		/// signalling BABE secondary slots. Every other arrangement returns `false`:
+		/// a missing item, a payload that fails to decode (or carries trailing bytes),
+		/// a duplicate of either engine's item, a BABE item before the AURA one, a slot
+		/// mismatch, or a non-`SecondaryPlain` variant. Items are counted by engine id,
+		/// so a malformed payload is a rejection rather than an invisible item.
 		pub(crate) fn has_aura_pre_digest_before_babe_pre_digest() -> bool {
 			let mut aura_slot = None;
-			let mut babe_present = false;
+			let mut babe_slot = None;
 			for log in frame_system::Pallet::<T>::digest().logs.iter() {
-				if let Some(slot) = AuraCompatibleDigestItem::<()>::as_aura_pre_digest(log) {
-					aura_slot = Some(slot);
-					continue;
-				};
+				let Some((engine_id, _)) = log.as_pre_runtime() else { continue };
 
-				if let Some(babe) = log.as_babe_pre_digest() {
+				if engine_id == AURA_ENGINE_ID {
+					// Present by engine id, so it must decode and be the only one.
+					let Some(slot) = AuraCompatibleDigestItem::<()>::as_aura_pre_digest(log) else {
+						// Malformed AURA pre-digest
+						return false;
+					};
+					if aura_slot.is_some() {
+						// AURA pre-digest is not unique
+						return false;
+					}
+					aura_slot = Some(slot);
+				} else if engine_id == BABE_ENGINE_ID {
+					if babe_slot.is_some() {
+						// BABE pre-digest is not unique
+						return false;
+					}
+					let Some(babe) = log.as_babe_pre_digest() else {
+						// Malformed BABE pre-digest
+						return false;
+					};
+					let Some(slot) = aura_slot else {
+						// BABE pre-digest before AURA
+						return false;
+					};
 					// Only `SecondaryPlain` is a valid transition digest. `Primary` and
 					// `SecondaryVRF` carry VRF material that is never verified while
 					// blocks still import through the AURA pipeline, yet pallet-babe
@@ -360,23 +384,14 @@ pub mod pallet {
 						// Non-SecondaryPlain BABE pre-digest
 						return false;
 					}
-					if let Some(slot) = aura_slot {
-						if babe.slot() != slot {
-							// BABE slot different to AURA slot
-							return false;
-						}
-						if babe_present {
-							// BABE pre-digest is not unique
-							return false;
-						}
-						babe_present = true
-					} else {
-						// BABE pre-digest before AURA
+					if babe.slot() != slot {
+						// BABE slot different to AURA slot
 						return false;
 					}
+					babe_slot = Some(babe.slot());
 				}
 			}
-			babe_present
+			babe_slot.is_some()
 		}
 
 		fn is_last_slot_of_epoch(slot: Slot) -> bool {

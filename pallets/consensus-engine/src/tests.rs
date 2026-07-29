@@ -509,3 +509,105 @@ fn should_emit_babe_preruntime_digest_only_while_armed() {
 		}
 	});
 }
+
+// --- malformed payloads: presence is keyed on the engine id, not on decoding ---
+//
+// `as_babe_pre_digest`/`as_aura_pre_digest` decode with `DecodeAll`, so they return
+// `None` for an undecodable payload *and* for a valid one with trailing bytes.
+// `pallet-babe`/`pallet-aura` read the same items with plain `Decode`, which ignores
+// trailing bytes, so a "malformed" item is still consumed on-chain. These guards must
+// therefore reject such items rather than see straight through them.
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest present in state 'Aura'")]
+fn baseline_rejects_undecodable_babe_pre_digest() {
+	new_test_ext().execute_with(|| {
+		start_block_with_logs(vec![aura_pre_digest(100), undecodable_babe_pre_digest()]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest present in state 'Aura'")]
+fn baseline_rejects_babe_pre_digest_with_trailing_bytes() {
+	new_test_ext().execute_with(|| {
+		// pallet-babe would decode this and initialize its genesis epoch prematurely,
+		// depositing a `NextEpochData` digest that cannot be retracted.
+		start_block_with_logs(vec![aura_pre_digest(100), babe_pre_digest_with_trailing_bytes(100)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "AURA pre-runtime digest present in state 'Babe'")]
+fn babe_rejects_aura_pre_digest_with_trailing_bytes() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::Babe);
+		// pallet-aura's `Slot::decode` accepts this, and lenient off-chain decoders
+		// (polkadot-js `extractAuthor`) would credit `slot % n_authorities`.
+		start_block_with_logs(vec![
+			babe_pre_digest(1500),
+			aura_pre_digest_with_trailing_bytes(9999),
+		]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
+fn armed_rejects_extra_babe_item_with_trailing_bytes() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ArmedBabe);
+		// A valid marker plus a second BABE item that `DecodeAll` cannot read: the
+		// uniqueness rule must still catch it.
+		start_block_with_logs(vec![
+			aura_pre_digest(100),
+			babe_pre_digest(100),
+			babe_pre_digest_with_trailing_bytes(100),
+		]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
+fn armed_rejects_undecodable_babe_pre_digest() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ArmedBabe);
+		start_block_with_logs(vec![aura_pre_digest(100), undecodable_babe_pre_digest()]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
+fn armed_rejects_malformed_aura_pre_digest() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ArmedBabe);
+		// The AURA item is the one pallet-aura reads for the slot; a malformed one
+		// must not pass as "no AURA digest" either.
+		start_block_with_logs(vec![aura_pre_digest_with_trailing_bytes(100), babe_pre_digest(100)]);
+		on_initialize();
+	});
+}
+
+#[test]
+fn malformed_items_are_not_detected_as_the_transition_shape() {
+	// Helper level: each malformed arrangement fails the marker check.
+	assert!(!aura_before_babe(vec![aura_pre_digest(100), undecodable_babe_pre_digest()]));
+	assert!(!aura_before_babe(vec![
+		aura_pre_digest(100),
+		babe_pre_digest_with_trailing_bytes(100)
+	]));
+	assert!(!aura_before_babe(vec![
+		aura_pre_digest_with_trailing_bytes(100),
+		babe_pre_digest(100)
+	]));
+	// Duplicate AURA items are rejected too.
+	assert!(!aura_before_babe(vec![
+		aura_pre_digest(100),
+		aura_pre_digest(100),
+		babe_pre_digest(100)
+	]));
+}
+

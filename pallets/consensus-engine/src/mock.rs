@@ -172,6 +172,35 @@ pub fn babe_primary_pre_digest(slot: u64) -> DigestItem {
 	)
 }
 
+/// A BABE pre-runtime item whose payload does not decode as a `PreDigest` at all.
+pub fn undecodable_babe_pre_digest() -> DigestItem {
+	DigestItem::PreRuntime(BABE_ENGINE_ID, vec![0xff, 0xff, 0xff])
+}
+
+/// A BABE pre-runtime item holding a valid `SecondaryPlain` digest for `slot`
+/// followed by trailing bytes.
+///
+/// `as_babe_pre_digest` uses `DecodeAll` and rejects this, but `pallet-babe` reads
+/// it with plain `Decode` and consumes it as a real pre-digest — so the pallet must
+/// treat it as present.
+pub fn babe_pre_digest_with_trailing_bytes(slot: u64) -> DigestItem {
+	let mut payload = BabePreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+		authority_index: 0,
+		slot: Slot::from(slot),
+	})
+	.encode();
+	payload.extend_from_slice(&[0xde, 0xad]);
+	DigestItem::PreRuntime(BABE_ENGINE_ID, payload)
+}
+
+/// An AURA pre-runtime item holding a valid slot followed by trailing bytes —
+/// rejected by `as_aura_pre_digest`, but consumed by `pallet-aura`'s plain `Decode`.
+pub fn aura_pre_digest_with_trailing_bytes(slot: u64) -> DigestItem {
+	let mut payload = Slot::from(slot).encode();
+	payload.extend_from_slice(&[0xde, 0xad]);
+	DigestItem::PreRuntime(AURA_ENGINE_ID, payload)
+}
+
 /// A pre-runtime digest item for an unrelated engine, which the pallet must ignore.
 pub fn unrelated_pre_digest() -> DigestItem {
 	DigestItem::PreRuntime(*b"test", Vec::new())
