@@ -100,10 +100,10 @@ jobs:
       - name: Run rebuild-metadata
         env:
           EARTHLY_CONFIG: .earthly/config.yml
+          # No .envrc here to forward it, so set directly: disable Earthly build caches on
+          # CI runners (see the CI ARG in the Earthfile).
+          EARTHLY_BUILD_ARGS: CI=true
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
           earthly -P +rebuild-metadata
 
       - name: Commit and push changes

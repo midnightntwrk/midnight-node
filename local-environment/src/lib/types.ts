@@ -65,14 +65,33 @@ export interface RuntimeUpgradeBaseOptions extends RunOptions {
   rpcUrl?: string;
 }
 
-export interface FederatedRuntimeUpgradeOptions
-  extends RuntimeUpgradeBaseOptions {
+/** Signer URIs required to drive a federated-authority motion to execution. */
+export interface FederatedGovernanceOptions {
   /** URIs for council members who will propose/vote to approve the motion */
   councilUris: string[];
   /** URIs for technical committee members who will propose/vote to approve the motion */
   techCommitteeUris: string[];
-  /** URI used to close the federated motion and apply the authorized upgrade */
+  /** URI used to close the federated motion and dispatch the approved call as root */
   motionExecutorUri: string;
+}
+
+/**
+ * Options for governance actions that dispatch a fixed runtime call as root via
+ * a federated-authority motion (no wasm artifact involved), e.g. the
+ * consensus-engine transitions.
+ */
+export interface GovernanceCallOptions
+  extends RunOptions,
+    FederatedGovernanceOptions {
+  /** skip bringing up docker-compose before submitting the motion */
+  skipRun?: boolean;
+  /** websocket endpoint for the target node (default ws://localhost:9944) */
+  rpcUrl?: string;
+}
+
+export interface FederatedRuntimeUpgradeOptions
+  extends RuntimeUpgradeBaseOptions,
+    FederatedGovernanceOptions {
   /**
    * Use `system.authorizeUpgradeWithoutChecks` instead of `system.authorizeUpgrade`,
    * skipping the runtime-side `SpecVersionNeedsToIncrease` check. Intended for

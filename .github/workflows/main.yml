@@ -72,7 +72,7 @@ jobs:
           config: ./midnight-node-ci/.github/season.yml
 
       - name: Install just
-        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 #v2.83.2
+        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 #v2.84.0
         with:
           tool: just
 
@@ -120,10 +120,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
@@ -310,10 +306,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
