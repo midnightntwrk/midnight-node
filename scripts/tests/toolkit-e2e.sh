@@ -165,7 +165,8 @@ docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
 
 # Issue #1896: fund a new wallet with 4 NIGHT UTXOs, then register it self-funded
 # (no --funding-seed) - the fee is paid from the wallet's own retroactive DUST.
-new_seed=$( (uuidgen; uuidgen) | tr -d '-\n' | tr '[:upper:]' '[:lower:]')
+# NB: the dash must come last in the set: a leading dash makes GNU tr parse it as an option.
+new_seed=$( (uuidgen; uuidgen) | tr -d '\n-' | tr '[:upper:]' '[:lower:]')
 new_address=$(
     docker run --rm -e RUST_BACKTRACE=1 "$TOOLKIT_IMAGE" \
     show-address \
