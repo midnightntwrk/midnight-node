@@ -10,7 +10,10 @@ holds a single UTXO (more would exceed the time-to-dismiss limit).
 The builder now puts the generationless UTXO with the most retroactive DUST into the
 guaranteed offer and requests exactly its availability. UTXOs already backing DUST
 generation are excluded via the new `BuilderContext::backs_dust_generation`. Balancing
-failures return an actionable error instead of panicking.
+failures return an actionable error instead of panicking; a wallet whose every NIGHT
+UTXO already backs generation gets a dedicated error (such UTXOs never accrue
+retroactive DUST, so waiting cannot help).
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1922
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1896
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1906

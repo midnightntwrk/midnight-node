@@ -19,6 +19,7 @@ use clap::Parser;
 use common::{
 	test_image,
 	toolkit_helper::{CircuitCall, ToolkitTestHelper},
+	wait_for_node,
 	wait_for_node::wait_for_finalized_block,
 };
 use midnight_node_toolkit::{
@@ -300,6 +301,10 @@ async fn register_dust_address() {
 		url,
 	])
 	.await;
+
+	// The fresh UTXOs have accrued no retroactive DUST inside their own funding block
+	// (dt = 0); one more block accrues plenty for the fee.
+	wait_for_node::wait_for_block_after_current(url, Duration::from_secs(60)).await;
 
 	run_cli(&[
 		"generate-txs",

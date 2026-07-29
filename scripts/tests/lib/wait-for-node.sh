@@ -99,3 +99,20 @@ wait_for_unfinalized_block() {
 wait_for_finalized_block() {
     _wait_for_block_inner _rpc_get_finalized_height "finalized" "$1" "$2" "${3:-90}"
 }
+
+# wait_for_block_after_current <rpc_url> [timeout_secs]
+#     Waits until finality advances at least one block past the current finalized
+#     height. Use after a state-changing transaction when the next step needs the
+#     chain tip to have moved on (e.g. retroactive DUST accrues with block time,
+#     so a wallet funded in the latest block has accrued nothing yet).
+wait_for_block_after_current() {
+    local url="$1"
+    local timeout="${2:-90}"
+    local current
+    current=$(_rpc_get_finalized_height "$url")
+    if [ -z "$current" ]; then
+        echo "❌ could not fetch current finalized height from ${url}"
+        return 1
+    fi
+    wait_for_finalized_block "$url" "$((current + 1))" "$timeout"
+}

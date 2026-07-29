@@ -33,6 +33,12 @@ pub enum RegisterDustAddressError {
 		 UTXO, wait for more DUST to accrue, or pay the fee via --funding-seed"
 	)]
 	Balancing(Box<dyn std::error::Error + Send + Sync>),
+	#[error(
+		"every NIGHT UTXO in the wallet already backs DUST generation, so none accrues \
+		 retroactive DUST for a self-funded registration fee; send the NIGHT to yourself to \
+		 mint fresh UTXOs, or pay the fee via --funding-seed"
+	)]
+	AllUtxosBackGeneration,
 }
 
 impl<C: BuilderContext<DefaultDB>> RegisterDustAddressBuilder<C> {
@@ -121,9 +127,19 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 					best = Some((i, dust));
 				}
 			}
-			if let Some((i, dust)) = best {
-				night_utxos.swap(0, i);
-				allow_fee_payment = dust;
+			match best {
+				Some((i, dust)) => {
+					night_utxos.swap(0, i);
+					allow_fee_payment = dust;
+				},
+				// A wallet whose every NIGHT UTXO backs generation can never accrue
+				// retroactive DUST, so the generic "wait for more DUST" guidance of the
+				// balancing error below would mislead. An empty wallet still falls
+				// through: balancing reports the missing funds.
+				None if !night_utxos.is_empty() => {
+					return Err(RegisterDustAddressError::AllUtxosBackGeneration);
+				},
+				None => {},
 			}
 		}
 

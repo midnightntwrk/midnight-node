@@ -43,6 +43,21 @@ pub async fn wait_for_finalized_block(ws_url: &str, target_block: u64, timeout: 
 	}
 }
 
+/// Wait until finality advances at least one block past the current finalized height.
+///
+/// Retroactive DUST accrues with block time, so a wallet funded in the latest block has
+/// accrued nothing yet (`dt = 0`); one more block is enough for a self-funded registration.
+// Shared across test binaries; not every binary uses it.
+#[allow(dead_code)]
+pub async fn wait_for_block_after_current(ws_url: &str, timeout: Duration) {
+	let client = connect(ws_url, timeout).await;
+	let current = client
+		.get_finalized_height()
+		.await
+		.unwrap_or_else(|e| panic!("failed to fetch finalized height from {ws_url}: {e}"));
+	wait_for_finalized_block(ws_url, current + 1, timeout).await;
+}
+
 async fn connect(ws_url: &str, timeout: Duration) -> MidnightNodeClient {
 	let connect_timeout = timeout.min(Duration::from_secs(60));
 	MidnightNodeClient::new(ws_url, Some(connect_timeout))

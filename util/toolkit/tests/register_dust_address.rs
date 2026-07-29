@@ -228,6 +228,24 @@ async fn utxos_already_backing_generation_are_excluded_from_allowance() {
 	build_registration(&setup).await.expect("registration must balance");
 }
 
+/// When every NIGHT UTXO already backs generation, no retroactive DUST can ever accrue,
+/// so "wait for more DUST" would mislead - the error must point at minting fresh UTXOs
+/// or --funding-seed instead.
+#[tokio::test]
+async fn all_utxos_backing_generation_fails_with_accurate_guidance() {
+	let setup = setup(2, 3600);
+	for utxo in &setup.utxos {
+		mark_backing_generation(&setup.ctx, utxo);
+	}
+
+	let err = build_registration(&setup).await.expect_err("no generationless UTXO must fail");
+	assert!(
+		matches!(err, RegisterDustAddressError::AllUtxosBackGeneration),
+		"unexpected error: {err:?}"
+	);
+	assert!(err.to_string().contains("--funding-seed"), "error lacks guidance: {err}");
+}
+
 /// No time elapsed means no retroactive DUST for the fee: the builder must return an
 /// actionable error instead of panicking.
 #[tokio::test]

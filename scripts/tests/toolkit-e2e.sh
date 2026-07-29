@@ -186,6 +186,10 @@ docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     -s ws://midnight-node-tx:9944 \
     -d ws://midnight-node-tx:9944
 
+# The fresh UTXOs have accrued no retroactive DUST inside their own funding block
+# (dt = 0); one more block accrues plenty for the fee.
+wait_for_block_after_current http://localhost:9944
+
 echo "Register multi-UTXO wallet with self-funded fee..."
 docker run --rm -e RUST_BACKTRACE=1 --network toolkit-e2e-net "$TOOLKIT_IMAGE" \
     generate-txs register-dust-address \
