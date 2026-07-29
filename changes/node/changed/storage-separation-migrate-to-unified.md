@@ -7,5 +7,5 @@ The node now folds `<base-path>/ledger_storage/` into the shared ParityDb on sta
 
 `unified` -> `separate` is still unsupported and still requires a resync.
 
-PR: <link to PR>
-Issue: <link to Github Issue, if applicable>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1948
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1464

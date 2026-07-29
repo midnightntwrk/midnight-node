@@ -9,5 +9,5 @@ In `storage_separation = "unified"` the Midnight Ledger columns of the shared Pa
 
 Ledger nodes remain uncompressed in `unified` mode, matching how the standalone ledger database stores them, so migrated bytes are identical either side of a `separate` -> `unified` switch. Compressing them would be a separate change needing its own migration.
 
-PR: <link to PR>
-Issue: <link to Github Issue, if applicable>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1948
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1464

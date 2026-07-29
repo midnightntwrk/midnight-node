@@ -7,5 +7,5 @@ Existing nodes do not need a resync. The first start-up after the upgrade folds 
 
 Operators who want the previous behaviour can set `storage_separation = "separate"` explicitly (TOML key or `STORAGE_SEPARATION=separate`). Doing so on a database that has already been migrated to `unified` requires a resync — `unified` -> `separate` is not supported.
 
-PR: <link to PR>
-Issue: <link to Github Issue, if applicable>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1948
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1464
