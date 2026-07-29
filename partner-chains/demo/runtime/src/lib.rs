@@ -282,10 +282,7 @@ impl frame_system::Config for Runtime {
 	type OnSetCode = ();
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
-	type SingleBlockMigrations = (
-		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
-		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
-	);
+	type SingleBlockMigrations = ();
 	type MultiBlockMigrator = ();
 	type PreInherents = ();
 	type PostInherents = ();
