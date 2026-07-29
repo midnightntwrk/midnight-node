@@ -15,14 +15,17 @@ actual ledger effects in the regular tables: the consumed collateral inputs beco
 `tx_in` rows and the collateral-return output becomes a regular `tx_out` row, flagged
 with `tx.valid_contract = false`.
 
-Observation queries that interpret outputs at watched script addresses (registrations,
-deregistrations, governance body UTxOs, committee-selection token data, bridge
-transfers) filter on `tx.valid_contract = true` to safeguard against malicious use of
-failing script transactions: an attacker could otherwise use a failing transaction's collateral
-return to place a crafted output at an observed address. Tokens moved to the bridge
-address this way are deliberately never observed and stay locked.
+Observation queries that interpret *datums* at watched script addresses (registrations,
+deregistrations, governance body UTxOs, committee-selection token data) filter on
+`tx.valid_contract = true` to safeguard against malicious use of failing script
+transactions: an attacker could otherwise use a failing transaction's collateral
+return to place a crafted datum at an observed address.
 
-Queries that track raw balances or compute UTxO sets (asset creates/spends, UTxOs at
-an address) intentionally do **not** filter: db-sync rows for invalid transactions
-describe real on-chain effects, and excluding them would desync the observed state
-from the actual Cardano UTxO set.
+Queries that account for *value* intentionally do **not** filter: db-sync rows for
+invalid transactions describe real on-chain effects, and excluding them would desync
+the observed state from the actual Cardano UTxO set. This covers asset creates/spends,
+UTxO-set queries, and bridge transfers (`get_bridge_txs`): a collateral return that
+moves tokens to the bridge address is a genuine lock on Cardano, and the bridge
+invariant requires every locked token to surface on Midnight — as a user transfer,
+a reserve distribution, or a treasury unlock (`TransferRecipient::Invalid` catches
+deposits without valid metadata). Filtering there would silently strand locked tokens.

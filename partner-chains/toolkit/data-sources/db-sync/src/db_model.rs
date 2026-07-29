@@ -794,9 +794,11 @@ pub(crate) async fn get_bridge_txs(
 	// TODO: improve query by using metadata.ident "cache" and tx, tx_out, ma_tx_out,
 	// tx_metadata and tx_in ids boundaries. https://github.com/midnightntwrk/partner-chains/issues/26
 	//
-	// tx.valid_contract = true: failing script transactions are never observed as
-	// transfers, even if their collateral return moves tokens to the bridge address.
-	// Tokens stranded that way stay locked on purpose.
+	// Deliberately NOT filtered by tx.valid_contract: a failing script transaction's
+	// collateral return can move tokens to the bridge address — a genuine lock on
+	// Cardano. Every locked token must surface on the Midnight side (user transfer,
+	// reserve, or treasury via TransferRecipient::Invalid), so such deposits are
+	// observed like any other.
 	let mut query_builder = QueryBuilder::new(&format!(
 		"
 		WITH
@@ -820,7 +822,6 @@ pub(crate) async fn get_bridge_txs(
 			    JOIN relevant_txs ON relevant_txs.tx_id = tx.id
 			    LEFT JOIN tx_metadata ON tx_metadata.tx_id = tx.id AND tx_metadata.key = $5
 			WHERE block.block_no <= $6
-				AND tx.valid_contract = true
 				AND {checkpoint_limit}) AS bridge_tx_totals
 		WHERE bridge_out > bridge_in OR reserve_in > reserve_out
 		ORDER BY block_number, tx_ix
