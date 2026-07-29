@@ -41,6 +41,11 @@ const REQUIRED_STATE: Record<ConsensusAction, string> = {
   scheduleFlip: "ArmedBabe",
 };
 
+const EXPECTED_STATE: Record<ConsensusAction, string> = {
+  armBabe: "ArmedBabe",
+  scheduleFlip: "ScheduledFlip",
+};
+
 interface EngineState {
   /** The active `EngineState` variant name, e.g. "Aura". */
   variant: string;
@@ -96,6 +101,12 @@ async function consensusUpgrade(
     const after = await readEngineState(api);
     console.log(`Consensus engine state after: ${after.human}`);
     console.log(`consensusEngine.${action} motion completed.`);
+    const expected = EXPECTED_STATE[action];
+    if (after.variant !== expected) {
+      throw new Error(
+        `consensusEngine.${action} motion completed but the state is ${after.variant} instead of ${expected}`,
+      );
+    }
   } finally {
     await disconnectApi(api, provider);
   }

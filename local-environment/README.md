@@ -103,7 +103,7 @@ npm run consensus-upgrade-arm-babe:local-env -- \
 ```
 
 `consensus-upgrade-schedule-flip` moves it from `ArmedBabe` to `ScheduledFlip`
-Rrun it only after the finalized blocks have BABE pre-runtime digests.
+Run it only after the finalized blocks have BABE pre-runtime digests.
 
 ```bash
 npm run consensus-upgrade-schedule-flip:local-env -- \
