@@ -33,4 +33,4 @@ rejections.
 - `SenderError::FailedToFinalize` and the `FAILED_TO_FINALIZE` log line
   now carry the underlying reason.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/XXXX
+PR: https://github.com/midnightntwrk/midnight-node/pull/1943
