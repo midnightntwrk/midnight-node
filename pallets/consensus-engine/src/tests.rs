@@ -163,18 +163,19 @@ fn babe_pre_digest_is_allowed_once_armed() {
 }
 
 #[test]
-fn armed_allows_aura_only_blocks() {
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
+fn armed_rejects_aura_only_blocks() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ArmedBabe);
-		// Old binaries may omit the BABE digest; that is still valid during the armed window.
+		// Nodes are updated before governance arms the flip, so an armed block
+		// without the BABE digest comes from a non-compliant author — rejected.
 		start_block_at_slot(100);
 		on_initialize();
-		assert_eq!(EngineState::<Test>::get(), State::ArmedBabe);
 	});
 }
 
 #[test]
-#[should_panic(expected = "BABE pre-runtime digest must match AURA slot during transition")]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_mismatched_babe_slot() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ArmedBabe);
@@ -184,7 +185,7 @@ fn armed_rejects_mismatched_babe_slot() {
 }
 
 #[test]
-#[should_panic(expected = "BABE pre-runtime digest must match AURA slot during transition")]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ScheduledFlip'")]
 fn scheduled_rejects_mismatched_babe_slot() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
@@ -195,7 +196,7 @@ fn scheduled_rejects_mismatched_babe_slot() {
 }
 
 #[test]
-#[should_panic(expected = "BABE pre-runtime digest must match AURA slot during transition")]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_babe_before_aura() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ArmedBabe);
@@ -289,7 +290,7 @@ fn flip_fires_at_the_last_slot_of_the_epoch() {
 }
 
 #[test]
-#[should_panic(expected = "BABE pre-runtime digest required on flip block")]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ScheduledFlip'")]
 fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
@@ -303,7 +304,7 @@ fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
 }
 
 #[test]
-#[should_panic(expected = "BABE pre-runtime digest must match AURA slot during transition")]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_primary_babe_digest() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ArmedBabe);
@@ -314,17 +315,17 @@ fn armed_rejects_primary_babe_digest() {
 }
 
 #[test]
-fn flip_postpones_epoch_end_block_without_digest_while_authorities_empty() {
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ScheduledFlip'")]
+fn scheduled_rejects_aura_only_blocks_even_while_authorities_empty() {
 	new_test_ext().execute_with(|| {
 		EngineState::<Test>::put(State::ScheduledFlip);
 		assert!(pallet_babe::Authorities::<Test>::get().is_empty());
 
-		// While waiting for the session rotation to populate BABE authorities, an
-		// epoch-end block from an old binary (AURA digest only) must take the
-		// postpone path, not be rejected for the missing flip marker.
+		// The digest requirement holds on every scheduled block, including while
+		// waiting for the session rotation — nodes must emit the marker before
+		// governance arms/schedules the flip.
 		start_block_at_slot(1499);
 		on_initialize();
-		assert_eq!(EngineState::<Test>::get(), State::ScheduledFlip);
 	});
 }
 
@@ -437,13 +438,17 @@ fn migrate_to_babe_preserves_existing_epoch_config() {
 #[test]
 fn on_initialize_is_a_no_op_in_stable_states() {
 	new_test_ext().execute_with(|| {
-		for state in [State::Aura, State::ArmedBabe] {
-			EngineState::<Test>::put(state);
-			// Even at an epoch's last slot, non-scheduled states never flip.
-			start_block_at_slot(1499);
-			on_initialize();
-			assert_eq!(EngineState::<Test>::get(), state);
-		}
+		// Even at an epoch's last slot, non-scheduled states never flip.
+		EngineState::<Test>::put(State::Aura);
+		start_block_at_slot(1499);
+		on_initialize();
+		assert_eq!(EngineState::<Test>::get(), State::Aura);
+
+		// Armed blocks must carry the BABE digest alongside AURA.
+		EngineState::<Test>::put(State::ArmedBabe);
+		start_block_with_babe_pre_digest(1499);
+		on_initialize();
+		assert_eq!(EngineState::<Test>::get(), State::ArmedBabe);
 
 		// Post-flip blocks carry a BABE digest only (an AURA one is rejected).
 		EngineState::<Test>::put(State::Babe);

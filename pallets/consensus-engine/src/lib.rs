@@ -28,14 +28,13 @@
 //! information is not available in the runtime, so we rely on a manual action here.
 //!
 //! Once scheduled, the pallet performs the flip at the last block of the epoch.
-//! That flip block must carry a matching BABE `PreRuntimeDigest`; without it the
-//! block is rejected on import. During `ArmedBabe`/`ScheduledFlip`, BABE digests
-//! are optional, but any present digest must be `SecondaryPlain` and match the
-//! AURA slot (unique, after AURA) — `Primary`/`SecondaryVRF` are rejected, since
-//! their VRF material is never client-verified while blocks import through the
-//! AURA pipeline. The flip is postponed while `pallet-babe::Authorities` is empty
-//! (session has not yet populated BABE keys after a runtime upgrade); while
-//! waiting, epoch-end blocks are not required to carry the flip marker. If the
+//! From arming onward every block must carry a BABE `SecondaryPlain` pre-runtime
+//! digest matching the AURA slot (unique, after AURA); a block without it is
+//! rejected on import, so nodes must be updated to emit the digest before
+//! governance arms the flip. `Primary`/`SecondaryVRF` variants are rejected too,
+//! since their VRF material is never client-verified while blocks import through
+//! the AURA pipeline. The flip is postponed while `pallet-babe::Authorities` is
+//! empty (session has not yet populated BABE keys after a runtime upgrade). If the
 //! last slot of an epoch is empty, migration is postponed to a later epoch-end block.
 //! After the flip (`Babe`) the check is mirrored: AURA pre-runtime digests are
 //! rejected, so a stray one cannot hijack slot/author extraction from a block that
@@ -164,21 +163,26 @@ pub mod pallet {
 						"BABE pre-runtime digest present in state 'Aura'",
 					);
 				},
+				// From arming onward, every block must carry the BABE `SecondaryPlain`
+				// pre-digest matching the AURA slot (unique, after AURA). Nodes are
+				// updated to emit it before governance arms the flip, so a missing
+				// digest means a non-compliant author and the block is rejected.
 				State::ArmedBabe => {
-					// Digests are optional during the armed window (old binaries), but any
-					// present BABE pre-digest must match the AURA slot.
-					Self::assert_babe_pre_digest_matches_aura_if_present();
+					assert!(
+						Self::has_aura_pre_digest_before_babe_pre_digest(),
+						"BABE pre-runtime digest required in state 'ArmedBabe'",
+					);
 				},
 				State::ScheduledFlip => {
-					Self::assert_babe_pre_digest_matches_aura_if_present();
+					assert!(
+						Self::has_aura_pre_digest_before_babe_pre_digest(),
+						"BABE pre-runtime digest required in state 'ScheduledFlip'",
+					);
 					if let Some(slot) = Self::current_slot_from_aura_digest()
 						&& Self::is_last_slot_of_epoch(slot)
 					{
-						// Postpone while session has not yet filled BABE authorities.
-						// Checked before the flip-marker requirement so that, while
-						// waiting for the session rotation, an epoch-end block from an
-						// old binary (no BABE digest) postpones instead of being
-						// rejected.
+						// Postpone while session has not yet filled BABE authorities
+						// (waiting for the first rotation after the key upgrade).
 						if pallet_babe::Authorities::<T>::get().is_empty() {
 							log::warn!(
 								target: "consensus-engine",
@@ -187,13 +191,6 @@ pub mod pallet {
 								slot,
 							);
 						} else {
-							// The block committing the flip must carry a BABE
-							// SecondaryPlain pre-digest at the same slot as AURA;
-							// otherwise reject the block.
-							assert!(
-								Self::has_aura_pre_digest_before_babe_pre_digest(),
-								"BABE pre-runtime digest required on flip block",
-							);
 							Self::migrate_to_babe(slot);
 							EngineState::<T>::put(State::Babe);
 						}
@@ -317,20 +314,6 @@ pub mod pallet {
 				.logs
 				.iter()
 				.find_map(AuraCompatibleDigestItem::<()>::as_aura_pre_digest)
-		}
-
-		/// Reject malformed BABE digests during the AURA→BABE transition.
-		///
-		/// Absence is allowed (an old binary may not emit them yet). Presence must be
-		/// exactly one BABE pre-digest after AURA at the same slot — the shape
-		/// [`has_aura_pre_digest_before_babe_pre_digest`] detects.
-		fn assert_babe_pre_digest_matches_aura_if_present() {
-			if Self::has_any_babe_pre_digest() {
-				assert!(
-					Self::has_aura_pre_digest_before_babe_pre_digest(),
-					"BABE pre-runtime digest must match AURA slot during transition",
-				);
-			}
 		}
 
 		/// Whether the current block's digest carries any BABE pre-runtime digest.

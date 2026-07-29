@@ -8,15 +8,12 @@ The consensus-engine pallet now:
   hijack slot or author extraction from a BABE-authored block (`pallet-babe`
   and the BABE verifier ignore foreign digests, and `polkadot-js`
   `extractAuthor` credits the first pre-runtime digest it can decode);
-- requires a matching BABE `SecondaryPlain` pre-runtime digest on the
-  epoch-boundary flip block, checked only once BABE authorities are populated so
-  that blocks produced while waiting for the session rotation still postpone
-  instead of being rejected;
-- accepts only the `SecondaryPlain` variant as a transition digest — `Primary`
-  and `SecondaryVRF` carry VRF material that is never client-verified while
-  blocks import through the AURA pipeline;
-- rejects malformed BABE digests during `ArmedBabe`/`ScheduledFlip` (wrong slot,
-  ordering, or duplicates; absence remains allowed for older binaries);
+- requires a matching BABE `SecondaryPlain` pre-runtime digest on every
+  `ArmedBabe`/`ScheduledFlip` block — a block missing it, or carrying a
+  malformed one (wrong slot, ordering, duplicates, or a `Primary`/`SecondaryVRF`
+  variant, whose VRF material is never client-verified while blocks import
+  through the AURA pipeline), is rejected on import, so nodes must be updated to
+  emit the digest before governance arms the flip;
 - returns `Error::InvalidEngineState` from `arm_babe` / `schedule_flip` when
   called from the wrong `EngineState`;
 - postpones the flip while `pallet-babe::Authorities` is empty;
