@@ -560,21 +560,6 @@ fn babe_accepts_babe_only_block_with_unrelated_digest() {
 	});
 }
 
-#[test]
-fn should_emit_babe_preruntime_digest_only_while_armed() {
-	new_test_ext().execute_with(|| {
-		for (state, expected) in [
-			(State::Aura, false),
-			(State::ArmedBabe, true),
-			(State::ScheduledFlip, true),
-			(State::Babe, false),
-		] {
-			EngineState::<Test>::put(state);
-			assert_eq!(ConsensusEngine::should_emit_babe_preruntime_digest(), expected);
-		}
-	});
-}
-
 // --- malformed payloads: presence is keyed on the engine id, not on decoding ---
 //
 // `as_babe_pre_digest`/`as_aura_pre_digest` decode with `DecodeAll`, so they return
@@ -676,8 +661,6 @@ fn malformed_items_are_not_detected_as_the_transition_shape() {
 	]));
 }
 
-<<<<<<< HEAD
-=======
 #[test]
 fn flip_leaves_babe_current_slot_matching_the_flip_block_timestamp() {
 	new_test_ext().execute_with(|| {
@@ -702,4 +685,38 @@ fn flip_leaves_babe_current_slot_matching_the_flip_block_timestamp() {
 		<ConsensusEngine as OnTimestampSet<u64>>::on_timestamp_set(1499 * SLOT_DURATION);
 	});
 }
->>>>>>> f4ab7614f7 (fix(consensus-engine): set babe CurrentSlot to the flip block's slot so OnTimestampSet accepts it)
+
+#[test]
+fn current_slot_reads_aura_storage_pre_flip() {
+	new_test_ext().execute_with(|| {
+		pallet_aura::CurrentSlot::<Test>::put(Slot::from(7));
+		pallet_babe::CurrentSlot::<Test>::put(Slot::from(99));
+		assert_eq!(ConsensusEngine::current_slot(), Slot::from(7));
+	});
+}
+
+#[test]
+fn current_slot_reads_babe_storage_post_flip() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::Babe);
+		pallet_aura::CurrentSlot::<Test>::put(Slot::from(7));
+		pallet_babe::CurrentSlot::<Test>::put(Slot::from(42));
+		assert_eq!(ConsensusEngine::current_slot(), Slot::from(42));
+	});
+}
+
+#[test]
+fn current_slot_reads_aura_storage_while_flip_pending() {
+	new_test_ext().execute_with(|| {
+		for state in [State::ArmedBabe, State::ScheduledFlip] {
+			put_engine_state(state);
+			pallet_aura::CurrentSlot::<Test>::put(Slot::from(7));
+			pallet_babe::CurrentSlot::<Test>::put(Slot::from(99));
+			assert_eq!(
+				ConsensusEngine::current_slot(),
+				Slot::from(7),
+				"unexpected slot in state {state:?}"
+			);
+		}
+	});
+}

@@ -28,7 +28,7 @@ The consensus-engine pallet now:
   `Babe::current_epoch()` / `next_epoch()` expect it).
 
 The `ConsensusEngine` pallet index moves from 52 to 10 so its `on_initialize`
-digest guards run in pallet-index hook order after `Babe` (7) but before
+digest guards run in pallet-index hook order after `Babe` but before
 `Scheduler` (18) and `Session` (30). At index 52 the guards evaluated
 post-rotation / post-dispatch state: a session boundary that resizes the AURA
 committee while armed would false-reject every honest author's block
@@ -37,6 +37,15 @@ and the AURA seal verifier use the parent state), and a Scheduler-dispatched
 `arm_babe` would reject its own block (guard sees `ArmedBabe`, block authored
 under `Aura`). Storage is keyed by pallet name, so no migration is needed; call
 encoding and metadata change.
+
+`Babe` moves from index 7 to 3 (immediately after `Aura`); `Grandpa` takes the
+former Babe index 7. Sidechain (4) therefore runs after both engines have
+written `CurrentSlot`, so `ConsensusEngine::current_slot()` — used by
+`pallet_sidechain::Config::current_slot_number()` and
+`GetSidechainStatus::get_sidechain_status()` — is a single storage read of the
+active engine. Previously Sidechain ran before Babe and had to read the BABE
+pre-digest (or see a stale `CurrentSlot`), which split the source of truth and
+fired epoch transitions one block late after the flip.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1929
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1935

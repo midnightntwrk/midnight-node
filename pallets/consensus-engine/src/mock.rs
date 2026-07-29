@@ -40,11 +40,12 @@ pub const SLOT_DURATION: u64 = 6000;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
-// Pallet indices follow production relative order: Babe (runtime index 7) must
-// run `on_initialize` *before* ConsensusEngine (runtime index 10). Digests are
-// consumed by Babe first; ConsensusEngine's guards must still reject unsafe ones.
+// Pallet indices follow production relative order: Babe must run
+// `on_initialize` *before* ConsensusEngine. Digests are consumed by Babe first;
+// ConsensusEngine's guards must still reject unsafe ones.
 // (In production ConsensusEngine must in turn run before Scheduler and Session —
-// see the hook-ordering notes in lib.rs; those pallets are not part of this mock.)
+// see the hook-ordering notes in lib.rs; those pallets are not part of this mock.
+// Babe also runs before Sidechain so `CurrentSlot` is fresh when Sidechain reads it.)
 frame_support::construct_runtime!(
 	pub struct Test {
 		System: frame_system = 0,

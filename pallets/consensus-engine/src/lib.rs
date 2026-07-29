@@ -347,6 +347,19 @@ pub mod pallet {
 				.find_map(AuraCompatibleDigestItem::<()>::as_aura_pre_digest)
 		}
 
+		/// Slot of the active consensus engine (`pallet_aura` / `pallet_babe`
+		/// `CurrentSlot`).
+		///
+		/// Single source of truth for sidechain hooks and runtime APIs. The runtime
+		/// must order Aura and Babe *before* Sidechain so this storage already
+		/// reflects the current block's digest when Sidechain reads it.
+		pub fn current_slot() -> Slot {
+			match Self::active_engine() {
+				ActiveEngine::Aura => pallet_aura::CurrentSlot::<T>::get(),
+				ActiveEngine::Babe => pallet_babe::CurrentSlot::<T>::get(),
+			}
+		}
+
 		/// Whether the current block's digest carries a pre-runtime item for
 		/// `engine_id`, **regardless of whether its payload decodes**.
 		///
