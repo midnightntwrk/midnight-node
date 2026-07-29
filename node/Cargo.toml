@@ -90,6 +90,7 @@ midnight-node-res = { workspace = true, features = ["chain-spec"], default-featu
 midnight-primitives-beefy = { workspace = true, default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
 midnight-primitives = { workspace = true, default-features = true }
+midnight-node-data-sources = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
 midnight-primitives-federated-authority-observation = { workspace = true, default-features = true }
 midnight-primitives-system-parameters = { workspace = true, default-features = true }
@@ -168,6 +169,11 @@ substrate-build-script-utils.workspace = true
 
 [features]
 default = []
+
+# Run the acropolis Cardano indexer inside the node process (the `Embedded`
+# and `DbSyncEmbeddedVerify` main-chain follower backends). Off by default:
+# it pulls the full acropolis/caryatid dependency tree.
+embedded-follower = ["midnight-node-data-sources/embedded"]
 
 # Dependencies that are only required if runtime benchmarking should be build.
 runtime-benchmarks = [

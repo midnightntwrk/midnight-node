@@ -1,0 +1,136 @@
+# Acropolis embedded-indexer configuration for the midnight-node Embedded /
+# DbSyncEmbeddedVerify follower backends. Copied from
+# input-output-hk/acropolis processes/midnight_indexer (rev 869354b3), with
+# the gRPC bind address moved to loopback.
+
+# ============================================================================
+# Startup Configuration
+# ============================================================================
+[global.startup]
+network-name = "preview"
+startup-mode = "genesis"   # Options: "genesis" | "snapshot"
+sync-mode = "mithril"      # Options: "mithril" | "upstream"
+topic = "cardano.sequence.start"
+
+# ============================================================================
+# Bootstrap Module Configurations
+# ============================================================================
+[module.genesis-bootstrapper]
+
+[module.mithril-snapshot-fetcher]
+aggregator-url = "https://aggregator.pre-release-preview.api.mithril.network/aggregator"
+genesis-key = "5b3132372c37332c3132342c3136312c362c3133372c3133312c3231332c3230372c3131372c3139382c38352c3137362c3139392c3136322c3234312c36382c3132332c3131392c3134352c31332c3233322c3234332c34392c3232392c322c3234392c3230352c3230352c33392c3233352c34345d"
+# Download max age in hours. E.g. 8 means 8 hours (if there isn't any snapshot within this time range download from Mithril)
+download-max-age = "never"
+# Pause constraint E.g. "epoch:100", "block:1200"
+pause = "none"
+# Stop constraint likewise
+stop = "none"
+
+[module.snapshot-bootstrapper]
+epoch = 999
+data-dir = "../../modules/snapshot_bootstrapper/data"
+
+# ============================================================================
+# Core Module Configurations
+# ============================================================================
+[module.peer-network-interface]
+sync-point = "dynamic"
+node-addresses = [
+    "preview-node.play.dev.cardano.org:3001",
+]
+
+[module.midnight-state]
+address-deltas-topic = "cardano.address.deltas"
+
+# The below configuration is for `preview`: https://github.com/midnightntwrk/midnight-node/tree/main/res/preview
+# Config for CNight asset
+cnight-policy-id = "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
+cnight-asset-name = ""
+
+# Config for Midnight candidates
+mapping-validator-address = "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng"
+committee-candidate-address = "addr_test1wz5ax0hjvhx2uqef8sqrxnmfywd37hea4truhqxu4yxp9hsvggkfm"
+auth-token-asset-name = ""
+
+# Config for Midnight governance
+technical-committee-address = "addr_test1wptcy7h9rmkhdnhn3jvm6tuhehcq2hhhzntvn00nq79ph8c44v43j"
+technical-committee-policy-id = "57827ae51eed76cef38c99bd2f97cdf0055ef714d6c9bdf3078a1b9f"
+council-address = "addr_test1wzy47zdsq22pg9l48c5v0f835ljdjzkz47sa5za9cehcejcw28k2d"
+council-policy-id = "895f09b002941417f53e28c7a4f1a7e4d90ac2afa1da0ba5c66f8ccb"
+
+# Config for Midnight Ariadne parameters
+permissioned-candidate-policy = "24dccfce2576ae6fa7149bc485850656ae6faf9f4158891316773a78"
+
+# Config for Midnight gRPC server
+# The embedded node calls the query service directly; no gRPC port needed.
+# Set a bind address (e.g. "127.0.0.1:50051") to also serve external clients.
+grpc-bind-address = "disabled"
+
+[module.block-unpacker]
+
+[module.tx-unpacker]
+# Subscriptions needed for validation
+bootstrapped-subscribe-topic = "cardano.sequence.bootstrapped"
+protocol-parameters-subscribe-topic = "cardano.protocol.parameters"
+
+publish-utxo-deltas-topic = "cardano.utxo.deltas"
+publish-withdrawals-topic = "cardano.withdrawals"
+publish-certificates-topic = "cardano.certificates"
+publish-governance-topic = "cardano.governance"
+publish-tx-validation-topic = "cardano.validation.tx"
+
+[module.utxo-state]
+address-delta-topic = "cardano.address.deltas"
+block-totals-topic = "cardano.block.txs"
+address-delta-publish-mode = "extended"
+pool-registration-updates-subscribe-topic = "cardano.pool.registration.updates"
+stake-registration-updates-subscribe-topic = "cardano.stake.registration.updates"
+
+[module.spo-state]
+
+[module.spdd-state]
+store-spdd = true
+
+[module.drep-state]
+
+[module.governance-state]
+
+[module.parameters-state]
+
+[module.stake-delta-filter]
+
+[module.epochs-state]
+
+[module.accounts-state]
+
+[module.consensus]
+
+#[module.block-vrf-validator]
+
+#[module.block-kes-validator]
+
+[module.chain-store]
+
+[module.clock]
+
+# Enable for message spying
+#[module.spy]
+#topic = "cardano.#"
+
+# ============================================================================
+# Message Bus Configuration
+# ============================================================================
+# Enable if external routing required
+#[message-bus.external]
+#class = "rabbit-mq"
+#url = "amqp://127.0.0.1:5672/%2f"
+#exchange = "caryatid"
+
+[message-bus.internal]
+class = "in-memory"
+
+# Message routing
+[[message-router.route]]  # Everything is internal only
+pattern = "#"
+bus = "internal"

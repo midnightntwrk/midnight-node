@@ -29,6 +29,21 @@ pub enum StorageSeparation {
 	Unified,
 }
 
+/// Which backend answers main-chain (Cardano) follower queries.
+#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MainChainFollowerBackend {
+	/// Query a cardano-db-sync postgres database.
+	#[default]
+	DbSync,
+	/// In-process Cardano indexer. Not implemented yet; selecting it fails at
+	/// startup with a clear error.
+	Embedded,
+	/// Answer from db-sync (consensus behaviour identical to `DbSync`) while
+	/// shadow-checking every query against the embedded backend, recording
+	/// divergences. See [`MidnightCfg::mc_follower_on_divergence`].
+	DbSyncEmbeddedVerify,
+}
+
 /// Default for `cnight_observation_window_size` when not present in config.
 /// Applied by serde on deserialization (the path that builds a live config);
 /// the derived `Default` is only used by a key-enumeration test helper.
@@ -58,6 +73,26 @@ pub struct MidnightCfg {
 	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
 	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
 	pub cross_chain_seed_file: Option<String>,
+
+	/// Main-chain follower backend: DbSync (default), Embedded (not yet
+	/// implemented), or DbSyncEmbeddedVerify (db-sync answers, embedded
+	/// shadow-checked). Ignored when use_main_chain_follower_mock is true.
+	#[serde(default)]
+	pub main_chain_follower_backend: MainChainFollowerBackend,
+
+	/// What to do when DbSyncEmbeddedVerify detects a divergence: Log
+	/// (default) records metrics and an error log; Halt exits the node, for
+	/// soak tests that must fail loudly.
+	#[serde(default)]
+	pub mc_follower_on_divergence: crate::verifying_data_sources::OnDivergence,
+
+	/// Path to the acropolis indexer TOML consumed by the Embedded /
+	/// DbSyncEmbeddedVerify follower backends (same format as acropolis's
+	/// midnight_indexer configs; see res/cfg/acropolis/). Required when
+	/// either backend is selected on a node built with the
+	/// `embedded-follower` feature.
+	#[validate(custom = |s| maybe(s, path_exists))]
+	pub acropolis_config_file: Option<String>,
 
 	/// Mock ariadne parameters
 	pub use_main_chain_follower_mock: bool,

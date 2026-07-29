@@ -1,0 +1,138 @@
+[package]
+name = "midnight-node-data-sources"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+# workspace primitives
+midnight-primitives-mainchain-follower = { workspace = true }
+midnight-primitives-cnight-observation = { workspace = true }
+midnight-primitives-federated-authority-observation = { workspace = true }
+
+# partner chains
+authority-selection-inherents = { workspace = true }
+pallet-sidechain-rpc = { workspace = true }
+sidechain-mc-hash = { workspace = true }
+sidechain-domain = { workspace = true }
+partner-chains-plutus-data = { workspace = true }
+
+# substrate
+sp-core = { workspace = true }
+sp-timestamp = { workspace = true }
+
+# shared libs
+cardano-serialization-lib = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+
+# grpc
+tonic = { version = "0.12", optional = true }
+prost = { version = "0.13", optional = true }
+
+# In-process acropolis indexer (feature `embedded`). Pinned to a single rev
+# of our fork (branch giles-midnight-embedding = upstream 869354b3 + three
+# upstream-able commits: tracing-subscriber pin relax, the embeddable query
+# service, and arbitrary_precision-safe genesis parsing); acropolis is
+# pre-release and its crates are not published, and an unpinned git ref
+# would make node builds non-reproducible.
+acropolis_common = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_midnight_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_genesis_bootstrapper = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_snapshot_bootstrapper = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_mithril_snapshot_fetcher = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_peer_network_interface = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_block_unpacker = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_tx_unpacker = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_accounts_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_drep_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_governance_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_parameters_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_utxo_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_epochs_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_spo_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_stake_delta_filter = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_consensus = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_block_vrf_validator = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_block_kes_validator = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_chain_store = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+acropolis_module_spdd_state = { git = "https://github.com/gilescope/acropolis", rev = "ec873b18728960eebceb25fa3e518478df9f1f43", optional = true }
+caryatid_process = { version = "0.14.2", optional = true }
+caryatid_module_clock = { version = "0.13.2", optional = true }
+caryatid_module_spy = { version = "0.13.2", optional = true }
+config = { version = "0.15.11", optional = true }
+anyhow = { version = "1.0", optional = true }
+tokio = { workspace = true, optional = true }
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+tokio = { workspace = true }
+tokio-stream = { version = "0.1", features = ["net"] }
+sqlx = { version = "0.8.5", features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
+partner-chains-db-sync-data-sources = { workspace = true, features = ["block-source", "candidate-source", "mc-hash", "sidechain-rpc", "bridge"] }
+hex.workspace = true
+dotenvy = "0.15"
+
+[[bench]]
+name = "datasources"
+harness = false
+
+[features]
+default = ["std"]
+
+std = [
+    "midnight-primitives-mainchain-follower/std",
+    "midnight-primitives-cnight-observation/std",
+    "midnight-primitives-federated-authority-observation/std",
+    "authority-selection-inherents/std",
+    "sidechain-domain/std",
+    "sp-core/std",
+    "sp-timestamp/std",
+    "log/std",
+    "tonic/transport",
+    "prost",
+]
+
+# Run the acropolis Cardano indexer inside the node process and serve the
+# data-source traits by calling its query service directly — no transport,
+# no codec, no port.
+embedded = [
+    "std",
+    "dep:acropolis_common",
+    "dep:acropolis_module_midnight_state",
+    "dep:acropolis_module_genesis_bootstrapper",
+    "dep:acropolis_module_snapshot_bootstrapper",
+    "dep:acropolis_module_mithril_snapshot_fetcher",
+    "dep:acropolis_module_peer_network_interface",
+    "dep:acropolis_module_block_unpacker",
+    "dep:acropolis_module_tx_unpacker",
+    "dep:acropolis_module_accounts_state",
+    "dep:acropolis_module_drep_state",
+    "dep:acropolis_module_governance_state",
+    "dep:acropolis_module_parameters_state",
+    "dep:acropolis_module_utxo_state",
+    "dep:acropolis_module_epochs_state",
+    "dep:acropolis_module_spo_state",
+    "dep:acropolis_module_stake_delta_filter",
+    "dep:acropolis_module_consensus",
+    "dep:acropolis_module_block_vrf_validator",
+    "dep:acropolis_module_block_kes_validator",
+    "dep:acropolis_module_chain_store",
+    "dep:acropolis_module_spdd_state",
+    "dep:caryatid_process",
+    "dep:caryatid_module_clock",
+    "dep:caryatid_module_spy",
+    "dep:config",
+    "dep:anyhow",
+    "dep:tokio",
+]

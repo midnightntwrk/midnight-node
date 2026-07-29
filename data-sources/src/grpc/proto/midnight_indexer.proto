@@ -1,0 +1,234 @@
+syntax = "proto3";
+
+package midnight_state;
+
+service MidnightState {
+  rpc GetAssetCreates (AssetCreatesRequest) returns (AssetCreatesResponse);
+  rpc GetAssetSpends (AssetSpendsRequest) returns (AssetSpendsResponse);
+  rpc GetRegistrations (RegistrationsRequest) returns (RegistrationsResponse);
+  rpc GetDeregistrations (DeregistrationsRequest) returns (DeregistrationsResponse);
+  rpc GetTechnicalCommitteeDatum (TechnicalCommitteeDatumRequest) returns (TechnicalCommitteeDatumResponse);
+  rpc GetCouncilDatum (CouncilDatumRequest) returns (CouncilDatumResponse);
+  rpc GetAriadneParameters (AriadneParametersRequest) returns (AriadneParametersResponse);
+  rpc GetBlockByHash (BlockByHashRequest) returns (BlockByHashResponse);
+  rpc GetUtxoEvents (UtxoEventsRequest) returns (UtxoEventsResponse);
+  rpc GetEpochNonce (EpochNonceRequest) returns (EpochNonceResponse);
+  rpc GetEpochCandidates (EpochCandidatesRequest) returns (EpochCandidatesResponse);
+  rpc GetStableBlock (StableBlockRequest) returns (StableBlockResponse);
+  rpc GetLatestStableBlock (LatestStableBlockRequest) returns (LatestStableBlockResponse);
+  rpc GetLatestBlock (LatestBlockRequest) returns (LatestBlockResponse);
+}
+
+message AssetCreatesRequest {
+  uint32 start_block = 1;
+  uint32 start_tx_index = 2;
+  uint32 utxo_capacity = 3;
+}
+message AssetCreate {
+  bytes address = 1;
+  uint64 quantity = 2;
+
+  bytes tx_hash = 3;
+  uint32 output_index = 4;
+
+  uint64 block_number = 5;
+  bytes block_hash = 6;
+  uint32 tx_index = 7;
+
+  int64 block_timestamp_unix_millis = 8;
+}
+message AssetCreatesResponse {
+  repeated AssetCreate creates = 1;
+}
+
+message AssetSpendsRequest {
+  uint32 start_block = 1;
+  uint32 start_tx_index = 2;
+  uint32 utxo_capacity = 3;
+}
+message AssetSpend {
+  bytes address = 1;
+  uint64 quantity = 2;
+
+  bytes spending_tx_hash = 3;
+  uint64 block_number = 4;
+  bytes block_hash = 5;
+  uint32 tx_index = 6;
+
+  bytes utxo_tx_hash = 7;
+  uint32 utxo_index = 8;
+
+  int64 block_timestamp_unix_millis = 9;
+}
+message AssetSpendsResponse {
+  repeated AssetSpend spends = 1;
+}
+
+message RegistrationsRequest {
+  uint32 start_block = 1;
+  uint32 start_tx_index = 2;
+  uint32 utxo_capacity = 3;
+}
+message Registration {
+  bytes full_datum = 1;
+
+  bytes tx_hash = 2;
+  uint32 output_index = 3;
+
+  uint64 block_number = 4;
+  bytes block_hash = 5;
+  uint32 tx_index = 6;
+
+  int64 block_timestamp_unix_millis = 7;
+}
+message RegistrationsResponse {
+  repeated Registration registrations = 1;
+}
+
+message DeregistrationsRequest {
+  uint32 start_block = 1;
+  uint32 start_tx_index = 2;
+  uint32 utxo_capacity = 3;
+}
+message Deregistration {
+  bytes full_datum = 1;
+
+  bytes tx_hash = 2;
+
+  uint64 block_number = 3;
+  bytes block_hash = 4;
+  uint32 tx_index = 5;
+
+  bytes utxo_tx_hash = 6;
+  uint32 utxo_index = 7;
+
+  int64 block_timestamp_unix_millis = 8;
+}
+message DeregistrationsResponse {
+  repeated Deregistration deregistrations = 1;
+}
+
+message TechnicalCommitteeDatumRequest {
+  uint64 block_number = 1;
+}
+message TechnicalCommitteeDatumResponse {
+  uint64 source_block_number = 1;
+  bytes datum = 2;
+}
+
+message CouncilDatumRequest {
+  uint64 block_number = 1;
+}
+message CouncilDatumResponse {
+  uint64 source_block_number = 1;
+  bytes datum = 2;
+}
+
+message AriadneParametersRequest {
+  uint64 epoch = 1;
+}
+message AriadneParametersResponse {
+  uint64 source_epoch = 1;
+  bytes datum = 2;
+}
+
+message EpochNonceRequest {
+  uint64 epoch = 1;
+}
+message EpochNonceResponse {
+  optional bytes nonce = 1;
+}
+
+message EpochCandidatesRequest {
+  uint64 epoch = 1;
+}
+message UtxoId {
+  bytes tx_hash = 1;
+  uint32 index = 2;
+}
+message EpochCandidate {
+  bytes full_datum = 1;
+
+  bytes utxo_tx_hash = 2;
+  uint32 utxo_index = 3;
+
+  repeated UtxoId tx_inputs = 4;
+
+  uint64 epoch_number = 5;
+  uint64 block_number = 6;
+  uint64 slot_number = 7;
+  uint32 tx_index = 8;
+}
+message StakePoolEntry {
+  bytes pool_hash = 1;
+  uint64 stake = 2;
+}
+message EpochCandidatesResponse {
+  repeated EpochCandidate candidates = 1;
+  repeated StakePoolEntry stake_distribution = 2;
+}
+
+message UtxoEventsRequest {
+  uint32 tx_capacity = 1;
+  bytes end_block_hash = 2;
+  CardanoPosition start_position = 3;
+}
+message UtxoEvent {
+  oneof kind {
+    AssetCreate asset_create = 1;
+    AssetSpend asset_spend = 2;
+    Registration registration = 3;
+    Deregistration deregistration = 4;
+  }
+}
+message CardanoPosition {
+  bytes block_hash = 1;
+  uint32 block_number = 2;
+  uint32 tx_index = 3;
+  int64 block_timestamp_unix_millis = 4;
+}
+message UtxoEventsResponse {
+  repeated UtxoEvent events = 1;
+  CardanoPosition next_position = 2;
+}
+
+message BlockByHashRequest {
+  bytes block_hash = 1;
+}
+message BlockByHashResponse {
+  uint32 block_number = 1;
+  uint32 tx_count = 2;
+  int64 block_timestamp_unix = 3;
+  uint32 epoch_number = 4;
+  uint64 slot_number = 5;
+}
+
+message Block {
+  uint32 block_number = 1;
+  bytes block_hash = 2;
+  uint32 epoch_number = 3;
+  uint64 slot_number = 4;
+  uint64 block_timestamp_unix = 5;
+}
+message LatestStableBlockRequest {
+  uint32 stability_offset = 1;
+  uint64 as_of_timestamp_unix_millis = 2;
+}
+message LatestStableBlockResponse {
+  optional Block block = 1;
+}
+
+message LatestBlockRequest {}
+message LatestBlockResponse {
+  Block block = 1;
+}
+
+
+message StableBlockRequest {
+  bytes block_hash = 1;
+  uint32 stability_offset = 2;
+  uint64 as_of_timestamp_unix_millis = 3;
+}
+message StableBlockResponse {
+  optional Block block = 1;
+}

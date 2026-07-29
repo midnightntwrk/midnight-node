@@ -291,6 +291,7 @@ pub fn new_partial(
 			cnight_follower_genesis,
 			mc_follower_metrics.clone(),
 			midnight_metrics.clone(),
+			config.prometheus_registry(),
 		))
 	})?;
 

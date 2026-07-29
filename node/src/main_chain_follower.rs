@@ -28,7 +28,8 @@ use sidechain_mc_hash::McHashDataSource;
 use sp_partner_chains_bridge::TokenBridgeDataSource;
 use sqlx::{Pool, Postgres};
 
-use super::cfg::midnight_cfg::MidnightCfg;
+use super::cfg::midnight_cfg::{MainChainFollowerBackend, MidnightCfg};
+use crate::verifying_data_sources::{VerifyContext, VerifyMetrics, verify_data_sources};
 use midnight_primitives::BridgeRecipient;
 use partner_chains_mock_data_sources::MockRegistrationsConfig;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
@@ -72,6 +73,7 @@ pub(crate) async fn create_cached_main_chain_follower_data_sources(
 	cnight_follower_genesis: Option<(CNightAddresses, CardanoPosition)>,
 	mc_metrics_opt: Option<McFollowerMetrics>,
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
+	prometheus_registry: Option<&prometheus_endpoint::Registry>,
 ) -> std::result::Result<DataSources, ServiceError> {
 	if cfg.use_main_chain_follower_mock {
 		let mock = create_mock_data_sources(cfg.clone()).await.map_err(|err| {
@@ -81,21 +83,109 @@ pub(crate) async fn create_cached_main_chain_follower_data_sources(
 			)
 		})?;
 
-		Ok(mock)
-	} else {
+		return Ok(mock);
+	}
+
+	let db_sync = |cfg: MidnightCfg| {
 		create_cached_data_sources(
 			cfg,
 			cnight_follower_genesis,
 			mc_metrics_opt,
 			midnight_metrics_opt,
 		)
-		.await
-		.map_err(|err| {
-			ServiceError::Application(
-				format!("Failed to create db-sync main chain follower: {err}").into(),
-			)
-		})
+	};
+	let app_err = |err: Box<dyn Error + Send + Sync>| {
+		ServiceError::Application(
+			format!("Failed to create db-sync main chain follower: {err}").into(),
+		)
+	};
+
+	match cfg.main_chain_follower_backend {
+		MainChainFollowerBackend::DbSync => db_sync(cfg).await.map_err(app_err),
+		// The embedded indexer has no token-bridge data source yet, so it
+		// cannot stand alone; it can only shadow a db-sync primary (which
+		// provides the bridge) in DbSyncEmbeddedVerify mode.
+		MainChainFollowerBackend::Embedded => Err(ServiceError::Application(
+			"the Embedded main-chain follower cannot run standalone yet: the embedded indexer \
+			 has no token-bridge data source. Use DbSyncEmbeddedVerify to run it alongside \
+			 db-sync."
+				.into(),
+		)),
+		MainChainFollowerBackend::DbSyncEmbeddedVerify => {
+			let on_divergence = cfg.mc_follower_on_divergence;
+			let primary = db_sync(cfg.clone()).await.map_err(app_err)?;
+			let shadow = create_embedded_data_sources(&cfg, primary.bridge.clone()).await.map_err(
+				|err| {
+					ServiceError::Application(
+						format!("Failed to create embedded shadow for verify mode: {err}").into(),
+					)
+				},
+			)?;
+			let metrics = VerifyMetrics::register_warn_errors(prometheus_registry);
+			let ctx = VerifyContext::new(metrics, on_divergence);
+			Ok(verify_data_sources(primary, shadow, ctx))
+		},
 	}
+}
+
+/// In-process (acropolis-based) Cardano indexer backend: spawns the acropolis
+/// module fleet on the node's tokio runtime and serves the data-source traits
+/// by calling the indexer's query service directly — no transport, no codec,
+/// no local port.
+///
+/// `bridge` is passed through untouched — the embedded indexer has no bridge
+/// implementation, and in verify mode the wrapper only ever uses the
+/// primary's bridge anyway.
+#[cfg(feature = "embedded-follower")]
+async fn create_embedded_data_sources(
+	cfg: &MidnightCfg,
+	bridge: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
+) -> Result<DataSources, Box<dyn Error + Send + Sync>> {
+	use midnight_node_data_sources::{
+		AuthoritySelectionDataSourceGrpcImpl, FederatedAuthorityObservationGrpcImpl,
+		McHashDataSourceGrpcImpl, MidnightCNightObservationGrpcImpl,
+		SidechainRpcDataSourceGrpcImpl, embedded::spawn_embedded_indexer,
+	};
+
+	let acropolis_config =
+		cfg.acropolis_config_file.as_ref().ok_or(missing("acropolis_config_file"))?;
+	let service = spawn_embedded_indexer(acropolis_config).await?.service;
+
+	let block_config = DbSyncBlockDataSourceConfig {
+		cardano_security_parameter: cfg
+			.cardano_security_parameter
+			.ok_or(missing("cardano_security_parameter"))?,
+		cardano_active_slots_coeff: cfg
+			.cardano_active_slots_coeff
+			.ok_or(missing("cardano_active_slots_coeff"))?,
+		block_stability_margin: cfg
+			.block_stability_margin
+			.ok_or(missing("block_stability_margin"))?,
+	};
+
+	Ok(DataSources {
+		sidechain_rpc: Arc::new(SidechainRpcDataSourceGrpcImpl::direct(service.clone())),
+		mc_hash: Arc::new(McHashDataSourceGrpcImpl::direct(service.clone(), block_config)),
+		authority_selection: Arc::new(AuthoritySelectionDataSourceGrpcImpl::direct(
+			service.clone(),
+		)),
+		cnight_observation: Arc::new(MidnightCNightObservationGrpcImpl::direct(service.clone())),
+		federated_authority_observation: Arc::new(FederatedAuthorityObservationGrpcImpl::direct(
+			service,
+		)),
+		bridge,
+	})
+}
+
+/// Stub when built without `--features embedded-follower`.
+#[cfg(not(feature = "embedded-follower"))]
+async fn create_embedded_data_sources(
+	_cfg: &MidnightCfg,
+	_bridge: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
+) -> Result<DataSources, Box<dyn Error + Send + Sync>> {
+	Err("this node binary was built without the `embedded-follower` feature; rebuild with \
+		 `--features embedded-follower` to use the embedded main-chain follower"
+		.into())
 }
 
 pub async fn create_mock_data_sources(

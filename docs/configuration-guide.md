@@ -58,6 +58,26 @@ CURRENT_VALUE: my_new_chain_id
 ...
 ```
 
+## Main-chain follower backends
+
+`main_chain_follower_backend` (env: `MAIN_CHAIN_FOLLOWER_BACKEND`) selects how
+the node observes Cardano:
+
+| Value | Behaviour |
+| ---------------------- | ------------------------------------------------------------------ |
+| `DbSync` (default) | Query a cardano-db-sync postgres, as today. |
+| `Embedded` | In-process acropolis indexer. Rejected at startup for now (no token-bridge data source yet). |
+| `DbSyncEmbeddedVerify` | Serve from db-sync while shadow-checking every query against the embedded indexer. |
+
+The `Embedded`/`DbSyncEmbeddedVerify` backends need a node built with
+`--features embedded-follower` and `acropolis_config_file` pointing at an
+acropolis indexer TOML (presets: `res/cfg/acropolis/`). In verify mode,
+outcomes are counted in `midnight_mc_follower_verify_total{method,outcome}`
+and divergences are logged at ERROR; `mc_follower_on_divergence = "Halt"`
+exits the node on divergence instead (soak-test mode). Consensus behaviour in
+verify mode is identical to `DbSync` - the shadow never blocks or alters the
+primary path.
+
 ## Chainspecs
 
 To run the node, you must supply a chainspec file. Chainspec files for known networks are stored in `res/<network-name>/` and are named `chain-spec.json` (human-readable) or `chain-spec-raw.json` (encoded for production use).

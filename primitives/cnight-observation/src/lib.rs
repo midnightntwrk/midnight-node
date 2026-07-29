@@ -287,7 +287,7 @@ impl Ord for ObservedUtxo {
 }
 
 /// A struct to contain all UTXOs in a given range
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ObservedUtxos {
 	// Start position (inclusive)
 	pub start: CardanoPosition,

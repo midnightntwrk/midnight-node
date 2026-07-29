@@ -38,3 +38,4 @@ pub mod service;
 pub mod sidechain_params_cmd;
 pub mod subscription_bounds;
 mod util;
+pub mod verifying_data_sources;

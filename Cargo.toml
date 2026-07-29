@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "data-sources",
     "ledger",
     "ledger/helpers",
     "metadata",
@@ -131,6 +132,7 @@ midnight-node-runtime = { path = "runtime", default-features = false }
 midnight-primitives = { path = "primitives/midnight", default-features = false }
 midnight-primitives-beefy = { path = "primitives/beefy", default-features = false }
 midnight-primitives-ledger = { path = "primitives/ledger", default-features = false }
+midnight-node-data-sources = { path = "data-sources", default-features = false }
 midnight-primitives-mainchain-follower = { path = "primitives/mainchain-follower", default-features = false }
 midnight-primitives-cnight-observation = { path = "primitives/cnight-observation", default-features = false }
 midnight-primitives-ics-observation = { path = "primitives/ics-observation", default-features = false }

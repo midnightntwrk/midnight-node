@@ -1,0 +1,157 @@
+# Acropolis embedded-indexer configuration for midnight DEVNET (which
+# observes Cardano preview). Derived from input-output-hk/acropolis
+# processes/midnight_indexer config.preview.toml; candidate/governance
+# addresses swapped for devnet's (from res/devnet/), gRPC server disabled,
+# ingest pointed at the local preview cardano-node container.
+
+# ============================================================================
+# Startup Configuration
+# ============================================================================
+[global.startup]
+network-name = "preview"
+startup-mode = "genesis"   # Options: "genesis" | "snapshot"
+# "upstream": peer-sync the whole chain from node-addresses (the local
+# preview cardano-node). Mithril is unusable on preview at this rev: the
+# aggregator stopped publishing the legacy full-snapshot artifacts the
+# fetcher expects.
+sync-mode = "upstream"     # Options: "mithril" | "upstream"
+topic = "cardano.sequence.start"
+
+# ============================================================================
+# Bootstrap Module Configurations
+# ============================================================================
+[module.genesis-bootstrapper]
+
+[module.mithril-snapshot-fetcher]
+directory = "/Users/gilescope/data/acropolis-devnet/mithril"
+aggregator-url = "https://aggregator.pre-release-preview.api.mithril.network/aggregator"
+genesis-key = "5b3132372c37332c3132342c3136312c362c3133372c3133312c3231332c3230372c3131372c3139382c38352c3137362c3139392c3136322c3234312c36382c3132332c3131392c3134352c31332c3233322c3234332c34392c3232392c322c3234392c3230352c3230352c33392c3233352c34345d"
+# Download max age in hours. E.g. 8 means 8 hours (if there isn't any snapshot within this time range download from Mithril)
+download-max-age = "never"
+# Pause constraint E.g. "epoch:100", "block:1200"
+pause = "none"
+# Stop constraint likewise
+stop = "none"
+
+[module.snapshot-bootstrapper]
+epoch = 999
+data-dir = "../../modules/snapshot_bootstrapper/data"
+
+# ============================================================================
+# Core Module Configurations
+# ============================================================================
+[module.peer-network-interface]
+cache-dir = "/Users/gilescope/data/acropolis-devnet/peer-cache"
+
+# "origin": replay the chain from genesis via the peers below. ("dynamic"
+# waits for a sync command that only the mithril fetcher sends, and mithril
+# is disabled here - see sync-mode above.)
+sync-point = "origin"
+# Single peer on purpose: with two peers in Direct (auto-fetch) block-flow
+# mode, a late-connecting second peer starts its own chain-sync from origin
+# and the duplicate block stream desyncs every module's message readers.
+node-addresses = [
+    "127.0.0.1:3003", # local preview-cardano-node container
+]
+
+[module.midnight-state]
+address-deltas-topic = "cardano.address.deltas"
+
+# The below configuration is for devnet: values from res/devnet/ (cnight-config.json, federated-authority-config.json, chain-spec.json)
+# Config for CNight asset
+cnight-policy-id = "d2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1"
+cnight-asset-name = ""
+
+# Config for Midnight candidates
+mapping-validator-address = "addr_test1wplxjzranravtp574s2wz00md7vz9rzpucu252je68u9a8qzjheng"
+committee-candidate-address = "addr_test1wzj9h8pzkxvkqv0s3c9f53j9hrmnrjku3hajhnpswzft2ags02c2l"
+auth-token-asset-name = ""
+
+# Config for Midnight governance
+technical-committee-address = "addr_test1wzwtcadgp9xz95k8yke5ut33uzf76qkm72y9tuxtg64wamgtlr3xm"
+technical-committee-policy-id = "9cbc75a8094c22d2c725b34e2e31e093ed02dbf28855f0cb46aaeeed"
+council-address = "addr_test1wq7nqw77hqnfep0ma0rrmqwuq4lgd9rahelgv2vvj7pymsg7hhpuu"
+council-policy-id = "3d303bdeb8269c85fbebc63d81dc057e86947dbe7e86298c97824dc1"
+
+# Config for Midnight Ariadne parameters
+permissioned-candidate-policy = "17ff3b32dd10e13b561b09444fcd5da3b800365ac5049ebf3e780051"
+
+# Config for Midnight gRPC server
+# The embedded node calls the query service directly; no gRPC port needed.
+# Set a bind address (e.g. "127.0.0.1:50051") to also serve external clients.
+grpc-bind-address = "disabled"
+
+[module.block-unpacker]
+
+[module.tx-unpacker]
+# Subscriptions needed for validation
+bootstrapped-subscribe-topic = "cardano.sequence.bootstrapped"
+protocol-parameters-subscribe-topic = "cardano.protocol.parameters"
+
+publish-utxo-deltas-topic = "cardano.utxo.deltas"
+publish-withdrawals-topic = "cardano.withdrawals"
+publish-certificates-topic = "cardano.certificates"
+publish-governance-topic = "cardano.governance"
+publish-tx-validation-topic = "cardano.validation.tx"
+
+[module.utxo-state]
+address-delta-topic = "cardano.address.deltas"
+block-totals-topic = "cardano.block.txs"
+address-delta-publish-mode = "extended"
+pool-registration-updates-subscribe-topic = "cardano.pool.registration.updates"
+stake-registration-updates-subscribe-topic = "cardano.stake.registration.updates"
+
+[module.spo-state]
+
+[module.spdd-state]
+store-spdd = true
+
+[module.drep-state]
+
+[module.governance-state]
+
+[module.parameters-state]
+
+[module.stake-delta-filter]
+# Only Mainnet has a predefined pointer cache built in; testnets must build
+# their own (same as acropolis's omnibus-preview config).
+cache-mode = "write"
+write-full-cache = "false"
+
+[module.epochs-state]
+
+[module.accounts-state]
+
+[module.consensus]
+
+#[module.block-vrf-validator]
+
+#[module.block-kes-validator]
+
+[module.chain-store]
+# Keep the block store out of the checkout (default is cwd-relative).
+database-path = "/Users/gilescope/data/acropolis-devnet/fjall-blocks"
+
+
+[module.clock]
+
+# Enable for message spying
+#[module.spy]
+#topic = "cardano.#"
+
+# ============================================================================
+# Message Bus Configuration
+# ============================================================================
+# Enable if external routing required
+#[message-bus.external]
+#class = "rabbit-mq"
+#url = "amqp://127.0.0.1:5672/%2f"
+#exchange = "caryatid"
+
+[message-bus.internal]
+class = "in-memory"
+
+# Message routing
+[[message-router.route]]  # Everything is internal only
+pattern = "#"
+bus = "internal"
