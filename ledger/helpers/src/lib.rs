@@ -60,6 +60,12 @@ pub mod ledger_7 {
 	mod block_context;
 	pub use block_context::*;
 
+	// All L7 circuits are ZKIR-v2, so the plain `zkir` proving pipeline covers them.
+	#[allow(clippy::duplicate_mod)]
+	#[path = "proving_provider/v2_only.rs"]
+	mod proving_provider;
+	pub use proving_provider::*;
+
 	// ECDSA is only supported from ledger 9. Pre-9 dependency versions can't represent an
 	// ECDSA unshielded identity (coin-structure has no `From<ecdsa::VerifyingKey> for
 	// UserAddress`, and the signature enums have no ECDSA variant), so the shared `common`
@@ -181,6 +187,12 @@ pub mod ledger_8 {
 	mod block_context;
 	pub use block_context::*;
 
+	// All L8 circuits are ZKIR-v2, so the plain `zkir` proving pipeline covers them.
+	#[allow(clippy::duplicate_mod)]
+	#[path = "proving_provider/v2_only.rs"]
+	mod proving_provider;
+	pub use proving_provider::*;
+
 	// ECDSA is only supported from ledger 9 (see the note in `ledger_7`).
 	#[allow(clippy::duplicate_mod)]
 	mod ecdsa_unimpl;
@@ -297,6 +309,12 @@ pub mod ledger_9 {
 	#[path = "block_context/post_ledger_8.rs"]
 	mod block_context;
 	pub use block_context::*;
+
+	// L9's Dust spend circuit is ZKIR-v3 while everything else is still ZKIR-v2, so proving
+	// has to dispatch per circuit.
+	#[path = "proving_provider/v2_or_v3.rs"]
+	mod proving_provider;
+	pub use proving_provider::*;
 
 	#[allow(clippy::duplicate_mod)]
 	mod common;
