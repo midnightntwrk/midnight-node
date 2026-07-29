@@ -55,3 +55,8 @@ bootnodes = []
 
 # Disallow symlinks when loading config files
 unsafe_allow_symlinks = false
+
+# 12 seconds == 2 slots
+tblock_correction_offset = 12
+# Tuesday, August 4, 2026 at 12:00:00 AM (UTC)
+tblock_correction_disable_after = 1785801600
