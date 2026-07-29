@@ -107,26 +107,22 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 
 	let db = Arc::new(parity_db::Db::open_or_create(&config)?);
 
-	// Genesis-arena init dispatches (inside the ledger crate) on the genesis_state's
-	// `ledger-state[vNN]` tag, not this build's latest version. A network genesis'd with an older
-	// ledger version (e.g. a real devnet whose genesis arena is still v13/ledger_8) must be
-	// initialised with the matching deserializer, or the init panics with a tag-version mismatch.
-	// (This is also what lets a fresh node warp-sync onto such a network: the genesis arena is set
-	// up under the right version, then warp recovery overwrites it with the verified target arena.)
-	let genesis_state = &storage_config.genesis_state;
 	match storage_config.separation {
 		StorageSeparation::Separate => {
-			midnight_node_ledger::init_storage_paritydb_separate(
+			// Version-aware: a ledger-9 node may boot on a ledger-8 genesis during
+			// the 8->9 hardfork; seed the arena with the deserializer matching the
+			// genesis `ledger-state[vN]` tag (see `init_ledger_storage_separate`).
+			midnight_node_ledger::init_ledger_storage_separate(
 				&storage_config.db_path,
-				genesis_state,
+				&storage_config.genesis_state,
 				storage_config.cache_size,
 			);
 			Ok((OwnedDb(db), LedgerStorageDb::SeparateDb(storage_config.db_path.clone())))
 		},
 		StorageSeparation::Unified => {
-			midnight_node_ledger::init_storage_paritydb_unified::<_, NUM_COLUMNS_POLKADOT>(
+			midnight_node_ledger::init_ledger_storage_unified::<_, NUM_COLUMNS_POLKADOT>(
 				OwnedDb(db.clone()),
-				genesis_state,
+				&storage_config.genesis_state,
 				storage_config.cache_size,
 			);
 			Ok((OwnedDb(db.clone()), LedgerStorageDb::UnifiedDb(db.clone())))

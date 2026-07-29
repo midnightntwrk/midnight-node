@@ -312,67 +312,52 @@ pub fn import_verified_ledger_snapshot(
 	}
 }
 
-/// Initialise the ledger arena default storage (separate-DB layout) at `dir` and allocate
-/// `genesis_state` into it, dispatching to the ledger module matching the genesis state's
-/// `ledger-state[vNN]` tag (see [`ledger_state_tag_version`]) — the version→module mapping lives
-/// here, next to the other tag dispatchers, so embedders don't maintain their own copy.
+/// Seed the (separate) ledger arena from a genesis `LedgerState` blob, using the
+/// deserializer that matches the blob's `ledger-state[vN]` header tag.
 ///
-/// Panics on an unsupported tag version: a build that cannot deserialize a network's genesis
-/// state cannot run that network at all.
+/// A node may boot on a chain-spec produced by an older runtime — notably the
+/// ledger 8->9 hardfork, where a ledger-9 node starts from a ledger-8
+/// (`ledger-state[v13]`) genesis and only upgrades to v9 later via the runtime
+/// migration. Seeding must therefore match the genesis version (the genesis
+/// block runs under the old WASM and expects the old-format arena root), not the
+/// latest. v8 and v9 share one storage backend, so a v8-seeded arena is exactly
+/// what the post-migration v9 runtime reads. Unrecognized tags fall back to the
+/// latest version (`ledger_9`), preserving the prior default behaviour.
 #[cfg(feature = "std")]
-pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
+pub fn init_ledger_storage_separate<P: AsRef<std::path::Path>>(
 	dir: P,
 	genesis_state: &[u8],
 	cache_size: usize,
-) {
-	match ledger_state_tag_version(genesis_state) {
-		Some(16..=18) => {
-			ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size);
-		},
-		Some(13) => {
-			ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size);
-		},
-		Some(5) => {
-			ledger_7::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size);
-		},
-		other => panic!("unsupported genesis ledger-state version {other:?}"),
+) -> alloc::vec::Vec<u8> {
+	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
+		ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
+	} else {
+		ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
 	}
 }
 
-/// Unified-DB counterpart of [`init_storage_paritydb_separate`]: initialise the arena default
-/// storage inside the embedder's already-open ParityDb at column offset `COLUMN_OFFSET`,
-/// dispatching on the genesis state's `ledger-state[vNN]` tag. Panics on an unsupported version.
+/// Unified-DB counterpart of [`init_ledger_storage_separate`].
 #[cfg(feature = "std")]
-pub fn init_storage_paritydb_unified<D, const COLUMN_OFFSET: u8>(
+pub fn init_ledger_storage_unified<
+	D: core::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+	const COLUMN_OFFSET: u8,
+>(
 	db_instance: D,
 	genesis_state: &[u8],
 	cache_size: usize,
-) where
-	D: std::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
-{
-	match ledger_state_tag_version(genesis_state) {
-		Some(16..=18) => {
-			ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
-				db_instance,
-				genesis_state,
-				cache_size,
-			);
-		},
-		Some(13) => {
-			ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
-				db_instance,
-				genesis_state,
-				cache_size,
-			);
-		},
-		Some(5) => {
-			ledger_7::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
-				db_instance,
-				genesis_state,
-				cache_size,
-			);
-		},
-		other => panic!("unsupported genesis ledger-state version {other:?}"),
+) -> alloc::vec::Vec<u8> {
+	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
+		ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+			db_instance,
+			genesis_state,
+			cache_size,
+		)
+	} else {
+		ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+			db_instance,
+			genesis_state,
+			cache_size,
+		)
 	}
 }
 
