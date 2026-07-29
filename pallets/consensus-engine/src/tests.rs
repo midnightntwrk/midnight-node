@@ -135,6 +135,12 @@ fn primary_babe_digest_is_not_detected() {
 }
 
 #[test]
+fn secondary_vrf_babe_digest_is_not_detected() {
+	// `SecondaryVRF` also carries unverified VRF material under AURA import.
+	assert!(!aura_before_babe(vec![aura_pre_digest(100), babe_secondary_vrf_pre_digest(100)]));
+}
+
+#[test]
 fn babe_before_aura_is_not_detected() {
 	assert!(!aura_before_babe(vec![babe_pre_digest(100), aura_pre_digest(100)]));
 }
@@ -313,6 +319,17 @@ fn armed_rejects_primary_babe_digest() {
 		EngineState::<Test>::put(State::ArmedBabe);
 		// Matching slot, but the wrong variant: Primary carries unverified VRF material.
 		start_block_with_logs(vec![aura_pre_digest(100), babe_primary_pre_digest(100)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
+fn armed_rejects_secondary_vrf_babe_digest() {
+	new_test_ext().execute_with(|| {
+		EngineState::<Test>::put(State::ArmedBabe);
+		// Matching slot, but SecondaryVRF carries the same unverified VRF risk as Primary.
+		start_block_with_logs(vec![aura_pre_digest(100), babe_secondary_vrf_pre_digest(100)]);
 		on_initialize();
 	});
 }

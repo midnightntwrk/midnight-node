@@ -22,7 +22,7 @@ use parity_scale_codec::{Decode, Encode};
 use sp_consensus_aura::AURA_ENGINE_ID;
 use sp_consensus_babe::BABE_ENGINE_ID;
 use sp_consensus_babe::digests::{
-	PreDigest as BabePreDigest, PrimaryPreDigest, SecondaryPlainPreDigest,
+	PreDigest as BabePreDigest, PrimaryPreDigest, SecondaryPlainPreDigest, SecondaryVRFPreDigest,
 };
 use sp_consensus_slots::Slot;
 use sp_core::H256;
@@ -164,6 +164,22 @@ pub fn babe_primary_pre_digest(slot: u64) -> DigestItem {
 	DigestItem::PreRuntime(
 		BABE_ENGINE_ID,
 		BabePreDigest::Primary(PrimaryPreDigest {
+			authority_index: 0,
+			slot: Slot::from(slot),
+			vrf_signature,
+		})
+		.encode(),
+	)
+}
+
+/// A BABE `SecondaryVRF` pre-runtime digest item for `slot`, carrying a (dummy,
+/// unverified) VRF signature — rejected for the same reason as [`babe_primary_pre_digest`].
+pub fn babe_secondary_vrf_pre_digest(slot: u64) -> DigestItem {
+	let vrf_signature = sp_core::sr25519::vrf::VrfSignature::decode(&mut &[0u8; 96][..])
+		.expect("zeroed bytes decode as a VRF signature");
+	DigestItem::PreRuntime(
+		BABE_ENGINE_ID,
+		BabePreDigest::SecondaryVRF(SecondaryVRFPreDigest {
 			authority_index: 0,
 			slot: Slot::from(slot),
 			vrf_signature,
