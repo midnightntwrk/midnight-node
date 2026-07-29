@@ -8065,6 +8065,8 @@ dependencies = [
  "midnight-onchain-runtime 2.0.1",
  "midnight-onchain-runtime 3.1.0",
  "midnight-onchain-runtime 4.0.0",
+ "midnight-onchain-state 3.0.0",
+ "midnight-onchain-state 4.0.0",
  "midnight-primitives-ledger",
  "midnight-serialize",
  "midnight-storage 1.1.1",
@@ -8114,6 +8116,8 @@ dependencies = [
  "midnight-onchain-runtime 2.0.1",
  "midnight-onchain-runtime 3.1.0",
  "midnight-onchain-runtime 4.0.0",
+ "midnight-onchain-state 3.0.0",
+ "midnight-onchain-state 4.0.0",
  "midnight-serialize",
  "midnight-storage 1.1.1",
  "midnight-storage 2.0.1",
@@ -8734,6 +8738,7 @@ checksum = "210e601a89aee79ce2b007cf96c1a56c23baa306b0c40b9b98d12c27e18d1981"
 dependencies = [
  "crypto",
  "derive-where",
+ "hashbrown 0.16.1",
  "midnight-base-crypto",
  "midnight-serialize",
  "midnight-storage-core",
@@ -8755,6 +8760,7 @@ dependencies = [
  "crypto",
  "derive-where",
  "fake",
+ "hashbrown 0.16.1",
  "hex",
  "itertools 0.14.0",
  "konst 0.4.3",
@@ -11368,6 +11374,7 @@ dependencies = [
  "sidechain-mc-hash",
  "sp-partner-chains-bridge",
  "sp-timestamp",
+ "tokio",
 ]
 
 [[package]]

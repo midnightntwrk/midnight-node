@@ -110,7 +110,7 @@ jobs:
             core.setOutput('number', prNumber);
 
       - name: Checkout PR branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
           ref: ${{ steps.pr.outputs.sha }}
@@ -146,13 +146,12 @@ jobs:
       - name: Run rebuild-chainspec
         env:
           EARTHLY_CONFIG: .earthly/config.yml
+          # No .envrc here to forward it, so set directly: disable Earthly build caches on
+          # CI runners (see the CI ARG in the Earthfile).
+          EARTHLY_BUILD_ARGS: CI=true
           NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
           VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || steps.parse_comment.outputs.version }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           NODE_IMAGE="+node-image"
           if [ -n "$VERSION" ]; then
             NODE_IMAGE="midnightntwrk/midnight-node:$VERSION"
