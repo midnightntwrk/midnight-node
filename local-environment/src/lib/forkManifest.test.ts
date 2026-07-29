@@ -17,6 +17,9 @@ import os from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 
+import { globSync } from "glob";
+import YAML from "yaml";
+
 import { forkManifestPath, writeForkManifest } from "./forkManifest";
 
 const cleanup: string[] = [];
@@ -138,5 +141,73 @@ services:
     const m = parseManifest(namespace);
     assert.equal(m.MIDNIGHT_FORK_NODE_IMAGE, "midnight-node");
     assert.equal(m.MIDNIGHT_FORK_NODE_TAG, "");
+  });
+
+  it("overwrites an existing manifest so an image roll can refresh it", () => {
+    // `image-upgrade` writes the manifest via the initial `run()` with the
+    // starting image, then rewrites it with the rolled image once every service
+    // is on the new tag. Prove the second write wins so the manifest never
+    // advertises a stale image to downstream consumers.
+    const namespace = "__test_refresh__";
+    const composeFile = fixture("mainnet", TWO_VALIDATORS);
+
+    writeForkManifest({
+      namespace,
+      composeFile,
+      env: { NODE_IMAGE: "ghcr.io/midnight-ntwrk/midnight-node:from" },
+    });
+    assert.equal(
+      parseManifest(namespace).MIDNIGHT_FORK_NODE_IMAGE,
+      "ghcr.io/midnight-ntwrk/midnight-node:from",
+    );
+
+    writeForkManifest({
+      namespace,
+      composeFile,
+      env: { NODE_IMAGE: "ghcr.io/midnight-ntwrk/midnight-node:to" },
+    });
+    const m = parseManifest(namespace);
+    assert.equal(
+      m.MIDNIGHT_FORK_NODE_IMAGE,
+      "ghcr.io/midnight-ntwrk/midnight-node:to",
+    );
+    assert.equal(m.MIDNIGHT_FORK_NODE_TAG, "to");
+  });
+});
+
+describe("well-known fork compose files", () => {
+  it("pin a stable default network name independent of COMPOSE_PROJECT_NAME", () => {
+    // The manifest advertises MIDNIGHT_FORK_NETWORK from the compose file's
+    // networks.default.name. Without an explicit name compose derives
+    // `<project>_default`, which shifts when the caller sets
+    // COMPOSE_PROJECT_NAME — so the advertised network would no longer match
+    // the one compose actually creates. Guard that every fork the tooling can
+    // bring up pins `midnight-fork-<namespace>` (as mainnet already does).
+    const wellKnownDir = path.resolve(__dirname, "../networks/well-known");
+    const namespaces = fs
+      .readdirSync(wellKnownDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+    assert.ok(namespaces.length > 0, "expected well-known networks to exist");
+
+    for (const ns of namespaces) {
+      // Resolve the same compose file `run`/`image-upgrade` would select.
+      const candidates = globSync(
+        path.join(wellKnownDir, ns, "*.network.yaml"),
+      );
+      const composeFile =
+        candidates.find((p) => path.basename(p) === `${ns}.network.yaml`) ??
+        candidates[0];
+      assert.ok(composeFile, `no *.network.yaml found for '${ns}'`);
+
+      const parsed = YAML.parse(fs.readFileSync(composeFile, "utf-8")) as {
+        networks?: Record<string, { name?: string } | null>;
+      };
+      assert.equal(
+        parsed?.networks?.default?.name,
+        `midnight-fork-${ns}`,
+        `${ns} must pin networks.default.name so the manifest's advertised network can't drift under COMPOSE_PROJECT_NAME`,
+      );
+    }
   });
 });

@@ -18,6 +18,7 @@ import { parse } from "dotenv";
 import { spawn } from "child_process";
 import { ImageUpgradeOptions } from "../lib/types";
 import { mockOverridePath } from "../lib/mockComposeOverride";
+import { writeForkManifest } from "../lib/forkManifest";
 
 // Command functionality we can depend on
 import { run } from "./run";
@@ -131,6 +132,17 @@ export async function imageUpgrade(
   console.log(
     `\n Rollout complete! All selected services are now on ${toTag}.`,
   );
+
+  // The manifest written during the initial `run()` still records the starting
+  // image (`fromTag`), but every service is now on `toTag`. Refresh it so
+  // downstream consumers that source the manifest select companion images
+  // matching the image the fork is actually running. `writeForkManifest` reads
+  // the node image from `env.NODE_IMAGE`, so update it there regardless of
+  // which env var drove the rollout.
+  env[imageEnvVar] = toTag;
+  env.NODE_IMAGE = toTag;
+  const manifestPath = writeForkManifest({ namespace, composeFile, env });
+  console.log(`Fork manifest refreshed with rolled image: ${manifestPath}`);
 }
 
 function resolveNetworkCompose(namespace: string): string {

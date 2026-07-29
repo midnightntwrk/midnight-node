@@ -571,3 +571,12 @@ volumes:
   node-data-11:
   node-data-12:
   node-data-13:
+
+networks:
+  # Stable, project-name-independent network name so external consumers
+  # (e.g. the midnight-indexer overlay) can attach with `external: true`.
+  # Without an explicit name compose derives `<project>_default`, which
+  # shifts when COMPOSE_PROJECT_NAME is set and would no longer match the
+  # MIDNIGHT_FORK_NETWORK recorded in artifacts/qanet.manifest.env.
+  default:
+    name: midnight-fork-qanet

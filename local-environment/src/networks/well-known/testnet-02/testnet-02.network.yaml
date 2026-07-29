@@ -522,3 +522,12 @@ volumes:
   node-data-9:
   node-data-10:
   node-data-11:
+
+networks:
+  # Stable, project-name-independent network name so external consumers
+  # (e.g. the midnight-indexer overlay) can attach with `external: true`.
+  # Without an explicit name compose derives `<project>_default`, which
+  # shifts when COMPOSE_PROJECT_NAME is set and would no longer match the
+  # MIDNIGHT_FORK_NETWORK recorded in artifacts/testnet-02.manifest.env.
+  default:
+    name: midnight-fork-testnet-02
