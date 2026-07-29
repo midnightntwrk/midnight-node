@@ -61,24 +61,42 @@ is small relative to the total ParityDb workload.
 
 ## Switching modes
 
-**Switching between `separate` and `unified` on an existing database is not
-supported.** The column layout written into ParityDb metadata at first open is
-incompatible between the two modes. Attempting to restart with a different value will
-fail immediately with an `IncompatibleColumnConfig` error that includes the hint:
+### `separate` → `unified`
 
-> Switching between `separate` and `unified` is not supported on an existing
-> database — to change `storage_separation`, delete the chain data directory and resync.
+Migrated in place on start-up, since 2.1.0. Both modes store the same
+content-addressed ledger nodes; only the database they live in differs. The node
+folds `<base-path>/ledger_storage/` into the Substrate ParityDb and carries on —
+**no resync**.
 
-To switch:
+1. Stop the node cleanly. The migration reads what ledger storage has flushed to
+   disk, so let the process shut down rather than `SIGKILL`ing it.
+2. Set `storage_separation = "unified"` (or `STORAGE_SEPARATION=unified`).
+3. Start the node. It logs `Migrating ledger storage into the unified database`,
+   copies the ledger columns across, and renames the source directory to
+   `<base-path>/ledger_storage.migrated/`.
+4. Once the node is producing/importing blocks again, delete
+   `<base-path>/ledger_storage.migrated/` to reclaim the disk.
+
+The migration needs a single pass over ledger storage, so allow extra start-up
+time proportional to its size. It is safe to interrupt: a `ledger_storage.importing`
+marker file records an unfinished import and the next start begins it again. Do not
+delete `<base-path>/ledger_storage/` while that marker exists — the node refuses to
+start rather than run on a partially copied ledger.
+
+If the node instead fails with an `IncompatibleColumnConfig` error, `ledger_storage/`
+is missing and there is nothing to migrate from. Restore it, or fall back to the
+resync below.
+
+### `unified` → `separate`
+
+Not supported. Restarting in `separate` mode on a `unified` database fails
+immediately with an `IncompatibleColumnConfig` error. To go back:
 
 1. Stop the node cleanly.
 2. Delete the chain data directory (`<base-path>/chains/<chain-id>/` **and**
    `<base-path>/ledger_storage/` if it exists).
-3. Set the new `storage_separation` value.
+3. Set `storage_separation = "separate"`.
 4. Resync from genesis or from a trusted snapshot.
-
-Pick the mode before first start on a new node; do not rely on being able to change it
-later.
 
 ## References
 

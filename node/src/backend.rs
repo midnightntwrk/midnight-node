@@ -21,9 +21,13 @@ use midnight_primitives_ledger::LedgerStorageDb;
 use midnight_storage_core::db::paritydb::OwnedDb;
 use sc_service::{DatabaseSource, config::Database};
 
-use crate::{backend::custom_parity_db::DbAdapter, service::StorageInit};
+use crate::{
+	backend::custom_parity_db::DbAdapter, cfg::midnight_cfg::StorageSeparation,
+	service::StorageInit,
+};
 
 pub mod custom_parity_db;
+pub mod separate_to_unified;
 
 pub fn open_paritydb(
 	path: &std::path::Path,
@@ -32,6 +36,18 @@ pub fn open_paritydb(
 	// Flag the db for initialisation if it doesn't already exist
 	let require_create_flag =
 		std::fs::read_dir(path).map(|dir| dir.into_iter().count() == 0).unwrap_or(true);
+
+	// An operator who switches to `unified` already has every ledger node on
+	// disk, just in a database of its own. Fold it in rather than making them
+	// resync. No-op unless there is something to migrate.
+	if storage_config.separation == StorageSeparation::Unified {
+		separate_to_unified::import_if_pending(
+			path,
+			&custom_parity_db::column_options(path, StorageSeparation::Unified),
+			&storage_config.db_path,
+		)
+		.map_err(|e| sp_blockchain::Error::Backend(e.to_string()))?;
+	}
 
 	let (db, storage) =
 		match custom_parity_db::open::<sp_core::H256>(path, false, storage_config) {
@@ -45,9 +61,12 @@ pub fn open_paritydb(
 				return Err(sp_blockchain::Error::Backend(format!(
 					"Failed to open parity-db: {e}. This typically means the \
 					 `storage_separation` config option was changed between runs. \
-					 Switching between `separate` and `unified` is not supported on an \
-					 existing database — to change `storage_separation`, delete the chain \
-					 data directory and resync.",
+					 `separate` -> `unified` is migrated in place, but only while the \
+					 ledger storage directory it is migrated from ({}) is still present. \
+					 `unified` -> `separate` is not supported at all. To change \
+					 `storage_separation` from here, delete the chain data directory \
+					 and resync.",
+					storage_config.db_path.display(),
 				)));
 			},
 			Err(e) => Err(e),
@@ -71,7 +90,6 @@ pub fn create_database_source(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::cfg::midnight_cfg::StorageSeparation;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use std::path::PathBuf;
 	use tempfile::TempDir;

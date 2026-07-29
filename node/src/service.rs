@@ -80,7 +80,8 @@ impl sc_partner_chains_consensus::SlotExtractor<Block> for AuraSlotExtractor {
 
 pub struct StorageInit {
 	pub separation: StorageSeparation,
-	/// Used only when separation == 'separate'
+	/// Where ledger storage lives under `separate`. Under `unified` it is the
+	/// directory a one-off `separate` -> `unified` migration reads from.
 	pub db_path: PathBuf,
 	pub genesis_state: Vec<u8>,
 	pub cache_size: usize,

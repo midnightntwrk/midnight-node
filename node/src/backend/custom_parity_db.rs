@@ -57,12 +57,16 @@ pub(crate) mod columns_polkadot {
 
 pub(crate) const NUM_COLUMNS: u8 = NUM_COLUMNS_POLKADOT + NUM_COLUMNS_LEDGER;
 
-/// Wrap parity-db database into a trait object that implements `sp_database::Database`
-pub fn open<H: Clone + AsRef<[u8]>>(
-	path: &std::path::Path,
-	upgrade: bool,
-	storage_config: &StorageInit,
-) -> parity_db::Result<(OwnedDb, LedgerStorageDb)> {
+/// Column layout of the Substrate ParityDb instance for the given storage mode.
+///
+/// The trailing [`NUM_COLUMNS_LEDGER`] columns belong to the Midnight Ledger.
+/// `Separate` mode reserves them with the ledger's own options even though it
+/// keeps ledger nodes in a database of their own; `Unified` mode leaves them at
+/// ParityDb's defaults, which is the layout its ledger nodes are written with.
+/// ParityDb rejects any difference between these options and the ones recorded
+/// on disk, which is what makes switching modes a migration — see
+/// [`super::separate_to_unified`].
+pub fn column_options(path: &std::path::Path, separation: StorageSeparation) -> parity_db::Options {
 	let mut config = parity_db::Options::with_columns(path, NUM_COLUMNS);
 
 	let compressed = [
@@ -90,13 +94,24 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 	tx_col.uniform = true;
 
 	// Set init options for ParityDb backend
-	if storage_config.separation == StorageSeparation::Separate {
+	if separation == StorageSeparation::Separate {
 		midnight_node_ledger::ledger_9::storage::set_init_options_paritydb(
 			&mut config,
 			NUM_COLUMNS_POLKADOT,
 			true,
 		);
 	}
+
+	config
+}
+
+/// Wrap parity-db database into a trait object that implements `sp_database::Database`
+pub fn open<H: Clone + AsRef<[u8]>>(
+	path: &std::path::Path,
+	upgrade: bool,
+	storage_config: &StorageInit,
+) -> parity_db::Result<(OwnedDb, LedgerStorageDb)> {
+	let config = column_options(path, storage_config.separation);
 
 	if upgrade {
 		log::info!("Upgrading database metadata.");
