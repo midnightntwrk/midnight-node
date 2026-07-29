@@ -52,6 +52,7 @@ use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
+use midnight_primitives_consensus_engine::ActiveEngine;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
@@ -61,7 +62,6 @@ pub use pallet_session_validator_management::{self, Config};
 pub use pallet_timestamp::Call as TimestampCall;
 pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
-use session_manager::ValidatorManagementSessionManager;
 use sidechain_domain::{
 	DParameter, MainchainAddress, PermissionedCandidateData, PolicyId, RegistrationData,
 	ScEpochNumber, ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
@@ -84,7 +84,7 @@ use sp_runtime::traits::StaticLookup;
 //use sp_block_rewards::GetBlockRewardPoints;
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
-use sp_runtime::traits::{Convert, Keccak256};
+use sp_runtime::traits::{Convert, ConvertInto, Keccak256};
 use sp_runtime::{
 	ApplyExtrinsicResult, Cow, MultiSignature, OpaqueValue, generic, impl_opaque_keys,
 	traits::{
@@ -110,19 +110,15 @@ include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 #[cfg(test)]
 mod mock;
 
-/// Handover phase is 1/6th length of an epoch.
-/// With committee size 5 we would like any validator to have two slots for signing certificates.
-/// 5 * 2 * 6 = 60
-/// (Needs to multiply cleanly into 24h)
+/// Number of slots per partner-chain epoch: 300 slots of 6-second blocks give 30-minute
+/// epochs. The epoch length must divide 24h evenly.
 pub const SLOTS_PER_EPOCH: u32 = 300;
 
-pub mod authorship;
 pub mod beefy;
 pub mod check_call_filter;
 mod constants;
 mod currency;
 mod migrations;
-mod session_manager;
 pub mod weights;
 
 use check_call_filter::CheckCallFilter;
@@ -280,11 +276,11 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 002_000_000,
+	spec_version: 002_001_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
-	system_version: 1,
+	system_version: 3,
 };
 
 /// This determines the average expected block time that we are targeting.
@@ -379,8 +375,9 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Needed if chain is upgradeing from before PC 1.6
-		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
+		// Initializes the QueuedCommittee storage added in v2
+		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
+		// See migrations::authority_keys when opaque::SessionKeys changes shape.
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -395,6 +392,11 @@ impl pallet_aura::Config for Runtime {
 	type MaxAuthorities = MaxAuthorities;
 	type AllowMultipleBlocksPerSlot = ConstBool<false>;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+}
+
+impl pallet_authorship::Config for Runtime {
+	type FindAuthor = pallet_session::FindAccountFromAuthorIndex<Self, ConsensusEngine>;
+	type EventHandler = ();
 }
 
 impl pallet_babe::Config for Runtime {
@@ -420,7 +422,33 @@ impl Get<u64> for SidechainEpochDuration {
 	}
 }
 
-pallet_partner_chains_session::impl_pallet_session_config!(Runtime);
+impl pallet_session::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type ValidatorId = <Self as frame_system::Config>::AccountId;
+	type ValidatorIdOf = ConvertInto;
+	type ShouldEndSession = SessionCommitteeManagement;
+	type NextSessionRotation = ();
+	type SessionManager = SessionCommitteeManagement;
+	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
+	type Keys = opaque::SessionKeys;
+	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
+	type WeightInfo = pallet_session::weights::SubstrateWeight<Runtime>;
+	type Currency = CurrencyWaiver;
+	type KeyDeposit = ();
+}
+
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AccountId, Option<()>> for FullIdentificationOf {
+	fn convert(_: AccountId) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
+}
 
 impl pallet_grandpa::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
@@ -502,7 +530,7 @@ impl pallet_beefy_mmr::Config for Runtime {
 impl pallet_timestamp::Config for Runtime {
 	/// A timestamp: milliseconds since the unix epoch.
 	type Moment = u64;
-	type OnTimestampSet = Aura;
+	type OnTimestampSet = ConsensusEngine;
 	type MinimumPeriod = ConstU64<{ SLOT_DURATION / 2 }>;
 	type WeightInfo = weights::pallet_timestamp::WeightInfo<Runtime>;
 }
@@ -549,17 +577,6 @@ impl pallet_scheduler::Config for Runtime {
 	type OriginPrivilegeCmp = EqualPrivilegeOnly;
 	type Preimages = Preimage;
 	type BlockNumberProvider = frame_system::Pallet<Runtime>;
-}
-
-impl pallet_partner_chains_session::Config for Runtime {
-	type ValidatorId = <Self as frame_system::Config>::AccountId;
-	type ShouldEndSession = ValidatorManagementSessionManager<Runtime>;
-	type NextSessionRotation = ();
-	type SessionManager = ValidatorManagementSessionManager<Runtime>;
-	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
-	type Keys = opaque::SessionKeys;
-	type Currency = CurrencyWaiver;
-	type KeyDeposit = ();
 }
 
 parameter_types! {
@@ -642,7 +659,10 @@ impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
 
 impl pallet_sidechain::Config for Runtime {
 	fn current_slot_number() -> ScSlotNumber {
-		ScSlotNumber(*pallet_aura::CurrentSlot::<Self>::get())
+		match ConsensusEngine::active_engine() {
+			ActiveEngine::Aura => ScSlotNumber(*pallet_aura::CurrentSlot::<Self>::get()),
+			ActiveEngine::Babe => ScSlotNumber(*pallet_babe::CurrentSlot::<Self>::get()),
+		}
 	}
 	type OnNewEpoch = LogBeneficiaries;
 }
@@ -922,6 +942,15 @@ impl pallet_throttle::Config for Runtime {
 	type WindowSize = WindowSize;
 }
 
+impl pallet_consensus_engine::Config for Runtime {
+	// Some state transitions are governance-driven: federated-authority motions dispatch approved
+	// calls as root.
+	type GovernanceOrigin = EnsureRoot<AccountId>;
+	type EpochDuration = SidechainEpochDuration;
+	// Unit weights for now. Issue #1863.
+	type WeightInfo = ();
+}
+
 parameter_types! {
 	pub const BridgeMaxTransfersPerBlock: u32 = 256;
 }
@@ -1042,10 +1071,18 @@ mod runtime {
 
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
+
+	// Authorship must be before Session (polkadot-sdk hook order).
+	#[runtime::pallet_index(9)]
+	pub type Authorship = pallet_authorship::Pallet<Runtime>;
+
 	#[runtime::pallet_index(30)]
-	pub type Session = pallet_partner_chains_session::Pallet<Runtime>;
+	#[runtime::disable_call]
+	pub type Session = pallet_session::Pallet<Runtime>;
+	#[runtime::pallet_index(31)]
+	pub type Historical = pallet_session::historical::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards = 9,
+	//BlockRewards: pallet_block_rewards = 10,
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
@@ -1059,11 +1096,6 @@ mod runtime {
 
 	#[runtime::pallet_index(16)]
 	pub type MultiBlockMigrations = pallet_migrations::Pallet<Runtime>;
-	// Only stub implementation of pallet_session should be wired.
-	// Partner Chains session_manager ValidatorManagementSessionManager writes to pallet_session::pallet::CurrentIndex.
-	// ValidatorManagementSessionManager is wired in by pallet_partner_chains_session.
-	#[runtime::pallet_index(17)]
-	pub type PalletSession = pallet_session::Pallet<Runtime>;
 
 	#[runtime::pallet_index(18)]
 	pub type Scheduler = pallet_scheduler::Pallet<Runtime>;
@@ -1111,6 +1143,10 @@ mod runtime {
 	// Throttling
 	#[runtime::pallet_index(51)]
 	pub type Throttle = pallet_throttle::Pallet<Runtime>;
+
+	// Consensus engine transition state machine
+	#[runtime::pallet_index(52)]
+	pub type ConsensusEngine = pallet_consensus_engine::Pallet<Runtime>;
 }
 
 /// The address format for describing accounts.
@@ -1152,7 +1188,13 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,);
+pub type Migrations = (
+	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
+	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
+	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
+	// this ledger-9 runtime (storage version 2).
+	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where
@@ -1737,6 +1779,12 @@ impl_runtime_apis! {
 		}
 	}
 
+	impl midnight_primitives_consensus_engine::ConsensusEngineApi<Block> for Runtime {
+		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
+			ConsensusEngine::active_engine()
+		}
+	}
+
 	impl sp_sidechain::GetGenesisUtxo<Block> for Runtime {
 		fn genesis_utxo() -> UtxoId {
 			Sidechain::genesis_utxo()
@@ -1901,6 +1949,8 @@ mod tests {
 		new_test_ext().execute_with(|| {
 			// Needs to be run to initialize first slot and epoch numbers;
 			advance_block();
+
+			// Scheduled committee goes into effect after a 2-epoch delay
 			set_committee_through_inherent_data(&[alice()]);
 			until_epoch_after_finalizing(1, &|| {
 				assert_current_epoch!(0);
@@ -1912,30 +1962,37 @@ mod tests {
 			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(1);
 				assert_grandpa_weights();
-				assert_grandpa_authorities!([alice()]);
+				assert_grandpa_authorities!([alice(), bob()]);
 			});
-
+			set_committee_through_inherent_data(&[alice()]);
 			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(2);
 				assert_grandpa_weights();
+				assert_grandpa_authorities!([alice()]);
+			});
+			set_committee_through_inherent_data(&[alice(), bob()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(3);
+				assert_grandpa_weights();
 				assert_grandpa_authorities!([bob()]);
 			});
-
-			// Authorities can be set as late as in the first block of new epoch, but it makes session last 1 block longer
-			set_committee_through_inherent_data(&[alice()]);
-			advance_block();
-			assert_current_epoch!(3);
-			assert_grandpa_authorities!([bob()]);
-			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH - 1, &|| {
-				assert_current_epoch!(3);
+			set_committee_through_inherent_data(&[bob(), alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(4);
 				assert_grandpa_weights();
 				assert_grandpa_authorities!([alice()]);
 			});
-
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(5);
 				assert_grandpa_weights();
 				assert_grandpa_authorities!([alice(), bob()]);
+			});
+
+			// When there's no new committees being scheduled, the last committee stays in power
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+				assert_grandpa_weights();
+				assert_grandpa_authorities!([bob(), alice()]);
 			});
 		});
 
@@ -1950,32 +2007,44 @@ mod tests {
 	#[test]
 	fn check_aura_authorities_rotation() {
 		new_test_ext().execute_with(|| {
+			// Needs to be run to initialize first slot and epoch numbers;
 			advance_block();
+			// Scheduled committee goes into effect after a 2-epoch delay
 			set_committee_through_inherent_data(&[alice()]);
-			until_epoch(1, &|| {
+			until_epoch_after_finalizing(1, &|| {
 				assert_current_epoch!(0);
 				assert_aura_authorities!([alice(), bob()]);
 			});
 
-			for_next_n_blocks(SLOTS_PER_EPOCH, &|| {
+			set_committee_through_inherent_data(&[bob()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(1);
+				assert_aura_authorities!([alice(), bob()]);
+			});
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(2);
 				assert_aura_authorities!([alice()]);
 			});
-
-			// Authorities can be set as late as in the first block of new epoch, but it makes session last 1 block longer
-			set_committee_through_inherent_data(&[bob()]);
-			assert_current_epoch!(2);
-			assert_aura_authorities!([alice()]);
-			advance_block();
 			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks(SLOTS_PER_EPOCH - 1, &|| {
-				assert_current_epoch!(2);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(3);
 				assert_aura_authorities!([bob()]);
 			});
-
-			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks(SLOTS_PER_EPOCH * 3, &|| {
+			set_committee_through_inherent_data(&[bob(), alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(4);
+				assert_aura_authorities!([alice()]);
+			});
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(5);
 				assert_aura_authorities!([alice(), bob()]);
+			});
+
+			// When there's no new committees being scheduled, the last committee stays in power
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+				assert_aura_authorities!([bob(), alice()]);
 			});
 		});
 	}
