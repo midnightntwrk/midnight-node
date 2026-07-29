@@ -713,10 +713,21 @@ impl pallet_block_rewards::Config for Runtime {
 }
 */
 
+/// Wall-clock time (UNIX millis) sourced from the node's system clock via a custom host
+/// function. Used only by `validate_unsigned` (tx-pool path) to base the DUST validity
+/// window on real time; it never feeds block execution/consensus.
+pub struct HostWallClock;
+impl Get<u64> for HostWallClock {
+	fn get() -> u64 {
+		midnight_node_ledger::host_api::clock::wall_clock::now_millis()
+	}
+}
+
 /// Configure the pallet-midnight in pallets/midnight.
 impl pallet_midnight::Config for Runtime {
 	type BlockReward = LedgerBlockReward;
 	type SlotDuration = ConstU64<SLOT_DURATION>;
+	type WallClockMillis = HostWallClock;
 }
 
 /// Configure the pallet-midnight in pallets/midnight.

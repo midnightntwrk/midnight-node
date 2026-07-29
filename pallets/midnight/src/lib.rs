@@ -132,6 +132,9 @@ pub mod pallet {
 
 		#[pallet::constant]
 		type SlotDuration: Get<<Self as pallet_timestamp::Config>::Moment>;
+
+		/// Current wall-clock time in milliseconds (host clock). Not a #[pallet::constant].
+		type WallClockMillis: Get<u64>;
 	}
 
 	// The pallet's runtime storage items.
@@ -172,11 +175,6 @@ pub mod pallet {
 		EXTRA_WEIGHT_TX_SIZE
 	}
 
-	#[pallet::type_value]
-	pub fn DefaultMaxSkippedSlots() -> u8 {
-		1
-	}
-
 	#[pallet::storage]
 	#[pallet::getter(fn configurable_transaction_size_weight)]
 	pub type ConfigurableTransactionSizeWeight<T> =
@@ -188,9 +186,6 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type ConfigurableOnRuntimeUpgradeWeight<T> =
 		StorageValue<_, Weight, ValueQuery, DefaultWeight>;
-
-	#[pallet::storage]
-	pub type MaxSkippedSlots<T> = StorageValue<_, u8, ValueQuery, DefaultMaxSkippedSlots>;
 
 	#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct TxAppliedDetails {
@@ -444,20 +439,21 @@ pub mod pallet {
 		type Call = Call<T>;
 		fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
 			let mut block_context = Self::get_block_context();
-			let slot_duration: u64 = T::SlotDuration::get().unique_saturated_into();
-			let slot_duration_secs = slot_duration.saturating_div(1000);
+			let slot_ms: u64 = T::SlotDuration::get().unique_saturated_into();
 
-			// Simulate the expected next block time during validation.
-			// This is needed to avoid potential `OutOfDustValidityWindow` tx validation errors where `ctime > tblock`.
-			// During transaction pool validation, the stored Timestamp still corresponds to the last produced block.
-			// Validity is increased by `slot_duration_secs * MaxSkippedSlots` to prevent the node
-			// from rejecting potentially valid transactions if an AURA block production slots are skipped.
-			let skipped_slots_margin =
-				slot_duration_secs.saturating_mul(MaxSkippedSlots::<T>::get() as u64);
-			block_context.tblock = block_context
-				.tblock
-				.saturating_add(slot_duration_secs)
-				.saturating_add(skipped_slots_margin);
+			// Expected next block time: wall-clock now rounded UP to the next slot boundary.
+			// The tx-pool's stored timestamp reflects the last produced block, so basing the
+			// DUST validity window on it (rather than real time) wrongly rejects txs after a
+			// production stall. tblock is in seconds; slot boundaries align to slot_ms.
+			// TODO: once we have a custom transaction pool, source this from a timestamp (offchain)
+			// extension via `sp_io::offchain::timestamp()` instead of the `WallClockMillis` host fn.
+			let now_ms = T::WallClockMillis::get();
+			let next_slot_ms = now_ms
+				.checked_div(slot_ms)
+				.unwrap_or_default()
+				.saturating_add(1)
+				.saturating_mul(slot_ms);
+			block_context.tblock = next_slot_ms.saturating_div(1000);
 
 			Self::validate_unsigned(call, block_context)
 		}
