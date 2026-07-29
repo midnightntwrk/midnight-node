@@ -312,10 +312,11 @@ pub enum TokenBridgeInherentDataProvider<RecipientAddress> {
 
 /// Value specifying the point in time up to which bridge transfers have been processed
 ///
-/// This type is an enum wrapping either a block number or a utxo to handle both a case
-/// where all transfers up to a block have been handled and a case where there were more
-/// transfers than the limit allows and observability needs to pick up after the last
-/// utxo that could be observed
+/// This type is an enum wrapping a block number, a transaction, or a transaction together with
+/// a number of its transfers, to handle the case where all transfers up to a block have been
+/// handled, the case where there were more transfers than the limit allows and observability
+/// needs to pick up after the last transaction that could be observed, and the case where
+/// processing stopped in the middle of a transaction's transfers
 #[derive(
 	Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Eq, MaxEncodedLen,
 )]
@@ -324,6 +325,18 @@ pub enum BridgeDataCheckpoint {
 	Tx(McTxHash),
 	/// Cardano block up to which data has been processed
 	Block(McBlockNumber),
+	/// A transaction of which only some transfers have been processed
+	///
+	/// One Cardano transaction can result in more than one transfer, and processing them can
+	/// stop in the middle of such a transaction. This checkpoint keeps the transaction as the
+	/// resume point and records how many of its transfers are already done, so that the
+	/// observability layer can leave those out when it presents the transaction again.
+	PartialTx {
+		/// The partially processed transaction
+		tx: McTxHash,
+		/// Number of this transaction's transfers that have already been processed
+		transfers_processed: u16,
+	},
 }
 
 /// Interface for data sources that can be used by [TokenBridgeInherentDataProvider]
@@ -331,6 +344,9 @@ pub enum BridgeDataCheckpoint {
 #[async_trait::async_trait]
 pub trait TokenBridgeDataSource<RecipientAddress>: Send + Sync {
 	/// Fetches at most `max_transfers` of token bridge transfers after `data_checkpoint` up to `current_mc_block`
+	///
+	/// A [BridgeDataCheckpoint::PartialTx] checkpoint includes the transaction it points at,
+	/// minus the transfers of it that have already been processed.
 	async fn get_transfers(
 		&self,
 		main_chain_scripts: MainChainScripts,

@@ -359,6 +359,87 @@ with_migration_versions_and_caching! {
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Tx(complex_transfer_tx()))
 	}
 
+	async fn partial_tx_checkpoint_skips_the_transfers_already_processed(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		// `reserve_and_user_tx` makes two transfers, of which the runtime handled the first one
+		// before it stopped. Only the second one is left to handle.
+		let data_checkpoint = BridgeDataCheckpoint::PartialTx {
+			tx: reserve_and_user_transfer_tx(),
+			transfers_processed: 1,
+		};
+		let current_mc_block = block_8_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![reserve_and_user_tx_user_transfer()]);
+
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
+	}
+
+	async fn partial_tx_checkpoint_returns_all_transfers_not_processed_yet(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		// All transfers of `complex_withdraw_tx` (there is only one) have been handled, so the
+		// transfers of the transactions following it are returned.
+		let data_checkpoint = BridgeDataCheckpoint::PartialTx {
+			tx: complex_transfer_tx(),
+			transfers_processed: 1,
+		};
+		let current_mc_block = block_8_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transfers,
+			vec![reserve_and_user_tx_reserve_transfer(), reserve_and_user_tx_user_transfer()]
+		);
+
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
+	}
+
+	async fn partial_tx_checkpoint_with_nothing_processed_returns_the_whole_tx(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::PartialTx {
+			tx: reserve_and_user_transfer_tx(),
+			transfers_processed: 0,
+		};
+		let current_mc_block = block_8_hash();
+		let max_transfers = 32;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transfers,
+			vec![reserve_and_user_tx_reserve_transfer(), reserve_and_user_tx_user_transfer()]
+		);
+
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
+	}
+
+	async fn keeps_the_checkpoint_when_the_first_tx_does_not_fit_into_the_limit(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		// `reserve_and_user_tx` makes two transfers, which are only ever returned together, so
+		// neither of them can be returned within a limit of one transfer.
+		let data_checkpoint = BridgeDataCheckpoint::Tx(complex_transfer_tx());
+		let current_mc_block = block_8_hash();
+		let max_transfers = 1;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint.clone(), max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(transfers, vec![]);
+
+		assert_eq!(new_checkpoint, data_checkpoint)
+	}
+
 	async fn utxos_from_checkpoint_block_are_not_included_in_result(data_source: &dyn TokenBridgeDataSource<ByteString>) {
 		let data_checkpoint = BridgeDataCheckpoint::Block(McBlockNumber(2));
 		let current_mc_block = block_3_hash();

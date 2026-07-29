@@ -45,7 +45,7 @@
 use crate::McFollowerMetrics;
 use crate::db_model::*;
 use crate::metrics::observed_async_trait;
-use sidechain_domain::McBlockHash;
+use sidechain_domain::{McBlockHash, McTxHash};
 use sp_partner_chains_bridge::*;
 use sqlx::PgPool;
 use sqlx::types::JsonValue;
@@ -98,18 +98,24 @@ observed_async_trait!(
 				.await?
 				.ok_or(format!("Could not find block for hash {current_mc_block_hash:?}"))?;
 
-			let data_checkpoint = match data_checkpoint {
+			let resolved_checkpoint = match &data_checkpoint {
 				BridgeDataCheckpoint::Tx(tx_hash) => {
 					let TxBlockInfo { block_number, tx_ix } =
-						get_block_info_for_tx_hash(&self.pool, tx_hash.into()).await?.ok_or(
-							format!(
-								"Could not find block info for data checkpoint: {data_checkpoint:?}"
-							),
-						)?;
+						self.resolve_tx_position(*tx_hash).await?;
 					ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix }
 				},
+				// The transfers of this transaction that the runtime has already handled are
+				// left out of the returned data below.
+				BridgeDataCheckpoint::PartialTx { tx, transfers_processed } => {
+					let TxBlockInfo { block_number, tx_ix } = self.resolve_tx_position(*tx).await?;
+					ResolvedBridgeDataCheckpoint::PartialTx {
+						block_number,
+						tx_ix,
+						transfers_processed: *transfers_processed,
+					}
+				},
 				BridgeDataCheckpoint::Block(number) => {
-					ResolvedBridgeDataCheckpoint::Block { number: number.into() }
+					ResolvedBridgeDataCheckpoint::Block { number: (*number).into() }
 				},
 			};
 
@@ -119,19 +125,42 @@ observed_async_trait!(
 				&main_chain_scripts.illiquid_circulation_supply_validator_address.into(),
 				&main_chain_scripts.reserve_validator_address.into(),
 				asset,
-				data_checkpoint,
+				resolved_checkpoint,
 				current_mc_block.block_no,
 				Some(max_transfers),
 			)
 			.await?;
 
-			Ok(txs_to_transfers(txs, max_transfers, current_mc_block.block_no))
+			Ok(txs_to_transfers(
+				txs,
+				&data_checkpoint,
+				resolved_checkpoint.transfers_to_skip(),
+				max_transfers,
+				current_mc_block.block_no,
+			))
 		}
 	}
 );
 
+impl TokenBridgeDataSourceImpl {
+	async fn resolve_tx_position(
+		&self,
+		tx_hash: McTxHash,
+	) -> Result<TxBlockInfo, Box<dyn std::error::Error + Send + Sync>> {
+		get_block_info_for_tx_hash(&self.pool, tx_hash.into()).await?.ok_or_else(|| {
+			format!("Could not find block info for data checkpoint tx: {tx_hash:?}").into()
+		})
+	}
+}
+
+/// Turns the observed Cardano transactions into the transfers to be handled next.
+///
+/// `skip_from_first_tx` transfers are left out of the first transaction, because the runtime
+/// stopped in the middle of that transaction and already handled them.
 fn txs_to_transfers<RecipientAddress>(
 	txs: Vec<BridgeTx>,
+	current_checkpoint: &BridgeDataCheckpoint,
+	skip_from_first_tx: u16,
 	max_transfers: u32,
 	block_bound: BlockNumber,
 ) -> (Vec<BridgeTransferV1<RecipientAddress>>, BridgeDataCheckpoint)
@@ -139,21 +168,34 @@ where
 	RecipientAddress: for<'a> TryFrom<&'a [u8]>,
 {
 	let mut transfers: Vec<BridgeTransferV1<RecipientAddress>> = vec![];
-	let mut checkpoint = BridgeDataCheckpoint::Block(block_bound.into());
-	// Add Cardano transaction transfers only if all of them fit into max_transfers
-	for tx in &txs {
-		let tx_transfers = tx_to_transfers::<RecipientAddress>(tx.clone());
-		// Would go over limit, return accumulated state from previous iteration
+	let mut last_returned_tx: Option<McTxHash> = None;
+	let mut all_txs_returned = true;
+
+	for (index, tx) in txs.iter().enumerate() {
+		let mut tx_transfers = tx_to_transfers::<RecipientAddress>(tx.clone());
+		if index == 0 {
+			tx_transfers.drain(..usize::from(skip_from_first_tx).min(tx_transfers.len()));
+		}
+		// Add Cardano transaction transfers only if all of them fit into max_transfers
 		if transfers.len() + tx_transfers.len() > max_transfers as usize {
-			return (transfers, checkpoint);
+			all_txs_returned = false;
+			break;
 		}
 		transfers.extend(tx_transfers);
-		checkpoint = BridgeDataCheckpoint::Tx(tx.tx_id())
+		last_returned_tx = Some(tx.tx_id());
 	}
-	let checkpoint = if transfers.len() == max_transfers as usize {
-		checkpoint
-	} else {
+
+	// The query is limited to `max_transfers` transactions, so hitting the limit means there may
+	// be further transactions before `block_bound` that were not read.
+	let checkpoint = if all_txs_returned && transfers.len() < max_transfers as usize {
 		BridgeDataCheckpoint::Block(block_bound.into())
+	} else {
+		match last_returned_tx {
+			Some(tx) => BridgeDataCheckpoint::Tx(tx),
+			// Not even the first transaction fits into the limit, so nothing can be handled and
+			// the checkpoint has to stay where it is.
+			None => current_checkpoint.clone(),
+		}
 	};
 	(transfers, checkpoint)
 }

@@ -631,8 +631,20 @@ pub(crate) type TxOrderingKey = (BlockNumber, TxIndexInBlock);
 #[cfg(feature = "bridge")]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum ResolvedBridgeDataCheckpoint {
-	Tx { block_number: BlockNumber, tx_ix: TxIndexInBlock },
-	Block { number: BlockNumber },
+	Tx {
+		block_number: BlockNumber,
+		tx_ix: TxIndexInBlock,
+	},
+	/// A transaction that has to be returned again, without its first `transfers_processed`
+	/// transfers, which have already been processed by the runtime.
+	PartialTx {
+		block_number: BlockNumber,
+		tx_ix: TxIndexInBlock,
+		transfers_processed: u16,
+	},
+	Block {
+		number: BlockNumber,
+	},
 }
 
 #[cfg(feature = "bridge")]
@@ -641,6 +653,17 @@ impl ResolvedBridgeDataCheckpoint {
 		match self {
 			ResolvedBridgeDataCheckpoint::Block { number } => *number,
 			ResolvedBridgeDataCheckpoint::Tx { block_number, .. } => *block_number,
+			ResolvedBridgeDataCheckpoint::PartialTx { block_number, .. } => *block_number,
+		}
+	}
+
+	/// Number of transfers to leave out of the first transaction returned
+	pub(crate) fn transfers_to_skip(&self) -> u16 {
+		match self {
+			ResolvedBridgeDataCheckpoint::PartialTx { transfers_processed, .. } => {
+				*transfers_processed
+			},
+			_ => 0,
 		}
 	}
 }
@@ -696,6 +719,10 @@ pub(crate) async fn get_bridge_txs(
 		},
 		ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix } => {
 			format!("(block.block_no, tx.block_index) > ({}, {})", block_number.0, tx_ix.0)
+		},
+		// The transaction itself still has transfers left to process, so it is included.
+		ResolvedBridgeDataCheckpoint::PartialTx { block_number, tx_ix, .. } => {
+			format!("(block.block_no, tx.block_index) >= ({}, {})", block_number.0, tx_ix.0)
 		},
 	};
 

@@ -86,6 +86,12 @@ impl TokenUtxoCache {
 			{
 				Box::new(move |utxo| utxo.ordering_key() <= (*block_number, *tx_ix))
 			},
+			// The transaction still has transfers left to process, so it is served again.
+			ResolvedBridgeDataCheckpoint::PartialTx { block_number, tx_ix, .. }
+				if self.start_block <= *block_number =>
+			{
+				Box::new(move |utxo| utxo.ordering_key() < (*block_number, *tx_ix))
+			},
 			_ => return None,
 		};
 
@@ -100,13 +106,13 @@ impl TokenUtxoCache {
 		)
 	}
 
-	pub(crate) fn try_resolve_checkpoint_from_cache(
+	pub(crate) fn try_resolve_tx_position_from_cache(
 		&self,
 		tx_id: &McTxHash,
-	) -> Option<ResolvedBridgeDataCheckpoint> {
+	) -> Option<TxOrderingKey> {
 		let BridgeTx { block_number, tx_ix, .. } = self.tx_cache.get(tx_id).cloned()?;
 
-		Some(ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix })
+		Some((block_number, tx_ix))
 	}
 }
 
@@ -130,20 +136,28 @@ observed_async_trait!(
 
 			let to_block = self.get_block_by_hash(&current_mc_block_hash).await?.number.into();
 
-			let data_checkpoint = self.resolve_data_checkpoint(&data_checkpoint).await?;
+			let resolved_checkpoint = self.resolve_data_checkpoint(&data_checkpoint).await?;
 
-			let txs =
-				match self.try_serve_from_cache(&data_checkpoint, to_block, max_transfers).await {
-					Some(utxos) => utxos,
-					None => {
-						self.fill_cache(main_chain_scripts, &data_checkpoint, to_block).await?;
-						self.try_serve_from_cache(&data_checkpoint, to_block, max_transfers)
-							.await
-							.ok_or("Data should be present in cache after filling cache succeeded")?
-					},
-				};
+			let txs = match self
+				.try_serve_from_cache(&resolved_checkpoint, to_block, max_transfers)
+				.await
+			{
+				Some(utxos) => utxos,
+				None => {
+					self.fill_cache(main_chain_scripts, &resolved_checkpoint, to_block).await?;
+					self.try_serve_from_cache(&resolved_checkpoint, to_block, max_transfers)
+						.await
+						.ok_or("Data should be present in cache after filling cache succeeded")?
+				},
+			};
 
-			Ok(txs_to_transfers(txs, max_transfers, to_block))
+			Ok(txs_to_transfers(
+				txs,
+				&data_checkpoint,
+				resolved_checkpoint.transfers_to_skip(),
+				max_transfers,
+				to_block,
+			))
 		}
 	}
 );
@@ -236,15 +250,19 @@ impl CachedTokenBridgeDataSourceImpl {
 			.map(|block| block.number.into()))
 	}
 
-	async fn resolve_checkpoint_for_tx_hash(
+	async fn resolve_tx_position(
 		&self,
 		tx_hash: &McTxHash,
-	) -> Result<ResolvedBridgeDataCheckpoint, Box<dyn Error + Send + Sync>> {
+	) -> Result<TxOrderingKey, Box<dyn Error + Send + Sync>> {
+		if let Some(position) = self.cache.lock().await.try_resolve_tx_position_from_cache(tx_hash)
+		{
+			return Ok(position);
+		}
 		let TxBlockInfo { block_number, tx_ix } =
 			get_block_info_for_tx_hash(&self.pool, (*tx_hash).into())
 				.await?
 				.ok_or(format!("Could not find block info for tx: {tx_hash:?}"))?;
-		Ok(ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix })
+		Ok((block_number, tx_ix))
 	}
 
 	async fn resolve_data_checkpoint(
@@ -256,10 +274,16 @@ impl CachedTokenBridgeDataSourceImpl {
 				Ok(ResolvedBridgeDataCheckpoint::Block { number: (*number).into() })
 			},
 			BridgeDataCheckpoint::Tx(tx_hash) => {
-				match self.cache.lock().await.try_resolve_checkpoint_from_cache(&tx_hash) {
-					Some(checkpoint) => Ok(checkpoint),
-					None => self.resolve_checkpoint_for_tx_hash(&tx_hash).await,
-				}
+				let (block_number, tx_ix) = self.resolve_tx_position(tx_hash).await?;
+				Ok(ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix })
+			},
+			BridgeDataCheckpoint::PartialTx { tx, transfers_processed } => {
+				let (block_number, tx_ix) = self.resolve_tx_position(tx).await?;
+				Ok(ResolvedBridgeDataCheckpoint::PartialTx {
+					block_number,
+					tx_ix,
+					transfers_processed: *transfers_processed,
+				})
 			},
 		}
 	}

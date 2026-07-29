@@ -55,6 +55,7 @@ pub mod pallet {
 		active_ledger_bridge as LedgerApi, active_version::LedgerApiError,
 	};
 	use midnight_primitives::{BridgeRecipient, MidnightSystemTransactionExecutor};
+	use pallet_partner_chains_bridge::TransferHandlerError;
 	use sidechain_domain::McTxHash;
 	use sp_core::hexdisplay::HexDisplay;
 	use sp_partner_chains_bridge::{
@@ -257,7 +258,8 @@ pub mod pallet {
 			result: Result<Vec<u8>, LedgerApiError>,
 			make_event: F,
 			description: &str,
-		) where
+		) -> Result<(), TransferHandlerError>
+		where
 			F: FnOnce([u8; 32]) -> Event<T>,
 		{
 			match result {
@@ -270,22 +272,29 @@ pub mod pallet {
 							log::debug!("Executed system transaction for {}", description);
 							let event = make_event(tx_hash);
 							Self::deposit_event(event);
+							Ok(())
 						},
 						Err(e) => {
 							log::error!(
 								"Failed to execute system transaction for {}: {e:?}",
 								description
 							);
+							Err(TransferHandlerError::Retriable)
 						},
 					}
 				},
 				Err(e) => {
 					log::error!("Failed to serialize transaction for {}: {e:?}", description);
+					// Surely a bug, we will retry it until runtime code is fixed and able
+					// to serialize tx
+					Err(TransferHandlerError::Retriable)
 				},
 			}
 		}
 
-		fn handle_subminimal_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
+		fn handle_subminimal_transfer(
+			transfer: BridgeTransferV1<BridgeRecipient>,
+		) -> Result<(), TransferHandlerError> {
 			let SubminimalTransfersState { count, sum } = SubminimalTransfers::<T>::get();
 			let config = SubminimalTransfersConfiguration::<T>::get();
 
@@ -301,14 +310,17 @@ pub mod pallet {
 						midnight_tx_hash,
 					},
 					&alloc::format!("subminimal transfers flush of total {}", sum),
-				);
+				)?;
 				SubminimalTransfers::<T>::kill();
 			} else {
 				SubminimalTransfers::<T>::put(SubminimalTransfersState { count, sum });
 			}
+			Ok(())
 		}
 
-		fn handle_regular_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
+		fn handle_regular_transfer(
+			transfer: BridgeTransferV1<BridgeRecipient>,
+		) -> Result<(), TransferHandlerError> {
 			let amount = transfer.amount;
 			let mc_tx_hash = transfer.mc_tx_hash;
 			match transfer.recipient {
@@ -320,87 +332,98 @@ pub mod pallet {
 			}
 		}
 
-		fn handle_invalid_transfer(mc_tx_hash: McTxHash, amount: u64) {
+		fn handle_invalid_transfer(
+			mc_tx_hash: McTxHash,
+			amount: u64,
+		) -> Result<(), TransferHandlerError> {
 			Self::execute_serialized_tx(
 				LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
 				|midnight_tx_hash| Event::InvalidTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Invalid' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
-			);
+			)
 		}
 
-		fn handle_reserve_transfer(mc_tx_hash: McTxHash, amount: u64) {
+		fn handle_reserve_transfer(
+			mc_tx_hash: McTxHash,
+			amount: u64,
+		) -> Result<(), TransferHandlerError> {
 			Self::execute_serialized_tx(
 				LedgerApi::construct_distribute_reserve_system_tx(amount.into()),
 				|midnight_tx_hash| Event::ReserveTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Reserve' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
-			);
+			)
 		}
 
-		fn handle_user_transfer(mc_tx_hash: McTxHash, amount: u64, recipient: BridgeRecipient) {
-			// Approval is single-use: remove before executing so a failed ledger call
-			// cannot be replayed against the same approval.
-			match ApprovedMcTxHashes::<T>::take(mc_tx_hash) {
-				None => {
-					// Not pre-approved by governance — redirect funds to the Treasury.
-					Self::execute_serialized_tx(
-						LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
-						|midnight_tx_hash| Event::UnapprovedTransfer {
-							mc_tx_hash,
-							amount,
-							recipient: recipient.clone(),
-							midnight_tx_hash,
-						},
-						&alloc::format!(
-							"Unapproved 'User' transfer of {} NIGHT to {} from Cardano Tx: {}",
-							amount,
-							HexDisplay::from(&recipient.as_ref()),
-							mc_tx_hash
-						),
-					);
-				},
-				Some(_) => {
-					let nonce = Self::generate_nonce();
-					Self::execute_serialized_tx(
-						LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
-							amount.into(),
-							recipient.as_bytes(),
-							nonce,
-						),
-						|midnight_tx_hash| Event::UserTransfer {
-							mc_tx_hash,
-							amount,
-							recipient: recipient.clone(),
-							midnight_tx_hash,
-						},
-						&alloc::format!(
-							"'User' transfer of {} NIGHT to {} from Cardano Tx: {}",
-							amount,
-							HexDisplay::from(&recipient.as_ref()),
-							mc_tx_hash
-						),
-					);
-				},
+		fn handle_user_transfer(
+			mc_tx_hash: McTxHash,
+			amount: u64,
+			recipient: BridgeRecipient,
+		) -> Result<(), TransferHandlerError> {
+			if !ApprovedMcTxHashes::<T>::contains_key(mc_tx_hash) {
+				// Not pre-approved by governance — redirect funds to the Treasury.
+				return Self::execute_serialized_tx(
+					LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
+					|midnight_tx_hash| Event::UnapprovedTransfer {
+						mc_tx_hash,
+						amount,
+						recipient: recipient.clone(),
+						midnight_tx_hash,
+					},
+					&alloc::format!(
+						"Unapproved 'User' transfer of {} NIGHT to {} from Cardano Tx: {}",
+						amount,
+						HexDisplay::from(&recipient.as_ref()),
+						mc_tx_hash
+					),
+				);
 			}
+
+			let nonce = Self::generate_nonce();
+			Self::execute_serialized_tx(
+				LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
+					amount.into(),
+					recipient.as_bytes(),
+					nonce,
+				),
+				|midnight_tx_hash| Event::UserTransfer {
+					mc_tx_hash,
+					amount,
+					recipient: recipient.clone(),
+					midnight_tx_hash,
+				},
+				&alloc::format!(
+					"'User' transfer of {} NIGHT to {} from Cardano Tx: {}",
+					amount,
+					HexDisplay::from(&recipient.as_ref()),
+					mc_tx_hash
+				),
+			)?;
+			// Approval is single-use, but it is only consumed once the transfer has actually been
+			// applied to the ledger.
+			ApprovedMcTxHashes::<T>::remove(mc_tx_hash);
+			Ok(())
 		}
 	}
 
 	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for Pallet<T> {
-		fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
+		fn handle_incoming_transfer(
+			transfer: BridgeTransferV1<BridgeRecipient>,
+		) -> Result<(), TransferHandlerError> {
 			match T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount() {
 				Ok(min_amount) => {
 					if u128::from(transfer.amount) < min_amount {
-						Self::handle_subminimal_transfer(transfer);
+						Self::handle_subminimal_transfer(transfer)
 					} else {
-						Self::handle_regular_transfer(transfer);
+						Self::handle_regular_transfer(transfer)
 					}
 				},
 				Err(e) => {
 					// If ledger read fails, then subminimal transfers functionality is bypassed.
 					// Most likely, if ledger reads fail, the code will never succeed making a transaction.
 					log::error!("Failed to read c_to_m_bridge_min_amount from ledger: {e:?}");
-					Self::handle_regular_transfer(transfer);
+					Self::handle_regular_transfer(transfer)
 				},
-			};
+			}
 		}
 	}
 }
