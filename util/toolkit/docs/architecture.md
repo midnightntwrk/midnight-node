@@ -17,7 +17,7 @@ The toolkit is a transaction generator and testing tool for Midnight. It fetches
             ▼                  ▼                       ▼                    ▼
        TxGenerator          toolkit_js              Genesis         Standalone Commands
     (tx_generator/mod.rs)  (toolkit_js/mod.rs)  (genesis_generator.rs)  (commands/)
-            │                  │                 Ledger 8 only              │
+            │                  │                 Latest Ledger only              │
             │                  ▼                                            ▼
             │         Node.js child process                            show-wallet
             │         toolkit.js -> compact.js                         show-address
@@ -89,7 +89,7 @@ Wallet state is cached across runs via `wallet_state_cache.rs`.
 
 ## Dual Compilation
 
-The toolkit must support multiple ledger versions (currently Ledger 7 and Ledger 8) which have incompatible type hierarchies -- different `Transaction`, `Wallet`, `LedgerState` types, etc. Rather than abstracting over them with generics (which would require a shared trait boundary that doesn't exist), the builder code is written once in `common/` and compiled twice with different type aliases.
+The toolkit must support multiple ledger versions which have incompatible type hierarchies -- different `Transaction`, `Wallet`, `LedgerState` types, etc. Rather than abstracting over them with generics (which would require a shared trait boundary that doesn't exist), the builder code is written once in `common/` and compiled twice with different type aliases.
 
 The `ledger-helpers` crate (`util/ledger-helpers/`) defines the transaction building primitives (wallet, ledger context, proof providers). It uses the same pattern -- `ledger_7` and `ledger_8` modules expose the same interface against different ledger versions.
 
