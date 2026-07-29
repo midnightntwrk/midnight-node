@@ -1188,7 +1188,13 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,);
+pub type Migrations = (
+	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
+	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
+	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
+	// this ledger-9 runtime (storage version 2).
+	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where
