@@ -8125,6 +8125,7 @@ dependencies = [
  "midnight-transient-crypto 2.2.0",
  "midnight-transient-crypto 3.0.0",
  "midnight-zkir",
+ "midnight-zkir-v3",
  "midnight-zswap 7.0.3",
  "midnight-zswap 8.1.0",
  "midnight-zswap 9.0.0",
@@ -8928,9 +8929,15 @@ version = "3.0.0-rc.2"
 source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=cd54fd2f74ff534922de17323571417058849eec#cd54fd2f74ff534922de17323571417058849eec"
 dependencies = [
  "anyhow",
+ "clap",
+ "console 0.16.3",
  "const-hex",
+ "env_logger",
+ "futures-executor",
  "group",
  "hex",
+ "indicatif 0.18.4",
+ "log",
  "midnight-base-crypto",
  "midnight-circuits 7.2.2",
  "midnight-curves 0.3.1",
@@ -8948,7 +8955,9 @@ dependencies = [
  "serde_repr",
  "sha2 0.11.0",
  "sha3 0.11.0",
+ "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

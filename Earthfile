@@ -1279,6 +1279,20 @@ build:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
 
+# dust-keys compiles the ZKIR-v3 Dust spend proving/verifying keys locally — they aren't
+# published anywhere for this branch (see scripts/seed-dust-keys.sh and
+# Batch-Verification-Notes.md, "Dust proving keys: use the bundled artifacts, not the
+# published ones"). Kept as its own target so only image builds that need it (toolkit-image)
+# pay the extra compile time, not every +build of the node.
+dust-keys:
+    FROM +build-prepare
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx scripts \
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
+
+    RUN MIDNIGHT_PP=/dust-keys-out bash scripts/seed-dust-keys.sh
+
+    SAVE ARTIFACT /dust-keys-out/dust /dust
+
 build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
@@ -1476,6 +1490,17 @@ toolkit-image:
 
     COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
+
+    # Bake the Zswap proving/verifying keys into the image (for both ledger
+    # static/version 9 and 10 — see scripts/seed-zswap-keys.sh) so the toolkit's
+    # local prover never has to reach srs.midnight.network at container runtime.
+    COPY scripts/seed-zswap-keys.sh /seed-zswap-keys.sh
+    RUN bash /seed-zswap-keys.sh && rm /seed-zswap-keys.sh
+
+    # Bake the Dust spend proving/verifying keys too. These are compiled locally by
+    # +dust-keys (not fetched — see scripts/seed-dust-keys.sh), since they aren't
+    # published anywhere for this branch.
+    COPY +dust-keys/dust /.cache/midnight/zk-params/dust
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"

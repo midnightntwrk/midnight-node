@@ -22,6 +22,11 @@ ledger-storage = { workspace = true }
 transient-crypto = { workspace = true }
 zswap = { workspace = true }
 zkir = { workspace = true }
+# Not used directly by this crate — pulled in only to activate its `binary` feature, so
+# `cargo build --bin zkir -p midnight-zkir-v3` unlocks the `zkir compile-many` CLI that
+# scripts/seed-dust-keys.sh uses to regenerate Dust proving keys locally (see that script
+# and Batch-Verification-Notes.md, "Dust proving keys: use the bundled artifacts").
+midnight-zkir-v3 = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec", features = ["binary"] }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 
