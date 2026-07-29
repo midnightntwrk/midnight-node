@@ -24,8 +24,8 @@ use invariants::check_mainchain_epoch_invariants;
 
 #[derive(Debug, Copy, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StorageSeparation {
-	#[default]
 	Separate,
+	#[default]
 	Unified,
 }
 
