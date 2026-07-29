@@ -68,18 +68,20 @@ pub enum UtxoActionType {
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
 
-/// Runtime acceptance envelope: upper bound on the UTXO-to-TX ratio that
-/// `process_tokens` and the worst-case weight will accept per inherent.
-///
-/// This is intentionally *wider* than the IDP's actual fetch factor (which the
-/// node binary picks per `CNightObservationApi` version — 4x at v2+, 64x at v1).
-/// The runtime must keep accepting the legacy 64x envelope so that v1 binaries
-/// pairing with a v2 runtime during the upgrade window can still have their
-/// inherents verified. Do not lower this to match the IDP fetch factor.
-pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
+/// Default for the [`pallet::UtxoPerTxOverestimate`] storage value: the per-block
+/// UTXO bound is `CardanoTxCapacityPerBlock * UtxoPerTxOverestimate`. The live
+/// multiplier is read from storage; this is only the genesis/upgrade default.
+/// Owned here (not in the primitives crate) because the value is runtime state —
+/// the node reads the live value through `CNightObservationApi`, and the only
+/// node-side consumer of the default, the genesis tool, depends on this pallet.
+pub const DEFAULT_UTXO_PER_TX_OVERESTIMATE: u32 = 64;
 
 /// Upper bound on UTXO count per block, used for worst-case weight declaration.
-pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER_TX_OVERESTIMATE;
+/// Computed from the storage *defaults*; a governance change to either
+/// `CardanoTxCapacityPerBlock` or `UtxoPerTxOverestimate` would require
+/// re-benchmarking against the new product.
+pub const MAX_UTXO_COUNT: u32 =
+	DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * DEFAULT_UTXO_PER_TX_OVERESTIMATE;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -183,7 +185,7 @@ pub mod pallet {
 		InherentAlreadyExecuted,
 		/// Next Cardano position does not advance beyond current position
 		CardanoPositionRegression,
-		/// UTXO count exceeds `CardanoTxCapacityPerBlock * UTXO_PER_TX_OVERESTIMATE`
+		/// UTXO count exceeds `CardanoTxCapacityPerBlock * UtxoPerTxOverestimate`
 		TooManyUtxos,
 		// Ledger errors mirrored from `LedgerApiError`. Flattened (rather than wrapped)
 		// so the encoding fits within `MAX_MODULE_ERROR_ENCODED_SIZE`.
@@ -290,6 +292,22 @@ pub mod pallet {
 	/// Max amount of Cardano transactions that can be processed per block
 	pub type CardanoTxCapacityPerBlock<T: Config> =
 		StorageValue<_, u32, ValueQuery, DefaultCardanoTxCapacityPerBlock>;
+
+	#[pallet::type_value]
+	pub fn DefaultUtxoPerTxOverestimate() -> u32 {
+		DEFAULT_UTXO_PER_TX_OVERESTIMATE
+	}
+
+	#[pallet::storage]
+	/// Upper bound on how many cNIGHT UTXOs a single observed Cardano transaction
+	/// is assumed to carry — a deliberate overestimate. Multiplied by
+	/// `CardanoTxCapacityPerBlock` it gives the per-block UTXO bound enforced by
+	/// `process_tokens`. Exposed to the node IDP via
+	/// `CNightObservationApi::get_utxo_per_tx_overestimate` so the block author's
+	/// truncation cap and the runtime's acceptance bound are always the same value
+	/// at a given parent.
+	pub type UtxoPerTxOverestimate<T: Config> =
+		StorageValue<_, u32, ValueQuery, DefaultUtxoPerTxOverestimate>;
 
 	#[pallet::storage]
 	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
@@ -640,7 +658,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight((T::WeightInfo::process_tokens(CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE)), DispatchClass::Mandatory))]
+		#[pallet::weight((T::WeightInfo::process_tokens(CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UtxoPerTxOverestimate::<T>::get())), DispatchClass::Mandatory))]
 		pub fn process_tokens(
 			origin: OriginFor<T>,
 			utxos: Vec<ObservedUtxo>,
@@ -651,7 +669,7 @@ pub mod pallet {
 			ensure!(
 				utxo_count
 					<= CardanoTxCapacityPerBlock::<T>::get()
-						.saturating_mul(UTXO_PER_TX_OVERESTIMATE),
+						.saturating_mul(UtxoPerTxOverestimate::<T>::get()),
 				Error::<T>::TooManyUtxos
 			);
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);

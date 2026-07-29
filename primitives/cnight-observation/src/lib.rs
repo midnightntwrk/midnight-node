@@ -421,11 +421,23 @@ impl PartialOrd for ObservedUtxoHeader {
 }
 
 decl_runtime_apis! {
-	// v2 marks the consensus-affecting reduction of the cNight db-sync over-fetch
-	// factor from 64x to 4x. Node binaries gate the multiplier on this version so
-	// the change only takes effect at the runtime upgrade boundary; mixing old and
-	// new binaries against the same runtime version stays consensus-equivalent.
-	#[api_version(2)]
+	// Two version families are in play and they are NOT the same thing:
+	// "v2"/"v3" here are versions of this runtime API trait (`api_version`),
+	// while "v1"/"v2" in the node's derivation code (`derive_inherent_v1/_v2`)
+	// are versions of the inherent derivation, selected by runtime
+	// `spec_version`.
+	//
+	// API v2 once gated a node-side db-sync over-fetch multiplier; the node now
+	// fetches the whole range instead, so nothing is gated on it. Retained for
+	// compatibility.
+	//
+	// API v3 adds `get_utxo_per_tx_overestimate`: the per-tx UTXO overestimate
+	// became runtime storage (mirroring `CardanoTxCapacityPerBlock`), so the node
+	// reads it at `parent_hash` instead of compiling in a constant. The node only
+	// calls it on the *derivation v2* path, which activates at a `spec_version`
+	// that ships in the same runtime as this API method — so a runtime without
+	// API v3 is never asked for it.
+	#[api_version(3)]
 	pub trait CNightObservationApi {
 		/// Get the contract address on Cardano which emits registration mappings in utxo datums
 		fn get_mapping_validator_address() -> Vec<u8>;
@@ -443,5 +455,13 @@ decl_runtime_apis! {
 		// (`pallet_cnight_observation::CardanoTxCapacityPerBlock`), not a UTXO count.
 		// Callers must multiply by the per-tx UTXO over-fetch factor to get a row limit.
 		fn get_utxo_capacity_per_block() -> u32;
+
+		/// Acceptance-envelope multiplier: the per-block UTXO bound enforced by
+		/// `process_tokens` is `get_utxo_capacity_per_block() *
+		/// get_utxo_per_tx_overestimate()`. Backed by the
+		/// `pallet_cnight_observation::UtxoPerTxOverestimate` storage value
+		/// (default `pallet_cnight_observation::DEFAULT_UTXO_PER_TX_OVERESTIMATE`).
+		#[api_version(3)]
+		fn get_utxo_per_tx_overestimate() -> u32;
 	}
 }

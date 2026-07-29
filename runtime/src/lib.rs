@@ -1842,6 +1842,10 @@ impl_runtime_apis! {
 			pallet_cnight_observation::CardanoTxCapacityPerBlock::<Runtime>::get()
 		}
 
+		fn get_utxo_per_tx_overestimate() -> u32 {
+			pallet_cnight_observation::UtxoPerTxOverestimate::<Runtime>::get()
+		}
+
 		fn get_cardano_block_window_size() -> u32 {
 			pallet_cnight_observation::CardanoBlockWindowSize::<Runtime>::get()
 		}

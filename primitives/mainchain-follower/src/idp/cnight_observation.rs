@@ -20,12 +20,27 @@ use midnight_primitives_cnight_observation::{
 };
 use parity_scale_codec::Decode;
 use sidechain_domain::McBlockHash;
-use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
+use sp_api::{ApiError, ApiExt, Core, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::{error::Error, string::FromUtf8Error, sync::Arc};
 
 pub const DEFAULT_CARDANO_BLOCK_WINDOW_SIZE: u32 = 10000;
+
+/// Runtime `spec_version` at (and above) which the cNIGHT observation inherent
+/// is derived with the **v2** mechanism. Below it, the frozen v1 derivation
+/// (`data_source::cnight_observation_v1`) is used so pre-upgrade blocks replay
+/// byte-identically on import.
+///
+/// The switch is gated on `spec_version` (read at `parent_hash`) because that is
+/// consensus state every node agrees on, and it bumps exactly at the v2 runtime
+/// upgrade. The handover is atomic: the upgrade block itself still derives v1
+/// (its parent predates the bump); the first child is the first v2 block.
+///
+/// PLACEHOLDER `u32::MAX` ⟹ v2 is **disabled** — every block uses v1 — until the
+/// v2 runtime upgrade ships and its real `spec_version` is pinned here. This
+/// threshold is itself consensus: all nodes must carry the same value.
+pub const CNIGHT_OBSERVATION_V2_SPEC_VERSION: u32 = u32::MAX;
 
 pub struct MidnightCNightObservationInherentDataProvider {
 	pub utxos: Vec<ObservedUtxo>,
@@ -65,7 +80,7 @@ impl MidnightCNightObservationInherentDataProvider {
 		Block: BlockT,
 		C: HeaderBackend<Block>,
 		C: ProvideRuntimeApi<Block> + Send + Sync,
-		C::Api: CNightObservationApi<Block>,
+		C::Api: CNightObservationApi<Block> + Core<Block>,
 	{
 		if let Ok(true) =
 			client.runtime_api().has_api::<dyn CNightObservationApi<Block>>(parent_hash)
@@ -94,23 +109,12 @@ impl MidnightCNightObservationInherentDataProvider {
 		Block: BlockT,
 		C: HeaderBackend<Block>,
 		C: ProvideRuntimeApi<Block> + Send + Sync,
-		C::Api: CNightObservationApi<Block>,
+		C::Api: CNightObservationApi<Block> + Core<Block>,
 	{
 		let api = client.runtime_api();
 		let mapping_validator_address =
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
 		let tx_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
-
-		// The over-fetch quantity used when querying db-sync is consensus-affecting:
-		// validators must agree on it to produce identical inherents. The reduction
-		// from 64x to 4x is therefore gated on the on-chain `CNightObservationApi`
-		// version: v2+ runtimes use the new factor, older runtimes keep the legacy
-		// 64x used by node binaries that shipped against v1.
-		let api_version = api
-			.api_version::<dyn CNightObservationApi<Block>>(parent_hash)?
-			.ok_or(IDPCreationError::CNightObservationApiUnavailable)?;
-		let overestimate_factor: u32 = if api_version >= 2 { 4 } else { 64 };
-		let utxo_overestimate = tx_capacity.saturating_mul(overestimate_factor);
 
 		let (cnight_policy_id, cnight_asset_name) = api.get_cnight_token_identifier(parent_hash)?;
 		let auth_token_asset_name: String = api
@@ -130,16 +134,38 @@ impl MidnightCNightObservationInherentDataProvider {
 			})?,
 		};
 
-		let observed_utxos = data_source
-			.get_utxos_up_to_capacity(
-				&config,
-				&cardano_position_start,
-				mc_hash,
-				tx_capacity as usize,
-				utxo_overestimate as usize,
-			)
-			.await
-			.map_err(IDPCreationError::DataSourceError)?;
+		// Consensus gate: pick the derivation by the parent's runtime
+		// `spec_version`. Below the v2 activation, run the frozen v1 derivation
+		// so pre-upgrade blocks replay byte-identically; at/after it, the v2
+		// (bulk-cached, one-block) path. Both `create_inherent` (author) and
+		// `check_inherent` (importer) reach this through the same parent state,
+		// so they never disagree on which version to use.
+		let spec_version = api.version(parent_hash)?.spec_version;
+		let observed_utxos = if spec_version < CNIGHT_OBSERVATION_V2_SPEC_VERSION {
+			data_source
+				.get_utxos_v1(&config, &cardano_position_start, mc_hash, tx_capacity as usize)
+				.await
+		} else {
+			// UTXO acceptance envelope = tx_capacity * multiplier, with *both* factors
+			// read from the runtime at `parent_hash` (same as `tx_capacity`), so the
+			// author's truncation cap always equals the runtime's `process_tokens`
+			// bound — across upgrades, not just within one build. `get_utxo_per_tx_overestimate`
+			// is a v3 `CNightObservationApi` method that ships in the same runtime as
+			// the v2 activation `spec_version`, so this branch only ever calls it
+			// against a runtime that has it.
+			let multiplier = api.get_utxo_per_tx_overestimate(parent_hash)?;
+			let max_utxos = tx_capacity.saturating_mul(multiplier) as usize;
+			data_source
+				.get_utxos_v2(
+					&config,
+					&cardano_position_start,
+					mc_hash,
+					tx_capacity as usize,
+					max_utxos,
+				)
+				.await
+		}
+		.map_err(IDPCreationError::DataSourceError)?;
 
 		Ok(Self { utxos: observed_utxos.utxos, next_cardano_position: observed_utxos.end })
 	}

@@ -404,7 +404,7 @@ SELECT
     low_ma_tx_out.ma_tx_out_id AS "ma_tx_out_id!",
     low_tx_in.tx_in_id AS "tx_in_id!"
 FROM
-    (SELECT COALESCE ((SELECT id FROM block WHERE block_no = $1 LIMIT 1), 0) AS id) AS block,
+    (SELECT COALESCE ((SELECT id FROM block WHERE block_no = $1 ORDER BY id ASC LIMIT 1), 0) AS id) AS block,
     LATERAL (SELECT COALESCE((SELECT id FROM tx WHERE block_id < block.id ORDER BY block_id DESC LIMIT 1), 0) AS tx_id) AS low_tx,
     LATERAL (SELECT COALESCE((SELECT id FROM tx_out WHERE tx_id <= low_tx.tx_id ORDER BY tx_id DESC LIMIT 1), 0) AS tx_out_id) AS low_tx_out,
     LATERAL (SELECT COALESCE((SELECT id FROM ma_tx_out WHERE tx_out_id <= low_tx_out.tx_out_id ORDER BY tx_out_id DESC LIMIT 1), 0) AS ma_tx_out_id) AS low_ma_tx_out,
@@ -435,7 +435,7 @@ SELECT
     high_ma_tx_out.ma_tx_out_id AS "ma_tx_out_id!",
     high_tx_in.tx_in_id AS "tx_in_id!"
 FROM
-    (SELECT id FROM block WHERE block_no = $1 LIMIT 1) AS block,
+    (SELECT id FROM block WHERE block_no = $1 ORDER BY id DESC LIMIT 1) AS block,
     LATERAL (SELECT COALESCE((SELECT id FROM tx WHERE block_id > block.id ORDER BY block_id ASC LIMIT 1), 9223372036854775807) AS tx_id) AS high_tx,
     LATERAL (SELECT COALESCE((SELECT id FROM tx_out WHERE tx_id >= high_tx.tx_id ORDER BY tx_id ASC LIMIT 1), 9223372036854775807) AS tx_out_id) AS high_tx_out,
     LATERAL (SELECT COALESCE((SELECT id FROM ma_tx_out WHERE tx_out_id >= high_tx_out.tx_out_id ORDER BY tx_out_id ASC LIMIT 1), 9223372036854775807) AS ma_tx_out_id) AS high_ma_tx_out,

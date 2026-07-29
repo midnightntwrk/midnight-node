@@ -112,7 +112,7 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		start: &CardanoPosition,
 		_current_tip: McBlockHash,
 		_tx_capacity: usize,
-		_utxo_overestimate: usize,
+		_max_utxos: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Calculate deterministic end position
 		let mut end = start.clone();
@@ -124,6 +124,30 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		let utxos = Self::deterministic_utxos(start);
 
 		Ok(ObservedUtxos { start: start.clone(), end, utxos })
+	}
+
+	async fn get_utxos_v1(
+		&self,
+		config: &CNightAddresses,
+		start: &CardanoPosition,
+		current_tip: McBlockHash,
+		tx_capacity: usize,
+	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+		// The mock is version-agnostic; reuse the same deterministic output.
+		self.get_utxos_up_to_capacity(config, start, current_tip, tx_capacity, 0).await
+	}
+
+	async fn get_utxos_v2(
+		&self,
+		config: &CNightAddresses,
+		start: &CardanoPosition,
+		current_tip: McBlockHash,
+		tx_capacity: usize,
+		max_utxos: usize,
+	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+		// The mock is version-agnostic; reuse the same deterministic output.
+		self.get_utxos_up_to_capacity(config, start, current_tip, tx_capacity, max_utxos)
+			.await
 	}
 }
 

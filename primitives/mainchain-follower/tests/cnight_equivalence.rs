@@ -35,7 +35,6 @@
 //! - `CNIGHT_EQUIV_FROM_BLOCK`       first Cardano block_no (default: 0)
 //! - `CNIGHT_EQUIV_TO_BLOCK`         last Cardano block_no (default: max in db)
 //! - `CNIGHT_EQUIV_TX_CAPACITY`      whole-tx capacity per call (default: 200)
-//! - `CNIGHT_EQUIV_UTXO_OVERESTIMATE` per-query SQL over-fetch bound (default: 12800)
 //! - `CNIGHT_EQUIV_MAX_COMPARISONS`  cap on number of (start,tip) queries (default: 500)
 //!
 //! NOTE: the standard source clips its SQL window to `LIVE_PULL_BLOCK_DELTA`
@@ -115,8 +114,11 @@ async fn bulk_source_matches_standard_over_block_range() {
 	assert!(to_block > from_block, "empty block range [{from_block}, {to_block}]");
 
 	// Consensus knobs — override to match the runtime config of the network.
+	// The multiplier mirrors `pallet_cnight_observation::DEFAULT_UTXO_PER_TX_OVERESTIMATE`;
+	// this crate sits below the pallet so the value is restated here rather than imported.
 	let tx_capacity: usize = env_parsed("CNIGHT_EQUIV_TX_CAPACITY").unwrap_or(200);
-	let utxo_overestimate: usize = env_parsed("CNIGHT_EQUIV_UTXO_OVERESTIMATE").unwrap_or(12_800);
+	let utxo_per_tx_overestimate: usize = env_parsed("CNIGHT_EQUIV_UTXO_PER_TX").unwrap_or(64);
+	let max_utxos = tx_capacity * utxo_per_tx_overestimate;
 
 	let rows = sqlx::query(
 		"SELECT block_no::bigint AS block_no, hash FROM block \
@@ -151,9 +153,13 @@ async fn bulk_source_matches_standard_over_block_range() {
 	let window_start = whole_block_position(window_from, 0);
 	let window_end =
 		whole_block_position(window_to, u32::try_from(i32::MAX).expect("i32::MAX is non-negative"));
-	let events = bulk_pull(&pool, &addresses, &window_start, &window_end, LARGE_LIMIT)
+	let (events, complete) = bulk_pull(&pool, &addresses, &window_start, &window_end, LARGE_LIMIT)
 		.await
 		.expect("bulk_pull window");
+	assert!(
+		complete,
+		"test window exceeded LARGE_LIMIT rows; widen LARGE_LIMIT or narrow the range"
+	);
 	eprintln!("cached window [{window_from}, {window_to}] holds {} events", events.len());
 
 	let db_fallback = Arc::new(MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0));
@@ -195,23 +201,11 @@ async fn bulk_source_matches_standard_over_block_range() {
 		};
 		let tip = blocks[(i + tip_delta).min(blocks.len() - 1)].1.clone();
 		let standard_result = standard
-			.get_utxos_up_to_capacity(
-				&addresses,
-				&start,
-				tip.clone(),
-				tx_capacity,
-				utxo_overestimate,
-			)
+			.get_utxos_up_to_capacity(&addresses, &start, tip.clone(), tx_capacity, max_utxos)
 			.await
 			.expect("standard source query");
 		let bulk_result = bulk
-			.get_utxos_up_to_capacity(
-				&addresses,
-				&start,
-				tip.clone(),
-				tx_capacity,
-				utxo_overestimate,
-			)
+			.get_utxos_up_to_capacity(&addresses, &start, tip.clone(), tx_capacity, max_utxos)
 			.await
 			.expect("bulk source query");
 

@@ -56,7 +56,33 @@ pub mod inherent_provider {
 			start_position: &CardanoPosition,
 			current_tip: McBlockHash,
 			tx_capacity: usize,
-			utxo_overestimate: usize,
+			max_utxos: usize,
+		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
+
+		/// Frozen **v1** derivation, selected by the IDP for blocks whose parent
+		/// runtime `spec_version` predates the v2 activation. It must reproduce
+		/// `release/node-1.0.1` byte-for-byte (see
+		/// `data_source::cnight_observation_v1`). No `max_utxos`: v1's budget is
+		/// `tx_capacity * 64` internally, and v1 never used the cache.
+		async fn get_utxos_v1(
+			&self,
+			config: &CNightAddresses,
+			start_position: &CardanoPosition,
+			current_tip: McBlockHash,
+			tx_capacity: usize,
+		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
+
+		/// **v2** derivation: one Cardano block per inherent (see
+		/// `data_source::cnight_observation_v2`). Selected once the parent
+		/// `spec_version` reaches the v2 activation. `max_utxos` is the runtime
+		/// `process_tokens` envelope (`tx_capacity * 64`).
+		async fn get_utxos_v2(
+			&self,
+			config: &CNightAddresses,
+			start_position: &CardanoPosition,
+			current_tip: McBlockHash,
+			tx_capacity: usize,
+			max_utxos: usize,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
 	}
 
