@@ -41,8 +41,10 @@ pub const SLOT_DURATION: u64 = 6000;
 type Block = frame_system::mocking::MockBlock<Test>;
 
 // Pallet indices follow production relative order: Babe (runtime index 7) must
-// run `on_initialize` *before* ConsensusEngine (runtime index 52). Digests are
+// run `on_initialize` *before* ConsensusEngine (runtime index 10). Digests are
 // consumed by Babe first; ConsensusEngine's guards must still reject unsafe ones.
+// (In production ConsensusEngine must in turn run before Scheduler and Session —
+// see the hook-ordering notes in lib.rs; those pallets are not part of this mock.)
 frame_support::construct_runtime!(
 	pub struct Test {
 		System: frame_system = 0,
@@ -132,11 +134,12 @@ pub fn seed_aura_authorities(n: u32) {
 	use sp_core::sr25519;
 	let authorities: Vec<_> = (0..n)
 		.map(|i| {
-			sp_consensus_aura::sr25519::AuthorityId::from(sr25519::Public::from_raw([i as u8 + 1; 32]))
+			sp_consensus_aura::sr25519::AuthorityId::from(sr25519::Public::from_raw(
+				[i as u8 + 1; 32],
+			))
 		})
 		.collect();
-	let bounded =
-		BoundedVec::try_from(authorities).expect("n authorities must fit MaxAuthorities");
+	let bounded = BoundedVec::try_from(authorities).expect("n authorities must fit MaxAuthorities");
 	pallet_aura::Authorities::<Test>::put(bounded);
 }
 

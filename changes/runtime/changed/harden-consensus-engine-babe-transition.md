@@ -27,5 +27,16 @@ The consensus-engine pallet now:
   flip when absent (upgraded networks never ran Babe genesis, and
   `Babe::current_epoch()` / `next_epoch()` expect it).
 
+The `ConsensusEngine` pallet index moves from 52 to 10 so its `on_initialize`
+digest guards run in pallet-index hook order after `Babe` (7) but before
+`Scheduler` (18) and `Session` (30). At index 52 the guards evaluated
+post-rotation / post-dispatch state: a session boundary that resizes the AURA
+committee while armed would false-reject every honest author's block
+(`authority_index == slot % n` checked against the rotated set, while authors
+and the AURA seal verifier use the parent state), and a Scheduler-dispatched
+`arm_babe` would reject its own block (guard sees `ArmedBabe`, block authored
+under `Aura`). Storage is keyed by pallet name, so no migration is needed; call
+encoding and metadata change.
+
 PR: https://github.com/midnightntwrk/midnight-node/pull/1929
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1935

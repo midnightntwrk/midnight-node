@@ -42,6 +42,25 @@
 //! BABE authored.
 //! The migration initializes pallet-babe state and transitions to the final state
 //! `Babe`. The first block of the next epoch is authored with BABE.
+//!
+//! # Hook ordering requirements
+//!
+//! The runtime must order this pallet's hooks (`on_initialize` runs in pallet
+//! index order) so that the digest guards evaluate the same state the block
+//! author and the client-side AURA verifier used — i.e. the parent state:
+//!
+//! * **after `pallet-babe`**, which consumes BABE pre-runtime digests first
+//!   (the guards then reject unsafe ones, reverting whatever Babe wrote);
+//! * **before `pallet-session`**: session rotation resizes
+//!   `pallet_aura::Authorities` in its `on_initialize`, while the author (and
+//!   the AURA seal check) computed `slot % n` from the parent state. Running
+//!   after rotation would false-reject every honest block at a session boundary
+//!   whose committee size changes while armed;
+//! * **before `pallet-scheduler`** (or any hook that can dispatch
+//!   [`Pallet::arm_babe`] / [`Pallet::schedule_flip`] during block
+//!   initialization): a state transition applied before the guard would make
+//!   the guard check the *new* state against a block authored under the old
+//!   one, rejecting the transition block itself.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 

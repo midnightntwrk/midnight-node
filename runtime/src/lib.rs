@@ -1082,13 +1082,24 @@ mod runtime {
 	#[runtime::pallet_index(9)]
 	pub type Authorship = pallet_authorship::Pallet<Runtime>;
 
+	// Consensus engine transition state machine. Hook order (pallet index order) is
+	// load-bearing: its `on_initialize` digest guards must run after Babe (which
+	// consumes BABE pre-digests) but before anything that mutates the state they
+	// check against — Scheduler (18) can dispatch `arm_babe`/`schedule_flip` from
+	// its own `on_initialize`, and Session (30) rotates `pallet_aura::Authorities`,
+	// which the `authority_index == slot % n` transition guard compares with. Both
+	// the block author and the AURA seal verifier work from the parent state, so
+	// the guards must too.
+	#[runtime::pallet_index(10)]
+	pub type ConsensusEngine = pallet_consensus_engine::Pallet<Runtime>;
+
 	#[runtime::pallet_index(30)]
 	#[runtime::disable_call]
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards = 10,
+	//BlockRewards: pallet_block_rewards, (index 10 now taken by ConsensusEngine)
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
@@ -1149,10 +1160,6 @@ mod runtime {
 	// Throttling
 	#[runtime::pallet_index(51)]
 	pub type Throttle = pallet_throttle::Pallet<Runtime>;
-
-	// Consensus engine transition state machine
-	#[runtime::pallet_index(52)]
-	pub type ConsensusEngine = pallet_consensus_engine::Pallet<Runtime>;
 }
 
 /// The address format for describing accounts.
