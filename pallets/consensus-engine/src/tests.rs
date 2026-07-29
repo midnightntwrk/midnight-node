@@ -16,15 +16,16 @@
 use crate::{Error, State, mock::*, pallet::EngineState};
 use frame_support::{
 	assert_noop, assert_ok,
-	traits::{Hooks, OnTimestampSet},
+	traits::{OnInitialize, OnTimestampSet},
 };
 use midnight_primitives_consensus_engine::ActiveEngine;
 use sp_consensus_slots::Slot;
 use sp_runtime::DispatchError;
 
-/// Run the pallet's `on_initialize` hook for the current block.
+/// Run `on_initialize` for every pallet in construct_runtime order (Babe before
+/// ConsensusEngine), matching production hook ordering.
 fn on_initialize() {
-	ConsensusEngine::on_initialize(System::block_number());
+	AllPalletsWithSystem::on_initialize(System::block_number());
 }
 
 #[test]
@@ -163,7 +164,7 @@ fn duplicate_babe_digest_is_not_detected() {
 #[test]
 fn babe_pre_digest_is_allowed_once_armed() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		// Once armed the node is expected to emit BABE pre-digests; no rejection.
 		start_block_with_babe_pre_digest(100);
 		on_initialize();
@@ -175,7 +176,7 @@ fn babe_pre_digest_is_allowed_once_armed() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_aura_only_blocks() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		// Nodes are updated before governance arms the flip, so an armed block
 		// without the BABE digest comes from a non-compliant author — rejected.
 		start_block_at_slot(100);
@@ -187,7 +188,7 @@ fn armed_rejects_aura_only_blocks() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_mismatched_babe_slot() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		start_block_with_logs(vec![aura_pre_digest(100), babe_pre_digest(101)]);
 		on_initialize();
 	});
@@ -197,7 +198,7 @@ fn armed_rejects_mismatched_babe_slot() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ScheduledFlip'")]
 fn scheduled_rejects_mismatched_babe_slot() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		// Mid-epoch: flip does not run, but a mismatched BABE digest is still rejected.
 		start_block_with_logs(vec![aura_pre_digest(1400), babe_pre_digest(1401)]);
 		on_initialize();
@@ -208,7 +209,7 @@ fn scheduled_rejects_mismatched_babe_slot() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_babe_before_aura() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		start_block_with_logs(vec![babe_pre_digest(100), aura_pre_digest(100)]);
 		on_initialize();
 	});
@@ -227,6 +228,8 @@ fn arm_babe_requires_governance_origin() {
 fn arm_babe_is_rejected_from_other_states() {
 	new_test_ext().execute_with(|| {
 		for state in [State::ArmedBabe, State::ScheduledFlip, State::Babe] {
+			// Raw put: we must not pre-seed the sentinel — the assertion below checks
+			// that a rejected `arm_babe` leaves GenesisSlot untouched.
 			EngineState::<Test>::put(state);
 			assert_noop!(
 				ConsensusEngine::arm_babe(RuntimeOrigin::root()),
@@ -243,7 +246,7 @@ fn arm_babe_is_rejected_from_other_states() {
 #[test]
 fn schedule_flip_from_armed() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 
 		assert_ok!(ConsensusEngine::schedule_flip(RuntimeOrigin::root()));
 
@@ -256,7 +259,7 @@ fn schedule_flip_from_armed() {
 #[test]
 fn schedule_flip_requires_governance_origin() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		assert_noop!(
 			ConsensusEngine::schedule_flip(RuntimeOrigin::signed(1)),
 			DispatchError::BadOrigin
@@ -273,7 +276,7 @@ fn schedule_flip_requires_governance_origin() {
 fn schedule_flip_is_rejected_unless_armed() {
 	new_test_ext().execute_with(|| {
 		for state in [State::Aura, State::ScheduledFlip, State::Babe] {
-			EngineState::<Test>::put(state);
+			put_engine_state(state);
 			assert_noop!(
 				ConsensusEngine::schedule_flip(RuntimeOrigin::root()),
 				Error::<Test>::InvalidEngineState
@@ -287,7 +290,7 @@ fn schedule_flip_is_rejected_unless_armed() {
 #[should_panic(expected = "Issue #1742 adds BABE keys to the runtime")]
 fn flip_fires_at_the_last_slot_of_the_epoch() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		seed_babe_authorities();
 
 		// The last slot of the epoch (1499 for a 300-slot epoch) attempts the flip.
@@ -302,7 +305,7 @@ fn flip_fires_at_the_last_slot_of_the_epoch() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ScheduledFlip'")]
 fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		seed_babe_authorities();
 
 		// An epoch-end AURA block without a BABE pre-digest must be rejected: committing
@@ -316,7 +319,7 @@ fn flip_rejects_epoch_end_block_without_babe_pre_digest() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_primary_babe_digest() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		// Matching slot, but the wrong variant: Primary carries unverified VRF material.
 		start_block_with_logs(vec![aura_pre_digest(100), babe_primary_pre_digest(100)]);
 		on_initialize();
@@ -327,7 +330,7 @@ fn armed_rejects_primary_babe_digest() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_secondary_vrf_babe_digest() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		// Matching slot, but SecondaryVRF carries the same unverified VRF risk as Primary.
 		start_block_with_logs(vec![aura_pre_digest(100), babe_secondary_vrf_pre_digest(100)]);
 		on_initialize();
@@ -338,7 +341,7 @@ fn armed_rejects_secondary_vrf_babe_digest() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ScheduledFlip'")]
 fn scheduled_rejects_aura_only_blocks_even_while_authorities_empty() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		assert!(pallet_babe::Authorities::<Test>::get().is_empty());
 
 		// The digest requirement holds on every scheduled block, including while
@@ -352,7 +355,7 @@ fn scheduled_rejects_aura_only_blocks_even_while_authorities_empty() {
 #[test]
 fn flip_postpones_when_babe_authorities_empty() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		// Default Authorities is empty — postpone even when the digest is present.
 		assert!(pallet_babe::Authorities::<Test>::get().is_empty());
 		start_block_with_babe_pre_digest(1499);
@@ -373,7 +376,7 @@ fn flip_postpones_when_babe_authorities_empty() {
 #[test]
 fn flip_does_not_run_mid_epoch() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		seed_babe_authorities();
 		// A mid-epoch block does not trigger the flip (no panic, state unchanged),
 		// even when it carries a BABE pre-digest.
@@ -387,7 +390,7 @@ fn flip_does_not_run_mid_epoch() {
 #[test]
 fn flip_does_not_run_on_penultimate_or_first_slot_of_next_epoch() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		seed_babe_authorities();
 		// Don't flip at the penultimate slot.
 		start_block_with_babe_pre_digest(1498);
@@ -407,7 +410,7 @@ fn flip_does_not_run_on_penultimate_or_first_slot_of_next_epoch() {
 #[should_panic(expected = "Issue #1742 adds BABE keys to the runtime")]
 fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		seed_babe_authorities();
 		// The epoch's last slot (1499) was skipped; the flip waits and fires at the
 		// next epoch's last slot (1799), where completing it panics (Issue #1742).
@@ -419,7 +422,7 @@ fn flip_fires_at_next_epoch_last_slot_when_the_last_slot_is_skipped() {
 #[test]
 fn migrate_to_babe_writes_epoch_config_when_absent() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		seed_babe_authorities();
 		// Upgrade-path shape: Babe genesis never ran, so EpochConfig is unset.
 		assert!(pallet_babe::EpochConfig::<Test>::get().is_none());
@@ -437,7 +440,7 @@ fn migrate_to_babe_writes_epoch_config_when_absent() {
 #[test]
 fn migrate_to_babe_preserves_existing_epoch_config() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		seed_babe_authorities();
 
 		let existing = sp_consensus_babe::BabeEpochConfiguration {
@@ -459,20 +462,22 @@ fn migrate_to_babe_preserves_existing_epoch_config() {
 fn on_initialize_is_a_no_op_in_stable_states() {
 	new_test_ext().execute_with(|| {
 		// Even at an epoch's last slot, non-scheduled states never flip.
-		EngineState::<Test>::put(State::Aura);
+		// Slots must strictly increase across these blocks: full-runtime hooks
+		// run pallet-aura, which rejects non-increasing slots.
+		put_engine_state(State::Aura);
 		start_block_at_slot(1499);
 		on_initialize();
 		assert_eq!(EngineState::<Test>::get(), State::Aura);
 
 		// Armed blocks must carry the BABE digest alongside AURA.
-		EngineState::<Test>::put(State::ArmedBabe);
-		start_block_with_babe_pre_digest(1499);
+		put_engine_state(State::ArmedBabe);
+		start_block_with_babe_pre_digest(1500);
 		on_initialize();
 		assert_eq!(EngineState::<Test>::get(), State::ArmedBabe);
 
 		// Post-flip blocks carry a BABE digest only (an AURA one is rejected).
-		EngineState::<Test>::put(State::Babe);
-		start_block_with_logs(vec![babe_pre_digest(1499)]);
+		put_engine_state(State::Babe);
+		start_block_with_logs(vec![babe_pre_digest(1501)]);
 		on_initialize();
 		assert_eq!(EngineState::<Test>::get(), State::Babe);
 	});
@@ -482,7 +487,7 @@ fn on_initialize_is_a_no_op_in_stable_states() {
 #[should_panic(expected = "AURA pre-runtime digest present in state 'Babe'")]
 fn babe_rejects_aura_pre_digest_before_babe() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::Babe);
+		put_engine_state(State::Babe);
 		// The misattribution shape: `polkadot-js` extractAuthor takes the first
 		// decodable pre-runtime digest, so a leading AURA digest would credit
 		// `slot % n_authorities` instead of the real BABE author.
@@ -495,7 +500,7 @@ fn babe_rejects_aura_pre_digest_before_babe() {
 #[should_panic(expected = "AURA pre-runtime digest present in state 'Babe'")]
 fn babe_rejects_aura_pre_digest_after_babe() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::Babe);
+		put_engine_state(State::Babe);
 		// Position-independent: helpers that look AURA up first (e.g. the node's
 		// parent-slot resolution) are fooled wherever the digest sits.
 		start_block_with_logs(vec![babe_pre_digest(1500), aura_pre_digest(9999)]);
@@ -506,7 +511,7 @@ fn babe_rejects_aura_pre_digest_after_babe() {
 #[test]
 fn babe_accepts_babe_only_block_with_unrelated_digest() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::Babe);
+		put_engine_state(State::Babe);
 		// What BABE actually authors: its own pre-digest plus partner-chains' own
 		// digest item, which must not be mistaken for an AURA one.
 		start_block_with_logs(vec![babe_pre_digest(1500), unrelated_pre_digest()]);
@@ -562,7 +567,7 @@ fn baseline_rejects_babe_pre_digest_with_trailing_bytes() {
 #[should_panic(expected = "AURA pre-runtime digest present in state 'Babe'")]
 fn babe_rejects_aura_pre_digest_with_trailing_bytes() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::Babe);
+		put_engine_state(State::Babe);
 		// pallet-aura's `Slot::decode` accepts this, and lenient off-chain decoders
 		// (polkadot-js `extractAuthor`) would credit `slot % n_authorities`.
 		start_block_with_logs(vec![
@@ -577,7 +582,7 @@ fn babe_rejects_aura_pre_digest_with_trailing_bytes() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_extra_babe_item_with_trailing_bytes() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		// A valid marker plus a second BABE item that `DecodeAll` cannot read: the
 		// uniqueness rule must still catch it.
 		start_block_with_logs(vec![
@@ -593,7 +598,7 @@ fn armed_rejects_extra_babe_item_with_trailing_bytes() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_undecodable_babe_pre_digest() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		start_block_with_logs(vec![aura_pre_digest(100), undecodable_babe_pre_digest()]);
 		on_initialize();
 	});
@@ -603,7 +608,7 @@ fn armed_rejects_undecodable_babe_pre_digest() {
 #[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
 fn armed_rejects_malformed_aura_pre_digest() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ArmedBabe);
+		put_engine_state(State::ArmedBabe);
 		// The AURA item is the one pallet-aura reads for the slot; a malformed one
 		// must not pass as "no AURA digest" either.
 		start_block_with_logs(vec![aura_pre_digest_with_trailing_bytes(100), babe_pre_digest(100)]);
@@ -636,7 +641,7 @@ fn malformed_items_are_not_detected_as_the_transition_shape() {
 #[test]
 fn flip_leaves_babe_current_slot_matching_the_flip_block_timestamp() {
 	new_test_ext().execute_with(|| {
-		EngineState::<Test>::put(State::ScheduledFlip);
+		put_engine_state(State::ScheduledFlip);
 		seed_babe_authorities();
 
 		start_block_with_babe_pre_digest(1499);
@@ -653,7 +658,7 @@ fn flip_leaves_babe_current_slot_matching_the_flip_block_timestamp() {
 
 		// The engine is BABE by the time the timestamp inherent executes, so
 		// pallet-babe's hook must accept the flip block rather than reject it.
-		EngineState::<Test>::put(State::Babe);
+		put_engine_state(State::Babe);
 		<ConsensusEngine as OnTimestampSet<u64>>::on_timestamp_set(1499 * SLOT_DURATION);
 	});
 }

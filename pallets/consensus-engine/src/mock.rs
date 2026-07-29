@@ -40,13 +40,16 @@ pub const SLOT_DURATION: u64 = 6000;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
+// Pallet indices follow production relative order: Babe (runtime index 7) must
+// run `on_initialize` *before* ConsensusEngine (runtime index 52). Digests are
+// consumed by Babe first; ConsensusEngine's guards must still reject unsafe ones.
 frame_support::construct_runtime!(
 	pub struct Test {
 		System: frame_system = 0,
-		ConsensusEngine: pallet_consensus_engine = 1,
-		Timestamp: pallet_timestamp = 2,
-		Aura: pallet_aura = 3,
-		Babe: pallet_babe = 4,
+		Timestamp: pallet_timestamp = 1,
+		Aura: pallet_aura = 2,
+		Babe: pallet_babe = 3,
+		ConsensusEngine: pallet_consensus_engine = 4,
 	}
 );
 
@@ -130,6 +133,20 @@ pub fn seed_babe_authorities() {
 	let authorities =
 		WeakBoundedVec::try_from(vec![(id, 1u64)]).expect("one authority fits MaxAuthorities");
 	pallet_babe::Authorities::<Test>::put(authorities);
+}
+
+/// Put [`EngineState`] as in production: once past `Aura`, `arm_babe` has already
+/// written the BABE genesis-slot sentinel so pallet-babe does not self-initialize
+/// from a transition digest. Skips the write when `GenesisSlot` is already set
+/// (e.g. after `migrate_to_babe`).
+pub fn put_engine_state(state: crate::State) {
+	use crate::pallet::EngineState;
+	EngineState::<Test>::put(state);
+	if matches!(state, crate::State::ArmedBabe | crate::State::ScheduledFlip | crate::State::Babe)
+		&& pallet_babe::GenesisSlot::<Test>::get() == Slot::from(0u64)
+	{
+		pallet_babe::GenesisSlot::<Test>::put(Slot::from(u64::MAX));
+	}
 }
 
 /// Start a new block whose header carries exactly the given digest `logs`.
