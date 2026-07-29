@@ -125,6 +125,21 @@ impl pallet_consensus_engine::Config for Test {
 	type WeightInfo = ();
 }
 
+/// Seed `n` AURA authorities so transition digests can be checked against
+/// `slot % n` (the AURA author index).
+pub fn seed_aura_authorities(n: u32) {
+	use frame_support::BoundedVec;
+	use sp_core::sr25519;
+	let authorities: Vec<_> = (0..n)
+		.map(|i| {
+			sp_consensus_aura::sr25519::AuthorityId::from(sr25519::Public::from_raw([i as u8 + 1; 32]))
+		})
+		.collect();
+	let bounded =
+		BoundedVec::try_from(authorities).expect("n authorities must fit MaxAuthorities");
+	pallet_aura::Authorities::<Test>::put(bounded);
+}
+
 /// Seed a non-empty `pallet-babe::Authorities` set so the flip is allowed to commit.
 pub fn seed_babe_authorities() {
 	use frame_support::WeakBoundedVec;
@@ -160,16 +175,24 @@ pub fn aura_pre_digest(slot: u64) -> DigestItem {
 	DigestItem::PreRuntime(AURA_ENGINE_ID, Slot::from(slot).encode())
 }
 
-/// A BABE (secondary plain) pre-runtime digest item for `slot`.
-pub fn babe_pre_digest(slot: u64) -> DigestItem {
+/// A BABE (secondary plain) pre-runtime digest item for `slot` claiming
+/// `authority_index` (must equal `slot % n_aura_authorities` for the transition
+/// guard to accept it).
+pub fn babe_pre_digest_with_authority(slot: u64, authority_index: u32) -> DigestItem {
 	DigestItem::PreRuntime(
 		BABE_ENGINE_ID,
 		BabePreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-			authority_index: 0,
+			authority_index,
 			slot: Slot::from(slot),
 		})
 		.encode(),
 	)
+}
+
+/// A BABE (secondary plain) pre-runtime digest item for `slot` with authority
+/// index 0 — valid when the mock has a single AURA authority (see [`new_test_ext`]).
+pub fn babe_pre_digest(slot: u64) -> DigestItem {
+	babe_pre_digest_with_authority(slot, 0)
 }
 
 /// A BABE `Primary` pre-runtime digest item for `slot`, carrying a (dummy,
@@ -256,6 +279,10 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	let t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
 	let mut ext: sp_io::TestExternalities = t.into();
 	// Block 0 does not record events; move to block 1 so `assert_last_event` works.
-	ext.execute_with(|| System::set_block_number(1));
+	// One AURA authority so `babe_pre_digest`'s index 0 matches `slot % 1`.
+	ext.execute_with(|| {
+		System::set_block_number(1);
+		seed_aura_authorities(1);
+	});
 	ext
 }

@@ -152,6 +152,34 @@ fn babe_with_mismatched_slot_is_not_detected() {
 }
 
 #[test]
+fn babe_with_mismatched_authority_index_is_not_detected() {
+	new_test_ext().execute_with(|| {
+		// Three authorities → AURA author for slot 100 is `100 % 3 = 1`.
+		seed_aura_authorities(3);
+		start_block_with_logs(vec![aura_pre_digest(100), babe_pre_digest_with_authority(100, 0)]);
+		assert!(!ConsensusEngine::has_aura_pre_digest_before_babe_pre_digest());
+	});
+}
+
+#[test]
+fn babe_with_matching_authority_index_is_detected() {
+	new_test_ext().execute_with(|| {
+		seed_aura_authorities(3);
+		start_block_with_logs(vec![aura_pre_digest(100), babe_pre_digest_with_authority(100, 1)]);
+		assert!(ConsensusEngine::has_aura_pre_digest_before_babe_pre_digest());
+	});
+}
+
+#[test]
+fn babe_with_empty_aura_authorities_is_not_detected() {
+	new_test_ext().execute_with(|| {
+		pallet_aura::Authorities::<Test>::kill();
+		start_block_with_logs(vec![aura_pre_digest(100), babe_pre_digest(100)]);
+		assert!(!ConsensusEngine::has_aura_pre_digest_before_babe_pre_digest());
+	});
+}
+
+#[test]
 fn duplicate_babe_digest_is_not_detected() {
 	// Two BABE digests (even matching the AURA slot) are not the unique-digest shape.
 	assert!(!aura_before_babe(vec![
@@ -333,6 +361,18 @@ fn armed_rejects_secondary_vrf_babe_digest() {
 		put_engine_state(State::ArmedBabe);
 		// Matching slot, but SecondaryVRF carries the same unverified VRF risk as Primary.
 		start_block_with_logs(vec![aura_pre_digest(100), babe_secondary_vrf_pre_digest(100)]);
+		on_initialize();
+	});
+}
+
+#[test]
+#[should_panic(expected = "BABE pre-runtime digest required in state 'ArmedBabe'")]
+fn armed_rejects_mismatched_authority_index() {
+	new_test_ext().execute_with(|| {
+		put_engine_state(State::ArmedBabe);
+		seed_aura_authorities(3);
+		// Slot 100 → AURA author 1; claiming 0 must be rejected.
+		start_block_with_logs(vec![aura_pre_digest(100), babe_pre_digest_with_authority(100, 0)]);
 		on_initialize();
 	});
 }

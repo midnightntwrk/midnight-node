@@ -29,7 +29,8 @@
 //!
 //! Once scheduled, the pallet performs the flip at the last block of the epoch.
 //! From arming onward every block must carry a BABE `SecondaryPlain` pre-runtime
-//! digest matching the AURA slot (unique, after AURA); a block without it is
+//! digest matching the AURA slot and AURA author index (`slot % n_authorities`)
+//! (unique, after AURA); a block without it is
 //! rejected on import, so nodes must be updated to emit the digest before
 //! governance arms the flip. `Primary`/`SecondaryVRF` variants are rejected too,
 //! since their VRF material is never client-verified while blocks import through
@@ -345,18 +346,20 @@ pub mod pallet {
 
 		/// Returns `true` when the current block's digest carries exactly one AURA and
 		/// exactly one BABE pre-runtime item, both decode exactly, the BABE one is a
-		/// `SecondaryPlain` variant appearing *after* the AURA one, and their slots
-		/// match.
+		/// `SecondaryPlain` variant appearing *after* the AURA one, their slots match,
+		/// and the BABE `authority_index` equals the AURA author for that slot
+		/// (`slot % pallet_aura::Authorities.len()`).
 		///
 		/// This is the shape a node emits while still on AURA once it has begun
 		/// signalling BABE secondary slots. Every other arrangement returns `false`:
 		/// a missing item, a payload that fails to decode (or carries trailing bytes),
 		/// a duplicate of either engine's item, a BABE item before the AURA one, a slot
-		/// mismatch, or a non-`SecondaryPlain` variant. Items are counted by engine id,
-		/// so a malformed payload is a rejection rather than an invisible item.
+		/// mismatch, a wrong authority index, an empty AURA authority set, or a
+		/// non-`SecondaryPlain` variant. Items are counted by engine id, so a malformed
+		/// payload is a rejection rather than an invisible item.
 		pub(crate) fn has_aura_pre_digest_before_babe_pre_digest() -> bool {
 			let mut aura_slot = None;
-			let mut babe_slot = None;
+			let mut babe_ok = false;
 			for log in frame_system::Pallet::<T>::digest().logs.iter() {
 				let Some((engine_id, _)) = log.as_pre_runtime() else { continue };
 
@@ -372,7 +375,7 @@ pub mod pallet {
 					}
 					aura_slot = Some(slot);
 				} else if engine_id == BABE_ENGINE_ID {
-					if babe_slot.is_some() {
+					if babe_ok {
 						// BABE pre-digest is not unique
 						return false;
 					}
@@ -389,18 +392,30 @@ pub mod pallet {
 					// blocks still import through the AURA pipeline, yet pallet-babe
 					// would consume the unverified VRF output for its randomness
 					// accumulation (`on_finalize` trusts the client to have verified it).
-					if !matches!(babe, PreDigest::SecondaryPlain(_)) {
+					let PreDigest::SecondaryPlain(ref plain) = babe else {
 						// Non-SecondaryPlain BABE pre-digest
 						return false;
-					}
-					if babe.slot() != slot {
+					};
+					if plain.slot != slot {
 						// BABE slot different to AURA slot
 						return false;
 					}
-					babe_slot = Some(babe.slot());
+					// Must claim the same author AURA would attribute: `slot % n`.
+					// An empty set cannot author under AURA either, so reject rather
+					// than skip the check.
+					let n = pallet_aura::Pallet::<T>::authorities_len();
+					if n == 0 {
+						return false;
+					}
+					let expected = (u64::from(slot) % n as u64) as u32;
+					if plain.authority_index != expected {
+						// BABE authority_index does not match AURA author
+						return false;
+					}
+					babe_ok = true;
 				}
 			}
-			babe_slot.is_some()
+			babe_ok
 		}
 
 		fn is_last_slot_of_epoch(slot: Slot) -> bool {
