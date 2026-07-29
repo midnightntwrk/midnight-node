@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use documented::{Documented, DocumentedFields as _};
+use midnight_primitives_ledger::TBlockCorrection;
 use serde::{Deserialize, Serialize};
 use serde_valid::{Validate, validation};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
@@ -135,6 +136,12 @@ pub struct MidnightCfg {
 	/// Job name label to include with pushed metrics.
 	/// Default: "midnight-node"
 	pub prometheus_push_job_name: Option<String>,
+
+	/// Offset (seconds) for tblock to allow transactions with invalid ctime values
+	/// into blocks when syncing historical chain data
+	pub tblock_correction_offset: i64,
+	/// Time in seconds since unix epoch after which to ignore the tblock correction
+	pub tblock_correction_disable_after: u64,
 }
 
 fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> {
@@ -198,6 +205,15 @@ impl From<MidnightCfg> for MainchainEpochConfig {
 			slot_duration_millis: sp_core::offchain::Duration::from_millis(
 				value.mc_slot_duration_millis,
 			),
+		}
+	}
+}
+
+impl From<&MidnightCfg> for TBlockCorrection {
+	fn from(value: &MidnightCfg) -> Self {
+		TBlockCorrection {
+			offset: value.tblock_correction_offset,
+			disable_after: value.tblock_correction_disable_after,
 		}
 	}
 }
