@@ -1783,6 +1783,10 @@ impl_runtime_apis! {
 		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
 			ConsensusEngine::active_engine()
 		}
+
+		fn should_emit_babe_preruntime_digest() -> bool {
+			ConsensusEngine::should_emit_babe_preruntime_digest()
+		}
 	}
 
 	impl sp_sidechain::GetGenesisUtxo<Block> for Runtime {

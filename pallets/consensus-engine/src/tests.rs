@@ -258,3 +258,18 @@ fn on_initialize_is_a_no_op_in_stable_states() {
 		}
 	});
 }
+
+#[test]
+fn should_emit_babe_preruntime_digest_only_while_armed() {
+	new_test_ext().execute_with(|| {
+		for (state, expected) in [
+			(State::Aura, false),
+			(State::ArmedBabe, true),
+			(State::ScheduledFlip, true),
+			(State::Babe, false),
+		] {
+			EngineState::<Test>::put(state);
+			assert_eq!(ConsensusEngine::should_emit_babe_preruntime_digest(), expected);
+		}
+	});
+}
