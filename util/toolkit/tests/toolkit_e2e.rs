@@ -19,6 +19,7 @@ use clap::Parser;
 use common::{
 	test_image,
 	toolkit_helper::{CircuitCall, ToolkitTestHelper},
+	wait_for_node,
 	wait_for_node::wait_for_finalized_block,
 };
 use midnight_node_toolkit::{
@@ -109,6 +110,7 @@ async fn run_cli(args: &[&str]) {
 }
 
 const RNG_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";
+const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000002";
 
 fn ledger_test_artifacts_ready() -> bool {
 	let Ok(path) = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR") else {
@@ -189,7 +191,7 @@ async fn register_dust_address() {
 			"--network",
 			"undeployed",
 			"--seed",
-			"0000000000000000000000000000000000000000000000000000000000000002",
+			SOURCE_SEED,
 			"--dust",
 		]);
 		match cli.command {
@@ -208,9 +210,9 @@ async fn register_dust_address() {
 		"inmemory",
 		"register-dust-address",
 		"--wallet-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
 		"--funding-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
 		"--destination-dust",
 		&dust_address,
 		"-s",
@@ -229,7 +231,7 @@ async fn register_dust_address() {
 		"--wallet-seed",
 		"0000000000000000000000000000000000000000000000000000000000000052",
 		"--funding-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
 		"-s",
 		url,
 		"-d",
@@ -244,9 +246,73 @@ async fn register_dust_address() {
 		"inmemory",
 		"deregister-dust-address",
 		"--wallet-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
 		"--funding-seed",
-		"0000000000000000000000000000000000000000000000000000000000000002",
+		SOURCE_SEED,
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// Issue #1896: fund a new wallet with 4 NIGHT UTXOs, then register it self-funded
+	// (no --funding-seed) - the fee is paid from the wallet's own retroactive DUST.
+	let new_seed = hex::encode(rand::random::<[u8; 32]>());
+	let new_address = {
+		let cli = Cli::parse_from([
+			"midnight-node-toolkit",
+			"show-address",
+			"--network",
+			"undeployed",
+			"--seed",
+			&new_seed,
+			"--unshielded",
+		]);
+		match cli.command {
+			Commands::ShowAddress(args) => match show_address::execute(args) {
+				show_address::ShowAddress::SingleAddress(addr) => addr,
+				show_address::ShowAddress::Addresses(_) => panic!("should not reach this arm"),
+			},
+			_ => unreachable!(),
+		}
+	};
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"single-tx",
+		"--source-seed",
+		SOURCE_SEED,
+		"--unshielded-amount",
+		"2000000000000",
+		"--destination-address",
+		&new_address,
+		"--destination-address",
+		&new_address,
+		"--destination-address",
+		&new_address,
+		"--destination-address",
+		&new_address,
+		"-s",
+		url,
+		"-d",
+		url,
+	])
+	.await;
+
+	// The fresh UTXOs have accrued no retroactive DUST inside their own funding block
+	// (dt = 0); one more block accrues plenty for the fee.
+	wait_for_node::wait_for_next_finalized_block(url, Duration::from_secs(60)).await;
+
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"register-dust-address",
+		"--wallet-seed",
+		&new_seed,
 		"-s",
 		url,
 		"-d",

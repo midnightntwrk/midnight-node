@@ -752,6 +752,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		);
 		let proposer_factory: PartnerChainsProposerFactory<_, _, McHashInherentDigest> =
 			PartnerChainsProposerFactory::new(basic_authorship_proposer_factory);
+		// Attach a BABE `SecondaryPlain` pre-runtime digest to authored blocks while the flip to
+		// BABE is armed.
+		let proposer_factory = crate::armed_babe_proposer::ArmedBabeProposerFactory::new(
+			proposer_factory,
+			client.clone(),
+		);
 
 		let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 			.map_err(sp_blockchain::Error::from)?;
