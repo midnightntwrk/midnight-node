@@ -189,6 +189,8 @@ pub async fn bulk_pull(
 ///   there cannot skip a counted tx's UTXOs.
 /// - The cursor reaches `fallback_end` (the tip) ONLY when `complete` (the fetch
 ///   wasn't row-limited); otherwise it stops at the last fully-observed tx.
+/// - The cursor never advances past an event we did not admit, and never at all
+///   when nothing was admitted (see [`boundary_after`]).
 ///
 /// Every node feeds this the complete range and the same `max_utxos`, so there is
 /// no fetch-size input left to disagree on — inherents are byte-identical.
@@ -252,17 +254,28 @@ pub fn truncate_to_tx_capacity(
 	ObservedUtxos { start: start_position.clone(), end, utxos: truncated }
 }
 
-/// Position just past the last accepted event. When nothing was accepted this
-/// still increments past `start`, skipping the tx at the cursor — reachable
-/// only if the sole fetched tx was dropped as row-truncated, i.e. a single tx
-/// with more than `max_utxos` events at the cursor, beyond what a Cardano tx
-/// can physically carry.
+/// Position just past the last accepted event — or `start` **unchanged** when
+/// nothing was accepted, so the cursor never moves past unobserved data.
+///
+/// Two ways to accept nothing: the sole fetched tx was dropped as row-truncated
+/// (needs one tx carrying more than `max_utxos` events, beyond what a Cardano
+/// block can physically hold), or a misconfigured `tx_capacity == 0`.
+/// Incrementing in either case would skip the tx sitting at the cursor
+/// permanently, so we hold and log: a stalled cNIGHT cursor is visible and
+/// recoverable, silently dropped mint/burn events are neither.
 fn boundary_after(truncated: &[ObservedUtxo], start_position: &CardanoPosition) -> CardanoPosition {
-	truncated
-		.last()
-		.map(|u| u.header.tx_position.clone())
-		.unwrap_or_else(|| start_position.clone())
-		.increment()
+	match truncated.last() {
+		Some(last) => last.header.tx_position.clone().increment(),
+		None => {
+			log::error!(
+				target: "cnight::observation",
+				"no whole transaction fit the acceptance envelope at cardano {}/{}; \
+				 holding the cursor (check CardanoTxCapacityPerBlock and UtxoPerTxOverestimate)",
+				start_position.block_number, start_position.tx_index_in_block,
+			);
+			start_position.clone()
+		},
+	}
 }
 
 /// Cached result of the previous `get_utxos_up_to_capacity` call. During
@@ -967,6 +980,31 @@ mod tests {
 		assert_eq!(obs.utxos.len(), 20, "did not cut on a whole-tx boundary");
 		assert!(obs.utxos.len() <= 22);
 		assert_eq!(obs.end, pos(3, 0).increment(), "must resume past the last whole tx");
+	}
+
+	/// Nothing admitted ⟹ the cursor does not move. Incrementing past `start`
+	/// would skip the transaction sitting at the cursor for good. Here the sole
+	/// fetched tx is dropped as row-truncated (`complete == false`).
+	#[test]
+	fn row_limited_lone_tx_holds_the_cursor() {
+		// One tx (5 UTXOs sharing a position) at the cursor, fetch row-limited.
+		let events: Vec<_> = (0..5u16).map(|u| utxo_with_index(7, u)).collect();
+		let start = pos(7, 0);
+		let obs = truncate_to_tx_capacity(events, 1000, 100_000, false, &start, pos(100, 0));
+		assert!(obs.utxos.is_empty(), "a row-truncated tx must not be admitted");
+		assert_eq!(obs.end, start, "cursor stepped over an unobserved transaction");
+	}
+
+	/// Same rule via the other route into "nothing admitted": a misconfigured
+	/// `tx_capacity == 0`. Observation stalls loudly instead of the cursor
+	/// walking the chain one tx per block, dropping every event as it goes.
+	#[test]
+	fn zero_tx_capacity_holds_the_cursor() {
+		let start = pos(0, 0);
+		let obs =
+			truncate_to_tx_capacity(fifty_txs_five_utxos(), 0, 100_000, true, &start, pos(100, 0));
+		assert!(obs.utxos.is_empty());
+		assert_eq!(obs.end, start, "cursor advanced with zero capacity — events lost");
 	}
 
 	/// The transaction-count cap admits at most `tx_capacity` whole transactions.
