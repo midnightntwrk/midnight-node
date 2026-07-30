@@ -166,6 +166,24 @@ pub mod pallet {
 		InvalidEngineState,
 	}
 
+	/// For session keys migration idempotency.
+	#[pallet::storage]
+	pub type AddBabeSessionKeysMigrated<T: Config> = StorageValue<_, bool, ValueQuery>;
+
+	#[pallet::genesis_config]
+	#[derive(frame_support::DefaultNoBound)]
+	pub struct GenesisConfig<T: Config> {
+		#[serde(skip)]
+		pub _marker: core::marker::PhantomData<T>,
+	}
+
+	#[pallet::genesis_build]
+	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
+		fn build(&self) {
+			AddBabeSessionKeysMigrated::<T>::put(true);
+		}
+	}
+
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		/// Drives the automatic, non-governance part of the state machine each block.

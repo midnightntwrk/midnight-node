@@ -37,10 +37,36 @@ where
 	Ok(CryptoBytes::from_raw(arr))
 }
 
+fn from_hex_opt<'de, D, T, const N: usize>(
+	deserializer: D,
+) -> Result<Option<CryptoBytes<N, T>>, D::Error>
+where
+	D: Deserializer<'de>,
+{
+	let opt = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
+	match opt {
+		Some(s) => {
+			let bytes: Vec<u8> = sp_core::bytes::from_hex(&s).map_err(serde::de::Error::custom)?;
+			let arr: [u8; N] = bytes.try_into().map_err(|v: Vec<u8>| {
+				serde::de::Error::custom(format!("expected {N} bytes, got {}", v.len()))
+			})?;
+			Ok(Some(CryptoBytes::from_raw(arr)))
+		},
+		None => Ok(None),
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InitialAuthorityData {
 	#[serde(rename = "aura_pub_key", deserialize_with = "from_hex")]
 	pub aura_pubkey: sp_core::sr25519::Public,
+	#[serde(
+		rename = "babe_pub_key",
+		default,
+		deserialize_with = "from_hex_opt",
+		skip_serializing_if = "Option::is_none"
+	)]
+	pub babe_pubkey: Option<sp_core::sr25519::Public>,
 	#[serde(rename = "grandpa_pub_key", deserialize_with = "from_hex")]
 	pub grandpa_pubkey: sp_core::ed25519::Public,
 	#[serde(rename = "sidechain_pub_key", deserialize_with = "from_hex")]
@@ -55,6 +81,9 @@ impl InitialAuthorityData {
 		let aura_pub_key = sp_core::sr25519::Pair::from_string(uri, None)
 			.expect("failed to generate aura keypair from uri")
 			.public();
+		let babe_pub_key = sp_core::sr25519::Pair::from_string(uri, None)
+			.expect("failed to generate aura keypair from uri")
+			.public();
 		let grandpa_pub_key = sp_core::ed25519::Pair::from_string(uri, None)
 			.expect("failed to generate grandpa keypair from uri")
 			.public();
@@ -64,6 +93,7 @@ impl InitialAuthorityData {
 
 		InitialAuthorityData {
 			aura_pubkey: aura_pub_key,
+			babe_pubkey: Some(babe_pub_key),
 			grandpa_pubkey: grandpa_pub_key,
 			crosschain_pubkey: ecdsa_pub_key,
 			beefy_pubkey: ecdsa_pub_key,
