@@ -110,10 +110,8 @@ pub mod pallet {
 		#[pallet::constant]
 		type EpochDuration: Get<u64>;
 
-		/// BABE epoch configuration written into `pallet_babe::EpochConfig` at the
-		/// flip when absent. Genesis networks get this from Babe genesis build;
-		/// upgraded networks never ran that path, and `Babe::current_epoch()` /
-		/// `next_epoch()` expect the value.
+		/// BABE epoch configuration to be written into `pallet_babe::EpochConfig` if it
+		/// was empty at the flip time.
 		type EpochConfiguration: Get<sp_consensus_babe::BabeEpochConfiguration>;
 
 		/// Weight information for this pallet's extrinsics.
