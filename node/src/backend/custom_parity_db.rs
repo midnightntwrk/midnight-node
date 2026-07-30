@@ -132,7 +132,10 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 
 	match storage_config.separation {
 		StorageSeparation::Separate => {
-			midnight_node_ledger::ledger_9::storage::init_storage_paritydb_separate(
+			// Version-aware: a ledger-9 node may boot on a ledger-8 genesis during
+			// the 8->9 hardfork; seed the arena with the deserializer matching the
+			// genesis `ledger-state[vN]` tag (see `init_ledger_storage_separate`).
+			midnight_node_ledger::init_ledger_storage_separate(
 				&storage_config.db_path,
 				&storage_config.genesis_state,
 				storage_config.cache_size,
@@ -140,10 +143,11 @@ pub fn open<H: Clone + AsRef<[u8]>>(
 			Ok((OwnedDb(db), LedgerStorageDb::SeparateDb(storage_config.db_path.clone())))
 		},
 		StorageSeparation::Unified => {
-			midnight_node_ledger::ledger_9::storage::init_storage_paritydb_unified::<
-				_,
-				NUM_COLUMNS_POLKADOT,
-			>(OwnedDb(db.clone()), &storage_config.genesis_state, storage_config.cache_size);
+			midnight_node_ledger::init_ledger_storage_unified::<_, NUM_COLUMNS_POLKADOT>(
+				OwnedDb(db.clone()),
+				&storage_config.genesis_state,
+				storage_config.cache_size,
+			);
 			Ok((OwnedDb(db.clone()), LedgerStorageDb::UnifiedDb(db.clone())))
 		},
 	}
