@@ -55,6 +55,10 @@ pub trait BuilderContext<D: DB + Clone>: Send + Sync + 'static {
 	/// All unshielded UTXOs owned by the wallet for `seed`, with their creation time.
 	async fn unshielded_utxos(&self, seed: WalletSeed) -> Vec<(Utxo, Timestamp)>;
 
+	/// Whether `utxo` currently backs DUST generation on chain. Such UTXOs earn no
+	/// retroactive DUST towards a self-funded DUST address registration fee.
+	async fn backs_dust_generation(&self, utxo: &Utxo) -> bool;
+
 	/// The global shielded (zswap) chain state.
 	async fn zswap_state(&self) -> ZswapChainState<D>;
 
