@@ -184,9 +184,10 @@ pub mod pallet {
 					);
 				},
 				// From arming onward, every block must carry the BABE `SecondaryPlain`
-				// pre-digest matching the AURA slot (unique, after AURA). Nodes are
-				// updated to emit it before governance arms the flip, so a missing
-				// digest means a non-compliant author and the block is rejected.
+				// pre-digest matching the AURA slot (unique, after AURA). Nodes should
+				// be updated to emit it when ArmedBabe and ScheduledFlip before
+				// governance arms the flip, so a missing digest means a non-compliant
+				// author and the block is rejected.
 				State::ArmedBabe => {
 					assert!(
 						Self::has_aura_pre_digest_before_babe_pre_digest(),
