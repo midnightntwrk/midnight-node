@@ -19,7 +19,7 @@ use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
 		ForkAwareLedgerContext, apply_block_7, apply_block_8, apply_block_9,
 		block_context_from_raw_7, block_context_from_raw_8, block_context_from_raw_9,
-		fork_context_7_to_8,
+		fork_context_7_to_8, fork_context_8_to_9,
 	},
 	raw_block_data::{LedgerVersion, RawBlockData},
 };
@@ -1208,7 +1208,11 @@ async fn initialize_context(
 				)
 			});
 			// All cached wallets share `start_height` (caller-enforced on pre-9
-			// chains); inject them all here.
+			// chains, but runs on a chain that crossed to 9 can leave mixed heights).
+			assert!(
+				cached.iter().all(|(_, ws)| ws.block_height == start_height),
+				"ledger-8 snapshot restore requires all cached wallets at height {start_height} - clear caches and retry"
+			);
 			for (seed, state) in cached {
 				wallet_state_cache::inject_wallet_from_cache_8(
 					&ctx,
@@ -1486,6 +1490,30 @@ fn replay_blocks_9(
 	}
 }
 
+/// Fork a ledger-8 context to ledger 9 (real state translation) and replay the
+/// ledger-9 blocks, if any. Returns the ledger-8 context unchanged when there are
+/// no ledger-9 blocks.
+fn fork_8_to_9_if_needed(
+	ctx8: midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
+	l9_blocks: &[RawBlockData],
+	cached: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
+	checkpoint: Option<&ReplayCheckpoint<'_>>,
+) -> ForkAwareLedgerContext {
+	if l9_blocks.is_empty() {
+		assert!(
+			cached.is_empty(),
+			"cached wallets must be injected at restore time on a Ledger8 context"
+		);
+		ForkAwareLedgerContext::Ledger8(ctx8)
+	} else {
+		let ctx9 =
+			timed!("fork_context_8_to_9", fork_context_8_to_9(ctx8)).expect("fork 8 to 9 failed");
+		replay_blocks_9(&ctx9, l9_blocks, cached, schemes, checkpoint);
+		ForkAwareLedgerContext::Ledger9(ctx9)
+	}
+}
+
 /// Replays blocks across a potential Ledger7→Ledger8->Ledger9 fork boundaries,
 /// injecting cached wallets at their saved height.
 pub(crate) fn replay_blocks(
@@ -1520,31 +1548,27 @@ pub(crate) fn replay_blocks_with_checkpoint(
 		l8_and_l9_blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger8);
 	let (l8_blocks, l9_blocks) = l8_and_l9_blocks.split_at(fork_8_to_9_idx);
 
-	assert!(
-		l9_blocks.is_empty() || (l7_blocks.is_empty() && l8_blocks.is_empty()),
-		"chain has Ledger9 blocks and eariler version blocks. This is not supported yet!"
-	);
-
+	// Replay each version's blocks in order, forking the context across the
+	// 7->8 and 8->9 boundaries as needed. The 8->9 fork performs a real state
+	// translation (see `fork_context_8_to_9`) so post-hardfork transactions are
+	// built at ledger 9, matching the upgraded chain.
 	let result = match fork_ctx {
 		ForkAwareLedgerContext::Ledger7(ctx7) => {
 			replay_blocks_7(&ctx7, l7_blocks);
-			if l8_blocks.is_empty() {
-				assert!(cached.is_empty(), "cached wallets with no Ledger8 blocks");
+			if l8_blocks.is_empty() && l9_blocks.is_empty() {
+				assert!(cached.is_empty(), "cached wallets with no Ledger8/9 blocks");
 				ForkAwareLedgerContext::Ledger7(ctx7)
 			} else {
-				let ctx8 = fork_context_7_to_8(ctx7).expect("fork 7 to 8 failed");
+				let ctx8 = timed!("fork_context_7_to_8", fork_context_7_to_8(ctx7))
+					.expect("fork 7 to 8 failed");
 				replay_blocks_8(&ctx8, l8_blocks, schemes, checkpoint);
-				ForkAwareLedgerContext::Ledger8(ctx8)
+				fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes, checkpoint)
 			}
 		},
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger8 context");
-			assert!(
-				cached.is_empty(),
-				"cached wallets must be injected at restore time on a Ledger8 context"
-			);
 			replay_blocks_8(&ctx8, l8_blocks, schemes, checkpoint);
-			ForkAwareLedgerContext::Ledger8(ctx8)
+			fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes, checkpoint)
 		},
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger9 context");
