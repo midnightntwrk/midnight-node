@@ -33,5 +33,9 @@ sp_api::decl_runtime_apis! {
 	pub trait ConsensusEngineApi {
 		/// Returns the consensus engine that is currently active.
 		fn active_engine() -> ActiveEngine;
+
+		/// Whether block authors should attach a synthetic BABE `SecondaryPlain` pre-runtime digest
+		/// to the blocks they produce.
+		fn should_emit_babe_preruntime_digest() -> bool;
 	}
 }
