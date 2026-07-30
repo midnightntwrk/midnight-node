@@ -24,7 +24,7 @@ use std::{
 };
 use subxt::{
 	client::OnlineClientAtBlockImpl,
-	config::Hash,
+	config::{Hash, HashFor},
 	error::{BackendError, ExtrinsicError, RpcError},
 	tx::{TransactionInBlock, TransactionProgress, TransactionStatus},
 };
@@ -42,11 +42,12 @@ pub struct SendBatchError {
 	pub failed_count: usize,
 }
 
-/// Minimum number of finalized blocks to scan backwards when the watch stream
-/// timed out without reporting finality. The effective depth scales with the
-/// configured finalization timeout (see [`Sender::finalized_fallback_scan_depth`]):
-/// a longer wait lets the finalized head advance further past the block that
-/// carried the tx, so a fixed window would miss it.
+/// Minimum number of finalized blocks to scan backwards when neither the
+/// watch stream nor the known-block finality check confirmed the tx. The
+/// effective depth scales with the configured finalization timeout (see
+/// [`Sender::finalized_fallback_scan_depth`]): a longer wait lets the
+/// finalized head advance further past the block that carried the tx, so a
+/// fixed window would miss it.
 const FINALIZED_FALLBACK_MIN_SCAN_DEPTH: u32 = 64;
 
 /// Expected block production interval, used to convert the finalization
@@ -85,15 +86,16 @@ pub enum SenderError {
 		 evicted it. A synced node with finalized blocks does not imply the tx is valid."
 	)]
 	FailedToReachBestBlock { last_status: String },
-	#[error("tx reached best block but was not finalized within timeout")]
-	FailedToFinalize,
+	#[error("tx reached best block but was not finalized within timeout: {reason}")]
+	FailedToFinalize { reason: String },
 	#[error(
-		"tx reached best block, the finalization watch timed out, and the \
+		"tx reached best block, finality was not confirmed ({watch_reason}), and the \
 		 finalized-chain check could not complete: {source}. Finality is UNKNOWN — \
 		 the tx may have landed; do not treat this exit as proof of failure for \
 		 at-most-once operations."
 	)]
 	FinalityUnverified {
+		watch_reason: String,
 		#[source]
 		source: FinalityScanError,
 	},
@@ -170,10 +172,21 @@ pub struct ClientHandle {
 
 struct Progress {
 	url: String,
+	client: Arc<MidnightNodeClient>,
 	tx_progress: TransactionProgress<
 		MidnightNodeClientConfig,
 		OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
 	>,
+}
+
+/// How finalization of a sent tx was confirmed.
+enum Finalized {
+	/// The tx subscription delivered `InFinalizedBlock`.
+	Subscription,
+	/// The subscription died without a finalization event, but a direct query
+	/// confirmed the including block finalized. Carries the reason the
+	/// subscription gave up.
+	Fallback { watch_reason: String },
 }
 
 pub struct Sender {
@@ -329,9 +342,15 @@ impl Sender {
 			midnight_tx_hash = &tx_hashes.midnight_tx_hash;
 			"SENT"
 		);
-		Ok((tx_hashes, Progress { url: client.url.clone(), tx_progress }))
+		Ok((
+			tx_hashes,
+			Progress { url: client.url.clone(), client: client.client.clone(), tx_progress },
+		))
 	}
 
+	/// Waits until the tx lands in a block. The `bool` in the success value is
+	/// true when the subscription skipped straight to `InFinalizedBlock`
+	/// (event coalescing under load) — the caller can skip the finality wait.
 	/// Read a duration override (in seconds) from the environment, falling back
 	/// to `default`. Lets slow or fault-injected environments stretch the send
 	/// watch phases without a CLI change (see #1853/#1854).
@@ -341,119 +360,6 @@ impl Sender {
 			.and_then(|v| v.parse::<u64>().ok())
 			.map(Duration::from_secs)
 			.unwrap_or(default)
-	}
-
-	async fn wait_for_best_block(
-		mut progress: Progress,
-	) -> (
-		Progress,
-		Result<
-			TransactionInBlock<
-				MidnightNodeClientConfig,
-				OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
-			>,
-			SenderError,
-		>,
-	) {
-		let best_block_timeout =
-			Self::duration_from_env("MN_SEND_BEST_BLOCK_TIMEOUT", Duration::from_secs(30));
-
-		let mut last_status: &'static str = "<none>";
-		let wait_future = async {
-			while let Some(prog) = progress.tx_progress.next().await {
-				match prog {
-					Ok(TransactionStatus::InBestBlock(info)) => return Ok(info),
-					Ok(TransactionStatus::Invalid { message }) => {
-						return Err(SenderError::InvalidTransaction { message });
-					},
-					Ok(TransactionStatus::Dropped { message }) => {
-						return Err(SenderError::DroppedTransaction { message });
-					},
-					Ok(TransactionStatus::Error { message }) => {
-						return Err(SenderError::TransactionError { message });
-					},
-					Ok(status) => {
-						last_status = match status {
-							TransactionStatus::Validated => "Validated",
-							TransactionStatus::Broadcasted => "Broadcasted",
-							TransactionStatus::NoLongerInBestBlock => "NoLongerInBestBlock",
-							TransactionStatus::InFinalizedBlock(_) => "InFinalizedBlock",
-							_ => "Unknown",
-						};
-					},
-					Err(e) => {
-						return Err(SenderError::TransactionError { message: e.to_string() });
-					},
-				}
-			}
-			Err(SenderError::FailedToReachBestBlock {
-				last_status: format!("{last_status} (stream ended)"),
-			})
-		};
-
-		match tokio::time::timeout(best_block_timeout, wait_future).await {
-			Ok(result) => (progress, result),
-			Err(_) => {
-				log::warn!(
-					url = progress.url;
-					"Timeout waiting for best block after {} seconds",
-					best_block_timeout.as_secs()
-				);
-				let err = SenderError::FailedToReachBestBlock {
-					last_status: format!(
-						"{last_status} (no terminal status after {}s)",
-						best_block_timeout.as_secs()
-					),
-				};
-				(progress, Err(err))
-			},
-		}
-	}
-
-	async fn wait_for_finalized(
-		mut progress: Progress,
-	) -> Option<
-		TransactionInBlock<
-			MidnightNodeClientConfig,
-			OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
-		>,
-	> {
-		let finalized_timeout =
-			Self::duration_from_env("MN_SEND_FINALIZED_TIMEOUT", Duration::from_secs(60));
-
-		let url = progress.url.clone();
-		let wait_future = async {
-			while let Some(prog) = progress.tx_progress.next().await {
-				match prog {
-					Ok(TransactionStatus::InFinalizedBlock(info)) => return Some(info),
-					// A fork retraction: the block that carried the tx fell off
-					// the best chain. The tx normally returns to the pool for
-					// re-inclusion, so keep watching — and make the retraction
-					// visible, since it is the precursor of the lost-tx failure
-					// mode (#1854).
-					Ok(TransactionStatus::NoLongerInBestBlock) => {
-						log::warn!(
-							url = progress.url;
-							"tx retracted from best block; watching for re-inclusion"
-						);
-					},
-					_ => {},
-				}
-			}
-			None
-		};
-
-		match tokio::time::timeout(finalized_timeout, wait_future).await {
-			Ok(result) => result,
-			Err(_) => {
-				log::warn!(
-					url = url;
-					"Timeout waiting for finalization after {} seconds",
-					finalized_timeout.as_secs()
-				);
-				None
-			},
-		}
 	}
 
 	/// Scan depth for the finalized-chain fallback, scaled to the configured
@@ -470,10 +376,11 @@ impl Sender {
 	/// Check the finalized chain directly for an extrinsic, newest block first,
 	/// up to `max_depth` blocks below the finalized head.
 	///
-	/// The watch stream can lose track of a tx across a fork retraction: the
-	/// tx is re-included and finalized in a different block, but the stream
-	/// never reports it and the watcher times out (#1854). The chain itself is
-	/// the source of truth, so consult it before declaring a landed tx failed.
+	/// The known-block finality check (#1943) cannot see a tx that a fork
+	/// retraction re-included in a *different* block: the watch stream stays
+	/// silent and `is_block_finalized` on the original block answers false while
+	/// the tx is finalized elsewhere (#1854). The chain itself is the source of
+	/// truth, so consult it before declaring a landed tx failed.
 	///
 	/// `Ok(Some(hash))` means the extrinsic is finalized in `hash`; `Ok(None)`
 	/// means the scan completed and the extrinsic is definitively absent from
@@ -522,10 +429,176 @@ impl Sender {
 		Ok(None)
 	}
 
+	async fn wait_for_best_block(
+		mut progress: Progress,
+	) -> (
+		Progress,
+		Result<
+			(
+				TransactionInBlock<
+					MidnightNodeClientConfig,
+					OnlineClientAtBlockImpl<MidnightNodeClientConfig>,
+				>,
+				bool,
+			),
+			SenderError,
+		>,
+	) {
+		const BEST_BLOCK_TIMEOUT: Duration = Duration::from_secs(30);
+
+		let mut last_status: &'static str = "<none>";
+		let wait_future = async {
+			while let Some(prog) = progress.tx_progress.next().await {
+				match prog {
+					Ok(TransactionStatus::InBestBlock(info)) => return Ok((info, false)),
+					Ok(TransactionStatus::InFinalizedBlock(info)) => return Ok((info, true)),
+					Ok(TransactionStatus::Invalid { message }) => {
+						return Err(SenderError::InvalidTransaction { message });
+					},
+					Ok(TransactionStatus::Dropped { message }) => {
+						return Err(SenderError::DroppedTransaction { message });
+					},
+					Ok(TransactionStatus::Error { message }) => {
+						return Err(SenderError::TransactionError { message });
+					},
+					Ok(status) => {
+						last_status = match status {
+							TransactionStatus::Validated => "Validated",
+							TransactionStatus::Broadcasted => "Broadcasted",
+							TransactionStatus::NoLongerInBestBlock => "NoLongerInBestBlock",
+							_ => "Unknown",
+						};
+					},
+					Err(e) => {
+						return Err(SenderError::TransactionError { message: e.to_string() });
+					},
+				}
+			}
+			Err(SenderError::FailedToReachBestBlock {
+				last_status: format!("{last_status} (stream ended)"),
+			})
+		};
+
+		let best_block_timeout =
+			Self::duration_from_env("MN_SEND_BEST_BLOCK_TIMEOUT", BEST_BLOCK_TIMEOUT);
+		match tokio::time::timeout(best_block_timeout, wait_future).await {
+			Ok(result) => (progress, result),
+			Err(_) => {
+				log::warn!(
+					url = progress.url;
+					"Timeout waiting for best block after {} seconds",
+					best_block_timeout.as_secs()
+				);
+				let err = SenderError::FailedToReachBestBlock {
+					last_status: format!(
+						"{last_status} (no terminal status after {}s)",
+						best_block_timeout.as_secs()
+					),
+				};
+				(progress, Err(err))
+			},
+		}
+	}
+
+	async fn wait_for_finalized(
+		mut progress: Progress,
+		best_block_hash: HashFor<MidnightNodeClientConfig>,
+	) -> Result<Finalized, String> {
+		const FINALIZED_TIMEOUT: Duration = Duration::from_secs(60);
+		const FINALITY_POLL_INTERVAL: Duration = Duration::from_secs(2);
+		const MIN_FALLBACK_WINDOW: Duration = Duration::from_secs(10);
+
+		let finalized_timeout =
+			Self::duration_from_env("MN_SEND_FINALIZED_TIMEOUT", FINALIZED_TIMEOUT);
+		let url = progress.url.clone();
+		let deadline = tokio::time::Instant::now() + finalized_timeout;
+
+		let watch_future = async {
+			while let Some(prog) = progress.tx_progress.next().await {
+				let reason = match prog {
+					Ok(TransactionStatus::InFinalizedBlock(_)) => return Ok(()),
+					Ok(TransactionStatus::Invalid { message }) => {
+						format!("pool reported Invalid: {message}")
+					},
+					Ok(TransactionStatus::Dropped { message }) => {
+						format!("pool reported Dropped: {message}")
+					},
+					Ok(TransactionStatus::Error { message }) => {
+						format!("pool reported Error: {message}")
+					},
+					// A fork retraction: the block that carried the tx fell off
+					// the best chain. The tx normally returns to the pool for
+					// re-inclusion, so keep watching — and make the retraction
+					// visible, since it is the precursor of the lost-tx failure
+					// mode (#1854).
+					Ok(TransactionStatus::NoLongerInBestBlock) => {
+						log::warn!(
+							url = url;
+							"tx retracted from best block; watching for re-inclusion"
+						);
+						continue;
+					},
+					Ok(_) => continue,
+					Err(e) => format!("subscription error: {e}"),
+				};
+				log::warn!(
+					url = url;
+					"terminal event on tx subscription after best block: {reason}"
+				);
+				return Err(reason);
+			}
+			let reason = "subscription ended without a finalization event".to_string();
+			log::warn!(url = url; "{reason}");
+			Err(reason)
+		};
+
+		let watch_reason = match tokio::time::timeout_at(deadline, watch_future).await {
+			Ok(Ok(())) => return Ok(Finalized::Subscription),
+			Ok(Err(reason)) => reason,
+			Err(_) => format!("no finalization event after {}s", finalized_timeout.as_secs()),
+		};
+
+		// The subscription is not authoritative for a tx that already reached a best
+		// block: the pool can drop its watcher (terminal event, stream end) even
+		// though that block finalizes normally. Ask the node directly about the
+		// including block before declaring failure.
+		log::debug!(
+			url = url;
+			"tx subscription gave no finalization event ({watch_reason}), \
+			 checking finality of the including block directly"
+		);
+		// Guarantee a minimum direct-check window even when the watcher died late
+		// in the finalization budget — the check is cheap, and a watcher death at
+		// t=59s must not reintroduce the false failure right when the node is
+		// under load.
+		let fallback_deadline = deadline.max(tokio::time::Instant::now() + MIN_FALLBACK_WINDOW);
+		loop {
+			match progress.client.is_block_finalized(best_block_hash).await {
+				Ok(true) => return Ok(Finalized::Fallback { watch_reason }),
+				Ok(false) => {},
+				// Transient RPC failures must not fail the tx: log and let the
+				// next tick retry until the deadline.
+				Err(e) => {
+					log::warn!(url = url; "failed to check block finality: {e}");
+				},
+			}
+			if tokio::time::Instant::now() >= fallback_deadline {
+				break;
+			}
+			tokio::time::sleep(FINALITY_POLL_INTERVAL).await;
+		}
+		log::warn!(
+			url = url;
+			"including block not finalized within {}s ({watch_reason})",
+			finalized_timeout.as_secs()
+		);
+		Err(watch_reason)
+	}
+
 	async fn send_and_log(&self, tx_hashes: &TxHashes, tx: Progress) -> Result<(), SenderError> {
 		let url = tx.url.clone();
 		let (progress, best_block_result) = Self::wait_for_best_block(tx).await;
-		let best_block = match best_block_result {
+		let (best_block, already_finalized) = match best_block_result {
 			Ok(info) => info,
 			Err(err) => {
 				let tag = match &err {
@@ -552,68 +625,94 @@ impl Sender {
 			"BEST_BLOCK"
 		);
 
-		let finalized = Self::wait_for_finalized(progress).await;
-		let (finalized_block_hash, scan_error) = match &finalized {
-			Some(info) => (Some(hash_to_str(info.block_hash())), None),
-			// The watch stream said nothing — but the tx may have been
-			// re-included after a retraction and finalized in a block the
-			// stream never reported (#1854). Ask the chain before failing.
-			// A scan that cannot complete is tracked separately from a scan
-			// that completes without a match: only the latter refutes finality.
-			None => {
-				let client = self.clients.iter().find(|c| c.url == url);
-				match client {
+		if already_finalized {
+			log::info!(
+				url = &url,
+				extrinsic_hash = &tx_hashes.extrinsic_hash,
+				midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+				block_hash = hash_to_str(best_block.block_hash()).as_str();
+				"FINALIZED"
+			);
+			return Ok(());
+		}
+
+		match Self::wait_for_finalized(progress, best_block.block_hash()).await {
+			Ok(Finalized::Subscription) => {
+				log::info!(
+					url = &url,
+					extrinsic_hash = &tx_hashes.extrinsic_hash,
+					midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+					block_hash = hash_to_str(best_block.block_hash()).as_str();
+					"FINALIZED"
+				);
+				Ok(())
+			},
+			Ok(Finalized::Fallback { watch_reason }) => {
+				log::info!(
+					url = &url,
+					extrinsic_hash = &tx_hashes.extrinsic_hash,
+					midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+					block_hash = hash_to_str(best_block.block_hash()).as_str(),
+					reason = watch_reason.as_str();
+					"FINALIZED_VIA_FALLBACK"
+				);
+				Ok(())
+			},
+			Err(watch_reason) => {
+				// Neither the subscription nor the known-block check confirmed
+				// finality — but a fork retraction can re-include the tx in a
+				// *different* block that both of them are blind to (#1854).
+				// Scan the finalized chain for the extrinsic itself before
+				// declaring a landed tx failed.
+				let finalized_timeout =
+					Self::duration_from_env("MN_SEND_FINALIZED_TIMEOUT", Duration::from_secs(60));
+				let scan = match self.clients.iter().find(|c| c.url == url) {
 					Some(handle) => {
-						let finalized_timeout = Self::duration_from_env(
-							"MN_SEND_FINALIZED_TIMEOUT",
-							Duration::from_secs(60),
-						);
-						match Self::find_in_finalized_chain(
+						Self::find_in_finalized_chain(
 							&handle.client,
 							&tx_hashes.extrinsic_hash,
 							Self::finalized_fallback_scan_depth(finalized_timeout),
 						)
 						.await
-						{
-							Ok(found) => (found, None),
-							Err(e) => {
-								log::warn!(
-									url = &url;
-									"finalized-chain check inconclusive: {e}"
-								);
-								(None, Some(e))
-							},
-						}
 					},
-					None => (None, None),
+					None => Ok(None),
+				};
+				match scan {
+					Ok(Some(found_hash)) => {
+						log::info!(
+							url = &url,
+							extrinsic_hash = &tx_hashes.extrinsic_hash,
+							midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+							block_hash = found_hash.as_str(),
+							reason = watch_reason.as_str();
+							"FINALIZED_AFTER_RETRACTION"
+						);
+						Ok(())
+					},
+					Ok(None) => {
+						log::info!(
+							url = &url,
+							extrinsic_hash = &tx_hashes.extrinsic_hash,
+							midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+							block_hash = hash_to_str(best_block.block_hash()).as_str(),
+							reason = watch_reason.as_str();
+							"FAILED_TO_FINALIZE"
+						);
+						Err(SenderError::FailedToFinalize { reason: watch_reason })
+					},
+					Err(source) => {
+						log::info!(
+							url = &url,
+							extrinsic_hash = &tx_hashes.extrinsic_hash,
+							midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+							block_hash = hash_to_str(best_block.block_hash()).as_str(),
+							reason = source.to_string().as_str();
+							"FINALITY_UNVERIFIED"
+						);
+						Err(SenderError::FinalityUnverified { watch_reason, source })
+					},
 				}
 			},
-		};
-
-		let message = if finalized_block_hash.is_some() {
-			if finalized.is_some() { "FINALIZED" } else { "FINALIZED_AFTER_RETRACTION" }
-		} else if scan_error.is_some() {
-			// Neither confirmed nor refuted: the watch timed out AND the
-			// chain could not be consulted. Distinct from FAILED_TO_FINALIZE
-			// so at-most-once callers don't read it as proof of absence.
-			"FINALITY_UNVERIFIED"
-		} else {
-			"FAILED_TO_FINALIZE"
-		};
-		let display_block_hash = finalized_block_hash
-			.clone()
-			.unwrap_or_else(|| hash_to_str(best_block.block_hash()));
-		log::info!(
-			url = &url,
-			extrinsic_hash = &tx_hashes.extrinsic_hash,
-			midnight_tx_hash = &tx_hashes.midnight_tx_hash,
-			block_hash = display_block_hash.as_str();
-			"{message}"
-		);
-		match (finalized_block_hash.is_some(), scan_error) {
-			(true, _) => Ok(()),
-			(false, Some(source)) => Err(SenderError::FinalityUnverified { source }),
-			(false, None) => Err(SenderError::FailedToFinalize),
 		}
 	}
 }

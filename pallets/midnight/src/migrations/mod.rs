@@ -23,3 +23,6 @@ pub const PALLET_MIGRATIONS_ID: &[u8; 19] = b"pallet-midnight-mbm";
 // See https://github.com/input-output-hk/midnight-substrate-prototype/pull/382
 // for the example of such a migration.
 // pub mod v1;
+
+/// Single-block ledger v8 -> v9 state translation (storage version 1 -> 2).
+pub mod v2;
