@@ -449,22 +449,22 @@ parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "
 # the ledger branch moves, re-isolate (see Batch-Verification-Notes.md § "Ledger dependency
 # wiring"), push the new commit to that branch, and update the `rev` below. Unchanged crates
 # stay on their published rc tags.
-midnight-ledger-v9            = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec" }
-midnight-zswap                = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec" }
+midnight-ledger-v9            = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "c1da0f6d63ba03e32c434bbfbcb23216829d4d36" }
+midnight-zswap                = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "c1da0f6d63ba03e32c434bbfbcb23216829d4d36" }
 midnight-coin-structure       = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "coin-structure-3.0.0-rc.1" }
 midnight-base-crypto          = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-1.1.0-rc.2" }
 midnight-base-crypto-derive   = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-derive-1.1.0-rc.2" }
-midnight-transient-crypto     = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec" }
+midnight-transient-crypto     = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "c1da0f6d63ba03e32c434bbfbcb23216829d4d36" }
 midnight-transient-crypto-old = { package = "midnight-transient-crypto", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
 midnight-onchain-vm           = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-vm-4.0.0-rc.2" }
-midnight-onchain-state        = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec" }
+midnight-onchain-state        = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "c1da0f6d63ba03e32c434bbfbcb23216829d4d36" }
 midnight-onchain-runtime      = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-runtime-4.0.0-rc.2" }
-midnight-zkir                 = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec" }
-midnight-zkir-v3              = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec" }
+midnight-zkir                 = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "c1da0f6d63ba03e32c434bbfbcb23216829d4d36" }
+midnight-zkir-v3              = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "c1da0f6d63ba03e32c434bbfbcb23216829d4d36" }
 # `static/version` moved 9 -> 10 on the branch (new Dust ZKIR-v3 artifacts) without a package
 # version bump, so the crates.io 9.0.0 copy would bake the stale "9" into the data-provider key
 # paths (`dust/<v>/…`, `zswap/<v>/…`). Isolated so `version!()` matches the branch.
-midnight-ledger-static        = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec" }
+midnight-ledger-static        = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "c1da0f6d63ba03e32c434bbfbcb23216829d4d36" }
 midnight-serialize            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.2.0-rc.1" }
 # The ledger branch patches the midnight-zk stack to `irakoton/batch-verify` (the batch-verify
 # API: `batch_verify(.., identify_failures)` returning failing indices). A dependency's

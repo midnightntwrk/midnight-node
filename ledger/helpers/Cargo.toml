@@ -28,7 +28,7 @@ zkir = { workspace = true }
 # (`cargo build --bin zkir -p midnight-zkir-v3`) that scripts/seed-dust-keys.sh uses to
 # regenerate Dust proving keys locally (see that script and Batch-Verification-Notes.md,
 # "Dust proving keys: use the bundled artifacts").
-zkir-v3 = { package = "midnight-zkir-v3", git = "https://github.com/midnightntwrk/midnight-ledger", rev = "cd54fd2f74ff534922de17323571417058849eec", features = ["binary"] }
+zkir-v3 = { package = "midnight-zkir-v3", git = "https://github.com/midnightntwrk/midnight-ledger", rev = "c1da0f6d63ba03e32c434bbfbcb23216829d4d36", features = ["binary"] }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 

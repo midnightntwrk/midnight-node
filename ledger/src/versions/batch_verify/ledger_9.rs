@@ -66,7 +66,10 @@ where
 		}
 	}
 
-	match <ProofMarker as ProofKind<D>>::batch_proof_verify(&all_evidence, mode) {
+	// `linear_revalidation: false` — we don't use the ledger's own failed-index localization;
+	// on aggregate failure the caller (`batch_verify_transactions`) isolates the offender(s)
+	// itself by re-verifying individually (see `common/mod.rs`'s fallback path).
+	match <ProofMarker as ProofKind<D>>::batch_proof_verify(&all_evidence, mode, false) {
 		Ok(()) => Ok(()),
 		Err(e) => {
 			log::warn!(

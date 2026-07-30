@@ -435,7 +435,7 @@ descendant). Only the crates whose *own* source changed vs. that rc source (`<ta
 re-isolating; unchanged crates keep their published rc tags (they reference changed siblings
 by version, which our patches redirect). Changed set:
 
-All 7 are pinned to a **single** isolate commit (`rev = cd54fd2f…`, the tip of the ledger branch
+All 7 are pinned to a **single** isolate commit (`rev = c1da0f6d…`, the tip of the ledger branch
 `js/batch-verification-isolated`) — they're all workspace members of that one commit with their
 `path=` deps stripped, so every patch resolves its package as a member of the same commit;
 inter-crate deps among the 7 route registry→patch→same rev. (The ledger repo's own
@@ -476,7 +476,7 @@ ignored — only the root workspace's counts — so the node repeats those four 
 deps (`blake2b_halo2`, `sha3-circuit`) are themselves git deps — fine, since they hang off a git
 dependency rather than a patch.
 
-**Current state.** The single isolate commit `cd54fd2f` (ledger branch tip `2509be25`) is pushed
+**Current state.** The single isolate commit `c1da0f6d` (ledger branch tip `71fc0084`) is pushed
 to the ledger remote branch `js/batch-verification-isolated`, and the node `[patch.crates-io]`
 pins the 7 crates by `rev` to that commit over
 `https://github.com/midnightntwrk/midnight-ledger`. No tags. This is shareable/CI-ready — no
@@ -509,15 +509,27 @@ no force-push). Steps:
 4. Fast-forward push (no force): `git push origin "$APPEND:refs/heads/js/batch-verification-isolated"`
 5. Update the `rev` for the 7 crates in the node `Cargo.toml` to `$APPEND`, and re-check the ledger
    branch's root `Cargo.toml` `[patch.crates-io]` + `Cargo.lock` in case the midnight-zk pin moved.
-6. Re-resolve the lock. Prefer the *minimal* path: bump only what the branch actually forces with
-   `cargo update -p <pkg>@<old> --precise <new>` (last time: `reqwest 0.13.3 → 0.13.4`), then let
-   `cargo metadata` re-resolve the changed `rev`s on its own. A blanket
-   `cargo update -p midnight-ledger-v9 -p …` re-resolves far more widely and *downgrades*
-   unrelated transitive picks to whatever older version is already in the lock — notably
-   `bip39`'s `rand_core 0.6.4 → 0.4.2`, which breaks `pallas-wallet` (its rand-0.8 RNG no longer
-   satisfies `Mnemonic::generate_in_with`) and shows up as an unrelated-looking build failure in
-   `midnight-beefy-relay`. If you hit that, check `git diff Cargo.lock` for downgraded
-   dependency edges, not just changed package versions.
+   **Also grep for a second pin**: `ledger/helpers/Cargo.toml` has its own *direct* (non-patch)
+   `zkir-v3 = { package = "midnight-zkir-v3", git = ..., rev = "…", features = ["binary"] }` for the
+   `zkir compile-many` CLI (see "Dust proving keys"). It doesn't route through
+   `[patch.crates-io]`, so a `grep -rn cd54fd2f… --include=Cargo.toml` (the *old* rev, not just the
+   workspace root) is the reliable way to catch every pin site. Leaving it stale doesn't break the
+   build — cargo just resolves *two* `midnight-zkir-v3` package instances, one per rev — but it
+   silently reintroduces stale-key risk and triggers the churn in step 6.
+6. Re-resolve the lock with `cargo check --offline -p midnight-ledger-v9` (or any `cargo
+   build`/`check` — it doesn't need to target that specific package). A plain check/build already
+   re-locks exactly the packages whose manifest `source` changed; it does **not** need `cargo update`
+   at all for a pure `rev` bump. `--offline` matters: `cargo update -p <pkg>` (even scoped, even with
+   `--precise <rev>`) refreshes the crates.io index and re-solves the whole graph, which can
+   *downgrade* unrelated transitive picks to whatever else is now compatible — last two refreshes hit
+   `bip39`'s `rand_core 0.6.4 → 0.4.2` (breaks `pallas-wallet`'s rand-0.8
+   `Mnemonic::generate_in_with`, surfacing as an unrelated-looking build failure in
+   `midnight-beefy-relay`) plus unrelated `windows-sys`/`socket2`/`itertools`/`syn` churn. Confirm
+   with `git diff Cargo.lock`: it should touch **only** the 7 crates' `source = git+…?rev=…#…` lines
+   (14 lines: old+new per crate) — a `cargo check --offline` on the previous, already-consistent pin
+   left exactly that on a re-run before the second-pin fix above, and a wider diff means either the
+   second pin above is still stale (temporarily produces two `midnight-zkir-v3` entries) or something
+   reached the network and re-resolved more broadly than intended.
 
 The commit is **not reproducible by SHA** (commit timestamps differ per run), so the `rev` changes
 every regeneration. (The ledger repo's `scripts/isolate.py` is the per-crate/push-tags alternative
