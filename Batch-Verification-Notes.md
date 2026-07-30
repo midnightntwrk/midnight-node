@@ -173,7 +173,10 @@ loop:
     process(batch)                            # T = alpha + beta*|batch|
 ```
 
-In the case of one bad transaction in the batch, the whole batch fails together. The fallback mechanism needs work - for now, fallback should be verifying each tx individually
+In the case of one bad transaction in the batch, the whole batch fails together, so the offender has
+to be attributed before the good transactions can be accepted. The ledger does that for us — see
+"Isolation: the ledger's own localisation, not ours" below; no per-transaction re-verification is
+involved.
 
 ### Implementation
 
@@ -374,10 +377,10 @@ know *which* tx is bad — the whole block is rejected regardless — so we can 
 individual-verification fallback entirely. Cost of an adversarial block is then bounded by one
 batched verification pass (an aggregate check, or a bounded parallel fan-out), which is no worse
 than — and generally better than — today's serial one-by-one worst case (which already verifies
-up to N−1 good proofs before hitting a bad one placed last). The individual-verification
-fallback from the batching-algorithm section belongs to the **mempool** path, where per-tx
-attribution is needed to accept the good txs and reject/penalize the bad one; it does not apply
-here.
+up to N−1 good proofs before hitting a bad one placed last). Per-tx attribution — needed to accept
+the good txs and reject/penalize the bad one — belongs to the **mempool** path; it does not apply
+here, which is why import passes `linear_revalidation = false` and skips even the ledger's cheap
+localisation pass (see "Isolation: the ledger's own localisation, not ours").
 
 Placement determines whether the panic is even needed:
 - **Inside `Core::execute_block`** — must use the panic channel (no `Result`); panic before
@@ -535,18 +538,37 @@ The commit is **not reproducible by SHA** (commit timestamps differ per run), so
 every regeneration. (The ledger repo's `scripts/isolate.py` is the per-crate/push-tags alternative
 used for real crates.io releases.)
 
-## New on the branch, not yet used here: localised batch failures
+## Isolation: the ledger's own localisation, not ours
 
-`ledger/src/structure.rs` now calls `VerifierKey::batch_verify_with_failures(.., identify_failures)`
+`ledger/src/structure.rs` calls `VerifierKey::batch_verify_with_failures(.., identify_failures)`
 and, on rejection, returns `MalformedTransaction::InvalidProofBatch { failed_indices }` — the
-positions of the bad proofs within the transaction's `collect_proof_evidence()` sequence.
+positions of the bad proofs within the evidence sequence *as passed in*, which for us is the
+concatenation across the whole batch. The search is a linear pass over the already-prepared
+per-proof guards (one cheap pairing each, in parallel, reusing the expensive `prepare` work), so
+localisation costs a fraction of re-verifying anything. Crucially its semantics are exactly what we
+need: a proof is reported iff its *singleton* batch fails, so the complement of `failed_indices` is
+verified-good.
 
-Our mempool path (`isolate_on_failure = true`) still isolates the offender by re-verifying every
-ready transaction as a batch-of-one (`isolate_fallback_results`). Because we concatenate evidence
-per transaction in input order, the reported indices could be mapped straight back to the offending
-transactions instead, turning an O(n) re-verification into a single aggregate call. Worth doing, but
-it needs `batch_verify_proofs` to return the indices rather than `Err(())`, plus a per-tx
-evidence-length table — deliberately left out of the dependency bump.
+We use it directly. `batch_verify_proofs` takes `linear_revalidation` and returns
+`BatchVerifyFailure` (`ledger/src/common/batch.rs`):
+
+- `Localized(tx_indices)` — the ledger's evidence indices mapped back to transaction indices via a
+  per-transaction evidence prefix-sum table (`evidence_to_tx_indices`; proofless transactions such
+  as `ClaimRewards` contribute an empty range and can never be blamed). `batch_verify_transactions`
+  caches `false` for exactly those transactions and warms the caches for the rest — **no
+  re-verification of anything**, where the previous shape re-verified all *n* ready transactions as
+  batches-of-one.
+- `Unlocalized` — `linear_revalidation` was off, evidence collection failed, or the rejection came
+  from a path the ledger doesn't localise (the legacy v2 proof batch, verifier-key init). The whole
+  batch is rejected. Also the defensive answer if the reported indices don't map into our evidence
+  table: an empty `Localized` would read as "no offender" and let us accept a batch the ledger just
+  rejected.
+
+`linear_revalidation` mirrors `isolate_on_failure`, so **block import passes `false`** — it never
+needs per-tx attribution (the whole block is rejected either way), so it takes the cheaper
+unlocalised rejection; the mempool passes `true`. On the mempool path an `Unlocalized` batch-wide
+`Err` is safe: `process_batch` delegates every parked submission to the runtime for authoritative
+inline verification.
 
 Jegor also added `Intent::collect_dust_proof_evidence` (dust-only evidence collection). Purely
 additive; we don't need it for the current batch shape.

@@ -542,8 +542,10 @@ pub trait Ledger9Bridge {
 /// crypto runs natively. It mirrors the `is_unified` storage-mode dispatch of the runtime-interface
 /// methods above, then invokes the batched `Bridge` entry point.
 ///
-/// `isolate_on_failure` selects the batch-failure behaviour: `true` (mempool) isolates the
-/// offending transaction(s); `false` (block import) fails fast so the whole block is rejected.
+/// `isolate_on_failure` selects the batch-failure behaviour: `true` (mempool) asks the ledger to
+/// localize the offending proofs (`linear_revalidation`) and rejects only those transactions;
+/// `false` (block import) takes the cheaper unlocalized rejection and fails fast, so the whole
+/// block is rejected.
 ///
 /// Only the active (ledger-9) version exposes real batching; callers must gate on the target
 /// block's ledger version and not route older-version blocks here.

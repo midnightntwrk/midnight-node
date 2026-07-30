@@ -17,8 +17,8 @@
 //! (`collect_proof_evidence` / `batch_proof_verify`), so it cannot batch. The node only ever
 //! dispatches the batch entry point to the active (ledger-9) version, so this is never reached at
 //! runtime; it exists solely to keep the version-agnostic `Bridge::batch_verify_transactions`
-//! compiling for every ledger version. Returning `Err(())` forces the caller to fall back to
-//! per-transaction inline verification rather than silently trusting unverified proofs.
+//! compiling for every ledger version. Returning an (unlocalized) error forces the caller to fall
+//! back to per-transaction inline verification rather than silently trusting unverified proofs.
 
 #![cfg(feature = "std")]
 
@@ -31,16 +31,18 @@ use super::{
 	},
 	transient_crypto_local::commitment::PureGeneratorPedersen,
 };
+use crate::common::batch::BatchVerifyFailure;
 
 /// Ledger 8 cannot batch-verify proofs; always signals "unsupported" so the caller falls back.
 pub fn batch_verify_proofs<S, D>(
 	_txs: &[&Transaction<S, ProofMarker, PureGeneratorPedersen, D>],
 	_ref_state: &impl StateReference<D>,
-) -> Result<(), ()>
+	_linear_revalidation: bool,
+) -> Result<(), BatchVerifyFailure>
 where
 	S: SignatureKind<D>,
 	D: DB,
 	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Serializable,
 {
-	Err(())
+	Err(BatchVerifyFailure::Unlocalized)
 }
