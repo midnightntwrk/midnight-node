@@ -32,8 +32,6 @@ pub async fn get_registrations(
 ) -> Result<Vec<RegistrationRow>, SqlxError> {
 	assert!(query.limit < i32::MAX as usize);
 	assert!(query.offset < i32::MAX as usize);
-	// tx.valid_contract = true: never observe outputs of failing script transactions
-	// (see "Handling of failed script transactions" in the crate README).
 	sqlx::query_as!(
 		RegistrationRow,
 		r#"
@@ -57,7 +55,6 @@ WHERE tx.id >= $9 AND tx.id <= $10
     AND tx_out.address = $1
     AND ma_tx_out.ident = $2
     AND ma_tx_out.quantity = 1
-    AND tx.valid_contract = true
     AND (block.block_no > $3 OR (block.block_no = $3 AND tx.block_index >= $4))
     AND (block.block_no < $5 OR (block.block_no = $5 AND tx.block_index < $6))
 ORDER BY block.block_no, tx.block_index
@@ -93,9 +90,6 @@ pub async fn get_deregistrations(
 	// Once one valid deregistration can occur in a single tx, so we don't have to worry about
 	// ordering within txs
 
-	// valid_contract filters mirror get_registrations: a UTxO ignored at creation
-	// (tx_tx_out invalid) must also be ignored when spent, or we'd emit a
-	// deregistration with no matching registration.
 	sqlx::query_as!(
 		DeregistrationRow,
 		r#"
@@ -117,8 +111,6 @@ FROM block
     JOIN datum ON datum.hash = tx_out.data_hash
 WHERE block.block_no >= $2 AND block.block_no <= $4
     AND tx_out.address = $1
-    AND tx.valid_contract = true
-    AND tx_tx_out.valid_contract = true
     AND (block.block_no > $2 OR (block.block_no = $2 AND tx.block_index >= $3))
     AND (block.block_no < $4 OR (block.block_no = $4 AND tx.block_index < $5))
     AND tx.id >= $8 AND tx.id <=$9
