@@ -50,7 +50,6 @@ fn testnet_genesis(
 		transaction_payment: Default::default(),
 		sidechain: Default::default(),
 		session_committee_management: Default::default(),
-		pallet_session: Default::default(),
 		session: Default::default(),
 		bridge: Default::default(),
 	};

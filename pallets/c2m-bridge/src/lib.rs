@@ -250,7 +250,7 @@ pub mod pallet {
 			data.extend(b"midnight:bridge-transfer-nonce:");
 			data.extend(parent_hash.as_ref());
 			data.extend(&counter.to_le_bytes());
-			sp_core::hashing::blake2_256(&data)
+			sp_crypto_hashing::blake2_256(&data)
 		}
 
 		fn execute_serialized_tx<F>(

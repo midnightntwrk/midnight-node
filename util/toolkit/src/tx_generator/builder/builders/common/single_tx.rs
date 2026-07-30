@@ -101,13 +101,19 @@ impl<C: BuilderContext<DefaultDB>> SingleTxBuilder<C> {
 		};
 		let (shielded_outputs, unshielded_outputs) = resolve_outputs_from_triples(&output_args);
 
+		// The builder stores only the seed value; the unshielded signature scheme is applied when
+		// the context wallet is built (see `Builder::relevant_wallet_schemes`), so the scheme half
+		// of each resolved pair is dropped here.
+		let (source_seed, _) = args.source_seed.resolve();
+		let funding_seed = args.funding_seed.map(|s| s.resolve().0);
+
 		Self {
 			context,
 			prover,
 			shielded_outputs,
 			unshielded_outputs,
-			source_seed: convert_wallet_seed(args.source_seed),
-			funding_seed: args.funding_seed.map(convert_wallet_seed),
+			source_seed: convert_wallet_seed(source_seed),
+			funding_seed: funding_seed.map(convert_wallet_seed),
 			input_utxos: {
 				let mut seen: HashSet<([u8; 32], u32)> = HashSet::new();
 				args.input_utxos
@@ -230,6 +236,7 @@ pub(crate) fn build_shielded_offer<C: BuilderContext<DefaultDB>>(
 	}
 
 	// Per token type: select inputs and append a change refund if needed.
+	let select_start = std::time::Instant::now();
 	for (token_type, total_required) in totals {
 		let (token_inputs, change) = InputInfo::coins_to_cover_value(
 			context.clone(),
@@ -253,6 +260,7 @@ pub(crate) fn build_shielded_offer<C: BuilderContext<DefaultDB>>(
 			outputs_info.push(refund);
 		}
 	}
+	log::debug!("[perf] select_shielded_offer took {:?}", select_start.elapsed());
 
 	Ok(OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] })
 }
@@ -305,6 +313,7 @@ pub(crate) async fn build_unshielded_intents<C: BuilderContext<DefaultDB>>(
 
 	// Per token type: select utxos (or use pinned utxos for the single-token case)
 	// and append a change refund if needed.
+	let select_start = std::time::Instant::now();
 	for (token_type, total_required) in totals {
 		let (token_inputs, remaining) = if input_utxos.is_empty() {
 			UtxoSpendInfo::utxos_to_cover_value(
@@ -340,6 +349,7 @@ pub(crate) async fn build_unshielded_intents<C: BuilderContext<DefaultDB>>(
 			outputs_info.push(refund);
 		}
 	}
+	log::debug!("[perf] select_unshielded_intents took {:?}", select_start.elapsed());
 
 	let inputs_outputs_len = inputs_info.len() + outputs_info.len();
 	let unshielded_offer = UnshieldedOfferInfo { inputs: inputs_info, outputs: outputs_info };

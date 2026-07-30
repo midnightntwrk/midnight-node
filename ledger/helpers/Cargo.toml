@@ -11,6 +11,7 @@ cargo_metadata = "0.15"
 
 [dependencies]
 hex.workspace = true
+sha2.workspace = true
 
 mn-ledger = { workspace = true, features = ["proving"] }
 base-crypto = { workspace = true }
@@ -26,11 +27,13 @@ reqwest = { workspace = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"] }
 onchain-runtime-ledger-8 = { workspace = true }
+onchain-state-ledger-8 = { workspace = true }
 ledger-storage-ledger-8 = { workspace = true }
 zswap-ledger-8 = { workspace = true }
 
 mn-ledger-9 = { workspace = true, features = ["proving", "test-utilities"] }
 onchain-runtime-ledger-9 = { workspace = true }
+onchain-state-ledger-9 = { workspace = true }
 zswap-ledger-9 = { workspace = true }
 coin-structure-ledger-9 = { workspace = true }
 transient-crypto-ledger-9 = { workspace = true }

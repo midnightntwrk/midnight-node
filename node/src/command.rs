@@ -1559,8 +1559,8 @@ mod tests {
 		chain_spec_genesis: &[u8],
 		compiled_genesis: &[u8],
 	) -> sc_cli::Result<()> {
-		let spec_hash = sp_core::hashing::blake2_256(chain_spec_genesis);
-		let compiled_hash = sp_core::hashing::blake2_256(compiled_genesis);
+		let spec_hash = sp_crypto_hashing::blake2_256(chain_spec_genesis);
+		let compiled_hash = sp_crypto_hashing::blake2_256(compiled_genesis);
 		if spec_hash != compiled_hash {
 			return Err(sc_cli::Error::Input(format!(
 				"genesis state mismatch: chain spec genesis hash {} differs from compiled default {}",

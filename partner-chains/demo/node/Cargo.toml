@@ -31,9 +31,8 @@ sc-telemetry = { workspace = true }
 sc-transaction-pool = { workspace = true }
 sc-transaction-pool-api = { workspace = true }
 sc-consensus-aura = { workspace = true }
-sc-partner-chains-consensus-aura = { workspace = true }
 sp-consensus-aura = { workspace = true }
-sp-partner-chains-consensus-aura = { workspace = true }
+sc-partner-chains-consensus = { workspace = true }
 sc-consensus = { workspace = true }
 sc-consensus-grandpa = { workspace = true }
 sc-consensus-grandpa-rpc = { workspace = true }
@@ -95,6 +94,7 @@ hex-literal = { workspace = true }
 time-source = { workspace = true, features = ["mock"] }
 pallet-sidechain-rpc = { workspace = true }
 authority-selection-inherents = { workspace = true, features = ["mock"] }
+pretty_assertions = { workspace = true }
 
 [features]
 default = [

@@ -7,11 +7,12 @@ use midnight_node_e2e::api::midnight::{C2MBridgePalletCalls, MidnightClient};
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 use midnight_node_ledger_helpers::{
-    ClaimKind, HashOutput, SystemTransaction, UnshieldedWallet, UserAddress, WalletSeed,
-    deserialize, extract_tx_with_context,
+    ClaimKind, HashOutput, SystemTransaction, UnshieldedSignatureScheme, UnshieldedWallet,
+    UserAddress, WalletSeed, deserialize, extract_tx_with_context,
 };
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::TransferRecipient;
+use midnight_node_toolkit::cli_parsers::SchemeSeed;
 use midnight_node_toolkit::commands::generate_txs::{self, GenerateTxsArgs};
 use midnight_node_toolkit::tx_generator::builder::{Builder, ClaimKindArg, ClaimRewardsArgs};
 use midnight_node_toolkit::tx_generator::destination::Destination;
@@ -282,7 +283,10 @@ async fn bridge_transfer_cnight_to_midnight_address() {
     let claim_file_str = claim_file.to_string_lossy().to_string();
     let claim_args = GenerateTxsArgs {
         builder: Builder::ClaimRewards(ClaimRewardsArgs {
-            funding_seed: CLAIM_FUNDING_SEED_HEX.to_string(),
+            funding_seed: SchemeSeed {
+                seed: CLAIM_FUNDING_SEED_HEX.parse().expect("valid funding seed"),
+                scheme: UnshieldedSignatureScheme::Schnorr,
+            },
             rng_seed: None,
             amount: claimable,
             claim_kind: ClaimKindArg::CardanoBridge,
