@@ -1,0 +1,16 @@
+bin.name = "midnight-node-toolkit"
+args = [
+    "show-address",
+    "--network", "testnet",
+    "--seed", "foo:0000000000000000000000000000000000000000000000000000000000000001",
+]
+status.code = 2
+
+stdout = ""
+
+stderr = """
+error: invalid value 'foo:0000000000000000000000000000000000000000000000000000000000000001' for '--seed <SEED>': error: invalid value for one of the arguments
+
+
+For more information, try '--help'.
+"""

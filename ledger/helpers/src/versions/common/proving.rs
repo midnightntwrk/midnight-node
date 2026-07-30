@@ -20,14 +20,17 @@ use super::{
 };
 use async_trait::async_trait;
 
+// Proving a transaction is mostly CPU-bound, however the `prove` method also
+// resolves keys for use during proving. These may come from remote sources, hence
+// the need for this method to be async.
 #[async_trait]
 pub trait ProofProvider<D: DB + Clone>: Send + Sync {
 	async fn prove(
 		&self,
 		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 		rng: StdRng,
-		resolver: &Resolver,
-		cost_model: &CostModel,
+		resolver: &'static Resolver,
+		cost_model: CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D>;
 }
 
@@ -53,27 +56,45 @@ impl<D: DB + Clone> ProofProvider<D> for LocalProofServer {
 		&self,
 		tx: Transaction<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 		rng: StdRng,
-		resolver: &Resolver,
-		cost_model: &CostModel,
+		resolver: &'static Resolver,
+		cost_model: CostModel,
 	) -> Transaction<Signature, ProofMarker, PedersenRandomness, D> {
-		log::info!("Ensuring zswap key material is available...");
-		{
-			let ks =
-				futures::future::join_all((10..=15).map(|k| resolver.zswap_resolver.0.fetch_k(k)));
-			let keys = futures::future::join_all(
-				["midnight/zswap/spend", "midnight/zswap/output", "midnight/zswap/sign"]
-					.into_iter()
-					.map(|k| resolver.zswap_resolver.resolve_key(KeyLocation(k.into()))),
-			);
-			let (ks, keys) = futures::future::join(ks, keys).await;
-			ks.into_iter().collect::<Result<Vec<_>, _>>().expect("failed to get keys 'ks'");
-			keys.into_iter()
-				.collect::<Result<Vec<_>, _>>()
-				.expect("failed to get keys 'keys'");
-		}
+		// Local proving is CPU-bound (and, for L9, also `!Send` — this body is shared across
+		// L7/L8/L9). Run it on a blocking-pool thread via `spawn_blocking`: the future is built and
+		// driven inside the closure (in a fresh current-thread runtime) so even the `!Send` L9 future
+		// never crosses a thread boundary, and `.await`ing the handle yields the calling worker — so N
+		// semaphore-bounded proofs run in real parallel even on the toolkit's single-threaded runtime.
+		// The closure captures only `tx`/`rng`/`resolver` (`&'static`)/`cost_model` — not `self` (it
+		// uses `&*PUBLIC_PARAMS`, a static).
+		tokio::task::spawn_blocking(move || {
+			let rt = tokio::runtime::Builder::new_current_thread()
+				.enable_all()
+				.build()
+				.expect("failed to build local proving runtime");
+			rt.block_on(async move {
+				log::info!("Ensuring zswap key material is available...");
+				{
+					let ks = futures::future::join_all(
+						(10..=15).map(|k| resolver.zswap_resolver.0.fetch_k(k)),
+					);
+					let keys = futures::future::join_all(
+						["midnight/zswap/spend", "midnight/zswap/output", "midnight/zswap/sign"]
+							.into_iter()
+							.map(|k| resolver.zswap_resolver.resolve_key(KeyLocation(k.into()))),
+					);
+					let (ks, keys) = futures::future::join(ks, keys).await;
+					ks.into_iter().collect::<Result<Vec<_>, _>>().expect("failed to get keys 'ks'");
+					keys.into_iter()
+						.collect::<Result<Vec<_>, _>>()
+						.expect("failed to get keys 'keys'");
+				}
 
-		let pp = LocalProvingProvider { rng, resolver, params: &*PUBLIC_PARAMS };
+				let pp = LocalProvingProvider { rng, resolver, params: &*PUBLIC_PARAMS };
 
-		tx.prove(pp, cost_model).await.expect("Tx should be provable")
+				tx.prove(pp, &cost_model).await.expect("Tx should be provable")
+			})
+		})
+		.await
+		.expect("local proving task panicked")
 	}
 }

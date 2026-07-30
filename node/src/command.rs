@@ -15,7 +15,7 @@
 
 use crate::{
 	cfg::{Cfg, midnight_cfg::StorageSeparation},
-	cli::{self, Cli, RunMidnight, Subcommand},
+	cli::{Cli, RunMidnight, Subcommand},
 	filtering_pool::TxFilterConfig,
 	genesis::{
 		creation::{
@@ -46,7 +46,13 @@ use sc_cli::{CliConfiguration, LoggerBuilder, RunCmd, SubstrateCli};
 use sc_keystore::LocalKeystore;
 use sc_service::{BasePath, PartialComponents, config::KeystoreConfig};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
-use sp_core::{ByteArray, Pair, offchain::KeyTypeId};
+use sp_core::{
+	ByteArray, Pair,
+	crypto::key_types::{
+		AURA as AURA_KEY_TYPE, BABE as BABE_KEY_TYPE, GRANDPA as GRANDPA_KEY_TYPE,
+	},
+	offchain::KeyTypeId,
+};
 use sp_keystore::KeystorePtr;
 
 #[cfg(feature = "runtime-benchmarks")]
@@ -167,12 +173,12 @@ fn decode_genesis_state(
 
 fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	bail_if_runtime_benchmarks("running a node");
-	let run_cmd: RunCmd = cfg
-		.substrate_cfg
-		.clone()
-		.into_run_cmd(&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?)?;
 	let run_midnight = RunMidnight::try_parse_from(cfg.substrate_cfg.clone().argv())
 		.map_err(|e| sc_cli::Error::Input(format!("invalid node run arguments: {e}")))?;
+	let run_cmd: RunCmd = cfg.substrate_cfg.clone().apply_overrides_to_run_cmd(
+		run_midnight.run.clone(),
+		&Cfg::safe_read_opts().map_err(|e| sc_cli::Error::Input(e.to_string()))?,
+	)?;
 	let tx_filter_config = if run_midnight.filter_deploy_txs {
 		TxFilterConfig::enabled()
 	} else {
@@ -223,10 +229,21 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
-		keystore
-			.insert(KeyTypeId(*b"aura"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("AURA pubkey: {}", &keypair.public())
+	}
+
+	if let Some(seed_file) = &cfg.midnight_cfg.babe_seed_file {
+		let seed = std::fs::read_to_string(seed_file).map_err(|e| {
+			sc_cli::Error::Input(format!(
+				"error when reading BABE seed file at {seed_file}. Error: {e}"
+			))
+		})?;
+		let seed = seed.trim();
+		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
+			.map_err(|e| sc_cli::Error::Input(format!("Invalid BABE seed: {e}")))?;
+		keystore.insert(BABE_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
+		log::info!("BABE pubkey: {}", &keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.grandpa_seed_file {
@@ -238,9 +255,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let seed = seed.trim();
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
-		keystore
-			.insert(KeyTypeId(*b"gran"), seed, &keypair.public().to_raw_vec())
-			.unwrap();
+		keystore.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
 		log::info!("GRANDPA pubkey: {}", &keypair.public())
 	}
 
@@ -407,11 +422,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				Ok((client, task_manager, other.5.authority_selection))
 			};
 
-			partner_chains_node_commands::run::<_, _, _, _, cli::MidnightBlockProducerMetadata, _, _>(
-				&cfg,
-				make_dependencies,
-				cmd.clone(),
-			)
+			partner_chains_node_commands::run::<_, _, _, _, _>(&cfg, make_dependencies, cmd.clone())
 		},
 		Subcommand::BuildSpec(ref cmd) => {
 			let runner = cfg.create_runner(cmd)?;
@@ -1548,8 +1559,8 @@ mod tests {
 		chain_spec_genesis: &[u8],
 		compiled_genesis: &[u8],
 	) -> sc_cli::Result<()> {
-		let spec_hash = sp_core::hashing::blake2_256(chain_spec_genesis);
-		let compiled_hash = sp_core::hashing::blake2_256(compiled_genesis);
+		let spec_hash = sp_crypto_hashing::blake2_256(chain_spec_genesis);
+		let compiled_hash = sp_crypto_hashing::blake2_256(compiled_genesis);
 		if spec_hash != compiled_hash {
 			return Err(sc_cli::Error::Input(format!(
 				"genesis state mismatch: chain spec genesis hash {} differs from compiled default {}",

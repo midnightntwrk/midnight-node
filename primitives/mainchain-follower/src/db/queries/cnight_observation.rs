@@ -446,3 +446,34 @@ FROM
 	.fetch_optional(pool)
 	.await
 }
+
+/// Highest stable `block_no` present in db-sync that does not exceed `upper`.
+///
+/// Stability is the same coarse block-number bound used by the mainchain
+/// follower: latest db-sync block minus `cardano_security_parameter +
+/// block_stability_margin`. This keeps cNIGHT refresh lookahead out of the
+/// rollback-prone tail of Cardano while still clamping to an existing block.
+pub async fn get_highest_stable_block_le(
+	pool: &Pool<Postgres>,
+	upper: u32,
+	stability_margin: u32,
+) -> Result<Option<u32>, SqlxError> {
+	let latest: Option<i64> = sqlx::query_scalar("SELECT max(block_no)::bigint FROM block")
+		.fetch_one(pool)
+		.await?;
+	let Some(latest) = latest else {
+		return Ok(None);
+	};
+	let latest = u32::try_from(latest).unwrap_or(u32::MAX);
+	let stable_upper = latest.saturating_sub(stability_margin);
+	let bounded_upper = upper.min(stable_upper);
+
+	// Cast to bigint so we decode INT8 regardless of the db-sync `block_no`
+	// column width (it is INT4 on current schemas).
+	let max: Option<i64> =
+		sqlx::query_scalar("SELECT max(block_no)::bigint FROM block WHERE block_no <= $1")
+			.bind(i64::from(bounded_upper))
+			.fetch_one(pool)
+			.await?;
+	Ok(max.map(|n| n as u32))
+}

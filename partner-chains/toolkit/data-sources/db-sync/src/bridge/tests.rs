@@ -28,6 +28,10 @@ fn illiquid_circulation_supply_validator_address() -> MainchainAddress {
 	MainchainAddress::from_str("ics address").unwrap()
 }
 
+fn reserve_validator_address() -> MainchainAddress {
+	MainchainAddress::from_str("reserve address").unwrap()
+}
+
 fn block_2_hash() -> McBlockHash {
 	McBlockHash(hex!("b000000000000000000000000000000000000000000000000000000000000002"))
 }
@@ -93,6 +97,30 @@ fn invalid_transfer_2() -> BridgeTransferV1<ByteString> {
 	}
 }
 
+fn complex_transfer() -> BridgeTransferV1<ByteString> {
+	BridgeTransferV1 {
+		amount: 50,
+		mc_tx_hash: complex_transfer_tx(),
+		recipient: TransferRecipient::Reserve,
+	}
+}
+
+fn reserve_and_user_tx_reserve_transfer() -> BridgeTransferV1<ByteString> {
+	BridgeTransferV1 {
+		amount: 100,
+		mc_tx_hash: reserve_and_user_transfer_tx(),
+		recipient: TransferRecipient::Reserve,
+	}
+}
+
+fn reserve_and_user_tx_user_transfer() -> BridgeTransferV1<ByteString> {
+	BridgeTransferV1 {
+		amount: 65,
+		mc_tx_hash: reserve_and_user_transfer_tx(),
+		recipient: TransferRecipient::Address { recipient: ByteString(hex!("9999").to_vec()) },
+	}
+}
+
 fn reserve_transfer_tx() -> McTxHash {
 	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000002"))
 }
@@ -113,12 +141,21 @@ fn invalid_transfer_2_tx() -> McTxHash {
 	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000006"))
 }
 
+fn complex_transfer_tx() -> McTxHash {
+	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000007"))
+}
+
+fn reserve_and_user_transfer_tx() -> McTxHash {
+	McTxHash(hex!("c000000000000000000000000000000000000000000000000000000000000008"))
+}
+
 fn main_chain_scripts() -> MainChainScripts {
 	MainChainScripts {
 		token_policy_id: token_policy_id(),
 		token_asset_name: token_asset_name(),
 		illiquid_circulation_supply_validator_address:
 			illiquid_circulation_supply_validator_address(),
+		reserve_validator_address: reserve_validator_address(),
 	}
 }
 
@@ -281,7 +318,7 @@ with_migration_versions_and_caching! {
 
 		assert_eq!(
 			transfers,
-			vec![reserve_transfer(), user_transfer_1(), user_transfer_2(), invalid_transfer_1(), invalid_transfer_2()]
+			vec![reserve_transfer(), user_transfer_1(), user_transfer_2(), invalid_transfer_1(), invalid_transfer_2(), complex_transfer(), reserve_and_user_tx_reserve_transfer(), reserve_and_user_tx_user_transfer()]
 		);
 
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(8)))
@@ -301,6 +338,25 @@ with_migration_versions_and_caching! {
 		assert_eq!(transfers, vec![reserve_transfer()]);
 
 		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Tx(reserve_transfer_tx()))
+	}
+
+	async fn truncates_output_and_returns_utxo_checkpoint_when_transfer_would_exceed_limit(data_source: &dyn TokenBridgeDataSource<ByteString>) {
+		let data_checkpoint = BridgeDataCheckpoint::Block(McBlockNumber(0));
+		let current_mc_block = block_8_hash();
+		// One of two transfers of reserve_and_user_tx would not fit
+		let max_transfers = 7;
+
+		let (transfers, new_checkpoint) = data_source
+			.get_transfers(main_chain_scripts(), data_checkpoint, max_transfers, current_mc_block)
+			.await
+			.unwrap();
+
+		assert_eq!(
+			transfers,
+			vec![reserve_transfer(), user_transfer_1(), user_transfer_2(), invalid_transfer_1(), invalid_transfer_2(), complex_transfer()]
+		);
+
+		assert_eq!(new_checkpoint, BridgeDataCheckpoint::Tx(complex_transfer_tx()))
 	}
 
 	async fn utxos_from_checkpoint_block_are_not_included_in_result(data_source: &dyn TokenBridgeDataSource<ByteString>) {

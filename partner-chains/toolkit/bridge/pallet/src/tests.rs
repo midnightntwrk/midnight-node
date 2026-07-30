@@ -17,7 +17,7 @@ fn transfers() -> BoundedVec<BridgeTransferV1<RecipientAddress>, MaxTransfersPer
 		BridgeTransferV1 {
 			amount: 100,
 			recipient: Address { recipient: AccountId32::new([2; 32]) },
-			mc_tx_hash: McTxHash([1; 32])
+			mc_tx_hash: McTxHash([1; 32]),
 		},
 		BridgeTransferV1 { amount: 200, mc_tx_hash: McTxHash([2; 32]), recipient: Reserve },
 		BridgeTransferV1 { amount: 300, mc_tx_hash: McTxHash([3; 32]), recipient: Invalid }
@@ -32,6 +32,7 @@ fn main_chain_scripts() -> MainChainScripts {
 			"validator address",
 		)
 		.unwrap(),
+		reserve_validator_address: MainchainAddress::from_str("reserve validator address").unwrap(),
 	}
 }
 

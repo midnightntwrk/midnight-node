@@ -20,49 +20,25 @@
 
 extern crate alloc;
 
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
 #[cfg(test)]
 mod mock;
 mod runtime_api;
 #[cfg(test)]
 mod tests;
+pub mod weights;
 
 use frame_support::pallet_prelude::*;
 pub use pallet::*;
 pub use runtime_api::*;
+pub use weights::WeightInfo;
 
 /// Maximum number of approved mainchain transaction hashes that can be added in a single batch.
 pub const MAX_APPROVALS_PER_BATCH: u32 = 32;
 
 /// Hash of a Midnight ledger transaction, returned by the system transaction executor.
 pub type MidnightTxHash = [u8; 32];
-
-/// Amount of STARS. One NIGHT is 10^6 STARS.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Stars(u128);
-
-// Build-time proof: `from_cnight` must handle the largest bridge `amount` without `u128` overflow.
-const _: Stars = Stars::from_cnight(u64::MAX);
-
-impl Stars {
-	const fn from_cnight(c_night: u64) -> Stars {
-		Stars(STARS_PER_NIGHT * c_night as u128)
-	}
-}
-
-impl From<u128> for Stars {
-	fn from(value: u128) -> Self {
-		Self(value)
-	}
-}
-
-impl From<Stars> for u128 {
-	fn from(value: Stars) -> u128 {
-		value.0
-	}
-}
-
-/// 10^6 STARS = 1 NIGHT. STAR is atomic.
-pub(crate) const STARS_PER_NIGHT: u128 = 1_000_000;
 
 #[derive(Debug, Decode, Encode, Default, TypeInfo, MaxEncodedLen, PartialEq, Eq)]
 pub struct SubminimalTransfersState {
@@ -98,12 +74,15 @@ pub mod pallet {
 
 		/// Origin for governance extrinsic calls.
 		type GovernanceOrigin: EnsureOrigin<Self::RuntimeOrigin>;
+
+		/// Weight information for this pallet's extrinsics.
+		type WeightInfo: crate::weights::WeightInfo;
 	}
 
 	/// Provides access to the minimum bridge transfer amount from the Midnight ledger.
 	pub trait MinBridgeAmountProvider {
-		/// Returns the minimum bridge transfer amount from ledger parameters.
-		fn get_c_to_m_bridge_min_amount() -> Result<Stars, LedgerApiError>;
+		/// Returns the minimum bridge transfer amount, in STARS, from the ledger parameters.
+		fn get_c_to_m_bridge_min_amount() -> Result<u128, LedgerApiError>;
 	}
 
 	#[pallet::event]
@@ -180,6 +159,9 @@ pub mod pallet {
 	pub struct GenesisConfig<T: Config> {
 		/// Initial subminimal transfers configuration.
 		pub subminimal_transfers_config: SubminimalTransfersConfig,
+		/// Mainchain transaction hashes to pre-approve at genesis.
+		#[serde(default)]
+		pub approved_txs: Vec<McTxHash>,
 		#[allow(missing_docs)]
 		pub _marker: PhantomData<T>,
 	}
@@ -188,6 +170,7 @@ pub mod pallet {
 		fn default() -> Self {
 			Self {
 				subminimal_transfers_config: SubminimalTransfersConfig::default(),
+				approved_txs: Vec::new(),
 				_marker: Default::default(),
 			}
 		}
@@ -196,8 +179,11 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			let GenesisConfig { subminimal_transfers_config, _marker } = self;
+			let GenesisConfig { subminimal_transfers_config, approved_txs, _marker } = self;
 			SubminimalTransfersConfiguration::<T>::put(subminimal_transfers_config.clone());
+			for hash in approved_txs {
+				ApprovedMcTxHashes::<T>::insert(*hash, ());
+			}
 		}
 	}
 
@@ -214,7 +200,7 @@ pub mod pallet {
 		///
 		/// Must be called via governance (e.g. `sudo` or council).
 		#[pallet::call_index(0)]
-		#[pallet::weight(T::DbWeight::get().writes(1))]
+		#[pallet::weight(<T as Config>::WeightInfo::set_subminimal_transfers_config())]
 		pub fn set_subminimal_transfers_config(
 			origin: OriginFor<T>,
 			config: SubminimalTransfersConfig,
@@ -228,7 +214,7 @@ pub mod pallet {
 		///
 		/// Must be called via governance.
 		#[pallet::call_index(1)]
-		#[pallet::weight(T::DbWeight::get().writes(hashes.len() as u64))]
+		#[pallet::weight(<T as Config>::WeightInfo::add_approved_mc_tx_hashes(hashes.len() as u32))]
 		pub fn add_approved_mc_tx_hashes(
 			origin: OriginFor<T>,
 			hashes: BoundedVec<McTxHash, ConstU32<MAX_APPROVALS_PER_BATCH>>,
@@ -264,7 +250,7 @@ pub mod pallet {
 			data.extend(b"midnight:bridge-transfer-nonce:");
 			data.extend(parent_hash.as_ref());
 			data.extend(&counter.to_le_bytes());
-			sp_core::hashing::blake2_256(&data)
+			sp_crypto_hashing::blake2_256(&data)
 		}
 
 		fn execute_serialized_tx<F>(
@@ -308,7 +294,7 @@ pub mod pallet {
 			let count = count.saturating_add(1);
 			if sum > config.subminimal_transfers_flush_threshold {
 				Self::execute_serialized_tx(
-					LedgerApi::construct_distribute_treasury_system_tx(sum.into()),
+					LedgerApi::construct_unlock_to_treasury_system_tx(sum.into()),
 					|midnight_tx_hash| Event::SubminimalFlushTransfer {
 						amount: sum,
 						count,
@@ -336,9 +322,7 @@ pub mod pallet {
 
 		fn handle_invalid_transfer(mc_tx_hash: McTxHash, amount: u64) {
 			Self::execute_serialized_tx(
-				LedgerApi::construct_distribute_treasury_system_tx(
-					Stars::from_cnight(amount).into(),
-				),
+				LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
 				|midnight_tx_hash| Event::InvalidTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Invalid' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
 			);
@@ -346,9 +330,7 @@ pub mod pallet {
 
 		fn handle_reserve_transfer(mc_tx_hash: McTxHash, amount: u64) {
 			Self::execute_serialized_tx(
-				LedgerApi::construct_distribute_reserve_system_tx(
-					Stars::from_cnight(amount).into(),
-				),
+				LedgerApi::construct_distribute_reserve_system_tx(amount.into()),
 				|midnight_tx_hash| Event::ReserveTransfer { mc_tx_hash, amount, midnight_tx_hash },
 				&alloc::format!("'Reserve' transfer of {} from Cardano Tx: {}", amount, mc_tx_hash),
 			);
@@ -361,9 +343,7 @@ pub mod pallet {
 				None => {
 					// Not pre-approved by governance — redirect funds to the Treasury.
 					Self::execute_serialized_tx(
-						LedgerApi::construct_distribute_treasury_system_tx(
-							Stars::from_cnight(amount).into(),
-						),
+						LedgerApi::construct_unlock_to_treasury_system_tx(amount.into()),
 						|midnight_tx_hash| Event::UnapprovedTransfer {
 							mc_tx_hash,
 							amount,
@@ -382,7 +362,7 @@ pub mod pallet {
 					let nonce = Self::generate_nonce();
 					Self::execute_serialized_tx(
 						LedgerApi::construct_distribute_night_cardano_bridge_system_tx(
-							Stars::from_cnight(amount).into(),
+							amount.into(),
 							recipient.as_bytes(),
 							nonce,
 						),
@@ -408,7 +388,7 @@ pub mod pallet {
 		fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
 			match T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount() {
 				Ok(min_amount) => {
-					if Stars::from_cnight(transfer.amount) < min_amount {
+					if u128::from(transfer.amount) < min_amount {
 						Self::handle_subminimal_transfer(transfer);
 					} else {
 						Self::handle_regular_transfer(transfer);

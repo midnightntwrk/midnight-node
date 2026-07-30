@@ -13,9 +13,9 @@
 
 use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
 use super::ledger_helpers_local::{
-	BuildContractAction, BuildInput, BuildIntent, BuildOutput, ContractDeployInfo, DefaultDB,
-	IntentInfo, LedgerContext, MerkleTreeContract, OfferInfo, ProofProvider,
-	TransactionWithContext, UnshieldedWallet, VerifyingKey, Wallet, WalletSeed,
+	BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuilderContext, ContractDeployInfo,
+	DefaultDB, IntentInfo, MerkleTreeContract, OfferInfo, ProofProvider, TransactionWithContext,
+	UnshieldedWallet, Wallet, WalletSeed,
 };
 use crate::{
 	serde_def::SourceTransactions,
@@ -25,40 +25,44 @@ use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
-pub struct ContractDeployBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct ContractDeployBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
-	committee: Vec<VerifyingKey>,
+	committee: Vec<UnshieldedWallet>,
 	committee_threshold: u32,
 	rng_seed: Option<[u8; 32]>,
 }
 
-impl ContractDeployBuilder {
+impl<C: BuilderContext<DefaultDB>> ContractDeployBuilder<C> {
 	pub fn new(
 		args: ContractDeployArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		use super::type_convert::{convert_scheme, convert_wallet_seed};
+
 		let funding_seed = args.funding_seed;
 		let rng_seed = args.rng_seed;
 		let committee_threshold = args.authority_threshold;
 
-		let mut committee_seeds: Vec<WalletSeed> = args
+		// Each committee member carries its own signature scheme (Schnorr or ledger-9 ECDSA); the
+		// pre-ledger-9 ECDSA guard runs earlier via `Builder::relevant_wallet_schemes`.
+		let mut committee: Vec<UnshieldedWallet> = args
 			.authority_seeds
 			.iter()
-			.map(|s| super::type_convert::convert_wallet_seed(s.clone()))
+			.map(|s| {
+				let (seed, scheme) = s.resolve();
+				UnshieldedWallet::new(convert_wallet_seed(seed), convert_scheme(scheme))
+			})
 			.collect();
 
-		// Set the funding seed as the committee if none is passed
-		if committee_seeds.is_empty() {
-			committee_seeds = vec![Wallet::<DefaultDB>::wallet_seed_decode(&funding_seed)];
+		// Default to the (Schnorr) funding seed as the sole committee member if none is passed.
+		if committee.is_empty() {
+			committee = vec![UnshieldedWallet::default(Wallet::<DefaultDB>::wallet_seed_decode(
+				&funding_seed,
+			))];
 		}
-
-		let committee: Vec<_> = committee_seeds
-			.iter()
-			.map(|s| UnshieldedWallet::default(s.clone()).signing_key().verifying_key().clone())
-			.collect();
 
 		let committee_threshold = committee_threshold.unwrap_or_else(|| committee.len() as u32);
 
@@ -67,9 +71,9 @@ impl ContractDeployBuilder {
 }
 
 #[async_trait]
-impl IntentToFile for ContractDeployBuilder {}
+impl<C: BuilderContext<DefaultDB>> IntentToFile<C> for ContractDeployBuilder<C> {}
 
-impl BuildTxsExt for ContractDeployBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxsExt<C> for ContractDeployBuilder<C> {
 	fn funding_seed(&self) -> WalletSeed {
 		Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed)
 	}
@@ -78,7 +82,7 @@ impl BuildTxsExt for ContractDeployBuilder {
 		self.rng_seed
 	}
 
-	fn context(&self) -> &Arc<LedgerContext<DefaultDB>> {
+	fn context(&self) -> &Arc<C> {
 		&self.context
 	}
 
@@ -87,10 +91,10 @@ impl BuildTxsExt for ContractDeployBuilder {
 	}
 }
 
-impl CreateIntentInfo for ContractDeployBuilder {
-	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB>> {
+impl<C: BuilderContext<DefaultDB>> CreateIntentInfo<C> for ContractDeployBuilder<C> {
+	fn create_intent_info(&self) -> Box<dyn BuildIntent<DefaultDB, C>> {
 		log::info!("Create intent info for contract deploy");
-		let deploy_contract: Box<dyn BuildContractAction<DefaultDB>> =
+		let deploy_contract: Box<dyn BuildContractAction<DefaultDB, C>> =
 			Box::new(ContractDeployInfo {
 				type_: MerkleTreeContract::new(),
 				committee: self.committee.clone(),
@@ -98,7 +102,7 @@ impl CreateIntentInfo for ContractDeployBuilder {
 				_marker: PhantomData,
 			});
 
-		let actions: Vec<Box<dyn BuildContractAction<DefaultDB>>> = vec![deploy_contract];
+		let actions: Vec<Box<dyn BuildContractAction<DefaultDB, C>>> = vec![deploy_contract];
 
 		// - Intents
 		let intent_info = IntentInfo {
@@ -112,7 +116,7 @@ impl CreateIntentInfo for ContractDeployBuilder {
 }
 
 #[async_trait]
-impl BuildTxs for ContractDeployBuilder {
+impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractDeployBuilder<C> {
 	type Error = Infallible;
 
 	async fn build_txs_from(
@@ -127,10 +131,10 @@ impl BuildTxs for ContractDeployBuilder {
 		tx_info.add_intent(1, intent_info);
 
 		//   - Input
-		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB>>> = vec![];
+		let inputs_info: Vec<Box<dyn BuildInput<DefaultDB, C>>> = vec![];
 
 		//   - Output
-		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB>>> = vec![];
+		let outputs_info: Vec<Box<dyn BuildOutput<DefaultDB, C>>> = vec![];
 
 		let offer_info =
 			OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] };

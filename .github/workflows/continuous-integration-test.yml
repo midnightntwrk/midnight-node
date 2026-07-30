@@ -16,7 +16,10 @@ concurrency:
 jobs:
   run:
     name: Run tests
-    runs-on: ubuntu-latest-16-core-x64
+    # Fork PRs run on ubuntu-latest, not the self-hosted pool: untrusted PR code is kept
+    # off our own infrastructure. Same-repo PRs and push/merge_group keep self-hosted.
+    # (This job is also skipped on fork PRs by its step guards; the routing is belt-and-braces.)
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON('["self-hosted", "tier:large"]') }}
     permissions:
       contents: read
       packages: write
@@ -25,7 +28,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -40,11 +43,11 @@ jobs:
           use-cache: false
 
       - name: Free disk space
-        if: steps.guard.outputs.hit != 'true'
-        run: scripts/free-disk-space.sh
+        if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Log in to GHCR (for remote cache)
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.guard.outputs.hit != 'true'
         with:
           registry: ghcr.io
@@ -56,7 +59,7 @@ jobs:
       # Skipped on fork PRs where these secrets are not available.
       # If for some reason we can't log in we should proceed unauthed.
       - name: Log in to Docker Hub
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         continue-on-error: true
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
@@ -69,17 +72,34 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
           DOCKERHUB_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
+          # actions/checkout leaves the workspace on the PR merge commit in
+          # detached-HEAD state, so the EARTHLY_GIT_BRANCH builtin resolves to
+          # the literal string "HEAD" for every PR — useless for cache scoping.
+          # Use the actual head ref (PR source branch) or ref_name (push /
+          # merge_group). Sanitize: substitute any char outside [A-Za-z0-9._-]
+          # with '-' so e.g. `feat/foo` becomes `feat-foo`.
+          GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          GH_REF_FOR_BUILD: ${{ github.ref }}
         run: |
           PUSH_FLAG=""
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$GH_REF_FOR_BUILD" = "refs/heads/main" ]; then
             PUSH_FLAG="--push"
           fi
+          CACHE_KEY=$(printf '%s' "$GITHUB_REF_RAW" | tr -c 'A-Za-z0-9._-' '-')
+          # tr produces an empty string for empty input; guard so we never
+          # cache as `target-` (would silently merge all unkeyed runs).
+          if [ -z "$CACHE_KEY" ]; then
+            echo "::error::could not derive CACHE_KEY from refs (head_ref=$GITHUB_REF_RAW)"
+            exit 1
+          fi
+          echo "Using CACHE_KEY=$CACHE_KEY"
           . ./.envrc && earthly -P \
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             --strict $PUSH_FLAG \
-            --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test +test
+            --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test \
+            +test --CACHE_KEY="$CACHE_KEY"
 
       - name: Upload test report artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

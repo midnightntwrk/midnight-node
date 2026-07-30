@@ -16,9 +16,10 @@ export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
   /**
-   * Snapshot URI (http://, https://, or local path) to fork the well-known
-   * network from. Required for well-known networks since they only have a
-   * mock-authorities-driven bring-up path.
+   * Snapshot URI (http:// or https://) to fork the well-known network from.
+   * Required on the first bring-up of a well-known network; later runs can
+   * omit it to reuse existing restored data plus generated mock-authorities
+   * output.
    */
   fromSnapshot?: string;
 }
@@ -51,19 +52,58 @@ export interface RuntimeUpgradeBaseOptions extends RunOptions {
   rpcUrl?: string;
 }
 
-export interface FederatedRuntimeUpgradeOptions
-  extends RuntimeUpgradeBaseOptions {
+/** Signer URIs required to drive a federated-authority motion to execution. */
+export interface FederatedGovernanceOptions {
   /** URIs for council members who will propose/vote to approve the motion */
   councilUris: string[];
   /** URIs for technical committee members who will propose/vote to approve the motion */
   techCommitteeUris: string[];
-  /** URI used to close the federated motion and apply the authorized upgrade */
+  /** URI used to close the federated motion and dispatch the approved call as root */
   motionExecutorUri: string;
 }
+
+/**
+ * Options for governance actions that dispatch a fixed runtime call as root via
+ * a federated-authority motion (no wasm artifact involved), e.g. the
+ * consensus-engine transitions.
+ */
+export interface GovernanceCallOptions
+  extends RunOptions,
+    FederatedGovernanceOptions {
+  /** skip bringing up docker-compose before submitting the motion */
+  skipRun?: boolean;
+  /** websocket endpoint for the target node (default ws://localhost:9944) */
+  rpcUrl?: string;
+}
+
+export interface FederatedRuntimeUpgradeOptions
+  extends RuntimeUpgradeBaseOptions,
+    FederatedGovernanceOptions {
+  /**
+   * Use `system.authorizeUpgradeWithoutChecks` instead of `system.authorizeUpgrade`,
+   * skipping the runtime-side `SpecVersionNeedsToIncrease` check. Intended for
+   * local rehearsals where the candidate wasm shares a spec_version with the
+   * running runtime; production upgrades should leave this off so the check
+   * still catches real version-bump regressions.
+   */
+  allowSameVersion?: boolean;
+}
+
+/**
+ * Options for the two-phase `full-upgrade` command: image rollout followed by
+ * governance runtime upgrade. Inherits both option sets; there are no field
+ * conflicts because both ImageUpgradeOptions and FederatedRuntimeUpgradeOptions
+ * extend RunOptions.
+ */
+export interface FullUpgradeOptions
+  extends ImageUpgradeOptions,
+    FederatedRuntimeUpgradeOptions {}
 
 export const WELL_KNOWN_NAMESPACES = [
   "devnet",
   "preview",
+  "preprod",
+  "mainnet",
   "qanet",
   "testnet-02",
 ] as const;

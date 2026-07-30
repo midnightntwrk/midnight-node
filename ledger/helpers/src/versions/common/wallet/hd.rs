@@ -65,7 +65,7 @@ pub enum Role {
 	UnshieldedInternal,
 	Dust,
 	Zswap,
-	Metadata,
+	Ecdsa,
 }
 
 impl TryFrom<u32> for Role {
@@ -77,7 +77,7 @@ impl TryFrom<u32> for Role {
 			1 => Ok(Role::UnshieldedInternal),
 			2 => Ok(Role::Dust),
 			3 => Ok(Role::Zswap),
-			4 => Ok(Role::Metadata),
+			4 => Ok(Role::Ecdsa),
 			_ => Err(DerivationPathError::UnknownRole(value)),
 		}
 	}
@@ -138,7 +138,7 @@ impl DerivationPath {
 			Role::UnshieldedInternal => "m/44'/2400'/0'/1/0",
 			Role::Dust => "m/44'/2400'/0'/2/0",
 			Role::Zswap => "m/44'/2400'/0'/3/0",
-			Role::Metadata => "m/44'/2400'/0'/4/0",
+			Role::Ecdsa => "m/44'/2400'/0'/4/0",
 		};
 
 		Self { path: path.to_string(), role }
@@ -175,7 +175,7 @@ mod tests {
 			(1, Role::UnshieldedInternal),
 			(2, Role::Dust),
 			(3, Role::Zswap),
-			(4, Role::Metadata),
+			(4, Role::Ecdsa),
 		] {
 			let path = format!("m/44'/2400'/0'/{role_index}/0");
 			let dp = DerivationPath::new(path.clone()).expect("should be valid");
@@ -217,7 +217,7 @@ mod tests {
 		assert_eq!(Role::try_from(1).unwrap(), Role::UnshieldedInternal);
 		assert_eq!(Role::try_from(2).unwrap(), Role::Dust);
 		assert_eq!(Role::try_from(3).unwrap(), Role::Zswap);
-		assert_eq!(Role::try_from(4).unwrap(), Role::Metadata);
+		assert_eq!(Role::try_from(4).unwrap(), Role::Ecdsa);
 	}
 
 	#[test]

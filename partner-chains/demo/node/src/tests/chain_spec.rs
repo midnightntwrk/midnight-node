@@ -1,6 +1,7 @@
 use crate::chain_spec::pc_create_chain_spec;
 use partner_chains_cli::{CreateChainSpecConfig, ParsedPermissionedCandidatesKeys};
 use partner_chains_demo_runtime::opaque::SessionKeys;
+use pretty_assertions::assert_eq;
 use sidechain_domain::{AssetName, MainchainAddress, PolicyId, UtxoId};
 use sp_core::{ecdsa, ed25519, sr25519};
 use std::str::FromStr;
@@ -26,24 +27,11 @@ fn pc_create_chain_spec_test() {
 			"addr_nativetokenisc",
 		)
 		.unwrap(),
-		governed_map_validator_address: Some(MainchainAddress::from_str("addr_govmap").unwrap()),
-		governed_map_asset_policy_id: Some(PolicyId([5u8; 28])),
 	};
 
 	let json = pc_create_chain_spec(&config);
 	let config = json.pointer("/genesis/runtimeGenesis/config").unwrap().clone();
 	let config_obj = config.as_object().unwrap().clone();
-
-	assert_eq!(
-		config_obj.get("governedMap").unwrap(),
-		&serde_json::json!({
-		  "mainChainScripts": {
-			"asset_policy_id": "0x05050505050505050505050505050505050505050505050505050505",
-			"validator_address": "addr_govmap"
-		  },
-		  "marker": null
-		})
-	);
 
 	assert_eq!(
 		config_obj.get("bridge").unwrap(),
@@ -52,7 +40,8 @@ fn pc_create_chain_spec_test() {
 		  "mainChainScripts": {
 			"token_policy_id": "0x04040404040404040404040404040404040404040404040404040404",
 			"token_asset_name": "0x040404",
-			"illiquid_circulation_supply_validator_address": "addr_nativetokenisc"
+			"illiquid_circulation_supply_validator_address": "addr_nativetokenisc",
+			"reserve_validator_address": ""
 		  },
 		  "marker": null
 		})
@@ -91,15 +80,8 @@ fn pc_create_chain_spec_test() {
 	assert_eq!(
 		config_obj.get("session").unwrap(),
 		&serde_json::json!({
-			"initialValidators": [
-				[
-					"5CUUBrDiVEKVa655Bsm8sYc5An5Jqi52PetteUpMY2JFbuRF",
-					{
-						"aura": "5CLW1ZaVdZdj6bf7nmvJfba6GbvxueXzV6Dw5fnPaKTiSARx",
-						"grandpa": "5CMpMdu3LbHuj2TqX4RAUzXCHCqmNj8Fce43wAbcqSFZuNfp"
-					}
-				]
-			]
+			"keys": [],
+			"nonAuthorityKeys": []
 		})
 	);
 }

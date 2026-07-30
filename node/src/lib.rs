@@ -13,6 +13,7 @@
 
 extern crate alloc;
 
+mod aura_to_babe_migration_keystore;
 pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
@@ -20,6 +21,7 @@ pub mod cfg;
 pub mod chain_spec;
 pub mod cli;
 pub mod command;
+pub mod committee_membership;
 pub mod extensions;
 mod filtering_pool;
 pub mod genesis;

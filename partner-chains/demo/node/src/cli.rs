@@ -2,7 +2,6 @@ use partner_chains_cli::{AURA, GRANDPA, KeyDefinition};
 use partner_chains_demo_runtime::opaque::SessionKeys;
 use partner_chains_node_commands::{PartnerChainRuntime, PartnerChainsSubcommand};
 use sc_cli::RunCmd;
-use sp_runtime::AccountId32;
 
 #[derive(Debug, clap::Parser)]
 pub struct Cli {
@@ -37,7 +36,7 @@ pub enum Subcommand {
 	Key(sc_cli::KeySubcommand),
 
 	#[clap(flatten)]
-	PartnerChains(PartnerChainsSubcommand<WizardBindings, AccountId32>),
+	PartnerChains(PartnerChainsSubcommand<WizardBindings>),
 
 	/// Build a chain specification.
 	BuildSpec(sc_cli::BuildSpecCmd),
