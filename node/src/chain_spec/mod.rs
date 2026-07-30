@@ -31,6 +31,7 @@ use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
 use sidechain_domain::{AssetName, MainchainAddress, McTxHash};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_consensus_babe::AuthorityId as BabeId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
 use sp_partner_chains_bridge::{
@@ -112,6 +113,7 @@ pub fn authority_keys_from_seed(s: &str) -> AuthorityKeys {
 		session: SessionKeys {
 			aura: get_from_seed::<AuraId>(s),
 			grandpa: get_from_seed::<GrandpaId>(s),
+			babe: get_from_seed::<BabeId>(s),
 		},
 		cross_chain: get_from_seed::<CrossChainPublic>(s),
 	}
@@ -243,6 +245,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			session: SessionKeys {
 				aura: keys.aura_pubkey.into(),
 				grandpa: keys.grandpa_pubkey.into(),
+				// Fall back to the AURA key when no BABE key is configured (both sr25519).
+				babe: keys.babe_pubkey.unwrap_or(keys.aura_pubkey).into(),
 			},
 			cross_chain: keys.crosschain_pubkey.into(),
 		})
@@ -257,6 +261,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		system: Default::default(),
 		aura: Default::default(),
 		babe: Default::default(),
+		consensus_engine: Default::default(),
 		beefy: BeefyConfig {
 			authorities: genesis
 				.initial_authorities()
