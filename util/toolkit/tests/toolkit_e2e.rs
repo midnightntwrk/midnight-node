@@ -304,7 +304,7 @@ async fn register_dust_address() {
 
 	// The fresh UTXOs have accrued no retroactive DUST inside their own funding block
 	// (dt = 0); one more block accrues plenty for the fee.
-	wait_for_node::wait_for_block_after_current(url, Duration::from_secs(60)).await;
+	wait_for_node::wait_for_next_finalized_block(url, Duration::from_secs(60)).await;
 
 	run_cli(&[
 		"generate-txs",

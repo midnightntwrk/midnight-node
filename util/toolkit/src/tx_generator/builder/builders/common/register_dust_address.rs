@@ -26,7 +26,7 @@ pub struct RegisterDustAddressBuilder<C: BuilderContext<DefaultDB>> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RegisterDustAddressError {
-	#[error("failed to decode destination dust address: {0:?}")]
+	#[error("failed to decode destination DUST address: {0:?}")]
 	InvalidDustAddress(DustAddressParseError),
 	#[error(
 		"failed to balance the registration transaction: {0}; consolidate NIGHT into a larger \

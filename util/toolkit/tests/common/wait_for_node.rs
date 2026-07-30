@@ -49,7 +49,7 @@ pub async fn wait_for_finalized_block(ws_url: &str, target_block: u64, timeout: 
 /// accrued nothing yet (`dt = 0`); one more block is enough for a self-funded registration.
 // Shared across test binaries; not every binary uses it.
 #[allow(dead_code)]
-pub async fn wait_for_block_after_current(ws_url: &str, timeout: Duration) {
+pub async fn wait_for_next_finalized_block(ws_url: &str, timeout: Duration) {
 	let client = connect(ws_url, timeout).await;
 	let current = client
 		.get_finalized_height()
