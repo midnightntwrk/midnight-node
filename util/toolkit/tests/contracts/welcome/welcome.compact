@@ -50,6 +50,10 @@ export circuit add_organizer(organizer_pk: Bytes<32>): [] {
   organizer_pks.insert(disclose(organizer_pk));
 }
 
+export circuit verify_organizer(organizer_pk: Bytes<32>): [] {
+  assert (organizer_pks.member(disclose(organizer_pk)), "Organizer not found");
+}
+
 // Yes, anyone can check in as any other eligible participant
 export circuit check_in(participant: Opaque<"string">): [] {
   const p = disclose(participant);

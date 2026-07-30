@@ -659,18 +659,49 @@ async fn welcome_e2e() {
 		.await
 		.expect("submit add_organizer tx failed");
 
-	// Check in the just-added participant.
+	// Read the post-call state and prove that add_organizer persisted its ledger mutation.
 	let state_3 = helper.work_dir.path().join("welcome_state_3.mn");
 	helper
 		.contract_state(&welcome_addr, &state_3)
+		.await
+		.expect("contract state fetch failed");
+	let verify_organizer = helper
+		.generate_intent_circuit(
+			&config_file,
+			&coin_public,
+			&state_3,
+			&add_organizer.private_state,
+			&welcome_addr,
+			CircuitCall { circuit_id: "verify_organizer", call_args: &[&coin_public] },
+		)
+		.await
+		.expect("generate verify_organizer intent failed");
+	let verify_organizer_tx = helper
+		.send_intent(
+			&verify_organizer.intent,
+			&compiled_dir,
+			FUNDING_SEED,
+			Some(&verify_organizer.zswap_state),
+		)
+		.await
+		.expect("send verify_organizer intent failed");
+	helper
+		.submit_tx(&verify_organizer_tx)
+		.await
+		.expect("submit verify_organizer tx failed");
+
+	// Check in the just-added participant.
+	let state_4 = helper.work_dir.path().join("welcome_state_4.mn");
+	helper
+		.contract_state(&welcome_addr, &state_4)
 		.await
 		.expect("contract state fetch failed");
 	let check_in = helper
 		.generate_intent_circuit(
 			&config_file,
 			&coin_public,
-			&state_3,
-			&add_organizer.private_state,
+			&state_4,
+			&verify_organizer.private_state,
 			&welcome_addr,
 			CircuitCall { circuit_id: "check_in", call_args: &[participant] },
 		)
@@ -683,16 +714,16 @@ async fn welcome_e2e() {
 	helper.submit_tx(&check_in_tx).await.expect("submit check_in tx failed");
 
 	// Read the post-call state and prove that check_in persisted its ledger mutation.
-	let state_4 = helper.work_dir.path().join("welcome_state_4.mn");
+	let state_5 = helper.work_dir.path().join("welcome_state_5.mn");
 	helper
-		.contract_state(&welcome_addr, &state_4)
+		.contract_state(&welcome_addr, &state_5)
 		.await
 		.expect("contract state fetch failed");
 	let verify = helper
 		.generate_intent_circuit(
 			&config_file,
 			&coin_public,
-			&state_4,
+			&state_5,
 			&check_in.private_state,
 			&welcome_addr,
 			CircuitCall { circuit_id: "verify_checked_in", call_args: &[participant] },
