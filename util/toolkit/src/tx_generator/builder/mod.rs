@@ -1459,6 +1459,17 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 
 	// 2. Compute start height.
 	let start_height = if !uncached_seeds.is_empty() {
+		// An uncached wallet needs its full history scanned, which forces the
+		// replay back to genesis for the whole context — the dominant cost on
+		// long chains. Surface it loudly so a stray uncached seed is not
+		// mistaken for a broken cache.
+		log::warn!(
+			"{} of {} wallet seeds have no cache entry ({} cached) — full replay from genesis forced. \
+			 Warm the cache once with the complete seed set to avoid this.",
+			uncached_seeds.len(),
+			wallet_seeds.len(),
+			cached.len(),
+		);
 		0
 	} else {
 		cached.first().map(|c| c.1.block_height).unwrap_or(0)
