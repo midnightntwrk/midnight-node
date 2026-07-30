@@ -28,7 +28,10 @@
 //!    open a database whose on-disk column options differ from the requested
 //!    ones at all. Because those columns are provably empty in a `separate`
 //!    database — it keeps ledger nodes elsewhere — rewriting the metadata is
-//!    safe.
+//!    safe. A database old enough to predate the ledger columns being reserved
+//!    here at all — it has no metadata entries for them whatsoever — is the
+//!    same situation: there is nothing on disk to conflict with, so growing the
+//!    column count to the unified layout is just as safe.
 //! 2. The ledger nodes themselves have to be copied across.
 //!
 //! Both happen here, before the node's long-lived ParityDb handle is created.
@@ -187,12 +190,15 @@ pub fn import_if_pending(
 }
 
 /// Inspects the on-disk metadata and, if the ledger columns still carry the
-/// `separate` layout, returns the `(salt, version)` needed to rewrite it.
+/// `separate` layout — including a database old enough to have no ledger
+/// columns reserved at all — returns the `(salt, version)` needed to rewrite
+/// it to the unified layout.
 ///
 /// Returns `None` for a database that has no metadata yet (a fresh one), whose
-/// column count differs (handled by the metadata-upgrade path in
-/// [`super::open_paritydb`]), or whose ledger columns already match the unified
-/// layout.
+/// column count is *larger* than expected (a newer schema than this binary
+/// understands — not this migration's job to reconcile, deferred to the
+/// metadata-upgrade path in [`super::open_paritydb`]), or whose ledger columns
+/// already match the unified layout.
 ///
 /// The ledger columns must match one of those two layouts *exactly*. "Anything
 /// other than unified" is not good enough: a `unified` database written before
@@ -207,8 +213,41 @@ fn separate_layout_metadata(paritydb_path: &Path) -> Result<Option<([u8; 32], u3
 		super::custom_parity_db::column_options(paritydb_path, StorageSeparation::Separate);
 	let unified =
 		super::custom_parity_db::column_options(paritydb_path, StorageSeparation::Unified);
-	if metadata.columns.len() != unified.columns.len() {
+
+	if metadata.columns.len() > unified.columns.len() {
 		return Ok(None);
+	}
+
+	if metadata.columns.len() <= NUM_COLUMNS_POLKADOT as usize {
+		// No ledger columns reserved on disk at all: this database predates the
+		// change that folded them into the Substrate ParityDb in the first
+		// place, so it is provably in the same state as an on-disk `separate`
+		// layout — there is simply nothing recorded for them yet. Only the
+		// Substrate columns that do exist need to check out; growing the
+		// metadata to the full unified column count is the same safe rewrite as
+		// the `separate` case below.
+		if let Some(c) =
+			(0..metadata.columns.len()).find(|&c| metadata.columns[c] != unified.columns[c])
+		{
+			return Err(Error::Unsupported(format!(
+				"parity-db at {} has an unexpected configuration for Substrate column {c}; \
+				 refusing to migrate ledger storage.",
+				paritydb_path.display(),
+			)));
+		}
+		return Ok(Some((metadata.salt, metadata.version)));
+	}
+
+	if metadata.columns.len() != unified.columns.len() {
+		// Some, but not all, ledger columns are reserved — not a layout this
+		// migration understands.
+		return Err(Error::Unsupported(format!(
+			"parity-db at {} reserves {} of the {} expected columns; refusing to migrate \
+			 ledger storage.",
+			paritydb_path.display(),
+			metadata.columns.len(),
+			unified.columns.len(),
+		)));
 	}
 
 	let ledger_columns = NUM_COLUMNS_POLKADOT as usize..NUM_COLUMNS as usize;
@@ -334,6 +373,14 @@ mod tests {
 		options
 	}
 
+	/// The Substrate layout from before the ledger columns were reserved in this
+	/// ParityDb at all: only the Polkadot columns exist.
+	fn legacy_pre_ledger_columns_config(path: &Path) -> parity_db::Options {
+		let mut options = config(path, StorageSeparation::Unified);
+		options.columns.truncate(NUM_COLUMNS_POLKADOT as usize);
+		options
+	}
+
 	/// Number of entries in a ledger column of the given database. Only possible
 	/// because both layouts btree-index these columns.
 	fn ledger_column_len(options: &parity_db::Options, column: u8) -> usize {
@@ -397,6 +444,52 @@ mod tests {
 		// supports on a btree-indexed column.
 		assert_eq!(ledger_column_len(&unified, NUM_COLUMNS_POLKADOT), 300);
 		assert_eq!(ledger_column_len(&unified, NUM_COLUMNS_POLKADOT + 1), 300);
+	}
+
+	/// An operator upgrading from before the ledger columns were reserved in the
+	/// Substrate ParityDb at all (predating the on-disk column count this binary
+	/// expects) but who still has an un-migrated `ledger_storage/` must still get
+	/// the ledger nodes copied in — not have them silently skipped because the
+	/// column count doesn't match yet.
+	#[test]
+	fn migrates_a_database_that_predates_the_reserved_ledger_columns() {
+		let base = TempDir::new().unwrap();
+		let paritydb = base.path().join("paritydb");
+		let ledger = base.path().join("ledger_storage");
+
+		let legacy = legacy_pre_ledger_columns_config(&paritydb);
+		let db = parity_db::Db::open_or_create(&legacy).unwrap();
+		db.commit_changes(vec![(
+			0u8,
+			parity_db::Operation::Set(b"substrate-meta".to_vec(), b"intact".to_vec()),
+		)])
+		.unwrap();
+		drop(db);
+		seed_source(&ledger, 300);
+
+		let unified = config(&paritydb, StorageSeparation::Unified);
+		// Confirms the premise: opening under the current column count fails,
+		// same as any other pending migration.
+		assert!(parity_db::Db::open(&unified).is_err());
+
+		import_if_pending(&paritydb, &unified, &ledger).unwrap();
+
+		assert!(!ledger.exists(), "source should be retired");
+		assert!(base.path().join("ledger_storage.migrated").is_dir());
+		assert!(!base.path().join("ledger_storage.importing").exists());
+
+		{
+			let db = parity_db::Db::open(&unified).unwrap();
+			assert_eq!(db.get(0, b"substrate-meta").unwrap().as_deref(), Some(&b"intact"[..]));
+			for i in [0u32, 42, 299] {
+				assert_eq!(
+					db.get(NUM_COLUMNS_POLKADOT, &node_key(i)).unwrap(),
+					Some(vec![i as u8; 48]),
+					"ledger node {i} should have been copied",
+				);
+			}
+		}
+		assert_eq!(ledger_column_len(&unified, NUM_COLUMNS_POLKADOT), 300);
 	}
 
 	#[test]
