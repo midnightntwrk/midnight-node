@@ -2,7 +2,8 @@
 use crate::ledger_9::Bridge;
 use crate::{
 	common::types::{
-		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
+		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
+		TranslationStep, Tx,
 	},
 	ledger_9::{BlockContext, types::LedgerApiError},
 };
@@ -501,29 +502,40 @@ pub trait Ledger9Bridge {
 		true
 	}
 
-	/// Translate the ledger state from ledger-v8 format to ledger-v9 format.
+	/// Run one bounded step of the ledger-v8 -> ledger-v9 state translation.
 	///
-	/// Called by `pallet_midnight`'s v8->v9 storage migration during the runtime
-	/// upgrade that crosses into ledger-9. `state_key` is the pallet's `StateKey`
-	/// (a v8 arena root); returns the new v9 arena root to store back, together
-	/// with the synthetic cost (picoseconds) the translation consumed against
-	/// the ledger's cost model, for the pallet to charge as this migration's
-	/// weight.
-	fn migrate_state_v8_to_v9(
+	/// Driven once per block by `pallet_midnight`'s v8->v9 multi-block migration
+	/// during the runtime upgrade that crosses into ledger-9. `state_key` is the
+	/// pallet's `StateKey` (a v8 arena root), read only when `cursor` is empty;
+	/// `cursor` is the previous step's [`TranslationStep::InProgress`] payload,
+	/// verbatim; `budget_ps` is the picosecond budget this step may spend against
+	/// the ledger's deterministic cost model.
+	///
+	/// Returns [`TranslationStep::Done`] with the new v9 arena root to store back
+	/// into `StateKey`, or [`TranslationStep::InProgress`] with the cursor for the
+	/// next block's step.
+	fn migrate_state_v8_to_v9_step(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
-	) -> AllocateAndReturnByCodec<Result<(Vec<u8>, u64), LedgerApiError>> {
+		cursor: PassFatPointerAndRead<&[u8]>,
+		budget_ps: u64,
+	) -> AllocateAndReturnByCodec<Result<TranslationStep, LedgerApiError>> {
 		// Ensure the ledger arena is initialized before translating. The migration
-		// runs in the Executive migrations tuple, before pallet_midnight's
-		// on_initialize/on_runtime_upgrade have (re)initialized storage this block.
-		// `set_default_storage` is idempotent — a no-op if the pre-fork ledger-8
-		// blocks already set it (v8 and v9 share the same storage backend).
+		// runs in `pallet_migrations`' MBM service, before pallet_midnight's
+		// on_initialize/on_runtime_upgrade have (re)initialized storage on the
+		// first block of the upgrade. `set_default_storage` is idempotent — a
+		// no-op if the pre-fork ledger-8 blocks already set it (v8 and v9 share
+		// the same storage backend).
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::set_default_storage(*self);
-			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbUnified>(state_key)
+			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9_step::<DbUnified>(
+				state_key, cursor, budget_ps,
+			)
 		} else {
 			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbSeparate>(state_key)
+			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9_step::<DbSeparate>(
+				state_key, cursor, budget_ps,
+			)
 		}
 	}
 

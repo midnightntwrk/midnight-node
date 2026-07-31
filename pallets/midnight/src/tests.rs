@@ -450,6 +450,148 @@ fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 	});
 }
 
+/// Ledger v8 -> v9 multi-block migration ([`crate::migrations::v2`]).
+///
+/// Drives `SteppedMigration::step` directly — the mock leaves
+/// `frame_system::Config::MultiBlockMigrator` unset, so the MBM framework itself
+/// is not exercised here. The mock's ledger state is already v9, so the host
+/// function's idempotency guard makes the translation a single step; the
+/// multi-step and determinism properties are covered in
+/// `midnight_node_ledger::host_api::migration_8_to_9`'s tests.
+mod migration_v2 {
+	use super::*;
+	use crate::migrations::v2::MigrateV1ToV2;
+	use frame_support::{
+		migrations::{SteppedMigration, SteppedMigrationError},
+		traits::{GetStorageVersion, StorageVersion},
+		weights::WeightMeter,
+	};
+	use sp_runtime::Perbill;
+	use test_log::test;
+
+	type Migration = MigrateV1ToV2<Test>;
+
+	/// Same limit the runtime grants MBMs per block (80% of `max_block`).
+	fn service_meter() -> WeightMeter {
+		WeightMeter::with_limit(
+			Perbill::from_percent(80)
+				* <Test as frame_system::Config>::BlockWeights::get().max_block,
+		)
+	}
+
+	#[test]
+	fn pending_until_the_final_step_bumps_the_storage_version() {
+		mock::new_test_ext().execute_with(|| {
+			init_ledger_state(BlockContext::default());
+			// A ledger-8 chain arrives at this runtime on storage version 1.
+			StorageVersion::new(1).put::<mock::Midnight>();
+			let state_key_before = StateKey::<Test>::get();
+
+			assert!(
+				mock::Midnight::ledger_migration_pending(),
+				"the ledger must be frozen before the migration completes",
+			);
+
+			let mut meter = service_meter();
+			let cursor = Migration::step(None, &mut meter).expect("step must succeed");
+
+			assert!(cursor.is_none(), "an already-v9 state must finish in one step");
+			assert_eq!(
+				mock::Midnight::on_chain_storage_version(),
+				StorageVersion::new(2),
+				"the final step must bump the storage version to 2",
+			);
+			assert!(
+				!mock::Midnight::ledger_migration_pending(),
+				"the ledger must be un-frozen once the migration completes",
+			);
+			// The host function no-ops on an already-v9 root, so the key is
+			// rewritten with the same bytes.
+			assert_eq!(StateKey::<Test>::get(), state_key_before);
+			assert!(meter.consumed().ref_time() > 0, "the step must charge its budget");
+		});
+	}
+
+	#[test]
+	fn skips_when_genesis_is_already_at_version_two() {
+		mock::new_test_ext().execute_with(|| {
+			init_ledger_state(BlockContext::default());
+			// A chain whose genesis is already ledger-9 starts at version 2.
+			StorageVersion::new(2).put::<mock::Midnight>();
+			let state_key_before = StateKey::<Test>::get();
+
+			let mut meter = service_meter();
+			let cursor = Migration::step(None, &mut meter).expect("step must succeed");
+
+			assert!(cursor.is_none());
+			assert_eq!(StateKey::<Test>::get(), state_key_before);
+			assert_eq!(
+				meter.consumed(),
+				Weight::zero(),
+				"the version gate must short-circuit before charging anything",
+			);
+		});
+	}
+
+	/// The step budget is a fixed share of the meter's *limit*, so a meter that
+	/// has already been drawn down below that share must surface
+	/// `InsufficientWeight` (and be retried next block) rather than run a
+	/// short-changed step.
+	#[test]
+	fn insufficient_remaining_weight_defers_the_step() {
+		mock::new_test_ext().execute_with(|| {
+			init_ledger_state(BlockContext::default());
+			StorageVersion::new(1).put::<mock::Midnight>();
+
+			let mut meter = service_meter();
+			// Leave half the limit: less than the 75% share a step asks for.
+			let half = Perbill::from_percent(50) * meter.limit();
+			meter.consume(half);
+
+			let result = Migration::step(None, &mut meter);
+			assert!(
+				matches!(result, Err(SteppedMigrationError::InsufficientWeight { .. })),
+				"a drawn-down meter must surface InsufficientWeight, got {result:?}",
+			);
+			assert!(
+				mock::Midnight::ledger_migration_pending(),
+				"a deferred step must leave the ledger frozen",
+			);
+		});
+	}
+
+	/// The load-bearing guard: `on_finalize` runs on every block the migration
+	/// spans, and `apply_post_block_update` against a pre-migration state would
+	/// fail — and it is `expect`ed, so an unguarded `on_finalize` bricks the chain
+	/// on the upgrade block.
+	#[test]
+	fn on_finalize_skips_the_post_block_update_while_pending() {
+		mock::new_test_ext().execute_with(|| {
+			init_ledger_state(BlockContext::default());
+			StorageVersion::new(1).put::<mock::Midnight>();
+			let state_key_before = StateKey::<Test>::get();
+
+			// Must not panic, and must leave the ledger state key alone.
+			mock::Midnight::on_finalize(mock::System::block_number());
+			assert_eq!(
+				StateKey::<Test>::get(),
+				state_key_before,
+				"no post-block update may run while the migration is pending",
+			);
+
+			// Once the migration has completed, the post-block update resumes and
+			// advances the state key.
+			StorageVersion::new(2).put::<mock::Midnight>();
+			mock::Midnight::on_finalize(mock::System::block_number());
+			assert_ne!(
+				StateKey::<Test>::get(),
+				state_key_before,
+				"the post-block update must resume once the migration completes",
+			);
+		});
+	}
+}
+
 #[cfg(feature = "experimental")]
 #[ignore = "TODO UNSHIELDED - fix when Claim Mint is properly handled for Unshielded"]
 #[test]

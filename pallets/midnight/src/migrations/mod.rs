@@ -24,5 +24,5 @@ pub const PALLET_MIGRATIONS_ID: &[u8; 19] = b"pallet-midnight-mbm";
 // for the example of such a migration.
 // pub mod v1;
 
-/// Single-block ledger v8 -> v9 state translation (storage version 1 -> 2).
+/// Multi-block ledger v8 -> v9 state translation (storage version 1 -> 2).
 pub mod v2;

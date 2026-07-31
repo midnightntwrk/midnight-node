@@ -543,8 +543,18 @@ parameter_types! {
 
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
+	// Append-only: `ActiveCursor.index` is an index into this tuple, so inserting
+	// ahead of an existing entry would misidentify an in-flight migration.
+	// Completed migrations are skipped via `Historic`, not removed.
 	#[cfg(not(feature = "runtime-benchmarks"))]
-	type Migrations = (pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,);
+	type Migrations = (
+		pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,
+		// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
+		// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
+		// this ledger-9 runtime (storage version 2). Normally completes in the
+		// upgrade block; pauses the ledger for as many blocks as it spans.
+		pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+	);
 	// Benchmarks need mocked migrations to guarantee that they succeed.
 	#[cfg(feature = "runtime-benchmarks")]
 	type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
@@ -1200,13 +1210,7 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (
-	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
-	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
-	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
-	// this ledger-9 runtime (storage version 2).
-	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
-);
+pub type Migrations = (pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where

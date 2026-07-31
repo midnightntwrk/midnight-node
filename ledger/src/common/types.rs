@@ -266,6 +266,20 @@ pub struct BenchmarkClaimMintTxBuilder {
 	pub token: Vec<u8>,
 }
 
+/// Outcome of one bounded step of the ledger v8 -> v9 state translation
+/// (`Ledger9Bridge::migrate_state_v8_to_v9_step`).
+///
+/// Lives here rather than next to the host implementation because the on-chain
+/// half (`pallet_midnight::migrations::v2`) is `no_std`, whereas the translation
+/// module is std-only.
+#[derive(Encode, Decode, TypeInfo, Debug, Clone, PartialEq, Eq)]
+pub enum TranslationStep {
+	/// Translation is incomplete. Pass `cursor` back to the next step verbatim.
+	InProgress { cursor: Vec<u8> },
+	/// Translation finished. Store `state_key` into `pallet_midnight::StateKey`.
+	Done { state_key: Vec<u8> },
+}
+
 pub type SegmentId = u16;
 
 #[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq, TypeInfo)]
