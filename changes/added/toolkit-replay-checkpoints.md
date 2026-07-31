@@ -13,3 +13,4 @@ from regression), and the intermediate snapshots are collected by the
 existing reference-based GC as wallet heights advance past them.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1968
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1970

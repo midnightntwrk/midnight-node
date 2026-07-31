@@ -13,3 +13,4 @@ previously this fallback was silent and a single stray seed caused a
 full-chain replay with no indication why.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1968
+Issue: https://github.com/midnightntwrk/midnight-node/issues/1970
