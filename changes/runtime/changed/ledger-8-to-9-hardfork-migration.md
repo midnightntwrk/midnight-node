@@ -54,4 +54,5 @@ hardcoding the v9 deserializer), and restoring the ledger-8
 still imports.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1925
+PR: https://github.com/midnightntwrk/midnight-node/pull/1962
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1580
