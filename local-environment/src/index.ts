@@ -100,8 +100,16 @@ program
     "--from-snapshot <uri>",
     "http(s):// snapshot URI to restore before the first well-known-network bring-up. Later runs can omit it to reuse existing local fork state.",
   )
+  .option(
+    "--from-genesis",
+    "Bring up the well-known network's base compose from block 0 instead of forking a snapshot. Requires the network's validator seeds and main-chain data-source env vars (see README).",
+  )
+  .option(
+    "--compose-override <path...>",
+    "Extra docker-compose override file(s) applied after the generated genesis override (from-genesis mode only), e.g. to point nodes at a mock main-chain follower for fully local runs.",
+  )
   .description(
-    "Bring up a forked well-known network from a snapshot using mock-authorities, reuse an existing local fork, or run the local-env target.",
+    "Bring up a forked well-known network from a snapshot using mock-authorities, reuse an existing local fork, start a well-known network from genesis, or run the local-env target.",
   )
   .action(async (network: string, options: RunOptions) => {
     await run(network, options);
