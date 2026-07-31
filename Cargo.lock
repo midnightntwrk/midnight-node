@@ -7948,6 +7948,7 @@ dependencies = [
  "sc-client-db",
  "sc-consensus",
  "sc-consensus-aura",
+ "sc-consensus-babe",
  "sc-consensus-beefy",
  "sc-consensus-beefy-rpc",
  "sc-consensus-grandpa",

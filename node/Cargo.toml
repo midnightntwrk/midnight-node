@@ -168,6 +168,8 @@ yamux = "0.13"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Enable the `std`-gated `testing` module (MemoryKeystore) for unit tests.
 sp-keystore = { workspace = true, features = ["std"] }
+# Pins the upstream `find_pre_digest` contract the digest-synthesizing client relies on.
+sc-consensus-babe.workspace = true
 
 [build-dependencies]
 substrate-build-script-utils.workspace = true
