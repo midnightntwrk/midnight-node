@@ -34,6 +34,15 @@ pub trait LedgerStateProviderMut {
 	fn mut_ledger_state<F, E, R>(f: F) -> Result<R, E>
 	where
 		F: FnOnce(Vec<u8>) -> Result<(Vec<u8>, R), E>;
+	/// Whether a ledger state migration is still in flight, i.e. the state key
+	/// references a state the *current* runtime's ledger API cannot read.
+	///
+	/// Multi-block migrations are serviced after a block's inherents, so every
+	/// mandatory inherent in a migration block runs against the pre-migration
+	/// state. Callers that touch the ledger from an inherent (or from
+	/// `on_finalize`) must skip that work while this is `true`, and must leave
+	/// their own progress markers untouched so the work is re-delivered later.
+	fn ledger_migration_pending() -> bool;
 }
 
 pub trait LedgerBlockContextProvider {
@@ -45,6 +54,10 @@ pub trait MidnightSystemTransactionExecutor {
 	fn execute_system_transaction(
 		serialized_system_transaction: Vec<u8>,
 	) -> Result<Hash, DispatchError>;
+	/// Whether a ledger state migration is still in flight, in which case
+	/// [`Self::execute_system_transaction`] would fail against the pre-migration
+	/// state. See [`LedgerStateProviderMut::ledger_migration_pending`].
+	fn ledger_migration_pending() -> bool;
 }
 
 #[derive(Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]

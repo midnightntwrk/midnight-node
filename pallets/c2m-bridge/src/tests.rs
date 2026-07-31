@@ -88,6 +88,26 @@ fn emits_events() {
 	})
 }
 
+/// The bridge inherent runs before multi-block migrations are serviced, so while
+/// the ledger v8 -> v9 translation is in flight the handler must refuse the whole
+/// batch — `pallet_partner_chains_bridge` then leaves its data checkpoint
+/// unchanged and re-delivers the transfers later.
+#[test]
+fn defers_transfers_while_the_ledger_migration_is_pending() {
+	new_test_ext().execute_with(|| {
+		assert!(
+			<C2MBridge as TransferHandler<BridgeRecipient>>::can_handle_transfers(),
+			"transfers must be accepted when no ledger migration is pending",
+		);
+
+		mock_pallet::LedgerMigrationPending::<Test>::put(true);
+		assert!(
+			!<C2MBridge as TransferHandler<BridgeRecipient>>::can_handle_transfers(),
+			"transfers must be deferred while the ledger migration is pending",
+		);
+	})
+}
+
 #[test]
 fn nonce_influences_addressed_transfers() {
 	new_test_ext().execute_with(|| {

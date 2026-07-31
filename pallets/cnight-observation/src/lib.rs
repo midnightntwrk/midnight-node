@@ -666,9 +666,20 @@ pub mod pallet {
 			// the migration drains it. Skip processing entirely; `NextCardanoPosition`
 			// stays unchanged so the next block's inherent re-presents the same UTXOs
 			// (plus any new ones) and we resume once the migration finishes.
-			if Pallet::<T>::on_chain_storage_version() < STORAGE_VERSION {
+			let mapping_migration_pending =
+				Pallet::<T>::on_chain_storage_version() < STORAGE_VERSION;
+			// Likewise while the ledger v8 -> v9 state translation is in flight: MBM
+			// steps run *after* a block's inherents, so this mandatory inherent
+			// executes against a state the current ledger API cannot read, and
+			// `execute_system_transaction` below would fail — failing a mandatory
+			// inherent makes the block unimportable. Skipping leaves
+			// `NextCardanoPosition` unchanged, so the node's inherent data provider
+			// re-delivers the identical UTXO batch in a later block.
+			let ledger_migration_pending =
+				<T as Config>::MidnightSystemTransactionExecutor::ledger_migration_pending();
+			if mapping_migration_pending || ledger_migration_pending {
 				log::warn!(
-					"cnight-observation: skipping process_tokens (on-chain storage version {:?} < {:?}); MBM in progress",
+					"cnight-observation: skipping process_tokens (mapping migration pending: {mapping_migration_pending}, on-chain storage version {:?} of {:?}; ledger migration pending: {ledger_migration_pending})",
 					Pallet::<T>::on_chain_storage_version(),
 					STORAGE_VERSION,
 				);
