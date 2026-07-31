@@ -806,6 +806,8 @@ jobs:
     with:
       image: midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-release }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-dockerhub-${{ matrix.arch }}-release
+      platform: linux/${{ matrix.arch }}
+      multi-arch-image: midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-release }}
       skip-scan: true
       tlog-upload: true
     secrets: inherit
@@ -826,6 +828,8 @@ jobs:
     with:
       image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.toolkit-tag-release }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-dockerhub-${{ matrix.arch }}-release
+      platform: linux/${{ matrix.arch }}
+      multi-arch-image: midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.toolkit-tag-release }}
       skip-scan: true
       tlog-upload: true
     secrets: inherit
