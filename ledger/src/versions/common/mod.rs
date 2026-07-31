@@ -836,6 +836,12 @@ where
 		};
 
 		/// Per-transaction preparation outcome (kept in input order).
+		///
+		/// `Ready` is deliberately not boxed despite dwarfing `Failed`: this is a short-lived local
+		/// buffer holding one entry per transaction in a single batch, so the wasted stack/`Vec` bytes
+		/// are bounded by the batch size, whereas boxing would add two heap allocations per
+		/// transaction on the batch-verification hot path this whole function exists to speed up.
+		#[allow(clippy::large_enum_variant)]
 		enum Prep<S: SignatureKind<D>, D: DB> {
 			/// Deserialization or the non-crypto `well_formed` checks failed for this tx.
 			Failed(LedgerApiError),
@@ -853,7 +859,7 @@ where
 			let tx = match api.tagged_deserialize::<Transaction<S, D>>(tx_serialized) {
 				Ok(tx) => tx,
 				Err(e) => {
-					preps.push(Prep::Failed(e.into()));
+					preps.push(Prep::Failed(e));
 					continue;
 				},
 			};
@@ -1292,6 +1298,7 @@ where
 	/// - Checks the strict cache (keyed by state_hash + tx_hash)
 	/// - On hit: returns cached VerifiedTransaction
 	/// - On miss: calls well_formed(), caches result in both caches, returns it
+	///
 	/// Returns the transaction's `VerifiedTransaction` together with the wall-clock time spent
 	/// running the ZK crypto **inline**, if any. The duration is `Some` only on the OFF/cold-cache
 	/// path — where `well_formed` verified the proofs itself — and `None` on a strict-cache hit or a
