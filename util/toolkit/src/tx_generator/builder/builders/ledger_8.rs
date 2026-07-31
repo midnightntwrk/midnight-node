@@ -28,6 +28,7 @@ pub mod inner {
 	mod contract_maintenance;
 	mod deregister_dust_address;
 	mod do_nothing;
+	pub mod output_spec;
 	mod register_dust_address;
 	pub mod single_tx;
 	pub mod transactions;

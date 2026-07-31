@@ -44,6 +44,11 @@ services:
         --unsafe-rpc-external
         --rpc-cors=all
         --public-addr /dns4/node1/tcp/30334
+        --reserved-only
+        --reserved-nodes /dns4/node2/tcp/30335/p2p/12D3KooWSCufgHzV4fCwRijfH2k3abrpAJxTKxEvN1FDuRXA2U9x
+        --reserved-nodes /dns4/node3/tcp/30336/p2p/12D3KooWSsChzF81YDUKpe9Uk5AHV5oqAaXAcWNSPYgoLauUk4st
+        --reserved-nodes /dns4/node4/tcp/30337/p2p/12D3KooWSuTq6MG9gPt7qZqLFKkYrfxMewTZhj9nmRHJkPwzWDG2
+        --reserved-nodes /dns4/node5/tcp/30338/p2p/12D3KooWMz5U7fR8mF5DNhZSSyFN8c19kU63xYopzDSNCzoFigYk
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -77,6 +82,8 @@ services:
         --unsafe-rpc-external
         --rpc-cors=all
         --public-addr /dns4/node2/tcp/30335
+        --reserved-only
+        --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -110,6 +117,8 @@ services:
         --unsafe-rpc-external
         --rpc-cors=all
         --public-addr /dns4/node3/tcp/30336
+        --reserved-only
+        --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -143,6 +152,8 @@ services:
         --unsafe-rpc-external
         --rpc-cors=all
         --public-addr /dns4/node4/tcp/30337
+        --reserved-only
+        --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -176,6 +187,8 @@ services:
         --unsafe-rpc-external
         --rpc-cors=all
         --public-addr /dns4/node5/tcp/30338
+        --reserved-only
+        --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s

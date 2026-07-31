@@ -128,67 +128,19 @@ function findHostPort(service: unknown, containerPort: number): number | null {
 function parsePortMapping(entry: unknown): PortMapping | null {
   if (typeof entry === "string") {
     const [withoutProto] = entry.split("/");
-    // Split on ':' separators only, ignoring the ':' inside a compose
-    // interpolation default like `${MN1_RPC_HOST_PORT:-9933}`.
-    const parts = splitTopLevelColons(withoutProto);
+    const parts = withoutProto.split(":");
     if (parts.length < 2) return null;
-    const host = resolvePortToken(parts[parts.length - 2]);
-    const container = resolvePortToken(parts[parts.length - 1]);
-    if (host === null || container === null) return null;
+    const host = Number.parseInt(parts[parts.length - 2], 10);
+    const container = Number.parseInt(parts[parts.length - 1], 10);
+    if (!Number.isFinite(host) || !Number.isFinite(container)) return null;
     return { host, container };
   }
   if (entry && typeof entry === "object") {
     const obj = entry as Record<string, unknown>;
-    const host = resolvePortToken(String(obj.published));
-    const container = resolvePortToken(String(obj.target));
-    if (host === null || container === null) return null;
+    const host = Number(obj.published);
+    const container = Number(obj.target);
+    if (!Number.isFinite(host) || !Number.isFinite(container)) return null;
     return { host, container };
   }
   return null;
-}
-
-/**
- * Resolve a compose port token to a number. Handles plain integers as well as
- * compose interpolation — `${VAR}` and `${VAR:-default}` — by reading the
- * current process environment, which carries the per-runner host ports injected
- * at bring-up. Returns null if the token can't be resolved to a finite number.
- */
-function resolvePortToken(token: string): number | null {
-  const trimmed = token.trim();
-  const interp = trimmed.match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(\d+))?\}$/);
-  if (interp) {
-    const [, name, fallback] = interp;
-    const fromEnv = process.env[name];
-    const raw =
-      fromEnv !== undefined && fromEnv !== "" ? fromEnv : (fallback ?? "");
-    const value = Number.parseInt(raw, 10);
-    return Number.isFinite(value) ? value : null;
-  }
-  const value = Number.parseInt(trimmed, 10);
-  return Number.isFinite(value) ? value : null;
-}
-
-/**
- * Split a compose port string on its ':' separators while treating any
- * `${...}` interpolation as opaque, so the ':' in a `${VAR:-default}` default
- * is not mistaken for a host/container separator.
- */
-function splitTopLevelColons(s: string): string[] {
-  const parts: string[] = [];
-  let current = "";
-  let depth = 0;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === "{") depth++;
-    else if (ch === "}") depth = Math.max(0, depth - 1);
-
-    if (ch === ":" && depth === 0) {
-      parts.push(current);
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  parts.push(current);
-  return parts;
 }

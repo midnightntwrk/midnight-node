@@ -13,6 +13,8 @@
 
 extern crate alloc;
 
+pub mod armed_babe_proposer;
+mod aura_to_babe_migration_keystore;
 pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;

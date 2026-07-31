@@ -68,6 +68,7 @@ impl crate::Config for Test {
 	type GovernanceOrigin = EnsureRoot<AccountId>;
 	type MidnightSystemTransactionExecutor = Mock;
 	type MinBridgeAmountProvider = Mock;
+	type WeightInfo = ();
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

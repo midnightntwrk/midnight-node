@@ -177,6 +177,8 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// A Cardano Wallet address was sent, but was longer than expected
 		MaxCardanoAddrLengthExceeded,
+		/// A Cardano asset name contained non-ASCII bytes
+		NonAsciiAssetName,
 		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
 		/// Next Cardano position does not advance beyond current position
@@ -757,7 +759,7 @@ pub mod pallet {
 		///
 		/// This extrinsic needs Root origin
 		#[pallet::call_index(2)]
-		#[pallet::weight((1, DispatchClass::Normal))]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
 		pub fn set_mapping_validator_contract_address(
 			origin: OriginFor<T>,
 			address: Vec<u8>,
@@ -769,6 +771,52 @@ pub mod pallet {
 					.try_into()
 					.map_err(|_| Error::<T>::MaxCardanoAddrLengthExceeded)?,
 			);
+
+			Ok(())
+		}
+
+		/// Replaces the (policy id, asset name) pair identifying the cNIGHT native asset
+		/// on Cardano. Intended for ephemeral forks redirecting to STAGING contracts.
+		///
+		/// This extrinsic needs Root origin.
+		#[pallet::call_index(3)]
+		#[pallet::weight((T::WeightInfo::set_cnight_identifier(), DispatchClass::Normal))]
+		pub fn set_cnight_identifier(
+			origin: OriginFor<T>,
+			policy_id: [u8; CNIGHT_POLICY_ID_LENGTH as usize],
+			asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			// Genesis validates asset names as ASCII-only strings, and block authors
+			// convert this value to a `String` when building the cNIGHT observation
+			// inherent. Enforce the same constraint here so a root call cannot store
+			// bytes that would make inherent-data creation fail.
+			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
+			// Infallible: the array length equals the BoundedVec bound.
+			let bounded_policy_id: BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>> =
+				BoundedVec::truncate_from(policy_id.to_vec());
+			CNightIdentifier::<T>::set((bounded_policy_id, asset_name));
+
+			Ok(())
+		}
+
+		/// Replaces the asset name of the auth token used by the mapping validator on Cardano.
+		/// Intended for ephemeral forks redirecting to STAGING contracts.
+		///
+		/// This extrinsic needs Root origin.
+		#[pallet::call_index(4)]
+		#[pallet::weight((T::WeightInfo::set_auth_token_asset_name(), DispatchClass::Normal))]
+		pub fn set_auth_token_asset_name(
+			origin: OriginFor<T>,
+			asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			// Genesis validates this field as an ASCII-only string, and block authors
+			// convert it to a `String` when building the cNIGHT observation inherent.
+			// Enforce the same constraint here so a root call cannot store bytes that
+			// would make inherent-data creation fail.
+			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
+			MainChainAuthTokenAssetName::<T>::set(asset_name);
 
 			Ok(())
 		}

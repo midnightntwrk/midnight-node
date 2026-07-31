@@ -23,7 +23,6 @@ import {
   loadEnvDefault,
   requiredImageVars,
 } from "../lib/localEnv";
-import { currentLayout, layoutEnv } from "../lib/ports";
 
 export async function stop(network: string, runOptions: RunOptions) {
   if (network === "local-env") {
@@ -75,14 +74,10 @@ function stopLocalEnvironment(runOptions: RunOptions) {
 
   const localEnvSecretVars = getLocalEnvSecretVars();
   const envDefault = loadEnvDefault();
-  // Match the layout used at bring-up so `down` targets this slot's compose
-  // project (and its volumes), not a sibling runner's stack.
-  const layout = currentLayout();
   const finalEnv: Record<string, string> = {
     ...envDefault,
     ...localEnvSecretVars,
     ...cleanEnv(process.env),
-    ...layoutEnv(layout),
   };
 
   const missing = requiredImageVars.filter((key) => !finalEnv[key]);

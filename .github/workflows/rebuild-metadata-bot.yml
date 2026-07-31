@@ -76,7 +76,7 @@ jobs:
             core.setOutput('number', prNumber);
 
       - name: Checkout PR branch
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
           ref: ${{ steps.pr.outputs.sha }}
@@ -91,7 +91,7 @@ jobs:
           use-cache: false
 
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -100,10 +100,10 @@ jobs:
       - name: Run rebuild-metadata
         env:
           EARTHLY_CONFIG: .earthly/config.yml
+          # No .envrc here to forward it, so set directly: disable Earthly build caches on
+          # CI runners (see the CI ARG in the Earthfile).
+          EARTHLY_BUILD_ARGS: CI=true
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
           earthly -P +rebuild-metadata
 
       - name: Commit and push changes

@@ -17,20 +17,61 @@ use crate::{
 	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
 };
 use cardano_serialization_lib::PlutusData;
-use derive_new::new;
+use lru::LruCache;
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
 	FederatedAuthorityObservationConfig, GovernanceAuthorityDatumR0, GovernanceAuthorityDatums,
 };
 use sidechain_domain::{McBlockHash, PolicyId};
 pub use sqlx::PgPool;
+use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
 
-#[derive(new)]
+/// Cache key for `get_federated_authority_data`.
+///
+/// The result is derived from the Cardano block *and* the governance bodies the
+/// query reads (council and technical committee addresses + policy ids), so all
+/// of those must take part in the key. Keying on `mc_block_hash` alone would
+/// serve stale data if the governance config changes (e.g. across a runtime
+/// upgrade) while the block hash is unchanged. The genesis-only `members` /
+/// `members_mainchain` fields don't affect the query, so they're left out.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct FederatedAuthorityCacheKey {
+	mc_block_hash: McBlockHash,
+	council_address: String,
+	council_policy_id: PolicyId,
+	technical_committee_address: String,
+	technical_committee_policy_id: PolicyId,
+}
+
+impl FederatedAuthorityCacheKey {
+	fn new(config: &FederatedAuthorityObservationConfig, mc_block_hash: &McBlockHash) -> Self {
+		Self {
+			mc_block_hash: mc_block_hash.clone(),
+			council_address: config.council.address.clone(),
+			council_policy_id: config.council.policy_id.clone(),
+			technical_committee_address: config.technical_committee.address.clone(),
+			technical_committee_policy_id: config.technical_committee.policy_id.clone(),
+		}
+	}
+}
+
 pub struct FederatedAuthorityObservationDataSourceImpl {
 	pub pool: PgPool,
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
-	#[allow(dead_code)]
-	cache_size: u16,
+	cache: Arc<Mutex<LruCache<FederatedAuthorityCacheKey, FederatedAuthorityData>>>,
+}
+
+impl FederatedAuthorityObservationDataSourceImpl {
+	pub fn new(
+		pool: PgPool,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		cache_size: u16,
+	) -> Self {
+		let cap = NonZeroUsize::new(cache_size.max(1) as usize).unwrap();
+		let cache = Arc::new(Mutex::new(LruCache::new(cap)));
+		Self { pool, metrics_opt, cache }
+	}
 }
 
 observed_async_trait!(
@@ -40,6 +81,16 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 		config: &FederatedAuthorityObservationConfig,
 		mc_block_hash: &McBlockHash,
 	) -> Result<FederatedAuthorityData, Box<dyn std::error::Error + Send + Sync>> {
+		// Memoize combined council and technical committee data by Cardano block
+		// hash *and* the governance config the query reads from.
+		let cache_key = FederatedAuthorityCacheKey::new(config, mc_block_hash);
+		if let Ok(mut cache) = self.cache.lock()
+			&& let Some(cached) = cache.get(&cache_key)
+		{
+			log::debug!("fedauth cache hit for mc_block_hash {:?}", mc_block_hash);
+			return Ok(cached.clone());
+		}
+
 		// Get block number from hash
 		let _block_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_block_by_hash");
 		let block = crate::db::get_block_by_hash(&self.pool, mc_block_hash.clone()).await?;
@@ -52,7 +103,6 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 		};
 
-		// Query council UTXO
 		let _council_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_council_utxo");
 		let council_utxo = get_governance_body_utxo(
 			&self.pool,
@@ -86,8 +136,8 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 		};
 
-		// Query technical committee UTXO
-		let _techcomm_timer = start_sub_query_timer(&self.metrics_opt, "fedauth_get_technical_committee_utxo");
+		let _techcomm_timer =
+			start_sub_query_timer(&self.metrics_opt, "fedauth_get_technical_committee_utxo");
 		let technical_committee_utxo = get_governance_body_utxo(
 			&self.pool,
 			&config.technical_committee.address,
@@ -120,11 +170,15 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			},
 		};
 
-		Ok(FederatedAuthorityData {
+		let result = FederatedAuthorityData {
 			council_authorities,
 			technical_committee_authorities,
 			mc_block_hash: mc_block_hash.clone(),
-		})
+		};
+		if let Ok(mut cache) = self.cache.lock() {
+			cache.put(cache_key, result.clone());
+		}
+		Ok(result)
 	}
 }
 );

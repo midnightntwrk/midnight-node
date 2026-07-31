@@ -39,19 +39,19 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -61,7 +61,7 @@ jobs:
       # needed for testing while main branch does not have
       # ./.github/actions/install-season
       - name: Checkout node repo (for install-season action)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           path: ./midnight-node-ci
 
@@ -72,7 +72,7 @@ jobs:
           config: ./midnight-node-ci/.github/season.yml
 
       - name: Install just
-        uses: taiki-e/install-action@3235f8901fd37ffed0052b276cec25a362fb82e9 #v2.77.7
+        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 #v2.84.0
         with:
           tool: just
 
@@ -113,17 +113,13 @@ jobs:
         run: |
           git fetch origin "$GITHUB_REF" --depth=1
           git checkout FETCH_HEAD -- "scripts/free-disk-space.sh"
-          ./scripts/free-disk-space.sh
+          ./scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Run build
         if: steps.check-images.outputs.images_exist != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
@@ -140,13 +136,13 @@ jobs:
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node image (amd64)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node
           subject-digest: ${{ steps.digests.outputs.node }}
 
       - name: Attest toolkit image (amd64)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
@@ -261,13 +257,13 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
           ref: ${{ github.event.inputs.branch }}
 
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -310,10 +306,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
@@ -328,13 +320,13 @@ jobs:
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node image (arm64)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node
           subject-digest: ${{ steps.digests.outputs.node }}
 
       - name: Attest toolkit image (arm64)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
@@ -480,20 +472,20 @@ jobs:
       attestations: write  # Required for GitHub native attestations
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee #v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Checkout node repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           ref: ${{ github.event.inputs.branch }}
           submodules: true
@@ -529,13 +521,13 @@ jobs:
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node multi-arch manifest (GHCR)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node
           subject-digest: ${{ steps.ghcr-digests.outputs.node }}
 
       - name: Attest toolkit multi-arch manifest (GHCR)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.ghcr-digests.outputs.toolkit }}
@@ -583,13 +575,13 @@ jobs:
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node commit-tagged image (GHCR midnightntwrk)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.midnightntwrk-digests.outputs.node }}
 
       - name: Attest toolkit commit-tagged image (GHCR midnightntwrk)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-digests.outputs.toolkit }}
@@ -690,42 +682,42 @@ jobs:
 
       - name: Attest Docker Hub node image (amd64)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.dockerhub-digests.outputs.node-amd64 }}
 
       - name: Attest Docker Hub node image (arm64)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.dockerhub-digests.outputs.node-arm64 }}
 
       - name: Attest Docker Hub toolkit image (amd64)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-amd64 }}
 
       - name: Attest Docker Hub toolkit image (arm64)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-arm64 }}
 
       - name: Attest Docker Hub node multi-arch manifest
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.dockerhub-digests.outputs.node-multi }}
 
       - name: Attest Docker Hub toolkit multi-arch manifest
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-multi }}
@@ -741,14 +733,14 @@ jobs:
 
       - name: Attest node `latest-main` image (GHCR midnightntwrk)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.midnightntwrk-latest-digests.outputs.node }}
 
       - name: Attest toolkit `latest-main` image (GHCR midnightntwrk)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-latest-digests.outputs.toolkit }}

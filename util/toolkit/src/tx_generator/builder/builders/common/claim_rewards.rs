@@ -15,22 +15,23 @@ use async_trait::async_trait;
 use std::{convert::Infallible, sync::Arc};
 
 use super::ledger_helpers_local::{
-	BuilderContext, ClaimMintInfo, DefaultDB, FromContext, ProofProvider, RewardsInfo,
-	TransactionWithContext, Wallet,
+	BuilderContext, ClaimKind, ClaimMintInfo, DefaultDB, FromContext, ProofProvider, RewardsInfo,
+	TransactionWithContext, WalletSeed,
 };
 
 use crate::{
 	serde_def::SourceTransactions,
-	tx_generator::builder::{BuildTxs, ClaimRewardsArgs},
+	tx_generator::builder::{BuildTxs, ClaimKindArg, ClaimRewardsArgs},
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub struct ClaimRewardsBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
-	funding_seed: String,
+	funding_seed: WalletSeed,
 	rng_seed: Option<[u8; 32]>,
 	amount: u128,
+	claim_kind: ClaimKind,
 }
 
 impl<C: BuilderContext<DefaultDB>> ClaimRewardsBuilder<C> {
@@ -39,12 +40,23 @@ impl<C: BuilderContext<DefaultDB>> ClaimRewardsBuilder<C> {
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		use super::type_convert::convert_wallet_seed;
+
+		// Map the CLI-facing arg onto this ledger version's `ClaimKind`.
+		let claim_kind = match args.claim_kind {
+			ClaimKindArg::Reward => ClaimKind::Reward,
+			ClaimKindArg::CardanoBridge => ClaimKind::CardanoBridge,
+		};
+		// Only the seed value is stored; its scheme is applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (funding_seed, _) = args.funding_seed.resolve();
 		Self {
 			context,
 			prover,
-			funding_seed: args.funding_seed,
+			funding_seed: convert_wallet_seed(funding_seed),
 			rng_seed: args.rng_seed,
 			amount: args.amount,
+			claim_kind,
 		}
 	}
 }
@@ -60,7 +72,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ClaimRewardsBuilder<C> {
 		let context_arc = self.context.clone();
 
 		// - Calculate the funding `WalletSeed` (can be more than one)
-		let funding_seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.funding_seed);
+		let funding_seed = self.funding_seed.clone();
 
 		// - Transaction info
 		let mut tx_info = ClaimMintInfo::new_from_context(
@@ -73,6 +85,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ClaimRewardsBuilder<C> {
 		let rewards = RewardsInfo { owner: funding_seed, value: self.amount };
 
 		tx_info.set_rewards(rewards);
+		tx_info.set_claim_kind(self.claim_kind);
 
 		#[cfg(not(feature = "erase-proof"))]
 		let tx = tx_info.prove().await;

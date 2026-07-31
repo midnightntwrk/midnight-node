@@ -43,11 +43,10 @@ pub async fn execute(
 
 	let serialized_state = fork_ctx.dispatch(
 		|ctx| {
-			let addr =
-				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_contract_address(
-					args.contract_address,
-				);
-			crate::commands::fork::ledger_7::contract_state::get_contract_state(&ctx, addr)
+			crate::commands::fork::ledger_7::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)
 		},
 		|ctx| {
 			crate::commands::fork::ledger_8::contract_state::get_contract_state(

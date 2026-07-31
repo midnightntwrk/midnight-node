@@ -75,6 +75,22 @@ pub trait Ledger9Bridge {
 		}
 	}
 
+	fn apply_post_block_update(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_post_block_update(*self, state_key, block_context)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_post_block_update(
+				*self,
+				state_key,
+				block_context,
+			)
+		}
+	}
+
 	// Current Enabled Version
 	fn get_version(&mut self) -> AllocateAndReturnFatPointer<Vec<u8>> {
 		// Dispatch on storage mode even though `get_version` doesn't read storage today —
@@ -274,6 +290,22 @@ pub trait Ledger9Bridge {
 	}
 
 	/*
+	 * Returns the unclaimed Cardano-bridge transfer amount for a provided beneficiary address
+	 */
+	// Current Enabled Version
+	fn get_bridge_receiving_amount(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		beneficiary: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_bridge_receiving_amount(state_key, beneficiary)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_bridge_receiving_amount(state_key, beneficiary)
+		}
+	}
+
+	/*
 	 * Returns the Ledger Parameters
 	 */
 	// Current Enabled Version
@@ -467,5 +499,64 @@ pub trait Ledger9Bridge {
 			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
 		}
 		true
+	}
+
+	/// Translate the ledger state from ledger-v8 format to ledger-v9 format.
+	///
+	/// Called by `pallet_midnight`'s v8->v9 storage migration during the runtime
+	/// upgrade that crosses into ledger-9. `state_key` is the pallet's `StateKey`
+	/// (a v8 arena root); returns the new v9 arena root to store back, together
+	/// with the synthetic cost (picoseconds) the translation consumed against
+	/// the ledger's cost model, for the pallet to charge as this migration's
+	/// weight.
+	fn migrate_state_v8_to_v9(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<(Vec<u8>, u64), LedgerApiError>> {
+		// Ensure the ledger arena is initialized before translating. The migration
+		// runs in the Executive migrations tuple, before pallet_midnight's
+		// on_initialize/on_runtime_upgrade have (re)initialized storage this block.
+		// `set_default_storage` is idempotent — a no-op if the pre-fork ledger-8
+		// blocks already set it (v8 and v9 share the same storage backend).
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::set_default_storage(*self);
+			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbUnified>(state_key)
+		} else {
+			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
+			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbSeparate>(state_key)
+		}
+	}
+
+	/// Initialize a process-wide temporary ledger ParityDb seeded with the
+	/// undeployed-network genesis state.
+	///
+	/// Seeding with the undeployed genesis state is required because the
+	/// chain-spec's `StateKey<T>` is derived from that exact byte payload;
+	/// any other seed would produce a different arena root and host calls
+	/// like `get_c_to_m_bridge_min_amount` would not resolve.
+	///
+	/// `init_storage_paritydb_separate` internally calls the storage-core's
+	/// once-set `set_default_storage`, so subsequent calls across benchmark
+	/// iterations are effectively no-ops; we still gate with a `OnceLock`
+	/// to avoid the re-alloc + parity-db lock churn that would otherwise
+	/// happen each iteration.
+	#[cfg(feature = "runtime-benchmarks")]
+	fn register_benchmark_ledger_storage(&mut self) {
+		// Can't use `midnight-node-res` dependency, because it transitively depends
+		// on this crate (via `pallet-cnight-observation`).
+		const GENESIS_STATE_UNDEPLOYED: &[u8] =
+			include_bytes!("../../../res/genesis/genesis_state_undeployed.mn");
+		use std::sync::OnceLock;
+		static INIT: OnceLock<()> = OnceLock::new();
+		INIT.get_or_init(|| {
+			let mut dir = std::env::temp_dir();
+			dir.push(format!("midnight-bench-ledger-{}", std::process::id()));
+			let _ = std::fs::create_dir_all(&dir);
+			let _state_key = crate::ledger_9::storage::init_storage_paritydb_separate(
+				dir,
+				GENESIS_STATE_UNDEPLOYED,
+				10_000,
+			);
+		});
 	}
 }

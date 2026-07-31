@@ -6,10 +6,12 @@ use serde::Serialize;
 #[derive(Args, Clone)]
 pub struct ContractAddressArgs {
 	/// Serialize Tagged
-	#[arg(long)]
+	#[arg(long, conflicts_with = "untagged")]
 	pub tagged: bool,
-	/// Serialize Untagged
-	#[arg(long)]
+	/// Deprecated. Kept for backward compatibility; the bare/untagged address
+	/// is now the default. Hidden from `--help`; will be removed in a future
+	/// major version.
+	#[arg(long, hide = true, conflicts_with = "tagged")]
 	pub untagged: bool,
 	/// Serialized Transaction
 	#[arg(long, short)]
@@ -73,7 +75,9 @@ pub fn execute(args: ContractAddressArgs) -> Result<String, ContractAddressError
 	})?;
 
 	if args.untagged {
-		eprintln!("Warning: `--untagged` flag is deprecated (now default)");
+		log::warn!(
+			"--untagged is deprecated; the bare/untagged address is now the default — omit the flag."
+		);
 	}
 
 	if args.tagged { Ok(both.tagged().to_string()) } else { Ok(both.untagged().to_string()) }
@@ -99,7 +103,7 @@ mod test {
 		assert_eq!(res, untagged.trim());
 
 		let args =
-			ContractAddressArgs { src_file: src_file.to_string(), tagged: true, untagged: true };
+			ContractAddressArgs { src_file: src_file.to_string(), tagged: true, untagged: false };
 		let res = execute(args).expect("execution failed");
 		assert!(res.len() > untagged.trim().len());
 	}
