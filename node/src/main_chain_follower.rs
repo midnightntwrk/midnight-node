@@ -295,7 +295,7 @@ async fn build_cnight_observation_data_source(
 	Box<dyn Error + Send + Sync + 'static>,
 > {
 	use midnight_primitives_mainchain_follower::data_source::{
-		BulkCacheConfig, BulkCachedCNightObservationDataSource,
+		BulkCacheConfig, BulkCachedCNightObservationDataSource, CNightGroupedUtxos,
 	};
 
 	match cnight_follower_genesis {
@@ -328,7 +328,7 @@ async fn build_cnight_observation_data_source(
 				1000,
 			));
 			Ok(Arc::new(BulkCachedCNightObservationDataSource::new(
-				Vec::new(),
+				CNightGroupedUtxos::default(),
 				BulkCacheConfig {
 					window_start_block: init_horizon,
 					window_end_block: init_horizon,

@@ -172,6 +172,42 @@ impl CNightGroupedUtxos {
 		}
 	}
 
+	/// Clone out the transactions whose position falls in `[start, end)` —
+	/// the sliding-window read path. `partition_point` finds the bounds in
+	/// O(log n); the cost is the copy of the returned range only.
+	pub fn slice_range(&self, start: &CardanoPosition, end: &CardanoPosition) -> Self {
+		let a = self.txs.partition_point(|tx| tx.position < *start);
+		let b = self.txs.partition_point(|tx| tx.position < *end);
+		let txs: Vec<ObservedTx> = self.txs[a..b].to_vec();
+		let num_utxos = txs.iter().map(|tx| tx.utxos.len()).sum();
+		Self { txs, num_utxos }
+	}
+
+	/// Drop every transaction in a Cardano block before `block_number` — the
+	/// sliding window's front trim. In place, O(log n) to find the cut.
+	pub fn trim_before_block(&mut self, block_number: u32) {
+		let trim_at = self.txs.partition_point(|tx| tx.position.block_number < block_number);
+		for tx in self.txs.drain(..trim_at) {
+			self.num_utxos -= tx.utxos.len();
+		}
+	}
+
+	/// Append `extension`, whose transactions must all sort strictly after
+	/// the existing ones (the sliding window only ever extends forward).
+	/// Debug-asserted, so "no global re-sort is needed" is a checked claim
+	/// rather than a comment.
+	pub fn append(&mut self, extension: Self) {
+		debug_assert!(
+			match (self.last_position(), extension.txs.first()) {
+				(Some(last), Some(first)) => *last < first.position,
+				_ => true,
+			},
+			"extension must sort strictly after the existing window"
+		);
+		self.num_utxos += extension.num_utxos;
+		self.txs.extend(extension.txs);
+	}
+
 	/// Flatten back to the wire representation: the fully-sorted flat event
 	/// sequence, byte-identical to sorting the raw query results directly.
 	pub fn into_utxos(self) -> Vec<ObservedUtxo> {
@@ -339,5 +375,68 @@ mod tests {
 	#[test]
 	fn last_position_none_when_empty() {
 		assert!(CNightGroupedUtxos::default().last_position().is_none());
+	}
+
+	/// One single-event tx per block in `range`.
+	fn blocks(range: core::ops::Range<u32>) -> CNightGroupedUtxos {
+		CNightGroupedUtxos::from_unsorted(range.map(|n| utxo(n, 0, 0)).collect())
+	}
+
+	fn block_numbers(g: &CNightGroupedUtxos) -> Vec<u32> {
+		g.txs().iter().map(|tx| tx.position.block_number).collect()
+	}
+
+	#[test]
+	fn slice_range_returns_half_open_subrange() {
+		let got = blocks(0..10).slice_range(&pos(2, 0), &pos(7, 0));
+		// Half-open: block 7 excluded.
+		assert_eq!(block_numbers(&got), vec![2, 3, 4, 5, 6]);
+		assert_eq!(got.num_utxos(), 5);
+	}
+
+	#[test]
+	fn slice_range_empty_when_start_eq_end() {
+		assert!(blocks(0..10).slice_range(&pos(5, 0), &pos(5, 0)).is_empty());
+	}
+
+	#[test]
+	fn slice_range_empty_when_above_data() {
+		assert!(blocks(0..10).slice_range(&pos(20, 0), &pos(30, 0)).is_empty());
+	}
+
+	#[test]
+	fn trim_and_append_slide_the_window() {
+		// Existing window covers blocks [10..30); slide to new_start=15 while
+		// appending blocks [30..35).
+		let mut window = blocks(10..30);
+		window.trim_before_block(15);
+		window.append(blocks(30..35));
+		assert_eq!(block_numbers(&window), (15..35).collect::<Vec<_>>());
+		assert_eq!(window.num_utxos(), 20, "trim and append must keep the count in sync");
+	}
+
+	#[test]
+	fn trim_before_block_noop_below_existing_start() {
+		let mut window = blocks(10..15);
+		window.trim_before_block(5);
+		assert_eq!(block_numbers(&window), (10..15).collect::<Vec<_>>());
+	}
+
+	#[test]
+	fn append_after_full_trim() {
+		// Window restart (the plan_refresh jump case): everything existing is
+		// trimmed, only the extension survives.
+		let mut window = blocks(10..15);
+		window.trim_before_block(100);
+		window.append(blocks(20..25));
+		assert_eq!(block_numbers(&window), (20..25).collect::<Vec<_>>());
+		assert_eq!(window.num_utxos(), 5);
+	}
+
+	#[test]
+	fn append_empty_extension_is_noop() {
+		let mut window = blocks(10..15);
+		window.append(CNightGroupedUtxos::default());
+		assert_eq!(window.num_utxos(), 5);
 	}
 }

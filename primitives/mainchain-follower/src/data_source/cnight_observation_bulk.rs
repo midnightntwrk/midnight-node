@@ -13,8 +13,9 @@
 
 //! Sliding-window cNIGHT observation data source.
 //!
-//! Holds a contiguous window of observation events in memory, sorted by
-//! Cardano position. The cache starts empty: the first inherent query after
+//! Holds a contiguous window of observation events in memory, grouped by
+//! Cardano transaction and sorted by position ([`CNightGroupedUtxos`]). The
+//! cache starts empty: the first inherent query after
 //! startup is served by the live db-backed source and kicks off a background
 //! refresh anchored at the runtime's latest processed Cardano position — so a
 //! node restarting after a full sync pulls only the window it needs, not
@@ -23,13 +24,13 @@
 //! tip). Queries outside the cached window delegate to the live source so the
 //! node keeps importing.
 
+use crate::MidnightCNightObservationDataSource;
 use crate::data_source::candidates_data_source::observed_async_trait;
 use crate::data_source::cnight_grouped::CNightGroupedUtxos;
 use crate::data_source::cnight_observation::{
 	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl,
 };
 use crate::data_source::metrics::MidnightDataSourceMetrics;
-use crate::{MidnightCNightObservationDataSource, ObservedUtxo};
 use cardano_serialization_lib::{Address, EnterpriseAddress};
 use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
 use sidechain_domain::McBlockHash;
@@ -267,14 +268,15 @@ struct LastObservation {
 	result: ObservedUtxos,
 }
 
-/// A `MidnightCNightObservationDataSource` backed by an in-memory event vector
-/// built once at startup, with an async sliding-window refresh and a live
-/// db-backed fallback for queries past the current horizon.
+/// A `MidnightCNightObservationDataSource` backed by an in-memory grouped
+/// event window built once at startup, with an async sliding-window refresh
+/// and a live db-backed fallback for queries past the current horizon.
 pub struct BulkCachedCNightObservationDataSource {
-	/// Sorted events. Readers take the read lock for the (cheap) slice+copy of
-	/// their window; the refresh task takes the write lock briefly to mutate
-	/// the vec in place (trim the front, append the extension).
-	all_events: Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
+	/// The cached window, grouped by transaction and sorted. Readers take the
+	/// read lock for the (cheap) slice+copy of their range; the refresh task
+	/// takes the write lock briefly to mutate the window in place (trim the
+	/// front, append the extension).
+	all_events: Arc<std::sync::RwLock<CNightGroupedUtxos>>,
 	/// Used exclusively for `get_block_by_hash` — a single indexed lookup
 	/// per call when the block is not yet in `block_position_cache`.
 	pool: PgPool,
@@ -335,7 +337,7 @@ impl BulkCachedCNightObservationDataSource {
 	/// `[config.window_start_block, config.window_end_block]`. The caller is
 	/// responsible for having bulk-pulled that range; we just record the
 	/// bookkeeping.
-	pub fn new(events: Vec<ObservedUtxo>, config: BulkCacheConfig) -> Self {
+	pub fn new(events: CNightGroupedUtxos, config: BulkCacheConfig) -> Self {
 		let BulkCacheConfig {
 			window_start_block,
 			window_end_block,
@@ -407,7 +409,7 @@ impl BulkCachedCNightObservationDataSource {
 struct RefreshContext {
 	pool: PgPool,
 	cnight_addresses: CNightAddresses,
-	all_events: Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
+	all_events: Arc<std::sync::RwLock<CNightGroupedUtxos>>,
 	last_observation: Arc<Mutex<Option<LastObservation>>>,
 	snapshot_start_block: Arc<std::sync::RwLock<Option<u32>>>,
 	snapshot_end_block: Arc<std::sync::RwLock<Option<u32>>>,
@@ -482,9 +484,11 @@ impl RefreshContext {
 		{
 			let mut events_guard =
 				self.all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
-			// Flatten back to the window's storage form; grouping preserved the
-			// sort, so the extension still slots in after the retained events.
-			slide_events(&mut events_guard, extension.into_utxos(), new_window_start);
+			// Slide the window in place: trim the front, then append the
+			// extension, which sorts strictly after every retained tx
+			// (`append` checks that claim).
+			events_guard.trim_before_block(new_window_start);
+			events_guard.append(extension);
 		}
 		*self
 			.snapshot_start_block
@@ -540,34 +544,6 @@ fn plan_refresh(
 		None => existing_start,
 	};
 	(contiguous_from, new_window_start)
-}
-
-/// Slide the in-memory window forward, in place: drop events before
-/// `new_window_start`, then append `extension` (events strictly after the
-/// existing end). Mutates `existing` to avoid allocating a fresh vec.
-fn slide_events(
-	existing: &mut Vec<ObservedUtxo>,
-	extension: Vec<ObservedUtxo>,
-	new_window_start: u32,
-) {
-	// `existing` is sorted ascending by tx_position.block_number, so a
-	// partition_point gives the first retained index in O(log n).
-	let trim_at =
-		existing.partition_point(|u| u.header.tx_position.block_number < new_window_start);
-	existing.drain(..trim_at);
-	existing.extend(extension);
-}
-
-/// From a sorted vec, return the slice `[a..b)` covering events whose
-/// `tx_position` falls in `[start, end)`.
-fn slice_range<'a>(
-	vec: &'a [ObservedUtxo],
-	start: &CardanoPosition,
-	end: &CardanoPosition,
-) -> &'a [ObservedUtxo] {
-	let a = vec.partition_point(|u| u.header.tx_position < *start);
-	let b = vec.partition_point(|u| u.header.tx_position < *end);
-	&vec[a..b]
 }
 
 observed_async_trait!(
@@ -677,21 +653,14 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 		// Hold the read lock only for the (cheap) slice+copy of our window.
 		// Readers share the lock, so they don't block each other; a concurrent
 		// refresh's write lock waits for this copy to finish.
-		let window: Vec<ObservedUtxo> = match self.all_events.read() {
-			Ok(guard) => slice_range(&guard, start_position, &end).to_vec(),
-			Err(_) => Vec::new(),
+		let window: CNightGroupedUtxos = match self.all_events.read() {
+			Ok(guard) => guard.slice_range(start_position, &end),
+			Err(_) => CNightGroupedUtxos::default(),
 		};
 		// Window holds the complete range, so `complete = true` — same inputs as
-		// the db fallback, hence the same inherent. The slice is already sorted,
-		// so regrouping it is a cheap linear pass.
-		let result = truncate_to_tx_capacity(
-			CNightGroupedUtxos::from_unsorted(window),
-			tx_capacity,
-			max_utxos,
-			true,
-			start_position,
-			end,
-		);
+		// the db fallback, hence the same inherent.
+		let result =
+			truncate_to_tx_capacity(window, tx_capacity, max_utxos, true, start_position, end);
 
 		if let Ok(mut guard) = self.last_observation.lock() {
 			*guard = Some(LastObservation {
@@ -750,7 +719,9 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{ObservedUtxoData, ObservedUtxoHeader, RegistrationData, UtxoIndexInTx};
+	use crate::{
+		ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData, UtxoIndexInTx,
+	};
 	use midnight_primitives_cnight_observation::CardanoRewardAddressBytes;
 	use sidechain_domain::{McBlockHash, McTxHash};
 
@@ -785,59 +756,8 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn slice_range_returns_half_open_subrange() {
-		let events: Vec<_> = (0..10).map(|n| utxo(n, 0)).collect();
-		let got = slice_range(&events, &pos(2, 0), &pos(7, 0));
-		let block_numbers: Vec<u32> =
-			got.iter().map(|u| u.header.tx_position.block_number).collect();
-		// Half-open: block 7 excluded.
-		assert_eq!(block_numbers, vec![2, 3, 4, 5, 6]);
-	}
-
-	#[test]
-	fn slice_range_empty_when_start_eq_end() {
-		let events: Vec<_> = (0..10).map(|n| utxo(n, 0)).collect();
-		assert!(slice_range(&events, &pos(5, 0), &pos(5, 0)).is_empty());
-	}
-
-	#[test]
-	fn slice_range_empty_when_above_data() {
-		let events: Vec<_> = (0..10).map(|n| utxo(n, 0)).collect();
-		assert!(slice_range(&events, &pos(20, 0), &pos(30, 0)).is_empty());
-	}
-
-	#[test]
-	fn slide_events_trims_front_and_appends_back() {
-		// Existing window covers blocks [10..30); slide to new_start=15
-		// while appending blocks [30..35).
-		let mut existing: Vec<_> = (10..30).map(|n| utxo(n, 0)).collect();
-		let extension: Vec<_> = (30..35).map(|n| utxo(n, 0)).collect();
-		slide_events(&mut existing, extension, 15);
-		let block_numbers: Vec<u32> =
-			existing.iter().map(|u| u.header.tx_position.block_number).collect();
-		assert_eq!(block_numbers, (15..35).collect::<Vec<_>>());
-	}
-
-	#[test]
-	fn slide_events_no_trim_when_start_below_existing() {
-		let mut existing: Vec<_> = (10..15).map(|n| utxo(n, 0)).collect();
-		let extension: Vec<_> = (15..18).map(|n| utxo(n, 0)).collect();
-		slide_events(&mut existing, extension, 5);
-		assert_eq!(existing.len(), 8);
-		assert_eq!(existing[0].header.tx_position.block_number, 10);
-	}
-
-	#[test]
-	fn slide_events_full_trim_when_start_above_existing() {
-		let mut existing: Vec<_> = (10..15).map(|n| utxo(n, 0)).collect();
-		let extension: Vec<_> = (20..25).map(|n| utxo(n, 0)).collect();
-		slide_events(&mut existing, extension, 100);
-		// Everything from `existing` is dropped; only extension survives.
-		let block_numbers: Vec<u32> =
-			existing.iter().map(|u| u.header.tx_position.block_number).collect();
-		assert_eq!(block_numbers, vec![20, 21, 22, 23, 24]);
-	}
+	// The window-mechanics tests (slice/trim/append) live with
+	// `CNightGroupedUtxos` in `cnight_grouped.rs`.
 
 	#[test]
 	fn plan_refresh_contiguous_extends_and_trims_behind_follower() {
@@ -876,15 +796,6 @@ mod tests {
 		// behind the jump target (which would claim coverage over a gap).
 		let (from, start) = plan_refresh(99, 570_000, 0, Some(50), 100_000);
 		assert_eq!((from, start), (570_000, 570_000));
-	}
-
-	#[test]
-	fn slide_events_empty_extension_just_trims() {
-		let mut existing: Vec<_> = (10..20).map(|n| utxo(n, 0)).collect();
-		slide_events(&mut existing, vec![], 14);
-		let block_numbers: Vec<u32> =
-			existing.iter().map(|u| u.header.tx_position.block_number).collect();
-		assert_eq!(block_numbers, (14..20).collect::<Vec<_>>());
 	}
 
 	/// `block_number`-th transaction, `utxo_index`-th UTXO within it. UTXOs that
