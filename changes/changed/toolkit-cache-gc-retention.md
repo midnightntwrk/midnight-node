@@ -11,3 +11,5 @@ same-or-newer height) instead of counting them as saved, and the tx builder
 logs a warning when uncached wallet seeds force the replay back to genesis —
 previously this fallback was silent and a single stray seed caused a
 full-chain replay with no indication why.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/1968

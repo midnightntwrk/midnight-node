@@ -1557,8 +1557,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 					end,
 					blocks.len(),
 				);
-				try_save_cache_v2(&ctx, wallet_seeds, chain_id, chunk_last, storage, schemes)
-					.await;
+				try_save_cache_v2(&ctx, wallet_seeds, chain_id, chunk_last, storage, schemes).await;
 			}
 			start = end;
 		}

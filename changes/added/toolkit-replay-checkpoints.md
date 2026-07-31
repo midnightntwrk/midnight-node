@@ -11,3 +11,5 @@ Wallets cached beyond a checkpoint boundary are withheld from that replay
 chunk (`write_wallet_if_newer` additionally guards their on-disk entries
 from regression), and the intermediate snapshots are collected by the
 existing reference-based GC as wallet heights advance past them.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/1968
