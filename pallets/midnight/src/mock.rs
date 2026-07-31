@@ -16,7 +16,7 @@ use crate as pallet_midnight;
 use frame_support::{
 	pallet_prelude::Weight,
 	parameter_types,
-	traits::{ConstU16, ConstU64},
+	traits::{ConstU16, ConstU64, GetStorageVersion},
 	weights::constants::WEIGHT_REF_TIME_PER_SECOND,
 };
 
@@ -68,7 +68,9 @@ impl frame_system::Config for Test {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = ();
 	type SingleBlockMigrations = (); // replaces the `Executive` now for configuring migrations.
-	type MultiBlockMigrator = (); // the `pallet-migrations` would be set here, if deployed.
+	// The runtime wires `pallet-migrations` here; the mock leaves it unset and
+	// drives `migrations::v2::MigrateV1ToV2::step` directly instead.
+	type MultiBlockMigrator = ();
 	type PreInherents = (); // a hook that runs before any inherent.
 	type PostInherents = (); // a hook to run between inherents and `poll`/MBM logic.
 	type PostTransactions = (); // a hook to run after all transactions but before `on_idle`.
@@ -143,7 +145,17 @@ impl pallet_block_rewards::Config for Test {
 
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
-	frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into()
+	let mut ext: sp_io::TestExternalities =
+		frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into();
+	// On a real chain `construct_runtime!`'s genesis build writes every pallet's
+	// current storage version via `OnGenesis`; this ext only assimilates
+	// `frame_system`'s genesis, so do it by hand. Without it
+	// `Pallet::ledger_migration_pending` would read version 0 and report an
+	// in-flight ledger v8->v9 migration, freezing the ledger for every test.
+	ext.execute_with(|| {
+		<Midnight as GetStorageVersion>::in_code_storage_version().put::<Midnight>();
+	});
+	ext
 }
 
 pub fn midnight_events() -> Vec<super::Event> {
