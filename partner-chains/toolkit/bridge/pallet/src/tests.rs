@@ -107,6 +107,24 @@ mod handle_transfers {
 	}
 
 	#[test]
+	fn defers_the_whole_batch_when_the_handler_is_not_ready() {
+		new_test_ext().execute_with(|| {
+			mock_pallet::HandlerNotReady::<Test>::put(true);
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers(),
+				data_checkpoint()
+			));
+
+			// Nothing applied and the checkpoint left untouched, so the inherent
+			// re-delivers the same transfers in a later block.
+			assert_eq!(mock_pallet::Transfers::<Test>::get(), None);
+			assert_eq!(DataCheckpoint::<Test>::get(), None);
+		})
+	}
+
+	#[test]
 	fn duplicate_inherent_protection_works() {
 		new_test_ext().execute_with(|| {
 			assert_ok!(Bridge::handle_transfers(

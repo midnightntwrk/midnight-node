@@ -203,7 +203,22 @@ use sp_partner_chains_bridge::BridgeTransferV1;
 /// ledger structure. Calls to all functions defined by this trait should not return any errors
 /// as this would fail the block creation. Instead, any validation and business logic errors
 /// should be handled gracefully inside the handler code.
+///
+/// Note for downstream forks: [`Self::can_handle_transfers`] is a Midnight addition to the
+/// upstream trait. If patching this pallet is ever not an option, the same effect can be had
+/// without touching it, by having the handler queue every incoming transfer into its own storage
+/// and drain that queue from a hook once it is able to apply them.
 pub trait TransferHandler<Recipient> {
+	/// Whether the runtime can accept transfers in this block.
+	///
+	/// When `false` the pallet skips the whole batch and leaves [`pallet::DataCheckpoint`]
+	/// unchanged, so the inherent re-delivers the same transfers in a later block. Gating the
+	/// batch as a whole — rather than per transfer — is what makes re-delivery safe: no transfer
+	/// is ever applied twice because none is applied at all.
+	fn can_handle_transfers() -> bool {
+		true
+	}
+
 	/// Should handle an incoming token transfer of `token_mount` tokens to `recipient`
 	fn handle_incoming_transfer(_transfer: BridgeTransferV1<Recipient>);
 }
@@ -326,6 +341,16 @@ pub mod pallet {
 			ensure_none(origin)?;
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
+			// Gate the batch *before* any mutation, so partial application is
+			// structurally impossible and re-delivery can never double-credit.
+			if !T::TransferHandler::can_handle_transfers() {
+				log::info!(
+					target: "partner-chains-bridge",
+					"transfer handler not ready; deferring {} transfer(s), data checkpoint unchanged",
+					transfers.len()
+				);
+				return Ok(());
+			}
 			for transfer in transfers {
 				T::TransferHandler::handle_incoming_transfer(transfer);
 			}
