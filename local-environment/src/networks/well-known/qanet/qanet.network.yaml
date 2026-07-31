@@ -47,6 +47,19 @@ services:
         --no-telemetry
         --name MidnightBootNode_Local
         --public-addr /dns4/boot-node/tcp/30333/ws
+        --reserved-only
+        --reserved-nodes /dns4/node0/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
+        --reserved-nodes /dns4/node2/tcp/30335/p2p/12D3KooWSCufgHzV4fCwRijfH2k3abrpAJxTKxEvN1FDuRXA2U9x
+        --reserved-nodes /dns4/node3/tcp/30336/p2p/12D3KooWSsChzF81YDUKpe9Uk5AHV5oqAaXAcWNSPYgoLauUk4st
+        --reserved-nodes /dns4/node4/tcp/30337/p2p/12D3KooWSuTq6MG9gPt7qZqLFKkYrfxMewTZhj9nmRHJkPwzWDG2
+        --reserved-nodes /dns4/node5/tcp/30338/p2p/12D3KooWMz5U7fR8mF5DNhZSSyFN8c19kU63xYopzDSNCzoFigYk
+        --reserved-nodes /dns4/node6/tcp/30339/p2p/12D3KooWE3quQCP6Xu7eXpcmmpwVS1KofWnPCBWYNHCswgaqwCso
+        --reserved-nodes /dns4/node7/tcp/30340/p2p/12D3KooWNcx5xKjEvC3gBkuQDEk2d4eJN5bxTDMMb3VLNqZ9VVuB
+        --reserved-nodes /dns4/node8/tcp/30341/p2p/12D3KooWQizATZJGTZSb8ShuaniCCaDCBQSczRQ38QgvWH3sJj9c
+        --reserved-nodes /dns4/node9/tcp/30342/p2p/12D3KooWNHBKuurUCGYNgrWXkNEhro54KonoEvKkjaB3QGKoMNzt
+        --reserved-nodes /dns4/node10/tcp/30343/p2p/12D3KooWF9PqFCdboSo7FTmbuwQqj2A49xvxutKQZCyWo6fXYqJw
+        --reserved-nodes /dns4/node11/tcp/30344/p2p/12D3KooWGyXUfTbVfRdz5axhNSpHkryLQkcAqjiNySwVfVT5R3QF
+        --reserved-nodes /dns4/node12/tcp/30345/p2p/12D3KooWQMkbZgBmjXpCFAXUoH6MfByoEnMaeNfdGrQ2o3fTRUwE
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -83,6 +96,8 @@ services:
         --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --name MidnightNode1_Local
         --public-addr /dns4/node0/tcp/30334
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"] # Check internal RPC port
       interval: 5s
@@ -123,6 +138,8 @@ services:
         --rpc-methods=Unsafe
         --name MidnightNode2_Local
         --public-addr /dns4/node2/tcp/30335
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -164,6 +181,8 @@ services:
         --rpc-methods=Unsafe
         --name MidnightNode3_Local
         --public-addr /dns4/node3/tcp/30336
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -199,6 +218,8 @@ services:
         --port 30337
         --rpc-port 9944
         --public-addr /dns4/node4/tcp/30337
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-external
@@ -246,6 +267,8 @@ services:
         --rpc-methods=Unsafe
         --name MidnightNode5_Local
         --public-addr /dns4/node5/tcp/30338
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -281,6 +304,8 @@ services:
         --port 30339
         --rpc-port 9944
         --public-addr /dns4/node6/tcp/30339
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -322,6 +347,8 @@ services:
         --port 30340
         --rpc-port 9944
         --public-addr /dns4/node7/tcp/30340
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -363,6 +390,8 @@ services:
         --port 30341
         --rpc-port 9944
         --public-addr /dns4/node8/tcp/30341
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -404,6 +433,8 @@ services:
         --port 30342
         --rpc-port 9944
         --public-addr /dns4/node9/tcp/30342
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -444,6 +475,8 @@ services:
         --port 30343
         --rpc-port 9944
         --public-addr /dns4/node10/tcp/30343
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -478,6 +511,8 @@ services:
         --port 30344 # P2P port for node5
         --rpc-port 9944
         --public-addr /dns4/node11/tcp/30344
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -512,6 +547,8 @@ services:
         --port 30345
         --rpc-port 9944
         --public-addr /dns4/node12/tcp/30345
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
