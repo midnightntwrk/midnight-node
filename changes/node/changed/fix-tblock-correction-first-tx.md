@@ -23,4 +23,5 @@ The config values are unchanged, but `tblock_correction_offset` is now relative 
 block's timestamp and must equal `slot_duration_secs * (1 + MaxSkippedSlots)` (`6 * 2 = 12`).
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1964
+PR: https://github.com/midnightntwrk/midnight-node/pull/1965
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1924
