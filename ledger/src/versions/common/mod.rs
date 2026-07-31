@@ -811,6 +811,10 @@ where
 			return Ok(Vec::new());
 		}
 
+		// `isolate_on_failure` doubles as the ingress-point selector (see the doc comment above):
+		// only the mempool asks for per-transaction localization, block import fails the batch fast.
+		let is_mempool = isolate_on_failure;
+
 		// Ensure the process-global ledger arena storage is initialized from the node's
 		// `LedgerStorageExt`. This is idempotent (once-set), so it is a no-op whenever the runtime
 		// has already initialized storage in this process.
@@ -949,7 +953,7 @@ where
 		for prep in preps {
 			match prep {
 				Prep::Failed(e) => results.push(Err(e)),
-				Prep::Ready { key, verified_tx, .. } => {
+				Prep::Ready { key, tx, verified_tx } => {
 					let is_bad = bad_ready.contains(&ready_idx);
 					ready_idx += 1;
 					if is_bad {
@@ -969,7 +973,9 @@ where
 							state_hash,
 							block_context.tblock,
 							key,
+							&tx,
 							verified_tx,
+							is_mempool,
 						));
 					}
 				},
@@ -995,13 +1001,24 @@ where
 	/// cache, dry-runs the guaranteed segment against the batch's reference state, and on success
 	/// inserts the SOFT-cache entry. Returns the per-transaction validation result: `Ok(())` when
 	/// the guaranteed dry-run passes, otherwise the `Invalid` error it would fail with.
+	///
+	/// `is_mempool` selects whether the success arm emits the per-transaction
+	/// `📋 Validated transaction … for mempool` line that `do_validate_transaction` emits on the
+	/// non-batched path — see the comment at that log site for why block import is excluded.
+	///
+	/// The argument list is wide because everything but `key`/`tx`/`verified_tx` is batch-wide state
+	/// the caller hoists out of its per-transaction loop (`state_hash` in particular is deliberately
+	/// computed once per batch, not once per transaction).
+	#[allow(clippy::too_many_arguments)]
 	fn warm_verified_tx(
 		ledger: &Sp<Ledger<D>, D>,
 		ctx: &TransactionContext<D>,
 		state_hash: Hash,
 		block_context_tblock: u64,
 		key: WrappedHash,
+		tx: &Transaction<S, D>,
 		verified_tx: VerifiedTransaction<D>,
+		is_mempool: bool,
 	) -> Result<(), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -1018,6 +1035,23 @@ where
 			ctx,
 		) {
 			Ok(()) => {
+				// Mirror the non-batched path's per-tx line. The SOFT-cache entry inserted just below
+				// makes the subsequent `do_validate_transaction` return early from its cache hit
+				// *without* logging, so without this a batch-ON node would emit no
+				// `📋 Validated transaction` line at all and log-derived tx counts would not be
+				// comparable against a batch-OFF node.
+				//
+				// Block import is excluded: there the non-batched path validates via `pre_dispatch`
+				// (`do_validate_guaranteed_execution`), which emits no such line either — so logging
+				// per-tx here would *add* lines the OFF side lacks, and put INFO logging in the hot
+				// path the A/B is measuring.
+				if is_mempool {
+					log::info!(
+						target: LOG_TARGET,
+						"📋 Validated transaction {} for mempool",
+						hex::encode(tx.hash())
+					);
+				}
 				SOFT_TX_VALIDATION_CACHE.insert(SoftTxValidationKey { tx_hash: key.0 }, Ok(()));
 				Ok(())
 			},
