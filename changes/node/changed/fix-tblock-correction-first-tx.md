@@ -22,5 +22,5 @@ context it passes to the ledger.
 The config values are unchanged, but `tblock_correction_offset` is now relative to the parent
 block's timestamp and must equal `slot_duration_secs * (1 + MaxSkippedSlots)` (`6 * 2 = 12`).
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1964
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1924
