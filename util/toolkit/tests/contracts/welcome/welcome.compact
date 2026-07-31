@@ -27,6 +27,10 @@ witness set_local_id(participant: Opaque<"string">): [];
 // Secret key of the current user (only defined for organizers)
 witness local_sk(): Maybe<Bytes<32>>;
 
+// Secret key for an organizer being added. The witness updates local private state so
+// the new organizer can authenticate subsequent privileged calls.
+witness new_organizer_sk(): Bytes<32>;
+
 export ledger organizer_pks: Set<Bytes<32>>;
 export ledger eligible_participants: Set<Opaque<"string">>;
 export ledger checked_in_participants: Set<Opaque<"string">>;
@@ -45,9 +49,9 @@ export circuit add_participant(participant: Opaque<"string">): [] {
   eligible_participants.insert(disclose(participant));
 }
 
-export circuit add_organizer(organizer_pk: Bytes<32>): [] {
+export circuit add_organizer(): [] {
   assert (organizer_pks.member(local_pk_or_error()), "Not an organizer");
-  organizer_pks.insert(disclose(organizer_pk));
+  organizer_pks.insert(disclose(public_key(new_organizer_sk())));
 }
 
 export circuit verify_organizer(organizer_pk: Bytes<32>): [] {

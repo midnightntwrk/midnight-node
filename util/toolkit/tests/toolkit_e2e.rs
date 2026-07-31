@@ -639,8 +639,10 @@ async fn welcome_e2e() {
 
 	// Arbitrary key; makes the deployer an organizer via the `local_sk` witness.
 	let organizer_sk = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+	let new_organizer_sk = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
 	// `Opaque<"string">`; must be identical across add/check_in so membership matches.
 	let participant = r#""alice""#;
+	let new_participant = r#""bob""#;
 
 	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
 
@@ -652,7 +654,12 @@ async fn welcome_e2e() {
 
 	let config_content = helper.load_template(
 		"welcome/config.template.ts",
-		&[("ORGANIZER_SK", organizer_sk), ("COIN_PUBLIC", &coin_public), ("NETWORK", "undeployed")],
+		&[
+			("ORGANIZER_SK", organizer_sk),
+			("NEW_ORGANIZER_SK", new_organizer_sk),
+			("COIN_PUBLIC", &coin_public),
+			("NETWORK", "undeployed"),
+		],
 	);
 	let config_file = helper.write_config(&config_content, "welcome/contract.config.ts");
 
@@ -666,6 +673,7 @@ async fn welcome_e2e() {
 		.await
 		.expect("send deploy intent failed");
 	helper.assert_secret_not_in_tx(&deploy_tx, organizer_sk, "welcome deploy");
+	helper.assert_secret_not_in_tx(&deploy_tx, new_organizer_sk, "welcome deploy");
 	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
 	let welcome_addr =
 		helper.contract_address(&deploy_tx).expect("contract address extraction failed");
@@ -707,7 +715,7 @@ async fn welcome_e2e() {
 			&state_2,
 			&add.private_state,
 			&welcome_addr,
-			CircuitCall { circuit_id: "add_organizer", call_args: &[&coin_public] },
+			CircuitCall { circuit_id: "add_organizer", call_args: &[] },
 		)
 		.await
 		.expect("generate add_organizer intent failed");
@@ -721,43 +729,49 @@ async fn welcome_e2e() {
 		.await
 		.expect("send add_organizer intent failed");
 	helper.assert_secret_not_in_tx(&add_organizer_tx, organizer_sk, "add_organizer()");
+	helper.assert_secret_not_in_tx(&add_organizer_tx, new_organizer_sk, "add_organizer()");
 	helper
 		.submit_tx(&add_organizer_tx)
 		.await
 		.expect("submit add_organizer tx failed");
 
-	// Read the post-call state and prove that add_organizer persisted its ledger mutation.
+	// Authenticate as the newly added organizer and exercise a privileged state mutation.
 	let state_3 = helper.work_dir.path().join("welcome_state_3.mn");
 	helper
 		.contract_state(&welcome_addr, &state_3)
 		.await
 		.expect("contract state fetch failed");
-	let verify_organizer = helper
+	let add_by_new_organizer = helper
 		.generate_intent_circuit(
 			&config_file,
 			&coin_public,
 			&state_3,
 			&add_organizer.private_state,
 			&welcome_addr,
-			CircuitCall { circuit_id: "verify_organizer", call_args: &[&coin_public] },
+			CircuitCall { circuit_id: "add_participant", call_args: &[new_participant] },
 		)
 		.await
-		.expect("generate verify_organizer intent failed");
-	let verify_organizer_tx = helper
+		.expect("generate add_participant intent for new organizer failed");
+	let add_by_new_organizer_tx = helper
 		.send_intent(
-			&verify_organizer.intent,
+			&add_by_new_organizer.intent,
 			&compiled_dir,
 			FUNDING_SEED,
-			Some(&verify_organizer.zswap_state),
+			Some(&add_by_new_organizer.zswap_state),
 		)
 		.await
-		.expect("send verify_organizer intent failed");
+		.expect("send add_participant intent for new organizer failed");
+	helper.assert_secret_not_in_tx(
+		&add_by_new_organizer_tx,
+		new_organizer_sk,
+		"new organizer add_participant()",
+	);
 	helper
-		.submit_tx(&verify_organizer_tx)
+		.submit_tx(&add_by_new_organizer_tx)
 		.await
-		.expect("submit verify_organizer tx failed");
+		.expect("submit add_participant tx for new organizer failed");
 
-	// Check in the just-added participant.
+	// Check in the participant added by the new organizer.
 	let state_4 = helper.work_dir.path().join("welcome_state_4.mn");
 	helper
 		.contract_state(&welcome_addr, &state_4)
@@ -768,9 +782,9 @@ async fn welcome_e2e() {
 			&config_file,
 			&coin_public,
 			&state_4,
-			&verify_organizer.private_state,
+			&add_by_new_organizer.private_state,
 			&welcome_addr,
-			CircuitCall { circuit_id: "check_in", call_args: &[participant] },
+			CircuitCall { circuit_id: "check_in", call_args: &[new_participant] },
 		)
 		.await
 		.expect("generate check_in intent failed");
@@ -793,7 +807,7 @@ async fn welcome_e2e() {
 			&state_5,
 			&check_in.private_state,
 			&welcome_addr,
-			CircuitCall { circuit_id: "verify_checked_in", call_args: &[participant] },
+			CircuitCall { circuit_id: "verify_checked_in", call_args: &[new_participant] },
 		)
 		.await
 		.expect("generate verify_checked_in intent failed");
@@ -807,9 +821,9 @@ async fn welcome_e2e() {
 /// Tic-tac-toe contract E2E ported from `midnight-contracts`: deploy a two-player game,
 /// play a full game to a Player X win, and assert the final state via verifier circuits.
 ///
-/// `make_move` gates on `ownPublicKey().bytes == player_{x,o}_key`, so each move is
-/// submitted with that player's `--coin-public` (X is FUNDING_SEED, O is a distinct
-/// wallet); fees are always paid by FUNDING_SEED. All circuit args are primitives.
+/// `make_move` proves knowledge of the current player's private witness and compares its
+/// derived identity with the registered player key. Fees are paid by FUNDING_SEED; player
+/// authorization is deliberately independent from the public fee-paying wallet.
 #[cfg(feature = "compact-contract-tests")]
 #[tokio::test]
 async fn tic_tac_toe_e2e() {
@@ -820,11 +834,9 @@ async fn tic_tac_toe_e2e() {
 		return;
 	}
 
-	// Player X is the funding wallet; player O is a distinct wallet (the constructor
-	// asserts the two keys differ).
-	const PLAYER_O_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000002";
-	let player_x = helper.show_address_coin_public(FUNDING_SEED);
-	let player_o = helper.show_address_coin_public(PLAYER_O_SEED);
+	const PLAYER_X_SK: &str = "1000000000000000000000000000000000000000000000000000000000000001";
+	const PLAYER_O_SK: &str = "2000000000000000000000000000000000000000000000000000000000000002";
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
 
 	let source = helper.load_contract_file("tic-tac-toe/tic_tac_toe.compact");
 	let compiled_dir = helper
@@ -834,18 +846,25 @@ async fn tic_tac_toe_e2e() {
 
 	let config_content = helper.load_template(
 		"tic-tac-toe/config.template.ts",
-		&[("COIN_PUBLIC", &player_x), ("NETWORK", "undeployed")],
+		&[
+			("PLAYER_X_SK", PLAYER_X_SK),
+			("PLAYER_O_SK", PLAYER_O_SK),
+			("COIN_PUBLIC", &coin_public),
+			("NETWORK", "undeployed"),
+		],
 	);
 	let config_file = helper.write_config(&config_content, "tic-tac-toe/contract.config.ts");
 
 	let deploy = helper
-		.generate_intent_deploy_with_args(&config_file, &player_x, &[&player_x, &player_o])
+		.generate_intent_deploy(&config_file, &coin_public)
 		.await
 		.expect("generate deploy intent failed");
 	let deploy_tx = helper
 		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
 		.await
 		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, PLAYER_X_SK, "tic-tac-toe deploy");
+	helper.assert_secret_not_in_tx(&deploy_tx, PLAYER_O_SK, "tic-tac-toe deploy");
 	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
 	let addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
 
@@ -864,11 +883,10 @@ async fn tic_tac_toe_e2e() {
 	for (i, (circuit, args, is_o)) in calls.into_iter().enumerate() {
 		let state = helper.work_dir.path().join(format!("ttt_state_{i}.mn"));
 		helper.contract_state(&addr, &state).await.expect("contract state fetch failed");
-		let coin_public: &str = if is_o { &player_o } else { &player_x };
 		let out = helper
 			.generate_intent_circuit(
 				&config_file,
-				coin_public,
+				&coin_public,
 				&state,
 				&prev_private,
 				&addr,
@@ -880,6 +898,10 @@ async fn tic_tac_toe_e2e() {
 			.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
 			.await
 			.unwrap_or_else(|e| panic!("send {circuit} intent failed: {e}"));
+		if circuit == "make_move" {
+			let player_secret = if is_o { PLAYER_O_SK } else { PLAYER_X_SK };
+			helper.assert_secret_not_in_tx(&tx, player_secret, "tic-tac-toe make_move()");
+		}
 		helper
 			.submit_tx(&tx)
 			.await

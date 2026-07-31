@@ -19,14 +19,14 @@
  * Two-player turn-based game on a 3x3 board using Map for state.
  *
  * Features:
- * - Multi-user gameplay (Player X vs Player O identified by public keys)
+ * - Multi-user gameplay (Player X vs Player O identified by private-key-derived identities)
  * - Move validation (position, turn, occupancy)
  * - Win detection (3 in a row: horizontal, vertical, diagonal)
  * - Draw detection (board full with no winner)
  * - Game state verification for testing
  *
  * Test intent:
- * - Exercise Map-backed board state, Counter-backed move count, ownPublicKey()
+ * - Exercise Map-backed board state, Counter-backed move count, and private witnesses
  * - Check that invalid moves fail before ledger mutation
  * - Expose small verifier circuits so tests can assert exact state after each move
  *
@@ -44,7 +44,7 @@ import CompactStandardLibrary;
 // Map lookup returns 0 for non-existent keys (empty positions)
 export ledger board: Map<Uint<8>, Uint<8>>;
 
-// Player public keys
+// Player identities derived from private witness keys
 export ledger player_x_key: Bytes<32>;
 export ledger player_o_key: Bytes<32>;
 
@@ -54,13 +54,18 @@ export ledger move_count: Counter;
 export ledger game_status: Uint<8>;   // 0=in_progress, 1=x_wins, 2=o_wins, 3=draw
 export ledger winner: Uint<8>;        // 0=none, 1=X, 2=O
 
-constructor(player_x_public_key: Bytes<32>, player_o_public_key: Bytes<32>) {
-    // Validate players are different so turn checks cannot be satisfied by one wallet.
-    assert(disclose(player_x_public_key) != disclose(player_o_public_key), "Players must be different");
+witness player_secret_key(player: Uint<8>): Bytes<32>;
+
+constructor() {
+    // Bind both players to private witnesses. Later moves must prove knowledge of the
+    // corresponding secret rather than merely supplying a known public wallet key.
+    const x_key = disclose(public_key(player_secret_key(1 as Uint<8>)));
+    const o_key = disclose(public_key(player_secret_key(2 as Uint<8>)));
+    assert(x_key != o_key, "Players must be different");
 
     // Set players
-    player_x_key = disclose(player_x_public_key);
-    player_o_key = disclose(player_o_public_key);
+    player_x_key = x_key;
+    player_o_key = o_key;
 
     // Initialize each playable square explicitly; later lookups assert occupancy by position.
     board.insertDefault(0 as Uint<8>);
@@ -94,8 +99,8 @@ export circuit make_move(board_position: Uint<8>): [] {
     assert(pos < 9, "Invalid position (must be 0-8)");
     assert(board.lookup(pos) == 0, "Position already occupied");
 
-    // Validate player turn against the wallet public key of the caller.
-    const caller_key = ownPublicKey().bytes;
+    // Prove knowledge of the current player's private key and compare its derived identity.
+    const caller_key = disclose(public_key(player_secret_key(disclose(current_turn))));
     if (current_turn == 1) {
         assert(caller_key == player_x_key, "Wrong player: expected player X");
     } else {
@@ -124,6 +129,10 @@ export circuit make_move(board_position: Uint<8>): [] {
             current_turn = 1 as Uint<8>;
         }
     }
+}
+
+export circuit public_key(sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([pad(32, "tic-tac-toe:pk:"), sk]);
 }
 
 /**

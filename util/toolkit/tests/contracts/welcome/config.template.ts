@@ -20,6 +20,7 @@ import { Contract as WelcomeContract_ } from './out/contract/index.js';
 // through the JSON private-state file) and converted to bytes in the witness.
 type WelcomePrivateState = {
   readonly organizerSecretKey: string | null;
+  readonly newOrganizerSecretKey: string | null;
   readonly participantId: string | null;
 };
 
@@ -34,12 +35,24 @@ const witnesses: Contract.Contract.Witnesses<WelcomeContract> = {
       ? { is_some: true, value: new Uint8Array(Buffer.from(privateState.organizerSecretKey, 'hex')) }
       : { is_some: false, value: new Uint8Array(32) },
   ],
+  // Supplies the next organizer's secret and switches the local identity to that organizer.
+  new_organizer_sk: ({ privateState }) => {
+    if (!privateState.newOrganizerSecretKey) {
+      throw new Error('No new organizer secret key found');
+    }
+    const secretKey = privateState.newOrganizerSecretKey;
+    return [
+      { ...privateState, organizerSecretKey: secretKey, newOrganizerSecretKey: null },
+      new Uint8Array(Buffer.from(secretKey, 'hex')),
+    ];
+  },
   // Records the identity used to check in.
   set_local_id: ({ privateState }, participantId) => [{ ...privateState, participantId }, []],
 };
 
 const createInitialPrivateState: () => WelcomePrivateState = () => ({
   organizerSecretKey: '{{ORGANIZER_SK}}',
+  newOrganizerSecretKey: '{{NEW_ORGANIZER_SK}}',
   participantId: null,
 });
 
