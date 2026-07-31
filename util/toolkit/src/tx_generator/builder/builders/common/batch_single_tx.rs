@@ -17,7 +17,7 @@ use super::ledger_helpers_local::{
 	BuilderContext, CoinSelectionStrategy, DefaultDB, FromContext as _, ProofProvider,
 	ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StandardTrasactionInfo,
 	TransactionWithContext, UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError,
-	WalletAddress,
+	WalletAddress, WalletSeed,
 };
 use super::single_tx::{MAX_GUARANTEED_OUTPUTS, build_shielded_offer, build_unshielded_intents};
 use async_trait::async_trait;
@@ -38,12 +38,27 @@ enum BatchTransferError {
 	ProvingFailed(String),
 }
 
+/// Per-wallet-seed locks serializing transfers that touch the same wallet, so a
+/// failed transfer's wallet mutations can be rolled back without racing
+/// concurrent transfers built from the same wallet.
+type SeedLocks = std::sync::Mutex<HashMap<WalletSeed, Arc<tokio::sync::Mutex<()>>>>;
+
+/// Deterministic global ordering for acquiring multiple seed locks (deadlock avoidance).
+fn seed_lock_order(seed: &WalletSeed) -> (u8, &[u8]) {
+	match seed {
+		WalletSeed::Short(bytes) => (0, bytes.as_slice()),
+		WalletSeed::Medium(bytes) => (1, bytes.as_slice()),
+		WalletSeed::Long(bytes) => (2, bytes.as_slice()),
+	}
+}
+
 pub struct BatchSingleTxBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	transfers: Vec<TransferSpec>,
 	concurrency: usize,
 	coin_selection: CoinSelectionStrategy,
+	emit_partial_batch: bool,
 }
 
 impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
@@ -53,19 +68,28 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
 		let coin_selection = args.coin_selection;
+		let emit_partial_batch = args.emit_partial_batch;
 		let transfers = args.get_transfer_specs();
 		let concurrency = args
 			.concurrency
 			.unwrap_or_else(|| std::thread::available_parallelism().unwrap().into());
 
-		Self { context, prover, transfers, concurrency, coin_selection }
+		Self { context, prover, transfers, concurrency, coin_selection, emit_partial_batch }
 	}
 
+	/// Builds one transfer while holding the locks of every wallet it mutates
+	/// (source and funding), and restores those wallets to their pre-transfer
+	/// state if the build fails. Failures after input selection (e.g. proving
+	/// or validation errors) would otherwise leave coins marked spent — and
+	/// change coins pending — in the shared context for a tx that is never
+	/// emitted, so later transfers built from the same wallet could depend on
+	/// state that will never exist on-chain.
 	async fn build_single_transfer(
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 		spec: &TransferSpec,
 		coin_selection: CoinSelectionStrategy,
+		seed_locks: Arc<SeedLocks>,
 	) -> Result<
 		TransactionWithContext<
 			super::ledger_helpers_local::Signature,
@@ -83,6 +107,61 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 			.as_ref()
 			.map(|s| convert_wallet_seed(s.parse().expect("invalid funding_seed hex")))
 			.unwrap_or(source_seed.clone());
+
+		let mut seeds = vec![source_seed.clone()];
+		if funding_seed != source_seed {
+			seeds.push(funding_seed.clone());
+		}
+		seeds.sort_by(|a, b| seed_lock_order(a).cmp(&seed_lock_order(b)));
+
+		let mut guards = Vec::with_capacity(seeds.len());
+		let mut snapshots = Vec::with_capacity(seeds.len());
+		for seed in seeds {
+			let lock = seed_locks
+				.lock()
+				.expect("seed locks mutex poisoned")
+				.entry(seed.clone())
+				.or_default()
+				.clone();
+			guards.push(lock.lock_owned().await);
+			snapshots.push((seed.clone(), context.with_wallet_from_seed(seed, |w| w.clone())));
+		}
+
+		let result = Self::build_transfer_inner(
+			context.clone(),
+			prover,
+			spec,
+			coin_selection,
+			source_seed,
+			funding_seed,
+		)
+		.await;
+
+		if result.is_err() {
+			for (seed, snapshot) in snapshots {
+				context.with_wallet_from_seed(seed, |wallet| *wallet = snapshot);
+			}
+		}
+
+		result
+	}
+
+	async fn build_transfer_inner(
+		context: Arc<C>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+		spec: &TransferSpec,
+		coin_selection: CoinSelectionStrategy,
+		source_seed: WalletSeed,
+		funding_seed: WalletSeed,
+	) -> Result<
+		TransactionWithContext<
+			super::ledger_helpers_local::Signature,
+			super::ledger_helpers_local::ProofMarker,
+			DefaultDB,
+		>,
+		BatchTransferError,
+	> {
+		use super::type_convert::*;
 
 		let rng_seed: Option<[u8; 32]> = spec.rng_seed.as_ref().map(|s| {
 			let bytes = hex::decode(s).expect("invalid rng_seed hex");
@@ -192,6 +271,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 		let mut failed = 0usize;
 
 		let num_transfers = self.transfers.len();
+		let seed_locks: Arc<SeedLocks> = Arc::default();
 		let futures: Vec<_> = self
 			.transfers
 			.iter()
@@ -200,19 +280,25 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 				let prover = self.prover.clone();
 				let spec = spec.clone();
 				let coin_selection = self.coin_selection;
+				let seed_locks = seed_locks.clone();
 				async move {
-					let result =
-						Self::build_single_transfer(context, prover, &spec, coin_selection)
-							.await
-							.map(|tx_with_ctx| {
-								let serialized = super::tx_serialization::build_single(tx_with_ctx);
-								serialized
-									.batches
-									.into_iter()
-									.next()
-									.and_then(|b| b.into_iter().next())
-									.expect("build_single should produce exactly one tx")
-							});
+					let result = Self::build_single_transfer(
+						context,
+						prover,
+						&spec,
+						coin_selection,
+						seed_locks,
+					)
+					.await
+					.map(|tx_with_ctx| {
+						let serialized = super::tx_serialization::build_single(tx_with_ctx);
+						serialized
+							.batches
+							.into_iter()
+							.next()
+							.and_then(|b| b.into_iter().next())
+							.expect("build_single should produce exactly one tx")
+					});
 					result
 				}
 			})
@@ -249,20 +335,22 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 
 		progress.finish(format!("batch-single-tx: {} succeeded, {} failed", succeeded, failed));
 
-		// Emit every tx we managed to build, even on partial failure. Discarding the
-		// successful txs because a few transfers failed wastes the whole batch and starves
-		// downstream load appliers. Only treat a batch with zero successes as an error.
 		if failed > 0 {
 			if succeeded == 0 {
 				return Err(BatchSingleTxError::AllFailed { failed });
 			}
+			// With --emit-partial-batch, emit every tx that built successfully instead of
+			// discarding the whole batch: throwing away the successful txs because a few
+			// transfers failed starves downstream load appliers. Without the flag, keep the
+			// strict all-or-nothing behavior.
+			if !self.emit_partial_batch {
+				return Err(BatchSingleTxError::PartialFailure { succeeded, failed });
+			}
 			tracing::warn!(
-				succeeded = succeeded,
-				failed = failed,
-				"Partial batch: {} of {} transfers failed; emitting {} successful txs",
 				failed,
-				succeeded + failed,
-				succeeded
+				total,
+				succeeded,
+				"Partial batch: {failed} of {total} transfers failed; emitting {succeeded} successful txs"
 			);
 		}
 
@@ -272,6 +360,11 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for BatchSingleTxBuilder<C> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum BatchSingleTxError {
+	#[error(
+		"{failed} of {} transfers failed; pass --emit-partial-batch to emit the {succeeded} successful txs instead",
+		.succeeded + .failed
+	)]
+	PartialFailure { succeeded: usize, failed: usize },
 	#[error("all {failed} transfers failed")]
 	AllFailed { failed: usize },
 }

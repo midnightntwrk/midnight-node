@@ -243,6 +243,7 @@ mod tests {
 				},
 				concurrency: Some(1),
 				coin_selection: CoinSelectionStrategy::LargestFirst,
+				emit_partial_batch: false,
 			}),
 			["genesis/genesis_block_undeployed.mn"]
 		);
@@ -263,6 +264,86 @@ mod tests {
 		assert!(
 			!serialized_tx_batches.batches.is_empty(),
 			"batch-single-tx should generate one batch"
+		);
+	}
+
+	/// Transfer specs where the middle transfer cannot be funded (amount far above the
+	/// genesis balance), so it fails input selection while the other two succeed.
+	fn partial_failure_transfers() -> serde_json::Value {
+		const DEST: &str =
+			"mn_addr_undeployed13h0e3c2m7rcfem6wvjljnyjmxy5rkg9kkwcldzt73ya5pv7c4p8skzgqwj";
+		serde_json::json!([
+			{
+				"source_seed": "0000000000000000000000000000000000000000000000000000000000000001",
+				"destination_address": DEST,
+				"unshielded_amount": 100,
+			},
+			{
+				"source_seed": "0000000000000000000000000000000000000000000000000000000000000001",
+				"destination_address": DEST,
+				"unshielded_amount": u128::MAX / 2,
+			},
+			{
+				"source_seed": "0000000000000000000000000000000000000000000000000000000000000001",
+				"destination_address": DEST,
+				"unshielded_amount": 100,
+			},
+		])
+	}
+
+	async fn run_batch_single_tx(
+		transfers_json: serde_json::Value,
+		emit_partial_batch: bool,
+	) -> Result<SerializedTxBatches, GenerateTxsError> {
+		let dir = tempfile::tempdir().unwrap();
+		let transfers_file = dir.path().join("transfers.json");
+		std::fs::write(&transfers_file, serde_json::to_string(&transfers_json).unwrap()).unwrap();
+
+		let args = test_fixture!(
+			Builder::BatchSingleTx(BatchSingleTxArgs {
+				transfers: TransferArgs {
+					transfers_file: Some(transfers_file.to_str().unwrap().to_string()),
+					transfers: None,
+				},
+				concurrency: Some(2),
+				coin_selection: CoinSelectionStrategy::LargestFirst,
+				emit_partial_batch,
+			}),
+			["genesis/genesis_block_undeployed.mn"]
+		);
+
+		let generator = TxGenerator::new(
+			args.source,
+			args.destination,
+			args.builder,
+			args.proof_server,
+			args.dry_run,
+		)
+		.await
+		.unwrap();
+
+		let received_txs = generator.get_txs().await.unwrap();
+		super::generate_txs(&generator, received_txs).await
+	}
+
+	#[tokio::test]
+	async fn test_batch_single_tx_partial_failure_emits_successful_txs_with_flag() {
+		let serialized_tx_batches = run_batch_single_tx(partial_failure_transfers(), true)
+			.await
+			.expect("--emit-partial-batch must emit the successful txs on partial failure");
+
+		let txs: usize = serialized_tx_batches.batches.iter().map(|b| b.len()).sum();
+		assert_eq!(txs, 2, "the two fundable transfers should be emitted");
+	}
+
+	#[tokio::test]
+	async fn test_batch_single_tx_partial_failure_errors_without_flag() {
+		let result = run_batch_single_tx(partial_failure_transfers(), false).await;
+
+		let err = result.expect_err("partial failure must fail the batch without the flag");
+		assert!(
+			err.to_string().contains("1 of 3 transfers failed"),
+			"expected PartialFailure error, got: {err}"
 		);
 	}
 }

@@ -345,6 +345,10 @@ pub struct BatchSingleTxArgs {
 	/// `largest-first` minimizes the number of inputs; `smallest-first` consolidates dust.
 	#[arg(long, value_parser = cli::coin_selection_strategy, default_value = "largest-first")]
 	pub coin_selection: CoinSelectionStrategy,
+	/// Emit the successfully-built txs (exit 0) even when some transfers fail.
+	/// Off by default: any failed transfer fails the whole batch and nothing is emitted.
+	#[arg(long)]
+	pub emit_partial_batch: bool,
 }
 
 impl BatchSingleTxArgs {
