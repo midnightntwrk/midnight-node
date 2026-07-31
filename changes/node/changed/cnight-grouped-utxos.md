@@ -27,4 +27,4 @@ non-local `limit > max_utxos` invariant. A truncated sliding-window refresh
 now shortens its coverage claim to the last whole block pulled instead of
 storing a window with a hidden gap.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/1966
