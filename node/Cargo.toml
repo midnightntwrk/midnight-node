@@ -49,7 +49,10 @@ sc-offchain.workspace = true
 sc-client-api.workspace = true
 sc-network.workspace = true
 sc-utils.workspace = true
+sp-consensus.workspace = true
 sp-consensus-aura.workspace = true
+sp-consensus-babe.workspace = true
+sp-consensus-slots.workspace = true
 sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true
 sp-state-machine.workspace = true
@@ -96,6 +99,7 @@ midnight-primitives-system-parameters = { workspace = true, default-features = t
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
+midnight-primitives-consensus-engine = { workspace = true, default-features = true }
 midnight-primitives-session-info = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
