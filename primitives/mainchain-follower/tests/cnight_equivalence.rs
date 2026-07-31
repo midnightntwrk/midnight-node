@@ -160,11 +160,15 @@ async fn bulk_source_matches_standard_over_block_range() {
 		complete,
 		"test window exceeded LARGE_LIMIT rows; widen LARGE_LIMIT or narrow the range"
 	);
-	eprintln!("cached window [{window_from}, {window_to}] holds {} events", events.len());
+	eprintln!(
+		"cached window [{window_from}, {window_to}] holds {} events in {} txs",
+		events.num_utxos(),
+		events.num_transactions()
+	);
 
 	let db_fallback = Arc::new(MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0));
 	let bulk = BulkCachedCNightObservationDataSource::new(
-		events,
+		events.into_utxos(),
 		BulkCacheConfig {
 			window_start_block: window_from,
 			window_end_block: window_to,

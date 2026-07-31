@@ -42,7 +42,7 @@
 //! sliding window instead of Postgres) is a pure-perf layer to be added under
 //! `select_one_block`; it must not change this output.
 
-use crate::ObservedUtxo;
+use crate::data_source::cnight_grouped::CNightGroupedUtxos;
 use crate::data_source::cnight_observation::MidnightCNightObservationDataSourceError;
 use crate::data_source::cnight_observation_bulk::bulk_pull;
 use midnight_primitives_cnight_observation::{CNightAddresses, CardanoPosition, ObservedUtxos};
@@ -81,73 +81,49 @@ pub async fn derive_inherent_v2(
 }
 
 /// Pure one-block selection + truncation, factored out so the consensus rule is
-/// unit-testable without a database. `sorted_events` are the events in
-/// `[cursor, tip]` sorted by position (as `bulk_pull` returns them); `tip_end`
-/// is the tip-derived cursor used when the span holds no events.
+/// unit-testable without a database. `events` are the events in `[cursor, tip]`
+/// (grouped and sorted, as `bulk_pull` returns them); `tip_end` is the
+/// tip-derived cursor used when the span holds no events.
 fn select_one_block(
-	sorted_events: Vec<ObservedUtxo>,
+	events: CNightGroupedUtxos,
 	cursor: &CardanoPosition,
 	max_utxos: usize,
 	tip_end: CardanoPosition,
 ) -> ObservedUtxos {
-	let Some(first) = sorted_events.first() else {
+	if events.is_empty() {
 		// Empty span: advance to the tip (real hash). Empty Cardano blocks
 		// between cursor and tip are skipped for free.
 		return ObservedUtxos { start: cursor.clone(), end: tip_end, utxos: Vec::new() };
-	};
-	let first_block = first.header.tx_position.block_number;
-
-	// The contiguous prefix belonging to the first non-empty Cardano block. Only
-	// this block is ingested this inherent.
-	let block_events: Vec<ObservedUtxo> = sorted_events
-		.into_iter()
-		.take_while(|u| u.header.tx_position.block_number == first_block)
-		.collect();
-
-	let truncated = cap_whole_tx(block_events, max_utxos);
-
-	// Cursor = just past the last admitted event: a real position. Normally the
-	// block boundary (whole block ingested); a tx boundary inside the block while
-	// draining an oversized one.
-	let end = truncated
-		.last()
-		.map(|u| u.header.tx_position.clone())
-		.unwrap_or_else(|| cursor.clone())
-		.increment();
-	ObservedUtxos { start: cursor.clone(), end, utxos: truncated }
-}
-
-/// Admit whole transactions in position order until the next would push the
-/// total past `max_utxos`. A single transaction larger than the whole envelope
-/// is admitted alone (so the runtime bound rejects it loudly rather than the
-/// node stalling forever) — physically unreachable given Cardano's block-size
-/// limit, but defensive.
-fn cap_whole_tx(events: Vec<ObservedUtxo>, max_utxos: usize) -> Vec<ObservedUtxo> {
-	let n = events.len();
-	let mut out: Vec<ObservedUtxo> = Vec::with_capacity(n.min(max_utxos));
-	let mut i = 0usize;
-	while i < n {
-		// Extent [i, j) of the whole tx at `i` — its UTXOs share a position.
-		let mut j = i + 1;
-		while j < n && events[j].header.tx_position == events[i].header.tx_position {
-			j += 1;
-		}
-		let tx_len = j - i;
-		if !out.is_empty() && out.len() + tx_len > max_utxos {
-			break;
-		}
-		out.extend_from_slice(&events[i..j]);
-		i = j;
 	}
-	out
+
+	// Only the first non-empty Cardano block is ingested this inherent, capped
+	// to a whole-tx prefix of the envelope. `tx_capacity` does not bind on the
+	// v2 path, so only `max_utxos` is enforced; a lone tx bigger than the whole
+	// envelope is admitted alone (see `take_envelope_prefix`).
+	let (admitted, _capped) = events.take_first_block().take_envelope_prefix(usize::MAX, max_utxos);
+
+	// Cursor = just past the last admitted tx: a real position. Normally the
+	// block boundary (whole block ingested); a tx boundary inside the block while
+	// draining an oversized one. (`admitted` is never empty here — the envelope
+	// prefix of a non-empty group always admits its first tx — so the cursor
+	// fallback is defensive only.)
+	let end = admitted.last_position().cloned().unwrap_or_else(|| cursor.clone()).increment();
+	ObservedUtxos { start: cursor.clone(), end, utxos: admitted.into_utxos() }
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{ObservedUtxoData, ObservedUtxoHeader, RegistrationData, UtxoIndexInTx};
+	use crate::{
+		ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData, UtxoIndexInTx,
+	};
 	use midnight_primitives_cnight_observation::CardanoRewardAddressBytes;
 	use sidechain_domain::McTxHash;
+
+	/// Group raw test events the way `bulk_pull` would.
+	fn grouped(events: Vec<ObservedUtxo>) -> CNightGroupedUtxos {
+		CNightGroupedUtxos::from_unsorted(events)
+	}
 
 	/// One UTXO at `(block, tx_index)`.
 	fn utxo(block: u32, tx_index: u32) -> ObservedUtxo {
@@ -177,7 +153,7 @@ mod tests {
 	/// Empty span: cursor jumps to the tip, no UTXOs.
 	#[test]
 	fn empty_span_advances_to_tip() {
-		let got = select_one_block(Vec::new(), &pos(5, 0), 12_800, pos(100, 0));
+		let got = select_one_block(CNightGroupedUtxos::default(), &pos(5, 0), 12_800, pos(100, 0));
 		assert!(got.utxos.is_empty());
 		assert_eq!(got.end, pos(100, 0));
 	}
@@ -188,7 +164,7 @@ mod tests {
 	fn ingests_one_whole_block() {
 		// block 5 with 3 distinct txs; tip far away at block 100.
 		let events = vec![utxo(5, 0), utxo(5, 1), utxo(5, 2)];
-		let got = select_one_block(events, &pos(5, 0), 12_800, pos(100, 0));
+		let got = select_one_block(grouped(events), &pos(5, 0), 12_800, pos(100, 0));
 		assert_eq!(got.utxos.len(), 3);
 		assert_eq!(got.end, pos(5, 2).increment(), "cursor parks past block 5's last tx");
 		assert_ne!(got.end, pos(100, 0), "must not jump to tip with events present");
@@ -199,7 +175,7 @@ mod tests {
 	#[test]
 	fn takes_only_the_first_block() {
 		let events = vec![utxo(5, 0), utxo(6, 0), utxo(7, 0)];
-		let got = select_one_block(events, &pos(5, 0), 12_800, pos(100, 0));
+		let got = select_one_block(grouped(events), &pos(5, 0), 12_800, pos(100, 0));
 		assert_eq!(got.utxos.len(), 1);
 		assert_eq!(got.utxos[0].header.tx_position.block_number, 5);
 		assert_eq!(got.end, pos(5, 0).increment());
@@ -211,7 +187,7 @@ mod tests {
 	fn oversized_block_drains_at_tx_boundary() {
 		// block 5 with 5 single-UTXO txs, envelope 3 → admit txs 0,1,2.
 		let events: Vec<_> = (0..5u32).map(|t| utxo(5, t)).collect();
-		let got = select_one_block(events, &pos(5, 0), 3, pos(100, 0));
+		let got = select_one_block(grouped(events), &pos(5, 0), 3, pos(100, 0));
 		assert_eq!(got.utxos.len(), 3, "capped to the envelope on a whole-tx boundary");
 		assert_eq!(got.end, pos(5, 2).increment(), "cursor parks mid-block to resume the drain");
 		assert!(got.end < pos(6, 0), "did not advance past the oversized block");
@@ -223,7 +199,7 @@ mod tests {
 	fn lone_oversized_tx_admitted_whole() {
 		// one tx (shared position) with 5 UTXOs, envelope 3.
 		let events: Vec<_> = (0..5u32).map(|_| utxo(5, 0)).collect();
-		let got = select_one_block(events, &pos(5, 0), 3, pos(100, 0));
+		let got = select_one_block(grouped(events), &pos(5, 0), 3, pos(100, 0));
 		assert_eq!(got.utxos.len(), 5, "lone over-envelope tx admitted whole, not split");
 		assert_eq!(got.end, pos(5, 0).increment());
 	}

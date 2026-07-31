@@ -24,6 +24,7 @@
 //! node keeps importing.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
+use crate::data_source::cnight_grouped::CNightGroupedUtxos;
 use crate::data_source::cnight_observation::{
 	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl,
 };
@@ -73,9 +74,10 @@ pub enum BulkPullError {
 	Observation(#[from] MidnightCNightObservationDataSourceError),
 }
 
-/// Pull every cnight observation event in `[start, end]` (inclusive), sorted by
-/// `tx_position`, with `complete = true` iff no query hit `limit` (so the result
-/// is the whole range, not a row-limited prefix).
+/// Pull every cnight observation event in `[start, end]` (inclusive), grouped
+/// by transaction and sorted by `tx_position`, with `complete = true` iff no
+/// query hit `limit` (so the result is the whole range, not a row-limited
+/// prefix).
 ///
 /// `complete == false` means a query held >`limit` rows. At [`LARGE_LIMIT`] that
 /// is pathological, so it is logged at error level; callers must not advance the
@@ -91,7 +93,7 @@ pub async fn bulk_pull(
 	end: &CardanoPosition,
 	// Per-query SQL row limit; callers pass `LARGE_LIMIT` for a whole-range pull.
 	limit: usize,
-) -> Result<(Vec<ObservedUtxo>, bool), BulkPullError> {
+) -> Result<(CNightGroupedUtxos, bool), BulkPullError> {
 	let data_source = MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0);
 
 	let mapping_validator_address = Address::from_bech32(&cfg.mapping_validator_address)
@@ -136,29 +138,30 @@ pub async fn bulk_pull(
 		high_bound: high_bounds,
 	};
 
-	let mut all = Vec::new();
+	// `CNightGroupedUtxos::add` keeps the accumulated events sorted and
+	// grouped by transaction; no trailing sort needed.
+	let mut all = CNightGroupedUtxos::default();
 	let mut counts = (0usize, 0usize, 0usize, 0usize);
 	if let Some(ident) = auth_token_ident {
 		let v = data_source
 			.get_registration_utxos(cardano_network, ident, &cfg.mapping_validator_address, &paged)
 			.await?;
 		counts.0 = v.len();
-		all.extend(v);
+		all.add(v);
 	}
 	let v = data_source
 		.get_deregistration_utxos(cardano_network, &cfg.mapping_validator_address, &paged)
 		.await?;
 	counts.1 = v.len();
-	all.extend(v);
+	all.add(v);
 	if let Some(ident) = cnight_ident {
 		let v = data_source.get_asset_create_utxos(cardano_network, ident, &paged).await?;
 		counts.2 = v.len();
-		all.extend(v);
+		all.add(v);
 		let v = data_source.get_asset_spend_utxos(cardano_network, ident, &paged).await?;
 		counts.3 = v.len();
-		all.extend(v);
+		all.add(v);
 	}
-	all.sort();
 	// A query that returned exactly `limit` rows may have more behind it, so the
 	// pull is not provably complete.
 	let complete = counts.0 < limit && counts.1 < limit && counts.2 < limit && counts.3 < limit;
@@ -180,7 +183,7 @@ pub async fn bulk_pull(
 	Ok((all, complete))
 }
 
-/// Build the observation inherent from the **complete** sorted event list for
+/// Build the observation inherent from the **complete** grouped event set for
 /// `[start, fallback_end]`. Caps at `tx_capacity` whole transactions and
 /// `max_utxos` UTXOs (the runtime `process_tokens` envelope).
 ///
@@ -195,67 +198,40 @@ pub async fn bulk_pull(
 /// Every node feeds this the complete range and the same `max_utxos`, so there is
 /// no fetch-size input left to disagree on — inherents are byte-identical.
 pub fn truncate_to_tx_capacity(
-	events: Vec<ObservedUtxo>,
+	events: CNightGroupedUtxos,
 	tx_capacity: usize,
 	max_utxos: usize,
 	complete: bool,
 	start_position: &CardanoPosition,
 	fallback_end: CardanoPosition,
 ) -> ObservedUtxos {
-	let n = events.len();
-	let mut truncated: Vec<ObservedUtxo> = Vec::with_capacity(n.min(max_utxos));
-	let mut num_txs: usize = 0;
-	let mut capped = false;
-	let mut i = 0usize;
-	while i < n {
-		// Extent [i, j) of the whole tx at `i` — its UTXOs share a position.
-		let mut j = i + 1;
-		while j < n
-			&& events[j].header.tx_position.partial_cmp(&events[i].header.tx_position)
-				== Some(core::cmp::Ordering::Equal)
-		{
-			j += 1;
-		}
-		let tx_len = j - i;
-		// A lone tx bigger than the whole envelope is still admitted (cap check
-		// skipped while empty) so the runtime's bound rejects it loudly instead
-		// of us stalling forever.
-		let exceeds_tx_cap = num_txs + 1 > tx_capacity;
-		let exceeds_max_utxos = !truncated.is_empty() && truncated.len() + tx_len > max_utxos;
-		if exceeds_tx_cap || exceeds_max_utxos {
-			capped = true;
-			break;
-		}
-		truncated.extend_from_slice(&events[i..j]);
-		num_txs += 1;
-		i = j;
-	}
+	// Whole transactions only, up to both caps; the lone-oversized-tx admission
+	// lives in `take_envelope_prefix`.
+	let (mut admitted, capped) = events.take_envelope_prefix(tx_capacity, max_utxos);
 
 	let end = if capped {
 		// Only whole txs are admitted, so resuming just past the last one is
 		// safe. That holds even for a row-limited fetch (`limit = max_utxos + 1`):
 		// a query that hit the row limit contributed more rows than the
 		// `max_utxos` cap admits, so the cap fires inside the proven-complete
-		// prefix. Sole exception: the lone-oversized-tx admission above, whose
+		// prefix. Sole exception: the lone-oversized-tx admission, whose
 		// fetched rows may themselves be truncated — that needs one tx with more
 		// than `max_utxos` events, beyond what a Cardano tx can physically carry.
-		boundary_after(&truncated, start_position)
+		boundary_after(&admitted, start_position)
 	} else if complete {
 		fallback_end
 	} else {
 		// Row-limited: the final fetched tx may be missing UTXOs past the limit,
-		// so drop it and resume only as far as we proved complete.
-		if let Some(last) = truncated.last().map(|u| u.header.tx_position.clone()) {
-			truncated.retain(|u| u.header.tx_position < last);
-		}
-		boundary_after(&truncated, start_position)
+		// so drop it whole and resume only as far as we proved complete.
+		admitted.drop_last_tx();
+		boundary_after(&admitted, start_position)
 	};
 
-	ObservedUtxos { start: start_position.clone(), end, utxos: truncated }
+	ObservedUtxos { start: start_position.clone(), end, utxos: admitted.into_utxos() }
 }
 
-/// Position just past the last accepted event — or `start` **unchanged** when
-/// nothing was accepted, so the cursor never moves past unobserved data.
+/// Position just past the last accepted transaction — or `start` **unchanged**
+/// when nothing was accepted, so the cursor never moves past unobserved data.
 ///
 /// Two ways to accept nothing: the sole fetched tx was dropped as row-truncated
 /// (needs one tx carrying more than `max_utxos` events, beyond what a Cardano
@@ -263,9 +239,12 @@ pub fn truncate_to_tx_capacity(
 /// Incrementing in either case would skip the tx sitting at the cursor
 /// permanently, so we hold and log: a stalled cNIGHT cursor is visible and
 /// recoverable, silently dropped mint/burn events are neither.
-fn boundary_after(truncated: &[ObservedUtxo], start_position: &CardanoPosition) -> CardanoPosition {
-	match truncated.last() {
-		Some(last) => last.header.tx_position.clone().increment(),
+fn boundary_after(
+	admitted: &CNightGroupedUtxos,
+	start_position: &CardanoPosition,
+) -> CardanoPosition {
+	match admitted.last_position() {
+		Some(last) => last.clone().increment(),
 		None => {
 			log::error!(
 				target: "cnight::observation",
@@ -503,7 +482,9 @@ impl RefreshContext {
 		{
 			let mut events_guard =
 				self.all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
-			slide_events(&mut events_guard, extension, new_window_start);
+			// Flatten back to the window's storage form; grouping preserved the
+			// sort, so the extension still slots in after the retained events.
+			slide_events(&mut events_guard, extension.into_utxos(), new_window_start);
 		}
 		*self
 			.snapshot_start_block
@@ -701,9 +682,16 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 			Err(_) => Vec::new(),
 		};
 		// Window holds the complete range, so `complete = true` — same inputs as
-		// the db fallback, hence the same inherent.
-		let result =
-			truncate_to_tx_capacity(window, tx_capacity, max_utxos, true, start_position, end);
+		// the db fallback, hence the same inherent. The slice is already sorted,
+		// so regrouping it is a cheap linear pass.
+		let result = truncate_to_tx_capacity(
+			CNightGroupedUtxos::from_unsorted(window),
+			tx_capacity,
+			max_utxos,
+			true,
+			start_position,
+			end,
+		);
 
 		if let Ok(mut guard) = self.last_observation.lock() {
 			*guard = Some(LastObservation {
@@ -915,6 +903,11 @@ mod tests {
 			.collect()
 	}
 
+	/// Group raw test events the way `bulk_pull` would.
+	fn grouped(events: Vec<ObservedUtxo>) -> CNightGroupedUtxos {
+		CNightGroupedUtxos::from_unsorted(events)
+	}
+
 	/// The cNIGHT observation skip bug, fixed: a row-limited (incomplete) fetch
 	/// must NEVER advance `next_cardano_position` to the tip. The rows between
 	/// the last observed tx and the tip would be skipped forever, and a node
@@ -930,7 +923,7 @@ mod tests {
 		let tip = pos(100, 0);
 
 		let obs = truncate_to_tx_capacity(
-			fetched,
+			grouped(fetched),
 			/* tx_capacity */ 1000,
 			/* max_utxos */ 100_000,
 			/* complete */ false,
@@ -956,8 +949,14 @@ mod tests {
 	fn complete_fetch_advances_to_tip() {
 		let events = fifty_txs_five_utxos();
 		let tip = pos(100, 0);
-		let obs =
-			truncate_to_tx_capacity(events.clone(), 1000, 100_000, true, &pos(0, 0), tip.clone());
+		let obs = truncate_to_tx_capacity(
+			grouped(events.clone()),
+			1000,
+			100_000,
+			true,
+			&pos(0, 0),
+			tip.clone(),
+		);
 		assert_eq!(obs.end, tip);
 		assert_eq!(obs.utxos.len(), events.len());
 	}
@@ -970,7 +969,7 @@ mod tests {
 		// 250 events. Cap 22 -> 4 whole txs (20 UTXOs); the 5th (would reach 25)
 		// is held back.
 		let obs = truncate_to_tx_capacity(
-			fifty_txs_five_utxos(),
+			grouped(fifty_txs_five_utxos()),
 			1000,
 			22,
 			true,
@@ -990,7 +989,8 @@ mod tests {
 		// One tx (5 UTXOs sharing a position) at the cursor, fetch row-limited.
 		let events: Vec<_> = (0..5u16).map(|u| utxo_with_index(7, u)).collect();
 		let start = pos(7, 0);
-		let obs = truncate_to_tx_capacity(events, 1000, 100_000, false, &start, pos(100, 0));
+		let obs =
+			truncate_to_tx_capacity(grouped(events), 1000, 100_000, false, &start, pos(100, 0));
 		assert!(obs.utxos.is_empty(), "a row-truncated tx must not be admitted");
 		assert_eq!(obs.end, start, "cursor stepped over an unobserved transaction");
 	}
@@ -1001,8 +1001,14 @@ mod tests {
 	#[test]
 	fn zero_tx_capacity_holds_the_cursor() {
 		let start = pos(0, 0);
-		let obs =
-			truncate_to_tx_capacity(fifty_txs_five_utxos(), 0, 100_000, true, &start, pos(100, 0));
+		let obs = truncate_to_tx_capacity(
+			grouped(fifty_txs_five_utxos()),
+			0,
+			100_000,
+			true,
+			&start,
+			pos(100, 0),
+		);
 		assert!(obs.utxos.is_empty());
 		assert_eq!(obs.end, start, "cursor advanced with zero capacity — events lost");
 	}
@@ -1011,7 +1017,7 @@ mod tests {
 	#[test]
 	fn tx_capacity_cap_truncates_at_whole_tx() {
 		let obs = truncate_to_tx_capacity(
-			fifty_txs_five_utxos(),
+			grouped(fifty_txs_five_utxos()),
 			10,
 			100_000,
 			true,
