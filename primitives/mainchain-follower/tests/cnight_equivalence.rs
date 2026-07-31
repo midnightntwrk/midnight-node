@@ -153,11 +153,11 @@ async fn bulk_source_matches_standard_over_block_range() {
 	let window_start = whole_block_position(window_from, 0);
 	let window_end =
 		whole_block_position(window_to, u32::try_from(i32::MAX).expect("i32::MAX is non-negative"));
-	let (events, complete) = bulk_pull(&pool, &addresses, &window_start, &window_end, LARGE_LIMIT)
+	let (events, cut) = bulk_pull(&pool, &addresses, &window_start, &window_end, LARGE_LIMIT)
 		.await
 		.expect("bulk_pull window");
 	assert!(
-		complete,
+		cut.is_none(),
 		"test window exceeded LARGE_LIMIT rows; widen LARGE_LIMIT or narrow the range"
 	);
 	eprintln!(

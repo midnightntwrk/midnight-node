@@ -19,4 +19,12 @@ flattening a group is byte-identical to sorting the raw query results, and
 the frozen v1 derivation path is untouched. The sliding-window cache also
 stores its window as grouped transactions.
 
+Row-limited pulls are now gap-free by construction: `bulk_pull` tracks each
+category query's position frontier when it hits its row limit, cuts the
+merged set at the earliest frontier, and returns that cut for the cursor to
+resume from — replacing the `complete` flag whose safety relied on a
+non-local `limit > max_utxos` invariant. A truncated sliding-window refresh
+now shortens its coverage claim to the last whole block pulled instead of
+storing a window with a hidden gap.
+
 PR:

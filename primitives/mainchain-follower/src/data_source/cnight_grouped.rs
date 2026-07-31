@@ -20,11 +20,13 @@
 //! structural — events enter and leave only in whole-transaction units — so
 //! callers cannot accidentally drop a single UTXO out of a transaction.
 //!
-//! One caveat the type cannot enforce: it guarantees we never split what was
-//! *fetched*, not that the fetch captured every event of the final
-//! transaction. A row-limited query can truncate mid-tx; that is what the
-//! `complete` flag on `bulk_pull` covers, and why callers drop the last
-//! transaction of an incomplete fetch ([`CNightGroupedUtxos::drop_last_tx`]).
+//! One caveat the type cannot enforce on its own: it guarantees we never
+//! split what was *fetched*, not that the fetch captured every event. A
+//! row-limited query truncates its category at a position frontier (and can
+//! slice the frontier transaction mid-tx); `bulk_pull` therefore cuts the
+//! merged set at the earliest such frontier
+//! ([`CNightGroupedUtxos::truncate_at_position`]) so the set it hands out is
+//! gap-free over the range it claims to cover.
 
 use crate::ObservedUtxo;
 use midnight_primitives_cnight_observation::CardanoPosition;
@@ -163,11 +165,13 @@ impl CNightGroupedUtxos {
 		out
 	}
 
-	/// Drop the last (highest) transaction whole. Used when a row-limited
-	/// fetch may have truncated the final transaction's events mid-tx: the
-	/// prefix before it is proven complete, the last tx is not.
-	pub fn drop_last_tx(&mut self) {
-		if let Some(tx) = self.txs.pop() {
+	/// Drop every transaction at or after `cut`, in place. Used to trim the
+	/// merged set back to a row-limit frontier: the transaction *at* the
+	/// frontier may have been sliced mid-tx by the limit, so it goes too,
+	/// leaving a set that is provably gap-free over `[.., cut)`.
+	pub fn truncate_at_position(&mut self, cut: &CardanoPosition) {
+		let keep = self.txs.partition_point(|tx| tx.position < *cut);
+		for tx in self.txs.drain(keep..) {
 			self.num_utxos -= tx.utxos.len();
 		}
 	}
@@ -363,13 +367,31 @@ mod tests {
 	}
 
 	#[test]
-	fn drop_last_tx_removes_the_whole_tx() {
-		let events = vec![utxo(5, 0, 0), utxo(6, 0, 0), utxo(6, 0, 1)];
+	fn truncate_at_position_drops_the_frontier_tx_too() {
+		// Txs at blocks 5, 6 (two events), 7; cut at block 6's position: the
+		// frontier tx may be mid-sliced by a row limit, so both of its events
+		// and everything after must go.
+		let events = vec![utxo(5, 0, 0), utxo(6, 0, 0), utxo(6, 0, 1), utxo(7, 0, 0)];
 		let mut g = CNightGroupedUtxos::from_unsorted(events);
-		g.drop_last_tx();
+		g.truncate_at_position(&pos(6, 0));
 		assert_eq!(g.num_transactions(), 1);
-		assert_eq!(g.num_utxos(), 1, "both of the last tx's events must go");
+		assert_eq!(g.num_utxos(), 1, "the frontier tx's events must go whole");
 		assert_eq!(g.last_position().unwrap().block_number, 5);
+	}
+
+	#[test]
+	fn truncate_at_position_above_all_is_noop() {
+		let mut g = blocks(10..15);
+		g.truncate_at_position(&pos(100, 0));
+		assert_eq!(g.num_utxos(), 5);
+	}
+
+	#[test]
+	fn truncate_at_position_at_or_below_first_empties() {
+		let mut g = blocks(10..15);
+		g.truncate_at_position(&pos(10, 0));
+		assert!(g.is_empty());
+		assert_eq!(g.num_utxos(), 0);
 	}
 
 	#[test]

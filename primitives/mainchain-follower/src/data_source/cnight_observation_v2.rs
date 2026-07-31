@@ -73,11 +73,15 @@ pub async fn derive_inherent_v2(
 
 	// One envelope's worth plus a sentinel: holds the first non-empty block
 	// whole, or the first `max_utxos + 1` rows of an oversized block (enough to
-	// cap it). `complete` is irrelevant to one-block selection.
-	let (events, _complete) =
+	// cap it). A row-limited pull is cut back to its proven-complete prefix;
+	// feeding the cut as the empty-span cursor means we can never advance past
+	// it (a non-empty first block parks the cursor at a tx boundary at or
+	// below the cut anyway, since every event in the set sits below it).
+	let (events, cut) =
 		bulk_pull(pool, config, start_position, &end, max_utxos.saturating_add(1)).await?;
+	let covered_end = cut.unwrap_or(end);
 
-	Ok(select_one_block(events, start_position, max_utxos, end))
+	Ok(select_one_block(events, start_position, max_utxos, covered_end))
 }
 
 /// Pure one-block selection + truncation, factored out so the consensus rule is
