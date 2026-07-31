@@ -125,6 +125,7 @@ pub async fn execute_many(
 		&source_blocks,
 		wallet_cache.as_deref(),
 		&schemes,
+		0,
 	)
 	.await;
 	let jsons: Vec<DustBalanceJson> = fork_ctx.dispatch(
@@ -191,6 +192,7 @@ mod tests {
 			fetch_only_cached: false,
 			fetch_cache: FetchCacheConfig::InMemory,
 			ledger_state_db: String::new(),
+			replay_checkpoint_interval: 0,
 		}
 	}
 
@@ -354,6 +356,7 @@ mod tests {
 			fetch_only_cached: false,
 			fetch_cache: fetch_cache_cfg.clone(),
 			ledger_state_db: ledger_state_db_str.clone(),
+			replay_checkpoint_interval: 0,
 		};
 		let src = TxGenerator::source(source, false).await.expect("build source");
 		let mut source_blocks = src.get_txs().await.expect("get_txs");

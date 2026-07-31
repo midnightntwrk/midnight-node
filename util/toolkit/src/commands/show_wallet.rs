@@ -85,6 +85,7 @@ pub async fn execute(
 			&source_blocks,
 			wallet_cache.as_deref(),
 			&schemes,
+			0,
 		)
 		.await;
 
@@ -123,6 +124,7 @@ pub async fn execute(
 			&source_blocks,
 			wallet_cache.as_deref(),
 			&WalletSchemes::new(),
+			0,
 		)
 		.await;
 
@@ -231,6 +233,7 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -282,6 +285,7 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
@@ -322,6 +326,7 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
