@@ -13,6 +13,7 @@
 
 extern crate alloc;
 
+pub mod armed_babe_proposer;
 mod aura_to_babe_migration_keystore;
 pub mod backend;
 pub mod batch_block_import;

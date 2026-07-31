@@ -54,7 +54,9 @@ use {
 		TransactionAppliedStage, TransactionOperation,
 	},
 	base_crypto_local::{
-		cost_model::NormalizedCost as LedgerNormalizedCost, hash::HashOutput, time::Timestamp,
+		cost_model::NormalizedCost as LedgerNormalizedCost,
+		hash::HashOutput,
+		time::{Duration as DurationLedger, Timestamp},
 	},
 	coin_structure_local::coin::Nonce,
 	ledger_storage_local::{
@@ -63,7 +65,9 @@ use {
 		db::{DB, ParityDb, paritydb::OwnedDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt},
+	midnight_primitives_ledger::{
+		LedgerMetricsExt, LedgerStorageDb, LedgerStorageExt, TBlockCorrection, TBlockCorrectionExt,
+	},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		semantics::TransactionContext,
@@ -100,6 +104,7 @@ pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
 pub struct StrictTxValidationKey {
 	state_hash: Hash,
 	tx_hash: Hash,
+	block_context_tblock: u64,
 }
 #[derive(PartialEq, Eq, Hash)]
 pub struct SoftTxValidationKey {
@@ -407,8 +412,15 @@ where
 
 		// Use cached VerifiedTransaction if available
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
-		let (verified_tx, inline_proof_verify) =
-			Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key)?;
+		let tblock_ext = externalities.extension::<TBlockCorrectionExt>();
+		let tblock_correction = tblock_ext.map(|e| &e.0);
+		let (verified_tx, inline_proof_verify) = Self::get_verified_transaction(
+			&ledger,
+			&tx,
+			&block_context,
+			&cache_key,
+			tblock_correction,
+		)?;
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Building tx context (elapsed_ms={})",
@@ -648,8 +660,15 @@ where
 
 		let wrapped_cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 
-		let was_cached =
-			Self::do_validate_transaction(&ledger, &tx, &block_context, &wrapped_cache_key)?;
+		let tblock_ext = externalities.extension::<TBlockCorrectionExt>();
+		let tblock_correction = tblock_ext.map(|e| &e.0);
+		let was_cached = Self::do_validate_transaction(
+			&ledger,
+			&tx,
+			&block_context,
+			&wrapped_cache_key,
+			tblock_correction,
+		)?;
 
 		let tx_details = if get_tx_details {
 			let tx_gas_cost =
@@ -706,9 +725,16 @@ where
 
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 
+		let tblock_ext = externalities.extension::<TBlockCorrectionExt>();
+		let tblock_correction = tblock_ext.map(|e| &e.0);
 		// Perform dry-run validation with caching
-		let (was_cached, inline_proof_verify) =
-			Self::do_validate_guaranteed_execution(&ledger, &tx, &block_context, &cache_key)?;
+		let (was_cached, inline_proof_verify) = Self::do_validate_guaranteed_execution(
+			&ledger,
+			&tx,
+			&block_context,
+			&cache_key,
+			tblock_correction,
+		)?;
 
 		// Write Prometheus metrics
 		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
@@ -795,6 +821,20 @@ where
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let state_hash: Hash = ledger.state.state_hash().0.into();
 
+		// Apply the same historical-sync tblock correction the per-transaction path uses, so the
+		// non-crypto `well_formed` checks below — and the `VerifiedTransaction`s they produce — match
+		// what `get_verified_transaction` would compute for these transactions.
+		let tblock = {
+			let tblock_correction = externalities.extension::<TBlockCorrectionExt>().map(|e| &e.0);
+			if let Some(tc) = tblock_correction
+				&& block_context.tblock < tc.disable_after
+			{
+				ctx.block_context.tblock + DurationLedger::from_secs(tc.offset as i128)
+			} else {
+				ctx.block_context.tblock
+			}
+		};
+
 		/// Per-transaction preparation outcome (kept in input order).
 		enum Prep<S: SignatureKind<D>, D: DB> {
 			/// Deserialization or the non-crypto `well_formed` checks failed for this tx.
@@ -825,7 +865,7 @@ where
 			strictness.verify_native_proofs = false;
 
 			let wf_start = Instant::now();
-			let wf_result = tx.0.well_formed(&ctx.ref_state, strictness, ctx.block_context.tblock);
+			let wf_result = tx.0.well_formed(&ctx.ref_state, strictness, tblock);
 			prep_elapsed += wf_start.elapsed();
 			prep_count += 1;
 			match wf_result {
@@ -921,6 +961,7 @@ where
 							&ledger,
 							&ctx,
 							state_hash,
+							block_context.tblock,
 							key,
 							verified_tx,
 						));
@@ -952,6 +993,7 @@ where
 		ledger: &Sp<Ledger<D>, D>,
 		ctx: &TransactionContext<D>,
 		state_hash: Hash,
+		block_context_tblock: u64,
 		key: WrappedHash,
 		verified_tx: VerifiedTransaction<D>,
 	) -> Result<(), LedgerApiError>
@@ -960,7 +1002,7 @@ where
 	{
 		insert_proof_result(&key, true);
 
-		let strict_key = StrictTxValidationKey { state_hash, tx_hash: key.0 };
+		let strict_key = StrictTxValidationKey { state_hash, tx_hash: key.0, block_context_tblock };
 		STRICT_TX_VALIDATION_CACHE.insert(strict_key, Arc::new(verified_tx.clone()));
 
 		// Dry-run the guaranteed segment against the batch's reference state.
@@ -1260,13 +1302,17 @@ where
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
+		tblock_correction: Option<&TBlockCorrection>,
 	) -> Result<(VerifiedTransaction<D>, Option<std::time::Duration>), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
 		let state_hash = ledger.state.state_hash();
-		let strict_key =
-			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
+		let strict_key = StrictTxValidationKey {
+			state_hash: state_hash.0.into(),
+			tx_hash: tx_hash.0,
+			block_context_tblock: block_context.tblock,
+		};
 
 		// Check strict cache
 		if let Some(cached) = STRICT_TX_VALIDATION_CACHE.get(&strict_key) {
@@ -1323,17 +1369,22 @@ where
 			},
 		}
 
+		let tblock = if let Some(tc) = tblock_correction
+			&& block_context.tblock < tc.disable_after
+		{
+			ctx.block_context.tblock + DurationLedger::from_secs(tc.offset as i128)
+		} else {
+			ctx.block_context.tblock
+		};
+
 		let wf_start = Instant::now();
-		let verified_tx = tx
-			.0
-			.well_formed(&ctx.ref_state, strictness, ctx.block_context.tblock)
-			.map_err(|e| {
-				log::warn!(
-					target: LOG_TARGET,
-					"Transaction malformed: {e}",
-				);
-				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
-			})?;
+		let verified_tx = tx.0.well_formed(&ctx.ref_state, strictness, tblock).map_err(|e| {
+			log::warn!(
+				target: LOG_TARGET,
+				"Transaction malformed: {e}",
+			);
+			LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
+		})?;
 		// Only the `None` branch actually ran the ZK crypto; the deferred-proof branch just did the
 		// cheap non-crypto checks, so it is not an inline proof-verification sample.
 		let inline_proof_verify = verifies_proofs_inline.then(|| wf_start.elapsed());
@@ -1355,6 +1406,7 @@ where
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
+		tblock_correction: Option<&TBlockCorrection>,
 	) -> Result<bool, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -1370,7 +1422,13 @@ where
 		let tx_hash_hex = hex::encode(tx.hash());
 		// The inline proof-verify duration (`.1`) is recorded on the block-import path
 		// (`apply_transaction`); the mempool path is not instrumented here.
-		let verified_tx = match Self::get_verified_transaction(ledger, tx, block_context, tx_hash) {
+		let verified_tx = match Self::get_verified_transaction(
+			ledger,
+			tx,
+			block_context,
+			tx_hash,
+			tblock_correction,
+		) {
 			Ok((vt, _)) => vt,
 			Err(e) => {
 				log::warn!(
@@ -1429,6 +1487,7 @@ where
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
+		tblock_correction: Option<&TBlockCorrection>,
 	) -> Result<(bool, Option<std::time::Duration>), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -1438,12 +1497,15 @@ where
 
 		// Check strict cache to determine if this is a cache hit
 		let state_hash = ledger.state.state_hash();
-		let strict_key =
-			StrictTxValidationKey { state_hash: state_hash.0.into(), tx_hash: tx_hash.0 };
+		let strict_key = StrictTxValidationKey {
+			state_hash: state_hash.0.into(),
+			tx_hash: tx_hash.0,
+			block_context_tblock: block_context.tblock,
+		};
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
 		let (verified_tx, inline_proof_verify) =
-			Self::get_verified_transaction(ledger, tx, block_context, tx_hash)?;
+			Self::get_verified_transaction(ledger, tx, block_context, tx_hash, tblock_correction)?;
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
@@ -1531,6 +1593,14 @@ where
 	pub fn construct_unlock_to_treasury_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
 		let system_tx = super::system_tx::unlock_to_treasury_system_tx(amount)?;
+		api.tagged_serialize(&system_tx)
+	}
+
+	pub fn construct_distribute_treasury_system_tx(
+		amount: u128,
+	) -> Result<Vec<u8>, LedgerApiError> {
+		let api = api::new();
+		let system_tx = super::system_tx::distribute_treasury_system_tx(amount)?;
 		api.tagged_serialize(&system_tx)
 	}
 }

@@ -163,6 +163,55 @@ pub fn drop_all_default_storage() {
 	ledger_9::storage::drop_default_storage_if_exists();
 }
 
+/// Seed the (separate) ledger arena from a genesis `LedgerState` blob, using the
+/// deserializer that matches the blob's `ledger-state[vN]` header tag.
+///
+/// A node may boot on a chain-spec produced by an older runtime — notably the
+/// ledger 8->9 hardfork, where a ledger-9 node starts from a ledger-8
+/// (`ledger-state[v13]`) genesis and only upgrades to v9 later via the runtime
+/// migration. Seeding must therefore match the genesis version (the genesis
+/// block runs under the old WASM and expects the old-format arena root), not the
+/// latest. v8 and v9 share one storage backend, so a v8-seeded arena is exactly
+/// what the post-migration v9 runtime reads. Unrecognized tags fall back to the
+/// latest version (`ledger_9`), preserving the prior default behaviour.
+#[cfg(feature = "std")]
+pub fn init_ledger_storage_separate<P: AsRef<std::path::Path>>(
+	dir: P,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> alloc::vec::Vec<u8> {
+	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
+		ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
+	} else {
+		ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
+	}
+}
+
+/// Unified-DB counterpart of [`init_ledger_storage_separate`].
+#[cfg(feature = "std")]
+pub fn init_ledger_storage_unified<
+	D: core::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+	const COLUMN_OFFSET: u8,
+>(
+	db_instance: D,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> alloc::vec::Vec<u8> {
+	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
+		ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+			db_instance,
+			genesis_state,
+			cache_size,
+		)
+	} else {
+		ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+			db_instance,
+			genesis_state,
+			cache_size,
+		)
+	}
+}
+
 mod common;
 
 pub mod types {

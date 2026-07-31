@@ -1,7 +1,7 @@
 mod inherent_digest_tests {
 	use crate::mock::*;
 	use crate::*;
-	use sp_partner_chains_consensus_aura::inherent_digest::InherentDigest;
+	use sp_partner_chains_consensus::InherentDigest;
 
 	#[tokio::test]
 	async fn from_inherent_data_works() {

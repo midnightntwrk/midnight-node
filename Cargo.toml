@@ -7,6 +7,7 @@ members = [
     "node",
     "pallets/midnight",
     "pallets/c2m-bridge",
+    "pallets/consensus-engine",
     "pallets/cnight-observation",
     "pallets/cnight-observation/mock",
     "pallets/midnight-system",
@@ -20,6 +21,7 @@ members = [
     "primitives/midnight",
     "primitives/ledger",
     "primitives/session-info",
+    "primitives/consensus-engine",
     "primitives/system-parameters",
     "res",
     "runtime",
@@ -34,6 +36,8 @@ members = [
     "partner-chains/demo/node",
     "partner-chains/toolkit/committee-selection/selection-simulator",
     "partner-chains/toolkit/data-sources/cli",
+    "partner-chains/toolkit/consensus",
+    "partner-chains/toolkit/consensus/primitives",
 ]
 [workspace.package]
 license-file = "LICENSE"
@@ -87,8 +91,14 @@ zkir = { version = "^2.2.0", package = "midnight-zkir" }
 # Ledger 8 (compatible with layout-v2)
 # coin-structure and transient-crypto (2.x) share versions with L7 so reuse those entries.
 mn-ledger-8 = { version = "=8.1.0", package = "midnight-ledger" }
-ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db"] }
+# `state-translation` (needed by the v8->v9 storage migration) pulls in
+# `public-internal-structure`, exposing `merkle_patricia_trie`/`storable`/the
+# `state_translation` module used by `midnight_node_ledger::state_translation_v8_to_v9`.
+ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db", "state-translation"] }
 onchain-runtime-ledger-8 = { version = "=3.1.0", package = "midnight-onchain-runtime" }
+# Same `midnight-onchain-state` instance that `mn-ledger-8`'s `ContractState`
+# resolves to (via onchain-runtime 3.1.0); used as the v8 side of the state translation table.
+onchain-state-ledger-8 = { version = "=3.0.0", package = "midnight-onchain-state" }
 zswap-ledger-8 = { version = "=8.1.0", package = "midnight-zswap" }
 
 # Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
@@ -97,6 +107,9 @@ zswap-ledger-8 = { version = "=8.1.0", package = "midnight-zswap" }
 # (midnight-zkir 2.2.0) serves all of L7/L8/L9.
 mn-ledger-9 = { version = "=1.0.0", package = "midnight-ledger-v9" }
 onchain-runtime-ledger-9 = { version = "=4.0.0", package = "midnight-onchain-runtime" }
+# v9 side of the state translation table (matches `mn-ledger-9`'s `ContractState`
+# via onchain-runtime 4.0.0). Patched to onchain-state-4.0.0-rc.3 by [patch.crates-io].
+onchain-state-ledger-9 = { version = "=4.0.0", package = "midnight-onchain-state" }
 zswap-ledger-9 = { version = "=9.0.0", package = "midnight-zswap" }
 coin-structure-ledger-9 = { version = "=3.0.0", package = "midnight-coin-structure" }
 transient-crypto-ledger-9 = { version = "=3.0.0", package = "midnight-transient-crypto" }
@@ -122,6 +135,7 @@ pallet-cnight-observation-mock = { path = "pallets/cnight-observation/mock", def
 pallet-version = { path = "pallets/version", default-features = false }
 pallet-system-parameters = { path = "pallets/system-parameters", default-features = false }
 pallet-throttle = { path = "pallets/throttle", default-features = false }
+pallet-consensus-engine = { path = "pallets/consensus-engine", default-features = false }
 pallet-system-parameters-rpc = { path = "pallets/system-parameters/rpc", default-features = true }
 pallet-federated-authority = { path = "pallets/federated-authority", default-features = false }
 pallet-federated-authority-observation = { path = "pallets/federated-authority-observation", default-features = false }
@@ -136,6 +150,7 @@ midnight-primitives-cnight-observation = { path = "primitives/cnight-observation
 midnight-primitives-ics-observation = { path = "primitives/ics-observation", default-features = false }
 midnight-primitives-reserve-observation = { path = "primitives/reserve-observation", default-features = false }
 midnight-primitives-session-info = { path = "primitives/session-info", default-features = false }
+midnight-primitives-consensus-engine = { path = "primitives/consensus-engine", default-features = false }
 midnight-primitives-federated-authority-observation = { path = "primitives/federated-authority-observation", default-features = false }
 midnight-primitives-system-parameters = { path = "primitives/system-parameters", default-features = false }
 
@@ -166,13 +181,14 @@ plutus = { default-features = false, path = "partner-chains/toolkit/utils/plutus
 sp-session-validator-management = { default-features = false, path = "partner-chains/toolkit/committee-selection/primitives" }
 sp-session-validator-management-query = { default-features = false, path = "partner-chains/toolkit/committee-selection/query" }
 time-source = { default-features = false, path = "partner-chains/toolkit/utils/time-source" }
-pallet-partner-chains-session = { default-features = false, path = "partner-chains/substrate-extensions/partner-chains-session", features = ["pallet-session-compat"] }
-sp-partner-chains-consensus-aura = { default-features = false, path = "partner-chains/substrate-extensions/aura/primitives" }
-sc-partner-chains-consensus-aura = { default-features = false, path = "partner-chains/substrate-extensions/aura/consensus" }
+sp-partner-chains-consensus = { path = "partner-chains/toolkit/consensus/primitives" }
+sc-partner-chains-consensus = { path = "partner-chains/toolkit/consensus" }
 # Substrate dependencies
 
 binary-merkle-tree = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 pallet-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+pallet-authorship = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+pallet-babe = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 pallet-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 pallet-beefy-mmr = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 pallet-mmr = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
@@ -211,10 +227,12 @@ frame-benchmarking = { default-features = false, git = "https://github.com/parit
 frame-benchmarking-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-basic-authorship = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+sp-application-crypto = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-io = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-block-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-blockchain = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+sp-consensus-babe = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus-grandpa = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus-slots = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
@@ -246,7 +264,9 @@ sc-network = { default-features = false, git = "https://github.com/paritytech/po
 sc-executor = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-grandpa = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+sc-consensus-babe = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-beefy = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+sc-consensus-epochs = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-slots = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-client-api = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-cli = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
@@ -334,7 +354,6 @@ num-derive = { version = "0.4.2" }
 num-traits = { version = "0.2.17", default-features = false }
 ogmios-client = { path = "partner-chains/toolkit/utils/ogmios-client", default-features = false }
 once_cell = { version = "1.21.4", default-features = false }
-parking_lot = { version = "0.12.5", default-features = false }
 plutus-datum-derive = { default-features = false, path = "partner-chains/toolkit/utils/plutus/plutus-datum-derive" }
 pretty_assertions = { version = "1.4.1" }
 proptest = { version = "1.11.0" }
@@ -361,7 +380,6 @@ sidechain-block-search = { path = "partner-chains/toolkit/sidechain/sidechain-bl
 pallet-balances = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-block-builder = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-network-test = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
-sp-application-crypto = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-consensus = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-std = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 substrate-test-runtime-client = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }

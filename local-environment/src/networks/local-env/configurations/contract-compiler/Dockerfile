@@ -18,7 +18,7 @@
 # BASE STAGE: Common dependencies for all architectures
 # =============================================================================
 # renovate: datasource=docker depName=node
-FROM node:22-slim@sha256:7378f5a4830ef48eb36d1abf4ef398391db562b5c41a0bded83192fbcea21cc8 AS base
+FROM node:22-slim@sha256:53ada149d435c38b14476cb57e4a7da73c15595aba79bd6971b547ceb6d018bf AS base
 
 # Install required tools
 # Package versions for Debian Bookworm (node:22-slim base)
@@ -29,11 +29,11 @@ FROM node:22-slim@sha256:7378f5a4830ef48eb36d1abf4ef398391db562b5c41a0bded83192f
 # renovate: datasource=debian depName=unzip versioning=deb
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        jq=1.6-2.1+deb12u2 \
-        curl=7.88.1-10+deb12u15 \
-        ca-certificates=20230311+deb12u1 \
-        vim=2:9.0.1378-2+deb12u2 \
-        unzip=6.0-28 && \
+        jq \
+        curl \
+        ca-certificates \
+        vim \
+        unzip && \
     rm -rf /var/lib/apt/lists/*
 
 # Tool versions (shared across stages)
