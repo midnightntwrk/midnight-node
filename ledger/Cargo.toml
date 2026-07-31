@@ -44,6 +44,11 @@ scale-info.workspace = true
 
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
+# The crate's own `#[cfg(test)]` modules (api::ledger, api::transaction) use
+# `extract_tx_with_context`, gated behind the helpers `can-panic` feature.
+# Enable it for test builds so the tests compile when the crate is tested
+# standalone.
+midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils"] }
 
 [features]
 default = [
