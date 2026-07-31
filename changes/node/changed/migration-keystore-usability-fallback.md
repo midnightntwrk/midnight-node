@@ -8,5 +8,5 @@ the keystore. Previously only an empty BABE key list triggered fallback, so a
 present-but-mismatched BABE key let secondary-plain slot claims succeed via
 `has_keys` and then fail at seal signing — a silent authoring miss.
 
-PR: 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1954
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1825
