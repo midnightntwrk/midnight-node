@@ -206,6 +206,9 @@ fn merge_gap_free(
 ) -> (CNightGroupedUtxos, Option<CardanoPosition>) {
 	let mut cut: Option<CardanoPosition> = None;
 	for rows in &categories {
+		// The frontier is exclusive: the row limit may have sliced the tx at the
+		// last row's position mid-tx, so that tx is dropped and the cursor
+		// resumes exactly there.
 		if rows.len() >= limit
 			&& let Some(frontier) = rows.last().map(|u| u.header.tx_position.clone())
 		{
