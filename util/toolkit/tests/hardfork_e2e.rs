@@ -16,7 +16,10 @@
 mod common;
 
 use clap::Parser;
-use common::{test_image, wait_for_node::wait_for_finalized_block};
+use common::{
+	test_image,
+	wait_for_node::{wait_for_finalized_block, wait_for_ledger_9_state},
+};
 use midnight_node_toolkit::cli::{Cli, run_command};
 use std::{process::Command, time::Duration};
 use testcontainers::{
@@ -140,7 +143,14 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 5. Post-fork: run single-tx again to verify the node still works after the (future) upgrade
+	// 5. Wait for the v8 -> v9 state translation to land. It runs as a multi-block
+	//    migration serviced after each block's inherents, so the ledger state is
+	//    still v8 for the block(s) it spans — a client syncing to such a head
+	//    would build ledger-8 transactions. Those blocks admit inherents only, so
+	//    waiting costs nothing.
+	wait_for_ledger_9_state(&url, Duration::from_secs(180)).await;
+
+	// 6. Post-fork: run single-tx again to verify the node still works after the (future) upgrade
 	run_cli(&[
 		"generate-txs",
 		"--fetch-cache",

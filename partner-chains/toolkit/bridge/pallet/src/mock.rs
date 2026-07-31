@@ -34,7 +34,16 @@ pub mod mock_pallet {
 	#[pallet::unbounded]
 	pub type Transfers<T: Config> = StorageValue<_, Vec<BridgeTransferV1<RecipientAddress>>>;
 
+	/// Drives the `TransferHandler::can_handle_transfers` gate from tests.
+	/// Defaults to `false`, i.e. the handler is ready.
+	#[pallet::storage]
+	pub type HandlerNotReady<T: Config> = StorageValue<_, bool, ValueQuery>;
+
 	impl<T> TransferHandler<RecipientAddress> for Pallet<T> {
+		fn can_handle_transfers() -> bool {
+			!HandlerNotReady::<Test>::get()
+		}
+
 		fn handle_incoming_transfer(transfer: BridgeTransferV1<RecipientAddress>) {
 			Transfers::<Test>::append(transfer);
 		}

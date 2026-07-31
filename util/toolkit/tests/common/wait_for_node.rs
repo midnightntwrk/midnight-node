@@ -18,8 +18,47 @@
 //! commands, which fails with `OnlyGenesisFinalized` until finality has reached
 //! block 1, so finality (not best-block) is what tests need to wait for.
 
+use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use midnight_node_toolkit::client::MidnightNodeClient;
 use std::time::{Duration, Instant};
+
+/// Wait until the finalized ledger state has been translated to ledger 9.
+///
+/// The ledger 8 -> 9 state translation is a multi-block migration, so for the
+/// blocks it spans the chain still carries a ledger-8 state root even though the
+/// ledger-9 runtime is live. A client that syncs to such a head would build
+/// ledger-8 transactions; those blocks admit inherents only, so nothing is lost
+/// by waiting for the migration to land first.
+pub async fn wait_for_ledger_9_state(ws_url: &str, timeout: Duration) {
+	let client = connect(ws_url, timeout).await;
+	let start = Instant::now();
+	loop {
+		match client.get_state_root_at(None).await {
+			Ok(Some(root)) => match LedgerVersion::from_state_root(&root) {
+				Some(LedgerVersion::Ledger9) => {
+					eprintln!(
+						"[wait_for_ledger_9] finalized state is ledger 9 (elapsed: {:.1}s)",
+						start.elapsed().as_secs_f32()
+					);
+					return;
+				},
+				other => eprintln!(
+					"[wait_for_ledger_9] finalized state is {other:?}, migration still pending (elapsed: {:.1}s)",
+					start.elapsed().as_secs_f32()
+				),
+			},
+			Ok(None) => eprintln!("[wait_for_ledger_9] no StateKey in storage yet"),
+			Err(e) => eprintln!("[wait_for_ledger_9] rpc error fetching StateKey: {e}"),
+		}
+		if start.elapsed() >= timeout {
+			panic!(
+				"timed out after {:?} waiting for the ledger 8->9 migration to complete on {ws_url}",
+				start.elapsed()
+			);
+		}
+		tokio::time::sleep(Duration::from_secs(1)).await;
+	}
+}
 
 pub async fn wait_for_finalized_block(ws_url: &str, target_block: u64, timeout: Duration) {
 	let client = connect(ws_url, timeout).await;

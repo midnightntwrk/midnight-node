@@ -13,6 +13,7 @@
 
 #![allow(clippy::unwrap_in_result)]
 
+use core::sync::atomic::{AtomicBool, Ordering};
 use frame_support::sp_runtime::{
 	BuildStorage,
 	traits::{BlakeTwo256, Get, IdentityLookup},
@@ -150,9 +151,19 @@ pub struct MidnightSystemTx {}
 
 static CAPTURED_SYSTEM_TXS: LazyLock<Mutex<Vec<Vec<u8>>>> = LazyLock::new(|| Mutex::new(vec![]));
 
+/// Stands in for `pallet_midnight`'s in-flight ledger migration, so tests can
+/// drive the `process_tokens` freeze without a real v8 ledger state.
+static LEDGER_MIGRATION_PENDING: AtomicBool = AtomicBool::new(false);
+
 impl MidnightSystemTx {
 	pub fn pop_captured_system_txs() -> Vec<Vec<u8>> {
 		CAPTURED_SYSTEM_TXS.lock().unwrap().drain(..).collect()
+	}
+
+	/// Sets whether [`MidnightSystemTransactionExecutor::ledger_migration_pending`]
+	/// reports an in-flight ledger migration.
+	pub fn set_ledger_migration_pending(pending: bool) {
+		LEDGER_MIGRATION_PENDING.store(pending, Ordering::SeqCst);
 	}
 }
 
@@ -162,6 +173,10 @@ impl MidnightSystemTransactionExecutor for MidnightSystemTx {
 	) -> Result<midnight_node_ledger::types::Hash, __private::DispatchError> {
 		CAPTURED_SYSTEM_TXS.lock().unwrap().push(serialized_system_transaction);
 		Ok(midnight_node_ledger::types::Hash::default())
+	}
+
+	fn ledger_migration_pending() -> bool {
+		LEDGER_MIGRATION_PENDING.load(Ordering::SeqCst)
 	}
 }
 

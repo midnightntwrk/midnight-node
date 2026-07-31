@@ -31,6 +31,11 @@ pub mod mock_pallet {
 	#[pallet::storage]
 	pub type TransfersCount<T: Config> = StorageValue<_, u8, ValueQuery>;
 
+	/// Stands in for `pallet_midnight`'s in-flight ledger migration, so tests can
+	/// drive the `TransferHandler::can_handle_transfers` gate.
+	#[pallet::storage]
+	pub type LedgerMigrationPending<T: Config> = StorageValue<_, bool, ValueQuery>;
+
 	impl<T> MidnightSystemTransactionExecutor for Pallet<T> {
 		fn execute_system_transaction(tx: Vec<u8>) -> Result<Hash, DispatchError> {
 			let bounded_vec: BoundedVec<u8, MaxTxLength> = tx.clone().try_into().unwrap();
@@ -38,6 +43,10 @@ pub mod mock_pallet {
 			let count = TransfersCount::<Test>::get();
 			TransfersCount::<Test>::put(count + 1);
 			Ok([count; 32])
+		}
+
+		fn ledger_migration_pending() -> bool {
+			LedgerMigrationPending::<Test>::get()
 		}
 	}
 

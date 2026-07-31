@@ -367,6 +367,97 @@ fn process_tokens_inherent_should_update_storage_correctly() {
 	});
 }
 
+/// `process_tokens` is a *mandatory* inherent and runs before multi-block
+/// migrations are serviced, so while the ledger v8 -> v9 translation is in flight
+/// it would execute a system transaction against a state the current ledger API
+/// cannot read — failing the inherent and making the block unimportable. It must
+/// skip instead, leaving `NextCardanoPosition` unchanged so the node's inherent
+/// data provider re-delivers the same UTXOs later.
+#[test]
+fn process_tokens_defers_while_ledger_migration_is_pending() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+		let (cardano_reward_address, dust_public_key) = test_wallet_pairing();
+
+		// pallet-midnight below storage version 2 == ledger v8->v9 translation
+		// still in flight.
+		StorageVersion::new(1).put::<mock::Midnight>();
+
+		let position_before = NextCardanoPosition::<Test>::get();
+
+		let utxos = vec![
+			ObservedUtxo {
+				header: test_header(1, 2, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address,
+					dust_public_key: dust_public_key.clone(),
+				}),
+			},
+			ObservedUtxo {
+				header: test_header(2, 0, 0, None),
+				data: ObservedUtxoData::AssetCreate(CreateData {
+					value: 100,
+					owner: cardano_reward_address,
+					utxo_tx_hash: tx_hash(1, 3),
+					utxo_tx_index: 0,
+				}),
+			},
+		];
+
+		let inherent_data = create_inherent(utxos, test_position(3, 0));
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		// The inherent still succeeds — it just does nothing.
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		assert_eq!(
+			NextCardanoPosition::<Test>::get(),
+			position_before,
+			"NextCardanoPosition must not advance while the ledger migration is pending",
+		);
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
+			0,
+			"no UTXO should have been handled",
+		);
+		let applied_system_tx = frame_system::Pallet::<Test>::events().iter().any(|record| {
+			matches!(
+				record.event,
+				mock::RuntimeEvent::MidnightSystem(
+					pallet_midnight_system::Event::SystemTransactionApplied(_)
+				)
+			)
+		});
+		assert!(!applied_system_tx, "no system transaction should have been applied");
+
+		// Once the migration completes, the re-delivered batch is applied.
+		StorageVersion::new(2).put::<mock::Midnight>();
+		advance_block_and_reset_events();
+
+		let inherent_data = create_inherent(
+			vec![ObservedUtxo {
+				header: test_header(1, 2, 0, None),
+				data: ObservedUtxoData::Registration(RegistrationData {
+					cardano_reward_address,
+					dust_public_key: dust_public_key.clone(),
+				}),
+			}],
+			test_position(3, 0),
+		);
+		let call = CNightObservation::create_inherent(&inherent_data)
+			.expect("Expected to create inherent call");
+		let call = RuntimeCall::CNightObservation(call);
+		assert_ok!(call.dispatch(frame_system::RawOrigin::None.into()));
+
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).collect::<Vec<_>>(),
+			vec![dust_public_key],
+		);
+		assert_eq!(NextCardanoPosition::<Test>::get(), test_position(3, 0));
+	});
+}
+
 #[test]
 fn removing_duplicate_registration_results_in_valid_registration() {
 	new_test_ext().execute_with(|| {

@@ -1250,6 +1250,49 @@ fn replay_blocks_7(
 	}
 }
 
+/// Tracks which blocks a replay must not apply to the ledger because the chain's
+/// own ledger state did not move in them.
+///
+/// That is the case for the blocks the ledger 8 -> 9 state translation spans:
+/// `pallet_midnight`'s `on_finalize` skips the post-block ledger update while the
+/// multi-block migration is in flight, and `frame_executive` admits only
+/// inherents in those blocks. Applying one would perform a post-block update the
+/// chain never did, advancing the local state past the chain's and failing the
+/// next block's state-root check.
+///
+/// Only the *ledger* application is skipped: the surrounding dust bookkeeping
+/// must still run, and the dust clock must not be advanced past the last block
+/// the ledger actually moved in.
+///
+/// Inert outside that window: if a block's recorded root equals its parent's, a
+/// replay that changed state would have failed the root check anyway.
+#[derive(Default)]
+struct LedgerPauseTracker<'a> {
+	last_applied: Option<&'a RawBlockData>,
+}
+
+impl<'a> LedgerPauseTracker<'a> {
+	/// Whether `block` should be applied to the ledger. Records it as the latest
+	/// applied block when so.
+	fn should_apply(&mut self, block: &'a RawBlockData) -> bool {
+		if block.leaves_ledger_unchanged(self.last_applied.and_then(|b| b.state_root.as_ref())) {
+			log::debug!(
+				"replay: not applying block {} — state root unchanged from parent (ledger paused)",
+				block.number,
+			);
+			return false;
+		}
+		self.last_applied = Some(block);
+		true
+	}
+
+	/// The last block the ledger actually moved in, i.e. the block whose context
+	/// the trailing dust update should use.
+	fn last_applied(&self) -> Option<&'a RawBlockData> {
+		self.last_applied
+	}
+}
+
 fn replay_blocks_8(
 	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[RawBlockData],
@@ -1257,9 +1300,12 @@ fn replay_blocks_8(
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
 
 	let total = blocks_sorted_by_height.len();
+	let mut pause = LedgerPauseTracker::default();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
-		events.extend(apply_block_8(ctx, block));
+		if pause.should_apply(block) {
+			events.extend(apply_block_8(ctx, block));
+		}
 
 		let is_last = i + 1 == total;
 		if events.len() >= DUST_BATCH_SIZE || is_last {
@@ -1269,7 +1315,7 @@ fn replay_blocks_8(
 		}
 	}
 
-	if let Some(block) = blocks_sorted_by_height.last() {
+	if let Some(block) = pause.last_applied() {
 		ctx.update_dust_from_block(&block_context_from_raw_8(block));
 	}
 }
@@ -1284,8 +1330,11 @@ fn replay_blocks_9(
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
 	let mut last_info_at = std::time::Instant::now();
+	let mut pause = LedgerPauseTracker::default();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
+		let apply = pause.should_apply(block);
+
 		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
 		if n > 0 {
 			let (to_inject, rest) = remaining.split_at(n);
@@ -1298,7 +1347,9 @@ fn replay_blocks_9(
 			remaining = rest;
 		}
 
-		events.extend(apply_block_9(ctx, block));
+		if apply {
+			events.extend(apply_block_9(ctx, block));
+		}
 
 		let is_last = i + 1 == total;
 		if events.len() >= DUST_BATCH_SIZE || is_last {
@@ -1329,7 +1380,7 @@ fn replay_blocks_9(
 		inject_cached_wallets(ctx, remaining, &ls, height, schemes);
 	}
 
-	if let Some(block) = blocks_sorted_by_height.last() {
+	if let Some(block) = pause.last_applied() {
 		ctx.update_dust_from_block(&block_context_from_raw_9(block));
 	}
 }

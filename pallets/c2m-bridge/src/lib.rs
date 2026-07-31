@@ -385,6 +385,19 @@ pub mod pallet {
 	}
 
 	impl<T: Config> pallet_partner_chains_bridge::TransferHandler<BridgeRecipient> for Pallet<T> {
+		/// Defer the whole batch while the ledger v8 -> v9 state translation is in
+		/// flight. The bridge inherent runs *before* the multi-block migration is
+		/// serviced, so at this point the ledger state key still references a state
+		/// the current ledger API cannot read: both the
+		/// `get_c_to_m_bridge_min_amount` read below and the system transaction
+		/// `handle_regular_transfer` builds would fail, and the error is swallowed
+		/// — silently dropping user funds. `handle_transfers` leaves its data
+		/// checkpoint unchanged, so these transfers are re-delivered once the
+		/// migration completes.
+		fn can_handle_transfers() -> bool {
+			!T::MidnightSystemTransactionExecutor::ledger_migration_pending()
+		}
+
 		fn handle_incoming_transfer(transfer: BridgeTransferV1<BridgeRecipient>) {
 			match T::MinBridgeAmountProvider::get_c_to_m_bridge_min_amount() {
 				Ok(min_amount) => {

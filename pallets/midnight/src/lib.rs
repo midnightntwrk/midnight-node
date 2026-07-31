@@ -78,6 +78,10 @@ pub mod pallet {
 
 			Ok(custom_result)
 		}
+
+		fn ledger_migration_pending() -> bool {
+			Pallet::<T>::ledger_migration_pending()
+		}
 	}
 
 	impl<T: Config> LedgerBlockContextProvider for Pallet<T> {
@@ -340,14 +344,31 @@ pub mod pallet {
 		}
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
-			// Post Block Ledger Update
-			let state_key = StateKey::<T>::get();
-			let block_context = Self::get_block_context();
+			// While the v8 -> v9 state translation is still in flight, `StateKey`
+			// references a state this runtime's ledger-9 API cannot read, so
+			// `apply_post_block_update` would fail and (being `expect`ed) brick the
+			// chain. Skip the post-block update; the ledger is paused for the
+			// blocks the migration spans.
+			//
+			// The flush below still runs: it is what makes the in-flight
+			// translation cursor the migration parked in the arena durable, once
+			// per block.
+			if !Self::ledger_migration_pending() {
+				// Post Block Ledger Update
+				let state_key = StateKey::<T>::get();
+				let block_context = Self::get_block_context();
 
-			let state_root = LedgerApi::apply_post_block_update(&state_key, block_context.clone())
-				.expect("FATAL: Apply post block update failed");
+				let state_root =
+					LedgerApi::apply_post_block_update(&state_key, block_context.clone())
+						.expect("FATAL: Apply post block update failed");
 
-			StateKey::<T>::put(state_root);
+				StateKey::<T>::put(state_root);
+			} else {
+				log::info!(
+					target: "midnight::migration",
+					"ledger migration pending; skipping post-block ledger update"
+				);
+			}
 
 			// Flush ledger storage changes to disk
 			LedgerApi::flush_storage();
@@ -627,6 +648,24 @@ pub mod pallet {
 		pub fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
 			let state_key = StateKey::<T>::get();
 			LedgerApi::get_ledger_state_root(&state_key)
+		}
+
+		/// Whether the ledger v8 -> v9 state translation
+		/// ([`crate::migrations::v2`]) is still in flight, i.e. [`StateKey`]
+		/// still references a state this runtime's ledger-9 API cannot read.
+		///
+		/// True from the very first instruction of the upgrade block: the storage
+		/// version only flips on the migration's final step, whereas multi-block
+		/// migrations are serviced *after* the block's inherents. Every ledger
+		/// read/write reachable from an inherent or from `on_finalize` must
+		/// therefore be skipped while this holds — see the `on_finalize` guard
+		/// below, `pallet_cnight_observation::process_tokens`, and
+		/// `pallet_c2m_bridge`'s `can_handle_transfers`.
+		///
+		/// Compares against the literal `2` rather than [`STORAGE_VERSION`] so a
+		/// future storage version 3 doesn't accidentally re-freeze the ledger.
+		pub fn ledger_migration_pending() -> bool {
+			Self::on_chain_storage_version() < StorageVersion::new(2)
 		}
 
 		// Helper for the weight macro

@@ -177,5 +177,9 @@ pub mod pallet {
 
 			Ok(hash)
 		}
+
+		fn ledger_migration_pending() -> bool {
+			<T as Config>::LedgerStateProviderMut::ledger_migration_pending()
+		}
 	}
 }
