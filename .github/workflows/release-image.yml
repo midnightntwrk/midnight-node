@@ -315,49 +315,37 @@ jobs:
       - name: Retag and push node release images (Docker Hub)
         if: inputs.skip-node != true
         run: |
-          echo "Creating node images for Docker Hub from $IMAGE_TAG_CONTENT_HASH"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64"
-
-          echo "Tagging node images with $IMAGE_TAG_RELEASE"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64" "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
-
-          echo "Push node ${IMAGE_TAG_RELEASE} images to Docker Hub"
-          docker push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64"
-          docker push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
+          echo "Copy node arch images GHCR -> Docker Hub for $IMAGE_TAG_RELEASE"
+          docker buildx imagetools create \
+            --tag "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64" \
+            "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-amd64"
+          docker buildx imagetools create \
+            --tag "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64" \
+            "ghcr.io/midnightntwrk/midnight-node:${IMAGE_TAG_CONTENT_HASH}-arm64"
 
           echo "Create node multi-arch manifest for Docker Hub"
-          docker manifest create "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}" \
+          docker buildx imagetools create \
+            --tag "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}" \
             "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-amd64" \
             "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}-arm64"
-
-          echo "Push node manifest to Docker Hub"
-          docker manifest push "midnightntwrk/midnight-node:${IMAGE_TAG_RELEASE}"
 
       # --- Docker Hub: Toolkit ---
       - name: Retag and push toolkit release images (Docker Hub)
         if: inputs.skip-toolkit != true
         run: |
-          echo "Creating toolkit images for Docker Hub from $IMAGE_TAG_CONTENT_HASH"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64"
-          docker pull "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64"
-
-          echo "Tagging toolkit images with $TOOLKIT_TAG_RELEASE"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64" "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-amd64"
-          docker tag "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64" "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-arm64"
-
-          echo "Push toolkit ${TOOLKIT_TAG_RELEASE} images to Docker Hub"
-          docker push "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-amd64"
-          docker push "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-arm64"
+          echo "Copy toolkit arch images GHCR -> Docker Hub for $TOOLKIT_TAG_RELEASE"
+          docker buildx imagetools create \
+            --tag "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-amd64" \
+            "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-amd64"
+          docker buildx imagetools create \
+            --tag "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-arm64" \
+            "ghcr.io/midnightntwrk/midnight-node-toolkit:${IMAGE_TAG_CONTENT_HASH}-arm64"
 
           echo "Create toolkit multi-arch manifest for Docker Hub"
-          docker manifest create "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}" \
+          docker buildx imagetools create \
+            --tag "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}" \
             "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-amd64" \
             "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}-arm64"
-
-          echo "Push toolkit manifest to Docker Hub"
-          docker manifest push "midnightntwrk/midnight-node-toolkit:${TOOLKIT_TAG_RELEASE}"
 
       # --- Docker Hub digests ---
       - name: Get Docker Hub node release image digest
