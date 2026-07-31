@@ -540,6 +540,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	tx_filter_config: TxFilterConfig,
 	max_finality_subscriptions: u32,
 	serve_warp_ledger_sync: bool,
+	no_serve_warp_ledger_sync: bool,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
@@ -617,14 +618,23 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// Non-validators serve by default. Validators don't — arena serialization is the protocol's
 	// most CPU-expensive operation and must not compete with authoring/finality (a remote DoS
 	// vector) — unless the operator opts in via `--serve-warp-ledger-sync` (for small or local
-	// networks with no non-validator nodes to serve). Every node still registers the protocol as
-	// a client, so it can warp-sync and recover its own arena regardless.
-	let serve_ledger_sync = !config.role.is_authority() || serve_warp_ledger_sync;
+	// networks with no non-validator nodes to serve). `--no-serve-warp-ledger-sync` opts out
+	// outright, for non-validators whose CPU must not be spent on other nodes' warp sync (public
+	// RPC endpoints, bootnodes). Every node still registers the protocol as a client, so it can
+	// warp-sync and recover its own arena regardless. Clap rejects both flags together.
+	let serve_ledger_sync =
+		!no_serve_warp_ledger_sync && (!config.role.is_authority() || serve_warp_ledger_sync);
 	if serve_warp_ledger_sync && config.role.is_authority() {
 		log::warn!(
 			"--serve-warp-ledger-sync is enabled on an authority: serializing ledger snapshots \
 			 for warp-syncing peers is CPU-expensive and may compete with block authoring and \
 			 finality duties"
+		);
+	}
+	if no_serve_warp_ledger_sync {
+		log::info!(
+			"--no-serve-warp-ledger-sync: this node will not serve ledger snapshots to \
+			 warp-syncing peers (it can still warp-sync as a client)"
 		);
 	}
 	let ledger_sync_protocol_name: sc_network::ProtocolName =
