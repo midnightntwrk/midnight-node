@@ -92,6 +92,20 @@ pub struct MidnightCfg {
 	#[doc_tag(secret)]
 	pub db_sync_postgres_connection_string: Option<String>,
 
+	/// Base URL of a Blockfrost-compatible API (e.g. https://cardano-preview.blockfrost.io/api/v0
+	/// or a self-hosted blockfrost-backend-ryo instance). When set, all main chain follower
+	/// data is read from this API instead of the db-sync Postgres database.
+	///
+	/// This covers running a node only. The genesis generation subcommands read Cardano
+	/// data directly from db-sync SQL, so they still require
+	/// `db_sync_postgres_connection_string` even when this is set.
+	pub blockfrost_endpoint: Option<String>,
+
+	/// Blockfrost project id, sent as the `project_id` header with every request.
+	/// Optional: self-hosted blockfrost-backend-ryo instances ignore it.
+	#[doc_tag(secret)]
+	pub blockfrost_project_id: Option<String>,
+
 	/// see partner-chains CandidateDataSourceCacheConfig and DbSyncBlockDataSourceConfig
 	pub cardano_security_parameter: Option<u32>,
 
@@ -164,8 +178,8 @@ fn main_chain_follower_vars(cfg: &MidnightCfg) -> Result<(), validation::Error> 
 			));
 		}
 	} else {
-		if cfg.db_sync_postgres_connection_string.is_none() {
-			return Err(missing("db_sync_postgres_connection_string"));
+		if cfg.db_sync_postgres_connection_string.is_none() && cfg.blockfrost_endpoint.is_none() {
+			return Err(missing("db_sync_postgres_connection_string or blockfrost_endpoint"));
 		}
 		if cfg.cardano_security_parameter.is_none() {
 			return Err(missing("cardano_security_parameter"));
@@ -284,6 +298,34 @@ mod tests {
 		let mut cfg = good_cfg();
 		cfg.mc_slot_duration_millis = 2000;
 		assert!(mainchain_epoch_invariants(&cfg).is_err());
+	}
+
+	/// A non-mock config with the Cardano observability parameters set, but no backend.
+	fn follower_cfg() -> MidnightCfg {
+		let mut cfg = good_cfg();
+		cfg.cardano_security_parameter = Some(432);
+		cfg.cardano_active_slots_coeff = Some(0.05);
+		cfg.block_stability_margin = Some(10);
+		cfg
+	}
+
+	#[test]
+	fn follower_requires_db_sync_or_blockfrost() {
+		assert!(main_chain_follower_vars(&follower_cfg()).is_err());
+	}
+
+	#[test]
+	fn follower_accepts_db_sync_backend() {
+		let mut cfg = follower_cfg();
+		cfg.db_sync_postgres_connection_string = Some("postgres://localhost/cexplorer".into());
+		assert!(main_chain_follower_vars(&cfg).is_ok());
+	}
+
+	#[test]
+	fn follower_accepts_blockfrost_backend() {
+		let mut cfg = follower_cfg();
+		cfg.blockfrost_endpoint = Some("https://cardano-preview.blockfrost.io/api/v0".into());
+		assert!(main_chain_follower_vars(&cfg).is_ok());
 	}
 
 	#[test]

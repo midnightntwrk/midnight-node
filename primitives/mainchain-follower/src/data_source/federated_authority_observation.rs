@@ -199,7 +199,7 @@ impl FederatedAuthorityObservationDataSourceImpl {
 	///   and Sr25519Keys is a 32-byte public key
 	///
 	/// Returns a GovernanceAuthorityDatums enum containing the authorities and round
-	fn decode_governance_datum(
+	pub fn decode_governance_datum(
 		datum: &PlutusData,
 	) -> Result<GovernanceAuthorityDatums, Box<dyn std::error::Error + Send + Sync>> {
 		// The new format uses @list annotation, so VersionedMultisig is a list: [data, logic_round]

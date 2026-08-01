@@ -82,6 +82,22 @@ pub(crate) async fn create_cached_main_chain_follower_data_sources(
 		})?;
 
 		Ok(mock)
+	} else if cfg.blockfrost_endpoint.is_some() {
+		// `mc_metrics_opt` is not passed on: `McFollowerMetrics`' accessors and the macro
+		// that records into them are `pub(crate)` in `partner-chains-db-sync-data-sources`,
+		// so a data source outside that crate cannot report into it. The Midnight-side
+		// handle is wired through, with the same sub-query labels the db-sync sources use.
+		crate::blockfrost::create_blockfrost_data_sources(
+			cfg,
+			cnight_follower_genesis,
+			midnight_metrics_opt,
+		)
+		.await
+		.map_err(|err| {
+			ServiceError::Application(
+				format!("Failed to create Blockfrost main chain follower: {err}").into(),
+			)
+		})
 	} else {
 		create_cached_data_sources(
 			cfg,
@@ -518,8 +534,7 @@ pub async fn create_cnight_observation_data_source(
 ) -> Result<Arc<dyn MidnightCNightObservationDataSource>, Box<dyn Error + Send + Sync + 'static>> {
 	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
-		&cfg.db_sync_postgres_connection_string
-			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		&db_sync_connection_string(&cfg)?,
 		CNIGHT_OBSERVATION_POOL_CFG,
 		cfg.ssl_root_cert.as_deref(),
 	)
@@ -539,8 +554,7 @@ pub async fn create_federated_authority_observation_data_source(
 {
 	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
-		&cfg.db_sync_postgres_connection_string
-			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		&db_sync_connection_string(&cfg)?,
 		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
 		cfg.ssl_root_cert.as_deref(),
 	)
@@ -570,8 +584,7 @@ pub async fn create_authority_selection_data_source_with_pool(
 > {
 	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
-		&cfg.db_sync_postgres_connection_string
-			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		&db_sync_connection_string(&cfg)?,
 		CANDIDATES_POOL_CFG,
 		cfg.ssl_root_cert.as_deref(),
 	)
@@ -590,8 +603,7 @@ pub async fn create_ics_genesis_pool(
 ) -> Result<sqlx::PgPool, Box<dyn Error + Send + Sync + 'static>> {
 	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
-		&cfg.db_sync_postgres_connection_string
-			.ok_or(missing("db_sync_postgres_connection_string"))?,
+		&db_sync_connection_string(&cfg)?,
 		ICS_POOL_CFG,
 		cfg.ssl_root_cert.as_deref(),
 	)
@@ -655,9 +667,63 @@ fn missing(field: &str) -> sc_service::Error {
 	ServiceError::Application(format!("Missing {field}. Check configuration.").into())
 }
 
+/// Connection string for the helpers that read Cardano data straight from db-sync SQL
+/// instead of going through a `DataSources` trait object: the genesis generators and the
+/// single-source CLI helpers. A node configured for Blockfrost has no PostgreSQL to fall
+/// back on, and reporting only the absent setting would blame the wrong thing, so that
+/// case gets its own message.
+fn db_sync_connection_string(
+	cfg: &MidnightCfg,
+) -> Result<String, Box<dyn Error + Send + Sync + 'static>> {
+	match (&cfg.db_sync_postgres_connection_string, &cfg.blockfrost_endpoint) {
+		(Some(connection_string), _) => Ok(connection_string.clone()),
+		(None, Some(endpoint)) => Err(Box::new(ServiceError::Application(
+			format!(
+				"This command reads Cardano data directly from db-sync and needs \
+				 db_sync_postgres_connection_string. The configured Blockfrost endpoint \
+				 ({endpoint}) backs node operation only; genesis generation from Blockfrost \
+				 is not supported."
+			)
+			.into(),
+		))),
+		(None, None) => Err(Box::new(missing("db_sync_postgres_connection_string"))),
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	fn blockfrost_only_cfg() -> MidnightCfg {
+		MidnightCfg {
+			blockfrost_endpoint: Some("https://example.invalid/api/v0".to_string()),
+			..Default::default()
+		}
+	}
+
+	#[test]
+	fn blockfrost_only_config_is_told_genesis_needs_db_sync() {
+		let error = db_sync_connection_string(&blockfrost_only_cfg())
+			.expect_err("no postgres is configured");
+		let message = error.to_string();
+		assert!(
+			message.contains("genesis generation from Blockfrost is not supported"),
+			"must name the real limitation, not just the absent setting: {message}"
+		);
+		assert!(
+			message.contains("db_sync_postgres_connection_string"),
+			"must still name the setting to add: {message}"
+		);
+	}
+
+	#[test]
+	fn config_without_any_backend_names_the_connection_string() {
+		let error = db_sync_connection_string(&MidnightCfg::default())
+			.expect_err("no backend is configured");
+		let message = error.to_string();
+		assert!(message.contains("Missing db_sync_postgres_connection_string"), "{message}");
+		assert!(!message.contains("Blockfrost"), "no Blockfrost is configured: {message}");
+	}
 
 	#[test]
 	fn connection_error_redacts_infrastructure_details() {

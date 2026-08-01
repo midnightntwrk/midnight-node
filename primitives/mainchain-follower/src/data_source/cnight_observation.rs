@@ -138,7 +138,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 );
 
 impl MidnightCNightObservationDataSourceImpl {
-	fn decode_registration_datum(
+	pub fn decode_registration_datum(
 		datum: ConstrPlutusData,
 	) -> Result<(Credential, DustPublicKeyBytes), RegistrationDatumDecodeError> {
 		// We use a Vec here because the `get` method on `PlutusList` can panic

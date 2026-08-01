@@ -66,6 +66,10 @@ See [Genesis Verification Guide](docs/genesis/verification.md) for complete docu
 /tests/e2e/    - End-to-end test suite
 ```
 
+**Main chain follower:** Cardano data comes from a cardano-db-sync PostgreSQL database by default, or
+from a Blockfrost-compatible HTTP API when `blockfrost_endpoint` is set (no Cardano node or db-sync
+required). See [Blockfrost main chain follower](docs/blockfrost-main-chain-follower.md).
+
 **Consensus:** AURA (6-second blocks) + GRANDPA (finality) + BEEFY (bridge security)
 
 **Key dependencies:**
