@@ -18,4 +18,5 @@ and treats a changed `spec_version` as success. It falls back to the
 `System.CodeUpdated` event only when `spec_version` is unchanged (the
 `--allow-same-version` path, where the event shape cannot have changed).
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/1973
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1960
