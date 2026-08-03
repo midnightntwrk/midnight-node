@@ -29,6 +29,15 @@ impl Default for BlockContext {
 	}
 }
 
+impl BlockContext {
+	/// The parent block's timestamp, when the ledger version carries one.
+	///
+	/// See the ledger-7 counterpart in `pre_ledger_8.rs`, which returns `None`.
+	pub fn parent_block_time(&self) -> Option<u64> {
+		Some(self.last_block_time)
+	}
+}
+
 #[cfg(feature = "std")]
 impl From<super::onchain_runtime_local::context::BlockContext> for BlockContext {
 	fn from(value: super::onchain_runtime_local::context::BlockContext) -> Self {
