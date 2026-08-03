@@ -181,6 +181,38 @@ fn test_validation_works() {
 }
 
 #[test]
+fn test_in_block_validation_returns_pool_tags() {
+	let (tx, block_context) =
+		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.into());
+
+		let in_block = <mock::Midnight as ValidateUnsigned>::validate_unsigned(
+			TransactionSource::InBlock,
+			&call,
+		)
+		.expect("InBlock validation should succeed for a valid transaction");
+		let external = <mock::Midnight as ValidateUnsigned>::validate_unsigned(
+			TransactionSource::External,
+			&call,
+		)
+		.expect("External validation should succeed for a valid transaction");
+
+		assert!(
+			!in_block.provides.is_empty(),
+			"InBlock must return provides tags for tx-pool prune"
+		);
+		assert_eq!(
+			in_block.provides, external.provides,
+			"InBlock and mempool validation must share the same provides tags"
+		);
+		assert_eq!(in_block.longevity, external.longevity);
+	})
+}
+
+#[test]
 fn test_validation_fails() {
 	let call = MidnightCall::send_mn_transaction { midnight_tx: vec![1, 2, 3] };
 

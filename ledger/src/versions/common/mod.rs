@@ -614,8 +614,13 @@ where
 
 	/// Validates that applying a transaction will succeed.
 	///
-	/// Used by `pre_dispatch` to reject transactions whose application
-	/// would fail - this keeps the block free of failed transactions.
+	/// Used by inclusion-time validation (`TransactionSource::InBlock` /
+	/// `pre_dispatch`) to reject transactions whose application would fail —
+	/// this keeps the block free of failed transactions.
+	///
+	/// Returns the same provides-tag hash as [`Self::validate_transaction`] so
+	/// the transaction pool can prune matching entries when revalidating
+	/// included extrinsics.
 	///
 	/// This function checks the strict cache for a cached `VerifiedTransaction`
 	/// (populated by `validate_unsigned(strict=true)`) to avoid redundant ZK
@@ -626,7 +631,7 @@ where
 		tx_serialized: &[u8],
 		block_context: BlockContext,
 		runtime_version: u32,
-	) -> Result<(), LedgerApiError>
+	) -> Result<Hash, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -654,7 +659,7 @@ where
 			metrics.set_tx_validation_cache_size("soft", SOFT_TX_VALIDATION_CACHE.entry_count());
 		}
 
-		Ok(())
+		Ok(cache_key.0)
 	}
 
 	pub fn get_decoded_transaction(transaction_bytes: &[u8]) -> Result<Tx, LedgerApiError> {

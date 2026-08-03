@@ -448,23 +448,24 @@ pub mod pallet {
 						return Err(Self::invalid_transaction(Default::default()));
 					};
 
-					// Substrate's Bare extrinsic path runs pallet pre_dispatch before the
-					// CheckWeight extension, so we pre-check here to avoid expensive ledger
-					// validation for txs that won't fit in the block.
+					// Default `ValidateUnsigned::pre_dispatch` calls this arm. Substrate's Bare
+					// extrinsic path runs that before the CheckWeight extension, so we pre-check
+					// here to avoid expensive ledger validation for txs that won't fit in the block.
 					Self::check_weight(call)?;
 
 					let block_context = Self::get_block_context();
 					let state_key = StateKey::<T>::get();
 					let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
-					LedgerApi::validate_guaranteed_execution(
+					let tx_hash = LedgerApi::validate_guaranteed_execution(
 						&state_key,
 						midnight_tx,
 						block_context,
 						runtime_version,
 					)
 					.map_err(|e| Self::invalid_transaction(e.into()))?;
-					Ok(ValidTransaction::default())
+
+					Self::build_valid_transaction(tx_hash)
 				},
 				TransactionSource::Local | TransactionSource::External => {
 					let mut block_context = Self::get_block_context();
@@ -569,6 +570,14 @@ pub mod pallet {
 			TransactionValidityError::Invalid(InvalidTransaction::Custom(error_code))
 		}
 
+		fn build_valid_transaction(tx_hash: LedgerTypes::Hash) -> TransactionValidity {
+			ValidTransaction::with_tag_prefix("Midnight")
+				// Transactions can live in the pool for max 600 blocks before they must be revalidated
+				.longevity(600)
+				.and_provides(tx_hash)
+				.build()
+		}
+
 		fn validate_unsigned(call: &Call<T>, block_context: BlockContext) -> TransactionValidity {
 			if let Call::send_mn_transaction { midnight_tx } = call {
 				let state_key = StateKey::<T>::get();
@@ -584,11 +593,7 @@ pub mod pallet {
 				)
 				.map_err(|e| Self::invalid_transaction(e.into()))?;
 
-				ValidTransaction::with_tag_prefix("Midnight")
-					// Transactions can live in the pool for max 600 blocks before they must be revalidated
-					.longevity(600)
-					.and_provides(tx_hash)
-					.build()
+				Self::build_valid_transaction(tx_hash)
 			} else {
 				// grcov-excl-start
 				Err(Self::invalid_transaction(Default::default()))

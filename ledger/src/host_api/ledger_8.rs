@@ -198,7 +198,9 @@ pub trait Ledger8Bridge {
 	 * validate_guaranteed_execution()
 	 *
 	 * Validates that the guaranteed part of a transaction will succeed.
-	 * Used by pre_dispatch to reject transactions that would fail without paying fees.
+	 * Used by inclusion-time validation (InBlock / pre_dispatch) to reject
+	 * transactions that would fail without paying fees.
+	 * Returns the provides-tag hash used by the transaction pool.
 	 */
 	fn validate_guaranteed_execution(
 		&mut self,
@@ -206,7 +208,7 @@ pub trait Ledger8Bridge {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
-	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
+	) -> AllocateAndReturnByCodec<Result<Hash, LedgerApiError>> {
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::validate_guaranteed_execution(
 				*self,
