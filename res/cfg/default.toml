@@ -56,7 +56,12 @@ bootnodes = []
 # Disallow symlinks when loading config files
 unsafe_allow_symlinks = false
 
-# 12 seconds == 2 slots
+# Offset added to the *parent* block's timestamp when verifying the first ledger transaction
+# of a block produced before `tblock_correction_disable_after`. It must match the skew the
+# mempool applies in `<pallet_midnight as ValidateUnsigned>::validate_unsigned`, i.e.
+# `slot_duration_secs * (1 + MaxSkippedSlots)` — 6 * (1 + 1) = 12 seconds today.
+# See https://github.com/midnightntwrk/midnight-node/issues/1924
 tblock_correction_offset = 12
+# Blocks whose own timestamp is at or after this point never get the correction.
 # Tuesday, August 4, 2026 at 12:00:00 AM (UTC)
 tblock_correction_disable_after = 1785801600
