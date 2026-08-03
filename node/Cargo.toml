@@ -51,7 +51,6 @@ sc-offchain.workspace = true
 sc-client-api.workspace = true
 sc-network.workspace = true
 sc-network-sync.workspace = true
-sp-consensus.workspace = true
 sc-utils.workspace = true
 sp-consensus.workspace = true
 sp-consensus-aura.workspace = true
