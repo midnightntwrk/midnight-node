@@ -292,6 +292,7 @@ services:
       APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
       APP__INFRA__LEDGER_STATE_STORAGE__URL: "nats:4222"
+      APP__APPLICATION__NETWORK_ID: "local"
 
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/indexer-api/running"]
