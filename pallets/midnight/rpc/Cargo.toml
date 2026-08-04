@@ -15,13 +15,23 @@ sc-client-api.workspace = true
 sp-api.workspace = true
 sp-runtime.workspace = true
 sp-blockchain.workspace = true
+sp-crypto-hashing.workspace = true
+sp-state-machine.workspace = true
+parity-scale-codec.workspace = true
 pallet-midnight.workspace = true
+midnight-node-ledger.workspace = true
+midnight-primitives-ledger.workspace = true
 
 [features]
 default = ["std"]
 std = [
+    "midnight-node-ledger/std",
+    "midnight-primitives-ledger/std",
+    "parity-scale-codec/std",
     "sp-api/std",
+    "sp-crypto-hashing/std",
     "sp-runtime/std",
+    "sp-state-machine/std",
     "pallet-midnight/std"
 ]
 

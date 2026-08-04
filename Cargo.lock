@@ -10566,13 +10566,18 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "jsonrpsee",
+ "midnight-node-ledger",
+ "midnight-primitives-ledger",
  "pallet-midnight",
+ "parity-scale-codec",
  "sc-client-api",
  "schemars 0.8.22",
  "serde",
  "sp-api",
  "sp-blockchain",
+ "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2606)",
  "sp-runtime",
+ "sp-state-machine",
 ]
 
 [[package]]
