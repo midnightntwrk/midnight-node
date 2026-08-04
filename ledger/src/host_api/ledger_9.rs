@@ -67,24 +67,12 @@ fn as_ledger_9_error(error: crate::ledger_8::types::LedgerApiError) -> LedgerApi
 /// is a ledger-8 arena root, by returning early from the enclosing host function.
 /// Falls through to the ledger-9 body otherwise.
 ///
-/// The `set_code` block of the ledger 8->9 hardfork commits a state that pairs the
-/// *new* `:code` with the *old* `StateKey`: `frame_system` overwrites `:code`
-/// inside that block (the pre-fork runtime ships `system_version: 1`, so the code
-/// is not staged in `:pending_code`), while pallet-midnight's v8->v9 state
-/// translation only runs in the next block's `on_runtime_upgrade`. Reading the
-/// ledger state *at* that block therefore executes ledger-9 code against a
-/// ledger-8 arena root and fails with `Deserialization(TypedArenaKey)` — GH #1959.
+/// For the ledger 8 -> 9 hard-fork, `system_version == 1` which means runtime code
+/// is applied during the upgrade block rather than queued to be applied in the next
+/// block. This code allows off-chain runtime calls to access historic block data
+/// using the correct ledger api despite the runtime code/chain data skew.
 ///
-/// That block is committed history: it stays that way for every future sync, and
-/// `system_version: 3` only prevents *further* skew blocks. So answer from the
-/// ledger-8 bridge, which is what the state at that block actually is. v8 and v9
-/// share one storage crate and hence one arena (see `super::migration_8_to_9`),
-/// so `DbSeparate`/`DbUnified` name the same types for both and no data movement
-/// is involved.
-///
-/// Doing this in the host function rather than in the node's RPC layer fixes every
-/// caller at once — `midnight_*` RPCs, `MidnightRuntimeApi` via `state_call`, and
-/// subxt-based tooling — since they all reach the ledger through here.
+/// This will not be needed for future forks; see: https://github.com/midnightntwrk/midnight-node/pull/1900
 ///
 /// `$call` names the `Bridge` method and takes its arguments verbatim; only the
 /// storage-mode dispatch and the error translation are supplied here.
