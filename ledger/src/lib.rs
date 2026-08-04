@@ -27,6 +27,9 @@ pub mod json;
 #[cfg(feature = "std")]
 mod utils;
 
+#[cfg(feature = "std")]
+pub mod gc;
+
 pub mod host_api;
 
 #[path = "versions"]

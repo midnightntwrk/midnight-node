@@ -525,6 +525,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	max_finality_subscriptions: u32,
 ) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
 	let database_source = config.database.clone();
+	// Captured before `spawn_tasks` consumes `config`.
+	let state_pruning = config.state_pruning.clone();
 	let new_partial_components =
 		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
 
@@ -919,6 +921,14 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		&task_manager.spawn_essential_handle(),
 	)
 	.map_err(|e| ServiceError::Application(e.into()))?;
+
+	// Align ledger_storage retention with Substrate state pruning (issue #1983).
+	crate::ledger_gc::try_spawn(
+		&state_pruning,
+		client.clone(),
+		backend.clone(),
+		&task_manager.spawn_handle(),
+	);
 
 	// Spawn Prometheus metrics push task if configured
 	if let Some(mut push_config) = metrics_push_config {
