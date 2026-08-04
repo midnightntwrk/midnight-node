@@ -21,11 +21,19 @@ use jsonrpsee::{
 	types::error::{ErrorObject, ErrorObjectOwned, INVALID_PARAMS_CODE},
 };
 
+use midnight_node_ledger::{
+	host_api::ledger_8::ledger_8_bridge,
+	ledger_8::{self, types::LedgerApiError as Ledger8ApiError},
+};
+use midnight_primitives_ledger::{LedgerStorage, LedgerStorageExt};
 use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
-use sc_client_api::{BlockBackend, BlockchainEvents};
+use parity_scale_codec::Decode;
+use sc_client_api::{Backend, BlockBackend, BlockchainEvents, StorageKey, StorageProvider};
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
+use sp_crypto_hashing::twox_128;
 use sp_runtime::traits::Block as BlockT;
+use sp_state_machine::BasicExternalities;
 use std::sync::Arc;
 
 pub const API_VERSIONS: [u32; 1] = [2];
@@ -238,16 +246,58 @@ pub struct RpcBlock<Header> {
 	pub transactions_index: Vec<(String, String)>,
 }
 
-pub struct Midnight<C, Block> {
+pub struct Midnight<C, Block, B> {
 	/// Shared reference to the client.
 	client: Arc<C>,
+	/// The node's ledger storage configuration. Needed to build an externalities
+	/// scope for native ledger host calls, see [`Midnight::with_ledger_storage`].
+	ledger_storage: LedgerStorage,
 	//todo do I need this one?
-	_marker: std::marker::PhantomData<Block>,
+	_marker: std::marker::PhantomData<(Block, B)>,
 }
 
-impl<C, Block> Midnight<C, Block> {
-	pub fn new(client: Arc<C>) -> Self {
-		Self { client, _marker: Default::default() }
+impl<C, Block, B> Midnight<C, Block, B> {
+	pub fn new(client: Arc<C>, ledger_storage: LedgerStorage) -> Self {
+		Self { client, ledger_storage, _marker: Default::default() }
+	}
+}
+
+impl<C, Block, B> Midnight<C, Block, B>
+where
+	Block: BlockT,
+	B: Backend<Block>,
+	C: StorageProvider<Block, B>,
+{
+	/// The ledger-8 arena root at `at`, if this block predates the v8->v9 ledger
+	/// state translation.
+	///
+	/// `None` — i.e. "use the runtime API as usual" — when the state is
+	/// unavailable, `StateKey` is unset, or the key is already ledger-9.
+	///
+	/// `StateKey` is read straight from the state backend rather than through the
+	/// runtime API on purpose: at the `set_code` block of the hardfork the runtime
+	/// API is precisely what cannot read it (the block's committed state pairs
+	/// ledger-9 `:code` with a ledger-8 `StateKey`).
+	fn maybe_ledger_8_state_key(&self, at: Block::Hash) -> Option<Vec<u8>> {
+		// Same derivation as `util/toolkit/src/client.rs`: the storage key is
+		// twox_128("Midnight") ++ twox_128("StateKey").
+		let key = StorageKey([twox_128(b"Midnight"), twox_128(b"StateKey")].concat());
+		let raw = self.client.storage(at, &key).ok().flatten()?;
+		let state_key = Vec::<u8>::decode(&mut &raw.0[..]).ok()?;
+		ledger_8::storage::state_key_matches_this_version(&state_key).then_some(state_key)
+	}
+
+	/// Run a ledger host function natively, inside a minimal externalities scope
+	/// carrying the node's `LedgerStorageExt`.
+	///
+	/// `#[runtime_interface]` host functions take `&mut self` and so require an
+	/// externalities environment. The ledger ones use it only to read
+	/// `LedgerStorageExt` and pick the storage mode; without the extension they
+	/// silently assume `Separate`, which would panic on a unified-storage node.
+	fn with_ledger_storage<R>(&self, f: impl FnOnce() -> R) -> R {
+		let mut ext = BasicExternalities::new_empty();
+		ext.register_extension(LedgerStorageExt::new(self.ledger_storage.clone()));
+		ext.execute_with(f)
 	}
 }
 
@@ -269,14 +319,16 @@ where
 		.ok_or(sp_api::ApiError::UsingSameInstanceForDifferentBlocks)
 }
 
-impl<C, Block> MidnightApiServer<<Block as BlockT>::Hash> for Midnight<C, Block>
+impl<C, Block, B> MidnightApiServer<<Block as BlockT>::Hash> for Midnight<C, Block, B>
 where
 	Block: BlockT,
+	B: Backend<Block> + 'static,
 	C: Send + Sync + 'static,
 	C: ProvideRuntimeApi<Block>,
 	C: HeaderBackend<Block>,
 	C: BlockBackend<Block>,
 	C: BlockchainEvents<Block>,
+	C: StorageProvider<Block, B>,
 	C::Api: MidnightRuntimeApi<Block>,
 {
 	fn get_state(
@@ -295,6 +347,21 @@ where
 
 		let api_version = get_api_version::<C, Block>(&api, at)
 			.map_err(|_| StateRpcError::UnableToGetContractState)?;
+
+		if let Some(state_key) = self.maybe_ledger_8_state_key(at) {
+			let result = self
+				.with_ledger_storage(|| ledger_8_bridge::get_contract_state(&state_key, &dehexed))
+				.map_err(|e| match e {
+					// Same legacy contract as below: api_version < 2 predates
+					// ContractNotPresent and must keep seeing the generic error.
+					Ledger8ApiError::ContractNotPresent if api_version >= 2 => {
+						StateRpcError::ContractNotPresent
+					},
+					_ => StateRpcError::UnableToGetContractState,
+				})?;
+
+			return Ok(hex::encode(result));
+		}
 
 		let result = if api_version < 2 {
 			// Legacy path: v1 of the RPC contract predates ContractNotPresent,
@@ -323,6 +390,12 @@ where
 	) -> Result<Vec<u8>, StateRpcError> {
 		let at = at.unwrap_or_else(|| self.client.info().best_hash);
 
+		if let Some(state_key) = self.maybe_ledger_8_state_key(at) {
+			return self
+				.with_ledger_storage(|| ledger_8_bridge::get_zswap_state_root(&state_key))
+				.map_err(|_| StateRpcError::UnableToGetZSwapStateRoot);
+		}
+
 		let root = self
 			.client
 			.runtime_api()
@@ -340,6 +413,12 @@ where
 		at: Option<<Block as BlockT>::Hash>,
 	) -> Result<Vec<u8>, StateRpcError> {
 		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		if let Some(state_key) = self.maybe_ledger_8_state_key(at) {
+			return self
+				.with_ledger_storage(|| ledger_8_bridge::get_ledger_state_root(&state_key))
+				.map_err(|_| StateRpcError::UnableToGetLedgerStateRoot);
+		}
 
 		let root = self
 			.client

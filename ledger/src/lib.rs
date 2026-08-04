@@ -246,4 +246,34 @@ mod tests {
 		unsafe_drop_default_storage::<ParityDb>();
 		assert!(try_get_default_storage::<ParityDb>().is_none());
 	}
+
+	/// `state_key_matches_this_version` is what the node's RPC layer dispatches on
+	/// to read the `set_code` block of a ledger hardfork, whose `StateKey` is one
+	/// version behind its `:code` (GH #1959). It has to tell v8 and v9 arena roots
+	/// apart from the header tag alone.
+	#[test]
+	fn state_key_tag_discriminates_ledger_versions() {
+		use ledger_storage_ledger_8::DefaultDB;
+		use midnight_serialize::{GLOBAL_TAG, Tagged};
+
+		// A `StateKey` is `tagged_serialize(&Sp<Ledger<D>, D>::as_typed_key())`, and
+		// `TypedArenaKey`'s tag wraps its referent's — which for `Ledger` is just
+		// `LedgerState`'s. Only the header matters here; `peek_tag` never reads the body.
+		fn header<T: Tagged>() -> Vec<u8> {
+			format!("{GLOBAL_TAG}storage-key({}):", T::tag()).into_bytes()
+		}
+		let v8 = header::<mn_ledger_8::structure::LedgerState<DefaultDB>>();
+		let v9 = header::<mn_ledger_9::structure::LedgerState<DefaultDB>>();
+		assert_ne!(v8, v9, "v8 and v9 ledger states must not share a tag");
+
+		assert!(super::ledger_8::storage::state_key_matches_this_version(&v8));
+		assert!(!super::ledger_8::storage::state_key_matches_this_version(&v9));
+		assert!(super::ledger_9::storage::state_key_matches_this_version(&v9));
+		assert!(!super::ledger_9::storage::state_key_matches_this_version(&v8));
+
+		// An unset `StateKey`, or anything else untagged, is not a v8 root: the RPC
+		// layer must fall through to the runtime API rather than guess.
+		assert!(!super::ledger_8::storage::state_key_matches_this_version(&[]));
+		assert!(!super::ledger_8::storage::state_key_matches_this_version(b"not-tagged-at-all"));
+	}
 }

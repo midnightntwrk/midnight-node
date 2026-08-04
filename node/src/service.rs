@@ -258,6 +258,7 @@ type MidnightService = sc_service::PartialComponents<
 		sc_consensus_beefy::BeefyRPCLinks<Block, BeefyId>,
 		Option<Telemetry>,
 		DataSources,
+		LedgerStorage,
 	),
 >;
 
@@ -391,7 +392,7 @@ pub fn new_partial(
 		.execution_extensions()
 		.set_extensions_factory(ExtensionsFactory::<Block>::new(
 			Arc::new(Mutex::new(ledger_metrics)),
-			ledger_storage,
+			ledger_storage.clone(),
 			TBlockCorrection::from(&midnight_cfg),
 		));
 
@@ -504,6 +505,7 @@ pub fn new_partial(
 			beefy_rpc_links,
 			telemetry,
 			data_sources,
+			ledger_storage,
 		),
 	};
 
@@ -544,6 +546,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				beefy_rpc_links,
 				mut telemetry,
 				data_sources,
+				ledger_storage,
 			),
 	} = new_partial_components;
 
@@ -667,6 +670,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let network_for_rpc = network.clone();
 		let system_rpc_tx_for_rpc = system_rpc_tx.clone();
 		let subscription_tracker = subscription_tracker.clone();
+		let ledger_storage_for_rpc = ledger_storage;
 
 		#[allow(clippy::result_large_err)]
 		move |subscription_executor: SubscriptionTaskExecutor| {
@@ -696,6 +700,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				time_source: Arc::new(SystemTimeSource),
 				main_chain_epoch_config: epoch_config.clone(),
 				backend: backend.clone(),
+				ledger_storage: ledger_storage_for_rpc.clone(),
 				network: network_for_rpc.clone(),
 				system_rpc_tx: system_rpc_tx_for_rpc.clone(),
 				subscription_tracker: subscription_tracker.clone(),

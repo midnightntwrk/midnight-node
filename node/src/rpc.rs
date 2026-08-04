@@ -25,6 +25,7 @@ use midnight_node_runtime::{
 	AccountId, BlockNumber, CrossChainPublic, Hash, Nonce,
 	opaque::{Block, SessionKeys},
 };
+use midnight_primitives_ledger::LedgerStorage;
 use sc_client_api::{BlockBackend, BlockchainEvents};
 use sc_consensus_grandpa::{
 	FinalityProofProvider, GrandpaJustificationStream, SharedAuthoritySet, SharedVoterState,
@@ -108,6 +109,9 @@ pub struct FullDeps<C, P, B, T, AuthorityId: AuthorityIdBound> {
 	pub main_chain_epoch_config: MainchainEpochConfig,
 	/// Backend used by the node.
 	pub backend: Arc<B>,
+	/// Ledger storage configuration, used by the Midnight RPCs to read historical
+	/// blocks whose ledger state predates the v8->v9 hardfork translation.
+	pub ledger_storage: LedgerStorage,
 	/// Network service for peer reputation queries.
 	pub network: Arc<dyn NetworkPeers + Send + Sync>,
 	/// Channel for system RPC requests (used to query connected peers).
@@ -126,6 +130,7 @@ where
 	C: HeaderBackend<Block> + HeaderMetadata<Block, Error = BlockChainError> + 'static,
 	C: BlockBackend<Block>,
 	C: BlockchainEvents<Block>,
+	C: sc_client_api::StorageProvider<Block, B>,
 	C: Send + Sync + 'static,
 	C::Api: substrate_frame_rpc_system::AccountNonceApi<Block, AccountId, Nonce>,
 	C::Api: BlockBuilder<Block>,
@@ -163,6 +168,7 @@ where
 		time_source,
 		main_chain_epoch_config,
 		backend,
+		ledger_storage,
 		network,
 		system_rpc_tx,
 		subscription_tracker,
@@ -242,7 +248,7 @@ where
 	));
 
 	module.merge(SessionValidatorManagementRpc::new(session_validator_query.clone()).into_rpc())?;
-	module.merge(Midnight::new(client.clone()).into_rpc())?;
+	module.merge(Midnight::<_, Block, B>::new(client.clone(), ledger_storage).into_rpc())?;
 	module.merge(SystemParametersRpc::new(client, session_validator_query).into_rpc())?;
 	module.merge(PeerInfoRpc::new(network, system_rpc_tx).into_rpc())?;
 

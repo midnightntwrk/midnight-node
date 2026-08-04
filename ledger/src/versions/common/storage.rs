@@ -93,6 +93,24 @@ pub fn genesis_matches_this_version(genesis_state: &[u8]) -> bool {
 	}
 }
 
+/// Returns true if `state_key` is a tagged-serialized arena root
+/// (`TypedArenaKey<Ledger<_>, _>`) of *this* ledger version.
+#[cfg(feature = "std")]
+pub fn state_key_matches_this_version(state_key: &[u8]) -> bool {
+	use super::api::Ledger;
+	use super::ledger_storage_local::{DefaultDB, arena::TypedArenaKey};
+
+	// `TypedArenaKey`'s tag wraps its referent's: `storage-key(ledger-state[vN])`.
+	// The hasher parameter contributes nothing to the tag, so `DefaultDB`'s hasher
+	// gives the right answer for both storage modes.
+	let expected = <TypedArenaKey<Ledger<DefaultDB>, <DefaultDB as DB>::Hasher> as Tagged>::tag();
+	// `peek_tag` reads the serialized header tag without deserializing the body.
+	match super::midnight_serialize_local::peek_tag(&mut std::io::Cursor::new(state_key)) {
+		Ok(tag) => tag.as_str() == expected.as_ref(),
+		Err(_) => false,
+	}
+}
+
 pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRootError> {
 	// Get empty state key
 	use super::api::Ledger;
