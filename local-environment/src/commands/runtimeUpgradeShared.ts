@@ -14,33 +14,36 @@
 import type { ApiPromise, WsProvider } from "@polkadot/api";
 
 import { run } from "./run";
-import { RuntimeUpgradeBaseOptions } from "../lib/types";
+import { RunOptions, RuntimeUpgradeBaseOptions } from "../lib/types";
 import {
   createApi,
   loadRuntimeWasm,
   resolveRpcUrl,
 } from "../lib/runtimeUpgradeUtils";
 
-export interface PreparedRuntimeUpgrade {
-  wasm: ReturnType<typeof loadRuntimeWasm>;
+export interface NetworkConnection {
   api: ApiPromise;
   provider: WsProvider;
   rpcUrl: string;
 }
 
-export async function prepareRuntimeUpgrade(
+export interface PreparedRuntimeUpgrade extends NetworkConnection {
+  wasm: ReturnType<typeof loadRuntimeWasm>;
+}
+
+/**
+ * Optionally bring the network up via docker-compose, then open an API
+ * connection to the target node. Shared by every governance command that needs
+ * a running node to submit against.
+ */
+export async function ensureRunningAndConnect(
   namespace: string,
-  opts: RuntimeUpgradeBaseOptions,
-): Promise<PreparedRuntimeUpgrade> {
-  const wasm = loadRuntimeWasm(opts.wasmPath);
-
-  console.log(`Loaded runtime wasm from ${wasm.path} (${wasm.length} bytes)`);
-  console.log(`Runtime code hash: ${wasm.hash}`);
-
+  opts: RunOptions & { skipRun?: boolean; rpcUrl?: string },
+): Promise<NetworkConnection> {
   if (opts.skipRun) {
     console.log("Skipping docker-compose bring-up (--skip-run)");
   } else {
-    console.log("Ensuring network is running before applying upgrade...");
+    console.log("Ensuring network is running before submitting...");
     await run(namespace, {
       profiles: opts.profiles,
       envFile: opts.envFile,
@@ -52,5 +55,19 @@ export async function prepareRuntimeUpgrade(
   console.log(`Connecting to node at ${rpcUrl}`);
   const { api, provider } = await createApi(rpcUrl);
 
-  return { wasm, api, provider, rpcUrl };
+  return { api, provider, rpcUrl };
+}
+
+export async function prepareRuntimeUpgrade(
+  namespace: string,
+  opts: RuntimeUpgradeBaseOptions,
+): Promise<PreparedRuntimeUpgrade> {
+  const wasm = loadRuntimeWasm(opts.wasmPath);
+
+  console.log(`Loaded runtime wasm from ${wasm.path} (${wasm.length} bytes)`);
+  console.log(`Runtime code hash: ${wasm.hash}`);
+
+  const connection = await ensureRunningAndConnect(namespace, opts);
+
+  return { wasm, ...connection };
 }

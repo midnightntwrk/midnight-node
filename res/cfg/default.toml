@@ -19,7 +19,7 @@ validator = false
 # MidnightEnv Defaults
 cardano_security_parameter = 432
 cardano_active_slots_coeff = 0.05
-block_stability_margin = 10
+block_stability_margin = 30
 
 mc__first_epoch_timestamp_millis = 1666656000000
 mc__first_epoch_number = 0
@@ -56,3 +56,8 @@ bootnodes = []
 
 # Disallow symlinks when loading config files
 unsafe_allow_symlinks = false
+
+# 12 seconds == 2 slots
+tblock_correction_offset = 12
+# Tuesday, August 4, 2026 at 12:00:00 AM (UTC)
+tblock_correction_disable_after = 1785801600

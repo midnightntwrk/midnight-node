@@ -75,6 +75,22 @@ pub trait Ledger8Bridge {
 		}
 	}
 
+	fn apply_post_block_update(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_post_block_update(*self, state_key, block_context)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_post_block_update(
+				*self,
+				state_key,
+				block_context,
+			)
+		}
+	}
+
 	// Current Enabled Version
 	fn get_version(&mut self) -> AllocateAndReturnFatPointer<Vec<u8>> {
 		// Dispatch on storage mode even though `get_version` doesn't read storage today —
@@ -274,6 +290,22 @@ pub trait Ledger8Bridge {
 	}
 
 	/*
+	 * Returns the unclaimed Cardano-bridge transfer amount for a provided beneficiary address
+	 */
+	// Current Enabled Version
+	fn get_bridge_receiving_amount(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		beneficiary: PassFatPointerAndRead<&[u8]>,
+	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_bridge_receiving_amount(state_key, beneficiary)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_bridge_receiving_amount(state_key, beneficiary)
+		}
+	}
+
+	/*
 	 * Returns the Ledger Parameters
 	 */
 	// Current Enabled Version
@@ -426,6 +458,20 @@ pub trait Ledger8Bridge {
 			Bridge::<Signature, DbUnified>::construct_distribute_reserve_system_tx(amount)
 		} else {
 			Bridge::<Signature, DbSeparate>::construct_distribute_reserve_system_tx(amount)
+		}
+	}
+
+	/// The ledger-8 runtime imports this to pay block rewards to the treasury.
+	/// Retained (removed for v9) so the current node can execute the ledger-8
+	/// WASM across the 8->9 hardfork boundary.
+	fn construct_distribute_treasury_system_tx(
+		&mut self,
+		amount: PassFatPointerAndDecode<u128>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::construct_distribute_treasury_system_tx(amount)
+		} else {
+			Bridge::<Signature, DbSeparate>::construct_distribute_treasury_system_tx(amount)
 		}
 	}
 

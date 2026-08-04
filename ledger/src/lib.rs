@@ -56,6 +56,9 @@ pub mod ledger_7 {
 	#[path = "guaranteed_validation/ledger_7.rs"]
 	mod guaranteed_validation;
 
+	#[path = "post_block_update/ledger_7.rs"]
+	mod post_block_update;
+
 	pub const CRATE_NAME: &str = "mn-ledger";
 	#[cfg(feature = "std")]
 	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
@@ -89,6 +92,9 @@ pub mod ledger_8 {
 	#[path = "guaranteed_validation/ledger_8.rs"]
 	mod guaranteed_validation;
 
+	#[path = "post_block_update/ledger_8.rs"]
+	mod post_block_update;
+
 	pub const CRATE_NAME: &str = "mn-ledger-8";
 	#[cfg(feature = "std")]
 	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
@@ -101,12 +107,12 @@ pub mod ledger_8 {
 pub mod ledger_9 {
 	#[cfg(feature = "std")]
 	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
+		base_crypto as base_crypto_local, coin_structure_ledger_9 as coin_structure_local,
 		ledger_storage_ledger_8 as ledger_storage_local,
 		midnight_node_ledger_helpers::ledger_9 as helpers_local,
 		midnight_serialize as midnight_serialize_local, mn_ledger_9 as mn_ledger_local,
 		onchain_runtime_ledger_9 as onchain_runtime_local,
-		transient_crypto as transient_crypto_local, zswap_ledger_9 as zswap_local,
+		transient_crypto_ledger_9 as transient_crypto_local, zswap_ledger_9 as zswap_local,
 	};
 
 	#[allow(clippy::duplicate_mod)]
@@ -122,6 +128,9 @@ pub mod ledger_9 {
 
 	#[path = "guaranteed_validation/ledger_9.rs"]
 	mod guaranteed_validation;
+
+	#[path = "post_block_update/ledger_9.rs"]
+	mod post_block_update;
 
 	pub const CRATE_NAME: &str = "mn-ledger-9";
 	#[cfg(feature = "std")]
@@ -143,6 +152,55 @@ pub fn drop_all_default_storage() {
 	ledger_7::storage::drop_default_storage_if_exists();
 	ledger_8::storage::drop_default_storage_if_exists();
 	ledger_9::storage::drop_default_storage_if_exists();
+}
+
+/// Seed the (separate) ledger arena from a genesis `LedgerState` blob, using the
+/// deserializer that matches the blob's `ledger-state[vN]` header tag.
+///
+/// A node may boot on a chain-spec produced by an older runtime — notably the
+/// ledger 8->9 hardfork, where a ledger-9 node starts from a ledger-8
+/// (`ledger-state[v13]`) genesis and only upgrades to v9 later via the runtime
+/// migration. Seeding must therefore match the genesis version (the genesis
+/// block runs under the old WASM and expects the old-format arena root), not the
+/// latest. v8 and v9 share one storage backend, so a v8-seeded arena is exactly
+/// what the post-migration v9 runtime reads. Unrecognized tags fall back to the
+/// latest version (`ledger_9`), preserving the prior default behaviour.
+#[cfg(feature = "std")]
+pub fn init_ledger_storage_separate<P: AsRef<std::path::Path>>(
+	dir: P,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> alloc::vec::Vec<u8> {
+	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
+		ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
+	} else {
+		ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
+	}
+}
+
+/// Unified-DB counterpart of [`init_ledger_storage_separate`].
+#[cfg(feature = "std")]
+pub fn init_ledger_storage_unified<
+	D: core::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+	const COLUMN_OFFSET: u8,
+>(
+	db_instance: D,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> alloc::vec::Vec<u8> {
+	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
+		ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+			db_instance,
+			genesis_state,
+			cache_size,
+		)
+	} else {
+		ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+			db_instance,
+			genesis_state,
+			cache_size,
+		)
+	}
 }
 
 mod common;

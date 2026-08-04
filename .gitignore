@@ -105,3 +105,6 @@ toolkit-image.tar
 
 # Scratch dir written by the +feature-unification-inputs LOCALLY target
 .scope/
+
+# Generated compactc wrapper from `just compactc` (points into the nix store)
+.compact-home/

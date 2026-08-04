@@ -17,12 +17,12 @@ use async_trait::async_trait;
 
 use super::super::{
 	BuildContractAction, BuilderContext, Contract, DB, Intent, PedersenRandomness,
-	ProofPreimageMarker, Signature, StdRng, VerifyingKey,
+	ProofPreimageMarker, Signature, StdRng, UnshieldedWallet,
 };
 
 pub struct ContractDeployInfo<C: Contract<D>, D: DB + Clone> {
 	pub type_: C,
-	pub committee: Vec<VerifyingKey>,
+	pub committee: Vec<UnshieldedWallet>,
 	pub committee_threshold: u32,
 	pub _marker: PhantomData<D>,
 }
@@ -40,8 +40,11 @@ impl<C: Contract<D>, D: DB + Clone, BC: BuilderContext<D>> BuildContractAction<D
 		let resolver = self.type_.resolver();
 		context.update_resolver(resolver).await;
 
-		let contract_deploy =
-			self.type_.deploy(&self.committee, self.committee_threshold, rng).await;
+		let contract_deploy = self
+			.type_
+			.deploy(&self.committee, self.committee_threshold, rng)
+			.await
+			.expect("Failed to construct contract deploy");
 
 		println!("CONTRACT ADDRESS: {:?}", contract_deploy.address());
 

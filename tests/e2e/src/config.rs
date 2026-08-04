@@ -50,6 +50,13 @@ fn submodule_network() -> &'static str {
     {
         "qanet"
     }
+    // devnet observes the same Preview-deployed contracts as qanet (the
+    // two networks' cnight configs match), and the pinned contracts
+    // submodule has no devnet dir — read the identical qanet snapshot.
+    #[cfg(feature = "devnet")]
+    {
+        "qanet"
+    }
 }
 
 fn read_contracts_info_entry(name: &str) -> serde_json::Value {
@@ -96,7 +103,7 @@ impl Settings {
     pub fn new() -> Self {
         {
             let network_info = CardanoNetworkInfo::testnet_preview();
-            Self {
+            let mut settings = Self {
                 node_client: NodeClientSettings {
                     #[cfg(feature = "local-dev")]
                     base_url: "ws://127.0.0.1:9944".into(),
@@ -109,13 +116,18 @@ impl Settings {
 
                     #[cfg(feature = "qanet")]
                     base_url: "wss://rpc.qanet.midnight.network".into(),
+
+                    #[cfg(feature = "devnet")]
+                    base_url: "wss://rpc.devnet.midnight.network".into(),
                 },
                 ogmios_client: OgmiosClientSettings {
                     #[cfg(any(feature = "local", feature = "local-dev"))]
                     base_url: "ws://127.0.0.1:1337".into(),
                     #[cfg(feature = "local-ci")]
                     base_url: "ws://172.17.0.1:1337".into(),
-                    #[cfg(feature = "qanet")]
+                    // qanet and devnet both follow Cardano Preview and share
+                    // the same ogmios deployment.
+                    #[cfg(any(feature = "qanet", feature = "devnet"))]
                     base_url: "wss://ogmios.devnet.midnight.network".into(),
                     timeout_seconds: 180,
                     network: CardanoNetwork::Preview,
@@ -123,7 +135,7 @@ impl Settings {
                 },
                 #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
                 finality_timeout: Duration::from_secs(60),
-                #[cfg(feature = "qanet")]
+                #[cfg(any(feature = "qanet", feature = "devnet"))]
                 finality_timeout: Duration::from_secs(300),
                 constants: Constants {
                     payments: Payments {
@@ -195,7 +207,18 @@ impl Settings {
                         ],
                     ],
                 },
+            };
+            // Reachability override: when running as a compose service on the
+            // local-env network, the node RPC + ogmios are reached by service
+            // name (e.g. ws://midnight-node-1:9933 / ws://ogmios:1337), not the
+            // host-mapped ports the feature defaults assume. Unset = no change.
+            if let Ok(url) = std::env::var("E2E_NODE_URL") {
+                settings.node_client.base_url = url;
             }
+            if let Ok(url) = std::env::var("E2E_OGMIOS_URL") {
+                settings.ogmios_client.base_url = url;
+            }
+            settings
         }
     }
 }

@@ -32,7 +32,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
           # The merge commit plus both parents, so HEAD^1 (the base) is
@@ -54,7 +54,7 @@ jobs:
       # Uncomment if disk space again becomes an issue.
       # - name: Free disk space
       #   if: steps.guard.outputs.hit != 'true'
-      #   run: scripts/free-disk-space.sh
+      #   run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       # The only git-coupled work: git history exists on the host, and `--ci`
       # (strict) forbids LOCALLY inside the build, so the scope inputs are

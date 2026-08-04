@@ -3,7 +3,9 @@ use crate::config::{NodeClientSettings, OgmiosClientSettings};
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use hex::ToHex;
-use midnight_node_ledger_helpers::{DefaultDB, DustWallet, WalletSeed, serialize_untagged};
+use midnight_node_ledger_helpers::{
+    DefaultDB, DustWallet, LedgerParameters, WalletSeed, deserialize, serialize_untagged,
+};
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::utxo_owners::Output as UtxoOwners;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::midnight_primitives::bridge::BridgeRecipient;
 use midnight_node_metadata::midnight_metadata_latest::runtime_types::sp_partner_chains_bridge::BridgeTransferV1;
@@ -116,6 +118,38 @@ impl MidnightClient {
         Ok(())
     }
 
+    /// True when a subxt error means the `OnlineClient`'s background task
+    /// has terminated ("background task closed; restart required").
+    fn is_terminal_client_error(err: &(dyn std::error::Error + 'static)) -> bool {
+        let msg = err.to_string();
+        msg.contains("restart required") || msg.contains("background task closed")
+    }
+
+    /// [`Self::get_finalized_block_number`] with recovery: on a terminal
+    /// "background task closed" error the dead `OnlineClient` is rebuilt
+    /// before the error is returned, so the next call uses a fresh client.
+    /// The error is still surfaced (rather than swallowed) so callers keep
+    /// control of retry timing.
+    async fn get_finalized_block_number_recovering(
+        &self,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        match self.get_finalized_block_number().await {
+            Ok(n) => Ok(n),
+            Err(e) => {
+                if Self::is_terminal_client_error(e.as_ref()) {
+                    tracing::warn!(
+                        "subxt background task closed while reading finalized block; \
+                         rebuilding OnlineClient",
+                    );
+                    if let Err(reconnect_err) = self.reconnect_online_client().await {
+                        tracing::warn!("OnlineClient rebuild failed (will retry): {reconnect_err}");
+                    }
+                }
+                Err(e)
+            }
+        }
+    }
+
     pub fn new_seed() -> WalletSeed {
         let seed_bytes: [u8; 32] = rand::random();
         tracing::info!("Midnight seed: {}", hex::encode(seed_bytes));
@@ -154,10 +188,34 @@ impl MidnightClient {
         cardano_blocks: u64,
         midnight_blocks: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let cardano_start = CardanoClient::current_block_height(ogmios_settings)
-            .await
-            .ok_or("wait_for_block_spacing: failed to read initial Cardano tip")?;
-        let midnight_start = midnight_client.get_finalized_block_number().await?;
+        // Read the starting tips resiliently. A transient RPC drop — or a
+        // dead subxt background task ("restart required") — at call time must
+        // not fail the test: retry the reads (rebuilding the Midnight client
+        // when it's terminally broken) instead of propagating. This mirrors
+        // the reconnect handling in `await_cnight_observations`; without it a
+        // brief node/RPC blip here panics the whole test.
+        let cardano_start = loop {
+            match CardanoClient::current_block_height(ogmios_settings).await {
+                Some(h) => break h,
+                None => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        };
+        let midnight_start = loop {
+            match midnight_client
+                .get_finalized_block_number_recovering()
+                .await
+            {
+                Ok(b) => break b,
+                Err(e) => {
+                    tracing::warn!(
+                        "wait_for_block_spacing: initial Midnight read failed, retrying: {e}"
+                    );
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        };
         tracing::info!(
             "wait_for_block_spacing: waiting for {cardano_blocks} cardano + {midnight_blocks} midnight \
              blocks past (cardano #{cardano_start}, midnight #{midnight_start})"
@@ -168,7 +226,10 @@ impl MidnightClient {
                 Some(h) => h,
                 None => continue,
             };
-            let midnight_now = match midnight_client.get_finalized_block_number().await {
+            let midnight_now = match midnight_client
+                .get_finalized_block_number_recovering()
+                .await
+            {
                 Ok(b) => b,
                 Err(_) => continue,
             };
@@ -282,6 +343,13 @@ impl MidnightClient {
         // mint-observed / spend-not-yet state. See `PRE_AWAIT_SUBMISSION_SPACING`
         // in `tests/lib.rs` for the spacing/poll-interval interaction.
         const POLL_INTERVAL: Duration = Duration::from_secs(5);
+
+        // The watermark normally advances every few minutes; a longer
+        // freeze means the follower (or its db-sync feed) is stuck, so fail
+        // with a diagnosis now instead of burning the outer timeout.
+        const WATERMARK_STALL_LIMIT: Duration = Duration::from_mins(45);
+        let mut last_advance: Option<(u64, Instant)> = None;
+
         let inner = async {
             loop {
                 // Each iteration is two short-lived RPC calls: head lookup +
@@ -331,6 +399,26 @@ impl MidnightClient {
                             }
                         }
 
+                        // Stall detector (see WATERMARK_STALL_LIMIT above).
+                        match last_advance {
+                            Some((last_wm, _)) if watermark > last_wm => {
+                                last_advance = Some((watermark, Instant::now()));
+                            }
+                            Some((last_wm, since)) if since.elapsed() > WATERMARK_STALL_LIMIT => {
+                                return Err(format!(
+                                    "await_cnight_observations: watermark stalled at {last_wm} \
+                                     for {:?} (target {target}); the Midnight follower or its \
+                                     db-sync feed appears stuck",
+                                    since.elapsed(),
+                                )
+                                .into());
+                            }
+                            Some(_) => {}
+                            None => {
+                                last_advance = Some((watermark, Instant::now()));
+                            }
+                        }
+
                         // Heartbeat shows per-test progress: how far the
                         // watermark is from this test's target. The Cardano
                         // tip is included for absolute-time context but the
@@ -355,9 +443,7 @@ impl MidnightClient {
                         // restart required". Detect that string and rebuild
                         // the client — without this we'd just log the same
                         // WARN every 5s for the remainder of the test.
-                        let err_msg = e.to_string();
-                        let needs_reconnect = err_msg.contains("restart required")
-                            || err_msg.contains("background task closed");
+                        let needs_reconnect = Self::is_terminal_client_error(e.as_ref());
                         if needs_reconnect {
                             tracing::warn!(
                                 "await_cnight_observations: subxt background task closed; \
@@ -425,10 +511,7 @@ impl MidnightClient {
             match result {
                 Ok(Ok(v)) => return Ok(v),
                 Ok(Err(e)) => {
-                    let msg = e.to_string();
-                    if (msg.contains("restart required") || msg.contains("background task closed"))
-                        && attempt < MAX_ATTEMPTS
-                    {
+                    if Self::is_terminal_client_error(e.as_ref()) && attempt < MAX_ATTEMPTS {
                         tracing::warn!(
                             "read_next_cardano_position_at(#{midnight_block}): transport error \
                              (attempt {attempt}/{MAX_ATTEMPTS}); reconnecting: {e}"
@@ -769,6 +852,24 @@ impl MidnightClient {
         Ok(String::from_utf8(bytes)?)
     }
 
+    /// Read the active `LedgerParameters` via the `get_ledger_parameters` runtime API.
+    pub async fn get_ledger_parameters(
+        &self,
+    ) -> Result<LedgerParameters, Box<dyn std::error::Error>> {
+        let call = mn_meta::runtime_apis::RuntimeApi
+            .midnight_runtime_api()
+            .get_ledger_parameters();
+        let bytes = self
+            .online_client()
+            .at_current_block()
+            .await?
+            .runtime_apis()
+            .call(call)
+            .await?
+            .map_err(|e| format!("get_ledger_parameters runtime API returned error: {e:?}"))?;
+        Ok(deserialize(&mut &bytes[..])?)
+    }
+
     pub async fn subscribe_to_federated_authority_events(
         &self,
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1068,12 +1169,21 @@ impl MidnightClient {
         tx_bytes: Vec<u8>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         tracing::info!("Submitting transaction expecting rejection...");
-        match self
-            .submit_midnight_tx(tx_bytes)
-            .await?
-            .wait_for_finalized_success()
-            .await
-        {
+        // A rejection can surface two ways, both valid:
+        //  (1) submit_and_watch errors at submission time — e.g. "already imported" /
+        //      "temporarily banned", common when replaying a tx whose original is still in
+        //      (or was just pruned from) the pool;
+        //  (2) the tx is watched and then fails pre_dispatch/execution.
+        // Only case (2) reaches wait_for_finalized_success, so catch case (1) here rather
+        // than propagating it as an unexpected error.
+        let progress = match self.submit_midnight_tx(tx_bytes).await {
+            Ok(progress) => progress,
+            Err(e) => {
+                tracing::info!("Transaction rejected at submission as expected: {e}");
+                return Ok(e.to_string());
+            }
+        };
+        match progress.wait_for_finalized_success().await {
             Err(e) => {
                 tracing::info!("Transaction rejected as expected: {}", e);
                 Ok(e.to_string())
