@@ -18,5 +18,4 @@ bundled npm), not caused by any product code change.
   ws; a `vite` override (`^7.3.6`, within vitest 3.2.6's existing range) clears the
   remaining high without a vitest major bump.
 
-PR: <link to PR>
-JIRA: <link to JIRA ticket, if applicable>
+PR: https://github.com/midnightntwrk/midnight-node/pull/1987
