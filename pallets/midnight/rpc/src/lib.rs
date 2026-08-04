@@ -22,8 +22,8 @@ use jsonrpsee::{
 };
 
 use midnight_node_ledger::{
-	host_api::ledger_8::ledger_8_bridge,
-	ledger_8::{self, types::LedgerApiError as Ledger8ApiError},
+	host_api::ledger_8::ledger_8_bridge, is_ledger_8_state_key,
+	ledger_8::types::LedgerApiError as Ledger8ApiError,
 };
 use midnight_primitives_ledger::{LedgerStorage, LedgerStorageExt};
 use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
@@ -284,7 +284,7 @@ where
 		let key = StorageKey([twox_128(b"Midnight"), twox_128(b"StateKey")].concat());
 		let raw = self.client.storage(at, &key).ok().flatten()?;
 		let state_key = Vec::<u8>::decode(&mut &raw.0[..]).ok()?;
-		ledger_8::storage::state_key_matches_this_version(&state_key).then_some(state_key)
+		is_ledger_8_state_key(&state_key).then_some(state_key)
 	}
 
 	/// Run a ledger host function natively, inside a minimal externalities scope
