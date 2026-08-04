@@ -249,6 +249,10 @@ pub mod opaque {
 					value.aura.into_inner().to_raw().to_vec(),
 				),
 				sidechain_domain::CandidateKey::new(
+					BABE,
+					value.babe.into_inner().to_raw().to_vec(),
+				),
+				sidechain_domain::CandidateKey::new(
 					GRANDPA,
 					value.grandpa.into_inner().to_raw().to_vec(),
 				),
