@@ -9,7 +9,8 @@ compile/prove/submit/on-chain-verify pipeline. Adds a config template and a
 
 Also fixes `prerequisites_ready` to match the compact variant directory by
 major.minor.patch (previously major.minor), without which all contract e2e
-tests silently skip.
+tests silently skip. When `compact-contract-tests` is enabled, missing
+prerequisites now fail the test instead of reporting a successful skip.
 
 The welcome constructor is simplified from the upstream
 `Vector<5000, Maybe<Opaque<"string">>>` to a small fixed vector of plain

@@ -459,9 +459,7 @@ async fn bboard_private_witness_not_leaked() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);
 
-	if !helper.prerequisites_ready() {
-		return;
-	}
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
 	let secret_key = "deadbeefcafebabe1234567890abcdef1122334455667788aabbccddeeff0011";
 
@@ -567,9 +565,7 @@ async fn counter_increment_e2e() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);
 
-	if !helper.prerequisites_ready() {
-		return;
-	}
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
 	let coin_public_addr = helper.show_address_coin_public(FUNDING_SEED);
 
@@ -633,9 +629,7 @@ async fn welcome_e2e() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);
 
-	if !helper.prerequisites_ready() {
-		return;
-	}
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
 	// Arbitrary key; makes the deployer an organizer via the `local_sk` witness.
 	let organizer_sk = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
@@ -830,9 +824,7 @@ async fn tic_tac_toe_e2e() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);
 
-	if !helper.prerequisites_ready() {
-		return;
-	}
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
 
 	const PLAYER_X_SK: &str = "1000000000000000000000000000000000000000000000000000000000000001";
 	const PLAYER_O_SK: &str = "2000000000000000000000000000000000000000000000000000000000000002";
