@@ -38,5 +38,8 @@
     "typescript": "5.9.3",
     "vitest": "3.2.6",
     "turbo": "2.8.17"
+  },
+  "overrides": {
+    "vite": "^7.3.6"
   }
 }
