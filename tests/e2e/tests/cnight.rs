@@ -9,6 +9,10 @@ use crate::global_faucet_manager;
 
 // -------- TESTS --------
 
+// Local-env-only: drives the local Cardano faucet + registration flow, so it is
+// gated to the local features. `cnight::observation` (the qanet/devnet set)
+// lives in the submodule above and stays ungated.
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 #[e2e_test]
 async fn alice_cannot_deregister_bob() {
     let settings = Settings::default();

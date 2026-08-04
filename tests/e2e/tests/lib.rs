@@ -1,3 +1,16 @@
+// The qanet/devnet nightly job runs this suite filtered to
+// `cnight::observation::` (see nightly-run-cnight-e2e-*.yml), which is the only
+// set meant to run there. The local-env test modules below are cfg-gated to the
+// local features so an unfiltered `cargo test --no-default-features --features
+// qanet` doesn't run (and hang on) local-only tests. That gating leaves the
+// dev-wallet / deploy helpers in this file unused when no local feature is set,
+// so silence dead_code/unused_imports for exactly those builds rather than
+// cfg-gating every helper individually.
+#![cfg_attr(
+    not(any(feature = "local", feature = "local-dev", feature = "local-ci")),
+    allow(dead_code, unused_imports)
+)]
+
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::faucet::FaucetManager;
@@ -719,8 +732,19 @@ pub(crate) fn fetch_concurrency() -> usize {
 }
 
 // -------- TEST MODULES --------
+//
+// Only `cnight::observation::` is meant to run under qanet/devnet (the nightly
+// job filters to it). Every other module here is local-env-only: they call
+// `ensure_dev_wallet_funded()` / the local faucet stack and would hang ~180s
+// under an unfiltered `--features qanet` run. Gate them to the local features
+// so the per-feature test sets stay coherent. `cnight` stays ungated because it
+// owns `cnight::observation`; its own local-only test is gated inside the module.
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 mod c2m_bridge;
 mod cnight;
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 mod contract_state;
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 mod governance;
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 mod operational;
