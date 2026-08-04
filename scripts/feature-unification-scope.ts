@@ -1,43 +1,29 @@
 #!/usr/bin/env node
-// Compute the cargo-hack package scope for the feature-unification check.
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Print the package selection for `cargo hack check --no-dev-deps`: "-p a -p b"
+// (only these need re-checking), "--workspace --exclude ..." (everything
+// affected), or "" (skip). Union of two sets:
+//   1. changed file -> owning crate -> reverse-dependency closure over
+//      workspace normal/build edges (dev edges can't reach past a
+//      no-dev-deps check);
+//   2. lock packages whose (version, source, checksum, deps) changed, plus dep
+//      names from a root Cargo.toml diff (feature-only [workspace.dependencies]
+//      edits never touch the lock), reverse-walked to the members using them.
 //
-// Usage:
-//   node feature-unification-scope.ts <changed-files> <base-lock> <toml-diff>
-//
-//   <changed-files>  file: PR-changed paths, one per line (git diff --name-only)
-//   <base-lock>      file: the base commit's Cargo.lock (empty if none)
-//   <toml-diff>      file: `git diff` of the root Cargo.toml (empty if untouched)
-//
-// All git access happens before the build (the CI workflow, or a few git
-// commands locally) and lands in .scope/; this script is pure computation over
-// those files plus `cargo metadata` and the head `Cargo.lock` (read from the
-// current workspace, i.e. inside the check container). Prints the package
-// selection args for `cargo hack check --no-dev-deps`:
-//
-//   * "-p a -p b ..."              only these crates and their reverse-dependency
-//                                  closure need re-checking
-//   * "--workspace --exclude ..."  every crate is affected (computed, or a
-//                                  global input like rust-toolchain changed)
-//   * "" (empty)                   nothing compile-relevant changed, skip the check
-//
-// Scope is the union of two computed sets -- there is no blanket "manifest
-// changed, check everything" path:
-//
-//   1. File attribution: each changed file maps to the crate whose directory
-//      contains it; take the reverse-dependency closure over workspace
-//      normal/build edges. Dev-dependency edges are ignored on purpose -- the
-//      check strips dev-deps, so a change can never reach a dependent through
-//      one.
-//   2. Lock diff: if Cargo.lock changed, fingerprint every package in the base
-//      and head locks by (version, source, checksum, deps) and reverse-walk the
-//      lock graph from the changed packages to the workspace members whose
-//      resolution they participate in. If the root Cargo.toml changed, dep names
-//      harvested from its diff hunks are added as seeds (this catches
-//      feature-only [workspace.dependencies] edits, which never touch the lock).
-//
-// Runs on Node >= 22.18 (native TypeScript type stripping), no build step.
-// Deps: scripts/package.json (smol-toml); `npm ci` in the check target. The CI
-// image pins node, so the result is reproducible.
+// Usage: node feature-unification-scope.ts <changed-files> <base-lock> <toml-diff>
+// (git-derived files in .scope/ -- see the Earthfile target). Node >= 22.18.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -51,9 +37,9 @@ const MAX_BUFFER = 512 * 1024 * 1024; // cargo metadata can be MBs
 const GLOBAL = [/^\.cargo\//, /^\.config\//, /^rust-toolchain/];
 // Handled out-of-band by the lock/manifest diff below (root manifests only).
 const HANDLED = [/^Cargo\.toml$/, /^Cargo\.lock$/];
-// Never compile-relevant (only consulted for files outside every crate dir).
-// Earthfile and this scoper are deliberately here: build-recipe or scoper
-// edits should not force a full workspace re-check.
+// Never compile-relevant (consulted only for files outside every crate dir);
+// the Earthfile and the scoper's own files are deliberately here -- build-recipe
+// or scoper edits can't change whether crates compile.
 const IGNORE = [
 	/^changes\//,
 	/^\.changes_archive\//,
@@ -62,7 +48,6 @@ const IGNORE = [
 	/^LICENSE/,
 	/^Earthfile$/,
 	/^\.gitignore$/,
-	// the scoper's own files: changing them can't change whether crates compile
 	/^scripts\/feature-unification-scope\.ts$/,
 	/^scripts\/package(-lock)?\.json$/,
 ];
@@ -97,9 +82,8 @@ function readOr(path: string | undefined, fallback = ""): string {
 	}
 }
 
-// Cargo.lock is TOML; parse it as such. A dependency entry is "name" or
-// "name version (source)" -- keep the leading name. source/checksum/dependencies
-// are absent for path/workspace members, hence the defaults.
+// A lock dependency entry is "name" or "name version (source)" -- keep the name.
+// source/checksum/dependencies are absent for path members, hence the defaults.
 function parseLock(text: string): LockPkg[] {
 	const doc = parseToml(text) as { package?: Record<string, unknown>[] };
 	return (doc.package ?? []).map((p) => ({
@@ -111,9 +95,8 @@ function parseLock(text: string): LockPkg[] {
 	}));
 }
 
-// name -> canonical fingerprint of all its locked entries (a name may resolve
-// to several versions). deps stay in lock order inside an entry; the entries
-// themselves are sorted so the fingerprint is order-independent.
+// name -> canonical fingerprint of its locked entries (a name may resolve to
+// several versions); entries are sorted so the fingerprint is order-independent.
 function lockFingerprint(pkgs: LockPkg[]): Map<string, string> {
 	const byName = new Map<string, string[]>();
 	for (const p of pkgs) {
@@ -173,9 +156,8 @@ function owningCrate(file: string, crates: Crate[]): string | null {
 	return best?.name ?? null;
 }
 
-// Member names whose resolution changed between the base and head lock files,
-// plus dep-name seeds from a changed root manifest. Returns null when Cargo.lock
-// changed but there is no base lock to diff against: caller falls back to full.
+// Members whose lock resolution changed (base vs head), plus dep-name seeds
+// from a root-manifest diff. Null = lock changed with no base to diff -> full.
 function lockAffected(
 	changed: string[],
 	members: string[],
@@ -189,8 +171,8 @@ function lockAffected(
 		for (const c of lockChanged(parseLock(baseLock), headLock)) seeds.add(c);
 	}
 	if (changed.includes("Cargo.toml")) {
-		// Dep names from changed lines of the root manifest; tokens that are not
-		// package names simply match nothing in the lock graph.
+		// Dep names from changed root-manifest lines; non-package tokens simply
+		// match nothing in the lock graph.
 		for (const line of tomlDiff.split("\n")) {
 			const m = line.match(/^[+-]\s*([A-Za-z0-9_-]+)\s*=/);
 			if (m) seeds.add(m[1]);
@@ -221,8 +203,7 @@ function main(): void {
 	});
 	const names = crates.map((c) => c.name);
 	const nameSet = new Set(names);
-	// name -> [workspace deps], normal/build kinds only (dev edges can't reach a
-	// dependent through the no-dev-deps check; see header).
+	// name -> [workspace deps], normal/build kinds only (see header).
 	const deps = new Map<string, string[]>();
 	for (const p of meta.packages)
 		deps.set(

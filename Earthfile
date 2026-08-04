@@ -1054,28 +1054,17 @@ check-rust:
     ENV SKIP_WASM_BUILD=1
 
 # check-feature-unification verifies each crate compiles without dev-deps,
-# catching issues where workspace feature unification masks missing dependencies.
-# The partner-chains demo crates are excluded: they are upstream examples, not
-# shipped artifacts, and cost ~5min of the serial check.
-#
-# Scope is computed in-container by scripts/feature-unification-scope.ts (the
-# reverse-dependency closure of the crates the PR diff touches). It reads three
-# git-derived files from .scope/, which must exist before the build -- git
-# history only lives on the host, and `--ci` (strict) forbids LOCALLY. The CI
-# workflow writes them; for a local run, from the repo root:
-#   mkdir -p .scope
-#   git diff --name-only HEAD^1 HEAD   > .scope/changed.txt
-#   git show HEAD^1:Cargo.lock         > .scope/base-lock.txt
-#   git diff HEAD^1 HEAD -- Cargo.toml > .scope/toml-diff.txt
-# An empty scope (nothing compile-relevant changed) skips the check entirely.
+# catching missing dependencies masked by workspace feature unification.
+# partner-chains demo crates excluded: upstream examples, ~5min of serial check.
+# Inputs: .scope/{changed,base-lock,toml-diff}.txt -- git-derived, written by
+# the CI workflow (git only exists on the host; strict --ci forbids LOCALLY).
 check-feature-unification:
     FROM +check-rust-prepare
     IF [ "$CI" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     END
-    # Scope tooling deps (smol-toml) in their own layer so workspace edits don't
-    # reinstall. node + npm are pinned in the CI base image.
+    # Scope tooling deps in their own layer so workspace edits don't reinstall.
     COPY scripts/package.json scripts/package-lock.json scripts/
     RUN cd scripts && npm ci --no-audit --no-fund
     COPY --keep-ts --dir \
@@ -1083,18 +1072,14 @@ check-feature-unification:
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
     COPY scripts/feature-unification-scope.ts scripts/feature-unification-scope.ts
-    # git-derived scope inputs, produced on the host before the build (see above)
     COPY .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt .scope/
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    # Pinned: an unpinned binstall here can drift from the version baked into
-    # the CI base image and change check behaviour between runs.
+    # Pinned so it can't drift from the version in the CI base image.
     # renovate: datasource=crate packageName=cargo-hack
     ARG CARGO_HACK_VERSION=0.6.45
     RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
-    # node is pinned in the CI base image; the scoper reads the git-derived
-    # inputs and emits the `-p` selection (empty => nothing to check).
     RUN PACKAGES="$(node scripts/feature-unification-scope.ts \
             .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
         if [ -z "$PACKAGES" ]; then \
