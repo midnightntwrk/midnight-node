@@ -203,6 +203,22 @@ pub fn init_ledger_storage_unified<
 	}
 }
 
+/// Returns true if `state_key` is a ledger-8 arena root, i.e. a tagged-serialized
+/// `TypedArenaKey<ledger_8::api::Ledger<_>, _>`.
+#[cfg(feature = "std")]
+pub(crate) fn is_ledger_8_state_key(state_key: &[u8]) -> bool {
+	use ledger_storage_ledger_8::{DefaultDB, arena::TypedArenaKey, db::DB};
+	use midnight_serialize::Tagged;
+
+	type Ledger8Root = TypedArenaKey<ledger_8::api::Ledger<DefaultDB>, <DefaultDB as DB>::Hasher>;
+
+	let expected = <Ledger8Root as Tagged>::tag();
+	match midnight_serialize::peek_tag(&mut std::io::Cursor::new(state_key)) {
+		Ok(tag) => tag.as_str() == expected.as_ref(),
+		Err(_) => false,
+	}
+}
+
 mod common;
 
 pub mod types {
@@ -245,5 +261,33 @@ mod tests {
 		// Drop default storage
 		unsafe_drop_default_storage::<ParityDb>();
 		assert!(try_get_default_storage::<ParityDb>().is_none());
+	}
+
+	/// `is_ledger_8_state_key` is what the ledger-9 host API dispatches on to read the
+	/// `set_code` block of the 8->9 hardfork, whose `StateKey` is one version behind
+	/// its `:code` (GH #1959). It has to tell a ledger-8 arena root from a ledger-9
+	/// one from the header tag alone.
+	#[test]
+	fn ledger_8_state_key_tag_is_recognised() {
+		use ledger_storage_ledger_8::DefaultDB;
+		use midnight_serialize::{GLOBAL_TAG, Tagged};
+
+		// A `StateKey` is `tagged_serialize(&Sp<Ledger<D>, D>::as_typed_key())`, and
+		// `TypedArenaKey`'s tag wraps its referent's — which for `Ledger` is just
+		// `LedgerState`'s. Only the header matters here; `peek_tag` never reads the body.
+		fn header<T: Tagged>() -> Vec<u8> {
+			format!("{GLOBAL_TAG}storage-key({}):", T::tag()).into_bytes()
+		}
+		let v8 = header::<mn_ledger_8::structure::LedgerState<DefaultDB>>();
+		let v9 = header::<mn_ledger_9::structure::LedgerState<DefaultDB>>();
+		assert_ne!(v8, v9, "v8 and v9 ledger states must not share a tag");
+
+		assert!(super::is_ledger_8_state_key(&v8));
+		assert!(!super::is_ledger_8_state_key(&v9));
+
+		// An unset `StateKey`, or anything else untagged, is not a ledger-8 root: the
+		// host API must take its ordinary ledger-9 path rather than guess.
+		assert!(!super::is_ledger_8_state_key(&[]));
+		assert!(!super::is_ledger_8_state_key(b"not-tagged-at-all"));
 	}
 }
