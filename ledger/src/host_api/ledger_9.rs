@@ -72,7 +72,8 @@ fn as_ledger_9_error(error: crate::ledger_8::types::LedgerApiError) -> LedgerApi
 /// block. This code allows off-chain runtime calls to access historic block data
 /// using the correct ledger api despite the runtime code/chain data skew.
 ///
-/// This will not be needed for future forks; see: https://github.com/midnightntwrk/midnight-node/pull/1900
+/// This will not be needed for future forks; see:
+/// - https://github.com/midnightntwrk/midnight-node/pull/1900
 ///
 /// `$call` names the `Bridge` method and takes its arguments verbatim; only the
 /// storage-mode dispatch and the error translation are supplied here.
