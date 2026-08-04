@@ -32,5 +32,5 @@ Behaviour note: at the `set_code` block `midnight_ledgerStateRoot` now returns a
 root — correct, since that block's state *is* v8 — so consumers walking the fork see the tag
 flip at the migration block rather than a hole.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1982
+PR: https://github.com/midnightntwrk/midnight-node/pull/1985
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1959
