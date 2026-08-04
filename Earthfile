@@ -1054,22 +1054,39 @@ check-rust:
     ENV SKIP_WASM_BUILD=1
 
 # check-feature-unification verifies each crate compiles without dev-deps,
-# catching issues where workspace feature unification masks missing dependencies.
+# catching missing dependencies masked by workspace feature unification.
+# partner-chains demo crates excluded: upstream examples, ~5min of serial check.
+# Inputs: .scope/{changed,base-lock,toml-diff}.txt -- git-derived, written by
+# the CI workflow (git only exists on the host; strict --ci forbids LOCALLY).
 check-feature-unification:
     FROM +check-rust-prepare
     IF [ "$CI" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     END
+    # Scope tooling deps in their own layer so workspace edits don't reinstall.
+    COPY scripts/package.json scripts/package-lock.json scripts/
+    RUN cd scripts && npm ci --no-audit --no-fund
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
+    COPY scripts/feature-unification-scope.ts scripts/feature-unification-scope.ts
+    COPY .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt .scope/
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    RUN cargo binstall --no-confirm cargo-hack
-    RUN cargo hack check --workspace --no-dev-deps
+    # Pinned so it can't drift from the version in the CI base image.
+    # renovate: datasource=crate packageName=cargo-hack
+    ARG CARGO_HACK_VERSION=0.6.45
+    RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
+    RUN PACKAGES="$(node scripts/feature-unification-scope.ts \
+            .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
+        if [ -z "$PACKAGES" ]; then \
+            echo "feature-unification: nothing affected — skipping"; exit 0; \
+        fi && \
+        echo "feature-unification scope: $PACKAGES" && \
+        cargo hack check $PACKAGES --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
