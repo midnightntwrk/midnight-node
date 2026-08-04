@@ -18,7 +18,7 @@ use backoff::future::retry;
 use midnight_node_ledger_helpers::{LedgerParameters, deserialize};
 use midnight_node_metadata::{
 	midnight_metadata_0_22_0 as mn_meta_0_22_0, midnight_metadata_1_0_0 as mn_meta_1_0_0,
-	midnight_metadata_latest as mn_meta,
+	midnight_metadata_2_0_0 as mn_meta_2_0_0, midnight_metadata_latest as mn_meta,
 };
 use subxt::config::HashFor;
 use subxt::rpcs::methods::legacy::{BlockNumber, SystemProperties};
@@ -150,6 +150,28 @@ impl MidnightNodeClient {
 					.map_err(|e| ClientError::LedgerApi(format!("{e:?}")))?;
 				Ok(Some(root))
 			},
+			RuntimeVersion::V2_0_0 => {
+				let call = mn_meta_2_0_0::runtime_apis::RuntimeApi
+					.midnight_runtime_api()
+					.get_ledger_state_root();
+				let root = at_block
+					.runtime_apis()
+					.call(call)
+					.await?
+					.map_err(|e| ClientError::LedgerApi(format!("{e:?}")))?;
+				Ok(Some(root))
+			},
+			RuntimeVersion::V2_1_0 => {
+				let call = mn_meta::runtime_apis::RuntimeApi
+					.midnight_runtime_api()
+					.get_ledger_state_root();
+				let root = at_block
+					.runtime_apis()
+					.call(call)
+					.await?
+					.map_err(|e| ClientError::LedgerApi(format!("{e:?}")))?;
+				Ok(Some(root))
+			},
 		}
 	}
 
@@ -179,6 +201,24 @@ impl MidnightNodeClient {
 	pub async fn get_best_height(&self) -> Result<u64, ClientError> {
 		let header = self.rpc.chain_get_header(None).await?.ok_or(ClientError::NoBestHeader)?;
 		Ok(header.number)
+	}
+
+	/// Whether `hash` is on the finalized chain: at or below the finalized head
+	/// and canonical at its height.
+	pub async fn is_block_finalized(
+		&self,
+		hash: HashFor<MidnightNodeClientConfig>,
+	) -> Result<bool, ClientError> {
+		let Some(header) = self.rpc.chain_get_header(Some(hash)).await? else {
+			// The node no longer knows the block: pruned or reorged away.
+			return Ok(false);
+		};
+		if header.number > self.get_finalized_height().await? {
+			return Ok(false);
+		}
+		let canonical =
+			self.rpc.chain_get_block_hash(Some(BlockNumber::Number(header.number))).await?;
+		Ok(canonical == Some(hash))
 	}
 
 	pub async fn get_ledger_parameters(&self) -> Result<LedgerParameters, ClientError> {

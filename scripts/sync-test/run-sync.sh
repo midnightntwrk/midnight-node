@@ -27,9 +27,13 @@ POSTGRES_IMAGE=${POSTGRES_IMAGE:-postgres:17.4-alpine}
 SNAPSHOT=${SNAPSHOT:-snapshot.sql}
 CFG_PRESET=${CFG_PRESET:-mainnet}
 SYNC_UNTIL=${SYNC_UNTIL:-1000}
-NETWORK_NAME=${NETWORK_NAME:-midnight-sync-test}
-PG_CONTAINER=${PG_CONTAINER:-midnight-sync-test-pg}
-NODE_CONTAINER=${NODE_CONTAINER:-midnight-sync-test-node}
+# Suffix container/network names with a per-run id so concurrent jobs sharing a
+# docker host (e.g. self-hosted CI runner slots) don't collide on fixed names
+# and tear down each other's containers. Falls back to the shell PID off-CI.
+RUN_ID=${RUN_ID:-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}}
+NETWORK_NAME=${NETWORK_NAME:-midnight-sync-test-$RUN_ID}
+PG_CONTAINER=${PG_CONTAINER:-midnight-sync-test-pg-$RUN_ID}
+NODE_CONTAINER=${NODE_CONTAINER:-midnight-sync-test-node-$RUN_ID}
 PG_PASSWORD=${PG_PASSWORD:-cardano}
 SYNC_TIMEOUT_SECS=${SYNC_TIMEOUT_SECS:-1800}
 STALL_TIMEOUT_SECS=${STALL_TIMEOUT_SECS:-180}
@@ -100,11 +104,32 @@ docker run -d --rm \
   "$POSTGRES_IMAGE" \
   -c "$PG_INIT" >/dev/null
 
-echo "==> Waiting for postgres..." >&2
+echo "==> Waiting for postgres (real server over TCP)..." >&2
+# Probe over TCP (-h 127.0.0.1), not the Unix socket. On first boot the postgres
+# image runs a temporary socket-only server (listen_addresses='') to create
+# POSTGRES_DB, logs "ready to accept connections", then shuts it down to start
+# the real server. pg_isready over the socket goes green against that temp
+# server, so the snapshot load below would race its shutdown and fail with
+# "the database system is shutting down". The temp init server never listens on
+# TCP, so a TCP query against cexplorer only succeeds once the real server is up.
+pg_ready=0
 for _ in $(seq 1 60); do
-  if docker exec "$PG_CONTAINER" pg_isready -U cardano -d cexplorer >/dev/null 2>&1; then break; fi
+  if docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_CONTAINER" \
+      psql -h 127.0.0.1 -U cardano -d cexplorer -tAc 'SELECT 1' >/dev/null 2>&1; then
+    pg_ready=1
+    break
+  fi
   sleep 1
 done
+if [[ "$pg_ready" != "1" ]]; then
+  echo "FAIL: postgres did not become ready within 60s" >&2
+  echo "==> postgres container state:" >&2
+  docker ps -a --filter "name=^${PG_CONTAINER}$" \
+    --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' >&2 || true
+  echo "==> postgres logs:" >&2
+  docker logs "$PG_CONTAINER" >&2 || true
+  exit 1
+fi
 
 echo "==> Loading snapshot ($(stat -c %s "$SNAPSHOT" | awk '{printf "%.1f MB", $1/1048576}'))..." >&2
 case "$SNAPSHOT" in
@@ -130,7 +155,6 @@ docker run -d \
   -e DB_SYNC_POSTGRES_CONNECTION_STRING="$PG_DSN" \
   -e CARDANO_SECURITY_PARAMETER=2160 \
   -e CARDANO_ACTIVE_SLOTS_COEFF=0.05 \
-  -e BLOCK_STABILITY_MARGIN=10 \
   -e SHOW_CONFIG=true \
   "$NODE_IMAGE" \
   --node-key "$NODE_KEY" \

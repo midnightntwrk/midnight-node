@@ -17,6 +17,7 @@ import { globSync } from "glob";
 import { parse } from "dotenv";
 import { spawn } from "child_process";
 import { ImageUpgradeOptions } from "../lib/types";
+import { mockOverridePath } from "../lib/mockComposeOverride";
 
 // Command functionality we can depend on
 import { run } from "./run";
@@ -64,7 +65,17 @@ export async function imageUpgrade(
   });
 
   const composeFile = resolveNetworkCompose(namespace);
-  const services = opts.services ?? (await listServices(composeFile, env));
+  // For well-known networks `run()` writes a mock-mode override; layer it onto
+  // every subsequent docker-compose call so recreated validators keep the
+  // mock env (USE_MAIN_CHAIN_FOLLOWER_MOCK, *_SEED_FILE, ...) and the seeds
+  // volume mount. `local-env` doesn't generate one so the file simply won't
+  // exist there.
+  const overridePath = mockOverridePath(path.dirname(composeFile), namespace);
+  const composeFiles = fs.existsSync(overridePath)
+    ? [composeFile, overridePath]
+    : [composeFile];
+
+  const services = opts.services ?? (await listServices(composeFiles, env));
   if (!services.length) {
     throw new Error(
       "No services discovered to roll out. Provide ImageUpgradeOptions.services explicitly or check your compose file.",
@@ -74,8 +85,8 @@ export async function imageUpgrade(
   console.log(`Rollout order: ${services.join(", ")}`);
 
   if (opts.waitBeforeMs) {
-    console.log("Waiting ", opts.waitBeforeMs, " ms before beginning upgrade")
-    await sleep(opts.waitBeforeMs)
+    console.log("Waiting ", opts.waitBeforeMs, " ms before beginning upgrade");
+    await sleep(opts.waitBeforeMs);
   }
 
   console.log(
@@ -85,17 +96,27 @@ export async function imageUpgrade(
     console.log(`\n Upgrading service: ${svc}`);
     env[imageEnvVar] = toTag;
 
-    // Important: only re-create this one service, do not bounce dependencies
-    await dockerCompose(["-f", composeFile, "up", "-d", "--no-deps  --force-recreate", svc], {
-      env,
-      profiles: opts.profiles,
-    });
+    // Only re-create this one service, do not bounce dependencies.
+    await dockerCompose(
+      [
+        ...fileFlags(composeFiles),
+        "up",
+        "-d",
+        "--no-deps",
+        "--force-recreate",
+        svc,
+      ],
+      {
+        env,
+        profiles: opts.profiles,
+      },
+    );
 
     if (requireHealthy) {
       console.log(
         `Waiting for ${svc} to become healthy (timeout ${healthTimeoutSec}s)`,
       );
-      await waitForHealthy(composeFile, svc, env, healthTimeoutSec);
+      await waitForHealthy(composeFiles, svc, env, healthTimeoutSec);
     } else if (waitBetweenMs > 0) {
       await sleep(waitBetweenMs);
     }
@@ -138,13 +159,17 @@ function resolveNetworkCompose(namespace: string): string {
   return composeFile;
 }
 
+function fileFlags(composeFiles: string[]): string[] {
+  return composeFiles.flatMap((f) => ["-f", f]);
+}
+
 async function listServices(
-  composeFile: string,
+  composeFiles: string[],
   env: Record<string, string>,
 ): Promise<string[]> {
   const { code, stdout, stderr } = await sh(
     "docker",
-    ["compose", "-f", composeFile, "config", "--services"],
+    ["compose", ...fileFlags(composeFiles), "config", "--services"],
     { env },
   );
   if (code !== 0) {
@@ -158,7 +183,7 @@ async function listServices(
 }
 
 async function waitForHealthy(
-  composeFile: string,
+  composeFiles: string[],
   service: string,
   env: Record<string, string>,
   timeoutSec: number,
@@ -168,7 +193,7 @@ async function waitForHealthy(
   // We fetch container name(s) for the given service using `docker compose ps`.
   // Then we poll `.State.Health.Status` for each.
   while (Date.now() < deadline) {
-    const names = await containerNamesForService(composeFile, service, env);
+    const names = await containerNamesForService(composeFiles, service, env);
     if (!names.length) {
       // Service might still be starting. Keep waiting.
       await sleep(1500);
@@ -200,13 +225,20 @@ async function waitForHealthy(
 }
 
 async function containerNamesForService(
-  composeFile: string,
+  composeFiles: string[],
   service: string,
   env: Record<string, string>,
 ): Promise<string[]> {
   const { code, stdout } = await sh(
     "docker",
-    ["compose", "-f", composeFile, "ps", "--format", "{{.Name}}", service],
+    [
+      "compose",
+      ...fileFlags(composeFiles),
+      "ps",
+      "--format",
+      "{{.Name}}",
+      service,
+    ],
     { env },
   );
   if (code !== 0) return [];

@@ -21,7 +21,15 @@ import type { ISubmittableResult } from "@polkadot/types/types";
 import { u8aToHex } from "@polkadot/util";
 import { blake2AsU8a } from "@polkadot/util-crypto";
 
-export const DEFAULT_RPC_URL = "ws://localhost:9944";
+// Prefer an explicit IPv4 host over `localhost`: under the Node 17+ resolver
+// order `localhost` resolves to ::1 first, and if the IPv6 loopback path to the
+// node's published port is not routable the WsProvider (which has no connect
+// timeout of its own) retries forever instead of falling back to IPv4.
+export const DEFAULT_RPC_URL = "ws://127.0.0.1:9944";
+
+// Fail a stuck connection fast with an actionable error rather than letting the
+// WsProvider auto-reconnect indefinitely (which otherwise hangs the whole run).
+export const API_CONNECT_TIMEOUT_MS = 60_000;
 
 export interface WasmArtifact {
   path: string;
@@ -33,8 +41,10 @@ export interface WasmArtifact {
 
 export function loadRuntimeWasm(wasmPath: string): WasmArtifact {
   const trimmed = wasmPath?.trim();
-  if (!trimmed) throw new Error("Runtime wasm path is required and cannot be empty");
-  if (trimmed.includes("\0")) throw new Error("Runtime wasm path cannot include null bytes");
+  if (!trimmed)
+    throw new Error("Runtime wasm path is required and cannot be empty");
+  if (trimmed.includes("\0"))
+    throw new Error("Runtime wasm path cannot include null bytes");
 
   const allowedRoot = fs.realpathSync(path.resolve(process.cwd(), "artifacts"));
   const candidate = path.resolve(allowedRoot, trimmed);
@@ -50,7 +60,8 @@ export function loadRuntimeWasm(wasmPath: string): WasmArtifact {
   }
 
   const bytes = fs.readFileSync(realCandidate);
-  if (bytes.length === 0) throw new Error(`Runtime wasm at ${realCandidate} is empty`);
+  if (bytes.length === 0)
+    throw new Error(`Runtime wasm at ${realCandidate} is empty`);
 
   const u8 = new Uint8Array(bytes);
 
@@ -71,13 +82,45 @@ export function resolveRpcUrl(candidate?: string): string {
   return DEFAULT_RPC_URL;
 }
 
-export async function createApi(rpcUrl: string): Promise<{
+export async function createApi(
+  rpcUrl: string,
+  connectTimeoutMs: number = API_CONNECT_TIMEOUT_MS,
+): Promise<{
   api: ApiPromise;
   provider: WsProvider;
 }> {
   const provider = new WsProvider(rpcUrl);
-  const api = await ApiPromise.create({ provider });
-  return { api, provider };
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new Error(
+          `Timed out after ${connectTimeoutMs}ms connecting to ${rpcUrl}. ` +
+            `Is the node RPC reachable there? If the URL uses 'localhost' it may ` +
+            `resolve to IPv6 (::1); try an explicit IPv4 host, e.g. ws://127.0.0.1:<port>.`,
+        ),
+      );
+    }, connectTimeoutMs);
+  });
+
+  try {
+    const api = await Promise.race([ApiPromise.create({ provider }), timeout]);
+    return { api, provider };
+  } catch (err) {
+    // Tear down the socket so a failed connect doesn't keep reconnecting in the
+    // background and hold the process open.
+    try {
+      await provider.disconnect();
+    } catch {
+      // best-effort cleanup
+    }
+    throw err;
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 export async function disconnectApi(
@@ -139,12 +182,6 @@ export async function signAndWait(
         if (result.status.isInBlock) {
           console.log(
             `${label} included in block ${result.status.asInBlock.toHex()}`,
-          );
-        }
-
-        if (result.status.isFinalized) {
-          console.log(
-            `${label} finalized in block ${result.status.asFinalized.toHex()}`,
           );
           cleanup();
           resolve(result);

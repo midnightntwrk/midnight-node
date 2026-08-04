@@ -66,4 +66,4 @@ try-runtime = [
 ]
 
 [package.metadata.cargo-shear]
-ignored = ["sp-io", "parity-scale-codec"]
+ignored = ["parity-scale-codec"]

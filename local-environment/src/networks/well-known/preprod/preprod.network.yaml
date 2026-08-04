@@ -1,0 +1,464 @@
+x-common-variables: &common-variables
+  CFG_PRESET: "preprod"
+  SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
+  CARDANO_SECURITY_PARAMETER: 2160
+  CARDANO_ACTIVE_SLOTS_COEFF: 0.05
+  MC__FIRST_EPOCH_TIMESTAMP_MILLIS: 1655769600000
+  MC__FIRST_EPOCH_NUMBER: 4
+  MC__EPOCH_DURATION_MILLIS: 432000000
+  MC__FIRST_SLOT_NUMBER: 86400
+  MC__SLOT_DURATION_MILLIS: 1000
+
+x-node-common: &node-common
+  image: "${NODE_IMAGE:?NODE_IMAGE is not set}"
+  volumes:
+    - ./res:/res
+    - ./data/boot-node:/data
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  boot-node:
+    <<: *node-common
+    hostname: boot-node
+    container_name: boot-node
+    volumes:
+      - ./data/boot-node:/data
+    ports:
+      - "9933:9933"
+      - "9944:9944"
+      - "30333:30333"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    environment:
+      <<: *common-variables
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_BOOT_MIDNIGHT_NODE_BOOT_07_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000001
+        --port 30333
+        --rpc-port 9944
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+        --no-telemetry
+        --name MidnightBootNode_Local
+        --public-addr /dns4/boot-node/tcp/30333/ws
+        --reserved-only
+        --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
+        --reserved-nodes /dns4/node2/tcp/30335/p2p/12D3KooWSCufgHzV4fCwRijfH2k3abrpAJxTKxEvN1FDuRXA2U9x
+        --reserved-nodes /dns4/node3/tcp/30336/p2p/12D3KooWSsChzF81YDUKpe9Uk5AHV5oqAaXAcWNSPYgoLauUk4st
+        --reserved-nodes /dns4/node4/tcp/30337/p2p/12D3KooWSuTq6MG9gPt7qZqLFKkYrfxMewTZhj9nmRHJkPwzWDG2
+        --reserved-nodes /dns4/node5/tcp/30338/p2p/12D3KooWMz5U7fR8mF5DNhZSSyFN8c19kU63xYopzDSNCzoFigYk
+        --reserved-nodes /dns4/node6/tcp/30339/p2p/12D3KooWE3quQCP6Xu7eXpcmmpwVS1KofWnPCBWYNHCswgaqwCso
+        --reserved-nodes /dns4/node7/tcp/30340/p2p/12D3KooWNcx5xKjEvC3gBkuQDEk2d4eJN5bxTDMMb3VLNqZ9VVuB
+        --reserved-nodes /dns4/node8/tcp/30341/p2p/12D3KooWQizATZJGTZSb8ShuaniCCaDCBQSczRQ38QgvWH3sJj9c
+        --reserved-nodes /dns4/node9/tcp/30342/p2p/12D3KooWNHBKuurUCGYNgrWXkNEhro54KonoEvKkjaB3QGKoMNzt
+        --reserved-nodes /dns4/node10/tcp/30343/p2p/12D3KooWF9PqFCdboSo7FTmbuwQqj2A49xvxutKQZCyWo6fXYqJw
+
+  node1:
+    <<: *node-common
+    hostname: node1
+    container_name: node1
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9950:9944"
+      - "30334:30334"
+    volumes:
+      - ./data/node-1:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_01_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_01_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000002
+        --validator
+        --port 30334
+        --rpc-port 9944
+        --base-path=/data
+        --unsafe-rpc-external
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --rpc-cors=all
+        --public-addr /dns4/node1/tcp/30334
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node2:
+    <<: *node-common
+    hostname: node2
+    container_name: node2
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9951:9944"
+      - "30335:30335"
+    volumes:
+      - ./data/node-2:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_02_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_02_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000003
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30335
+        --rpc-port 9944
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-cors=all
+        --public-addr /dns4/node2/tcp/30335
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node3:
+    <<: *node-common
+    hostname: node3
+    container_name: node3
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9952:9944"
+      - "30336:30336"
+    volumes:
+      - ./data/node-3:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_03_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_03_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000004
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30336
+        --rpc-port 9944
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-cors=all
+        --public-addr /dns4/node3/tcp/30336
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node4:
+    <<: *node-common
+    hostname: node4
+    container_name: node4
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9953:9944"
+      - "30337:30337"
+    volumes:
+      - ./data/node-4:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_04_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_04_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000005
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30337
+        --rpc-port 9944
+        --public-addr /dns4/node4/tcp/30337
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node5:
+    <<: *node-common
+    hostname: node5
+    container_name: node5
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9954:9944"
+      - "30338:30338"
+    volumes:
+      - ./data/node-5:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_05_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_05_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000006
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30338
+        --rpc-port 9944
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-cors=all
+        --public-addr /dns4/node5/tcp/30338
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node6:
+    <<: *node-common
+    hostname: node6
+    container_name: node6
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9955:9944"
+      - "30339:30339"
+    volumes:
+      - ./data/node-6:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_06_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_06_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000007
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30339
+        --rpc-port 9944
+        --public-addr /dns4/node6/tcp/30339
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node7:
+    <<: *node-common
+    hostname: node7
+    container_name: node7
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9956:9944"
+      - "30340:30340"
+    volumes:
+      - ./data/node-7:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_07_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_07_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000008
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30340
+        --rpc-port 9944
+        --public-addr /dns4/node7/tcp/30340
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node8:
+    <<: *node-common
+    hostname: node8
+    container_name: node8
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9957:9944"
+      - "30341:30341"
+    volumes:
+      - ./data/node-8:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_08_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_08_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000009
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30341
+        --rpc-port 9944
+        --public-addr /dns4/node8/tcp/30341
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node9:
+    <<: *node-common
+    hostname: node9
+    container_name: node9
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9958:9944"
+      - "30342:30342"
+    volumes:
+      - ./data/node-9:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_09_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_09_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000010
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30342
+        --rpc-port 9944
+        --public-addr /dns4/node9/tcp/30342
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  node10:
+    <<: *node-common
+    hostname: node10
+    container_name: node10
+    labels:
+      io.midnight.role: validator
+      io.midnight.rpc-port: "9944"
+    depends_on:
+      boot-node:
+        condition: service_healthy
+    ports:
+      - "9959:9944"
+      - "30343:30343"
+    volumes:
+      - ./data/node-10:/data
+    environment:
+      <<: *common-variables
+      SEED_PHRASE: $MIDNIGHT_NODE_10_0_SEED
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_10_0}
+      ARGS: >
+        --node-key=0000000000000000000000000000000000000000000000000000000000000011
+        --validator
+        --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --port 30343
+        --rpc-port 9944
+        --public-addr /dns4/node10/tcp/30343
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
+        --base-path=/data
+        --unsafe-rpc-external
+        --rpc-methods=Unsafe
+        --rpc-cors=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  boot-node-data:
+  node-data-1:
+  node-data-2:
+  node-data-3:
+  node-data-4:
+  node-data-5:
+  node-data-6:
+  node-data-7:
+  node-data-8:
+  node-data-9:
+  node-data-10:

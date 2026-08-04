@@ -17,8 +17,6 @@ import { existsSync, rmSync } from "fs";
 
 import { RunOptions } from "../lib/types";
 import { stopDockerCompose } from "../lib/docker";
-import { getSecrets } from "../lib/getSecretsForEnv";
-import { stopPortForwardWatchdogs } from "../lib/portForwardWatchdog";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
@@ -27,30 +25,15 @@ import {
 } from "../lib/localEnv";
 
 export async function stop(network: string, runOptions: RunOptions) {
-  // TODO: For now, we will run the local environment as a separate option. In the future, we will include it as an option to run local env pc resources, alongside midnight nodes of the chosen environment
   if (network === "local-env") {
-    console.log("Running environment with local Cardano/PC resources");
     stopLocalEnvironment(runOptions);
-  } else {
-    console.log(`Stop ${network} chain`);
-    stopEphemeralEnvironment(network, runOptions);
+    return;
   }
+  console.log(`Stop ${network} chain`);
+  stopWellKnownNetwork(network, runOptions);
 }
 
-async function stopEphemeralEnvironment(
-  namespace: string,
-  runOptions: RunOptions,
-) {
-  let envObject: Record<string, string> = {};
-  try {
-    console.log(`🔐 Extracting secrets for namespace: ${namespace}`);
-    envObject = getSecrets(namespace);
-  } catch (error) {
-    console.warn(
-      `⚠️  Failed to read Kubernetes secrets for '${namespace}', continuing with local env only: ${(error as Error).message}`,
-    );
-  }
-
+function stopWellKnownNetwork(namespace: string, runOptions: RunOptions) {
   const searchPath = path.resolve(
     __dirname,
     "../networks",
@@ -67,7 +50,6 @@ async function stopEphemeralEnvironment(
     process.exit(1);
   }
 
-  // Prefer: <namespace>.network.yaml
   const preferred = candidates.find(
     (p) => path.basename(p) === `${namespace}.network.yaml`,
   );
@@ -80,11 +62,9 @@ async function stopEphemeralEnvironment(
 
   stopDockerCompose({
     composeFile,
-    env: { ...cleanEnv(process.env), ...envObject },
+    env: cleanEnv(process.env),
     profiles: runOptions.profiles,
   });
-
-  stopPortForwardWatchdogs(namespace);
 }
 
 function stopLocalEnvironment(runOptions: RunOptions) {
@@ -125,8 +105,6 @@ function stopLocalEnvironment(runOptions: RunOptions) {
     rmSync(runtimeValuesPath, { recursive: true, force: true });
     console.log("🧹 Cleaned up runtime-values");
   }
-
-  return;
 }
 
 // Helper to ensure no undefined values in env vars

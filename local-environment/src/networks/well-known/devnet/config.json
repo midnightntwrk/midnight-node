@@ -1,13 +1,8 @@
 {
-  "dbsync": {
-    "mode": "rds-proxy"
-  },
-  "secrets": {
-    "mode": "preview-style"
-  },
-  "boot": {
-    "podNames": [
-      "midnight-18-midnight-node-boot-18-0"
-    ]
+  "mock": {
+    "chainId": "midnight_devnet",
+    "numValidators": 6,
+    "validatorServices": ["node1", "node2", "node3", "node4", "node5", "node6"],
+    "extraServices": []
   }
 }

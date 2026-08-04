@@ -34,6 +34,12 @@ use sqlx::types::chrono::{DateTime, Utc};
 pub const CARDANO_BECH32_ADDRESS_MAX_LENGTH: u32 = 108;
 pub const CARDANO_REWARD_ADDRESS_LENGTH: usize = 29;
 
+/// Cardano native-asset policy ID length in bytes (fixed-width per Cardano protocol).
+pub const CNIGHT_POLICY_ID_LENGTH: u32 = 28;
+
+/// Cardano native-asset name maximum length in bytes.
+pub const CARDANO_ASSET_NAME_MAX_LENGTH: u32 = 32;
+
 #[derive(
 	Encode,
 	Decode,
@@ -193,6 +199,31 @@ impl CardanoPosition {
 	pub fn increment(mut self) -> Self {
 		self.tx_index_in_block += 1;
 		self
+	}
+
+	/// Lowest position within `block_number` (tx index 0). Only
+	/// `(block_number, tx_index_in_block)` are significant when used as a
+	/// range bound; `block_hash`/`block_timestamp` are placeholders.
+	pub fn min_for_block(block_number: u32) -> Self {
+		Self {
+			block_hash: McBlockHash([0u8; 32]),
+			block_number,
+			block_timestamp: Default::default(),
+			tx_index_in_block: 0,
+		}
+	}
+
+	/// Highest position within `block_number`. `tx_index_in_block` is
+	/// `i32::MAX` so it survives the `as i32` cast in the SQL bind path
+	/// without underflowing to `-1`. Like [`Self::min_for_block`], the
+	/// `block_hash`/`block_timestamp` are placeholders.
+	pub fn max_for_block(block_number: u32) -> Self {
+		Self {
+			block_hash: McBlockHash([0u8; 32]),
+			block_number,
+			block_timestamp: Default::default(),
+			tx_index_in_block: u32::try_from(i32::MAX).expect("i32::MAX is non-negative"),
+		}
 	}
 }
 

@@ -63,6 +63,14 @@ where
 			frame_system::Pallet::<T>::dec_sufficients(who);
 		}
 	}
+
+	fn set_prime(prime: Option<T::AccountId>) {
+		<P as ChangeMembers<T::AccountId>>::set_prime(prime);
+	}
+
+	fn get_prime() -> Option<T::AccountId> {
+		<P as ChangeMembers<T::AccountId>>::get_prime()
+	}
 }
 
 /// Default votes will be always NO for abstentions

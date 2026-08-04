@@ -41,4 +41,4 @@ std = [
 ]
 
 [lib]
-test = false
+doctest = false

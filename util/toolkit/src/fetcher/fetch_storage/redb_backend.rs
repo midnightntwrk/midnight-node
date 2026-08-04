@@ -11,7 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{any::type_name, cmp::Ordering, path::Path, sync::Arc};
+use std::{
+	any::type_name,
+	cmp::Ordering,
+	fs::{File, OpenOptions, TryLockError},
+	path::{Path, PathBuf},
+	sync::Arc,
+};
 
 use core::fmt::Debug;
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
@@ -31,27 +37,66 @@ pub struct BlockKey {
 /// Persistent [`FetchStorage`] backend using [redb](https://github.com/cberner/redb).
 ///
 /// Data is serialized with postcard. Uses `RwLock` for concurrent read access.
+/// An advisory file lock on a `<path>.lock` sidecar prevents concurrent toolkit
+/// processes from corrupting the cache.
 #[derive(Clone)]
 pub struct RedbBackend {
 	pub db: Arc<RwLock<Database>>,
 	pub block_data_table: TableDefinition<'static, Serde<BlockKey>, Serde<RawBlockData>>,
 	pub highest_verified_table: TableDefinition<'static, [u8; 32], u64>,
+	// Held for the lifetime of the backend; lock is released when the file closes on drop.
+	_lock: Arc<File>,
 }
 
 impl RedbBackend {
-	/// Creates or opens a database at the given path. Will fail if open in another process.
+	/// Creates or opens a database at the given path.
+	///
+	/// Takes an exclusive advisory lock on `<path>.lock` before opening redb. If another
+	/// toolkit process holds the lock, blocks until it is released, printing a notice the
+	/// first time the lock is contested.
 	pub fn new(path: impl AsRef<Path>) -> Self {
 		let p = path.as_ref();
 		if let Some(parent) = p.parent() {
 			std::fs::create_dir_all(parent)
 				.expect("failed to create parent dir for redb fetch cache");
 		}
+
+		let lock_path: PathBuf = {
+			let mut s = p.as_os_str().to_owned();
+			s.push(".lock");
+			s.into()
+		};
+		let lock_file = OpenOptions::new()
+			.read(true)
+			.write(true)
+			.create(true)
+			.truncate(false)
+			.open(&lock_path)
+			.unwrap_or_else(|e| {
+				panic!("failed to open redb cache lockfile '{}': {e}", lock_path.display())
+			});
+
+		match lock_file.try_lock() {
+			Ok(()) => {},
+			Err(TryLockError::WouldBlock) => {
+				eprintln!(
+					"waiting for lock on redb cache at {} (held by another toolkit process)...",
+					p.display()
+				);
+				lock_file.lock().unwrap_or_else(|e| {
+					panic!("failed to acquire lock on redb cache '{}': {e}", lock_path.display())
+				});
+			},
+			Err(TryLockError::Error(e)) => {
+				panic!("failed to lock redb cache '{}': {e}", lock_path.display());
+			},
+		}
+
 		Self {
-			db: Arc::new(RwLock::new(
-				Database::create(path).expect("failed to create database - is it already open?"),
-			)),
+			db: Arc::new(RwLock::new(Database::create(path).expect("failed to create database"))),
 			block_data_table: TableDefinition::new("raw_block_data_v2"),
 			highest_verified_table: TableDefinition::new("highest_verified"),
+			_lock: Arc::new(lock_file),
 		}
 	}
 }

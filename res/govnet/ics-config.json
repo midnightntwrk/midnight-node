@@ -4,6 +4,12 @@
     "policy_id": "0xd2dbff622e509dda256fedbd31ef6e9fd98ed49ad91d5c0e07f68af1",
     "asset_name": "NIGHT"
   },
-  "utxos": [],
-  "total_amount": 0
+  "utxos": [
+    {
+      "tx_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "output_index": 0,
+      "amount": 1200000000000000
+    }
+  ],
+  "total_amount": 1200000000000000
 }

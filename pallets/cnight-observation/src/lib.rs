@@ -86,7 +86,8 @@ pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
 	use midnight_primitives::MidnightSystemTransactionExecutor;
 	use midnight_primitives_cnight_observation::{
-		CARDANO_BECH32_ADDRESS_MAX_LENGTH, CardanoRewardAddressBytes, DustPublicKeyBytes,
+		CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
+		CardanoRewardAddressBytes, DustPublicKeyBytes,
 	};
 	use midnight_primitives_mainchain_follower::{
 		CreateData, DeregistrationData, ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader,
@@ -176,6 +177,8 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// A Cardano Wallet address was sent, but was longer than expected
 		MaxCardanoAddrLengthExceeded,
+		/// A Cardano asset name contained non-ASCII bytes
+		NonAsciiAssetName,
 		/// Only one inherent is allowed per block
 		InherentAlreadyExecuted,
 		/// Next Cardano position does not advance beyond current position
@@ -231,7 +234,7 @@ pub mod pallet {
 	#[pallet::storage]
 	// Asset name for auth token used in MappingValidator
 	pub type MainChainAuthTokenAssetName<T: Config> =
-		StorageValue<_, BoundedVec<u8, ConstU32<32>>, ValueQuery>;
+		StorageValue<_, BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>, ValueQuery>;
 
 	/// Individual Cardano -> DUST mappings, keyed by the reward address and the
 	/// source UTXO reference. Each UTXO produces exactly one mapping, so
@@ -262,9 +265,9 @@ pub mod pallet {
 		_,
 		(
 			// Policy ID
-			BoundedVec<u8, ConstU32<28>>,
+			BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>>,
 			// Asset Name
-			BoundedVec<u8, ConstU32<32>>,
+			BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>,
 		),
 		ValueQuery,
 	>;
@@ -301,12 +304,11 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			// Genesis configuration validation: BuildGenesisConfig::build() returns () and
-			// cannot propagate errors via Result. Panicking on invalid configuration values
-			// is the standard Substrate genesis fail-fast convention — an invalid chain spec
-			// must halt node startup rather than silently produce incorrect chain state.
-			// Each expect() below validates a bounded-length conversion from the chain spec;
-			// failure indicates a misconfigured genesis that must be corrected before launch.
+			// Substrate genesis fail-fast convention: build() returns (), so we panic on
+			// invalid chain-spec input rather than silently producing incorrect state. Each
+			// panic names the chain-spec field path (matching the camelCase JSON keys the
+			// operator edits) and reads the cap from the destination BoundedVec type, so a
+			// startup-failure log points directly at the offending field.
 			MainChainMappingValidatorAddress::<T>::set(
 				self.config
 					.addresses
@@ -314,23 +316,41 @@ pub mod pallet {
 					.as_bytes()
 					.to_vec()
 					.try_into()
-					.expect("Mapping Validator address longer than expected"),
+					.unwrap_or_else(|v: Vec<u8>| {
+						panic!(
+							"genesis: cNightObservation.config.addresses.mapping_validator_address \
+							 length {} bytes exceeds maximum {}",
+							v.len(),
+							BoundedCardanoAddress::bound(),
+						)
+					}),
 			);
 
 			CNightIdentifier::<T>::set((
-				self.config
-					.addresses
-					.cnight_policy_id
-					.to_vec()
-					.try_into()
-					.expect("Policy ID too long"),
+				self.config.addresses.cnight_policy_id.to_vec().try_into().unwrap_or_else(
+					|v: Vec<u8>| {
+						panic!(
+							"genesis: cNightObservation.config.addresses.cnight_policy_id \
+							 length {} bytes exceeds maximum {}",
+							v.len(),
+							BoundedVec::<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>>::bound(),
+						)
+					},
+				),
 				self.config
 					.addresses
 					.cnight_asset_name
 					.as_bytes()
 					.to_vec()
 					.try_into()
-					.expect("Asset name too long"),
+					.unwrap_or_else(|v: Vec<u8>| {
+						panic!(
+							"genesis: cNightObservation.config.addresses.cnight_asset_name \
+							 length {} bytes exceeds maximum {}",
+							v.len(),
+							BoundedVec::<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>::bound(),
+						)
+					}),
 			));
 
 			MainChainAuthTokenAssetName::<T>::set(
@@ -340,7 +360,14 @@ pub mod pallet {
 					.as_bytes()
 					.to_vec()
 					.try_into()
-					.expect("Auth Token asset name longer than expected"),
+					.unwrap_or_else(|v: Vec<u8>| {
+						panic!(
+							"genesis: cNightObservation.config.addresses.auth_token_asset_name \
+							 length {} bytes exceeds maximum {}",
+							v.len(),
+							BoundedVec::<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>::bound(),
+						)
+					}),
 			);
 
 			for (addr, entries) in &self.config.mappings {
@@ -732,7 +759,7 @@ pub mod pallet {
 		///
 		/// This extrinsic needs Root origin
 		#[pallet::call_index(2)]
-		#[pallet::weight((1, DispatchClass::Normal))]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
 		pub fn set_mapping_validator_contract_address(
 			origin: OriginFor<T>,
 			address: Vec<u8>,
@@ -744,6 +771,52 @@ pub mod pallet {
 					.try_into()
 					.map_err(|_| Error::<T>::MaxCardanoAddrLengthExceeded)?,
 			);
+
+			Ok(())
+		}
+
+		/// Replaces the (policy id, asset name) pair identifying the cNIGHT native asset
+		/// on Cardano. Intended for ephemeral forks redirecting to STAGING contracts.
+		///
+		/// This extrinsic needs Root origin.
+		#[pallet::call_index(3)]
+		#[pallet::weight((T::WeightInfo::set_cnight_identifier(), DispatchClass::Normal))]
+		pub fn set_cnight_identifier(
+			origin: OriginFor<T>,
+			policy_id: [u8; CNIGHT_POLICY_ID_LENGTH as usize],
+			asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			// Genesis validates asset names as ASCII-only strings, and block authors
+			// convert this value to a `String` when building the cNIGHT observation
+			// inherent. Enforce the same constraint here so a root call cannot store
+			// bytes that would make inherent-data creation fail.
+			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
+			// Infallible: the array length equals the BoundedVec bound.
+			let bounded_policy_id: BoundedVec<u8, ConstU32<CNIGHT_POLICY_ID_LENGTH>> =
+				BoundedVec::truncate_from(policy_id.to_vec());
+			CNightIdentifier::<T>::set((bounded_policy_id, asset_name));
+
+			Ok(())
+		}
+
+		/// Replaces the asset name of the auth token used by the mapping validator on Cardano.
+		/// Intended for ephemeral forks redirecting to STAGING contracts.
+		///
+		/// This extrinsic needs Root origin.
+		#[pallet::call_index(4)]
+		#[pallet::weight((T::WeightInfo::set_auth_token_asset_name(), DispatchClass::Normal))]
+		pub fn set_auth_token_asset_name(
+			origin: OriginFor<T>,
+			asset_name: BoundedVec<u8, ConstU32<CARDANO_ASSET_NAME_MAX_LENGTH>>,
+		) -> DispatchResult {
+			ensure_root(origin)?;
+			// Genesis validates this field as an ASCII-only string, and block authors
+			// convert it to a `String` when building the cNIGHT observation inherent.
+			// Enforce the same constraint here so a root call cannot store bytes that
+			// would make inherent-data creation fail.
+			ensure!(asset_name.is_ascii(), Error::<T>::NonAsciiAssetName);
+			MainChainAuthTokenAssetName::<T>::set(asset_name);
 
 			Ok(())
 		}

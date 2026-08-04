@@ -6,22 +6,16 @@ use authority_selection_inherents::{
 	AuthoritySelectionDataSource, AuthoritySelectionInputs, CandidateValidationApi,
 };
 use clap::Parser;
-use cli_commands::address_association_signatures::AddressAssociationSignaturesCmd;
-use cli_commands::block_producer_metadata_signatures::BlockProducerMetadataSignatureCmd;
 use cli_commands::registration_signatures::RegistrationSignaturesCmd;
 use frame_support::sp_runtime::traits::NumberFor;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_cli::DefaultCmdRunContext;
 pub use partner_chains_cli::PartnerChainRuntime;
-use partner_chains_smart_contracts_commands::SmartContractsCmd;
 use sc_cli::{CliConfiguration, SharedParams, SubstrateCli};
 use sc_service::TaskManager;
 use sidechain_domain::*;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
-use sp_runtime::AccountId32;
-use sp_runtime::DeserializeOwned;
-use sp_runtime::Serialize;
 use sp_runtime::traits::Block as BlockT;
 use sp_session_validator_management::CommitteeMember as CommitteeMemberT;
 use sp_session_validator_management::SessionValidatorManagementApi;
@@ -101,10 +95,7 @@ static REGISTRATION_STATUS_AFTER_HELP: once_cell::sync::Lazy<String> = once_cell
 #[derive(Clone, Debug, clap::Subcommand)]
 #[allow(clippy::large_enum_variant)]
 /// Entry point for all Partner Chains specific subcommand.
-pub enum PartnerChainsSubcommand<
-	RuntimeBindings: PartnerChainRuntime + Send + Sync,
-	PartnerchainAddress: Clone + Sync + Send + FromStrStdErr + 'static,
-> {
+pub enum PartnerChainsSubcommand<RuntimeBindings: PartnerChainRuntime + Send + Sync> {
 	/// Returns sidechain parameters.
 	/// Requires --chain parameter that results in loading a properly configured chain spec.
 	SidechainParams(SidechainParamsCmd),
@@ -127,17 +118,6 @@ pub enum PartnerChainsSubcommand<
 	/// Generates registration signatures for partner chains committee candidates
 	RegistrationSignatures(RegistrationSignaturesCmd),
 
-	/// Signs address association
-	SignAddressAssociation(AddressAssociationSignaturesCmd<PartnerchainAddress>),
-
-	/// Signs block producer metadata for submitting to the runtime
-	#[command(subcommand)]
-	SignBlockProducerMetadata(BlockProducerMetadataSignatureCmd<AccountId32>),
-
-	/// Commands for interacting with Partner Chain smart contracts on Cardano
-	#[command(subcommand)]
-	SmartContracts(SmartContractsCmd),
-
 	/// Partner Chains text "wizards" for setting up chain
 	#[command(subcommand)]
 	Wizards(partner_chains_cli::Command<RuntimeBindings>),
@@ -150,9 +130,7 @@ pub fn run<
 	Block,
 	CommitteeMember,
 	Client,
-	BlockProducerMetadata,
 	RuntimeBindings: PartnerChainRuntime + Send + Sync,
-	PartnerchainAddress,
 >(
 	cli: &Cli,
 	get_deps: impl FnOnce(
@@ -161,7 +139,7 @@ pub fn run<
 		(Arc<Client>, TaskManager, Arc<dyn AuthoritySelectionDataSource + Send + Sync>),
 		sc_service::error::Error,
 	>,
-	cmd: PartnerChainsSubcommand<RuntimeBindings, PartnerchainAddress>,
+	cmd: PartnerChainsSubcommand<RuntimeBindings>,
 ) -> sc_cli::Result<()>
 where
 	Cli: SubstrateCli,
@@ -179,8 +157,6 @@ where
 	CommitteeMember: CommitteeMemberT + Encode + Decode + Send + Sync + 'static,
 	CommitteeMember::AuthorityId: Decode + Encode + AsRef<[u8]> + Send + Sync + 'static,
 	CommitteeMember::AuthorityKeys: Decode + Encode,
-	BlockProducerMetadata: DeserializeOwned + Encode + Send + Sync,
-	PartnerchainAddress: Serialize + Clone + Sync + Send + FromStrStdErr + Encode + 'static,
 {
 	match cmd {
 		PartnerChainsSubcommand::SidechainParams(cmd) => {
@@ -217,19 +193,6 @@ where
 			})
 		},
 		PartnerChainsSubcommand::RegistrationSignatures(cmd) => Ok(println!("{}", cmd.execute())),
-		PartnerChainsSubcommand::SignAddressAssociation(cmd) => {
-			cmd.execute().map_err(|e| sc_service::Error::Application(e.into()))?;
-			Ok(())
-		},
-		PartnerChainsSubcommand::SignBlockProducerMetadata(cmd) => {
-			cmd.execute::<BlockProducerMetadata>()
-				.map_err(|e| sc_service::Error::Application(e.into()))?;
-			Ok(())
-		},
-		PartnerChainsSubcommand::SmartContracts(cmd) => {
-			setup_log4rs()?;
-			Ok(cmd.execute_blocking()?)
-		},
 		PartnerChainsSubcommand::Wizards(cmd) => {
 			setup_log4rs()?;
 			Ok(cmd

@@ -41,10 +41,7 @@ use ogmios_client::{
 	transactions::Transactions,
 	types::OgmiosUtxo,
 };
-use partner_chains_plutus_data::{
-	bridge::{TOKEN_TRANSFER_METADATUM_KEY, transfer_to_reserve_metadatum},
-	reserve::ReserveRedeemer,
-};
+use partner_chains_plutus_data::reserve::ReserveRedeemer;
 use sidechain_domain::UtxoId;
 
 /// Spends current UTXO at validator address to illiquid supply validator and burn reserve auth policy token, preventing further operations.
@@ -95,9 +92,6 @@ fn build_tx(
 	let mut tx_builder = TransactionBuilder::new(&get_builder_config(ctx)?);
 
 	let reserve_auth_policy_spend_cost = costs.get_one_spend();
-
-	tx_builder
-		.add_metadatum(&TOKEN_TRANSFER_METADATUM_KEY.into(), &transfer_to_reserve_metadatum());
 
 	// mint goveranance token
 	tx_builder.add_mint_one_script_token_using_reference_script(

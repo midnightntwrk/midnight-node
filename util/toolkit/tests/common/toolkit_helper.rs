@@ -101,31 +101,96 @@ impl ToolkitTestHelper {
 		}
 	}
 
-	pub fn compactc_version() -> String {
-		std::env::var("COMPACTC_VERSION").unwrap_or_else(|_| {
+	pub fn compactc_version() -> semver::Version {
+		let version_str = std::env::var("COMPACTC_VERSION").unwrap_or_else(|_| {
 			let version_file = manifest_dir().join(COMPACTC_VERSION_FILE);
 			std::fs::read_to_string(&version_file)
 				.map(|s| s.trim().to_string())
 				.unwrap_or_else(|e| panic!("failed to read {}: {e}", version_file.display()))
-		})
+		});
+
+		semver::Version::parse(&version_str).unwrap()
 	}
 
 	pub fn prerequisites_ready(&self) -> bool {
 		let compactc_version = Self::compactc_version();
 		let required_paths = [
 			self.toolkit_js_path.join("dist/bin.js"),
-			self.toolkit_js_path.join("node_modules/@midnight-ntwrk/node-toolkit-v8"),
 			self.toolkit_js_path.join(format!(
-				"node_modules/@midnight-ntwrk/midnight-js-compact/managed/{compactc_version}"
+				"node_modules/@midnight-ntwrk/node-toolkit-compact-{}.{}",
+				compactc_version.major, compactc_version.minor
 			)),
 		];
 
 		if let Some(missing) = required_paths.iter().find(|path| !path.exists()) {
 			eprintln!(
 				"Skipping contract integration tests: missing {}\n\
-                 Setup: cd util/toolkit-js && npm install && npm run build && \
-                 npx fetch-compactc --version={compactc_version}",
+                 Setup: cd util/toolkit-js && npm install && npm run build",
 				missing.display()
+			);
+			return false;
+		}
+
+		// `run-compactc` needs a compiler. COMPACT_HOME takes precedence: when set,
+		// midnight-js-compact's `resolveCompactPath` uses that compiler regardless of
+		// COMPACTC_VERSION. Otherwise the legacy `fetch-compactc` download populates
+		// midnight-js-compact/managed/<version>.
+		if let Some(home) = std::env::var_os("COMPACT_HOME") {
+			let compactc = Path::new(&home).join("compactc");
+			if !compactc.exists() {
+				eprintln!(
+					"Skipping contract integration tests: COMPACT_HOME is set ({}) but no compactc there.\n\
+                     Setup: build it from the compact submodule (`just compactc`).",
+					Path::new(&home).display()
+				);
+				return false;
+			}
+
+			// COMPACT_HOME wins in run-compactc, so its compiler must match the version
+			// the tests select the toolkit package and cache key for — otherwise we would
+			// silently compile with the wrong compiler. `compactc --version` reports the
+			// bare semver (no tree-hash suffix), so compare against major.minor.patch.
+			let expected = format!(
+				"{}.{}.{}",
+				compactc_version.major, compactc_version.minor, compactc_version.patch
+			);
+			match std::process::Command::new(&compactc).arg("--version").output() {
+				Ok(out) if out.status.success() => {
+					let got = String::from_utf8_lossy(&out.stdout).trim().to_string();
+					if got != expected {
+						eprintln!(
+							"Skipping contract integration tests: COMPACT_HOME compactc is {got}, \
+                             but COMPACTC_VERSION selects {expected}.\n\
+                             run-compactc prefers COMPACT_HOME, so this would compile with the wrong \
+                             compiler. Rebuild the submodule to match (`just compactc`) or unset COMPACT_HOME."
+						);
+						return false;
+					}
+				},
+				other => {
+					eprintln!(
+						"Skipping contract integration tests: failed to query {} --version: {other:?}",
+						compactc.display()
+					);
+					return false;
+				},
+			}
+
+			return true;
+		}
+
+		let downloaded_ready = self
+			.toolkit_js_path
+			.join(format!(
+				"node_modules/@midnight-ntwrk/midnight-js-compact/managed/{compactc_version}"
+			))
+			.exists();
+
+		if !downloaded_ready {
+			eprintln!(
+				"Skipping contract integration tests: compactc unavailable.\n\
+                 Setup: build it from the compact submodule (`just compactc`, sets COMPACT_HOME),\n\
+                 or: cd util/toolkit-js && npx fetch-compactc --version={compactc_version}"
 			);
 			return false;
 		}
@@ -134,7 +199,10 @@ impl ToolkitTestHelper {
 	}
 
 	fn toolkit_js(&self) -> ToolkitJs {
-		ToolkitJs { path: path_to_string(&self.toolkit_js_path) }
+		ToolkitJs {
+			path: path_to_string(&self.toolkit_js_path),
+			compactc_version: Self::compactc_version(),
+		}
 	}
 
 	fn source_from_url(&self) -> Source {
@@ -187,7 +255,7 @@ impl ToolkitTestHelper {
 		name: &str,
 	) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
 		let compactc_version = Self::compactc_version();
-		let cache_key = compile_cache_key(compact_source, &compactc_version);
+		let cache_key = compile_cache_key(compact_source, &compactc_version.to_string());
 		let cache_dir = std::env::temp_dir().join(COMPILE_CACHE_DIR).join(&cache_key);
 		let cached_out = cache_dir.join("out");
 
@@ -211,7 +279,7 @@ impl ToolkitTestHelper {
 			.arg("run-compactc")
 			.arg(&source_file)
 			.arg(&cached_out)
-			.env("COMPACTC_VERSION", &compactc_version)
+			.env("COMPACTC_VERSION", compactc_version.to_string())
 			.current_dir(&self.toolkit_js_path)
 			.output()
 			.await?;
@@ -245,7 +313,10 @@ impl ToolkitTestHelper {
 	pub fn show_address_coin_public(&self, seed: &str) -> String {
 		let args = ShowAddressArgs {
 			network: self.network.clone(),
-			seed: cli_parsers::wallet_seed_decode(seed).expect("invalid wallet seed"),
+			seed: cli_parsers::SchemeSeed {
+				seed: cli_parsers::wallet_seed_decode(seed).expect("invalid wallet seed"),
+				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+			},
 			specific_address: SpecificAddressTypeArgs { coin_public: true, ..Default::default() },
 		};
 		match show_address::execute(args) {
@@ -320,6 +391,7 @@ impl ToolkitTestHelper {
 					output_private_state: RelativePath(out_private_state.clone()),
 					output_zswap_state: RelativePath(out_zswap_state.clone()),
 					output_result: None,
+					output_events: None,
 					circuit_id: circuit_id.to_string(),
 					call_args: call_args.iter().map(|s| s.to_string()).collect(),
 				},

@@ -1,110 +1,304 @@
 # Midnight Network Tools
 
-A flexible set of tools for launching **well-known networks, custom networks, and dynamic local environments**, as well as **performing state changes** against those networks (image upgrades now, runtime upgrades and hard forks coming soon).
-
-This project provides a unified way to spin up Midnight resources for development, testing, and experimentation.
-
----
+Tools for bringing up local forks of well-known Midnight networks and rehearsing
+upgrade flows against them.
 
 ## Features
 
-- Launch dockerized **well-known Midnight networks** (e.g. `qanet`, `devnet`, `govnet`, `testnet-02`, etc.)
-- Perform **state-changing operations** such as image upgrades (runtime upgrades and hard forks planned).
-- Launch a fully **dynamic local environment** with sped-up Cardano resources for quick testing of Partner Chains/Cardano capabilities.
-
----
+- Restore a well-known network from an `http(s)` snapshot and replace the live
+  authority set with locally generated mock validators.
+- Reuse an existing restored fork across `run`, `image-upgrade`,
+  `governance-runtime-upgrade`, and `full-upgrade` commands without
+  re-downloading the snapshot each time.
+- Rehearse image-only upgrades, governance runtime upgrades, or a two-phase
+  rollout that does both in sequence.
+- Launch the standalone `local-env` stack for fast local Partner Chains testing.
 
 ## Usage
 
-All functionality is available via npm/yarn scripts defined in `package.json`.
+All commands are exposed through the npm scripts in
+[package.json](./package.json).
 
-### Launching Networks
+### Well-known network forks
 
-You can run different Midnight networks locally with:
+Supported fork targets are `devnet`, `qanet`, `testnet-02`, `preview`,
+`preprod`, and `mainnet`.
 
-```bash
-npm run run:qanet
-npm run run:devnet
-npm run run:govnet
-npm run run:testnet-02
-```
-
-### Upgrading Networks
-
-You can also launch a network and immediately apply image upgrades:
+The first bring-up for a well-known network needs `--from-snapshot`. The CLI
+downloads the archive, restores it into each compose data directory, runs
+`mock-authorities convert`, and writes a compose override that switches the fork
+into mock-validator mode.
 
 ```bash
-npm run image-upgrade:qanet
-npm run image-upgrade:devnet
-npm run image-upgrade:govnet
-npm run image-upgrade:testnet-02
+npm run run:preview -- --from-snapshot https://example.com/snapshots/preview-latest.tar.zst
+npm run run:preprod -- --from-snapshot https://example.com/snapshots/preprod-latest.tar.gz
+npm run run:mainnet -- --from-snapshot https://example.com/snapshots/mainnet-latest.tar.gz
 ```
 
-### Stopping Networks
+Real snapshot URLs for each network can be resolved from the backup system's
+public index — see
+[Finding snapshot archives](../docs/fork-testing.md#finding-snapshot-archives).
 
-To stop any running network:
+After that initial restore, the same network can be restarted without
+`--from-snapshot` as long as the restored `data/` directories and generated
+mock-authorities output are still present:
 
 ```bash
-npm run stop:qanet
-npm run stop:devnet
-npm run stop:govnet
-npm run stop:testnet-02
+npm run run:preview
 ```
 
-### Fork Testing
+Before forking from a snapshot, confirm the chainspec embedded in the node
+image was built with the same `networkId` as the genesis used to produce the
+snapshot. Recent runtimes validate this at boot and the node will refuse to
+start on a mismatch.
 
-See [fork-testing.md](../docs/fork-testing.md)
+### Starting a well-known network from genesis
 
-### Local Environment
+`--from-genesis` skips the snapshot/fork flow entirely and brings up the
+network's base compose from block 0:
 
-In addition to well-known networks, you can launch a dynamic local environment that connects multiple components together.
+```bash
+npm run run:devnet -- --from-genesis --env-file ../devnet.env
+```
 
-### Local env – step by step
-> **Warning:** Public use of Local env is currently disabled, until we publish Governance Smart Contracts. For anyone who already has acccess,
-you need to clone [midnight-reserve-contracts](https://github.com/midnightntwrk/midnight-reserve-contracts) to the same location where midnight-node repo sits.
+Unlike fork mode, nothing is mocked: each validator needs its real seed phrase
+(e.g. `MIDNIGHT_NODE_01_0_SEED`) supplied via `--env-file` or the process
+environment. The node only imports keystore keys from `AURA_SEED_FILE` /
+`GRANDPA_SEED_FILE` / `CROSS_CHAIN_SEED_FILE`, so the CLI writes each provided
+phrase to per-validator seed files under `genesis-config/` (gitignored) and
+generates a `<network>.genesis.override.yaml` that mounts them — the same
+phrase drives all three key types, as in the original genesis deployment. At
+least one seed phrase is required; validators without one start with empty
+keystores and cannot author blocks. Note that only holders of the network's
+genesis authority keys can produce blocks from genesis.
 
-> **Note:** Local development environments use a self-signed TLS certificate for PostgreSQL connections. Production deployments should set `ssl_root_cert` for full certificate validation (`PgSslMode::VerifyFull`).
+Networks whose validators were deployed with a _distinct_ phrase per key type
+can set per-type vars instead: the base var's `_SEED` suffix is replaced by
+`_AURA_SEED` / `_GRANDPA_SEED` / `_CROSS_CHAIN_SEED` (e.g.
+`MIDNIGHT_NODE_01_0_AURA_SEED`). Each key type falls back to the base var when
+its per-type var is unset; a validator is seeded only when all three key types
+resolve.
 
-When first run, all images are pulled from public repositories. This may take some time.
+Each node also needs a main-chain data source: either the real db-sync
+connection strings (the `DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_*` vars) or
+the node's built-in mock follower, enabled through an extra override file:
 
-The stack is built and started. A Cardano node begins block production from a pre-configured genesis file (private testnet, no public connectivity).
+```yaml
+# mock-follower.override.yaml
+services:
+  node1: &mock
+    environment:
+      USE_MAIN_CHAIN_FOLLOWER_MOCK: "true"
+      MOCK_REGISTRATIONS_FILE: /res/mock-bridge-data/default-registrations.json
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ""
+  node2: *mock
+  # ... one entry per validator service
+```
+
+```bash
+npm run run:devnet -- --from-genesis --env-file ../devnet.env \
+  --compose-override ../mock-follower.override.yaml
+```
+
+The CLI warns about any compose variables left unset, and about existing
+`data/` directories (nodes resume from existing chain data; wipe the network's
+`data/` directories first for a clean block-0 start). Restarting a genesis
+environment uses the same flags.
+
+### Upgrade rehearsals
+
+`image-upgrade` rolls service containers from `NODE_IMAGE` to `NEW_NODE_IMAGE`.
+
+```bash
+NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:old \
+NEW_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:new \
+npm run image-upgrade:preview -- --from-snapshot https://example.com/snapshots/preview-latest.tar.zst
+```
+
+`governance-runtime-upgrade` submits the federated-authority flow against a
+running fork. The wasm path must resolve under the repo-level `artifacts/`
+directory.
+
+```bash
+npm run governance-runtime-upgrade:preview -- \
+  --wasm upgrade/midnight_node_runtime.compact.wasm \
+  --council-uris //Dave //Eve //Ferdie \
+  --technical-uris //Alice //Bob //Charlie \
+  --executor-uri //Alice
+```
+
+`full-upgrade` runs the production-shaped rehearsal: first the image rollout,
+then the governance runtime upgrade against the running fork.
+
+```bash
+NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:old \
+NEW_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:new \
+npm run full-upgrade:preview -- \
+  --from-snapshot https://example.com/snapshots/preview-latest.tar.zst \
+  --wasm upgrade/midnight_node_runtime.compact.wasm \
+  --council-uris //Dave //Eve //Ferdie \
+  --technical-uris //Alice //Bob //Charlie \
+  --executor-uri //Alice
+```
+
+Use `--allow-same-version` only for local rehearsals where the candidate wasm
+does not bump `spec_version`. It deliberately bypasses the runtime-side version
+check and should not be used for production-shaped validation.
+
+### Consensus engine (AURA → BABE) transitions
+
+`pallet-consensus-engine`'s `arm_babe` and `schedule_flip` calls are gated by
+governance motion filter, like runtime upgrades.
+
+`consensus-upgrade-arm-babe` moves the engine from `Aura` to `ArmedBabe`.
+
+```bash
+npm run consensus-upgrade-arm-babe:local-env -- \
+  --technical-uris //One //Two //Three \
+  --council-uris //Four //Five //Six \
+  --executor-uri //One
+```
+
+`consensus-upgrade-schedule-flip` moves it from `ArmedBabe` to `ScheduledFlip`
+Run it only after the finalized blocks have BABE pre-runtime digests.
+
+```bash
+npm run consensus-upgrade-schedule-flip:local-env -- \
+  --technical-uris //One //Two //Three \
+  --council-uris //Four //Five //Six \
+  --executor-uri //One
+```
+
+Both commands will error if the pallet is not a state expected for given call.
+
+### Stopping networks
+
+```bash
+npm run stop:preview
+npm run stop:preprod
+npm run stop:mainnet
+```
+
+### Fork testing
+
+See [fork-testing.md](../docs/fork-testing.md) for snapshot prerequisites and
+archive format details.
+
+### Local environment
+
+In addition to the fork-based workflows above, you can launch a dynamic local
+environment that connects multiple components together.
+
+### Local env - step by step
+
+> **Note:** The governance contracts are tracked as a git submodule at
+> `midnight-reserve-contracts/`. If you cloned without `--recurse-submodules`,
+> run:
+>
+> ```bash
+> git submodule update --init midnight-reserve-contracts
+> ```
+>
+> The submodule pin is the version used in CI; do not edit it on the local-env
+> path.
+
+> **Note:** Local development environments use a self-signed TLS certificate for
+> PostgreSQL connections. Production deployments should set `ssl_root_cert` for
+> full certificate validation (`PgSslMode::VerifyFull`).
+
+When first run, all images are pulled from public repositories. This may take
+some time.
+
+The stack is built and started. A Cardano node begins block production from a
+pre-configured genesis file (private testnet, no public connectivity).
 
 Once Cardano is synced, Ogmios and DB-Sync connect and begin syncing.
 
-pc-contracts-cli inserts D parameter values and registers Midnight Node keys with Cardano.
+`pc-contracts-cli` inserts D parameter values and registers Midnight Node keys
+with Cardano.
 
-Once Postgres is populated, Midnight nodes begin block production after 2 main chain epochs.
+Once Postgres is populated, Midnight nodes begin block production after 2 main
+chain epochs.
 
-Starting the environment
+#### Startup phases
 
-To start the environment via Earthly:
+`docker compose up` brings the stack up in dependency order: the one-shot jobs
+(`contract-compiler` → `mint-cnight-supply` → `midnight-setup` → `init-mnight-faucet`)
+each run to completion (`exit 0`) before the next phase starts.
+
+| Phase | Container(s)                          | Does                                                                                                                        |
+| ----: | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+|     0 | `cardano-node-1`, `postgres`          | base                                                                                                                        |
+|     1 | `ogmios`, `kupo`, `db-sync`           | Cardano API + chain indexing                                                                                                |
+|     2 | `contract-compiler`                   | compile + deploy the Aiken governance contracts                                                                             |
+|     3 | `mint-cnight-supply`                  | mint the cNIGHT supply → Reserve / ICS / faucet pools, then send the c2m bridge transfer funding wallet `0x..01` (1B NIGHT) |
+|     4 | `midnight-setup`                      | build the chainspec/genesis (bridge checkpoint + pre-approved faucet tx)                                                    |
+|     5 | `midnight-node-1` … `midnight-node-5` | validators; produce + finalize blocks                                                                                       |
+|     6 | `init-mnight-faucet`                  | claim the bridged NIGHT + DUST-register wallet `0x..01`                                                                     |
+
+With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
+`wallet-indexer`, `indexer-api`) starts alongside the Cardano services.
+
+#### cNIGHT bridge funding
+
+The `local` network ships an **unfunded** genesis (no faucet wallets), so all NIGHT
+enters through the real cNIGHT→mNIGHT bridge. Two one-shot services drive this:
+
+- **`mint-cnight-supply`** seeds the Cardano side of the bridge (#1778). It runs after
+  the governance contracts are deployed and _before_ `midnight-setup` captures the
+  bridge observation checkpoint. In one `cardano-cli` tx it mints the full cNIGHT
+  supply and splits it to mirror the Midnight genesis pools — Reserve (`C.R = M.R`),
+  ICS (`C.L = M.U`), and the funded/faucet address (`C.U = M.L`) — so the cross-chain
+  pool invariants hold from block 0. It then sends a c2m bridge transfer locking 1B
+  NIGHT of the circulating cNIGHT to ICS for the dev wallet `0x..01`; because that
+  transfer spends the seeding tx's outputs it lands strictly _after_ the checkpoint and
+  is observed as a user transfer, and `midnight-setup` pre-approves its tx hash in the
+  c2m-bridge genesis config (`approved_txs`), so claiming it needs no governance round.
+
+- **`init-mnight-faucet`** runs once the chain is producing blocks. It claims that
+  pre-approved transfer (`claim-rewards --claim-kind cardano-bridge` — feeless and
+  self-signed, so the empty wallet needs no starting balance or DUST) and registers the
+  wallet's DUST address (`register-dust-address`, self-funded from the claimed NIGHT's
+  retroactive DUST), so `0x..01` can generate DUST and transact. It is plain toolkit CLI
+  calls on `${TOOLKIT_IMAGE}` (no dedicated image), idempotent via a
+  `runtime-values/mnight-faucet-ready` marker.
+
+Starting the environment via Earthly:
 
 ```bash
 earthly +start-local-env-latest
 ```
 
-Or specify a released node image:
+Or specify released node + toolkit images:
 
 ```bash
-earthly +start-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0
+earthly +start-local-env \
+  --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0 \
+  --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:0.12.0
 ```
 
-You can also use npm scripts:
+You can also use npm scripts (these read the image env vars from `.envrc`):
 
 ```bash
 npm run run:local-env
 npm run run:local-env-with-indexer
 ```
 
-Stopping the environment
+`init-mnight-faucet` runs on the standard toolkit image (no dedicated image), so
+`local-environment/.envrc` derives `TOOLKIT_IMAGE` for your checkout the same way as
+`MIDNIGHT_NODE_IMAGE`; `earthly +start-local-env-latest` builds both from source
+automatically. Export `TOOLKIT_IMAGE` to pin your own.
 
-When stopping, volumes must also be wiped (persistent state is not supported yet).
+Stopping the environment:
+
+When stopping, volumes must also be wiped (persistent state is not supported
+yet).
 
 ```bash
 earthly +stop-local-env-latest
 ```
 
-# or
+Or:
 
 ```bash
 earthly +stop-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0

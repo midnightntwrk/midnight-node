@@ -13,6 +13,8 @@
 
 extern crate alloc;
 
+pub mod armed_babe_proposer;
+mod aura_to_babe_migration_keystore;
 pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
@@ -20,6 +22,7 @@ pub mod cfg;
 pub mod chain_spec;
 pub mod cli;
 pub mod command;
+pub mod committee_membership;
 pub mod extensions;
 mod filtering_pool;
 pub mod genesis;
@@ -31,6 +34,7 @@ pub mod openrpc;
 pub mod partner_chains;
 pub mod payload;
 pub mod peer_info_rpc;
+pub mod reference_hardware;
 pub mod rpc;
 pub mod service;
 pub mod sidechain_params_cmd;

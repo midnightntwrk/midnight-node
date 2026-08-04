@@ -95,6 +95,7 @@ jobs:
       node-version: ${{ steps.release-env.outputs.node_version }}
       image-tag-content-hash: ${{ steps.release-env.outputs.image_tag_content_hash }}
       image-tag-release: ${{ steps.release-env.outputs.image_tag_release }}
+      release-sha: ${{ steps.release-env.outputs.release_sha }}
       git-tag-release: ${{ steps.release-config.outputs.git_tag_release }}
       git-tag-node: ${{ steps.release-config.outputs.git_tag_node }}
       git-tag-toolkit: ${{ steps.release-config.outputs.git_tag_toolkit }}
@@ -107,7 +108,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
 
         with:
           registry: ghcr.io
@@ -115,13 +116,13 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Checkout repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
           ref: ${{ inputs.ref }}
@@ -150,6 +151,10 @@ jobs:
           TOOLKIT_TAG_RELEASE="$TOOLKIT_VERSION$SUFFIX"
           RUNTIME_TAG_RELEASE="$RUNTIME_VERSION$SUFFIX"
 
+          # Resolve inputs.ref to a concrete commit SHA so every downstream
+          # tag/release points at the exact tree we just built from.
+          RELEASE_SHA="$(git rev-parse HEAD)"
+
           # Job outputs (for downstream jobs)
           echo "node_version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
           echo "toolkit_version=$TOOLKIT_VERSION" >> "$GITHUB_OUTPUT"
@@ -158,6 +163,7 @@ jobs:
           echo "image_tag_release=$IMAGE_TAG_RELEASE" >> "$GITHUB_OUTPUT"
           echo "toolkit_tag_release=$TOOLKIT_TAG_RELEASE" >> "$GITHUB_OUTPUT"
           echo "runtime_tag_release=$RUNTIME_TAG_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
 
           # Env vars (for subsequent steps in this job)
           echo "NODE_VERSION=$NODE_VERSION" >> "$GITHUB_ENV"
@@ -230,14 +236,14 @@ jobs:
       # --- GHCR attestations ---
       - name: Attest node release image (GHCR)
         if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node
           subject-digest: ${{ steps.ghcr-digests-node.outputs.digest }}
 
       - name: Attest toolkit release image (GHCR)
         if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.ghcr-digests-toolkit.outputs.digest }}
@@ -293,14 +299,14 @@ jobs:
       # --- GHCR midnightntwrk attestations ---
       - name: Attest node release image (GHCR midnightntwrk)
         if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.midnightntwrk-digests-node.outputs.digest }}
 
       - name: Attest toolkit release image (GHCR midnightntwrk)
         if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-digests-toolkit.outputs.digest }}
@@ -371,14 +377,14 @@ jobs:
       # --- Docker Hub attestations ---
       - name: Attest node release image (Docker Hub)
         if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.dockerhub-digests-node.outputs.digest }}
 
       - name: Attest toolkit release image (Docker Hub)
         if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests-toolkit.outputs.digest }}
@@ -399,7 +405,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
           ref: ${{ inputs.ref }}
@@ -408,7 +414,7 @@ jobs:
       # We can remove this once merged to main - useful for now for testing against main branch
       # ./.github/actions/install-season
       - name: Checkout node repo (for install-season action)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           path: ./midnight-node-ci
 
@@ -429,6 +435,7 @@ jobs:
           RUNTIME_VERSION: ${{ needs.prepare-release.outputs.runtime-version }}
           TOOLKIT_TAG_RELEASE: ${{ needs.prepare-release.outputs.toolkit-tag-release }}
           RUNTIME_TAG_RELEASE: ${{ needs.prepare-release.outputs.runtime-tag-release }}
+          RELEASE_SHA: ${{ needs.prepare-release.outputs.release-sha }}
         run: |
           echo "IMAGE_TAG_CONTENT_HASH=$IMAGE_TAG_CONTENT_HASH" >> "$GITHUB_ENV"
           echo "IMAGE_TAG_RELEASE=$IMAGE_TAG_RELEASE" >> "$GITHUB_ENV"
@@ -438,6 +445,7 @@ jobs:
           echo "RUNTIME_VERSION=$RUNTIME_VERSION" >> "$GITHUB_ENV"
           echo "TOOLKIT_TAG_RELEASE=$TOOLKIT_TAG_RELEASE" >> "$GITHUB_ENV"
           echo "RUNTIME_TAG_RELEASE=$RUNTIME_TAG_RELEASE" >> "$GITHUB_ENV"
+          echo "RELEASE_SHA=$RELEASE_SHA" >> "$GITHUB_ENV"
 
       - name: Build Release Notes
         shell: bash
@@ -481,6 +489,24 @@ jobs:
           FORCE: ${{ github.event.inputs.force }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # If the tag already exists on the remote, refuse to publish unless it
+          # points at the commit we built from. Without this guard, a pre-existing
+          # tag at the wrong commit (e.g. created by a previous buggy run) would
+          # be silently reused by `gh release create/edit`.
+          # `git/ref/tags/<n>` is the exact-match endpoint; `git/refs/...` is a prefix match and returns an array.
+          if EXISTING_TAG_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GIT_TAG_RELEASE}" 2>/dev/null); then
+            EXISTING_SHA=$(echo "$EXISTING_TAG_JSON" | jq -r '.object.sha')
+            EXISTING_TYPE=$(echo "$EXISTING_TAG_JSON" | jq -r '.object.type')
+            if [ "$EXISTING_TYPE" = "tag" ]; then
+              EXISTING_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXISTING_SHA}" --jq '.object.sha')
+            fi
+            if [ "$EXISTING_SHA" != "$RELEASE_SHA" ]; then
+              echo "::error::Tag ${GIT_TAG_RELEASE} already exists at ${EXISTING_SHA} but the release was built from ${RELEASE_SHA}."
+              echo "::error::Refusing to publish a release whose tag does not match the built tree."
+              exit 1
+            fi
+          fi
+
           if gh release view --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" --json isDraft 2>/dev/null; then
             if gh release view --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" --json isDraft -q '.isDraft' | grep -q false; then
               if [ "$FORCE" != "true" ]; then
@@ -502,6 +528,13 @@ jobs:
             latest)     FLAGS=("--latest" "--draft=false") ;;
           esac
 
+          # `--target` is only valid (and only meaningful) when gh creates the
+          # tag. Without it, gh creates the tag on the repository's default
+          # branch (main) — which is exactly the bug we're fixing.
+          if [ "$EDIT_OR_CREATE" = "create" ]; then
+            FLAGS+=("--target" "$RELEASE_SHA")
+          fi
+
           gh release --repo "$GITHUB_REPOSITORY" "$EDIT_OR_CREATE" "$GIT_TAG_RELEASE" \
             --title "$GIT_TAG_RELEASE" \
             "${FLAGS[@]}" \
@@ -516,8 +549,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Create separate tags for toolkit and runtime (node tag is the primary release tag)
-          # This ensures each component has its own tag for independent versioning
-          RELEASE_SHA="$GITHUB_SHA"
+          # This ensures each component has its own tag for independent versioning.
+          # RELEASE_SHA is the resolved SHA of inputs.ref (set by Setup Env), not
+          # $GITHUB_SHA — which would be the workflow ref, possibly main.
 
           # Toolkit tag (only if toolkit is included and not skipped)
           if [ "$SKIP_TOOLKIT" != "true" ]; then
@@ -538,6 +572,11 @@ jobs:
   archive-changes:
     needs: [validate-inputs, prepare-release, finalize-release]
     if: ${{ !cancelled() && !failure() }}
+    # Caps the called workflow's GITHUB_TOKEN — archive-and-bump opens a PR
+    # with a signed commit, so it needs contents + pull-requests write.
+    permissions:
+      contents: write
+      pull-requests: write
     uses: ./.github/workflows/archive-changes.yml
     with:
       ref: ${{ inputs.ref }}
@@ -567,7 +606,7 @@ jobs:
         platform: [amd64, arm64]
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  #v4.1.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -633,13 +672,13 @@ jobs:
 
       - name: Attest node release binary
         if: inputs.skip-node != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ steps.extract-node.outputs.node_release }}
 
       - name: Attest toolkit release binary
         if: inputs.skip-toolkit != true
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: ${{ steps.extract-toolkit.outputs.toolkit_release }}
 
@@ -713,7 +752,7 @@ jobs:
           done
 
       - name: Attest checksums file
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: SHA256SUMS
 

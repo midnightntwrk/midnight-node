@@ -1,10 +1,10 @@
-use std::{collections::VecDeque, convert::Infallible, sync::Arc};
+use std::sync::Arc;
 
 use super::ledger_helpers_local::{
-	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, DefaultDB, DustRegistrationBuilder, DustWallet,
-	FromContext, IntentInfo, LedgerContext, NIGHT, ProofProvider, Segment, StandardTrasactionInfo,
-	Timestamp, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo, UtxoSpendInfo, Wallet,
-	WalletAddress, WalletSeed,
+	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB, DustAddressParseError,
+	DustParameters, DustRegistrationBuilder, DustWallet, FromContext, IntentInfo, NIGHT,
+	ProofProvider, Segment, StandardTrasactionInfo, Timestamp, TransactionWithContext,
+	UnshieldedOfferInfo, Utxo, UtxoOutputInfo, UtxoSpendInfo, WalletAddress, WalletSeed,
 };
 use async_trait::async_trait;
 
@@ -15,27 +15,50 @@ use crate::{
 };
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
-pub struct RegisterDustAddressBuilder {
-	context: Arc<LedgerContext<DefaultDB>>,
+pub struct RegisterDustAddressBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
-	seed: String,
+	seed: WalletSeed,
 	rng_seed: Option<[u8; 32]>,
-	funding_seed: Option<String>,
+	funding_seed: Option<WalletSeed>,
 	destination_dust: Option<WalletAddress>,
 }
 
-impl RegisterDustAddressBuilder {
+#[derive(Debug, thiserror::Error)]
+pub enum RegisterDustAddressError {
+	#[error("failed to decode destination DUST address: {0:?}")]
+	InvalidDustAddress(DustAddressParseError),
+	#[error(
+		"failed to balance the registration transaction: {0}; consolidate NIGHT into a larger \
+		 UTXO, wait for more DUST to accrue, or pay the fee via --funding-seed"
+	)]
+	Balancing(Box<dyn std::error::Error + Send + Sync>),
+	#[error(
+		"every NIGHT UTXO in the wallet already backs DUST generation, so none accrues \
+		 retroactive DUST for a self-funded registration fee; send the NIGHT to yourself to \
+		 mint fresh UTXOs, or pay the fee via --funding-seed"
+	)]
+	AllUtxosBackGeneration,
+}
+
+impl<C: BuilderContext<DefaultDB>> RegisterDustAddressBuilder<C> {
 	pub fn new(
 		args: RegisterDustAddressArgs,
-		context: Arc<LedgerContext<DefaultDB>>,
+		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		use super::type_convert::convert_wallet_seed;
+
+		// Only the seed values are stored; their schemes are applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (wallet_seed, _) = args.wallet_seed.resolve();
+		let funding_seed = args.funding_seed.map(|s| convert_wallet_seed(s.resolve().0));
 		Self {
 			context,
 			prover,
-			seed: args.wallet_seed,
+			seed: convert_wallet_seed(wallet_seed),
 			rng_seed: args.rng_seed,
-			funding_seed: args.funding_seed,
+			funding_seed,
 			destination_dust: args
 				.destination_dust
 				.as_ref()
@@ -44,44 +67,23 @@ impl RegisterDustAddressBuilder {
 	}
 }
 
-/// Compute the retroactive DUST available from generationless NIGHT UTXOs.
-///
-/// NIGHT UTXOs that have never had a registered DUST address accrue virtual DUST
-/// over time that can be used to pay for self DUST address registration.
-/// This function computes the total available DUST using the same formula as the ledger's `generationless_fee_availability`.
-fn generationless_fee_availability(
-	context: &LedgerContext<DefaultDB>,
-	seed: WalletSeed,
+/// Retroactive DUST a generationless NIGHT UTXO accrues between `ctime` and `now`;
+/// mirrors the ledger's `generationless_fee_availability`.
+fn retroactive_dust(
+	value: u128,
+	ctime: Timestamp,
 	now: Timestamp,
+	params: &DustParameters,
 ) -> u128 {
-	context.with_ledger_state(|ledger_state| {
-		let dust_params = &ledger_state.parameters.dust;
-		context.with_wallet_from_seed(seed.clone(), |wallet| {
-			wallet
-				.unshielded_utxos(ledger_state)
-				.iter()
-				.filter(|utxo| utxo.type_ == NIGHT)
-				.map(|utxo| {
-					let vfull = utxo.value.saturating_mul(dust_params.night_dust_ratio.into());
-					let rate = utxo.value.saturating_mul(dust_params.generation_decay_rate.into());
-					let ctime = ledger_state
-						.utxo
-						.utxos
-						.get(utxo)
-						.expect("'utxo' is from this ledger state")
-						.ctime;
-
-					let dt = u128::try_from((now - ctime).as_seconds()).unwrap_or(0);
-					u128::clamp(dt.saturating_mul(rate), 0, vfull)
-				})
-				.fold(0u128, |a, b| a.saturating_add(b))
-		})
-	})
+	let vfull = value.saturating_mul(params.night_dust_ratio.into());
+	let rate = value.saturating_mul(params.generation_decay_rate.into());
+	let dt = u128::try_from((now - ctime).as_seconds()).unwrap_or(0);
+	dt.saturating_mul(rate).min(vfull)
 }
 
 #[async_trait]
-impl BuildTxs for RegisterDustAddressBuilder {
-	type Error = Infallible;
+impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
+	type Error = RegisterDustAddressError;
 
 	async fn build_txs_from(
 		&self,
@@ -89,9 +91,8 @@ impl BuildTxs for RegisterDustAddressBuilder {
 	) -> Result<SerializedTxBatches, Self::Error> {
 		let spin = Spin::new("building register dust address transaction...");
 
-		let seed = Wallet::<DefaultDB>::wallet_seed_decode(&self.seed);
-		let funding_seed =
-			self.funding_seed.as_ref().map(|s| Wallet::<DefaultDB>::wallet_seed_decode(s));
+		let seed = self.seed.clone();
+		let funding_seed = self.funding_seed.clone();
 
 		let context = self.context.clone();
 
@@ -101,81 +102,106 @@ impl BuildTxs for RegisterDustAddressBuilder {
 			self.rng_seed,
 		);
 
-		let inputs = context.with_ledger_state(|ledger_state| {
-			context.with_wallet_from_seed(seed.clone(), |wallet| {
-				wallet
-					.unshielded_utxos(ledger_state)
-					.iter()
-					.filter(|utxo| utxo.type_ == NIGHT)
-					.map(|utxo| UtxoSpendInfo {
-						value: utxo.value,
-						owner: seed.clone(),
-						token_type: NIGHT,
-						intent_hash: Some(utxo.intent_hash),
-						output_number: Some(utxo.output_no),
-					})
-					.collect::<Vec<_>>()
-			})
-		});
+		let mut night_utxos: Vec<(Utxo, Timestamp)> = context
+			.unshielded_utxos(seed.clone())
+			.await
+			.into_iter()
+			.filter(|(utxo, _ctime)| utxo.type_ == NIGHT)
+			.collect();
 
-		let mut outputs: VecDeque<Box<dyn BuildUtxoOutput<DefaultDB>>> = inputs
+		// A self-funded fee is paid from retroactive DUST, which the ledger only grants for
+		// generationless NIGHT spent in the guaranteed offer. Move the best such UTXO to the
+		// front (it becomes the guaranteed offer) and request exactly its accrued DUST;
+		// requesting more makes the transaction unbalanceable.
+		let mut allow_fee_payment = 0u128;
+		if funding_seed.is_none() {
+			let now = context.latest_block_context().await.tblock;
+			let dust_params = context.ledger_parameters().await.dust;
+			let mut best: Option<(usize, u128)> = None;
+			for (i, (utxo, ctime)) in night_utxos.iter().enumerate() {
+				if context.backs_dust_generation(utxo).await {
+					continue;
+				}
+				let dust = retroactive_dust(utxo.value, *ctime, now, &dust_params);
+				if best.is_none_or(|(_, best_dust)| dust > best_dust) {
+					best = Some((i, dust));
+				}
+			}
+			match best {
+				Some((i, dust)) => {
+					night_utxos.swap(0, i);
+					allow_fee_payment = dust;
+				},
+				// A wallet whose every NIGHT UTXO backs generation can never accrue
+				// retroactive DUST, so the generic "wait for more DUST" guidance of the
+				// balancing error below would mislead. An empty wallet still falls
+				// through: balancing reports the missing funds.
+				None if !night_utxos.is_empty() => {
+					return Err(RegisterDustAddressError::AllUtxosBackGeneration);
+				},
+				None => {},
+			}
+		}
+
+		let mut inputs: Vec<Box<dyn BuildUtxoSpend<DefaultDB, C>>> = night_utxos
 			.iter()
-			.map(|input| {
-				let output: Box<dyn BuildUtxoOutput<DefaultDB>> = Box::new(UtxoOutputInfo {
-					value: input.value,
-					owner: input.owner.clone(),
-					token_type: input.token_type,
+			.map(|(utxo, _ctime)| {
+				let input: Box<dyn BuildUtxoSpend<DefaultDB, C>> = Box::new(UtxoSpendInfo {
+					value: utxo.value,
+					owner: seed.clone(),
+					token_type: NIGHT,
+					intent_hash: Some(utxo.intent_hash),
+					output_number: Some(utxo.output_no),
+				});
+				input
+			})
+			.collect();
+
+		let mut outputs: Vec<Box<dyn BuildUtxoOutput<DefaultDB, C>>> = night_utxos
+			.iter()
+			.map(|(utxo, _ctime)| {
+				let output: Box<dyn BuildUtxoOutput<DefaultDB, C>> = Box::new(UtxoOutputInfo {
+					value: utxo.value,
+					owner: seed.clone(),
+					token_type: NIGHT,
 				});
 				output
 			})
 			.collect();
 
-		let mut inputs: VecDeque<Box<dyn BuildUtxoSpend<DefaultDB>>> = inputs
-			.into_iter()
-			.map(|input| {
-				let input: Box<dyn BuildUtxoSpend<DefaultDB>> = Box::new(input);
-				input
-			})
-			.collect();
+		// Only one UTXO fits the guaranteed offer - more would exceed the ledger's
+		// time-to-dismiss limit. The rest go into the fallible offer: their retroactive
+		// DUST is forfeited, but they still switch over to regular DUST generation.
+		let fallible_inputs = inputs.split_off(usize::min(1, inputs.len()));
+		let fallible_outputs = outputs.split_off(usize::min(1, outputs.len()));
 
-		let guaranteed_inputs = inputs.pop_front().into_iter().collect();
-		let guaranteed_outputs = outputs.pop_front().into_iter().collect();
-		let guaranteed_unshielded_offer =
-			UnshieldedOfferInfo { inputs: guaranteed_inputs, outputs: guaranteed_outputs };
-
-		let fallible_unshielded_offer = if !inputs.is_empty() && !outputs.is_empty() {
-			Some(UnshieldedOfferInfo { inputs: inputs.into(), outputs: outputs.into() })
-		} else {
-			None
-		};
+		let guaranteed_unshielded_offer = UnshieldedOfferInfo { inputs, outputs };
+		let fallible_unshielded_offer =
+			if !fallible_inputs.is_empty() && !fallible_outputs.is_empty() {
+				Some(UnshieldedOfferInfo { inputs: fallible_inputs, outputs: fallible_outputs })
+			} else {
+				None
+			};
 		let intent_info = IntentInfo {
 			guaranteed_unshielded_offer: Some(guaranteed_unshielded_offer),
 			fallible_unshielded_offer,
 			actions: vec![],
 		};
 
-		let boxed_intent: Box<dyn BuildIntent<DefaultDB>> = Box::new(intent_info);
+		let boxed_intent: Box<dyn BuildIntent<DefaultDB, C>> = Box::new(intent_info);
 		tx_info.add_intent(Segment::Fallible.into(), boxed_intent);
 
-		// Compute allow_fee_payment for self-funding when no funding seed is provided
-		let allow_fee_payment = if funding_seed.is_none() {
-			let now = context.latest_block_context().tblock;
-			generationless_fee_availability(&context, seed.clone(), now)
-		} else {
-			0
+		let destination_dust = match self.destination_dust.as_ref() {
+			Some(address) => {
+				DustWallet::<DefaultDB>::try_from(address)
+					.map_err(RegisterDustAddressError::InvalidDustAddress)?
+					.public_key
+			},
+			None => context.with_wallet_from_seed(seed.clone(), |wallet| wallet.dust.public_key),
 		};
-
 		context.with_wallet_from_seed(seed.clone(), |wallet| {
-			let destination_dust = self.destination_dust.clone().map_or(
-				wallet.dust.public_key,
-				|destination_dust_arg| {
-					DustWallet::<DefaultDB>::try_from(&destination_dust_arg)
-						.expect("failed to decode dust address")
-						.public_key
-				},
-			);
 			tx_info.add_dust_registration(DustRegistrationBuilder {
-				signing_key: wallet.unshielded.signing_key().clone(),
+				wallet: wallet.unshielded.clone(),
 				dust_address: Some(destination_dust),
 				allow_fee_payment,
 			});
@@ -184,7 +210,7 @@ impl BuildTxs for RegisterDustAddressBuilder {
 		tx_info.set_funding_seeds(funding_seed.into_iter().collect());
 		tx_info.use_mock_proofs_for_fees(true);
 
-		let tx = tx_info.prove().await.expect("Balancing TX failed");
+		let tx = tx_info.prove().await.map_err(RegisterDustAddressError::Balancing)?;
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 

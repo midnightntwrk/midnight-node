@@ -11,11 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_trait::async_trait;
 use std::{any::Any, marker::PhantomData, sync::Arc};
 
+use async_trait::async_trait;
+
 use super::super::{
-	BuildContractAction, Contract, ContractAddress, DB, Intent, LedgerContext, PedersenRandomness,
+	BuildContractAction, BuilderContext, Contract, ContractAddress, DB, Intent, PedersenRandomness,
 	ProofPreimage, ProofPreimageMarker, Signature, StdRng,
 };
 
@@ -28,19 +29,32 @@ pub struct CallInfo<C: Contract<D>, D: DB + Clone> {
 }
 
 #[async_trait]
-impl<C: Contract<D>, D: DB + Clone> BuildContractAction<D> for CallInfo<C, D> {
+impl<C: Contract<D>, D: DB + Clone, BC: BuilderContext<D>> BuildContractAction<D, BC>
+	for CallInfo<C, D>
+{
 	async fn build(
 		&mut self,
 		rng: &mut StdRng,
-		context: Arc<LedgerContext<D>>,
+		context: Arc<BC>,
 		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
 	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D> {
 		let resolver = self.type_.resolver();
 		context.update_resolver(resolver).await;
 
-		let call =
-			self.type_
-				.contract_call(&self.address, self.key, &self.input, rng, context.clone());
+		let contract_state = context
+			.contract_state(self.address)
+			.await
+			.unwrap_or_else(|| panic!("Contract with address {:?} does not exist", self.address));
+		let parameters = context.ledger_parameters().await;
+
+		let call = self.type_.contract_call(
+			&self.address,
+			self.key,
+			&self.input,
+			rng,
+			&contract_state,
+			&parameters,
+		);
 
 		intent.add_call::<ProofPreimage>(call)
 	}

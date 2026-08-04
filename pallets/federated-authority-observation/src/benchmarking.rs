@@ -20,7 +20,7 @@ use super::*;
 use crate::Pallet as FederatedAuthorityObservation;
 use core::str::FromStr;
 use frame_benchmarking::{account, v2::*};
-use frame_support::BoundedVec;
+use frame_support::{BoundedVec, assert_ok};
 use frame_system::RawOrigin;
 use midnight_primitives_federated_authority_observation::MainchainMember;
 use sidechain_domain::{MainchainAddress, PolicyId};
@@ -61,6 +61,10 @@ fn generate_tc_members<T: Config>(
 mod benchmarks {
 	use super::*;
 
+	fn reset_inherent_guard<T: Config>() {
+		InherentExecutedThisBlock::<T>::kill();
+	}
+
 	/// Benchmark resetting only Council members
 	/// Variable `a`: Number of council members to reset
 	/// Variable `b`: Number of technical committee members (unchanged from existing)
@@ -69,15 +73,18 @@ mod benchmarks {
 		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
+		reset_inherent_guard::<T>();
+
 		// Setup: Create initial state with some members
 		let initial_council = generate_council_members::<T>(a + 1);
 		let initial_tc = generate_tc_members::<T>(b);
 
-		let _ = FederatedAuthorityObservation::<T>::reset_members(
+		assert_ok!(FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
 			initial_council,
 			initial_tc.clone(),
-		);
+		));
+		reset_inherent_guard::<T>();
 
 		// Create new council members
 		let new_council_members = generate_council_members::<T>(a);
@@ -98,15 +105,18 @@ mod benchmarks {
 		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
+		reset_inherent_guard::<T>();
+
 		// Setup: Create initial state with some members
 		let initial_council = generate_council_members::<T>(a);
 		let initial_tc = generate_tc_members::<T>(b + 1);
 
-		let _ = FederatedAuthorityObservation::<T>::reset_members(
+		assert_ok!(FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
 			initial_council.clone(),
 			initial_tc,
-		);
+		));
+		reset_inherent_guard::<T>();
 
 		// Create new TC members
 		let new_tc_members = generate_tc_members::<T>(b);
@@ -127,15 +137,18 @@ mod benchmarks {
 		a: Linear<1, { T::CouncilMaxMembers::get() - 1 }>,
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() - 1 }>,
 	) {
+		reset_inherent_guard::<T>();
+
 		// Setup: Create initial state with some members
 		let initial_council = generate_council_members::<T>(a + 1);
 		let initial_tc = generate_tc_members::<T>(b + 1);
 
-		let _ = FederatedAuthorityObservation::<T>::reset_members(
+		assert_ok!(FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
 			initial_council,
 			initial_tc,
-		);
+		));
+		reset_inherent_guard::<T>();
 
 		// Create new members for both committees
 		let new_council_members = generate_council_members::<T>(a);
@@ -157,15 +170,18 @@ mod benchmarks {
 		a: Linear<1, { T::CouncilMaxMembers::get() }>,
 		b: Linear<1, { T::TechnicalCommitteeMaxMembers::get() }>,
 	) {
+		reset_inherent_guard::<T>();
+
 		// Setup: Create initial state with some members
 		let council_members = generate_council_members::<T>(a);
 		let tc_members = generate_tc_members::<T>(b);
 
-		let _ = FederatedAuthorityObservation::<T>::reset_members(
+		assert_ok!(FederatedAuthorityObservation::<T>::reset_members(
 			RawOrigin::None.into(),
 			council_members.clone(),
 			tc_members.clone(),
-		);
+		));
+		reset_inherent_guard::<T>();
 
 		#[extrinsic_call]
 		reset_members(RawOrigin::None, council_members.clone(), tc_members.clone());

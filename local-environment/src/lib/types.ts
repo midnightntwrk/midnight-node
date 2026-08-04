@@ -15,7 +15,26 @@
 export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
+  /**
+   * Snapshot URI (http:// or https://) to fork the well-known network from.
+   * Required on the first bring-up of a well-known network; later runs can
+   * omit it to reuse existing restored data plus generated mock-authorities
+   * output.
+   */
   fromSnapshot?: string;
+  /**
+   * Bring the well-known network's base compose up from block 0 instead of
+   * forking a snapshot. Nothing is mocked in this mode: validator seed
+   * phrases and a main-chain data source must be supplied via env/--env-file.
+   * Mutually exclusive with fromSnapshot.
+   */
+  fromGenesis?: boolean;
+  /**
+   * Extra docker-compose override file(s) applied after the generated genesis
+   * override (from-genesis mode only) — e.g. to enable the node's mock
+   * main-chain follower for fully local runs.
+   */
+  composeOverride?: string[];
 }
 
 export interface ImageUpgradeOptions extends RunOptions {
@@ -46,33 +65,58 @@ export interface RuntimeUpgradeBaseOptions extends RunOptions {
   rpcUrl?: string;
 }
 
-export interface FederatedRuntimeUpgradeOptions
-  extends RuntimeUpgradeBaseOptions {
+/** Signer URIs required to drive a federated-authority motion to execution. */
+export interface FederatedGovernanceOptions {
   /** URIs for council members who will propose/vote to approve the motion */
   councilUris: string[];
   /** URIs for technical committee members who will propose/vote to approve the motion */
   techCommitteeUris: string[];
-  /** URI used to close the federated motion and apply the authorized upgrade */
+  /** URI used to close the federated motion and dispatch the approved call as root */
   motionExecutorUri: string;
 }
 
-export interface SnapshotOptions {
-  /** name of the bootnode statefulset to snapshot */
-  bootnodeStatefulSet?: string;
-  /** optional pvc name override */
-  pvcName?: string;
-  /** s3 uri that receives the archive */
-  s3Uri?: string;
-  /** container image used to perform the snapshot */
-  snapshotImage?: string;
-  /** timeout window in minutes */
-  timeoutMinutes?: number;
+/**
+ * Options for governance actions that dispatch a fixed runtime call as root via
+ * a federated-authority motion (no wasm artifact involved), e.g. the
+ * consensus-engine transitions.
+ */
+export interface GovernanceCallOptions
+  extends RunOptions,
+    FederatedGovernanceOptions {
+  /** skip bringing up docker-compose before submitting the motion */
+  skipRun?: boolean;
+  /** websocket endpoint for the target node (default ws://localhost:9944) */
+  rpcUrl?: string;
 }
+
+export interface FederatedRuntimeUpgradeOptions
+  extends RuntimeUpgradeBaseOptions,
+    FederatedGovernanceOptions {
+  /**
+   * Use `system.authorizeUpgradeWithoutChecks` instead of `system.authorizeUpgrade`,
+   * skipping the runtime-side `SpecVersionNeedsToIncrease` check. Intended for
+   * local rehearsals where the candidate wasm shares a spec_version with the
+   * running runtime; production upgrades should leave this off so the check
+   * still catches real version-bump regressions.
+   */
+  allowSameVersion?: boolean;
+}
+
+/**
+ * Options for the two-phase `full-upgrade` command: image rollout followed by
+ * governance runtime upgrade. Inherits both option sets; there are no field
+ * conflicts because both ImageUpgradeOptions and FederatedRuntimeUpgradeOptions
+ * extend RunOptions.
+ */
+export interface FullUpgradeOptions
+  extends ImageUpgradeOptions,
+    FederatedRuntimeUpgradeOptions {}
 
 export const WELL_KNOWN_NAMESPACES = [
   "devnet",
-  "govnet",
   "preview",
+  "preprod",
+  "mainnet",
   "qanet",
   "testnet-02",
 ] as const;
@@ -82,6 +126,8 @@ export function assertWellKnownNamespace(
   ns: string,
 ): asserts ns is WellKnownNamespace {
   if (!WELL_KNOWN_NAMESPACES.includes(ns as WellKnownNamespace)) {
-    throw new Error(`Unknown namespace '${ns}'. Expected one of ${WELL_KNOWN_NAMESPACES.join(", ")}`);
+    throw new Error(
+      `Unknown namespace '${ns}'. Expected one of ${WELL_KNOWN_NAMESPACES.join(", ")}`,
+    );
   }
 }

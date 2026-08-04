@@ -74,11 +74,11 @@ fn current_state_key() -> LedgerStateKey {
 #[test]
 fn persist_refcount_invariants() {
 	let (deploy_tx, deploy_ctx) =
-		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(DEPLOY_TX);
+		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 	let (store_tx, store_ctx) =
-		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(STORE_TX);
+		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
 	let (check_tx, check_ctx) =
-		midnight_node_ledger_helpers::ledger_8::extract_tx_with_context(CHECK_TX);
+		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(CHECK_TX);
 
 	let deploy_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: deploy_tx.clone() };
 

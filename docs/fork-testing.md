@@ -1,79 +1,98 @@
 # Fork Testing with Snapshots
 
-You can fork an existing chain by creating a snapshot of its state as of a moment in time, and restoring that snapshot to a locally running version of that network.
+You can fork an existing chain by restoring a bootnode snapshot into a local
+Docker Compose network and then swapping the live authority set for a synthetic
+mock-validator set.
 
-## Bootnode snapshots
+The local tooling only consumes snapshot archives. It no longer captures them
+from Kubernetes directly. Obtain the archive from CI, a backup job, or another
+external process first.
 
-The Midnight tools can capture the `/node` volume from a Kubernetes bootnode and
-upload the archive to any S3-compatible object store. They can also restore the
-archive locally before starting Docker Compose services.
+## Supported snapshot inputs
 
-### Local MinIO setup (optional)
+`--from-snapshot` currently accepts an `http://` or `https://` URL pointing to
+one of these archive formats:
 
-You can run a local MinIO server to store snapshots while developing:
+- `.tar`
+- `.tar.gz` or `.tgz`
+- `.tar.zst`
 
-```bash
-docker run \
-  -p 9000:9000 \
-  -p 9001:9001 \
-  -e MINIO_ROOT_USER=midnight \
-  -e MINIO_ROOT_PASSWORD=midnight123 \
-  -v "$(pwd)/minio-data:/data" \
-  --name midnight-minio \
-  minio/minio server /data --console-address ":9001"
-```
+Local restore requires:
 
-Create a bucket for snapshots using the AWS CLI (make sure it is installed
-locally):
+- `curl`
+- `tar`
+- `zstd` for `.zst` archives
 
-```bash
-AWS_ACCESS_KEY_ID=midnight \
-AWS_SECRET_ACCESS_KEY=midnight123 \
-aws --endpoint-url http://127.0.0.1:9000 s3 mb s3://midnight-node-snapshots
-```
+## Finding snapshot archives
 
-Set the environment variables expected by the snapshot tooling:
+The backup system publishes snapshots of the well-known networks behind a
+CloudFront distribution. The manifest at
+`https://dg39snjayoq3t.cloudfront.net/index.json` lists every available
+archive, keyed by network name. To see which networks currently have
+snapshots:
 
 ```bash
-export AWS_ACCESS_KEY_ID=midnight
-export AWS_SECRET_ACCESS_KEY=midnight123
-export MN_SNAPSHOT_S3_ENDPOINT_URL=http://127.0.0.1:9000
-export MN_SNAPSHOT_S3_URI=s3://midnight-node-snapshots
+curl -fsSL https://dg39snjayoq3t.cloudfront.net/index.json | jq 'keys'
 ```
 
-### Creating a snapshot
+As of this writing the index contains `devnet`, `qanet`, and `govnet`.
+`preview`, `preprod`, and `mainnet` snapshots are not published there yet;
+ask the node team if you need one.
 
-Ensure your `kubectl` context points to the target Midnight cluster. Then run
-one of the provided npm scripts to capture a snapshot from the bootnode of a
-well-known namespace:
+To resolve the latest archive URL for a network (this mirrors what the
+`fork-network` workflow's "Resolve latest snapshot URL" step does):
 
 ```bash
-npm run snapshot:qanet
-npm run snapshot:devnet
-npm run snapshot:testnet-02
+NETWORK=devnet
+curl -fsSL https://dg39snjayoq3t.cloudfront.net/index.json |
+  jq -r --arg net "$NETWORK" '
+    .[$net] | to_entries | map(.value[]) | sort_by(.timestamp) | last
+    | .s3_path | sub("^s3://[^/]+/"; "https://dg39snjayoq3t.cloudfront.net/")'
 ```
 
-By default the snapshot pod uploads to `MN_SNAPSHOT_S3_URI`. You can override
-the destination on a per-run basis:
+Pass the resulting URL to `--from-snapshot`. Drop the `last` selection to list
+every archive for the network (older snapshots stay useful for forking a
+specific block height or runtime version).
+
+## Initial restore
+
+On the first bring-up of a well-known network, pass the snapshot URL to `run`,
+`image-upgrade`, `governance-runtime-upgrade`, or `full-upgrade`.
 
 ```bash
-npm run snapshot:qanet -- --s3-uri s3://midnight-node-snapshots/qanet/latest.tar.zst
+npm run run:qanet -- --from-snapshot https://example.com/snapshots/qanet-latest.tar.zst
 ```
 
-If your bootnode uses a different StatefulSet, PVC name, or you want to override
-the helper image, pass `--bootnode`, `--pvc`, or `--snapshot-image` respectively.
+The restore flow:
 
-### Restoring a snapshot locally
+1. Downloads and extracts the archive.
+2. Replicates the extracted node state into every compose `data/` mount for the
+   selected network.
+3. Runs `mock-authorities convert` over the restored state.
+4. Generates a compose override that mounts the generated validator seeds and
+   switches the main-chain follower into mock mode.
 
-The `run`, `image-upgrade`, and `governance-runtime-upgrade` commands can automatically
-restore a bootnode snapshot before launching Docker Compose services. This
-requires the AWS CLI (for `aws s3 cp`) and `zstd` if the archive is compressed.
+## Reusing an existing local fork
+
+After the first restore succeeds, you can omit `--from-snapshot` on later runs
+for the same network. The tooling will reuse the existing restored `data/`
+directories and generated mock-authorities output.
 
 ```bash
-npm run run:qanet -- --from-snapshot latest.tar.zst
+npm run image-upgrade:qanet
+npm run governance-runtime-upgrade:qanet -- \
+  --wasm upgrade/midnight_node_runtime.compact.wasm \
+  --council-uris //Dave //Eve //Ferdie \
+  --technical-uris //Alice //Bob //Charlie \
+  --executor-uri //Alice
 ```
 
-The value passed to `--from-snapshot` can be either a full S3 URI
-(`s3://bucket/path.tar.zst`) or a key relative to `MN_SNAPSHOT_S3_URI`. The
-credentials and endpoint variables from the MinIO example above are re-used for
-restores.
+If the generated fork-mode artifacts or restored `data/` directories are
+missing, the command will fail fast and ask you to rerun with `--from-snapshot`.
+
+## Chainspec compatibility
+
+Before restoring a snapshot, confirm the chainspec embedded in the node image
+was built with the same `networkId` as the genesis used to produce that
+snapshot. Recent runtimes validate this at boot and refuse to start when the
+network id does not match the restored state.

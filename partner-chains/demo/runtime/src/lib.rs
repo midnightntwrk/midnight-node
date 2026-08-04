@@ -9,44 +9,35 @@ extern crate frame_benchmarking;
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
 use alloc::string::String;
 use authority_selection_inherents::{
 	AuthoritySelectionInputs, CommitteeMember, PermissionedCandidateDataError,
 	RegistrationDataError, StakeError, select_authorities, validate_permissioned_candidate_data,
 };
 use frame_support::genesis_builder_helper::{build_state, get_preset};
-use frame_support::inherent::ProvideInherent;
 use frame_support::weights::constants::ParityDbWeight as RuntimeDbWeight;
 use frame_support::{
 	BoundedVec, construct_runtime, parameter_types,
-	traits::{ConstBool, ConstU8, ConstU16, ConstU32, ConstU64, ConstU128},
+	traits::{ConstBool, ConstU8, ConstU32, ConstU64, ConstU128},
 	weights::{IdentityFee, constants::WEIGHT_REF_TIME_PER_SECOND},
 };
 use frame_system::EnsureRoot;
 use opaque::SessionKeys;
-use pallet_block_producer_metadata;
 use pallet_grandpa::AuthorityId as GrandpaId;
-use pallet_session_validator_management::session_manager::ValidatorManagementSessionManager;
 use pallet_transaction_payment::{ConstFeeMultiplier, FungibleAdapter, Multiplier};
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use serde::{Deserialize, Serialize};
-use sidechain_domain::byte_string::{BoundedString, ByteString, SizedByteString};
+use sidechain_domain::byte_string::{BoundedString, SizedByteString};
 use sidechain_domain::{
-	CrossChainPublicKey, DelegatorKey, MainchainKeyHash, PermissionedCandidateData,
-	RegistrationData, ScEpochNumber, ScSlotNumber, StakeDelegation, StakePoolPublicKey, UtxoId,
+	PermissionedCandidateData, RegistrationData, ScEpochNumber, ScSlotNumber, StakeDelegation,
+	StakePoolPublicKey, UtxoId,
 };
-use sidechain_slots::Slot;
 use sp_api::impl_runtime_apis;
-use sp_block_participation::AsCardanoSPO;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-#[cfg(feature = "runtime-benchmarks")]
-use sp_core::ByteArray;
 use sp_core::{OpaqueMetadata, crypto::KeyTypeId};
-use sp_governed_map::MainChainScriptsV1;
-use sp_inherents::InherentIdentifier;
 use sp_partner_chains_bridge::{BridgeDataCheckpoint, MainChainScripts as BridgeMainChainScripts};
+use sp_runtime::traits::ConvertInto;
 use sp_runtime::{
 	ApplyExtrinsicResult, MultiSignature, Perbill, generic, impl_opaque_keys,
 	traits::{
@@ -201,7 +192,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	impl_version: 1,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 1,
-	system_version: 1,
+	system_version: 3,
 };
 
 /// This determines the average expected block time that we are targeting.
@@ -291,8 +282,7 @@ impl frame_system::Config for Runtime {
 	type OnSetCode = ();
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
-	type SingleBlockMigrations =
-		(pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,);
+	type SingleBlockMigrations = ();
 	type MultiBlockMigrator = ();
 	type PreInherents = ();
 	type PostInherents = ();
@@ -307,7 +297,34 @@ impl pallet_aura::Config for Runtime {
 	type SlotDuration = ConstU64<SLOT_DURATION>;
 }
 
-pallet_partner_chains_session::impl_pallet_session_config!(Runtime);
+impl pallet_session::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type ValidatorId = AccountId;
+	type ValidatorIdOf = ConvertInto;
+	type ShouldEndSession = SessionCommitteeManagement;
+	type NextSessionRotation = ();
+	type SessionManager = SessionCommitteeManagement;
+	type SessionHandler = <SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
+	type Keys = SessionKeys;
+	type DisablingStrategy = pallet_session::disabling::UpToLimitWithReEnablingDisablingStrategy;
+
+	type WeightInfo = pallet_session::weights::SubstrateWeight<Runtime>;
+	type Currency = Balances;
+	type KeyDeposit = ConstU128<0>;
+}
+
+pub struct FullIdentificationOf;
+impl sp_runtime::traits::Convert<AccountId, Option<()>> for FullIdentificationOf {
+	fn convert(_: AccountId) -> Option<()> {
+		Some(())
+	}
+}
+
+impl pallet_session::historical::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type FullIdentification = ();
+	type FullIdentificationOf = FullIdentificationOf;
+}
 
 impl pallet_grandpa::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
@@ -369,17 +386,6 @@ impl pallet_sudo::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type RuntimeCall = RuntimeCall;
 	type WeightInfo = pallet_sudo::weights::SubstrateWeight<Runtime>;
-}
-
-impl pallet_partner_chains_session::Config for Runtime {
-	type ValidatorId = <Self as frame_system::Config>::AccountId;
-	type ShouldEndSession = ValidatorManagementSessionManager<Runtime>;
-	type NextSessionRotation = ();
-	type SessionManager = ValidatorManagementSessionManager<Runtime>;
-	type SessionHandler = <opaque::SessionKeys as OpaqueKeys>::KeyTypeIdProviders;
-	type Keys = opaque::SessionKeys;
-	type Currency = Balances;
-	type KeyDeposit = ();
 }
 
 parameter_types! {
@@ -466,15 +472,6 @@ impl From<CommitteeMember<CrossChainPublic, SessionKeys>> for BlockAuthor {
 	}
 }
 
-impl AsCardanoSPO for BlockAuthor {
-	fn as_cardano_spo(&self) -> Option<MainchainKeyHash> {
-		match self {
-			BlockAuthor::Incentivized(_, key) => Some(key.hash()),
-			BlockAuthor::ProBono(_) => None,
-		}
-	}
-}
-
 pub const MAX_METADATA_URL_LENGTH: u32 = 512;
 
 #[derive(
@@ -495,184 +492,15 @@ pub struct BlockProducerMetadataType {
 	pub hash: SizedByteString<32>,
 }
 
-#[cfg(feature = "runtime-benchmarks")]
-pub struct PalletBlockProductionLogBenchmarkHelper;
-
-#[cfg(feature = "runtime-benchmarks")]
-impl pallet_block_production_log::benchmarking::BenchmarkHelper<BlockAuthor>
-	for PalletBlockProductionLogBenchmarkHelper
-{
-	fn producer_id() -> BlockAuthor {
-		let id = sp_core::ecdsa::Public::from_slice(&[0u8; 33]).unwrap().into();
-		BlockAuthor::ProBono(id)
-	}
-}
-
-#[cfg(feature = "runtime-benchmarks")]
-pub struct PalletBlockProducerMetadataBenchmarkHelper;
-
-#[cfg(feature = "runtime-benchmarks")]
-impl
-	pallet_block_producer_metadata::benchmarking::BenchmarkHelper<
-		BlockProducerMetadataType,
-		AccountId,
-	> for PalletBlockProducerMetadataBenchmarkHelper
-{
-	fn genesis_utxo() -> UtxoId {
-		Sidechain::genesis_utxo()
-	}
-
-	fn metadata() -> BlockProducerMetadataType {
-		BlockProducerMetadataType {
-			url: "https://cool.stuff/spo.json".try_into().unwrap(),
-			hash: SizedByteString::from([0; 32]),
-		}
-	}
-
-	fn cross_chain_pub_key() -> sidechain_domain::CrossChainPublicKey {
-		sidechain_domain::CrossChainPublicKey(
-			hex_literal::hex!("020a1091341fe5664bfa1782d5e04779689068c916b04cb365ec3153755684d9a1")
-				.to_vec(),
-		)
-	}
-
-	fn cross_chain_sign_key() -> pallet_block_producer_metadata::benchmarking::SecretKey {
-		pallet_block_producer_metadata::benchmarking::SecretKey::from_slice(&hex_literal::hex!(
-			"cb6df9de1efca7a3998a8ead4e02159d5fa99c3e0d4fd6432667390bb4726854"
-		))
-		.unwrap()
-	}
-
-	fn upsert_valid_before() -> u64 {
-		11751276163
-	}
-
-	fn delete_valid_before() -> u64 {
-		11751276230
-	}
-}
-
-impl pallet_block_production_log::Config for Runtime {
-	type BlockProducerId = BlockAuthor;
-	type WeightInfo = pallet_block_production_log::weights::SubstrateWeight<Runtime>;
-
-	fn current_slot() -> sp_consensus_slots::Slot {
-		let slot: u64 = pallet_aura::CurrentSlot::<Runtime>::get().into();
-		sp_consensus_slots::Slot::from(slot)
-	}
-
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = PalletBlockProductionLogBenchmarkHelper;
-}
-
-parameter_types! {
-	/// Amount of tokens to burn when making irreversible, forever association
-	pub const AddressAssociationBurnAmount: Balance = 1_000_000;
-}
-
-impl pallet_address_associations::Config for Runtime {
-	type WeightInfo = pallet_address_associations::weights::SubstrateWeight<Runtime>;
-
-	type PartnerChainAddress = AccountId;
-	type Currency = Balances;
-	type BurnAmount = AddressAssociationBurnAmount;
-
-	fn genesis_utxo() -> UtxoId {
-		Sidechain::genesis_utxo()
-	}
-
-	type OnNewAssociation = TestHelperPallet;
-}
-
-#[cfg(feature = "runtime-benchmarks")]
-pub struct PalletBlockProducerFeesBenchmarkHelper;
-
-#[cfg(feature = "runtime-benchmarks")]
-impl pallet_block_producer_fees::benchmarking::BenchmarkHelper<AccountId>
-	for PalletBlockProducerFeesBenchmarkHelper
-{
-	fn account_id(i: u8) -> AccountId {
-		sp_core::sr25519::Public::from_raw([i; 32]).into()
-	}
-}
-
-impl pallet_block_producer_fees::Config for Runtime {
-	type WeightInfo = ();
-
-	type HistoricalChangesPerProducer = ConstU16<5>;
-
-	fn current_slot() -> sp_consensus_slots::Slot {
-		let slot: u64 = pallet_aura::CurrentSlot::<Runtime>::get().into();
-		sp_consensus_slots::Slot::from(slot)
-	}
-
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = PalletBlockProducerFeesBenchmarkHelper;
-}
-
 parameter_types! {
 	/// Amount of tokens to hold when upserting block producer metadata.
 	pub const MetadataHoldAmount: Balance = 1_000_000;
-}
-
-impl pallet_block_producer_metadata::Config for Runtime {
-	type WeightInfo = pallet_block_producer_metadata::weights::SubstrateWeight<Runtime>;
-
-	type BlockProducerMetadata = BlockProducerMetadataType;
-
-	fn genesis_utxo() -> UtxoId {
-		Sidechain::genesis_utxo()
-	}
-
-	fn current_time() -> u64 {
-		pallet_timestamp::Now::<Runtime>::get() / 1000
-	}
-
-	type Currency = Balances;
-	type HoldAmount = MetadataHoldAmount;
-	type RuntimeHoldReason = RuntimeHoldReason;
-
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = PalletBlockProducerMetadataBenchmarkHelper;
-}
-
-impl pallet_block_participation::Config for Runtime {
-	type WeightInfo = pallet_block_participation::weights::SubstrateWeight<Runtime>;
-	type BlockAuthor = BlockAuthor;
-	type DelegatorId = DelegatorKey;
-
-	fn should_release_data(slot: sidechain_slots::Slot) -> Option<sidechain_slots::Slot> {
-		TestHelperPallet::should_release_participation_data(slot)
-	}
-
-	fn blocks_produced_up_to_slot(slot: Slot) -> impl Iterator<Item = (Slot, BlockAuthor)> {
-		BlockProductionLog::peek_prefix(slot)
-	}
-
-	fn discard_blocks_produced_up_to_slot(slot: Slot) {
-		BlockProductionLog::drop_prefix(&slot)
-	}
-
-	const TARGET_INHERENT_ID: InherentIdentifier = TestHelperPallet::INHERENT_IDENTIFIER;
 }
 
 parameter_types! {
 	pub const MaxChanges: u32 = 16;
 	pub const MaxKeyLength: u32 = 64;
 	pub const MaxValueLength: u32 = 512;
-}
-
-impl pallet_governed_map::Config for Runtime {
-	type MaxChanges = MaxChanges;
-	type MaxKeyLength = MaxKeyLength;
-	type MaxValueLength = MaxValueLength;
-	type WeightInfo = pallet_governed_map::weights::SubstrateWeight<Runtime>;
-
-	type OnGovernedMappingChange = TestHelperPallet;
-	type MainChainScriptsOrigin = EnsureRoot<Self::AccountId>;
-
-	#[cfg(feature = "runtime-benchmarks")]
-	type BenchmarkHelper = ();
 }
 
 parameter_types! {
@@ -711,19 +539,12 @@ construct_runtime!(
 		// Sidechain pallet must come after the Aura pallet, since it gets the slot number from it
 		Sidechain: pallet_sidechain,
 		SessionCommitteeManagement: pallet_session_validator_management,
-		AddressAssociations: pallet_address_associations,
-		BlockProducerFees: pallet_block_producer_fees,
-		BlockProducerMetadata: pallet_block_producer_metadata,
-		BlockProductionLog: pallet_block_production_log,
-		BlockParticipation: pallet_block_participation,
-		// pallet_grandpa reads pallet_session::pallet::CurrentIndex storage.
-		// Only stub implementation of pallet_session should be wired.
-		// Partner Chains session_manager ValidatorManagementSessionManager writes to pallet_session::pallet::CurrentIndex.
-		// ValidatorManagementSessionManager is wired in by pallet_partner_chains_session.
-		PalletSession: pallet_session,
-		// The order matters!! pallet_partner_chains_session needs to come last for correct initialization order
-		Session: pallet_partner_chains_session,
-		GovernedMap: pallet_governed_map,
+		// We exclude pallet's extrinsics to make them unavailable to users to submit.
+		// This is to ensure that registrations on Cardano coming in throught the
+		// `SessionCommitteeManagement` pallet are the only source of truth about keys
+		// and accounts of block producers.
+		Session: pallet_session exclude_parts { Call },
+		Historical: pallet_session::historical,
 		Bridge: pallet_partner_chains_bridge,
 		TestHelperPallet: crate::test_helper_pallet,
 	}
@@ -769,12 +590,6 @@ mod benches {
 		[pallet_balances, Balances]
 		[pallet_timestamp, Timestamp]
 		[pallet_sudo, Sudo]
-		[pallet_block_production_log, BlockProductionLog]
-		[pallet_address_associations, AddressAssociations]
-		[pallet_block_producer_fees, BlockProducerFees]
-		[pallet_block_producer_metadata, BlockProducerMetadata]
-		[pallet_block_participation, BlockParticipation]
-		[pallet_governed_map, GovernedMap]
 		[pallet_partner_chains_bridge, Bridge]
 		[pallet_session_validator_management, SessionCommitteeManagement]
 	);
@@ -917,7 +732,6 @@ impl_runtime_apis! {
 		}
 	}
 
-
 	impl frame_system_rpc_runtime_api::AccountNonceApi<Block, AccountId, Nonce> for Runtime {
 		fn account_nonce(account: AccountId) -> Nonce {
 			System::account_nonce(account)
@@ -1058,22 +872,6 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl sp_block_producer_metadata::BlockProducerMetadataApi<Block, BlockProducerMetadataType> for Runtime
-	{
-		fn get_metadata_for(
-			cross_chain_pub_key: &CrossChainPublicKey,
-		) -> Option<BlockProducerMetadataType> {
-			BlockProducerMetadata::get_metadata_for(&cross_chain_pub_key)
-		}
-	}
-
-	impl sp_block_producer_fees::BlockProducerFeesApi<Block, AccountId> for Runtime
-	{
-		fn get_all_fees() -> Vec<(AccountId, sp_block_producer_fees::PerTenThousands)> {
-			BlockProducerFees::get_all_latest().map(|(account_id, (_slot, fee))| (account_id, fee)).collect()
-		}
-	}
-
 	#[api_version(2)]
 	impl sp_session_validator_management::SessionValidatorManagementApi<
 		Block,
@@ -1110,39 +908,6 @@ impl_runtime_apis! {
 		}
 	}
 
-	impl sp_block_production_log::BlockProductionLogApi<Block, CommitteeMember<CrossChainPublic, SessionKeys>>  for Runtime {
-		fn get_author(slot: Slot) -> Option<CommitteeMember<CrossChainPublic, SessionKeys>> {
-			 SessionCommitteeManagement::get_current_authority_round_robin(*slot as usize)
-		}
-	}
-
-	impl sp_block_participation::BlockParticipationApi<Block, BlockAuthor> for Runtime {
-		fn should_release_data(slot: Slot) -> Option<Slot> {
-			BlockParticipation::should_release_data(slot)
-		}
-		fn blocks_produced_up_to_slot(slot: Slot) -> Vec<(Slot, BlockAuthor)> {
-			<Runtime as pallet_block_participation::Config>::blocks_produced_up_to_slot(slot).collect()
-		}
-		fn target_inherent_id() -> InherentIdentifier {
-			<Runtime as pallet_block_participation::Config>::TARGET_INHERENT_ID
-		}
-	}
-
-	impl sp_governed_map::GovernedMapIDPApi<Block> for Runtime {
-		fn is_initialized() -> bool {
-			GovernedMap::is_initialized()
-		}
-		fn get_current_state() -> BTreeMap<String, ByteString> {
-			GovernedMap::get_all_key_value_pairs_unbounded().collect()
-		}
-		fn get_main_chain_scripts() -> Option<MainChainScriptsV1> {
-			GovernedMap::get_main_chain_scripts()
-		}
-		fn get_pallet_version() -> u32 {
-			GovernedMap::get_version()
-		}
-	}
-
 	impl sp_partner_chains_bridge::TokenBridgeIDPRuntimeApi<Block> for Runtime {
 		fn get_pallet_version() -> u32 {
 			Bridge::get_pallet_version()
@@ -1167,6 +932,7 @@ mod tests {
 		inherent::ProvideInherent,
 		traits::{UnfilteredDispatchable, WhitelistedStorageKeys},
 	};
+	use pretty_assertions::assert_eq;
 	use sp_core::{Pair, hexdisplay::HexDisplay};
 	use sp_inherents::InherentData;
 	use std::collections::HashSet;
@@ -1206,6 +972,8 @@ mod tests {
 		new_test_ext().execute_with(|| {
 			// Needs to be run to initialize first slot and epoch numbers;
 			advance_block();
+
+			// Scheduled committee goes into effect after a 2-epoch delay
 			set_committee_through_inherent_data(&[alice()]);
 			until_epoch_after_finalizing(1, &|| {
 				assert_current_epoch!(0);
@@ -1217,30 +985,37 @@ mod tests {
 			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(1);
 				assert_grandpa_weights();
-				assert_grandpa_authorities!([alice()]);
+				assert_grandpa_authorities!([alice(), bob()]);
 			});
-
+			set_committee_through_inherent_data(&[alice()]);
 			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(2);
 				assert_grandpa_weights();
+				assert_grandpa_authorities!([alice()]);
+			});
+			set_committee_through_inherent_data(&[alice(), bob()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(3);
+				assert_grandpa_weights();
 				assert_grandpa_authorities!([bob()]);
 			});
-
-			// Authorities can be set as late as in the first block of new epoch, but it makes session last 1 block longer
-			set_committee_through_inherent_data(&[alice()]);
-			advance_block();
-			assert_current_epoch!(3);
-			assert_grandpa_authorities!([bob()]);
-			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH - 1, &|| {
-				assert_current_epoch!(3);
+			set_committee_through_inherent_data(&[bob(), alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(4);
 				assert_grandpa_weights();
 				assert_grandpa_authorities!([alice()]);
 			});
-
-			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(5);
 				assert_grandpa_weights();
 				assert_grandpa_authorities!([alice(), bob()]);
+			});
+
+			// When there's no new committees being scheduled, the last committee stays in power
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+				assert_grandpa_weights();
+				assert_grandpa_authorities!([bob(), alice()]);
 			});
 		});
 
@@ -1255,32 +1030,45 @@ mod tests {
 	#[test]
 	fn check_aura_authorities_rotation() {
 		new_test_ext().execute_with(|| {
+			// Needs to be run to initialize first slot and epoch numbers;
 			advance_block();
+
+			// Scheduled committee goes into effect after a 2-epoch delay
 			set_committee_through_inherent_data(&[alice()]);
-			until_epoch(1, &|| {
+			until_epoch_after_finalizing(1, &|| {
 				assert_current_epoch!(0);
 				assert_aura_authorities!([alice(), bob()]);
 			});
 
-			for_next_n_blocks(SLOTS_PER_EPOCH, &|| {
+			set_committee_through_inherent_data(&[bob()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
 				assert_current_epoch!(1);
+				assert_aura_authorities!([alice(), bob()]);
+			});
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(2);
 				assert_aura_authorities!([alice()]);
 			});
-
-			// Authorities can be set as late as in the first block of new epoch, but it makes session last 1 block longer
-			set_committee_through_inherent_data(&[bob()]);
-			assert_current_epoch!(2);
-			assert_aura_authorities!([alice()]);
-			advance_block();
 			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks(SLOTS_PER_EPOCH - 1, &|| {
-				assert_current_epoch!(2);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(3);
 				assert_aura_authorities!([bob()]);
 			});
-
-			set_committee_through_inherent_data(&[alice(), bob()]);
-			for_next_n_blocks(SLOTS_PER_EPOCH * 3, &|| {
+			set_committee_through_inherent_data(&[bob(), alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(4);
+				assert_aura_authorities!([alice()]);
+			});
+			set_committee_through_inherent_data(&[alice()]);
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH, &|| {
+				assert_current_epoch!(5);
 				assert_aura_authorities!([alice(), bob()]);
+			});
+
+			// When there's no new committees being scheduled, the last committee stays in power
+			for_next_n_blocks_after_finalizing(SLOTS_PER_EPOCH * 3, &|| {
+				assert_aura_authorities!([bob(), alice()]);
 			});
 		});
 	}
