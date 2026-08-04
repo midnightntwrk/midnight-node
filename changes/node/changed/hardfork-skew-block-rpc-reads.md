@@ -25,5 +25,5 @@ Not covered: `chain-indexer` reads `get_zswap_state_root` through a raw `state_c
 API rather than the `midnight_*` RPCs, so it is unaffected by this fix and still needs either
 to switch to `midnight_zswapStateRoot` or its own skip/fallback at that block.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/1982
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1959
