@@ -190,7 +190,7 @@ impl ToolkitTestHelper {
 			eprintln!(
 				"Skipping contract integration tests: compactc unavailable.\n\
                  Setup: build it from the compact submodule (`just compactc`, sets COMPACT_HOME),\n\
-                 or: cd util/toolkit-js && npx fetch-compactc --version={compactc_version}"
+                 or: cd util/toolkit-js && npm ci && ./node_modules/.bin/fetch-compactc --version={compactc_version}"
 			);
 			return false;
 		}

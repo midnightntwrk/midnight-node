@@ -259,7 +259,9 @@ rebuild-genesis-state:
     IF [ "$COMPILE_SIMPLE_MERKLE_TREE" = "true" ]
         COPY ledger/test-data/simple-merkle-tree.compact /tmp/simple-merkle-tree.compact
         WORKDIR /toolkit-js
-        RUN npx run-compactc /tmp/simple-merkle-tree.compact /test-static/simple-merkle-tree
+        # Resolve the bin from node_modules directly: bare `npx` falls back to the
+        # public npm registry when the bin is missing locally (unscoped name).
+        RUN ./node_modules/.bin/run-compactc /tmp/simple-merkle-tree.compact /test-static/simple-merkle-tree
         WORKDIR /
     ELSE
         COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
