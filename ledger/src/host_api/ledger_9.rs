@@ -3,7 +3,8 @@ use crate::ledger_9::Bridge;
 use crate::{
 	common::types::{
 		GasCost, Hash, LedgerStateKey, SystemTransactionAppliedStateRoot,
-		TransactionAppliedStateRoot, Tx,
+		SystemTransactionAppliedStateRootBytes, TransactionAppliedStateRoot,
+		TransactionAppliedStateRootBytes, Tx,
 	},
 	ledger_9::{BlockContext, types::LedgerApiError},
 };
@@ -64,6 +65,40 @@ pub trait Ledger9Bridge {
 		}
 	}
 
+	/// Version 1 keeps the pre-[`LedgerStateKey`] ABI: raw state-key bytes in, raw
+	/// bytes out. Host functions resolve by name and version, so the 2.0.x runtimes —
+	/// ledger-9 runtimes built before `LedgerStateKey` existed — still call
+	/// `_version_1`, and the node must keep executing them: every historical block
+	/// is replayed with the runtime it was authored with. Changing a version's
+	/// signature in place breaks that, and breaks it silently — both state-key forms
+	/// are fat pointers, so the wasm signature is unchanged and the import still
+	/// resolves. The old runtime then passes an unprefixed byte slice where the host
+	/// expects a SCALE-encoded enum and the decode fails mid-block, which reads as a
+	/// node that starts fine and never authors.
+	///
+	/// The input is treated as `Anchored`, which reproduces the old semantics
+	/// exactly — the successor state is persisted and the predecessor is never
+	/// unpersisted. Pre-2.1 runtimes therefore keep leaking intermediate states;
+	/// only runtimes that call version 2 get the garbage-collection behaviour.
+	///
+	/// Ledger 7 and 8 need no counterpart: the current runtime only ever calls the
+	/// ledger-9 bridge, so those two keep the legacy ABI and nothing else.
+	fn post_block_update(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let result = if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::post_block_update(*self, &state_key, block_context)
+		} else {
+			Bridge::<Signature, DbSeparate>::post_block_update(*self, &state_key, block_context)
+		};
+		result.map(LedgerStateKey::into_bytes)
+	}
+
+	// Current Enabled Version
+	#[version(2)]
 	fn post_block_update(
 		&mut self,
 		state_key: PassFatPointerAndDecode<LedgerStateKey>,
@@ -76,6 +111,31 @@ pub trait Ledger9Bridge {
 		}
 	}
 
+	/// Legacy ABI — see the version-1 [`Self::post_block_update`] comment.
+	fn apply_post_block_update(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let result = if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_post_block_update(
+				*self,
+				&state_key,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_post_block_update(
+				*self,
+				&state_key,
+				block_context,
+			)
+		};
+		result.map(LedgerStateKey::into_bytes)
+	}
+
+	// Current Enabled Version
+	#[version(2)]
 	fn apply_post_block_update(
 		&mut self,
 		state_key: PassFatPointerAndDecode<LedgerStateKey>,
@@ -110,6 +170,39 @@ pub trait Ledger9Bridge {
 	/*
 	 * apply_transaction()
 	 */
+	/// Legacy ABI — see the version-1 [`Self::post_block_update`] comment.
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRootBytes, LedgerApiError>> {
+		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let result = if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_transaction(
+				*self,
+				&state_key,
+				tx,
+				block_context,
+				true,
+				runtime_version,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_transaction(
+				*self,
+				&state_key,
+				tx,
+				block_context,
+				true,
+				runtime_version,
+			)
+		};
+		result.map(Into::into)
+	}
+
+	// Current Enabled Version
+	#[version(2)]
 	fn apply_transaction(
 		&mut self,
 		state_key: PassFatPointerAndDecode<LedgerStateKey>,
@@ -138,6 +231,35 @@ pub trait Ledger9Bridge {
 		}
 	}
 
+	/// Legacy ABI — see the version-1 [`Self::post_block_update`] comment.
+	fn apply_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootBytes, LedgerApiError>> {
+		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let result = if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_system_transaction(
+				*self,
+				&state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_system_transaction(
+				*self,
+				&state_key,
+				tx,
+				block_context,
+			)
+		};
+		result.map(Into::into)
+	}
+
+	// Current Enabled Version
+	#[version(2)]
 	fn apply_system_transaction(
 		&mut self,
 		state_key: PassFatPointerAndDecode<LedgerStateKey>,

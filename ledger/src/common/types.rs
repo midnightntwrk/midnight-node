@@ -106,6 +106,60 @@ pub struct SystemTransactionAppliedStateRoot {
 	pub tx_type: String,
 }
 
+/// Pre-[`LedgerStateKey`] shape of [`TransactionAppliedStateRoot`], carrying the
+/// state key as raw bytes.
+///
+/// Returned by the `_version_1` `apply_transaction` host functions, which must keep
+/// the wire format that runtimes built before `LedgerStateKey` existed decode. See
+/// the version-1 comment in [`crate::host_api::ledger_9`] for the full rationale.
+#[derive(Encode, Decode, DecodeWithMemTracking)]
+pub struct TransactionAppliedStateRootBytes {
+	pub state_root: Vec<u8>,
+	pub tx_hash: Hash,
+	pub all_applied: bool,
+	pub call_addresses: Vec<Vec<u8>>,
+	pub deploy_addresses: Vec<Vec<u8>>,
+	pub maintain_addresses: Vec<Vec<u8>>,
+	pub claim_rewards: Vec<u128>,
+	pub unshielded_utxos_created: Vec<UtxoInfo>,
+	pub unshielded_utxos_spent: Vec<UtxoInfo>,
+}
+
+impl From<TransactionAppliedStateRoot> for TransactionAppliedStateRootBytes {
+	fn from(value: TransactionAppliedStateRoot) -> Self {
+		Self {
+			state_root: value.state_root.into_bytes(),
+			tx_hash: value.tx_hash,
+			all_applied: value.all_applied,
+			call_addresses: value.call_addresses,
+			deploy_addresses: value.deploy_addresses,
+			maintain_addresses: value.maintain_addresses,
+			claim_rewards: value.claim_rewards,
+			unshielded_utxos_created: value.unshielded_utxos_created,
+			unshielded_utxos_spent: value.unshielded_utxos_spent,
+		}
+	}
+}
+
+/// Pre-[`LedgerStateKey`] shape of [`SystemTransactionAppliedStateRoot`], carrying
+/// the state key as raw bytes. See [`TransactionAppliedStateRootBytes`].
+#[derive(Encode, Decode, DecodeWithMemTracking)]
+pub struct SystemTransactionAppliedStateRootBytes {
+	pub state_root: Vec<u8>,
+	pub tx_hash: Hash,
+	pub tx_type: String,
+}
+
+impl From<SystemTransactionAppliedStateRoot> for SystemTransactionAppliedStateRootBytes {
+	fn from(value: SystemTransactionAppliedStateRoot) -> Self {
+		Self {
+			state_root: value.state_root.into_bytes(),
+			tx_hash: value.tx_hash,
+			tx_type: value.tx_type,
+		}
+	}
+}
+
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]
 pub enum Op {
 	Call { address: Vec<u8>, entry_point: Vec<u8> },
