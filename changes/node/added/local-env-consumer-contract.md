@@ -1,3 +1,4 @@
+#node #local-env
 # Let downstream repos run against a local-environment fork
 
 Downstream repos (first up: midnight-indexer) can now point their services at a
