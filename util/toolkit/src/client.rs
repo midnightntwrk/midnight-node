@@ -16,10 +16,8 @@ use std::time::Duration;
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
 use midnight_node_ledger_helpers::{LedgerParameters, deserialize};
-use midnight_node_metadata::{
-	midnight_metadata_0_22_0 as mn_meta_0_22_0, midnight_metadata_1_0_0 as mn_meta_1_0_0,
-	midnight_metadata_2_0_0 as mn_meta_2_0_0, midnight_metadata_latest as mn_meta,
-};
+use midnight_node_metadata::midnight_metadata_latest as mn_meta;
+use parity_scale_codec::Decode;
 use subxt::config::HashFor;
 use subxt::rpcs::methods::legacy::{BlockNumber, SystemProperties};
 use subxt::utils::{AccountId32, MultiAddress, MultiSignature};
@@ -128,49 +126,25 @@ impl MidnightNodeClient {
 				// verification for V0_21_0 blocks.
 				Ok(None)
 			},
-			RuntimeVersion::V0_22_0 => {
-				let call = mn_meta_0_22_0::runtime_apis::RuntimeApi
-					.midnight_runtime_api()
-					.get_ledger_state_root();
-				let root = at_block
+			// V0_22_0 onwards all expose `get_ledger_state_root() -> Result<Vec<u8>,
+			// LedgerApiError>`. Call it raw: subxt's static codegen validates the
+			// method's type hash against the metadata of the block being queried, and
+			// the checked-in `midnight_metadata_<version>.scale` snapshots are not
+			// faithful to the released runtimes of the same name (e.g. the 1.0.0 file
+			// carries ledger-9 types and a `C2MBridge` pallet the 1.0.1 release does
+			// not have), so validation fails with `IncompatibleCodegen` against a real
+			// pre-fork node. `call_raw` skips validation; the wire shape is stable.
+			_ => {
+				let raw = at_block
 					.runtime_apis()
-					.call(call)
-					.await?
-					.map_err(|e| ClientError::LedgerApi(format!("{e:?}")))?;
-				Ok(Some(root))
-			},
-			RuntimeVersion::V1_0_0 => {
-				let call = mn_meta_1_0_0::runtime_apis::RuntimeApi
-					.midnight_runtime_api()
-					.get_ledger_state_root();
-				let root = at_block
-					.runtime_apis()
-					.call(call)
-					.await?
-					.map_err(|e| ClientError::LedgerApi(format!("{e:?}")))?;
-				Ok(Some(root))
-			},
-			RuntimeVersion::V2_0_0 => {
-				let call = mn_meta_2_0_0::runtime_apis::RuntimeApi
-					.midnight_runtime_api()
-					.get_ledger_state_root();
-				let root = at_block
-					.runtime_apis()
-					.call(call)
-					.await?
-					.map_err(|e| ClientError::LedgerApi(format!("{e:?}")))?;
-				Ok(Some(root))
-			},
-			RuntimeVersion::V2_1_0 => {
-				let call = mn_meta::runtime_apis::RuntimeApi
-					.midnight_runtime_api()
-					.get_ledger_state_root();
-				let root = at_block
-					.runtime_apis()
-					.call(call)
-					.await?
-					.map_err(|e| ClientError::LedgerApi(format!("{e:?}")))?;
-				Ok(Some(root))
+					.call_raw("MidnightRuntimeApi_get_ledger_state_root", None)
+					.await?;
+				// `Result<Vec<u8>, LedgerApiError>`. The error variant's payload differs
+				// per runtime version, so decode it as opaque and report the raw bytes.
+				match Result::<Vec<u8>, ()>::decode(&mut &raw[..]) {
+					Ok(Ok(root)) => Ok(Some(root)),
+					_ => Err(ClientError::LedgerApi(hex::encode(&raw))),
+				}
 			},
 		}
 	}
