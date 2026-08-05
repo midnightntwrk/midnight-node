@@ -63,5 +63,5 @@ unsafe_allow_symlinks = false
 # See https://github.com/midnightntwrk/midnight-node/issues/1924
 tblock_correction_offset = 12
 # Blocks whose own timestamp is at or after this point never get the correction.
-# Tuesday, August 4, 2026 at 12:00:00 AM (UTC)
-tblock_correction_disable_after = 1785801600
+# Saturday, October 31, 2026 at 12:00:00 AM (UTC)
+tblock_correction_disable_after = 1793404800
