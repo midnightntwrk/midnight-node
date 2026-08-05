@@ -58,6 +58,7 @@ pub async fn execute(
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
+	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	// Exactly one of `--seed` / `--address` is set (clap's `wallet_id` group).
@@ -85,7 +86,7 @@ pub async fn execute(
 			&source_blocks,
 			wallet_cache.as_deref(),
 			&schemes,
-			0,
+			replay_checkpoint_interval,
 		)
 		.await;
 
@@ -124,7 +125,7 @@ pub async fn execute(
 			&source_blocks,
 			wallet_cache.as_deref(),
 			&WalletSchemes::new(),
-			0,
+			replay_checkpoint_interval,
 		)
 		.await;
 

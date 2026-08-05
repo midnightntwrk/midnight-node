@@ -1423,13 +1423,14 @@ pub async fn build_fork_aware_context_cached(
 	wallet_seeds: &[WalletSeed],
 	received_tx: &SourceTransactions,
 	cache_storage: Option<&dyn WalletStateCaching>,
+	replay_checkpoint_interval: u64,
 ) -> ForkAwareLedgerContext {
 	build_fork_aware_context_cached_with_schemes(
 		wallet_seeds,
 		received_tx,
 		cache_storage,
 		&WalletSchemes::new(),
-		0,
+		replay_checkpoint_interval,
 	)
 	.await
 }

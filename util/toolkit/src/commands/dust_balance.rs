@@ -95,6 +95,7 @@ pub async fn execute_many(
 	// check.
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
+	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	if args.dry_run {
@@ -125,7 +126,7 @@ pub async fn execute_many(
 		&source_blocks,
 		wallet_cache.as_deref(),
 		&schemes,
-		0,
+		replay_checkpoint_interval,
 	)
 	.await;
 	let jsons: Vec<DustBalanceJson> = fork_ctx.dispatch(
@@ -392,7 +393,7 @@ mod tests {
 		// the real chain head.
 		let test_start_secs =
 			SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_secs();
-		let _ = build_fork_aware_context_cached(&seeds, &source_blocks, Some(storage)).await;
+		let _ = build_fork_aware_context_cached(&seeds, &source_blocks, Some(storage), 0).await;
 
 		// Invariant (1) + (2): snapshot tagged at real head, never at 0.
 		let latest = storage.get_latest_ledger_height(chain_id).await;
@@ -443,7 +444,7 @@ mod tests {
 		// Second call: warm restore, must not panic and must apply the
 		// warp in-memory only.
 		let fork_ctx_2 =
-			build_fork_aware_context_cached(&seeds, &source_blocks, Some(storage)).await;
+			build_fork_aware_context_cached(&seeds, &source_blocks, Some(storage), 0).await;
 
 		// Invariant (3): in-memory warp re-applied on warm restore. The
 		// warm-path filter drops the synthetic (number=0 ≤ start_height),

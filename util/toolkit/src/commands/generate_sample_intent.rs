@@ -32,6 +32,7 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
+	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 	let source = TxGenerator::source(args.source, args.dry_run)
 		.await
 		.expect("failed to init tx source");
@@ -55,8 +56,13 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	let seeds =
 		vec![midnight_node_ledger_helpers::Wallet::<midnight_node_ledger_helpers::DefaultDB>::wallet_seed_decode(funding_seed_str)];
 
-	let fork_ctx =
-		build_fork_aware_context_cached(&seeds, &received_txs, wallet_cache.as_deref()).await;
+	let fork_ctx = build_fork_aware_context_cached(
+		&seeds,
+		&received_txs,
+		wallet_cache.as_deref(),
+		replay_checkpoint_interval,
+	)
+	.await;
 	let version = fork_ctx.version();
 
 	// Same pre-ledger-9 ECDSA guard as the `generate-txs`/`send-intent` path: reject an `ecdsa:`
