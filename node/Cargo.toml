@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "2.0.0"
+version = "2.1.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -49,7 +49,10 @@ sc-offchain.workspace = true
 sc-client-api.workspace = true
 sc-network.workspace = true
 sc-utils.workspace = true
+sp-consensus.workspace = true
 sp-consensus-aura.workspace = true
+sp-consensus-babe.workspace = true
+sp-consensus-slots.workspace = true
 sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true
 sp-state-machine.workspace = true
@@ -96,6 +99,7 @@ midnight-primitives-system-parameters = { workspace = true, default-features = t
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
+midnight-primitives-consensus-engine = { workspace = true, default-features = true }
 midnight-primitives-session-info = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
@@ -124,8 +128,7 @@ pallet-sidechain-rpc.workspace = true
 sidechain-slots.workspace = true
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-mc-hash = { workspace = true, features = ["mock"] }
-sp-partner-chains-consensus-aura.workspace = true
-sc-partner-chains-consensus-aura.workspace = true
+sc-partner-chains-consensus.workspace = true
 sp-session-validator-management-query.workspace = true
 partner-chains-node-commands.workspace = true
 partner-chains-cli.workspace = true

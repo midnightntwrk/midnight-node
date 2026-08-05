@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-runtime"
-version = "2.0.0"
+version = "2.1.0"
 description = "A fresh FRAME-based Substrate node, ready for hacking."
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 edition = "2024"
@@ -21,6 +21,7 @@ frame-system.workspace = true
 frame-try-runtime = { workspace = true, optional = true }
 frame-executive.workspace = true
 pallet-aura.workspace = true
+pallet-authorship.workspace = true
 pallet-babe.workspace = true
 pallet-beefy.workspace = true
 pallet-beefy-mmr.workspace = true
@@ -72,7 +73,6 @@ pallet-partner-chains-bridge.workspace = true
 pallet-sidechain.workspace = true
 pallet-session.workspace = true
 pallet-session-validator-management.workspace = true
-pallet-partner-chains-session.workspace = true
 sidechain-domain = { workspace = true, features = ["serde"] }
 sidechain-slots.workspace = true
 
@@ -82,10 +82,12 @@ pallet-midnight.workspace = true
 pallet-midnight-system.workspace = true
 pallet-system-parameters.workspace = true
 pallet-throttle.workspace = true
+pallet-consensus-engine.workspace = true
 pallet-version.workspace = true
 midnight-primitives-beefy.workspace = true
 midnight-primitives-federated-authority-observation.workspace = true
 midnight-primitives-session-info.workspace = true
+midnight-primitives-consensus-engine.workspace = true
 pallet-c2m-bridge.workspace = true
 pallet-cnight-observation.workspace = true
 midnight-primitives-cnight-observation.workspace = true
@@ -117,6 +119,7 @@ std = [
     "frame-system/std",
     "frame-try-runtime/std",
     "pallet-aura/std",
+    "pallet-authorship/std",
     "pallet-babe/std",
     "pallet-beefy/std",
     "pallet-beefy-mmr/std",
@@ -124,6 +127,7 @@ std = [
     "pallet-midnight/std",
     "pallet-system-parameters/std",
     "pallet-throttle/std",
+    "pallet-consensus-engine/std",
     "pallet-mmr/std",
     "pallet-partner-chains-bridge/std",
     "pallet-version/std",
@@ -163,7 +167,6 @@ std = [
     "pallet-sidechain/std",
     "pallet-session/std",
     "pallet-session-validator-management/std",
-    "pallet-partner-chains-session/std",
     "pallet-tx-pause/std",
     "sidechain-domain/std",
     "sidechain-slots/std",
@@ -172,6 +175,7 @@ std = [
     "midnight-primitives-beefy/std",
     "midnight-primitives-cnight-observation/std",
     "midnight-primitives-session-info/std",
+    "midnight-primitives-consensus-engine/std",
     "runtime-common/std"
 ]
 runtime-benchmarks = [
@@ -207,6 +211,7 @@ try-runtime = [
     "frame-system/try-runtime",
     "frame-support/try-runtime",
     "pallet-aura/try-runtime",
+    "pallet-authorship/try-runtime",
     "pallet-babe/try-runtime",
     "pallet-beefy/try-runtime",
     "pallet-beefy-mmr/try-runtime",
@@ -222,6 +227,7 @@ try-runtime = [
     "pallet-membership/try-runtime",
     "pallet-collective/try-runtime",
     "pallet-throttle/try-runtime",
+    "pallet-consensus-engine/try-runtime",
     "pallet-cnight-observation/try-runtime",
 ]
 experimental = []

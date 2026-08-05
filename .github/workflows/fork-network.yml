@@ -15,6 +15,15 @@ name: fork-network
 #             federated-authority governance flow
 #   full    - production-shaped rehearsal: image rollout first, then the
 #             runtime upgrade via governance
+#
+# node_image / new_node_image take full Docker image references — anything
+# `docker pull` accepts. Git branches, commit shas, and repo URLs are NOT
+# accepted. Examples:
+#   ghcr.io/midnight-ntwrk/midnight-node:1.0.0                            (release tag)
+#   ghcr.io/midnight-ntwrk/midnight-node:1.0.1-dev-6587676a9bb2-amd64     (CI build of a commit)
+# CI tags a per-commit image <version>-dev-<12-char-tree-hash>-amd64; find it
+# in the commit's continuous-integration run (image_tags step) or compute the
+# hash with `git rev-parse HEAD^{tree} | cut -c1-12`.
 
 on:
   workflow_dispatch:
@@ -32,10 +41,10 @@ on:
         required: true
         default: "368fd98"
       node_image:
-        description: "midnight-node image to fork from (must match the snapshot's runtime host fns)"
+        description: "Full Docker image reference to fork from, e.g. ghcr.io/midnight-ntwrk/midnight-node:1.0.0 or a CI tag like ghcr.io/midnight-ntwrk/midnight-node:1.0.1-dev-<tree-hash>-amd64 — not a git branch/sha/URL. Must match the snapshot's runtime host fns"
         required: true
       new_node_image:
-        description: "midnight-node image to upgrade to (image rollout target and/or runtime wasm source, per upgrade_mode)"
+        description: "Full Docker image reference to upgrade to (image rollout target and/or runtime wasm source, per upgrade_mode). Same format as node_image"
         required: true
       upgrade_mode:
         description: "Upgrade shape: roll the node image, submit a runtime upgrade via governance, or both in sequence"
@@ -101,10 +110,10 @@ jobs:
         run: df -h /
 
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
 
@@ -112,7 +121,7 @@ jobs:
       # the pull-or-inspect fallback below to hit cached images.
       - name: Login to GHCR
         if: ${{ env.ACT != 'true' }}
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c #v4.5.2
         with:
           registry: ghcr.io
           username: MidnightCI
