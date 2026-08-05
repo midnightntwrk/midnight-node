@@ -4,4 +4,4 @@
 October 31, 2026 at 12:00:00 AM (UTC), giving networks more time to sync past the historical
 blocks the correction covers before it is disabled.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/1995
