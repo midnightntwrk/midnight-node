@@ -64,12 +64,7 @@ When generating genesis configs, connecting to PostgreSQL fails with SSL-related
 By default, the genesis construction tool expects a secure (SSL/TLS) connection to the PostgreSQL `db-sync` database.
 
 **Solution:**
-If you are running a local database for development (e.g. `postgres://postgres:postgres@localhost:5432/cexplorer`), you must bypass the SSL requirement:
-
-```bash
-export ALLOW_NON_SSL=true
-```
-*Security Note: Use this environment variable only for local development.*
+The node strictly requires TLS for all PostgreSQL connections. You must configure your local PostgreSQL instance to support TLS. For a quick local setup, you can generate self-signed certificates and enable TLS in your `postgresql.conf`, or use a proxy like `stunnel`. Plaintext connections (and the legacy `ALLOW_NON_SSL` flag) are no longer supported.
 
 ---
 
