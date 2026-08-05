@@ -43,6 +43,10 @@ use super::{
 	read_state_key,
 };
 
+/// How often to log a heartbeat while the (synchronous, CPU-bound) arena verify/import runs on the
+/// blocking pool — so a slow, large-arena recovery is observable instead of looking hung.
+const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// Drives ledger-arena recovery against peers over the ledger-sync request/response protocol.
 ///
 /// `Network` is `?Sized` so the node's `Arc<dyn NetworkService>` handle (which has `NetworkRequest`
@@ -94,24 +98,61 @@ where
 				},
 			};
 
-			// Verification happens inside the importer (root must equal `state_key`); a verify
-			// failure means the peer served bad data — discard and try the next one.
-			// A reputation report on the peer belongs here (deferred).
-			match midnight_node_ledger::import_verified_ledger_snapshot(
-				self.unified,
-				&blob,
-				&state_key,
-			) {
-				Ok(()) => {
+			// Verification + import reconstructs the entire ledger arena via the native multi-pass
+			// `Arena::deserialize_sp` — a synchronous, CPU-bound computation that scales with arena
+			// size and can run for seconds (or, on a large load-tested arena, minutes). Running it
+			// inline on this async worker would monopolize a runtime thread, starve networking/RPC,
+			// and give no sign of progress (the node looks hung). Offload it to the blocking pool and
+			// emit a heartbeat so a slow recovery is observable. Verification still happens inside the
+			// importer (recomputed root must equal `state_key`); a failure means the peer served bad
+			// data — discard and try the next one. (A reputation report on the peer belongs here.)
+			let unified = self.unified;
+			let blob_len = blob.len();
+			let state_key = state_key.clone();
+			log::info!(
+				target: LOG_TARGET,
+				"Verifying + importing ledger arena snapshot from {peer} ({blob_len} bytes); \
+				 large arenas can take a while…"
+			);
+			let started = std::time::Instant::now();
+			let mut import = tokio::task::spawn_blocking(move || {
+				midnight_node_ledger::import_verified_ledger_snapshot(unified, &blob, &state_key)
+			});
+			let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
+			heartbeat.tick().await; // consume the immediate first tick
+			let outcome = loop {
+				tokio::select! {
+					res = &mut import => break res,
+					_ = heartbeat.tick() => log::info!(
+						target: LOG_TARGET,
+						"…still verifying ledger arena snapshot from {peer} ({:.0?} elapsed)",
+						started.elapsed(),
+					),
+				}
+			};
+			match outcome {
+				Ok(Ok(())) => {
 					log::info!(
 						target: LOG_TARGET,
-						"Recovered + verified ledger arena at {target:?} from {peer} ({} bytes)",
-						blob.len()
+						"Recovered + verified ledger arena at {target:?} from {peer} \
+						 ({blob_len} bytes) in {:.1?}",
+						started.elapsed(),
 					);
 					return Ok(());
 				},
-				Err(e) => {
-					log::warn!(target: LOG_TARGET, "ledger import from {peer} failed: {e}; trying next peer");
+				Ok(Err(e)) => {
+					log::warn!(
+						target: LOG_TARGET,
+						"ledger import from {peer} failed after {:.1?}: {e}; trying next peer",
+						started.elapsed(),
+					);
+				},
+				Err(join_err) => {
+					// The blocking task panicked or was cancelled — treat as a failed attempt.
+					log::warn!(
+						target: LOG_TARGET,
+						"ledger import task from {peer} did not complete: {join_err}; trying next peer",
+					);
 				},
 			}
 		}
