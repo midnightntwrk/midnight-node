@@ -174,8 +174,8 @@ CHECKPOINT_HASH_AFTER=$(rpc chain_getBlockHash "[${BLOCKS_BEFORE_SWITCH}]" | jq 
 [ "$CHECKPOINT_HASH_AFTER" = "$CHECKPOINT_HASH" ] ||
   fail "block ${BLOCKS_BEFORE_SWITCH} changed across the migration: ${CHECKPOINT_HASH} -> ${CHECKPOINT_HASH_AFTER}"
 
-# And the ledger state behind it came across intact. A resync from genesis, or a
-# half-copied ledger, would not reproduce this root.
+# And the ledger state behind it came across intact - a half-copied ledger
+# would not reproduce this root.
 LEDGER_ROOT_AFTER=$(rpc midnight_ledgerStateRoot "[\"${CHECKPOINT_HASH}\"]")
 [ "$LEDGER_ROOT_AFTER" = "$LEDGER_ROOT_BEFORE" ] ||
   fail "ledger state root at block ${BLOCKS_BEFORE_SWITCH} changed across the migration: ${LEDGER_ROOT_BEFORE} -> ${LEDGER_ROOT_AFTER}"
