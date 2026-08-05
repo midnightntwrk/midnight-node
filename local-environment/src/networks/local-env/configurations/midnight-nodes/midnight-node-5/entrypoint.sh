@@ -19,8 +19,7 @@ set -euxo pipefail
 # Source the mainchain env
 . /shared/mc.env
 
-# `unified` is the default; nodes 4 and 5 keep the `separate` layout covered.
-export STORAGE_SEPARATION=separate
+export STORAGE_SEPARATION=unified
 
 ./midnight-node \
   --chain=/shared/chain-spec.json \
