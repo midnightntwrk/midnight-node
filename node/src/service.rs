@@ -14,6 +14,11 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
 use crate::aura_to_babe_migration_keystore::AuraToBabeMigrationKeystore;
+use crate::babe_key_readiness::{
+	self,
+	probe::{BabeKeyProbe, ProbeCandidatesDataSource},
+	reporter::BabeKeyMetrics,
+};
 use crate::backend::{create_database_source, open_paritydb};
 use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
@@ -762,6 +767,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);
+		let babe_key_readiness_epoch_config = epoch_config.clone();
 		let inherent_config =
 			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source)
 				.map_err(|e| {
@@ -811,6 +817,39 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
 			),
 		);
+
+		// Report whether this validator holds a BABE key registered on Cardano, so
+		// operators can fix their keystore before the switch to BABE consensus.
+		// Remove after mainnet switch to BABE.
+		match prometheus_registry.as_ref().map(BabeKeyMetrics::register) {
+			Some(Ok(metrics)) => {
+				let candidates = ProbeCandidatesDataSource::new(
+					client.clone(),
+					data_sources.authority_selection.clone(),
+					babe_key_readiness_epoch_config,
+					Arc::new(SystemTimeSource),
+				);
+				let probe = BabeKeyProbe::new(Arc::new(candidates), keystore_container.keystore());
+
+				task_manager.spawn_handle().spawn(
+					"babe-key-readiness",
+					None,
+					babe_key_readiness::reporter::run(
+						probe,
+						metrics,
+						babe_key_readiness::reporter::DEFAULT_PROBE_INTERVAL,
+					),
+				);
+			},
+			Some(Err(err)) => log::error!(
+				target: "prometheus",
+				"Failed to register BABE key readiness metric: {err}",
+			),
+			None => log::debug!(
+				target: "prometheus",
+				"No Prometheus registry available; not reporting BABE key readiness",
+			),
+		}
 	}
 
 	if enable_grandpa {
