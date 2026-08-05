@@ -3,7 +3,6 @@ x-common-variables: &common-variables
   SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
   CARDANO_SECURITY_PARAMETER: 2160
   CARDANO_ACTIVE_SLOTS_COEFF: 0.05
-  BLOCK_STABILITY_MARGIN: 10
   MC__FIRST_EPOCH_TIMESTAMP_MILLIS: 1596059091000
   MC__FIRST_EPOCH_NUMBER: 208
   MC__EPOCH_DURATION_MILLIS: 432000000
@@ -61,6 +60,17 @@ services:
         --no-telemetry
         --name MidnightBootNode_Local
         --public-addr /dns4/boot-node/tcp/30333/ws
+        --reserved-only
+        --reserved-nodes /dns4/node1/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
+        --reserved-nodes /dns4/node2/tcp/30335/p2p/12D3KooWSCufgHzV4fCwRijfH2k3abrpAJxTKxEvN1FDuRXA2U9x
+        --reserved-nodes /dns4/node3/tcp/30336/p2p/12D3KooWSsChzF81YDUKpe9Uk5AHV5oqAaXAcWNSPYgoLauUk4st
+        --reserved-nodes /dns4/node4/tcp/30337/p2p/12D3KooWSuTq6MG9gPt7qZqLFKkYrfxMewTZhj9nmRHJkPwzWDG2
+        --reserved-nodes /dns4/node5/tcp/30338/p2p/12D3KooWMz5U7fR8mF5DNhZSSyFN8c19kU63xYopzDSNCzoFigYk
+        --reserved-nodes /dns4/node6/tcp/30339/p2p/12D3KooWE3quQCP6Xu7eXpcmmpwVS1KofWnPCBWYNHCswgaqwCso
+        --reserved-nodes /dns4/node7/tcp/30340/p2p/12D3KooWNcx5xKjEvC3gBkuQDEk2d4eJN5bxTDMMb3VLNqZ9VVuB
+        --reserved-nodes /dns4/node8/tcp/30341/p2p/12D3KooWQizATZJGTZSb8ShuaniCCaDCBQSczRQ38QgvWH3sJj9c
+        --reserved-nodes /dns4/node9/tcp/30342/p2p/12D3KooWNHBKuurUCGYNgrWXkNEhro54KonoEvKkjaB3QGKoMNzt
+        --reserved-nodes /dns4/node10/tcp/30343/p2p/12D3KooWF9PqFCdboSo7FTmbuwQqj2A49xvxutKQZCyWo6fXYqJw
 
   node1:
     <<: *node-common
@@ -102,6 +112,8 @@ services:
         --bootnodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --rpc-cors=all
         --public-addr /dns4/node1/tcp/30334
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -149,6 +161,8 @@ services:
         --unsafe-rpc-external
         --rpc-cors=all
         --public-addr /dns4/node2/tcp/30335
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -196,6 +210,8 @@ services:
         --unsafe-rpc-external
         --rpc-cors=all
         --public-addr /dns4/node3/tcp/30336
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -240,6 +256,8 @@ services:
         --port 30337
         --rpc-port 9944
         --public-addr /dns4/node4/tcp/30337
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -290,6 +308,8 @@ services:
         --unsafe-rpc-external
         --rpc-cors=all
         --public-addr /dns4/node5/tcp/30338
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -335,6 +355,8 @@ services:
         --port 30339
         --rpc-port 9944
         --public-addr /dns4/node6/tcp/30339
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -383,6 +405,8 @@ services:
         --port 30340
         --rpc-port 9944
         --public-addr /dns4/node7/tcp/30340
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-methods=Unsafe
@@ -432,6 +456,8 @@ services:
         --port 30341
         --rpc-port 9944
         --public-addr /dns4/node8/tcp/30341
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-methods=Unsafe
@@ -481,6 +507,8 @@ services:
         --port 30342
         --rpc-port 9944
         --public-addr /dns4/node9/tcp/30342
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-methods=Unsafe
@@ -530,6 +558,8 @@ services:
         --port 30343
         --rpc-port 9944
         --public-addr /dns4/node10/tcp/30343
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-methods=Unsafe
