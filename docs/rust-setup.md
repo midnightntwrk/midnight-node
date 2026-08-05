@@ -80,7 +80,7 @@ direnv allow
 
 ### Option B: Nix (Alternative)
 
-If you prefer Nix, the repository provides a Nix flake that sets up all dependencies (Rust, Earthly, Just) automatically in an isolated environment.
+If you prefer Nix, the repository provides a Nix flake that sets up most dependencies (Rust, Earthly) automatically in an isolated environment. Note that **Just** is not included in the Nix flake and still needs to be installed separately (see step 3 above).
 
 ```bash
 # Start the Nix development shell
