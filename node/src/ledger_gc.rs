@@ -96,7 +96,7 @@ impl LedgerGcDurability for AuxGcStore {
 }
 
 /// Unpersist lag = the effective `--state-pruning` window; `None` disables
-/// the worker (archive modes only).
+/// the worker (`ArchiveAll` only).
 ///
 /// A `None` *config* does not mean archive: the CLI's `[default: 256]` is
 /// help text only, so a node started without the flag reaches here with
@@ -106,10 +106,17 @@ impl LedgerGcDurability for AuxGcStore {
 /// bound (the bug this feature fixes). If the DB was created with a larger
 /// window and the flag later dropped, `have_state_at` (checked past the lag)
 /// still keeps tips live until actual pruning, so the mismatch is leak-only.
+///
+/// `ArchiveCanonical` is zero-lag: Substrate still drops non-canonical state,
+/// so abandoned-fork `post_block_update` roots would otherwise leak forever.
+/// With lag `0`, `state_still_live` relies on `have_state_at` alone — canonical
+/// archive history stays live; stale forks become reclaimable once their
+/// state is gone.
 fn discovery_depth(state_pruning: &Option<PruningMode>) -> Option<u32> {
 	match state_pruning.clone().unwrap_or_default() {
 		PruningMode::Constrained(c) => Some(c.max_blocks.unwrap_or(0)),
-		PruningMode::ArchiveAll | PruningMode::ArchiveCanonical => None,
+		PruningMode::ArchiveCanonical => Some(0),
+		PruningMode::ArchiveAll => None,
 	}
 }
 
@@ -149,15 +156,26 @@ fn read_anchored_tip(client: &FullClient, hash: BlockHash) -> Option<Vec<u8>> {
 }
 
 /// Record tips from newly finalized / abandoned-fork blocks (StateKey @ hash).
+///
+/// `bind_canonical` is false under `ArchiveCanonical`: canonical state is
+/// never dropped there, so canonical bindings could never be reclaimed —
+/// they would sit in the AuxStore blob forever, growing it by one entry per
+/// block and re-writing the whole blob every finality. Only stale forks are
+/// reclaimable in that mode. Fork capture is best-effort either way:
+/// non-canonical state is discarded in the same commit that emits this
+/// notification, so a tip unreadable by now leaks (bounded by fork rate).
 fn on_finality(
 	client: &FullClient,
 	index: &LedgerGcIndex,
 	note: &sc_client_api::FinalityNotification<Block>,
+	bind_canonical: bool,
 ) {
 	let mut binds = Vec::new();
-	for hash in note.tree_route.iter().copied().chain(std::iter::once(note.hash)) {
-		if let Some(tip) = read_anchored_tip(client, hash) {
-			binds.push((hash_bytes(&hash), tip));
+	if bind_canonical {
+		for hash in note.tree_route.iter().copied().chain(std::iter::once(note.hash)) {
+			if let Some(tip) = read_anchored_tip(client, hash) {
+				binds.push((hash_bytes(&hash), tip));
+			}
 		}
 	}
 	for stale in note.stale_blocks.iter() {
@@ -294,12 +312,13 @@ async fn run<S>(
 	sync: Arc<S>,
 	index: LedgerGcIndex,
 	depth: u32,
+	bind_canonical: bool,
 ) where
 	S: SyncOracle + Send + Sync + 'static,
 {
 	info!(
 		target: LOG_TARGET,
-		"♻️  Ledger GC started (depth={depth})"
+		"♻️  Ledger GC started (depth={depth}, bind_canonical={bind_canonical})"
 	);
 	info!(target: LOG_TARGET, "📦 GC index (tips={})", index.len());
 
@@ -323,9 +342,9 @@ async fn run<S>(
 			warn!(target: LOG_TARGET, "⚠️  Finality stream closed; stopping ledger GC");
 			return;
 		};
-		on_finality(&client, &index, &note);
+		on_finality(&client, &index, &note, bind_canonical);
 		while let Some(Some(note)) = finality.next().now_or_never() {
-			on_finality(&client, &index, &note);
+			on_finality(&client, &index, &note, bind_canonical);
 		}
 
 		let run_gc = if sync.is_major_syncing() {
@@ -364,7 +383,7 @@ async fn run_reclaim_slice(
 	}
 }
 
-/// Spawn the GC worker when state pruning is constrained.
+/// Spawn the GC worker unless pruning keeps *all* state (`ArchiveAll`).
 pub fn try_spawn<S>(
 	spawn: &SpawnTaskHandle,
 	client: Arc<FullClient>,
@@ -375,13 +394,27 @@ pub fn try_spawn<S>(
 ) where
 	S: SyncOracle + Send + Sync + 'static,
 {
+	// Derive the mode explicitly: `depth == 0` alone cannot distinguish
+	// `ArchiveCanonical` from `Constrained(max_blocks: None)` (which prunes
+	// canonical state immediately and so must bind canonical blocks and get
+	// the sync warning below).
+	let archive_canonical =
+		matches!(state_pruning.clone().unwrap_or_default(), PruningMode::ArchiveCanonical);
 	let Some(depth) = discovery_depth(state_pruning) else {
 		info!(
 			target: LOG_TARGET,
-			"ℹ️  Ledger GC disabled (archive pruning); tips retain full history"
+			"ℹ️  Ledger GC disabled (ArchiveAll); tips retain full history"
 		);
 		return;
 	};
+
+	if archive_canonical {
+		info!(
+			target: LOG_TARGET,
+			"ℹ️  Ledger GC enabled (ArchiveCanonical, zero-lag); reclaiming stale-fork \
+			 tips once Substrate drops non-canonical state"
+		);
+	}
 
 	// Tips are captured by reading `StateKey` at finality. During full sync,
 	// GRANDPA finalizes in justification-period batches and state pruning runs
@@ -389,8 +422,9 @@ pub fn try_spawn<S>(
 	// already unreadable when the notification arrives, so their tips can never
 	// be captured and leak permanently. A window >= the justification period
 	// closes that gap (warp sync is unaffected: skipped history is never
-	// executed, so nothing is persisted).
-	if depth < crate::service::GRANDPA_JUSTIFICATION_PERIOD {
+	// executed, so nothing is persisted). ArchiveCanonical keeps canonical
+	// state forever, so the constrained-window gap does not apply there.
+	if !archive_canonical && depth < crate::service::GRANDPA_JUSTIFICATION_PERIOD {
 		warn!(
 			target: LOG_TARGET,
 			"⚠️  --state-pruning {depth} is smaller than the GRANDPA justification period \
@@ -402,7 +436,13 @@ pub fn try_spawn<S>(
 		);
 	}
 
-	spawn.spawn("ledger-gc", Some("ledger"), run(client, backend, sync, index, depth));
+	// Canonical bindings are only reclaimable when canonical state can
+	// actually be pruned — i.e. everywhere except ArchiveCanonical.
+	spawn.spawn(
+		"ledger-gc",
+		Some("ledger"),
+		run(client, backend, sync, index, depth, !archive_canonical),
+	);
 }
 
 #[cfg(test)]
@@ -417,6 +457,7 @@ mod tests {
 		assert_eq!(discovery_depth(&Some(PruningMode::default())), Some(256));
 		assert_eq!(discovery_depth(&Some(PruningMode::blocks_pruning(1024))), Some(1024));
 		assert_eq!(discovery_depth(&Some(PruningMode::ArchiveAll)), None);
-		assert_eq!(discovery_depth(&Some(PruningMode::ArchiveCanonical)), None);
+		// ArchiveCanonical still drops non-canonical state — zero-lag worker.
+		assert_eq!(discovery_depth(&Some(PruningMode::ArchiveCanonical)), Some(0));
 	}
 }

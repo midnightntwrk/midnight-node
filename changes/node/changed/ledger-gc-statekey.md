@@ -10,7 +10,12 @@ debounced `have_state_at == false`, it retires the hash from AuxStore and then
 `unpersist`s each tip once (remove-first: the decrement is not idempotent, so
 a crash between the two steps costs a leak, never a double-decrement).
 Incremental arena `gc` runs after reclaim (deferred during major sync).
-Archive backends skip the worker.
+`ArchiveAll` skips the worker; `ArchiveCanonical` runs at zero lag, binds
+only stale-fork tips (canonical bindings could never be reclaimed and would
+grow the AuxStore blob forever) and reclaims them once `have_state_at` is
+false, keeping canonical archive history live. Fork capture at finality is
+best-effort: non-canonical state is dropped in the same finalize commit, so
+tips unreadable by then leak (bounded by fork rate).
 
 Capture happens at finality, so blocks whose state is pruned in the same
 batched-finalization commit (justification period > pruning window) can never
