@@ -15,6 +15,7 @@
 
 use crate::aura_to_babe_migration_keystore::AuraToBabeMigrationKeystore;
 use crate::backend::{create_database_source, open_paritydb};
+use crate::block_import_timing::TimingBlockImport;
 use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
 use crate::{
@@ -34,6 +35,7 @@ use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
 use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
+use sc_consensus::import_queue::BoxBlockImport;
 use sc_consensus_aura::{SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
@@ -481,9 +483,14 @@ pub fn new_partial(
 		),
 	);
 
+	// Wrapped so that every imported block reports the ledger's share of its
+	// import time on the `midnight::tx_timing` target (no-op unless enabled).
+	let timed_block_import =
+		TimingBlockImport::new(Box::new(grandpa_block_import.clone()) as BoxBlockImport<Block>);
+
 	let import_queue = sc_consensus::import_queue::BasicQueue::new(
 		verifier,
-		Box::new(grandpa_block_import.clone()),
+		Box::new(timed_block_import),
 		Some(Box::new(grandpa_block_import.clone())),
 		&task_manager.spawn_essential_handle(),
 		config.prometheus_registry(),

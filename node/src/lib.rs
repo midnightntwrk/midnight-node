@@ -18,6 +18,7 @@ mod aura_to_babe_migration_keystore;
 pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
 pub mod benchmarking;
+pub mod block_import_timing;
 pub mod cfg;
 pub mod chain_spec;
 pub mod cli;
