@@ -7,8 +7,10 @@ only when the tip decodes as a reclaimable ledger-8/9 arena key (pre-ledger-8
 roots are not indexed and leak). Pre-v3 raw `StateKey` blobs are accepted
 through the same filter. Once past the configured state-pruning lag and
 debounced `have_state_at == false`, it retires the hash from AuxStore and then
-`unpersist`s each tip once (remove-first: the decrement is not idempotent, so
-a crash between the two steps costs a leak, never a double-decrement).
+`unpersist`s each tip once and flushes the ledger write cache (remove-first:
+the decrement is not idempotent, so a crash between the two steps costs a
+leak, never a double-decrement; without the flush, shutdown could drop
+staged decrements after AuxStore retirement and leave roots unreclaimable).
 Incremental arena `gc` runs after reclaim (deferred during major sync).
 `ArchiveAll` skips the worker; `ArchiveCanonical` runs at zero lag, binds
 only stale-fork tips (canonical bindings could never be reclaimed and would

@@ -250,9 +250,11 @@ fn reclaim_slice(
 		// removal retry) would decrement the root twice and drive its count
 		// negative (fail-deadly). So durably drop the binding FIRST and only
 		// decrement once the removal is committed; any failure after that
-		// point costs at most a leak. On unpersist failure, re-bind
-		// best-effort so the tips retry next slice (re-bind failure = leak,
-		// still fail-safe).
+		// point costs at most a leak. `unpersist_tips` flushes the ledger
+		// write cache before Ok, so a shutdown before the next block flush
+		// cannot drop staged root-count decrements while bindings are gone.
+		// On unpersist failure, re-bind best-effort so the tips retry next
+		// slice (re-bind failure = leak, still fail-safe).
 		let removed_binds: Vec<(Vec<u8>, Vec<u8>)> =
 			snapshot.iter().filter(|(h, _)| to_remove.contains(h)).cloned().collect();
 		if !index.remove_bound(&to_remove) {

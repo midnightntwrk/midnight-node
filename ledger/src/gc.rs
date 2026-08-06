@@ -46,6 +46,12 @@ pub fn is_reclaimable_tip(tip: &[u8]) -> bool {
 
 /// Unpersist each tip once. Returns how many arena roots were decremented.
 ///
+/// On success the root-count decrements are flushed to the ledger DB before
+/// returning — `unpersist` alone only stages them in the write cache, and a
+/// process exit before the next block's normal ledger flush would otherwise
+/// drop the cache while the caller's AuxStore binding is already gone,
+/// leaving the on-disk root permanently unreclaimable.
+///
 /// **Not idempotent**: each call blindly decrements the tip's arena root
 /// count by one — calling twice for the same persist event drives the count
 /// negative (storage-core treats negative root counts as a fatal invariant
@@ -145,6 +151,10 @@ fn unpersist_in<D: DB + 'static>(tips: &[Vec<u8>]) -> Result<Option<usize>, Stri
 		for root in &roots {
 			backend.unpersist(root);
 		}
+		// Durability: AuxStore bindings are already retired by the caller.
+		// Without this flush, shutdown drops the write cache and the on-disk
+		// root counts stay elevated with nothing left to retry the decrement.
+		backend.flush_all_changes_to_db();
 	});
 	Ok(Some(roots.len()))
 }
