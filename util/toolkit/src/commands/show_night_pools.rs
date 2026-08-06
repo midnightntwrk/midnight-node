@@ -13,7 +13,7 @@
 
 //! Dump the NIGHT pools (Reserved / Locked / Unlocked) held in a network's `LedgerState`.
 
-use crate::commands::fork::{ledger_7, ledger_8, ledger_9};
+use crate::commands::fork::{ledger_8, ledger_9};
 use crate::source::Source;
 use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::create_file_wallet_cache;
@@ -67,7 +67,6 @@ pub async fn execute(
 		build_fork_aware_context_cached(&cache_seed, &source_txs, wallet_cache.as_deref()).await;
 
 	let night_pools = fork_ctx.dispatch(
-		|ctx| ledger_7::night_pools::night_pools(&ctx),
 		|ctx| ledger_8::night_pools::night_pools(&ctx),
 		|ctx| ledger_9::night_pools::night_pools(&ctx),
 	)?;

@@ -17,9 +17,8 @@ use clap::{Args, Subcommand, ValueEnum};
 pub use midnight_node_ledger_helpers::CoinSelectionStrategy;
 use midnight_node_ledger_helpers::fork::{
 	fork_aware_context::{
-		ForkAwareLedgerContext, apply_block_7, apply_block_8, apply_block_9,
-		block_context_from_raw_7, block_context_from_raw_8, block_context_from_raw_9,
-		fork_context_7_to_8, fork_context_8_to_9,
+		ForkAwareLedgerContext, apply_block_8, apply_block_9, block_context_from_raw_8,
+		block_context_from_raw_9, fork_context_8_to_9,
 	},
 	raw_block_data::{LedgerVersion, RawBlockData},
 };
@@ -519,10 +518,6 @@ pub enum ProverConfig {
 /// Error when constructing a versioned builder.
 #[derive(Debug, thiserror::Error)]
 pub enum BuilderConstructionError {
-	#[error("remote prover is not supported for ledger 7")]
-	RemoteProverNotSupportedForLedger7,
-	#[error("{0} builder is not supported for ledger 7")]
-	NotSupportedForLedger7(&'static str),
 	#[error(
 		"ECDSA unshielded (NIGHT) signatures are only supported from ledger 9; the source chain is \
 		 on {0:?}. Use a bare or `schnorr:`-prefixed seed (--seed / --source-seed / --wallet-seed / \
@@ -763,7 +758,6 @@ impl Builder {
 	///
 	/// Dispatches on `fork_ctx.version()`:
 	/// - Ledger8 → builds with ledger_8 types
-	/// - Ledger7 → builds with ledger_7 types (errors if remote prover requested)
 	/// - None (pass-through builders) → defaults to ledger_8
 	pub fn to_versioned_builder(
 		self,
@@ -775,19 +769,6 @@ impl Builder {
 			Some(ctx) => {
 				let self_clone = self.clone();
 				ctx.dispatch(
-					|context| {
-						if matches!(prover_config, ProverConfig::Remote(_)) {
-							return Err(
-								BuilderConstructionError::RemoteProverNotSupportedForLedger7,
-							);
-						}
-						let prover: Arc<
-							dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
-									midnight_node_ledger_helpers::ledger_7::DefaultDB,
-								>,
-						> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
-						self_clone.clone().to_builder_v7(Arc::new(context), prover)
-					},
 					|context| {
 						let prover = Self::make_prover_v8(prover_config);
 						Ok(self_clone.clone().to_builder_v8(Arc::new(context), prover))
@@ -933,62 +914,6 @@ impl Builder {
 			},
 			Builder::Send => constr(v8::DoNothingBuilder::new()),
 		}
-	}
-
-	fn to_builder_v7(
-		self,
-		context: Arc<
-			midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
-				midnight_node_ledger_helpers::ledger_7::DefaultDB,
-			>,
-		>,
-		prover: Arc<
-			dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
-					midnight_node_ledger_helpers::ledger_7::DefaultDB,
-				>,
-		>,
-	) -> Result<Box<dyn BuildTxs<Error = DynamicError>>, BuilderConstructionError> {
-		fn constr(
-			builder: impl BuildTxs + Send + Sync + 'static,
-		) -> Box<dyn BuildTxs<Error = DynamicError>> {
-			Box::new(DynamicTransactionBuilder { builder })
-		}
-
-		use builders::ledger_7 as v7;
-
-		Ok(match self {
-			Builder::Batches(args) => constr(v7::BatchesBuilder::new(args, context, prover)),
-			Builder::ContractSimple(call) => match call {
-				ContractCall::Deploy(args) => {
-					constr(v7::ContractDeployBuilder::new(args, context, prover))
-				},
-				ContractCall::Call(args) => {
-					constr(v7::ContractCallBuilder::new(args, context, prover))
-				},
-				ContractCall::Maintenance(args) => {
-					constr(v7::ContractMaintenanceBuilder::new(args, context, prover))
-				},
-			},
-			Builder::ContractCustom(args) => {
-				constr(v7::CustomContractBuilder::new(args, context, prover))
-			},
-			Builder::BatchSingleTx(_) => {
-				return Err(BuilderConstructionError::NotSupportedForLedger7("batch-single-tx"));
-			},
-			Builder::ClaimRewards(args) => {
-				constr(v7::ClaimRewardsBuilder::new(args, context, prover))
-			},
-			Builder::SingleTx(args) => {
-				constr(v7::single_tx::SingleTxBuilder::new(args, context, prover))
-			},
-			Builder::RegisterDustAddress(args) => {
-				constr(v7::RegisterDustAddressBuilder::new(args, context, prover))
-			},
-			Builder::DeregisterDustAddress(args) => {
-				constr(v7::DeregisterDustAddressBuilder::new(args, context, prover))
-			},
-			Builder::Send => constr(DoNothingBuilder::new()),
-		})
 	}
 
 	fn to_builder_passthrough(self) -> Box<dyn BuildTxs<Error = DynamicError>> {
@@ -1200,55 +1125,16 @@ async fn initialize_context(
 	}
 }
 
-type Db7 = midnight_node_ledger_helpers::ledger_7::DefaultDB;
 type Db8 = midnight_node_ledger_helpers::ledger_8::DefaultDB;
 type Db9 = midnight_node_ledger_helpers::ledger_9::DefaultDB;
 
 const DUST_BATCH_SIZE: usize = 1000;
 
 /// Interval between info-level "replay progress: …" log lines emitted from
-/// `replay_blocks_{7,8}`. Fine-grained per-batch progress remains at
+/// `replay_blocks_8`. Fine-grained per-batch progress remains at
 /// `log::debug!`; this throttle is what users see by default during a
 /// multi-hour replay so it doesn't look like the process has hung.
 const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(30);
-
-fn replay_blocks_7(
-	ctx: &midnight_node_ledger_helpers::ledger_7::context::LedgerContext<Db7>,
-	blocks_sorted_by_height: &[RawBlockData],
-) {
-	let mut events: Vec<midnight_node_ledger_helpers::ledger_7::Event<Db7>> = Vec::new();
-	let total = blocks_sorted_by_height.len();
-	let mut last_info_at = std::time::Instant::now();
-
-	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
-		events.extend(apply_block_7(ctx, block));
-
-		let is_last = i + 1 == total;
-		if events.len() >= DUST_BATCH_SIZE || is_last {
-			ctx.update_dust_from_events(events.as_slice());
-			events.clear();
-			log::debug!("[perf] replay_blocks_7 progress: {}/{} blocks", i + 1, total);
-		}
-
-		// Heartbeat lives outside the flush branch so a long stretch of
-		// blocks with no dust events still gets a "still alive" signal.
-		// Inside the flush branch this would only fire on `DUST_BATCH_SIZE`
-		// or `is_last`, which on sparse chains can be far apart.
-		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
-			log::info!(
-				"replay progress: {}/{} blocks ({:.1}%)",
-				i + 1,
-				total,
-				(i + 1) as f64 / total as f64 * 100.0,
-			);
-			last_info_at = std::time::Instant::now();
-		}
-	}
-
-	if let Some(block) = blocks_sorted_by_height.last() {
-		ctx.update_dust_from_block(&block_context_from_raw_7(block));
-	}
-}
 
 fn replay_blocks_8(
 	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
@@ -1307,7 +1193,7 @@ fn replay_blocks_9(
 			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
 		}
 
-		// See note in `replay_blocks_7`: heartbeat must be evaluated every
+		// See note in `replay_blocks_8`: heartbeat must be evaluated every
 		// iteration, not gated on the event-flush condition, so sparse
 		// chains still get a "still alive" signal at the 30 s cadence.
 		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
@@ -1353,7 +1239,7 @@ fn fork_8_to_9_if_needed(
 	}
 }
 
-/// Replays blocks across a potential Ledger7→Ledger8->Ledger9 fork boundaries,
+/// Replays blocks across a potential Ledger8->Ledger9 fork boundary,
 /// injecting cached wallets at their saved height.
 pub(crate) fn replay_blocks(
 	fork_ctx: ForkAwareLedgerContext,
@@ -1371,36 +1257,19 @@ pub(crate) fn replay_blocks(
 
 	let t_replay = std::time::Instant::now();
 
-	let fork_7_to_8_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger7);
-	let (l7_blocks, l8_and_l9_blocks) = blocks.split_at(fork_7_to_8_idx);
-	let fork_8_to_9_idx =
-		l8_and_l9_blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger8);
-	let (l8_blocks, l9_blocks) = l8_and_l9_blocks.split_at(fork_8_to_9_idx);
+	let fork_8_to_9_idx = blocks.partition_point(|b| b.ledger_version() == LedgerVersion::Ledger8);
+	let (l8_blocks, l9_blocks) = blocks.split_at(fork_8_to_9_idx);
 
 	// Replay each version's blocks in order, forking the context across the
-	// 7->8 and 8->9 boundaries as needed. The 8->9 fork performs a real state
+	// 8->9 boundary as needed. The fork performs a real state
 	// translation (see `fork_context_8_to_9`) so post-hardfork transactions are
 	// built at ledger 9, matching the upgraded chain.
 	let result = match fork_ctx {
-		ForkAwareLedgerContext::Ledger7(ctx7) => {
-			replay_blocks_7(&ctx7, l7_blocks);
-			if l8_blocks.is_empty() && l9_blocks.is_empty() {
-				assert!(cached.is_empty(), "cached wallets with no Ledger8/9 blocks");
-				ForkAwareLedgerContext::Ledger7(ctx7)
-			} else {
-				let ctx8 = timed!("fork_context_7_to_8", fork_context_7_to_8(ctx7))
-					.expect("fork 7 to 8 failed");
-				replay_blocks_8(&ctx8, l8_blocks);
-				fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes)
-			}
-		},
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
-			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger8 context");
 			replay_blocks_8(&ctx8, l8_blocks);
 			fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes)
 		},
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
-			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger9 context");
 			assert!(l8_blocks.is_empty(), "Ledger8 blocks with Ledger9 context");
 			replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
 			ForkAwareLedgerContext::Ledger9(ctx9)
@@ -1533,11 +1402,11 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	// this run (`register_dust_address`, batch builders) read the
 	// warped tblock as expected.
 	//
-	// Mirrors `replay_blocks_{7,8}`'s contract: `apply_block_*` only
+	// Mirrors `replay_blocks_8`'s contract: `apply_block_*` only
 	// updates the ledger context (and `latest_block_context`); the
 	// per-wallet dust TTL advance lives in `update_dust_from_block`,
-	// which `replay_blocks_{7,8}` always calls for the last replayed
-	// block (see their final stanzas). Without this second call the
+	// which `replay_blocks_8` always calls for the last replayed
+	// block (see its final stanza). Without this second call the
 	// warp would advance the *ledger's* clock but leave wallets' dust
 	// nullifier windows pinned at the real-head block's tblock, so
 	// transaction builders would read a warped `latest_block_context`
@@ -1545,12 +1414,6 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	// The synthetic has no transactions, so we don't need a matching
 	// `update_dust_from_events` — `apply_block_*` returns an empty
 	// event vec on a tx-less block.
-	//
-	// Handle both Ledger7 and Ledger8 variants: a pre-fork chain
-	// produces a `Ledger7` context out of step 5, and the raw/no-cache
-	// path replays the synthetic block inline in that case, so the
-	// cached path must do the same to preserve dust-warp semantics on
-	// pre-Ledger8 sources.
 	if let Some(synthetic) = synthetic_dust_warp {
 		match &fork_ctx {
 			ForkAwareLedgerContext::Ledger9(ctx9) => {
@@ -1560,10 +1423,6 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 			ForkAwareLedgerContext::Ledger8(ctx8) => {
 				let _events = apply_block_8(ctx8, synthetic);
 				ctx8.update_dust_from_block(&block_context_from_raw_8(synthetic));
-			},
-			ForkAwareLedgerContext::Ledger7(ctx7) => {
-				let _events = apply_block_7(ctx7, synthetic);
-				ctx7.update_dust_from_block(&block_context_from_raw_7(synthetic));
 			},
 		}
 	}
@@ -1584,10 +1443,6 @@ async fn try_save_cache_v2(
 		ForkAwareLedgerContext::Ledger9(ctx) => ctx,
 		ForkAwareLedgerContext::Ledger8(_) => {
 			log::debug!("Skipping cache save: context is still on ledger 8");
-			return;
-		},
-		ForkAwareLedgerContext::Ledger7(_) => {
-			log::debug!("Skipping cache save: context is still on ledger 7");
 			return;
 		},
 	};
@@ -1726,14 +1581,13 @@ mod tests {
 
 	#[test]
 	fn ecdsa_guard_rejects_pre_ledger9_sources() {
-		for version in [LedgerVersion::Ledger7, LedgerVersion::Ledger8] {
-			let err = ensure_ecdsa_supported(version, &ecdsa_schemes())
-				.expect_err("ECDSA on a pre-ledger-9 source must be rejected");
-			assert!(
-				matches!(err, BuilderConstructionError::EcdsaNotSupportedForLedger(v) if v == version),
-				"expected EcdsaNotSupportedForLedger({version:?}), got {err:?}",
-			);
-		}
+		let version = LedgerVersion::Ledger8;
+		let err = ensure_ecdsa_supported(version, &ecdsa_schemes())
+			.expect_err("ECDSA on a pre-ledger-9 source must be rejected");
+		assert!(
+			matches!(err, BuilderConstructionError::EcdsaNotSupportedForLedger(v) if v == version),
+			"expected EcdsaNotSupportedForLedger({version:?}), got {err:?}",
+		);
 	}
 
 	#[test]
@@ -1810,7 +1664,7 @@ mod tests {
 		let schemes = contract_call_wallet_schemes(&call)
 			.expect("distinct funding + ECDSA committee is fine");
 		assert_eq!(schemes.len(), 1, "only the ECDSA authority should be recorded");
-		ensure_ecdsa_supported(LedgerVersion::Ledger7, &schemes)
+		ensure_ecdsa_supported(LedgerVersion::Ledger8, &schemes)
 			.expect_err("an ECDSA committee on a pre-ledger-9 source must be rejected");
 		assert!(ensure_ecdsa_supported(LedgerVersion::Ledger9, &schemes).is_ok());
 	}
@@ -1835,7 +1689,7 @@ mod tests {
 			WalletSeed::Short([7u8; 16]),
 			UnshieldedSignatureScheme::Schnorr,
 		)]);
-		for version in [LedgerVersion::Ledger7, LedgerVersion::Ledger8, LedgerVersion::Ledger9] {
+		for version in [LedgerVersion::Ledger8, LedgerVersion::Ledger9] {
 			assert!(ensure_ecdsa_supported(version, &WalletSchemes::new()).is_ok());
 			assert!(ensure_ecdsa_supported(version, &schnorr).is_ok());
 		}

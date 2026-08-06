@@ -30,44 +30,6 @@ mod utils;
 pub mod host_api;
 
 #[path = "versions"]
-pub mod ledger_7 {
-	#[cfg(feature = "std")]
-	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
-		ledger_storage as ledger_storage_local,
-		midnight_node_ledger_helpers::ledger_7 as helpers_local,
-		midnight_serialize as midnight_serialize_local, mn_ledger as mn_ledger_local,
-		onchain_runtime as onchain_runtime_local, transient_crypto as transient_crypto_local,
-		zswap as zswap_local,
-	};
-
-	#[allow(clippy::duplicate_mod)]
-	#[path = "block_context/pre_ledger_8.rs"]
-	mod block_context;
-	pub use block_context::*;
-
-	#[allow(clippy::duplicate_mod)]
-	#[path = "error_ext/ledger_7.rs"]
-	mod error_ext;
-
-	#[path = "system_tx/ledger_7.rs"]
-	mod system_tx;
-
-	#[path = "guaranteed_validation/ledger_7.rs"]
-	mod guaranteed_validation;
-
-	#[path = "post_block_update/ledger_7.rs"]
-	mod post_block_update;
-
-	pub const CRATE_NAME: &str = "mn-ledger";
-	#[cfg(feature = "std")]
-	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
-	#[allow(clippy::duplicate_mod)]
-	mod common;
-	pub use common::*;
-}
-
-#[path = "versions"]
 pub mod ledger_8 {
 	#[cfg(feature = "std")]
 	pub(crate) use {
@@ -149,7 +111,6 @@ pub use ledger_9 as latest;
 /// example after Tokio/node shutdown completes) to ensure DB-backed storage is
 /// released deterministically.
 pub fn drop_all_default_storage() {
-	ledger_7::storage::drop_default_storage_if_exists();
 	ledger_8::storage::drop_default_storage_if_exists();
 	ledger_9::storage::drop_default_storage_if_exists();
 }

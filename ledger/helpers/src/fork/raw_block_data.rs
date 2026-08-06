@@ -58,7 +58,6 @@ mod hex_or_bytes_32 {
 /// Which ledger version a block was produced under.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LedgerVersion {
-	Ledger7,
 	Ledger8,
 	#[default]
 	Ledger9,
@@ -85,7 +84,7 @@ impl RawTransaction {
 /// Version-agnostic block data that stores transactions as raw serialized bytes.
 ///
 /// Deserialization into version-specific ledger types happens lazily in
-/// `apply_block_7` / `apply_block_8`, which use the correct types for
+/// `apply_block_8` / `apply_block_9`, which use the correct types for
 /// the respective ledger version.
 ///
 /// The `spec_version` field stores the raw runtime spec version number.
@@ -115,11 +114,10 @@ pub struct RawBlockData {
 impl LedgerVersion {
 	/// Convert a raw spec version to a `LedgerVersion`.
 	///
-	/// Versions up to 0.21.x use Ledger7, 0.22.0..=1.x.y use Ledger8, 2.0.0+ uses Ledger9.
+	/// Versions 0.22.0..=1.x.y use Ledger8, 2.0.0+ uses Ledger9. Versions below 0.22.0
+	/// (pre-ledger-8) are no longer supported.
 	pub fn from_spec_version(spec_version: u32) -> Option<Self> {
 		match spec_version {
-			#[allow(clippy::zero_prefixed_literal)]
-			000_017_000..=000_021_999 => Some(LedgerVersion::Ledger7),
 			#[allow(clippy::zero_prefixed_literal)]
 			000_022_000..=001_999_999 => Some(LedgerVersion::Ledger8),
 			#[allow(clippy::zero_prefixed_literal)]

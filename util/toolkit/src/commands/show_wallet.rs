@@ -90,14 +90,6 @@ pub async fn execute(
 
 		Ok(fork_ctx.dispatch(
 			|ctx| {
-				let seed_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed.clone());
-				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
-					&ctx, seed_v7, args.debug,
-				);
-				fork_wallet_result_v7(result)
-			},
-			|ctx| {
 			let seed_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(seed.clone());
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
@@ -128,16 +120,6 @@ pub async fn execute(
 
 		let address_clone = address.clone();
 		Ok(fork_ctx.dispatch(
-			|ctx| {
-				let addr_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_address(
-						&address_clone,
-					);
-				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_address(
-					&ctx, addr_v7,
-				);
-				fork_wallet_result_v7(result)
-			},
 			|ctx| {
 				let addr_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_address(
@@ -172,16 +154,6 @@ fn fork_wallet_result_v8(
 	result: crate::commands::fork::ledger_8::show_wallet::ShowWalletResult,
 ) -> ShowWalletResult {
 	use crate::commands::fork::ledger_8::show_wallet::ShowWalletResult as R;
-	match result {
-		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
-		R::Json(j) => ShowWalletResult::Json(j),
-	}
-}
-
-fn fork_wallet_result_v7(
-	result: crate::commands::fork::ledger_7::show_wallet::ShowWalletResult,
-) -> ShowWalletResult {
-	use crate::commands::fork::ledger_7::show_wallet::ShowWalletResult as R;
 	match result {
 		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
 		R::Json(j) => ShowWalletResult::Json(j),
