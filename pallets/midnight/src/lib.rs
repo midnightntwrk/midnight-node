@@ -350,7 +350,8 @@ pub mod pallet {
 		}
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
-			// Post Block Ledger Update
+			// Post Block Ledger Update. The tip is persisted as a wrapper tagged
+			// with `System::Number` (known here; the block hash is not).
 			let state_key = Self::state_key();
 			let block_context = Self::get_block_context();
 
