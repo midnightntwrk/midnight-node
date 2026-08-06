@@ -62,9 +62,7 @@ use {
 		db::{DB, ParityDb},
 		storage::{default_storage, set_default_storage},
 	},
-	midnight_primitives_ledger::{
-		LedgerMetricsExt, LedgerStorageExt, TBlockCorrection, TBlockCorrectionExt,
-	},
+	midnight_primitives_ledger::{LedgerMetricsExt, LedgerStorageExt},
 	mn_ledger_local::{
 		dust::InitialNonce,
 		structure::{
@@ -284,6 +282,7 @@ where
 		block_context: BlockContext,
 		should_skip_failed_segments: bool,
 		runtime_version: u32,
+		skew_tblock: bool,
 	) -> Result<TransactionAppliedStateRoot, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -321,15 +320,8 @@ where
 
 		// Use cached VerifiedTransaction if available
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
-		let tblock_ext = externalities.extension::<TBlockCorrectionExt>();
-		let tblock_correction = tblock_ext.map(|e| &e.0);
-		let verified_tx = Self::get_verified_transaction(
-			&ledger,
-			&tx,
-			&block_context,
-			&cache_key,
-			tblock_correction,
-		)?;
+		let verified_tx =
+			Self::get_verified_transaction(&ledger, &tx, &block_context, &cache_key, skew_tblock)?;
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Building tx context (elapsed_ms={})",
@@ -602,6 +594,7 @@ where
 		tx_serialized: &[u8],
 		block_context: BlockContext,
 		runtime_version: u32,
+		skew_tblock: bool,
 	) -> Result<(), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -612,15 +605,13 @@ where
 
 		let cache_key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
 
-		let tblock_ext = externalities.extension::<TBlockCorrectionExt>();
-		let tblock_correction = tblock_ext.map(|e| &e.0);
 		// Perform dry-run validation with caching
 		let was_cached = Self::do_validate_guaranteed_execution(
 			&ledger,
 			&tx,
 			&block_context,
 			&cache_key,
-			tblock_correction,
+			skew_tblock,
 		)?;
 
 		// Write Prometheus metrics
@@ -874,7 +865,7 @@ where
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
-		tblock_correction: Option<&TBlockCorrection>,
+		skew_tblock: bool,
 	) -> Result<VerifiedTransaction<D>, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -898,7 +889,7 @@ where
 		// Cache miss: compute VerifiedTransaction
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
-		let tblock = well_formed_tblock(ledger, block_context, tblock_correction);
+		let tblock = well_formed_tblock(ledger, block_context, skew_tblock);
 		let verified_tx =
 			tx.0.well_formed(
 				&ctx.ref_state,
@@ -944,7 +935,7 @@ where
 		// Cache miss: transaction is entering the mempool or being re-validated
 		let tx_hash_hex = hex::encode(tx.hash());
 		let verified_tx =
-			match Self::get_verified_transaction(ledger, tx, block_context, tx_hash, None) {
+			match Self::get_verified_transaction(ledger, tx, block_context, tx_hash, false) {
 				Ok(vt) => vt,
 				Err(e) => {
 					log::warn!(
@@ -996,7 +987,7 @@ where
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
-		tblock_correction: Option<&TBlockCorrection>,
+		skew_tblock: bool,
 	) -> Result<bool, LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -1014,7 +1005,7 @@ where
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
 		let verified_tx =
-			Self::get_verified_transaction(ledger, tx, block_context, tx_hash, tblock_correction)?;
+			Self::get_verified_transaction(ledger, tx, block_context, tx_hash, skew_tblock)?;
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 		let (_next_state, result) = ledger.state.apply(&verified_tx, &ctx);
@@ -1150,11 +1141,16 @@ fn create_nonce(separator: &[u8], block_hash: &[u8], output_number: u8) -> Nonce
 	Nonce(HashOutput(h256.0))
 }
 
+/// `slot_duration_secs * (1 + MaxSkippedSlots)` = 6 * 2. Fixed for every chain this correction
+/// can apply to: those blocks were produced under `SLOT_DURATION = 6s` and `MaxSkippedSlots = 1`.
+#[cfg(feature = "std")]
+const TBLOCK_CORRECTION_OFFSET_SECS: i128 = 12;
+
 /// The `tblock` to run `well_formed` against.
 ///
-/// Blocks produced before `disable_after` can contain a *first* transaction whose `ctime` runs
-/// ahead of the block timestamp: the producing node served that transaction's `well_formed`
-/// result from the strict cache, where it had been verified during mempool ingress at
+/// Historical blocks can contain a *first* transaction whose `ctime` runs ahead of the block
+/// timestamp: the producing node served that transaction's `well_formed` result from the strict
+/// cache, where it had been verified during mempool ingress at
 /// `ParentTimestamp + slot_duration * (1 + MaxSkippedSlots)` (see
 /// `<pallet_midnight::Pallet as ValidateUnsigned>::validate_unsigned`). Reproduce that exact
 /// timestamp — and only for the first ledger tx in a block, which is the only position where
@@ -1165,22 +1161,28 @@ fn create_nonce(separator: &[u8], block_hash: &[u8], output_number: u8) -> Nonce
 /// `parent + offset` against the parent's post-block state, which is exactly the state and key
 /// `pre_dispatch` then looked up. The first ledger tx in a block was therefore *always* verified
 /// at `parent + offset`, never at the block's own timestamp — so this is a single unconditional
-/// rule, a total function of `(block_context, is_block_start, config)` evaluated identically on
-/// every node, with no try-then-retry branch for consensus to depend on.
+/// rule, a total function of `(block_context, is_block_start)` evaluated identically on every
+/// node, with no try-then-retry branch for consensus to depend on.
+///
+/// The loophole is gated on the host-function version, not a date: version 1 of
+/// `apply_transaction`/`validate_guaranteed_execution` passes `skew_tblock = true`, version 2
+/// passes `false`. Historical blocks replay against whichever runtime was on-chain at that
+/// height, so pre-upgrade wasm imports v1 and still corrects; from the `set_code` block onward
+/// the new wasm imports v2 and the loophole is closed. No clock, no node config.
 ///
 /// See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 #[cfg(feature = "std")]
 fn well_formed_tblock<D: DB>(
 	ledger: &Ledger<D>,
 	block_context: &BlockContext,
-	tblock_correction: Option<&TBlockCorrection>,
+	skew_tblock: bool,
 ) -> Timestamp {
-	if let Some(tc) = tblock_correction
-		&& block_context.tblock < tc.disable_after
+	if skew_tblock
 		&& ledger.is_block_start()
 		&& let Some(parent_block_time) = block_context.parent_block_time()
 	{
-		Timestamp::from_secs(parent_block_time) + DurationLedger::from_secs(tc.offset as i128)
+		Timestamp::from_secs(parent_block_time)
+			+ DurationLedger::from_secs(TBLOCK_CORRECTION_OFFSET_SECS)
 	} else {
 		Timestamp::from_secs(block_context.tblock)
 	}
@@ -1210,18 +1212,11 @@ mod tests {
 	use ledger_storage_local::DefaultDB;
 	use mn_ledger_local::structure::LedgerState;
 
-	/// Matches `res/cfg/default.toml`: `slot_duration_secs * (1 + MaxSkippedSlots)` = 6 * 2.
-	const OFFSET: i64 = 12;
 	/// Preview #128537, the block whose first transaction motivated the correction.
 	const BLOCK_TBLOCK: u64 = 1784987076;
-	const DISABLE_AFTER: u64 = 1785801600;
 
 	fn block_context() -> BlockContext {
 		BlockContext { tblock: BLOCK_TBLOCK, ..Default::default() }
-	}
-
-	fn correction(disable_after: u64) -> TBlockCorrection {
-		TBlockCorrection { offset: OFFSET, disable_after }
 	}
 
 	/// A ledger at the start of a block: nothing applied, `block_fullness` still zero.
@@ -1238,8 +1233,7 @@ mod tests {
 	#[test]
 	fn well_formed_tblock_corrects_the_first_tx_in_a_historical_block() {
 		let bc = block_context();
-		let tblock =
-			well_formed_tblock(&ledger_at_block_start(), &bc, Some(&correction(DISABLE_AFTER)));
+		let tblock = well_formed_tblock(&ledger_at_block_start(), &bc, true);
 
 		match bc.parent_block_time() {
 			// Ledger 8+: the tx is verified at the parent's timestamp plus the mempool skew,
@@ -1247,7 +1241,8 @@ mod tests {
 			Some(parent) => {
 				assert_eq!(
 					tblock,
-					Timestamp::from_secs(parent) + DurationLedger::from_secs(OFFSET as i128),
+					Timestamp::from_secs(parent)
+						+ DurationLedger::from_secs(TBLOCK_CORRECTION_OFFSET_SECS),
 				);
 				assert_ne!(
 					tblock,
@@ -1260,25 +1255,12 @@ mod tests {
 		}
 	}
 
+	/// What host-function version 2 — the one the upgraded runtime imports — asks for.
 	#[test]
-	fn well_formed_tblock_is_uncorrected_without_a_configured_correction() {
+	fn well_formed_tblock_is_uncorrected_when_the_correction_is_off() {
 		let bc = block_context();
 		assert_eq!(
-			well_formed_tblock(&ledger_at_block_start(), &bc, None),
-			Timestamp::from_secs(BLOCK_TBLOCK),
-		);
-	}
-
-	#[test]
-	fn well_formed_tblock_is_uncorrected_at_or_after_disable_after() {
-		let bc = block_context();
-		// `disable_after` is exclusive of the correction: a block at the cutoff is not corrected.
-		assert_eq!(
-			well_formed_tblock(&ledger_at_block_start(), &bc, Some(&correction(BLOCK_TBLOCK))),
-			Timestamp::from_secs(BLOCK_TBLOCK),
-		);
-		assert_eq!(
-			well_formed_tblock(&ledger_at_block_start(), &bc, Some(&correction(BLOCK_TBLOCK - 1))),
+			well_formed_tblock(&ledger_at_block_start(), &bc, false),
 			Timestamp::from_secs(BLOCK_TBLOCK),
 		);
 	}
@@ -1287,7 +1269,7 @@ mod tests {
 	fn well_formed_tblock_is_uncorrected_after_the_first_tx_in_a_block() {
 		let bc = block_context();
 		assert_eq!(
-			well_formed_tblock(&ledger_mid_block(), &bc, Some(&correction(DISABLE_AFTER))),
+			well_formed_tblock(&ledger_mid_block(), &bc, true),
 			Timestamp::from_secs(BLOCK_TBLOCK),
 		);
 	}
