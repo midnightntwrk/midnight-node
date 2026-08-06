@@ -20,6 +20,7 @@ import { after, describe, it } from "node:test";
 import { globSync } from "glob";
 import YAML from "yaml";
 
+import { shouldRefreshForkManifest } from "../commands/imageUpgrade";
 import { forkManifestPath, writeForkManifest } from "./forkManifest";
 
 const cleanup: string[] = [];
@@ -172,6 +173,17 @@ services:
       "ghcr.io/midnight-ntwrk/midnight-node:to",
     );
     assert.equal(m.MIDNIGHT_FORK_NODE_TAG, "to");
+  });
+});
+
+describe("image-upgrade manifest refresh", () => {
+  it("does not refresh the primary manifest image for a non-primary rollout", () => {
+    assert.equal(shouldRefreshForkManifest(["node2"], "node1"), false);
+  });
+
+  it("refreshes the manifest when the primary validator is rolled", () => {
+    assert.equal(shouldRefreshForkManifest(["node1"], "node1"), true);
+    assert.equal(shouldRefreshForkManifest(["node2", "node1"], "node1"), true);
   });
 });
 
