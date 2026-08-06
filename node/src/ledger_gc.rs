@@ -14,9 +14,11 @@
 // limitations under the License.
 
 //! Ledger GC worker: index Anchored tips from Substrate `StateKey` at finality,
-//! then `unpersist` them once Substrate state pruning drops the block.
+//! then `unpersist` them once Substrate state pruning drops the block; also
+//! runs incremental arena `gc` to cull zero-ref transient/intermediate nodes.
 //!
-//! AuxStore holds `(block_hash → tip_bytes)`.
+//! AuxStore holds `(block_hash → tip_bytes)`. Under `ArchiveAll`, tip reclaim
+//! is skipped (history tips stay) but the arena GC loop still runs.
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
@@ -95,14 +97,17 @@ impl LedgerGcDurability for AuxGcStore {
 	}
 }
 
-/// Unpersist lag = the effective `--state-pruning` window; `None` disables
-/// the worker (`ArchiveAll` only).
+/// Unpersist lag = the effective `--state-pruning` window.
+///
+/// `None` means tip reclaim is off (`ArchiveAll` only) — Anchored history
+/// tips must stay — but the arena GC loop still runs to cull zero-ref
+/// transient/intermediate nodes unpersisted during block execution.
 ///
 /// A `None` *config* does not mean archive: the CLI's `[default: 256]` is
 /// help text only, so a node started without the flag reaches here with
 /// `None` while sc-client-db prunes at `PruningMode::default()` (constrained,
 /// 256). Map it through that same default — otherwise default-configured
-/// nodes silently skip the worker and `ledger_storage` re-grows without
+/// nodes silently skip tip reclaim and `ledger_storage` re-grows without
 /// bound (the bug this feature fixes). If the DB was created with a larger
 /// window and the flag later dropped, `have_state_at` (checked past the lag)
 /// still keeps tips live until actual pruning, so the mismatch is leak-only.
@@ -281,31 +286,38 @@ fn reclaim_slice(
 	}
 
 	if run_gc {
-		let started = std::time::Instant::now();
-		let mut culled_total = 0usize;
-		while started.elapsed() < GC_BUDGET {
-			match midnight_node_ledger::gc::collect_garbage(GC_CHUNK) {
-				Ok(0) => break,
-				Ok(n) => culled_total += n,
-				Err(e) => {
-					debug!(target: LOG_TARGET, "⏸️  Arena GC deferred: {e}");
-					break;
-				},
-			}
-			std::thread::sleep(Duration::from_millis(2));
-		}
-		if culled_total > 0 {
-			info!(
-				target: LOG_TARGET,
-				"🗑️  Culled {culled_total} arena nodes in {}ms",
-				started.elapsed().as_millis()
-			);
-		}
+		run_arena_gc_budget();
 	} else {
 		debug!(target: LOG_TARGET, "💤 Unpersist-only slice (tips={})", index.len());
 	}
 
 	candidates
+}
+
+/// Incremental arena GC for up to [`GC_BUDGET`], in [`GC_CHUNK`] slices.
+/// Culled zero-ref nodes (including Transient intermediates already
+/// unpersisted during block execution).
+fn run_arena_gc_budget() {
+	let started = std::time::Instant::now();
+	let mut culled_total = 0usize;
+	while started.elapsed() < GC_BUDGET {
+		match midnight_node_ledger::gc::collect_garbage(GC_CHUNK) {
+			Ok(0) => break,
+			Ok(n) => culled_total += n,
+			Err(e) => {
+				debug!(target: LOG_TARGET, "⏸️  Arena GC deferred: {e}");
+				break;
+			},
+		}
+		std::thread::sleep(Duration::from_millis(2));
+	}
+	if culled_total > 0 {
+		info!(
+			target: LOG_TARGET,
+			"🗑️  Culled {culled_total} arena nodes in {}ms",
+			started.elapsed().as_millis()
+		);
+	}
 }
 
 async fn run<S>(
@@ -385,7 +397,43 @@ async fn run_reclaim_slice(
 	}
 }
 
-/// Spawn the GC worker unless pruning keeps *all* state (`ArchiveAll`).
+/// Arena-GC-only loop for `ArchiveAll`: never unpersists Anchored history
+/// tips, but still culls zero-ref Transient/intermediate garbage that block
+/// execution already unpersisted. Paced on finality (same as tip reclaim).
+async fn run_arena_only<S>(client: Arc<FullClient>, sync: Arc<S>)
+where
+	S: SyncOracle + Send + Sync + 'static,
+{
+	info!(
+		target: LOG_TARGET,
+		"♻️  Ledger arena GC started (ArchiveAll; tip reclaim disabled, history tips kept)"
+	);
+
+	let mut finality = client.finality_notification_stream();
+	// Catch up any backlog before waiting on the next notification.
+	if !sync.is_major_syncing() {
+		let _ = tokio::task::spawn_blocking(run_arena_gc_budget).await;
+	}
+
+	loop {
+		let Some(_note) = finality.next().await else {
+			warn!(target: LOG_TARGET, "⚠️  Finality stream closed; stopping ledger arena GC");
+			return;
+		};
+		while let Some(Some(_)) = finality.next().now_or_never() {}
+
+		if sync.is_major_syncing() {
+			debug!(target: LOG_TARGET, "⏳ Major sync; skipping arena GC slice");
+			continue;
+		}
+
+		if let Err(e) = tokio::task::spawn_blocking(run_arena_gc_budget).await {
+			error!(target: LOG_TARGET, "💥 Arena GC slice task failed: {e}");
+		}
+	}
+}
+
+/// Spawn the ledger GC worker for the configured pruning mode.
 pub fn try_spawn<S>(
 	spawn: &SpawnTaskHandle,
 	client: Arc<FullClient>,
@@ -403,10 +451,14 @@ pub fn try_spawn<S>(
 	let archive_canonical =
 		matches!(state_pruning.clone().unwrap_or_default(), PruningMode::ArchiveCanonical);
 	let Some(depth) = discovery_depth(state_pruning) else {
+		// ArchiveAll: keep every Anchored tip, but still run arena GC so
+		// zero-ref Transient intermediates do not accumulate forever.
 		info!(
 			target: LOG_TARGET,
-			"ℹ️  Ledger GC disabled (ArchiveAll); tips retain full history"
+			"ℹ️  Ledger tip reclaim disabled (ArchiveAll); arena GC still runs for \
+			 transient/intermediate garbage"
 		);
+		spawn.spawn("ledger-gc", Some("ledger"), run_arena_only(client, sync));
 		return;
 	};
 
@@ -458,6 +510,7 @@ mod tests {
 		assert_eq!(discovery_depth(&None), Some(256));
 		assert_eq!(discovery_depth(&Some(PruningMode::default())), Some(256));
 		assert_eq!(discovery_depth(&Some(PruningMode::blocks_pruning(1024))), Some(1024));
+		// ArchiveAll: tip reclaim off (`None`); arena-GC-only worker still spawns.
 		assert_eq!(discovery_depth(&Some(PruningMode::ArchiveAll)), None);
 		// ArchiveCanonical still drops non-canonical state — zero-lag worker.
 		assert_eq!(discovery_depth(&Some(PruningMode::ArchiveCanonical)), Some(0));

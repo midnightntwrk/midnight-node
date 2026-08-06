@@ -12,12 +12,14 @@ the decrement is not idempotent, so a crash between the two steps costs a
 leak, never a double-decrement; without the flush, shutdown could drop
 staged decrements after AuxStore retirement and leave roots unreclaimable).
 Incremental arena `gc` runs after reclaim (deferred during major sync).
-`ArchiveAll` skips the worker; `ArchiveCanonical` runs at zero lag, binds
-only stale-fork tips (canonical bindings could never be reclaimed and would
-grow the AuxStore blob forever) and reclaims them once `have_state_at` is
-false, keeping canonical archive history live. Fork capture at finality is
-best-effort: non-canonical state is dropped in the same finalize commit, so
-tips unreadable by then leak (bounded by fork rate).
+`ArchiveAll` keeps Anchored history tips (no tip reclaim) but still runs the
+arena GC loop so zero-ref Transient/intermediate garbage is culled.
+`ArchiveCanonical` runs at zero lag, binds only stale-fork tips (canonical
+bindings could never be reclaimed and would grow the AuxStore blob forever)
+and reclaims them once `have_state_at` is false, keeping canonical archive
+history live. Fork capture at finality is best-effort: non-canonical state
+is dropped in the same finalize commit, so tips unreadable by then leak
+(bounded by fork rate).
 
 Capture happens at finality, so blocks whose state is pruned in the same
 batched-finalization commit (justification period > pruning window) can never
