@@ -25,5 +25,4 @@ instantiate a runtime that imports `ext_ledger_8_bridge_apply_transaction_versio
 validator left behind stops importing blocks at the `set_code`.
 
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1924
-</content>
-</invoke>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2002
