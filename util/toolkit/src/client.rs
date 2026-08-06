@@ -140,10 +140,26 @@ impl MidnightNodeClient {
 					.call_raw("MidnightRuntimeApi_get_ledger_state_root", None)
 					.await?;
 				// `Result<Vec<u8>, LedgerApiError>`. The error variant's payload differs
-				// per runtime version, so decode it as opaque and report the raw bytes.
+				// per runtime version, so decode it as opaque.
+				//
+				// An error here is not fatal: the state root only feeds block
+				// verification, which is skipped when it is `None` (as for V0_21_0
+				// above). The hardfork's `set_code` block *always* errors — it stores
+				// the new code but its ledger data is still the old version, so the
+				// new runtime's deserializer rejects it (`0x010005` =
+				// `LedgerApiError::Deserialization`). That block is genuinely
+				// unverifiable, and one unverified block must not fail the whole fetch.
 				match Result::<Vec<u8>, ()>::decode(&mut &raw[..]) {
 					Ok(Ok(root)) => Ok(Some(root)),
-					_ => Err(ClientError::LedgerApi(hex::encode(&raw))),
+					_ => {
+						log::warn!(
+							"get_ledger_state_root failed at block {:?} (raw: 0x{}); \
+							 skipping state-root verification for this block",
+							at_block.block_ref().hash(),
+							hex::encode(&raw),
+						);
+						Ok(None)
+					},
 				}
 			},
 		}
@@ -223,8 +239,6 @@ pub enum ClientError {
 	BlockError(#[from] subxt::error::BlockError),
 	#[error("runtime version error: {0}")]
 	RuntimeVersion(#[from] RuntimeVersionError),
-	#[error("ledger runtime API returned an error: {0}")]
-	LedgerApi(String),
 	#[error("midnight node client received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
 	#[error("failed to get block hash for block {0}")]

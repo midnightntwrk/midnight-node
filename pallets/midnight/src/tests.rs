@@ -500,3 +500,16 @@ fn test_send_claim_mint() {
 	*/
 }
 // grcov-excl-stop
+
+/// `#[storage_alias]` derives the storage item's name from the alias
+/// identifier, so the migrations' raw-bytes read-side alias only addresses the
+/// pallet's `StateKey` if it is literally named `StateKey`. A mismatch is
+/// silent — the read returns the `ValueQuery` default (empty `Vec`) — and cost
+/// the v8->v9 migration a `Deserialization(TypedArenaKey)` panic mid-upgrade.
+#[test]
+fn migration_state_key_alias_addresses_the_pallet_storage_item() {
+	assert_eq!(
+		crate::migrations::v2::old::StateKey::<mock::Test>::hashed_key(),
+		crate::StateKey::<mock::Test>::hashed_key(),
+	);
+}

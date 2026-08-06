@@ -25,19 +25,13 @@
 //! storage version 1 translates v8 → v9 first and re-encodes the resulting
 //! root here.
 
-use crate::{Config, Pallet, StateKey};
-use alloc::vec::Vec;
+use crate::{Config, Pallet, StateKey, migrations::v2::old};
 use core::marker::PhantomData;
 use frame_support::{
-	migrations::VersionedMigration, pallet_prelude::*, storage_alias,
-	traits::UncheckedOnRuntimeUpgrade, weights::Weight,
+	migrations::VersionedMigration, pallet_prelude::*, traits::UncheckedOnRuntimeUpgrade,
+	weights::Weight,
 };
 use midnight_node_ledger::types::LedgerStateKey;
-
-/// Read-side alias for the pre-v3 storage layout (`Vec<u8>`). Only used here to
-/// pull the existing bytes off-chain at upgrade time.
-#[storage_alias]
-type OldStateKey<T: Config> = StorageValue<Pallet<T>, Vec<u8>, ValueQuery>;
 
 /// The actual migration logic. `VersionedMigration` wraps this with the
 /// version gating and storage-version bump.
@@ -45,7 +39,8 @@ pub struct InnerMigration<T>(PhantomData<T>);
 
 impl<T: Config> UncheckedOnRuntimeUpgrade for InnerMigration<T> {
 	fn on_runtime_upgrade() -> Weight {
-		let bytes = OldStateKey::<T>::get();
+		// `old::StateKey` is the raw-bytes read-side alias v2 also uses
+		let bytes = old::StateKey::<T>::get();
 		log::info!(
 			target: "pallet-midnight",
 			"Migrating StateKey to LedgerStateKey::Anchored ({} bytes)",

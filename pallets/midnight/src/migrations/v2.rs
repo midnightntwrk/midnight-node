@@ -38,7 +38,7 @@
 //! detects that case and no-ops (returns the `StateKey` unchanged), so the only
 //! effect on that path is the storage-version bump to 2.
 //!
-//! This migration works on the raw-bytes `StateKey` layout via [`RawStateKey`]:
+//! This migration works on the raw-bytes `StateKey` layout via [`old::StateKey`]:
 //! the typed [`LedgerStateKey`](midnight_node_ledger::types::LedgerStateKey)
 //! re-encoding is a separate, later step ([`crate::migrations::v3`]), so at the
 //! point this runs the on-chain value is still a bare `Vec<u8>`.
@@ -58,15 +58,19 @@ use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
 /// [`LedgerStateKey`](midnight_node_ledger::types::LedgerStateKey). The live
 /// [`crate::StateKey`] definition is already the typed enum, so this migration
 /// must go through an alias rather than the pallet's storage item.
-#[storage_alias]
-type RawStateKey<T: Config> = StorageValue<Pallet<T>, Vec<u8>, ValueQuery>;
+pub(crate) mod old {
+	use super::*;
+
+	#[storage_alias]
+	pub(crate) type StateKey<T: Config> = StorageValue<Pallet<T>, Vec<u8>, ValueQuery>;
+}
 
 /// [`UncheckedOnRuntimeUpgrade`] implementation wrapped by [`MigrateV1ToV2`].
 pub struct InnerMigrateV1ToV2<T: Config>(core::marker::PhantomData<T>);
 
 impl<T: Config> UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2<T> {
 	fn on_runtime_upgrade() -> Weight {
-		let state_key = RawStateKey::<T>::get();
+		let state_key = old::StateKey::<T>::get();
 
 		// The host function reads the v8 arena root, translates the referenced
 		// `LedgerState` to v9, re-persists it, and returns the new v9 root
@@ -80,7 +84,7 @@ impl<T: Config> UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2<T> {
 		let (new_state_key, consumed_cost_ps) = LedgerApi::migrate_state_v8_to_v9(&state_key)
 			.expect("FATAL: ledger v8->v9 state migration failed");
 
-		RawStateKey::<T>::put(new_state_key);
+		old::StateKey::<T>::put(new_state_key);
 		log::info!(
 			target: "midnight::migration",
 			"ledger v8->v9 state migration complete; StateKey re-pointed to v9 root ({consumed_cost_ps}ps synthetic cost)"
@@ -101,7 +105,7 @@ impl<T: Config> UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2<T> {
 	#[cfg(feature = "try-runtime")]
 	fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
 		frame_support::ensure!(
-			!RawStateKey::<T>::get().is_empty(),
+			!old::StateKey::<T>::get().is_empty(),
 			"ledger StateKey must be populated before v8->v9 migration"
 		);
 		Ok(Vec::new())
@@ -110,7 +114,7 @@ impl<T: Config> UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2<T> {
 	#[cfg(feature = "try-runtime")]
 	fn post_upgrade(_state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
 		frame_support::ensure!(
-			!RawStateKey::<T>::get().is_empty(),
+			!old::StateKey::<T>::get().is_empty(),
 			"ledger StateKey must remain populated after v8->v9 migration"
 		);
 		Ok(())
