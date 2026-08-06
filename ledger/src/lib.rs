@@ -25,6 +25,9 @@ extern crate alloc;
 pub mod json;
 
 #[cfg(feature = "std")]
+pub mod gc;
+
+#[cfg(feature = "std")]
 mod utils;
 
 pub mod host_api;

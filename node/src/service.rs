@@ -34,7 +34,7 @@ use crate::{
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
-use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
+use midnight_primitives_ledger::{LedgerGcIndex, LedgerMetrics, LedgerStorage};
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
@@ -241,7 +241,7 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
 /// The minimum period of blocks on which justifications will be
 /// imported and generated.
-const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
+pub(crate) const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
 type TransactionPool = FilteringTransactionPool<Block, FullClient>;
 
@@ -264,6 +264,7 @@ type MidnightService = sc_service::PartialComponents<
 		// Shared warp ledger-sync recovery gate (gates block import + authoring until the arena is
 		// recovered). Created in `new_partial` so it can wrap the import queue's block import.
 		Arc<crate::warp_ledger_sync::oracle::RecoveryGate>,
+		LedgerGcIndex,
 	),
 >;
 
@@ -387,6 +388,9 @@ pub fn new_partial(
 
 	let ledger_storage =
 		LedgerStorage { db: ledger_storage_db, cache_size: storage_config.cache_size };
+
+	let ledger_gc_index =
+		LedgerGcIndex::with_durability(crate::ledger_gc::AuxGcStore::new(client.clone()));
 
 	client
 		.execution_extensions()
@@ -516,6 +520,7 @@ pub fn new_partial(
 			telemetry,
 			data_sources,
 			recovery_gate,
+			ledger_gc_index,
 		),
 	};
 
@@ -561,6 +566,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				mut telemetry,
 				data_sources,
 				warp_ledger_recovery_gate,
+				ledger_gc_index,
 			),
 	} = new_partial_components;
 
@@ -648,6 +654,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		Vec::default(),
 	));
 
+	let state_pruning = config.state_pruning.clone();
+
 	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
@@ -662,6 +670,15 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			block_relay: None,
 			metrics,
 		})?;
+
+	crate::ledger_gc::try_spawn(
+		&task_manager.spawn_handle(),
+		client.clone(),
+		backend.clone(),
+		sync_service.clone(),
+		ledger_gc_index,
+		&state_pruning,
+	);
 
 	// Capture peer_id before network is moved
 	let peer_id = network.local_peer_id().to_base58();

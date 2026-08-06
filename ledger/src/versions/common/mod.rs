@@ -249,10 +249,10 @@ where
 	/// # Persist refcount contract
 	///
 	/// On success, returns `LedgerStateKey::Anchored` at rc=1. Anchored states
-	/// are never unpersisted on input by subsequent Bridge calls, so the
-	/// post-block tip remains rooted forever — preserved for RPC and history,
-	/// and safe across sibling forks (a second fork built on the same parent
-	/// does not unpersist it).
+	/// are never unpersisted on input by subsequent Bridge calls — preserved
+	/// for RPC/history within the Substrate pruning window, and safe across
+	/// sibling forks. The node GC worker reclaims them from `StateKey` at
+	/// finality once Substrate drops state for that block.
 	///
 	/// If the input was `LedgerStateKey::Transient` (the last `apply_transaction`
 	/// output of this block), it is unpersisted once, dropping to rc=0.
@@ -261,7 +261,7 @@ where
 	///
 	/// On error, refcounts are unchanged.
 	pub fn post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		_externalities: &mut dyn Externalities,
 		state_key: &LedgerStateKey,
 		block_context: BlockContext,
 	) -> Result<LedgerStateKey, LedgerApiError> {
@@ -330,7 +330,7 @@ where
 	/// input is unpersisted once, and `Anchored` inputs are left alone. On
 	/// error, refcounts are unchanged.
 	pub fn apply_post_block_update(
-		mut _externalities: &mut dyn Externalities,
+		_externalities: &mut dyn Externalities,
 		state_key: &LedgerStateKey,
 		block_context: BlockContext,
 	) -> Result<LedgerStateKey, LedgerApiError> {
