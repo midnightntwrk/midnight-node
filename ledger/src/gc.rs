@@ -89,6 +89,12 @@ pub fn unpersist_tips(tips: &[Vec<u8>]) -> Result<usize, String> {
 }
 
 /// Run incremental arena GC for up to `budget`. Returns culled node count.
+///
+/// Sweeps only when the ledger write cache is quiescent (empty): the
+/// mark/sweep's reachability is DB-based and staged-but-unflushed state is
+/// invisible to it, so sweeping concurrently with an executing block could
+/// cull nodes the in-flight state still references. When the cache is dirty
+/// this returns `0` and the caller should retry after the next block flush.
 pub fn collect_garbage(budget: Duration) -> Result<usize, String> {
 	if let Some(n) = gc_in::<DbSeparate>(budget)? {
 		return Ok(n);
@@ -163,7 +169,23 @@ fn gc_in<D: DB + 'static>(budget: Duration) -> Result<Option<usize>, String> {
 	if try_get_default_storage::<D>().is_none() {
 		return Ok(None);
 	}
-	let culled = default_storage::<D>().with_backend(|backend| backend.gc(budget));
+	let culled = default_storage::<D>().with_backend(|backend| {
+		// Quiescence gate: the incremental mark/sweep computes reachability
+		// from DB roots (plus live inserts) and its write barrier re-arms only
+		// on flushed root-count changes. Staged-but-unflushed state — a block
+		// mid-execution after its `Sp`s dropped, or eviction-flushed interior
+		// nodes whose root has not landed yet — is invisible to the mark set,
+		// so a concurrent sweep could cull DB nodes that only the staged DAG
+		// references and even evict their pending cache deltas, leaving the
+		// next host call unable to load the state (fail-deadly). Only sweep
+		// when the write cache is empty: everything is then in the DB, and
+		// every root that changed since the last mark has forced a rescan.
+		// Deferring costs at most reclaim latency (retried next slice).
+		if backend.get_write_cache_len() > 0 {
+			return 0;
+		}
+		backend.gc(budget)
+	});
 	Ok(Some(culled))
 }
 
