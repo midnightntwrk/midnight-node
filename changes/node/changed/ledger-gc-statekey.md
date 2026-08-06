@@ -2,9 +2,11 @@
 # Reclaim Anchored tips after Substrate state pruning
 
 The node GC worker reads `pallet_midnight::StateKey` at finality
-(`tree_route` + `stale_blocks`) and stores `(block_hash → tip)` in AuxStore.
-Once past the configured state-pruning lag and debounced
-`have_state_at == false`, it retires the hash from AuxStore and then
+(`tree_route` + `stale_blocks`) and stores `(block_hash → tip)` in AuxStore
+only when the tip decodes as a reclaimable ledger-8/9 arena key (pre-ledger-8
+roots are not indexed and leak). Pre-v3 raw `StateKey` blobs are accepted
+through the same filter. Once past the configured state-pruning lag and
+debounced `have_state_at == false`, it retires the hash from AuxStore and then
 `unpersist`s each tip once (remove-first: the decrement is not idempotent, so
 a crash between the two steps costs a leak, never a double-decrement).
 Incremental arena `gc` runs after reclaim (deferred during major sync).

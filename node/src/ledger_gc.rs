@@ -123,10 +123,29 @@ fn hash_bytes(hash: &BlockHash) -> Vec<u8> {
 
 fn read_anchored_tip(client: &FullClient, hash: BlockHash) -> Option<Vec<u8>> {
 	let data = client.storage(hash, &midnight_state_key()).ok().flatten()?;
-	match LedgerStateKey::decode_all(&mut &data.0[..]) {
-		Ok(LedgerStateKey::Anchored(bytes)) if !bytes.is_empty() => Some(bytes),
-		_ => None,
+	let tip = match LedgerStateKey::decode_all(&mut &data.0[..]) {
+		Ok(LedgerStateKey::Anchored(bytes)) if !bytes.is_empty() => bytes,
+		Ok(LedgerStateKey::Anchored(_)) | Ok(LedgerStateKey::Transient(_)) => return None,
+		// Pre-v3 `StateKey` was a raw tip `Vec<u8>` (every post-block root was a
+		// retained tip). Needed so full-sync across pre-migration history still
+		// indexes those roots for reclaim after pruning.
+		Err(_) => match Vec::<u8>::decode_all(&mut &data.0[..]) {
+			Ok(bytes) if !bytes.is_empty() => bytes,
+			_ => return None,
+		},
+	};
+	// Only index tips this binary can reclaim (ledger-8/9). Pre-ledger-8
+	// arena roots would otherwise enter AuxStore, get retired, then be
+	// skipped at unpersist — a pointless binding with the same leak.
+	if !midnight_node_ledger::gc::is_reclaimable_tip(&tip) {
+		debug!(
+			target: LOG_TARGET,
+			"⏭️  Not indexing undecodable tip at {hash:?} ({} bytes)",
+			tip.len()
+		);
+		return None;
 	}
+	Some(tip)
 }
 
 /// Record tips from newly finalized / abandoned-fork blocks (StateKey @ hash).
@@ -201,10 +220,9 @@ fn reclaim_slice(
 		}
 		candidates.insert(hash);
 		if prev_pruned.contains(&hash) {
+			// One unpersist per removed binding (each executed block persisted once).
 			to_remove.push(hash_bytes.clone());
-			if !tips_to_zero.iter().any(|t| t == tip) {
-				tips_to_zero.push(tip.clone());
-			}
+			tips_to_zero.push(tip.clone());
 		}
 	}
 
@@ -223,11 +241,10 @@ fn reclaim_slice(
 			return candidates;
 		}
 		match midnight_node_ledger::gc::unpersist_tips(&tips_to_zero) {
-			Ok(()) => {
+			Ok(n) => {
 				info!(
 					target: LOG_TARGET,
-					"🧹 Unpersisted {} arena tip(s) ({} block(s))",
-					tips_to_zero.len(),
+					"🧹 Unpersisted {n} arena tip root(s) from {} block binding(s)",
 					to_remove.len()
 				);
 			},
