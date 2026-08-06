@@ -19,10 +19,13 @@ in-flight state references; a dirty cache defers the sweep to the next slice.
 arena GC loop so zero-ref Transient/intermediate garbage is culled.
 `ArchiveCanonical` runs at zero lag, binds only stale-fork tips (canonical
 bindings could never be reclaimed and would grow the AuxStore blob forever)
-and reclaims them once `have_state_at` is false, keeping canonical archive
-history live. Fork capture at finality is best-effort: non-canonical state
-is dropped in the same finalize commit, so tips unreadable by then leak
-(bounded by fork rate).
+and reclaims them by block liveness — once finality passes the fork's height
+and it is not the canonical block there — rather than `have_state_at`, which
+on archive backends is a state-root presence probe that a canonical sibling
+sharing the same state root would keep true forever. Canonical archive
+history stays live. Fork capture at finality is best-effort: non-canonical
+state is dropped in the same finalize commit, so tips unreadable by then
+leak (bounded by fork rate).
 
 Capture happens at finality, so blocks whose state is pruned in the same
 batched-finalization commit (justification period > pruning window) can never

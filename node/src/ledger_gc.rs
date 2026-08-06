@@ -215,6 +215,42 @@ fn state_still_live(
 	}
 }
 
+/// Liveness for stale-fork bindings under `ArchiveCanonical`.
+///
+/// `have_state_at` on archive backends is a state-root-*presence* probe, and
+/// a stale fork can share its state root with a canonical sibling (an empty
+/// or equivocation sibling at the same height) — the canonical copy keeps
+/// that trie root present forever, so the probe would never release the
+/// fork's binding even though the fork block's own ledger persist must be
+/// reclaimed. Use block liveness instead: a fork is reclaimable once
+/// finality has passed its height and it is not the canonical block there
+/// (non-canonical state is discarded at canonicalization; a shared trie root
+/// surviving via the sibling is irrelevant to the fork's own tip count).
+/// Unknown header → displaced leftover → reclaimable. Transient errors →
+/// keep (fail-safe).
+fn stale_fork_still_live(client: &FullClient, hash: BlockHash) -> bool {
+	match client.number(hash) {
+		Ok(Some(n)) => {
+			if n > client.info().finalized_number {
+				// Finality has not passed this height — the fork is still
+				// contestable and its state may still be live.
+				return true;
+			}
+			// Defensive: stale bindings should never be canonical, but if one
+			// is, keep it (its state is retained forever in this mode).
+			match client.hash(n) {
+				Ok(Some(canonical)) => canonical == hash,
+				Ok(None) | Err(_) => true,
+			}
+		},
+		Ok(None) => false,
+		Err(e) => {
+			debug!(target: LOG_TARGET, "⏸️  number({hash:?}) failed ({e}); keeping tip");
+			true
+		},
+	}
+}
+
 fn reclaim_slice(
 	client: &FullClient,
 	backend: &FullBackend,
@@ -222,6 +258,7 @@ fn reclaim_slice(
 	lag: NumberFor<Block>,
 	prev_pruned: HashSet<BlockHash>,
 	run_gc: bool,
+	archive_canonical: bool,
 ) -> HashSet<BlockHash> {
 	let snapshot = index.bound_snapshot();
 	let mut candidates = HashSet::new();
@@ -238,7 +275,15 @@ fn reclaim_slice(
 			continue;
 		};
 		let hash = BlockHash::from(raw);
-		if state_still_live(client, backend, hash, lag) {
+		// ArchiveCanonical bindings are stale forks only, and `have_state_at`
+		// is a root-presence probe there — use block liveness instead (see
+		// `stale_fork_still_live`).
+		let live = if archive_canonical {
+			stale_fork_still_live(client, hash)
+		} else {
+			state_still_live(client, backend, hash, lag)
+		};
+		if live {
 			continue;
 		}
 		candidates.insert(hash);
@@ -326,13 +371,15 @@ async fn run<S>(
 	sync: Arc<S>,
 	index: LedgerGcIndex,
 	depth: u32,
-	bind_canonical: bool,
+	archive_canonical: bool,
 ) where
 	S: SyncOracle + Send + Sync + 'static,
 {
+	let bind_canonical = !archive_canonical;
 	info!(
 		target: LOG_TARGET,
-		"♻️  Ledger GC started (depth={depth}, bind_canonical={bind_canonical})"
+		"♻️  Ledger GC started (depth={depth}, archive_canonical={archive_canonical}, \
+		 bind_canonical={bind_canonical})"
 	);
 	info!(target: LOG_TARGET, "📦 GC index (tips={})", index.len());
 
@@ -348,6 +395,7 @@ async fn run<S>(
 		lag,
 		pruned_candidates,
 		!sync.is_major_syncing(),
+		archive_canonical,
 	)
 	.await;
 
@@ -368,8 +416,16 @@ async fn run<S>(
 			true
 		};
 
-		pruned_candidates =
-			run_reclaim_slice(&client, &backend, &index, lag, pruned_candidates, run_gc).await;
+		pruned_candidates = run_reclaim_slice(
+			&client,
+			&backend,
+			&index,
+			lag,
+			pruned_candidates,
+			run_gc,
+			archive_canonical,
+		)
+		.await;
 	}
 }
 
@@ -380,12 +436,13 @@ async fn run_reclaim_slice(
 	lag: NumberFor<Block>,
 	prev: HashSet<BlockHash>,
 	run_gc: bool,
+	archive_canonical: bool,
 ) -> HashSet<BlockHash> {
 	let client_gc = client.clone();
 	let backend_gc = backend.clone();
 	let index_gc = index.clone();
 	match tokio::task::spawn_blocking(move || {
-		reclaim_slice(&client_gc, &backend_gc, &index_gc, lag, prev, run_gc)
+		reclaim_slice(&client_gc, &backend_gc, &index_gc, lag, prev, run_gc, archive_canonical)
 	})
 	.await
 	{
@@ -489,12 +546,10 @@ pub fn try_spawn<S>(
 		);
 	}
 
-	// Canonical bindings are only reclaimable when canonical state can
-	// actually be pruned — i.e. everywhere except ArchiveCanonical.
 	spawn.spawn(
 		"ledger-gc",
 		Some("ledger"),
-		run(client, backend, sync, index, depth, !archive_canonical),
+		run(client, backend, sync, index, depth, archive_canonical),
 	);
 }
 
