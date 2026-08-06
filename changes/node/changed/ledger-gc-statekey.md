@@ -33,5 +33,12 @@ be captured and leak; the node warns at startup when
 `--state-pruning < 512` — full-sync-from-genesis nodes should use a window of
 at least the GRANDPA justification period.
 
+An existing archive DB restarted with `--state-pruning` omitted keeps its
+stored mode (`StateDb::open`); since the stored variant is not exposed through
+the public API, that case falls back to arena-only GC (correct for
+`ArchiveAll`; a stored `ArchiveCanonical` forgoes stale-fork reclaim,
+leak-only) instead of mistakenly binding immortal canonical tips on the
+constrained path. Pass the mode explicitly to opt into stale-fork reclaim.
+
 PR: https://github.com/midnightntwrk/midnight-node/pull/1991
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1983

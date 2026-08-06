@@ -111,6 +111,9 @@ impl LedgerGcDurability for AuxGcStore {
 /// bound (the bug this feature fixes). If the DB was created with a larger
 /// window and the flag later dropped, `have_state_at` (checked past the lag)
 /// still keeps tips live until actual pruning, so the mismatch is leak-only.
+/// (`None` resolving to a stored *archive* mode on an existing DB is diverted
+/// in `try_spawn` via the DB-effective `requires_full_sync()` before this
+/// mapping is consulted.)
 ///
 /// `ArchiveCanonical` is zero-lag: Substrate still drops non-canonical state,
 /// so abandoned-fork `post_block_update` roots would otherwise leak forever.
@@ -501,6 +504,30 @@ pub fn try_spawn<S>(
 ) where
 	S: SyncOracle + Send + Sync + 'static,
 {
+	// `StateDb::open` reuses the DB-stored pruning mode when the CLI flag is
+	// omitted (`(false, Some(stored), None) => stored`), so a `None` config
+	// only means "constrained 256" on a fresh DB. If the flag is omitted and
+	// the backend reports archive pruning, the stored mode is `ArchiveAll` or
+	// `ArchiveCanonical` — indistinguishable through the public API (upstream
+	// ask: expose the effective mode). Fall back to arena-only GC: correct
+	// for `ArchiveAll`, and for a stored `ArchiveCanonical` it merely forgoes
+	// stale-fork reclaim (leak-only, fork-rate bounded). Running the
+	// constrained path here instead would bind canonical tips that archive
+	// state keeps live forever, growing the AuxStore blob by one immortal
+	// entry per finalized block. With the flag set explicitly, `StateDb::open`
+	// errors on a variant mismatch, so the config variant below is
+	// authoritative for the DB.
+	if state_pruning.is_none() && backend.requires_full_sync() {
+		info!(
+			target: LOG_TARGET,
+			"ℹ️  Archive DB with --state-pruning omitted; ledger tip reclaim disabled \
+			 (arena GC only). Pass --state-pruning archive-canonical explicitly to \
+			 enable stale-fork reclaim"
+		);
+		spawn.spawn("ledger-gc", Some("ledger"), run_arena_only(client, sync));
+		return;
+	}
+
 	// Derive the mode explicitly: `depth == 0` alone cannot distinguish
 	// `ArchiveCanonical` from `Constrained(max_blocks: None)` (which prunes
 	// canonical state immediately and so must bind canonical blocks and get
