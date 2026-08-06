@@ -26,6 +26,7 @@ use ledger_storage_local::{
 };
 
 use helpers_local::{StorableSyntheticCost, compute_overall_fullness};
+use midnight_primitives_ledger::tx_timing::{self, Phase as TimedPhase};
 use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
 	semantics::{TransactionContext, TransactionResult},
@@ -168,11 +169,14 @@ impl<D: DB> Ledger<D> {
 			&sp.state.parameters.limits.block_limits,
 			"apply_verified_transaction",
 		)?;
+		tx_timing::mark("tx_cost");
 
 		let (next_state, result) = sp.state.apply(verified_tx, ctx);
+		tx_timing::mark_agg(TimedPhase::LedgerApply);
 		let new_sp = default_storage::<D>()
 			.arena
 			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() });
+		tx_timing::mark("arena_alloc");
 
 		match result {
 			TransactionResult::Success(_) => Ok((new_sp, AppliedStage::AllApplied)),
