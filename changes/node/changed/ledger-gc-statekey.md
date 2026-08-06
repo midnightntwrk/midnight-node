@@ -25,8 +25,7 @@ Capture happens at finality, so blocks whose state is pruned in the same
 batched-finalization commit (justification period > pruning window) can never
 be captured and leak; the node warns at startup when
 `--state-pruning < 512` — full-sync-from-genesis nodes should use a window of
-at least the GRANDPA justification period, or warp sync (skipped history is
-never executed, so nothing leaks).
+at least the GRANDPA justification period.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1991
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1983

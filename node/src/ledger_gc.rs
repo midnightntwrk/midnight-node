@@ -475,16 +475,15 @@ pub fn try_spawn<S>(
 	// in the same commit — blocks more than `depth` behind each batch head are
 	// already unreadable when the notification arrives, so their tips can never
 	// be captured and leak permanently. A window >= the justification period
-	// closes that gap (warp sync is unaffected: skipped history is never
-	// executed, so nothing is persisted). ArchiveCanonical keeps canonical
-	// state forever, so the constrained-window gap does not apply there.
+	// closes that gap. ArchiveCanonical keeps canonical state forever, so the
+	// constrained-window gap does not apply there.
 	if !archive_canonical && depth < crate::service::GRANDPA_JUSTIFICATION_PERIOD {
 		warn!(
 			target: LOG_TARGET,
 			"⚠️  --state-pruning {depth} is smaller than the GRANDPA justification period \
 			 ({}); a full sync from genesis will permanently leak ledger tips for blocks \
-			 pruned before their finality notification. Use --state-pruning >= {} (or warp \
-			 sync) for full-sync nodes",
+			 pruned before their finality notification. Use --state-pruning >= {} for \
+			 full-sync nodes",
 			crate::service::GRANDPA_JUSTIFICATION_PERIOD,
 			crate::service::GRANDPA_JUSTIFICATION_PERIOD,
 		);
