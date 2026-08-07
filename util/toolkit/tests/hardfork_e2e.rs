@@ -26,6 +26,9 @@ use testcontainers::{
 	runners::AsyncRunner,
 };
 
+/// Genesis-funded dev wallet the test transacts from.
+const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+
 /// Generate a chain-spec JSON string by running `build-spec` in the fork-from node container.
 fn generate_chainspec(image: &str, tag: &str) -> String {
 	let output = Command::new("docker")
@@ -209,7 +212,7 @@ async fn hardfork_single_tx() {
 		"inmemory",
 		"single-tx",
 		"--source-seed",
-		"0000000000000000000000000000000000000000000000000000000000000001",
+		SOURCE_SEED,
 		"--unshielded-amount",
 		"10",
 		"--destination-address",
@@ -314,6 +317,34 @@ async fn hardfork_single_tx() {
 	);
 	eprintln!("[hardfork_e2e] dust generation replay wound up by #{}", applied + 3);
 
+	// 5c. The fork wipes dust state, and the `dev` preset has no `UtxoOwners` for
+	//     the replay above to restore, so the genesis wallets cross the fork still
+	//     holding NIGHT but generating no DUST — and with no DUST they cannot pay
+	//     a fee. Re-register the source wallet's dust address to start generation
+	//     again. The registration funds itself from the retroactive DUST its
+	//     now-generationless NIGHT accrued, which is exactly the path a real
+	//     holder takes after the wipe.
+	run_cli(&[
+		"generate-txs",
+		"--fetch-cache",
+		"inmemory",
+		"register-dust-address",
+		"--wallet-seed",
+		SOURCE_SEED,
+		"-s",
+		&url,
+		"-d",
+		&url,
+	])
+	.await;
+
+	// The sender only returns once the registration is finalized, but the NIGHT it
+	// re-registered starts generating from *that* block's time — at the tip there
+	// is still nothing accrued to spend. Give it a couple of blocks.
+	let registered_at = finalized_height(&rpc).await;
+	wait_for_finalized_block(&url, registered_at + 2, Duration::from_secs(60)).await;
+	eprintln!("[hardfork_e2e] dust address re-registered by #{registered_at}");
+
 	// 6. Post-fork: run single-tx again to verify the node still works after the (future) upgrade
 	run_cli(&[
 		"generate-txs",
@@ -321,7 +352,7 @@ async fn hardfork_single_tx() {
 		"inmemory",
 		"single-tx",
 		"--source-seed",
-		"0000000000000000000000000000000000000000000000000000000000000001",
+		SOURCE_SEED,
 		"--unshielded-amount",
 		"10",
 		"--destination-address",
