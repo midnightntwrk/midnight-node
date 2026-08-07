@@ -131,16 +131,20 @@ mod handle_transfers {
 
 			// The failing transfer and everything observed after it is left for a later block.
 			assert_eq!(handled_transfers(), transfers[..1].to_vec());
-			// The checkpoint only moves up to the last fully handled Cardano transaction.
+			// The checkpoint points at the failing Cardano transaction, none of whose transfers
+			// were handled.
 			assert_eq!(
 				DataCheckpoint::<Test>::get(),
-				Some(BridgeDataCheckpoint::Tx(transfers[0].mc_tx_hash))
+				Some(BridgeDataCheckpoint::PartialTx {
+					tx: transfers[1].mc_tx_hash,
+					transfers_processed: 0
+				})
 			);
 		})
 	}
 
 	#[test]
-	fn keeps_the_data_checkpoint_when_no_transfer_could_be_handled() {
+	fn points_the_data_checkpoint_at_the_first_tx_when_no_transfer_could_be_handled() {
 		new_test_ext().execute_with(|| {
 			DataCheckpoint::<Test>::put(data_checkpoint());
 			let transfers = transfers();
@@ -148,12 +152,20 @@ mod handle_transfers {
 
 			assert_ok!(Bridge::handle_transfers(
 				RuntimeOrigin::none(),
-				transfers,
+				transfers.clone(),
 				final_checkpoint()
 			));
 
 			assert_eq!(handled_transfers(), vec![]);
-			assert_eq!(DataCheckpoint::<Test>::get(), Some(data_checkpoint()));
+			// Nothing was handled, so the whole first Cardano transaction is to be presented again.
+			// The transactions before it, if any, had no transfers left to handle.
+			assert_eq!(
+				DataCheckpoint::<Test>::get(),
+				Some(BridgeDataCheckpoint::PartialTx {
+					tx: transfers[0].mc_tx_hash,
+					transfers_processed: 0
+				})
+			);
 		})
 	}
 
@@ -187,7 +199,7 @@ mod handle_transfers {
 		new_test_ext().execute_with(|| {
 			let tx = McTxHash([2; 32]);
 			// One transfer of `tx` was handled before, so the observability layer left it out and
-			// presents the remaining two.
+			// presents the remaining two, keeping their index within `tx`.
 			DataCheckpoint::<Test>::put(BridgeDataCheckpoint::PartialTx {
 				tx,
 				transfers_processed: 1,
