@@ -11,10 +11,12 @@ debounced `have_state_at == false`, it retires the hash from AuxStore and then
 the decrement is not idempotent, so a crash between the two steps costs a
 leak, never a double-decrement; without the flush, shutdown could drop
 staged decrements after AuxStore retirement and leave roots unreclaimable).
-Incremental arena `gc` runs after reclaim (deferred during major sync) and
-only while the ledger write cache is quiescent — its DB-based mark/sweep
-cannot see staged block state, so sweeping mid-execution could cull nodes the
-in-flight state references; a dirty cache defers the sweep to the next slice.
+Incremental arena `gc` runs once per finality after reclaim (deferred during
+major sync), with a short soft time bound — further progress resumes on later
+notifications instead of looping under the arena mutex. GC runs only while the
+ledger write cache is quiescent: its DB-based mark/sweep cannot see staged
+block state, so sweeping mid-execution could cull nodes the in-flight state
+references; a dirty cache defers the sweep to the next slice.
 `ArchiveAll` keeps Anchored history tips (no tip reclaim) but still runs the
 arena GC loop so zero-ref Transient/intermediate garbage is culled.
 `ArchiveCanonical` runs at zero lag, binds only stale-fork tips (canonical

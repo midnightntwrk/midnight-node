@@ -42,8 +42,10 @@ use sp_runtime::{
 use crate::service::{FullBackend, FullClient};
 
 const LOG_TARGET: &str = "midnight::ledger_gc";
-const GC_BUDGET: Duration = Duration::from_millis(250);
-const GC_CHUNK: Duration = Duration::from_millis(25);
+/// Soft time bound for one arena mark/sweep slice after finality. Storage-core
+/// GC is incremental across calls, so backlog continues on later notifications
+/// instead of looping under the arena mutex in a single tick.
+const GC_SLICE: Duration = Duration::from_millis(25);
 
 /// AuxStore key for SCALE [`LedgerGcState`].
 const AUX_GC_KEY: &[u8] = b"midnight/ledger_gc";
@@ -334,7 +336,7 @@ fn reclaim_slice(
 	}
 
 	if run_gc {
-		run_arena_gc_budget();
+		run_arena_gc_slice();
 	} else {
 		debug!(target: LOG_TARGET, "💤 Unpersist-only slice (tips={})", index.len());
 	}
@@ -342,29 +344,22 @@ fn reclaim_slice(
 	candidates
 }
 
-/// Incremental arena GC for up to [`GC_BUDGET`], in [`GC_CHUNK`] slices.
-/// Culled zero-ref nodes (including Transient intermediates already
-/// unpersisted during block execution).
-fn run_arena_gc_budget() {
+/// One incremental arena GC slice (zero-ref Transient/intermediate cull).
+/// Paced on finality — no inner mutex-yield loop.
+fn run_arena_gc_slice() {
 	let started = std::time::Instant::now();
-	let mut culled_total = 0usize;
-	while started.elapsed() < GC_BUDGET {
-		match midnight_node_ledger::gc::collect_garbage(GC_CHUNK) {
-			Ok(0) => break,
-			Ok(n) => culled_total += n,
-			Err(e) => {
-				debug!(target: LOG_TARGET, "⏸️  Arena GC deferred: {e}");
-				break;
-			},
-		}
-		std::thread::sleep(Duration::from_millis(2));
-	}
-	if culled_total > 0 {
-		info!(
-			target: LOG_TARGET,
-			"🗑️  Culled {culled_total} arena nodes in {}ms",
-			started.elapsed().as_millis()
-		);
+	match midnight_node_ledger::gc::collect_garbage(GC_SLICE) {
+		Ok(0) => {},
+		Ok(n) => {
+			info!(
+				target: LOG_TARGET,
+				"🗑️  Arena GC slice: culled={n} elapsed_ms={}",
+				started.elapsed().as_millis()
+			);
+		},
+		Err(e) => {
+			debug!(target: LOG_TARGET, "⏸️  Arena GC deferred: {e}");
+		},
 	}
 }
 
@@ -472,7 +467,7 @@ where
 	let mut finality = client.finality_notification_stream();
 	// Catch up any backlog before waiting on the next notification.
 	if !sync.is_major_syncing() {
-		let _ = tokio::task::spawn_blocking(run_arena_gc_budget).await;
+		let _ = tokio::task::spawn_blocking(run_arena_gc_slice).await;
 	}
 
 	loop {
@@ -487,7 +482,7 @@ where
 			continue;
 		}
 
-		if let Err(e) = tokio::task::spawn_blocking(run_arena_gc_budget).await {
+		if let Err(e) = tokio::task::spawn_blocking(run_arena_gc_slice).await {
 			error!(target: LOG_TARGET, "💥 Arena GC slice task failed: {e}");
 		}
 	}
