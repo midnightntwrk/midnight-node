@@ -15,6 +15,12 @@ load("@prelude//toolchains:rust.bzl", "system_rust_toolchain")
 _WASM_CC = read_config("wasm", "cc", "/opt/homebrew/opt/llvm/bin/clang")
 _WASM_CXX = read_config("wasm", "cxx", "/opt/homebrew/opt/llvm/bin/clang++")
 _WASM_AR = read_config("wasm", "ar", "/opt/homebrew/opt/llvm/bin/llvm-ar")
+# The wasm linker wrapper. Default is the in-repo relative path (works for a
+# local build from the repo root); under distributed RE it must be an absolute
+# path present on every worker (the relative path isn't staged into the remote
+# action's cwd -> "toolchains/wasm-lld.sh: No such file"), so CI overrides
+# `[wasm] linker` to /usr/local/bin/wasm-lld.sh (installed by the composite).
+_WASM_LINKER = read_config("wasm", "linker", "toolchains/wasm-lld.sh")
 
 system_genrule_toolchain(
     name = "genrule",
@@ -78,7 +84,7 @@ system_cxx_toolchain(
     # driver/link flags and locates rust-lld via the sysroot (portable).
     linker = select({
         "config//os:windows": "link.exe",
-        "prelude//cpu:wasm32": "toolchains/wasm-lld.sh",
+        "prelude//cpu:wasm32": _WASM_LINKER,
         "DEFAULT": "/usr/bin/clang++",
     }),
     archiver = select({

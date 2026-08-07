@@ -6,10 +6,9 @@
 # dispatched to a worker while the few `local_only` actions (reindeer git_fetch,
 # which needs the driver's private-repo auth) still run locally. The driver stays
 # light — it was getting VM-reclaimed ~20 min into a cold monolithic build when
-# it compiled everything locally. `--decentralized-cas` keeps each action's
-# outputs on the worker that built them (the driver holds only a digest→producer
-# index), so the driver's disk/egress stay small. Rendezvous is keyless: every
-# job derives the driver's iroh key from the run id.
+# it compiled everything locally. buck-out + the CAS store live on /mnt (the big
+# ephemeral disk), so the central CAS the driver serves doesn't overflow `/`.
+# Rendezvous is keyless: every job derives the driver's iroh key from the run id.
 #
 # The build includes the on-chain WASM runtime blob (wasm32 cdylib → wasm-opt →
 # zstd), so the toolchain step installs a wasm-capable clang + wasm-opt + protoc +
@@ -57,6 +56,7 @@ env:
     -c wasm.cc=/usr/local/bin/wasm-cc.sh
     -c wasm.cxx=/usr/local/bin/wasm-cc.sh
     -c wasm.ar=/usr/local/bin/wasm-ar.sh
+    -c wasm.linker=/usr/local/bin/wasm-lld.sh
   # CAS bank lineage (rebuck2): the branch's bank is its own; it inherits the
   # parent lineage's bank read-only so a first lap on a branch is warm off trunk.
   CAS_LINEAGE: ${{ github.head_ref || github.ref_name }}
@@ -113,10 +113,13 @@ jobs:
           # the build (below) still pushes every compile/link/test to a worker, so
           # the driver stays light without forbidding local_only.
           execution-platforms: root//platforms:re-cache
-          # --decentralized-cas: outputs stay on the worker that built them; the
-          # driver keeps only a digest→producer index → small driver disk/egress.
           # --prefetch-metadata: pull input metadata ahead of dispatch.
-          extra-args: --decentralized-cas --prefetch-metadata
+          # NB: --decentralized-cas dropped — with git deps produced local_only on
+          # the driver, workers pulling those large trees P2P dropped non-.rs files
+          # (polkadot-sdk's docs/*.mmd that sp-runtime include_str!s). Central CAS
+          # (the driver serves complete blobs from /mnt) keeps the tree intact; the
+          # driver stays light anyway because --prefer-remote runs no compiles here.
+          extra-args: --prefetch-metadata
           # cache failed actions too, so a re-run doesn't repeat known failures.
           cache-failures: "true"
           # CAS bank: warm incremental laps (artifacts, no LRU eviction).

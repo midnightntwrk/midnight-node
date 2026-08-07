@@ -93,3 +93,7 @@ runs:
         set -euo pipefail
         sudo install -m755 toolchains/wasm-cc.sh /usr/local/bin/wasm-cc.sh
         sudo install -m755 toolchains/wasm-ar.sh /usr/local/bin/wasm-ar.sh
+        # The wasm linker wrapper too: workers run the wasm cdylib link remotely,
+        # and toolchains/BUCK's relative path doesn't resolve in the staged action
+        # cwd. Installed absolute + selected via `-c wasm.linker` (BUCK_WASM_CFG).
+        sudo install -m755 toolchains/wasm-lld.sh /usr/local/bin/wasm-lld.sh
