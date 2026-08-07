@@ -32,7 +32,7 @@ runs:
         SEASON_TAG: ${{ steps.config.outputs.tag }}
         SEASON_REPO: ${{ steps.config.outputs.repo }}
         SEASON_CHECKSUM: ${{ steps.config.outputs.checksum }}
-      run: |
+      run: | # zizmor: ignore[github-env] GITHUB_PATH write is a literal, trusted path - not attacker-influenced
         gh release download "$SEASON_TAG" \
           -R "$SEASON_REPO" \
           -p "season-x86_64-unknown-linux-musl.tar.gz"
@@ -42,5 +42,4 @@ runs:
         mkdir -p "$HOME/.local/bin"
         mv season "$HOME/.local/bin/"
         rm season-x86_64-unknown-linux-musl.tar.gz
-        # zizmor: ignore[github-env] literal, trusted path - not attacker-influenced
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
