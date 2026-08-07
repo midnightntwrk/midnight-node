@@ -15,10 +15,11 @@ The reclaim hold is quiescence-gated: it defers while the shared ledger write
 cache is dirty, so the durability flush only ever writes isolated GC
 decrements — flushing mid-execution would land another block's staged
 unrooted nodes in the DB and let the arena sweep's quiescence check pass
-while the runtime still needs them. Decrements are zero-clamped (a
-crash-replayed binding across the two independent parity-db WALs, or a
-state-synced block that never executed locally, is a logged no-op instead of
-a root-count underflow).
+while the runtime still needs them. Decrement batches are coalesced by arena
+root and clamped to the observed root count (a crash-replayed binding across
+the two independent parity-db WALs, or duplicate bindings where a
+state-synced block that never executed locally shares a tip with an executed
+one, become a logged no-op instead of a root-count underflow).
 Incremental arena `gc` runs once per finality after reclaim (including during
 major sync), with a short soft time bound — further progress resumes on later
 notifications instead of looping under the arena mutex. GC runs only while the

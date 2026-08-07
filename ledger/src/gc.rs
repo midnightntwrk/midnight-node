@@ -78,10 +78,12 @@ pub fn ledger_quiescent() -> bool {
 /// state the runtime still needs. A dirty cache returns `Err` ("busy");
 /// callers should treat it as retryable and re-submit the tips later.
 ///
-/// **Zero-clamped**: roots already at count 0 are skipped with a warning
-/// (crash-replayed binding across the two independent parity-db WALs, or a
-/// state-synced block that never executed locally) instead of underflowing
-/// the flush-time `root_count >= 0` assert.
+/// **Count-clamped**: the batch is coalesced by arena root and each root is
+/// decremented at most its observed count — never per-tip, so duplicate
+/// bindings exceeding the count (a state-synced block that never executed
+/// locally sharing a tip with one executed block; a crash-replayed binding
+/// across the two independent parity-db WALs) clamp to a warned no-op
+/// instead of underflowing the flush-time `root_count >= 0` assert.
 ///
 /// **Not idempotent** for shared roots: replaying a tip whose root is also
 /// persisted by another still-live block (recurrence class) steals that
@@ -183,31 +185,42 @@ fn unpersist_in<D: DB + 'static>(tips: &[Vec<u8>]) -> Result<Option<usize>, Stri
 		);
 	}
 
-	// Zero-clamp (pre-read; `test_helpers::get_root_count` takes the backend
-	// RefCell itself, so it must not run inside `with_backend`): never
-	// decrement a root already at 0. Two real paths hit this — (a) crash
-	// replay: AuxStore retirement and the flush below ride *independent*
-	// parity-db WALs in separate-DB mode, so a crash can durably keep the
-	// decrement while losing the removal; (b) state-synced (warp/fast)
-	// history: a readable `StateKey` for a block that never executed locally
-	// has no persist to release. Underflow would trip the `root_count >= 0`
-	// assert during flush — after the cache was already cleared — discarding
-	// everything staged with it. Counts can only rise between this read and
-	// the hold below (Bridge never unpersists Anchored roots), which is safe.
+	// Count-clamp (pre-read; `test_helpers::get_root_count` takes the backend
+	// RefCell itself, so it must not run inside `with_backend`): coalesce the
+	// batch by root and decrement at most the observed count per root. A
+	// binding can outlive or outnumber its persists — (a) crash replay:
+	// AuxStore retirement and the flush below ride *independent* parity-db
+	// WALs in separate-DB mode, so a crash can durably keep the decrement
+	// while losing the removal; (b) state-synced (warp/fast) blocks: a
+	// readable `StateKey` for a block that never executed locally contributes
+	// a binding but no persist, so duplicate-tip batches can request more
+	// decrements than the root holds (per-tip zero-checks would each see the
+	// same nonzero count and all pass). Decrementing past the count would
+	// underflow into the flush-time `root_count >= 0` assert — after the
+	// cache was already cleared — discarding everything staged with it.
+	// Counts can only rise between this read and the hold below (Bridge never
+	// unpersists Anchored roots), which is safe.
 	let storage = default_storage::<D>();
-	let mut to_zero = Vec::with_capacity(roots.len());
-	let mut already_zero = 0usize;
+	let mut per_root: Vec<(ArenaHash<D::Hasher>, u32)> = Vec::new();
 	for root in roots {
-		if arena::test_helpers::get_root_count(&storage.arena, &root) == 0 {
-			already_zero += 1;
-		} else {
-			to_zero.push(root);
+		match per_root.iter_mut().find(|(r, _)| *r == root) {
+			Some((_, mult)) => *mult += 1,
+			None => per_root.push((root, 1)),
 		}
 	}
-	if already_zero > 0 {
+	let mut to_zero: Vec<(ArenaHash<D::Hasher>, u32)> = Vec::new();
+	let mut clamped = 0u32;
+	for (root, mult) in per_root {
+		let take = mult.min(arena::test_helpers::get_root_count(&storage.arena, &root));
+		clamped += mult - take;
+		if take > 0 {
+			to_zero.push((root, take));
+		}
+	}
+	if clamped > 0 {
 		warn!(
 			target: LOG_TARGET,
-			"⏭️  Skipped {already_zero} tip root(s) already at zero count \
+			"⏭️  Clamped {clamped} decrement(s) exceeding observed root count(s) \
 			 (crash-replayed binding or state-synced block never executed locally)"
 		);
 	}
@@ -227,8 +240,10 @@ fn unpersist_in<D: DB + 'static>(tips: &[Vec<u8>]) -> Result<Option<usize>, Stri
 		if backend.get_write_cache_len() > 0 {
 			return false;
 		}
-		for root in &to_zero {
-			backend.unpersist(root);
+		for (root, take) in &to_zero {
+			for _ in 0..*take {
+				backend.unpersist(root);
+			}
 		}
 		// Durability: AuxStore bindings are already retired by the caller.
 		// Without this flush, shutdown drops the write cache and the on-disk
@@ -239,7 +254,7 @@ fn unpersist_in<D: DB + 'static>(tips: &[Vec<u8>]) -> Result<Option<usize>, Stri
 	if !flushed {
 		return Err("ledger write cache busy; tip reclaim deferred".into());
 	}
-	Ok(Some(to_zero.len()))
+	Ok(Some(to_zero.iter().map(|(_, take)| *take as usize).sum()))
 }
 
 fn gc_in<D: DB + 'static>(budget: Duration) -> Result<Option<usize>, String> {
@@ -372,6 +387,19 @@ mod tests {
 		let tip = ledger_9_tip("gc-clamp-replay", 1);
 		assert_eq!(unpersist_retrying(std::slice::from_ref(&tip)), 1);
 		assert_eq!(unpersist_retrying(std::slice::from_ref(&tip)), 0);
+		assert_eq!(root_count(&tip), 0);
+	}
+
+	#[test]
+	fn duplicate_tips_clamp_to_observed_root_count() {
+		// One locally executed block persisted the tip once, but TWO bindings
+		// carry it (e.g. a state-synced sibling that never executed locally
+		// shares the empty-block tip). Per-tip zero-checks would each see
+		// count 1 and both pass — the batch must coalesce by root and
+		// decrement at most the observed count, not underflow.
+		let tip = ledger_9_tip("gc-dup-clamp", 1);
+		assert_eq!(root_count(&tip), 1);
+		assert_eq!(unpersist_retrying(&[tip.clone(), tip.clone()]), 1);
 		assert_eq!(root_count(&tip), 0);
 	}
 
