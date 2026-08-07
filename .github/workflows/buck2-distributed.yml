@@ -1,15 +1,20 @@
 # Distributed buck2 build + test on free ubuntu-latest runners.
 #
-# buck2 needs no big paid machine here: one `driver` job owns the buck2
-# invocation and N `worker` jobs lend their cores over an iroh P2P mesh
-# (gilescope/rebuck2). Compile/link/test actions are dispatched to whichever
-# runner is free; blobs move peer-to-peer. Rendezvous is keyless — every job
-# derives the driver's iroh key from the run id, so no service and no secrets.
+# One `driver` job owns the buck2 invocation; N `worker` jobs lend their cores
+# over an iroh P2P mesh (gilescope/rebuck2). The driver runs `--no-local-exec`
+# against the `re-exec` platform, so every compile/link/test action is dispatched
+# to a worker — the driver stays light (it was getting VM-reclaimed ~20 min into
+# a cold monolithic build when it held all of buck-out and compiled locally).
+# `--decentralized-cas` keeps each action's outputs on the worker that built them
+# (the driver holds only a digest→producer index), so the driver's disk/egress
+# stay small. Rendezvous is keyless: every job derives the driver's iroh key from
+# the run id.
 #
 # The build includes the on-chain WASM runtime blob (wasm32 cdylib → wasm-opt →
-# zstd), so the toolchain step installs a wasm-capable clang + wasm-opt on every
-# runner. Tests tagged `ci-infra` (Docker/devnet/Cardano) are excluded — they
-# need external stacks these runners don't have; everything else must pass.
+# zstd), so the toolchain step installs a wasm-capable clang + wasm-opt + protoc +
+# a pinned binaryen on every runner (workers execute the compiles now). Tests
+# tagged `ci-infra` (Docker/devnet/Cardano) are excluded — they need external
+# stacks these runners don't have; everything else must pass.
 name: buck2 distributed
 
 on:
@@ -29,9 +34,15 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: buck2-distributed-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   # One mesh session per run; driver + workers derive the iroh key from it.
   MESH_SESSION: mesh-${{ github.run_id }}
+  # Quorum below the worker count: one no-show runner must not scrap the run.
+  QUORUM_WORKERS: "3"
   # Pin the toolchain so rustc uses the pre-installed 1.95 directly and never
   # consults rust-toolchain.toml at build time — parallel rustc actions otherwise
   # race to rustup-install its pinned components ("detected conflict:
@@ -45,41 +56,39 @@ env:
     -c wasm.cc=/usr/local/bin/wasm-cc.sh
     -c wasm.cxx=/usr/local/bin/wasm-cc.sh
     -c wasm.ar=/usr/local/bin/wasm-ar.sh
+  # CAS bank lineage (rebuck2): the branch's bank is its own; it inherits the
+  # parent lineage's bank read-only so a first lap on a branch is warm off trunk.
+  CAS_LINEAGE: ${{ github.head_ref || github.ref_name }}
+  CAS_PARENT_LINEAGE: ${{ github.base_ref != '' && github.base_ref || (github.ref_name != 'main' && 'main' || '') }}
 
 jobs:
-  # The driver owns buck2. It also lends half its cores as a co-worker, so the
-  # fleet is (driver co-worker + 3 workers). min-workers is below the worker
-  # count: one no-show runner must not scrap the run.
+  # The driver owns buck2 but executes nothing itself (--no-local-exec): every
+  # action goes to a worker. It lends a few cores as a co-worker for the native
+  # local_only actions (reindeer fetches, toolchain discovery).
   driver:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
-      actions: write # driver publishes its mesh address as a run artifact
+      actions: write # driver publishes its mesh address + banks AC/CAS
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      # The driver holds the whole build's buck-out (tens of GB) plus the rebuck2
-      # CAS store — both default onto the free runner's ~14 GB `/` and overflow it
-      # mid-build, and the VM gets reclaimed (exit 143, "runner received a shutdown
-      # signal" — not a build error). Redirect buck-out via a symlink and the
-      # store via the driver's `store` input to /mnt (~70 GB ephemeral disk). 6 GB
-      # swap on /mnt covers local rustc memory peaks (the driver also co-works).
-      - name: Redirect buck-out + store to /mnt, add swap
+      # Even with --no-local-exec + --decentralized-cas the driver holds buck-out
+      # (materialized inputs to local_only actions + final outputs). Keep it off
+      # the free runner's small `/` via a BIND MOUNT to /mnt (a symlink resolves
+      # inconsistently under rebuck2's materializer → "couldn't read src/lib.rs").
+      # Reclaim the pre-installed ballast on `/` too, and add swap for the
+      # co-worker's rustc peaks.
+      - name: Redirect buck-out + store to /mnt, reclaim ballast, add swap
         run: |
           set -e
-          # Keep buck-out + the CAS store off the free runner's ~14 GB `/` (the
-          # full build's buck-out is tens of GB). Use a BIND MOUNT, not a symlink:
-          # buck2's materializer resolves a symlinked buck-out inconsistently under
-          # rebuck2 (sources land where rustc can't read them -> "couldn't read
-          # src/lib.rs"); a bind mount is transparent — buck2 sees a real dir
-          # backed by /mnt (~70 GB).
           sudo mkdir -p /mnt/buck-out /mnt/rebuck2
           mkdir -p buck-out
           sudo mount --bind /mnt/buck-out buck-out
           sudo chown -R "$(id -u):$(id -g)" buck-out /mnt/rebuck2
-          # Bonus swap for local rustc peaks — best-effort: the runner may already
-          # have an active /mnt/swapfile, so use a fresh name and never fail here.
-          ( sudo fallocate -l 6G /mnt/rebuck-swap \
+          ( sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+              /opt/hostedtoolcache/CodeQL /usr/local/.ghcup 2>/dev/null ) || true
+          ( sudo fallocate -l 10G /mnt/rebuck-swap \
             && sudo chmod 600 /mnt/rebuck-swap \
             && sudo mkswap /mnt/rebuck-swap \
             && sudo swapon /mnt/rebuck-swap ) || echo "extra swap unavailable (continuing)"
@@ -88,45 +97,34 @@ jobs:
       - uses: ./.github/actions/buck2-linux-toolchain
 
       - name: Bring up rebuck2 driver
-        uses: gilescope/rebuck/rebuck2/actions/driver@4c402ee3169c58d497e0afcac620516970cd889b
+        uses: gilescope/rebuck/rebuck2/actions/driver@796b7885b954f4fc026a5d880a7c23c58ff4033d
         with:
           session: ${{ env.MESH_SESSION }}
           buck2-version: "" # we install buck2 ourselves (install-buck2 above)
-          min-workers: "2"
+          min-workers: ${{ env.QUORUM_WORKERS }}
           co-worker-slots: "half"
-          # re-cache (hybrid), not re-exec: reindeer's git_fetch actions are
-          # local_only (they hit the network), and re-exec's local_enabled=False
-          # rejects them. Hybrid runs local_only local, the rest via the mesh.
-          execution-platforms: root//platforms:re-cache
-          # Keep the CAS store off the free runner's small `/` (see the disk
-          # redirect step above) — it grows to GBs and would overflow it.
+          # The driver executes nothing (re-exec platform, local_enabled=False);
+          # every compile/link/test is dispatched to a worker. Its co-worker
+          # covers the native local_only actions. This is what keeps the driver
+          # from being VM-reclaimed on a cold monolithic build.
+          no-local-exec: "true"
+          execution-platforms: root//platforms:re-exec
+          # --decentralized-cas: outputs stay on the worker that built them; the
+          # driver keeps only a digest→producer index → small driver disk/egress.
+          # --prefetch-metadata: pull input metadata ahead of dispatch.
+          extra-args: --decentralized-cas --prefetch-metadata
+          # cache failed actions too, so a re-run doesn't repeat known failures.
+          cache-failures: "true"
+          # CAS bank: warm incremental laps (artifacts, no LRU eviction).
+          lineage: ${{ env.CAS_LINEAGE }}
+          parent-lineage: ${{ env.CAS_PARENT_LINEAGE }}
+          # Keep the CAS store off the free runner's small `/`.
           store: /mnt/rebuck2
-          # No cross-run store snapshot: the monolith is multi-GB (2.3 GB seen)
-          # and blows the actions-cache budget. Each run is a cold build for now;
-          # revisit with sharded-CAS persistence once the build is reliably green.
-          snapshot-key-prefix: ""
-          # NB: the `[wasm]` cc/cxx/ar override is NOT set here. The driver writes
-          # it to `.buckconfig.local`, which is root-cell-scoped — but the wasm C
-          # toolchain (`toolchains/BUCK`) reads `read_config("wasm", …)` from the
-          # `toolchains` cell, which doesn't see it, so it fell back to the macOS
-          # Homebrew clang path and `os.execl` FileNotFound'd on Linux (cc-rs
-          # swallows that as an empty-stderr exit 1). Pass it as a *global* `-c`
-          # override on the build/test commands instead (see BUCK_WASM_CFG) —
-          # that reaches every cell.
 
       # --target-platforms pins os:linux+cpu:x86_64: buck2's host auto-detection
       # misfired on the runner (selected arm/neon sources on x86). See platforms/BUCK.
-      #
-      # Build the real deliverables, not `root//...`: the latter also builds
-      # orphan platform-specific object targets (e.g. ring's Windows `*-nasm.o`,
-      # which reindeer emits without `target_compatible_with`, so they aren't
-      # skipped off-Windows and fail `ld.lld: unknown file type` on Linux). The
-      # node/toolkit binaries + the wasm blob pull the whole first-party + third-
-      # party closure through their real (platform-correct) deps.
+      # BUCK_WASM_CFG is a *global* -c so the toolchains cell sees the wasm cc.
       - name: buck2 build (node + toolkit binaries + on-chain wasm blob)
-        # pipefail: `… | tee` otherwise returns tee's exit (0), masking a buck2
-        # failure as a green step. This is load-bearing — it's what turns a real
-        # build failure into a failed job.
         run: |
           set -o pipefail
           buck2 build $BUCK_WASM_CFG --target-platforms root//platforms:linux-x86_64 \
@@ -134,9 +132,6 @@ jobs:
             root//util/toolkit:midnight-node-toolkit-bin \
             root//:runtime-wasm 2>&1 | tee build.log
 
-      # `buck2 test` builds every test target + its deps and runs them — this is
-      # the "builds and runs the tests" deliverable. Orphan object targets are
-      # not test deps, so they're not built here either.
       - name: buck2 test (excluding infra-dependent tests)
         run: |
           set -o pipefail
@@ -148,33 +143,40 @@ jobs:
           grep -Eo 'remote: [0-9]+|local: [0-9]+|Cache hits: [0-9]+%' build.log | sort -u || true
           grep -Eq 'remote: [1-9]' build.log \
             && echo "distributed: actions ran cross-runner" \
-            || echo "note: no remote actions (ran on the driver — tune hybrid/quorum)"
+            || echo "note: no remote actions (ran on the driver — tune quorum)"
 
-      - name: Tear down rebuck2 driver
+      - name: Tear down rebuck2 driver (finalize + bank)
         if: always()
-        uses: gilescope/rebuck/rebuck2/actions/driver-finish@4c402ee3169c58d497e0afcac620516970cd889b
+        uses: gilescope/rebuck/rebuck2/actions/driver-finish@796b7885b954f4fc026a5d880a7c23c58ff4033d
 
-  # Workers join the mesh from anywhere, claim actions least-loaded-first, fetch
-  # inputs P2P, execute, stream outputs back. No checkout — the source arrives as
-  # blobs. continue-on-error: the driver job is the verdict; a lost worker just
-  # means fewer cores.
+  # Workers execute the dispatched compile/link/test actions, so they carry the
+  # same toolchain as the driver. They fetch input blobs P2P; with
+  # --decentralized-cas their outputs stay local and peers pull them direct.
+  # continue-on-error: the driver job is the verdict; a lost worker is fewer cores.
   worker:
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        n: [1, 2, 3]
+        n: [1, 2, 3, 4]
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     permissions:
       contents: read
-      actions: read # fetch the driver-address run artifact
+      actions: read # fetch the driver-address run artifact + bank restore
     steps:
-      # Checkout only to resolve the local composite action below — the build
-      # inputs themselves arrive as blobs over the mesh, not from this tree.
+      # Checkout resolves the local composite action; the build inputs arrive as
+      # blobs over the mesh, not from this tree.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Redirect worker store to /mnt
+        run: |
+          sudo mkdir -p /mnt/rebuck2
+          sudo chown -R "$(id -u):$(id -g)" /mnt/rebuck2
       - uses: ./.github/actions/buck2-linux-toolchain
       - name: Join the mesh and serve
-        uses: gilescope/rebuck/rebuck2/actions/worker@4c402ee3169c58d497e0afcac620516970cd889b
+        uses: gilescope/rebuck/rebuck2/actions/worker@796b7885b954f4fc026a5d880a7c23c58ff4033d
         with:
           session: ${{ env.MESH_SESSION }}
+          role: ${{ runner.os }}-w${{ matrix.n }}
+          lineage: ${{ env.CAS_LINEAGE }}
+          store: /mnt/rebuck2
