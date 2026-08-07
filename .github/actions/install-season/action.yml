@@ -42,4 +42,5 @@ runs:
         mkdir -p "$HOME/.local/bin"
         mv season "$HOME/.local/bin/"
         rm season-x86_64-unknown-linux-musl.tar.gz
+        # zizmor: ignore[github-env] literal, trusted path - not attacker-influenced
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
