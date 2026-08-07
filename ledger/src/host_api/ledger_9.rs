@@ -613,6 +613,36 @@ pub trait Ledger9Bridge {
 		}
 	}
 
+	/// The night value and dust owner of each requested nonce's still-generating
+	/// entry in the *pre-fork* (ledger-8) dust state, positionally aligned with
+	/// `nonces` and `None` for nonces that are untracked or already destroyed.
+	///
+	/// Called by `pallet-cnight-observation`'s dust re-apply migration, which
+	/// rebuilds the cNIGHT generation entries the ledger 8 -> 9 hardfork wipes.
+	/// `state_key` is the v8 arena root it saved during the upgrade block;
+	/// `Err(NoLedgerState)` means that root no longer resolves, or is not a
+	/// ledger-8 root at all.
+	fn dust_generation_values_v8(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		nonces: PassFatPointerAndDecode<Vec<[u8; 32]>>,
+	) -> AllocateAndReturnByCodec<Result<Vec<Option<(u128, Vec<u8>)>>, LedgerApiError>> {
+		// The migration runs in `inherents_applied()`, after pallet-midnight has
+		// initialized the arena, but `set_default_storage` is idempotent and
+		// keeps this callable from anywhere in the block.
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::set_default_storage(*self);
+			crate::host_api::dust_generation::dust_generation_values_v8::<DbUnified>(
+				state_key, &nonces,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
+			crate::host_api::dust_generation::dust_generation_values_v8::<DbSeparate>(
+				state_key, &nonces,
+			)
+		}
+	}
+
 	/// Initialize a process-wide temporary ledger ParityDb seeded with the
 	/// undeployed-network genesis state.
 	///

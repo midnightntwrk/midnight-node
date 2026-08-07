@@ -124,6 +124,20 @@ async fn find_code_applied_block(rpc: &RpcClient, head: u64, old_spec: u64) -> u
 	lo
 }
 
+/// A plain (non-map) storage value at `hash`, or `None` if unset.
+async fn storage_at(rpc: &RpcClient, pallet: &[u8], item: &[u8], hash: &str) -> Option<Vec<u8>> {
+	let key = format!(
+		"0x{}{}",
+		hex::encode(sp_crypto_hashing::twox_128(pallet)),
+		hex::encode(sp_crypto_hashing::twox_128(item)),
+	);
+	let value: Option<String> = rpc
+		.request("state_getStorage", rpc_params![&key, hash])
+		.await
+		.unwrap_or_else(|e| panic!("state_getStorage({key}) failed at {hash}: {e}"));
+	value.map(|v| hex::decode(v.trim_start_matches("0x")).expect("hex-encoded storage value"))
+}
+
 /// Every way of reading the ledger state must answer at `height`.
 ///
 /// Both the `midnight_*` RPCs and a raw `state_call`: the fix lives in the ledger-9
@@ -272,6 +286,33 @@ async fn hardfork_single_tx() {
 	assert_ledger_state_readable(&rpc, applied - 1, "pre-fork").await;
 	assert_ledger_state_readable(&rpc, applied, "code-applied block").await;
 	assert_ledger_state_readable(&rpc, applied + 1, "post-migration").await;
+
+	// 5b. The cNIGHT dust generation replay (pallet-cnight-observation v1 -> v2)
+	//     arms itself in the code-applying block and then runs as a multi-block
+	//     migration. It must wind up: while it is in flight `process_tokens`
+	//     ignores every Cardano observation, so a replay that never finishes
+	//     silently strands the observer. Storage version 2 with the pre-fork key
+	//     cleared is exactly "wound up", by either the restore or the
+	//     self-cancel path.
+	//
+	//     The `dev` preset carries no `UtxoOwners` rows, so this exercises the
+	//     arming and wind-up, not the restore. Nor is the self-cancel visible
+	//     here for the same reason (with nothing to replay there is no colliding
+	//     `Create`); the pallet tests cover both against a real ledger state.
+	wait_for_finalized_block(&url, applied + 3, Duration::from_secs(60)).await;
+	let head_hash = block_hash_at(&rpc, applied + 3).await;
+	assert_eq!(
+		storage_at(&rpc, b"CNightObservation", b":__STORAGE_VERSION__", &head_hash).await,
+		Some(vec![2, 0]),
+		"cnight-observation must reach storage version 2 (dust replay wound up) by #{}",
+		applied + 3,
+	);
+	assert_eq!(
+		storage_at(&rpc, b"CNightObservation", b"PreForkStateKey", &head_hash).await,
+		None,
+		"the pre-fork ledger state key must be cleared once the dust replay winds up",
+	);
+	eprintln!("[hardfork_e2e] dust generation replay wound up by #{}", applied + 3);
 
 	// 6. Post-fork: run single-tx again to verify the node still works after the (future) upgrade
 	run_cli(&[
