@@ -168,6 +168,7 @@ that we are still in the process of being release. As such:
 - [Rust Installation](docs/rust-setup.md) - Setup instructions and toolchain information
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
+- [Profiling Transaction Processing](docs/tx-processing-profiling.md) - Phase-level timing logs for Midnight transactions and block import
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
 - [Governance](docs/governance/overview.md) - Federated Authority Governance System documentation
   - [Runtime Upgrade Guide](docs/governance/example/runtime-upgrade.md) - Step-by-step guide for runtime upgrades via governance
