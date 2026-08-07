@@ -298,15 +298,33 @@ fn reclaim_slice(
 	}
 
 	if !to_remove.is_empty() {
-		// At-most-once ordering: `unpersist_tips` is a blind, NON-idempotent
-		// decrement — repeating it for the same tip (crash retry, failed
-		// removal retry) would decrement the root twice and drive its count
-		// negative (fail-deadly). So durably drop the binding FIRST and only
-		// decrement once the removal is committed; any failure after that
-		// point costs at most a leak. `unpersist_tips` flushes the ledger
-		// write cache before Ok, so a shutdown before the next block flush
-		// cannot drop staged root-count decrements while bindings are gone.
-		// On unpersist failure, re-bind best-effort so the tips retry next
+		// Advisory quiescence pre-check: `unpersist_tips` defers (Err) when
+		// the shared ledger write cache is dirty — its durability flush must
+		// only ever write isolated GC decrements, or it would land another
+		// block execution's staged nodes in the DB unrooted and let the arena
+		// sweep's quiescence check pass mid-execution. Checking here first
+		// skips the retire → busy-defer → re-bind AuxStore churn; the
+		// authoritative check still runs under the backend lock inside
+		// `unpersist_tips`.
+		if !midnight_node_ledger::gc::ledger_quiescent() {
+			debug!(
+				target: LOG_TARGET,
+				"⏸️  Ledger write cache busy; deferring reclaim of {} binding(s)",
+				to_remove.len()
+			);
+			return candidates;
+		}
+
+		// At-most-once ordering: `unpersist_tips` is a NON-idempotent
+		// decrement for shared roots — repeating it for the same tip (crash
+		// retry, failed removal retry) can steal a still-live sibling's count
+		// (single-owner roots are zero-clamped). So durably drop the binding
+		// FIRST and only decrement once the removal is committed; any failure
+		// after that point costs at most a leak. `unpersist_tips` flushes the
+		// ledger write cache before Ok, so a shutdown before the next block
+		// flush cannot drop staged root-count decrements while bindings are
+		// gone. On unpersist failure (including a busy cache that dirtied
+		// after the pre-check), re-bind best-effort so the tips retry next
 		// slice (re-bind failure = leak, still fail-safe).
 		let removed_binds: Vec<(Vec<u8>, Vec<u8>)> =
 			snapshot.iter().filter(|(h, _)| to_remove.contains(h)).cloned().collect();

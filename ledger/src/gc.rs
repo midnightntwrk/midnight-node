@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use ledger_storage_ledger_8::{
 	DefaultDB,
-	arena::{ArenaHash, ArenaKey, TypedArenaKey},
+	arena::{self, ArenaHash, ArenaKey, TypedArenaKey},
 	db::{DB, ParityDb, paritydb::OwnedDb},
 	storage::{default_storage, try_get_default_storage},
 };
@@ -44,6 +44,24 @@ pub fn is_reclaimable_tip(tip: &[u8]) -> bool {
 		|| tip_root::<DefaultDB>(tip).is_some()
 }
 
+/// Advisory: whether the initialized ledger backend's write cache is empty.
+///
+/// The GC worker checks this *before* durably retiring AuxStore bindings, to
+/// avoid the retire → busy-defer → re-bind churn when a block is mid-
+/// execution. Purely advisory — the authoritative check runs under the
+/// backend lock inside [`unpersist_tips`]. Returns `true` when no storage is
+/// initialized (the reclaim path will then fail with its own error).
+pub fn ledger_quiescent() -> bool {
+	fn quiescent_in<D: DB + 'static>() -> Option<bool> {
+		try_get_default_storage::<D>()
+			.map(|storage| storage.with_backend(|backend| backend.get_write_cache_len() == 0))
+	}
+	quiescent_in::<DbSeparate>()
+		.or_else(quiescent_in::<DbUnified>)
+		.or_else(quiescent_in::<DefaultDB>)
+		.unwrap_or(true)
+}
+
 /// Unpersist each tip once. Returns how many arena roots were decremented.
 ///
 /// On success the root-count decrements are flushed to the ledger DB before
@@ -52,13 +70,24 @@ pub fn is_reclaimable_tip(tip: &[u8]) -> bool {
 /// drop the cache while the caller's AuxStore binding is already gone,
 /// leaving the on-disk root permanently unreclaimable.
 ///
-/// **Not idempotent**: each call blindly decrements the tip's arena root
-/// count by one — calling twice for the same persist event drives the count
-/// negative (storage-core treats negative root counts as a fatal invariant
-/// violation) or steals a count from another tip sharing the root. Callers
-/// must guarantee at-most-once delivery per tip: durably retire the tip
-/// *before* calling this, and only re-submit a tip whose retirement was
-/// rolled back (see the node GC worker's remove-then-unpersist ordering).
+/// **Quiescence-gated**: the decrement + flush run only when the shared
+/// ledger write cache is empty, so the durability flush writes *isolated GC
+/// decrements* and nothing else. Flushing a dirty cache would land another
+/// block execution's staged, not-yet-rooted nodes in the DB and make the
+/// arena sweep's own quiescence check pass mid-execution — letting it cull
+/// state the runtime still needs. A dirty cache returns `Err` ("busy");
+/// callers should treat it as retryable and re-submit the tips later.
+///
+/// **Zero-clamped**: roots already at count 0 are skipped with a warning
+/// (crash-replayed binding across the two independent parity-db WALs, or a
+/// state-synced block that never executed locally) instead of underflowing
+/// the flush-time `root_count >= 0` assert.
+///
+/// **Not idempotent** for shared roots: replaying a tip whose root is also
+/// persisted by another still-live block (recurrence class) steals that
+/// count. Callers must keep at-most-once delivery per tip: durably retire
+/// the tip *before* calling this, and only re-submit a tip whose retirement
+/// was rolled back (see the node GC worker's remove-then-unpersist ordering).
 pub fn unpersist_tips(tips: &[Vec<u8>]) -> Result<usize, String> {
 	if tips.is_empty() {
 		return Ok(0);
@@ -153,16 +182,64 @@ fn unpersist_in<D: DB + 'static>(tips: &[Vec<u8>]) -> Result<Option<usize>, Stri
 			roots.len()
 		);
 	}
-	default_storage::<D>().with_backend(|backend| {
-		for root in &roots {
+
+	// Zero-clamp (pre-read; `test_helpers::get_root_count` takes the backend
+	// RefCell itself, so it must not run inside `with_backend`): never
+	// decrement a root already at 0. Two real paths hit this — (a) crash
+	// replay: AuxStore retirement and the flush below ride *independent*
+	// parity-db WALs in separate-DB mode, so a crash can durably keep the
+	// decrement while losing the removal; (b) state-synced (warp/fast)
+	// history: a readable `StateKey` for a block that never executed locally
+	// has no persist to release. Underflow would trip the `root_count >= 0`
+	// assert during flush — after the cache was already cleared — discarding
+	// everything staged with it. Counts can only rise between this read and
+	// the hold below (Bridge never unpersists Anchored roots), which is safe.
+	let storage = default_storage::<D>();
+	let mut to_zero = Vec::with_capacity(roots.len());
+	let mut already_zero = 0usize;
+	for root in roots {
+		if arena::test_helpers::get_root_count(&storage.arena, &root) == 0 {
+			already_zero += 1;
+		} else {
+			to_zero.push(root);
+		}
+	}
+	if already_zero > 0 {
+		warn!(
+			target: LOG_TARGET,
+			"⏭️  Skipped {already_zero} tip root(s) already at zero count \
+			 (crash-replayed binding or state-synced block never executed locally)"
+		);
+	}
+	if to_zero.is_empty() {
+		return Ok(Some(0));
+	}
+
+	let flushed = storage.with_backend(|backend| {
+		// Quiescence gate for the reclaim hold: the durability flush below
+		// drains the WHOLE shared write cache. If another block execution has
+		// staged writes (between host calls, before its `on_finalize` flush),
+		// flushing here would land its unrooted in-flight nodes in the DB and
+		// leave the cache empty — making the arena sweep's own quiescence
+		// check pass mid-execution and cull state the runtime still needs.
+		// Defer instead (caller re-binds and retries); with an empty cache at
+		// this point, the flush writes ONLY our decrements.
+		if backend.get_write_cache_len() > 0 {
+			return false;
+		}
+		for root in &to_zero {
 			backend.unpersist(root);
 		}
 		// Durability: AuxStore bindings are already retired by the caller.
 		// Without this flush, shutdown drops the write cache and the on-disk
 		// root counts stay elevated with nothing left to retry the decrement.
 		backend.flush_all_changes_to_db();
+		true
 	});
-	Ok(Some(roots.len()))
+	if !flushed {
+		return Err("ledger write cache busy; tip reclaim deferred".into());
+	}
+	Ok(Some(to_zero.len()))
 }
 
 fn gc_in<D: DB + 'static>(budget: Duration) -> Result<Option<usize>, String> {
@@ -218,6 +295,9 @@ mod tests {
 
 		let state: LedgerState<DefaultDB> = LedgerState::new(network_id);
 		let sp = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
+		// Flush so the shared test arena's write cache stays quiescent —
+		// `unpersist_tips` defers on a dirty cache.
+		default_storage::<DefaultDB>().with_backend(|b| b.flush_all_changes_to_db());
 		let mut tip = vec![];
 		tagged_serialize(&sp.as_typed_key(), &mut tip).expect("tip serializes");
 		tip
@@ -227,6 +307,22 @@ mod tests {
 		let root = tip_root::<DefaultDB>(tip).expect("tip decodes");
 		default_storage::<DefaultDB>()
 			.with_backend(|b| b.get_roots().get(&root).copied().unwrap_or(0))
+	}
+
+	/// `unpersist_tips` with bounded retry on the quiescence deferral: tests
+	/// share one global arena and run in parallel, so another test's staging
+	/// can transiently dirty the write cache.
+	fn unpersist_retrying(tips: &[Vec<u8>]) -> usize {
+		for _ in 0..50 {
+			match unpersist_tips(tips) {
+				Ok(n) => return n,
+				Err(e) if e.contains("busy") => {
+					std::thread::sleep(Duration::from_millis(10));
+				},
+				Err(e) => panic!("unpersist_tips failed: {e}"),
+			}
+		}
+		panic!("ledger write cache never became quiescent");
 	}
 
 	#[test]
@@ -245,7 +341,7 @@ mod tests {
 	fn unpersist_decrements_once_per_tip() {
 		let tip = ledger_9_tip("gc-once", 1);
 		assert_eq!(root_count(&tip), 1);
-		assert_eq!(unpersist_tips(std::slice::from_ref(&tip)).unwrap(), 1);
+		assert_eq!(unpersist_retrying(std::slice::from_ref(&tip)), 1);
 		assert_eq!(root_count(&tip), 0);
 	}
 
@@ -257,7 +353,25 @@ mod tests {
 		// no binding left to retry it.
 		let tip = ledger_9_tip("gc-mult", 2);
 		assert_eq!(root_count(&tip), 2);
-		assert_eq!(unpersist_tips(&[tip.clone(), tip.clone()]).unwrap(), 2);
+		assert_eq!(unpersist_retrying(&[tip.clone(), tip.clone()]), 2);
+		assert_eq!(root_count(&tip), 0);
+	}
+
+	#[test]
+	fn zero_count_root_is_clamped_not_underflowed() {
+		// A binding can outlive its persist count: crash-replayed removal
+		// (independent WALs) or a state-synced block that never executed
+		// locally. The decrement must clamp to a no-op, not underflow into
+		// the flush-time `root_count >= 0` assert.
+		let tip = ledger_9_tip("gc-clamp", 0);
+		assert_eq!(root_count(&tip), 0);
+		assert_eq!(unpersist_retrying(std::slice::from_ref(&tip)), 0);
+		assert_eq!(root_count(&tip), 0);
+
+		// And a replayed rc=1 reclaim: first call decrements, replay is a no-op.
+		let tip = ledger_9_tip("gc-clamp-replay", 1);
+		assert_eq!(unpersist_retrying(std::slice::from_ref(&tip)), 1);
+		assert_eq!(unpersist_retrying(std::slice::from_ref(&tip)), 0);
 		assert_eq!(root_count(&tip), 0);
 	}
 
@@ -268,6 +382,6 @@ mod tests {
 		// Undecodable tips with initialized storage must be a no-op (leak),
 		// not an error — an error would make the worker re-bind and retry the
 		// same batch forever (wedged reclaim).
-		assert_eq!(unpersist_tips(&[vec![1, 2, 3]]).unwrap(), 0);
+		assert_eq!(unpersist_retrying(&[vec![1, 2, 3]]), 0);
 	}
 }

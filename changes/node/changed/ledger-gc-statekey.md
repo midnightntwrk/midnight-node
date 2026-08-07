@@ -11,6 +11,14 @@ debounced `have_state_at == false`, it retires the hash from AuxStore and then
 the decrement is not idempotent, so a crash between the two steps costs a
 leak, never a double-decrement; without the flush, shutdown could drop
 staged decrements after AuxStore retirement and leave roots unreclaimable).
+The reclaim hold is quiescence-gated: it defers while the shared ledger write
+cache is dirty, so the durability flush only ever writes isolated GC
+decrements — flushing mid-execution would land another block's staged
+unrooted nodes in the DB and let the arena sweep's quiescence check pass
+while the runtime still needs them. Decrements are zero-clamped (a
+crash-replayed binding across the two independent parity-db WALs, or a
+state-synced block that never executed locally, is a logged no-op instead of
+a root-count underflow).
 Incremental arena `gc` runs once per finality after reclaim (including during
 major sync), with a short soft time bound — further progress resumes on later
 notifications instead of looping under the arena mutex. GC runs only while the
