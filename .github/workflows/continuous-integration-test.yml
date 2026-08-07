@@ -38,7 +38,7 @@ jobs:
       - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.18-rc-3
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
