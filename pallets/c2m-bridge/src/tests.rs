@@ -5,7 +5,7 @@ use midnight_primitives::BridgeRecipient;
 use pallet_partner_chains_bridge::TransferHandler;
 use sidechain_domain::McTxHash;
 use sp_partner_chains_bridge::*;
-use sp_runtime::{BoundedVec, DispatchError};
+use sp_runtime::{BoundedVec, BuildStorage, DispatchError};
 
 fn sort_hashes(mut v: Vec<McTxHash>) -> Vec<McTxHash> {
 	v.sort_by_key(|h| h.0);
@@ -435,4 +435,42 @@ fn add_approved_mc_tx_hashes_inserts_unique_entries() {
 			sort_hashes(vec![h1, h2, h3])
 		);
 	})
+}
+
+#[test]
+fn genesis_initializes_approved_mc_tx_hashes() {
+	let h1 = McTxHash([7; 32]);
+	let h2 = McTxHash([8; 32]);
+
+	let mut ext: sp_io::TestExternalities = {
+		let mut storage = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
+		pallet::GenesisConfig::<Test> { approved_txs: vec![h1, h2], ..Default::default() }
+			.assimilate_storage(&mut storage)
+			.unwrap();
+		storage.into()
+	};
+
+	ext.execute_with(|| {
+		assert_eq!(sort_hashes(C2MBridge::get_approved_mc_tx_hashes()), sort_hashes(vec![h1, h2]));
+	})
+}
+
+#[test]
+fn genesis_config_approved_txs_is_optional() {
+	// Absent field deserializes to an empty vec.
+	let config: pallet::GenesisConfig<Test> = serde_json::from_str(
+		r#"{"subminimalTransfersConfig":{"subminimal_transfers_flush_threshold":0},"marker":null}"#,
+	)
+	.expect("approved_txs must be optional");
+	assert!(config.approved_txs.is_empty());
+}
+
+#[test]
+fn genesis_config_approved_txs_are_hex_encoded() {
+	// Present field is an array of hex strings (not an array of numbers).
+	let config: pallet::GenesisConfig<Test> = serde_json::from_str(
+		r#"{"subminimalTransfersConfig":{"subminimal_transfers_flush_threshold":0},"approvedTxs":["0x0101010101010101010101010101010101010101010101010101010101010101"],"marker":null}"#,
+	)
+	.expect("hex string array must deserialize");
+	assert_eq!(config.approved_txs, vec![McTxHash([1; 32])]);
 }

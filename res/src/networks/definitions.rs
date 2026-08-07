@@ -105,6 +105,7 @@ impl MidnightNetwork for UndeployedNetwork {
 		super::MainChainScripts::load_from_configs(&registered_candidates, &permissioned_candidates)
 	}
 }
+
 /// Used when `--chain` is not specified when running `build-spec` - it will source chain values from
 /// environment variables at runtime rather than hard-coded values at compile-time
 pub struct CustomNetwork {
