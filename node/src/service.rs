@@ -675,7 +675,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		&task_manager.spawn_handle(),
 		client.clone(),
 		backend.clone(),
-		sync_service.clone(),
 		ledger_gc_index,
 		&state_pruning,
 	);

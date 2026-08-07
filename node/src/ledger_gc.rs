@@ -32,7 +32,6 @@ use sc_client_api::{Backend, BlockchainEvents, StorageProvider, backend::AuxStor
 use sc_client_db::PruningMode;
 use sc_service::SpawnTaskHandle;
 use sp_blockchain::HeaderBackend;
-use sp_consensus::SyncOracle;
 use sp_core::storage::StorageKey;
 use sp_runtime::{
 	SaturatedConversion,
@@ -262,7 +261,6 @@ fn reclaim_slice(
 	index: &LedgerGcIndex,
 	lag: NumberFor<Block>,
 	prev_pruned: HashSet<BlockHash>,
-	run_gc: bool,
 	archive_canonical: bool,
 ) -> HashSet<BlockHash> {
 	let snapshot = index.bound_snapshot();
@@ -335,11 +333,7 @@ fn reclaim_slice(
 		}
 	}
 
-	if run_gc {
-		run_arena_gc_slice();
-	} else {
-		debug!(target: LOG_TARGET, "💤 Unpersist-only slice (tips={})", index.len());
-	}
+	run_arena_gc_slice();
 
 	candidates
 }
@@ -363,16 +357,13 @@ fn run_arena_gc_slice() {
 	}
 }
 
-async fn run<S>(
+async fn run(
 	client: Arc<FullClient>,
 	backend: Arc<FullBackend>,
-	sync: Arc<S>,
 	index: LedgerGcIndex,
 	depth: u32,
 	archive_canonical: bool,
-) where
-	S: SyncOracle + Send + Sync + 'static,
-{
+) {
 	let bind_canonical = !archive_canonical;
 	info!(
 		target: LOG_TARGET,
@@ -386,16 +377,9 @@ async fn run<S>(
 	let mut pruned_candidates: HashSet<BlockHash> = HashSet::new();
 
 	// Reclaim any tips already past the pruning window before waiting on finality.
-	pruned_candidates = run_reclaim_slice(
-		&client,
-		&backend,
-		&index,
-		lag,
-		pruned_candidates,
-		!sync.is_major_syncing(),
-		archive_canonical,
-	)
-	.await;
+	pruned_candidates =
+		run_reclaim_slice(&client, &backend, &index, lag, pruned_candidates, archive_canonical)
+			.await;
 
 	loop {
 		let Some(note) = finality.next().await else {
@@ -407,23 +391,9 @@ async fn run<S>(
 			on_finality(&client, &index, &note, bind_canonical);
 		}
 
-		let run_gc = if sync.is_major_syncing() {
-			debug!(target: LOG_TARGET, "⏳ Major sync; unpersist-only slice");
-			false
-		} else {
-			true
-		};
-
-		pruned_candidates = run_reclaim_slice(
-			&client,
-			&backend,
-			&index,
-			lag,
-			pruned_candidates,
-			run_gc,
-			archive_canonical,
-		)
-		.await;
+		pruned_candidates =
+			run_reclaim_slice(&client, &backend, &index, lag, pruned_candidates, archive_canonical)
+				.await;
 	}
 }
 
@@ -433,14 +403,13 @@ async fn run_reclaim_slice(
 	index: &LedgerGcIndex,
 	lag: NumberFor<Block>,
 	prev: HashSet<BlockHash>,
-	run_gc: bool,
 	archive_canonical: bool,
 ) -> HashSet<BlockHash> {
 	let client_gc = client.clone();
 	let backend_gc = backend.clone();
 	let index_gc = index.clone();
 	match tokio::task::spawn_blocking(move || {
-		reclaim_slice(&client_gc, &backend_gc, &index_gc, lag, prev, run_gc, archive_canonical)
+		reclaim_slice(&client_gc, &backend_gc, &index_gc, lag, prev, archive_canonical)
 	})
 	.await
 	{
@@ -455,10 +424,7 @@ async fn run_reclaim_slice(
 /// Arena-GC-only loop for `ArchiveAll`: never unpersists Anchored history
 /// tips, but still culls zero-ref Transient/intermediate garbage that block
 /// execution already unpersisted. Paced on finality (same as tip reclaim).
-async fn run_arena_only<S>(client: Arc<FullClient>, sync: Arc<S>)
-where
-	S: SyncOracle + Send + Sync + 'static,
-{
+async fn run_arena_only(client: Arc<FullClient>) {
 	info!(
 		target: LOG_TARGET,
 		"♻️  Ledger arena GC started (ArchiveAll; tip reclaim disabled, history tips kept)"
@@ -466,9 +432,7 @@ where
 
 	let mut finality = client.finality_notification_stream();
 	// Catch up any backlog before waiting on the next notification.
-	if !sync.is_major_syncing() {
-		let _ = tokio::task::spawn_blocking(run_arena_gc_slice).await;
-	}
+	let _ = tokio::task::spawn_blocking(run_arena_gc_slice).await;
 
 	loop {
 		let Some(_note) = finality.next().await else {
@@ -477,11 +441,6 @@ where
 		};
 		while let Some(Some(_)) = finality.next().now_or_never() {}
 
-		if sync.is_major_syncing() {
-			debug!(target: LOG_TARGET, "⏳ Major sync; skipping arena GC slice");
-			continue;
-		}
-
 		if let Err(e) = tokio::task::spawn_blocking(run_arena_gc_slice).await {
 			error!(target: LOG_TARGET, "💥 Arena GC slice task failed: {e}");
 		}
@@ -489,16 +448,13 @@ where
 }
 
 /// Spawn the ledger GC worker for the configured pruning mode.
-pub fn try_spawn<S>(
+pub fn try_spawn(
 	spawn: &SpawnTaskHandle,
 	client: Arc<FullClient>,
 	backend: Arc<FullBackend>,
-	sync: Arc<S>,
 	index: LedgerGcIndex,
 	state_pruning: &Option<PruningMode>,
-) where
-	S: SyncOracle + Send + Sync + 'static,
-{
+) {
 	// `StateDb::open` reuses the DB-stored pruning mode when the CLI flag is
 	// omitted (`(false, Some(stored), None) => stored`), so a `None` config
 	// only means "constrained 256" on a fresh DB. If the flag is omitted and
@@ -519,7 +475,7 @@ pub fn try_spawn<S>(
 			 (arena GC only). Pass --state-pruning archive-canonical explicitly to \
 			 enable stale-fork reclaim"
 		);
-		spawn.spawn("ledger-gc", Some("ledger"), run_arena_only(client, sync));
+		spawn.spawn("ledger-gc", Some("ledger"), run_arena_only(client));
 		return;
 	}
 
@@ -537,7 +493,7 @@ pub fn try_spawn<S>(
 			"ℹ️  Ledger tip reclaim disabled (ArchiveAll); arena GC still runs for \
 			 transient/intermediate garbage"
 		);
-		spawn.spawn("ledger-gc", Some("ledger"), run_arena_only(client, sync));
+		spawn.spawn("ledger-gc", Some("ledger"), run_arena_only(client));
 		return;
 	};
 
@@ -568,11 +524,7 @@ pub fn try_spawn<S>(
 		);
 	}
 
-	spawn.spawn(
-		"ledger-gc",
-		Some("ledger"),
-		run(client, backend, sync, index, depth, archive_canonical),
-	);
+	spawn.spawn("ledger-gc", Some("ledger"), run(client, backend, index, depth, archive_canonical));
 }
 
 #[cfg(test)]

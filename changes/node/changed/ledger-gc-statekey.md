@@ -11,7 +11,7 @@ debounced `have_state_at == false`, it retires the hash from AuxStore and then
 the decrement is not idempotent, so a crash between the two steps costs a
 leak, never a double-decrement; without the flush, shutdown could drop
 staged decrements after AuxStore retirement and leave roots unreclaimable).
-Incremental arena `gc` runs once per finality after reclaim (deferred during
+Incremental arena `gc` runs once per finality after reclaim (including during
 major sync), with a short soft time bound — further progress resumes on later
 notifications instead of looping under the arena mutex. GC runs only while the
 ledger write cache is quiescent: its DB-based mark/sweep cannot see staged
