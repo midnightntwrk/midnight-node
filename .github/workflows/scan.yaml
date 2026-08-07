@@ -37,7 +37,7 @@ jobs:
 
       - name: Scan code
         if: steps.guard.outputs.hit != 'true'
-        uses: midnightntwrk/upload-sarif-github-action@1101dd4be9e5d1f40cd0d7de4e710284b58f08cf
+        uses: midnightntwrk/upload-sarif-github-action@f41db95c0645da26b8036c7ef94c2aa533222925
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
