@@ -40,10 +40,12 @@
 //! generation entries too, and nothing in this repo records which of those the
 //! wipe took.
 //!
-//! Until the ledger update that wipes dust ships this is inert: today's
-//! translation table carries dust across, so the first replayed `Create`
-//! collides with `GenerationInfoAlreadyPresent` and the migration self-cancels
-//! (see [`MigrateV1ToV2::step`]).
+//! The wipe itself lives in the translation table
+//! (`midnight_node_ledger_helpers::state_translation_v8_to_v9`), which replaces
+//! the v8 dust state with the empty one. Should that ever stop being true, this
+//! migration self-cancels rather than corrupting state: the first replayed
+//! `Create` collides with `GenerationInfoAlreadyPresent` (see
+//! [`MigrateV1ToV2::step`]).
 
 extern crate alloc;
 
@@ -226,8 +228,9 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 				// Nothing has been restored yet, so the likely reason is that the
 				// hardfork did not wipe dust after all: re-applying a surviving
 				// `Create` fails with `GenerationInfoAlreadyPresent`. This is the
-				// self-cancel that keeps the migration inert until the wiping
-				// ledger ships. (Keyed on "nothing restored" rather than "first
+				// self-cancel that keeps the migration inert against a
+				// translation that carries dust across. (Keyed on "nothing
+				// restored" rather than "first
 				// batch" because a leading page can legitimately resolve to no
 				// events at all, and then never apply anything.)
 				log::warn!(

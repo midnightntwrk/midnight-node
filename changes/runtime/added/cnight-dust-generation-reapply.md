@@ -37,11 +37,13 @@ and on the mint/claim path); nothing in this repo records which of those the wip
 took, so `DustReapplyCompleted` must not be read as "all dust generation
 restored".
 
-Until the ledger update that wipes dust ships, the migration is inert: the
-current state translation carries dust across, so the first replayed event
-collides with `GenerationInfoAlreadyPresent` and the migration self-cancels with
-a `DustReapplySkipped` event. It activates on its own when that ledger change
-lands.
+The wipe itself is part of this change: the v8 -> v9 state translation now drops
+the dust state and installs the empty one genesis starts from, instead of
+carrying it across. The toolkit's `fork_context_8_to_9` mirrors that, resetting
+every wallet's local dust state so it does not try to spend dust the chain no
+longer has. Should a translation ever carry dust across again, the migration
+self-cancels rather than corrupting state: the first replayed event collides with
+`GenerationInfoAlreadyPresent` and it emits `DustReapplySkipped`.
 
 New events: `DustReapplyStarted`, `DustReapplyBatchFailed`,
 `DustReapplyCompleted`, `DustReapplySkipped`.
