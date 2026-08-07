@@ -1,14 +1,15 @@
 # Distributed buck2 build + test on free ubuntu-latest runners.
 #
 # One `driver` job owns the buck2 invocation; N `worker` jobs lend their cores
-# over an iroh P2P mesh (gilescope/rebuck2). The driver runs `--no-local-exec`
-# against the `re-exec` platform, so every compile/link/test action is dispatched
-# to a worker — the driver stays light (it was getting VM-reclaimed ~20 min into
-# a cold monolithic build when it held all of buck-out and compiled locally).
-# `--decentralized-cas` keeps each action's outputs on the worker that built them
-# (the driver holds only a digest→producer index), so the driver's disk/egress
-# stay small. Rendezvous is keyless: every job derives the driver's iroh key from
-# the run id.
+# over an iroh P2P mesh (gilescope/rebuck2). The driver builds with the hybrid
+# `re-cache` platform + `--prefer-remote`, so every compile/link/test is
+# dispatched to a worker while the few `local_only` actions (reindeer git_fetch,
+# which needs the driver's private-repo auth) still run locally. The driver stays
+# light — it was getting VM-reclaimed ~20 min into a cold monolithic build when
+# it compiled everything locally. `--decentralized-cas` keeps each action's
+# outputs on the worker that built them (the driver holds only a digest→producer
+# index), so the driver's disk/egress stay small. Rendezvous is keyless: every
+# job derives the driver's iroh key from the run id.
 #
 # The build includes the on-chain WASM runtime blob (wasm32 cdylib → wasm-opt →
 # zstd), so the toolchain step installs a wasm-capable clang + wasm-opt + protoc +
@@ -103,12 +104,15 @@ jobs:
           buck2-version: "" # we install buck2 ourselves (install-buck2 above)
           min-workers: ${{ env.QUORUM_WORKERS }}
           co-worker-slots: "half"
-          # The driver executes nothing (re-exec platform, local_enabled=False);
-          # every compile/link/test is dispatched to a worker. Its co-worker
-          # covers the native local_only actions. This is what keeps the driver
-          # from being VM-reclaimed on a cold monolithic build.
-          no-local-exec: "true"
-          execution-platforms: root//platforms:re-exec
+          # Hybrid `re-cache`, NOT `re-exec`/`no-local-exec`: reindeer fetches the
+          # git dependencies (midnight-ledger, whisky, polkadot-sdk) via `git_fetch`,
+          # which is `local_only = True` (network + private-repo auth live on the
+          # driver's checkout). re-exec has no local executor, so it hard-rejects
+          # those ("Trying to execute a local_only action on remote executor"). The
+          # hybrid platform keeps a local executor for them; `--prefer-remote` on
+          # the build (below) still pushes every compile/link/test to a worker, so
+          # the driver stays light without forbidding local_only.
+          execution-platforms: root//platforms:re-cache
           # --decentralized-cas: outputs stay on the worker that built them; the
           # driver keeps only a digest→producer index → small driver disk/egress.
           # --prefetch-metadata: pull input metadata ahead of dispatch.
@@ -127,7 +131,9 @@ jobs:
       - name: buck2 build (node + toolkit binaries + on-chain wasm blob)
         run: |
           set -o pipefail
-          buck2 build $BUCK_WASM_CFG --target-platforms root//platforms:linux-x86_64 \
+          # --prefer-remote: push every non-local_only action (all the compiles)
+          # to a worker; local_only (git_fetch) still runs on the driver.
+          buck2 build --prefer-remote $BUCK_WASM_CFG --target-platforms root//platforms:linux-x86_64 \
             root//node:midnight-node-bin \
             root//util/toolkit:midnight-node-toolkit-bin \
             root//:runtime-wasm 2>&1 | tee build.log
@@ -135,7 +141,7 @@ jobs:
       - name: buck2 test (excluding infra-dependent tests)
         run: |
           set -o pipefail
-          buck2 test $BUCK_WASM_CFG root//... --target-platforms root//platforms:linux-x86_64 --exclude ci-infra 2>&1 | tee test.log
+          buck2 test --prefer-remote $BUCK_WASM_CFG root//... --target-platforms root//platforms:linux-x86_64 --exclude ci-infra 2>&1 | tee test.log
 
       - name: Report distribution
         if: always()
