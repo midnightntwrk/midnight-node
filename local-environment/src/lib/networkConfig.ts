@@ -29,6 +29,12 @@ export interface NetworkConfig {
   mock?: MockModeConfig;
 }
 
+export interface MockValidatorSelection {
+  numValidators: number;
+  validatorServices: string[];
+  disabledValidatorServices: string[];
+}
+
 export function loadNetworkConfig(namespace: string): NetworkConfig {
   const configPath = path.resolve(
     __dirname,
@@ -62,4 +68,38 @@ export function requireMockConfig(
     );
   }
   return config.mock;
+}
+
+/**
+ * Resolve the active validator topology for a fork. The configured service
+ * list is the maximum topology that Docker Compose can materialize; a CLI
+ * override may select a prefix of that list but cannot invent new services.
+ */
+export function resolveMockValidatorSelection(
+  config: MockModeConfig,
+  requestedNumValidators?: number,
+): MockValidatorSelection {
+  const numValidators = requestedNumValidators ?? config.numValidators;
+  const source =
+    requestedNumValidators === undefined
+      ? "mock.numValidators in config.json"
+      : "--num-validators";
+
+  if (!Number.isSafeInteger(numValidators) || numValidators < 1) {
+    throw new Error(
+      `${source} must be a positive integer; got ${numValidators}`,
+    );
+  }
+
+  if (numValidators > config.validatorServices.length) {
+    throw new Error(
+      `${source} requested ${numValidators} validators, but this network's Compose topology only defines ${config.validatorServices.length}: ${config.validatorServices.join(", ")}`,
+    );
+  }
+
+  return {
+    numValidators,
+    validatorServices: config.validatorServices.slice(0, numValidators),
+    disabledValidatorServices: config.validatorServices.slice(numValidators),
+  };
 }

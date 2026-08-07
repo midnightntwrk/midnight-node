@@ -35,6 +35,23 @@ npm run run:preprod -- --from-snapshot https://example.com/snapshots/preprod-lat
 npm run run:mainnet -- --from-snapshot https://example.com/snapshots/mainnet-latest.tar.gz
 ```
 
+Use `--num-validators` to run a smaller mock authority set than the network's
+Compose topology defines. For example, this restores the Preview snapshot,
+generates three validator keysets, and starts only `node1` through `node3`:
+
+```bash
+npm run run:preview -- \
+  --from-snapshot https://example.com/snapshots/preview-latest.tar.zst \
+  --num-validators 3
+```
+
+The count must be a positive integer no larger than the network's
+`mock.validatorServices` list in `src/networks/well-known/<network>/config.json`.
+Changing the count requires `--from-snapshot` so `mock-authorities` can rewrite
+the authority set and regenerate seeds. Later restarts omit both options and
+reuse the generated selection. The option is not supported by the standalone
+`local-env` stack, whose five-validator topology and keys are fixed.
+
 After that initial restore, the same network can be restarted without
 `--from-snapshot` as long as the restored `data/` directories and generated
 mock-authorities output are still present:
