@@ -91,31 +91,24 @@ def _ledger_helpers_env(pkg, node):
 # would otherwise set. Lets us skip running the script under buck.
 ENV_HOOKS = {
     "midnight-node-ledger-helpers": _ledger_helpers_env,
-    # sqlx::query_as! verifies queries at compile time against the .sqlx offline
-    # cache. sqlx-macros reads SQLX_OFFLINE from CARGO_MANIFEST_DIR/.env via
-    # dotenvy — which works locally (rustc CWD = __srcs root) but panics on a
-    # remote worker where the CWD/.env resolution differs. Set it in the rustc
-    # env directly so offline mode never depends on reading the .env file. The
-    # .sqlx cache is already in srcs (root//:sqlx-offline) at ./.sqlx.
     "midnight-primitives-mainchain-follower": lambda p, n: {
-        # sqlx-macros (0.9) resolves the query cache dir by trying, in order:
-        # SQLX_OFFLINE_DIR, <manifest_dir>/.sqlx, then <workspace_root>/.sqlx —
-        # and the last one shells out to `cargo metadata`, which EOFs in buck's
-        # sandboxed __srcs tree (no cargo workspace). sqlx does the SQLX_OFFLINE_DIR
-        # lookup with std::fs relative to rustc's CWD, which buck sets to the REPO
-        # ROOT (not __srcs) — so a relative dir misses on the remote worker. The
-        # buck2 rust prelude only auto-absolutizes CARGO_MANIFEST_DIR / OUT_DIR;
-        # for any other path-bearing env it puts values *containing an artifact
-        # input* into `path_env`, which rustc_action.py turns into a worker-
-        # absolute path at runtime (build.bzl process_env, ~L1728). So express the
-        # cache dir as $(location) of the staged filegroup + its `.sqlx/` subdir
-        # (the glob keeps that prefix). That is CWD-independent and correct on both
-        # local and RE. Proven with CARGO=/bin/false (build still green => sqlx
-        # matched dir[0] and cargo metadata was never invoked). CARGO stays set to
-        # satisfy sqlx's pre-offline presence check.
+        # sqlx-macros (0.9) verifies query_as!/query! at compile time against the
+        # .sqlx offline cache, found by trying (in order) SQLX_OFFLINE_DIR,
+        # <manifest_dir>/.sqlx, then <workspace_root>/.sqlx — the last shells out to
+        # `cargo metadata`, which EOFs in buck's sandboxed __srcs tree (no cargo
+        # workspace). We land on candidate #2: the crate carries its own real .sqlx/
+        # (SRC_HOOKS globs it into srcs, so it stages exactly like src/*.rs — a
+        # __srcs symlink to project source, which the remote worker materializes),
+        # and CARGO_MANIFEST_DIR="." is auto-absolutized by the rust prelude
+        # (_DIRECTORY_ENV) to the __srcs root, so <manifest_dir>/.sqlx resolves on
+        # both local and RE without cargo metadata. A relative SQLX_OFFLINE_DIR
+        # missed (rustc's CWD is the repo root, not __srcs) and a $(location) one
+        # missed too (that filegroup artifact isn't materialized at its logical
+        # path under rebuck2's CAS). Proven with CARGO=/bin/false: build still green
+        # => cargo metadata was never invoked. CARGO stays set to satisfy sqlx's
+        # pre-offline presence check.
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
-        "SQLX_OFFLINE_DIR": "$(location root//:sqlx-offline)/.sqlx",
     },
     # runtime lib.rs include!s $OUT_DIR/wasm_binary.rs; point at the stub dir
     # (WASM_BINARY=None) since substrate-wasm-builder can't run under buck.
@@ -244,9 +237,10 @@ TEST_SRCS_HOOKS = {
 # each value is a list of starlark expressions added to `srcs` with `+`; a
 # fragment may be a list literal (["..."]) or a glob() call.
 SRCS_HOOKS = {
-    # .env (SQLX_OFFLINE + SQLX_OFFLINE_DIR=.sqlx) drives sqlx offline mode;
-    # sqlx-macros 0.8.x reads it via dotenvy from CARGO_MANIFEST_DIR/.env.
-    "midnight-primitives-mainchain-follower": ['[".env", "root//:sqlx-offline"]'],
+    # Crate-local .sqlx/ (real source, copied from the workspace root cache) is
+    # globbed in so it stages like src/*.rs and sqlx finds it via <manifest_dir>/
+    # .sqlx on the remote worker (see ENV_HOOKS). .env kept for local cargo.
+    "midnight-primitives-mainchain-follower": ['glob([".sqlx/**"])', '[".env"]'],
     # include_str!("../examples/*.json") — data outside the src/ glob.
     "partner-chains-mock-data-sources": ['glob(["examples/**/*.json"])'],
     # res embeds genesis/network config blobs via include_str!/include_bytes!

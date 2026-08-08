@@ -1,17 +1,5 @@
 # Root cell targets.
 
-# sqlx offline query cache. sqlx-macros 0.8.x reads SQLX_OFFLINE_DIR only from a
-# crate-local `.env` file (via dotenvy), never from process env — so consumers
-# (primitives/mainchain-follower) ship a `.env` with SQLX_OFFLINE_DIR=.sqlx and
-# add this filegroup to srcs, materializing the cache at the CWD-relative .sqlx
-# the macro resolves. Without it, query_as! falls through to `cargo metadata`
-# (needs $CARGO, unset under buck) and panics.
-filegroup(
-    name = "sqlx-offline",
-    srcs = glob([".sqlx/**"]),
-    visibility = ["PUBLIC"],
-)
-
 # WASM_BINARY = None stub for the runtime. runtime/src/lib.rs does
 # include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs")); the real file is
 # emitted by substrate-wasm-builder (build.rs), which spawns cargo and can't

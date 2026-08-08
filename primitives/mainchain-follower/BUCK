@@ -4,7 +4,7 @@ rust_library(
     crate = "midnight_primitives_mainchain_follower",
     crate_root = "src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"] + [".env", "root//:sqlx-offline"],
+    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]) + [".env"],
     features = select({
         "prelude//cpu:wasm32": [
         ],
@@ -40,7 +40,6 @@ rust_library(
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
-        "SQLX_OFFLINE_DIR": "$(location root//:sqlx-offline)/.sqlx",
     },
     deps = select({
         "prelude//cpu:wasm32": [
@@ -101,7 +100,7 @@ rust_test(
     crate = "midnight_primitives_mainchain_follower",
     crate_root = "src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"] + [".env", "root//:sqlx-offline"],
+    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]) + [".env"],
     features = [
         "async-trait",
         "authority-selection-inherents",
@@ -133,7 +132,6 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
-        "SQLX_OFFLINE_DIR": "$(location root//:sqlx-offline)/.sqlx",
     },
     deps = [
         "root//partner-chains/toolkit/committee-selection/authority-selection-inherents:authority-selection-inherents",
@@ -175,7 +173,7 @@ rust_test(
     crate = "cnight_equivalence",
     crate_root = "tests/cnight_equivalence.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**"]) + ["Cargo.toml"] + [".env", "root//:sqlx-offline"],
+    srcs = glob(["src/**", "tests/**"]) + ["Cargo.toml"] + glob([".sqlx/**"]) + [".env"],
     features = [
         "async-trait",
         "authority-selection-inherents",
@@ -207,7 +205,6 @@ rust_test(
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
-        "SQLX_OFFLINE_DIR": "$(location root//:sqlx-offline)/.sqlx",
     },
     deps = [
         ":midnight-primitives-mainchain-follower",

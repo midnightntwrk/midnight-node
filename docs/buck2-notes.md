@@ -48,7 +48,7 @@ Install buck2 to `~/.cargo/bin/buck2`; build reindeer with
 ```
 .buckconfig              root cell + `fixups` external cell (buck2-fixups pin)
 .buckroot
-BUCK                     sqlx-offline filegroup, runtime-wasm-stub genrule
+BUCK                     runtime-wasm-stub genrule, on-chain wasm blob target
 toolchains/BUCK          system rust/cxx/python toolchains (abs clang paths)
 third-party/
   reindeer.toml          shared_fixups pin + global cargo_env + vendor=false
@@ -130,12 +130,22 @@ run; instead:
 
 ## Notable per-crate handling
 
-* **sqlx offline** (`mainchain-follower`) — sqlx-macros 0.8.x reads
-  `SQLX_OFFLINE` / `SQLX_OFFLINE_DIR` **only from a `.env` file** (via dotenvy
-  at `CARGO_MANIFEST_DIR/.env`), never from process env. So the crate ships a
-  `.env` (`SQLX_OFFLINE_DIR=.sqlx`), added to srcs alongside the root
-  `:sqlx-offline` filegroup. rustc's CWD is the `__srcs` tree root, so
-  `CARGO_MANIFEST_DIR="."` and the cache resolves at `./.sqlx`.
+* **sqlx offline** (`mainchain-follower`) — sqlx-macros 0.9 verifies
+  `query_as!` against the `.sqlx` cache, tried in order: `SQLX_OFFLINE_DIR`,
+  `<manifest_dir>/.sqlx`, `<workspace_root>/.sqlx` (the last shells out to
+  `cargo metadata`, which EOFs in the sandboxed `__srcs` tree). We hit
+  candidate #2: the crate carries its **own real `.sqlx/`** (copied from the
+  workspace-root cache), globbed into srcs so it stages like `src/*.rs` — a
+  `__srcs` symlink to project source that the remote worker materializes.
+  `CARGO_MANIFEST_DIR="."` is auto-absolutized by the rust prelude
+  (`_DIRECTORY_ENV`) to the `__srcs` root, so `<manifest_dir>/.sqlx` resolves
+  on local **and** RE without cargo metadata. A relative `SQLX_OFFLINE_DIR`
+  missed (rustc's CWD is the repo root, not `__srcs`); a `$(location)` one
+  missed too (that filegroup artifact isn't materialized at its logical path
+  under rebuck2's CAS — only srcs symlinked to project source are).
+  `CARGO="cargo"` set for sqlx's pre-offline presence check.
+  Caveat: the crate `.sqlx/` duplicates the root cache; keep them in sync
+  (`cargo sqlx prepare --workspace` then re-copy) — CI `prepare --check` guards it.
 * **proc-macro-crate** — 3.x invokes `cargo` to resolve `codec = { workspace =
   true }` renames, unavailable under buck. Patched with the same Cargo.toml-scan
   fallback the Bazel build uses (`third-party/patched/proc-macro-crate`, wired
