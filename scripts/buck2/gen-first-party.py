@@ -91,6 +91,16 @@ def _ledger_helpers_env(pkg, node):
 # would otherwise set. Lets us skip running the script under buck.
 ENV_HOOKS = {
     "midnight-node-ledger-helpers": _ledger_helpers_env,
+    # sqlx::query_as! verifies queries at compile time against the .sqlx offline
+    # cache. sqlx-macros reads SQLX_OFFLINE from CARGO_MANIFEST_DIR/.env via
+    # dotenvy — which works locally (rustc CWD = __srcs root) but panics on a
+    # remote worker where the CWD/.env resolution differs. Set it in the rustc
+    # env directly so offline mode never depends on reading the .env file. The
+    # .sqlx cache is already in srcs (root//:sqlx-offline) at ./.sqlx.
+    "midnight-primitives-mainchain-follower": lambda p, n: {
+        "SQLX_OFFLINE": "true",
+        "SQLX_OFFLINE_DIR": ".sqlx",
+    },
     # runtime lib.rs include!s $OUT_DIR/wasm_binary.rs; point at the stub dir
     # (WASM_BINARY=None) since substrate-wasm-builder can't run under buck.
     "midnight-node-runtime": lambda p, n: {

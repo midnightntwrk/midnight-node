@@ -38,6 +38,8 @@ rust_library(
         "CARGO_PKG_DESCRIPTION": "Extensions to Partnerchains mainchain follower",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
+        "SQLX_OFFLINE": "true",
+        "SQLX_OFFLINE_DIR": ".sqlx",
     },
     deps = select({
         "prelude//cpu:wasm32": [
@@ -128,6 +130,8 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "Extensions to Partnerchains mainchain follower",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
+        "SQLX_OFFLINE": "true",
+        "SQLX_OFFLINE_DIR": ".sqlx",
     },
     deps = [
         "root//partner-chains/toolkit/committee-selection/authority-selection-inherents:authority-selection-inherents",
@@ -199,6 +203,8 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "Extensions to Partnerchains mainchain follower",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
+        "SQLX_OFFLINE": "true",
+        "SQLX_OFFLINE_DIR": ".sqlx",
     },
     deps = [
         ":midnight-primitives-mainchain-follower",
