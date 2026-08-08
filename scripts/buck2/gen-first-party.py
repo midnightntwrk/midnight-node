@@ -98,13 +98,18 @@ ENV_HOOKS = {
     # env directly so offline mode never depends on reading the .env file. The
     # .sqlx cache is already in srcs (root//:sqlx-offline) at ./.sqlx.
     "midnight-primitives-mainchain-follower": lambda p, n: {
-        # sqlx-macros requires CARGO to be set (cargo sets it; buck2 doesn't —
-        # present on local exec via the host env, absent on a remote worker:
-        # "`CARGO` must be set: NotPresent"). In offline mode it isn't run, so a
-        # bare "cargo" (PATH-resolved) satisfies the check.
+        # sqlx-macros (0.9) resolves the query cache dir by trying, in order:
+        # SQLX_OFFLINE_DIR, <manifest_dir>/.sqlx, then <workspace_root>/.sqlx —
+        # and the last one shells out to `cargo metadata`, which EOFs in buck's
+        # sandboxed __srcs tree (no cargo workspace). A *relative* SQLX_OFFLINE_DIR
+        # is resolved against the process CWD, which differs on a remote worker, so
+        # it falls through to cargo metadata and panics. Point it at the absolute
+        # $(location) of the staged .sqlx filegroup — that dir holds query-*.json
+        # directly, so sqlx matches on the first candidate and never runs cargo
+        # metadata. CARGO is still set to satisfy the pre-offline presence check.
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
-        "SQLX_OFFLINE_DIR": ".sqlx",
+        "SQLX_OFFLINE_DIR": "$(location root//:sqlx-offline)",
     },
     # runtime lib.rs include!s $OUT_DIR/wasm_binary.rs; point at the stub dir
     # (WASM_BINARY=None) since substrate-wasm-builder can't run under buck.
