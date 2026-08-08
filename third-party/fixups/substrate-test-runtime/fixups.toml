@@ -8,3 +8,12 @@ overlay = "overlay"
 
 [env]
 OUT_DIR = "polkadot-sdk-eff3836c89051857/substrate/test-utils/runtime"
+
+# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
+# referenced as git sub-target srcs so remote workers materialise them
+# (extra_srcs can't: it globs local files, git deps are fetched at build).
+[extra_mapped_srcs]
+"substrate/test-utils/runtime/res/default_genesis_config.json" = "res/default_genesis_config.json"
+"substrate/test-utils/runtime/res/default_genesis_config_incomplete.json" = "res/default_genesis_config_incomplete.json"
+"substrate/test-utils/runtime/res/default_genesis_config_invalid.json" = "res/default_genesis_config_invalid.json"
+"substrate/test-utils/runtime/res/default_genesis_config_invalid_2.json" = "res/default_genesis_config_invalid_2.json"

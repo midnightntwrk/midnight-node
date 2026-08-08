@@ -1,0 +1,10 @@
+buildscript.run = false
+
+# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
+# referenced as git sub-target srcs so remote workers materialise them
+# (extra_srcs can't: it globs local files, git deps are fetched at build).
+[extra_mapped_srcs]
+"substrate/utils/frame/benchmarking-cli/src/machine/reference_hardware.json" = "src/machine/reference_hardware.json"
+"substrate/utils/frame/benchmarking-cli/src/overhead/weights.hbs" = "src/overhead/weights.hbs"
+"substrate/utils/frame/benchmarking-cli/src/pallet/template.hbs" = "src/pallet/template.hbs"
+"substrate/utils/frame/benchmarking-cli/src/storage/weights.hbs" = "src/storage/weights.hbs"

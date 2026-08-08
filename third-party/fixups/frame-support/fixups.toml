@@ -1,0 +1,15 @@
+# parity-scale-codec's derive (#[derive(Encode/Decode)]) uses `proc-macro-crate`
+# to resolve this crate's rename of parity-scale-codec to `codec`; proc-macro-crate
+# reads CARGO_MANIFEST_DIR. Without it (buck2 doesn't set it by default) the derive
+# can't resolve the rename and PostDispatchInfo et al. never get their Encode impl
+# -> E0277 "PostDispatchInfo: WrapperTypeEncode is not satisfied". cargo_env supplies
+# the CARGO_* vars (same fix as the sp-* layer). Cargo sets these implicitly, which
+# is why `cargo build` works but the buck2 build did not.
+cargo_env = true
+
+# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
+# referenced as git sub-target srcs so remote workers materialise them
+# (extra_srcs can't: it globs local files, git deps are fetched at build).
+[extra_mapped_srcs]
+"substrate/frame/support/procedural/src/pallet/README.md" = "procedural/src/pallet/README.md"
+"substrate/frame/support/test/example-readme.md" = "test/example-readme.md"

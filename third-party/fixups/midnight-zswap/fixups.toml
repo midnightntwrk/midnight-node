@@ -1,0 +1,8 @@
+
+# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
+# referenced as git sub-target srcs so remote workers materialise them
+# (extra_srcs can't: it globs local files, git deps are fetched at build).
+[extra_mapped_srcs]
+"zswap/static/output.verifier" = "static/output.verifier"
+"zswap/static/sign.verifier" = "static/sign.verifier"
+"zswap/static/spend.verifier" = "static/spend.verifier"

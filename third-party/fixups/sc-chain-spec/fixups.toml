@@ -1,0 +1,15 @@
+
+# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
+# referenced as git sub-target srcs so remote workers materialise them
+# (extra_srcs can't: it globs local files, git deps are fetched at build).
+[extra_mapped_srcs]
+"substrate/client/chain-spec/res/chain_spec.json" = "res/chain_spec.json"
+"substrate/client/chain-spec/res/chain_spec2.json" = "res/chain_spec2.json"
+"substrate/client/chain-spec/res/raw_no_code.json" = "res/raw_no_code.json"
+"substrate/client/chain-spec/res/substrate_test_runtime_from_config.json" = "res/substrate_test_runtime_from_config.json"
+"substrate/client/chain-spec/res/substrate_test_runtime_from_config_raw.json" = "res/substrate_test_runtime_from_config_raw.json"
+"substrate/client/chain-spec/res/substrate_test_runtime_from_named_preset.json" = "res/substrate_test_runtime_from_named_preset.json"
+"substrate/client/chain-spec/res/substrate_test_runtime_from_patch.json" = "res/substrate_test_runtime_from_patch.json"
+"substrate/client/chain-spec/res/substrate_test_runtime_from_patch_raw.json" = "res/substrate_test_runtime_from_patch_raw.json"
+"substrate/test-utils/runtime/res/default_genesis_config.json" = "../../test-utils/runtime/res/default_genesis_config.json"
+"substrate/test-utils/runtime/res/default_genesis_config_invalid_2.json" = "../../test-utils/runtime/res/default_genesis_config_invalid_2.json"

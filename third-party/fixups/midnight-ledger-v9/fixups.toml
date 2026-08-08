@@ -1,0 +1,6 @@
+
+# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
+# referenced as git sub-target srcs so remote workers materialise them
+# (extra_srcs can't: it globs local files, git deps are fetched at build).
+[extra_mapped_srcs]
+"ledger/static/dust/spend.verifier" = "static/dust/spend.verifier"

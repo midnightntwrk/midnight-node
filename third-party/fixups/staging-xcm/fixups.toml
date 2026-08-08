@@ -1,0 +1,15 @@
+# Substrate/polkadot crate deriving Encode/Decode (parity-scale-codec): the derive
+# uses proc-macro-crate which reads CARGO_MANIFEST_DIR; buck2 doesn't set it by
+# default, so the derive can't resolve the codec crate and associated types go
+# missing (E0220/E0277 cascade). cargo_env supplies the CARGO_* vars.
+cargo_env = true
+
+# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
+# referenced as git sub-target srcs so remote workers materialise them
+# (extra_srcs can't: it globs local files, git deps are fetched at build).
+[extra_mapped_srcs]
+"polkadot/xcm/docs/mermaid/location_hierarchy.mmd" = "docs/mermaid/location_hierarchy.mmd"
+"polkadot/xcm/docs/mermaid/structure.mmd" = "docs/mermaid/structure.mmd"
+"polkadot/xcm/docs/mermaid/transport_protocols.mmd" = "docs/mermaid/transport_protocols.mmd"
+"polkadot/xcm/docs/mermaid/universal_location.mmd" = "docs/mermaid/universal_location.mmd"
+"polkadot/xcm/docs/mermaid/usdt_location.mmd" = "docs/mermaid/usdt_location.mmd"
