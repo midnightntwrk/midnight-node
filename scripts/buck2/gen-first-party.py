@@ -98,6 +98,11 @@ ENV_HOOKS = {
     # env directly so offline mode never depends on reading the .env file. The
     # .sqlx cache is already in srcs (root//:sqlx-offline) at ./.sqlx.
     "midnight-primitives-mainchain-follower": lambda p, n: {
+        # sqlx-macros requires CARGO to be set (cargo sets it; buck2 doesn't —
+        # present on local exec via the host env, absent on a remote worker:
+        # "`CARGO` must be set: NotPresent"). In offline mode it isn't run, so a
+        # bare "cargo" (PATH-resolved) satisfies the check.
+        "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
         "SQLX_OFFLINE_DIR": ".sqlx",
     },
