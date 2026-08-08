@@ -27,9 +27,12 @@ export_file(
 rust_library(
     name = "midnight-node-res",
     crate = "midnight_node_res",
-    crate_root = "src/lib.rs",
+    crate_root = "res/src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob(["**/*.mn", "**/*.json", "**/*.hbs"]),
+    mapped_srcs = dict(
+        [(f, "res/" + f) for f in glob(["src/**", "Cargo.toml", "**/*.mn", "**/*.json", "**/*.hbs", "**/*.toml"])] + [
+        ],
+    ),
     features = [
         "chain-spec",
         "midnight-primitives-federated-authority-observation",
@@ -45,7 +48,7 @@ rust_library(
         "test",
     ],
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "res",
         "CARGO_PKG_NAME": "midnight-node-res",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -77,9 +80,12 @@ rust_library(
 rust_test(
     name = "midnight-node-res-unit-test",
     crate = "midnight_node_res",
-    crate_root = "src/lib.rs",
+    crate_root = "res/src/lib.rs",
     edition = "2024",
-    srcs = glob(["src/**"]) + ["Cargo.toml"] + glob(["**/*.mn", "**/*.json", "**/*.hbs"]),
+    mapped_srcs = dict(
+        [(f, "res/" + f) for f in glob(["src/**", "Cargo.toml", "**/*.mn", "**/*.json", "**/*.hbs", "**/*.toml"])] + [
+        ],
+    ),
     features = [
         "chain-spec",
         "midnight-primitives-federated-authority-observation",
@@ -95,7 +101,7 @@ rust_test(
         "test",
     ],
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "res",
         "CARGO_PKG_NAME": "midnight-node-res",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",
@@ -129,9 +135,12 @@ rust_test(
 rust_test(
     name = "midnight-node-res-check_chainstate_genesis",
     crate = "check_chainstate_genesis",
-    crate_root = "tests/check_chainstate_genesis.rs",
+    crate_root = "res/tests/check_chainstate_genesis.rs",
     edition = "2024",
-    srcs = glob(["src/**", "tests/**"]) + ["Cargo.toml"] + glob(["**/*.mn", "**/*.json", "**/*.hbs"]),
+    mapped_srcs = dict(
+        [(f, "res/" + f) for f in glob(["src/**", "Cargo.toml", "tests/**", "**/*.mn", "**/*.json", "**/*.hbs", "**/*.toml"])] + [
+        ],
+    ),
     features = [
         "chain-spec",
         "midnight-primitives-federated-authority-observation",
@@ -147,7 +156,7 @@ rust_test(
         "test",
     ],
     env = {
-        "CARGO_MANIFEST_DIR": ".",
+        "CARGO_MANIFEST_DIR": "res",
         "CARGO_PKG_NAME": "midnight-node-res",
         "CARGO_PKG_VERSION": "0.1.0",
         "CARGO_PKG_VERSION_MAJOR": "0",

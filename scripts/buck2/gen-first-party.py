@@ -142,7 +142,22 @@ ENV_HOOKS = {
 # external files at their repo-relative paths — with crate_root/CARGO_MANIFEST_DIR
 # prefixed by <rel>. The external files live in other buck packages, so they're
 # pulled via export_file labels (see EXPORTS). Value: {label: dest-in-tree}.
+# Data-file globs a prefixed package needs in addition to src/** + Cargo.toml
+# (the `else` branch gets these via SRCS_HOOKS; the prefix branch needs them here
+# so runtime fixture reads resolve at the project-relative layout).
+PREFIX_DATA_GLOBS = {
+    # res tests walk up from the test's CWD (= project root, since buck2 runs
+    # tests with run_from_project_root=True) for `res/cfg/default.toml`, then read
+    # cfg tomls + chainspec/genesis blobs. Staging res's files at the `res/` prefix
+    # puts them at exactly those project-relative paths. Note the *.toml — the cfg
+    # presets are toml, absent from the .mn/.json/.hbs data set.
+    "midnight-node-res": ["**/*.mn", "**/*.json", "**/*.hbs", "**/*.toml"],
+}
+
 MAPPED_SRCS_EXTERNAL = {
+    # res owns every file its tests read, so no cross-package labels — membership
+    # here (even empty) just switches it to the project-relative `res/` prefix.
+    "midnight-node-res": {},
     "midnight-node-toolkit": {
         "root//:COMPACTC_VERSION": "COMPACTC_VERSION",
         "root//node:cargo-toml": "node/Cargo.toml",
@@ -243,9 +258,7 @@ SRCS_HOOKS = {
     "midnight-primitives-mainchain-follower": ['glob([".sqlx/**"])', '[".env"]'],
     # include_str!("../examples/*.json") — data outside the src/ glob.
     "partner-chains-mock-data-sources": ['glob(["examples/**/*.json"])'],
-    # res embeds genesis/network config blobs via include_str!/include_bytes!
-    # from many sibling dirs (genesis/, dev/, <network>/, test-*/).
-    "midnight-node-res": ['glob(["**/*.mn", "**/*.json", "**/*.hbs"])'],
+    # (res moved to the `res/` prefix + PREFIX_DATA_GLOBS — see MAPPED_SRCS_EXTERNAL.)
     # subxt::subxt(runtime_metadata_path="static/*.scale") reads the SCALE
     # metadata blobs at macro-expansion time.
     "midnight-node-metadata": ['glob(["static/**"])'],
@@ -390,7 +403,8 @@ def gen_buck(pkg, prefix=""):
                 f'            ("{label}", "{dest}"),\n'
                 for label, dest in sorted(MAPPED_SRCS_EXTERNAL.get(pkg["name"], {}).items())
             )
-            globs = '"src/**", "Cargo.toml"' + "".join(f', "{g}"' for g in extra_globs)
+            globs = '"src/**", "Cargo.toml"' + "".join(
+                f', "{g}"' for g in tuple(extra_globs) + tuple(PREFIX_DATA_GLOBS.get(pkg["name"], ())))
             out.append("    mapped_srcs = dict(\n")
             out.append(f'        [(f, "{prefix}/" + f) for f in '
                        f'glob([{globs}])] + [\n')
