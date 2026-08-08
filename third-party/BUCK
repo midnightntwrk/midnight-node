@@ -21,11 +21,6 @@ git_fetch(
     name = "midnight-ledger-0c7437f9d11f648f.git",
     repo = "https://github.com/midnightntwrk/midnight-ledger",
     rev = "d495446e618ea92577d920bfdf01f3eb1118a322",
-    sub_targets = [
-        "zswap/static/output.verifier",
-        "zswap/static/sign.verifier",
-        "zswap/static/spend.verifier",
-    ],
     visibility = [],
 )
 
@@ -121,6 +116,7 @@ git_fetch(
     repo = "https://github.com/paritytech/polkadot-sdk.git",
     rev = "2e4dd0bc22366a5af820492528869a493b5a5208",
     sub_targets = [
+        "docs",
         "polkadot/xcm/docs/mermaid/location_hierarchy.mmd",
         "polkadot/xcm/docs/mermaid/structure.mmd",
         "polkadot/xcm/docs/mermaid/transport_protocols.mmd",
@@ -166,11 +162,9 @@ git_fetch(
         "substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json",
         "substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json",
         "substrate/frame/sassafras/src/data/25_tickets_100_auths.bin",
-        "substrate/frame/support/procedural/src/pallet/README.md",
         "substrate/frame/support/test/example-readme.md",
         "substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm",
         "substrate/primitives/consensus/beefy/test-res/large-raw-commitment",
-        "substrate/primitives/runtime/docs/mermaid/extrinsics.mmd",
         "substrate/primitives/trie/test-res/invalid-delta-order",
         "substrate/primitives/trie/test-res/proof",
         "substrate/primitives/trie/test-res/storage_root",
@@ -13026,7 +13020,6 @@ cargo.rust_library(
         "std",
     ],
     mapped_srcs = {
-        ":polkadot-sdk-eff3836c89051857.git[substrate/frame/support/procedural/src/pallet/README.md]": "polkadot-sdk-eff3836c89051857/substrate/frame/support/procedural/src/pallet/README.md",
         ":polkadot-sdk-eff3836c89051857.git[substrate/frame/support/test/example-readme.md]": "polkadot-sdk-eff3836c89051857/substrate/frame/support/test/example-readme.md",
     },
     named_deps = {
@@ -13097,9 +13090,6 @@ cargo.rust_library(
         "experimental",
         "std",
     ],
-    mapped_srcs = {
-        ":polkadot-sdk-eff3836c89051857.git[substrate/frame/support/procedural/src/pallet/README.md]": "polkadot-sdk-eff3836c89051857/substrate/frame/support/procedural/src/pallet/README.md",
-    },
     proc_macro = True,
     visibility = [],
     deps = [
@@ -24000,11 +23990,6 @@ http_archive(
     name = "midnight-zswap-7.0.3.crate",
     sha256 = "56bc2635ed2de0cb18c8ca3aafcbb4910d42cd50cc7c73b5ae7dd31a6f5b5b1f",
     strip_prefix = "midnight-zswap-7.0.3",
-    sub_targets = [
-        "zswap/static/output.verifier",
-        "zswap/static/sign.verifier",
-        "zswap/static/spend.verifier",
-    ],
     urls = ["https://static.crates.io/crates/midnight-zswap/7.0.3/download"],
     visibility = [],
 )
@@ -24030,11 +24015,6 @@ cargo.rust_library(
         "default",
         "proof-verifying",
     ],
-    mapped_srcs = {
-        ":midnight-zswap-7.0.3.crate[zswap/static/output.verifier]": "midnight-zswap-7.0.3.crate/static/output.verifier",
-        ":midnight-zswap-7.0.3.crate[zswap/static/sign.verifier]": "midnight-zswap-7.0.3.crate/static/sign.verifier",
-        ":midnight-zswap-7.0.3.crate[zswap/static/spend.verifier]": "midnight-zswap-7.0.3.crate/static/spend.verifier",
-    },
     named_deps = {
         "base_crypto": ":midnight-base-crypto-1",
         "coin_structure": ":midnight-coin-structure-2",
@@ -24069,11 +24049,6 @@ http_archive(
     name = "midnight-zswap-8.1.0.crate",
     sha256 = "4c83f946d8ac03abea38ca470599801fa08e91e2ddf3cb0963027a7701180c7c",
     strip_prefix = "midnight-zswap-8.1.0",
-    sub_targets = [
-        "zswap/static/output.verifier",
-        "zswap/static/sign.verifier",
-        "zswap/static/spend.verifier",
-    ],
     urls = ["https://static.crates.io/crates/midnight-zswap/8.1.0/download"],
     visibility = [],
 )
@@ -24099,11 +24074,6 @@ cargo.rust_library(
         "default",
         "proof-verifying",
     ],
-    mapped_srcs = {
-        ":midnight-zswap-8.1.0.crate[zswap/static/output.verifier]": "midnight-zswap-8.1.0.crate/static/output.verifier",
-        ":midnight-zswap-8.1.0.crate[zswap/static/sign.verifier]": "midnight-zswap-8.1.0.crate/static/sign.verifier",
-        ":midnight-zswap-8.1.0.crate[zswap/static/spend.verifier]": "midnight-zswap-8.1.0.crate/static/spend.verifier",
-    },
     named_deps = {
         "base_crypto": ":midnight-base-crypto-1",
         "coin_structure": ":midnight-coin-structure-2",
@@ -24155,11 +24125,6 @@ cargo.rust_library(
         "default",
         "proof-verifying",
     ],
-    mapped_srcs = {
-        ":midnight-ledger-0c7437f9d11f648f.git[zswap/static/output.verifier]": "midnight-ledger-0c7437f9d11f648f/zswap/static/output.verifier",
-        ":midnight-ledger-0c7437f9d11f648f.git[zswap/static/sign.verifier]": "midnight-ledger-0c7437f9d11f648f/zswap/static/sign.verifier",
-        ":midnight-ledger-0c7437f9d11f648f.git[zswap/static/spend.verifier]": "midnight-ledger-0c7437f9d11f648f/zswap/static/spend.verifier",
-    },
     named_deps = {
         "base_crypto": ":midnight-base-crypto-1",
         "coin_structure": ":midnight-coin-structure-3",
@@ -31251,7 +31216,6 @@ cargo.rust_library(
         ":polkadot-sdk-eff3836c89051857.git[substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json]": "polkadot-sdk-eff3836c89051857/substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json",
         ":polkadot-sdk-eff3836c89051857.git[substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json]": "polkadot-sdk-eff3836c89051857/substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json",
         ":polkadot-sdk-eff3836c89051857.git[substrate/frame/sassafras/src/data/25_tickets_100_auths.bin]": "polkadot-sdk-eff3836c89051857/substrate/frame/sassafras/src/data/25_tickets_100_auths.bin",
-        ":polkadot-sdk-eff3836c89051857.git[substrate/frame/support/procedural/src/pallet/README.md]": "polkadot-sdk-eff3836c89051857/substrate/frame/support/procedural/src/pallet/README.md",
         ":polkadot-sdk-eff3836c89051857.git[substrate/frame/support/test/example-readme.md]": "polkadot-sdk-eff3836c89051857/substrate/frame/support/test/example-readme.md",
         ":polkadot-sdk-eff3836c89051857.git[substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm]": "polkadot-sdk-eff3836c89051857/substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm",
     },
@@ -37604,8 +37568,6 @@ cargo.rust_library(
         ":polkadot-sdk-eff3836c89051857.git[substrate/client/chain-spec/res/substrate_test_runtime_from_named_preset.json]": "polkadot-sdk-eff3836c89051857/substrate/client/chain-spec/res/substrate_test_runtime_from_named_preset.json",
         ":polkadot-sdk-eff3836c89051857.git[substrate/client/chain-spec/res/substrate_test_runtime_from_patch.json]": "polkadot-sdk-eff3836c89051857/substrate/client/chain-spec/res/substrate_test_runtime_from_patch.json",
         ":polkadot-sdk-eff3836c89051857.git[substrate/client/chain-spec/res/substrate_test_runtime_from_patch_raw.json]": "polkadot-sdk-eff3836c89051857/substrate/client/chain-spec/res/substrate_test_runtime_from_patch_raw.json",
-        ":polkadot-sdk-eff3836c89051857.git[substrate/test-utils/runtime/res/default_genesis_config.json]": "polkadot-sdk-eff3836c89051857/substrate/client/chain-spec/../../test-utils/runtime/res/default_genesis_config.json",
-        ":polkadot-sdk-eff3836c89051857.git[substrate/test-utils/runtime/res/default_genesis_config_invalid_2.json]": "polkadot-sdk-eff3836c89051857/substrate/client/chain-spec/../../test-utils/runtime/res/default_genesis_config_invalid_2.json",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
@@ -38140,9 +38102,6 @@ cargo.rust_library(
         "CARGO_PKG_VERSION_MAJOR": "0",
         "CARGO_PKG_VERSION_MINOR": "41",
         "CARGO_PKG_VERSION_PATCH": "0",
-    },
-    mapped_srcs = {
-        ":polkadot-sdk-eff3836c89051857.git[substrate/client/chain-spec/res/chain_spec.json]": "polkadot-sdk-eff3836c89051857/substrate/client/consensus/grandpa/../../chain-spec/res/chain_spec.json",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",
@@ -45353,7 +45312,7 @@ cargo.rust_library(
         "std",
     ],
     mapped_srcs = {
-        ":polkadot-sdk-eff3836c89051857.git[substrate/primitives/runtime/docs/mermaid/extrinsics.mmd]": "polkadot-sdk-eff3836c89051857/substrate/primitives/runtime/docs/mermaid/extrinsics.mmd",
+        ":polkadot-sdk-eff3836c89051857.git[docs]": "polkadot-sdk-eff3836c89051857/substrate/primitives/runtime/docs",
     },
     named_deps = {
         "codec": ":parity-scale-codec-3",

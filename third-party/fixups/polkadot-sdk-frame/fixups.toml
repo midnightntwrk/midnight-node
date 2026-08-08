@@ -4,9 +4,10 @@
 # missing (E0220/E0277 cascade). cargo_env supplies the CARGO_* vars.
 cargo_env = true
 
-# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
-# referenced as git sub-target srcs so remote workers materialise them
-# (extra_srcs can't: it globs local files, git deps are fetched at build).
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
 [extra_mapped_srcs]
 "substrate/frame/broker/README.md" = "broker/README.md"
 "substrate/frame/contracts/fixtures/build/Cargo.toml" = "contracts/fixtures/build/Cargo.toml"
@@ -33,6 +34,5 @@ cargo_env = true
 "substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json" = "revive/src/tests/json_trace/fibonacci_evm.json"
 "substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json" = "revive/src/tests/json_trace/fibonacci_pvm.json"
 "substrate/frame/sassafras/src/data/25_tickets_100_auths.bin" = "sassafras/src/data/25_tickets_100_auths.bin"
-"substrate/frame/support/procedural/src/pallet/README.md" = "support/procedural/src/pallet/README.md"
 "substrate/frame/support/test/example-readme.md" = "support/test/example-readme.md"
 "substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm" = "system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm"

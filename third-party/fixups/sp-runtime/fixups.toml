@@ -1,9 +1,10 @@
 # Polkadot SDK: parity-scale-codec Encode/Decode derive needs CARGO_MANIFEST_DIR
 # (via proc-macro-crate); supplied by cargo_env.
 cargo_env = true
-# git deps' include_str! files can't go through extra_srcs (reindeer globs local
-# project files; git sources are fetched at buck build time). Reference them as
-# git-tree sub-targets via extra_mapped_srcs (key = path within the git repo,
-# value = path within the crate's materialised __srcs).
+
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
 [extra_mapped_srcs]
-"substrate/primitives/runtime/docs/mermaid/extrinsics.mmd" = "docs/mermaid/extrinsics.mmd"
+"docs" = "docs"

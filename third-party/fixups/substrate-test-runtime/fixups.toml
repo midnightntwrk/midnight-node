@@ -9,9 +9,10 @@ overlay = "overlay"
 [env]
 OUT_DIR = "polkadot-sdk-eff3836c89051857/substrate/test-utils/runtime"
 
-# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
-# referenced as git sub-target srcs so remote workers materialise them
-# (extra_srcs can't: it globs local files, git deps are fetched at build).
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
 [extra_mapped_srcs]
 "substrate/test-utils/runtime/res/default_genesis_config.json" = "res/default_genesis_config.json"
 "substrate/test-utils/runtime/res/default_genesis_config_incomplete.json" = "res/default_genesis_config_incomplete.json"

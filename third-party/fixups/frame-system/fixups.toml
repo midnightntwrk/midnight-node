@@ -7,8 +7,9 @@
 # is why `cargo build` works but the buck2 build did not.
 cargo_env = true
 
-# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
-# referenced as git sub-target srcs so remote workers materialise them
-# (extra_srcs can't: it globs local files, git deps are fetched at build).
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
 [extra_mapped_srcs]
 "substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm" = "benchmarking/res/kitchensink_runtime.compact.compressed.wasm"

@@ -4,9 +4,10 @@
 # missing (E0220/E0277 cascade). cargo_env supplies the CARGO_* vars.
 cargo_env = true
 
-# include_str!/include_bytes!/mermaid! of non-.rs files from the git tree —
-# referenced as git sub-target srcs so remote workers materialise them
-# (extra_srcs can't: it globs local files, git deps are fetched at build).
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
 [extra_mapped_srcs]
 "polkadot/xcm/docs/mermaid/location_hierarchy.mmd" = "docs/mermaid/location_hierarchy.mmd"
 "polkadot/xcm/docs/mermaid/structure.mmd" = "docs/mermaid/structure.mmd"
