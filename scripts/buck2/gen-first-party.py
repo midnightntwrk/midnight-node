@@ -101,18 +101,21 @@ ENV_HOOKS = {
         # sqlx-macros (0.9) resolves the query cache dir by trying, in order:
         # SQLX_OFFLINE_DIR, <manifest_dir>/.sqlx, then <workspace_root>/.sqlx —
         # and the last one shells out to `cargo metadata`, which EOFs in buck's
-        # sandboxed __srcs tree (no cargo workspace). The `root//:sqlx-offline`
-        # filegroup (added to srcs below) stages into the compile tree as
-        # `sqlx-offline/.sqlx/query-*.json` — buck2 symlinks the target's default
-        # output under its name and the glob preserves the `.sqlx/` prefix. The
-        # rustc action's CWD is that __srcs root on both local and remote, so a
-        # *relative* "sqlx-offline/.sqlx" matches on the first candidate everywhere
-        # and cargo metadata never runs. ($(location ...) resolves to a driver-
-        # absolute buck-out path invalid in the remote sandbox — must be relative.)
-        # CARGO is still set to satisfy sqlx's pre-offline presence check.
+        # sandboxed __srcs tree (no cargo workspace). sqlx does the SQLX_OFFLINE_DIR
+        # lookup with std::fs relative to rustc's CWD, which buck sets to the REPO
+        # ROOT (not __srcs) — so a relative dir misses on the remote worker. The
+        # buck2 rust prelude only auto-absolutizes CARGO_MANIFEST_DIR / OUT_DIR;
+        # for any other path-bearing env it puts values *containing an artifact
+        # input* into `path_env`, which rustc_action.py turns into a worker-
+        # absolute path at runtime (build.bzl process_env, ~L1728). So express the
+        # cache dir as $(location) of the staged filegroup + its `.sqlx/` subdir
+        # (the glob keeps that prefix). That is CWD-independent and correct on both
+        # local and RE. Proven with CARGO=/bin/false (build still green => sqlx
+        # matched dir[0] and cargo metadata was never invoked). CARGO stays set to
+        # satisfy sqlx's pre-offline presence check.
         "CARGO": "cargo",
         "SQLX_OFFLINE": "true",
-        "SQLX_OFFLINE_DIR": "sqlx-offline/.sqlx",
+        "SQLX_OFFLINE_DIR": "$(location root//:sqlx-offline)/.sqlx",
     },
     # runtime lib.rs include!s $OUT_DIR/wasm_binary.rs; point at the stub dir
     # (WASM_BINARY=None) since substrate-wasm-builder can't run under buck.
