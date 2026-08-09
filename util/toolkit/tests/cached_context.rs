@@ -27,8 +27,14 @@ use midnight_node_toolkit::{
 use subxt::utils::H256;
 
 fn load_genesis_source() -> SourceTransactions {
+	// Resolve CARGO_MANIFEST_DIR at runtime, not compile time: under buck2 the
+	// compile-time env!() bakes an ephemeral remote-build sandbox path that is gone
+	// when the test runs on another worker. cargo sets the var at runtime too, so
+	// std::env::var works in both; fall back to the compile-time value otherwise.
+	let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+		.unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string());
 	let genesis_path =
-		format!("{}/test-data/genesis/genesis_block_undeployed.mn", env!("CARGO_MANIFEST_DIR"));
+		format!("{manifest_dir}/test-data/genesis/genesis_block_undeployed.mn");
 	let batches = GetTxsFromFile::load_single_or_multiple(&genesis_path)
 		.expect("failed to load genesis file");
 	let mut source = SourceTransactions::from_batches(batches.batches, true, None);

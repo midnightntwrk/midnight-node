@@ -154,6 +154,14 @@ TEST_RESOURCES = {
     "midnight-node": '{"../res": "root//res:test-fixtures"}',
 }
 
+# Per-TEST-TARGET resources (keyed by rust_test name), for packages whose test
+# targets need different runtime files. Takes precedence over TEST_RESOURCES.
+TEST_TARGET_RESOURCES = {
+    # cached_context reads test-data/genesis/genesis_block_undeployed.mn at runtime
+    # (via CARGO_MANIFEST_DIR, resolved at runtime after the env!-> std::env::var fix).
+    "midnight-node-toolkit-cached_context": 'glob(["test-data/genesis/**"])',
+}
+
 # Data-file globs a prefixed package needs in addition to src/** + Cargo.toml
 # (the `else` branch gets these via SRCS_HOOKS; the prefix branch needs them here
 # so runtime fixture reads resolve at the project-relative layout).
@@ -465,8 +473,10 @@ def gen_buck(pkg, prefix=""):
         # compile) must be declared here. Each resource named `n` materializes at the
         # project-relative path <package>/<n>, i.e. exactly where CWD-relative /
         # workspace-root-walk lookups expect it. Only test targets get these.
-        if rule == "rust_test" and pkg["name"] in TEST_RESOURCES:
-            out.append(f'    resources = {TEST_RESOURCES[pkg["name"]]},\n')
+        if rule == "rust_test":
+            res_expr = TEST_TARGET_RESOURCES.get(name) or TEST_RESOURCES.get(pkg["name"])
+            if res_expr:
+                out.append(f'    resources = {res_expr},\n')
         for e in extra:
             out.append(e)
         emit_list_field("deps", tdeps, wasm["deps"] if wasm else None)
