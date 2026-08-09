@@ -29,21 +29,25 @@ runs:
         password: ${{ inputs.ghcr-password }}
 
     - name: Run JUST command
-      run: |
-        echo "🧪 Running E2E command: ${{ inputs.just-command }}"
-
-        case "${{ inputs.just-command }}" in
-          indexer-api-e2e)
-            just "${{ inputs.just-command }}"
-            ;;
-          startup-dev-e2e | startup-qanet-e2e)
-            just "${{ inputs.just-command }}" "${{ inputs.node-image }}"
-            ;;
-          toolkit-e2e | toolkit-update-ledger-parameters-e2e | toolkit-maintenance-e2e | toolkit-mint-e2e | toolkit-tokens-minter-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
-            just "${{ inputs.just-command }}" "${{ inputs.node-image }}" "${{ inputs.toolkit-image }}"
-            ;;
-          *)
-            just "${{ inputs.just-command }}" "${{ inputs.node-image }}"
-            ;;
-        esac
+      env:
+        JUST_COMMAND: ${{ inputs.just-command }}
+        NODE_IMAGE: ${{ inputs.node-image }}
+        TOOLKIT_IMAGE: ${{ inputs.toolkit-image }}
       shell: bash
+      run: |
+        echo "🧪 Running E2E command: $JUST_COMMAND"
+
+        # Resolve the just invocation (which positional images each command wants),
+        # then run it through retry-transient-ci.sh: retries only on a known-transient
+        # CI failure (buildkit recycled by a concurrent job, or a dropped ghcr push);
+        # a genuine E2E failure fails fast.
+        case "$JUST_COMMAND" in
+          indexer-api-e2e)
+            args=(just "$JUST_COMMAND") ;;
+          toolkit-e2e | toolkit-update-ledger-parameters-e2e | toolkit-maintenance-e2e | toolkit-mint-e2e | toolkit-tokens-minter-e2e | toolkit-contracts-e2e | genesis-wallets-undeployed-e2e | genesis-wallets-devnet-e2e)
+            args=(just "$JUST_COMMAND" "$NODE_IMAGE" "$TOOLKIT_IMAGE") ;;
+          *)
+            args=(just "$JUST_COMMAND" "$NODE_IMAGE") ;;
+        esac
+
+        ./.github/scripts/retry-transient-ci.sh "${args[@]}"

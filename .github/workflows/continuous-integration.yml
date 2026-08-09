@@ -178,19 +178,8 @@ jobs:
           # No ::group:: wrapping — failures need to be visible by default in
           # the GHA log, not collapsed.
           . ./.envrc
-          for attempt in 1 2 3; do
-            echo "----- earthly attempt $attempt/3 -----"
-            if earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images; then
-              exit 0
-            fi
-            echo "----- earthly attempt $attempt failed -----"
-            if [ $attempt -lt 3 ]; then
-              echo "sleeping 30s before retry"
-              sleep 30
-            fi
-          done
-          echo "earthly failed after 3 attempts"
-          exit 1
+          ./.github/scripts/retry-transient-ci.sh \
+            earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
