@@ -80,4 +80,4 @@ You do not have the required AWS credentials locally, which hold the node keys a
 
 **Solution:**
 - For local, isolated development, you can rebuild for the `undeployed` or `local` network which does not require AWS secrets. (Note: Running a node with `CFG_PRESET=dev` automatically uses the `undeployed` genesis).
-- If you absolutely need genesis rebuilt for a deployed network, open a PR with your changes and ask the node team in Slack: *"Could someone with AWS access run `earthly -P +rebuild-genesis` after downloading the secrets?"*
+- If you absolutely need genesis rebuilt for a deployed network, open a PR with your changes and ask the node team in Slack: *"Could someone with AWS access run `earthly -P +rebuild-genesis-state-<network>` (and `earthly -P +rebuild-chainspec --NETWORK=<network>` if needed) after downloading the secrets?"*
