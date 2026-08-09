@@ -306,6 +306,7 @@ rust_test(
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
+    resources = {"../res": "root//res:test-fixtures"},
     deps = [
         "root//ledger/helpers:midnight-node-ledger-helpers",
         "root//ledger:midnight-node-ledger",
@@ -451,6 +452,7 @@ rust_test(
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
+    resources = {"../res": "root//res:test-fixtures"},
     deps = [
         ":midnight-node",
         "root//ledger/helpers:midnight-node-ledger-helpers",
@@ -597,6 +599,7 @@ rust_test(
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
+    resources = {"../res": "root//res:test-fixtures"},
     deps = [
         ":midnight-node",
         "root//ledger/helpers:midnight-node-ledger-helpers",

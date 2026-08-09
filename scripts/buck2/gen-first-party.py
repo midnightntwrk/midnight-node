@@ -149,6 +149,9 @@ TEST_RESOURCES = {
     # res/cfg/default.toml, then read cfg presets + chainspec/openrpc/genesis blobs.
     # Globbed relative to the res package, they materialize back at res/… .
     "midnight-node-res": 'glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"])',
+    # node tests call into res's locate_workspace_root(); pull res's fixtures in at
+    # the project-relative res/ layout so the walk + config reads resolve.
+    "midnight-node": '{"../res": "root//res:test-fixtures"}',
 }
 
 # Data-file globs a prefixed package needs in addition to src/** + Cargo.toml
@@ -201,6 +204,13 @@ EXPORTS = {
         '    visibility = ["PUBLIC"],\n)',
         'export_file(\n    name = "serialized-tx",\n'
         '    src = "test-tx-deserialize/serialized_tx.mn",\n'
+        '    visibility = ["PUBLIC"],\n)',
+        # Runtime fixtures other crates' tests read after locate_workspace_root()
+        # anchors on res/cfg/default.toml (cfg presets + per-network config blobs).
+        # Consumers add `resources = {"../res": "root//res:test-fixtures"}` so it
+        # materializes back at the project-relative res/… layout.
+        'filegroup(\n    name = "test-fixtures",\n'
+        '    srcs = glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"]),\n'
         '    visibility = ["PUBLIC"],\n)',
     ],
     # cli_tests (trycmd) runs `$ midnight-node-toolkit …` and diffs clap's usage
