@@ -73,7 +73,7 @@ The node strictly requires TLS for all PostgreSQL connections. You must configur
 ### Genesis Rebuild Requires AWS Secrets
 
 **Symptom:**
-Unable to rebuild genesis for deployed networks (`qanet`, `preview`, `testnet`).
+Unable to rebuild genesis for deployed networks (`qanet`, `preview`, `preprod`).
 
 **Cause:**
 You do not have the required AWS credentials locally, which hold the node keys and wallet seeds.
