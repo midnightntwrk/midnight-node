@@ -1688,7 +1688,11 @@ fix-lock-npm:
         npm install -g npm@12.0.2 && \
         node --version && npm --version
 
-    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/
+    # .npmrc must come along: this is the only npm site that copies individual files
+    # rather than the whole directory, and without it the lockfile would be regenerated
+    # with no min-release-age cooldown — the one place it matters most, since `npm install`
+    # is what resolves fresh versions.
+    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/.npmrc ${DIRECTORY}/
     WORKDIR ${DIRECTORY}
     RUN npm install
     SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
