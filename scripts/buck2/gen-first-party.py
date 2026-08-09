@@ -142,6 +142,15 @@ ENV_HOOKS = {
 # external files at their repo-relative paths — with crate_root/CARGO_MANIFEST_DIR
 # prefixed by <rel>. The external files live in other buck packages, so they're
 # pulled via export_file labels (see EXPORTS). Value: {label: dest-in-tree}.
+# Starlark `resources` expr per package whose TEST targets read files at runtime.
+# See the emit_target comment: resource `n` lands at <package>/<n>, project-relative.
+TEST_RESOURCES = {
+    # res tests: locate_workspace_root() walks up from CWD (= project root) for
+    # res/cfg/default.toml, then read cfg presets + chainspec/openrpc/genesis blobs.
+    # Globbed relative to the res package, they materialize back at res/… .
+    "midnight-node-res": 'glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"])',
+}
+
 # Data-file globs a prefixed package needs in addition to src/** + Cargo.toml
 # (the `else` branch gets these via SRCS_HOOKS; the prefix branch needs them here
 # so runtime fixture reads resolve at the project-relative layout).
@@ -441,6 +450,13 @@ def gen_buck(pkg, prefix=""):
         for k, v in sorted(env.items()):
             out.append(f'        "{k}": {json.dumps(v)},\n')
         out.append("    },\n")
+        # Runtime resources: buck2 runs rust tests with run_from_project_root=True in
+        # an otherwise-empty remote sandbox, so files a test reads at runtime (not at
+        # compile) must be declared here. Each resource named `n` materializes at the
+        # project-relative path <package>/<n>, i.e. exactly where CWD-relative /
+        # workspace-root-walk lookups expect it. Only test targets get these.
+        if rule == "rust_test" and pkg["name"] in TEST_RESOURCES:
+            out.append(f'    resources = {TEST_RESOURCES[pkg["name"]]},\n')
         for e in extra:
             out.append(e)
         emit_list_field("deps", tdeps, wasm["deps"] if wasm else None)

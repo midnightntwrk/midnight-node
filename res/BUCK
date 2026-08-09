@@ -112,6 +112,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
+    resources = glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"]),
     deps = [
         "root//pallets/cnight-observation:pallet-cnight-observation",
         "root//partner-chains/toolkit/committee-selection/primitives:sp-session-validator-management",
@@ -167,6 +168,7 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
     },
+    resources = glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"]),
     deps = [
         ":midnight-node-res",
         "root//pallets/cnight-observation:pallet-cnight-observation",
