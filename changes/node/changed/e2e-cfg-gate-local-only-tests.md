@@ -15,5 +15,5 @@ dev-wallet and deploy helpers in `lib.rs` become unused, so a scoped
 `allow(dead_code, unused_imports)` (active only when no local feature is set) keeps that build
 warning-clean without cfg-gating every helper.
 
-PR: <link>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2010
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1842
