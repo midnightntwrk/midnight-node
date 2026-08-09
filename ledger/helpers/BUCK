@@ -97,6 +97,7 @@ rust_test(
         "LEDGER_7_VERSION": "7.0.3",
         "LEDGER_8_VERSION": "8.1.0",
         "LEDGER_9_VERSION": "1.0.0 (tag: crate-ledger-9.1.0.0-rc.3, rev: 85e769a0e352518c979cb6f7a07901b63e1c124d)",
+        "MIDNIGHT_PP": ".zk-params",
     },
     deps = [
         "root//third-party:anyhow",

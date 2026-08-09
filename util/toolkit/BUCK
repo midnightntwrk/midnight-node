@@ -260,6 +260,7 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
+        "MIDNIGHT_PP": ".zk-params",
     },
     resources = glob(["test-data/genesis/**"]),
     deps = [

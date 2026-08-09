@@ -240,6 +240,19 @@ TEST_ENV_HOOKS = {
     ("midnight-node-toolkit", "cli_tests"): {
         "CARGO_BIN_EXE_midnight-node-toolkit": "$(location :toolkit-hyphen-bin)",
     },
+    # cached_context builds a LedgerContext, whose MidnightDataProvider needs a
+    # zk-params cache dir ($MIDNIGHT_PP / $XDG_CACHE_HOME / $HOME) or it panics
+    # "Could not determine ...". Point it at a per-sandbox relative dir; the
+    # provider create_dir_all's it and fetches params on demand from S3.
+    ("midnight-node-toolkit", "cached_context"): {
+        "MIDNIGHT_PP": ".zk-params",
+    },
+}
+
+# Env for a package's LIB unit-test (the tests/*.rs integration targets use
+# TEST_ENV_HOOKS instead). Same zk-params reason as above.
+UNIT_TEST_ENV = {
+    "midnight-node-ledger-helpers": {"MIDNIGHT_PP": ".zk-params"},
 }
 
 # Crates to skip emitting a unit-test target for. sc-partner-chains-consensus-aura's
@@ -536,6 +549,7 @@ def gen_buck(pkg, prefix=""):
         out.append("\n")
         emit_target("rust_test", f"{pkg['name']}-unit-test", underscore(lt["name"]),
                     rel_root(lt), dev_deps, dev_named, extra_globs=test_globs,
+                    env_override=UNIT_TEST_ENV.get(pkg["name"]),
                     labels=["ci-infra"] if pkg["name"] in CI_INFRA_UNIT else None)
     for t in tests:
         tdeps = sorted(set(dev_deps + ([f":{pkg['name']}"] if lt else [])))
