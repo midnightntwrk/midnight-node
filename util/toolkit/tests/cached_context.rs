@@ -33,8 +33,7 @@ fn load_genesis_source() -> SourceTransactions {
 	// std::env::var works in both; fall back to the compile-time value otherwise.
 	let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
 		.unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string());
-	let genesis_path =
-		format!("{manifest_dir}/test-data/genesis/genesis_block_undeployed.mn");
+	let genesis_path = format!("{manifest_dir}/test-data/genesis/genesis_block_undeployed.mn");
 	let batches = GetTxsFromFile::load_single_or_multiple(&genesis_path)
 		.expect("failed to load genesis file");
 	let mut source = SourceTransactions::from_batches(batches.batches, true, None);
