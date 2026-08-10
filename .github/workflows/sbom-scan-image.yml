@@ -56,6 +56,16 @@ on:
         description: 'Upload attestation to the Sigstore transparency log (Rekor). Set to false for non-release builds.'
         default: true
         type: boolean
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE:
+        description: 'GHCR write token; falls back to github.token when absent'
+        required: false
+      DOCKERHUB_MIDNIGHTNTWRK_USER:
+        description: 'DockerHub username; only needed when the DockerHub login step runs'
+        required: false
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN:
+        description: 'DockerHub token; only needed when the DockerHub login step runs'
+        required: false
 
 # no top level default permissions for security reasons
 permissions: {}
