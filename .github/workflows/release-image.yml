@@ -555,6 +555,7 @@ jobs:
           SKIP_NODE: ${{ inputs.skip-node }}
           SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
+          FORCE: ${{ github.event.inputs.force }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Create separate tags for toolkit and runtime (node tag is the primary release tag)
@@ -562,20 +563,34 @@ jobs:
           # RELEASE_SHA is the resolved SHA of inputs.ref (set by Setup Env), not
           # $GITHUB_SHA — which would be the workflow ref, possibly main.
 
+          # Creating a ref never moves an existing one. Under force the primary
+          # release tag is moved to RELEASE_SHA, so component tags must move too
+          # — otherwise they stay on the previous commit while the release,
+          # images and assets all name the built tree.
+          ensure_tag() {
+            local tag="$1"
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+                 -f ref="refs/tags/${tag}" -f sha="$RELEASE_SHA" > /dev/null; then
+              echo "Created tag ${tag} at ${RELEASE_SHA}"
+            elif [ "$FORCE" = "true" ]; then
+              echo "::warning::force: moving tag ${tag} to ${RELEASE_SHA}."
+              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
+                -f sha="$RELEASE_SHA" -F force=true > /dev/null
+            else
+              echo "Tag ${tag} already exists, skipping"
+            fi
+          }
+
           # Toolkit tag (only if toolkit is included and not skipped)
           if [ "$SKIP_TOOLKIT" != "true" ]; then
             echo "Creating tag toolkit-${TOOLKIT_TAG_RELEASE}"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/toolkit-${TOOLKIT_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-              || echo "Tag toolkit-${TOOLKIT_TAG_RELEASE} already exists, skipping"
+            ensure_tag "toolkit-${TOOLKIT_TAG_RELEASE}"
           fi
 
           # Runtime tag (only if runtime is included and not skipped)
           if [ "$SKIP_RUNTIME" != "true" ]; then
             echo "Creating tag runtime-${RUNTIME_TAG_RELEASE}"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/runtime-${RUNTIME_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-              || echo "Tag runtime-${RUNTIME_TAG_RELEASE} already exists, skipping"
+            ensure_tag "runtime-${RUNTIME_TAG_RELEASE}"
           fi
 
       - name: Fetch release tag
