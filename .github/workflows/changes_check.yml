@@ -28,7 +28,7 @@ jobs:
       contents: read
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c #v4.5.2
         if: >
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.fork == false
@@ -53,6 +53,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # PR title is untrusted input - only ever handle it via env, never inline
           PR_TITLE: ${{ github.event.pull_request.title }}
+          # merge_group head_ref is derived from a branch name - untrusted, handle via env only
+          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
         run: |
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
@@ -60,7 +62,7 @@ jobs:
             LABELS=$(gh pr view "${{ github.event.pull_request.number }}" --json labels | jq -c '[.labels[].name]')
             echo "labels=$LABELS" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" == "merge_group" ]; then
-            PR_NUM=$(echo "${{ github.event.merge_group.head_ref }}" | sed -n 's/.*\/pr-\([0-9]*\)-.*/\1/p')
+            PR_NUM=$(echo "$MERGE_GROUP_HEAD_REF" | sed -n 's/.*\/pr-\([0-9]*\)-.*/\1/p')
             echo "number=$PR_NUM" >> "$GITHUB_OUTPUT"
             LABELS=$(gh pr view "$PR_NUM" --json labels | jq -c '[.labels[].name]')
             echo "labels=$LABELS" >> "$GITHUB_OUTPUT"
