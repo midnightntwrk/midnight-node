@@ -144,11 +144,12 @@ impl MidnightNodeClient {
 				//
 				// An error here is not fatal: the state root only feeds block
 				// verification, which is skipped when it is `None` (as for V0_21_0
-				// above). The hardfork's `set_code` block *always* errors — it stores
-				// the new code but its ledger data is still the old version, so the
-				// new runtime's deserializer rejects it (`0x010005` =
-				// `LedgerApiError::Deserialization`). That block is genuinely
-				// unverifiable, and one unverified block must not fail the whole fetch.
+				// above), and one unverified block must not fail the whole fetch.
+				// The hardfork's `set_code` block used to always error with `0x010005`
+				// (`LedgerApiError::Deserialization`) — it commits the new code over
+				// still-old ledger data — but `pallet_midnight::Pallet::state_key`
+				// now reads that block's pre-v3 `StateKey` layout and dispatches to
+				// the old ledger version, so it answers with the pre-fork root.
 				match Result::<Vec<u8>, ()>::decode(&mut &raw[..]) {
 					Ok(Ok(root)) => Ok(Some(root)),
 					_ => {

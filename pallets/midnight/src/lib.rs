@@ -62,7 +62,7 @@ pub mod pallet {
 
 	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
 		fn get_ledger_state_key() -> LedgerTypes::LedgerStateKey {
-			StateKey::<T>::get()
+			Self::state_key()
 		}
 
 		#[allow(clippy::unwrap_in_result)] // generic error type E cannot be constructed here
@@ -70,7 +70,7 @@ pub mod pallet {
 		where
 			F: FnOnce(LedgerTypes::LedgerStateKey) -> Result<(LedgerTypes::LedgerStateKey, R), E>,
 		{
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 
 			let (new_state_key, custom_result) = f(state_key)?;
 
@@ -154,7 +154,6 @@ pub mod pallet {
 	pub type StateKeyLength = ConstU32<1065>;
 	type MaxNetworkIdLength = ConstU32<64>;
 	#[pallet::storage]
-	#[pallet::getter(fn state_key)]
 	/// It is safe to keep the state key unbounded as its size can not be influenced by external users.
 	/// We might want still to verify the bounded length for genesis build due it may be not set by a ledger.
 	/// Handling of the case that state key will go out of boundaries during runtime operation is unrecoverable.
@@ -343,7 +342,7 @@ pub mod pallet {
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
 			// Post Block Ledger Update
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			let block_context = Self::get_block_context();
 
 			let state_root = LedgerApi::apply_post_block_update(state_key, block_context.clone())
@@ -376,7 +375,7 @@ pub mod pallet {
 		#[pallet::call_index(0)]
 		#[pallet::weight(Pallet::<T>::get_tx_weight(midnight_tx))]
 		pub fn send_mn_transaction(_origin: OriginFor<T>, midnight_tx: Vec<u8>) -> DispatchResult {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			let block_context = Self::get_block_context();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
@@ -478,7 +477,7 @@ pub mod pallet {
 			Self::check_weight(call)?;
 
 			let block_context = Self::get_block_context();
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 
 			LedgerApi::validate_guaranteed_execution(
@@ -494,6 +493,31 @@ pub mod pallet {
 
 	// grcov-excl-start
 	impl<T: Config> Pallet<T> {
+		/// Reads [`StateKey`], tolerating the pre-v3 raw-bytes layout.
+		///
+		/// On the `set_code` block of a hardfork the committed state pairs the new
+		/// `:code` with the old storage layout — `migrations::v2`/`v3` only run in
+		/// the next block's `initialize_block` — so runtime APIs queried at that
+		/// block hash run this runtime against pre-v3 storage forever. The on-chain
+		/// storage version is the authority on which layout is there: v3 is the
+		/// migration that re-encoded it, and `VersionedMigration` bumps the version
+		/// in the same write.
+		///
+		/// Pinned at 3, not `STORAGE_VERSION`: a later migration that bumps the
+		/// version without touching this layout must not send reads back to the
+		/// legacy branch.
+		pub fn state_key() -> LedgerTypes::LedgerStateKey {
+			if Pallet::<T>::on_chain_storage_version() < StorageVersion::new(3) {
+				// The raw-bytes alias for this same storage key — see
+				// `migration_state_key_alias_addresses_the_pallet_storage_item`.
+				LedgerTypes::LedgerStateKey::Anchored(
+					crate::migrations::v2::old::StateKey::<T>::get(),
+				)
+			} else {
+				StateKey::<T>::get()
+			}
+		}
+
 		pub fn initialize_state(network_id: &str, state_key: &[u8]) {
 			//todo add checks
 			// It is correct to call expect for genesis initialization
@@ -507,10 +531,17 @@ pub mod pallet {
 			let network_id = BoundedString::<MaxNetworkIdLength>::try_from(network_id)
 				.expect("Network Id size out of boundaries");
 			NetworkId::<T>::put(network_id);
+
+			// A real genesis gets this from `frame`'s `on_genesis`, but mocks that
+			// call this directly (rather than through `GenesisConfig`) never run it,
+			// leaving the on-chain version at 0 — which `Self::state_key` would read
+			// as the pre-v3 layout. Writing it here keeps the value just written and
+			// the version that describes it in step, wherever genesis comes from.
+			STORAGE_VERSION.put::<Pallet<T>>();
 		}
 
 		pub fn get_contract_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			LedgerApi::get_contract_state(state_key.bytes(), contract_address)
 		}
 
@@ -530,7 +561,7 @@ pub mod pallet {
 		}
 
 		pub fn get_zswap_chain_state(contract_address: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			LedgerApi::get_zswap_chain_state(state_key.bytes(), contract_address)
 		}
 		// grcov-excl-stop
@@ -576,7 +607,7 @@ pub mod pallet {
 
 		fn validate_unsigned(call: &Call<T>, block_context: BlockContext) -> TransactionValidity {
 			if let Call::send_mn_transaction { midnight_tx } = call {
-				let state_key = StateKey::<T>::get();
+				let state_key = Self::state_key();
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let max_weight = T::BlockWeights::get().max_block.ref_time();
 
@@ -602,34 +633,34 @@ pub mod pallet {
 		}
 
 		pub fn get_unclaimed_amount(beneficiary: &[u8]) -> Result<u128, LedgerApiError> {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			LedgerApi::get_unclaimed_amount(state_key.bytes(), beneficiary)
 		}
 
 		pub fn get_ledger_parameters() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			LedgerApi::get_ledger_parameters(state_key.bytes())
 		}
 
 		pub fn get_c_to_m_bridge_min_amount() -> Result<u128, LedgerApiError> {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			LedgerApi::get_c_to_m_bridge_min_amount(state_key.bytes())
 		}
 
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			let block_context = Self::get_block_context();
 			let max_weight = T::BlockWeights::get().max_block.ref_time();
 			LedgerApi::get_transaction_cost(state_key.bytes(), tx, block_context, max_weight)
 		}
 
 		pub fn get_zswap_state_root() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			LedgerApi::get_zswap_state_root(state_key.bytes())
 		}
 
 		pub fn get_ledger_state_root() -> Result<Vec<u8>, LedgerApiError> {
-			let state_key = StateKey::<T>::get();
+			let state_key = Self::state_key();
 			LedgerApi::get_ledger_state_root(state_key.bytes())
 		}
 

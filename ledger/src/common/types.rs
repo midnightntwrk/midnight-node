@@ -374,3 +374,21 @@ pub struct UtxoInfo {
 	pub value: u128,
 	pub output_no: u32,
 }
+
+#[cfg(test)]
+mod ledger_state_key_tests {
+	use super::*;
+
+	#[test]
+	fn round_trips_both_variants() {
+		let key = alloc::vec![9u8; 73];
+		for value in [
+			LedgerStateKey::Anchored(key.clone()),
+			LedgerStateKey::Transient(key.clone()),
+			LedgerStateKey::default(),
+		] {
+			let encoded = value.encode();
+			assert_eq!(LedgerStateKey::decode(&mut &encoded[..]).unwrap(), value);
+		}
+	}
+}

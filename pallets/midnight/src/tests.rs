@@ -513,3 +513,33 @@ fn migration_state_key_alias_addresses_the_pallet_storage_item() {
 		crate::StateKey::<mock::Test>::hashed_key(),
 	);
 }
+
+/// The `set_code` block of a hardfork commits the new runtime code alongside the
+/// pre-v3 raw-bytes `StateKey`, so reads there must fall back to that layout —
+/// see [`crate::Pallet::state_key`]. The on-chain storage version is what tells
+/// the two apart.
+#[test]
+fn state_key_read_follows_the_on_chain_storage_version() {
+	use frame_support::traits::StorageVersion;
+	use midnight_node_ledger::types::LedgerStateKey;
+
+	mock::new_test_ext().execute_with(|| {
+		let legacy = b"midnight:storage-key(ledger-state[v13]):xxx".to_vec();
+
+		// Pre-migration: version 2 (or 1) with a bare `Vec<u8>` in storage.
+		StorageVersion::new(2).put::<mock::Midnight>();
+		crate::migrations::v2::old::StateKey::<Test>::put(legacy.clone());
+		assert_eq!(
+			crate::Pallet::<Test>::state_key(),
+			LedgerStateKey::Anchored(legacy),
+			"pre-v3 storage must be read as the legacy bare-bytes layout"
+		);
+
+		// Post-migration: the typed value is read as-is, Transient included.
+		let typed =
+			LedgerStateKey::Transient(b"midnight:storage-key(ledger-state[v18]):yyy".to_vec());
+		StorageVersion::new(3).put::<mock::Midnight>();
+		crate::StateKey::<Test>::put(typed.clone());
+		assert_eq!(crate::Pallet::<Test>::state_key(), typed);
+	});
+}
