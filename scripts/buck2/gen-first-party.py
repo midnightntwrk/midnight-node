@@ -149,9 +149,11 @@ TEST_RESOURCES = {
     # res/cfg/default.toml, then read cfg presets + chainspec/openrpc/genesis blobs.
     # Globbed relative to the res package, they materialize back at res/… .
     "midnight-node-res": 'glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"])',
-    # node tests call into res's locate_workspace_root(); pull res's fixtures in at
-    # the project-relative res/ layout so the walk + config reads resolve.
-    "midnight-node": '{"../res": "root//res:test-fixtures"}',
+    # node cfg::tests / openrpc::tests call midnight_node_res::locate_workspace_root()
+    # then read <root>/res/<network>/*.json and <root>/docs/openrpc.json. Stage both
+    # under node/ (no `..` — cross-package `..` resource keys do not materialize on RE)
+    # and point locate_workspace_root at node/ via MN_WORKSPACE_ROOT (UNIT_TEST_ENV).
+    "midnight-node": '{"res": "root//res:test-fixtures", "docs/openrpc.json": "root//docs:openrpc-json"}',
 }
 
 # Per-TEST-TARGET resources (keyed by rust_test name), for packages whose test
@@ -199,6 +201,9 @@ MAPPED_SRCS_EXTERNAL = {
 EXPORTS = {
     "midnight-node": [
         'export_file(name = "cargo-toml", src = "Cargo.toml", visibility = ["PUBLIC"])',
+    ],
+    "docs": [
+        'export_file(name = "openrpc-json", src = "openrpc.json", visibility = ["PUBLIC"])',
     ],
     "midnight-node-res": [
         'export_file(\n    name = "test-contract-addr",\n'
@@ -253,6 +258,10 @@ TEST_ENV_HOOKS = {
 # TEST_ENV_HOOKS instead). Same zk-params reason as above.
 UNIT_TEST_ENV = {
     "midnight-node-ledger-helpers": {"MIDNIGHT_PP": ".zk-params"},
+    # node-unit-test's cfg/openrpc tests resolve the workspace root via res's
+    # locate_workspace_root(); point it at node/ where TEST_RESOURCES stages res/
+    # and docs/openrpc.json. Only the lib unit-test (not the integration tests).
+    "midnight-node": {"MN_WORKSPACE_ROOT": "node"},
 }
 
 # Crates to skip emitting a unit-test target for. sc-partner-chains-consensus-aura's

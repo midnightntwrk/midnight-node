@@ -303,10 +303,11 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "Midnight blockchain node",
         "CARGO_PKG_REPOSITORY": "https://github.com/substrate-developer-hub/substrate-node-template/",
         "CARGO_PKG_HOMEPAGE": "https://substrate.io/",
+        "MN_WORKSPACE_ROOT": "node",
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
-    resources = {"../res": "root//res:test-fixtures"},
+    resources = {"res": "root//res:test-fixtures", "docs/openrpc.json": "root//docs:openrpc-json"},
     deps = [
         "root//ledger/helpers:midnight-node-ledger-helpers",
         "root//ledger:midnight-node-ledger",
@@ -452,7 +453,7 @@ rust_test(
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
-    resources = {"../res": "root//res:test-fixtures"},
+    resources = {"res": "root//res:test-fixtures", "docs/openrpc.json": "root//docs:openrpc-json"},
     deps = [
         ":midnight-node",
         "root//ledger/helpers:midnight-node-ledger-helpers",
@@ -599,7 +600,7 @@ rust_test(
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
-    resources = {"../res": "root//res:test-fixtures"},
+    resources = {"res": "root//res:test-fixtures", "docs/openrpc.json": "root//docs:openrpc-json"},
     deps = [
         ":midnight-node",
         "root//ledger/helpers:midnight-node-ledger-helpers",

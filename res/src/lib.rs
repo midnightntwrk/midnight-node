@@ -32,6 +32,13 @@ pub const CFG_PATH: &str = "res/cfg/";
 /// # Panics
 /// If no `res/cfg/default.toml` exists in the current dir or any ancestor.
 pub fn locate_workspace_root() -> PathBuf {
+	// buck2 runs tests from the project root in a hermetic sandbox that lacks the
+	// res/ tree, and the upward walk can only find fixtures at or above cwd. Let a
+	// test target instead point at a staged fixtures root via MN_WORKSPACE_ROOT
+	// (unset under cargo, so the walk is the default).
+	if let Some(root) = std::env::var_os("MN_WORKSPACE_ROOT") {
+		return PathBuf::from(root);
+	}
 	let mut dir = std::env::current_dir().expect("cwd");
 	loop {
 		if dir.join(CFG_PATH).join("default.toml").exists() {
