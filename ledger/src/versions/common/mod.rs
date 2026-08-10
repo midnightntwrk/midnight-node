@@ -92,11 +92,15 @@ use {lazy_static::lazy_static, moka::sync::Cache};
 pub const LOG_TARGET: &str = "midnight::ledger_v2";
 pub const MINT_COINS_DOMAIN_SEPARATOR: &[u8; 10] = b"mint_coins";
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct StrictTxValidationKey {
 	state_hash: Hash,
 	tx_hash: Hash,
-	block_context_tblock: u64,
+	/// The timestamp the cached `VerifiedTransaction` was verified at — the output of
+	/// [`well_formed_tblock`], not the block's own `tblock`. Host-function v1 and v2 skew a
+	/// block's first transaction differently, and both can run in one process; keying on what
+	/// `well_formed` was actually given keeps them from reusing each other's entries.
+	well_formed_tblock: u64,
 }
 #[derive(PartialEq, Eq, Hash)]
 pub struct SoftTxValidationKey {
@@ -870,12 +874,7 @@ where
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
-		let state_hash = ledger.state.state_hash();
-		let strict_key = StrictTxValidationKey {
-			state_hash: state_hash.0.into(),
-			tx_hash: tx_hash.0,
-			block_context_tblock: block_context.tblock,
-		};
+		let strict_key = strict_cache_key(ledger, block_context, tx_hash, skew_tblock);
 
 		// Check strict cache
 		if let Some(cached) = STRICT_TX_VALIDATION_CACHE.get(&strict_key) {
@@ -889,12 +888,11 @@ where
 		// Cache miss: compute VerifiedTransaction
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
-		let tblock = well_formed_tblock(ledger, block_context, skew_tblock);
 		let verified_tx =
 			tx.0.well_formed(
 				&ctx.ref_state,
 				mn_ledger_local::verify::WellFormedStrictness::default(),
-				tblock,
+				Timestamp::from_secs(strict_key.well_formed_tblock),
 			)
 			.map_err(|e| {
 				log::warn!(
@@ -996,12 +994,7 @@ where
 		SOFT_TX_VALIDATION_CACHE.invalidate(&SoftTxValidationKey { tx_hash: tx_hash.0 });
 
 		// Check strict cache to determine if this is a cache hit
-		let state_hash = ledger.state.state_hash();
-		let strict_key = StrictTxValidationKey {
-			state_hash: state_hash.0.into(),
-			tx_hash: tx_hash.0,
-			block_context_tblock: block_context.tblock,
-		};
+		let strict_key = strict_cache_key(ledger, block_context, tx_hash, skew_tblock);
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
 		let verified_tx =
@@ -1188,6 +1181,29 @@ fn well_formed_tblock<D: DB>(
 	}
 }
 
+/// Key for a `VerifiedTransaction` in the strict cache.
+///
+/// Keyed on the timestamp [`well_formed_tblock`] resolves to rather than `block_context.tblock`,
+/// so a transaction verified under the correction can never be served to a caller that asked for
+/// the uncorrected timestamp, or vice versa. When the correction is inert the two agree and the
+/// entry is shared, which is exactly when sharing is sound.
+#[cfg(feature = "std")]
+fn strict_cache_key<D: DB>(
+	ledger: &Ledger<D>,
+	block_context: &BlockContext,
+	tx_hash: &WrappedHash,
+	skew_tblock: bool,
+) -> StrictTxValidationKey
+where
+	D::Hasher: OutputSizeUser<OutputSize = U32>,
+{
+	StrictTxValidationKey {
+		state_hash: ledger.state.state_hash().0.into(),
+		tx_hash: tx_hash.0,
+		well_formed_tblock: well_formed_tblock(ledger, block_context, skew_tblock).to_secs(),
+	}
+}
+
 #[cfg(feature = "std")]
 fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> GasCost {
 	let max_fp = *[
@@ -1272,6 +1288,28 @@ mod tests {
 			well_formed_tblock(&ledger_mid_block(), &bc, true),
 			Timestamp::from_secs(BLOCK_TBLOCK),
 		);
+	}
+
+	/// The two host-function versions must not share a cache entry when they verify at different
+	/// timestamps — whichever ran first would otherwise hand the other a `VerifiedTransaction`
+	/// checked against the wrong `tblock`.
+	#[test]
+	fn strict_cache_key_separates_corrected_from_uncorrected() {
+		let bc = block_context();
+		let tx_hash = WrappedHash([7u8; 32]);
+		let key = |ledger, skew| strict_cache_key::<DefaultDB>(ledger, &bc, &tx_hash, skew);
+
+		let at_block_start = ledger_at_block_start();
+		match bc.parent_block_time() {
+			// Ledger 8+: the correction fires for the first tx, so the keys must differ.
+			Some(_) => assert_ne!(key(&at_block_start, true), key(&at_block_start, false)),
+			// Ledger 7: no correction is possible, so both versions verify identically.
+			None => assert_eq!(key(&at_block_start, true), key(&at_block_start, false)),
+		}
+
+		// Mid-block the correction is inert either way, so sharing the entry is sound.
+		let mid_block = ledger_mid_block();
+		assert_eq!(key(&mid_block, true), key(&mid_block, false));
 	}
 
 	fn normalized_all(value: FixedPoint) -> LedgerNormalizedCost {
