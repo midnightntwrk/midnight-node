@@ -733,12 +733,14 @@ pub(crate) fn fetch_concurrency() -> usize {
 
 // -------- TEST MODULES --------
 //
-// Only `cnight::observation::` is meant to run under qanet/devnet (the nightly
-// job filters to it). Every other module here is local-env-only: they call
-// `ensure_dev_wallet_funded()` / the local faucet stack and would hang ~180s
-// under an unfiltered `--features qanet` run. Gate them to the local features
-// so the per-feature test sets stay coherent. `cnight` stays ungated because it
-// owns `cnight::observation`; its own local-only test is gated inside the module.
+// Meant to run under qanet/devnet: `cnight::observation::`, plus the
+// qanet/devnet-gated smoke tests that `operational` owns (`dust_balance_smoke`,
+// `dust_balance_smoke_many`, which check the Postgres fetch-cache path). The
+// fully local-env-only modules below call `ensure_dev_wallet_funded()` / the
+// local faucet stack and would hang ~180s under an unfiltered `--features qanet`
+// run, so gate them to the local features. `cnight` and `operational` stay
+// ungated because they own qanet-relevant tests; each gates its own local-only
+// tests inside the module.
 #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 mod c2m_bridge;
 mod cnight;
@@ -746,5 +748,4 @@ mod cnight;
 mod contract_state;
 #[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 mod governance;
-#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 mod operational;
