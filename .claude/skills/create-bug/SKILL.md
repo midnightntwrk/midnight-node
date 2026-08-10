@@ -1,0 +1,137 @@
+---
+name: create-bug
+description: File a bug issue in midnight-node with GitHub's `type: Bug` field (not the `bug` label). Use when the user asks to create/file/report a bug or open a bug issue, or wants a bug write-up from a failure they just hit.
+---
+
+# Create a bug issue
+
+Issue **types** are enabled on `midnightntwrk/midnight-node` (`Task`, `Bug`, `Feature`).
+Set the type — do **not** add the legacy `bug` label.
+
+```bash
+gh issue create --type Bug --title "…" -F body.md \
+  -l component:<area> -l origin:<who-found-it> -l bot:ai-assisted
+```
+
+`--type` needs gh ≥ 2.68 (`gh --version`). Verify available types with:
+`gh api graphql -f query='{repository(owner:"midnightntwrk",name:"midnight-node"){issueTypes(first:20){nodes{name isEnabled}}}}'`
+
+## Report observations, not diagnosis
+
+A bug report describes **what was observed** plus **how the reporter got around it**. Leave out:
+
+- root-cause analysis or theories about why it happens
+- suggested fixes ("the fix is to…", "this should instead…")
+- pointers into suspected source (`path/file.rs:123`) — a reporter's guess at where the problem
+  lives biases whoever picks it up
+
+Stack traces, panic locations, and log lines the system itself emitted are evidence, not
+analysis — include them verbatim. Diagnosis and fix design belong in triage.
+
+**Workarounds are in scope** and always worth stating — they are the difference between an
+annoyance and a blocker. Always include the section, even to say `None known`.
+
+## 1. Collect evidence before writing
+
+Never invent reproduction steps, versions, or output. Pull them from the session (commands run,
+logs, test output) or ask. Minimum bar:
+
+- **Versions**: node/runtime `specVersion`, ledger version, commit SHA, image tags, client lib versions.
+- **Environment**: local-env / qanet / preview / preprod / mainnet; validator count; config preset.
+- **Exact commands** that reproduce, copy-pasteable.
+- **Verbatim** error text or log excerpt (trimmed, not paraphrased).
+- **Frequency**: deterministic vs intermittent (say "N of M runs").
+- **Workaround**: what unblocks the user, or that nothing does.
+
+If something is unknown, write "unknown" in the issue rather than guessing.
+
+Check for duplicates first: `gh issue list --search "<key error phrase>" --state all --limit 20`
+
+## 2. Title
+
+`<area>: <what fails, in terms of the user action> — <distinguishing detail>`
+Area is `node`, `toolkit`, `ledger`, `ci`, etc. Name the **action**, not the code location —
+file names and line numbers are log detail and belong in the body.
+
+Good: `toolkit: panic when registering a DUST address — fails 'No Rust Panics …'`
+Good: `[HF v8→v9] Upgrade-block events cannot be decoded with post-upgrade metadata`
+Bad: `toolkit: panic at register_dust_address.rs:176:40` (code location, not an action)
+Bad: `Bug in toolkit` (no symptom)
+
+## 3. Body
+
+Follow `.github/ISSUE_TEMPLATE/bug-report.md` — its four sections, plus a workaround section:
+
+```markdown
+### Context & versions
+
+- **Node:** `main` @ `<sha>` — `<version>`, `specVersion <n>`, ledger `<v>`
+- **Network:** <local-env / qanet / …>, <n> validators
+- **Frequency:** deterministic | intermittent — observed in N of M runs
+
+### Steps to reproduce
+
+1. …
+2. ```
+   <exact command>
+   ```
+
+### Expected behavior
+
+<what should have happened>
+
+### Actual behavior
+
+<what happened, with the verbatim log/error in a fenced block>
+
+### Workaround
+
+<what unblocks the user, with exact commands/settings — or `None known.`>
+```
+
+Write the body to a temporary file and pass `-F <file>` rather than `--body`. Bug bodies contain
+backticks, quotes and `$` from log output; quoting rules for those differ between shells, and a
+file sidesteps all of it.
+
+## 4. Labels
+
+The type carries "this is a bug". Add only what you actually know:
+
+| Label | When |
+|---|---|
+| `component:node`, `component:ledger`, `component:midnight-toolkit`, `component:contracts` | the affected component |
+| `origin:shielded`, `origin:mnf`, `origin:public` | who found it |
+| `bot:ai-assisted` | always, when you drafted the issue |
+| `ci`, `security`, `test`, `breaking-change` | if applicable |
+
+Do **not** add:
+
+- `bug` — replaced by the type
+- `priority:*` — priority is a **field**, not a label (see below)
+- `triaged` / `untriaged` / status labels (`TO DO`, `IN PROGRESS`, …) — triage owns those
+
+`gh label list --limit 200` for the current set.
+
+## 5. Priority
+
+Priority is a field on the issue, not a label. `gh issue create` cannot set it, and reading or
+writing it needs a token with project permissions — so **leave it unset** and let triage assign it.
+
+What the reporter owes triage is the input for that decision, and it belongs in the body:
+impact and whether a workaround exists. No workaround plus severe impact (chain stalls, data
+loss, release blocked) is what makes a bug a blocker — state the facts, don't assign the rating.
+
+## 6. Verify
+
+```bash
+gh issue view <n> --json number,title,issueType,labels
+```
+
+Confirm `issueType.name == "Bug"`. If it came back `null`, the `--type` flag was dropped — set
+it after the fact:
+
+```bash
+gh issue edit <n> --type Bug
+```
+
+Report the issue URL back to the user.
