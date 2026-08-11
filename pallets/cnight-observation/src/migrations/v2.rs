@@ -30,8 +30,8 @@
 //!   `process_tokens` is gated off for the duration by the storage version.
 //!
 //! The restored generation entries are field-for-field identical to the wiped
-//! ones. Only the accrual clock moves: the original `ctime` is not in ledger
-//! state (it lives on the dust *UTXO*, which the wipe takes), so the replay
+//! ones. Only the accrual clock moves: the original `ctime` is not publicly
+//! visible in ledger state (it is stored as a commitment only), so the replay
 //! stamps `fork block time - dust.time_to_cap()`. DUST accrues linearly from
 //! `ctime` to a cap of `night_value * night_dust_ratio` reached after
 //! `time_to_cap` (~1 week), so backdating by exactly that much puts every holder
