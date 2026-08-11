@@ -53,8 +53,18 @@ mod v8 {
 	};
 }
 
-/// The fork block's time, i.e. the `ctime` every replayed entry must carry.
+/// The fork block's time.
 const FORK_TIME_SECS: u64 = 1_800_000_000;
+
+/// The `ctime` every replayed entry must carry: the fork block backdated by the
+/// dust `time_to_cap`, so each restored entry is at its DUST cap on arrival.
+/// Derived from the *active* (v9) parameters — the 8 -> 9 translation recasts
+/// `parameters.dust` unchanged, so this is an independent check of the value the
+/// migration reads out of the v8 state.
+fn expected_ctime_secs() -> u64 {
+	FORK_TIME_SECS
+		- midnight_node_ledger_helpers::INITIAL_PARAMETERS.dust.time_to_cap().as_seconds() as u64
+}
 
 fn init_ledger_state() {
 	let path_buf = tempfile::tempdir().unwrap().keep();
@@ -159,8 +169,9 @@ fn cnight_events() -> Vec<Event<Test>> {
 }
 
 /// The happy path: every live `UtxoOwners` nonce is restored with the night value
-/// and dust owner the pre-fork ledger held for it, stamped with the fork block's
-/// time. A nonce the pre-fork state doesn't know is tallied as skipped.
+/// and dust owner the pre-fork ledger held for it, stamped with a `ctime` that
+/// puts it at its DUST cap. A nonce the pre-fork state doesn't know is tallied as
+/// skipped.
 #[test]
 fn replays_live_entries_from_pre_fork_state() {
 	new_test_ext().execute_with(|| {
@@ -197,8 +208,8 @@ fn replays_live_entries_from_pre_fork_state() {
 				assert_eq!(event.owner, expected_owner, "restored owner must be the ledger's");
 				assert_eq!(
 					event.time.to_secs(),
-					FORK_TIME_SECS,
-					"replayed ctime must be the fork block's time",
+					expected_ctime_secs(),
+					"replayed ctime must be the fork block backdated by time_to_cap",
 				);
 				(event.value, event.nonce.0.0)
 			})

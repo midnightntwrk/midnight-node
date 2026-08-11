@@ -30,11 +30,22 @@
 //!   `process_tokens` is gated off for the duration by the storage version.
 //!
 //! The restored generation entries are field-for-field identical to the wiped
-//! ones. Only the accrual clock resets: the replay stamps the fork block's time
-//! as `ctime`, because the original is not in ledger state (it lives on the dust
-//! *UTXO*, which the wipe takes) and replaying an older one would re-credit
-//! accrual holders have already claimed and spent. Accrued-but-unclaimed DUST is
-//! lost — intrinsic to a dust-state wipe.
+//! ones. Only the accrual clock moves: the original `ctime` is not in ledger
+//! state (it lives on the dust *UTXO*, which the wipe takes), so the replay
+//! stamps `fork block time - dust.time_to_cap()`. DUST accrues linearly from
+//! `ctime` to a cap of `night_value * night_dust_ratio` reached after
+//! `time_to_cap` (~1 week), so backdating by exactly that much puts every holder
+//! at their cap the moment the replay lands — the pre-fork steady state, since
+//! anyone holding cNIGHT for a week was already capped.
+//!
+//! Stamping the fork block itself instead would be an equally arbitrary clock
+//! that starts everyone at zero and refills over a week, in proportion to
+//! holdings: large holders recover in minutes, small ones are locked out of
+//! paying fees for days. The real per-UTXO `ctime` is only available from
+//! db-sync, and would restore holders to the same cap anyway for all but the
+//! youngest UTXOs — while making the hardfork depend on a new
+//! consensus-critical mainchain query. The chosen offset over-credits only
+//! cNIGHT locked in the last week, bounded by a cap it would reach regardless.
 //!
 //! Only cnight's slice of the generating set is restored. Native NIGHT registers
 //! generation entries too, and nothing in this repo records which of those the
@@ -159,18 +170,6 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 			return Ok(cancel::<T>());
 		};
 
-		// Captured on the first step. Steps run in `inherents_applied()`, i.e.
-		// after the timestamp inherent, so this is the fork block's own time —
-		// every holder restarts accrual from the same instant.
-		let ctime = match DustReapplyCtime::<T>::get() {
-			Some(ctime) => ctime,
-			None => {
-				let ctime = T::LedgerBlockContextProvider::get_block_context().tblock;
-				DustReapplyCtime::<T>::put(ctime);
-				ctime
-			},
-		};
-
 		// Read-only paging: `UtxoOwners` is not drained, it stays the live set.
 		let mut iter = match cursor {
 			Some(last) => UtxoOwners::<T>::iter_from(UtxoOwners::<T>::hashed_key_for(last)),
@@ -184,16 +183,32 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 		};
 
 		let raw_nonces: Vec<[u8; 32]> = nonces.iter().map(|nonce| nonce.0).collect();
-		let values = match LedgerApi::dust_generation_values_v8(&pre_fork_key, raw_nonces) {
-			Ok(values) => values,
-			Err(e) => {
-				// The pre-fork arena root has been reaped, or (defensively) is
-				// not a ledger-8 root at all. Nothing to restore from.
-				log::error!(
-					target: LOG_TARGET,
-					"pre-fork dust generation state is unreadable ({e:?}); abandoning the replay"
-				);
-				return Ok(cancel::<T>());
+		let (time_to_cap, values) =
+			match LedgerApi::dust_generation_values_v8(&pre_fork_key, raw_nonces) {
+				Ok(values) => values,
+				Err(e) => {
+					// The pre-fork arena root has been reaped, or (defensively) is
+					// not a ledger-8 root at all. Nothing to restore from.
+					log::error!(
+						target: LOG_TARGET,
+						"pre-fork dust generation state is unreadable ({e:?}); abandoning the replay"
+					);
+					return Ok(cancel::<T>());
+				},
+			};
+
+		// Stamped once, on the first step that has something to restore, and
+		// reused by every later batch so the whole set shares one clock. Steps
+		// run in `inherents_applied()`, i.e. after the timestamp inherent, so
+		// `tblock` is the current block's own time; backdating it by
+		// `time_to_cap` puts every restored entry straight at its DUST cap.
+		let ctime = match DustReapplyCtime::<T>::get() {
+			Some(ctime) => ctime,
+			None => {
+				let tblock = T::LedgerBlockContextProvider::get_block_context().tblock;
+				let ctime = tblock.saturating_sub(time_to_cap);
+				DustReapplyCtime::<T>::put(ctime);
+				ctime
 			},
 		};
 

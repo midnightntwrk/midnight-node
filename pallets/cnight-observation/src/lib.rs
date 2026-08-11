@@ -332,9 +332,9 @@ pub mod pallet {
 	#[pallet::unbounded]
 	pub type PreForkStateKey<T: Config> = StorageValue<_, Vec<u8>, OptionQuery>;
 
-	/// Ledger time stamped on every replayed dust event. Written by the first
-	/// replay step, which runs after the fork block's timestamp inherent, so
-	/// every holder restarts DUST accrual from one instant.
+	/// Ledger time stamped on every replayed dust event: the fork block's own
+	/// time, backdated by the dust `time_to_cap` so every restored entry lands
+	/// at its DUST cap rather than at zero. Written by the first replay step.
 	#[pallet::storage]
 	pub type DustReapplyCtime<T: Config> = StorageValue<_, u64, OptionQuery>;
 

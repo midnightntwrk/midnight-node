@@ -43,10 +43,16 @@ use storage::{
 
 const LOG_TARGET: &str = "midnight::ledger::dust_generation";
 
-/// For each requested initial nonce, the night value and dust owner of its
-/// still-generating entry in the ledger-8 dust state referenced by `state_key`;
-/// `None` when the nonce is not tracked, or has already been destroyed.
-/// Positionally aligned with `nonces`.
+/// The dust parameters' `time_to_cap` in seconds, plus — for each requested
+/// initial nonce — the night value and dust owner of its still-generating entry
+/// in the ledger-8 dust state referenced by `state_key`; `None` when the nonce
+/// is not tracked, or has already been destroyed. Positionally aligned with
+/// `nonces`.
+///
+/// `time_to_cap` is how far the caller backdates the replayed `ctime` so every
+/// restored entry lands at its DUST cap, i.e. at the balance it held before the
+/// wipe. It comes from the v8 state because that is the one already loaded here,
+/// and the 8 -> 9 translation recasts `parameters.dust` unchanged.
 ///
 /// The owner bytes are the (untagged) serialized `DustPublicKey`, i.e. exactly
 /// what `construct_cnight_generates_dust_event` accepts for `owner`.
@@ -59,7 +65,7 @@ const LOG_TARGET: &str = "midnight::ledger::dust_generation";
 pub fn dust_generation_values_v8<D: DB>(
 	state_key: &[u8],
 	nonces: &[[u8; 32]],
-) -> Result<Vec<Option<(u128, Vec<u8>)>>, LedgerApiError> {
+) -> Result<(u64, Vec<Option<(u128, Vec<u8>)>>), LedgerApiError> {
 	if !crate::is_ledger_8_state_key(state_key) {
 		log::error!(
 			target: LOG_TARGET,
@@ -79,6 +85,8 @@ pub fn dust_generation_values_v8<D: DB>(
 		LedgerApiError::NoLedgerState
 	})?;
 	let generation = &ledger8.state.dust.generation;
+	// Non-negative by construction (`night_dust_ratio / generation_decay_rate`).
+	let time_to_cap = ledger8.state.parameters.dust.time_to_cap().as_seconds().max(0) as u64;
 
 	let values = nonces
 		.iter()
@@ -121,7 +129,7 @@ pub fn dust_generation_values_v8<D: DB>(
 		})
 		.collect();
 
-	Ok(values)
+	Ok((time_to_cap, values))
 }
 
 #[cfg(test)]
@@ -192,7 +200,7 @@ mod tests {
 		let owner = DustPublicKey(Fr::from(7u64));
 		let root = v8_root(owner);
 
-		let values = dust_generation_values_v8::<InMemoryDB>(
+		let (time_to_cap, values) = dust_generation_values_v8::<InMemoryDB>(
 			&root,
 			&[NONCE_LIVE, NONCE_DESTROYED, NONCE_UNKNOWN],
 		)
@@ -202,6 +210,11 @@ mod tests {
 		Serializable::serialize(&owner, &mut expected_owner).unwrap();
 
 		assert_eq!(values, vec![Some((100u128, expected_owner)), None, None]);
+		assert_eq!(
+			time_to_cap,
+			mn_ledger_8::structure::INITIAL_PARAMETERS.dust.time_to_cap().as_seconds() as u64,
+			"the served cap offset must be the state's own dust parameter",
+		);
 	}
 
 	/// The migration only ever holds a v8 key by construction, so a v9 key means
