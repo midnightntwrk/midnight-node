@@ -138,17 +138,25 @@ earthly doc
 
 > **Note:** Do not run a bare `cargo test` to verify your setup. The
 > `midnight-node-toolkit` crate depends on generated npm artifacts that are only
-> available after running the toolkit prep step. To run the core test suite,
-> use Earthly which automatically excludes toolkit-dependent crates:
+> available after running the toolkit prep step, and some pallet fixture tests
+> depend on `.mn` files that must be regenerated with the toolkit. To run the
+> core test suite, use Earthly which automatically excludes these:
 >
 > ```bash
-> earthly -P +test
+> earthly -P +test --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN=
 > ```
 >
-> If you prefer running tests with `cargo` directly, exclude the toolkit crate:
+> The `--secret` flags are required even for local runs (empty values use
+> anonymous Docker Hub access).
+>
+> If you prefer running tests with `cargo` directly, exclude the toolkit crate
+> and the fixture-dependent tests:
 >
 > ```bash
-> cargo test --workspace --exclude midnight-node-toolkit --exclude partner-chains-cardano-offchain
+> cargo nextest run --workspace --locked \
+>   --exclude midnight-node-toolkit \
+>   --exclude partner-chains-cardano-offchain \
+>   -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
 > ```
 
 For troubleshooting common setup or build issues, see [Troubleshooting](troubleshooting.md).
