@@ -288,6 +288,7 @@ pub fn new_partial(
 	midnight_cfg: MidnightCfg,
 	storage_config: StorageInit,
 	tx_filter_config: TxFilterConfig,
+	serve_warp_ledger_sync: bool,
 ) -> Result<MidnightService, ServiceError> {
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 	let midnight_metrics =
@@ -327,6 +328,22 @@ pub fn new_partial(
 	let executor = sc_service::new_wasm_executor(&config.executor);
 
 	let mut db_config = config.db_config();
+
+	// Serving warp sync needs the GRANDPA justifications at authority-set changes to survive
+	// `--blocks-pruning`; without the filter a block-pruned node silently stops being a viable
+	// warp-sync server, because the warp proof is built from exactly those blocks. Costs nothing
+	// under the default `archive-canonical`, where no bodies are pruned at all.
+	//
+	// Conditional on serving, so a node that never serves does not retain blocks it has no use
+	// for. NOTE: the filter only protects blocks pruned *from here on*. Enabling serving later on
+	// a node that has already run block-pruned leaves holes in its justification history that
+	// this cannot repair.
+	if serve_warp_ledger_sync {
+		db_config
+			.pruning_filters
+			.push(std::sync::Arc::new(sc_consensus_grandpa::GrandpaPruningFilter));
+	}
+
 	let DatabaseSource::ParityDb { path: db_path } = db_config.source else {
 		panic!("Midnight node support only parity-db as a backend");
 	};
@@ -546,8 +563,29 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// Captured before `storage_config` is moved into `new_partial`: selects the ParityDb layout the
 	// warp ledger-sync server/importer dispatch to.
 	let warp_ledger_unified = matches!(storage_config.separation, StorageSeparation::Unified);
-	let new_partial_components =
-		new_partial(&config, epoch_config.clone(), midnight_cfg, storage_config, tx_filter_config)?;
+
+	// Decided here rather than at the point of use: `new_partial` needs it too, to know whether to
+	// install the GRANDPA pruning filter that keeps this node able to serve warp proofs. One
+	// computation, both consumers.
+	//
+	// Non-validators serve by default. Validators don't — arena serialization is the protocol's
+	// most CPU-expensive operation and must not compete with authoring/finality (a remote DoS
+	// vector) — unless the operator opts in via `--serve-warp-ledger-sync` (for small or local
+	// networks with no non-validator nodes to serve). `--no-serve-warp-ledger-sync` opts out
+	// outright, for non-validators whose CPU must not be spent on other nodes' warp sync (public
+	// RPC endpoints, bootnodes). Every node still registers the protocol as a client, so it can
+	// warp-sync and recover its own arena regardless. Clap rejects both flags together.
+	let serve_ledger_sync =
+		!no_serve_warp_ledger_sync && (!config.role.is_authority() || serve_warp_ledger_sync);
+
+	let new_partial_components = new_partial(
+		&config,
+		epoch_config.clone(),
+		midnight_cfg,
+		storage_config,
+		tx_filter_config,
+		serve_ledger_sync,
+	)?;
 
 	let sc_service::PartialComponents {
 		client,
@@ -614,16 +652,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// Warp ledger-sync: register the request/response protocol that serves / recovers the
 	// Midnight ledger arena after warp+state-sync. The server handler is spawned after the network
 	// is built; `ledger_sync_protocol_name` is reused by the client driver in the monitor.
-	//
-	// Non-validators serve by default. Validators don't — arena serialization is the protocol's
-	// most CPU-expensive operation and must not compete with authoring/finality (a remote DoS
-	// vector) — unless the operator opts in via `--serve-warp-ledger-sync` (for small or local
-	// networks with no non-validator nodes to serve). `--no-serve-warp-ledger-sync` opts out
-	// outright, for non-validators whose CPU must not be spent on other nodes' warp sync (public
-	// RPC endpoints, bootnodes). Every node still registers the protocol as a client, so it can
-	// warp-sync and recover its own arena regardless. Clap rejects both flags together.
-	let serve_ledger_sync =
-		!no_serve_warp_ledger_sync && (!config.role.is_authority() || serve_warp_ledger_sync);
+	// `serve_ledger_sync` was decided above, before `new_partial`.
 	if serve_warp_ledger_sync && config.role.is_authority() {
 		log::warn!(
 			"--serve-warp-ledger-sync is enabled on an authority: serializing ledger snapshots \
