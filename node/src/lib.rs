@@ -13,6 +13,7 @@
 
 extern crate alloc;
 
+pub mod armed_babe_proposer;
 mod aura_to_babe_migration_keystore;
 pub mod backend;
 #[cfg(feature = "runtime-benchmarks")]
@@ -39,3 +40,4 @@ pub mod service;
 pub mod sidechain_params_cmd;
 pub mod subscription_bounds;
 mod util;
+pub mod warp_ledger_sync;

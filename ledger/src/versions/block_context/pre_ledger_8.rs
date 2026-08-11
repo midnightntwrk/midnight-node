@@ -23,6 +23,17 @@ impl Default for BlockContext {
 	}
 }
 
+impl BlockContext {
+	/// The parent block's timestamp, when the ledger version carries one.
+	///
+	/// Ledger 7 block contexts have no parent timestamp, so no `tblock` correction is
+	/// possible here — and none is needed, since ledger-7 blocks predate
+	/// <https://github.com/midnightntwrk/midnight-node/issues/1924>.
+	pub fn parent_block_time(&self) -> Option<u64> {
+		None
+	}
+}
+
 #[cfg(feature = "std")]
 impl From<super::onchain_runtime_local::context::BlockContext> for BlockContext {
 	fn from(value: super::onchain_runtime_local::context::BlockContext) -> Self {

@@ -108,7 +108,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c #v4.5.2
 
         with:
           registry: ghcr.io
@@ -116,13 +116,13 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c #v4.5.2
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Checkout repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
           ref: ${{ inputs.ref }}
@@ -405,7 +405,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
           ref: ${{ inputs.ref }}
@@ -414,7 +414,7 @@ jobs:
       # We can remove this once merged to main - useful for now for testing against main branch
       # ./.github/actions/install-season
       - name: Checkout node repo (for install-season action)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           path: ./midnight-node-ci
 
@@ -588,7 +588,8 @@ jobs:
       skip-node: ${{ inputs.skip-node }}
       skip-toolkit: ${{ inputs.skip-toolkit }}
       skip-runtime: ${{ inputs.skip-runtime }}
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_READ: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
 
   create-release-assets:
     permissions:
@@ -606,7 +607,7 @@ jobs:
         platform: [amd64, arm64]
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c #v4.5.2
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -711,7 +712,6 @@ jobs:
       ref: ${{ inputs.ref }}
       release-tag: ${{ needs.prepare-release.outputs.git-tag-release }}
       runtime-tag-release: ${{ needs.prepare-release.outputs.runtime-tag-release }}
-    secrets: inherit
 
   finalize-checksums:
     permissions:
@@ -781,7 +781,10 @@ jobs:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-ghcr-${{ matrix.arch }}-release
       tlog-upload: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   sbom-scan-ghcr-toolkit:
     if: github.event.inputs.skip-toolkit != 'true'
@@ -800,7 +803,10 @@ jobs:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.image-tag-content-hash }}-${{ matrix.arch }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ghcr-${{ matrix.arch }}-release
       tlog-upload: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   sbom-scan-dockerhub-node:
     if: github.event.inputs.skip-node != 'true'
@@ -820,7 +826,10 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-dockerhub-${{ matrix.arch }}-release
       skip-scan: true
       tlog-upload: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   sbom-scan-dockerhub-toolkit:
     if: github.event.inputs.skip-toolkit != 'true'
@@ -840,7 +849,10 @@ jobs:
       sbom-artifact-name: sbom-midnight-node-toolkit-dockerhub-${{ matrix.arch }}-release
       skip-scan: true
       tlog-upload: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   sbom-scan-midnightntwrk-node:
     if: github.event.inputs.skip-node != 'true'
@@ -862,7 +874,10 @@ jobs:
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node:${{ needs.prepare-release.outputs.image-tag-release }}
       skip-scan: true
       tlog-upload: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   sbom-scan-midnightntwrk-toolkit:
     if: github.event.inputs.skip-toolkit != 'true'
@@ -884,4 +899,7 @@ jobs:
       multi-arch-image: ghcr.io/midnightntwrk/midnight-node-toolkit:${{ needs.prepare-release.outputs.toolkit-tag-release }}
       skip-scan: true
       tlog-upload: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
