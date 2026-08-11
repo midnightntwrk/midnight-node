@@ -90,18 +90,6 @@ impl CNightGroupedUtxos {
 		Self { txs, num_utxos }
 	}
 
-	/// Append more raw events, restoring the sort and merging into existing
-	/// transactions where positions coincide (the category queries return the
-	/// same transaction's events across separate calls).
-	pub fn add(&mut self, utxos: Vec<ObservedUtxo>) {
-		if utxos.is_empty() {
-			return;
-		}
-		let mut flat = core::mem::take(self).into_utxos();
-		flat.extend(utxos);
-		*self = Self::from_unsorted(flat);
-	}
-
 	/// Number of distinct Cardano transactions.
 	pub fn num_transactions(&self) -> usize {
 		self.txs.len()
@@ -290,25 +278,6 @@ mod tests {
 		sorted.sort();
 		let flat = CNightGroupedUtxos::from_unsorted(events).into_utxos();
 		assert_eq!(flat, sorted, "group->flatten must be byte-identical to a plain sort");
-	}
-
-	#[test]
-	fn add_merges_and_resorts() {
-		// Category queries return the same tx's events in separate batches,
-		// out of global order.
-		let mut g = CNightGroupedUtxos::from_unsorted(vec![utxo(5, 0, 0), utxo(7, 0, 0)]);
-		g.add(vec![utxo(4, 0, 0), utxo(5, 0, 1)]);
-		assert_eq!(g.num_transactions(), 3);
-		assert_eq!(g.num_utxos(), 4);
-		assert_eq!(positions(&g), vec![(4, 0), (5, 0), (7, 0)]);
-		assert_eq!(g.txs()[1].utxos.len(), 2, "same-position events merge into one tx");
-	}
-
-	#[test]
-	fn add_empty_is_noop() {
-		let mut g = CNightGroupedUtxos::from_unsorted(vec![utxo(1, 0, 0)]);
-		g.add(Vec::new());
-		assert_eq!(g.num_utxos(), 1);
 	}
 
 	#[test]

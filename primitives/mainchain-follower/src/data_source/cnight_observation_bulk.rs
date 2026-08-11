@@ -218,12 +218,10 @@ fn merge_gap_free(
 			});
 		}
 	}
-	// `CNightGroupedUtxos::add` keeps the accumulated events sorted and
-	// grouped by transaction; no trailing sort needed.
-	let mut all = CNightGroupedUtxos::default();
-	for rows in categories {
-		all.add(rows);
-	}
+	// One sort over the concatenated categories: `from_unsorted` merges events
+	// sharing a transaction position whichever category they came from, so
+	// per-category accumulation (and its repeated re-sorts) buys nothing.
+	let mut all = CNightGroupedUtxos::from_unsorted(categories.into_iter().flatten().collect());
 	if let Some(cut) = &cut {
 		all.truncate_at_position(cut);
 	}
