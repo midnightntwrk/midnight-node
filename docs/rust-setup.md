@@ -57,7 +57,8 @@ brew install earthly
 
 **Ubuntu/Debian:**
 ```bash
-sudo wget https://github.com/earthly/earthly/releases/latest/download/earthly-linux-amd64 -O /usr/local/bin/earthly
+ARCH=$(uname -m); case "$ARCH" in aarch64) ARCH=arm64;; x86_64) ARCH=amd64;; esac
+sudo wget "https://github.com/earthly/earthly/releases/latest/download/earthly-linux-${ARCH}" -O /usr/local/bin/earthly
 sudo chmod +x /usr/local/bin/earthly
 ```
 
