@@ -15,6 +15,12 @@ guaranteed segment against the current state — `well_formed` does not check
 applicability, so without it an already-applied transaction would survive in the
 pool.
 
+Entries are never invalidated, only evicted by capacity or TTI. An entry records
+what `well_formed` proved at a given state and timestamp rather than a validity
+verdict, so a rejection does not falsify it, and keeping rejected and applied
+transactions cached means a reorg that returns one to the pool revalidates it
+instead of re-verifying it from scratch.
+
 PR: https://github.com/midnightntwrk/midnight-node/pull/744
 Required for https://github.com/midnightntwrk/midnight-node/issues/1178
              https://github.com/midnightntwrk/midnight-node/issues/1159

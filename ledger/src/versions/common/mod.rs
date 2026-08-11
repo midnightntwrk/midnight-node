@@ -167,6 +167,20 @@ lazy_static! {
 	/// Cache: stores VerifiedTransaction for reuse across apply_transaction,
 	/// validate_transaction, and validate_guaranteed_execution.
 	///
+	/// An entry records what `well_formed` proved about a transaction at a given state and
+	/// timestamp — never a validity verdict. Nothing that happens to the transaction afterwards
+	/// falsifies it, so nothing invalidates an entry: it is only ever evicted by capacity or TTI.
+	/// Every read either strict-hits an identical state and timestamp, or re-runs the checks that
+	/// can change (the revalidation delta and the `apply_guaranteed_only` dry-run).
+	///
+	/// Caching the verdict instead would be unsound: the same transaction is valid or not
+	/// depending on the fork, the timestamp, and how much of the block is already built, and
+	/// `pre_dispatch` reads this cache while *importing* blocks.
+	///
+	/// Rejected and already-applied transactions keep their entries for the same reason — a
+	/// rejection is a fact about a state, not about the transaction, and a reorg that returns the
+	/// transaction to the pool then revalidates it instead of re-verifying it from scratch.
+	///
 	/// We use `Arc<dyn Any + Send + Sync>` for type erasure because:
 	/// - Bridge<S, D> is generic over Signature and Database types
 	/// - Multiple signature types exist across ledger versions (e.g., Signature, SignatureHF)
@@ -969,18 +983,14 @@ where
 				return if fresh {
 					Ok((cached.verified_tx.clone(), TxValidationCacheOutcome::StrictCacheHit))
 				} else {
-					let result = Self::revalidate_transaction(
+					Self::revalidate_transaction(
 						ledger,
 						tx,
 						block_context,
 						&cached.state,
 						key.clone(),
 						tblock,
-					);
-					if result.is_err() {
-						TX_VALIDATION_CACHE.invalidate(key);
-					}
-					result
+					)
 				};
 			}
 			// Downcast failed - fall through to recompute
@@ -1116,7 +1126,6 @@ where
 					"🚫 Rejected transaction {} from mempool: guaranteed execution would fail: {reason:?}",
 					tx_hash_hex
 				);
-				TX_VALIDATION_CACHE.invalidate(key);
 				Err(LedgerApiError::Transaction(types::TransactionError::Invalid(reason.into())))
 			},
 		}
@@ -1157,7 +1166,6 @@ where
 					"🚫 Rejecting transaction {} at pre-dispatch: guaranteed execution would fail: {reason:?}",
 					hex::encode(tx.hash())
 				);
-				TX_VALIDATION_CACHE.invalidate(key);
 				Err(LedgerApiError::Transaction(types::TransactionError::Invalid(reason.into())))
 			},
 		}
