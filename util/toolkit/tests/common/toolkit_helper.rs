@@ -117,8 +117,8 @@ impl ToolkitTestHelper {
 		let required_paths = [
 			self.toolkit_js_path.join("dist/bin.js"),
 			self.toolkit_js_path.join(format!(
-				"node_modules/@midnight-ntwrk/node-toolkit-compact-{}.{}",
-				compactc_version.major, compactc_version.minor
+				"node_modules/@midnight-ntwrk/node-toolkit-compact-{}.{}.{}",
+				compactc_version.major, compactc_version.minor, compactc_version.patch
 			)),
 		];
 
@@ -330,6 +330,16 @@ impl ToolkitTestHelper {
 		config_file: &Path,
 		coin_public: &str,
 	) -> Result<DeployOutput, Box<dyn std::error::Error + Send + Sync>> {
+		self.generate_intent_deploy_with_args(config_file, coin_public, &[]).await
+	}
+
+	/// [`Self::generate_intent_deploy`] with positional `constructor_args`.
+	pub async fn generate_intent_deploy_with_args(
+		&self,
+		config_file: &Path,
+		coin_public: &str,
+		constructor_args: &[&str],
+	) -> Result<DeployOutput, Box<dyn std::error::Error + Send + Sync>> {
 		let intent = self.work_dir.path().join("deploy_intent.bin");
 		let private_state = self.work_dir.path().join("deploy_private_state.json");
 		let zswap_state = self.work_dir.path().join("deploy_zswap_state.json");
@@ -346,7 +356,7 @@ impl ToolkitTestHelper {
 					output_intent: RelativePath(intent.clone()),
 					output_private_state: RelativePath(private_state.clone()),
 					output_zswap_state: RelativePath(zswap_state.clone()),
-					constructor_args: vec![],
+					constructor_args: constructor_args.iter().map(|s| s.to_string()).collect(),
 				},
 				dry_run: false,
 			}),
