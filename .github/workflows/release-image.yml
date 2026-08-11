@@ -492,7 +492,10 @@ jobs:
           # If the tag already exists on the remote, refuse to publish unless it
           # points at the commit we built from. Without this guard, a pre-existing
           # tag at the wrong commit (e.g. created by a previous buggy run) would
-          # be silently reused by `gh release create/edit`.
+          # be silently reused by `gh release create/edit` — neither of which
+          # moves an existing tag. `force` overrides: it moves the tag to the
+          # built commit, which is the only way a forced re-release of an
+          # existing version can produce a self-consistent release.
           # `git/ref/tags/<n>` is the exact-match endpoint; `git/refs/...` is a prefix match and returns an array.
           if EXISTING_TAG_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GIT_TAG_RELEASE}" 2>/dev/null); then
             EXISTING_SHA=$(echo "$EXISTING_TAG_JSON" | jq -r '.object.sha')
@@ -501,9 +504,15 @@ jobs:
               EXISTING_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXISTING_SHA}" --jq '.object.sha')
             fi
             if [ "$EXISTING_SHA" != "$RELEASE_SHA" ]; then
-              echo "::error::Tag ${GIT_TAG_RELEASE} already exists at ${EXISTING_SHA} but the release was built from ${RELEASE_SHA}."
-              echo "::error::Refusing to publish a release whose tag does not match the built tree."
-              exit 1
+              if [ "$FORCE" != "true" ]; then
+                echo "::error::Tag ${GIT_TAG_RELEASE} already exists at ${EXISTING_SHA} but the release was built from ${RELEASE_SHA}."
+                echo "::error::Refusing to publish a release whose tag does not match the built tree."
+                echo "::error::Re-run with 'Force release if it already exists?' checked to move the tag to ${RELEASE_SHA}."
+                exit 1
+              fi
+              echo "::warning::force: moving tag ${GIT_TAG_RELEASE} from ${EXISTING_SHA} to ${RELEASE_SHA}."
+              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${GIT_TAG_RELEASE}" \
+                -f sha="$RELEASE_SHA" -F force=true > /dev/null
             fi
           fi
 
@@ -546,6 +555,7 @@ jobs:
           SKIP_NODE: ${{ inputs.skip-node }}
           SKIP_TOOLKIT: ${{ inputs.skip-toolkit }}
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
+          FORCE: ${{ github.event.inputs.force }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Create separate tags for toolkit and runtime (node tag is the primary release tag)
@@ -553,20 +563,34 @@ jobs:
           # RELEASE_SHA is the resolved SHA of inputs.ref (set by Setup Env), not
           # $GITHUB_SHA — which would be the workflow ref, possibly main.
 
+          # Creating a ref never moves an existing one. Under force the primary
+          # release tag is moved to RELEASE_SHA, so component tags must move too
+          # — otherwise they stay on the previous commit while the release,
+          # images and assets all name the built tree.
+          ensure_tag() {
+            local tag="$1"
+            if gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+                 -f ref="refs/tags/${tag}" -f sha="$RELEASE_SHA" > /dev/null; then
+              echo "Created tag ${tag} at ${RELEASE_SHA}"
+            elif [ "$FORCE" = "true" ]; then
+              echo "::warning::force: moving tag ${tag} to ${RELEASE_SHA}."
+              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}" \
+                -f sha="$RELEASE_SHA" -F force=true > /dev/null
+            else
+              echo "Tag ${tag} already exists, skipping"
+            fi
+          }
+
           # Toolkit tag (only if toolkit is included and not skipped)
           if [ "$SKIP_TOOLKIT" != "true" ]; then
             echo "Creating tag toolkit-${TOOLKIT_TAG_RELEASE}"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/toolkit-${TOOLKIT_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-              || echo "Tag toolkit-${TOOLKIT_TAG_RELEASE} already exists, skipping"
+            ensure_tag "toolkit-${TOOLKIT_TAG_RELEASE}"
           fi
 
           # Runtime tag (only if runtime is included and not skipped)
           if [ "$SKIP_RUNTIME" != "true" ]; then
             echo "Creating tag runtime-${RUNTIME_TAG_RELEASE}"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-              -f ref="refs/tags/runtime-${RUNTIME_TAG_RELEASE}" -f sha="$RELEASE_SHA" \
-              || echo "Tag runtime-${RUNTIME_TAG_RELEASE} already exists, skipping"
+            ensure_tag "runtime-${RUNTIME_TAG_RELEASE}"
           fi
 
       - name: Fetch release tag
@@ -874,13 +898,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_FILE: ${{ steps.extract-node.outputs.node_release }}
           TOOLKIT_FILE: ${{ steps.extract-toolkit.outputs.toolkit_release }}
+          FORCE: ${{ github.event.inputs.force }}
         run: |
           echo "Uploading assets to release: $GIT_TAG_RELEASE"
           FILES=()
           [ -n "$NODE_FILE" ] && FILES+=("$NODE_FILE")
           [ -n "$TOOLKIT_FILE" ] && FILES+=("$TOOLKIT_FILE")
           FILES+=("SHA256SUMS-${{ matrix.platform }}")
-          gh release upload --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" "${FILES[@]}"
+          # --clobber only under force: a forced re-release of an existing
+          # version already has these assets attached and would 422 without it.
+          # Unforced, a name collision means something unexpected is going on,
+          # so let it fail loudly rather than overwrite a published artifact.
+          UPLOAD_FLAGS=()
+          [ "$FORCE" = "true" ] && UPLOAD_FLAGS+=("--clobber")
+          gh release upload "${UPLOAD_FLAGS[@]}" --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" "${FILES[@]}"
 
   srtool-build:
     permissions:
@@ -946,9 +977,13 @@ jobs:
       - name: Upload final checksums
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ github.event.inputs.force }}
         run: |
           echo "Uploading checksums to release: $GIT_TAG_RELEASE"
-          gh release upload --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" \
+          # --clobber only under force — see "Upload release assets".
+          UPLOAD_FLAGS=()
+          [ "$FORCE" = "true" ] && UPLOAD_FLAGS+=("--clobber")
+          gh release upload "${UPLOAD_FLAGS[@]}" --repo "$GITHUB_REPOSITORY" "$GIT_TAG_RELEASE" \
             SHA256SUMS
 
   sbom-scan-ghcr-node:
