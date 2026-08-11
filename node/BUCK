@@ -307,7 +307,7 @@ rust_test(
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
-    resources = {"res": "root//res:test-fixtures", "docs/openrpc.json": "root//docs:openrpc-json"},
+    resources = {"res/cfg/default.toml": "root//res:cfg-default", "res/cfg/dev.toml": "root//res:cfg-dev", "res/cfg/devnet.toml": "root//res:cfg-devnet", "res/cfg/govnet.toml": "root//res:cfg-govnet", "res/cfg/guardnet.toml": "root//res:cfg-guardnet", "res/cfg/local.toml": "root//res:cfg-local", "res/cfg/mainnet.toml": "root//res:cfg-mainnet", "res/cfg/perfnet.toml": "root//res:cfg-perfnet", "res/cfg/preprod.toml": "root//res:cfg-preprod", "res/cfg/preview.toml": "root//res:cfg-preview", "res/cfg/qanet.toml": "root//res:cfg-qanet", "res/cfg/stagenet.toml": "root//res:cfg-stagenet", "docs/openrpc.json": "root//docs:openrpc-json"},
     deps = [
         "root//ledger/helpers:midnight-node-ledger-helpers",
         "root//ledger:midnight-node-ledger",
@@ -453,7 +453,7 @@ rust_test(
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
-    resources = {"res": "root//res:test-fixtures", "docs/openrpc.json": "root//docs:openrpc-json"},
+    resources = {"res/cfg/default.toml": "root//res:cfg-default", "res/cfg/dev.toml": "root//res:cfg-dev", "res/cfg/devnet.toml": "root//res:cfg-devnet", "res/cfg/govnet.toml": "root//res:cfg-govnet", "res/cfg/guardnet.toml": "root//res:cfg-guardnet", "res/cfg/local.toml": "root//res:cfg-local", "res/cfg/mainnet.toml": "root//res:cfg-mainnet", "res/cfg/perfnet.toml": "root//res:cfg-perfnet", "res/cfg/preprod.toml": "root//res:cfg-preprod", "res/cfg/preview.toml": "root//res:cfg-preview", "res/cfg/qanet.toml": "root//res:cfg-qanet", "res/cfg/stagenet.toml": "root//res:cfg-stagenet", "docs/openrpc.json": "root//docs:openrpc-json"},
     deps = [
         ":midnight-node",
         "root//ledger/helpers:midnight-node-ledger-helpers",
@@ -600,7 +600,7 @@ rust_test(
         "SUBSTRATE_CLI_COMMIT_HASH": "",
         "SUBSTRATE_CLI_IMPL_VERSION": "2.0.0-buck",
     },
-    resources = {"res": "root//res:test-fixtures", "docs/openrpc.json": "root//docs:openrpc-json"},
+    resources = {"res/cfg/default.toml": "root//res:cfg-default", "res/cfg/dev.toml": "root//res:cfg-dev", "res/cfg/devnet.toml": "root//res:cfg-devnet", "res/cfg/govnet.toml": "root//res:cfg-govnet", "res/cfg/guardnet.toml": "root//res:cfg-guardnet", "res/cfg/local.toml": "root//res:cfg-local", "res/cfg/mainnet.toml": "root//res:cfg-mainnet", "res/cfg/perfnet.toml": "root//res:cfg-perfnet", "res/cfg/preprod.toml": "root//res:cfg-preprod", "res/cfg/preview.toml": "root//res:cfg-preview", "res/cfg/qanet.toml": "root//res:cfg-qanet", "res/cfg/stagenet.toml": "root//res:cfg-stagenet", "docs/openrpc.json": "root//docs:openrpc-json"},
     deps = [
         ":midnight-node",
         "root//ledger/helpers:midnight-node-ledger-helpers",

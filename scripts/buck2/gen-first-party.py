@@ -10,7 +10,7 @@ if present). Renamed deps land in named_deps so the extern crate name matches.
 Features come from the workspace-resolved feature set (cargo's unification).
 Build scripts are NOT run — members with build.rs get a placeholder comment.
 """
-import json, os, re, sys
+import glob, json, os, re, sys
 from collections import defaultdict
 
 META = sys.argv[1]
@@ -18,6 +18,19 @@ only = set(sys.argv[2:])
 
 meta = json.load(open(META))
 ws_root = meta["workspace_root"]
+
+# res cfg presets a consuming crate's tests read at runtime. buck2 only stages
+# PROJECT-SOURCE-backed test resources onto RE workers — a filegroup/dep output
+# (generated artifact) never reaches the RE action input — so each preset is
+# re-exposed via its own export_file (source-backed) and referenced per file.
+_RES_CFG = sorted(os.path.basename(p) for p in glob.glob(os.path.join(ws_root, "res", "cfg", "*.toml")))
+_RES_CFG_EXPORTS = [
+    # mode = "reference": the output IS the source file (not a copied, generated
+    # artifact) — only source-backed resources are staged onto RE test workers.
+    f'export_file(name = "cfg-{f[:-5]}", src = "cfg/{f}", mode = "reference", visibility = ["PUBLIC"])'
+    for f in _RES_CFG
+]
+_NODE_CFG_RESOURCES = "".join(f'"res/cfg/{f}": "root//res:cfg-{f[:-5]}", ' for f in _RES_CFG)
 # (name, req, source) -> third-party manifest key, written by gen-third-party.py
 keymap = json.load(open(os.path.join(ws_root, "third-party", "keys.json")))
 members = set(meta["workspace_members"])
@@ -149,11 +162,11 @@ TEST_RESOURCES = {
     # res/cfg/default.toml, then read cfg presets + chainspec/openrpc/genesis blobs.
     # Globbed relative to the res package, they materialize back at res/… .
     "midnight-node-res": 'glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"])',
-    # node cfg::tests / openrpc::tests call midnight_node_res::locate_workspace_root()
-    # then read <root>/res/<network>/*.json and <root>/docs/openrpc.json. Stage both
-    # under node/ (no `..` — cross-package `..` resource keys do not materialize on RE)
-    # and point locate_workspace_root at node/ via MN_WORKSPACE_ROOT (UNIT_TEST_ENV).
-    "midnight-node": '{"res": "root//res:test-fixtures", "docs/openrpc.json": "root//docs:openrpc-json"}',
+    # node cfg::tests read <root>/res/cfg/*.toml and openrpc::tests read
+    # <root>/docs/openrpc.json (root = MN_WORKSPACE_ROOT = node/, set in UNIT_TEST_ENV).
+    # Each file is an export_file (source-backed), not a filegroup, so it actually
+    # materializes on the RE worker. Keys are plain node/-relative (no `..`).
+    "midnight-node": '{' + _NODE_CFG_RESOURCES + '"docs/openrpc.json": "root//docs:openrpc-json"}',
 }
 
 # Per-TEST-TARGET resources (keyed by rust_test name), for packages whose test
@@ -203,7 +216,7 @@ EXPORTS = {
         'export_file(name = "cargo-toml", src = "Cargo.toml", visibility = ["PUBLIC"])',
     ],
     "docs": [
-        'export_file(name = "openrpc-json", src = "openrpc.json", visibility = ["PUBLIC"])',
+        'export_file(name = "openrpc-json", src = "openrpc.json", mode = "reference", visibility = ["PUBLIC"])',
     ],
     "midnight-node-res": [
         'export_file(\n    name = "test-contract-addr",\n'
@@ -222,10 +235,7 @@ EXPORTS = {
         # anchors on res/cfg/default.toml (cfg presets + per-network config blobs).
         # Consumers add `resources = {"../res": "root//res:test-fixtures"}` so it
         # materializes back at the project-relative res/… layout.
-        'filegroup(\n    name = "test-fixtures",\n'
-        '    srcs = glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"]),\n'
-        '    visibility = ["PUBLIC"],\n)',
-    ],
+    ] + _RES_CFG_EXPORTS,
     # cli_tests (trycmd) runs `$ midnight-node-toolkit …` and diffs clap's usage
     # strings, which echo argv[0]'s basename. Buck's bin artifact is
     # `midnight_node_toolkit` (underscore); cargo names it `midnight-node-toolkit`
