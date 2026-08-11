@@ -142,25 +142,20 @@ impl MidnightNodeClient {
 				// `Result<Vec<u8>, LedgerApiError>`. The error variant's payload differs
 				// per runtime version, so decode it as opaque.
 				//
-				// An error here is not fatal: the state root only feeds block
-				// verification, which is skipped when it is `None` (as for V0_21_0
-				// above), and one unverified block must not fail the whole fetch.
-				// The hardfork's `set_code` block used to always error with `0x010005`
-				// (`LedgerApiError::Deserialization`) — it commits the new code over
-				// still-old ledger data — but `pallet_midnight::Pallet::state_key`
-				// now reads that block's pre-v3 `StateKey` layout and dispatches to
-				// the old ledger version, so it answers with the pre-fork root.
+				// Even the hardfork's `set_code` block answers — it commits the new
+				// `:code` over the old ledger layout, but `Pallet::state_key` reads
+				// that block's pre-v3 `StateKey` layout, so the ledger-8 arena tag
+				// survives, and the ledger-9 host API's read accessors dispatch on
+				// that tag back to the ledger-8 bridge. A failure here is a real
+				// fault, and must not be downgraded to `None`: that would skip
+				// `LedgerContext::verify_state_root` and hide ledger divergence.
 				match Result::<Vec<u8>, ()>::decode(&mut &raw[..]) {
 					Ok(Ok(root)) => Ok(Some(root)),
-					_ => {
-						log::warn!(
-							"get_ledger_state_root failed at block {:?} (raw: 0x{}); \
-							 skipping state-root verification for this block",
-							at_block.block_ref().hash(),
-							hex::encode(&raw),
-						);
-						Ok(None)
-					},
+					_ => Err(ClientError::LedgerApi(format!(
+						"get_ledger_state_root failed at block {:?} (raw: 0x{})",
+						at_block.block_ref().hash(),
+						hex::encode(&raw),
+					))),
 				}
 			},
 		}
@@ -240,6 +235,8 @@ pub enum ClientError {
 	BlockError(#[from] subxt::error::BlockError),
 	#[error("runtime version error: {0}")]
 	RuntimeVersion(#[from] RuntimeVersionError),
+	#[error("ledger runtime API returned an error: {0}")]
+	LedgerApi(String),
 	#[error("midnight node client received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
 	#[error("failed to get block hash for block {0}")]
