@@ -41,11 +41,6 @@ use std::sync::{Arc, Mutex};
 /// one shot.
 const LARGE_LIMIT: usize = 5_000_000;
 
-/// Default number of cardano blocks to keep in the sliding window when the
-/// node config doesn't override it. Memory cost ≈ 5 KB × events-per-block,
-/// so 100k blocks ≈ a few hundred MB on a busy chain.
-pub const DEFAULT_WINDOW_SIZE: u32 = 100_000;
-
 /// If the next-needed cardano position (`start_position`) is within this many
 /// blocks of the cache's `end`, kick an async refresh that slides the window
 /// forward.
@@ -240,11 +235,12 @@ pub struct BulkCachedCNightObservationDataSource {
 	/// cNIGHT addresses cached so the sliding-window refresh can re-run the
 	/// observation queries without re-reading the chainspec JSON.
 	cnight_addresses: CNightAddresses,
-	/// Cardano blocks to leave un-fetched past the requested target
-	/// (re-org safety). Equals `cardano_security_parameter + block_stability_margin`.
+	/// Cardano reorg depth (`cardano_security_parameter + block_stability_margin`).
+	/// Used two ways: the margin left un-fetched past a refresh's target (so
+	/// proactive look-ahead never caches rollback-prone blocks), and the lookback
+	/// kept behind the follower (so a reorg that rewinds the follower is still
+	/// served from cache instead of `db_fallback`).
 	stability_margin: u32,
-	/// Cardano blocks to keep in the sliding window.
-	window_size: u32,
 	/// Single-flight gate for sliding-window refreshes. The owned lock guard is
 	/// held by the in-flight refresh task; `try_lock_owned` failing means a
 	/// refresh is already running, so a new trigger is a no-op.
@@ -262,10 +258,9 @@ pub struct BulkCacheConfig {
 	/// Cardano block range the initial events cover: `[window_start_block, window_end_block]`.
 	pub window_start_block: u32,
 	pub window_end_block: u32,
-	/// Cardano blocks to keep in the sliding window.
-	pub window_size: u32,
-	/// Cardano blocks to leave un-fetched past the requested target (re-org
-	/// safety). Equals `cardano_security_parameter + block_stability_margin`.
+	/// Cardano reorg depth (`cardano_security_parameter + block_stability_margin`).
+	/// Bounds both the refresh look-ahead and the window's lookback behind the
+	/// follower.
 	pub stability_margin: u32,
 	/// db-sync connection used by the refresh and per-call block lookups.
 	pub pool: PgPool,
@@ -285,7 +280,6 @@ impl BulkCachedCNightObservationDataSource {
 		let BulkCacheConfig {
 			window_start_block,
 			window_end_block,
-			window_size,
 			stability_margin,
 			pool,
 			db_fallback,
@@ -302,7 +296,6 @@ impl BulkCachedCNightObservationDataSource {
 			db_fallback,
 			cnight_addresses,
 			stability_margin,
-			window_size,
 			refresh_in_flight: Arc::new(tokio::sync::Mutex::new(())),
 			metrics_opt,
 		}
@@ -329,7 +322,6 @@ impl BulkCachedCNightObservationDataSource {
 			last_observation: Arc::clone(&self.last_observation),
 			snapshot_start_block: Arc::clone(&self.snapshot_start_block),
 			snapshot_end_block: Arc::clone(&self.snapshot_end_block),
-			window_size: self.window_size,
 			stability_margin: self.stability_margin,
 		};
 
@@ -357,7 +349,6 @@ struct RefreshContext {
 	last_observation: Arc<Mutex<Option<LastObservation>>>,
 	snapshot_start_block: Arc<std::sync::RwLock<Option<u32>>>,
 	snapshot_end_block: Arc<std::sync::RwLock<Option<u32>>>,
-	window_size: u32,
 	stability_margin: u32,
 }
 
@@ -405,8 +396,13 @@ impl RefreshContext {
 			.lock()
 			.ok()
 			.and_then(|g| g.as_ref().map(|last| last.start_position.block_number));
-		let (from_block, new_window_start) =
-			plan_refresh(old_end, follower_anchor, existing_start, trim_anchor, self.window_size);
+		let (from_block, new_window_start) = plan_refresh(
+			old_end,
+			follower_anchor,
+			existing_start,
+			trim_anchor,
+			self.stability_margin,
+		);
 		// The stable clamp above can land below a jumped-forward `from_block`
 		// when db-sync lags; nothing useful to pull yet.
 		if target_end < from_block {
@@ -451,36 +447,39 @@ impl RefreshContext {
 /// `(from_block, new_window_start)`.
 ///
 /// Contiguous case (`follower_anchor <= old_end + 1`): extend from
-/// `old_end + 1`. The trim point is anchored on the follower's last-seen
-/// position, keeping `window_size` blocks behind it — during catchup the
-/// follower can be hundreds of thousands of blocks behind tip and still
-/// needs that history, so trimming behind `target_end - window_size` would
-/// silently drop required events. With no follower call observed yet
-/// (`trim_anchor` is `None`), keep the existing start — never move it
-/// backward, otherwise we'd lie about coverage.
+/// `old_end + 1`, and trim the window's start to `reorg_margin` blocks behind
+/// the follower. The runtime only ever reads at or ahead of the follower, so
+/// blocks further back are never served from the cache — the one thing that
+/// could need them is a reorg, which can't rewind deeper than `reorg_margin`
+/// (a deeper re-read just falls back to `db_fallback`). Trimming this close is
+/// what keeps a node that synced from genesis tracking the tip instead of
+/// trailing it by a whole window (#1835). The start only ever moves forward:
+/// `existing_start.max(..)` never rewinds it — that would claim coverage the
+/// cache has already dropped — and with no follower position observed yet
+/// (`trim_anchor` is `None`) it stays put.
 ///
-/// Jump case (`follower_anchor > old_end + 1`): the runtime has already
-/// processed past the window's end, so extending contiguously would re-pull
-/// history nobody needs — e.g. a node restarting after a full sync, where
-/// the window is still anchored at the genesis observation position.
-/// Restart the window at the follower's position instead; queries older than
-/// that (competing forks) are served by `db_fallback`. The window start must
-/// equal the pull start here: retaining the old (pre-gap) events while
-/// claiming coverage from an older `new_window_start` would leave a hole in
-/// `(old_end, follower_anchor)` that cache reads would silently miss.
+/// Jump case (`follower_anchor > old_end + 1`): the runtime is already past the
+/// window's end, so extending contiguously would re-pull history nobody needs
+/// — e.g. a node restarting after a full sync with its window still anchored at
+/// the genesis observation position. Restart the window at the follower
+/// instead; older queries (competing forks) fall back to `db_fallback`. Here
+/// the window start must equal the pull start: the retained events sit below
+/// the gap, so a smaller `new_window_start` would claim `(old_end,
+/// follower_anchor)` while holding nothing there — a hole cache reads would
+/// silently miss.
 fn plan_refresh(
 	old_end: u32,
 	follower_anchor: u32,
 	existing_start: u32,
 	trim_anchor: Option<u32>,
-	window_size: u32,
+	reorg_margin: u32,
 ) -> (u32, u32) {
 	let contiguous_from = old_end.saturating_add(1);
 	if follower_anchor > contiguous_from {
 		return (follower_anchor, follower_anchor);
 	}
 	let new_window_start = match trim_anchor {
-		Some(anchor) => existing_start.max(anchor.saturating_sub(window_size)),
+		Some(anchor) => existing_start.max(anchor.saturating_sub(reorg_margin)),
 		None => existing_start,
 	};
 	(contiguous_from, new_window_start)
@@ -736,14 +735,14 @@ mod tests {
 	#[test]
 	fn plan_refresh_contiguous_extends_and_trims_behind_follower() {
 		// Window ends at 100, follower at 90: extend from 101, keep
-		// window_size=30 blocks behind the follower.
+		// reorg_margin=30 blocks behind the follower.
 		let (from, start) = plan_refresh(100, 90, 50, Some(90), 30);
 		assert_eq!((from, start), (101, 60));
 	}
 
 	#[test]
 	fn plan_refresh_contiguous_never_moves_start_backward() {
-		// Existing start (80) is already ahead of follower - window_size (60).
+		// Existing start (80) is already ahead of follower - reorg_margin (60).
 		let (from, start) = plan_refresh(100, 90, 80, Some(90), 30);
 		assert_eq!((from, start), (101, 80));
 	}
@@ -760,7 +759,7 @@ mod tests {
 		// Restart after a full sync: window still anchored at genesis
 		// (old_end=99) while the runtime has processed up to block 570_000.
 		// Pull and window both restart at the follower, not at genesis.
-		let (from, start) = plan_refresh(99, 570_000, 0, None, 100_000);
+		let (from, start) = plan_refresh(99, 570_000, 0, None, 2_160);
 		assert_eq!((from, start), (570_000, 570_000));
 	}
 
@@ -768,8 +767,27 @@ mod tests {
 	fn plan_refresh_jump_ignores_stale_trim_anchor() {
 		// A stale last_observation must not pull the window start back
 		// behind the jump target (which would claim coverage over a gap).
-		let (from, start) = plan_refresh(99, 570_000, 0, Some(50), 100_000);
+		let (from, start) = plan_refresh(99, 570_000, 0, Some(50), 2_160);
 		assert_eq!((from, start), (570_000, 570_000));
+	}
+
+	#[test]
+	fn plan_refresh_from_genesis_steady_state_tracks_follower_not_genesis() {
+		// A from-genesis node stays in the contiguous branch even once caught up,
+		// so it must trim to the reorg-margin lookback behind the follower, not
+		// stay pinned at genesis (the old cause of the permanent wide window,
+		// #1835).
+		let reorg_margin = 2_160;
+		let follower = 5_000_000;
+		let old_end = follower + 5; // cache slightly ahead → contiguous, not a jump
+		let existing_start = 0; // worst case: still at genesis
+		let (from, start) =
+			plan_refresh(old_end, follower, existing_start, Some(follower), reorg_margin);
+		assert_eq!(from, old_end + 1);
+		assert_eq!(start, follower - reorg_margin);
+		assert!(start > 0, "window must track the follower, not stay at genesis");
+		// Lookback is exactly the reorg margin, independent of distance travelled.
+		assert_eq!(follower - start, reorg_margin);
 	}
 
 	#[test]

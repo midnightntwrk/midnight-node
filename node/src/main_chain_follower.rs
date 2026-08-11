@@ -285,7 +285,6 @@ pub fn cnight_follower_genesis_from_storage(
 /// resolve the cNIGHT addresses we query db-sync for. Falls back to the per-call
 /// db-backed source otherwise; sync is significantly slower in that case.
 async fn build_cnight_observation_data_source(
-	cnight_observation_window_size: u32,
 	cnight_follower_genesis: Option<(CNightAddresses, CardanoPosition)>,
 	cnight_observation_pool: Pool<Postgres>,
 	db_sync_block_data_source_config: &DbSyncBlockDataSourceConfig,
@@ -309,7 +308,12 @@ async fn build_cnight_observation_data_source(
 			// history is not re-pulled.
 			let next_pos: u32 = next_cardano_position.block_number;
 			let init_horizon = next_pos.saturating_sub(1);
-			let window_size: u32 = cnight_observation_window_size;
+			// The window keeps a reorg-margin lookback behind the follower, so it
+			// tracks the tip once caught up rather than trailing it by a fixed
+			// width (see `plan_refresh`).
+			let stability_margin = db_sync_block_data_source_config
+				.cardano_security_parameter
+				.saturating_add(db_sync_block_data_source_config.block_stability_margin);
 
 			// Empty initial cache so the node starts up immediately. The
 			// first follower call will see `tip_pos > horizon`, delegate
@@ -317,11 +321,8 @@ async fn build_cnight_observation_data_source(
 			// refresh that populates the window. Subsequent calls hit
 			// the cache.
 			log::info!(
-				"cNIGHT observation: sliding window cache (anchor = Cardano block {next_pos}, window = {window_size})"
+				"cNIGHT observation: sliding window cache (anchor = Cardano block {next_pos}, lookback = {stability_margin})"
 			);
-			let stability_margin = db_sync_block_data_source_config
-				.cardano_security_parameter
-				.saturating_add(db_sync_block_data_source_config.block_stability_margin);
 			let db_fallback = Arc::new(MidnightCNightObservationDataSourceImpl::new(
 				cnight_observation_pool.clone(),
 				midnight_metrics_opt.clone(),
@@ -332,7 +333,6 @@ async fn build_cnight_observation_data_source(
 				BulkCacheConfig {
 					window_start_block: init_horizon,
 					window_end_block: init_horizon,
-					window_size,
 					stability_margin,
 					pool: cnight_observation_pool,
 					db_fallback,
@@ -461,7 +461,6 @@ pub async fn create_cached_data_sources(
 				e
 			})?;
 	let cnight_observation = build_cnight_observation_data_source(
-		cfg.cnight_observation_window_size,
 		cnight_follower_genesis,
 		cnight_observation_pool,
 		&db_sync_block_data_source_config,
