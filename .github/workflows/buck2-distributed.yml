@@ -94,7 +94,7 @@ jobs:
             && sudo mkswap /mnt/rebuck-swap \
             && sudo swapon /mnt/rebuck-swap ) || echo "extra swap unavailable (continuing)"
           df -h / /mnt; free -h
-      - uses: gilescope/install-buck2@79ce03d0602320942c0a39bdf1c754fe19a85703 # latest
+      - uses: ./.github/actions/install-buck2-pinned # pinned buck2 (was install-buck2 @latest — drifts)
       - uses: ./.github/actions/buck2-linux-toolchain
 
       - name: Bring up rebuck2 driver

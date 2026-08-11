@@ -231,10 +231,9 @@ EXPORTS = {
         'export_file(\n    name = "serialized-tx",\n'
         '    src = "test-tx-deserialize/serialized_tx.mn",\n'
         '    visibility = ["PUBLIC"],\n)',
-        # Runtime fixtures other crates' tests read after locate_workspace_root()
-        # anchors on res/cfg/default.toml (cfg presets + per-network config blobs).
-        # Consumers add `resources = {"../res": "root//res:test-fixtures"}` so it
-        # materializes back at the project-relative res/… layout.
+        # cfg presets other crates' tests read after locate_workspace_root(): each
+        # is a reference export_file (see _RES_CFG_EXPORTS) so it's source-backed and
+        # actually materializes on the RE worker when used as a consumer's resource.
     ] + _RES_CFG_EXPORTS,
     # cli_tests (trycmd) runs `$ midnight-node-toolkit …` and diffs clap's usage
     # strings, which echo argv[0]'s basename. Buck's bin artifact is
