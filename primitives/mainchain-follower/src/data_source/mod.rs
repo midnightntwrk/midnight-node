@@ -16,6 +16,7 @@
 //! This module uses the types and functions provided by the `db` module
 
 pub mod candidates_data_source;
+pub mod cnight_grouped;
 pub mod cnight_observation;
 pub mod cnight_observation_bulk;
 pub mod cnight_observation_mock;
@@ -28,6 +29,7 @@ pub mod metrics;
 pub use candidates_data_source::CandidatesDataSourceImpl;
 pub use candidates_data_source::cached::CandidateDataSourceCached;
 pub use candidates_data_source::get_epoch_for_block_hash;
+pub use cnight_grouped::{CNightGroupedUtxos, ObservedTx};
 pub use cnight_observation::{
 	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl, TxHash,
 	TxPosition,

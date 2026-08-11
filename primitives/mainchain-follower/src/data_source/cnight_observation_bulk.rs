@@ -13,8 +13,9 @@
 
 //! Sliding-window cNIGHT observation data source.
 //!
-//! Holds a contiguous window of observation events in memory, sorted by
-//! Cardano position. The cache starts empty: the first inherent query after
+//! Holds a contiguous window of observation events in memory, grouped by
+//! Cardano transaction and sorted by position ([`CNightGroupedUtxos`]). The
+//! cache starts empty: the first inherent query after
 //! startup is served by the live db-backed source and kicks off a background
 //! refresh anchored at the runtime's latest processed Cardano position — so a
 //! node restarting after a full sync pulls only the window it needs, not
@@ -24,6 +25,7 @@
 //! node keeps importing.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
+use crate::data_source::cnight_grouped::CNightGroupedUtxos;
 use crate::data_source::cnight_observation::{
 	MidnightCNightObservationDataSourceError, MidnightCNightObservationDataSourceImpl,
 };
@@ -73,13 +75,18 @@ pub enum BulkPullError {
 	Observation(#[from] MidnightCNightObservationDataSourceError),
 }
 
-/// Pull every cnight observation event in `[start, end]` (inclusive), sorted by
-/// `tx_position`, with `complete = true` iff no query hit `limit` (so the result
-/// is the whole range, not a row-limited prefix).
+/// Pull every cnight observation event in `[start, end]` (inclusive), grouped
+/// by transaction and sorted by `tx_position`.
 ///
-/// `complete == false` means a query held >`limit` rows. At [`LARGE_LIMIT`] that
-/// is pathological, so it is logged at error level; callers must not advance the
-/// cursor to the tip on it (that would skip the unfetched rows).
+/// The result is **gap-free by construction**: each category query is
+/// position-ordered and row-limited, so a query that hit `limit` covers its
+/// category only up to a position frontier. The merged set is cut back to the
+/// earliest such frontier (see [`merge_gap_free`]), and that cut is returned
+/// as `Some(position)` — the point from which the caller's cursor must resume.
+/// `None` means no query was row-limited and the whole requested range is
+/// covered. Advancing the cursor past a returned cut would silently skip the
+/// unfetched rows; at [`LARGE_LIMIT`] a cut is pathological and is logged at
+/// error level.
 ///
 /// Both endpoints are full `CardanoPosition`s so callers can pass exact
 /// `(block, tx_index)` boundaries or whole-block ranges via
@@ -91,7 +98,7 @@ pub async fn bulk_pull(
 	end: &CardanoPosition,
 	// Per-query SQL row limit; callers pass `LARGE_LIMIT` for a whole-range pull.
 	limit: usize,
-) -> Result<(Vec<ObservedUtxo>, bool), BulkPullError> {
+) -> Result<(CNightGroupedUtxos, Option<CardanoPosition>), BulkPullError> {
 	let data_source = MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 0);
 
 	let mapping_validator_address = Address::from_bech32(&cfg.mapping_validator_address)
@@ -136,136 +143,139 @@ pub async fn bulk_pull(
 		high_bound: high_bounds,
 	};
 
-	let mut all = Vec::new();
+	let mut categories: Vec<Vec<ObservedUtxo>> = Vec::with_capacity(4);
 	let mut counts = (0usize, 0usize, 0usize, 0usize);
 	if let Some(ident) = auth_token_ident {
 		let v = data_source
 			.get_registration_utxos(cardano_network, ident, &cfg.mapping_validator_address, &paged)
 			.await?;
 		counts.0 = v.len();
-		all.extend(v);
+		categories.push(v);
 	}
 	let v = data_source
 		.get_deregistration_utxos(cardano_network, &cfg.mapping_validator_address, &paged)
 		.await?;
 	counts.1 = v.len();
-	all.extend(v);
+	categories.push(v);
 	if let Some(ident) = cnight_ident {
 		let v = data_source.get_asset_create_utxos(cardano_network, ident, &paged).await?;
 		counts.2 = v.len();
-		all.extend(v);
+		categories.push(v);
 		let v = data_source.get_asset_spend_utxos(cardano_network, ident, &paged).await?;
 		counts.3 = v.len();
-		all.extend(v);
+		categories.push(v);
 	}
-	all.sort();
-	// A query that returned exactly `limit` rows may have more behind it, so the
-	// pull is not provably complete.
-	let complete = counts.0 < limit && counts.1 < limit && counts.2 < limit && counts.3 < limit;
+	let (all, cut) = merge_gap_free(categories, limit);
 	log::info!(
 		target: "cnight::sliding-window",
 		"bulk_pull [{}/{}, {}/{}] -> reg={} dereg={} create={} spend={} complete={} (auth_ident={:?} cnight_ident={:?})",
 		start.block_number, start.tx_index_in_block,
 		end.block_number, end.tx_index_in_block,
-		counts.0, counts.1, counts.2, counts.3, complete, auth_token_ident, cnight_ident,
+		counts.0, counts.1, counts.2, counts.3, cut.is_none(), auth_token_ident, cnight_ident,
 	);
-	if !complete {
+	if let Some(cut) = &cut {
 		log::error!(
 			target: "cnight::sliding-window",
 			"bulk_pull hit the {limit}-row limit in [{}, {}] (reg={} dereg={} create={} spend={}); \
-			 the cNIGHT observation window may be incomplete and the cursor will not advance to the tip",
+			 results are truncated to the covered prefix and the cursor will resume at {}/{}",
 			start.block_number, end.block_number, counts.0, counts.1, counts.2, counts.3,
+			cut.block_number, cut.tx_index_in_block,
 		);
 	}
-	Ok((all, complete))
+	Ok((all, cut))
 }
 
-/// Build the observation inherent from the **complete** sorted event list for
-/// `[start, fallback_end]`. Caps at `tx_capacity` whole transactions and
-/// `max_utxos` UTXOs (the runtime `process_tokens` envelope).
+/// Merge the per-category query results into one gap-free grouped set.
+///
+/// Each element of `categories` is one category's rows, position-ascending
+/// (the queries are `ORDER BY block_no, block_index ... LIMIT limit`). A
+/// category that returned `limit` rows may have more behind the limit, so it
+/// is only proven complete *below* the position of its last returned row (its
+/// frontier) — and the frontier transaction itself may have been sliced
+/// mid-tx by the row limit.
+///
+/// The merged set is therefore cut at the earliest frontier across all
+/// row-limited categories, dropping the frontier tx too. Every event below
+/// the cut is provably fetched for **all** categories, so the result carries
+/// no hidden gaps: a category's truncation can never be masked by other
+/// categories' events beyond its frontier. Returns the cut position
+/// (`None` when no category was row-limited).
+fn merge_gap_free(
+	categories: Vec<Vec<ObservedUtxo>>,
+	limit: usize,
+) -> (CNightGroupedUtxos, Option<CardanoPosition>) {
+	let mut cut: Option<CardanoPosition> = None;
+	for rows in &categories {
+		// The frontier is exclusive: the row limit may have sliced the tx at the
+		// last row's position mid-tx, so that tx is dropped and the cursor
+		// resumes exactly there.
+		if rows.len() >= limit
+			&& let Some(frontier) = rows.last().map(|u| u.header.tx_position.clone())
+		{
+			cut = Some(match cut {
+				Some(c) if c < frontier => c,
+				_ => frontier,
+			});
+		}
+	}
+	// One sort over the concatenated categories: `from_unsorted` merges events
+	// sharing a transaction position whichever category they came from, so
+	// per-category accumulation (and its repeated re-sorts) buys nothing.
+	let mut all = CNightGroupedUtxos::from_unsorted(categories.into_iter().flatten().collect());
+	if let Some(cut) = &cut {
+		all.truncate_at_position(cut);
+	}
+	(all, cut)
+}
+
+/// Build the observation inherent from a **gap-free** grouped event set
+/// covering `[start, covered_end)` (what `bulk_pull` returns — a row-limited
+/// pull is already cut back to its proven-complete prefix, with `covered_end`
+/// the cut). Caps at `tx_capacity` whole transactions and `max_utxos` UTXOs
+/// (the runtime `process_tokens` envelope).
 ///
 /// Consensus invariants:
 /// - Transactions are admitted whole, so `end` lands on a tx boundary; resuming
 ///   there cannot skip a counted tx's UTXOs.
-/// - The cursor reaches `fallback_end` (the tip) ONLY when `complete` (the fetch
-///   wasn't row-limited); otherwise it stops at the last fully-observed tx.
+/// - The cursor reaches `covered_end` ONLY when every event was admitted;
+///   otherwise it stops just past the last admitted tx — safe because the set
+///   is gap-free, so everything not admitted is at or ahead of that boundary.
 /// - The cursor never advances past an event we did not admit, and never at all
 ///   when nothing was admitted (see [`boundary_after`]).
 ///
-/// Every node feeds this the complete range and the same `max_utxos`, so there is
-/// no fetch-size input left to disagree on — inherents are byte-identical.
+/// Every node feeds this the same gap-free range and the same `max_utxos`, so
+/// there is no fetch-size input left to disagree on — inherents are
+/// byte-identical.
 pub fn truncate_to_tx_capacity(
-	events: Vec<ObservedUtxo>,
+	events: CNightGroupedUtxos,
 	tx_capacity: usize,
 	max_utxos: usize,
-	complete: bool,
 	start_position: &CardanoPosition,
-	fallback_end: CardanoPosition,
+	covered_end: CardanoPosition,
 ) -> ObservedUtxos {
-	let n = events.len();
-	let mut truncated: Vec<ObservedUtxo> = Vec::with_capacity(n.min(max_utxos));
-	let mut num_txs: usize = 0;
-	let mut capped = false;
-	let mut i = 0usize;
-	while i < n {
-		// Extent [i, j) of the whole tx at `i` — its UTXOs share a position.
-		let mut j = i + 1;
-		while j < n
-			&& events[j].header.tx_position.partial_cmp(&events[i].header.tx_position)
-				== Some(core::cmp::Ordering::Equal)
-		{
-			j += 1;
-		}
-		let tx_len = j - i;
-		// A lone tx bigger than the whole envelope is still admitted (cap check
-		// skipped while empty) so the runtime's bound rejects it loudly instead
-		// of us stalling forever.
-		let exceeds_tx_cap = num_txs + 1 > tx_capacity;
-		let exceeds_max_utxos = !truncated.is_empty() && truncated.len() + tx_len > max_utxos;
-		if exceeds_tx_cap || exceeds_max_utxos {
-			capped = true;
-			break;
-		}
-		truncated.extend_from_slice(&events[i..j]);
-		num_txs += 1;
-		i = j;
-	}
+	// Whole transactions only, up to both caps; the lone-oversized-tx admission
+	// lives in `take_envelope_prefix`.
+	let (admitted, capped) = events.take_envelope_prefix(tx_capacity, max_utxos);
 
-	let end = if capped {
-		// Only whole txs are admitted, so resuming just past the last one is
-		// safe. That holds even for a row-limited fetch (`limit = max_utxos + 1`):
-		// a query that hit the row limit contributed more rows than the
-		// `max_utxos` cap admits, so the cap fires inside the proven-complete
-		// prefix. Sole exception: the lone-oversized-tx admission above, whose
-		// fetched rows may themselves be truncated — that needs one tx with more
-		// than `max_utxos` events, beyond what a Cardano tx can physically carry.
-		boundary_after(&truncated, start_position)
-	} else if complete {
-		fallback_end
-	} else {
-		// Row-limited: the final fetched tx may be missing UTXOs past the limit,
-		// so drop it and resume only as far as we proved complete.
-		if let Some(last) = truncated.last().map(|u| u.header.tx_position.clone()) {
-			truncated.retain(|u| u.header.tx_position < last);
-		}
-		boundary_after(&truncated, start_position)
-	};
+	let end = if capped { boundary_after(&admitted, start_position) } else { covered_end };
 
-	ObservedUtxos { start: start_position.clone(), end, utxos: truncated }
+	ObservedUtxos { start: start_position.clone(), end, utxos: admitted.into_utxos() }
 }
 
-/// Position just past the last accepted event — or `start` **unchanged** when
-/// nothing was accepted, so the cursor never moves past unobserved data.
+/// Position just past the last accepted transaction — or `start` **unchanged**
+/// when nothing was accepted, so the cursor never moves past unobserved data.
 ///
-/// Two ways to accept nothing: the sole fetched tx was dropped as row-truncated
-/// (needs one tx carrying more than `max_utxos` events, beyond what a Cardano
-/// block can physically hold), or a misconfigured `tx_capacity == 0`.
-/// Incrementing in either case would skip the tx sitting at the cursor
-/// permanently, so we hold and log: a stalled cNIGHT cursor is visible and
-/// recoverable, silently dropped mint/burn events are neither.
-fn boundary_after(truncated: &[ObservedUtxo], start_position: &CardanoPosition) -> CardanoPosition {
-	match truncated.last() {
-		Some(last) => last.header.tx_position.clone().increment(),
+/// Accepting nothing takes a misconfigured `tx_capacity == 0` (the caps are
+/// only checked against a non-empty admission otherwise). Incrementing there
+/// would skip the tx sitting at the cursor permanently, so we hold and log: a
+/// stalled cNIGHT cursor is visible and recoverable, silently dropped
+/// mint/burn events are neither.
+fn boundary_after(
+	admitted: &CNightGroupedUtxos,
+	start_position: &CardanoPosition,
+) -> CardanoPosition {
+	match admitted.last_position() {
+		Some(last) => last.clone().increment(),
 		None => {
 			log::error!(
 				target: "cnight::observation",
@@ -288,14 +298,15 @@ struct LastObservation {
 	result: ObservedUtxos,
 }
 
-/// A `MidnightCNightObservationDataSource` backed by an in-memory event vector
-/// built once at startup, with an async sliding-window refresh and a live
-/// db-backed fallback for queries past the current horizon.
+/// A `MidnightCNightObservationDataSource` backed by an in-memory grouped
+/// event window built once at startup, with an async sliding-window refresh
+/// and a live db-backed fallback for queries past the current horizon.
 pub struct BulkCachedCNightObservationDataSource {
-	/// Sorted events. Readers take the read lock for the (cheap) slice+copy of
-	/// their window; the refresh task takes the write lock briefly to mutate
-	/// the vec in place (trim the front, append the extension).
-	all_events: Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
+	/// The cached window, grouped by transaction and sorted. Readers take the
+	/// read lock for the (cheap) slice+copy of their range; the refresh task
+	/// takes the write lock briefly to mutate the window in place (trim the
+	/// front, append the extension).
+	all_events: Arc<std::sync::RwLock<CNightGroupedUtxos>>,
 	/// Used exclusively for `get_block_by_hash` — a single indexed lookup
 	/// per call when the block is not yet in `block_position_cache`.
 	pool: PgPool,
@@ -356,7 +367,7 @@ impl BulkCachedCNightObservationDataSource {
 	/// `[config.window_start_block, config.window_end_block]`. The caller is
 	/// responsible for having bulk-pulled that range; we just record the
 	/// bookkeeping.
-	pub fn new(events: Vec<ObservedUtxo>, config: BulkCacheConfig) -> Self {
+	pub fn new(events: CNightGroupedUtxos, config: BulkCacheConfig) -> Self {
 		let BulkCacheConfig {
 			window_start_block,
 			window_end_block,
@@ -428,7 +439,7 @@ impl BulkCachedCNightObservationDataSource {
 struct RefreshContext {
 	pool: PgPool,
 	cnight_addresses: CNightAddresses,
-	all_events: Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
+	all_events: Arc<std::sync::RwLock<CNightGroupedUtxos>>,
 	last_observation: Arc<Mutex<Option<LastObservation>>>,
 	snapshot_start_block: Arc<std::sync::RwLock<Option<u32>>>,
 	snapshot_end_block: Arc<std::sync::RwLock<Option<u32>>>,
@@ -496,14 +507,30 @@ impl RefreshContext {
 			CardanoPosition::min_for_block(from_block),
 			CardanoPosition::max_for_block(target_end),
 		);
-		// Whole multi-block window, so `LARGE_LIMIT`. `_complete`: bulk_pull
-		// already error-logs a truncated pull (which would leave a gap here).
-		let (extension, _complete) =
+		// Whole multi-block window, so `LARGE_LIMIT`; a cut here is pathological
+		// (bulk_pull error-logs it). If it does happen, claim coverage only
+		// through the last *whole* block actually pulled: the cut block is
+		// partial, so drop its events and let the next refresh re-pull it from
+		// scratch — a shorter window is benign, a window with a hidden gap is a
+		// consensus split waiting to be served.
+		let (mut extension, cut) =
 			bulk_pull(&self.pool, &self.cnight_addresses, &start, &end, LARGE_LIMIT).await?;
+		let covered_end = match &cut {
+			None => target_end,
+			Some(cut_pos) => {
+				extension
+					.truncate_at_position(&CardanoPosition::min_for_block(cut_pos.block_number));
+				cut_pos.block_number.saturating_sub(1)
+			},
+		};
 		{
 			let mut events_guard =
 				self.all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
-			slide_events(&mut events_guard, extension, new_window_start);
+			// Slide the window in place: trim the front, then append the
+			// extension, which sorts strictly after every retained tx
+			// (`append` checks that claim).
+			events_guard.trim_before_block(new_window_start);
+			events_guard.append(extension);
 		}
 		*self
 			.snapshot_start_block
@@ -512,10 +539,10 @@ impl RefreshContext {
 		*self
 			.snapshot_end_block
 			.write()
-			.map_err(|e| format!("snapshot_end_block write poisoned: {e}"))? = Some(target_end);
+			.map_err(|e| format!("snapshot_end_block write poisoned: {e}"))? = Some(covered_end);
 		log::info!(
 			target: "cnight::sliding-window",
-			"refresh done: window now [{new_window_start}, {target_end}] (took {:?})",
+			"refresh done: window now [{new_window_start}, {covered_end}] (took {:?})",
 			t0.elapsed()
 		);
 		Ok(())
@@ -559,34 +586,6 @@ fn plan_refresh(
 		None => existing_start,
 	};
 	(contiguous_from, new_window_start)
-}
-
-/// Slide the in-memory window forward, in place: drop events before
-/// `new_window_start`, then append `extension` (events strictly after the
-/// existing end). Mutates `existing` to avoid allocating a fresh vec.
-fn slide_events(
-	existing: &mut Vec<ObservedUtxo>,
-	extension: Vec<ObservedUtxo>,
-	new_window_start: u32,
-) {
-	// `existing` is sorted ascending by tx_position.block_number, so a
-	// partition_point gives the first retained index in O(log n).
-	let trim_at =
-		existing.partition_point(|u| u.header.tx_position.block_number < new_window_start);
-	existing.drain(..trim_at);
-	existing.extend(extension);
-}
-
-/// From a sorted vec, return the slice `[a..b)` covering events whose
-/// `tx_position` falls in `[start, end)`.
-fn slice_range<'a>(
-	vec: &'a [ObservedUtxo],
-	start: &CardanoPosition,
-	end: &CardanoPosition,
-) -> &'a [ObservedUtxo] {
-	let a = vec.partition_point(|u| u.header.tx_position < *start);
-	let b = vec.partition_point(|u| u.header.tx_position < *end);
-	&vec[a..b]
 }
 
 observed_async_trait!(
@@ -696,14 +695,15 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 		// Hold the read lock only for the (cheap) slice+copy of our window.
 		// Readers share the lock, so they don't block each other; a concurrent
 		// refresh's write lock waits for this copy to finish.
-		let window: Vec<ObservedUtxo> = match self.all_events.read() {
-			Ok(guard) => slice_range(&guard, start_position, &end).to_vec(),
-			Err(_) => Vec::new(),
+		let window: CNightGroupedUtxos = match self.all_events.read() {
+			Ok(guard) => guard.slice_range(start_position, &end),
+			Err(_) => CNightGroupedUtxos::default(),
 		};
-		// Window holds the complete range, so `complete = true` — same inputs as
-		// the db fallback, hence the same inherent.
-		let result =
-			truncate_to_tx_capacity(window, tx_capacity, max_utxos, true, start_position, end);
+		// The window is gap-free through `snapshot_end_block` (a truncated
+		// refresh shortens its coverage claim instead of storing a gap), so the
+		// slice covers the whole queried range — same inputs as the db
+		// fallback, hence the same inherent.
+		let result = truncate_to_tx_capacity(window, tx_capacity, max_utxos, start_position, end);
 
 		if let Ok(mut guard) = self.last_observation.lock() {
 			*guard = Some(LastObservation {
@@ -762,7 +762,9 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{ObservedUtxoData, ObservedUtxoHeader, RegistrationData, UtxoIndexInTx};
+	use crate::{
+		ObservedUtxo, ObservedUtxoData, ObservedUtxoHeader, RegistrationData, UtxoIndexInTx,
+	};
 	use midnight_primitives_cnight_observation::CardanoRewardAddressBytes;
 	use sidechain_domain::{McBlockHash, McTxHash};
 
@@ -797,59 +799,8 @@ mod tests {
 		}
 	}
 
-	#[test]
-	fn slice_range_returns_half_open_subrange() {
-		let events: Vec<_> = (0..10).map(|n| utxo(n, 0)).collect();
-		let got = slice_range(&events, &pos(2, 0), &pos(7, 0));
-		let block_numbers: Vec<u32> =
-			got.iter().map(|u| u.header.tx_position.block_number).collect();
-		// Half-open: block 7 excluded.
-		assert_eq!(block_numbers, vec![2, 3, 4, 5, 6]);
-	}
-
-	#[test]
-	fn slice_range_empty_when_start_eq_end() {
-		let events: Vec<_> = (0..10).map(|n| utxo(n, 0)).collect();
-		assert!(slice_range(&events, &pos(5, 0), &pos(5, 0)).is_empty());
-	}
-
-	#[test]
-	fn slice_range_empty_when_above_data() {
-		let events: Vec<_> = (0..10).map(|n| utxo(n, 0)).collect();
-		assert!(slice_range(&events, &pos(20, 0), &pos(30, 0)).is_empty());
-	}
-
-	#[test]
-	fn slide_events_trims_front_and_appends_back() {
-		// Existing window covers blocks [10..30); slide to new_start=15
-		// while appending blocks [30..35).
-		let mut existing: Vec<_> = (10..30).map(|n| utxo(n, 0)).collect();
-		let extension: Vec<_> = (30..35).map(|n| utxo(n, 0)).collect();
-		slide_events(&mut existing, extension, 15);
-		let block_numbers: Vec<u32> =
-			existing.iter().map(|u| u.header.tx_position.block_number).collect();
-		assert_eq!(block_numbers, (15..35).collect::<Vec<_>>());
-	}
-
-	#[test]
-	fn slide_events_no_trim_when_start_below_existing() {
-		let mut existing: Vec<_> = (10..15).map(|n| utxo(n, 0)).collect();
-		let extension: Vec<_> = (15..18).map(|n| utxo(n, 0)).collect();
-		slide_events(&mut existing, extension, 5);
-		assert_eq!(existing.len(), 8);
-		assert_eq!(existing[0].header.tx_position.block_number, 10);
-	}
-
-	#[test]
-	fn slide_events_full_trim_when_start_above_existing() {
-		let mut existing: Vec<_> = (10..15).map(|n| utxo(n, 0)).collect();
-		let extension: Vec<_> = (20..25).map(|n| utxo(n, 0)).collect();
-		slide_events(&mut existing, extension, 100);
-		// Everything from `existing` is dropped; only extension survives.
-		let block_numbers: Vec<u32> =
-			existing.iter().map(|u| u.header.tx_position.block_number).collect();
-		assert_eq!(block_numbers, vec![20, 21, 22, 23, 24]);
-	}
+	// The window-mechanics tests (slice/trim/append) live with
+	// `CNightGroupedUtxos` in `cnight_grouped.rs`.
 
 	#[test]
 	fn plan_refresh_contiguous_extends_and_trims_behind_follower() {
@@ -890,15 +841,6 @@ mod tests {
 		assert_eq!((from, start), (570_000, 570_000));
 	}
 
-	#[test]
-	fn slide_events_empty_extension_just_trims() {
-		let mut existing: Vec<_> = (10..20).map(|n| utxo(n, 0)).collect();
-		slide_events(&mut existing, vec![], 14);
-		let block_numbers: Vec<u32> =
-			existing.iter().map(|u| u.header.tx_position.block_number).collect();
-		assert_eq!(block_numbers, (14..20).collect::<Vec<_>>());
-	}
-
 	/// `block_number`-th transaction, `utxo_index`-th UTXO within it. UTXOs that
 	/// share `block_number` belong to the same Cardano transaction (one distinct
 	/// `tx_position`).
@@ -915,35 +857,71 @@ mod tests {
 			.collect()
 	}
 
-	/// The cNIGHT observation skip bug, fixed: a row-limited (incomplete) fetch
-	/// must NEVER advance `next_cardano_position` to the tip. The rows between
-	/// the last observed tx and the tip would be skipped forever, and a node
-	/// that DID fetch them would build a different inherent (check_inherent
-	/// split). Before the fix, "fewer than tx_capacity distinct txs" was treated
-	/// as "range complete" and the cursor jumped to the tip regardless.
+	/// Group raw test events the way `bulk_pull` would.
+	fn grouped(events: Vec<ObservedUtxo>) -> CNightGroupedUtxos {
+		CNightGroupedUtxos::from_unsorted(events)
+	}
+
+	/// No category hit its row limit: nothing is cut and the whole merge is
+	/// covered (`cut == None`).
 	#[test]
-	fn incomplete_fetch_must_not_advance_to_tip() {
-		// The range holds 50 txs but the fetch was row-limited to the first 40.
+	fn merge_gap_free_without_row_limit_covers_everything() {
+		let a: Vec<_> = (0..3u32).map(|b| utxo(b, 0)).collect();
+		let b = vec![utxo(1, 1)];
+		let (merged, cut) = merge_gap_free(vec![a, b], 100);
+		assert!(cut.is_none());
+		assert_eq!(merged.num_utxos(), 4);
+		assert_eq!(merged.num_transactions(), 4);
+	}
+
+	/// The review scenario (Lech): one category (A) is row-limited while
+	/// another (B) has events beyond A's frontier. B's later events must not
+	/// mask A's truncation — the merge cuts everything at A's frontier, so the
+	/// gap in A can never be silently skipped over.
+	#[test]
+	fn category_truncation_cannot_be_masked_by_later_events() {
+		// A: 10 single-UTXO txs at blocks 0..10, exactly hitting limit = 10,
+		// so its frontier is its last returned row (block 9).
+		let a: Vec<_> = (0..10u32).map(|b| utxo(b, 0)).collect();
+		// B: one event below the frontier, one far beyond it.
+		let b = vec![utxo(3, 1), utxo(50, 0)];
+		let (merged, cut) = merge_gap_free(vec![a, b], 10);
+		let cut = cut.expect("A hit the row limit");
+		assert_eq!(cut, pos(9, 0), "cut at A's frontier");
+		// Kept: A's blocks 0..9 (9 events) + B's (3,1). Dropped: A's frontier
+		// tx (possibly mid-sliced) and B's block-50 event beyond the frontier.
+		assert_eq!(merged.num_utxos(), 10);
+		assert!(merged.last_position().unwrap() < &cut);
+		// The cursor resumes exactly at the cut — A's unfetched events are
+		// ahead of it and get re-pulled by the next inherent.
+		let obs = truncate_to_tx_capacity(merged, 1000, 100_000, &pos(0, 0), cut.clone());
+		assert_eq!(obs.end, cut);
+	}
+
+	/// The cNIGHT observation skip bug, fixed structurally: a row-limited
+	/// fetch is cut back to its proven-complete prefix and the cursor resumes
+	/// at the cut — NEVER at the tip. The rows between the cut and the tip
+	/// would otherwise be skipped forever, and a node that DID fetch them
+	/// would build a different inherent (check_inherent split).
+	#[test]
+	fn row_limited_fetch_must_not_advance_to_tip() {
+		// The range holds 50 txs (5 UTXOs each) but the fetch was row-limited
+		// to the first 200 rows = 40 txs, the last of which may be mid-sliced.
 		let fetched: Vec<ObservedUtxo> = (0..40u32)
 			.flat_map(|tx| (0..5u16).map(move |u| utxo_with_index(tx, u)))
 			.collect();
 		let tip = pos(100, 0);
 
-		let obs = truncate_to_tx_capacity(
-			fetched,
-			/* tx_capacity */ 1000,
-			/* max_utxos */ 100_000,
-			/* complete */ false,
-			&pos(0, 0),
-			tip.clone(),
-		);
+		let (merged, cut) = merge_gap_free(vec![fetched], 200);
+		let cut = cut.expect("the fetch hit the row limit");
+		assert_eq!(cut, pos(39, 0), "frontier = position of the last fetched row");
+		assert_eq!(merged.num_utxos(), 39 * 5, "the frontier tx is dropped whole");
 
-		assert_ne!(obs.end, tip, "advanced to tip on an incomplete fetch -> skips unfetched txs");
-		// The last fetched tx may be partial, so it is dropped; resume at the last
-		// provably-whole tx (tx 38), never past observed data.
-		assert_eq!(obs.end, pos(38, 0).increment());
+		let obs = truncate_to_tx_capacity(merged, 1000, 100_000, &pos(0, 0), cut.clone());
+		assert_ne!(obs.end, tip, "advanced to tip on a row-limited fetch -> skips unfetched txs");
+		assert_eq!(obs.end, cut, "resume exactly at the frontier");
 		assert!(
-			obs.utxos.iter().all(|u| u.header.tx_position < pos(39, 0)),
+			obs.utxos.iter().all(|u| u.header.tx_position < cut),
 			"retained a tx at/after the truncation frontier",
 		);
 	}
@@ -956,8 +934,13 @@ mod tests {
 	fn complete_fetch_advances_to_tip() {
 		let events = fifty_txs_five_utxos();
 		let tip = pos(100, 0);
-		let obs =
-			truncate_to_tx_capacity(events.clone(), 1000, 100_000, true, &pos(0, 0), tip.clone());
+		let obs = truncate_to_tx_capacity(
+			grouped(events.clone()),
+			1000,
+			100_000,
+			&pos(0, 0),
+			tip.clone(),
+		);
 		assert_eq!(obs.end, tip);
 		assert_eq!(obs.utxos.len(), events.len());
 	}
@@ -970,10 +953,9 @@ mod tests {
 		// 250 events. Cap 22 -> 4 whole txs (20 UTXOs); the 5th (would reach 25)
 		// is held back.
 		let obs = truncate_to_tx_capacity(
-			fifty_txs_five_utxos(),
+			grouped(fifty_txs_five_utxos()),
 			1000,
 			22,
-			true,
 			&pos(0, 0),
 			pos(100, 0),
 		);
@@ -982,16 +964,19 @@ mod tests {
 		assert_eq!(obs.end, pos(3, 0).increment(), "must resume past the last whole tx");
 	}
 
-	/// Nothing admitted ⟹ the cursor does not move. Incrementing past `start`
-	/// would skip the transaction sitting at the cursor for good. Here the sole
-	/// fetched tx is dropped as row-truncated (`complete == false`).
+	/// Nothing admitted ⟹ the cursor does not move. Here a row limit sliced
+	/// the sole fetched tx mid-transaction: the merge cut drops the partial tx
+	/// entirely and the cursor holds at its position, never stepping over it.
 	#[test]
 	fn row_limited_lone_tx_holds_the_cursor() {
 		// One tx (5 UTXOs sharing a position) at the cursor, fetch row-limited.
 		let events: Vec<_> = (0..5u16).map(|u| utxo_with_index(7, u)).collect();
 		let start = pos(7, 0);
-		let obs = truncate_to_tx_capacity(events, 1000, 100_000, false, &start, pos(100, 0));
-		assert!(obs.utxos.is_empty(), "a row-truncated tx must not be admitted");
+		let (merged, cut) = merge_gap_free(vec![events], 5);
+		assert!(merged.is_empty(), "a possibly-partial tx must not be admitted");
+		let cut = cut.expect("the fetch hit the row limit");
+		let obs = truncate_to_tx_capacity(merged, 1000, 100_000, &start, cut);
+		assert!(obs.utxos.is_empty());
 		assert_eq!(obs.end, start, "cursor stepped over an unobserved transaction");
 	}
 
@@ -1001,8 +986,13 @@ mod tests {
 	#[test]
 	fn zero_tx_capacity_holds_the_cursor() {
 		let start = pos(0, 0);
-		let obs =
-			truncate_to_tx_capacity(fifty_txs_five_utxos(), 0, 100_000, true, &start, pos(100, 0));
+		let obs = truncate_to_tx_capacity(
+			grouped(fifty_txs_five_utxos()),
+			0,
+			100_000,
+			&start,
+			pos(100, 0),
+		);
 		assert!(obs.utxos.is_empty());
 		assert_eq!(obs.end, start, "cursor advanced with zero capacity — events lost");
 	}
@@ -1011,10 +1001,9 @@ mod tests {
 	#[test]
 	fn tx_capacity_cap_truncates_at_whole_tx() {
 		let obs = truncate_to_tx_capacity(
-			fifty_txs_five_utxos(),
+			grouped(fifty_txs_five_utxos()),
 			10,
 			100_000,
-			true,
 			&pos(0, 0),
 			pos(100, 0),
 		);

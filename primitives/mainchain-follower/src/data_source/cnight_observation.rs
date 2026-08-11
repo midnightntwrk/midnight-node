@@ -136,15 +136,17 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		// This single query serves exactly one inherent, so fetch only one
 		// envelope's worth plus a sentinel row. Anything past `max_utxos` is
 		// discarded by `truncate_to_tx_capacity` anyway; a subquery returning the
-		// full `max_utxos + 1` rows flags the range row-limited
-		// (`complete = false`), holding the cursor short of the tip. Each category
-		// query is `ORDER BY (block_no, block_index, ...) LIMIT n`, so this prefix
-		// holds the same first-`max_utxos` rows the old whole-range pull did:
+		// full `max_utxos + 1` rows is row-limited, and `bulk_pull` cuts the
+		// result back to its proven-complete prefix and returns the cut — the
+		// cursor then resumes there instead of the tip. Each category query is
+		// `ORDER BY (block_no, block_index, ...) LIMIT n`, so this prefix holds
+		// the same first-`max_utxos` rows the old whole-range pull did:
 		// byte-identical inherent, far less resident. The cache path still pulls
 		// whole windows with `LARGE_LIMIT`; both truncate to the same envelope.
-		let (utxos, complete) =
+		let (utxos, cut) =
 			bulk_pull(&self.pool, config, start_position, &end, max_utxos.saturating_add(1)).await?;
-		Ok(truncate_to_tx_capacity(utxos, tx_capacity, max_utxos, complete, start_position, end))
+		let covered_end = cut.unwrap_or(end);
+		Ok(truncate_to_tx_capacity(utxos, tx_capacity, max_utxos, start_position, covered_end))
 	}
 
 	async fn get_utxos_v1(
