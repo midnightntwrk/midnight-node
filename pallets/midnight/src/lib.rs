@@ -106,6 +106,15 @@ pub mod pallet {
 	// `migrations::v3`). Fresh genesis starts at version 3 and runs neither.
 	const STORAGE_VERSION: StorageVersion = StorageVersion::new(3);
 
+	/// Storage version at which [`StateKey`] was re-encoded from raw `Vec<u8>` to
+	/// [`LedgerTypes::LedgerStateKey`] (`migrations::v3`) — the authority on which layout a given
+	/// block's state holds, for both [`Pallet::state_key`] and the node's raw reads (warp
+	/// ledger-sync).
+	///
+	/// Pinned, not [`STORAGE_VERSION`]: a later migration that bumps the version without touching
+	/// this layout must not send reads back to the legacy branch.
+	pub const STATE_KEY_ENUM_VERSION: StorageVersion = StorageVersion::new(3);
+
 	// Manually add ~1% of block weight
 	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
 
@@ -503,11 +512,11 @@ pub mod pallet {
 		/// migration that re-encoded it, and `VersionedMigration` bumps the version
 		/// in the same write.
 		///
-		/// Pinned at 3, not `STORAGE_VERSION`: a later migration that bumps the
-		/// version without touching this layout must not send reads back to the
-		/// legacy branch.
+		/// The threshold is [`STATE_KEY_ENUM_VERSION`], pinned rather than
+		/// `STORAGE_VERSION`, so a later migration that bumps the version without
+		/// touching this layout can't send reads back to the legacy branch.
 		pub fn state_key() -> LedgerTypes::LedgerStateKey {
-			if Pallet::<T>::on_chain_storage_version() < StorageVersion::new(3) {
+			if Pallet::<T>::on_chain_storage_version() < STATE_KEY_ENUM_VERSION {
 				// The raw-bytes alias for this same storage key — see
 				// `migration_state_key_alias_addresses_the_pallet_storage_item`.
 				LedgerTypes::LedgerStateKey::Anchored(
