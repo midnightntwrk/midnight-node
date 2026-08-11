@@ -58,6 +58,14 @@ cd "${CONTRACTS_DIR}"
 echo "Installing node dependencies"
 bun install
 
+# Backport of midnight-reserve-contracts 424f7f94 ("pin @blaze-cardano/blueprint to 0.8.2").
+# The contracts revision pinned by CI still calls `bunx @blaze-cardano/blueprint@latest`, which
+# now resolves to 0.9.0 — that generator emits `import { TypedScript } from "@blaze-cardano/tx"`,
+# a symbol absent from the tx@0.14.1 pinned in the contracts' bun.lock. Drop this once the
+# pinned contracts revision includes the fix.
+sed -i 's|@blaze-cardano/blueprint@latest|@blaze-cardano/blueprint@0.8.2|g' \
+    Justfile cli-yargs/commands/build/index.ts
+
 
 # Prepare one shot hash
 echo "=== One Shot Hash Preparation ==="
