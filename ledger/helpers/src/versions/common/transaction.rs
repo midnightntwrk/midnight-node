@@ -104,6 +104,9 @@ pub struct StandardTransactionInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub dust_registrations: Vec<DustRegistrationBuilder>,
 }
 
+#[deprecated(note = "misspelled; use `StandardTransactionInfo` instead")]
+pub type StandardTrasactionInfo<D, C> = StandardTransactionInfo<D, C>;
+
 impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTransactionInfo<D, C> {
 	fn new_from_context(
 		context: Arc<C>,
