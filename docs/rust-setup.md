@@ -25,17 +25,18 @@ rustup show
 Earthly runs every build target inside a container, so a container runtime must be installed and running **before** you install or use Earthly.
 
 **macOS:**
-Install [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/) and start it, or install [Podman](https://podman.io/docs/installation#macos) and run `podman machine init && podman machine start`.
+Install [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/) and start it. (Note: While [Podman](https://podman.io/docs/installation#macos) is an alternative, Earthly's `WITH DOCKER` targets like `+test` require rootful Podman which requires additional configuration).
 
 **Ubuntu/Debian:**
 ```bash
-# Docker
+# Docker (Recommended)
 sudo apt-get update && sudo apt-get install -y docker.io
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER"   # log out & back in for group to take effect
 
-# — or Podman —
+# — or Podman (Requires rootful mode for Earthly tests) —
 sudo apt-get update && sudo apt-get install -y podman
+sudo systemctl enable --now podman.socket
 ```
 
 **Windows (WSL2):**
