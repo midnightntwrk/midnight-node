@@ -157,19 +157,10 @@ const TX_VALIDATION_CACHE_CAPACITY: u64 = 2000;
 /// Time-to-idle for transaction validation cache entries.
 /// Entries not accessed within this duration are evicted, preventing stale VerifiedTransaction
 /// objects (which contain ZK proof data and can be 50-200 KiB each) from persisting indefinitely
-/// on low-traffic networks. Without this TTL, the cache only evicts by count — on quiet chains
+/// on low-traffic networks. Without this, the cache only evicts by count — on quiet chains
 /// entries live forever and contribute to steady-state memory growth.
 #[cfg(feature = "std")]
 const TX_VALIDATION_CACHE_TTI: Duration = Duration::from_secs(300);
-
-/// Time-to-live for cache entries.
-/// Unlike TTI, TTL evicts entries unconditionally after this duration regardless of access.
-/// This is critical for relay nodes (non-block-producers) where cache entries are never
-/// invalidated by block authoring — without a TTL, revalidation keeps accessing entries and
-/// resetting the TTI timer, so invalid transactions persist in the mempool indefinitely.
-/// Set to 60s (~10 blocks at 6s/block) to balance eviction latency against revalidation cost.
-#[cfg(feature = "std")]
-const TX_VALIDATION_CACHE_TTL: Duration = Duration::from_secs(60);
 
 #[cfg(feature = "std")]
 lazy_static! {
@@ -187,7 +178,6 @@ lazy_static! {
 		Cache::builder()
 			.max_capacity(TX_VALIDATION_CACHE_CAPACITY)
 			.time_to_idle(TX_VALIDATION_CACHE_TTI)
-			.time_to_live(TX_VALIDATION_CACHE_TTL)
 			.build();
 }
 
