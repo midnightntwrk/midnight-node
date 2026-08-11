@@ -153,10 +153,12 @@ earthly doc
 > and the fixture-dependent tests:
 >
 > ```bash
-> cargo nextest run --workspace --locked \
+> cargo test --workspace --locked \
 >   --exclude midnight-node-toolkit \
 >   --exclude partner-chains-cardano-offchain \
->   -E 'not (test(/^tests::test_get_contract_state$/) | test(/^tests::test_send_mn_transaction$/) | test(/^tests::test_validation_works$/))'
+>   -- --skip tests::test_get_contract_state \
+>      --skip tests::test_send_mn_transaction \
+>      --skip tests::test_validation_works
 > ```
 
 For troubleshooting common setup or build issues, see [Troubleshooting](troubleshooting.md).
