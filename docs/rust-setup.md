@@ -20,7 +20,33 @@ To verify your Rust installation:
 rustup show
 ```
 
-### 2. Earthly (Containerized Builds)
+### 2. Docker or Podman (Container Runtime)
+
+Earthly runs every build target inside a container, so a container runtime must be installed and running **before** you install or use Earthly.
+
+**macOS:**
+Install [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/) and start it, or install [Podman](https://podman.io/docs/installation#macos) and run `podman machine init && podman machine start`.
+
+**Ubuntu/Debian:**
+```bash
+# Docker
+sudo apt-get update && sudo apt-get install -y docker.io
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"   # log out & back in for group to take effect
+
+# — or Podman —
+sudo apt-get update && sudo apt-get install -y podman
+```
+
+**Windows (WSL2):**
+Install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) and enable the **WSL 2 backend** in Settings → General.
+
+To verify the container runtime:
+```bash
+docker info   # or: podman info
+```
+
+### 3. Earthly (Containerized Builds)
 
 Earthly is required for building Docker images, regenerating metadata, and rebuilding genesis state.
 
@@ -36,14 +62,14 @@ sudo chmod +x /usr/local/bin/earthly
 ```
 
 **Windows (WSL2):**
-Install via the Ubuntu instructions above inside your WSL2 terminal. Ensure Docker Desktop is configured to use the WSL2 backend.
+Install via the Ubuntu instructions above inside your WSL2 terminal.
 
 To verify Earthly:
 ```bash
 earthly --version
 ```
 
-### 3. Just (Command Runner)
+### 4. Just (Command Runner)
 
 `just` is required for running end-to-end (E2E) tests and toolkit compilation.
 
@@ -80,7 +106,7 @@ direnv allow
 
 ### Option B: Nix (Alternative)
 
-If you prefer Nix, the repository provides a Nix flake that sets up most dependencies (Rust, Earthly) automatically in an isolated environment. Note that **Just** is not included in the Nix flake and still needs to be installed separately (see step 3 above).
+If you prefer Nix, the repository provides a Nix flake that sets up most dependencies (Rust, Earthly) automatically in an isolated environment. Note that **Just** is not included in the Nix flake and still needs to be installed separately (see step 4 above).
 
 ```bash
 # Start the Nix development shell
@@ -96,7 +122,6 @@ If you don't want to use direnv or Nix, source `.envrc` manually before running 
 ```bash
 source .envrc
 cargo check
-cargo test
 ```
 
 ## Verify Setup
@@ -104,14 +129,26 @@ cargo test
 After completing the setup, verify everything works by running the basic development commands:
 
 ```bash
-# Check cargo commands work
+# Check that the workspace compiles
 cargo check
-
-# Run tests
-cargo test
 
 # Check earthly targets
 earthly doc
 ```
+
+> **Note:** Do not run a bare `cargo test` to verify your setup. The
+> `midnight-node-toolkit` crate depends on generated npm artifacts that are only
+> available after running the toolkit prep step. To run the core test suite,
+> use Earthly which automatically excludes toolkit-dependent crates:
+>
+> ```bash
+> earthly -P +test
+> ```
+>
+> If you prefer running tests with `cargo` directly, exclude the toolkit crate:
+>
+> ```bash
+> cargo test --workspace --exclude midnight-node-toolkit --exclude partner-chains-cardano-offchain
+> ```
 
 For troubleshooting common setup or build issues, see [Troubleshooting](troubleshooting.md).
