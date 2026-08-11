@@ -92,7 +92,7 @@ impl DustRegistrationBuilder {
 	}
 }
 
-pub struct StandardTrasactionInfo<D: DB + Clone, C: BuilderContext<D>> {
+pub struct StandardTransactionInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub context: Arc<C>,
 	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D, C>>>,
 	pub guaranteed_offer: Option<OfferInfo<D, C>>,
@@ -104,7 +104,7 @@ pub struct StandardTrasactionInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub dust_registrations: Vec<DustRegistrationBuilder>,
 }
 
-impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTrasactionInfo<D, C> {
+impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTransactionInfo<D, C> {
 	fn new_from_context(
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<D>>,
@@ -126,7 +126,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTrasacti
 	}
 }
 
-impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
+impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 	pub fn set_guaranteed_offer(&mut self, offer: OfferInfo<D, C>) {
 		self.guaranteed_offer = Some(offer);
 	}
