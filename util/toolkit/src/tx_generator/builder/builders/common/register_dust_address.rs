@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::ledger_helpers_local::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB, DustAddressParseError,
 	DustParameters, DustRegistrationBuilder, DustWallet, FromContext, IntentInfo, NIGHT,
-	ProofProvider, Segment, StandardTrasactionInfo, Timestamp, TransactionWithContext,
+	ProofProvider, Segment, StandardTransactionInfo, Timestamp, TransactionWithContext,
 	UnshieldedOfferInfo, Utxo, UtxoOutputInfo, UtxoSpendInfo, WalletAddress, WalletSeed,
 };
 use async_trait::async_trait;
@@ -96,7 +96,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for RegisterDustAddressBuilder<C> {
 
 		let context = self.context.clone();
 
-		let mut tx_info = StandardTrasactionInfo::new_from_context(
+		let mut tx_info = StandardTransactionInfo::new_from_context(
 			context.clone(),
 			self.prover.clone(),
 			self.rng_seed,
