@@ -18,9 +18,9 @@ height, so pre-upgrade wasm imports version 1 and still corrects, while every bl
 and `tblock_correction_offset` and `tblock_correction_disable_after` are removed from node config
 along with the externalities extension that carried them.
 
-`spec_version` is bumped to `001_000_002`.
+`spec_version` is bumped to `001_000_003`.
 
-**All validators must be running node 1.0.2 before the upgrade is enacted.** An older node cannot
+**All validators must be running node 1.0.3 before the upgrade is enacted.** An older node cannot
 instantiate a runtime that imports `ext_ledger_8_bridge_apply_transaction_version_2`, so any
 validator left behind stops importing blocks at the `set_code`.
 
