@@ -210,6 +210,7 @@ pub fn truncate_to_tx_capacity(
 struct LastObservation {
 	start_position: CardanoPosition,
 	current_tip: McBlockHash,
+	cnight_addresses: CNightAddresses,
 	result: ObservedUtxos,
 }
 
@@ -237,9 +238,11 @@ pub struct BulkCachedCNightObservationDataSource {
 	/// an async refresh.
 	snapshot_end_block: Arc<std::sync::RwLock<Option<u32>>>,
 	db_fallback: Arc<MidnightCNightObservationDataSourceImpl>,
-	/// cNIGHT addresses cached so the sliding-window refresh can re-run the
-	/// observation queries without re-reading the chainspec JSON.
-	cnight_addresses: CNightAddresses,
+	/// cNIGHT addresses currently represented by the sliding-window cache.
+	/// Runtime governance may rotate these values after genesis; calls with a
+	/// different runtime config invalidate the window and refresh with the new
+	/// values.
+	cnight_addresses: Arc<std::sync::RwLock<CNightAddresses>>,
 	/// Cardano blocks to leave un-fetched past the requested target
 	/// (re-org safety). Equals `cardano_security_parameter + block_stability_margin`.
 	stability_margin: u32,
@@ -292,6 +295,7 @@ impl BulkCachedCNightObservationDataSource {
 			cnight_addresses,
 			metrics_opt,
 		} = config;
+		let cnight_addresses = Arc::new(std::sync::RwLock::new(cnight_addresses));
 		Self {
 			all_events: Arc::new(std::sync::RwLock::new(events)),
 			pool,
@@ -305,6 +309,36 @@ impl BulkCachedCNightObservationDataSource {
 			window_size,
 			refresh_in_flight: Arc::new(tokio::sync::Mutex::new(())),
 			metrics_opt,
+		}
+	}
+
+	/// Keep the cache's cNIGHT query parameters aligned with the runtime value
+	/// supplied by the inherent data provider. Runtime governance can rotate
+	/// these values after genesis, so a mismatch means the current window and the
+	/// same-tip memoized result were computed for obsolete Cardano contracts or
+	/// assets and must not be reused.
+	fn sync_runtime_config(&self, config: &CNightAddresses, start_position: &CardanoPosition) {
+		if let Ok(mut guard) = self.cnight_addresses.write()
+			&& !cnight_addresses_eq(&guard, config)
+		{
+			log::info!(
+				target: "cnight::sliding-window",
+				"cNIGHT runtime configuration changed; invalidating sliding-window cache"
+			);
+			*guard = config.clone();
+			if let Ok(mut events) = self.all_events.write() {
+				events.clear();
+			}
+			if let Ok(mut last) = self.last_observation.lock() {
+				*last = None;
+			}
+			let anchor = start_position.block_number.saturating_sub(1);
+			if let Ok(mut start) = self.snapshot_start_block.write() {
+				*start = Some(anchor);
+			}
+			if let Ok(mut end) = self.snapshot_end_block.write() {
+				*end = Some(anchor);
+			}
 		}
 	}
 
@@ -322,9 +356,12 @@ impl BulkCachedCNightObservationDataSource {
 
 		// Snapshot the shared state the refresh needs (cheap — mostly `Arc`s) so
 		// it can run in the spawned task independent of `&self`.
+		let cnight_addresses =
+			self.cnight_addresses.read().map(|guard| guard.clone()).unwrap_or_default();
 		let ctx = RefreshContext {
 			pool: self.pool.clone(),
-			cnight_addresses: self.cnight_addresses.clone(),
+			cnight_addresses,
+			active_cnight_addresses: Arc::clone(&self.cnight_addresses),
 			all_events: Arc::clone(&self.all_events),
 			last_observation: Arc::clone(&self.last_observation),
 			snapshot_start_block: Arc::clone(&self.snapshot_start_block),
@@ -353,6 +390,7 @@ impl BulkCachedCNightObservationDataSource {
 struct RefreshContext {
 	pool: PgPool,
 	cnight_addresses: CNightAddresses,
+	active_cnight_addresses: Arc<std::sync::RwLock<CNightAddresses>>,
 	all_events: Arc<std::sync::RwLock<Vec<ObservedUtxo>>>,
 	last_observation: Arc<Mutex<Option<LastObservation>>>,
 	snapshot_start_block: Arc<std::sync::RwLock<Option<u32>>>,
@@ -425,6 +463,18 @@ impl RefreshContext {
 		// limit is the wide `LARGE_LIMIT` rather than the per-block over-fetch bound.
 		let extension =
 			bulk_pull(&self.pool, &self.cnight_addresses, &start, &end, LARGE_LIMIT).await?;
+		let active_config_matches = self
+			.active_cnight_addresses
+			.read()
+			.map(|guard| cnight_addresses_eq(&guard, &self.cnight_addresses))
+			.unwrap_or(false);
+		if !active_config_matches {
+			log::info!(
+				target: "cnight::sliding-window",
+				"discarding refresh result because cNIGHT runtime configuration changed"
+			);
+			return Ok(());
+		}
 		{
 			let mut events_guard =
 				self.all_events.write().map_err(|e| format!("all_events write poisoned: {e}"))?;
@@ -514,6 +564,13 @@ fn slice_range<'a>(
 	&vec[a..b]
 }
 
+fn cnight_addresses_eq(left: &CNightAddresses, right: &CNightAddresses) -> bool {
+	left.mapping_validator_address == right.mapping_validator_address
+		&& left.auth_token_asset_name == right.auth_token_asset_name
+		&& left.cnight_policy_id == right.cnight_policy_id
+		&& left.cnight_asset_name == right.cnight_asset_name
+}
+
 observed_async_trait!(
 impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSource {
 	async fn get_utxos_up_to_capacity(
@@ -524,6 +581,8 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 		tx_capacity: usize,
 		utxo_overestimate: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
+		self.sync_runtime_config(config, start_position);
+
 		// Same-tip cache: if `current_tip` and `start_position` are both
 		// unchanged, the Cardano window hasn't grown, so reuse the previous
 		// result directly. (A `start_position` that advanced under the same tip
@@ -533,6 +592,7 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 			&& let Some(last) = guard.as_ref()
 			&& last.current_tip == current_tip
 			&& last.start_position == *start_position
+			&& cnight_addresses_eq(&last.cnight_addresses, config)
 		{
 			return Ok(last.result.clone());
 		}
@@ -632,6 +692,7 @@ impl MidnightCNightObservationDataSource for BulkCachedCNightObservationDataSour
 			*guard = Some(LastObservation {
 				start_position: start_position.clone(),
 				current_tip: current_tip.clone(),
+				cnight_addresses: config.clone(),
 				result: result.clone(),
 			});
 		}
@@ -677,6 +738,39 @@ mod tests {
 			block_timestamp: Default::default(),
 			tx_index_in_block: tx_index,
 		}
+	}
+
+	fn cnight_addresses(tag: u8) -> CNightAddresses {
+		CNightAddresses {
+			mapping_validator_address: format!("addr_test1{tag}"),
+			auth_token_asset_name: format!("auth-{tag}"),
+			cnight_policy_id: [tag; 28],
+			cnight_asset_name: format!("cnight-{tag}"),
+		}
+	}
+
+	fn test_data_source(
+		events: Vec<ObservedUtxo>,
+		cnight_addresses: CNightAddresses,
+	) -> BulkCachedCNightObservationDataSource {
+		let pool = sqlx::postgres::PgPoolOptions::new()
+			.connect_lazy("postgres://postgres:postgres@localhost/postgres")
+			.unwrap();
+		let db_fallback =
+			Arc::new(MidnightCNightObservationDataSourceImpl::new(pool.clone(), None, 1000));
+		BulkCachedCNightObservationDataSource::new(
+			events,
+			BulkCacheConfig {
+				window_start_block: 10,
+				window_end_block: 20,
+				window_size: 100,
+				stability_margin: 0,
+				pool,
+				db_fallback,
+				cnight_addresses,
+				metrics_opt: None,
+			},
+		)
 	}
 
 	#[test]
@@ -779,5 +873,28 @@ mod tests {
 		let block_numbers: Vec<u32> =
 			existing.iter().map(|u| u.header.tx_position.block_number).collect();
 		assert_eq!(block_numbers, (14..20).collect::<Vec<_>>());
+	}
+
+	#[tokio::test]
+	async fn sync_runtime_config_invalidates_window_for_rotated_cnight_config() {
+		let data_source =
+			test_data_source((10..=20).map(|n| utxo(n, 0)).collect(), cnight_addresses(1));
+		*data_source.last_observation.lock().unwrap() = Some(LastObservation {
+			start_position: pos(10, 0),
+			current_tip: McBlockHash([1u8; 32]),
+			cnight_addresses: cnight_addresses(1),
+			result: ObservedUtxos { start: pos(10, 0), end: pos(21, 0), utxos: vec![] },
+		});
+
+		data_source.sync_runtime_config(&cnight_addresses(2), &pos(15, 0));
+
+		assert!(data_source.all_events.read().unwrap().is_empty());
+		assert!(data_source.last_observation.lock().unwrap().is_none());
+		assert_eq!(*data_source.snapshot_start_block.read().unwrap(), Some(14));
+		assert_eq!(*data_source.snapshot_end_block.read().unwrap(), Some(14));
+		assert!(cnight_addresses_eq(
+			&data_source.cnight_addresses.read().unwrap(),
+			&cnight_addresses(2)
+		));
 	}
 }
