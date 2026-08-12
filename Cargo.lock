@@ -7341,9 +7341,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.18.1"
+version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b6180140927ee907000b0aa540091f6ea512ead4447c92b8fc35bc72788a5a6"
+checksum = "5d2f2f9b4ba7e6b24d95e7e899329d35be83bcded72c8540cdd5368932d1d90a"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -8588,7 +8588,7 @@ dependencies = [
  "figment",
  "itertools 0.14.0",
  "log",
- "lru 0.18.1",
+ "lru 0.18.2",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
  "parity-scale-codec",
@@ -8794,7 +8794,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.18.1",
+ "lru 0.18.2",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
  "midnight-circuits 6.2.1",
@@ -8829,7 +8829,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.18.1",
+ "lru 0.18.2",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
  "midnight-circuits 7.2.1",
@@ -11208,7 +11208,7 @@ dependencies = [
  "hex-literal 1.1.0",
  "itertools 0.14.0",
  "log",
- "lru 0.18.1",
+ "lru 0.18.2",
  "pallet-sidechain-rpc",
  "partner-chains-plutus-data",
  "pretty_assertions",
