@@ -18,11 +18,13 @@ zswap = { workspace = true, optional = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"], optional = true }
 onchain-runtime-ledger-8 = { workspace = true, optional = true }
+onchain-state-ledger-8 = { workspace = true, optional = true }
 ledger-storage-ledger-8 = { workspace = true, optional = true }
 zswap-ledger-8 = { workspace = true, optional = true }
 
 mn-ledger-9 = { workspace = true, features = ["proving"], optional = true }
 onchain-runtime-ledger-9 = { workspace = true, optional = true }
+onchain-state-ledger-9 = { workspace = true, optional = true }
 zswap-ledger-9 = { workspace = true, optional = true }
 coin-structure-ledger-9 = { workspace = true, optional = true }
 transient-crypto-ledger-9 = { workspace = true, optional = true }
@@ -50,6 +52,11 @@ scale-info.workspace = true
 
 [dev-dependencies]
 midnight-node-res = { workspace = true, features = ["test", "chain-spec"] }
+# The crate's own `#[cfg(test)]` modules (api::ledger, api::transaction, and the
+# state-translation tests) use `extract_tx_with_context`, gated behind the
+# helpers `can-panic` feature. Enable it for test builds so the tests compile
+# when the crate is tested standalone.
+midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils"] }
 
 [features]
 default = [
@@ -82,10 +89,12 @@ std = [
     "zswap",
     "mn-ledger-8",
     "onchain-runtime-ledger-8",
+    "onchain-state-ledger-8",
     "ledger-storage-ledger-8",
     "zswap-ledger-8",
     "mn-ledger-9",
     "onchain-runtime-ledger-9",
+    "onchain-state-ledger-9",
     "zswap-ledger-9",
     "coin-structure-ledger-9",
     "transient-crypto-ledger-9",
