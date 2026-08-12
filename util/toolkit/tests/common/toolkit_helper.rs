@@ -72,6 +72,7 @@ fn default_source() -> Source {
 		ignore_block_context: false,
 		fetch_cache: FetchCacheConfig::InMemory,
 		ledger_state_db: String::new(),
+		replay_checkpoint_interval: 0,
 	}
 }
 
