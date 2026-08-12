@@ -58,4 +58,5 @@ self-cancels rather than corrupting state: the first replayed event collides wit
 New events: `DustReapplyStarted`, `DustReapplyBatchFailed`,
 `DustReapplyCompleted`, `DustReapplySkipped`.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2019
+Upstream PR: https://github.com/midnightntwrk/midnight-node/pull/2012
