@@ -41,16 +41,16 @@ mod tests {
 	#[test]
 	fn resolves_registry_version_without_comparator() {
 		// The lock-resolved bare semver, not the `=7.0.3` manifest spec.
-		let v = find_dependency_version("mn-ledger").expect("mn-ledger should resolve");
+		let v = find_dependency_version("mn-ledger-7").expect("mn-ledger-7 should resolve");
 		assert!(!v.starts_with('='), "expected resolved version, got {v:?}");
 		assert!(v.starts_with(|c: char| c.is_ascii_digit()), "got {v:?}");
 	}
 
 	#[test]
 	fn disambiguates_same_crate_at_different_versions() {
-		// `mn-ledger` and `mn-ledger-8` both rename `midnight-ledger`; the resolve graph keeps them
+		// `mn-ledger-7` and `mn-ledger-8` both rename `midnight-ledger`; the resolve graph keeps them
 		// distinct, so they must report different versions.
-		assert!(find_dependency_version("mn-ledger").unwrap().starts_with("7."));
+		assert!(find_dependency_version("mn-ledger-7").unwrap().starts_with("7."));
 		assert!(find_dependency_version("mn-ledger-8").unwrap().starts_with("8."));
 	}
 

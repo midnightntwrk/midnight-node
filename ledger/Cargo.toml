@@ -5,7 +5,7 @@ edition = "2024"
 license-file.workspace = true
 
 [dependencies]
-mn-ledger = { workspace = true, features = ["proving"], optional = true }
+mn-ledger-7 = { workspace = true, features = ["proving"], optional = true }
 base-crypto = { workspace = true, optional = true }
 coin-structure = { workspace = true, optional = true }
 onchain-runtime = { workspace = true, optional = true }
@@ -76,7 +76,7 @@ std = [
     "log",
     "lazy_static",
     "moka",
-    "mn-ledger",
+    "mn-ledger-7",
     "base-crypto",
     "coin-structure",
     "onchain-runtime",

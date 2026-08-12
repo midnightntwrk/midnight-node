@@ -75,7 +75,7 @@ default_constructed_unit_structs = { level = "allow", priority = 2 } # stylistic
 [workspace.dependencies]
 # Midnight dependencies
 # Ledger 7
-mn-ledger = { version = "=7.0.3", package = "midnight-ledger" }
+mn-ledger-7 = { version = "=7.0.3", package = "midnight-ledger" }
 ledger-storage = { version = "=1.1.1", package = "midnight-storage", features = ["parity-db"] }
 coin-structure = { version = "^2.0.0", package = "midnight-coin-structure" }
 onchain-runtime = { version = "=2.0.1", package = "midnight-onchain-runtime" }
@@ -117,7 +117,7 @@ transient-crypto-ledger-9 = { version = "=3.0.0", package = "midnight-transient-
 # Storage core v2 layout
 midnight-storage-core = { version = "1.2.0", features = ["layout-v2", "gc-v1"] }
 
-# res can't currently dep on mn-ledger without it bringing in non-std deps (which annoys the runtime).
+# res can't currently dep on mn-ledger-7 without it bringing in non-std deps (which annoys the runtime).
 midnight-serialize = { version = "=1.2.0", package = "midnight-serialize" }
 
 # Midnight local dependencies

@@ -13,7 +13,7 @@ cargo_metadata = "0.15"
 hex.workspace = true
 sha2.workspace = true
 
-mn-ledger = { workspace = true, features = ["proving"] }
+mn-ledger-7 = { workspace = true, features = ["proving"] }
 base-crypto = { workspace = true }
 coin-structure = { workspace = true }
 onchain-runtime = { workspace = true }
@@ -63,4 +63,4 @@ default = []
 can-panic = []
 erase-proof = []
 test-utils = []
-fixed-point-custom-serde = ["mn-ledger/fixed-point-custom-serde", "mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
+fixed-point-custom-serde = ["mn-ledger-7/fixed-point-custom-serde", "mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]

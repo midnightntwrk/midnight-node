@@ -36,7 +36,7 @@ pub mod ledger_7 {
 		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
 		ledger_storage as ledger_storage_local,
 		midnight_node_ledger_helpers::ledger_7 as helpers_local,
-		midnight_serialize as midnight_serialize_local, mn_ledger as mn_ledger_local,
+		midnight_serialize as midnight_serialize_local, mn_ledger_7 as mn_ledger_local,
 		onchain_runtime as onchain_runtime_local, transient_crypto as transient_crypto_local,
 		zswap as zswap_local,
 	};
@@ -59,7 +59,7 @@ pub mod ledger_7 {
 	#[path = "post_block_update/ledger_7.rs"]
 	mod post_block_update;
 
-	pub const CRATE_NAME: &str = "mn-ledger";
+	pub const CRATE_NAME: &str = "mn-ledger-7";
 	#[cfg(feature = "std")]
 	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
 	#[allow(clippy::duplicate_mod)]
