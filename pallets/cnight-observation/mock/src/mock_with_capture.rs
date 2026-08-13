@@ -20,10 +20,7 @@ use frame_support::sp_runtime::{
 use frame_support::traits::{ConstU16, ConstU32, ConstU64};
 use frame_support::weights::RuntimeDbWeight;
 use frame_support::*;
-use midnight_node_ledger::latest::types::BlockContext;
-use midnight_primitives::{
-	LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
-};
+use midnight_primitives::MidnightSystemTransactionExecutor;
 use sidechain_domain::*;
 #[cfg(feature = "std")]
 use sp_io::TestExternalities;
@@ -168,37 +165,8 @@ impl MidnightSystemTransactionExecutor for MidnightSystemTx {
 	}
 }
 
-parameter_types! {
-	/// Stand-ins for `pallet-midnight`, which this mock deliberately omits (it
-	/// exists to capture system transactions without a ledger). Tests drive the
-	/// dust replay migration through these.
-	pub static MockLedgerStateKey: Vec<u8> = Vec::new();
-	pub static MockBlockTime: u64 = 1_700_000_000;
-}
-
-pub struct MockLedger;
-
-impl LedgerStateProvider for MockLedger {
-	fn get_ledger_state_key() -> Vec<u8> {
-		MockLedgerStateKey::get()
-	}
-}
-
-impl LedgerBlockContextProvider for MockLedger {
-	fn get_block_context() -> BlockContext {
-		BlockContext {
-			tblock: MockBlockTime::get(),
-			tblock_err: 0,
-			parent_block_hash: vec![0u8; 32],
-			last_block_time: 0,
-		}
-	}
-}
-
 impl pallet_cnight_observation::Config for Test {
 	type MidnightSystemTransactionExecutor = MidnightSystemTx;
-	type LedgerStateProvider = MockLedger;
-	type LedgerBlockContextProvider = MockLedger;
 	type WeightInfo = ();
 }
 
