@@ -178,7 +178,7 @@ mod tests {
 
 	macro_rules! test_fixture {
 		($addr:literal, $src:literal) => {
-			($addr, vec![concat!(env!("CARGO_MANIFEST_DIR"), "/test-data/", $src).to_string()])
+			($addr, vec![format!("{}/test-data/{}", crate::test_paths::manifest_dir(), $src)])
 		};
 	}
 

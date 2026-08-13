@@ -34,6 +34,12 @@ pub(crate) mod test_paths {
 	use std::path::PathBuf;
 
 	pub fn workspace_root() -> PathBuf {
+		// buck2 runs tests from the project root in a hermetic sandbox lacking the
+		// repo tree; MN_WORKSPACE_ROOT points at a staged fixtures root (see the test
+		// target's resources). Unset under cargo, so the upward walk is the default.
+		if let Some(root) = std::env::var_os("MN_WORKSPACE_ROOT") {
+			return PathBuf::from(root);
+		}
 		let mut dir = std::env::current_dir().expect("cwd");
 		loop {
 			if dir.join("res/cfg/default.toml").exists() {
@@ -45,6 +51,15 @@ pub(crate) mod test_paths {
 				);
 			}
 		}
+	}
+
+	/// CARGO_MANIFEST_DIR resolved at RUNTIME (cargo and buck2 both set it; buck2 runs
+	/// tests from the project root so the value is relative). Compile-time env!() bakes
+	/// buck2's ephemeral build-sandbox path, which is gone when the test runs on another
+	/// RE worker — so test-data reads must go through this, not env!().
+	pub fn manifest_dir() -> String {
+		std::env::var("CARGO_MANIFEST_DIR")
+			.unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string())
 	}
 
 	/// Absolute path to a `res/`-relative fixture, e.g. `res("dev/ics-config.json")`.

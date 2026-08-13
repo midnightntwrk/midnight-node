@@ -179,7 +179,10 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
+        "MIDNIGHT_PP": ".zk-params",
+        "MN_WORKSPACE_ROOT": "util/toolkit/test-fixtures",
     },
+    resources = glob(["test-data/**", "test-fixtures/**"]),
     deps = [
         "root//ledger/helpers:midnight-node-ledger-helpers",
         "root//metadata:midnight-node-metadata",

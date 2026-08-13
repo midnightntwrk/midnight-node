@@ -33,5 +33,15 @@ cp README.md docs/test-fixtures/
 cp util/toolkit/src/fetcher/runtimes.rs docs/test-fixtures/util/toolkit/src/fetcher/
 cp docs/*.md docs/test-fixtures/docs/
 
+# toolkit: unit tests walk to res/cfg/default.toml, then res("...") reads
+# res/{cfg/*.toml, dev/*.json, test-tx-deserialize/serialized_tx.mn}. (test-data/**
+# is util/toolkit's own package — globbed directly as same-package resources.)
+rm -rf util/toolkit/test-fixtures
+mkdir -p util/toolkit/test-fixtures/res/cfg util/toolkit/test-fixtures/res/dev \
+         util/toolkit/test-fixtures/res/test-tx-deserialize
+cp res/cfg/*.toml util/toolkit/test-fixtures/res/cfg/
+cp res/dev/*.json util/toolkit/test-fixtures/res/dev/
+cp res/test-tx-deserialize/serialized_tx.mn util/toolkit/test-fixtures/res/test-tx-deserialize/
+
 echo "synced test fixtures:"
-find node/test-fixtures docs/test-fixtures -type f | sort
+find node/test-fixtures docs/test-fixtures util/toolkit/test-fixtures -type f | sort

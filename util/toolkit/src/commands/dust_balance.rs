@@ -149,7 +149,7 @@ mod tests {
 
 	/// Test data
 	fn td(filepath: &str) -> String {
-		[env!("CARGO_MANIFEST_DIR"), "/test-data/", &filepath].concat().to_string()
+		format!("{}/test-data/{filepath}", crate::test_paths::manifest_dir())
 	}
 
 	fn source_for(src_files: Vec<String>) -> Source {

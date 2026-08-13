@@ -167,6 +167,9 @@ TEST_TARGET_RESOURCES = {
     # cached_context reads test-data/genesis/genesis_block_undeployed.mn at runtime
     # (via CARGO_MANIFEST_DIR, resolved at runtime after the env!-> std::env::var fix).
     "midnight-node-toolkit-cached_context": 'glob(["test-data/genesis/**"])',
+    # toolkit unit tests read test-data/** (same-package) via manifest_dir(), and walk to
+    # res fixtures copied under test-fixtures/ (see sync-test-fixtures.sh + UNIT_TEST_ENV).
+    "midnight-node-toolkit-unit-test": 'glob(["test-data/**", "test-fixtures/**"])',
 }
 
 # Data-file globs a prefixed package needs in addition to src/** + Cargo.toml
@@ -261,6 +264,12 @@ UNIT_TEST_ENV = {
     # locate_workspace_root(); point it at node/ where TEST_RESOURCES stages res/
     # and docs/openrpc.json. Only the lib unit-test (not the integration tests).
     "midnight-node": {"MN_WORKSPACE_ROOT": "node/test-fixtures"},
+    # toolkit unit tests walk to res via test_paths::workspace_root() and some build a
+    # LedgerContext (needs the zk-params cache dir).
+    "midnight-node-toolkit": {
+        "MN_WORKSPACE_ROOT": "util/toolkit/test-fixtures",
+        "MIDNIGHT_PP": ".zk-params",
+    },
 }
 
 # Crates to skip emitting a unit-test target for. sc-partner-chains-consensus-aura's
