@@ -37,15 +37,17 @@ cp docs/*.md docs/test-fixtures/docs/
 # res/{cfg/*.toml, dev/*.json, test-tx-deserialize/serialized_tx.mn}. (test-data/**
 # is util/toolkit's own package — globbed directly as same-package resources.)
 rm -rf util/toolkit/test-fixtures
-mkdir -p util/toolkit/test-fixtures/res/cfg util/toolkit/test-fixtures/res/dev \
-         util/toolkit/test-fixtures/res/test-tx-deserialize util/toolkit/test-fixtures/res/test-contract \
-         util/toolkit/test-fixtures/util/toolkit/tests/cmd
-cp res/cfg/*.toml util/toolkit/test-fixtures/res/cfg/
-cp res/dev/*.json util/toolkit/test-fixtures/res/dev/
-cp res/test-tx-deserialize/serialized_tx.mn util/toolkit/test-fixtures/res/test-tx-deserialize/
+mkdir -p util/toolkit/test-fixtures/res util/toolkit/test-fixtures/util/toolkit/tests/cmd
+# Shared res/ subset the unit tests (res()/include_str!) and the cli_tests corpus
+# (../../res/...) read: cfg presets, dev configs, test-contract, serialized tx.
+for d in cfg dev test-contract test-tx-deserialize; do
+  cp -R "res/$d" util/toolkit/test-fixtures/res/
+done
+# genesis: only the *_undeployed.mn blobs are read (skip the ~3.8M of per-network genesis).
+mkdir -p util/toolkit/test-fixtures/res/genesis
+cp res/genesis/*_undeployed.mn util/toolkit/test-fixtures/res/genesis/
 # cli_tests (trycmd) chdir's to test-fixtures/util/toolkit (mirrors the crate's 2-levels-
 # deep path) and its tomls read ../../res/... -> test-fixtures/res/... and tests/cmd + README.
-cp res/test-contract/contract_tx_1_deploy_undeployed.mn util/toolkit/test-fixtures/res/test-contract/
 cp util/toolkit/tests/cmd/*.toml util/toolkit/test-fixtures/util/toolkit/tests/cmd/
 cp util/toolkit/README.md util/toolkit/test-fixtures/util/toolkit/
 

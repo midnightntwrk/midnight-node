@@ -247,6 +247,8 @@ TEST_ENV_HOOKS = {
         # chdir target: a staged mirror of the crate dir (2 levels deep) so the trycmd
         # corpus' tests/cmd/*.toml, README.md, and `../../res/...` paths all resolve.
         "MN_CLI_FIXTURES_ROOT": "util/toolkit/test-fixtures/util/toolkit",
+        # README show-wallet examples build ledger state -> zk-params cache dir.
+        "MIDNIGHT_PP": ".zk-params",
     },
     # cached_context builds a LedgerContext, whose MidnightDataProvider needs a
     # zk-params cache dir ($MIDNIGHT_PP / $XDG_CACHE_HOME / $HOME) or it panics
