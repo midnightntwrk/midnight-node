@@ -17,7 +17,9 @@ rust_test(
         "CARGO_PKG_DESCRIPTION": "",
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
+        "MN_WORKSPACE_ROOT": "docs/test-fixtures",
     },
+    resources = glob(["test-fixtures/**"]),
     deps = [
         "root//third-party:serde",
         "root//third-party:toml",

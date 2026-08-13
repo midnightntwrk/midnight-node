@@ -155,6 +155,10 @@ TEST_RESOURCES = {
     # input), so these are committed copies under node/test-fixtures/ (kept in sync by
     # scripts/buck2/sync-test-fixtures.sh) and MN_WORKSPACE_ROOT points the walk here.
     "midnight-node": 'glob(["test-fixtures/**"])',
+    # docs_tests reads a workspace-spanning fixture set (res/cfg, runtime/src/lib.rs,
+    # node+metadata Cargo.toml, README.md, util/toolkit source, docs/*.md), copied under
+    # docs/test-fixtures/ by sync-test-fixtures.sh; MN_WORKSPACE_ROOT points root() here.
+    "docs": 'glob(["test-fixtures/**"])',
 }
 
 # Per-TEST-TARGET resources (keyed by rust_test name), for packages whose test
@@ -242,6 +246,10 @@ TEST_ENV_HOOKS = {
     # provider create_dir_all's it and fetches params on demand from S3.
     ("midnight-node-toolkit", "cached_context"): {
         "MIDNIGHT_PP": ".zk-params",
+    },
+    # docs_tests' root() reads its fixtures from docs/test-fixtures/ (see TEST_RESOURCES).
+    ("docs", "docs_tests"): {
+        "MN_WORKSPACE_ROOT": "docs/test-fixtures",
     },
 }
 

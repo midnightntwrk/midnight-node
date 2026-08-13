@@ -29,6 +29,12 @@ struct Package {
 /// cargo runs from the crate dir (`docs/`), buck2 from the workspace root. Walk
 /// up until `res/cfg/default.toml` is found: the anchor both layouts share.
 fn root() -> PathBuf {
+	// buck2 runs tests from the project root in a hermetic sandbox lacking the repo
+	// tree; MN_WORKSPACE_ROOT points at a staged fixtures root (see the buck2 test
+	// target's resources). Unset under cargo, so the upward walk is the default.
+	if let Some(root) = std::env::var_os("MN_WORKSPACE_ROOT") {
+		return PathBuf::from(root);
+	}
 	let mut dir = std::env::current_dir().expect("cwd");
 	loop {
 		if dir.join("res/cfg/default.toml").exists() {
