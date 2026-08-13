@@ -94,14 +94,17 @@ pub fn run() -> sc_cli::Result<()> {
 			run_subcommand(cli.subcommand, cfg)
 		},
 		Err(e) if e.kind() == clap::error::ErrorKind::DisplayHelp => {
-			// Only show current config settings for main command.
+			// Only show current config settings for main command. `RunMidnight` (not bare
+			// `RunCmd`) so Midnight-specific run flags show up in the help text.
 			if !subcommand_used {
 				if std::env::args().any(|a| a == "--help") {
-					let _ =
-						RunCmd::try_parse_from(["midnight-node", "--help"]).unwrap_err().print();
+					let _ = RunMidnight::try_parse_from(["midnight-node", "--help"])
+						.unwrap_err()
+						.print();
 					Cfg::help();
 				} else {
-					let _ = RunCmd::try_parse_from(["midnight-node", "-h"]).unwrap_err().print();
+					let _ =
+						RunMidnight::try_parse_from(["midnight-node", "-h"]).unwrap_err().print();
 				}
 			}
 			let _ = e.print();
@@ -332,6 +335,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			hwbench,
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
+			run_midnight.serve_warp_ledger_sync,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)?;

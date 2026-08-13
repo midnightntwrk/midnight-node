@@ -89,17 +89,17 @@ zswap = { version = "=7.0.3", package = "midnight-zswap" }
 zkir = { version = "^2.2.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
-# coin-structure and transient-crypto (2.x) share versions with L7 so reuse those entries.
-mn-ledger-8 = { version = "=8.1.0", package = "midnight-ledger" }
+# coin-structure, transient-crypto and zkir share versions with L7 so reuse those entries.
+mn-ledger-8 = { version = "=8.1.1", package = "midnight-ledger" }
 # `state-translation` (needed by the v8->v9 storage migration) pulls in
 # `public-internal-structure`, exposing `merkle_patricia_trie`/`storable`/the
 # `state_translation` module used by `midnight_node_ledger::state_translation_v8_to_v9`.
-ledger-storage-ledger-8 = { version = "=2.0.1", package = "midnight-storage", features = ["parity-db", "state-translation"] }
+ledger-storage-ledger-8 = { version = "=2.0.2", package = "midnight-storage", features = ["parity-db", "state-translation"] }
 onchain-runtime-ledger-8 = { version = "=3.1.0", package = "midnight-onchain-runtime" }
 # Same `midnight-onchain-state` instance that `mn-ledger-8`'s `ContractState`
 # resolves to (via onchain-runtime 3.1.0); used as the v8 side of the state translation table.
 onchain-state-ledger-8 = { version = "=3.0.0", package = "midnight-onchain-state" }
-zswap-ledger-8 = { version = "=8.1.0", package = "midnight-zswap" }
+zswap-ledger-8 = { version = "=8.1.1", package = "midnight-zswap" }
 
 # Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
 # storage shares versions with L8 so reuses that entry. coin-structure and
@@ -261,6 +261,7 @@ sc-chain-spec = { default-features = false, git = "https://github.com/paritytech
 sc-consensus = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sp-crypto-hashing = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-network = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
+sc-network-sync = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-executor = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-grandpa = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
 sc-consensus-aura = { default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2606" }
