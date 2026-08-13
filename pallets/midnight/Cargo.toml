@@ -31,8 +31,8 @@ sp-tracing = { workspace = true}
 sidechain-domain.workspace = true
 
 [dev-dependencies]
-# Needed to register `TBlockCorrectionExt` on the test externalities.
-midnight-primitives-ledger = { workspace = true, features = ["std"] }
+# Needed to reach version 1 of the ledger host functions from the tblock tests.
+sp-externalities = { workspace = true, features = ["std"] }
 sp-core.workspace = true
 sp-io.workspace = true
 sp-runtime.workspace = true

@@ -7631,7 +7631,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -10008,13 +10008,13 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-primitives",
- "midnight-primitives-ledger",
  "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
  "sp-api",
  "sp-core",
+ "sp-externalities",
  "sp-io",
  "sp-runtime",
  "sp-tracing",

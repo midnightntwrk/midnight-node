@@ -59,6 +59,9 @@ pub trait LedgerBridge {
 
 	/*
 	 * apply_transaction()
+	 *
+	 * `skew_tblock` is inert here: ledger 7 block contexts carry no parent timestamp, so the
+	 * correction can never fire. Passed as `true` to keep these versions byte-identical.
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -74,6 +77,7 @@ pub trait LedgerBridge {
 			block_context,
 			false,
 			runtime_version,
+			/* skew_tblock */ true,
 		)
 	}
 
@@ -92,6 +96,7 @@ pub trait LedgerBridge {
 			block_context,
 			true,
 			runtime_version,
+			/* skew_tblock */ true,
 		)
 	}
 
@@ -177,6 +182,9 @@ pub trait LedgerBridge {
 			tx,
 			block_context,
 			runtime_version,
+			// Inert here — see `apply_transaction` above.
+			/* skew_tblock */
+			true,
 		)
 	}
 

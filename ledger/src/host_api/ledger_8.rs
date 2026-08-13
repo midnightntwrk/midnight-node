@@ -19,6 +19,32 @@ type Signature = crate::ledger_8::base_crypto_local::signatures::Signature;
 #[cfg(feature = "std")]
 type Database = crate::ledger_8::ledger_storage_local::db::ParityDb;
 
+/// The body of version 1 of `apply_transaction`, which skews the `tblock` of a block's first
+/// ledger transaction (see the trait below).
+///
+/// Exposed so tests can exercise the pre-upgrade behaviour: `sp-runtime-interface` keeps its
+/// generated `apply_transaction_version_1` shim private to the generated module, and the bare
+/// `apply_transaction` dispatches to the latest version on the std side. Version 1 calls this,
+/// so there is only ever one definition of what version 1 does.
+#[cfg(feature = "std")]
+pub fn apply_transaction_v1(
+	externalities: &mut dyn sp_externalities::Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
+	Bridge::<Signature, Database>::apply_transaction(
+		externalities,
+		state_key,
+		tx,
+		block_context,
+		true,
+		runtime_version,
+		/* skew_tblock */ true,
+	)
+}
+
 #[runtime_interface]
 pub trait Ledger8Bridge {
 	fn set_default_storage(&mut self) {
@@ -44,7 +70,26 @@ pub trait Ledger8Bridge {
 
 	/*
 	 * apply_transaction()
+	 *
+	 * v1 skews the `tblock` of a block's first ledger transaction to
+	 * `parent_block_time + 12s`, reproducing the timestamp the producing node's warm strict
+	 * cache had verified it at. v2 does not. Which one runs is decided by whichever runtime
+	 * was on-chain at that height, so historical blocks keep importing while every block from
+	 * the `set_code` onward is verified against its own timestamp.
+	 *
+	 * See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 	 */
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
+		apply_transaction_v1(*self, state_key, tx, block_context, runtime_version)
+	}
+
+	#[version(2)]
 	fn apply_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
@@ -59,6 +104,7 @@ pub trait Ledger8Bridge {
 			block_context,
 			true,
 			runtime_version,
+			/* skew_tblock */ false,
 		)
 	}
 
@@ -102,6 +148,8 @@ pub trait Ledger8Bridge {
 	 *
 	 * Validates that the guaranteed part of a transaction will succeed.
 	 * Used by pre_dispatch to reject transactions that would fail without paying fees.
+	 *
+	 * v1/v2 differ only in the `tblock` skew — see `apply_transaction` above.
 	 */
 	fn validate_guaranteed_execution(
 		&mut self,
@@ -116,6 +164,25 @@ pub trait Ledger8Bridge {
 			tx,
 			block_context,
 			runtime_version,
+			/* skew_tblock */ true,
+		)
+	}
+
+	#[version(2)]
+	fn validate_guaranteed_execution(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
+		Bridge::<Signature, Database>::validate_guaranteed_execution(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* skew_tblock */ false,
 		)
 	}
 
