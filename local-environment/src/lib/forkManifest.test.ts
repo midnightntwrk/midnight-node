@@ -86,12 +86,19 @@ describe("writeForkManifest", () => {
       MIDNIGHT_FORK_NETWORK_ID: "__test_mainnet__",
       MIDNIGHT_FORK_NODE_IMAGE: "ghcr.io/midnight-ntwrk/midnight-node:1.0.0",
       MIDNIGHT_FORK_NODE_TAG: "1.0.0",
+      // These expected endpoints are intentionally local-only.
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       MIDNIGHT_FORK_NODE_WS: "ws://node1:9944",
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       MIDNIGHT_FORK_NODE_WS_HOST: "ws://localhost:9950",
       MIDNIGHT_FORK_VALIDATORS: "node1,node2",
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       MIDNIGHT_FORK_NODE1_WS: "ws://node1:9944",
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       MIDNIGHT_FORK_NODE1_WS_HOST: "ws://localhost:9950",
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       MIDNIGHT_FORK_NODE2_WS: "ws://node2:9944",
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       MIDNIGHT_FORK_NODE2_WS_HOST: "ws://localhost:9951",
     });
   });
@@ -142,6 +149,39 @@ services:
     const m = parseManifest(namespace);
     assert.equal(m.MIDNIGHT_FORK_NODE_IMAGE, "midnight-node");
     assert.equal(m.MIDNIGHT_FORK_NODE_TAG, "");
+  });
+
+  it("extracts tags without mistaking registry ports or digests for tags", () => {
+    const namespace = "__test_image_references__";
+    const composeFile = fixture("mainnet", TWO_VALIDATORS);
+    const cases = [
+      ["localhost:5000/midnight-node", ""],
+      ["ghcr.io/midnight-ntwrk/midnight-node@sha256:deadbeef", ""],
+      ["localhost:5000/midnight-node:1.2.3", "1.2.3"],
+      ["midnight-node:1.2.3@sha256:deadbeef", "1.2.3"],
+    ];
+
+    for (const [nodeImage, expectedTag] of cases) {
+      writeForkManifest({
+        namespace,
+        composeFile,
+        env: { NODE_IMAGE: nodeImage },
+      });
+      const manifest = parseManifest(namespace);
+      assert.equal(manifest.MIDNIGHT_FORK_NODE_IMAGE, nodeImage);
+      assert.equal(manifest.MIDNIGHT_FORK_NODE_TAG, expectedTag);
+    }
+  });
+
+  it("rejects namespaces that could escape the artifacts directory", () => {
+    assert.throws(
+      () => forkManifestPath("../outside"),
+      /Invalid fork namespace/,
+    );
+    assert.throws(
+      () => forkManifestPath("/tmp/outside"),
+      /Invalid fork namespace/,
+    );
   });
 
   it("overwrites an existing manifest so an image roll can refresh it", () => {

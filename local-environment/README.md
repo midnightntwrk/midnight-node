@@ -197,9 +197,9 @@ layout. The contract has two parts:
    `artifacts/<network>.manifest.env` describing the fork:
    `MIDNIGHT_FORK_NETWORK` (docker network name), `MIDNIGHT_FORK_NETWORK_ID`,
    `MIDNIGHT_FORK_NODE_IMAGE` / `MIDNIGHT_FORK_NODE_TAG`,
-   `MIDNIGHT_FORK_NODE_WS` (in-network primary validator RPC, e.g.
-   `ws://node1:9944`), `MIDNIGHT_FORK_NODE_WS_HOST` (host-published, e.g.
-   `ws://localhost:9950`), plus per-validator `MIDNIGHT_FORK_<SERVICE>_WS[_HOST]`
+   `MIDNIGHT_FORK_NODE_WS` (in-network primary validator RPC on node1),
+   `MIDNIGHT_FORK_NODE_WS_HOST` (the same RPC published on localhost), plus
+   per-validator `MIDNIGHT_FORK_<SERVICE>_WS[_HOST]`
    entries. The file reflects the most recent bring-up.
 
 A minimal consumer overlay, run as its own compose project from the consumer's

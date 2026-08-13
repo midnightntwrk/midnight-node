@@ -17,6 +17,8 @@ import YAML from "yaml";
 
 import { discoverValidators } from "./discoverValidators";
 
+const SAFE_NAMESPACE = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+
 export interface ForkManifestOptions {
   namespace: string;
   composeFile: string;
@@ -37,9 +39,7 @@ export function writeForkManifest(options: ForkManifestOptions): string {
   const validators = discoverValidators(composeFile);
   const networkName = resolveComposeNetworkName(composeFile);
   const nodeImage = env.NODE_IMAGE ?? "";
-  const nodeTag = nodeImage.includes(":")
-    ? nodeImage.slice(nodeImage.lastIndexOf(":") + 1)
-    : "";
+  const nodeTag = extractImageTag(nodeImage);
 
   const primary = validators[0];
   const lines = [
@@ -54,15 +54,21 @@ export function writeForkManifest(options: ForkManifestOptions): string {
     `MIDNIGHT_FORK_NETWORK_ID=${namespace}`,
     `MIDNIGHT_FORK_NODE_IMAGE=${nodeImage}`,
     `MIDNIGHT_FORK_NODE_TAG=${nodeTag}`,
+    // Fork endpoints are intentionally unencrypted: one is confined to the
+    // private Docker network and the other is published on localhost only.
+    // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
     `MIDNIGHT_FORK_NODE_WS=ws://${primary.name}:${primary.rpcPort}`,
+    // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
     `MIDNIGHT_FORK_NODE_WS_HOST=ws://localhost:${primary.hostRpcPort}`,
     `MIDNIGHT_FORK_VALIDATORS=${validators.map((v) => v.name).join(",")}`,
   ];
   for (const v of validators) {
     lines.push(
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       `MIDNIGHT_FORK_${envKey(v.name)}_WS=ws://${v.name}:${v.rpcPort}`,
     );
     lines.push(
+      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       `MIDNIGHT_FORK_${envKey(v.name)}_WS_HOST=ws://localhost:${v.hostRpcPort}`,
     );
   }
@@ -74,11 +80,27 @@ export function writeForkManifest(options: ForkManifestOptions): string {
 }
 
 export function forkManifestPath(namespace: string): string {
+  if (!SAFE_NAMESPACE.test(namespace)) {
+    throw new Error(
+      `Invalid fork namespace '${namespace}': expected only letters, digits, underscores, and hyphens`,
+    );
+  }
+
+  // The validation above constrains namespace to one filename-safe component.
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
   return path.resolve(
     __dirname,
     "../../artifacts",
     `${namespace}.manifest.env`,
   );
+}
+
+/** Extract a tag from the final path segment of an OCI/Docker image reference. */
+function extractImageTag(image: string): string {
+  const withoutDigest = image.split("@", 1)[0];
+  const finalSlash = withoutDigest.lastIndexOf("/");
+  const tagSeparator = withoutDigest.lastIndexOf(":");
+  return tagSeparator > finalSlash ? withoutDigest.slice(tagSeparator + 1) : "";
 }
 
 function resolveComposeNetworkName(composeFile: string): string {

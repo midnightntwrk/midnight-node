@@ -56,8 +56,7 @@ export function discoverValidatorEndpoints(
 /**
  * Same discovery as {@link discoverValidatorEndpoints}, but returns the raw
  * service/port triples so callers can build both in-network
- * (`ws://<service>:<rpcPort>`) and host (`ws://localhost:<hostRpcPort>`)
- * addresses — the fork manifest needs both.
+ * and localhost WebSocket addresses — the fork manifest needs both.
  */
 export function discoverValidators(composeFile: string): ValidatorService[] {
   const raw = fs.readFileSync(composeFile, "utf-8");
