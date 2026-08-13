@@ -1292,12 +1292,14 @@ pub async fn build_fork_aware_context_cached(
 	wallet_seeds: &[WalletSeed],
 	received_tx: &SourceTransactions,
 	cache_storage: Option<&dyn WalletStateCaching>,
+	replay_checkpoint_interval: u64,
 ) -> ForkAwareLedgerContext {
 	build_fork_aware_context_cached_with_schemes(
 		wallet_seeds,
 		received_tx,
 		cache_storage,
 		&WalletSchemes::new(),
+		replay_checkpoint_interval,
 	)
 	.await
 }
@@ -1306,11 +1308,16 @@ pub async fn build_fork_aware_context_cached(
 /// unshielded signature scheme (absent → Schnorr); this determines both the cache key and how
 /// wallets are (re)built, so ECDSA identities cache and restore correctly and never collide with
 /// their Schnorr counterparts for the same seed.
+///
+/// `replay_checkpoint_interval` > 0 saves a wallet-cache checkpoint every that
+/// many replayed blocks, so an interrupted long replay resumes from the last
+/// checkpoint instead of starting over. 0 disables checkpointing.
 pub async fn build_fork_aware_context_cached_with_schemes(
 	wallet_seeds: &[WalletSeed],
 	received_tx: &SourceTransactions,
 	cache_storage: Option<&dyn WalletStateCaching>,
 	schemes: &WalletSchemes,
+	replay_checkpoint_interval: u64,
 ) -> ForkAwareLedgerContext {
 	if wallet_seeds.is_empty() {
 		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
@@ -1328,6 +1335,17 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 
 	// 2. Compute start height.
 	let start_height = if !uncached_seeds.is_empty() {
+		// An uncached wallet needs its full history scanned, which forces the
+		// replay back to genesis for the whole context — the dominant cost on
+		// long chains. Surface it loudly so a stray uncached seed is not
+		// mistaken for a broken cache.
+		log::warn!(
+			"{} of {} wallet seeds have no cache entry ({} cached) — full replay from genesis forced. \
+			 Warm the cache once with the complete seed set to avoid this.",
+			uncached_seeds.len(),
+			wallet_seeds.len(),
+			cached.len(),
+		);
 		0
 	} else {
 		cached.first().map(|c| c.1.block_height).unwrap_or(0)
@@ -1379,8 +1397,44 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		&real_blocks[i..]
 	};
 
-	// 5. Replay with mid-replay wallet injection.
-	let fork_ctx = replay_blocks(fork_ctx, blocks, &cached, schemes);
+	// 5. Replay with mid-replay wallet injection, optionally saving
+	// checkpoints so an interrupted long replay resumes from the last
+	// checkpoint instead of starting over.
+	let interval = replay_checkpoint_interval as usize;
+	let fork_ctx = if interval > 0 && blocks.len() > interval {
+		let mut ctx = fork_ctx;
+		let mut cached_cursor = 0usize;
+		let mut start = 0usize;
+		while start < blocks.len() {
+			let end = usize::min(start + interval, blocks.len());
+			let chunk = &blocks[start..end];
+			let chunk_last = chunk[chunk.len() - 1].number;
+			// Wallets cached beyond this chunk's last block must be withheld:
+			// `replay_blocks` injects any leftovers of the slice it is given
+			// at the end of its block range, which would splice a
+			// future-height wallet state into an older ledger state. Wallets
+			// cached exactly at `chunk_last` are injected against the same
+			// post-block ledger state either way, so `<=` matches the
+			// monolithic behavior.
+			let cached_end = cached.partition_point(|(_, ws)| ws.block_height <= chunk_last);
+			ctx = replay_blocks(ctx, chunk, &cached[cached_cursor..cached_end], schemes);
+			cached_cursor = cached_end;
+			// The final chunk's save is step 6 below.
+			if end < blocks.len() {
+				log::info!(
+					"replay checkpoint: saving cache at block {} ({}/{} blocks replayed)",
+					chunk_last,
+					end,
+					blocks.len(),
+				);
+				try_save_cache_v2(&ctx, wallet_seeds, chain_id, chunk_last, storage, schemes).await;
+			}
+			start = end;
+		}
+		ctx
+	} else {
+		replay_blocks(fork_ctx, blocks, &cached, schemes)
+	};
 
 	// 6. Save updated cache. `blocks.last()` is sound here because
 	// step 4 already excluded the dust-warp synthetic (`number = 0`)

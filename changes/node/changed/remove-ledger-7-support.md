@@ -13,4 +13,4 @@ decode or replay chain history that predates the ledger-7→8 hardfork
 (mainnet is unaffected since it launched post-hardfork; devnet/testnet
 archives from before the hardfork are no longer replayable by the toolkit).
 
-PR: TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/1999

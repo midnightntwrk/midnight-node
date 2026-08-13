@@ -778,6 +778,82 @@ where
 		api.serialize(&ledger_state.as_typed_key())
 	}
 
+	/// Serialize the full ledger arena snapshot at `state_key` into the canonical, `Ledger`-rooted
+	/// transfer blob used by trustless warp ledger-sync: `derived_tag_prefix ‖
+	/// TopoSortedNodes(Ledger DAG)`.
+	///
+	/// Mirrors the single-pass technique of the toolkit's `serialize_ledger_state_fast`, but roots
+	/// at `Ledger` (the `Sp` from `get_ledger` is an `Sp<Ledger>`) rather than `LedgerState`.
+	/// Because the blob is rooted at `Ledger`, its recomputed content-address root key equals the
+	/// on-chain `pallet_midnight::StateKey`, which is exactly what the client verifies against. The
+	/// tag prefix is **derived** (`GLOBAL_TAG ‖ <Ledger as Tagged>::tag()`), never hardcoded, so it
+	/// stays in lockstep with the ledger serialization format.
+	pub fn serialize_ledger_snapshot(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+		use ledger_storage_local::arena::TopoSortedNodes;
+		use midnight_serialize_local::{GLOBAL_TAG, Serializable};
+		use types::SerializationError;
+
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		// One `serialize_to_node_list()` pass (the derived `Serializable` impl would do two — once
+		// for `serialized_size`, once for `serialize` — each a full topo-sort of a multi-million
+		// node DAG), written directly. Byte-identical to the default impl's output.
+		let nodes: TopoSortedNodes = ledger.serialize_to_node_list();
+		let tag_prefix = format!("{}{}:", GLOBAL_TAG, <Ledger<D> as Tagged>::tag());
+		let mut bytes = Vec::with_capacity(tag_prefix.len() + nodes.serialized_size());
+		bytes.extend_from_slice(tag_prefix.as_bytes());
+		nodes.serialize(&mut bytes).map_err(|e| {
+			log::error!(target: LOG_TARGET, "Failed to serialize ledger snapshot: {e:?}");
+			LedgerApiError::Serialization(SerializationError::LedgerState)
+		})?;
+		Ok(bytes)
+	}
+
+	/// Import a verified, `Ledger`-rooted warp snapshot `blob` into the already-open arena backend,
+	/// binding it to the trie anchor `expected_state_key` (the on-chain `pallet_midnight::StateKey`
+	/// the warp-recovered trie already holds).
+	///
+	/// Reconstruction uses the arena's **native multi-pass deserializer**
+	/// (`Arena::deserialize_sp`, designed for untrusted wire input — it re-hashes every node), then
+	/// asserts the reconstructed root key equals `expected_state_key` before persisting. So a
+	/// malicious or faulty peer can at worst cause a rejected import (→ peer report + retry by the
+	/// caller), never state corruption.
+	///
+	/// Persists + flushes into the live `default_storage` so `get_lazy(StateKey)` resolves —
+	/// in-process, no restart, via the same `alloc`/`persist`/`flush` path live block execution
+	/// uses. The caller (warp client driver) MUST hold the authoring/import gate so no block
+	/// executes against the arena concurrently — the arena is single-writer.
+	pub fn import_verified_ledger_snapshot(
+		blob: &[u8],
+		expected_state_key: &[u8],
+	) -> Result<(), crate::SnapshotImportError> {
+		use crate::SnapshotImportError;
+
+		let api = api::new();
+		let expected: TypedArenaKey<Ledger<D>, D::Hasher> = api
+			.tagged_deserialize(expected_state_key)
+			.map_err(|e| SnapshotImportError::StateKeyDecode(format!("{e:?}")))?;
+
+		// Native verifying (untrusted-safe) deserialize of the `Ledger`-rooted blob into the live
+		// arena; re-allocating the loaded value yields the persistable `Sp`.
+		let ledger: Ledger<D> =
+			helpers_local::deserialize(blob).map_err(SnapshotImportError::Deserialize)?;
+		let mut sp = default_storage::<D>().arena.alloc(ledger);
+
+		// Cryptographic bind to the trie anchor: the reconstructed root must equal the on-chain
+		// `StateKey`. This is the whole security argument — reject anything else.
+		let computed: TypedArenaKey<Ledger<D>, D::Hasher> = sp.as_typed_key();
+		if computed != expected {
+			return Err(SnapshotImportError::RootMismatch);
+		}
+
+		sp.persist();
+		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+		log::info!(target: LOG_TARGET, "Imported verified ledger snapshot ({} bytes)", blob.len());
+		Ok(())
+	}
+
 	pub fn get_unclaimed_amount(
 		state_key: &[u8],
 		beneficiary: &[u8],

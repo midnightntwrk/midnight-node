@@ -262,6 +262,7 @@ services:
       APP__INFRA__STORAGE__PASSWORD: "${APP__INFRA__STORAGE__PASSWORD}"
       APP__INFRA__PUB_SUB__URL: "nats:4222"
       APP__INFRA__PUB_SUB__PASSWORD: "${APP__INFRA__PUB_SUB__PASSWORD}"
+      APP__APPLICATION__NETWORK_ID: "local"
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/wallet-indexer/running"]
       start_interval: "5s"

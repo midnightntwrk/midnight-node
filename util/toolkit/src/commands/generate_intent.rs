@@ -96,6 +96,7 @@ pub async fn fetch_zswap_state(
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = source.ledger_state_db.clone();
 	let fetch_cache = source.fetch_cache.clone();
+	let replay_checkpoint_interval = source.replay_checkpoint_interval;
 	let source = TxGenerator::source(source, dry_run).await?;
 	if dry_run {
 		log::info!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
@@ -112,6 +113,7 @@ pub async fn fetch_zswap_state(
 		&[wallet_seed.clone()],
 		&received_tx,
 		wallet_cache.as_deref(),
+		replay_checkpoint_interval,
 	)
 	.await;
 
