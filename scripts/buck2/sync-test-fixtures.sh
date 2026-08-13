@@ -38,10 +38,16 @@ cp docs/*.md docs/test-fixtures/docs/
 # is util/toolkit's own package — globbed directly as same-package resources.)
 rm -rf util/toolkit/test-fixtures
 mkdir -p util/toolkit/test-fixtures/res/cfg util/toolkit/test-fixtures/res/dev \
-         util/toolkit/test-fixtures/res/test-tx-deserialize
+         util/toolkit/test-fixtures/res/test-tx-deserialize util/toolkit/test-fixtures/res/test-contract \
+         util/toolkit/test-fixtures/util/toolkit/tests/cmd
 cp res/cfg/*.toml util/toolkit/test-fixtures/res/cfg/
 cp res/dev/*.json util/toolkit/test-fixtures/res/dev/
 cp res/test-tx-deserialize/serialized_tx.mn util/toolkit/test-fixtures/res/test-tx-deserialize/
+# cli_tests (trycmd) chdir's to test-fixtures/util/toolkit (mirrors the crate's 2-levels-
+# deep path) and its tomls read ../../res/... -> test-fixtures/res/... and tests/cmd + README.
+cp res/test-contract/contract_tx_1_deploy_undeployed.mn util/toolkit/test-fixtures/res/test-contract/
+cp util/toolkit/tests/cmd/*.toml util/toolkit/test-fixtures/util/toolkit/tests/cmd/
+cp util/toolkit/README.md util/toolkit/test-fixtures/util/toolkit/
 
 echo "synced test fixtures:"
 find node/test-fixtures docs/test-fixtures util/toolkit/test-fixtures -type f | sort

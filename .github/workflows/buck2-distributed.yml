@@ -74,6 +74,13 @@ jobs:
       actions: write # driver publishes its mesh address + banks AC/CAS
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Check test fixtures in sync
+        # The committed */test-fixtures/ copies exist because buck2 stages only
+        # same-package source resources onto RE workers; regenerate + fail on drift.
+        run: |
+          ./scripts/buck2/sync-test-fixtures.sh >/dev/null
+          git diff --exit-code -- '*/test-fixtures' || {
+            echo "::error::test fixtures out of sync — run scripts/buck2/sync-test-fixtures.sh and commit"; exit 1; }
       # Even with --no-local-exec + --decentralized-cas the driver holds buck-out
       # (materialized inputs to local_only actions + final outputs). Keep it off
       # the free runner's small `/` via a BIND MOUNT to /mnt (a symlink resolves

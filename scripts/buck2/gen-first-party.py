@@ -170,6 +170,8 @@ TEST_TARGET_RESOURCES = {
     # toolkit unit tests read test-data/** (same-package) via manifest_dir(), and walk to
     # res fixtures copied under test-fixtures/ (see sync-test-fixtures.sh + UNIT_TEST_ENV).
     "midnight-node-toolkit-unit-test": 'glob(["test-data/**", "test-fixtures/**"])',
+    # cli_tests reads the staged mirror under test-fixtures/ (see MN_CLI_FIXTURES_ROOT).
+    "midnight-node-toolkit-cli_tests": 'glob(["test-fixtures/**"])',
 }
 
 # Data-file globs a prefixed package needs in addition to src/** + Cargo.toml
@@ -242,6 +244,9 @@ EXPORTS = {
 TEST_ENV_HOOKS = {
     ("midnight-node-toolkit", "cli_tests"): {
         "CARGO_BIN_EXE_midnight-node-toolkit": "$(location :toolkit-hyphen-bin)",
+        # chdir target: a staged mirror of the crate dir (2 levels deep) so the trycmd
+        # corpus' tests/cmd/*.toml, README.md, and `../../res/...` paths all resolve.
+        "MN_CLI_FIXTURES_ROOT": "util/toolkit/test-fixtures/util/toolkit",
     },
     # cached_context builds a LedgerContext, whose MidnightDataProvider needs a
     # zk-params cache dir ($MIDNIGHT_PP / $XDG_CACHE_HOME / $HOME) or it panics

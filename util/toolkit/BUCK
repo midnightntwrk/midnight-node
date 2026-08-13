@@ -348,7 +348,9 @@ rust_test(
         "CARGO_PKG_REPOSITORY": "",
         "CARGO_PKG_HOMEPAGE": "",
         "CARGO_BIN_EXE_midnight-node-toolkit": "$(location :toolkit-hyphen-bin)",
+        "MN_CLI_FIXTURES_ROOT": "util/toolkit/test-fixtures/util/toolkit",
     },
+    resources = glob(["test-fixtures/**"]),
     deps = [
         ":midnight-node-toolkit",
         "root//ledger/helpers:midnight-node-ledger-helpers",

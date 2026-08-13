@@ -13,7 +13,16 @@ fn cli_tests() {
 	let bin = std::env::var_os("CARGO_BIN_EXE_midnight-node-toolkit")
 		.map(|p| std::env::current_dir().unwrap().join(p));
 
-	std::env::set_current_dir(env!("CARGO_MANIFEST_DIR")).unwrap();
+	// Under cargo, chdir to the crate dir (CARGO_MANIFEST_DIR) — where tests/cmd/,
+	// README.md, and the tomls' `../../res/...` all resolve. Under buck2 the RE test
+	// sandbox has none of that; MN_CLI_FIXTURES_ROOT points at a staged mirror that
+	// reproduces the same 2-levels-deep layout (util/toolkit/{tests/cmd,README.md}
+	// with res/ two levels up) so the unchanged `../../res/...` paths still resolve.
+	// compile-time env!() would bake buck2's dead build-sandbox path, so read at runtime.
+	let cwd = std::env::var("MN_CLI_FIXTURES_ROOT")
+		.or_else(|_| std::env::var("CARGO_MANIFEST_DIR"))
+		.unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string());
+	std::env::set_current_dir(&cwd).unwrap();
 	// Create directory to put test outputs in
 	std::fs::create_dir_all("out").unwrap();
 
