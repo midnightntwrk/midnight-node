@@ -40,3 +40,4 @@ pub mod service;
 pub mod sidechain_params_cmd;
 pub mod subscription_bounds;
 mod util;
+pub mod warp_ledger_sync;
