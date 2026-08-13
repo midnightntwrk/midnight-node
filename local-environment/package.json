@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --require ts-node/register --test src/lib/*.test.ts",
+    "test": "node --require ts-node/register --test src/lib/*.test.ts src/commands/*.test.ts",
     "run:qanet": "ts-node src/index.ts run qanet",
     "run:devnet": "ts-node src/index.ts run devnet",
     "run:govnet": "ts-node src/index.ts run govnet",
@@ -87,8 +87,9 @@
     "ts-node": "10.9.2",
     "typescript": "5.9.3"
   },
-  "packageManager": "pnpm@10.28.2+sha512.41872f037ad22f7348e3b1debbaf7e867cfd448f2726d9cf74c08f19507c31d2c8e7a11525b983febc2df640b5438dee6023ebb1f84ed43cc2d654d2bc326264",
+  "packageManager": "pnpm@11.9.0+sha512.bd682d5d03fe525ef7c9fd6780c6884d1e756ac4c9c9fe00c538782824310dcf90e3ddc4f53835f06dfaebd5085e41855e0bcbb3b60de2ac5bbab89e5036f03b",
   "overrides": {
-    "minimatch": "10.2.4"
+    "minimatch": "10.2.4",
+    "js-yaml": "4.3.1"
   }
 }
