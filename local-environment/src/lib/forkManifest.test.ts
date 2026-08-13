@@ -87,13 +87,13 @@ describe("writeForkManifest", () => {
       MIDNIGHT_FORK_NODE_IMAGE: "ghcr.io/midnight-ntwrk/midnight-node:1.0.0",
       MIDNIGHT_FORK_NODE_TAG: "1.0.0",
       // These expected endpoints are intentionally local-only.
-      MIDNIGHT_FORK_NODE_WS: "ws://node1:9944", // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-      MIDNIGHT_FORK_NODE_WS_HOST: "ws://localhost:9950", // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+      MIDNIGHT_FORK_NODE_WS: "ws://node1:9944",
+      MIDNIGHT_FORK_NODE_WS_HOST: "ws://localhost:9950",
       MIDNIGHT_FORK_VALIDATORS: "node1,node2",
-      MIDNIGHT_FORK_NODE1_WS: "ws://node1:9944", // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-      MIDNIGHT_FORK_NODE1_WS_HOST: "ws://localhost:9950", // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-      MIDNIGHT_FORK_NODE2_WS: "ws://node2:9944", // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-      MIDNIGHT_FORK_NODE2_WS_HOST: "ws://localhost:9951", // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+      MIDNIGHT_FORK_NODE1_WS: "ws://node1:9944",
+      MIDNIGHT_FORK_NODE1_WS_HOST: "ws://localhost:9950",
+      MIDNIGHT_FORK_NODE2_WS: "ws://node2:9944",
+      MIDNIGHT_FORK_NODE2_WS_HOST: "ws://localhost:9951",
     });
   });
 
