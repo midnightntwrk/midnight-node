@@ -316,6 +316,13 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 /// `SystemTransactionApplied` event carrying the serialized transaction, which
 /// is the indexer's hook — this pallet's variant is deliberately not emitted,
 /// its `CmstHeader` being a Cardano position that has no meaning here.
+///
+/// That event is **block-scoped, not extrinsic-scoped**: steps run in
+/// `inherents_applied()`, after the block's inherents, so the event's phase is an
+/// `ApplyExtrinsic` index one past the last extrinsic and no extrinsic claims it.
+/// Consumers must key on the event, not on a matching extrinsic — the indexer
+/// already does; the toolkit fetcher did not, and was fixed alongside this
+/// migration (`util/toolkit/src/fetcher/compute_task.rs`).
 fn apply_batch<T: Config>(events: Vec<Vec<u8>>) -> bool {
 	let tx = match LedgerApi::construct_cnight_generates_dust_system_tx(events) {
 		Ok(tx) => tx,

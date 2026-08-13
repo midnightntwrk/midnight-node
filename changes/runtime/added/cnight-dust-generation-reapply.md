@@ -58,4 +58,13 @@ self-cancels rather than corrupting state: the first replayed event collides wit
 New events: `DustReapplyStarted`, `DustReapplyBatchFailed`,
 `DustReapplyCompleted`, `DustReapplySkipped`.
 
+The replay's `SystemTransactionApplied` events are deposited from a migration
+step rather than from an extrinsic, so their phase is an `ApplyExtrinsic` index
+one past the block's last extrinsic and nothing claims it. The toolkit's block
+fetcher used to collect these events only while walking the extrinsic that
+matched their phase, and so would have dropped every replayed batch — leaving a
+post-fork replay to fail state root verification. It now keys on the event's own
+phase and sorts the block's transactions into execution order. (The indexer
+already collected them unconditionally.)
+
 PR: <link to PR>
