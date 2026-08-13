@@ -1,0 +1,28 @@
+# Mock the main chain when in dev mode
+use_main_chain_follower_mock = true
+mock_registrations_file = "res/mock-bridge-data/default-registrations.json"
+
+chainspec_name = "Midnight Undeployed"
+chainspec_id = "midnight_undeployed"
+chainspec_genesis_state = "res/genesis/genesis_state_undeployed.mn"
+chainspec_genesis_block = "res/genesis/genesis_block_undeployed.mn"
+chainspec_chain_type = "local"
+chainspec_pc_chain_config = "res/dev/pc-chain-config.json"
+chainspec_cnight_genesis = "res/dev/cnight-config.json"
+chainspec_ics_config = "res/dev/ics-config.json"
+chainspec_reserve_config = "res/dev/reserve-config.json"
+chainspec_federated_authority_config = "res/dev/federated-authority-config.json"
+chainspec_system_parameters_config = "res/dev/system-parameters-config.json"
+chainspec_permissioned_candidates_config = "res/dev/permissioned-candidates-config.json"
+chainspec_registered_candidates_addresses = "res/dev/registered-candidates-addresses.json"
+chainspec_c2m_bridge_config = "res/dev/c2m-bridge-config.json"
+
+args = [
+    "--dev",
+    "--node-key", "0000000000000000000000000000000000000000000000000000000000000001",
+    "--rpc-external",
+    "--rpc-cors=all",
+    "--prometheus-external",
+    "--state-pruning", "archive",
+    "--blocks-pruning", "archive"
+]

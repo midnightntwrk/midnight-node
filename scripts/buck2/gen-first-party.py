@@ -10,7 +10,7 @@ if present). Renamed deps land in named_deps so the extern crate name matches.
 Features come from the workspace-resolved feature set (cargo's unification).
 Build scripts are NOT run — members with build.rs get a placeholder comment.
 """
-import glob, json, os, re, sys
+import json, os, re, sys
 from collections import defaultdict
 
 META = sys.argv[1]
@@ -18,19 +18,6 @@ only = set(sys.argv[2:])
 
 meta = json.load(open(META))
 ws_root = meta["workspace_root"]
-
-# res cfg presets a consuming crate's tests read at runtime. buck2 only stages
-# PROJECT-SOURCE-backed test resources onto RE workers — a filegroup/dep output
-# (generated artifact) never reaches the RE action input — so each preset is
-# re-exposed via its own export_file (source-backed) and referenced per file.
-_RES_CFG = sorted(os.path.basename(p) for p in glob.glob(os.path.join(ws_root, "res", "cfg", "*.toml")))
-_RES_CFG_EXPORTS = [
-    # mode = "reference": the output IS the source file (not a copied, generated
-    # artifact) — only source-backed resources are staged onto RE test workers.
-    f'export_file(name = "cfg-{f[:-5]}", src = "cfg/{f}", mode = "reference", visibility = ["PUBLIC"])'
-    for f in _RES_CFG
-]
-_NODE_CFG_RESOURCES = "".join(f'"res/cfg/{f}": "root//res:cfg-{f[:-5]}", ' for f in _RES_CFG)
 # (name, req, source) -> third-party manifest key, written by gen-third-party.py
 keymap = json.load(open(os.path.join(ws_root, "third-party", "keys.json")))
 members = set(meta["workspace_members"])
@@ -163,10 +150,11 @@ TEST_RESOURCES = {
     # Globbed relative to the res package, they materialize back at res/… .
     "midnight-node-res": 'glob(["cfg/**", "**/*.json", "**/*.mn", "**/*.hbs"])',
     # node cfg::tests read <root>/res/cfg/*.toml and openrpc::tests read
-    # <root>/docs/openrpc.json (root = MN_WORKSPACE_ROOT = node/, set in UNIT_TEST_ENV).
-    # Each file is an export_file (source-backed), not a filegroup, so it actually
-    # materializes on the RE worker. Keys are plain node/-relative (no `..`).
-    "midnight-node": '{' + _NODE_CFG_RESOURCES + '"docs/openrpc.json": "root//docs:openrpc-json"}',
+    # <root>/docs/openrpc.json. Only SAME-PACKAGE attrs.source resources materialize on
+    # RE workers (cross-package target-ref resources never enter the RE test action
+    # input), so these are committed copies under node/test-fixtures/ (kept in sync by
+    # scripts/buck2/sync-test-fixtures.sh) and MN_WORKSPACE_ROOT points the walk here.
+    "midnight-node": 'glob(["test-fixtures/**"])',
 }
 
 # Per-TEST-TARGET resources (keyed by rust_test name), for packages whose test
@@ -215,9 +203,6 @@ EXPORTS = {
     "midnight-node": [
         'export_file(name = "cargo-toml", src = "Cargo.toml", visibility = ["PUBLIC"])',
     ],
-    "docs": [
-        'export_file(name = "openrpc-json", src = "openrpc.json", mode = "reference", visibility = ["PUBLIC"])',
-    ],
     "midnight-node-res": [
         'export_file(\n    name = "test-contract-addr",\n'
         '    src = "test-contract/contract_address_undeployed.mn",\n'
@@ -231,10 +216,7 @@ EXPORTS = {
         'export_file(\n    name = "serialized-tx",\n'
         '    src = "test-tx-deserialize/serialized_tx.mn",\n'
         '    visibility = ["PUBLIC"],\n)',
-        # cfg presets other crates' tests read after locate_workspace_root(): each
-        # is a reference export_file (see _RES_CFG_EXPORTS) so it's source-backed and
-        # actually materializes on the RE worker when used as a consumer's resource.
-    ] + _RES_CFG_EXPORTS,
+    ],
     # cli_tests (trycmd) runs `$ midnight-node-toolkit …` and diffs clap's usage
     # strings, which echo argv[0]'s basename. Buck's bin artifact is
     # `midnight_node_toolkit` (underscore); cargo names it `midnight-node-toolkit`
@@ -270,7 +252,7 @@ UNIT_TEST_ENV = {
     # node-unit-test's cfg/openrpc tests resolve the workspace root via res's
     # locate_workspace_root(); point it at node/ where TEST_RESOURCES stages res/
     # and docs/openrpc.json. Only the lib unit-test (not the integration tests).
-    "midnight-node": {"MN_WORKSPACE_ROOT": "node"},
+    "midnight-node": {"MN_WORKSPACE_ROOT": "node/test-fixtures"},
 }
 
 # Crates to skip emitting a unit-test target for. sc-partner-chains-consensus-aura's
