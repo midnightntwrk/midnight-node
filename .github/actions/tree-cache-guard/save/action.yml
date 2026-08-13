@@ -10,9 +10,14 @@ runs:
   using: composite
   steps:
     - shell: bash
+      if: inputs.key != '' && inputs.key != 'no-cache-workflow-override'
       run: mkdir -p /tmp/ci-sentinel && touch /tmp/ci-sentinel/ok
 
+    # Best-effort: the sentinel only skips future re-runs of an already-green
+    # tree, so a failed save must never fail the job that just passed.
     - uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 #v4
+      if: inputs.key != '' && inputs.key != 'no-cache-workflow-override'
+      continue-on-error: true
       with:
         key: ${{ inputs.key }}
         path: /tmp/ci-sentinel
