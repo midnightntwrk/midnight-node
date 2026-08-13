@@ -56,20 +56,16 @@ export function writeForkManifest(options: ForkManifestOptions): string {
     `MIDNIGHT_FORK_NODE_TAG=${nodeTag}`,
     // Fork endpoints are intentionally unencrypted: one is confined to the
     // private Docker network and the other is published on localhost only.
-    // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-    `MIDNIGHT_FORK_NODE_WS=ws://${primary.name}:${primary.rpcPort}`,
-    // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-    `MIDNIGHT_FORK_NODE_WS_HOST=ws://localhost:${primary.hostRpcPort}`,
+    `MIDNIGHT_FORK_NODE_WS=ws://${primary.name}:${primary.rpcPort}`, // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+    `MIDNIGHT_FORK_NODE_WS_HOST=ws://localhost:${primary.hostRpcPort}`, // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
     `MIDNIGHT_FORK_VALIDATORS=${validators.map((v) => v.name).join(",")}`,
   ];
   for (const v of validators) {
     lines.push(
-      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-      `MIDNIGHT_FORK_${envKey(v.name)}_WS=ws://${v.name}:${v.rpcPort}`,
+      `MIDNIGHT_FORK_${envKey(v.name)}_WS=ws://${v.name}:${v.rpcPort}`, // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
     );
     lines.push(
-      // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-      `MIDNIGHT_FORK_${envKey(v.name)}_WS_HOST=ws://localhost:${v.hostRpcPort}`,
+      `MIDNIGHT_FORK_${envKey(v.name)}_WS_HOST=ws://localhost:${v.hostRpcPort}`, // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
     );
   }
 
@@ -87,12 +83,8 @@ export function forkManifestPath(namespace: string): string {
   }
 
   // The validation above constrains namespace to one filename-safe component.
-  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
-  return path.resolve(
-    __dirname,
-    "../../artifacts",
-    `${namespace}.manifest.env`,
-  );
+  // prettier-ignore
+  return path.resolve(__dirname, "../../artifacts", `${namespace}.manifest.env`); // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
 }
 
 /** Extract a tag from the final path segment of an OCI/Docker image reference. */
