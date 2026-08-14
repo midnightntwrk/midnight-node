@@ -180,17 +180,6 @@ pub mod pallet {
 		MappingAdded(MappingEntry),
 		MappingRemoved(MappingEntry),
 		SystemTransactionApplied(SystemTransactionApplied),
-		/// `process_tokens` ignored this block's Cardano observations because a
-		/// multi-block migration of this pallet's storage is still running.
-		/// `NextCardanoPosition` is left unchanged, so nothing is lost — the
-		/// observer re-delivers these UTXOs once the migration winds up. Emitted
-		/// once per block for as long as the gate holds; the exact versions are
-		/// in the node log.
-		///
-		/// Unlike the `DustReapply*` events below, this one comes from an
-		/// inherent, so a block explorer that groups events under their extrinsic
-		/// does show it.
-		ObservationsSkippedForMigration,
 		/// The hardfork upgrade block armed the dust generation replay
 		/// (`migrations::v2`) by saving the pre-fork ledger state key.
 		///
@@ -219,6 +208,18 @@ pub mod pallet {
 		/// pre-fork state key was recorded, or that key is unreadable. The
 		/// reason is logged.
 		DustReapplySkipped,
+		/// `process_tokens` ignored this block's Cardano observations because a
+		/// multi-block migration of this pallet's storage is still running.
+		/// `NextCardanoPosition` is left unchanged, so nothing is lost — the
+		/// observer re-delivers these UTXOs once the migration winds up. Emitted
+		/// once per block for as long as the gate holds; the exact versions are
+		/// in the node log.
+		///
+		/// Unlike the `DustReapply*` events, this one comes from an inherent, so
+		/// a block explorer that groups events under their extrinsic does show
+		/// it. Appended rather than grouped with them so their variant indices
+		/// stay where the change file and the migration docs say they are.
+		ObservationsSkippedForMigration,
 	}
 
 	#[pallet::error]
