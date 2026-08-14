@@ -115,7 +115,13 @@ impl<T: Config> OnRuntimeUpgrade for RecordPreForkState<T> {
 
 		PreForkStateKey::<T>::put(T::LedgerStateProvider::get_ledger_state_key());
 		Pallet::<T>::deposit_event(Event::<T>::DustReapplyStarted);
-		log::info!(target: LOG_TARGET, "recorded pre-fork ledger state key for the dust generation replay");
+		// Every event this migration deposits is named in its log line: most of them
+		// are invisible to explorers that group events under their extrinsic (see
+		// `apply_batch`), so the log is where you go looking for them.
+		log::info!(
+			target: LOG_TARGET,
+			"DustReapplyStarted: recorded pre-fork ledger state key for the dust generation replay"
+		);
 
 		weight
 	}
@@ -258,6 +264,10 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 			// propagates the first event's error out of the whole system
 			// transaction, and `mut_ledger_state` only writes on success), so
 			// carrying on with the next page is safe.
+			log::warn!(
+				target: LOG_TARGET,
+				"DustReapplyBatchFailed: {applied} nonces in this batch were not restored; continuing with the next page"
+			);
 			Pallet::<T>::deposit_event(Event::<T>::DustReapplyBatchFailed { nonces });
 			skipped = skipped.saturating_add(applied);
 			applied = 0;
@@ -323,6 +333,13 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 /// Consumers must key on the event, not on a matching extrinsic — the indexer
 /// already does; the toolkit fetcher did not, and was fixed alongside this
 /// migration (`util/toolkit/src/fetcher/compute_task.rs`).
+///
+/// The same goes for everything else this migration deposits — `DustReapply*`
+/// here, and `pallet_migrations`' own `MigrationAdvanced`/`MigrationCompleted`.
+/// A block explorer that renders events grouped under their extrinsic shows none
+/// of them, which makes the replay look like it never ran past
+/// `DustReapplyStarted` (that one is emitted from `on_runtime_upgrade`, phase
+/// `Initialization`, so it is visible). They are all in `System::Events`.
 fn apply_batch<T: Config>(events: Vec<Vec<u8>>) -> bool {
 	let tx = match LedgerApi::construct_cnight_generates_dust_system_tx(events) {
 		Ok(tx) => tx,
@@ -342,9 +359,12 @@ fn apply_batch<T: Config>(events: Vec<Vec<u8>>) -> bool {
 }
 
 /// Wind the replay up without restoring anything, and let the observer resume.
+///
+/// The caller has already logged *why*; this logs the event that goes with it.
 fn cancel<T: Config>() -> Option<T::Hash> {
 	clear_transient::<T>();
 	Pallet::<T>::deposit_event(Event::<T>::DustReapplySkipped);
+	log::warn!(target: LOG_TARGET, "DustReapplySkipped: dust generation replay abandoned, nothing restored");
 	finish::<T>()
 }
 
@@ -353,7 +373,10 @@ fn complete<T: Config>() -> Option<T::Hash> {
 	let (applied, skipped) = DustReapplyProgress::<T>::get();
 	clear_transient::<T>();
 	Pallet::<T>::deposit_event(Event::<T>::DustReapplyCompleted { applied, skipped });
-	log::info!(target: LOG_TARGET, "dust generation replay complete: {applied} applied, {skipped} skipped");
+	log::info!(
+		target: LOG_TARGET,
+		"DustReapplyCompleted: dust generation replay complete, {applied} applied, {skipped} skipped"
+	);
 	finish::<T>()
 }
 

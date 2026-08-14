@@ -180,8 +180,26 @@ pub mod pallet {
 		MappingAdded(MappingEntry),
 		MappingRemoved(MappingEntry),
 		SystemTransactionApplied(SystemTransactionApplied),
+		/// `process_tokens` ignored this block's Cardano observations because a
+		/// multi-block migration of this pallet's storage is still running.
+		/// `NextCardanoPosition` is left unchanged, so nothing is lost — the
+		/// observer re-delivers these UTXOs once the migration winds up. Emitted
+		/// once per block for as long as the gate holds; the exact versions are
+		/// in the node log.
+		///
+		/// Unlike the `DustReapply*` events below, this one comes from an
+		/// inherent, so a block explorer that groups events under their extrinsic
+		/// does show it.
+		ObservationsSkippedForMigration,
 		/// The hardfork upgrade block armed the dust generation replay
 		/// (`migrations::v2`) by saving the pre-fork ledger state key.
+		///
+		/// The `DustReapply*` events other than this one are deposited from a
+		/// multi-block-migration step, which FRAME runs after the block's last
+		/// extrinsic — their phase is an `ApplyExtrinsic` index no extrinsic in
+		/// the block claims, so explorers that render events per extrinsic drop
+		/// them. They are in `System::Events` regardless. This one is emitted
+		/// from `on_runtime_upgrade`, i.e. phase `Initialization`, and is visible.
 		DustReapplyStarted,
 		/// One replay batch failed to apply; its nonces were not restored. The
 		/// replay continues with the next batch.
@@ -726,10 +744,14 @@ pub mod pallet {
 
 			if Pallet::<T>::on_chain_storage_version() < STORAGE_VERSION {
 				log::warn!(
-					"cnight-observation: skipping process_tokens (on-chain storage version {:?} < {:?}); MBM in progress",
+					"ObservationsSkippedForMigration: skipping process_tokens (on-chain storage version {:?} < {:?}); MBM in progress",
 					Pallet::<T>::on_chain_storage_version(),
 					STORAGE_VERSION,
 				);
+				// The log line alone is invisible to anyone watching the chain, and a
+				// gate that silently eats observations for minutes is exactly the
+				// thing you want to see from an explorer.
+				Self::deposit_event(Event::<T>::ObservationsSkippedForMigration);
 				return Ok(PostDispatchInfo {
 					actual_weight: Some(T::DbWeight::get().reads_writes(2, 1)),
 					pays_fee: Pays::No,

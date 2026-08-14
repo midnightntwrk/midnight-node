@@ -1589,11 +1589,24 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 			"no Mapping rows must be written during MBM",
 		);
 		assert!(
+			any_event(|e| matches!(
+				e,
+				RuntimeEvent::CNightObservation(crate::Event::ObservationsSkippedForMigration),
+			)),
+			"the skip must be visible on-chain, not just in the node log",
+		);
+		assert!(
 			!any_event(|e| matches!(
 				e,
-				RuntimeEvent::CNightObservation(_) | RuntimeEvent::MidnightSystem(_),
+				RuntimeEvent::CNightObservation(
+					crate::Event::Registration(_)
+						| crate::Event::Deregistration(_)
+						| crate::Event::MappingAdded(_)
+						| crate::Event::MappingRemoved(_)
+						| crate::Event::SystemTransactionApplied(_)
+				) | RuntimeEvent::MidnightSystem(_),
 			)),
-			"no pallet events must be emitted during MBM",
+			"no observation-derived events must be emitted during MBM",
 		);
 
 		// Duplicate-inherent guard still holds during MBM: the gate runs after the

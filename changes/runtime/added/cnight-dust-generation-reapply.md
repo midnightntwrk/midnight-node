@@ -56,15 +56,45 @@ self-cancels rather than corrupting state: the first replayed event collides wit
 `GenerationInfoAlreadyPresent` and it emits `DustReapplySkipped`.
 
 New events: `DustReapplyStarted`, `DustReapplyBatchFailed`,
-`DustReapplyCompleted`, `DustReapplySkipped`.
+`DustReapplyCompleted`, `DustReapplySkipped`, and
+`ObservationsSkippedForMigration` — the last one emitted once per block for as
+long as the gate above ignores observations, so a multi-minute stall is visible
+on chain rather than only in the node log.
 
-The replay's `SystemTransactionApplied` events are deposited from a migration
-step rather than from an extrinsic, so their phase is an `ApplyExtrinsic` index
-one past the block's last extrinsic and nothing claims it. The toolkit's block
-fetcher used to collect these events only while walking the extrinsic that
-matched their phase, and so would have dropped every replayed batch — leaving a
-post-fork replay to fail state root verification. It now keys on the event's own
-phase and sorts the block's transactions into execution order. (The indexer
-already collected them unconditionally.)
+## Watching it happen
+
+**In a block explorer, `DustReapplyStarted` is the only replay event you will
+see.** It is emitted from `on_runtime_upgrade` in the upgrade block, so its phase
+is `Initialization`. Everything else the replay produces —
+`DustReapplyCompleted` / `DustReapplySkipped` / `DustReapplyBatchFailed`, the
+replay's `SystemTransactionApplied`, and `pallet_migrations`' own
+`MigrationAdvanced` / `MigrationCompleted` / `UpgradeCompleted` — is deposited
+from a multi-block-migration step, which FRAME runs in `inherents_applied()`
+after the block's last extrinsic. Their phase is `ApplyExtrinsic(n)` where `n`
+is the block's extrinsic count, an index no extrinsic in that block has, and
+Polkadot.js Apps renders events grouped under the extrinsic that claims them —
+so it drops them silently. They are in `System::Events` either way.
+
+Read them by event rather than by extrinsic: `state_getStorage` on
+`System::Events` at the block hash, or subxt's `events()`. Or read the node log —
+every one of these events is logged under its own name, so grepping for the event
+name finds it whether or not an explorer will show it:
+
+```
+DustReapplyStarted: recorded pre-fork ledger state key for the dust generation replay
+ObservationsSkippedForMigration: skipping process_tokens (on-chain storage version StorageVersion(1) < StorageVersion(2)); MBM in progress
+DustReapplyCompleted: dust generation replay complete, 52 applied, 13 skipped
+```
+
+`ObservationsSkippedForMigration` comes from the `process_tokens` inherent, so
+that one *is* visible in an explorer, and it brackets the window during which
+Cardano observations are being ignored.
+
+The same phase quirk is why the toolkit's block fetcher — which used to collect
+system transactions only while walking the extrinsic that matched their phase —
+would have dropped every replayed batch, leaving a post-fork replay to fail state
+root verification. It now keys on the event's own phase and sorts the block's
+transactions into execution order. (The indexer already collected them
+unconditionally.)
 
 PR: <link to PR>
