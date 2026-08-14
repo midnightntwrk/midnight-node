@@ -13,21 +13,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Fork-boundary e2e: build a chain-spec from the previous release, run the
+//! current node on it, upgrade the runtime, and check the boundary.
+//!
+//! Set `NODE_BINARY=target/release/midnight-node` to run the node under test as a
+//! local process instead of the `midnight-node` docker image, which skips the image
+//! build while iterating. The *fork-from* chain-spec still comes from a docker
+//! image — that runtime is a past release. The runtime WASM to upgrade to is then
+//! taken from next to the binary; `RUNTIME_WASM` overrides where to look.
+
 mod common;
 
 use clap::Parser;
 use common::{test_image, wait_for_node::wait_for_finalized_block};
 use midnight_node_toolkit::cli::{Cli, run_command};
-use std::{process::Command, time::Duration};
+use std::{
+	net::TcpListener,
+	path::{Path, PathBuf},
+	process::{Child, Command},
+	time::Duration,
+};
 use subxt::rpcs::{RpcClient, rpc_params};
 use testcontainers::{
-	GenericImage, ImageExt,
+	ContainerAsync, GenericImage, ImageExt,
 	core::{ContainerPort, WaitFor},
 	runners::AsyncRunner,
 };
 
 /// Genesis-funded dev wallet the test transacts from.
 const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+
+/// The compiled runtime blob, under whichever directory holds it.
+const RUNTIME_WASM_FILE: &str = "midnight_node_runtime.compact.compressed.wasm";
 
 /// Generate a chain-spec JSON string by running `build-spec` in the fork-from node container.
 fn generate_chainspec(image: &str, tag: &str) -> String {
@@ -41,6 +58,114 @@ fn generate_chainspec(image: &str, tag: &str) -> String {
 		String::from_utf8_lossy(&output.stderr)
 	);
 	String::from_utf8(output.stdout).expect("invalid utf8 chain-spec")
+}
+
+/// The running node under test. Held for the duration of the test — dropping it
+/// stops the node either way.
+enum NodeUnderTest {
+	Container { _container: ContainerAsync<GenericImage> },
+	Local(Child),
+}
+
+impl Drop for NodeUnderTest {
+	fn drop(&mut self) {
+		if let NodeUnderTest::Local(child) = self {
+			let _ = child.kill();
+			let _ = child.wait();
+		}
+	}
+}
+
+/// An unused localhost port, so a local node does not collide with whatever else
+/// the developer has running.
+fn free_port() -> u16 {
+	TcpListener::bind("127.0.0.1:0")
+		.expect("failed to bind an ephemeral port")
+		.local_addr()
+		.expect("ephemeral socket has no local address")
+		.port()
+}
+
+/// Start the node under test on `chainspec` and return it with its RPC url.
+async fn start_node(
+	binary: Option<&str>,
+	chainspec: String,
+	tempdir: &Path,
+) -> (NodeUnderTest, String) {
+	let Some(binary) = binary else {
+		let (name, tag) = test_image("midnight-node");
+		let container = GenericImage::new(name, tag)
+			.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
+			.with_exposed_port(ContainerPort::Tcp(9944))
+			.with_env_var("CFG_PRESET", "dev")
+			.with_env_var("CHAIN", "/chainspec/chainspec.json")
+			.with_copy_to("/chainspec/chainspec.json", chainspec.into_bytes())
+			.start()
+			.await
+			.expect("failed to start midnight-node container");
+		let port = container.get_host_port_ipv4(9944).await.expect("failed to get node RPC port");
+		return (
+			NodeUnderTest::Container { _container: container },
+			format!("ws://127.0.0.1:{port}"),
+		);
+	};
+
+	// The node takes its run arguments from the cfg rather than from argv — passing
+	// any argument would *replace* the preset's `args` — so the ports go through
+	// `APPEND_ARGS`. `dev`'s preset resolves its `res/…` paths against the CWD,
+	// hence the repo root.
+	let chainspec_path = tempdir.join("chainspec.json");
+	std::fs::write(&chainspec_path, chainspec).expect("failed to write chainspec");
+	let rpc_port = free_port();
+	let child = Command::new(binary)
+		.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+		.env("CFG_PRESET", "dev")
+		.env("CHAIN", &chainspec_path)
+		.env("BASE_PATH", tempdir.join("chain"))
+		.env("APPEND_ARGS", format!("--rpc-port {rpc_port} --port 0 --no-prometheus"))
+		.spawn()
+		.unwrap_or_else(|e| panic!("failed to spawn NODE_BINARY {binary}: {e}"));
+	eprintln!(
+		"[hardfork_e2e] started local node {binary} (pid {}) with RPC on {rpc_port}",
+		child.id()
+	);
+	(NodeUnderTest::Local(child), format!("ws://127.0.0.1:{rpc_port}"))
+}
+
+/// The runtime WASM the upgrade applies: built alongside `NODE_BINARY` when
+/// running locally, otherwise copied out of the node image.
+fn runtime_wasm(binary: Option<&str>) -> Vec<u8> {
+	let Some(binary) = binary else {
+		let (name, tag) = test_image("midnight-node");
+		let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
+		let path_in_image = format!("/artifacts-{arch}/{RUNTIME_WASM_FILE}");
+		let output = Command::new("docker")
+			.args(["run", "--rm", "--entrypoint", "cat", &format!("{name}:{tag}"), &path_in_image])
+			.output()
+			.expect("docker run cat wasm failed");
+		assert!(
+			output.status.success(),
+			"failed to extract wasm: {}",
+			String::from_utf8_lossy(&output.stderr)
+		);
+		return output.stdout;
+	};
+
+	let dir = Path::new(binary).parent().expect("NODE_BINARY has no parent directory");
+	// `cargo build`'s layout first, then the flat one of CI's binaries artifact.
+	let candidates = [
+		dir.join("wbuild/midnight-node-runtime").join(RUNTIME_WASM_FILE),
+		dir.join(RUNTIME_WASM_FILE),
+	];
+	let path = match std::env::var("RUNTIME_WASM") {
+		Ok(explicit) => PathBuf::from(explicit),
+		Err(_) => candidates.iter().find(|p| p.exists()).cloned().unwrap_or_else(|| {
+			panic!("no runtime WASM next to {binary} (tried {candidates:?}); set RUNTIME_WASM")
+		}),
+	};
+	eprintln!("[hardfork_e2e] upgrading to runtime WASM at {}", path.display());
+	std::fs::read(&path)
+		.unwrap_or_else(|e| panic!("failed to read runtime WASM {}: {e}", path.display()))
 }
 
 /// Run a toolkit CLI command.
@@ -185,20 +310,8 @@ async fn hardfork_single_tx() {
 	let tempdir = tempfile::tempdir().expect("failed to create tempdir");
 
 	// 2. Start new node with fork-from chain-spec
-	let (name, tag) = test_image("midnight-node");
-	let node_image = format!("{name}:{tag}");
-	let container = GenericImage::new(name, tag)
-		.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
-		.with_exposed_port(ContainerPort::Tcp(9944))
-		.with_env_var("CFG_PRESET", "dev")
-		.with_env_var("CHAIN", "/chainspec/chainspec.json")
-		.with_copy_to("/chainspec/chainspec.json", chainspec_json.into_bytes())
-		.start()
-		.await
-		.expect("failed to start midnight-node container");
-
-	let port = container.get_host_port_ipv4(9944).await.expect("failed to get node RPC port");
-	let url = format!("ws://127.0.0.1:{port}");
+	let node_binary = std::env::var("NODE_BINARY").ok();
+	let (_node, url) = start_node(node_binary.as_deref(), chainspec_json, tempdir.path()).await;
 
 	// Wait for finality. The toolkit CLI calls get_block_one_hash on
 	// transaction-generating commands, which fails with OnlyGenesisFinalized
@@ -228,21 +341,9 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 4. Runtime upgrade: extract WASM from new node image and apply it
-	let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "amd64" };
-	let wasm_path_in_image =
-		format!("/artifacts-{arch}/midnight_node_runtime.compact.compressed.wasm");
-	let wasm_output = Command::new("docker")
-		.args(["run", "--rm", "--entrypoint", "cat", &node_image, &wasm_path_in_image])
-		.output()
-		.expect("docker run cat wasm failed");
-	assert!(
-		wasm_output.status.success(),
-		"failed to extract wasm: {}",
-		String::from_utf8_lossy(&wasm_output.stderr)
-	);
+	// 4. Runtime upgrade: take the new WASM from the node under test and apply it
 	let wasm_path = tempdir.path().join("runtime.wasm");
-	std::fs::write(&wasm_path, &wasm_output.stdout).expect("write wasm");
+	std::fs::write(&wasm_path, runtime_wasm(node_binary.as_deref())).expect("write wasm");
 
 	run_cli(&[
 		"runtime-upgrade",
