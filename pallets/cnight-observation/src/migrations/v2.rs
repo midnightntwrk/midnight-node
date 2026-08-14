@@ -67,7 +67,7 @@ use frame_support::{
 	traits::OnRuntimeUpgrade,
 	weights::WeightMeter,
 };
-use midnight_node_ledger::types::active_ledger_bridge as LedgerApi;
+use midnight_node_ledger::types::{DustGenerationValues, active_ledger_bridge as LedgerApi};
 use midnight_primitives::{
 	LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
 };
@@ -189,7 +189,7 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 		};
 
 		let raw_nonces: Vec<[u8; 32]> = nonces.iter().map(|nonce| nonce.0).collect();
-		let (time_to_cap, values) =
+		let DustGenerationValues { time_to_cap, entries } =
 			match LedgerApi::dust_generation_values_v8(&pre_fork_key, raw_nonces) {
 				Ok(values) => values,
 				Err(e) => {
@@ -220,16 +220,16 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 
 		let mut skipped = 0u32;
 		let mut events = Vec::with_capacity(nonces.len());
-		for (nonce, value) in nonces.iter().zip(values) {
+		for (nonce, entry) in nonces.iter().zip(entries) {
 			// `None`: the nonce is untracked in the v8 dust state, or was
 			// already destroyed there (both logged host-side).
-			let Some((night_value, owner)) = value else {
+			let Some(entry) = entry else {
 				skipped = skipped.saturating_add(1);
 				continue;
 			};
 			match LedgerApi::construct_cnight_generates_dust_event(
-				night_value,
-				&owner,
+				entry.value,
+				&entry.owner,
 				ctime,
 				UtxoActionType::Create as u8,
 				nonce.0,

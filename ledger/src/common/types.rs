@@ -268,6 +268,27 @@ pub struct BenchmarkClaimMintTxBuilder {
 
 pub type SegmentId = u16;
 
+/// A still-generating cNIGHT dust entry, read back out of the pre-fork
+/// (ledger-8) dust state by `dust_generation_values_v8`.
+#[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq)]
+pub struct DustGenerationEntry {
+	/// The entry's night value.
+	pub value: u128,
+	/// The (untagged) serialized `DustPublicKey`, i.e. exactly what
+	/// `construct_cnight_generates_dust_event` accepts for `owner`.
+	pub owner: Vec<u8>,
+}
+
+/// The result of one batched `dust_generation_values_v8` read.
+#[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq)]
+pub struct DustGenerationValues {
+	/// The dust parameters' `time_to_cap`, in seconds.
+	pub time_to_cap: u64,
+	/// One per requested nonce and positionally aligned with them; `None` when
+	/// the nonce is not tracked, or has already been destroyed.
+	pub entries: Vec<Option<DustGenerationEntry>>,
+}
+
 #[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq, TypeInfo)]
 pub struct UtxoInfo {
 	pub address: Hash,

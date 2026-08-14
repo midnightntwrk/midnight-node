@@ -28,6 +28,7 @@
 //! state from the v9 bridge is the same trick `serve_pre_migration_v8_read!`
 //! plays in [`crate::host_api::ledger_9`].
 
+use crate::common::types::{DustGenerationEntry, DustGenerationValues};
 use crate::ledger_8::api::Ledger as Ledger8;
 use crate::ledger_9::types::{DeserializationError, LedgerApiError};
 
@@ -43,19 +44,13 @@ use storage::{
 
 const LOG_TARGET: &str = "midnight::ledger::dust_generation";
 
-/// The dust parameters' `time_to_cap` in seconds, plus — for each requested
-/// initial nonce — the night value and dust owner of its still-generating entry
-/// in the ledger-8 dust state referenced by `state_key`; `None` when the nonce
-/// is not tracked, or has already been destroyed. Positionally aligned with
-/// `nonces`.
+/// The still-generating entry of each requested initial nonce in the ledger-8
+/// dust state referenced by `state_key`, plus that state's dust `time_to_cap`.
 ///
 /// `time_to_cap` is how far the caller backdates the replayed `ctime` so every
 /// restored entry lands at its DUST cap, i.e. at the balance it held before the
 /// wipe. It comes from the v8 state because that is the one already loaded here,
 /// and the 8 -> 9 translation recasts `parameters.dust` unchanged.
-///
-/// The owner bytes are the (untagged) serialized `DustPublicKey`, i.e. exactly
-/// what `construct_cnight_generates_dust_event` accepts for `owner`.
 ///
 /// Errors with `NoLedgerState` when `state_key` is not a ledger-8 state. This
 /// must *not* be an all-`None` success: the caller's key is only v8 because its
@@ -65,7 +60,7 @@ const LOG_TARGET: &str = "midnight::ledger::dust_generation";
 pub fn dust_generation_values_v8<D: DB>(
 	state_key: &[u8],
 	nonces: &[[u8; 32]],
-) -> Result<(u64, Vec<Option<(u128, Vec<u8>)>>), LedgerApiError> {
+) -> Result<DustGenerationValues, LedgerApiError> {
 	if !crate::is_ledger_8_state_key(state_key) {
 		log::error!(
 			target: LOG_TARGET,
@@ -88,7 +83,7 @@ pub fn dust_generation_values_v8<D: DB>(
 	// Non-negative by construction (`night_dust_ratio / generation_decay_rate`).
 	let time_to_cap = ledger8.state.parameters.dust.time_to_cap().as_seconds().max(0) as u64;
 
-	let values = nonces
+	let entries = nonces
 		.iter()
 		.map(|nonce| {
 			// Same lookup path the ledger's own `Destroy` handler takes:
@@ -125,11 +120,11 @@ pub fn dust_generation_values_v8<D: DB>(
 				log::error!(target: LOG_TARGET, "failed to serialize dust owner: {e:?}");
 				return None;
 			}
-			Some((info.value, owner))
+			Some(DustGenerationEntry { value: info.value, owner })
 		})
 		.collect();
 
-	Ok((time_to_cap, values))
+	Ok(DustGenerationValues { time_to_cap, entries })
 }
 
 #[cfg(test)]
@@ -200,16 +195,20 @@ mod tests {
 		let owner = DustPublicKey(Fr::from(7u64));
 		let root = v8_root(owner);
 
-		let (time_to_cap, values) = dust_generation_values_v8::<InMemoryDB>(
-			&root,
-			&[NONCE_LIVE, NONCE_DESTROYED, NONCE_UNKNOWN],
-		)
-		.expect("v8 root must resolve");
+		let DustGenerationValues { time_to_cap, entries } =
+			dust_generation_values_v8::<InMemoryDB>(
+				&root,
+				&[NONCE_LIVE, NONCE_DESTROYED, NONCE_UNKNOWN],
+			)
+			.expect("v8 root must resolve");
 
 		let mut expected_owner = Vec::new();
 		Serializable::serialize(&owner, &mut expected_owner).unwrap();
 
-		assert_eq!(values, vec![Some((100u128, expected_owner)), None, None]);
+		assert_eq!(
+			entries,
+			vec![Some(DustGenerationEntry { value: 100, owner: expected_owner }), None, None]
+		);
 		assert_eq!(
 			time_to_cap,
 			mn_ledger_8::structure::INITIAL_PARAMETERS.dust.time_to_cap().as_seconds() as u64,

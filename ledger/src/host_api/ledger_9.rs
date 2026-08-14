@@ -2,7 +2,8 @@
 use crate::ledger_9::Bridge;
 use crate::{
 	common::types::{
-		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
+		DustGenerationValues, GasCost, Hash, SystemTransactionAppliedStateRoot,
+		TransactionAppliedStateRoot, Tx,
 	},
 	ledger_9::{BlockContext, types::LedgerApiError},
 };
@@ -613,10 +614,8 @@ pub trait Ledger9Bridge {
 		}
 	}
 
-	/// The dust `time_to_cap` in seconds, plus the night value and dust owner of
-	/// each requested nonce's still-generating entry in the *pre-fork*
-	/// (ledger-8) dust state, positionally aligned with `nonces` and `None` for
-	/// nonces that are untracked or already destroyed.
+	/// Each requested nonce's still-generating entry in the *pre-fork*
+	/// (ledger-8) dust state, plus that state's dust `time_to_cap`.
 	///
 	/// Called by `pallet-cnight-observation`'s dust re-apply migration, which
 	/// rebuilds the cNIGHT generation entries the ledger 8 -> 9 hardfork wipes
@@ -627,7 +626,7 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 		nonces: PassFatPointerAndDecode<Vec<[u8; 32]>>,
-	) -> AllocateAndReturnByCodec<Result<(u64, Vec<Option<(u128, Vec<u8>)>>), LedgerApiError>> {
+	) -> AllocateAndReturnByCodec<Result<DustGenerationValues, LedgerApiError>> {
 		// The migration runs in `inherents_applied()`, after pallet-midnight has
 		// initialized the arena, but `set_default_storage` is idempotent and
 		// keeps this callable from anywhere in the block.
