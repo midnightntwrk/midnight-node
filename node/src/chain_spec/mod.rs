@@ -274,6 +274,11 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				Some(&genesis.network_id()),
 			)
 			.map_err(ChainSpecInitError::GenesisStateError)?,
+			// Same value `generate-genesis` divided the ledger's block limits by, so the two
+			// halves of the per-transaction weight stay in step.
+			tx_weight_factor_permille: Some(
+				genesis.system_parameters_config().tx_weight_factor_permille,
+			),
 		},
 		// Session keys are registered by `session_committee_management` genesis via
 		// `SessionInterface::set_keys`, not duplicated here.

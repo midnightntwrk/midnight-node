@@ -48,6 +48,7 @@ pub mod pallet {
 	use frame_support::{ensure, pallet_prelude::*, sp_runtime::traits::UniqueSaturatedInto};
 	use frame_system::pallet_prelude::*;
 	use midnight_primitives::LedgerBlockContextProvider;
+	pub use midnight_primitives_system_parameters::TX_WEIGHT_FACTOR_ONE;
 	use scale_info::prelude::{string::String, vec::Vec};
 	use sidechain_domain::byte_string::BoundedString;
 
@@ -116,6 +117,11 @@ pub mod pallet {
 	pub struct GenesisConfig<T: Config> {
 		pub network_id: String,
 		pub genesis_state_key: Vec<u8>,
+		/// Value for [`TxWeightFactorPermille`]. `None` leaves it at
+		/// [`TX_WEIGHT_FACTOR_ONE`] (unscaled), which is what chain specs built before this
+		/// field existed deserialize to.
+		#[serde(default)]
+		pub tx_weight_factor_permille: Option<u32>,
 		#[serde(skip)]
 		pub _config: PhantomData<T>,
 	}
@@ -124,6 +130,9 @@ pub mod pallet {
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
 			Pallet::<T>::initialize_state(&self.network_id, &self.genesis_state_key);
+			if let Some(permille) = self.tx_weight_factor_permille {
+				TxWeightFactorPermille::<T>::put(permille);
+			}
 		}
 	}
 
@@ -180,6 +189,11 @@ pub mod pallet {
 		1
 	}
 
+	#[pallet::type_value]
+	pub fn DefaultTxWeightFactorPermille() -> u32 {
+		TX_WEIGHT_FACTOR_ONE
+	}
+
 	#[pallet::storage]
 	#[pallet::getter(fn configurable_transaction_size_weight)]
 	pub type ConfigurableTransactionSizeWeight<T> =
@@ -194,6 +208,29 @@ pub mod pallet {
 
 	#[pallet::storage]
 	pub type MaxSkippedSlots<T> = StorageValue<_, u8, ValueQuery, DefaultMaxSkippedSlots>;
+
+	/// How many ledger transactions a block should hold relative to the ledger's block limits, in
+	/// permille ([`TX_WEIGHT_FACTOR_ONE`] = 1000 = unscaled, the default). Set from
+	/// `system-parameters-config.json` at genesis; see that field's documentation for the whole
+	/// picture.
+	///
+	/// A transaction's weight has two parts, and only one of them is rescaled here:
+	///
+	/// * the ledger-derived part is the transaction's cost *normalised against the ledger's
+	///   `limits.block_limits`* (see [`Pallet::get_tx_weight`]), so it already tracks the block
+	///   limits that `generate-genesis` divided by this same factor — rescaling it here as well
+	///   would count the factor twice and let FRAME pack more transactions than the ledger
+	///   accepts, which fails them with `BlockLimitExceededError`;
+	/// * [`ConfigurableTransactionSizeWeight`] is a flat per-transaction weight that is
+	///   independent of the ledger's limits, so nothing else would ever rescale it. That is the
+	///   term this factor applies to.
+	///
+	/// Setting this without the matching genesis block limits is therefore safe but only
+	/// partially effective: the flat term shrinks, the ledger-derived term does not.
+	#[pallet::storage]
+	#[pallet::getter(fn tx_weight_factor_permille)]
+	pub type TxWeightFactorPermille<T> =
+		StorageValue<_, u32, ValueQuery, DefaultTxWeightFactorPermille>;
 
 	#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeWithMemTracking, TypeInfo)]
 	pub struct TxAppliedDetails {
@@ -439,6 +476,17 @@ pub mod pallet {
 			ConfigurableTransactionSizeWeight::<T>::set(new_weight);
 			Ok(())
 		}
+
+		#[pallet::call_index(2)]
+		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Operational))]
+		/// A system transaction for rescaling the per-transaction weight derived from the ledger
+		/// cost model. See [`TxWeightFactorPermille`] for the semantics and the caveat about the
+		/// ledger's own block limits.
+		pub fn set_tx_weight_factor(origin: OriginFor<T>, permille: u32) -> DispatchResult {
+			ensure_root(origin)?;
+			TxWeightFactorPermille::<T>::set(permille);
+			Ok(())
+		}
 	}
 
 	#[pallet::validate_unsigned]
@@ -631,10 +679,31 @@ pub mod pallet {
 
 		// Helper for the weight macro
 		pub fn get_tx_weight(tx: &[u8]) -> Weight {
-			Self::get_transaction_cost(tx)
+			// The ledger-derived term is already expressed as a fraction of the ledger's block
+			// limits, so it follows `TxWeightFactorPermille` on its own via the limits baked into
+			// genesis. Only the flat term needs the factor applied here.
+			let ledger_weight = Self::get_transaction_cost(tx)
 				.map(|gas_cost| Weight::from_parts(gas_cost, 0))
-				.unwrap_or(crate::EXTRA_WEIGHT_TX_SIZE)
-				+ ConfigurableTransactionSizeWeight::<T>::get()
+				.unwrap_or(crate::EXTRA_WEIGHT_TX_SIZE);
+
+			ledger_weight + Self::scaled_tx_size_weight()
+		}
+
+		/// [`ConfigurableTransactionSizeWeight`] rescaled by [`TxWeightFactorPermille`].
+		///
+		/// Both are read from storage, so every node computes the same weight for the same
+		/// transaction at the same block — this stays a pure function of on-chain state, as
+		/// `#[pallet::weight]` requires.
+		fn scaled_tx_size_weight() -> Weight {
+			let size_weight = ConfigurableTransactionSizeWeight::<T>::get();
+			let permille = TxWeightFactorPermille::<T>::get();
+			if permille == TX_WEIGHT_FACTOR_ONE {
+				return size_weight;
+			}
+
+			size_weight
+				.saturating_mul(permille as u64)
+				.saturating_div(TX_WEIGHT_FACTOR_ONE as u64)
 		}
 	}
 }

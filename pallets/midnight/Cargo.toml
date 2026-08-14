@@ -23,6 +23,7 @@ frame-system.workspace = true
 log.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
+midnight-primitives-system-parameters.workspace = true
 sp-api.workspace = true
 sp-runtime.workspace = true
 pallet-timestamp.workspace = true
@@ -59,6 +60,7 @@ std = [
 	"sp-runtime/std",
     #"sp-block-rewards/std",
     "midnight-primitives/std",
+    "midnight-primitives-system-parameters/std",
     #"pallet-block-rewards/std",
     "sp-tracing/std",
     "pallet-timestamp/std",

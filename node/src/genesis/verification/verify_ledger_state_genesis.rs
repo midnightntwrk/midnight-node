@@ -25,8 +25,9 @@
 use frame_support::traits::Len;
 use midnight_node_ledger_helpers::{
 	DefaultDB, LedgerParameters, LedgerState, NIGHT, SystemTransaction, Timestamp, TokenType,
-	midnight_serialize::tagged_deserialize,
+	block_capacity::scale_block_limits, midnight_serialize::tagged_deserialize,
 };
+use midnight_primitives_system_parameters::{SystemParametersConfig, TX_WEIGHT_FACTOR_ONE};
 use pallet_cnight_observation::config::CNightGenesis;
 use std::path::Path;
 use thiserror::Error;
@@ -178,6 +179,21 @@ fn load_ledger_parameters(
 	let content = std::fs::read_to_string(ledger_params_path)?;
 	let params: LedgerParameters = serde_json::from_str(&content)?;
 	Ok(params)
+}
+
+/// Load `tx_weight_factor_permille` from system-parameters-config.json.
+///
+/// A missing path means the caller did not pass the file, which is the same as a network that
+/// never set the factor: unscaled.
+fn load_tx_weight_factor(
+	system_params_path: Option<&Path>,
+) -> Result<u32, VerifyLedgerStateGenesisError> {
+	let Some(path) = system_params_path else {
+		return Ok(TX_WEIGHT_FACTOR_ONE);
+	};
+	let content = std::fs::read_to_string(path)?;
+	let config: SystemParametersConfig = serde_json::from_str(&content)?;
+	Ok(config.tx_weight_factor_permille)
 }
 
 /// Verify that DustState matches the expected state after applying cnight system_tx
@@ -467,12 +483,23 @@ fn verify_supply_invariant(state: &LedgerState<DefaultDB>) -> (bool, String) {
 fn verify_ledger_parameters(
 	state: &LedgerState<DefaultDB>,
 	ledger_params_path: Option<&Path>,
+	system_params_path: Option<&Path>,
 ) -> (bool, String) {
 	let Some(path) = ledger_params_path else {
 		return (false, "No ledger-parameters-config.json provided".to_string());
 	};
 
-	match load_ledger_parameters(path) {
+	// `generate-genesis` divided the block limits by this factor, so the config file only matches
+	// the state once the same division is applied here.
+	let tx_weight_factor_permille = match load_tx_weight_factor(system_params_path) {
+		Ok(factor) => factor,
+		Err(e) => return (false, format!("Failed to load system-parameters-config.json: {e}")),
+	};
+
+	match load_ledger_parameters(path).and_then(|params| {
+		scale_block_limits(params, tx_weight_factor_permille)
+			.map_err(|e| VerifyLedgerStateGenesisError::DeserializationError(e.to_string()))
+	}) {
 		Ok(expected_params) => {
 			let state_params = &*state.parameters;
 
@@ -655,6 +682,7 @@ pub fn verify_ledger_state_genesis(
 	chain_spec_path: &Path,
 	cnight_config_path: Option<&Path>,
 	ledger_params_path: Option<&Path>,
+	system_params_path: Option<&Path>,
 	network: Option<&str>,
 	genesis_timestamp: u64,
 ) -> Result<VerificationResult, VerifyLedgerStateGenesisError> {
@@ -669,7 +697,7 @@ pub fn verify_ledger_state_genesis(
 	let (empty_state_ok, empty_state_message) = verify_empty_state(&state, network);
 	let (supply_invariant_ok, supply_invariant_message) = verify_supply_invariant(&state);
 	let (ledger_parameters_ok, ledger_parameters_message) =
-		verify_ledger_parameters(&state, ledger_params_path);
+		verify_ledger_parameters(&state, ledger_params_path, system_params_path);
 	let (timestamp_in_state_ok, timestamp_in_state_message) =
 		verify_genesis_timestamp_in_state(&state, genesis_timestamp);
 

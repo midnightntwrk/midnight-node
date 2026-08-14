@@ -166,6 +166,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 				Some(UndeployedNetwork.id()),
 			)
 			.unwrap(),
+			tx_weight_factor_permille: None,
 		},
 	}
 	.build_storage()

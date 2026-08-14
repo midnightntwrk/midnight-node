@@ -215,6 +215,11 @@ pub struct VerifyLedgerStateGenesisCmd {
 	#[arg(long)]
 	pub ledger_parameters_config: Option<std::path::PathBuf>,
 
+	/// Path to system-parameters-config.json. Only `tx_weight_factor_permille` is read from it,
+	/// to reproduce the block-limit scaling `generate-genesis` applied.
+	#[arg(long)]
+	pub system_parameters_config: Option<std::path::PathBuf>,
+
 	/// Network name (e.g., "mainnet", "qanet"). Used for network-specific checks like empty state
 	#[arg(long)]
 	pub network: Option<String>,

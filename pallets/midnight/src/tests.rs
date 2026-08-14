@@ -414,6 +414,71 @@ fn sets_extra_transaction_size_weight() {
 	});
 }
 
+/// The factor rescales the flat per-transaction term and leaves the ledger-derived term alone —
+/// that one follows the same factor through the block limits baked into the genesis state, so
+/// scaling it here as well would apply the factor twice.
+#[test]
+fn tx_weight_factor_rescales_only_the_flat_term() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+
+		init_ledger_state(block_context.into());
+
+		assert_eq!(
+			mock::Midnight::tx_weight_factor_permille(),
+			crate::pallet::TX_WEIGHT_FACTOR_ONE
+		);
+		let flat = mock::Midnight::configurable_transaction_size_weight();
+		let unscaled = mock::Midnight::get_tx_weight(&tx);
+		let ledger_term = unscaled - flat;
+		assert!(ledger_term.ref_time() > 0, "the test tx must carry some ledger cost");
+
+		// Half the weight per transaction: the flat term halves, the ledger term does not move.
+		mock::Midnight::set_tx_weight_factor(RawOrigin::Root.into(), 500).unwrap();
+		assert_eq!(
+			mock::Midnight::get_tx_weight(&tx),
+			ledger_term + flat.saturating_div(2),
+			"only the flat term should follow the factor"
+		);
+
+		// Double it: half as many transactions fit.
+		mock::Midnight::set_tx_weight_factor(RawOrigin::Root.into(), 2000).unwrap();
+		assert_eq!(mock::Midnight::get_tx_weight(&tx), ledger_term + flat.saturating_mul(2));
+
+		// Back to 1.0x.
+		mock::Midnight::set_tx_weight_factor(
+			RawOrigin::Root.into(),
+			crate::pallet::TX_WEIGHT_FACTOR_ONE,
+		)
+		.unwrap();
+		assert_eq!(mock::Midnight::get_tx_weight(&tx), unscaled);
+	});
+}
+
+/// The genesis config seeds the same storage value the chain spec carries.
+#[test]
+fn tx_weight_factor_comes_from_genesis_config() {
+	let mut ext = mock::new_test_ext_with_tx_weight_factor(Some(500));
+	ext.execute_with(|| {
+		assert_eq!(mock::Midnight::tx_weight_factor_permille(), 500);
+	});
+}
+
+#[test]
+fn tx_weight_factor_requires_root() {
+	mock::new_test_ext().execute_with(|| {
+		assert_err!(
+			mock::Midnight::set_tx_weight_factor(RuntimeOrigin::none(), 500),
+			sp_runtime::DispatchError::BadOrigin
+		);
+		assert_eq!(
+			mock::Midnight::tx_weight_factor_permille(),
+			crate::pallet::TX_WEIGHT_FACTOR_ONE
+		);
+	});
+}
+
 #[test]
 fn test_get_mn_transaction_fee() {
 	mock::new_test_ext().execute_with(|| {
