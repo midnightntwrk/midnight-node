@@ -6,5 +6,6 @@
     "d_parameter": {
         "num_permissioned_candidates": 10,
         "num_registered_candidates": 0
-    }
+    },
+    "tx_weight_factor_permille": 1000
 }

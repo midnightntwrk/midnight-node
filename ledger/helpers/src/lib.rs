@@ -14,6 +14,7 @@
 mod utils;
 
 pub use utils::find_dependency_version;
+pub mod block_capacity;
 pub mod extract_tx_with_context;
 
 /// Strategy for ordering candidate coins/UTXOs during input selection.

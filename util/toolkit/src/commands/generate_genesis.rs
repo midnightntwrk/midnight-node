@@ -8,8 +8,9 @@ use crate::genesis_generator::{
 };
 use midnight_node_ledger_helpers::{
 	LedgerParameters, Serializable, SystemTransaction, Tagged, WalletSeed,
-	midnight_serialize::tagged_deserialize, serialize,
+	block_capacity::scale_block_limits, midnight_serialize::tagged_deserialize, serialize,
 };
+use midnight_primitives_system_parameters::{SystemParametersConfig, TX_WEIGHT_FACTOR_ONE};
 
 #[derive(Deserialize)]
 pub struct CNightGeneratesDustConfig {
@@ -72,6 +73,11 @@ pub struct GenerateGenesisArgs {
 	/// File containing ledger parameters config (JSON).
 	#[arg(long)]
 	ledger_parameters_config: PathBuf,
+	/// File containing system parameters config (JSON). Only `tx_weight_factor_permille` is read
+	/// from it: the ledger's `limits.block_limits` are divided by that factor, so a factor of 500
+	/// gives the block roughly twice the ledger capacity. Omitted means unscaled.
+	#[arg(long)]
+	system_parameters_config: Option<PathBuf>,
 	/// Path to cardano-tip.json containing the genesis timestamp. If not provided,
 	/// defaults to the hardcoded Glacier Drop start timestamp.
 	#[arg(long)]
@@ -168,12 +174,31 @@ pub async fn execute(
 		None
 	};
 
+	// Read the block-capacity factor that the chain spec also hands to `pallet_midnight`
+	let tx_weight_factor_permille: u32 = match args.system_parameters_config {
+		Some(ref path) => {
+			let json_str = std::fs::read_to_string(path)
+				.map_err(|e| format!("Failed to read system parameters config {path:?}: {e}"))?;
+			let config: SystemParametersConfig = serde_json::from_str(&json_str)
+				.map_err(|e| format!("Failed to parse system parameters config: {e}"))?;
+			config.tx_weight_factor_permille
+		},
+		None => TX_WEIGHT_FACTOR_ONE,
+	};
+
 	// Parse the ledger parameters config file
 	let ledger_parameters: Option<LedgerParameters> = {
 		let json_str = std::fs::read_to_string(&args.ledger_parameters_config)?;
 		let params: LedgerParameters = serde_json::from_str(&json_str)?;
 		log::info!("Using ledger parameters from {}", args.ledger_parameters_config.display());
-		Some(params)
+		let scaled = scale_block_limits(params, tx_weight_factor_permille)?;
+		if tx_weight_factor_permille != TX_WEIGHT_FACTOR_ONE {
+			log::info!(
+				"Scaled ledger block limits for tx_weight_factor_permille = {tx_weight_factor_permille}: {:?}",
+				scaled.limits.block_limits
+			);
+		}
+		Some(scaled)
 	};
 
 	// Parse genesis timestamp from cardano-tip.json (if provided)

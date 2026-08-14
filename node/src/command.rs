@@ -1109,6 +1109,7 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 				&cmd.chain_spec,
 				cmd.cnight_config.as_deref(),
 				cmd.ledger_parameters_config.as_deref(),
+				cmd.system_parameters_config.as_deref(),
 				cmd.network.as_deref(),
 				genesis_timestamp,
 			)
