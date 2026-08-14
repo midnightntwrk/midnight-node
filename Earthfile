@@ -281,11 +281,13 @@ rebuild-genesis-state:
     RUN mkdir -p /genesis-config
     IF [ "${NETWORK}" = "undeployed" ]
         COPY res/dev/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+        COPY res/dev/system-parameters-config.json /genesis-config/system-parameters-config.json
         COPY res/dev/cnight-config.json /genesis-config/cnight-config.json
         COPY res/dev/ics-config.json /genesis-config/ics-config.json
         COPY res/dev/reserve-config.json /genesis-config/reserve-config.json
     ELSE
         COPY res/${NETWORK}/ledger-parameters-config.json /genesis-config/ledger-parameters-config.json
+        COPY res/${NETWORK}/system-parameters-config.json /genesis-config/system-parameters-config.json
         COPY res/${NETWORK}/cnight-config.json /genesis-config/cnight-config.json
         COPY res/${NETWORK}/ics-config.json /genesis-config/ics-config.json
         COPY res/${NETWORK}/reserve-config.json /genesis-config/reserve-config.json
@@ -314,6 +316,7 @@ rebuild-genesis-state:
             --network ${NETWORK} \
             --seeds-file /secrets/genesis-seeds.json \
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --system-parameters-config /genesis-config/system-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
             --ics-config /genesis-config/ics-config.json \
             --reserve-config /genesis-config/reserve-config.json
@@ -325,6 +328,7 @@ rebuild-genesis-state:
         RUN /midnight-node-toolkit generate-genesis \
             --network ${NETWORK} \
             --ledger-parameters-config /genesis-config/ledger-parameters-config.json \
+            --system-parameters-config /genesis-config/system-parameters-config.json \
             --cnight-generates-dust-config /genesis-config/cnight-config.json \
             --ics-config /genesis-config/ics-config.json \
             --reserve-config /genesis-config/reserve-config.json \

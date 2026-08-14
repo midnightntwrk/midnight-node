@@ -14,6 +14,7 @@
 mod utils;
 
 pub use utils::find_dependency_version;
+pub mod block_capacity;
 pub mod extract_tx_with_context;
 
 /// v8 -> v9 ledger state translation table (ported from midnight-ledger PR #539).

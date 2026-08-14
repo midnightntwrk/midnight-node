@@ -1376,7 +1376,7 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use base_crypto_local::cost_model::{FixedPoint, SyntheticCost};
+	use base_crypto_local::cost_model::{CostDuration, FixedPoint, SyntheticCost};
 	use coin_structure_local::coin::{ShieldedTokenType, UnshieldedTokenType};
 	use ledger_storage_local::DefaultDB;
 	use mn_ledger_local::structure::LedgerState;
@@ -1491,6 +1491,40 @@ mod tests {
 		assert_eq!(over_one, max_weight);
 		assert!(half >= zero);
 		assert!(one >= half);
+	}
+
+	/// The property the `tx_weight_factor_permille` design rests on: a transaction's runtime
+	/// weight is its cost *normalised against the ledger's block limits*, so widening those
+	/// limits narrows the weight by exactly the same ratio.
+	///
+	/// That is why `generate-genesis` only has to divide `block_limits` by the factor — the
+	/// ledger-derived half of the weight follows on its own, and `pallet_midnight` applies the
+	/// factor to the flat per-transaction term alone. Rescaling the ledger-derived half there
+	/// too would count the factor twice and let a block hold more transactions than the ledger
+	/// admits.
+	#[test]
+	fn doubling_block_limits_halves_the_scaled_cost() {
+		let max_weight = 1_000_000u64;
+		let cost = SyntheticCost {
+			read_time: CostDuration::from_picoseconds(300_000_000_000),
+			compute_time: CostDuration::from_picoseconds(500_000_000_000),
+			block_usage: 250_000,
+			bytes_written: 12_500,
+			bytes_churned: 12_500_000,
+		};
+		let limits = SyntheticCost {
+			read_time: CostDuration::from_picoseconds(2_000_000_000_000),
+			compute_time: CostDuration::from_picoseconds(2_000_000_000_000),
+			block_usage: 1_000_000,
+			bytes_written: 50_000,
+			bytes_churned: 50_000_000,
+		};
+
+		let at_limits = scale_normalized_cost(&cost.normalize(limits).unwrap(), max_weight);
+		let at_double = scale_normalized_cost(&cost.normalize(limits * 2.0).unwrap(), max_weight);
+
+		assert!(at_limits > 0, "the fixture must cost something to halve");
+		assert_eq!(at_double, at_limits / 2);
 	}
 
 	#[test]

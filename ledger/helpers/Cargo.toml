@@ -13,6 +13,8 @@ cargo_metadata = "0.15"
 hex.workspace = true
 sha2.workspace = true
 
+midnight-primitives-system-parameters = { workspace = true, default-features = true }
+
 mn-ledger = { workspace = true, features = ["proving"] }
 base-crypto = { workspace = true }
 coin-structure = { workspace = true }

@@ -146,6 +146,30 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into()
 }
 
+/// Externalities built through the pallet's own genesis config, which is how a chain spec seeds
+/// `TxWeightFactorPermille`.
+///
+/// The genesis build only writes pallet storage (`initialize_state` records the state key and
+/// network id), so no ledger storage is opened here — tests that need one still call
+/// `init_ledger_state`, and this helper stays out of the way of the process-global storage they
+/// share.
+pub fn new_test_ext_with_tx_weight_factor(
+	tx_weight_factor_permille: Option<u32>,
+) -> sp_io::TestExternalities {
+	RuntimeGenesisConfig {
+		system: Default::default(),
+		midnight: pallet_midnight::GenesisConfig::<Test> {
+			network_id: "undeployed".to_string(),
+			genesis_state_key: vec![0u8; 32],
+			tx_weight_factor_permille,
+			_config: Default::default(),
+		},
+	}
+	.build_storage()
+	.unwrap()
+	.into()
+}
+
 pub fn midnight_events() -> Vec<super::Event> {
 	System::events()
 		.into_iter()
