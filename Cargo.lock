@@ -7631,7 +7631,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "1.0.3"
+version = "1.0.300"
 dependencies = [
  "async-trait",
  "authority-selection-inherents",
@@ -7850,7 +7850,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "1.0.0"
+version = "1.0.300"
 dependencies = [
  "subxt 0.50.0",
  "walkdir",
@@ -7954,7 +7954,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-toolkit"
-version = "1.0.0"
+version = "1.0.300"
 dependencies = [
  "async-channel 2.5.0",
  "async-trait",
