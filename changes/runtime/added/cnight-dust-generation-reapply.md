@@ -98,3 +98,7 @@ transactions into execution order. (The indexer already collected them
 unconditionally.)
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2012
+Issues:
+- https://github.com/shieldedtech/shielded-security-engineering/issues/548
+- https://github.com/shieldedtech/shielded-security-engineering/issues/549
+- https://github.com/shieldedtech/shielded-security-engineering/issues/550
