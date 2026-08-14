@@ -1341,13 +1341,14 @@ fn fork_8_to_9_if_needed(
 	ctx8: midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
 	l9_blocks: &[RawBlockData],
 	cached: &[(WalletSeed, CachedWalletState)],
+	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
 	if l9_blocks.is_empty() {
 		ForkAwareLedgerContext::Ledger8(ctx8)
 	} else {
 		let ctx9 =
 			timed!("fork_context_8_to_9", fork_context_8_to_9(ctx8)).expect("fork 8 to 9 failed");
-		replay_blocks_9(&ctx9, l9_blocks, cached);
+		replay_blocks_9(&ctx9, l9_blocks, cached, schemes);
 		ForkAwareLedgerContext::Ledger9(ctx9)
 	}
 }
@@ -1390,13 +1391,13 @@ pub(crate) fn replay_blocks(
 				let ctx8 = timed!("fork_context_7_to_8", fork_context_7_to_8(ctx7))
 					.expect("fork 7 to 8 failed");
 				replay_blocks_8(&ctx8, l8_blocks);
-				fork_8_to_9_if_needed(ctx8, l9_blocks, cached)
+				fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes)
 			}
 		},
 		ForkAwareLedgerContext::Ledger8(ctx8) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger8 context");
 			replay_blocks_8(&ctx8, l8_blocks);
-			fork_8_to_9_if_needed(ctx8, l9_blocks, cached)
+			fork_8_to_9_if_needed(ctx8, l9_blocks, cached, schemes)
 		},
 		ForkAwareLedgerContext::Ledger9(ctx9) => {
 			assert!(l7_blocks.is_empty(), "Ledger7 blocks with Ledger9 context");
