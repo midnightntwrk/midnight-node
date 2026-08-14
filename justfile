@@ -1,15 +1,10 @@
 # Justfile for Midnight Node
 # This Justfile is used to define tasks for building, testing, and running the Midnight Node.
 
-# Seed the local zk-params cache with Zswap keys for both static/version 9 and 10, so the
-# toolkit's local prover never has to fetch them from srs.midnight.network (run once).
-seed-zswap-keys:
-  @bash scripts/seed-zswap-keys.sh
-
-# Seed the local zk-params cache with Dust spend keys by compiling them from the bundled
-# ZKIR-v3 circuit source, since they aren't published anywhere for this branch (run once).
-seed-dust-keys:
-  @bash scripts/seed-dust-keys.sh
+# Seed the local zk-params cache with the Dust and Zswap keys by compiling them from the
+# bundled circuit sources, since they aren't published anywhere for this branch (run once).
+seed-zk-keys:
+  @bash scripts/seed-zk-keys.sh
 
 # Build or fetch compactc from the `compact/` submodule and expose it to toolkit-js via
 # COMPACT_HOME (run once, and after bumping the submodule).

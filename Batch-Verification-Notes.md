@@ -438,7 +438,7 @@ descendant). Only the crates whose *own* source changed vs. that rc source (`<ta
 re-isolating; unchanged crates keep their published rc tags (they reference changed siblings
 by version, which our patches redirect). Changed set:
 
-All 7 are pinned to a **single** isolate commit (`rev = c1da0f6d…`, the tip of the ledger branch
+All 7 are pinned to a **single** isolate commit (`rev = fc87c27c…`, the tip of the ledger branch
 `js/batch-verification-isolated`) — they're all workspace members of that one commit with their
 `path=` deps stripped, so every patch resolves its package as a member of the same commit;
 inter-crate deps among the 7 route registry→patch→same rev. (The ledger repo's own
@@ -452,12 +452,12 @@ refs under `js/batch-verification/` (a ref can't be both a file and a directory)
 | crate | dir | reason it's isolated |
 |---|---|---|
 | midnight-ledger-v9        | ledger/           | changed (verify/structure/dust) |
-| midnight-zswap            | zswap/            | changed (verify.rs) |
+| midnight-zswap            | zswap/            | changed (verify.rs; now proves/verifies with ZKIR-v3 `transient-crypto` rather than the v2 `transient-crypto-old`) |
 | midnight-transient-crypto | transient-crypto/ | changed (proofs/mock_verify) |
 | midnight-onchain-state    | onchain-state/    | changed (state.rs) |
 | midnight-zkir             | zkir/             | changed (ir.rs) |
 | midnight-zkir-v3          | zkir-v3/          | newly required: ledger `test-utilities` now pulls `dep:zkir_v3`, and `ledger/helpers` enables that feature |
-| midnight-ledger-static    | static/           | `static/version` moved 9→10 (new Dust ZKIR-v3 artifacts) with no package-version bump, so the crates.io 9.0.0 copy would bake a stale `version!()` into the data-provider key paths |
+| midnight-ledger-static    | static/           | `static/version` moved 9→10→`10-dust-zswap-v3` (Dust, then Zswap, recompiled to ZKIR v3) with no package-version bump, so the crates.io 9.0.0 copy would bake a stale `version!()` into the data-provider key paths |
 
 Unchanged, on published rc tags: coin-structure, base-crypto, base-crypto-derive,
 onchain-vm, onchain-runtime, serialize (+ transient-crypto-old 2.2.0, untouched).
@@ -479,24 +479,32 @@ ignored — only the root workspace's counts — so the node repeats those four 
 deps (`blake2b_halo2`, `sha3-circuit`) are themselves git deps — fine, since they hang off a git
 dependency rather than a patch.
 
-**Current state.** The single isolate commit `c1da0f6d` (ledger branch tip `71fc0084`) is pushed
+**Current state.** The single isolate commit `fc87c27c` (ledger branch tip `ef5f7a04`) is pushed
 to the ledger remote branch `js/batch-verification-isolated`, and the node `[patch.crates-io]`
 pins the 7 crates by `rev` to that commit over
 `https://github.com/midnightntwrk/midnight-ledger`. No tags. This is shareable/CI-ready — no
 `file://`, no machine-local dependency. The commit stays reachable as long as the
 `js/batch-verification-isolated` branch exists on the remote (don't delete it).
 
-**Dust proving keys: use the bundled artifacts, not the published ones.** The branch's
-`ledger/static/dust/spend.*.sha256` expect `d058526b…`/`6ecb69fc…`/`41264553…`, but
-`https://srs.midnight.network/dust/10/spend.*` serves `b9e39102…`/`3e8d4fbd…`/`d2ad8f21…`, and
-there is **no plan to publish** the new ZKIR-v3 Dust artifacts for this branch. So anything that
-*fetches* Dust keys through `MidnightDataProvider`/`DUST_EXPECTED_FILES` (i.e. `ledger/helpers`, so
-proving-side tests and the toolkit) will fail the hash check; those paths need to source the keys
-from the crate's bundled `ledger/static/dust/*` instead of the data provider.
+**Proving keys: compile them, they aren't published.** `static/version` is now
+`10-dust-zswap-v3` — first bumped 9→10 for the ZKIR-v3 Dust circuit, then again when Zswap's
+circuits were recompiled to ZKIR v3 (branch commits `39ba94f3`/`24ae4290`/`ef5f7a04`). Both
+`https://srs.midnight.network/dust/10-dust-zswap-v3/*` and `.../zswap/10-dust-zswap-v3/*` 403,
+and there is **no plan to publish** either set for this branch, so anything that *fetches* keys
+through `MidnightDataProvider` (i.e. `ledger/helpers`, so proving-side tests and the toolkit)
+can never satisfy them from the network. The old fetch-and-copy trick is dead too: Zswap's
+artifacts are no longer byte-identical to the published `zswap/9/*`.
 
-Node-side *verification* is unaffected either way: `SPEND_VK` comes from
-`include_bytes!("../static/dust/spend.verifier")`. And `zswap/10/*` is byte-identical to
-`zswap/9/*`, so the `static/version` bump is a no-op for L7/L8/L9 zswap keys.
+`scripts/seed-zk-keys.sh` (`just seed-zk-keys`, and Earthly `+zk-keys` for the toolkit image)
+compiles both sets locally with `zkir compile-many` — deterministic halo2 `keygen_pk` over the
+plaintext circuit sources vendored in the pinned git dependency plus the same public SRS params
+the data provider already downloads — reproducing the exact hashes the provider expects. It
+reads the version and the expected hashes out of the pinned checkout (`static/version`,
+`ledger/static/dust/*.sha256`, `zswap/static/*.sha256`), so a future `static/version` bump needs
+no edit here.
+
+Node-side *verification* is unaffected either way: the VKs come from `include_bytes!` of the
+crates' bundled `static/dust/spend.verifier` / `zswap/static/*.verifier`.
 
 **To regenerate after the ledger branch moves** — the `js/batch-verification-isolated` branch is
 kept **append-only** (each isolate commit is parented on the previous one, so pushes fast-forward;
@@ -563,6 +571,10 @@ We use it directly. `batch_verify_proofs` takes `linear_revalidation` and return
   batch is rejected. Also the defensive answer if the reported indices don't map into our evidence
   table: an empty `Localized` would read as "no offender" and let us accept a batch the ledger just
   rejected.
+
+Since the ZKIR-v3 Zswap recompile, Zswap evidence is emitted as `ContractProofEvidence::V3` rather
+than `V2`, so it joins the localisable batch — a bad Zswap proof can now be attributed to its
+transaction instead of collapsing the whole batch into `Unlocalized`.
 
 `linear_revalidation` mirrors `isolate_on_failure`, so **block import passes `false`** — it never
 needs per-tx attribution (the whole block is rejected either way), so it takes the cheaper
