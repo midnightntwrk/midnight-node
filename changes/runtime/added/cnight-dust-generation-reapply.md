@@ -97,4 +97,4 @@ root verification. It now keys on the event's own phase and sorts the block's
 transactions into execution order. (The indexer already collected them
 unconditionally.)
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2012
