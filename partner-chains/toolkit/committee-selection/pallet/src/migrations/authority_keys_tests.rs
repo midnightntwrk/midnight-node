@@ -1,4 +1,4 @@
-//! Tests for [`super::authority_keys::AuthorityKeysMigration`].
+//! Tests for [`super::authority_keys::V1ToV2Migration`].
 //!
 //! The crate-level mock in [`crate::mock`] uses `u64` as `AuthorityKeys`, which cannot satisfy
 //! the migration's `pallet_session::Config<Keys = T::AuthorityKeys>` bound (session keys must be
@@ -7,7 +7,7 @@
 //! gaining an additional key (here `OldSessionKeys { foo }` -> `NewSessionKeys { foo, bar }`,
 //! with `bar` using a distinct `KeyTypeId`, like adding e.g. Beefy to Aura + Grandpa).
 
-use super::authority_keys::{AuthorityKeysMigration, UpgradeCommitteeMember};
+use super::authority_keys::{UpgradeCommitteeMember, V1ToV2Migration};
 use crate::pallet::CommitteeInfo;
 use frame_support::traits::{ConstU32, OnRuntimeUpgrade, StorageVersion};
 use frame_support::{derive_impl, parameter_types};
@@ -162,11 +162,7 @@ impl pallet_session::historical::Config for Test {
 	type FullIdentificationOf = FullIdentificationOf;
 }
 
-/// Storage versions the migration is wired for in these tests.
-const FROM: u16 = 1;
-const TO: u16 = 2;
-
-type Migration = AuthorityKeysMigration<Test, OldCommitteeMember, OldSessionKeys, FROM, TO>;
+type Migration = V1ToV2Migration<Test, OldCommitteeMember, OldSessionKeys>;
 
 type OldCommitteeInfo = CommitteeInfo<u64, OldCommitteeMember, ConstU32<32>>;
 type NewCommitteeInfo = CommitteeInfo<u64, NewCommitteeMember, ConstU32<32>>;
@@ -219,16 +215,10 @@ fn new_test_ext() -> sp_io::TestExternalities {
 		.into()
 }
 
-/// Rewrites storage to the exact shape a chain running the pre-upgrade runtime would have:
-/// old-shaped committees, old-shaped `NextKeys`/`QueuedKeys` and `KeyOwner` entries only for the
-/// old key types.
-fn seed_old_state(
-	current: &OldCommitteeInfo,
-	queued: &OldCommitteeInfo,
-	next: Option<&OldCommitteeInfo>,
-) {
+/// Rewrites storage to the exact shape of a v1 chain.
+fn seed_old_state(current: &OldCommitteeInfo, next: Option<&OldCommitteeInfo>) {
 	frame_support::storage::unhashed::put(&crate::CurrentCommittee::<Test>::hashed_key(), current);
-	frame_support::storage::unhashed::put(&crate::QueuedCommittee::<Test>::hashed_key(), queued);
+	frame_support::storage::unhashed::kill(&crate::QueuedCommittee::<Test>::hashed_key());
 	match next {
 		Some(next) => {
 			frame_support::storage::unhashed::put(&crate::NextCommittee::<Test>::hashed_key(), next)
@@ -254,23 +244,19 @@ fn seed_old_state(
 		&queued,
 	);
 
-	StorageVersion::new(FROM).put::<crate::Pallet<Test>>();
+	StorageVersion::new(1).put::<crate::Pallet<Test>>();
 }
 
 #[test]
 fn upgrades_committees_session_keys_and_storage_version() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(
-			&old_committee(5, &[ALICE, BOB]),
-			&old_committee(5, &[ALICE, BOB]),
-			Some(&old_committee(6, &[BOB])),
-		);
+		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[BOB])));
 
 		Migration::on_runtime_upgrade();
 
 		assert_eq!(
 			StorageVersion::get::<crate::Pallet<Test>>(),
-			StorageVersion::new(TO),
+			StorageVersion::new(2),
 			"storage version should be bumped"
 		);
 
@@ -314,37 +300,69 @@ fn upgrades_committees_session_keys_and_storage_version() {
 #[test]
 fn handles_missing_next_committee() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), &old_committee(4, &[ALICE]), None);
+		seed_old_state(&old_committee(5, &[ALICE, BOB]), None);
 
 		Migration::on_runtime_upgrade();
 
-		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(TO));
+		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
 		assert_committees_eq(
 			&crate::CurrentCommittee::<Test>::get(),
 			&new_committee(5, &[ALICE, BOB]),
 		);
-		assert_committees_eq(&crate::QueuedCommittee::<Test>::get(), &new_committee(4, &[ALICE]));
+		assert_committees_eq(
+			&crate::QueuedCommittee::<Test>::get(),
+			&new_committee(5, &[ALICE, BOB]),
+		);
 		assert!(crate::NextCommittee::<Test>::get().is_none());
 	});
 }
 
 #[test]
-fn is_noop_when_storage_version_is_not_from() {
+fn is_noop_when_run_again() {
 	new_test_ext().execute_with(|| {
-		// A chain that already upgraded (or was genesis-reset at the new version) stores
-		// new-shaped values. Running the migration again must not touch them.
-		StorageVersion::new(TO).put::<crate::Pallet<Test>>();
+		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[BOB])));
+		Migration::on_runtime_upgrade();
 		let state_before = (
 			crate::CurrentCommittee::<Test>::get().encode(),
+			crate::QueuedCommittee::<Test>::get().encode(),
+			crate::NextCommittee::<Test>::get().encode(),
 			pallet_session::NextKeys::<Test>::iter().collect::<Vec<_>>(),
 			pallet_session::QueuedKeys::<Test>::get(),
 		);
 
 		Migration::on_runtime_upgrade();
 
-		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(TO));
+		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
 		let state_after = (
 			crate::CurrentCommittee::<Test>::get().encode(),
+			crate::QueuedCommittee::<Test>::get().encode(),
+			crate::NextCommittee::<Test>::get().encode(),
+			pallet_session::NextKeys::<Test>::iter().collect::<Vec<_>>(),
+			pallet_session::QueuedKeys::<Test>::get(),
+		);
+		assert_eq!(state_before, state_after);
+	});
+}
+
+#[test]
+fn is_noop_for_fresh_genesis() {
+	new_test_ext().execute_with(|| {
+		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
+		let state_before = (
+			crate::CurrentCommittee::<Test>::get().encode(),
+			crate::QueuedCommittee::<Test>::get().encode(),
+			crate::NextCommittee::<Test>::get().encode(),
+			pallet_session::NextKeys::<Test>::iter().collect::<Vec<_>>(),
+			pallet_session::QueuedKeys::<Test>::get(),
+		);
+
+		Migration::on_runtime_upgrade();
+
+		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
+		let state_after = (
+			crate::CurrentCommittee::<Test>::get().encode(),
+			crate::QueuedCommittee::<Test>::get().encode(),
+			crate::NextCommittee::<Test>::get().encode(),
 			pallet_session::NextKeys::<Test>::iter().collect::<Vec<_>>(),
 			pallet_session::QueuedKeys::<Test>::get(),
 		);
@@ -356,14 +374,10 @@ fn is_noop_when_storage_version_is_not_from() {
 #[test]
 fn try_runtime_hooks_pass() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(
-			&old_committee(5, &[ALICE, BOB]),
-			&old_committee(5, &[ALICE, BOB]),
-			Some(&old_committee(6, &[BOB])),
-		);
+		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[BOB])));
 
 		Migration::try_on_runtime_upgrade(true).expect("pre/post upgrade hooks should pass");
 
-		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(TO));
+		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
 	});
 }

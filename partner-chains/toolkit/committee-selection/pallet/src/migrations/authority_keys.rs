@@ -1,19 +1,24 @@
-//! Implements a re-usable storage migration for the `AuthorityKeys` type.
+//! Migrates `session-validator-management` storage from v1 to v2.
 //!
-//! **Important**: This migration assumes that the runtime is using [pallet_session] and will
-//! migrate that pallet's key storage as well.
+//! This one migration adds [`crate::QueuedCommittee`] and changes the `AuthorityKeys` shape in
+//! committee and [pallet_session] storage. V1 chains do not have `QueuedCommittee`; after
+//! translating `CurrentCommittee`, the migration copies it to `QueuedCommittee` because the v1
+//! session integration treated the current committee as both active and queued.
 //!
-//! Unlike [`super::v1::LegacyToV1Migration`], which is a one-shot migration fixed to `0 -> 1`,
-//! [`AuthorityKeysMigration`] is generic over the old committee member/authority keys types and
-//! over the `FROM`/`TO` storage versions, so it can be reused whenever a Partner Chain changes
-//! the shape of its `AuthorityKeys`.
+//! Do not compose a separate queue-seeding migration with an authority-keys migration in one
+//! runtime upgrade. A seed step reads committee storage with the current runtime type and can
+//! silently corrupt old-shaped bytes before they are translated. Do not bump this pallet's storage
+//! version for a runtime-local session-key change either. The version namespace belongs to this
+//! pallet's storage layout in upstream Partner Chains.
 //!
 //! # Usage
 //!
 //! Preserve the old authority keys type and implement [`Into`] for it, targeting the new
 //! `T::AuthorityKeys` — this works directly since session key types are always locally defined
-//! (via [`sp_runtime::impl_opaque_keys`]) in the consuming runtime. The old committee member type
-//! needs [`UpgradeCommitteeMember`] instead of a plain `Into`/`From`: most runtimes reuse
+//! (via [`sp_runtime::impl_opaque_keys`]) in the consuming runtime. Keys added by the upgrade are
+//! filled with placeholder values; real keys become effective at a later session rotation from
+//! observed registration data. The old committee member type needs [`UpgradeCommitteeMember`]
+//! instead of a plain `Into`/`From`: most runtimes reuse
 //! `authority_selection_inherents::CommitteeMember<AuthorityId, AuthorityKeys>` directly as
 //! `T::CommitteeMember`, and implementing `From`/`Into` between two instantiations of a type
 //! that's foreign to the runtime crate would violate Rust's orphan rules.
@@ -47,22 +52,18 @@
 //! After implementing both, wire the migration into `Runtime`'s `SingleBlockMigrations`:
 //! ```rust,ignore
 //! type SingleBlockMigrations = (
-//! 	pallet_session_validator_management::migrations::authority_keys::AuthorityKeysMigration<
+//! 	pallet_session_validator_management::migrations::authority_keys::V1ToV2Migration<
 //! 		Runtime,
 //! 		LegacyCommitteeMember,
 //! 		LegacyAuthorityKeys,
-//! 		2, // pallet on-chain storage version before the migration (at wiring time)
-//! 		3, // pallet on-chain storage version after the migration (at wiring time)
 //! 	>,
 //! 	// ...other migrations
 //! );
 //! ```
 //!
-//! **Important**: `FROM`/`TO` must reflect the pallet's on-chain storage version when this
-//! migration is actually wired in, not the version declared in code at scaffold time. Remove the
-//! migration from `SingleBlockMigrations` once all live networks have upgraded. If it remains wired
-//! while a genesis reset leaves on-chain storage at `FROM` but stores new-shaped committee bytes,
-//! the next upgrade will run `translate` with the old type and panic.
+//! Remove the migration from `SingleBlockMigrations` after all networks enact it. Leaving it wired
+//! is harmless: the versioned gate skips chains already at v2, including fresh-genesis chains with
+//! new-shaped bytes.
 
 #[cfg(feature = "try-runtime")]
 extern crate alloc;
@@ -88,26 +89,17 @@ pub trait UpgradeCommitteeMember<T: crate::Config> {
 	fn upgrade(self) -> T::CommitteeMember;
 }
 
-/// [`VersionedMigration`] parametrized for a Partner Chain's `AuthorityKeys` change.
-///
-/// `FROM`/`TO` are the pallet's on-chain storage versions before/after the migration when it is
-/// wired in (see [`crate::pallet::Pallet`]'s `#[pallet::storage_version]` at that time).
-pub type AuthorityKeysMigration<
-	T,
-	OldCommitteeMember,
-	OldAuthorityKeys,
-	const FROM: u16,
-	const TO: u16,
-> = VersionedMigration<
-	FROM,
-	TO,
-	InnerMigrateAuthorityKeys<T, OldCommitteeMember, OldAuthorityKeys>,
+/// Combined v1-to-v2 committee and session-key migration.
+pub type V1ToV2Migration<T, OldCommitteeMember, OldAuthorityKeys> = VersionedMigration<
+	1,
+	2,
+	InnerMigrateV1ToV2<T, OldCommitteeMember, OldAuthorityKeys>,
 	crate::pallet::Pallet<T>,
 	<T as frame_system::Config>::DbWeight,
 >;
 
-/// Helper type used internally for migration. Use [`AuthorityKeysMigration`] in your runtime instead.
-pub struct InnerMigrateAuthorityKeys<T, OldCommitteeMember, OldAuthorityKeys>(
+/// Helper type used internally for migration. Use [`V1ToV2Migration`] in your runtime.
+pub struct InnerMigrateV1ToV2<T, OldCommitteeMember, OldAuthorityKeys>(
 	PhantomData<(T, OldCommitteeMember, OldAuthorityKeys)>,
 );
 
@@ -118,7 +110,7 @@ type OldCommitteeInfo<T, OldCommitteeMember> = CommitteeInfo<
 >;
 
 impl<T, OldCommitteeMember, OldAuthorityKeys> UncheckedOnRuntimeUpgrade
-	for InnerMigrateAuthorityKeys<T, OldCommitteeMember, OldAuthorityKeys>
+	for InnerMigrateV1ToV2<T, OldCommitteeMember, OldAuthorityKeys>
 where
 	T: crate::Config + pallet_session::Config<Keys = <T as crate::Config>::AuthorityKeys>,
 	OldCommitteeMember: UpgradeCommitteeMember<T>
@@ -131,8 +123,8 @@ where
 	T::AuthorityKeys: OpaqueKeys,
 {
 	fn on_runtime_upgrade() -> sp_runtime::Weight {
-		// `translate` always reads the value; it writes only when the value was present.
-		let mut weight = T::DbWeight::get().reads(3);
+		// The translations and current-committee read are unconditional. The queue seed always writes.
+		let mut weight = T::DbWeight::get().reads_writes(3, 1);
 
 		let current_translated =
 			crate::CurrentCommittee::<T>::translate::<OldCommitteeInfo<T, OldCommitteeMember>, _>(
@@ -140,15 +132,6 @@ where
 			)
 			.expect("Decoding of the old value must succeed");
 		if current_translated.is_some() {
-			weight = weight.saturating_add(T::DbWeight::get().writes(1));
-		}
-
-		let queued_translated = crate::QueuedCommittee::<T>::translate::<
-			OldCommitteeInfo<T, OldCommitteeMember>,
-			_,
-		>(|old| old.map(upgrade_committee_info::<T, OldCommitteeMember>))
-		.expect("Decoding of the old value must succeed");
-		if queued_translated.is_some() {
 			weight = weight.saturating_add(T::DbWeight::get().writes(1));
 		}
 
@@ -160,6 +143,8 @@ where
 		if next_translated.is_some() {
 			weight = weight.saturating_add(T::DbWeight::get().writes(1));
 		}
+
+		crate::QueuedCommittee::<T>::put(crate::CurrentCommittee::<T>::get());
 
 		// `upgrade_keys` translates the entire `NextKeys` map (1 read + 1 write per entry) and
 		// rewrites `KeyOwner` for every old/new key type per entry (pure writes). `QueuedKeys` is
@@ -188,18 +173,14 @@ where
 
 	#[cfg(feature = "try-runtime")]
 	fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
-		// `CurrentCommittee`/`QueuedCommittee`/`NextCommittee` `.get()` decodes as
-		// `T::CommitteeMember`, i.e. the post-upgrade shape — but at this point the on-chain
-		// bytes are still `OldCommitteeMember`. The same applies to `pallet_session`'s
+		// `CurrentCommittee`/`NextCommittee` `.get()` decodes as `T::CommitteeMember`, i.e. the
+		// post-upgrade shape, but the on-chain bytes are still `OldCommitteeMember`. The same
+		// applies to `pallet_session`'s
 		// `NextKeys`/`QueuedKeys`, which still hold `OldAuthorityKeys` bytes, so all values are
-		// read through `unhashed` with the old types.
+		// read through `unhashed` with the old types. `QueuedCommittee` does not exist at v1.
 		let current: OldCommitteeInfo<T, OldCommitteeMember> =
 			frame_support::storage::unhashed::get_or_default(
 				&crate::CurrentCommittee::<T>::hashed_key(),
-			);
-		let queued: OldCommitteeInfo<T, OldCommitteeMember> =
-			frame_support::storage::unhashed::get_or_default(
-				&crate::QueuedCommittee::<T>::hashed_key(),
 			);
 		let next: Option<OldCommitteeInfo<T, OldCommitteeMember>> =
 			frame_support::storage::unhashed::get(&crate::NextCommittee::<T>::hashed_key());
@@ -223,15 +204,14 @@ where
 				&pallet_session::QueuedKeys::<T>::hashed_key(),
 			);
 
-		Ok((current, queued, next, next_keys, queued_keys).encode())
+		Ok((current, next, next_keys, queued_keys).encode())
 	}
 
 	#[cfg(feature = "try-runtime")]
 	fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
 		use frame_support::ensure;
 
-		let (old_current, old_queued, old_next, old_next_keys, old_queued_keys): (
-			OldCommitteeInfo<T, OldCommitteeMember>,
+		let (old_current, old_next, old_next_keys, old_queued_keys): (
 			OldCommitteeInfo<T, OldCommitteeMember>,
 			Option<OldCommitteeInfo<T, OldCommitteeMember>>,
 			Vec<(T::ValidatorId, OldAuthorityKeys)>,
@@ -249,11 +229,9 @@ where
 		);
 
 		let new_queued = crate::QueuedCommittee::<T>::get();
-		ensure!(old_queued.epoch == new_queued.epoch, "queued epoch should be preserved");
 		ensure!(
-			committee_fingerprint::<T, OldCommitteeMember>(&old_queued.committee)
-				== new_committee_fingerprint::<T>(&new_queued.committee),
-			"queued committee membership should be preserved"
+			new_queued.encode() == new_current.encode(),
+			"queued committee should be seeded from current committee"
 		);
 
 		let new_next = crate::NextCommittee::<T>::get();
@@ -304,26 +282,34 @@ where
 			pallet_session::QueuedKeys::<T>::get() == expected_queued_keys,
 			"session QueuedKeys should be upgraded in place"
 		);
+		ensure!(
+			frame_support::traits::StorageVersion::get::<crate::Pallet<T>>()
+				== frame_support::traits::StorageVersion::new(2),
+			"on-chain storage version should be 2"
+		);
 
 		Ok(())
 	}
 }
 
 /// Maps an old committee to `(authority_id, upgraded_authority_keys)` pairs, for comparison
-/// against the post-upgrade committee in [`InnerMigrateAuthorityKeys::post_upgrade`].
+/// against the post-upgrade committee in [`InnerMigrateV1ToV2::post_upgrade`].
 #[cfg(feature = "try-runtime")]
 fn committee_fingerprint<T, OldCommitteeMember>(
 	committee: &BoundedVec<OldCommitteeMember, T::MaxValidators>,
 ) -> Vec<(T::AuthorityId, T::AuthorityKeys)>
 where
 	T: crate::Config,
-	OldCommitteeMember: Clone + CommitteeMemberT<AuthorityId = T::AuthorityId>,
-	<OldCommitteeMember as CommitteeMemberT>::AuthorityKeys: Into<T::AuthorityKeys>,
+	OldCommitteeMember:
+		Clone + UpgradeCommitteeMember<T> + CommitteeMemberT<AuthorityId = T::AuthorityId>,
 {
 	committee
 		.iter()
 		.cloned()
-		.map(|m| (m.authority_id(), m.authority_keys().into()))
+		.map(|member| {
+			let member = <OldCommitteeMember as UpgradeCommitteeMember<T>>::upgrade(member);
+			(member.authority_id(), member.authority_keys())
+		})
 		.collect()
 }
 

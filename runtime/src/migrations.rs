@@ -14,28 +14,23 @@
 //! Runtime migrations
 //!
 //! Fixed, one-shot migrations live in a pallet's `migrations` module and are wired into
-//! `SingleBlockMigrations` or [`crate::Migrations`]. Re-usable migrations such as
-//! `authority_keys` below are only wired in for the specific upgrade that needs them.
+//! `SingleBlockMigrations` or [`crate::Migrations`]. The session-key cutover scaffolding below is
+//! wired only in the runtime where [`crate::opaque::SessionKeys`] changes shape.
 
 pub mod authority_keys {
-	//! Scaffolding for migrating [`crate::opaque::SessionKeys`] alongside
-	//! `pallet_session_validator_management`'s own `V1ToV2` storage migration.
-	//!
-	//! When the `SessionKeys` shape changes (here: adding the BABE key), the committee and
-	//! `pallet_session` keys stored on an existing chain must be translated to the new shape. On
-	//! Midnight this coincides with the pallet's v1 → v2 storage upgrade, so
-	//! [`MigrateV1ToV2AddBabeSessionKeys`] combines both: the authority-key translation and the
-	//! v1 → v2 `QueuedCommittee` initialization, gated on the pallet's on-chain storage version.
+	//! Runtime-side types for the session-key cutover (BABE added to
+	//! [`crate::opaque::SessionKeys`]). [`MigrateV1ToV2AddBabeSessionKeys`] translates committee
+	//! and [pallet_session] key storage in one versioned step and runs only on chains at pallet
+	//! storage version 1; [`SetAddBabeSessionKeysMigratedFlag`] then records the guard the
+	//! node-side committee decoders read. BABE placeholders reuse the validator's aura key; real
+	//! keys become effective at a later session rotation from observed Cardano registrations.
 	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
 	use alloc::vec::Vec;
 	use authority_selection_inherents::CommitteeMember;
-	use frame_support::{
-		traits::{OnRuntimeUpgrade, UncheckedOnRuntimeUpgrade},
-		weights::Weight,
-	};
+	use frame_support::{traits::OnRuntimeUpgrade, weights::Weight};
 	use pallet_consensus_engine::AddBabeSessionKeysMigrated;
 	use pallet_session_validator_management::migrations::authority_keys::{
-		InnerMigrateAuthorityKeys, UpgradeCommitteeMember,
+		UpgradeCommitteeMember, V1ToV2Migration,
 	};
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_runtime::impl_opaque_keys;
@@ -66,39 +61,26 @@ pub mod authority_keys {
 		}
 	}
 
-	const LOG_TARGET: &str = "runtime::migration::v1-to-v2-add-babe-session-keys";
+	/// Combined v1-to-v2 committee and session-key migration for this runtime's cutover.
+	pub type MigrateV1ToV2AddBabeSessionKeys =
+		V1ToV2Migration<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
 
-	/// Authority-key translation from the pre-BABE [`LegacySessionKeys`] shape to the current
-	/// `SessionKeys` (adds the BABE key). Same logic as the pallet's `AuthorityKeysMigration`.
-	type Inner = InnerMigrateAuthorityKeys<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
+	/// Sets [`AddBabeSessionKeysMigrated`], the guard the node-side committee decoders read.
+	pub struct SetAddBabeSessionKeysMigratedFlag;
 
-	/// Migrates Current, Queued, and Next Committee storages and writes in consensus-engine
-	/// a trace that it was executed.
-	pub struct AddBabeToSessionKeysMigration;
-
-	impl OnRuntimeUpgrade for AddBabeToSessionKeysMigration {
+	impl OnRuntimeUpgrade for SetAddBabeSessionKeysMigratedFlag {
 		fn on_runtime_upgrade() -> Weight {
 			let db = <Runtime as frame_system::Config>::DbWeight::get();
-			log::info!(
-				target: LOG_TARGET,
-				"translating committee & session keys and initializing QueuedCommittee",
-			);
-			if AddBabeSessionKeysMigrated::<Runtime>::get() == true {
-				log::info!(
-					"SessionKeys migration that adds BABE authority keys was already executed. Migration can be removed from the runtime."
-				);
+			if AddBabeSessionKeysMigrated::<Runtime>::get() {
 				db.reads(1)
 			} else {
-				let weight = <Inner as UncheckedOnRuntimeUpgrade>::on_runtime_upgrade();
 				AddBabeSessionKeysMigrated::<Runtime>::put(true);
-				weight.saturating_add(db.reads_writes(1, 1))
+				db.reads_writes(1, 1)
 			}
 		}
 
 		#[cfg(feature = "try-runtime")]
 		fn post_upgrade(_state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
-			// Key-translation correctness is enforced by the inner migrations' own decode asserts;
-			// here we confirm the guard the committee decoders depend on is set.
 			frame_support::ensure!(
 				AddBabeSessionKeysMigrated::<Runtime>::get(),
 				"add-babe-session-keys: guard not set after migration",
