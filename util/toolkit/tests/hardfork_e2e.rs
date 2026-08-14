@@ -26,14 +26,21 @@ mod common;
 
 use clap::Parser;
 use common::{test_image, wait_for_node::wait_for_finalized_block};
-use midnight_node_toolkit::cli::{Cli, run_command};
+use midnight_node_toolkit::{
+	cli::{Cli, run_command},
+	client::MidnightNodeClientConfig,
+};
 use std::{
 	net::TcpListener,
 	path::{Path, PathBuf},
 	process::{Child, Command},
 	time::Duration,
 };
-use subxt::rpcs::{RpcClient, rpc_params};
+use subxt::{
+	OnlineClient,
+	ext::scale_value::{At, Composite},
+	rpcs::{RpcClient, rpc_params},
+};
 use testcontainers::{
 	ContainerAsync, GenericImage, ImageExt,
 	core::{ContainerPort, WaitFor},
@@ -45,6 +52,19 @@ const SOURCE_SEED: &str = "00000000000000000000000000000000000000000000000000000
 
 /// The compiled runtime blob, under whichever directory holds it.
 const RUNTIME_WASM_FILE: &str = "midnight_node_runtime.compact.compressed.wasm";
+
+/// The repo root. The test's own CWD is the toolkit crate, but `dev`'s preset
+/// resolves its `res/…` paths against the CWD, and `NODE_BINARY` is documented
+/// relative to the root — so both the node's working directory and the binary
+/// path hang off this.
+const REPO_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+
+/// `NODE_BINARY` as an absolute path, so the binary and the runtime WASM beside
+/// it resolve the same way no matter what the test's CWD is.
+fn node_binary_path(binary: &str) -> PathBuf {
+	let path = Path::new(binary);
+	if path.is_absolute() { path.to_owned() } else { Path::new(REPO_ROOT).join(path) }
+}
 
 /// Generate a chain-spec JSON string by running `build-spec` in the fork-from node container.
 fn generate_chainspec(image: &str, tag: &str) -> String {
@@ -117,8 +137,8 @@ async fn start_node(
 	let chainspec_path = tempdir.join("chainspec.json");
 	std::fs::write(&chainspec_path, chainspec).expect("failed to write chainspec");
 	let rpc_port = free_port();
-	let child = Command::new(binary)
-		.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+	let child = Command::new(node_binary_path(binary))
+		.current_dir(REPO_ROOT)
 		.env("CFG_PRESET", "dev")
 		.env("CHAIN", &chainspec_path)
 		.env("BASE_PATH", tempdir.join("chain"))
@@ -151,7 +171,8 @@ fn runtime_wasm(binary: Option<&str>) -> Vec<u8> {
 		return output.stdout;
 	};
 
-	let dir = Path::new(binary).parent().expect("NODE_BINARY has no parent directory");
+	let resolved = node_binary_path(binary);
+	let dir = resolved.parent().expect("NODE_BINARY has no parent directory");
 	// `cargo build`'s layout first, then the flat one of CI's binaries artifact.
 	let candidates = [
 		dir.join("wbuild/midnight-node-runtime").join(RUNTIME_WASM_FILE),
@@ -264,6 +285,46 @@ async fn storage_at(rpc: &RpcClient, pallet: &[u8], item: &[u8], hash: &str) -> 
 		.await
 		.unwrap_or_else(|e| panic!("state_getStorage({key}) failed at {hash}: {e}"));
 	value.map(|v| hex::decode(v.trim_start_matches("0x")).expect("hex-encoded storage value"))
+}
+
+/// Every `CNightObservation::DustReapply*` event between `from` and `to`, as
+/// `(height, event name, fields)`.
+///
+/// Decoded rather than inferred from storage, because the payload is the point:
+/// a replay that self-cancelled or restored nothing winds up exactly like one
+/// that worked, so `PreForkStateKey` being cleared says nothing about the
+/// outcome. Unlike `spec_version_at`, decoding with the client's own metadata is
+/// safe here — every block in this window already runs the new runtime.
+async fn dust_replay_events(url: &str, from: u64, to: u64) -> Vec<(u64, String, Composite<()>)> {
+	let api = OnlineClient::<MidnightNodeClientConfig>::from_insecure_url(url)
+		.await
+		.expect("failed to open subxt client");
+
+	let mut found = Vec::new();
+	for height in from..=to {
+		let at = api
+			.at_block(height)
+			.await
+			.unwrap_or_else(|e| panic!("failed to read block #{height}: {e}"));
+		let events = at
+			.events()
+			.fetch()
+			.await
+			.unwrap_or_else(|e| panic!("failed to fetch events at #{height}: {e}"));
+
+		for event in events.iter().filter_map(Result::ok) {
+			if event.pallet_name() != "CNightObservation"
+				|| !event.event_name().starts_with("DustReapply")
+			{
+				continue;
+			}
+			let fields = event.decode_fields_unchecked_as::<Composite<()>>().unwrap_or_else(|e| {
+				panic!("failed to decode {} at #{height}: {e}", event.event_name())
+			});
+			found.push((height, event.event_name().to_owned(), fields));
+		}
+	}
+	found
 }
 
 /// Every way of reading the ledger state must answer at `height`.
@@ -399,14 +460,15 @@ async fn hardfork_single_tx() {
 	//     cleared is exactly "wound up", by either the restore or the
 	//     self-cancel path.
 	//
-	//     The `dev` preset carries no `UtxoOwners` rows, so this exercises the
-	//     arming and wind-up, not the restore. Nor is the self-cancel visible
-	//     here for the same reason (with nothing to replay there is no colliding
-	//     `Create`); the pallet tests cover both against a real ledger state.
+	//     Winding up is necessary but not sufficient, so the events say which
+	//     path it took. The fork-from chain-spec ships cNIGHT `UtxoOwners` with
+	//     matching ledger-8 dust generation entries, so the replay here is the
+	//     real restore — `DustReapplySkipped`, or a `DustReapplyCompleted` that
+	//     applied nothing, means the feature did nothing at all.
 	wait_for_finalized_block(&url, applied + 3, Duration::from_secs(60)).await;
 	let head_hash = block_hash_at(&rpc, applied + 3).await;
 	assert_eq!(
-		storage_at(&rpc, b"CNightObservation", b":__STORAGE_VERSION__", &head_hash).await,
+		storage_at(&rpc, b"CNightObservation", b":__STORAGE_VERSION__:", &head_hash).await,
 		Some(vec![2, 0]),
 		"cnight-observation must reach storage version 2 (dust replay wound up) by #{}",
 		applied + 3,
@@ -416,13 +478,37 @@ async fn hardfork_single_tx() {
 		None,
 		"the pre-fork ledger state key must be cleared once the dust replay winds up",
 	);
-	eprintln!("[hardfork_e2e] dust generation replay wound up by #{}", applied + 3);
 
-	// 5c. The fork wipes dust state, and the `dev` preset has no `UtxoOwners` for
-	//     the replay above to restore, so the genesis wallets cross the fork still
-	//     holding NIGHT but generating no DUST — and with no DUST they cannot pay
-	//     a fee. Re-register the source wallet's dust address to start generation
-	//     again. The registration funds itself from the retroactive DUST its
+	let replay = dust_replay_events(&url, applied, applied + 3).await;
+	for (height, name, fields) in &replay {
+		eprintln!("[hardfork_e2e] #{height} CNightObservation::{name} {fields:?}");
+	}
+	let completed = replay
+		.iter()
+		.find(|(_, name, _)| name == "DustReapplyCompleted")
+		.unwrap_or_else(|| {
+			panic!("the dust replay must complete by #{}, saw {replay:?}", applied + 3)
+		});
+	let restored = completed
+		.2
+		.at("applied")
+		.and_then(|v| v.as_u128())
+		.expect("DustReapplyCompleted must carry an `applied` count");
+	assert!(
+		restored > 0,
+		"the dust replay restored nothing; the fork-from chain-spec's cNIGHT UtxoOwners \
+		 should have given it work to do ({completed:?})",
+	);
+	eprintln!(
+		"[hardfork_e2e] dust generation replay restored {restored} entries by #{}",
+		completed.0
+	);
+
+	// 5c. The fork wipes dust state, and the replay above only restores cNIGHT's
+	//     slice of it. The genesis wallets hold *native* NIGHT, so they cross the
+	//     fork still holding NIGHT but generating no DUST — and with no DUST they
+	//     cannot pay a fee. Re-register the source wallet's dust address to start
+	//     generation again. The registration funds itself from the retroactive DUST its
 	//     now-generationless NIGHT accrued, which is exactly the path a real
 	//     holder takes after the wipe.
 	run_cli(&[
