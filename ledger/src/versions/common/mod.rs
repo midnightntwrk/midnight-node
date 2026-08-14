@@ -1013,10 +1013,54 @@ where
 	/// helper is the symmetric companion: after persisting the new state, unpersist
 	/// the old one so only ledger states from historical blocks and the latest ledger
 	/// state stays rooted by default.
+	///
+	/// # A/B CONTROL ARM — DO NOT MERGE
+	///
+	/// On this branch the refcount drop is suppressed, reproducing the pre-#1443
+	/// leak so it can be measured side by side against the fix on one chain. It is
+	/// the *only* behavioural difference from `ozgb-ledger-intermediate-states`
+	/// @ 6d63b452.
+	///
+	/// Why this is the one safe place to cut, and why it does not fork the chain:
+	///
+	/// - The value the runtime stores is built entirely from the *new* ledger —
+	///   `LedgerStateKey::Transient(tagged_serialize(&new_ledger.as_typed_key()))`
+	///   in `apply_transaction` / `apply_system_transaction`, and
+	///   `LedgerStateKey::Anchored(..)` in `(apply_)post_block_update`. None of
+	///   them read anything this function touches, so every state root is
+	///   bit-identical to the treatment arm.
+	/// - Persist refcounts live in the node's local parity-db arena. They are not
+	///   hashed into the state root and never cross the host/runtime boundary.
+	/// - The binary still exports the `#[version(2)]` host functions, so it runs
+	///   the ledger-9 runtime (spec 2001000) unchanged. Skipping the export, or
+	///   returning `Anchored` where the treatment arm returns `Transient`, would
+	///   both fork — hence cutting *here* rather than at the call sites.
+	///
+	/// The four call sites keep their `state_key.is_transient()` guard so control
+	/// flow, branching and error paths stay identical; only the arena write is
+	/// dropped. The `tagged_deserialize` below is likewise retained so a malformed
+	/// key still fails on this arm exactly as it would on the other.
+	///
+	/// Expect unbounded arena growth on nodes running this build. That is the
+	/// measurement, not a bug — watch disk headroom and retire the arm when done.
 	fn unpersist_state(api: &api::Api, state_key: &[u8]) -> Result<(), LedgerApiError> {
 		let typed_key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
-		let key: ArenaKey<D::Hasher> = typed_key.into();
-		default_storage::<D>().with_backend(|backend| backend.unpersist(key.hash()));
+		let _key: ArenaKey<D::Hasher> = typed_key.into();
+
+		// Warn once per process so a control node is identifiable from its logs
+		// alone, not just by binary hash.
+		static WARNED: std::sync::Once = std::sync::Once::new();
+		WARNED.call_once(|| {
+			log::warn!(
+				target: LOG_TARGET,
+				"A/B CONTROL BUILD: intermediate ledger-state unpersisting is DISABLED. \
+				 The arena will grow without bound. This binary must never run outside \
+				 a perf A/B."
+			);
+		});
+
+		// Treatment arm runs:
+		//   default_storage::<D>().with_backend(|backend| backend.unpersist(_key.hash()));
 		Ok(())
 	}
 
