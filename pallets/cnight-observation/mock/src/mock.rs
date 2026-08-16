@@ -107,6 +107,7 @@ impl pallet_midnight::Config for Test {
 impl pallet_midnight_system::Config for Test {
 	type LedgerStateProviderMut = Midnight;
 	type LedgerBlockContextProvider = Midnight;
+	type WhitelistedCalls = frame_support::traits::Everything;
 }
 
 impl frame_system::Config for Test {
