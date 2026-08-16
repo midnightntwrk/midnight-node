@@ -1,0 +1,89 @@
+# Build and push content-addressed base Docker images for node, toolkit,
+# and hardfork-test-upgrader.  Each image is tagged with the git tree hash
+# of its images/<name>/ directory plus an architecture suffix, so the tag
+# changes only when the Dockerfile or its siblings (e.g. entrypoint.sh) change.
+#
+# Two jobs build natively on amd64 and arm64 runners — no QEMU.
+
+name: Build Base Images
+
+on:
+  push:
+    branches: [main]
+    paths: ['images/**']
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  build-base-images-amd64:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  #v6.0.2
+
+      - name: Login to GHCR
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  #v4.0.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Build and push missing base images
+        env:
+          REGISTRY: ghcr.io/midnight-ntwrk
+          ARCH: amd64
+        run: |
+          build_if_missing() {
+            local name=$1 dir=$2
+            local hash=$(git rev-parse "HEAD^{tree}:$dir")
+            local image="$REGISTRY/$name:$hash-$ARCH"
+            if docker manifest inspect "$image" > /dev/null 2>&1; then
+              echo "✓ $name:$hash-$ARCH exists"
+            else
+              echo "→ Building $name:$hash-$ARCH"
+              docker build --push -t "$image" "$dir"
+            fi
+          }
+
+          build_if_missing midnight-node-base images/node
+          build_if_missing midnight-toolkit-base images/toolkit
+          build_if_missing midnight-hardfork-upgrader-base images/hardfork-test-upgrader
+
+  build-base-images-arm64:
+    runs-on: ubuntu-latest-8-core-arm64
+    permissions:
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  #v6.0.2
+
+      - name: Login to GHCR
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2  #v4.0.0
+        with:
+          registry: ghcr.io
+          username: MidnightCI
+          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+
+      - name: Build and push missing base images
+        env:
+          REGISTRY: ghcr.io/midnight-ntwrk
+          ARCH: arm64
+        run: |
+          build_if_missing() {
+            local name=$1 dir=$2
+            local hash=$(git rev-parse "HEAD^{tree}:$dir")
+            local image="$REGISTRY/$name:$hash-$ARCH"
+            if docker manifest inspect "$image" > /dev/null 2>&1; then
+              echo "✓ $name:$hash-$ARCH exists"
+            else
+              echo "→ Building $name:$hash-$ARCH"
+              docker build --push -t "$image" "$dir"
+            fi
+          }
+
+          build_if_missing midnight-node-base images/node
+          build_if_missing midnight-toolkit-base images/toolkit
+          build_if_missing midnight-hardfork-upgrader-base images/hardfork-test-upgrader

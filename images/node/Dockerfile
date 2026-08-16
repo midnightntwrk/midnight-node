@@ -23,9 +23,7 @@ RUN microdnf -y install \
     rm -f /tmp/bytehound.tgz && \
     microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-COPY .envrc ./bin/.envrc
-COPY res/ ./res/
-COPY node/bin/entrypoint.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
 
 RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
 USER appuser
