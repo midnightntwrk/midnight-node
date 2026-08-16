@@ -5,16 +5,12 @@ edition = "2024"
 license-file.workspace = true
 
 [dependencies]
-mn-ledger = { workspace = true, features = ["proving"], optional = true }
 base-crypto = { workspace = true, optional = true }
 coin-structure = { workspace = true, optional = true }
-onchain-runtime = { workspace = true, optional = true }
 midnight-serialize = { workspace = true, optional = true }
-ledger-storage = { workspace = true, optional = true }
 midnight-storage-core = { workspace = true, optional = true }
 parity-db = { workspace = true, optional = true }
 transient-crypto = { workspace = true, optional = true }
-zswap = { workspace = true, optional = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"], optional = true }
 onchain-runtime-ledger-8 = { workspace = true, optional = true }
@@ -76,16 +72,12 @@ std = [
     "log",
     "lazy_static",
     "moka",
-    "mn-ledger",
     "base-crypto",
     "coin-structure",
-    "onchain-runtime",
     "midnight-serialize",
-    "ledger-storage",
     "midnight-storage-core",
     "parity-db",
     "transient-crypto",
-    "zswap",
     "mn-ledger-8",
     "onchain-runtime-ledger-8",
     "onchain-state-ledger-8",

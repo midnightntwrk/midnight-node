@@ -18,7 +18,7 @@
 //! ECDSA is a ledger-9+ feature (pre-9 the key types are `unimplemented!()` stubs). The shared
 //! `versions/common` is compiled once per generation, so this module is included *solely* by the
 //! `ledger_9` block (see `lib.rs`) — the tests exist and run only where ECDSA is real, avoiding a
-//! misleading `ledger_7::…::ecdsa_… ok`. The whole `common::wallet` module (hence `UnshieldedWallet`
+//! misleading `ledger_8::…::ecdsa_… ok`. The whole `common::wallet` module (hence `UnshieldedWallet`
 //! and every test here) is `can-panic`-gated, so the module gate on the `mod` declaration covers all
 //! of them.
 
