@@ -100,7 +100,7 @@ pub struct UnshieldedWallet {
 /// so a wallet can hold only the public half.
 #[derive(Clone, Serializable)]
 #[tag = "unshielded-wallet-keys[v1]"]
-// For ledger 7/8, the ECDSA variant of this enum is size 1 - so we ignore the clippy warning here
+// For ledger 8, the ECDSA variant of this enum is size 1 - so we ignore the clippy warning here
 #[allow(clippy::large_enum_variant)]
 pub enum UnshieldedWalletKeys {
 	Schnorr { verifying_key: VerifyingKeySchnorr, signing_key: Option<SigningKeySchnorr> },
@@ -325,7 +325,7 @@ impl From<UserAddress> for UnshieldedWallet {
 
 // `new`/`default` derive via HD (`derive_seed`, see `hd.rs`), which needs `can-panic`. ECDSA-only
 // tests live in `ledger_9::ecdsa_wallet_tests` — `common` compiles once per generation, so putting
-// them here would report a misleading `ledger_7::…::ecdsa_… ok` where they can't actually run.
+// them here would report a misleading `ledger_8::…::ecdsa_… ok` where they can't actually run.
 #[cfg(all(test, feature = "can-panic"))]
 mod tests {
 	use super::super::super::WalletSeed;
