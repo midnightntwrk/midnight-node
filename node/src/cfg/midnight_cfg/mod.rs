@@ -37,6 +37,35 @@ fn default_cnight_observation_window_size() -> u32 {
 	midnight_primitives_mainchain_follower::data_source::DEFAULT_WINDOW_SIZE
 }
 
+/// Batch-proof-verification toggles default OFF, so the node behaves exactly as today unless a
+/// preset opts in. These serde defaults let the fields be absent from the `res/cfg` presets.
+fn default_false() -> bool {
+	false
+}
+/// Default maximum batch size (M): the largest number of transactions verified in one aggregate
+/// crypto call.
+fn default_batch_verify_max_batch_size() -> usize {
+	64
+}
+/// Default target batch size (k_target): dispatch a batch as soon as this many transactions are
+/// queued, without waiting for the max-age timeout.
+fn default_batch_verify_target_batch_size() -> usize {
+	16
+}
+/// Default maximum queue age in milliseconds (tau): dispatch a partial batch once its oldest
+/// transaction has waited this long.
+fn default_batch_verify_max_age_ms() -> u64 {
+	50
+}
+/// Default number of blocking batch-verification worker tasks (N).
+fn default_batch_verify_workers() -> usize {
+	4
+}
+/// Default bounded batch-queue capacity (max in-flight mempool verifications).
+fn default_batch_verify_queue_capacity() -> usize {
+	4096
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
 #[validate(custom = mainchain_epoch_invariants)]
@@ -141,6 +170,39 @@ pub struct MidnightCfg {
 	/// Job name label to include with pushed metrics.
 	/// Default: "midnight-node"
 	pub prometheus_push_job_name: Option<String>,
+
+	/// Enable batch ZK-proof verification for received blocks at block import.
+	/// Safe to enable: on batch failure the block is rejected (fail-fast, no fallback).
+	/// Default: false.
+	#[serde(default = "default_false")]
+	pub batch_verify_block_import: bool,
+
+	/// Enable batch ZK-proof verification on the mempool ingress path.
+	/// Keep disabled until the batch-failure fallback lands — a bad proof in a public mempool
+	/// would otherwise hit the unimplemented fallback and panic. Default: false.
+	#[serde(default = "default_false")]
+	pub batch_verify_mempool: bool,
+
+	/// Maximum number of transactions verified together in one aggregate crypto call (M).
+	#[serde(default = "default_batch_verify_max_batch_size")]
+	pub batch_verify_max_batch_size: usize,
+
+	/// Target batch size that triggers dispatch before the max-age timeout (k_target).
+	#[serde(default = "default_batch_verify_target_batch_size")]
+	pub batch_verify_target_batch_size: usize,
+
+	/// Maximum time in milliseconds a transaction waits in the batch queue before dispatch (tau).
+	#[serde(default = "default_batch_verify_max_age_ms")]
+	pub batch_verify_max_age_ms: u64,
+
+	/// Number of blocking batch-verification worker tasks (N).
+	#[serde(default = "default_batch_verify_workers")]
+	pub batch_verify_workers: usize,
+
+	/// Bounded batch-queue capacity — the maximum number of in-flight mempool verifications.
+	/// Submissions beyond this are shed with a pool `ImmediatelyDropped` error.
+	#[serde(default = "default_batch_verify_queue_capacity")]
+	pub batch_verify_queue_capacity: usize,
 
 	/// Offset (seconds) added to the *parent* block's timestamp when verifying the first
 	/// ledger transaction of a block, to allow transactions with invalid ctime values into

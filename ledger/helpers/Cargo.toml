@@ -18,6 +18,13 @@ coin-structure = { workspace = true }
 midnight-serialize = { workspace = true }
 transient-crypto = { workspace = true }
 zkir = { workspace = true }
+# ZKIR-v3 (3.x proof system). Used directly by `versions/proving_provider/v2_or_v3.rs` to prove
+# the ledger-9 Dust spend circuit, which `zkir` (midnight-zkir 2.2.0) can't even parse. The
+# `binary` feature additionally unlocks the `zkir compile-many` CLI
+# (`cargo build --bin zkir -p midnight-zkir-v3`) that scripts/seed-zk-keys.sh uses to
+# regenerate the Dust and Zswap proving keys locally (see that script and
+# Batch-Verification-Notes.md, "Proving keys: compile them, they aren't published").
+zkir-v3 = { package = "midnight-zkir-v3", git = "https://github.com/midnightntwrk/midnight-ledger", rev = "31529634bc0c84f1cba4139125ddbbe5a8fc5407", features = ["binary"] }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 

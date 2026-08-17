@@ -1232,6 +1232,12 @@ build-test-toolkit:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
+    # Same seeded keys +toolkit-image bakes in: this branch's `static/version` isn't
+    # published on srs.midnight.network, so any local proving here would 404.
+    COPY +zk-keys/dust /zk-keys/dust
+    COPY +zk-keys/zswap /zk-keys/zswap
+    ENV MIDNIGHT_PP=/zk-keys
+
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
@@ -1365,6 +1371,21 @@ build:
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts
+
+# zk-keys compiles the ZKIR-v3 Dust and Zswap proving/verifying keys locally — they aren't
+# published anywhere for this branch (see scripts/seed-zk-keys.sh and
+# Batch-Verification-Notes.md, "Proving keys: compile them, they aren't published"). Kept as
+# its own target so only image builds that need it (toolkit-image) pay the extra compile
+# time, not every +build of the node.
+zk-keys:
+    FROM +build-prepare
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx scripts \
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
+
+    RUN MIDNIGHT_PP=/zk-keys-out bash scripts/seed-zk-keys.sh
+
+    SAVE ARTIFACT /zk-keys-out/dust /dust
+    SAVE ARTIFACT /zk-keys-out/zswap /zswap
 
 build-benchmarks:
     FROM +build-prepare
@@ -1560,6 +1581,13 @@ toolkit-image:
 
     COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
     RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
+
+    # Bake the Dust and Zswap proving/verifying keys into the image so the toolkit's
+    # local prover never has to reach srs.midnight.network at container runtime. They
+    # are compiled locally by +zk-keys (not fetched — see scripts/seed-zk-keys.sh),
+    # since they aren't published anywhere for this branch.
+    COPY +zk-keys/dust /.cache/midnight/zk-params/dust
+    COPY +zk-keys/zswap /.cache/midnight/zk-params/zswap
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
@@ -1866,6 +1894,11 @@ local-env-ci:
     COPY --dir scripts .
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    # Same seeded keys +toolkit-image bakes in: this branch's `static/version` isn't
+    # published on srs.midnight.network, so the e2e tests' local proving would 404.
+    COPY +zk-keys/dust /zk-keys/dust
+    COPY +zk-keys/zswap /zk-keys/zswap
+    ENV MIDNIGHT_PP=/zk-keys
     ENV RUSTFLAGS="-C debuginfo=1"
     RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
     # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/

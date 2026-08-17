@@ -647,6 +647,50 @@ pub trait Ledger9Bridge {
 	}
 }
 
+/// Native (non-WASM) batch-verification entry point for the active ledger version.
+///
+/// The node calls this **directly as native Rust** (never through the WASM host-function
+/// boundary) from its mempool worker pool and block-import wrapper, so the expensive aggregate ZK
+/// crypto runs natively. It mirrors the `is_unified` storage-mode dispatch of the runtime-interface
+/// methods above, then invokes the batched `Bridge` entry point.
+///
+/// `isolate_on_failure` selects the batch-failure behaviour: `true` (mempool) asks the ledger to
+/// localize the offending proofs (`linear_revalidation`) and rejects only those transactions;
+/// `false` (block import) takes the cheaper unlocalized rejection and fails fast, so the whole
+/// block is rejected.
+///
+/// Only the active (ledger-9) version exposes real batching; callers must gate on the target
+/// block's ledger version and not route older-version blocks here.
+#[cfg(feature = "std")]
+pub fn batch_verify_transactions(
+	ext: &mut dyn Externalities,
+	state_key: &[u8],
+	txs_serialized: &[Vec<u8>],
+	block_context: BlockContext,
+	runtime_version: u32,
+	isolate_on_failure: bool,
+) -> Result<Vec<Result<(), LedgerApiError>>, LedgerApiError> {
+	if is_unified(&mut *ext) {
+		Bridge::<Signature, DbUnified>::batch_verify_transactions(
+			ext,
+			state_key,
+			txs_serialized,
+			block_context,
+			runtime_version,
+			isolate_on_failure,
+		)
+	} else {
+		Bridge::<Signature, DbSeparate>::batch_verify_transactions(
+			ext,
+			state_key,
+			txs_serialized,
+			block_context,
+			runtime_version,
+			isolate_on_failure,
+		)
+	}
+}
+
 #[cfg(all(test, feature = "std"))]
 mod tests {
 	use super::as_ledger_9_error;

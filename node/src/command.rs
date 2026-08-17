@@ -288,6 +288,15 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 	> = std::sync::Arc::new(std::sync::Mutex::new(None));
 	let backend_handle_inner = backend_handle.clone();
 
+	// Reconstruct the transaction-pool limits from the CLI params (`config.transaction_pool` is
+	// opaque) so the custom SingleState pool honors `--pool-limit`/`--pool-kbytes`/`--tx-ban-seconds`.
+	let pool_options = service::pool_options(
+		run_cmd.pool_config.pool_limit,
+		run_cmd.pool_config.pool_kbytes,
+		run_cmd.pool_config.tx_ban_seconds,
+		run_cmd.shared_params().is_dev(),
+	);
+
 	let run_result = runner.run_node_until_exit(|config| async move {
 		let epoch_config: MainchainEpochConfig = cfg.midnight_cfg.clone().into();
 		let midnight_cfg = cfg.midnight_cfg.clone();
@@ -335,6 +344,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			hwbench,
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
+			pool_options,
 			run_midnight.serve_warp_ledger_sync,
 		)
 		.await

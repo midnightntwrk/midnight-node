@@ -46,6 +46,17 @@ pub struct LedgerMetrics {
 	pub tx_validation_cache_misses: CounterVec<U64>,
 	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
 	pub tx_validation_cache_size: GaugeVec<U64>,
+	/// ZK proof-verification time, labelled by `mode`. Lets the batch (ON) path be compared against
+	/// the inline (OFF) path at midnight-transaction granularity:
+	/// - `inline`: one per-transaction `well_formed` **with proofs** (the OFF/cold-cache path).
+	/// - `batch`: one aggregate `batch_verify_proofs` call over a whole batch (the ON crypto).
+	/// - `batch_prep`: per-transaction `well_formed` **without proofs** on the batch path (the
+	///   non-crypto work that both paths pay, so the comparison stays apples-to-apples).
+	pub proof_verify_duration: HistogramVec,
+	/// Transactions whose proofs were verified, labelled by the same `mode` as
+	/// `proof_verify_duration`. The `batch` duration is per aggregate call, so dividing its `_sum`
+	/// by this counter yields the per-transaction batched cost.
+	pub proof_verify_txs: CounterVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -190,6 +201,30 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			proof_verify_duration: prometheus::register(
+				HistogramVec::new(
+					HistogramOpts::new(
+						"ledger_proof_verify_duration_seconds",
+						"ZK proof-verification time by mode (inline=per-tx well_formed with proofs; \
+						 batch=per aggregate batch_verify_proofs call; batch_prep=per-tx well_formed \
+						 without proofs on the batch path)",
+					)
+					.buckets(time_buckets.clone()),
+					&["mode"],
+				)?,
+				registry,
+			)?,
+			proof_verify_txs: prometheus::register(
+				CounterVec::new(
+					Opts::new(
+						"ledger_proof_verify_txs_total",
+						"Transactions whose proofs were verified, by mode (normalizes the batch \
+						 duration to a per-transaction cost)",
+					),
+					&["mode"],
+				)?,
+				registry,
+			)?,
 		})
 	}
 }
@@ -242,6 +277,35 @@ impl LedgerMetricsExt {
 	pub fn observe_txs_size(&mut self, size: f64, label: &'static str) {
 		self.observe(|m| {
 			m.txs_size.with_label_values(&[label]).observe(size);
+		});
+	}
+
+	/// Records one inline (OFF-path) per-transaction proof verification: a `well_formed` call that
+	/// actually ran the ZK crypto (proof cache cold). This is the per-tx baseline the batched cost
+	/// is compared against.
+	pub fn observe_inline_proof_verify(&mut self, time: f64) {
+		self.observe(|m| {
+			m.proof_verify_duration.with_label_values(&["inline"]).observe(time);
+			m.proof_verify_txs.with_label_values(&["inline"]).inc();
+		});
+	}
+
+	/// Records one aggregate (ON-path) `batch_verify_proofs` call over `tx_count` transactions.
+	/// Per-transaction batched cost = `_sum{mode="batch"}` / `_txs_total{mode="batch"}`.
+	pub fn observe_batch_proof_verify(&mut self, time: f64, tx_count: u64) {
+		self.observe(|m| {
+			m.proof_verify_duration.with_label_values(&["batch"]).observe(time);
+			m.proof_verify_txs.with_label_values(&["batch"]).inc_by(tx_count);
+		});
+	}
+
+	/// Records the ON-path per-transaction non-crypto `well_formed` prep (proofs deferred), summed
+	/// over `tx_count` transactions in one batch. Added to the batched crypto cost it makes the
+	/// batch path directly comparable to the inline path, which pays both in a single call.
+	pub fn observe_batch_prep_verify(&mut self, time: f64, tx_count: u64) {
+		self.observe(|m| {
+			m.proof_verify_duration.with_label_values(&["batch_prep"]).observe(time);
+			m.proof_verify_txs.with_label_values(&["batch_prep"]).inc_by(tx_count);
 		});
 	}
 

@@ -13,7 +13,6 @@
 
 use crate::ContractVerifyingKeyBytes;
 
-pub use super::make_block_context;
 pub use super::{
 	MaintenanceVerifyingKey, SignatureVerifyingKey, SigningKeyEcdsa,
 	TransactionSignature as Signature, TransactionSigningKey, VerifyingKeyEcdsa,
@@ -117,6 +116,7 @@ pub use super::{
 		prove::ZswapResolver,
 	},
 };
+pub use super::{make_block_context, make_proving_provider};
 
 pub use rand::{
 	Rng, SeedableRng,

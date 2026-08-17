@@ -11,17 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::batch_chain_api::MidnightChainApi;
 use async_trait::async_trait;
 use midnight_node_ledger::types::{Op, Tx};
 use pallet_midnight::MidnightRuntimeApi;
 use parity_scale_codec::{Decode, Encode};
 use prometheus_endpoint::{Counter, CounterVec, Opts, Registry, U64, register};
-use sc_transaction_pool::{ChainApi, FullChainApi, TransactionPoolWrapper};
+use sc_transaction_pool::{BasicPool, ChainApi, FullChainApi, TransactionPoolWrapper};
 use sc_transaction_pool_api::error::Error as TxPoolError;
 use sc_transaction_pool_api::{
 	ChainEvent, ImportNotificationStream, LocalTransactionFor, LocalTransactionPool,
-	MaintainedTransactionPool, PoolStatus, ReadyTransactions, TransactionFor, TransactionSource,
-	TransactionStatusStreamFor, TxHash, TxInvalidityReportMap,
+	MaintainedTransactionPool, PoolStatus, ReadyTransactions, TransactionFor, TransactionPool,
+	TransactionSource, TransactionStatusStreamFor, TxHash, TxInvalidityReportMap,
 };
 use sp_runtime::traits::Block as BlockT;
 use std::{collections::HashMap, pin::Pin, sync::Arc};
@@ -53,13 +54,15 @@ where
 		+ sc_client_api::blockchain::HeaderBackend<Block>
 		+ sp_runtime::traits::BlockIdTo<Block>
 		+ sp_blockchain::HeaderMetadata<Block, Error = sp_blockchain::Error>
+		+ Send
+		+ Sync
 		+ 'static,
 	Client::Api:
 		sp_transaction_pool::runtime_api::TaggedTransactionQueue<Block> + MidnightRuntimeApi<Block>,
 {
 	/// Is filtering behavior enabled. If false it behaves like 'inner' pool.
 	enabled: bool,
-	inner: TransactionPoolWrapper<Block, Client>,
+	inner: BasicPool<MidnightChainApi<Client, Block>, Block>,
 	client: Arc<Client>,
 	metrics: FilteringMetrics,
 	deny_deploy: bool,
@@ -74,13 +77,15 @@ where
 		+ sc_client_api::blockchain::HeaderBackend<Block>
 		+ sp_runtime::traits::BlockIdTo<Block>
 		+ sp_blockchain::HeaderMetadata<Block, Error = sp_blockchain::Error>
+		+ Send
+		+ Sync
 		+ 'static,
 	Client::Api:
 		sp_transaction_pool::runtime_api::TaggedTransactionQueue<Block> + MidnightRuntimeApi<Block>,
 {
 	pub(crate) fn new(
 		config: TxFilterConfig,
-		inner: TransactionPoolWrapper<Block, Client>,
+		inner: BasicPool<MidnightChainApi<Client, Block>, Block>,
 		client: Arc<Client>,
 		metrics: FilteringMetrics,
 	) -> Self {
@@ -187,12 +192,18 @@ where
 		+ sc_client_api::blockchain::HeaderBackend<Block>
 		+ sp_runtime::traits::BlockIdTo<Block>
 		+ sp_blockchain::HeaderMetadata<Block, Error = sp_blockchain::Error>
+		+ Send
+		+ Sync
 		+ 'static,
 	Client::Api:
 		sp_transaction_pool::runtime_api::TaggedTransactionQueue<Block> + MidnightRuntimeApi<Block>,
 {
 	type Block = Block;
 	type Hash = <<FullChainApi<Client, Block> as ChainApi>::Block as BlockT>::Hash;
+	// `InPoolTransaction` depends only on `Block` (via `ExtrinsicHash`/`ExtrinsicFor`), not on the
+	// `ChainApi` type, so it is byte-identical whether projected through `TransactionPoolWrapper`
+	// (the stock `FullChainApi` pool) or our `BasicPool<MidnightChainApi>`. We keep the stable
+	// `TransactionPoolWrapper` projection so downstream consumers are provably unaffected.
 	type InPoolTransaction =
 		<TransactionPoolWrapper<Block, Client> as sc_service::TransactionPool>::InPoolTransaction;
 	type Error = <FullChainApi<Client, Block> as ChainApi>::Error;
@@ -300,6 +311,8 @@ where
 		+ sc_client_api::blockchain::HeaderBackend<Block>
 		+ sp_runtime::traits::BlockIdTo<Block>
 		+ sp_blockchain::HeaderMetadata<Block, Error = sp_blockchain::Error>
+		+ Send
+		+ Sync
 		+ 'static,
 	Client::Api:
 		sp_transaction_pool::runtime_api::TaggedTransactionQueue<Block> + MidnightRuntimeApi<Block>,
@@ -317,6 +330,8 @@ where
 		+ sc_client_api::blockchain::HeaderBackend<Block>
 		+ sp_runtime::traits::BlockIdTo<Block>
 		+ sp_blockchain::HeaderMetadata<Block, Error = sp_blockchain::Error>
+		+ Send
+		+ Sync
 		+ 'static,
 	Client::Api:
 		sp_transaction_pool::runtime_api::TaggedTransactionQueue<Block> + MidnightRuntimeApi<Block>,
@@ -333,7 +348,17 @@ where
 		if !self.should_accept_extrinsic(at, &xt) {
 			return Err(TxPoolError::ImmediatelyDropped.into());
 		}
-		self.inner.submit_local(at, xt)
+		// `LocalTransactionPool` is only implemented for `BasicPool<FullChainApi>`, not for our
+		// `BasicPool<MidnightChainApi>`. Route through the async `submit_one` with a `Local` source
+		// instead: `MidnightChainApi` short-circuits `Local` straight to the inner `FullChainApi`
+		// (no batching, no queue), so this is the same validation path with no deadlock risk.
+		// Drive it to completion synchronously to honour `submit_local`'s blocking contract, using
+		// `block_in_place` when already on a multi-threaded Tokio worker.
+		let fut = TransactionPool::submit_one(&self.inner, at, TransactionSource::Local, xt);
+		match tokio::runtime::Handle::try_current() {
+			Ok(handle) => tokio::task::block_in_place(|| handle.block_on(fut)),
+			Err(_) => futures::executor::block_on(fut),
+		}
 	}
 }
 

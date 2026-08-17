@@ -457,18 +457,39 @@ zeroize = { opt-level = 3 }
 [patch.crates-io]
 yamux = { git = "https://github.com/midnightntwrk/rust-yamux", branch = "yamux-v0.12.2" }
 parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "master" }
-midnight-ledger-v9            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.1.0.0-rc.3" }
-midnight-zswap                = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-9.0.0-rc.3" }
+# --- Batch-verification (js/batch-verification) ---
+# The crates that changed on the ledger `js/batch-verification` branch are pinned by `rev`
+# to a single "isolate" commit (all 7 as workspace members with `path=` deps stripped, like
+# the rc tags) pushed to the ledger branch `js/batch-verification-isolated`. To refresh after
+# the ledger branch moves, re-isolate (see Batch-Verification-Notes.md § "Ledger dependency
+# wiring"), push the new commit to that branch, and update the `rev` below. Unchanged crates
+# stay on their published rc tags.
+midnight-ledger-v9            = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "31529634bc0c84f1cba4139125ddbbe5a8fc5407" }
+midnight-zswap                = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "31529634bc0c84f1cba4139125ddbbe5a8fc5407" }
 midnight-coin-structure       = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "coin-structure-3.0.0-rc.1" }
 midnight-base-crypto          = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-1.1.0-rc.2" }
 midnight-base-crypto-derive   = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-derive-1.1.0-rc.2" }
-midnight-transient-crypto     = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-3.0.0-rc.2" }
+midnight-transient-crypto     = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "31529634bc0c84f1cba4139125ddbbe5a8fc5407" }
 midnight-transient-crypto-old = { package = "midnight-transient-crypto", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
 midnight-onchain-vm           = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-vm-4.0.0-rc.2" }
-midnight-onchain-state        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-state-4.0.0-rc.3" }
+midnight-onchain-state        = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "31529634bc0c84f1cba4139125ddbbe5a8fc5407" }
 midnight-onchain-runtime      = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-runtime-4.0.0-rc.2" }
-midnight-zkir                 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zkir-2.2.0-rc.3" }
+midnight-zkir                 = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "31529634bc0c84f1cba4139125ddbbe5a8fc5407" }
+midnight-zkir-v3              = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "31529634bc0c84f1cba4139125ddbbe5a8fc5407" }
+# `static/version` moved 9 -> 10 on the branch (new Dust ZKIR-v3 artifacts) without a package
+# version bump, so the crates.io 9.0.0 copy would bake the stale "9" into the data-provider key
+# paths (`dust/<v>/…`, `zswap/<v>/…`). Isolated so `version!()` matches the branch.
+midnight-ledger-static        = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "31529634bc0c84f1cba4139125ddbbe5a8fc5407" }
 midnight-serialize            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.2.0-rc.1" }
+# The ledger branch patches the midnight-zk stack to `irakoton/batch-verify` (the batch-verify
+# API: `batch_verify(.., identify_failures)` returning failing indices). A dependency's
+# `[patch]` table is ignored, so the same redirect has to live here, pinned to the rev the
+# ledger branch's own lockfile resolved. Only the `^7.2.2`/`^0.8.1`/`^0.3.1`/`^2.3.3`
+# requirements match; zkir's `-v1` aliases stay on crates.io.
+midnight-proofs               = { git = "https://github.com/midnightntwrk/midnight-zk", rev = "ae7b9aeb7401fb2396d6f4026a32ec863e01c3a5" }
+midnight-curves               = { git = "https://github.com/midnightntwrk/midnight-zk", rev = "ae7b9aeb7401fb2396d6f4026a32ec863e01c3a5" }
+midnight-circuits             = { git = "https://github.com/midnightntwrk/midnight-zk", rev = "ae7b9aeb7401fb2396d6f4026a32ec863e01c3a5" }
+midnight-zk-stdlib            = { git = "https://github.com/midnightntwrk/midnight-zk", rev = "ae7b9aeb7401fb2396d6f4026a32ec863e01c3a5" }
 
 [workspace.metadata.cargo-shear]
 ignored = []

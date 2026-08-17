@@ -14,9 +14,9 @@
 #![cfg(feature = "can-panic")]
 
 use super::{
-	CostModel, DB, KeyLocation, LocalProvingProvider, PUBLIC_PARAMS, PedersenRandomness,
-	ProofMarker, ProofPreimageMarker, Resolver, ResolverTrait, Signature, StdRng, Transaction,
-	ZswapResolver,
+	CostModel, DB, KeyLocation, PUBLIC_PARAMS, PedersenRandomness, ProofMarker,
+	ProofPreimageMarker, Resolver, ResolverTrait, Signature, StdRng, Transaction, ZswapResolver,
+	make_proving_provider,
 };
 use async_trait::async_trait;
 
@@ -64,8 +64,9 @@ impl<D: DB + Clone> ProofProvider<D> for LocalProofServer {
 		// driven inside the closure (in a fresh current-thread runtime) so even the `!Send` L9 future
 		// never crosses a thread boundary, and `.await`ing the handle yields the calling worker — so N
 		// semaphore-bounded proofs run in real parallel even on the toolkit's single-threaded runtime.
-		// The closure captures only `tx`/`rng`/`resolver` (`&'static`)/`cost_model` — not `self` (it
-		// uses `&*PUBLIC_PARAMS`, a static).
+		// The closure captures only `tx`/`rng`/`resolver` (`&'static`)/`cost_model` — not `self`
+		// (`make_proving_provider` sources its params from `resolver`/`&*PUBLIC_PARAMS`, both
+		// reachable without it).
 		tokio::task::spawn_blocking(move || {
 			let rt = tokio::runtime::Builder::new_current_thread()
 				.enable_all()
@@ -89,7 +90,9 @@ impl<D: DB + Clone> ProofProvider<D> for LocalProofServer {
 						.expect("failed to get keys 'keys'");
 				}
 
-				let pp = LocalProvingProvider { rng, resolver, params: &*PUBLIC_PARAMS };
+				// Per-generation: a plain ZKIR-v2 provider for L7/L8, an IR-tag-dispatching one
+				// for L9 (whose Dust spend circuit is ZKIR-v3). See `versions/proving_provider/`.
+				let pp = make_proving_provider(rng, resolver);
 
 				tx.prove(pp, &cost_model).await.expect("Tx should be provable")
 			})

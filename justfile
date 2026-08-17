@@ -1,6 +1,11 @@
 # Justfile for Midnight Node
 # This Justfile is used to define tasks for building, testing, and running the Midnight Node.
 
+# Seed the local zk-params cache with the Dust and Zswap keys by compiling them from the
+# bundled circuit sources, since they aren't published anywhere for this branch (run once).
+seed-zk-keys:
+  @bash scripts/seed-zk-keys.sh
+
 # Build or fetch compactc from the `compact/` submodule and expose it to toolkit-js via
 # COMPACT_HOME (run once, and after bumping the submodule).
 compactc compact_repo="LFDT-Minokawa/compact" compact_tag_prefix="compactc-v":
@@ -58,3 +63,11 @@ genesis-wallets-devnet-e2e NODE_IMAGE TOOLKIT_IMAGE:
 indexer-api-e2e:
   @scripts/tests/indexer-api-e2e.sh
   @echo "✅ Indexer GraphQL API E2E test completed successfully."
+
+# Prime a proof-heavy chain and archive it for the batch-verify block-import benchmark (run once)
+batch-verify-perf-prime NODE_IMAGE TOOLKIT_IMAGE:
+  @scripts/tests/batch-verify-perf/prime.sh {{NODE_IMAGE}} {{TOOLKIT_IMAGE}}
+
+# A/B benchmark block-import batch verification (off vs on) against the primed archive
+batch-verify-perf-bench NODE_IMAGE:
+  @scripts/tests/batch-verify-perf/benchmark.sh {{NODE_IMAGE}}
