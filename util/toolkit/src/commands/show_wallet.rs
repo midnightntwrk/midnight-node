@@ -168,6 +168,7 @@ mod tests {
 	use super::*;
 	use crate::WalletSeed;
 	use crate::tx_generator::source::FetchCacheConfig;
+	use crate::{IntoWalletAddress, UnshieldedWallet};
 	use test_case::test_case;
 
 	macro_rules! test_fixture {
@@ -180,11 +181,6 @@ mod tests {
 		matches Ok(ShowWalletResult::Json(WalletInfoJson{ utxos, ..}))
 			if !utxos.is_empty();
 		"funded-unshielded-address-0"
-	)]
-	#[test_case(test_fixture!("mn_addr_undeployed1em04acpr67j9jr4ffvgjmmvux40497ddmvpgpw2ezmpa2rj0tlaqhgqswk", "genesis/genesis_block_undeployed.mn") =>
-		matches Ok(ShowWalletResult::Json(WalletInfoJson{ utxos, ..}))
-			if utxos.is_empty();
-		"unfunded-unshielded-address"
 	)]
 	#[test_case(test_fixture!("mn_shield-addr_undeployed12p0cn6f9dtlw74r44pg8mwwjwkr74nuekt4xx560764703qeeuvqxqqgft8uzya2rud445nach4lk74s7upjwydl8s0nejeg6hh5vck0vueqyws5", "genesis/genesis_block_undeployed.mn") =>
 		matches Err(error)
@@ -217,6 +213,44 @@ mod tests {
 		super::execute(args).await
 	}
 
+	/// Seed must not appear in `res/dev/undeployed-genesis-seeds.json` (prefunded faucet list).
+	#[tokio::test]
+	async fn test_from_address_unfunded_wallet() {
+		let seed = WalletSeed::try_from_hex_str(
+			"0000000000000000000000000000000000000000000000000000000000000015",
+		)
+		.unwrap();
+		let wallet = UnshieldedWallet::default(seed);
+		let addr = wallet.address("undeployed").to_bech32();
+		let src_files = vec![concat!(
+			env!("CARGO_MANIFEST_DIR"),
+			"/test-data/genesis/genesis_block_undeployed.mn"
+		)
+		.to_string()];
+		let args = ShowWalletArgs {
+			source: Source {
+				src_url: None,
+				fetch_concurrency: 20,
+				fetch_compute_concurrency: None,
+				src_files: Some(src_files),
+				dust_warp: false,
+				ignore_block_context: false,
+				fetch_only_cached: false,
+				fetch_cache: FetchCacheConfig::InMemory,
+				ledger_state_db: String::new(),
+			},
+			seed: None,
+			address: Some(cli::wallet_address(&addr).unwrap()),
+			debug: false,
+			dry_run: false,
+		};
+		let result = super::execute(args).await;
+		assert!(matches!(
+			result,
+			Ok(ShowWalletResult::Json(WalletInfoJson { ref utxos, .. })) if utxos.is_empty()
+		));
+	}
+
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000001", "genesis/genesis_block_undeployed.mn") =>
 	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
 			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
@@ -239,8 +273,13 @@ mod tests {
 	)]
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000005", "genesis/genesis_block_undeployed.mn") =>
 	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
-			if utxos.is_empty() && coins.is_empty() && dust_utxos.is_empty();
-		"unfunded-unshielded-seed"
+			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
+		"funded-unshielded-seed-5"
+	)]
+	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000014", "genesis/genesis_block_undeployed.mn") =>
+	matches Ok(ShowWalletResult::Json(WalletInfoJson {utxos, coins, dust_utxos, ..}))
+			if !utxos.is_empty() && !coins.is_empty() && !dust_utxos.is_empty();
+		"funded-unshielded-seed-19-hex"
 	)]
 	#[tokio::test]
 	async fn test_from_seed(

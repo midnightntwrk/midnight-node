@@ -26,20 +26,56 @@ fi
 
 if [[ -z $NODE_CONTAINER ]]; then
     echo "Missing NODE_CONTAINER variable, defaulting to 'midnight-node-genesis'"
-    NETWORK="midnight-node-genesis"
+    NODE_CONTAINER="midnight-node-genesis"
 fi
 
-seeds=("0000000000000000000000000000000000000000000000000000000000000001" "0000000000000000000000000000000000000000000000000000000000000002" "0000000000000000000000000000000000000000000000000000000000000003" "0000000000000000000000000000000000000000000000000000000000000004")
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SEEDS_FILE="${SEEDS_FILE:-$REPO_ROOT/res/dev/undeployed-genesis-seeds.json}"
+
+# Prefer an explicit SEEDS override; otherwise load the funded undeployed set from
+# res/dev/undeployed-genesis-seeds.json (twenty wallets). Callers for other networks
+# can pass SEEDS / SEEDS_FILE as needed.
+if [[ -n "${SEEDS:-}" ]]; then
+    read -r -a seeds <<< "$SEEDS"
+elif [[ -f "$SEEDS_FILE" ]]; then
+    mapfile -t seeds < <(python3 -c '
+import json, re, sys
+obj = json.load(open(sys.argv[1]))
+def key(k):
+    m = re.fullmatch(r"wallet-seed-(\d+)", k)
+    return (0, int(m.group(1))) if m else (1, k)
+for k in sorted(obj, key=key):
+    if k.startswith("wallet-seed-"):
+        print(obj[k])
+' "$SEEDS_FILE")
+else
+    echo "No SEEDS override and seeds file not found: $SEEDS_FILE" >&2
+    exit 1
+fi
+
 check_seeds() {
     local command=$1
     local success=true
-    
+
     echo "Checking seeds using command: $command"
-    for seed in ${seeds[@]}; do
-        output=$(docker run --network $NETWORK $TOOLKIT_IMAGE $command --seed $seed --src-url ws://${NODE_CONTAINER}:9944)
-        
-        # Check if coins field is empty using grep
-        if echo "$output" | grep -q "Unshielded UTXOs: \[[[:space:]]*\]"; then
+    for seed in "${seeds[@]}"; do
+        if ! output=$(docker run --network "$NETWORK" "$TOOLKIT_IMAGE" $command --seed "$seed" --src-url "ws://${NODE_CONTAINER}:9944"); then
+            echo "Toolkit '$command' failed for seed $seed"
+            success=false
+            continue
+        fi
+
+        # A successful run must still contain the JSON utxos report — anything
+        # else (e.g. an output-format change) is a failure, not a funded wallet.
+        if ! echo "$output" | grep -q '"utxos"'; then
+            echo "No utxos report in output for seed $seed"
+            success=false
+            continue
+        fi
+
+        # An empty unshielded UTXO set means the wallet is unfunded
+        if echo "$output" | grep -q '"utxos": \[\]'; then
             echo "Wallet for seed $seed has an empty UTXOs list"
             success=false
             continue

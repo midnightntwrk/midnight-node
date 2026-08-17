@@ -131,16 +131,9 @@ Each chain requires a genesis ledger state. All test networks contain a set of s
 
 **Important:** Before generating ledger state, you must first generate the config files (`cnight-config.json`, `ics-config.json`) from their corresponding address files. See [Genesis Generation Guide](genesis/README.md) for the complete dependency sequence.
 
-The exception to this is the `undeployed` network, which uses the following well-known seeds:
+The exception to this is the `undeployed` network, which uses **20** well-known faucet seeds (`wallet-seed-0` … `wallet-seed-19`). Seed values are **hex**: `wallet-seed-0`–`2` are `…0001`–`…0003`, then after the Lace key (`wallet-seed-3`) the remaining wallets use `…0005` through `…0014` (so `wallet-seed-9` = `0x…000a`, and `wallet-seed-N` holds `N+1` in hex with Lace excepted). Seeds `0x…37` (toolkit RNG) and `0x…52` (registered-but-unfunded toolkit e2e wallet) stay intentionally unfunded.
 
-```json
-{
-    "wallet-seed-0": "0000000000000000000000000000000000000000000000000000000000000001",
-    "wallet-seed-1": "0000000000000000000000000000000000000000000000000000000000000002",
-    "wallet-seed-2": "0000000000000000000000000000000000000000000000000000000000000003",
-    "wallet-seed-3": "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d530c8db445e4f2d3ea42a321b260e022aadf05987c9a67ec7b6b6ca1d0593ec9"
-}
-```
+The canonical list lives at [`res/dev/undeployed-genesis-seeds.json`](../res/dev/undeployed-genesis-seeds.json). Genesis generation reads keys in **`wallet-seed-N` numeric order** (so `wallet-seed-10` is processed after `wallet-seed-9`, not lexically by string).
 
 Genesis is rebuilt using the toolkit's `generate-genesis` command:
 
