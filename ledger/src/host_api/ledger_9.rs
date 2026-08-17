@@ -45,6 +45,52 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
+#[cfg(feature = "std")]
+use crate::ledger_8::Bridge as Bridge8;
+#[cfg(feature = "std")]
+type Signature8 = crate::ledger_8::TransactionSignature;
+
+/// Translate a ledger-8 `LedgerApiError` into its ledger-9 counterpart.
+///
+/// The two are distinct types generated from the same source
+/// (`versions/common/types.rs`) by module parameterization, so their SCALE
+/// encodings are identical by construction. Round-tripping keeps this correct
+/// when a variant is added, where a hand-written match would need editing in
+/// lockstep. `ledger_8_error_encoding_matches_ledger_9` guards the assumption.
+#[cfg(feature = "std")]
+fn as_ledger_9_error(error: crate::ledger_8::types::LedgerApiError) -> LedgerApiError {
+	use parity_scale_codec::{Decode, Encode};
+	LedgerApiError::decode(&mut &error.encode()[..]).unwrap_or(LedgerApiError::HostApiError)
+}
+
+/// Serve a read-only ledger accessor from the ledger-8 bridge when `$state_key`
+/// is a ledger-8 arena root, by returning early from the enclosing host function.
+/// Falls through to the ledger-9 body otherwise.
+///
+/// For the ledger 8 -> 9 hard-fork, `system_version == 1` which means runtime code
+/// is applied during the upgrade block rather than queued to be applied in the next
+/// block. This code allows off-chain runtime calls to access historic block data
+/// using the correct ledger api despite the runtime code/chain data skew.
+///
+/// This will not be needed for future forks; see:
+/// - https://github.com/midnightntwrk/midnight-node/pull/1900
+///
+/// `$call` names the `Bridge` method and takes its arguments verbatim; only the
+/// storage-mode dispatch and the error translation are supplied here.
+#[cfg(feature = "std")]
+macro_rules! serve_pre_migration_v8_read {
+	($ext:expr, $state_key:expr, $call:ident($($arg:expr),* $(,)?)) => {
+		if crate::is_ledger_8_state_key($state_key) {
+			let result = if is_unified($ext) {
+				Bridge8::<Signature8, DbUnified>::$call($($arg),*)
+			} else {
+				Bridge8::<Signature8, DbSeparate>::$call($($arg),*)
+			};
+			return result.map_err(as_ledger_9_error);
+		}
+	};
+}
+
 #[runtime_interface]
 pub trait Ledger9Bridge {
 	fn set_default_storage(&mut self) {
@@ -235,6 +281,12 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		contract_address: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_contract_state(state_key, contract_address)
+		);
+
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::get_contract_state(state_key, contract_address)
 		} else {
@@ -266,6 +318,12 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		contract_address: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_zswap_chain_state(state_key, contract_address)
+		);
+
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::get_zswap_chain_state(state_key, contract_address)
 		} else {
@@ -282,6 +340,12 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		beneficiary: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_unclaimed_amount(state_key, beneficiary)
+		);
+
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::get_unclaimed_amount(state_key, beneficiary)
 		} else {
@@ -298,6 +362,12 @@ pub trait Ledger9Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		beneficiary: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
+		serve_pre_migration_v8_read!(
+			*self,
+			state_key,
+			get_bridge_receiving_amount(state_key, beneficiary)
+		);
+
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::get_bridge_receiving_amount(state_key, beneficiary)
 		} else {
@@ -313,6 +383,8 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		serve_pre_migration_v8_read!(*self, state_key, get_ledger_parameters(state_key));
+
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::get_ledger_parameters(state_key)
 		} else {
@@ -328,6 +400,8 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<u128, LedgerApiError>> {
+		serve_pre_migration_v8_read!(*self, state_key, get_c_to_m_bridge_min_amount(state_key));
+
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::get_c_to_m_bridge_min_amount(state_key)
 		} else {
@@ -337,6 +411,14 @@ pub trait Ledger9Bridge {
 
 	/*
 	 * Returns the expected fee to pay for a submitting a transaction
+	 *
+	 * No `serve_pre_migration_v8_read!` guard here, unlike the accessors above: a
+	 * cost estimate is always requested for a transaction about to be submitted,
+	 * and `get_ledger_version` reports ledger 9 as soon as the new code is live, so
+	 * `tx` is a v9-format transaction that ledger-8 code cannot deserialize anyway.
+	 * The same reasoning covers the transaction paths (`validate_transaction`,
+	 * `apply_transaction`, ...): at the skew block they concern v9 transactions, and
+	 * they resolve on their own one block later once the migration has run.
 	 */
 	fn get_transaction_cost(
 		&mut self,
@@ -370,6 +452,8 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		serve_pre_migration_v8_read!(*self, state_key, get_zswap_state_root(state_key));
+
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::get_zswap_state_root(state_key)
 		} else {
@@ -392,6 +476,8 @@ pub trait Ledger9Bridge {
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
+		serve_pre_migration_v8_read!(*self, state_key, get_ledger_state_root(state_key));
+
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::get_ledger_state_root(state_key)
 		} else {
@@ -602,5 +688,38 @@ pub fn batch_verify_transactions(
 			runtime_version,
 			isolate_on_failure,
 		)
+	}
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+	use super::as_ledger_9_error;
+	use crate::{ledger_8::types as v8, ledger_9::types as v9};
+
+	/// `as_ledger_9_error` relies on the two versions' `LedgerApiError` sharing a
+	/// SCALE encoding, which holds because both are generated from
+	/// `versions/common/types.rs`. Pin that down — including a nested payload and
+	/// the last variant, which is where a divergence would first show up — so a
+	/// future edit to one version's enum fails here rather than silently turning
+	/// every pre-migration read error into `HostApiError`.
+	#[test]
+	fn ledger_8_error_encoding_matches_ledger_9() {
+		let cases = [
+			(v8::LedgerApiError::NoLedgerState, v9::LedgerApiError::NoLedgerState),
+			(v8::LedgerApiError::ContractNotPresent, v9::LedgerApiError::ContractNotPresent),
+			(v8::LedgerApiError::BeneficiaryNotFound, v9::LedgerApiError::BeneficiaryNotFound),
+			(
+				v8::LedgerApiError::Deserialization(v8::DeserializationError::TypedArenaKey),
+				v9::LedgerApiError::Deserialization(v9::DeserializationError::TypedArenaKey),
+			),
+			(
+				v8::LedgerApiError::Serialization(v8::SerializationError::LedgerParameters),
+				v9::LedgerApiError::Serialization(v9::SerializationError::LedgerParameters),
+			),
+		];
+
+		for (from, expected) in cases {
+			assert_eq!(as_ledger_9_error(from.clone()), expected, "mistranslated {from:?}");
+		}
 	}
 }

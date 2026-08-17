@@ -204,10 +204,13 @@ pub struct MidnightCfg {
 	#[serde(default = "default_batch_verify_queue_capacity")]
 	pub batch_verify_queue_capacity: usize,
 
-	/// Offset (seconds) for tblock to allow transactions with invalid ctime values
-	/// into blocks when syncing historical chain data
+	/// Offset (seconds) added to the *parent* block's timestamp when verifying the first
+	/// ledger transaction of a block, to allow transactions with invalid ctime values into
+	/// blocks when syncing historical chain data. Must equal the skew the mempool applies,
+	/// `slot_duration_secs * (1 + MaxSkippedSlots)`.
 	pub tblock_correction_offset: i64,
-	/// Time in seconds since unix epoch after which to ignore the tblock correction
+	/// Block timestamp (seconds since unix epoch) at and after which to ignore the tblock
+	/// correction. Compared against the block's own timestamp, not wall-clock time.
 	pub tblock_correction_disable_after: u64,
 }
 

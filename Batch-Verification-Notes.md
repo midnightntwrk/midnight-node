@@ -421,8 +421,8 @@ This branch consumes the ledger repo's `js/batch-verification` branch. How that 
 
 **Model.** Our workspace depends on ledger crates by their published *names/versions*
 (`[workspace.dependencies]`), and `[patch.crates-io]` redirects each name to a git ref.
-Three ledger versions coexist (L7/L8/L9); a patch is keyed by crate name and only applies
-to the version that matches, so L7/L8 keep resolving from crates.io while L9 comes from git.
+Two ledger versions coexist (L8/L9); a patch is keyed by crate name and only applies
+to the version that matches, so L8 keeps resolving from crates.io while L9 comes from git.
 
 **Why the branch can't be patched in raw.** On the branch, every inter-crate dep still
 carries `path = "../foo"` (e.g. `storage = { version = "2.0.0", path = "../storage", .. }`).
