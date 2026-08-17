@@ -27,6 +27,7 @@ use sp_runtime::{
 	BuildStorage, Perbill,
 	traits::{BlakeTwo256, Get, IdentityLookup},
 };
+use sp_version::RuntimeVersion;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -57,7 +58,7 @@ impl frame_system::Config for Test {
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type RuntimeEvent = RuntimeEvent;
 	type BlockHashCount = ConstU64<250>;
-	type Version = ();
+	type Version = MockRuntimeVersion;
 	type PalletInfo = PalletInfo;
 	type AccountData = ();
 	type OnNewAccount = ();
@@ -81,6 +82,14 @@ parameter_types! {
 		Weight::from_parts(2u64 * WEIGHT_REF_TIME_PER_SECOND, u64::MAX),
 		NORMAL_DISPATCH_RATIO,
 	);
+	pub static TestSpecVersion: u32 = 1;
+}
+
+pub struct MockRuntimeVersion;
+impl Get<RuntimeVersion> for MockRuntimeVersion {
+	fn get() -> RuntimeVersion {
+		RuntimeVersion { spec_version: TestSpecVersion::get(), ..Default::default() }
+	}
 }
 
 pub const SLOT_DURATION: u64 = 6 * 1000;
@@ -144,6 +153,22 @@ impl pallet_block_rewards::Config for Test {
 // Build genesis storage according to the mock runtime.
 pub fn new_test_ext() -> sp_io::TestExternalities {
 	frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into()
+}
+
+pub type MetricsHandle =
+	std::sync::Arc<std::sync::Mutex<Option<midnight_primitives_ledger::LedgerMetrics>>>;
+
+pub fn new_test_ext_with_metrics() -> (sp_io::TestExternalities, MetricsHandle) {
+	let registry = prometheus_endpoint::Registry::new();
+	let metrics = midnight_primitives_ledger::LedgerMetrics::register(&registry)
+		.expect("metrics registration");
+	let handle: MetricsHandle = std::sync::Arc::new(std::sync::Mutex::new(Some(metrics)));
+
+	let mut ext: sp_io::TestExternalities =
+		frame_system::GenesisConfig::<Test>::default().build_storage().unwrap().into();
+	ext.register_extension(midnight_primitives_ledger::LedgerMetricsExt::new(handle.clone()));
+
+	(ext, handle)
 }
 
 pub fn midnight_events() -> Vec<super::Event> {

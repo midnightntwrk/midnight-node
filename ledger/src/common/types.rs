@@ -18,18 +18,6 @@ use scale_info_derive::TypeInfo;
 
 pub const PERSISTENT_HASH_BYTES: usize = 32;
 pub type Hash = [u8; PERSISTENT_HASH_BYTES];
-pub struct WrappedHash(pub Hash);
-
-const TWOX128_HASH_BYTES: usize = 16;
-pub type Hash128 = [u8; TWOX128_HASH_BYTES];
-
-impl From<Hash128> for WrappedHash {
-	fn from(value: Hash128) -> Self {
-		let mut extended = [0u8; PERSISTENT_HASH_BYTES]; // Create a new [u8; 32] array filled with zeros
-		extended[..TWOX128_HASH_BYTES].copy_from_slice(&value); // Copy the original [u8; 16] into the first part
-		WrappedHash(extended) // Return the extended array
-	}
-}
 
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct TransactionApplied {

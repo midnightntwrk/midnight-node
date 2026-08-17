@@ -40,11 +40,11 @@ pub struct LedgerMetrics {
 	pub storage_fetch_time: HistogramVec,
 	/// Storage flush time
 	pub storage_flush_time: HistogramVec,
-	/// Transaction validation cache hits (labeled by cache_type: "strict" or "soft")
+	/// Transaction validation cache hits (labeled by the type of cache hit: "strict" or "revalidation")
 	pub tx_validation_cache_hits: CounterVec<U64>,
 	/// Transaction validation cache misses
 	pub tx_validation_cache_misses: CounterVec<U64>,
-	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
+	/// Current cache entry count
 	pub tx_validation_cache_size: GaugeVec<U64>,
 }
 
@@ -127,7 +127,7 @@ impl LedgerMetrics {
 						"Time spent for validating a transaction",
 					)
 					.buckets(time_buckets.clone()),
-					&["tx_type"],
+					&["tx_type", "cache_outcome"],
 				)?,
 				registry,
 			)?,
@@ -233,9 +233,14 @@ impl LedgerMetricsExt {
 		});
 	}
 
-	pub fn observe_txs_validating_time(&mut self, time: f64, label: &'static str) {
+	pub fn observe_txs_validating_time(
+		&mut self,
+		time: f64,
+		tx_type: &'static str,
+		cache_outcome: &str,
+	) {
 		self.observe(|m| {
-			m.txs_validating_time.with_label_values(&[label]).observe(time);
+			m.txs_validating_time.with_label_values(&[tx_type, cache_outcome]).observe(time);
 		});
 	}
 
