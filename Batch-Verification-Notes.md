@@ -438,7 +438,7 @@ descendant). Only the crates whose *own* source changed vs. that rc source (`<ta
 re-isolating; unchanged crates keep their published rc tags (they reference changed siblings
 by version, which our patches redirect). Changed set:
 
-All 7 are pinned to a **single** isolate commit (`rev = fc87c27c…`, the tip of the ledger branch
+All 7 are pinned to a **single** isolate commit (`rev = 31529634…`, the tip of the ledger branch
 `js/batch-verification-isolated`) — they're all workspace members of that one commit with their
 `path=` deps stripped, so every patch resolves its package as a member of the same commit;
 inter-crate deps among the 7 route registry→patch→same rev. (The ledger repo's own
@@ -479,12 +479,17 @@ ignored — only the root workspace's counts — so the node repeats those four 
 deps (`blake2b_halo2`, `sha3-circuit`) are themselves git deps — fine, since they hang off a git
 dependency rather than a patch.
 
-**Current state.** The single isolate commit `fc87c27c` (ledger branch tip `ef5f7a04`) is pushed
+**Current state.** The single isolate commit `31529634` (ledger branch tip `99f6dbfb`) is pushed
 to the ledger remote branch `js/batch-verification-isolated`, and the node `[patch.crates-io]`
 pins the 7 crates by `rev` to that commit over
 `https://github.com/midnightntwrk/midnight-ledger`. No tags. This is shareable/CI-ready — no
 `file://`, no machine-local dependency. The commit stays reachable as long as the
-`js/batch-verification-isolated` branch exists on the remote (don't delete it).
+`js/batch-verification-isolated` branch exists on the remote (don't delete it). The `ef5f7a04
+→ 99f6dbfb` step is diagnostics only — `MalformedTransaction::InvalidProof` and
+`BatchVerifyError::Unlocalized` now carry the failing stage, proof version, contract
+address/entry point, VK `k`, public-input count and proof size instead of a bare
+`"Invalid proof"`, which is what the per-tx mempool rejection logs surface. No API movement,
+no node-side changes.
 
 **Proving keys: compile them, they aren't published.** `static/version` is now
 `10-dust-zswap-v3` — first bumped 9→10 for the ZKIR-v3 Dust circuit, then again when Zswap's

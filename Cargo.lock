@@ -7844,7 +7844,7 @@ dependencies = [
 [[package]]
 name = "midnight-ledger-static"
 version = "9.0.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c#fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=31529634bc0c84f1cba4139125ddbbe5a8fc5407#31529634bc0c84f1cba4139125ddbbe5a8fc5407"
 dependencies = [
  "proc-macro2",
  "quote 1.0.45",
@@ -7853,7 +7853,7 @@ dependencies = [
 [[package]]
 name = "midnight-ledger-v9"
 version = "1.0.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c#fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=31529634bc0c84f1cba4139125ddbbe5a8fc5407#31529634bc0c84f1cba4139125ddbbe5a8fc5407"
 dependencies = [
  "anyhow",
  "derive-where",
@@ -8433,7 +8433,7 @@ dependencies = [
 [[package]]
 name = "midnight-onchain-state"
 version = "4.0.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c#fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=31529634bc0c84f1cba4139125ddbbe5a8fc5407#31529634bc0c84f1cba4139125ddbbe5a8fc5407"
 dependencies = [
  "derive-where",
  "fake",
@@ -8837,7 +8837,7 @@ dependencies = [
 [[package]]
 name = "midnight-transient-crypto"
 version = "3.0.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c#fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=31529634bc0c84f1cba4139125ddbbe5a8fc5407#31529634bc0c84f1cba4139125ddbbe5a8fc5407"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -8918,7 +8918,7 @@ dependencies = [
 [[package]]
 name = "midnight-zkir"
 version = "2.2.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c#fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=31529634bc0c84f1cba4139125ddbbe5a8fc5407#31529634bc0c84f1cba4139125ddbbe5a8fc5407"
 dependencies = [
  "anyhow",
  "const-hex",
@@ -8948,7 +8948,7 @@ dependencies = [
 [[package]]
 name = "midnight-zkir-v3"
 version = "3.0.0-rc.2"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c#fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=31529634bc0c84f1cba4139125ddbbe5a8fc5407#31529634bc0c84f1cba4139125ddbbe5a8fc5407"
 dependencies = [
  "anyhow",
  "clap",
@@ -9035,7 +9035,7 @@ dependencies = [
 [[package]]
 name = "midnight-zswap"
 version = "9.0.0"
-source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c#fc87c27c2fd2d4dad272b64d5bc9a6e00ff0e36c"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=31529634bc0c84f1cba4139125ddbbe5a8fc5407#31529634bc0c84f1cba4139125ddbbe5a8fc5407"
 dependencies = [
  "anyhow",
  "derive-where",
