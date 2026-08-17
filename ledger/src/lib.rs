@@ -30,44 +30,6 @@ mod utils;
 pub mod host_api;
 
 #[path = "versions"]
-pub mod ledger_7 {
-	#[cfg(feature = "std")]
-	pub(crate) use {
-		base_crypto as base_crypto_local, coin_structure as coin_structure_local,
-		ledger_storage as ledger_storage_local,
-		midnight_node_ledger_helpers::ledger_7 as helpers_local,
-		midnight_serialize as midnight_serialize_local, mn_ledger as mn_ledger_local,
-		onchain_runtime as onchain_runtime_local, transient_crypto as transient_crypto_local,
-		zswap as zswap_local,
-	};
-
-	#[allow(clippy::duplicate_mod)]
-	#[path = "block_context/pre_ledger_8.rs"]
-	mod block_context;
-	pub use block_context::*;
-
-	#[allow(clippy::duplicate_mod)]
-	#[path = "error_ext/ledger_7.rs"]
-	mod error_ext;
-
-	#[path = "system_tx/ledger_7.rs"]
-	mod system_tx;
-
-	#[path = "guaranteed_validation/ledger_7.rs"]
-	mod guaranteed_validation;
-
-	#[path = "post_block_update/ledger_7.rs"]
-	mod post_block_update;
-
-	pub const CRATE_NAME: &str = "mn-ledger";
-	#[cfg(feature = "std")]
-	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
-	#[allow(clippy::duplicate_mod)]
-	mod common;
-	pub use common::*;
-}
-
-#[path = "versions"]
 pub mod ledger_8 {
 	#[cfg(feature = "std")]
 	pub(crate) use {
@@ -149,15 +111,13 @@ pub use ledger_9 as latest;
 /// example after Tokio/node shutdown completes) to ensure DB-backed storage is
 /// released deterministically.
 pub fn drop_all_default_storage() {
-	ledger_7::storage::drop_default_storage_if_exists();
 	ledger_8::storage::drop_default_storage_if_exists();
 	ledger_9::storage::drop_default_storage_if_exists();
 }
 
 /// Parse the `vNN` from a `ledger-state[vNN]` tag embedded in a tagged blob (a `StateKey` or a
 /// genesis_state). Used to dispatch warp serialize/import (and genesis-init) to the ledger module
-/// whose `LedgerState` serialization matches: **v5 → `ledger_7`, v13 → `ledger_8`,
-/// v16/v17/v18 → `ledger_9`**.
+/// whose `LedgerState` serialization matches: **v13 → `ledger_8`, v16/v17/v18 → `ledger_9`**.
 /// A warp-syncing node can target a chain governed by an *older* ledger version than this build's
 /// latest (e.g. a real devnet whose arena is still v13), so the version is read from the data, not
 /// assumed to be the tip's.
@@ -171,7 +131,7 @@ pub fn ledger_state_tag_version(tagged: &[u8]) -> Option<u32> {
 }
 
 /// Expand to the `(DbSeparate, DbUnified)`-parameterized call of a `Bridge` arena method on the given
-/// ledger version module (`ledger_7`/`ledger_8`/`ledger_9`), picking the DB instantiation by `unified`.
+/// ledger version module (`ledger_8`/`ledger_9`), picking the DB instantiation by `unified`.
 #[cfg(feature = "std")]
 macro_rules! bridge_arena_call {
 	($ver:ident, $unified:expr, $method:ident ( $($arg:expr),* )) => {{
@@ -207,8 +167,6 @@ pub fn serialize_ledger_snapshot(unified: bool, state_key: &[u8]) -> Result<Vec<
 		},
 		Some(13) => bridge_arena_call!(ledger_8, unified, serialize_ledger_snapshot(state_key))
 			.map_err(|e| format!("{e:?}")),
-		Some(5) => bridge_arena_call!(ledger_7, unified, serialize_ledger_snapshot(state_key))
-			.map_err(|e| format!("{e:?}")),
 		other => Err(format!("unsupported ledger-state version {other:?} in StateKey")),
 	}
 }
@@ -228,7 +186,6 @@ pub fn has_ledger_state(unified: bool, state_key: &[u8]) -> bool {
 			bridge_arena_call!(ledger_9, unified, get_ledger_state_root(state_key)).is_ok()
 		},
 		Some(13) => bridge_arena_call!(ledger_8, unified, get_ledger_state_root(state_key)).is_ok(),
-		Some(5) => bridge_arena_call!(ledger_7, unified, get_ledger_state_root(state_key)).is_ok(),
 		_ => false,
 	}
 }
@@ -295,13 +252,6 @@ pub fn import_verified_ledger_snapshot(
 		Some(13) => {
 			bridge_arena_call!(
 				ledger_8,
-				unified,
-				import_verified_ledger_snapshot(blob, expected_state_key)
-			)
-		},
-		Some(5) => {
-			bridge_arena_call!(
-				ledger_7,
 				unified,
 				import_verified_ledger_snapshot(blob, expected_state_key)
 			)

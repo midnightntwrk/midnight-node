@@ -74,22 +74,18 @@ default_constructed_unit_structs = { level = "allow", priority = 2 } # stylistic
 
 [workspace.dependencies]
 # Midnight dependencies
-# Ledger 7
-mn-ledger = { version = "=7.0.3", package = "midnight-ledger" }
-ledger-storage = { version = "=1.1.1", package = "midnight-storage", features = ["parity-db"] }
+# Shared 2.x deps (used by Ledger 8)
 coin-structure = { version = "^2.0.0", package = "midnight-coin-structure" }
-onchain-runtime = { version = "=2.0.1", package = "midnight-onchain-runtime" }
 base-crypto = { version = "^1.0.0", package = "midnight-base-crypto" }
 transient-crypto = { version = "^2.0.0", package = "midnight-transient-crypto" }
-zswap = { version = "=7.0.3", package = "midnight-zswap" }
 # midnight-zkir 2.2.0 (ledger 9.1 rc.3) carries both the 3.x stack and `transient-crypto-old`
-# (2.x), so it proves L7/L8 (v1 circuits) and L9 (v1/v2) alike. The rc.2-era renamed `zkir-2-1`
+# (2.x), so it proves L8 (v1 circuits) and L9 (v1/v2) alike. The rc.2-era renamed `zkir-2-1`
 # crate is gone: rc.3 dropped the separate 2.x zkir, and its frozen `Zkir` impl can't satisfy
 # transient-crypto 2.2.0's new tagged-IR trait methods.
 zkir = { version = "^2.2.0", package = "midnight-zkir" }
 
 # Ledger 8 (compatible with layout-v2)
-# coin-structure, transient-crypto and zkir share versions with L7 so reuse those entries.
+# coin-structure, transient-crypto (2.x) and zkir are shared above so reuse those entries.
 mn-ledger-8 = { version = "=8.1.1", package = "midnight-ledger" }
 # `state-translation` (needed by the v8->v9 storage migration) pulls in
 # `public-internal-structure`, exposing `merkle_patricia_trie`/`storable`/the
@@ -104,7 +100,7 @@ zswap-ledger-8 = { version = "=8.1.1", package = "midnight-zswap" }
 # Ledger 9 (compatible with layout-v2; midnight-ledger-v9 crate)
 # storage shares versions with L8 so reuses that entry. coin-structure and
 # transient-crypto went semver-major in L9 so get their own entries. The workspace `zkir`
-# (midnight-zkir 2.2.0) serves all of L7/L8/L9.
+# (midnight-zkir 2.2.0) serves both L8 and L9.
 mn-ledger-9 = { version = "=1.0.0", package = "midnight-ledger-v9" }
 onchain-runtime-ledger-9 = { version = "=4.0.0", package = "midnight-onchain-runtime" }
 # v9 side of the state translation table (matches `mn-ledger-9`'s `ContractState`

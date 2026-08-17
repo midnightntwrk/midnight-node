@@ -96,16 +96,6 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 
 			execute_with_builders_v8(args.contract_call, context, prover, &args.dest_dir).await;
 		},
-		LedgerVersion::Ledger7 => {
-			let context = Arc::new(fork_ctx.into_ledger7().expect("expected ledger 7 context"));
-			let prover: Arc<
-				dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
-						midnight_node_ledger_helpers::ledger_7::DefaultDB,
-					>,
-			> = Arc::new(midnight_node_ledger_helpers::ledger_7::LocalProofServer::new());
-
-			execute_with_builders_v7(args.contract_call, context, prover, &args.dest_dir).await;
-		},
 	}
 }
 
@@ -165,43 +155,6 @@ async fn execute_with_builders_v8(
 	};
 	type Ctx = midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
 		midnight_node_ledger_helpers::ledger_8::DefaultDB,
-	>;
-	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
-		match contract_call {
-			ContractCall::Deploy(a) => {
-				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
-			},
-			ContractCall::Call(a) => {
-				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
-			},
-			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
-		};
-
-	builder
-		.generate_intent_file(dest_dir, partial_file_name)
-		.await
-		.expect("failed to generate intent file");
-}
-
-async fn execute_with_builders_v7(
-	contract_call: ContractCall,
-	context: Arc<
-		midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
-			midnight_node_ledger_helpers::ledger_7::DefaultDB,
-		>,
-	>,
-	prover: Arc<
-		dyn midnight_node_ledger_helpers::ledger_7::ProofProvider<
-				midnight_node_ledger_helpers::ledger_7::DefaultDB,
-			>,
-	>,
-	dest_dir: &str,
-) {
-	use crate::tx_generator::builder::builders::ledger_7::{
-		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
-	};
-	type Ctx = midnight_node_ledger_helpers::ledger_7::context::LedgerContext<
-		midnight_node_ledger_helpers::ledger_7::DefaultDB,
 	>;
 	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
 		match contract_call {
