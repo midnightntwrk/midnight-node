@@ -134,17 +134,6 @@ pub async fn execute_many(
 			seeds
 				.iter()
 				.map(|seed| {
-					let seed_v7 = crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(
-						seed.clone(),
-					);
-					crate::commands::fork::ledger_7::dust_balance::dust_balance(&ctx, seed_v7)
-				})
-				.collect::<Result<Vec<_>, _>>()
-		},
-		|ctx| {
-			seeds
-				.iter()
-				.map(|seed| {
     				let seed_v8 = crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(
     					seed.clone(),
     				);
@@ -461,7 +450,7 @@ mod tests {
 					 got {ctx_tblock}",
 				);
 			},
-			ForkAwareLedgerContext::Ledger7(_) | ForkAwareLedgerContext::Ledger8(_) => {
+			ForkAwareLedgerContext::Ledger8(_) => {
 				panic!("post-fork context should be on Ledger9 after replay")
 			},
 		}

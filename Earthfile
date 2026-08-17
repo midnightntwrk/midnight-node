@@ -30,6 +30,12 @@ ARG --global CACHE_KEY=local
 # environment variable GitHub Actions always exports.
 ARG --global CI=false
 
+# renovate: datasource=node-version depName=node versioning=node
+ARG --global NODEJS_VERSION=24.18.0
+
+# renovate: datasource=npm packageName=npm
+ARG --global NPM_VERSION=12.0.2
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -734,14 +740,11 @@ node-ci-image-single-platform:
         mv "gh_2.62.0_linux_${GH_ARCH}/bin/gh" /usr/local/bin/ && \
         rm -rf gh_2.62.0_linux_${GH_ARCH}* gh.tar.gz
 
-    # Node.js + npm — pinned official binaries, NOT AL2023's microdnf nodejs (which is
-    # v18 and lacks the File API undici needs). +local-env-ci runs `npm ci`/`npm run`
-    # straight off this base image, so the version baked here is the one it uses.
-    # renovate: datasource=node-version packageName=node
-    ARG NODE_VERSION=24.18.0
+    # +local-env-ci runs `npm ci`/`npm run` straight off this base image, so the node
+    # and npm baked here are the ones it uses. Versions: NODEJS_VERSION/NPM_VERSION.
     RUN ARCH=$(uname -m) && \
         if [ "$ARCH" = "aarch64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
-        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
+        curl -fsSL "https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
         node --version && npm --version
@@ -805,6 +808,15 @@ prep-no-copy:
     FROM midnightntwrk/midnight-node-ci:${RUST_VERSION}-${COMPACTC_VERSION}-$NATIVEARCH
 
     # ca-certificates and curl-minimal already present in the CI base image
+
+    # Pin npm for every target built off +prep/+prep-no-copy — notably the +local-env-*
+    # targets, which run `npm ci` in local-environment/ against this image's node with no
+    # tarball overlay of their own. Deliberately here rather than (only) in the CI base
+    # image: that image is consumed by tag above, and the tag is derived from RUST_VERSION
+    # and COMPACTC_VERSION, so an npm-only bump produces no new tag and would not reach
+    # any build until the image was force-republished. Targets that DO overlay node
+    # (+toolkit-js-prep, +build-test-toolkit) re-pin after their overlay.
+    RUN npm install -g npm@${NPM_VERSION} && node --version && npm --version
 
     # cargo's home lives here — git/registry cache, config.toml, AND build-time-installed tool
     # binaries ($CARGO_HOME/bin). Relocating it makes the CACHE --id cargo-git/cargo-reg mounts
@@ -937,19 +949,18 @@ toolkit-js-prep:
     RUN microdnf -y install tar gzip xz perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 23 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     # rm -rf node_modules first: this image inherits node/npm from the CI base, and
     # `tar` overlays rather than replaces, so leftover files from the base's older npm
     # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
-    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
-    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt at the
+    # current NODEJS_VERSION — then the base and this overlay agree and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
         rm -rf /usr/local/lib/node_modules && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     COPY COMPACTC_VERSION .
@@ -1196,24 +1207,23 @@ build-test-toolkit:
     RUN microdnf -y install tar gzip xz docker && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 23 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
-    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
-    ARG NODE_VERSION=24.18.0
+    # Native architecture: the tests run on the native platform even though toolkit-js is from amd64.
     # TARGETARCH already declared above for the /target cache id
     # rm -rf node_modules first: this image inherits node/npm from the CI base, and
     # `tar` overlays rather than replaces, so leftover files from the base's older npm
     # would mix with the new npm and break `npm ci` (minipass "Class extends undefined").
-    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt with
-    # node 24.18.0 — then the base and this overlay are the same version and won't mix.
+    # TODO: drop the `rm -rf` once the published midnight-node-ci image is rebuilt at the
+    # current NODEJS_VERSION — then the base and this overlay agree and won't mix.
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
         rm -rf /usr/local/lib/node_modules && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     # Test
@@ -1525,19 +1535,16 @@ toolkit-image:
     RUN microdnf -y install tar-1.34 gzip-1.12 xz-5.2.5 perl-Digest-SHA && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18, which lacks File API needed by undici)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=24.18.0
     RUN if [ "$NATIVEARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version && \
-        npm install -g npm@11.18.0 && npm --version
+        npm install -g npm@${NPM_VERSION} && \
+        node --version && npm --version
 
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
@@ -1585,19 +1592,16 @@ audit-npm:
     RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        npm install -g npm@11.18.0 && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     COPY ${DIRECTORY} ${DIRECTORY}
@@ -1624,19 +1628,16 @@ audit-yarn:
     RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 22 from official binaries (AL2023's nodejs is v18)
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        npm install -g npm@11.18.0 && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
     # Install and enable corepack for yarn support
@@ -1676,21 +1677,23 @@ fix-lock-npm:
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
     # Keep in sync with audit-npm target
-    # renovate: datasource=node-version depName=node versioning=node
-    ARG NODE_VERSION=24.18.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
         else \
             NODE_ARCH="x64"; \
         fi && \
-        curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        curl -fsSL https://nodejs.org/dist/v${NODEJS_VERSION}/node-v${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        npm install -g npm@11.18.0 && \
+        npm install -g npm@${NPM_VERSION} && \
         node --version && npm --version
 
-    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/
+    # .npmrc must come along: this is the only npm site that copies individual files
+    # rather than the whole directory, and without it the lockfile would be regenerated
+    # with no min-release-age cooldown — the one place it matters most, since `npm install`
+    # is what resolves fresh versions.
+    COPY ${DIRECTORY}/package.json ${DIRECTORY}/package-lock.json ${DIRECTORY}/.npmrc ${DIRECTORY}/
     WORKDIR ${DIRECTORY}
     RUN npm install
     SAVE ARTIFACT package-lock.json AS LOCAL ${DIRECTORY}/package-lock.json
