@@ -146,9 +146,6 @@ jobs:
       - name: Run rebuild-chainspec
         env:
           EARTHLY_CONFIG: .earthly/config.yml
-          # No .envrc here to forward it, so set directly: disable Earthly build caches on
-          # CI runners (see the CI ARG in the Earthfile).
-          EARTHLY_BUILD_ARGS: CI=true
           NETWORKS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.networks || steps.parse_comment.outputs.networks }}
           VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || steps.parse_comment.outputs.version }}
         run: |

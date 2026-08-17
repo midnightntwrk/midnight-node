@@ -100,9 +100,6 @@ jobs:
       - name: Run rebuild-metadata
         env:
           EARTHLY_CONFIG: .earthly/config.yml
-          # No .envrc here to forward it, so set directly: disable Earthly build caches on
-          # CI runners (see the CI ARG in the Earthfile).
-          EARTHLY_BUILD_ARGS: CI=true
         run: |
           earthly -P +rebuild-metadata
 
