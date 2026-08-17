@@ -37,10 +37,11 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn annotates_git_dependency_with_tag_and_rev() {
-		// A git dep's tag is mutable; the locked commit SHA is the immutable build identity - both.
+	fn annotates_git_dependency_with_rev() {
+		// The locked commit SHA is the immutable build identity, so that's what's asserted. A tag
+		// is recorded too when the pin carries one, but it's optional: this branch pins the ledger
+		// by bare `rev` to the batch-verification isolate commit, which has no tag.
 		let v = find_dependency_version("mn-ledger-9").expect("mn-ledger-9 should resolve");
-		assert!(v.contains("tag:"), "expected tag annotation, got {v:?}");
 		let rev = v
 			.split("rev:")
 			.nth(1)

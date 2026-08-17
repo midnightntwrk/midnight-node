@@ -146,11 +146,12 @@ mod tests {
 	/// since only contract calls ever call `check()` — has become load-bearing.
 	#[test]
 	fn committed_contract_ir_is_still_v2() {
-		let ir = std::fs::read(concat!(
-			env!("CARGO_MANIFEST_DIR"),
-			"/../../static/contracts/simple-merkle-tree/zkir/check.bzkir"
-		))
-		.expect("committed simple-merkle-tree zkir should be readable");
+		// `static/` isn't in the CI build context - only the copied subset under
+		// `MIDNIGHT_LEDGER_TEST_STATIC_DIR` (the same var `test_resolver` reads) is.
+		let dir = std::env::var("MIDNIGHT_LEDGER_TEST_STATIC_DIR")
+			.expect("MIDNIGHT_LEDGER_TEST_STATIC_DIR should be set as env variable");
+		let ir = std::fs::read(format!("{dir}/simple-merkle-tree/zkir/check.bzkir"))
+			.expect("committed simple-merkle-tree zkir should be readable");
 		let tag = peek_tag(&mut std::io::Cursor::new(&ir)).expect("zkir should carry a tag");
 		assert_eq!(tag, TAG_V2);
 	}

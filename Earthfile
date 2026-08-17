@@ -1232,6 +1232,12 @@ build-test-toolkit:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
 
+    # Same seeded keys +toolkit-image bakes in: this branch's `static/version` isn't
+    # published on srs.midnight.network, so any local proving here would 404.
+    COPY +zk-keys/dust /zk-keys/dust
+    COPY +zk-keys/zswap /zk-keys/zswap
+    ENV MIDNIGHT_PP=/zk-keys
+
     # Extract Node Toolkit (JS)
     COPY +toolkit-js-prep/toolkit-js util/toolkit-js
 
@@ -1888,6 +1894,11 @@ local-env-ci:
     COPY --dir scripts .
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
+    # Same seeded keys +toolkit-image bakes in: this branch's `static/version` isn't
+    # published on srs.midnight.network, so the e2e tests' local proving would 404.
+    COPY +zk-keys/dust /zk-keys/dust
+    COPY +zk-keys/zswap /zk-keys/zswap
+    ENV MIDNIGHT_PP=/zk-keys
     ENV RUSTFLAGS="-C debuginfo=1"
     RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
     # --pull so earthly's buildkit (GHCR auth + layer cache) loads the private node/
