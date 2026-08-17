@@ -54,8 +54,22 @@ entirely - it had exactly one dependent - and the conflict disappears.
   `SystemTransactionError` variant names and their error codes (198 / 207) are
   unchanged - it is the same condition, and they are a stable runtime surface.
 
+## Regenerated fixtures
+
+rc.4's new dust spend circuit (`spend.zkir` / `spend.verifier`) does not verify
+proofs built against rc.3's, so every committed `.mn` fixture carrying a dust
+spend fails `well_formed` with `InvalidDustSpendProof`. Rebuilt via
+`earthly -P +rebuild-genesis-state-undeployed`: undeployed genesis
+(`res/genesis/genesis_{block,state}_undeployed.mn`, mirrored into
+`util/toolkit/test-data/genesis/`), the derived test transactions
+(`res/test-contract/contract_tx_*_undeployed.mn`, `res/test-zswap`,
+`res/test-tx-deserialize`) and the toolkit's counter/mint contract fixtures.
+The undeployed contract address is unchanged, and so are the deployed networks'
+genesis and chainspecs - `undeployed` has no committed chain-spec (the `dev`
+preset builds it at runtime from the genesis state), so no chainspec rebuild is
+needed.
+
 Runtime metadata is not regenerated: no pallet storage item, extrinsic signature
 or runtime API changed.
 
-PR: <link to PR>
-Issue: <link to Github Issue, if applicable>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2022
