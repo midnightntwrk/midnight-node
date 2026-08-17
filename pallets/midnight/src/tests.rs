@@ -35,7 +35,6 @@ use midnight_node_res::{
 		CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX, ZSWAP_TX,
 	},
 };
-use midnight_primitives_ledger::{TBlockCorrection, TBlockCorrectionExt};
 use sp_runtime::{
 	traits::ValidateUnsigned,
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
@@ -72,21 +71,11 @@ fn begin_block(block_number: u64, parent_ts: u64, block_ts: u64) {
 	mock::Timestamp::set_timestamp(block_ts * 1000);
 }
 
-/// A correction with a zero offset, which isolates what the correction is measured *from*: the
-/// corrected timestamp becomes exactly the parent block's, which is the timestamp the producing
-/// node's warm strict-cache entry was verified at. The offset arithmetic on top of that base is
-/// covered by the `well_formed_tblock` unit tests in `midnight-node-ledger`.
-fn parent_base_correction(disable_after: u64) -> TBlockCorrection {
-	TBlockCorrection { offset: 0, disable_after }
-}
-
-fn ext_with_correction(correction: Option<TBlockCorrection>) -> sp_io::TestExternalities {
-	let mut ext = mock::new_test_ext();
-	if let Some(correction) = correction {
-		ext.register_extension(TBlockCorrectionExt(correction));
-	}
-	ext
-}
+/// The correction's fixed offset (`slot_duration_secs * (1 + MaxSkippedSlots)`), hardcoded in
+/// `midnight-node-ledger`. The tests below subtract it from the parent timestamp they want the
+/// correction to *produce*; the arithmetic itself is covered by the `well_formed_tblock` unit
+/// tests in that crate.
+const TBLOCK_CORRECTION_OFFSET_SECS: u64 = 12;
 
 fn send_mn_transaction(tx: Vec<u8>) -> sp_runtime::DispatchResult {
 	mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx)
@@ -498,51 +487,33 @@ fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 	});
 }
 
-/// The first ledger transaction of a historical block is verified against the *parent* block's
-/// timestamp, not the block's own: DEPLOY_TX's intent no longer verifies a minute before its own
-/// block, so registering the correction must turn an accepted block into a rejected one.
+/// The parent timestamp that makes the correction land a minute before the block context the
+/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies. So the
+/// correction, when it applies, turns an accepted block into a rejected one.
+fn parent_ts_that_the_correction_rejects(block_context: &BlockContext) -> u64 {
+	block_context.tblock - 60 - TBLOCK_CORRECTION_OFFSET_SECS
+}
+
+/// The runtime this node ships imports version 2 of the host function, which does not correct:
+/// a block whose first transaction the correction would have rejected is verified against its own
+/// timestamp and accepted. This is the loophole closing — it is gated on the runtime upgrade,
+/// nothing else.
+///
+/// Version 1's side of the split is only reachable for ledger 8 (the pallet here runs ledger 9,
+/// which never skews), so it is covered by the `well_formed_tblock` / `strict_cache_key` unit
+/// tests in `midnight-node-ledger` rather than from a pallet test.
 ///
 /// See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 #[test]
-fn test_tblock_correction_verifies_first_tx_against_parent_timestamp() {
+fn test_tblock_correction_not_applied_by_the_current_runtime() {
 	let (tx, block_context) =
 		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 	let block_context: BlockContext = block_context.into();
-	let parent_ts = block_context.tblock - 60;
+	let parent_ts = parent_ts_that_the_correction_rejects(&block_context);
 
-	// Control: with no correction configured the tx is verified at the block's own timestamp.
-	ext_with_correction(None).execute_with(|| {
+	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(block_context.clone());
 		begin_block(1, parent_ts, uncached_block_ts(&block_context));
-
-		assert_ok!(send_mn_transaction(tx.clone()));
-	});
-
-	// With the correction configured the same tx is verified at `parent_ts` instead.
-	ext_with_correction(Some(parent_base_correction(u64::MAX))).execute_with(|| {
-		init_ledger_state(block_context.clone());
-		begin_block(1, parent_ts, uncached_block_ts(&block_context));
-
-		assert!(
-			send_mn_transaction(tx.clone()).is_err(),
-			"the first tx in the block must be verified at the parent block's timestamp"
-		);
-	});
-}
-
-/// `disable_after` is compared against the block's own timestamp, so a block at the cutoff is
-/// verified without any correction — the same block that the test above has rejected.
-#[test]
-fn test_tblock_correction_not_applied_at_or_after_disable_after() {
-	let (tx, block_context) =
-		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
-	let block_context: BlockContext = block_context.into();
-	let parent_ts = block_context.tblock - 60;
-	let block_ts = uncached_block_ts(&block_context);
-
-	ext_with_correction(Some(parent_base_correction(block_ts))).execute_with(|| {
-		init_ledger_state(block_context.clone());
-		begin_block(1, parent_ts, block_ts);
 
 		assert_ok!(send_mn_transaction(tx.clone()));
 	});
@@ -551,17 +522,14 @@ fn test_tblock_correction_not_applied_at_or_after_disable_after() {
 /// Mempool ingress must not be corrected: `validate_unsigned` already skews the block context it
 /// passes to the ledger by `slot_duration * (1 + MaxSkippedSlots)`, so correcting there too would
 /// double-count a slot and reject valid transactions.
-///
-/// Both halves run in the same externalities, against the same block, with the same correction
-/// registered — only the entry point differs.
 #[test]
 fn test_tblock_correction_does_not_affect_mempool_validation() {
 	let (tx, block_context) =
 		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 	let block_context: BlockContext = block_context.into();
-	let parent_ts = block_context.tblock - 60;
+	let parent_ts = parent_ts_that_the_correction_rejects(&block_context);
 
-	ext_with_correction(Some(parent_base_correction(u64::MAX))).execute_with(|| {
+	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(block_context.clone());
 		begin_block(1, parent_ts, uncached_block_ts(&block_context));
 
@@ -570,11 +538,6 @@ fn test_tblock_correction_does_not_affect_mempool_validation() {
 			TransactionSource::External,
 			&call
 		));
-
-		assert!(
-			send_mn_transaction(tx).is_err(),
-			"the block path must still apply the correction the mempool path ignores"
-		);
 	});
 }
 
