@@ -253,6 +253,7 @@ allow-git = [
     "https://github.com/midnightntwrk/midnight-ledger",
     "https://github.com/midnightntwrk/midnight-zk",
     "https://github.com/paritytech/polkadot-sdk",
+    "https://github.com/shieldedtech/polkadot-sdk", # carries the GRANDPA import_justification race fix (paritytech/polkadot-sdk#12506) until a stable2606 patch release includes it
     "https://github.com/SupernaviX/cardano-serialization-lib", # temporary until cardano-serialization-lib uses a newer wasm-bindgen version
 ]
 
