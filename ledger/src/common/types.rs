@@ -19,6 +19,50 @@ use scale_info_derive::TypeInfo;
 pub const PERSISTENT_HASH_BYTES: usize = 32;
 pub type Hash = [u8; PERSISTENT_HASH_BYTES];
 
+/// Variant tag carried alongside a serialized ledger state-key, telling the
+/// Bridge whether the addressed state may be unpersisted on transition.
+///
+/// - `Anchored` — a finalized state that must be retained for history (chain
+///   tip after `post_block_update`, or genesis). The Bridge never unpersists
+///   these on input; multiple sibling forks built on the same Anchored parent
+///   leave it untouched.
+/// - `Transient` — an intra-block intermediate state produced by
+///   `apply_transaction` / `apply_system_transaction`. The Bridge unpersists
+///   these when they're consumed as input to a successor call.
+#[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]
+pub enum LedgerStateKey {
+	Anchored(Vec<u8>),
+	Transient(Vec<u8>),
+}
+
+impl Default for LedgerStateKey {
+	/// `Default` is `Anchored(Vec::new())` — never an actual chain state, only
+	/// the placeholder before the pallet's `initialize_state` runs at genesis.
+	/// Anchored is chosen so an accidentally-defaulted value can't trigger an
+	/// unpersist on transition.
+	fn default() -> Self {
+		LedgerStateKey::Anchored(Vec::new())
+	}
+}
+
+impl LedgerStateKey {
+	pub fn bytes(&self) -> &[u8] {
+		match self {
+			LedgerStateKey::Anchored(b) | LedgerStateKey::Transient(b) => b,
+		}
+	}
+
+	pub fn into_bytes(self) -> Vec<u8> {
+		match self {
+			LedgerStateKey::Anchored(b) | LedgerStateKey::Transient(b) => b,
+		}
+	}
+
+	pub fn is_transient(&self) -> bool {
+		matches!(self, LedgerStateKey::Transient(_))
+	}
+}
+
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct TransactionApplied {
 	pub tx_hash: Hash,
@@ -32,7 +76,7 @@ pub struct TransactionApplied {
 
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct TransactionAppliedStateRoot {
-	pub state_root: Vec<u8>,
+	pub state_root: LedgerStateKey,
 	pub tx_hash: Hash,
 	pub all_applied: bool,
 	pub call_addresses: Vec<Vec<u8>>,
@@ -45,9 +89,63 @@ pub struct TransactionAppliedStateRoot {
 
 #[derive(Encode, Decode, DecodeWithMemTracking)]
 pub struct SystemTransactionAppliedStateRoot {
+	pub state_root: LedgerStateKey,
+	pub tx_hash: Hash,
+	pub tx_type: String,
+}
+
+/// Pre-[`LedgerStateKey`] shape of [`TransactionAppliedStateRoot`], carrying the
+/// state key as raw bytes.
+///
+/// Returned by the `_version_1` `apply_transaction` host functions, which must keep
+/// the wire format that runtimes built before `LedgerStateKey` existed decode. See
+/// the version-1 comment in [`crate::host_api::ledger_9`] for the full rationale.
+#[derive(Encode, Decode, DecodeWithMemTracking)]
+pub struct TransactionAppliedStateRootBytes {
+	pub state_root: Vec<u8>,
+	pub tx_hash: Hash,
+	pub all_applied: bool,
+	pub call_addresses: Vec<Vec<u8>>,
+	pub deploy_addresses: Vec<Vec<u8>>,
+	pub maintain_addresses: Vec<Vec<u8>>,
+	pub claim_rewards: Vec<u128>,
+	pub unshielded_utxos_created: Vec<UtxoInfo>,
+	pub unshielded_utxos_spent: Vec<UtxoInfo>,
+}
+
+impl From<TransactionAppliedStateRoot> for TransactionAppliedStateRootBytes {
+	fn from(value: TransactionAppliedStateRoot) -> Self {
+		Self {
+			state_root: value.state_root.into_bytes(),
+			tx_hash: value.tx_hash,
+			all_applied: value.all_applied,
+			call_addresses: value.call_addresses,
+			deploy_addresses: value.deploy_addresses,
+			maintain_addresses: value.maintain_addresses,
+			claim_rewards: value.claim_rewards,
+			unshielded_utxos_created: value.unshielded_utxos_created,
+			unshielded_utxos_spent: value.unshielded_utxos_spent,
+		}
+	}
+}
+
+/// Pre-[`LedgerStateKey`] shape of [`SystemTransactionAppliedStateRoot`], carrying
+/// the state key as raw bytes. See [`TransactionAppliedStateRootBytes`].
+#[derive(Encode, Decode, DecodeWithMemTracking)]
+pub struct SystemTransactionAppliedStateRootBytes {
 	pub state_root: Vec<u8>,
 	pub tx_hash: Hash,
 	pub tx_type: String,
+}
+
+impl From<SystemTransactionAppliedStateRoot> for SystemTransactionAppliedStateRootBytes {
+	fn from(value: SystemTransactionAppliedStateRoot) -> Self {
+		Self {
+			state_root: value.state_root.into_bytes(),
+			tx_hash: value.tx_hash,
+			tx_type: value.tx_type,
+		}
+	}
 }
 
 #[derive(Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, Eq, PartialEq, Debug)]
@@ -263,4 +361,22 @@ pub struct UtxoInfo {
 	pub intent_hash: Hash,
 	pub value: u128,
 	pub output_no: u32,
+}
+
+#[cfg(test)]
+mod ledger_state_key_tests {
+	use super::*;
+
+	#[test]
+	fn round_trips_both_variants() {
+		let key = alloc::vec![9u8; 73];
+		for value in [
+			LedgerStateKey::Anchored(key.clone()),
+			LedgerStateKey::Transient(key.clone()),
+			LedgerStateKey::default(),
+		] {
+			let encoded = value.encode();
+			assert_eq!(LedgerStateKey::decode(&mut &encoded[..]).unwrap(), value);
+		}
+	}
 }

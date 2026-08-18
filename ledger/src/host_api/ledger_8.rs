@@ -2,7 +2,8 @@
 use crate::ledger_8::Bridge;
 use crate::{
 	common::types::{
-		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
+		GasCost, Hash, LedgerStateKey, SystemTransactionAppliedStateRootBytes,
+		TransactionAppliedStateRootBytes, Tx,
 	},
 	ledger_8::{BlockContext, types::LedgerApiError},
 };
@@ -63,16 +64,30 @@ pub trait Ledger8Bridge {
 		}
 	}
 
+	/// The ledger-8 bridge is only ever reached by ledger-8 runtimes — the 1.0.x
+	/// releases — so it keeps the pre-[`LedgerStateKey`] ABI and nothing else. Host
+	/// functions resolve by name and version, and those runtimes are what a node
+	/// replays for every pre-hardfork block, so this signature is frozen. The
+	/// `LedgerStateKey` ABI lives only on
+	/// [`crate::host_api::ledger_9::Ledger9Bridge`], the only bridge the current
+	/// runtime calls.
+	///
+	/// The input is wrapped as `Anchored`, which reproduces the pre-`LedgerStateKey`
+	/// semantics exactly: the successor state is persisted and the predecessor is
+	/// never unpersisted. Ledger-8 runtimes therefore keep leaking intermediate
+	/// states; garbage collection only applies from ledger 9 onward.
 	fn post_block_update(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::post_block_update(*self, state_key, block_context)
+		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let result = if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::post_block_update(*self, &state_key, block_context)
 		} else {
-			Bridge::<Signature, DbSeparate>::post_block_update(*self, state_key, block_context)
-		}
+			Bridge::<Signature, DbSeparate>::post_block_update(*self, &state_key, block_context)
+		};
+		result.map(LedgerStateKey::into_bytes)
 	}
 
 	fn apply_post_block_update(
@@ -80,15 +95,21 @@ pub trait Ledger8Bridge {
 		state_key: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_post_block_update(*self, state_key, block_context)
+		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let result = if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_post_block_update(
+				*self,
+				&state_key,
+				block_context,
+			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_post_block_update(
 				*self,
-				state_key,
+				&state_key,
 				block_context,
 			)
-		}
+		};
+		result.map(LedgerStateKey::into_bytes)
 	}
 
 	// Current Enabled Version
@@ -111,11 +132,12 @@ pub trait Ledger8Bridge {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
-	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRootBytes, LedgerApiError>> {
+		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let result = if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::apply_transaction(
 				*self,
-				state_key,
+				&state_key,
 				tx,
 				block_context,
 				true,
@@ -124,13 +146,14 @@ pub trait Ledger8Bridge {
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_transaction(
 				*self,
-				state_key,
+				&state_key,
 				tx,
 				block_context,
 				true,
 				runtime_version,
 			)
-		}
+		};
+		result.map(Into::into)
 	}
 
 	fn apply_system_transaction(
@@ -139,22 +162,24 @@ pub trait Ledger8Bridge {
 		tx: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		_runtime_version: u32,
-	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootBytes, LedgerApiError>> {
+		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let result = if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::apply_system_transaction(
 				*self,
-				state_key,
+				&state_key,
 				tx,
 				block_context,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_system_transaction(
 				*self,
-				state_key,
+				&state_key,
 				tx,
 				block_context,
 			)
-		}
+		};
+		result.map(Into::into)
 	}
 
 	/*
@@ -386,7 +411,8 @@ pub trait Ledger8Bridge {
 	}
 
 	/*
-	 * Returns the pure ledger state root (without StorableLedgerState wrapping)
+	 * Returns the pure ledger state root: the untagged-serialized typed-key of
+	 * `LedgerState<D>` (without the surrounding `Ledger` block_fullness wrapper).
 	 */
 	fn get_ledger_state_root(
 		&mut self,

@@ -128,11 +128,37 @@ where
 	let state = Ledger::new(state);
 
 	let mut state = default_storage::<D>().arena.alloc(state);
+	// Genesis is treated as `LedgerStateKey::Anchored` — persist once at rc=1
+	// and rely on the Bridge never unpersisting Anchored inputs to retain it
+	// for history.
 	state.persist();
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
 	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes).unwrap();
 	bytes
+}
+
+/// Returns the persist refcount for the ledger state addressed by `state_key`,
+/// or `None` if the state is not currently a GC root (refcount zero).
+///
+/// Test-only inspection helper: lets tests verify the persist/unpersist
+/// arithmetic in `apply_transaction`, `apply_system_transaction`, and
+/// `post_block_update` is balanced as intended. Queries `ParityDb`-backed
+/// storage to match what `init_storage_paritydb_separate` sets up.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
+	use super::api::Ledger;
+	use super::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		db::ParityDb,
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+		super::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	default_storage::<ParityDb>()
+		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
 }
 
 #[cfg(feature = "std")]

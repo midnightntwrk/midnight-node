@@ -18,22 +18,22 @@ extern crate alloc;
 use alloc::vec::Vec;
 use hex_literal::hex;
 use midnight_node_ledger::types::{
-	Hash, Tx,
+	Hash, LedgerStateKey, Tx,
 	active_version::{BlockContext, LedgerApiError},
 };
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use scale_info::TypeInfo;
 use sp_runtime::DispatchError;
 
-pub type LedgerMutFn<E> = fn(Vec<u8>) -> Result<Vec<u8>, E>;
+pub type LedgerMutFn<E> = fn(LedgerStateKey) -> Result<LedgerStateKey, E>;
 /// Trait to allow pallets to mutate the Ledger state
 pub trait LedgerStateProviderMut {
 	/// Get the current ledger state key
-	fn get_ledger_state_key() -> Vec<u8>;
+	fn get_ledger_state_key() -> LedgerStateKey;
 	/// Mutate the ledger state - must return an updated ledger state key and may optionally return extra data
 	fn mut_ledger_state<F, E, R>(f: F) -> Result<R, E>
 	where
-		F: FnOnce(Vec<u8>) -> Result<(Vec<u8>, R), E>;
+		F: FnOnce(LedgerStateKey) -> Result<(LedgerStateKey, R), E>;
 }
 
 pub trait LedgerBlockContextProvider {
