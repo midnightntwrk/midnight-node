@@ -33,7 +33,7 @@ use sc_consensus_aura::{SlotDuration, find_pre_digest};
 use sc_service::Arc;
 use sidechain_domain::{McBlockHash, ScEpochNumber, mainchain_epoch::MainchainEpochConfig};
 use sidechain_mc_hash::McHashInherentDataProvider as McHashIDP;
-use sidechain_mc_hash::{BlockReferenceTimestamp, McHashDataSource};
+use sidechain_mc_hash::{BlockReferenceTimestamp, McHashDataSource, McHashInherentError};
 use sidechain_slots::ScSlotConfig;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::HeaderBackend;
@@ -280,18 +280,18 @@ where
 			.await
 			{
 				Ok(mc_state_reference) => break mc_state_reference,
-				Err(McHashInherentError::AwaitingCardanoData(hash)) => {
+				Err(err @ McHashInherentError::StableBlockUnavailable(..)) => {
 					let max_retries = config.cardano_check_max_retries;
 					if cardano_check_attempts >= max_retries {
 						log::warn!(
-							"Still awaiting fresh Cardano data to verify MC reference {hash} after {max_retries} retries; giving up and rejecting the block"
+							"Still awaiting fresh Cardano data to verify MC reference {mc_hash} after {max_retries} retries; giving up and rejecting the block: {err}"
 						);
-						return Err(McHashInherentError::AwaitingCardanoData(hash).into());
+						return Err(err.into());
 					}
 					cardano_check_attempts += 1;
 					let backoff = config.cardano_check_backoff;
 					log::warn!(
-						"Awaiting fresh Cardano data to verify MC reference {hash}; retry {cardano_check_attempts}/{max_retries} in {backoff:?}"
+						"Awaiting fresh Cardano data to verify MC reference {mc_hash}; retry {cardano_check_attempts}/{max_retries} in {backoff:?}: {err}"
 					);
 					tokio::time::sleep(backoff).await;
 				},

@@ -13,9 +13,8 @@ workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
-log = { workspace = true }
-sp-consensus-slots = { workspace = true }
-sp-partner-chains-consensus-aura = { workspace = true, features = ["std"] }
+sp-consensus-slots = { workspace = true, features = ["std"] }
+sp-partner-chains-consensus = { workspace = true }
 sidechain-domain = { workspace = true, features = ["std"] }
 sp-consensus = { workspace = true }
 sp-blockchain = { workspace = true }
@@ -23,7 +22,6 @@ sp-inherents = { workspace = true, features = ["std"] }
 sp-runtime = { workspace = true, features = ["std"] }
 sp-timestamp = { workspace = true, features = ["std"] }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["time"] }
 derive-new = { workspace = true, optional = true }
 log = { workspace = true }
 

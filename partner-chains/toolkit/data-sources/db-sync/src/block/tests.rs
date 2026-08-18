@@ -1,7 +1,6 @@
 use crate::block::{BlockDataSourceImpl, BlocksCache, MainchainBlock};
 use crate::metrics::mock::test_metrics;
-use chrono::{DateTime, NaiveDateTime, TimeDelta};
-use db_sync_sqlx::SlotNumber;
+use chrono::{NaiveDateTime, TimeDelta};
 use hex_literal::hex;
 use sidechain_domain::mainchain_epoch::{
 	Duration, MainchainEpochConfig, Timestamp as MainchainEpochTimestamp,
@@ -324,97 +323,7 @@ async fn test_records_cardano_block_metrics(pool: PgPool) {
 	assert_eq!(metrics.referenced_cardano_block_slot().get(), 190500,);
 }
 
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-async fn test_is_cardano_fresh(pool: PgPool) {
-	let security_parameter = 1;
-	// max_latest_block_age_seconds parameter is 100s, the highest block in migrations is from 2022-04-21T17:36:10Z (timestamp = 1650562570000)
-	// this time source will return highest block timestamp + 99 seconds
-	let time_source_1 = MockedTimeSource { current_time_millis: 1650562570000 + 99000 };
-	let source_1 =
-		mk_datasource_with_time_source(pool.clone(), security_parameter, Arc::new(time_source_1));
-
-	assert!(source_1.is_cardano_tip_fresh().await.unwrap());
-
-	// this time source will return highest block timestamp + 101 seconds
-	let time_source_2 = MockedTimeSource { current_time_millis: 1650562570000 + 101000 };
-	let source_2 =
-		mk_datasource_with_time_source(pool, security_parameter, Arc::new(time_source_2));
-	assert!(!source_2.is_cardano_tip_fresh().await.unwrap());
-}
-
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-async fn test_is_cardano_ok_chain_growth_rule_test(pool: PgPool) {
-	let security_param = 2; // Max block_no is 8, so blocks 7 and 8 don't have enough confirmations.
-
-	// Block number 6 is from 2022-04-21T17:02:50Z (timestamp = 1650560570000)
-	// By Praos chain growth rule (and test configs) the block can be at most 5000 seconds old.
-	let time_source_ok = MockedTimeSource { current_time_millis: 1650560570000 + 4999000 };
-	let source =
-		mk_datasource_with_time_source(pool.clone(), security_param, Arc::new(time_source_ok));
-	source.is_cardano_ok().await.unwrap();
-
-	let time_source_too_late = MockedTimeSource { current_time_millis: 1650560570000 + 5001000 };
-	let source = mk_datasource_with_time_source(
-		pool.clone(),
-		security_param,
-		Arc::new(time_source_too_late),
-	);
-	assert!(!source.is_cardano_ok().await.unwrap());
-}
-
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-async fn test_is_cardano_ok_chain_quality_test(pool: PgPool) {
-	// In this test we choose timestamp so chain growth rule is not violated in both case, but chain quality rule (latest block timestamp) is.
-	let security_param = 1;
-
-	// The latest block (8) is from 2022-04-21T17:36:10Z (timestamp = 1650562570000)
-	// By Praos chain quality rule and config of test data source, tip can be at most 1667s old
-	let time_source_ok = MockedTimeSource { current_time_millis: 1650562570000 + 1666000 };
-	let source =
-		mk_datasource_with_time_source(pool.clone(), security_param, Arc::new(time_source_ok));
-	source.is_cardano_ok().await.unwrap();
-
-	let time_source_too_late = MockedTimeSource { current_time_millis: 1650562570000 + 1668000 };
-	let source = mk_datasource_with_time_source(
-		pool.clone(),
-		security_param,
-		Arc::new(time_source_too_late),
-	);
-	assert!(!source.is_cardano_ok().await.unwrap());
-}
-
-#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-fn date_time_to_slot_tests(pool: PgPool) {
-	let source = mk_datasource(pool.clone(), 0);
-
-	// Hardcoded values based on [mainchain_epoch_config]
-	let dt = DateTime::from_timestamp(1650558070, 0).unwrap().naive_utc();
-	assert_eq!(source.date_time_to_slot(dt).unwrap(), SlotNumber(189000));
-
-	let dt = DateTime::from_timestamp(1650558071, 0).unwrap().naive_utc();
-	assert_eq!(source.date_time_to_slot(dt).unwrap(), SlotNumber(189001));
-
-	let dt = DateTime::parse_from_str("2022-04-21T16:28:00+0000", "%Y-%m-%dT%H:%M:%S%z")
-		.unwrap()
-		.naive_utc();
-	assert_eq!(source.date_time_to_slot(dt).unwrap(), SlotNumber(189410));
-
-	let dt = DateTime::parse_from_str("2022-04-21T17:36:10+0000", "%Y-%m-%dT%H:%M:%S%z")
-		.unwrap()
-		.naive_utc();
-	assert_eq!(source.date_time_to_slot(dt).unwrap(), SlotNumber(193500));
-}
-
 fn mk_datasource(pool: PgPool, security_parameter: u32) -> BlockDataSourceImpl {
-	let time_source = Arc::new(time_source::SystemTimeSource);
-	mk_datasource_with_time_source(pool, security_parameter, time_source)
-}
-
-fn mk_datasource_with_time_source(
-	pool: PgPool,
-	security_parameter: u32,
-	time_source: Arc<dyn TimeSource + Send + Sync>,
-) -> BlockDataSourceImpl {
 	BlockDataSourceImpl {
 		pool,
 		security_parameter,

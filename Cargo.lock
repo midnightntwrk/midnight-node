@@ -15813,6 +15813,7 @@ dependencies = [
  "async-trait",
  "derive-new",
  "log",
+ "sc-partner-chains-consensus",
  "sidechain-domain",
  "sp-blockchain",
  "sp-consensus",

@@ -105,7 +105,9 @@ pub use crate::mc_hash::McHashDataSourceImpl;
 #[cfg(feature = "sidechain-rpc")]
 pub use crate::sidechain_rpc::SidechainRpcDataSourceImpl;
 #[cfg(feature = "block-source")]
-pub use sidechain_mc_hash::StableBlockByHashResult;
+pub use sidechain_mc_hash::{
+	BlockByHash, LatestStableBlockForTimestamp, LocalDataUnavailableReason, StableBlockForHash,
+};
 
 mod data_sources;
 mod db_datum;

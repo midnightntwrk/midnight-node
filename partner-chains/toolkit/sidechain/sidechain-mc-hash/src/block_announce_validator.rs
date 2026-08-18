@@ -4,7 +4,7 @@ use crate::{
 };
 use sidechain_domain::McBlockHash;
 use sp_consensus::block_validation::{BlockAnnounceValidator, Validation};
-use sp_partner_chains_consensus_aura::inherent_digest::InherentDigest;
+use sp_partner_chains_consensus::InherentDigest;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::{error::Error, future::Future, pin::Pin, sync::Arc};
 

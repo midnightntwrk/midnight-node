@@ -320,10 +320,11 @@ mod validation_tests {
 		// should back off and retry rather than treat it as invalid.
 		data_source.set_tip_fresh_responses([false]);
 
+		let verified_block_slot = Slot::from(30);
 		let err = McHashInherentDataProvider::new_verification(
 			mock_header(McBlockHash([8; 32])),
 			None,
-			Slot::from(30),
+			verified_block_slot,
 			mc_block_hash.clone(),
 			slot_duration,
 			&data_source,
@@ -331,7 +332,11 @@ mod validation_tests {
 		.await
 		.unwrap_err();
 
-		assert_eq!(err.to_string(), AwaitingCardanoData(mc_block_hash).to_string());
+		let timestamp = verified_block_slot.timestamp(slot_duration).unwrap();
+		assert_eq!(
+			err.to_string(),
+			StableBlockUnavailable(timestamp, "Main chain tip looks stale".into()).to_string()
+		);
 	}
 
 	#[tokio::test]
@@ -343,10 +348,11 @@ mod validation_tests {
 		// Unknown reference while our Cardano view is unhealthy: hold off rather than reject.
 		data_source.set_cardano_ok_responses([false]);
 
+		let verified_block_slot = Slot::from(30);
 		let err = McHashInherentDataProvider::new_verification(
 			mock_header(McBlockHash([8; 32])),
 			None,
-			Slot::from(30),
+			verified_block_slot,
 			mc_block_hash.clone(),
 			slot_duration,
 			&data_source,
@@ -354,7 +360,11 @@ mod validation_tests {
 		.await
 		.unwrap_err();
 
-		assert_eq!(err.to_string(), AwaitingCardanoData(mc_block_hash).to_string());
+		let timestamp = verified_block_slot.timestamp(slot_duration).unwrap();
+		assert_eq!(
+			err.to_string(),
+			StableBlockUnavailable(timestamp, "Main chain is not OK".into()).to_string()
+		);
 	}
 
 	#[tokio::test]

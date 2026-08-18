@@ -68,12 +68,4 @@ impl sidechain_mc_hash::McHashDataSource for McHashDataSourceMock {
 	async fn is_cardano_ok(&self) -> Result<bool> {
 		Ok(true)
 	}
-
-	async fn is_cardano_tip_fresh(&self) -> Result<bool> {
-		Ok(true)
-	}
-
-	async fn is_cardano_ok(&self) -> Result<bool> {
-		Ok(true)
-	}
 }

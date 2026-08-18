@@ -16,8 +16,7 @@
 //! # Prerequisites
 //!
 //! This feature uses the [InherentDigest] mechanism from [sp_partner_chains_consensus] for storing inherent
-//! data in the block header. Your node must use the [PartnerChainsProposer] from `sc-partner-chains-consensus`
-//! for this feature to work.
+//! data in the block header. Your node must use the [PartnerChainsProposer] defined by that crate for this feature to work.
 //!
 //! # Adding to the node
 //!
@@ -260,14 +259,6 @@ pub enum McHashInherentError {
 	/// Signals that block details could not be retrieved for a stable Cardano block
 	#[error("Failed to retrieve MC Block that was verified as stable by its hash")]
 	StableBlockNotFoundByHash(McBlockHash),
-	/// Signals that the referenced Cardano block cannot be classified yet because our local
-	/// Cardano observation is lagging: the referenced block is not yet stable while our own
-	/// Cardano tip looks stale, or it is unknown while our Cardano view is unhealthy.
-	///
-	/// This is a *transient, local* condition rather than a verdict on the block. Callers should
-	/// back off and retry rather than treat the block as invalid or penalise the sending peer.
-	#[error("Awaiting fresh Cardano data before classifying reference {0}")]
-	AwaitingCardanoData(McBlockHash),
 }
 
 /// Result of querying the latest stable Cardano block for a Partner Chain block timestamp.
@@ -392,31 +383,6 @@ impl Deref for McHashInherentDataProvider {
 	fn deref(&self) -> &Self::Target {
 		&self.mc_block
 	}
-}
-
-/// Outcome of looking up a Cardano block by hash and checking whether it is stable
-/// against a reference timestamp.
-#[derive(Debug, Clone, PartialEq)]
-pub enum StableBlockByHashResult {
-	/// No block with the requested hash is known to the data source.
-	BlockNotFound,
-	/// Block exists, but its timestamp was out allowed range relative to query timestamp.
-	/// This won't resolve with new blocks being added.
-	BlockTimestampOutRange {
-		/// Information about the block.
-		info: MainchainBlock,
-	},
-	/// The block exists but is doesn't have enough confirmations on top of it.
-	NotEnoughConfirmations {
-		/// Information about the block.
-		info: MainchainBlock,
-	},
-	/// The block exists, has enough confirmations, and its timestamp is within the allowed
-	/// range relative to the reference timestamp.
-	BlockStable {
-		/// Information about the stable block.
-		info: MainchainBlock,
-	},
 }
 
 /// Data source API used by [McHashInherentDataProvider]
@@ -624,10 +590,10 @@ impl McHashInherentDataProvider {
 			},
 		};
 
-		if parent_slot.is_none() {
+		let Some(parent_slot) = parent_slot else {
 			// genesis block doesn't contain MC reference
 			return Ok(Self::from(mc_state_reference_block));
-		}
+		};
 
 		let parent_mc_hash = McHashInherentDigest::value_from_digest(&parent_header.digest().logs)
 			.map_err(|err| McHashInherentError::DigestError(err.to_string()))?;
@@ -939,6 +905,10 @@ pub mod mock {
 		pub fn add_unstable(&self, block: MainchainBlock) {
 			self.unstable_blocks.lock().unwrap().push(block);
 		}
+
+		fn scripted_response(queue: &Mutex<VecDeque<bool>>) -> bool {
+			queue.lock().unwrap().pop_front().unwrap_or(true)
+		}
 	}
 
 	impl From<Vec<MainchainBlock>> for MockMcHashDataSource {
@@ -955,6 +925,8 @@ pub mod mock {
 		) -> Result<LatestStableBlockForTimestamp, Box<dyn std::error::Error + Send + Sync>> {
 			Ok(self
 				.stable_blocks
+				.lock()
+				.unwrap()
 				.last()
 				.cloned()
 				.map(LatestStableBlockForTimestamp::Found)
@@ -971,13 +943,22 @@ pub mod mock {
 			hash: McBlockHash,
 			_reference_timestamp: Timestamp,
 		) -> Result<StableBlockForHash, Box<dyn std::error::Error + Send + Sync>> {
-			Ok(self
-				.stable_blocks
-				.iter()
-				.find(|b| b.hash == hash)
-				.cloned()
-				.map(StableBlockForHash::Found)
-				.unwrap_or(StableBlockForHash::BlockNotFound { hash }))
+			if let Some(block) =
+				self.stable_blocks.lock().unwrap().iter().find(|b| b.hash == hash).cloned()
+			{
+				return Ok(StableBlockForHash::Found(block));
+			}
+			if let Some(block) =
+				self.unstable_blocks.lock().unwrap().iter().find(|b| b.hash == hash).cloned()
+			{
+				return Ok(StableBlockForHash::BlockFoundButNotStable {
+					hash,
+					block_number: block.number,
+					latest_block_number: block.number,
+					required_latest_block: McBlockNumber(block.number.0 + 1),
+				});
+			}
+			Ok(StableBlockForHash::BlockNotFound { hash })
 		}
 
 		async fn get_block_by_hash(
@@ -986,10 +967,14 @@ pub mod mock {
 		) -> Result<BlockByHash, Box<dyn std::error::Error + Send + Sync>> {
 			Ok(self
 				.stable_blocks
+				.lock()
+				.unwrap()
 				.iter()
 				.find(|b| b.hash == hash)
 				.cloned()
-				.or_else(|| self.unstable_blocks.iter().find(|b| b.hash == hash).cloned())
+				.or_else(|| {
+					self.unstable_blocks.lock().unwrap().iter().find(|b| b.hash == hash).cloned()
+				})
 				.map(BlockByHash::Found)
 				.unwrap_or(BlockByHash::NotFound { hash }))
 		}
@@ -997,11 +982,11 @@ pub mod mock {
 		async fn is_cardano_tip_fresh(
 			&self,
 		) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-			Ok(true)
+			Ok(Self::scripted_response(&self.tip_fresh_responses))
 		}
 
 		async fn is_cardano_ok(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-			Ok(true)
+			Ok(Self::scripted_response(&self.cardano_ok_responses))
 		}
 	}
 }

@@ -48,7 +48,7 @@ impl McHashDataSource for McHashDataSourceImpl {
 		Ok(self
 			.inner
 			.get_stable_block_for(hash, Timestamp::new(reference_timestamp.as_millis()))
-			.await
+			.await?)
 	}
 
 	async fn get_block_by_hash(

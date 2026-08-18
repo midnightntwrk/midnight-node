@@ -264,6 +264,9 @@ type MidnightService = sc_service::PartialComponents<
 		Option<Telemetry>,
 		DataSources,
 		SlotBlockReferenceTimestamp,
+		// Shared warp ledger-sync recovery gate (gates block import + authoring until the arena is
+		// recovered). Created in `new_partial` so it can wrap the import queue's block import.
+		Arc<crate::warp_ledger_sync::oracle::RecoveryGate>,
 	),
 >;
 
@@ -437,7 +440,11 @@ pub fn new_partial(
 	let time_source = Arc::new(SystemTimeSource);
 	let block_announce_reference_timestamp =
 		SlotBlockReferenceTimestamp(sc_slot_config.slot_duration);
-	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source);
+	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source)
+		.map_err(|e| {
+			log::error!(target: "midnight", "Incoherent consensus timing configuration: {e}");
+			ServiceError::Other(format!("incoherent consensus timing configuration: {e}"))
+		})?;
 
 	// Warp ledger-sync recovery gate, shared by the import queue (below), the authoring oracle, and
 	// the recovery monitor (both in `new_full`). Wrapping the import queue's block import here holds
@@ -514,6 +521,7 @@ pub fn new_partial(
 			telemetry,
 			data_sources,
 			block_announce_reference_timestamp,
+			recovery_gate,
 		),
 	};
 
@@ -559,6 +567,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				mut telemetry,
 				data_sources,
 				block_announce_reference_timestamp,
+				warp_ledger_recovery_gate,
 			),
 	} = new_partial_components;
 

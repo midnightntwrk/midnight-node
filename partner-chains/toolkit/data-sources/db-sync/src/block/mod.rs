@@ -42,7 +42,6 @@ enum StableBlockByHashError {
 		block_no: u32,
 		required_latest_block_no: u32,
 		latest_block_no: u32,
-		block: Block,
 	},
 	#[error(
 		"Block with hash {hash} has timestamp {block_time}, outside allowed range [{min_allowed_time}..={max_allowed_time}] for reference timestamp {reference_timestamp}."
@@ -53,7 +52,6 @@ enum StableBlockByHashError {
 		min_allowed_time: NaiveDateTime,
 		max_allowed_time: NaiveDateTime,
 		reference_timestamp: NaiveDateTime,
-		block: Block,
 	},
 }
 
@@ -81,11 +79,8 @@ pub struct BlockDataSourceImpl {
 	mainchain_epoch_config: MainchainEpochConfig,
 	/// Additional offset applied when selecting the latest stable Cardano block
 	///
-	/// Block producers SHOULD take this parameter into account.
-	/// Block verification uses this value to determine if their observed Cardano tip is recent enough,
-	/// when verified block references unstable Cardano block.
-	/// Bigger value of this parameter across both block producers and validators makes attacks on partner-chain liveness not feasible.
-	/// Recommended value is 10, that add 200 seconds of lag in observing Cardano, but is also safe unless Cardano tip is not older then 200 seconds.
+	/// This parameter should be 0 by default and should only be increased to 1 in networks
+	/// struggling with frequent block rejections due to Db-Sync or Cardano node lag.
 	block_stability_margin: u32,
 	/// Maximum tolerated age of the latest observed Cardano block before our view of
 	/// Cardano is considered stale by [Self::is_cardano_tip_fresh].
@@ -185,8 +180,8 @@ impl BlockDataSourceImpl {
 		})
 	}
 
-	/// Finds a block by its `hash` and classifies it relative to `reference_timestamp`,
-	/// returning whether the block is unknown, found-but-not-yet-stable, or found-and-stable.
+	/// Finds a block by its `hash` and verifies that it is stable in reference to `reference_timestamp`
+	/// and returns its info
 	pub async fn get_stable_block_for(
 		&self,
 		hash: McBlockHash,
@@ -217,49 +212,6 @@ impl BlockDataSourceImpl {
 		Ok(block_opt
 			.map(|block| BlockByHash::Found(block.into()))
 			.unwrap_or(BlockByHash::NotFound { hash }))
-	}
-
-	/// Tests if our Cardano tip is at most BLOCK_MARGIN * 'expected block interval' old.
-	/// Possibly returns `false` when it is just Cardano chain density drop.
-	/// Invoke only when there is some other hint, like unknown block to validate,
-	/// that Cardano has problems.
-	pub async fn is_cardano_tip_fresh(
-		&self,
-	) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-		let block = self.get_latest_block_info().await?;
-		let is_block_time_valid = self.is_block_fresh(&block);
-		log::debug!(
-			"is_cardano_tip_fresh block: {block:?}, is_block_time_valid: {is_block_time_valid}"
-		);
-		Ok(is_block_time_valid)
-	}
-
-	/// Tests if out Cardano view matches Praos requirements.
-	/// Chain quality rule: at least one block in the last security_parameter/active_slots_coeff slots.
-	/// Chain growth rule: at least security_parameters of block in the last 3*security_parameter/active_slots_coeff slots.
-	/// See https://ouroboros-consensus.cardano.intersectmbo.org/docs/references/miscellaneous/cardano_praos_basics/.
-	/// Unlike [Self::is_cardano_tip_fresh] it is not heuristic.
-	pub async fn is_cardano_ok(&self) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-		let current_time = self.time_source.get_current_time_millis();
-		let current_time = BlockDataSourceImpl::timestamp_to_db_type(Timestamp::new(current_time))?;
-		let latest = match db_model::get_latest_block_info(&self.pool).await? {
-			None => return Ok(false),
-			Some(block) => block,
-		};
-		// Praos chain quality rule check.
-		if current_time - self.min_slot_boundary_as_seconds > latest.time {
-			log::debug!(
-				"is_cardano_ok current time: {current_time}, latest: {latest:?}, the latest block is too old."
-			);
-			return Ok(false);
-		}
-		let stable = BlockNumber(latest.block_no.0.saturating_sub(self.security_parameter));
-		// Praos chain growth rule is guaranteed by 'get_latest_block'.
-		let block = self.get_latest_block(stable, current_time).await?;
-		log::debug!(
-			"is_cardano_ok current time: {current_time}, stable: {stable:?}, block: {block:?}"
-		);
-		Ok(block.is_some())
 	}
 }
 
@@ -317,10 +269,23 @@ impl BlockDataSourceImpl {
 	/// Creates a new instance of [BlockDataSourceImpl], using passed configuration.
 	pub fn from_config(
 		pool: PgPool,
-		config: DbSyncBlockDataSourceConfig,
+		DbSyncBlockDataSourceConfig {
+			cardano_security_parameter,
+			cardano_active_slots_coeff,
+			block_stability_margin,
+		}: DbSyncBlockDataSourceConfig,
 		mc_epoch_config: &MainchainEpochConfig,
 	) -> BlockDataSourceImpl {
-		Self::from_config_with_metrics(pool, config, mc_epoch_config, None)
+		Self::from_config_with_metrics(
+			pool,
+			DbSyncBlockDataSourceConfig {
+				cardano_security_parameter,
+				cardano_active_slots_coeff,
+				block_stability_margin,
+			},
+			mc_epoch_config,
+			None,
+		)
 	}
 
 	/// Creates a new instance of [BlockDataSourceImpl], using passed configuration and an
@@ -389,10 +354,10 @@ impl BlockDataSourceImpl {
 		reference_timestamp - self.min_slot_boundary_as_seconds
 	}
 
-	/// Rules for stable block selection and verification mandates that timestamp of the block
+	/// Rules for block selection and verification mandates that timestamp of the block
 	/// falls in a given range, calculated from the reference timestamp, which is either
-	/// PC current time or PC block timestamp. Related to Praos "chain growth rule".
-	fn is_stable_block_time_valid(&self, block: &Block, timestamp: NaiveDateTime) -> bool {
+	/// PC current time or PC block timestamp.
+	fn is_block_time_valid(&self, block: &Block, timestamp: NaiveDateTime) -> bool {
 		self.min_block_allowed_time(timestamp) <= block.time
 			&& block.time <= self.max_allowed_block_time(timestamp)
 	}
@@ -556,13 +521,13 @@ impl BlockDataSourceImpl {
 		if let Ok(cache) = self.stable_blocks_cache.lock() {
 			cache
 				.find_by_hash(hash)
-				.filter(|block| self.is_stable_block_time_valid(block, reference_timestamp))
+				.filter(|block| self.is_block_time_valid(block, reference_timestamp))
 		} else {
 			None
 		}
 	}
 
-	/// Returns block by given hash from the database if it is stable in reference to given timestamp
+	/// Returns block by given hash from the cache if it is valid in reference to given timestamp
 	async fn get_stable_block_by_hash_from_db(
 		&self,
 		hash: McBlockHash,
@@ -588,7 +553,7 @@ impl BlockDataSourceImpl {
 		let is_stable = required_latest_block_no <= latest_block.block_no;
 		let min_allowed_time = self.min_block_allowed_time(reference_timestamp);
 		let max_allowed_time = self.max_allowed_block_time(reference_timestamp);
-		let is_time_valid = self.is_stable_block_time_valid(&block, reference_timestamp);
+		let is_time_valid = self.is_block_time_valid(&block, reference_timestamp);
 
 		if !is_stable {
 			return Err(StableBlockByHashError::NotStableYet {
@@ -605,16 +570,6 @@ impl BlockDataSourceImpl {
 				min_allowed_time,
 				max_allowed_time,
 				reference_timestamp,
-				block,
-			});
-		}
-		if !is_stable {
-			return Err(StableBlockByHashError::NotStableYet {
-				hash,
-				block_no: block.block_no.0,
-				required_latest_block_no: required_latest_block_no.0,
-				latest_block_no: latest_block.block_no.0,
-				block,
 			});
 		}
 

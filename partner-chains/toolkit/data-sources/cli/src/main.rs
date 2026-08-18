@@ -7,9 +7,7 @@
 
 use authority_selection_inherents::AuthoritySelectionDataSource;
 use clap::Parser;
-use partner_chains_db_sync_data_sources::{
-	BlockDataSourceImpl, CandidatesDataSourceImpl, PgPool, StableBlockByHashResult,
-};
+use partner_chains_db_sync_data_sources::{BlockDataSourceImpl, CandidatesDataSourceImpl, PgPool};
 use sidechain_domain::*;
 use sidechain_mc_hash::{LatestStableBlockForTimestamp, StableBlockForHash};
 use sp_timestamp::Timestamp;
