@@ -18,7 +18,9 @@
 //! ledger-9 state, and the pre-fork values genuinely come out of a ledger-8 one
 //! seeded in the same arena (v8 and v9 share the storage backend).
 
-use frame_support::{migrations::SteppedMigration, pallet_prelude::*, weights::WeightMeter};
+use frame_support::{
+	migrations::SteppedMigration, pallet_prelude::*, traits::Hooks, weights::WeightMeter,
+};
 use midnight_node_ledger_helpers::{
 	CNightGeneratesDustActionType, DustPublicKey, SystemTransaction, deserialize,
 	serialize_untagged,
@@ -123,17 +125,28 @@ fn seed_pre_fork_state(entries: &[(H256, u128)]) -> Vec<u8> {
 	root
 }
 
-/// Drive the replay to completion, returning the number of steps taken.
+/// Drive the replay to completion, one batch per step, returning the number of
+/// steps taken.
+///
+/// A one-picosecond meter is what pins a step to a single batch: `step` runs its
+/// first batch unconditionally (it must never report `InsufficientWeight`) and then
+/// stops as soon as the next batch's measured cost does not fit. `WeightMeter::new()`
+/// would drain the whole replay in one step and make the step counts below
+/// meaningless.
+///
+/// `Midnight::on_finalize` runs between steps because it is the only place the
+/// ledger's `block_fullness` resets; each step is a block.
 fn run_to_completion() -> u32 {
 	let mut cursor = None;
 	let mut steps = 0;
 	loop {
-		let mut meter = WeightMeter::new();
+		let mut meter = WeightMeter::with_limit(Weight::from_parts(1, u64::MAX));
 		cursor = MigrateV1ToV2::<Test>::step(cursor, &mut meter).expect("step must not fail");
 		steps += 1;
 		if cursor.is_none() {
 			return steps;
 		}
+		<mock::Midnight as Hooks<u64>>::on_finalize(1);
 	}
 }
 
@@ -334,5 +347,52 @@ fn unreadable_pre_fork_key_cancels() {
 		assert_eq!(cnight_events(), vec![Event::DustReapplySkipped]);
 		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
 		assert!(applied_dust_events().is_empty());
+	});
+}
+
+/// The loop inside a single `step`: `pallet_migrations` runs exactly one step per
+/// block, so spending the MBM weight budget means applying several batches in that
+/// one step. Given the runtime's real budget (80% of `max_block`), more than one
+/// batch must land — and the step must stay inside its meter.
+#[test]
+fn one_step_packs_several_batches_into_its_budget() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// Ten pages, every row resolvable, so every batch is priced off real ledger
+		// work rather than the unmeasurable-page fallback. More pages than the budget
+		// affords (~7 at the mock's 2e12 `max_block`), so the step has to hand a cursor
+		// back rather than finish.
+		let entries: Vec<(H256, u128)> = (0..MAX_REAPPLY_BATCH * 10)
+			.map(|i| (H256::from_low_u64_be(i as u64 + 1), 100u128 + i as u128))
+			.collect();
+		PreForkStateKey::<Test>::put(seed_pre_fork_state(&entries));
+		for (nonce, _) in entries.iter() {
+			UtxoOwners::<Test>::insert(nonce, owner_bytes());
+		}
+
+		// `runtime::MbmServiceWeight`.
+		let block_weights: frame_system::limits::BlockWeights =
+			<Test as frame_system::Config>::BlockWeights::get();
+		let mut meter = WeightMeter::with_limit(Weight::from_parts(
+			block_weights.max_block.ref_time() / 100 * 80,
+			u64::MAX,
+		));
+
+		let cursor = MigrateV1ToV2::<Test>::step(None, &mut meter).expect("step must not fail");
+
+		assert!(cursor.is_some(), "ten pages must not all fit in one step");
+		let (applied, skipped) = DustReapplyProgress::<Test>::get();
+		assert_eq!(skipped, 0, "every seeded row resolves");
+		assert!(
+			applied > MAX_REAPPLY_BATCH,
+			"more than one batch must land in a single step, got {applied}",
+		);
+		assert!(
+			meter.consumed().all_lte(meter.limit()),
+			"the step must not overrun its budget: consumed {:?} of {:?}",
+			meter.consumed(),
+			meter.limit(),
+		);
 	});
 }

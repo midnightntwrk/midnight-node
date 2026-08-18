@@ -454,6 +454,42 @@ pub trait Ledger9Bridge {
 	}
 
 	/*
+	 * As v1, but `tx` may also be a `SystemTransaction`: the version dispatches on
+	 * the serialized header tag. v1 could only price user transactions, which left
+	 * the cNIGHT dust replay migration with no way to ask what a
+	 * `CNightGeneratesDustUpdate` batch costs.
+	 *
+	 * A strict superset of v1 for `Transaction` bytes, and sp-runtime-interface
+	 * always binds the runtime to the highest version, so every existing caller
+	 * (`pallet_midnight::get_tx_weight` among them) moves here.
+	 */
+	// Current Enabled Version
+	#[version(2)]
+	fn get_transaction_cost(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_any_transaction_cost(
+				state_key,
+				tx,
+				&block_context,
+				max_weight,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_any_transaction_cost(
+				state_key,
+				tx,
+				&block_context,
+				max_weight,
+			)
+		}
+	}
+
+	/*
 	 * Returns the Zsawp state root
 	 */
 	// Current Enabled Version

@@ -12,19 +12,37 @@ own slice of the ledger's dust generating set as a multi-block migration
 - the multi-block migration then pages through `UtxoOwners` (the set of nonces
   that are cnight's and still live), reads each nonce's pre-wipe value and owner
   through a new `dust_generation_values_v8` host function (which also serves the
-  state's dust `time_to_cap`), and re-applies them in batches of 200 as
+  state's dust `time_to_cap`), and re-applies them in batches of 25 as
   `CNightGeneratesDustUpdate` system transactions;
 - incoming Cardano observations are ignored while it runs — the existing storage
   version gate in `process_tokens` covers it, so `NextCardanoPosition` does not
   advance and the observer re-delivers the same UTXOs afterwards.
 
-It is paced at one batch per block on purpose. `process_tokens`' benchmark
+Each batch is priced from the ledger's own cost model. `process_tokens`' benchmark
 observes registration UTXOs, which never reach the ledger, so its weight says
-nothing about the cost of 200 dust `Create`s; left to the weight meter the MBM
-service budget would service ~100 batches — 20k ledger creates — in one block.
-Measured live sets on 2026-08-06: **mainnet 4870** nonces (finalized #2019697),
-**preview 1524** (#301994), **preprod 85** (#1985972) — so ~25 blocks (~2.5 min)
-of gated observation on mainnet, ~8 on preview, 1 on preprod.
+nothing about what dust `Create`s cost; instead the migration asks the ledger what
+the batch it just built is worth — a widened `get_transaction_cost` host function
+(version 2) that also prices system transactions, not just user ones — and applies
+batches until the next one would not fit the multi-block-migration weight budget.
+`pallet_migrations` runs exactly one step per block, so that packing loop is what
+sets throughput.
+
+Nothing here is hardcoded: the figure comes from `SystemTransaction::cost`
+normalized against the ledger's own `parameters.limits.block_limits`, so the
+migration paces itself to whatever limits a given network reports, and stays correct
+if `OverwriteParameters` moves them. It also means a block that stays inside the MBM
+budget stays inside the ledger's own per-block fullness accounting. On the current
+parameters a dust `Create` prices at ~8.96e9 `ref_time`, so 80% of a 2e12 block
+affords 178 — 7 batches of 25, i.e. 175 restored per block. Measured live sets on
+2026-08-06: **mainnet 4870** nonces (finalized #2019697), **preview 1524**
+(#301994), **preprod 85** (#1985972) — so ~28 blocks (~2.8 min) of gated
+observation on mainnet, ~9 on preview, 1 on preprod.
+
+The batch size is a packing granularity, not a limit: smaller batches fill the
+budget more tightly (7 x 25 = 175 against 3 x 50 = 150) and keep the blast radius
+of a failed batch small, at the price of one extra host call and one extra system
+transaction each. A batch the ledger cannot price falls back to the previous
+half-a-block charge, so an unpriceable batch costs latency, never a stall.
 
 The restored generation entries are field-for-field identical to the wiped ones.
 Only the accrual clock moves: the original creation time lives on the dust UTXO

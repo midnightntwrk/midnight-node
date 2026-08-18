@@ -213,31 +213,21 @@ fn records_nothing_when_already_at_v2() {
 	});
 }
 
-/// The replay is deliberately paced at one batch per block by charging half a
-/// block per step (the benchmarked `process_tokens` weight says nothing about the
-/// ledger cost of 200 dust `Create`s). Pin that: anything less than half a block
-/// must defer to the next block rather than run a second batch in this one.
+/// `step` must never report `InsufficientWeight`: `pallet_migrations` routes that
+/// error to `upgrade_failed` when it comes from the first step of a migration, and
+/// the runtime's `FreezeChainOnFailedMigration` then freezes the chain. The step
+/// paces itself by returning a cursor instead, so even a meter with nothing left
+/// must come back `Ok`.
 #[test]
-fn replay_step_charges_half_a_block() {
+fn replay_step_never_reports_insufficient_weight() {
 	new_test_ext().execute_with(|| {
-		let block_weights: frame_system::limits::BlockWeights =
-			<Test as frame_system::Config>::BlockWeights::get();
-		let half_block = block_weights.max_block.ref_time() / 2;
+		StorageVersion::new(1).put::<Pallet<Test>>();
+		PreForkStateKey::<Test>::put(vec![0xAB; 64]);
 
-		let mut meter = WeightMeter::with_limit(Weight::from_parts(half_block - 1, u64::MAX));
+		let mut meter = WeightMeter::with_limit(Weight::zero());
 		assert!(
-			matches!(
-				MigrateV1ToV2::<Test>::step(None, &mut meter),
-				Err(SteppedMigrationError::InsufficientWeight { .. })
-			),
-			"under half a block, the step must defer",
-		);
-
-		let mut meter = WeightMeter::with_limit(Weight::from_parts(half_block, u64::MAX));
-		assert!(MigrateV1ToV2::<Test>::step(None, &mut meter).is_ok());
-		assert!(
-			meter.remaining().ref_time() < half_block,
-			"the step must consume what it charged, so no second batch fits",
+			MigrateV1ToV2::<Test>::step(None, &mut meter).is_ok(),
+			"a starved meter must not freeze the chain",
 		);
 	});
 }
