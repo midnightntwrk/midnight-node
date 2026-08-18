@@ -108,7 +108,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c #v4.5.2
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
 
         with:
           registry: ghcr.io
@@ -116,7 +116,7 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
-        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c #v4.5.2
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -607,7 +607,7 @@ jobs:
         platform: [amd64, arm64]
     steps:
       - name: Login to GHCR
-        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c #v4.5.2
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI

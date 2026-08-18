@@ -15,8 +15,8 @@
 //!
 //! The upstream module is feature-gated behind `test-utilities`, whose `zkir_v2`
 //! dependency (`midnight-zkir ^2.1.0`) now unifies to the 3.x-crypto-stack
-//! `midnight-zkir` 2.2.0 — type-incompatible with ledgers 7/8. We therefore build
-//! L7/L8 without `test-utilities` and supply these items ourselves, against the
+//! `midnight-zkir` 2.2.0 — type-incompatible with ledger 8. We therefore build
+//! L8 without `test-utilities` and supply these items ourselves, against the
 //! renamed 2.x-stack `zkir` crate (tag `crate-zkir-2.1.0`) that zkir 2.2.0 itself
 //! uses internally for backwards-compatible proving.
 //!

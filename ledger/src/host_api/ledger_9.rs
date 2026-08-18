@@ -151,6 +151,10 @@ pub trait Ledger9Bridge {
 
 	/*
 	 * apply_transaction()
+	 *
+	 * `skew_tblock` is always false here: the tblock correction only covers blocks produced
+	 * before the runtime upgrade that closed it, all of which are ledger 8 or older.
+	 * See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -167,6 +171,7 @@ pub trait Ledger9Bridge {
 				block_context,
 				true,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_transaction(
@@ -176,6 +181,7 @@ pub trait Ledger9Bridge {
 				block_context,
 				true,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		}
 	}
@@ -261,6 +267,7 @@ pub trait Ledger9Bridge {
 				tx,
 				block_context,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
@@ -269,6 +276,7 @@ pub trait Ledger9Bridge {
 				tx,
 				block_context,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		}
 	}

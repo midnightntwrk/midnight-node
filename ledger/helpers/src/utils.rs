@@ -15,7 +15,6 @@
 // (`cargo metadata --locked`). This replaces the runtime `Cargo.toml` parse the
 // LeastAuthority audit flagged ("Prefer Cargo.lock For Build-Time Crate Versions"): the constants
 // reflect what was actually resolved and built, and git deps carry their locked tag + commit SHA.
-const LEDGER_7_VERSION: &str = env!("LEDGER_7_VERSION");
 const LEDGER_8_VERSION: &str = env!("LEDGER_8_VERSION");
 const LEDGER_9_VERSION: &str = env!("LEDGER_9_VERSION");
 
@@ -27,7 +26,6 @@ const LEDGER_9_VERSION: &str = env!("LEDGER_9_VERSION");
 /// Returns `None` for an unknown alias.
 pub fn find_dependency_version(alias: &str) -> Option<String> {
 	match alias {
-		"mn-ledger" => Some(LEDGER_7_VERSION.to_owned()),
 		"mn-ledger-8" => Some(LEDGER_8_VERSION.to_owned()),
 		"mn-ledger-9" => Some(LEDGER_9_VERSION.to_owned()),
 		_ => None,
@@ -37,22 +35,6 @@ pub fn find_dependency_version(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
 	use super::*;
-
-	#[test]
-	fn resolves_registry_version_without_comparator() {
-		// The lock-resolved bare semver, not the `=7.0.3` manifest spec.
-		let v = find_dependency_version("mn-ledger").expect("mn-ledger should resolve");
-		assert!(!v.starts_with('='), "expected resolved version, got {v:?}");
-		assert!(v.starts_with(|c: char| c.is_ascii_digit()), "got {v:?}");
-	}
-
-	#[test]
-	fn disambiguates_same_crate_at_different_versions() {
-		// `mn-ledger` and `mn-ledger-8` both rename `midnight-ledger`; the resolve graph keeps them
-		// distinct, so they must report different versions.
-		assert!(find_dependency_version("mn-ledger").unwrap().starts_with("7."));
-		assert!(find_dependency_version("mn-ledger-8").unwrap().starts_with("8."));
-	}
 
 	#[test]
 	fn annotates_git_dependency_with_tag_and_rev() {
