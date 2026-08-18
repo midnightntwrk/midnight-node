@@ -215,7 +215,6 @@ pub fn construct_genesis_block<Block: BlockT>(
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	frame_benchmarking::benchmarking::HostFunctions,
-	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
 );
@@ -223,7 +222,6 @@ pub type HostFunctions = (
 #[cfg(not(feature = "runtime-benchmarks"))]
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
-	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
 );
