@@ -319,6 +319,7 @@ impl<D: DB>
 			// `pallet_cnight_observation::migrations::v2`; dust UTxOs (balances)
 			// are not restored — they regenerate from the re-applied generation
 			// entries.
+			// TODO: Replace this with the Ledger-team-provided state translation wipe
 			dust: Sp::new(ledger_v9::dust::DustState::default()),
 		}))
 	}

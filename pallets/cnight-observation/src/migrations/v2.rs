@@ -146,14 +146,13 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 	) -> Result<Option<Self::Cursor>, SteppedMigrationError> {
 		// One batch per step, and — by charging half a block — one step per block.
 		//
-		// The weight model cannot pace this: `process_tokens`' benchmark observes
-		// *registration* UTXOs, which never reach the ledger, so its ~15ms for 200
-		// UTXOs says nothing about 200 dust `Create`s. Against
-		// `MbmServiceWeight` (80% of the block) that would service ~100 batches —
-		// 20k ledger dust creates — in a single block. Half a block is over the
-		// service budget for a second step and under it for the first, so exactly
-		// one batch lands per block, and never the fatal
-		// `required > MaxServiceWeight`.
+		// We overestimate here - the Weight for
+		// SystemTransaction::CNightGeneratesDustUpdate is not correctly accounted
+		// for in the cNight pallet (https://github.com/midnightntwrk/midnight-node/issues/2036)
+		//
+		// So instead of using the existing weight model, we simply over-estimate
+		// and use 50% of the block. The allocated total MbmServiceWeight is 80% of the block,
+		// so this means 1 batch per block maximum.
 		//
 		// The cost is latency, and it is small: mainnet's live set was ~4.9k
 		// nonces on 2026-08-06 (preview ~1.5k, preprod ~85), i.e. ~25 batches,
@@ -244,7 +243,7 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 
 		let (restored_so_far, _) = DustReapplyProgress::<T>::get();
 		let mut applied = events.len() as u32;
-		if !events.is_empty() && !apply_batch::<T>(events) {
+		if !events.is_empty() && apply_batch::<T>(events).is_err() {
 			if restored_so_far == 0 {
 				// Nothing has been restored yet, so the likely reason is that the
 				// hardfork did not wipe dust after all: re-applying a surviving
@@ -340,20 +339,20 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 /// of them, which makes the replay look like it never ran past
 /// `DustReapplyStarted` (that one is emitted from `on_runtime_upgrade`, phase
 /// `Initialization`, so it is visible). They are all in `System::Events`.
-fn apply_batch<T: Config>(events: Vec<Vec<u8>>) -> bool {
+fn apply_batch<T: Config>(events: Vec<Vec<u8>>) -> Result<(), ()> {
 	let tx = match LedgerApi::construct_cnight_generates_dust_system_tx(events) {
 		Ok(tx) => tx,
 		Err(e) => {
 			log::error!(target: LOG_TARGET, "failed to construct replay system tx: {e:?}");
-			return false;
+			return Err(());
 		},
 	};
 
 	match T::MidnightSystemTransactionExecutor::execute_system_transaction(tx) {
-		Ok(_) => true,
+		Ok(_) => Ok(()),
 		Err(e) => {
 			log::error!(target: LOG_TARGET, "replay batch failed to apply: {e:?}");
-			false
+			Err(())
 		},
 	}
 }
