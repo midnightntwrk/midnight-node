@@ -45,6 +45,75 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
+/// The body of version 1 of `apply_transaction`, which skews the `tblock` of a block's first
+/// ledger transaction (see the trait below).
+///
+/// Public because `sp-runtime-interface` keeps its generated `apply_transaction_version_1` shim
+/// private to the generated module, and the bare `apply_transaction` dispatches to the latest
+/// version on the std side — so this is the only way to reach the pre-upgrade behaviour by name.
+#[cfg(feature = "std")]
+pub fn apply_transaction_v1(
+	externalities: &mut dyn Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
+	if is_unified(externalities) {
+		Bridge::<Signature, DbUnified>::apply_transaction(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			true,
+			runtime_version,
+			/* skew_tblock */ true,
+		)
+	} else {
+		Bridge::<Signature, DbSeparate>::apply_transaction(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			true,
+			runtime_version,
+			/* skew_tblock */ true,
+		)
+	}
+}
+
+/// Shared body of both versions of `validate_guaranteed_execution`; they differ only in
+/// `skew_tblock` (see the trait below).
+#[cfg(feature = "std")]
+fn validate_guaranteed_execution_inner(
+	externalities: &mut dyn Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+	skew_tblock: bool,
+) -> Result<(), LedgerApiError> {
+	if is_unified(externalities) {
+		Bridge::<Signature, DbUnified>::validate_guaranteed_execution(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			skew_tblock,
+		)
+	} else {
+		Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			skew_tblock,
+		)
+	}
+}
+
 #[runtime_interface]
 pub trait Ledger8Bridge {
 	fn set_default_storage(&mut self) {
@@ -104,7 +173,26 @@ pub trait Ledger8Bridge {
 
 	/*
 	 * apply_transaction()
+	 *
+	 * v1 skews the `tblock` of a block's first ledger transaction to
+	 * `parent_block_time + 12s`, reproducing the timestamp the producing node's warm strict
+	 * cache had verified it at. v2 does not. Which one runs is decided by whichever runtime
+	 * was on-chain at that height, so historical blocks keep importing while every block from
+	 * the `set_code` onward is verified against its own timestamp.
+	 *
+	 * See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 	 */
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
+		apply_transaction_v1(*self, state_key, tx, block_context, runtime_version)
+	}
+
+	#[version(2)]
 	fn apply_transaction(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
@@ -120,6 +208,7 @@ pub trait Ledger8Bridge {
 				block_context,
 				true,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_transaction(
@@ -129,6 +218,7 @@ pub trait Ledger8Bridge {
 				block_context,
 				true,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		}
 	}
@@ -199,6 +289,8 @@ pub trait Ledger8Bridge {
 	 *
 	 * Validates that the guaranteed part of a transaction will succeed.
 	 * Used by pre_dispatch to reject transactions that would fail without paying fees.
+	 *
+	 * v1/v2 differ only in the `tblock` skew — see `apply_transaction` above.
 	 */
 	fn validate_guaranteed_execution(
 		&mut self,
@@ -207,23 +299,32 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::validate_guaranteed_execution(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				runtime_version,
-			)
-		}
+		validate_guaranteed_execution_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			true,
+		)
+	}
+
+	#[version(2)]
+	fn validate_guaranteed_execution(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<(), LedgerApiError>> {
+		validate_guaranteed_execution_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			false,
+		)
 	}
 
 	/*
