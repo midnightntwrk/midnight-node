@@ -816,9 +816,21 @@ prep-no-copy:
     # the CI image's /.cargo/config.toml being found via the CWD=/ walk — that breaks the day a
     # target sets a non-/ WORKDIR. This is cargo's lowest-priority config source, so any
     # directory-level .cargo/config.toml still overrides it.
-    RUN mkdir -p "$CARGO_HOME" \
+    # Also point cargo's package-cache lock at the shared registry mount. cargo already
+    # serializes exactly the section that must not run concurrently — downloading and
+    # unpacking crates and updating git checkouts — with an flock on
+    # $CARGO_HOME/.package-cache, then downgrades to a shared lock so compiles still run in
+    # parallel. But that path sits in the image layer while registry/ and git/ are shared
+    # CACHE mounts, so concurrent builds on one buildkit daemon each flock their OWN private
+    # file and the exclusion is a no-op: they shred each other's downloads
+    # (`failed to unpack ... .cargo-ok: File exists`, `failed to stat <git checkout>`).
+    # Following the symlink onto the mount makes the lock span them. Buildkit's own
+    # CACHE --sharing locked is NOT an alternative here: a mount held locked by one build is
+    # not waited on by others, they are silently handed a fresh empty cache dir.
+    RUN mkdir -p "$CARGO_HOME" "$CARGO_HOME/registry" \
       && echo "[net]" >> "$CARGO_HOME/config.toml" \
-      && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml"
+      && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml" \
+      && ln -sfn "$CARGO_HOME/registry/.package-cache" "$CARGO_HOME/.package-cache"
 
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
