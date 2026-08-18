@@ -50,12 +50,6 @@ pub async fn execute(
 
 	let serialized_state = fork_ctx.dispatch(
 		|ctx| {
-			crate::commands::fork::ledger_7::contract_state::get_contract_state(
-				&ctx,
-				args.contract_address,
-			)
-		},
-		|ctx| {
 			crate::commands::fork::ledger_8::contract_state::get_contract_state(
 				&ctx,
 				args.contract_address,

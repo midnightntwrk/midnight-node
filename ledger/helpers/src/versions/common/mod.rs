@@ -167,7 +167,7 @@ pub use {
 // Re-exports without can-panic feature
 pub use types::*;
 
-/// Compatibility trait: L7 `apply` returns `WalletState<D>`, L8 returns `Result<WalletState<D>, _>`.
+/// Compatibility trait: L8 `apply` returns `WalletState<D>`, L9 returns `Result<WalletState<D>, _>`.
 pub trait IntoWalletState<D: DB + Clone> {
 	fn into_wallet_state(self) -> WalletState<D>;
 }
