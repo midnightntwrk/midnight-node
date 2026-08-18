@@ -905,7 +905,7 @@ where
 										},
 										// Ledger 9+ adds IrInsert/IrRemove (on-chain IR maintenance).
 										// This match is shared across ledger versions, so the variants
-										// can't be named here (they don't exist in L7/L8's SingleUpdate);
+										// can't be named here (they don't exist in L8's SingleUpdate);
 										// they're not yet broken out in ContractCallsDetails telemetry.
 										// TODO: support IrInsert/IrRemove
 										#[allow(unreachable_patterns)]
@@ -1336,23 +1336,18 @@ mod tests {
 		let tblock =
 			well_formed_tblock(&ledger_at_block_start(), &bc, Some(&correction(DISABLE_AFTER)));
 
-		match bc.parent_block_time() {
-			// Ledger 8+: the tx is verified at the parent's timestamp plus the mempool skew,
-			// reproducing what the producing node's warm strict-cache entry was verified at.
-			Some(parent) => {
-				assert_eq!(
-					tblock,
-					Timestamp::from_secs(parent) + DurationLedger::from_secs(OFFSET as i128),
-				);
-				assert_ne!(
-					tblock,
-					Timestamp::from_secs(bc.tblock),
-					"the corrected timestamp must not be the block's own tblock"
-				);
-			},
-			// Ledger 7 block contexts carry no parent timestamp, so no correction is possible.
-			None => assert_eq!(tblock, Timestamp::from_secs(bc.tblock)),
-		}
+		// The tx is verified at the parent's timestamp plus the mempool skew, reproducing
+		// what the producing node's warm strict-cache entry was verified at.
+		let parent = bc.parent_block_time().expect("post-ledger-8 contexts always carry one");
+		assert_eq!(
+			tblock,
+			Timestamp::from_secs(parent) + DurationLedger::from_secs(OFFSET as i128)
+		);
+		assert_ne!(
+			tblock,
+			Timestamp::from_secs(bc.tblock),
+			"the corrected timestamp must not be the block's own tblock"
+		);
 	}
 
 	#[test]

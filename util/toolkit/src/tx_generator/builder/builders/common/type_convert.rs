@@ -14,7 +14,7 @@
 //! Conversions from crate-level (ledger_9) types to version-local types.
 //!
 //! When compiled through `ledger_9.rs`, these are identity operations (same types).
-//! When compiled through `ledger_7.rs`/`ledger_8.rs` (coin-structure 2.x), these
+//! When compiled through `ledger_8.rs` (coin-structure 2.x), these
 //! convert through raw bytes/strings.
 
 use super::ledger_helpers_local::{
