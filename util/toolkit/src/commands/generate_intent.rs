@@ -96,6 +96,7 @@ pub async fn fetch_zswap_state(
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = source.ledger_state_db.clone();
 	let fetch_cache = source.fetch_cache.clone();
+	let replay_checkpoint_interval = source.replay_checkpoint_interval;
 	let source = TxGenerator::source(source, dry_run).await?;
 	if dry_run {
 		log::info!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
@@ -112,6 +113,7 @@ pub async fn fetch_zswap_state(
 		&[wallet_seed.clone()],
 		&received_tx,
 		wallet_cache.as_deref(),
+		replay_checkpoint_interval,
 	)
 	.await;
 
@@ -310,15 +312,7 @@ mod test {
 		true
 	}
 
-	// LEDGER9-TOOLKIT-JS: toolkit-js v8 / compact-js 2.5.1 produces
-	// `midnight:intent[v6]` (ledger-8) intent bytes, but the Rust toolkit's
-	// `generate-intent` path now deserializes through `ledger_9::Intent`
-	// (`midnight:intent[v7]`), so the call returns a tagged-deserialize error.
-	// Re-enable when `util/toolkit-js/v9/` lands with a compact-js whose
-	// intent serializer targets `intent[v7]`. Grep for `LEDGER9-TOOLKIT-JS`
-	// across the repo to find all related ignores + the gate in `Earthfile`.
 	#[tokio::test]
-	#[ignore = "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"]
 	async fn test_generate_deploy() {
 		if !toolkit_js_prerequisites_ready() {
 			return;
@@ -359,9 +353,7 @@ mod test {
 		assert!(fs::exists(&output_zswap_state).unwrap());
 	}
 
-	// LEDGER9-TOOLKIT-JS — see `test_generate_deploy` for the rationale.
 	#[tokio::test]
-	#[ignore = "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"]
 	async fn test_generate_circuit_call() {
 		if !toolkit_js_prerequisites_ready() {
 			return;
@@ -426,9 +418,7 @@ mod test {
 		assert!(fs::exists(&output_result).unwrap());
 	}
 
-	// LEDGER9-TOOLKIT-JS — see `test_generate_deploy` for the rationale.
 	#[tokio::test]
-	#[ignore = "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"]
 	async fn test_generate_maintain_contract() {
 		if !toolkit_js_prerequisites_ready() {
 			return;
@@ -477,12 +467,8 @@ mod test {
 		assert!(fs::exists(&output_intent).unwrap());
 	}
 
-	// LEDGER9-TOOLKIT-JS — also gated by the existing intermittent-failure
-	// ignore. Even once the intermittent issue is resolved, this test stays
-	// broken on ledger-9 until toolkit-js v9 / compact-js with `intent[v7]`
-	// lands. Grep for `LEDGER9-TOOLKIT-JS` across the repo for the rest.
 	#[tokio::test]
-	#[ignore = "test failing intermittently - reason unknown; also LEDGER9-TOOLKIT-JS: toolkit-js v9 missing"]
+	#[ignore = "test failing intermittently - reason unknown"]
 	async fn test_generate_maintain_circuit() {
 		if !toolkit_js_prerequisites_ready() {
 			return;
@@ -533,9 +519,7 @@ mod test {
 		assert!(fs::exists(&output_intent).unwrap());
 	}
 
-	// LEDGER9-TOOLKIT-JS — see `test_generate_deploy` for the rationale.
 	#[tokio::test]
-	#[ignore = "LEDGER9-TOOLKIT-JS: toolkit-js v9 / compact-js with intent[v7] serializer not yet vendored"]
 	async fn test_generate_maintain_remove_circuit() {
 		if !toolkit_js_prerequisites_ready() {
 			return;

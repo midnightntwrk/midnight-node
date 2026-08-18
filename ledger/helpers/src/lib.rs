@@ -16,6 +16,11 @@ mod utils;
 pub use utils::find_dependency_version;
 pub mod extract_tx_with_context;
 
+/// v8 -> v9 ledger state translation table (ported from midnight-ledger PR #539).
+/// Consumed by the runtime storage migration (via the `ledger` crate) and by the
+/// toolkit fork boundary (`fork::fork_8_to_9`).
+pub mod state_translation_v8_to_v9;
+
 /// Strategy for ordering candidate coins/UTXOs during input selection.
 ///
 /// Defined at the crate root (not inside the version-specific `common` module) so that
@@ -41,6 +46,14 @@ pub mod ledger_7 {
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
+
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 7;
+	/// The contract-maintenance-authority verifying-key type for this generation. Pre-ledger-9
+	/// ledgers have no dedicated maintenance-key enum, so it is the plain signature verifying key.
+	pub type MaintenanceVerifyingKey = SignatureVerifyingKey;
+	/// Workspace dependency name of the ledger crate backing this module.
+	pub const CRATE_NAME: &str = "mn-ledger";
 	pub use {
 		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
 		onchain_runtime, transient_crypto, zkir, zswap,
@@ -54,6 +67,14 @@ pub mod ledger_7 {
 	#[path = "block_context/pre_ledger_8.rs"]
 	mod block_context;
 	pub use block_context::*;
+
+	// ECDSA is only supported from ledger 9. Pre-9 dependency versions can't represent an
+	// ECDSA unshielded identity (coin-structure has no `From<ecdsa::VerifyingKey> for
+	// UserAddress`, and the signature enums have no ECDSA variant), so the shared `common`
+	// code compiles against these unimplemented stubs and fails loudly if ever exercised.
+	#[allow(clippy::duplicate_mod)]
+	mod ecdsa_unimpl;
+	pub use ecdsa_unimpl::{SigningKeyEcdsa, VerifyingKeyEcdsa};
 
 	#[allow(clippy::duplicate_mod)]
 	mod common;
@@ -81,16 +102,19 @@ pub mod ledger_7 {
 	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
 	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
 	pub fn contract_operation_versioned_verifier_key(
-		vk: transient_crypto::proofs::VerifierKey,
-	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
-		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
+		vk: Vec<u8>,
+	) -> Result<mn_ledger::structure::ContractOperationVersionedVerifierKey, std::io::Error> {
+		let vk: transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
+		Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk))
 	}
 
 	/// The verifier-key slot version for this ledger generation, used when *removing*
 	/// a key (the entry point alone doesn't say which slot the key lives in).
 	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
 	/// `contract_operation_versioned_verifier_key` above.
-	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+	pub fn contract_operation_version_of(
+		_op: &onchain_runtime::state::ContractOperation,
+	) -> mn_ledger::structure::ContractOperationVersion {
 		mn_ledger::structure::ContractOperationVersion::V3
 	}
 
@@ -117,6 +141,24 @@ pub mod ledger_7 {
 	) -> SignatureVerifyingKey {
 		key
 	}
+
+	pub fn signature_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn transaction_signing_key_ecdsa(_key: &SigningKeyEcdsa) -> TransactionSigningKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn transaction_signature_ecdsa(
+		_signature: base_crypto::ecdsa::Signature,
+	) -> TransactionSignature {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn maintenance_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
 }
 
 #[path = "versions"]
@@ -126,6 +168,14 @@ pub mod ledger_8 {
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_8 as extract_tx_with_context;
+
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 8;
+	/// The contract-maintenance-authority verifying-key type for this generation. Pre-ledger-9
+	/// ledgers have no dedicated maintenance-key enum, so it is the plain signature verifying key.
+	pub type MaintenanceVerifyingKey = SignatureVerifyingKey;
+	/// Workspace dependency name of the ledger crate backing this module.
+	pub const CRATE_NAME: &str = "mn-ledger-8";
 	pub use {
 		base_crypto, coin_structure, ledger_storage_ledger_8 as ledger_storage, midnight_serialize,
 		mn_ledger_8 as mn_ledger, onchain_runtime_ledger_8 as onchain_runtime, transient_crypto,
@@ -142,6 +192,11 @@ pub mod ledger_8 {
 	mod block_context;
 	pub use block_context::*;
 
+	// ECDSA is only supported from ledger 9 (see the note in `ledger_7`).
+	#[allow(clippy::duplicate_mod)]
+	mod ecdsa_unimpl;
+	pub use ecdsa_unimpl::{SigningKeyEcdsa, VerifyingKeyEcdsa};
+
 	#[allow(clippy::duplicate_mod)]
 	mod common;
 	pub use common::*;
@@ -168,16 +223,19 @@ pub mod ledger_8 {
 	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
 	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
 	pub fn contract_operation_versioned_verifier_key(
-		vk: transient_crypto::proofs::VerifierKey,
-	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
-		mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk)
+		vk: Vec<u8>,
+	) -> Result<mn_ledger::structure::ContractOperationVersionedVerifierKey, std::io::Error> {
+		let vk: transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
+		Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk))
 	}
 
 	/// The verifier-key slot version for this ledger generation, used when *removing*
 	/// a key (the entry point alone doesn't say which slot the key lives in).
 	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
 	/// `contract_operation_versioned_verifier_key` above.
-	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
+	pub fn contract_operation_version_of(
+		_op: &onchain_runtime::state::ContractOperation,
+	) -> mn_ledger::structure::ContractOperationVersion {
 		mn_ledger::structure::ContractOperationVersion::V3
 	}
 
@@ -204,6 +262,24 @@ pub mod ledger_8 {
 	) -> SignatureVerifyingKey {
 		key
 	}
+
+	pub fn signature_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn transaction_signing_key_ecdsa(_key: &SigningKeyEcdsa) -> TransactionSigningKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn transaction_signature_ecdsa(
+		_signature: base_crypto::ecdsa::Signature,
+	) -> TransactionSignature {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
+
+	pub fn maintenance_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
+		unimplemented!("ecdsa is only supported from ledger 9")
+	}
 }
 
 #[path = "versions"]
@@ -213,6 +289,14 @@ pub mod ledger_9 {
 	pub use super::CoinSelectionStrategy;
 	#[cfg(feature = "can-panic")]
 	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_9 as extract_tx_with_context;
+
+	/// Ledger generation implemented by this module.
+	pub const LEDGER_VERSION: u32 = 9;
+	/// The contract-maintenance-authority verifying-key type for this generation: from ledger 9 the
+	/// ledger carries a dedicated Schnorr/ECDSA maintenance-key enum.
+	pub type MaintenanceVerifyingKey = ContractMaintenanceVerifyingKey;
+	/// Workspace dependency name of the ledger crate backing this module.
+	pub const CRATE_NAME: &str = "mn-ledger-9";
 	pub use {
 		base_crypto, coin_structure_ledger_9 as coin_structure,
 		ledger_storage_ledger_8 as ledger_storage, midnight_serialize, mn_ledger_9 as mn_ledger,
@@ -232,11 +316,22 @@ pub mod ledger_9 {
 	mod common;
 	pub use common::*;
 
+	// Ledger-9-only ECDSA wallet tests (not in shared `common`); see the module docs.
+	// `can-panic`-gated: the whole `common::wallet` module (hence `UnshieldedWallet`) is.
+	#[cfg(all(test, feature = "can-panic"))]
+	mod ecdsa_wallet_tests;
+
 	pub use mn_ledger::structure::{
 		Signature as TransactionSignature, SignatureVerifyingKey,
 		SigningKey as TransactionSigningKey,
 	};
 	pub use onchain_runtime::state::ContractMaintenanceVerifyingKey;
+
+	// ECDSA is natively supported from ledger 9: the signature enums carry an `ECDSA` variant
+	// and coin-structure provides `From<ecdsa::VerifyingKey> for UserAddress`.
+	pub use base_crypto::ecdsa::{
+		SigningKey as SigningKeyEcdsa, VerifyingKey as VerifyingKeyEcdsa,
+	};
 
 	/// Builds a contract operation from a verifier key plus, from ledger 9 on,
 	/// the circuit's zkir. `ir_source` is stored on-chain alongside the verifier
@@ -263,23 +358,41 @@ pub mod ledger_9 {
 	}
 
 	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
-	/// Ledger 9 stores newly deployed verifier keys in the `v3` slot (`ContractOperation::new`
-	/// above), which is the `V4` (zk-stdlib v2) variant taking the 3.x
-	/// `transient_crypto::proofs::VerifierKey` this module deserializes. The `V3` variant is
-	/// reserved for legacy 2.x (`transient_crypto_old`) keys.
+	/// Ledger 9 accepts either a legacy 2.x (`v6`) key, stored in the `V3` slot via the
+	/// crate-level (non-ledger-9-aliased) `transient_crypto` — the same 2.x
+	/// `midnight-transient-crypto` build `op.v2` uses in `contract_operation_new` above —
+	/// or a 3.x/zk-stdlib-v2 (`v7`) key, stored in the `V4` slot. The tag on the key file
+	/// itself says which, mirroring the dispatch in `contract_operation_new`.
 	pub fn contract_operation_versioned_verifier_key(
-		vk: transient_crypto::proofs::VerifierKey,
-	) -> mn_ledger::structure::ContractOperationVersionedVerifierKey {
-		mn_ledger::structure::ContractOperationVersionedVerifierKey::V4(vk)
+		vk: Vec<u8>,
+	) -> Result<mn_ledger::structure::ContractOperationVersionedVerifierKey, std::io::Error> {
+		let tag = peek_tag(&mut std::io::Cursor::new(&vk))?;
+		match tag.as_str() {
+			"verifier-key[v6]" => {
+				let vk: ::transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
+				Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk))
+			},
+			"verifier-key[v7]" => {
+				let vk: transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
+				Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V4(vk))
+			},
+			_ => panic!("unknown verifier key tag: '{tag}'"),
+		}
 	}
 
-	/// The verifier-key slot version for this ledger generation, used when *removing*
-	/// a key (the entry point alone doesn't say which slot the key lives in). Ledger 9
-	/// stores newly deployed/upserted keys in the `V4` slot, so removals must target
-	/// `V4` to match `contract_operation_versioned_verifier_key` above; targeting `V3`
-	/// would miss the key and fail with `VerifierKeyNotFound`.
-	pub fn contract_operation_version() -> mn_ledger::structure::ContractOperationVersion {
-		mn_ledger::structure::ContractOperationVersion::V4
+	/// The verifier-key slot version an *existing* contract operation's key actually lives
+	/// in (the entry point alone doesn't say which slot). Ledger 9 keys can land in either
+	/// `V3` (legacy 2.x/v6) or `V4` (3.x/v7, preferred if somehow both are set) depending on
+	/// what compiled the circuit; removals must target whichever slot is populated, or they
+	/// fail with `VerifierKeyNotFound`.
+	pub fn contract_operation_version_of(
+		op: &onchain_runtime::state::ContractOperation,
+	) -> mn_ledger::structure::ContractOperationVersion {
+		if op.v3.is_some() {
+			mn_ledger::structure::ContractOperationVersion::V4
+		} else {
+			mn_ledger::structure::ContractOperationVersion::V3
+		}
 	}
 
 	pub fn signature_verifying_key(
@@ -304,6 +417,30 @@ pub mod ledger_9 {
 		key: base_crypto::signatures::VerifyingKey,
 	) -> ContractMaintenanceVerifyingKey {
 		ContractMaintenanceVerifyingKey::Schnorr(key)
+	}
+
+	pub fn signature_verifying_key_ecdsa(
+		key: base_crypto::ecdsa::VerifyingKey,
+	) -> SignatureVerifyingKey {
+		SignatureVerifyingKey::ECDSA(key)
+	}
+
+	pub fn transaction_signing_key_ecdsa(
+		key: &base_crypto::ecdsa::SigningKey,
+	) -> TransactionSigningKey {
+		TransactionSigningKey::ECDSA(key.clone())
+	}
+
+	pub fn transaction_signature_ecdsa(
+		signature: base_crypto::ecdsa::Signature,
+	) -> TransactionSignature {
+		TransactionSignature::ECDSA(signature)
+	}
+
+	pub fn maintenance_verifying_key_ecdsa(
+		key: base_crypto::ecdsa::VerifyingKey,
+	) -> ContractMaintenanceVerifyingKey {
+		ContractMaintenanceVerifyingKey::ECDSA(key)
 	}
 }
 

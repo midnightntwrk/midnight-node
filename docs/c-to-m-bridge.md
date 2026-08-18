@@ -2,6 +2,12 @@
 
 The Cardano-to-Midnight (C2M) bridge conceptually allows transferring NIGHT from Cardano to Midnight.
 
+> **Want to exercise it hands-on?** See the
+> [C-to-M bridge Happy Path walkthrough (Stagenet)](./c-to-m-bridge-walkthrough.md)
+> for step-by-step commands to lock cNIGHT, observe it on Midnight, and claim mNIGHT.
+> To check whether the bridge is switched on for a chain, or to enable it, see
+> [Enabling the C-to-M bridge](./c-to-m-bridge-enabling.md).
+
 ## Bridge features
 
 - Cardano Reserve to Cardano Locked transactions

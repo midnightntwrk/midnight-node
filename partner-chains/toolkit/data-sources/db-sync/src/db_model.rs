@@ -814,7 +814,7 @@ pub(crate) async fn get_bridge_txs(
 			    JOIN relevant_txs ON relevant_txs.tx_id = tx.id
 			    LEFT JOIN tx_metadata ON tx_metadata.tx_id = tx.id AND tx_metadata.key = $5
 			WHERE block.block_no <= $6
-				AND {checkpoint_limit})
+				AND {checkpoint_limit}) AS bridge_tx_totals
 		WHERE bridge_out > bridge_in OR reserve_in > reserve_out
 		ORDER BY block_number, tx_ix
 		LIMIT {max_rows};

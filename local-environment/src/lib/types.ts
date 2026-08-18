@@ -22,6 +22,19 @@ export interface RunOptions {
    * output.
    */
   fromSnapshot?: string;
+  /**
+   * Bring the well-known network's base compose up from block 0 instead of
+   * forking a snapshot. Nothing is mocked in this mode: validator seed
+   * phrases and a main-chain data source must be supplied via env/--env-file.
+   * Mutually exclusive with fromSnapshot.
+   */
+  fromGenesis?: boolean;
+  /**
+   * Extra docker-compose override file(s) applied after the generated genesis
+   * override (from-genesis mode only) — e.g. to enable the node's mock
+   * main-chain follower for fully local runs.
+   */
+  composeOverride?: string[];
 }
 
 export interface ImageUpgradeOptions extends RunOptions {

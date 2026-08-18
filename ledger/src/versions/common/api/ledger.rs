@@ -37,6 +37,7 @@ use zswap_local::ledger::State as ZswapLedgerState;
 
 use super::{
 	super::super::BlockContext,
+	super::super::post_block_update,
 	Api, ContractAddress, ContractState, DeserializableError, LOG_TARGET, SerializableError,
 	SystemTransaction, Transaction, TransactionInvalid, UserAddress, ZswapState,
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
@@ -96,6 +97,27 @@ impl<D: DB> Ledger<D> {
 		Self { state, block_fullness: SyntheticCost::ZERO.into() }
 	}
 
+	/// Builds a ledger with an arbitrary accrued `block_fullness`, so that
+	/// [`Self::is_block_start`] can be exercised without applying a real transaction.
+	#[cfg(test)]
+	pub(crate) fn new_with_block_fullness(
+		state: LedgerState<D>,
+		block_fullness: SyntheticCost,
+	) -> Self {
+		Self { state, block_fullness: block_fullness.into() }
+	}
+
+	/// True when no ledger transaction — user or system — has been applied yet in the
+	/// current block, i.e. [`Self::state`] is still exactly the parent's post-block state.
+	///
+	/// `block_fullness` is reset to zero by [`Self::post_block_update`] /
+	/// [`Self::apply_post_block_update`] and only ever accrues in
+	/// [`Self::apply_verified_transaction`] and [`Self::apply_system_tx`], so a zero fullness
+	/// is equivalent to "nothing has touched the ledger state in this block yet".
+	pub(crate) fn is_block_start(&self) -> bool {
+		self.block_fullness.is_zero()
+	}
+
 	pub(crate) fn get_zswap_state(
 		&self,
 		maybe_contract_address: Option<ContractAddress>,
@@ -139,8 +161,15 @@ impl<D: DB> Ledger<D> {
 		let tx_cost =
 			tx.0.cost(&sp.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
-		let (next_state, result) = sp.state.apply(verified_tx, ctx);
 		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
+		post_block_update::prevalidate_post_block_update(
+			&sp.state,
+			&next_block_fullness,
+			&sp.state.parameters.limits.block_limits,
+			"apply_verified_transaction",
+		)?;
+
+		let (next_state, result) = sp.state.apply(verified_tx, ctx);
 		let new_sp = default_storage::<D>()
 			.arena
 			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() });
@@ -186,17 +215,56 @@ impl<D: DB> Ledger<D> {
 		Ok(new_sp)
 	}
 
+	/// Infallible counterpart to [`post_block_update`](Self::post_block_update): applies the
+	/// end-of-block ledger update without the block-limit check.
+	///
+	/// The limit check is performed per-transaction via
+	/// `post_block_update::prevalidate_post_block_update` (see [`apply_verified_transaction`] and
+	/// [`apply_system_tx`]), and the accumulated `block_fullness` is clamped to the block limits
+	/// here before being applied, so the underlying update cannot fail on block limits. Suitable
+	/// for `on_finalize`, which cannot propagate an error.
+	pub(crate) fn apply_post_block_update(
+		sp: Sp<Self, D>,
+		block_context: BlockContext,
+	) -> Sp<Self, D> {
+		let block_fullness: SyntheticCost = sp.block_fullness.clone().into();
+		let block_limits = sp.state.parameters.limits.block_limits;
+		let normalized_fullness = helpers_local::clamp_and_normalize(
+			&block_fullness,
+			&block_limits,
+			"apply_post_block_update",
+		);
+		let overall_fullness = compute_overall_fullness(&normalized_fullness);
+		let next_state = post_block_update::apply_post_block_update(
+			&sp.state,
+			Timestamp::from_secs(block_context.tblock),
+			normalized_fullness,
+			overall_fullness,
+		);
+		default_storage::<D>()
+			.arena
+			.alloc(Ledger { state: next_state, block_fullness: SyntheticCost::ZERO.into() })
+	}
+
 	pub(crate) fn apply_system_tx(
 		sp: Sp<Self, D>,
 		tx: &SystemTransaction,
 		tblock: Timestamp,
 	) -> Result<Sp<Self, D>, LedgerApiError> {
 		let tx_cost = tx.cost(&sp.state.parameters);
+		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
 		let (next_state, _) = sp.state.apply_system_tx(tx, tblock).map_err(|e| {
 			log::error!(target: LOG_TARGET, "Error applying System Transaction: {e:?}");
 			LedgerApiError::Transaction(TransactionError::SystemTransaction(e.into()))
 		})?;
-		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
+		// SystemTransaction::OverwriteParameters can change cost model and block limit.
+		// Cost is computed with old parameters but block fullness is checked against updated limits.
+		post_block_update::prevalidate_post_block_update(
+			&next_state,
+			&next_block_fullness,
+			&next_state.parameters.limits.block_limits,
+			"apply_system_tx",
+		)?;
 		Ok(default_storage::<D>()
 			.arena
 			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() }))
@@ -204,6 +272,10 @@ impl<D: DB> Ledger<D> {
 
 	pub(crate) fn get_unclaimed_amount(&self, beneficiary: UserAddress) -> Option<&u128> {
 		self.state.unclaimed_block_rewards.get(&beneficiary)
+	}
+
+	pub(crate) fn get_bridge_receiving_amount(&self, beneficiary: UserAddress) -> Option<&u128> {
+		self.state.bridge_receiving.get(&beneficiary)
 	}
 
 	pub(crate) fn get_parameters(&self) -> LedgerParameters {
@@ -259,7 +331,9 @@ mod tests {
 		Sp::new(ledger)
 	}
 
-	fn assert_apply_transaction(
+	/// Applies `bytes` to `ledger` without running the end-of-block update, leaving the
+	/// accrued `block_fullness` in place.
+	fn assert_apply_transaction_only(
 		api: &Api,
 		ledger: &mut Sp<Ledger<DefaultDB>>,
 		bytes: &[u8],
@@ -276,21 +350,53 @@ mod tests {
 				tx_ctx.block_context.tblock,
 			)
 			.unwrap_or_else(|err| panic!("Transaction not well-formed: {err:?}"));
-		let (mut new_ledger_state, _applied_stage) =
-			Ledger::<DefaultDB>::apply_verified_transaction(
-				ledger.clone(),
-				api,
-				&tx,
-				&verified_tx,
-				&tx_ctx,
-			)
-			.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
-
-		new_ledger_state =
-			Ledger::<DefaultDB>::post_block_update(new_ledger_state, block_context.clone())
-				.expect("Post block update failed");
+		let (new_ledger_state, _applied_stage) = Ledger::<DefaultDB>::apply_verified_transaction(
+			ledger.clone(),
+			api,
+			&tx,
+			&verified_tx,
+			&tx_ctx,
+		)
+		.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
 
 		*ledger = new_ledger_state;
+	}
+
+	fn assert_apply_transaction(
+		api: &Api,
+		ledger: &mut Sp<Ledger<DefaultDB>>,
+		bytes: &[u8],
+		block_context: &BlockContext,
+	) {
+		assert_apply_transaction_only(api, ledger, bytes, block_context);
+
+		*ledger = Ledger::<DefaultDB>::post_block_update(ledger.clone(), block_context.clone())
+			.expect("Post block update failed");
+	}
+
+	/// `is_block_start` is the gate `well_formed_tblock` uses to decide whether a transaction
+	/// sits at the head of its block, so it must follow `block_fullness` exactly: true on a
+	/// fresh block, false once a transaction has been applied, true again after the
+	/// end-of-block update.
+	#[test]
+	fn is_block_start_tracks_applied_transactions() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let api = Api::new();
+		let mut ledger = prepare_ledger();
+		let (deploy_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
+		let block_context: BlockContext = block_context.into();
+
+		assert!(ledger.is_block_start(), "a fresh block has applied no transactions");
+
+		assert_apply_transaction_only(&api, &mut ledger, &deploy_tx, &block_context);
+		assert!(!ledger.is_block_start(), "a transaction has been applied in this block");
+
+		ledger = Ledger::<DefaultDB>::post_block_update(ledger.clone(), block_context)
+			.expect("Post block update failed");
+		assert!(ledger.is_block_start(), "the end-of-block update starts a new block");
 	}
 
 	#[test]
@@ -352,6 +458,39 @@ mod tests {
 			"Contract state not found for address {}",
 			String::from_utf8_lossy(a)
 		);
+	}
+
+	#[test]
+	fn get_bridge_receiving_amount_reads_only_the_bridge_map() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+
+		let api = Api::new();
+		// `night_address` builds a `UserAddress` from 32 raw bytes — the same conversion the
+		// real `Bridge::get_bridge_receiving_amount` uses on its `beneficiary` argument.
+		let bridge_addr = api.night_address([7u8; 32]).expect("valid 32-byte address");
+		let rewards_addr = api.night_address([9u8; 32]).expect("valid 32-byte address");
+		let absent_addr = api.night_address([0u8; 32]).expect("valid 32-byte address");
+
+		// Seed the two separate maps with distinct addresses and amounts.
+		let mut state: LedgerState<DefaultDB> = LedgerState::new("undeployed");
+		state.bridge_receiving = state.bridge_receiving.insert(bridge_addr, 1_234u128);
+		state.unclaimed_block_rewards =
+			state.unclaimed_block_rewards.insert(rewards_addr, 5_678u128);
+		let ledger = Ledger::new(state);
+
+		// Returns the stored (post-fee) bridge amount for an address present in `bridge_receiving`.
+		assert_eq!(ledger.get_bridge_receiving_amount(bridge_addr), Some(&1_234u128));
+		// Returns `None` for an address that has no bridge entry.
+		assert_eq!(ledger.get_bridge_receiving_amount(absent_addr), None);
+		// Is isolated from `unclaimed_block_rewards`: a rewards-only address is not visible here.
+		assert_eq!(ledger.get_bridge_receiving_amount(rewards_addr), None);
+
+		// Symmetry: the rewards lookup does not observe the bridge entry either.
+		assert_eq!(ledger.get_unclaimed_amount(rewards_addr), Some(&5_678u128));
+		assert_eq!(ledger.get_unclaimed_amount(bridge_addr), None);
 	}
 }
 // grcov-excl-stop

@@ -159,6 +159,9 @@ pub mod pallet {
 	pub struct GenesisConfig<T: Config> {
 		/// Initial subminimal transfers configuration.
 		pub subminimal_transfers_config: SubminimalTransfersConfig,
+		/// Mainchain transaction hashes to pre-approve at genesis.
+		#[serde(default)]
+		pub approved_txs: Vec<McTxHash>,
 		#[allow(missing_docs)]
 		pub _marker: PhantomData<T>,
 	}
@@ -167,6 +170,7 @@ pub mod pallet {
 		fn default() -> Self {
 			Self {
 				subminimal_transfers_config: SubminimalTransfersConfig::default(),
+				approved_txs: Vec::new(),
 				_marker: Default::default(),
 			}
 		}
@@ -175,8 +179,11 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			let GenesisConfig { subminimal_transfers_config, _marker } = self;
+			let GenesisConfig { subminimal_transfers_config, approved_txs, _marker } = self;
 			SubminimalTransfersConfiguration::<T>::put(subminimal_transfers_config.clone());
+			for hash in approved_txs {
+				ApprovedMcTxHashes::<T>::insert(*hash, ());
+			}
 		}
 	}
 
@@ -243,7 +250,7 @@ pub mod pallet {
 			data.extend(b"midnight:bridge-transfer-nonce:");
 			data.extend(parent_hash.as_ref());
 			data.extend(&counter.to_le_bytes());
-			sp_core::hashing::blake2_256(&data)
+			sp_crypto_hashing::blake2_256(&data)
 		}
 
 		fn execute_serialized_tx<F>(

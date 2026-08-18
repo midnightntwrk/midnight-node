@@ -150,9 +150,18 @@ export async function federatedRuntimeUpgrade(
     );
 
     console.log("Closing federated motion to execute authorize_upgrade...");
-    const motionCloseWeight = api.createType("WeightV2", CLOSE_WEIGHT);
+    // Older runtimes (e.g. mainnet spec 22000) take motionClose(motion_hash);
+    // newer ones add a proposal_weight_bound. Follow the on-chain signature.
+    const motionCloseArgs = api.tx.federatedAuthority.motionClose.meta.args;
+    const motionCloseTx =
+      motionCloseArgs.length === 1
+        ? api.tx.federatedAuthority.motionClose(motionHash)
+        : api.tx.federatedAuthority.motionClose(
+            motionHash,
+            api.createType("WeightV2", CLOSE_WEIGHT),
+          );
     await signAndWait(
-      api.tx.federatedAuthority.motionClose(motionHash, motionCloseWeight),
+      motionCloseTx,
       motionExecutor,
       "federatedAuthority.motionClose",
     );

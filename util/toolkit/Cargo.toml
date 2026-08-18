@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-toolkit"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 license-file.workspace = true
 
@@ -13,6 +13,7 @@ path = "src/main.rs"
 [features]
 default = []
 erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
+compact-contract-tests = []
 
 [dependencies]
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
@@ -58,6 +59,7 @@ stacker.workspace = true
 semver.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
 assert_matches.workspace = true
 test-case = "3.3.1"
 hex-literal.workspace = true

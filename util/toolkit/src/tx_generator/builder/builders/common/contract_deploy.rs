@@ -15,7 +15,7 @@ use super::build_txs_ext::{BuildTxsExt, CreateIntentInfo, IntentToFile};
 use super::ledger_helpers_local::{
 	BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuilderContext, ContractDeployInfo,
 	DefaultDB, IntentInfo, MerkleTreeContract, OfferInfo, ProofProvider, TransactionWithContext,
-	UnshieldedWallet, VerifyingKey, Wallet, WalletSeed,
+	UnshieldedWallet, Wallet, WalletSeed,
 };
 use crate::{
 	serde_def::SourceTransactions,
@@ -29,7 +29,7 @@ pub struct ContractDeployBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
 	funding_seed: String,
-	committee: Vec<VerifyingKey>,
+	committee: Vec<UnshieldedWallet>,
 	committee_threshold: u32,
 	rng_seed: Option<[u8; 32]>,
 }
@@ -40,25 +40,29 @@ impl<C: BuilderContext<DefaultDB>> ContractDeployBuilder<C> {
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
+		use super::type_convert::{convert_scheme, convert_wallet_seed};
+
 		let funding_seed = args.funding_seed;
 		let rng_seed = args.rng_seed;
 		let committee_threshold = args.authority_threshold;
 
-		let mut committee_seeds: Vec<WalletSeed> = args
+		// Each committee member carries its own signature scheme (Schnorr or ledger-9 ECDSA); the
+		// pre-ledger-9 ECDSA guard runs earlier via `Builder::relevant_wallet_schemes`.
+		let mut committee: Vec<UnshieldedWallet> = args
 			.authority_seeds
 			.iter()
-			.map(|s| super::type_convert::convert_wallet_seed(s.clone()))
+			.map(|s| {
+				let (seed, scheme) = s.resolve();
+				UnshieldedWallet::new(convert_wallet_seed(seed), convert_scheme(scheme))
+			})
 			.collect();
 
-		// Set the funding seed as the committee if none is passed
-		if committee_seeds.is_empty() {
-			committee_seeds = vec![Wallet::<DefaultDB>::wallet_seed_decode(&funding_seed)];
+		// Default to the (Schnorr) funding seed as the sole committee member if none is passed.
+		if committee.is_empty() {
+			committee = vec![UnshieldedWallet::default(Wallet::<DefaultDB>::wallet_seed_decode(
+				&funding_seed,
+			))];
 		}
-
-		let committee: Vec<_> = committee_seeds
-			.iter()
-			.map(|s| UnshieldedWallet::default(s.clone()).signing_key().verifying_key().clone())
-			.collect();
 
 		let committee_threshold = committee_threshold.unwrap_or_else(|| committee.len() as u32);
 

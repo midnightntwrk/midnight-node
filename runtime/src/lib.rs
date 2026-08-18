@@ -280,11 +280,11 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 002_000_000,
+	spec_version: 002_001_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
-	system_version: 1,
+	system_version: 3,
 };
 
 /// This determines the average expected block time that we are targeting.
@@ -1119,7 +1119,13 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,);
+pub type Migrations = (
+	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
+	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
+	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
+	// this ledger-9 runtime (storage version 2).
+	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where

@@ -13,7 +13,6 @@
 
 use std::{
 	collections::{HashMap, HashSet},
-	convert::Infallible,
 	sync::Arc,
 };
 
@@ -21,7 +20,7 @@ use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildUtxoOutput, BuildUtxoSpend, BuilderContext,
 	CoinSelectionStrategy, DefaultDB, FromContext as _, InputInfo, IntentInfo, OfferInfo,
 	OutputInfo, ProofProvider, Segment, ShieldedCoinSelectionError, ShieldedTokenType,
-	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
+	StandardTransactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
 	UtxoId, UtxoOutputInfo, UtxoSelectionError, UtxoSpendInfo, WalletSeed,
 };
 use super::output_spec::{
@@ -39,6 +38,18 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 
 pub(crate) const MAX_GUARANTEED_OUTPUTS: usize = 2;
 const MAX_GUARANTEED_INPUTS_OUTPUTS: usize = 3;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SingleTxError {
+	#[error("failed to select unshielded UTXOs for transfer: {0}")]
+	UtxoSelection(#[from] UtxoSelectionError),
+	#[error("insufficient shielded coins for transfer: {0}")]
+	ShieldedCoinSelection(#[from] ShieldedCoinSelectionError),
+	#[error("proving failed: {0}")]
+	ProvingFailed(String),
+	#[error("transaction is empty: no valid destination addresses were resolved into outputs")]
+	EmptyTransaction,
+}
 
 pub struct SingleTxBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
@@ -90,13 +101,19 @@ impl<C: BuilderContext<DefaultDB>> SingleTxBuilder<C> {
 		};
 		let (shielded_outputs, unshielded_outputs) = resolve_outputs_from_triples(&output_args);
 
+		// The builder stores only the seed value; the unshielded signature scheme is applied when
+		// the context wallet is built (see `Builder::relevant_wallet_schemes`), so the scheme half
+		// of each resolved pair is dropped here.
+		let (source_seed, _) = args.source_seed.resolve();
+		let funding_seed = args.funding_seed.map(|s| s.resolve().0);
+
 		Self {
 			context,
 			prover,
 			shielded_outputs,
 			unshielded_outputs,
-			source_seed: convert_wallet_seed(args.source_seed),
-			funding_seed: args.funding_seed.map(convert_wallet_seed),
+			source_seed: convert_wallet_seed(source_seed),
+			funding_seed: funding_seed.map(convert_wallet_seed),
 			input_utxos: {
 				let mut seen: HashSet<([u8; 32], u32)> = HashSet::new();
 				args.input_utxos
@@ -115,7 +132,7 @@ impl<C: BuilderContext<DefaultDB>> SingleTxBuilder<C> {
 
 #[async_trait]
 impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
-	type Error = Infallible;
+	type Error = SingleTxError;
 
 	async fn build_txs_from(
 		&self,
@@ -127,7 +144,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 		let funding_seed = self.funding_seed.clone().unwrap_or(self.source_seed.clone());
 
 		// - Transaction info
-		let mut tx_info = StandardTrasactionInfo::new_from_context(
+		let mut tx_info = StandardTransactionInfo::new_from_context(
 			context.clone(),
 			self.prover.clone(),
 			self.rng_seed,
@@ -139,8 +156,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 				self.source_seed.clone(),
 				self.shielded_outputs.iter().map(clone_shielded_spec).collect(),
 				self.coin_selection,
-			)
-			.expect("insufficient shielded coins for transfer");
+			)?;
 			if offer.outputs.len() > MAX_GUARANTEED_OUTPUTS {
 				tx_info.set_fallible_offers(HashMap::from([(1, offer)]));
 			} else {
@@ -156,10 +172,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 				&self.input_utxos,
 				self.coin_selection,
 			)
-			.await
-			.unwrap_or_else(|error| {
-				panic!("failed to select unshielded UTXOs for transfer: {error}")
-			});
+			.await?;
 			tx_info.set_intents(intents);
 		}
 
@@ -170,10 +183,13 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for SingleTxBuilder<C> {
 			log::error!(
 				"transaction is empty! No valid destination_addresses were resolved into outputs"
 			);
-			panic!("transaction empty");
+			return Err(SingleTxError::EmptyTransaction);
 		}
 
-		let tx = tx_info.prove().await.expect("Balancing TX failed");
+		let tx = tx_info
+			.prove()
+			.await
+			.map_err(|e| SingleTxError::ProvingFailed(format!("{e}")))?;
 
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
@@ -220,6 +236,7 @@ pub(crate) fn build_shielded_offer<C: BuilderContext<DefaultDB>>(
 	}
 
 	// Per token type: select inputs and append a change refund if needed.
+	let select_start = std::time::Instant::now();
 	for (token_type, total_required) in totals {
 		let (token_inputs, change) = InputInfo::coins_to_cover_value(
 			context.clone(),
@@ -243,6 +260,7 @@ pub(crate) fn build_shielded_offer<C: BuilderContext<DefaultDB>>(
 			outputs_info.push(refund);
 		}
 	}
+	log::debug!("[perf] select_shielded_offer took {:?}", select_start.elapsed());
 
 	Ok(OfferInfo { inputs: inputs_info, outputs: outputs_info, transients: vec![] })
 }
@@ -295,6 +313,7 @@ pub(crate) async fn build_unshielded_intents<C: BuilderContext<DefaultDB>>(
 
 	// Per token type: select utxos (or use pinned utxos for the single-token case)
 	// and append a change refund if needed.
+	let select_start = std::time::Instant::now();
 	for (token_type, total_required) in totals {
 		let (token_inputs, remaining) = if input_utxos.is_empty() {
 			UtxoSpendInfo::utxos_to_cover_value(
@@ -330,6 +349,7 @@ pub(crate) async fn build_unshielded_intents<C: BuilderContext<DefaultDB>>(
 			outputs_info.push(refund);
 		}
 	}
+	log::debug!("[perf] select_unshielded_intents took {:?}", select_start.elapsed());
 
 	let inputs_outputs_len = inputs_info.len() + outputs_info.len();
 	let unshielded_offer = UnshieldedOfferInfo { inputs: inputs_info, outputs: outputs_info };

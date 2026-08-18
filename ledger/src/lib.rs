@@ -56,6 +56,9 @@ pub mod ledger_7 {
 	#[path = "guaranteed_validation/ledger_7.rs"]
 	mod guaranteed_validation;
 
+	#[path = "post_block_update/ledger_7.rs"]
+	mod post_block_update;
+
 	pub const CRATE_NAME: &str = "mn-ledger";
 	#[cfg(feature = "std")]
 	pub(crate) type TransactionSignature = base_crypto_local::signatures::Signature;
@@ -88,6 +91,9 @@ pub mod ledger_8 {
 
 	#[path = "guaranteed_validation/ledger_8.rs"]
 	mod guaranteed_validation;
+
+	#[path = "post_block_update/ledger_8.rs"]
+	mod post_block_update;
 
 	pub const CRATE_NAME: &str = "mn-ledger-8";
 	#[cfg(feature = "std")]
@@ -123,6 +129,9 @@ pub mod ledger_9 {
 	#[path = "guaranteed_validation/ledger_9.rs"]
 	mod guaranteed_validation;
 
+	#[path = "post_block_update/ledger_9.rs"]
+	mod post_block_update;
+
 	pub const CRATE_NAME: &str = "mn-ledger-9";
 	#[cfg(feature = "std")]
 	pub(crate) type TransactionSignature = mn_ledger_local::structure::Signature;
@@ -143,6 +152,71 @@ pub fn drop_all_default_storage() {
 	ledger_7::storage::drop_default_storage_if_exists();
 	ledger_8::storage::drop_default_storage_if_exists();
 	ledger_9::storage::drop_default_storage_if_exists();
+}
+
+/// Seed the (separate) ledger arena from a genesis `LedgerState` blob, using the
+/// deserializer that matches the blob's `ledger-state[vN]` header tag.
+///
+/// A node may boot on a chain-spec produced by an older runtime — notably the
+/// ledger 8->9 hardfork, where a ledger-9 node starts from a ledger-8
+/// (`ledger-state[v13]`) genesis and only upgrades to v9 later via the runtime
+/// migration. Seeding must therefore match the genesis version (the genesis
+/// block runs under the old WASM and expects the old-format arena root), not the
+/// latest. v8 and v9 share one storage backend, so a v8-seeded arena is exactly
+/// what the post-migration v9 runtime reads. Unrecognized tags fall back to the
+/// latest version (`ledger_9`), preserving the prior default behaviour.
+#[cfg(feature = "std")]
+pub fn init_ledger_storage_separate<P: AsRef<std::path::Path>>(
+	dir: P,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> alloc::vec::Vec<u8> {
+	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
+		ledger_8::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
+	} else {
+		ledger_9::storage::init_storage_paritydb_separate(dir, genesis_state, cache_size)
+	}
+}
+
+/// Unified-DB counterpart of [`init_ledger_storage_separate`].
+#[cfg(feature = "std")]
+pub fn init_ledger_storage_unified<
+	D: core::ops::Deref<Target = parity_db::Db> + Default + Send + Sync + 'static,
+	const COLUMN_OFFSET: u8,
+>(
+	db_instance: D,
+	genesis_state: &[u8],
+	cache_size: usize,
+) -> alloc::vec::Vec<u8> {
+	if ledger_8::storage::genesis_matches_this_version(genesis_state) {
+		ledger_8::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+			db_instance,
+			genesis_state,
+			cache_size,
+		)
+	} else {
+		ledger_9::storage::init_storage_paritydb_unified::<D, COLUMN_OFFSET>(
+			db_instance,
+			genesis_state,
+			cache_size,
+		)
+	}
+}
+
+/// Returns true if `state_key` is a ledger-8 arena root, i.e. a tagged-serialized
+/// `TypedArenaKey<ledger_8::api::Ledger<_>, _>`.
+#[cfg(feature = "std")]
+pub(crate) fn is_ledger_8_state_key(state_key: &[u8]) -> bool {
+	use ledger_storage_ledger_8::{DefaultDB, arena::TypedArenaKey, db::DB};
+	use midnight_serialize::Tagged;
+
+	type Ledger8Root = TypedArenaKey<ledger_8::api::Ledger<DefaultDB>, <DefaultDB as DB>::Hasher>;
+
+	let expected = <Ledger8Root as Tagged>::tag();
+	match midnight_serialize::peek_tag(&mut std::io::Cursor::new(state_key)) {
+		Ok(tag) => tag.as_str() == expected.as_ref(),
+		Err(_) => false,
+	}
 }
 
 mod common;
@@ -187,5 +261,33 @@ mod tests {
 		// Drop default storage
 		unsafe_drop_default_storage::<ParityDb>();
 		assert!(try_get_default_storage::<ParityDb>().is_none());
+	}
+
+	/// `is_ledger_8_state_key` is what the ledger-9 host API dispatches on to read the
+	/// `set_code` block of the 8->9 hardfork, whose `StateKey` is one version behind
+	/// its `:code` (GH #1959). It has to tell a ledger-8 arena root from a ledger-9
+	/// one from the header tag alone.
+	#[test]
+	fn ledger_8_state_key_tag_is_recognised() {
+		use ledger_storage_ledger_8::DefaultDB;
+		use midnight_serialize::{GLOBAL_TAG, Tagged};
+
+		// A `StateKey` is `tagged_serialize(&Sp<Ledger<D>, D>::as_typed_key())`, and
+		// `TypedArenaKey`'s tag wraps its referent's — which for `Ledger` is just
+		// `LedgerState`'s. Only the header matters here; `peek_tag` never reads the body.
+		fn header<T: Tagged>() -> Vec<u8> {
+			format!("{GLOBAL_TAG}storage-key({}):", T::tag()).into_bytes()
+		}
+		let v8 = header::<mn_ledger_8::structure::LedgerState<DefaultDB>>();
+		let v9 = header::<mn_ledger_9::structure::LedgerState<DefaultDB>>();
+		assert_ne!(v8, v9, "v8 and v9 ledger states must not share a tag");
+
+		assert!(super::is_ledger_8_state_key(&v8));
+		assert!(!super::is_ledger_8_state_key(&v9));
+
+		// An unset `StateKey`, or anything else untagged, is not a ledger-8 root: the
+		// host API must take its ordinary ledger-9 path rather than guess.
+		assert!(!super::is_ledger_8_state_key(&[]));
+		assert!(!super::is_ledger_8_state_key(b"not-tagged-at-all"));
 	}
 }

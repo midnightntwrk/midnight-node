@@ -20,12 +20,12 @@ use std::{any::Any, borrow::Cow};
 use super::super::{
 	AlignedValue, ContractAddress, ContractCallPrototype, ContractDeploy, ContractOperation, DB,
 	LedgerParameters, Op, Resolver, ResultModeGather, ResultModeVerify, Sp, StdRng, Transcripts,
-	ValueReprAlignedValue, maintenance_verifying_key,
+	ValueReprAlignedValue,
 };
 use super::{
 	ChargedState, Contract, ContractMaintenanceAuthority, ContractState, EntryPointBuf,
 	HashMapStorage as HashMap, HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key,
-	KeyLocation, MerkleTree, PreTranscript, QueryContext, Rng, StateValue, VerifyingKey, key,
+	KeyLocation, MerkleTree, PreTranscript, QueryContext, Rng, StateValue, UnshieldedWallet, key,
 	leaf_hash, partition_transcripts, stval,
 };
 
@@ -75,7 +75,7 @@ impl Default for MerkleTreeContract {
 impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 	async fn deploy(
 		&self,
-		commitee: &[VerifyingKey],
+		commitee: &[UnshieldedWallet],
 		commitee_threshold: u32,
 		rng: &mut StdRng,
 	) -> Result<ContractDeploy<D>, std::io::Error> {
@@ -95,7 +95,13 @@ impl<D: DB + Clone> Contract<D> for MerkleTreeContract {
 				.insert(b"store"[..].into(), store_op.clone())
 				.insert(b"check"[..].into(), check_op.clone()),
 			maintenance_authority: ContractMaintenanceAuthority {
-				committee: commitee.iter().cloned().map(maintenance_verifying_key).collect(),
+				committee: commitee
+					.iter()
+					.map(|w| {
+						w.maintenance_verifying_key()
+							.expect("committee member must carry key material")
+					})
+					.collect(),
 				threshold: commitee_threshold,
 				counter: 0,
 			},
