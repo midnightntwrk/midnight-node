@@ -346,7 +346,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 				"embedded-indexer",
 				Some("embedded-indexer"),
 				async move {
-					if let Err(error) = crate::indexer::run() {
+					if let Err(error) = crate::indexer::run_on_dedicated_thread() {
 						log::error!("embedded indexer exited: {error:#}");
 					}
 				},

@@ -33,6 +33,7 @@ use spo_indexer::{
 	application as spo_app,
 	infra::{spo_client::SPOClient, storage as spo_storage},
 };
+use std::thread;
 use tokio::{
 	runtime::Builder,
 	select,
@@ -40,6 +41,22 @@ use tokio::{
 	task,
 };
 use wallet_indexer::{application as wallet_app, infra::storage as wallet_storage};
+
+pub fn run_on_dedicated_thread() -> anyhow::Result<()> {
+	run_in_thread(run)
+}
+
+fn run_in_thread<T>(run: impl FnOnce() -> anyhow::Result<T> + Send + 'static) -> anyhow::Result<T>
+where
+	T: Send + 'static,
+{
+	thread::Builder::new()
+		.name("embedded-indexer".into())
+		.spawn(run)
+		.context("spawn embedded indexer thread")?
+		.join()
+		.map_err(|_| anyhow::anyhow!("embedded indexer thread panicked"))?
+}
 
 pub fn run() -> anyhow::Result<()> {
 	let Config {
@@ -163,5 +180,23 @@ fn task_result(
 		Ok(Ok(())) => Err(anyhow!("{task_name} terminated")),
 		Ok(Err(error)) => Err(error.context(format!("{task_name} exited"))),
 		Err(error) => Err(anyhow!(error).context(format!("{task_name} panicked"))),
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::run_in_thread;
+	use tokio::runtime::Builder;
+
+	#[tokio::test(flavor = "multi_thread")]
+	async fn dedicated_thread_can_own_a_tokio_runtime() {
+		let result = run_in_thread(|| {
+			Builder::new_current_thread()
+				.enable_all()
+				.build()?
+				.block_on(async { Ok::<_, anyhow::Error>(()) })
+		});
+
+		assert!(result.is_ok());
 	}
 }
