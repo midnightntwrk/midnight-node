@@ -32,6 +32,9 @@ pub fn try_convert_extra_invalid<D: DB>(
 ) -> Result<InvalidError, TransactionInvalid<D>> {
 	match err {
 		TransactionInvalid::MerkleTreeError(_) => Ok(InvalidError::MerkleTreeError),
+		TransactionInvalid::GenerationInfoAlreadyPresent(_) => {
+			Ok(InvalidError::GenerationInfoAlreadyPresent)
+		},
 		other => Err(other),
 	}
 }
@@ -51,6 +54,9 @@ pub fn try_convert_extra_system_tx(
 	match err {
 		LedgerSystemTransactionError::MerkleTreeError(_) => {
 			Ok(SystemTransactionError::MerkleTreeError)
+		},
+		LedgerSystemTransactionError::GenerationInfoAlreadyPresent(_) => {
+			Ok(SystemTransactionError::GenerationInfoAlreadyPresent)
 		},
 		other => Err(other),
 	}
