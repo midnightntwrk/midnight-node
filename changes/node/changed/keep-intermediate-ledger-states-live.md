@@ -44,4 +44,4 @@ The emitted state key is unchanged: the `Ledger` root is always an `ArenaKey::Re
 byte-identical with or without the persist. No storage-layout, host-ABI or runtime change.
 
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1442
-PR: https://github.com/midnightntwrk/midnight-node/pull/1443
+PR: https://github.com/midnightntwrk/midnight-node/pull/2050
