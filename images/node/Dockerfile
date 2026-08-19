@@ -1,6 +1,7 @@
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@sha256:891544b0b3a6aae4e26901cfea4c21a0cb5bf02472c488167f971ec67be7465d
 
 ENV BASE_PATH=/node/chain
+ENV CONFIG_FILE=/etc/midnight/indexer.yaml
 ENV RUST_BACKTRACE=1
 
 # Runtime dependencies only — no build toolchain
@@ -29,6 +30,7 @@ RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
 
 COPY --chown=appuser:appuser .envrc ./bin/.envrc
 COPY --chown=appuser:appuser res/ ./res/
+COPY --chown=appuser:appuser indexer/indexer-standalone/config.yaml /etc/midnight/indexer.yaml
 COPY node/bin/entrypoint.sh /entrypoint.sh
 
 USER appuser
