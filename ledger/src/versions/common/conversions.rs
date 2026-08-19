@@ -87,7 +87,9 @@ impl<D: DB> From<TransactionInvalid<D>> for InvalidError {
 			Ti::InputNotInUtxos(..) => Ie::InputNotInUtxos,
 			Ti::DustDoubleSpend(..) => Ie::DustDoubleSpend,
 			Ti::DustDeregistrationNotRegistered(..) => Ie::DustDeregistrationNotRegistered,
-			Ti::GenerationInfoAlreadyPresent(..) => Ie::GenerationInfoAlreadyPresent,
+			// Dust-generation uniqueness: the upstream variant is spelled differently per ledger
+			// (`GenerationInfoAlreadyPresent` in 8, `InitialNonceAlreadyPresent` from
+			// 9.1.0.0-rc.4), so it is mapped in each `error_ext::ledger_N` instead of here.
 			Ti::InvariantViolation(..) => Ie::InvariantViolation,
 			Ti::RewardTooSmall { .. } => Ie::RewardTooSmall,
 			Ti::DivideByZero => Ie::DivideByZero,
@@ -113,7 +115,6 @@ impl From<LedgerSystemTransactionError> for SystemTransactionError {
 			Lste::CommitmentAlreadyPresent { .. } => Ste::CommitmentAlreadyPresent,
 			Lste::ReplayProtectionFailure(e) => Ste::ReplayProtectionFailure(e.into()),
 			Lste::IllegalReserveDistribution { .. } => Ste::IllegalReserveDistribution,
-			Lste::GenerationInfoAlreadyPresent(_) => Ste::GenerationInfoAlreadyPresent,
 			Lste::InvalidBasisPoints(_) => Ste::InvalidBasisPoints,
 			Lste::InvariantViolation(_) => Ste::InvariantViolation,
 			Lste::TreasuryDisabled => Ste::TreasuryDisabled,
