@@ -38,7 +38,7 @@
 //!   stages `persist_tagged` plus `unpersist` together. Do not flush the shared
 //!   write cache from the import watcher — the next `on_finalize` flush
 //!   commits after that block's tip is rooted. A crash before that flush
-//!   leaves the raw pin, so catch-up re-swaps.
+//!   leaves the raw pin; restart re-tags genesis and best.
 //! - Pruning: `release_tagged(&arena, &tags)`, then flush, then let the GC run.
 //!
 //! # Matching
@@ -219,7 +219,7 @@ pub fn is_tagged<D: DB>(arena: &Arena<D>, tag: &[u8], inner_hash: &ArenaHash<D::
 /// in-flight block allocations, and flushing it would empty the cache so the
 /// arena sweep could run mid-execution. Durability is the next block-boundary
 /// `flush_storage` (after that tip is rooted). A crash before that flush
-/// leaves the raw pin on disk, so catch-up re-swaps.
+/// leaves the raw pin on disk; restart re-tags genesis and best.
 pub fn swap_raw_pin_for_tagged<T: Storable<D>, D: DB>(
 	arena: &Arena<D>,
 	tag: std::vec::Vec<u8>,

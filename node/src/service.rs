@@ -650,6 +650,15 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 
 	let state_pruning = config.state_pruning.clone();
 
+	// Subscribe to every import before the network starts syncing. Genesis is
+	// already in the client; the watcher one-shots genesis+best, then the
+	// stream covers subsequent imports (including initial sync).
+	task_manager.spawn_handle().spawn(
+		"ledger-root-tag",
+		None,
+		crate::ledger_root_tag::watch(client.clone()),
+	);
+
 	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
@@ -820,12 +829,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		telemetry: telemetry.as_mut(),
 		tracing_execute_block: None,
 	})?;
-
-	task_manager.spawn_handle().spawn(
-		"ledger-root-tag",
-		None,
-		crate::ledger_root_tag::watch(client.clone()),
-	);
 
 	if let Some(hwbench) = hwbench {
 		sc_sysinfo::print_hwbench(&hwbench);

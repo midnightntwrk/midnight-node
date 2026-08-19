@@ -6,7 +6,8 @@ file sync — not only the post-sync import stream) and swaps each Anchored
 ledger persist for a wrapper tagged with that block's header hash. The swap
 is staged only; the next block's `on_finalize` flush makes it durable, so
 this task never empties the write cache mid-execution. A crash before that
-flush leaves the raw pin; catch-up re-swaps. The GC worker later
+flush leaves the raw pin; restart re-tags genesis and best (later imports
+are already on `every_import_notification_stream`). The GC worker later
 `release_tagged`s wrappers whose hash has left the pruning window. Transient
 intra-block states still use a raw persist. Warp/fast sync still skips
 hashes whose inner ledger state is not in the local DB.

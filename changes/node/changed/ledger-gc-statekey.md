@@ -17,8 +17,7 @@ that a canonical sibling sharing the same state root would keep true forever.
 
 Capture is at every executed import (including initial sync), so a pruning
 window smaller than the GRANDPA justification period no longer skips tips
-the way finality-time `StateKey` reads did, and a full sync no longer leaves
-untagged raw persists outside a shallow catch-up window.
+the way finality-time `StateKey` reads did.
 
 An existing archive DB restarted with `--state-pruning` omitted keeps its
 stored mode (`StateDb::open`); that case falls back to arena-only GC.
