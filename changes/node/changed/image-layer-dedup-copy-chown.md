@@ -16,4 +16,4 @@ Side effect: `chown -R … ./bin` never reached the file it was aimed at, since
 `/bin` is a usr-merge symlink and `chown -R` does not traverse it. `.envrc` is
 now owned by `appuser` like the rest.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2048
