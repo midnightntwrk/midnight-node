@@ -40,7 +40,7 @@ serde_json = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 lazy_static = { workspace = true, optional = true }
-moka = { version = "0.11.3", optional = true }
+moka = { version = "0.12", features = ["sync"], optional = true }
 sha2 = { workspace = true, optional = true }
 midnight-node-ledger-helpers = { workspace = true, optional = true }
 scale-info.workspace = true

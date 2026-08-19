@@ -11,21 +11,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Integration test for the LedgerStateKey Anchored/Transient persist contract.
+// Integration test for the ledger-state keep-alive contract: intra-block
+// intermediates are kept addressable by the global keep-alive cache and are
+// never made GC roots; only the post-block tip is persisted.
+//
 // Lives in `tests/` rather than `src/tests.rs` so it runs in its own test
 // binary, isolating the global ledger storage backend from other pallet tests.
 
 use frame_support::{assert_ok, traits::OnFinalize};
-use midnight_node_ledger::types::{LedgerStateKey, active_version::BlockContext};
+use midnight_node_ledger::{
+	latest::storage::{get_state_root_count, transient_state_is_retained},
+	types::active_version::BlockContext,
+};
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
-	undeployed::transactions::{CHECK_TX, DEPLOY_TX, STORE_TX},
+	undeployed::transactions::{CHECK_TX, DEPLOY_TX, MAINTENANCE_TX, STORE_TX},
 };
 use pallet_midnight::{
 	Call as MidnightCall,
 	mock::{self, RuntimeOrigin, Test},
 };
-use sp_runtime::{traits::ValidateUnsigned, transaction_validity::TransactionSource};
+use sp_runtime::{
+	traits::ValidateUnsigned,
+	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
+};
+
+/// `LedgerApiError::NoLedgerState`'s wire code — what an unresolvable state key looks
+/// like from the mempool.
+const NO_LEDGER_STATE: u8 = 151;
 
 fn init_ledger_state(block_context: BlockContext) {
 	let path_buf = tempfile::tempdir().unwrap().keep();
@@ -47,153 +60,217 @@ fn process_block(block_number: u64, block_context: BlockContext) {
 	mock::Timestamp::set_timestamp(block_context.tblock * 1000);
 }
 
-fn root_count(state_key: &LedgerStateKey) -> Option<u32> {
-	midnight_node_ledger::latest::storage::get_state_root_count(state_key.bytes())
-}
-
-fn current_state_key() -> LedgerStateKey {
+fn current_state_key() -> Vec<u8> {
 	pallet_midnight::StateKey::<Test>::get()
 }
 
-/// Walks an entire block lifecycle and asserts the LedgerStateKey persist
-/// contract at every transition:
-///   - `Anchored` states (genesis, post-block tips) are persisted at rc=1 and
-///     are NEVER unpersisted by subsequent Bridge calls — so they survive
-///     sibling forks and remain queryable for history,
-///   - `Transient` states (intra-block intermediates) are persisted at rc=1
-///     and unpersisted to rc=0 by their successor.
+/// Walks a whole block lifecycle and asserts the keep-alive contract at every
+/// transition:
+///   - intra-block intermediates are NEVER GC roots (`get_state_root_count ==
+///     None`) and stay addressable only because the transient keep-alive cache
+///     holds their `Sp`,
+///   - the successor call releases its predecessor, so the transient cache is
+///     empty once the block is finalized (the unit-test mirror of the
+///     `ledger_state_cache_size{cache_type="transient"}` gauge),
+///   - post-block tips are persisted at rc=1 and are never unpersisted, so they
+///     survive sibling forks and stay queryable for history,
+///   - the keep-alive is real: reads and validation against an intermediate tip
+///     mid-block succeed,
+///   - the transient keep-alive is refcounted, so two executions applying the
+///     same transaction to the same parent (sibling forks, or authoring
+///     alongside import) don't drop each other's state.
 ///
-/// Also guards that `validate_unsigned` and `pre_dispatch` are read-only —
-/// they must not change the refcount of the current tip, since the next
-/// dispatch needs to load that same state.
-///
-/// Single test fn: this integration test binary's tests share the global
-/// default ledger storage; absolute refcount assertions would be polluted by
-/// another test in the same binary alloc'ing the same genesis. Sequencing
-/// every scenario inside one test keeps the assertions precise.
+/// Single test fn: this integration test binary's tests share the global default
+/// ledger storage; absolute refcount assertions would be polluted by another
+/// test in the same binary alloc'ing the same genesis. Sequencing every scenario
+/// inside one test keeps the assertions precise.
 #[test]
-fn persist_refcount_invariants() {
+fn keep_alive_invariants() {
 	let (deploy_tx, deploy_ctx) =
 		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
 	let (store_tx, store_ctx) =
 		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
 	let (check_tx, check_ctx) =
 		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(CHECK_TX);
+	let (maintenance_tx, maintenance_ctx) =
+		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(MAINTENANCE_TX);
 
 	let deploy_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: deploy_tx.clone() };
+	let store_call = MidnightCall::<Test>::send_mn_transaction { midnight_tx: store_tx.clone() };
 
 	mock::new_test_ext().execute_with(|| {
 		init_ledger_state(deploy_ctx.clone().into());
 
 		let genesis_key = current_state_key();
-		assert!(matches!(genesis_key, LedgerStateKey::Anchored(_)), "genesis stored as Anchored");
 		assert_eq!(
-			root_count(&genesis_key),
+			get_state_root_count(&genesis_key),
 			Some(1),
 			"genesis is persisted at rc=1 by alloc_with_initial_state"
 		);
+		assert!(
+			!transient_state_is_retained(&genesis_key),
+			"genesis is anchored, not a transient intermediate"
+		);
 
-		// Read-only guard 1: validate_unsigned + pre_dispatch against the genesis
-		// Anchored tip. DEPLOY is valid here.
+		// Read-only guard: validate_unsigned + pre_dispatch against the genesis tip.
 		assert_ok!(<mock::Midnight as ValidateUnsigned>::validate_unsigned(
 			TransactionSource::External,
 			&deploy_call
 		));
-		assert_eq!(current_state_key(), genesis_key);
-		assert_eq!(root_count(&genesis_key), Some(1), "validate_unsigned must not change tip rc");
 		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&deploy_call));
 		assert_eq!(current_state_key(), genesis_key);
-		assert_eq!(root_count(&genesis_key), Some(1), "pre_dispatch must not change tip rc");
+		assert_eq!(
+			get_state_root_count(&genesis_key),
+			Some(1),
+			"validation must not change the tip's root count"
+		);
 
-		// Block 1: apply DEPLOY. Genesis is Anchored — Bridge must NOT unpersist
-		// it. (This is the property that makes sibling forks safe: a second fork
-		// applying its own first-tx on the same Anchored parent leaves rc=1.)
+		// Block 1: apply DEPLOY. The result is kept alive, not rooted; genesis is
+		// persisted so it must survive untouched.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), deploy_tx));
 		let post_deploy_key = current_state_key();
-		assert!(
-			matches!(post_deploy_key, LedgerStateKey::Transient(_)),
-			"apply_transaction returns Transient"
-		);
 		assert_ne!(post_deploy_key, genesis_key);
-		assert_eq!(root_count(&post_deploy_key), Some(1), "new Transient state at rc=1");
 		assert_eq!(
-			root_count(&genesis_key),
-			Some(1),
-			"Anchored genesis must NOT be unpersisted by apply_transaction"
-		);
-
-		// Finalize block 1. post_block_update unpersists the Transient predecessor
-		// (post_deploy → rc=0) and returns Anchored at rc=1.
-		process_block(2, store_ctx.clone().into());
-		let post_block_1_key = current_state_key();
-		assert!(
-			matches!(post_block_1_key, LedgerStateKey::Anchored(_)),
-			"post_block_update returns Anchored"
-		);
-		assert_ne!(post_block_1_key, post_deploy_key);
-		assert_eq!(
-			root_count(&post_deploy_key),
+			get_state_root_count(&post_deploy_key),
 			None,
-			"Transient last-apply output unrooted by post_block_update"
+			"an intra-block intermediate must never be a GC root"
+		);
+		assert!(
+			transient_state_is_retained(&post_deploy_key),
+			"the intermediate must be retained between its apply and its successor"
 		);
 		assert_eq!(
-			root_count(&post_block_1_key),
+			get_state_root_count(&genesis_key),
 			Some(1),
-			"Anchored post-block state at rc=1, retained for history"
+			"the persisted genesis tip must be untouched by apply_transaction"
 		);
 
-		// Read-only guard 2: validate against the Anchored post-block tip. DEPLOY
-		// fails here (contract already deployed) but rc must be untouched on
-		// either path.
-		let _ = <mock::Midnight as ValidateUnsigned>::validate_unsigned(
-			TransactionSource::External,
-			&deploy_call,
+		// The assertions that actually catch a broken keep-alive: read *through* the
+		// intermediate tip mid-block. Every one of these paths goes through
+		// `get_ledger` with the raw intermediate key.
+		assert_ok!(mock::Midnight::get_ledger_state_root());
+		assert_ok!(mock::Midnight::get_transaction_cost(&store_tx));
+		// The mempool paths too. These fixtures' dust spend proofs don't survive the
+		// skew `validate_unsigned` applies to the block context, so the assertion is
+		// that the *ledger state resolved* — the tx may then be rejected on its
+		// merits, but never with `NoLedgerState` (code 151).
+		for outcome in [
+			<mock::Midnight as ValidateUnsigned>::validate_unsigned(
+				TransactionSource::External,
+				&store_call,
+			)
+			.map(|_| ()),
+			<mock::Midnight as ValidateUnsigned>::pre_dispatch(&store_call),
+		] {
+			assert_ne!(
+				outcome,
+				Err(TransactionValidityError::Invalid(InvalidTransaction::Custom(NO_LEDGER_STATE))),
+				"validation must resolve the intra-block intermediate tip"
+			);
+		}
+
+		// Finalize block 1. `apply_post_block_update` is the successor call that
+		// consumes the intermediate: it only resolves because the keep-alive held it,
+		// and it releases it, leaving the transient cache empty — the unit-test mirror
+		// of the gauge reading 0 at block end.
+		process_block(1, store_ctx.clone().into());
+		let post_block_1_key = current_state_key();
+		assert_ne!(post_block_1_key, post_deploy_key);
+		assert!(
+			!transient_state_is_retained(&post_deploy_key),
+			"the block's last intermediate must be released by apply_post_block_update"
+		);
+		assert!(
+			!transient_state_is_retained(&post_block_1_key),
+			"the post-block tip is anchored, so it is never in the transient cache"
 		);
 		assert_eq!(
-			root_count(&post_block_1_key),
+			get_state_root_count(&post_block_1_key),
 			Some(1),
-			"validate_unsigned against post-block tip must not change rc"
+			"the post-block tip is the one state per block that is persisted"
 		);
-		let _ = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&deploy_call);
-		assert_eq!(
-			root_count(&post_block_1_key),
-			Some(1),
-			"pre_dispatch against post-block tip must not change rc"
+		// `flush_storage` ran as part of `on_finalize`. A released intermediate must be
+		// gone from the arena entirely — not merely unrooted — or its nodes would have
+		// been written to disk by that flush as unreferenced garbage.
+		assert!(
+			!midnight_node_ledger::has_ledger_state(false, &post_deploy_key),
+			"a released intermediate must not survive the block's storage flush"
+		);
+		assert!(
+			midnight_node_ledger::has_ledger_state(false, &post_block_1_key),
+			"the persisted post-block tip must survive it"
 		);
 
-		// Block 2: apply STORE. post_block_1 is Anchored — must NOT be unpersisted.
+		// Block 2: apply STORE against the persisted tip.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), store_tx));
 		let post_store_key = current_state_key();
+		assert_eq!(get_state_root_count(&post_store_key), None, "intermediate, so not rooted");
+		assert!(transient_state_is_retained(&post_store_key));
 		assert_eq!(
-			root_count(&post_block_1_key),
+			get_state_root_count(&post_block_1_key),
 			Some(1),
-			"Anchored post-block-1 must NOT be unpersisted by next block's first apply"
+			"the previous block's persisted tip must not be unpersisted by the next apply"
 		);
-		assert_eq!(root_count(&post_store_key), Some(1), "new Transient state at rc=1");
+		process_block(2, check_ctx.clone().into());
+		assert!(!transient_state_is_retained(&post_store_key));
 
-		// Finalize block 2.
-		process_block(3, check_ctx.clone().into());
-		let post_block_2_key = current_state_key();
-		assert_eq!(
-			root_count(&post_store_key),
-			None,
-			"Transient last-apply output of block 2 unrooted by post_block_update"
-		);
-		assert_eq!(root_count(&post_block_2_key), Some(1), "Anchored post-block-2 at rc=1");
-		assert_eq!(
-			root_count(&post_block_1_key),
-			Some(1),
-			"prior Anchored post-block-1 unaffected, still at rc=1"
-		);
-
-		// Block 3: apply CHECK and confirm Anchored states remain untouched.
+		// Block 3: apply CHECK, then finalize into the parent of the fork below.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), check_tx));
+		let post_check_key = current_state_key();
+		assert_eq!(get_state_root_count(&post_check_key), None);
+		assert!(transient_state_is_retained(&post_check_key));
+		assert_eq!(get_state_root_count(&genesis_key), Some(1), "genesis still rooted");
 		assert_eq!(
-			root_count(&post_block_2_key),
+			get_state_root_count(&post_block_1_key),
 			Some(1),
-			"Anchored post-block-2 unaffected by block 3's first apply"
+			"older post-block tips stay rooted for history"
 		);
-		assert_eq!(root_count(&post_block_1_key), Some(1), "Anchored post-block-1 still at rc=1");
-		assert_eq!(root_count(&genesis_key), Some(1), "Anchored genesis still at rc=1");
+		process_block(3, maintenance_ctx.clone().into());
+		assert!(!transient_state_is_retained(&post_check_key));
+
+		// --- The refcount check ---
+		//
+		// Two executions can be in flight at once (authoring alongside import), and
+		// two forks off the same parent applying the same transaction produce the
+		// *same* content hash. Without a refcount the first release would drop the
+		// other execution's keep-alive and it would fail with `NoLedgerState`.
+		let fork_parent = current_state_key();
+
+		assert_ok!(mock::Midnight::send_mn_transaction(
+			RuntimeOrigin::none(),
+			maintenance_tx.clone()
+		));
+		let forked_key = current_state_key();
+		assert!(transient_state_is_retained(&forked_key));
+
+		// Rewind to the shared parent and replay: the sibling fork's execution.
+		pallet_midnight::StateKey::<Test>::put(fork_parent.clone());
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), maintenance_tx));
+		assert_eq!(
+			current_state_key(),
+			forked_key,
+			"the same transaction on the same parent must produce the same state key"
+		);
+		assert_eq!(get_state_root_count(&forked_key), None, "still never rooted");
+
+		// One fork finalizes: that releases the shared intermediate once.
+		mock::Midnight::on_finalize(4);
+		assert!(
+			transient_state_is_retained(&forked_key),
+			"the other execution's claim must keep the state alive"
+		);
+
+		// ...and now the other.
+		pallet_midnight::StateKey::<Test>::put(forked_key.clone());
+		mock::Midnight::on_finalize(4);
+		assert!(
+			!transient_state_is_retained(&forked_key),
+			"the last release must drop the keep-alive"
+		);
+		assert_eq!(
+			get_state_root_count(&fork_parent),
+			Some(1),
+			"the shared parent is persisted and must survive both forks"
+		);
 	});
 }

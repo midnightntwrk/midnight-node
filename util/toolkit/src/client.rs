@@ -143,11 +143,11 @@ impl MidnightNodeClient {
 				// per runtime version, so decode it as opaque.
 				//
 				// Even the hardfork's `set_code` block answers — it commits the new
-				// `:code` over the old ledger layout, but `Pallet::state_key` reads
-				// that block's pre-v3 `StateKey` layout, so the ledger-8 arena tag
-				// survives, and the ledger-9 host API's read accessors dispatch on
-				// that tag back to the ledger-8 bridge. A failure here is a real
-				// fault, and must not be downgraded to `None`: that would skip
+				// `:code` while `StateKey` still points at the ledger-8 arena root
+				// (the v8 -> v9 migration only runs in the next block), and the
+				// ledger-9 host API's read accessors dispatch on that root's tag back
+				// to the ledger-8 bridge. A failure here is a real fault, and must not
+				// be downgraded to `None`: that would skip
 				// `LedgerContext::verify_state_root` and hide ledger divergence.
 				match Result::<Vec<u8>, ()>::decode(&mut &raw[..]) {
 					Ok(Ok(root)) => Ok(Some(root)),
