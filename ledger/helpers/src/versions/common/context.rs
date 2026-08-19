@@ -194,6 +194,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 	{
 		use rayon::prelude::*;
 		log::debug!(
+			target: super::transaction::PERF_TARGET,
 			"[perf] flushing {} events for {} wallets",
 			events.len(),
 			self.wallets.lock().expect("lock").len(),
@@ -598,6 +599,12 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 					})
 					.collect::<Vec<_>>()
 			})
+		})
+	}
+
+	async fn backs_dust_generation(&self, utxo: &Utxo) -> bool {
+		self.with_ledger_state(|ledger_state| {
+			ledger_state.dust.generation.night_indices.contains_key(&utxo.initial_nonce())
 		})
 	}
 

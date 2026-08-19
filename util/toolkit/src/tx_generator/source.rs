@@ -143,6 +143,14 @@ pub struct Source {
 		env = "MN_LEDGER_CACHE_DB"
 	)]
 	pub ledger_state_db: String,
+
+	/// Save a wallet-cache checkpoint every N replayed blocks during long ledger
+	/// replays, so an interrupted run resumes from the last checkpoint instead of
+	/// starting over (a full replay of a long chain can take tens of minutes).
+	/// 0 disables checkpointing. Requires the wallet state cache
+	/// (`--ledger-state-db`) to be enabled.
+	#[arg(long, global = true, default_value = "0", env = "MN_REPLAY_CHECKPOINT_INTERVAL")]
+	pub replay_checkpoint_interval: u64,
 }
 
 #[derive(Error, Debug)]

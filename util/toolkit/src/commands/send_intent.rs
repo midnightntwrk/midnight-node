@@ -119,6 +119,7 @@ mod test {
 			fetch_only_cached: false,
 			fetch_cache: FetchCacheConfig::InMemory,
 			ledger_state_db: String::new(),
+			replay_checkpoint_interval: 0,
 		};
 
 		let destination = Destination {

@@ -11,33 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import BN from "bn.js";
 import type { ApiPromise, WsProvider } from "@polkadot/api";
-import type { SubmittableExtrinsic } from "@polkadot/api/promise/types";
-import type { KeyringPair } from "@polkadot/keyring/types";
-import type { ISubmittableResult } from "@polkadot/types/types";
-import { blake2AsHex } from "@polkadot/util-crypto";
 
 import { FederatedRuntimeUpgradeOptions } from "../lib/types";
 import {
-  createKeyringPair,
   disconnectApi,
   hasEvent,
   signAndWait,
 } from "../lib/runtimeUpgradeUtils";
+import {
+  buildFederatedMotionSigners,
+  executeFederatedMotion,
+} from "../lib/federatedMotion";
 import { prepareRuntimeUpgrade } from "./runtimeUpgradeShared";
-
-type Collective = "council" | "technicalCommittee";
-
-interface ProposalInfo {
-  proposalHash: string;
-  proposalIndex: number;
-}
-
-const CLOSE_WEIGHT = {
-  refTime: new BN(10_000_000_000),
-  proofSize: new BN(65_536),
-};
 
 export async function federatedRuntimeUpgrade(
   namespace: string,
@@ -60,42 +46,7 @@ export async function federatedRuntimeUpgrade(
     // the new runtime's host calls during a rolling upgrade.
     await assertValidatorBinaryCompatible(api, opts);
 
-    const councilMembers = buildSigners(opts.councilUris, "Council");
-    const techCommitteeMembers = buildSigners(
-      opts.techCommitteeUris,
-      "Technical Committee",
-    );
-    const motionExecutor = createKeyringPair(
-      opts.motionExecutorUri,
-      "Motion executor",
-    );
-
-    const councilMemberCount = await getCollectiveMembersCount(api, "council");
-    const councilApprovalThreshold = computeTwoThirdsThreshold(
-      councilMemberCount,
-      "Council",
-    );
-    ensureSufficientAuthorities(
-      councilMembers,
-      councilApprovalThreshold,
-      "Council",
-      councilMemberCount,
-    );
-
-    const techCommitteeMemberCount = await getCollectiveMembersCount(
-      api,
-      "technicalCommittee",
-    );
-    const techCommitteeApprovalThreshold = computeTwoThirdsThreshold(
-      techCommitteeMemberCount,
-      "Technical Committee",
-    );
-    ensureSufficientAuthorities(
-      techCommitteeMembers,
-      techCommitteeApprovalThreshold,
-      "Technical Committee",
-      techCommitteeMemberCount,
-    );
+    const signers = buildFederatedMotionSigners(opts);
 
     const authorizeUpgradeCall = opts.allowSameVersion
       ? api.tx.system.authorizeUpgradeWithoutChecks(wasm.hash)
@@ -105,68 +56,13 @@ export async function federatedRuntimeUpgrade(
         "Using system.authorizeUpgradeWithoutChecks (--allow-same-version): spec_version check bypassed.",
       );
     }
-    const federatedApproveCall = api.tx.federatedAuthority.motionApprove(
-      authorizeUpgradeCall.method,
-    );
 
-    const lengthBound = federatedApproveCall.method.encodedLength;
-    const motionHash = blake2AsHex(authorizeUpgradeCall.method.toU8a());
-
-    console.log("Submitting Council proposal to approve the motion...");
-    const councilProposal = await proposeCollectiveMotion(
-      api,
-      "council",
-      federatedApproveCall.method,
-      lengthBound,
-      councilMembers[0],
-      councilApprovalThreshold,
-    );
-    await voteCollectiveMotion(api, "council", councilProposal, councilMembers);
-    await closeCollectiveProposal(
-      api,
-      "council",
-      councilProposal,
-      lengthBound,
-      councilMembers[0],
-    );
-
-    console.log(
-      "Submitting Technical Committee proposal to approve the motion...",
-    );
-    const techProposal = await proposeCollectiveMotion(
-      api,
-      "technicalCommittee",
-      federatedApproveCall.method,
-      lengthBound,
-      techCommitteeMembers[0],
-      techCommitteeApprovalThreshold,
-    );
-    await voteCollectiveMotion(
-      api,
-      "technicalCommittee",
-      techProposal,
-      techCommitteeMembers,
-    );
-    await closeCollectiveProposal(
-      api,
-      "technicalCommittee",
-      techProposal,
-      lengthBound,
-      techCommitteeMembers[0],
-    );
-
-    console.log("Closing federated motion to execute authorize_upgrade...");
-    const motionCloseWeight = api.createType("WeightV2", CLOSE_WEIGHT);
-    await signAndWait(
-      api.tx.federatedAuthority.motionClose(motionHash, motionCloseWeight),
-      motionExecutor,
-      "federatedAuthority.motionClose",
-    );
+    await executeFederatedMotion(api, authorizeUpgradeCall, signers);
 
     console.log("Applying authorized upgrade...");
     const applyResult = await signAndWait(
       api.tx.system.applyAuthorizedUpgrade(wasm.hex),
-      motionExecutor,
+      signers.motionExecutor,
       "system.applyAuthorizedUpgrade",
     );
 

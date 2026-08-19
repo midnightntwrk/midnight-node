@@ -144,6 +144,24 @@ impl MidnightNodeClient {
 		Ok(header.number)
 	}
 
+	/// Whether `hash` is on the finalized chain: at or below the finalized head
+	/// and canonical at its height.
+	pub async fn is_block_finalized(
+		&self,
+		hash: HashFor<MidnightNodeClientConfig>,
+	) -> Result<bool, ClientError> {
+		let Some(header) = self.rpc.chain_get_header(Some(hash)).await? else {
+			// The node no longer knows the block: pruned or reorged away.
+			return Ok(false);
+		};
+		if header.number > self.get_finalized_height().await? {
+			return Ok(false);
+		}
+		let canonical =
+			self.rpc.chain_get_block_hash(Some(BlockNumber::Number(header.number))).await?;
+		Ok(canonical == Some(hash))
+	}
+
 	pub async fn get_ledger_parameters(&self) -> Result<LedgerParameters, ClientError> {
 		let call = mn_meta::runtime_apis::RuntimeApi.midnight_runtime_api().get_ledger_parameters();
 		let response = self.api.at_current_block().await?.runtime_apis().call(call).await?;

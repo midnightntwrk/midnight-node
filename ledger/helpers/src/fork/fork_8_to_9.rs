@@ -2,6 +2,10 @@ use std::collections::HashMap;
 
 use tokio::sync::Mutex as MutexTokio;
 
+use crate::state_translation_v8_to_v9::StateTranslationTable;
+use base_crypto::cost_model::CostDuration;
+use ledger_storage_ledger_8::state_translation::TypedTranslationState;
+
 type Db8 = crate::ledger_8::DefaultDB;
 type Db9 = crate::ledger_9::DefaultDB;
 
@@ -67,8 +71,35 @@ pub fn fork_context_8_to_9(
 	context8: LedgerContext8<Db8>,
 ) -> Result<LedgerContext9<Db9>, std::io::Error> {
 	let ledger_state_8 = context8.ledger_state.lock().expect("failed to lock ledger state");
-	let ledger_state: crate::ledger_9::Sp<LedgerState8<Db8>, Db8> =
-		old_to_new_sp(ledger_state_8.clone())?;
+	// Real v8->v9 state translation (NOT `old_to_new_sp`): the LedgerState tag
+	// changed v13->v18 and its shape changed, so a bare arena-key reuse would
+	// produce a v9 root the ledger-9 machinery can't read. Walk the v8 state
+	// through the same `StateTranslationTable` the on-chain migration uses. Db8
+	// == Db9 (both `ledger_storage_ledger_8::DefaultDB`), so source and target
+	// share one arena and a single-`D` `TypedTranslationState` applies.
+	let ledger_state: crate::ledger_9::Sp<LedgerState8<Db8>, Db8> = {
+		let mut tl = TypedTranslationState::<
+			mn_ledger_8::structure::LedgerState<Db8>,
+			mn_ledger_9::structure::LedgerState<Db9>,
+			StateTranslationTable,
+			Db8,
+		>::start(ledger_state_8.clone())?;
+		// Single-shot: a generous per-step budget drains the whole state in a
+		// couple of iterations; the step cap is only a runaway backstop.
+		// 1_000_000_000_000 pico-seconds == 1 second
+		let budget = CostDuration::from_picoseconds(1_000_000_000_000);
+		let mut steps = 0usize;
+		loop {
+			steps += 1;
+			if steps > 100_000 {
+				return Err(std::io::Error::other("v8->v9 state translation did not converge"));
+			}
+			tl = tl.run(budget)?;
+			if let Some(result) = tl.result()? {
+				break result;
+			}
+		}
+	};
 
 	let mut wallets = HashMap::new();
 	for (k, v) in context8.wallets.lock().expect("failed to lock wallets").iter() {

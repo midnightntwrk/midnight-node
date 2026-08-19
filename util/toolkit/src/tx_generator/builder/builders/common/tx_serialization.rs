@@ -26,7 +26,9 @@ use super::ledger_helpers_local::TransactionWithContext;
 pub fn build_single(
 	tx_with_context: TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 ) -> SerializedTxBatches {
+	let start = std::time::Instant::now();
 	let initial_tx = serialize_tx(&tx_with_context);
+	log::debug!("[perf] serialize took {:?}", start.elapsed());
 	SerializedTxBatches { batches: vec![vec![initial_tx]] }
 }
 

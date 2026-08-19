@@ -1,5 +1,5 @@
 {
-  "packageManager": "npm@9.8.0",
+  "packageManager": "npm@12.0.2",
   "name": "@midnight-ntwrk/node-toolkit",
   "version": "0.1.0",
   "license": "Apache-2.0",
@@ -45,6 +45,7 @@
   "overrides": {
     "esbuild": "0.28.1",
     "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
-    "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3"
+    "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3",
+    "nanoid": "3.3.18"
   }
 }

@@ -50,14 +50,14 @@ impl BlockDataSourceMock {
 	) -> Result<Option<MainchainBlock>> {
 		// reverse of computation in `get_latest_stable_block_for`
 		let block_number = u32::from_be_bytes(hash.0[..4].try_into().unwrap());
-		let timestamp = block_number * 20000;
+		let timestamp = u64::from(block_number) * 20000;
 		let epoch = block_number / self.block_per_epoch();
 		Ok(Some(MainchainBlock {
 			number: McBlockNumber(block_number),
 			hash,
 			epoch: McEpochNumber(epoch),
 			slot: McSlotNumber(epoch.into()),
-			timestamp: timestamp.into(),
+			timestamp,
 		}))
 	}
 }
@@ -84,5 +84,20 @@ impl BlockDataSourceMock {
 			.duration_since(std::time::UNIX_EPOCH)
 			.unwrap()
 			.as_millis() as u64
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn get_block_by_hash_handles_large_block_numbers() {
+		let source = BlockDataSourceMock::new(43200000);
+		let mut hash_arr = [0u8; 32];
+		hash_arr[..4].copy_from_slice(&u32::MAX.to_be_bytes());
+		let block = source.get_block_by_hash(McBlockHash(hash_arr)).await.unwrap().unwrap();
+		assert_eq!(block.number, McBlockNumber(u32::MAX));
+		assert_eq!(block.timestamp, u64::from(u32::MAX) * 20000);
 	}
 }

@@ -17,12 +17,12 @@ use async_trait::async_trait;
 
 use super::super::{
 	BuildContractAction, BuilderContext, Contract, DB, Intent, PedersenRandomness,
-	ProofPreimageMarker, Signature, StdRng, VerifyingKey,
+	ProofPreimageMarker, Signature, StdRng, UnshieldedWallet,
 };
 
 pub struct ContractDeployInfo<C: Contract<D>, D: DB + Clone> {
 	pub type_: C,
-	pub committee: Vec<VerifyingKey>,
+	pub committee: Vec<UnshieldedWallet>,
 	pub committee_threshold: u32,
 	pub _marker: PhantomData<D>,
 }

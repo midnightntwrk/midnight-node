@@ -241,15 +241,6 @@ dependencies = [
 
 [[package]]
 name = "archery"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6cd774058b1b415c4855d8b86436c04bf050c003156fe24bc326fb3fe75c343"
-dependencies = [
- "static_assertions",
-]
-
-[[package]]
-name = "archery"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70e0a5f99dfebb87bb342d0f53bb92c81842e100bbb915223e38349580e5441d"
@@ -3046,7 +3037,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -5687,7 +5678,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.57.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -6553,41 +6544,14 @@ checksum = "c33070833c9ee02266356de0c43f723152bd38bd96ddf52c82b3af10c9138b28"
 
 [[package]]
 name = "konst"
-version = "0.3.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4381b9b00c55f251f2ebe9473aef7c117e96828def1a7cb3bd3f0f903c6894e9"
-dependencies = [
- "const_panic",
- "konst_kernel",
- "konst_proc_macros 0.3.10",
- "typewit",
-]
-
-[[package]]
-name = "konst"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f660d5f887e3562f9ab6f4a14988795b694099d66b4f5dedc02d197ba9becb1d"
 dependencies = [
  "const_panic",
- "konst_proc_macros 0.4.1",
+ "konst_proc_macros",
  "typewit",
 ]
-
-[[package]]
-name = "konst_kernel"
-version = "0.3.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4b1eb7788f3824c629b1116a7a9060d6e898c358ebff59070093d51103dcc3c"
-dependencies = [
- "typewit",
-]
-
-[[package]]
-name = "konst_proc_macros"
-version = "0.3.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00af7901ba50898c9e545c24d5c580c96a982298134e8037d8978b6594782c07"
 
 [[package]]
 name = "konst_proc_macros"
@@ -7341,9 +7305,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.18.1"
+version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b6180140927ee907000b0aa540091f6ea512ead4447c92b8fc35bc72788a5a6"
+checksum = "5d2f2f9b4ba7e6b24d95e7e899329d35be83bcded72c8540cdd5368932d1d90a"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -7774,42 +7738,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-ledger"
-version = "7.0.3"
+version = "8.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fc8b6b6c9d55af6c8852092eb76e72a52d227be435bfa1bd0be158bc2ac7b28"
-dependencies = [
- "anyhow",
- "derive-where",
- "fake",
- "futures",
- "introspection",
- "introspection-derive",
- "is_sorted",
- "itertools 0.14.0",
- "lazy_static",
- "midnight-base-crypto",
- "midnight-coin-structure 2.0.1",
- "midnight-ledger-static",
- "midnight-onchain-runtime 2.0.1",
- "midnight-serialize",
- "midnight-storage 1.1.1",
- "midnight-transient-crypto 2.2.0",
- "midnight-zswap 7.0.3",
- "rand 0.8.5",
- "rayon",
- "serde",
- "sha2 0.10.9",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "zeroize",
-]
-
-[[package]]
-name = "midnight-ledger"
-version = "8.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2182054f3a43ccabac514448fff2487437be293f517a01afc23905df701e8548"
+checksum = "479798394847a6686bb9fabda270d16f8525457e9adcc9d2c3486b2422cc4e1c"
 dependencies = [
  "anyhow",
  "derive-where",
@@ -7825,9 +7756,9 @@ dependencies = [
  "midnight-ledger-static",
  "midnight-onchain-runtime 3.1.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
- "midnight-zswap 8.1.0",
+ "midnight-zswap 8.1.1",
  "rand 0.8.5",
  "rayon",
  "serde",
@@ -7868,7 +7799,7 @@ dependencies = [
  "midnight-ledger-static",
  "midnight-onchain-runtime 4.0.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
  "midnight-transient-crypto 3.0.0",
  "midnight-zkir",
@@ -7888,6 +7819,7 @@ dependencies = [
 name = "midnight-node"
 version = "2.2.0"
 dependencies = [
+ "async-channel 1.9.0",
  "async-trait",
  "authority-selection-inherents",
  "blake2b_simd",
@@ -7912,6 +7844,7 @@ dependencies = [
  "midnight-primitives",
  "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
+ "midnight-primitives-consensus-engine",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-ics-observation",
  "midnight-primitives-ledger",
@@ -7955,6 +7888,7 @@ dependencies = [
  "sc-executor",
  "sc-keystore",
  "sc-network",
+ "sc-network-sync",
  "sc-offchain",
  "sc-partner-chains-consensus",
  "sc-rpc",
@@ -7978,9 +7912,12 @@ dependencies = [
  "sp-api",
  "sp-block-builder",
  "sp-blockchain",
+ "sp-consensus",
  "sp-consensus-aura",
+ "sp-consensus-babe",
  "sp-consensus-beefy",
  "sp-consensus-grandpa",
+ "sp-consensus-slots",
  "sp-core",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2606)",
  "sp-database",
@@ -8057,23 +7994,21 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-coin-structure 2.0.1",
  "midnight-coin-structure 3.0.0",
- "midnight-ledger 7.0.3",
- "midnight-ledger 8.1.0",
+ "midnight-ledger",
  "midnight-ledger-v9",
  "midnight-node-ledger-helpers",
  "midnight-node-res",
- "midnight-onchain-runtime 2.0.1",
  "midnight-onchain-runtime 3.1.0",
  "midnight-onchain-runtime 4.0.0",
+ "midnight-onchain-state 3.0.0",
+ "midnight-onchain-state 4.0.0",
  "midnight-primitives-ledger",
  "midnight-serialize",
- "midnight-storage 1.1.1",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-storage-core",
  "midnight-transient-crypto 2.2.0",
  "midnight-transient-crypto 3.0.0",
- "midnight-zswap 7.0.3",
- "midnight-zswap 8.1.0",
+ "midnight-zswap 8.1.1",
  "midnight-zswap 9.0.0",
  "moka 0.11.3",
  "parity-db 0.5.4",
@@ -8108,21 +8043,21 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-coin-structure 2.0.1",
  "midnight-coin-structure 3.0.0",
- "midnight-ledger 7.0.3",
- "midnight-ledger 8.1.0",
+ "midnight-ledger",
  "midnight-ledger-v9",
- "midnight-onchain-runtime 2.0.1",
  "midnight-onchain-runtime 3.1.0",
  "midnight-onchain-runtime 4.0.0",
+ "midnight-onchain-state 3.0.0",
+ "midnight-onchain-state 4.0.0",
  "midnight-serialize",
- "midnight-storage 1.1.1",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
  "midnight-transient-crypto 3.0.0",
  "midnight-zkir",
- "midnight-zswap 7.0.3",
- "midnight-zswap 8.1.0",
+ "midnight-zswap 8.1.1",
  "midnight-zswap 9.0.0",
+ "num_enum",
+ "postcard",
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.28",
@@ -8130,6 +8065,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "sha2 0.10.9",
+ "strum 0.28.0",
  "subxt 0.50.0",
  "subxt-signer 0.50.0",
  "thiserror 2.0.18",
@@ -8169,7 +8105,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-runtime"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "authority-selection-inherents",
  "binary-merkle-tree",
@@ -8185,6 +8121,7 @@ dependencies = [
  "midnight-primitives",
  "midnight-primitives-beefy",
  "midnight-primitives-cnight-observation",
+ "midnight-primitives-consensus-engine",
  "midnight-primitives-federated-authority-observation",
  "midnight-primitives-session-info",
  "pallet-aura",
@@ -8195,6 +8132,7 @@ dependencies = [
  "pallet-c2m-bridge",
  "pallet-cnight-observation",
  "pallet-collective",
+ "pallet-consensus-engine",
  "pallet-federated-authority",
  "pallet-federated-authority-observation",
  "pallet-grandpa",
@@ -8247,8 +8185,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-toolkit"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
+ "anyhow",
  "assert_matches",
  "async-channel 2.5.0",
  "async-trait",
@@ -8302,32 +8241,6 @@ dependencies = [
 
 [[package]]
 name = "midnight-onchain-runtime"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "251e828965432c89a3d13fec3c82fda23649eda3f8f76fa1326d97e00f195334"
-dependencies = [
- "derive-where",
- "enum_index",
- "enum_index_derive",
- "fake",
- "hex",
- "konst 0.3.16",
- "lazy_static",
- "midnight-base-crypto",
- "midnight-coin-structure 2.0.1",
- "midnight-onchain-state 2.0.1",
- "midnight-onchain-vm 1.0.2",
- "midnight-serialize",
- "midnight-storage 1.1.1",
- "midnight-transient-crypto 2.2.0",
- "rand 0.8.5",
- "serde",
- "serde_bytes",
- "tracing",
-]
-
-[[package]]
-name = "midnight-onchain-runtime"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8cbc5ffd4440bcadc02ad13d7e608c48de5facdc860f949eef4a22be50cb29b7"
@@ -8337,14 +8250,14 @@ dependencies = [
  "enum_index_derive",
  "fake",
  "hex",
- "konst 0.4.3",
+ "konst",
  "lazy_static",
  "midnight-base-crypto",
  "midnight-coin-structure 2.0.1",
  "midnight-onchain-state 3.0.0",
  "midnight-onchain-vm 3.1.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
  "rand 0.8.5",
  "serde",
@@ -8362,38 +8275,19 @@ dependencies = [
  "enum_index_derive",
  "fake",
  "hex",
- "konst 0.4.3",
+ "konst",
  "lazy_static",
  "midnight-base-crypto",
  "midnight-coin-structure 3.0.0",
  "midnight-onchain-state 4.0.0",
  "midnight-onchain-vm 4.0.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 3.0.0",
  "rand 0.8.5",
  "serde",
  "serde_bytes",
  "tracing",
-]
-
-[[package]]
-name = "midnight-onchain-state"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e153e26062e19ad07a065f8b4466243a6964e5fce5820d371fc9f4b036666ee7"
-dependencies = [
- "derive-where",
- "fake",
- "hex",
- "midnight-base-crypto",
- "midnight-coin-structure 2.0.1",
- "midnight-serialize",
- "midnight-storage 1.1.1",
- "midnight-transient-crypto 2.2.0",
- "rand 0.8.5",
- "serde",
- "serde_bytes",
 ]
 
 [[package]]
@@ -8408,7 +8302,7 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-coin-structure 2.0.1",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
  "rand 0.8.5",
  "serde",
@@ -8426,32 +8320,10 @@ dependencies = [
  "midnight-base-crypto",
  "midnight-coin-structure 3.0.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
  "midnight-transient-crypto 3.0.0",
  "rand 0.8.5",
- "serde",
- "serde_bytes",
-]
-
-[[package]]
-name = "midnight-onchain-vm"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f737f8a5d227d07683d0c5829e1de02bdf297e39ab8ef954a3d4f49072f973f"
-dependencies = [
- "derive-where",
- "fake",
- "hex",
- "konst 0.3.16",
- "midnight-base-crypto",
- "midnight-coin-structure 2.0.1",
- "midnight-onchain-state 2.0.1",
- "midnight-serialize",
- "midnight-storage 1.1.1",
- "midnight-transient-crypto 2.2.0",
- "rand 0.8.5",
- "rpds 0.13.0",
  "serde",
  "serde_bytes",
 ]
@@ -8465,15 +8337,15 @@ dependencies = [
  "derive-where",
  "fake",
  "hex",
- "konst 0.4.3",
+ "konst",
  "midnight-base-crypto",
  "midnight-coin-structure 2.0.1",
  "midnight-onchain-state 3.0.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
  "rand 0.8.5",
- "rpds 1.2.1",
+ "rpds",
  "serde",
  "serde_bytes",
 ]
@@ -8486,15 +8358,15 @@ dependencies = [
  "derive-where",
  "fake",
  "hex",
- "konst 0.4.3",
+ "konst",
  "midnight-base-crypto",
  "midnight-coin-structure 3.0.0",
  "midnight-onchain-state 4.0.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 3.0.0",
  "rand 0.8.5",
- "rpds 1.2.1",
+ "rpds",
  "serde",
  "serde_bytes",
 ]
@@ -8536,6 +8408,15 @@ dependencies = [
  "sp-inherents",
  "sqlx",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "midnight-primitives-consensus-engine"
+version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+ "sp-api",
 ]
 
 [[package]]
@@ -8584,7 +8465,7 @@ dependencies = [
  "figment",
  "itertools 0.14.0",
  "log",
- "lru 0.18.1",
+ "lru 0.18.2",
  "midnight-primitives-cnight-observation",
  "midnight-primitives-federated-authority-observation",
  "parity-scale-codec",
@@ -8593,7 +8474,6 @@ dependencies = [
  "rand 0.10.0",
  "scale-info",
  "serde",
- "serde_json",
  "sidechain-domain",
  "sp-api",
  "sp-blockchain",
@@ -8679,7 +8559,7 @@ version = "1.2.0"
 source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=serialize-1.2.0-rc.1#7267bca4478c4512e48db3def9d6894e0b5b7c7f"
 dependencies = [
  "crypto",
- "konst 0.4.3",
+ "konst",
  "lazy_static",
  "midnight-serialize-macros",
  "serde",
@@ -8699,30 +8579,13 @@ dependencies = [
 
 [[package]]
 name = "midnight-storage"
-version = "1.1.1"
+version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df40bcb4aa0a709f5c4441f6d05aa15e853f434d777c6ef8a4692c00f24d3f6e"
+checksum = "13f3f6a6f45732db644df3eb723a9fc3877490d47f937ea833609ed6cb1508cf"
 dependencies = [
  "crypto",
  "derive-where",
- "midnight-base-crypto",
- "midnight-serialize",
- "midnight-storage-core",
- "parking_lot 0.12.5",
- "rand 0.8.5",
- "serde",
- "sha2 0.10.9",
- "tempfile",
-]
-
-[[package]]
-name = "midnight-storage"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "210e601a89aee79ce2b007cf96c1a56c23baa306b0c40b9b98d12c27e18d1981"
-dependencies = [
- "crypto",
- "derive-where",
+ "hashbrown 0.16.1",
  "midnight-base-crypto",
  "midnight-serialize",
  "midnight-storage-core",
@@ -8740,13 +8603,14 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "191bb2abbf18ca8d151c201e1c2dc0b4cf96ee4ced17a08951cb4c4fd5550031"
 dependencies = [
- "archery 1.2.2",
+ "archery",
  "crypto",
  "derive-where",
  "fake",
+ "hashbrown 0.16.1",
  "hex",
  "itertools 0.14.0",
- "konst 0.4.3",
+ "konst",
  "lru 0.16.4",
  "midnight-base-crypto",
  "midnight-serialize",
@@ -8788,7 +8652,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.18.1",
+ "lru 0.18.2",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
  "midnight-circuits 6.2.1",
@@ -8823,7 +8687,7 @@ dependencies = [
  "group",
  "k256",
  "lazy_static",
- "lru 0.18.1",
+ "lru 0.18.2",
  "midnight-base-crypto",
  "midnight-base-crypto-derive",
  "midnight-circuits 7.2.1",
@@ -8922,34 +8786,9 @@ dependencies = [
 
 [[package]]
 name = "midnight-zswap"
-version = "7.0.3"
+version = "8.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56bc2635ed2de0cb18c8ca3aafcbb4910d42cd50cc7c73b5ae7dd31a6f5b5b1f"
-dependencies = [
- "derive-where",
- "fake",
- "futures",
- "is_sorted",
- "itertools 0.14.0",
- "lazy_static",
- "midnight-base-crypto",
- "midnight-coin-structure 2.0.1",
- "midnight-ledger-static",
- "midnight-onchain-runtime 2.0.1",
- "midnight-serialize",
- "midnight-storage 1.1.1",
- "midnight-transient-crypto 2.2.0",
- "rand 0.8.5",
- "serde",
- "tracing",
- "zeroize",
-]
-
-[[package]]
-name = "midnight-zswap"
-version = "8.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c83f946d8ac03abea38ca470599801fa08e91e2ddf3cb0963027a7701180c7c"
+checksum = "07ff4a06f9d1dcb857be73dd926fcb233b61af3d2a8ab0103b5e39725cd4feb8"
 dependencies = [
  "derive-where",
  "fake",
@@ -8962,7 +8801,7 @@ dependencies = [
  "midnight-ledger-static",
  "midnight-onchain-runtime 3.1.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
  "rand 0.8.5",
  "serde",
@@ -8987,7 +8826,7 @@ dependencies = [
  "midnight-ledger-static",
  "midnight-onchain-runtime 4.0.0",
  "midnight-serialize",
- "midnight-storage 2.0.1",
+ "midnight-storage",
  "midnight-transient-crypto 2.2.0",
  "midnight-transient-crypto 3.0.0",
  "midnight-zkir",
@@ -10396,6 +10235,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-consensus-engine"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "log",
+ "midnight-primitives-consensus-engine",
+ "pallet-aura",
+ "pallet-babe",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-consensus-aura",
+ "sp-consensus-babe",
+ "sp-consensus-slots",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "pallet-federated-authority"
 version = "0.1.0"
 dependencies = [
@@ -10677,6 +10537,7 @@ dependencies = [
  "parity-scale-codec",
  "scale-info",
  "sidechain-domain",
+ "sp-application-crypto",
  "sp-core",
  "sp-crypto-hashing 0.1.0 (git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2606)",
  "sp-io",
@@ -11185,7 +11046,7 @@ dependencies = [
  "hex-literal 1.1.0",
  "itertools 0.14.0",
  "log",
- "lru 0.18.1",
+ "lru 0.18.2",
  "pallet-sidechain-rpc",
  "partner-chains-plutus-data",
  "pretty_assertions",
@@ -11335,6 +11196,7 @@ dependencies = [
  "sidechain-mc-hash",
  "sp-partner-chains-bridge",
  "sp-timestamp",
+ "tokio",
 ]
 
 [[package]]
@@ -12446,7 +12308,7 @@ version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -12466,7 +12328,7 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.4.1",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "log",
  "multimap",
@@ -12704,9 +12566,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.14"
+version = "0.11.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
+checksum = "4fcb935c5bec503c2f0e306bdd3e58bb9029dcb14fa8d9ac76e3a5256ac0763e"
 dependencies = [
  "aws-lc-rs",
  "bytes",
@@ -13402,20 +13264,11 @@ dependencies = [
 
 [[package]]
 name = "rpds"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bd6ce569b15c331b1e5fd8cf6adb0bf240678b5f0cdc4d0f41e11683f6feba9"
-dependencies = [
- "archery 0.5.0",
-]
-
-[[package]]
-name = "rpds"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e025feb26210bc196b908e72deb063b1b4000754304341cbc168a1e72c857ebc"
 dependencies = [
- "archery 1.2.2",
+ "archery",
  "smallvec",
 ]
 
@@ -13593,7 +13446,7 @@ dependencies = [
  "once_cell",
  "ring 0.17.14",
  "rustls-pki-types",
- "rustls-webpki 0.103.10",
+ "rustls-webpki 0.103.13",
  "subtle 2.6.1",
  "zeroize",
 ]
@@ -13643,7 +13496,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "rustls-platform-verifier-android",
- "rustls-webpki 0.103.10",
+ "rustls-webpki 0.103.13",
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
@@ -13664,7 +13517,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "rustls-platform-verifier-android",
- "rustls-webpki 0.103.10",
+ "rustls-webpki 0.103.13",
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.6",
@@ -13689,9 +13542,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.10"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df33b2b81ac578cabaf06b89b0631153a3f416b0a886e8a7a1707fb51abbd1ef"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "aws-lc-rs",
  "ring 0.17.14",
@@ -19474,15 +19327,6 @@ name = "typewit"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc19094686c694eb41b3b99dcc2f2975d4b078512fa22ae6c63f7ca318bdcff7"
-dependencies = [
- "typewit_proc_macros",
-]
-
-[[package]]
-name = "typewit_proc_macros"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e36a83ea2b3c704935a01b4642946aadd445cea40b10935e3f8bd8052b8193d6"
 
 [[package]]
 name = "ucd-trie"

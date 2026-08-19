@@ -285,6 +285,7 @@ async fn run_warmup() {
             fetch_only_cached: false,
             fetch_cache: fetch_cache_config(),
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         // e2e wallets are all Schnorr NIGHT identities; pair each seed with its scheme.
         seeds: seeds
@@ -368,6 +369,7 @@ pub(crate) async fn ensure_dev_wallet_funded() {
                 fetch_only_cached: false,
                 fetch_cache: fetch_cache_config(),
                 ledger_state_db: String::new(),
+                replay_checkpoint_interval: 0,
             },
             seed: Some(midnight_node_toolkit::cli_parsers::SchemeSeed {
                 seed: seed.clone(),
@@ -419,6 +421,7 @@ fn live_source(url: &str) -> Source {
         fetch_only_cached: false,
         fetch_cache: fetch_cache_config(),
         ledger_state_db: String::new(),
+        replay_checkpoint_interval: 0,
     }
 }
 

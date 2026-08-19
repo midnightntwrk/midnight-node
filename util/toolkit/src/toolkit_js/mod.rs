@@ -6,7 +6,8 @@ use clap::{
 };
 use hex::ToHex;
 use midnight_node_ledger_helpers::{
-	CoinPublicKey, ContractAddress, UnshieldedWallet, WalletSeed, serialize_untagged,
+	CoinPublicKey, ContractAddress, UnshieldedSignatureScheme, UnshieldedWallet, WalletSeed,
+	serialize_untagged,
 };
 use zeroize::Zeroize;
 pub(crate) mod encoded_zswap_local_state;
@@ -106,6 +107,9 @@ pub struct CircuitArgs {
 	/// A file path of where the invoked circuit result data should be written.
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	pub output_result: Option<RelativePath>,
+	/// A file path where contract log events emitted during circuit execution should be written as JSON.
+	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
+	pub output_events: Option<RelativePath>,
 	/// Name of the circuit to invoke
 	pub circuit_id: String,
 	/// Arguments to pass to the circuit
@@ -123,9 +127,13 @@ pub struct DeployArgs {
 	/// A user public key capable of receiving Zswap coins, hex or Bech32m encoded.
 	#[arg(long, value_parser = cli::coin_public_decode)]
 	pub coin_public: CoinPublicKey,
-	/// Contract maintenance authority seed.
-	#[arg(long, value_parser = cli::wallet_seed_decode)]
-	pub authority_seed: Option<WalletSeed>,
+	/// Contract maintenance authority seed. Accepts an optional `schnorr:`/`ecdsa:` scheme prefix
+	/// (bare = Schnorr) for parity with the other seed flags. NOTE: only Schnorr is supported on
+	/// this (toolkit-js) deploy path — an `ecdsa:` seed is rejected with a pointer to the native
+	/// `generate-txs contract-simple deploy` path, because the underlying compact-js toolchain has
+	/// no channel to carry the ledger-9 signature scheme through to the deployed authority.
+	#[arg(long, value_parser = cli::scheme_seed_decode)]
+	pub authority_seed: Option<cli::SchemeSeed>,
 	/// The output file of the intent
 	#[arg(long, value_parser = PathBufValueParser::new().map(|p| RelativePath::from(p)))]
 	pub output_intent: RelativePath,
@@ -213,6 +221,20 @@ pub enum ToolkitJsError {
 	ToolkitJsOutputReadError(std::io::Error),
 	#[error("toolkit-js exited with {status}\nstdout: {stdout}\nstderr: {stderr}")]
 	NonZeroExit { status: std::process::ExitStatus, stdout: String, stderr: String },
+	#[error(
+		"ECDSA contract-maintenance authorities are not supported on the toolkit-js deploy path \
+		 (`generate-intent deploy`): the compact-js toolchain accepts only a BIP-340/Schnorr \
+		 signing key here and has no channel for the ledger-9 signature scheme, so an ECDSA seed \
+		 would silently deploy a Schnorr authority. Use \
+		 `generate-txs contract-simple deploy --authority-seed ecdsa:<seed>` for a native ECDSA \
+		 committee."
+	)]
+	EcdsaAuthorityUnsupported,
+	#[error(
+		"--output-events requires compactc version >= 0.33.0 (the compact-js events API), \
+		 but {version} is configured"
+	)]
+	OutputEventsUnsupported { version: semver::Version },
 }
 
 impl ToolkitJs {
@@ -225,6 +247,17 @@ impl ToolkitJs {
 		let mut version = self.compactc_version.clone();
 		version.pre = semver::Prerelease::EMPTY;
 		semver::VersionReq::parse("<0.31.0").unwrap().matches(&version)
+	}
+
+	/// `true` if the pinned compactc supports the `--output-events` flag on the circuit
+	/// command, added alongside the compact-js events API in the 0.33.0 line.
+	///
+	/// As with [`Self::needs_legacy_network_flag`], the pre-release suffix is stripped before
+	/// comparison, so that e.g. `0.33.0-rc.1` is treated as `0.33.0`.
+	fn supports_output_events(&self) -> bool {
+		let mut version = self.compactc_version.clone();
+		version.pre = semver::Prerelease::EMPTY;
+		semver::VersionReq::parse(">=0.33.0").unwrap().matches(&version)
 	}
 
 	pub fn execute(&self, cmd: Command) -> Result<(), ToolkitJsError> {
@@ -264,7 +297,16 @@ impl ToolkitJs {
 		let mut signing_key = args
 			.authority_seed
 			.map(|s| {
-				let mut bytes = serialize_untagged(UnshieldedWallet::default(s).signing_key())
+				let (seed, scheme) = s.resolve();
+				// The toolkit-js deploy path can only express a Schnorr (BIP-340) maintenance
+				// authority: the underlying compact-js-command CLI passes just the key *value* via
+				// `--signing` and has no channel for the ledger-9 `signingKind` discriminator, so an
+				// ECDSA seed would silently fall back to a Schnorr authority. Reject it loudly and
+				// point at the native path that builds an ECDSA committee in-process.
+				if scheme == UnshieldedSignatureScheme::Ecdsa {
+					return Err(ToolkitJsError::EcdsaAuthorityUnsupported);
+				}
+				let mut bytes = serialize_untagged(UnshieldedWallet::default(seed).signing_key())
 					.map_err(ToolkitJsError::ExecutionError)?;
 				let hex = bytes.encode_hex::<String>();
 				bytes.zeroize();
@@ -338,6 +380,18 @@ impl ToolkitJs {
 		if let Some(ref output_result) = output_result {
 			cmd_args.extend_from_slice(&["--output-result", &output_result]);
 		}
+		let output_events = args.output_events.map(|s| s.absolute());
+		if let Some(ref output_events) = output_events {
+			// Fail early with a clear message rather than forwarding an unrecognized flag to an
+			// older toolkit-js, where `@effect/cli` would absorb it into the trailing variadic
+			// circuit args and produce a confusing "Invalid number of arguments" error.
+			if !self.supports_output_events() {
+				return Err(ToolkitJsError::OutputEventsUnsupported {
+					version: self.compactc_version.clone(),
+				});
+			}
+			cmd_args.extend_from_slice(&["--output-events", &output_events]);
+		}
 		// Add positional args
 		cmd_args.extend_from_slice(&[&contract_address_str, &args.circuit_id]);
 		cmd_args.extend(args.call_args.iter().map(|s| s.as_str()));
@@ -348,6 +402,9 @@ impl ToolkitJs {
 			args.output_private_state,
 			args.output_zswap_state
 		);
+		if let Some(ref output_events) = output_events {
+			log::info!("written events log: {output_events}");
+		}
 		Ok(())
 	}
 
@@ -460,5 +517,84 @@ impl ToolkitJs {
 			});
 		}
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use midnight_node_ledger_helpers::{HashOutput, PERSISTENT_HASH_BYTES, WalletSeed};
+
+	fn deploy_args(scheme: UnshieldedSignatureScheme) -> DeployArgs {
+		let seed = WalletSeed::try_from_hex_str(
+			"0000000000000000000000000000000000000000000000000000000000000001",
+		)
+		.unwrap();
+		DeployArgs {
+			config: RelativePath::from(PathBuf::from("contract.config.ts")),
+			network: "undeployed".to_string(),
+			coin_public: CoinPublicKey(HashOutput([0u8; PERSISTENT_HASH_BYTES])),
+			authority_seed: Some(cli::SchemeSeed { seed, scheme }),
+			output_intent: RelativePath::from(PathBuf::from("intent.bin")),
+			output_private_state: RelativePath::from(PathBuf::from("private_state.json")),
+			output_zswap_state: RelativePath::from(PathBuf::from("zswap_state.json")),
+			constructor_args: vec![],
+		}
+	}
+
+	fn toolkit_js() -> ToolkitJs {
+		ToolkitJs {
+			// A path that cannot resolve to a real toolkit-js binary, so if the ECDSA guard ever
+			// stops firing the Schnorr path below fails with a *different* (spawn) error rather
+			// than silently passing.
+			path: "/nonexistent/toolkit-js".to_string(),
+			compactc_version: semver::Version::new(0, 33, 0),
+		}
+	}
+
+	/// An `ecdsa:` authority seed on the toolkit-js deploy path is rejected up front, before any
+	/// toolkit-js process is spawned (the compact-js toolchain has no channel for the scheme).
+	#[test]
+	fn deploy_rejects_ecdsa_authority() {
+		let err = toolkit_js()
+			.execute_deploy(deploy_args(UnshieldedSignatureScheme::Ecdsa))
+			.expect_err("ECDSA authority must be rejected on the toolkit-js deploy path");
+		assert!(
+			matches!(err, ToolkitJsError::EcdsaAuthorityUnsupported),
+			"expected EcdsaAuthorityUnsupported, got: {err:?}"
+		);
+	}
+
+	/// A Schnorr authority seed passes the scheme guard: it fails only later, when the bogus
+	/// toolkit-js path cannot be executed — never with `EcdsaAuthorityUnsupported`.
+	#[test]
+	fn deploy_accepts_schnorr_authority_past_guard() {
+		let err = toolkit_js()
+			.execute_deploy(deploy_args(UnshieldedSignatureScheme::Schnorr))
+			.expect_err("bogus toolkit-js path should fail to execute");
+		assert!(
+			!matches!(err, ToolkitJsError::EcdsaAuthorityUnsupported),
+			"Schnorr authority must not be rejected by the ECDSA guard, got: {err:?}"
+		);
+	}
+
+	fn toolkit_js_with_version(version: &str) -> ToolkitJs {
+		ToolkitJs { path: String::new(), compactc_version: version.parse().unwrap() }
+	}
+
+	#[test]
+	fn supports_output_events_from_0_33_0() {
+		// The events API landed in the 0.33.0 line.
+		assert!(toolkit_js_with_version("0.33.0").supports_output_events());
+		assert!(toolkit_js_with_version("0.34.0").supports_output_events());
+		// Pre-release suffixes must be stripped, otherwise `0.33.0-rc.1 >= 0.33.0` is false.
+		assert!(toolkit_js_with_version("0.33.0-rc.1").supports_output_events());
+	}
+
+	#[test]
+	fn supports_output_events_rejects_older_versions() {
+		assert!(!toolkit_js_with_version("0.31.0").supports_output_events());
+		assert!(!toolkit_js_with_version("0.30.0").supports_output_events());
+		assert!(!toolkit_js_with_version("0.29.0").supports_output_events());
 	}
 }

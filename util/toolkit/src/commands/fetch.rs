@@ -26,6 +26,7 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 
 	let ledger_state_db = src.ledger_state_db.clone();
 	let fetch_cache = src.fetch_cache.clone();
+	let replay_checkpoint_interval = src.replay_checkpoint_interval;
 
 	let start = std::time::Instant::now();
 	let txs: SourceTransactions = GetTxsFromUrl::new(
@@ -44,7 +45,13 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 	if let Some(seeds) = seeds {
 		let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 		let t = std::time::Instant::now();
-		let _ctx = build_fork_aware_context_cached(&seeds, &txs, wallet_cache.as_deref()).await;
+		let _ctx = build_fork_aware_context_cached(
+			&seeds,
+			&txs,
+			wallet_cache.as_deref(),
+			replay_checkpoint_interval,
+		)
+		.await;
 		log::info!(
 			"built wallet state cache for {} seeds in {:.3} s",
 			seeds.len(),

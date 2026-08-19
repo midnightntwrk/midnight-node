@@ -53,12 +53,34 @@ runs:
 
         echo "key=${key}" >> "$GITHUB_OUTPUT"
 
-        result=$(gh cache list \
-          --repo "$GITHUB_REPOSITORY" \
-          --key  "${key}" \
-          --json id --jq 'length')
-        [[ $result -gt 0 ]] && echo "hit=true" >> "$GITHUB_OUTPUT" \
-                             || echo "hit=false" >> "$GITHUB_OUTPUT"
+        # The lookup is an optimisation, never a gate: any failure (API outage,
+        # TLS interception, rate limit, malformed output) must degrade to a
+        # cache miss so the job runs, rather than failing the build.
+        result=''
+        err=$(mktemp)
+        for attempt in 1 2 3; do
+          if out=$(gh cache list \
+                     --repo "$GITHUB_REPOSITORY" \
+                     --key  "${key}" \
+                     --json id --jq 'length' 2>"$err"); then
+            result="${out//[[:space:]]/}"
+            break
+          fi
+          echo "::warning::cache lookup attempt ${attempt}/3 failed: $(tr '\n' ' ' < "$err")"
+          if (( attempt < 3 )); then sleep 5; fi
+        done
+        rm -f "$err"
+
+        if [[ ! "$result" =~ ^[0-9]+$ ]]; then
+          echo "::warning::cache lookup unavailable (key ${key}) - treating as a miss and running the job"
+          result=0
+        fi
+
+        if (( result > 0 )); then
+          echo "hit=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "hit=false" >> "$GITHUB_OUTPUT"
+        fi
       env:
         GH_TOKEN: ${{ github.token }}
         WORKFLOW_SHA: ${{ github.workflow_sha }}

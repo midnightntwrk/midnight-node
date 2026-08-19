@@ -32,3 +32,10 @@ pub fn unlock_to_treasury_system_tx(amount: u128) -> Result<SystemTransaction, L
 pub fn is_unlock_to_treasury_system_tx(tx: &SystemTransaction) -> bool {
 	matches!(tx, SystemTransaction::UnlockToTreasury { .. })
 }
+
+/// Not applicable to ledger-9: the block-rewards-to-treasury system tx was
+/// removed for v9 (only the ledger-8 bridge exposes this host fn, so the ledger-8
+/// WASM can be executed across the 8->9 hardfork).
+pub fn distribute_treasury_system_tx(_amount: u128) -> Result<SystemTransaction, LedgerApiError> {
+	Err(LedgerApiError::HostApiError)
+}

@@ -51,41 +51,54 @@ runs:
       id: run-tests
       continue-on-error: true
       shell: bash
+      env:
+        MARKERS: ${{ inputs.markers }}
+        MC_EPOCH: ${{ inputs.mc_epoch }}
+        LATEST_MC_EPOCH: ${{ inputs.latest_mc_epoch }}
+        DEPLOYMENT_MC_EPOCH: ${{ inputs.deployment_mc_epoch }}
+        DECRYPT: ${{ inputs.decrypt }}
+        BLOCKCHAIN: ${{ inputs.blockchain }}
+        TEST_ENV: ${{ inputs.env }}
+        LOG_LEVEL: ${{ inputs.log_level }}
+        KEYWORD: ${{ inputs.keyword }}
+        THREADS: ${{ inputs.threads }}
+        INIT_TIMESTAMP: ${{ inputs.init_timestamp }}
+        LOCAL_ENVIRONMENT: ${{ inputs.local-environment }}
       run: |
         markers_switch=""
-        if [ -n "${{ inputs.markers }}" ]; then
-          markers_switch="-m '${{ inputs.markers }}'"
+        if [ -n "$MARKERS" ]; then
+          markers_switch="-m '$MARKERS'"
         fi
-        
+
         mc_epoch_switch=""
-        if [ -n "${{ inputs.mc_epoch }}" ]; then
-          mc_epoch_switch="--mc-epoch '${{ inputs.mc_epoch }}'"
+        if [ -n "$MC_EPOCH" ]; then
+          mc_epoch_switch="--mc-epoch '$MC_EPOCH'"
         fi
 
         latest_mc_epoch_switch=""
-        if [ "${{ inputs.latest_mc_epoch }}" = "true" ]; then
+        if [ "$LATEST_MC_EPOCH" = "true" ]; then
           latest_mc_epoch_switch="--latest-mc-epoch"
         fi
 
         deployment_mc_epoch_switch=""
-        if [ -n "${{ inputs.deployment_mc_epoch }}" ]; then
-          deployment_mc_epoch_switch="--deployment-mc-epoch '${{ inputs.deployment_mc_epoch }}'"
+        if [ -n "$DEPLOYMENT_MC_EPOCH" ]; then
+          deployment_mc_epoch_switch="--deployment-mc-epoch '$DEPLOYMENT_MC_EPOCH'"
         fi
 
         decrypt_switch=""
-        if [ "${{ inputs.decrypt }}" = "true" ]; then
+        if [ "$DECRYPT" = "true" ]; then
           decrypt_switch="--decrypt"
         fi
 
-        pytest_cmd="pytest --blockchain '${{ inputs.blockchain }}' \
-          --env '${{ inputs.env }}' \
-          --log-cli-level '${{ inputs.log_level }}' \
-          -k '${{ inputs.keyword }}' \
+        pytest_cmd="pytest --blockchain '$BLOCKCHAIN' \
+          --env '$TEST_ENV' \
+          --log-cli-level '$LOG_LEVEL' \
+          -k '$KEYWORD' \
           ${markers_switch} \
-          -n '${{ inputs.threads}}' \
+          -n '$THREADS' \
           --dist=loadgroup \
           --ci-run \
-          --init-timestamp '${{ inputs.init_timestamp }}' \
+          --init-timestamp '$INIT_TIMESTAMP' \
           ${mc_epoch_switch} \
           ${latest_mc_epoch_switch} \
           ${deployment_mc_epoch_switch} \
@@ -95,7 +108,7 @@ runs:
           --json-report-summary \
           --junitxml=logs/junit_report.xml"
 
-        if [[ "${{ inputs.local-environment }}" == "true" ]]; then
+        if [[ "$LOCAL_ENVIRONMENT" == "true" ]]; then
           echo "Running tests via docker exec"
           docker exec tests bash -c "
             cd /e2e-tests &&

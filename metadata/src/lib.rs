@@ -8,6 +8,9 @@ pub mod midnight_metadata_0_22_0 {}
 #[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_1.0.0.scale")]
 pub mod midnight_metadata_1_0_0 {}
 
+#[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_1.0.3.scale")]
+pub mod midnight_metadata_1_0_3 {}
+
 #[subxt::subxt(runtime_metadata_path = "static/midnight_metadata_2.0.0.scale")]
 pub mod midnight_metadata_2_0_0 {}
 

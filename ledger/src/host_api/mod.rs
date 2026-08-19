@@ -11,6 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod ledger_7;
 pub mod ledger_8;
 pub mod ledger_9;
+
+/// Host-side v8 -> v9 ledger state translation used by the runtime storage migration.
+#[cfg(feature = "std")]
+pub mod migration_8_to_9;

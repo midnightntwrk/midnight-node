@@ -28,7 +28,7 @@ mod tests {
 
 	#[test]
 	fn should_find_crate_version() {
-		let version = find_crate_version("mn-ledger");
+		let version = find_crate_version("mn-ledger-8");
 		assert!(version.is_some());
 	}
 

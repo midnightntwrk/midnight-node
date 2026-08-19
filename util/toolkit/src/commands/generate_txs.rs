@@ -118,6 +118,7 @@ mod tests {
 					fetch_only_cached: false,
 					fetch_cache: FetchCacheConfig::InMemory,
 					ledger_state_db: String::new(),
+					replay_checkpoint_interval: 0,
 				},
 				destination: Destination {
 					dest_urls: vec![],

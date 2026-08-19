@@ -20,7 +20,11 @@ use crate::{
 	mock::{RuntimeOrigin, Test},
 };
 use assert_matches::assert_matches;
-use frame_support::{assert_err, assert_ok, pallet_prelude::Weight, traits::OnFinalize};
+use frame_support::{
+	assert_err, assert_ok,
+	pallet_prelude::Weight,
+	traits::{OnFinalize, OnInitialize},
+};
 use frame_system::RawOrigin;
 use midnight_node_ledger::types::{
 	LedgerEvent, LedgerEventSource,
@@ -59,6 +63,39 @@ fn process_block(block_number: u64, block_context: BlockContext) {
 	mock::Midnight::on_finalize(block_number);
 	mock::System::set_block_number(block_number + 1);
 	mock::Timestamp::set_timestamp(block_context.tblock * 1000);
+}
+
+/// Drives the start of a block the way a real one is built: `on_initialize` records the parent
+/// block's timestamp (which becomes the ledger's `last_block_time`) while `pallet_timestamp`
+/// still holds it, and only then does the timestamp inherent set the block's own.
+fn begin_block(block_number: u64, parent_ts: u64, block_ts: u64) {
+	mock::System::set_block_number(block_number);
+	mock::Timestamp::set_timestamp(parent_ts * 1000);
+	<mock::Midnight as OnInitialize<u64>>::on_initialize(block_number);
+	mock::Timestamp::set_timestamp(block_ts * 1000);
+}
+
+/// The correction's fixed offset (`slot_duration_secs * (1 + MaxSkippedSlots)`), hardcoded in
+/// `midnight-node-ledger`. The tests below subtract it from the parent timestamp they want the
+/// correction to *produce*; the arithmetic itself is covered by the `well_formed_tblock` unit
+/// tests in that crate.
+const TBLOCK_CORRECTION_OFFSET_SECS: u64 = 12;
+
+fn send_mn_transaction(tx: Vec<u8>) -> sp_runtime::DispatchResult {
+	mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx)
+}
+
+/// A block timestamp shortly after `block_context`'s, distinct on every call.
+///
+/// The strict transaction-validation cache is a process-global static keyed by
+/// `(ledger state hash, tx hash, block timestamp)`, and every `tblock_correction` test below
+/// validates the same fixture against the same genesis state. Handing out a distinct block
+/// timestamp per assertion keeps them from serving each other's cached `well_formed` results —
+/// which would make an assertion pass without ever running the code it is testing. The
+/// timestamps stay well inside the fixture's validity window.
+fn uncached_block_ts(block_context: &BlockContext) -> u64 {
+	static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(101);
+	block_context.tblock + NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 #[test]
@@ -528,6 +565,60 @@ fn test_get_ledger_state_root_differs_from_zswap_state_root() {
 		let zswap_root = mock::Midnight::get_zswap_state_root().unwrap();
 
 		assert_ne!(ledger_root, zswap_root);
+	});
+}
+
+/// The parent timestamp that makes the correction land a minute before the block context the
+/// DEPLOY_TX fixture was built for — a point at which its intent no longer verifies. So the
+/// correction, when it applies, turns an accepted block into a rejected one.
+fn parent_ts_that_the_correction_rejects(block_context: &BlockContext) -> u64 {
+	block_context.tblock - 60 - TBLOCK_CORRECTION_OFFSET_SECS
+}
+
+/// The runtime this node ships imports version 2 of the host function, which does not correct:
+/// a block whose first transaction the correction would have rejected is verified against its own
+/// timestamp and accepted. This is the loophole closing — it is gated on the runtime upgrade,
+/// nothing else.
+///
+/// Version 1's side of the split is only reachable for ledger 8 (the pallet here runs ledger 9,
+/// which never skews), so it is covered by the `well_formed_tblock` / `strict_cache_key` unit
+/// tests in `midnight-node-ledger` rather than from a pallet test.
+///
+/// See <https://github.com/midnightntwrk/midnight-node/issues/1924>
+#[test]
+fn test_tblock_correction_not_applied_by_the_current_runtime() {
+	let (tx, block_context) =
+		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	let block_context: BlockContext = block_context.into();
+	let parent_ts = parent_ts_that_the_correction_rejects(&block_context);
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.clone());
+		begin_block(1, parent_ts, uncached_block_ts(&block_context));
+
+		assert_ok!(send_mn_transaction(tx.clone()));
+	});
+}
+
+/// Mempool ingress must not be corrected: `validate_unsigned` already skews the block context it
+/// passes to the ledger by `slot_duration * (1 + MaxSkippedSlots)`, so correcting there too would
+/// double-count a slot and reject valid transactions.
+#[test]
+fn test_tblock_correction_does_not_affect_mempool_validation() {
+	let (tx, block_context) =
+		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	let block_context: BlockContext = block_context.into();
+	let parent_ts = parent_ts_that_the_correction_rejects(&block_context);
+
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.clone());
+		begin_block(1, parent_ts, uncached_block_ts(&block_context));
+
+		let call = MidnightCall::send_mn_transaction { midnight_tx: tx.clone() };
+		assert_ok!(<mock::Midnight as ValidateUnsigned>::validate_unsigned(
+			TransactionSource::External,
+			&call
+		));
 	});
 }
 

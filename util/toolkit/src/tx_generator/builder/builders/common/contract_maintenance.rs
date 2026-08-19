@@ -15,9 +15,9 @@ use super::ledger_helpers_local::{
 	BuildContractAction, BuildInput, BuildIntent, BuildOutput, BuilderContext, ContractAddress,
 	ContractMaintenanceAuthority, ContractMaintenanceAuthorityInfo, ContractOperationVersion,
 	ContractOperationVersionedVerifierKey, DefaultDB, EntryPointBuf, IntentInfo,
-	MaintenanceUpdateInfo, OfferInfo, ProofProvider, SigningKey, TransactionWithContext,
-	UnshieldedWallet, UpdateInfo, VerifyingKey, Wallet, WalletSeed, contract_operation_version_of,
-	contract_operation_versioned_verifier_key, maintenance_verifying_key, serialize_untagged,
+	MaintenanceUpdateInfo, MaintenanceVerifyingKey, OfferInfo, ProofProvider,
+	TransactionWithContext, UnshieldedWallet, UpdateInfo, Wallet, WalletSeed,
+	contract_operation_version_of, contract_operation_versioned_verifier_key, serialize_untagged,
 };
 use async_trait::async_trait;
 use std::{path::PathBuf, sync::Arc};
@@ -32,8 +32,8 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 pub struct ContractMaintenanceBuilder<C: BuilderContext<DefaultDB>> {
 	context: Arc<C>,
 	prover: Arc<dyn ProofProvider<DefaultDB>>,
-	current_committee: Vec<SigningKey>,
-	new_committee: Vec<SigningKey>,
+	current_committee: Vec<UnshieldedWallet>,
+	new_committee: Vec<UnshieldedWallet>,
 	upsert_entrypoints: Vec<PathBuf>,
 	remove_entrypoints: Vec<String>,
 	threshold: Option<u32>,
@@ -49,25 +49,22 @@ impl<C: BuilderContext<DefaultDB>> ContractMaintenanceBuilder<C> {
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<DefaultDB>>,
 	) -> Self {
-		use super::type_convert::{convert_contract_address, convert_wallet_seed};
+		use super::type_convert::{convert_contract_address, convert_scheme, convert_wallet_seed};
 
-		let commitee_seeds: Vec<WalletSeed> =
-			args.authority_seeds.iter().map(|s| convert_wallet_seed(s.clone())).collect();
-		let new_commitee_seeds: Vec<WalletSeed> = args
-			.new_authority_seeds
-			.iter()
-			.map(|s| convert_wallet_seed(s.clone()))
-			.collect();
+		// Each committee member carries its own signature scheme (Schnorr or ledger-9 ECDSA); the
+		// pre-ledger-9 ECDSA guard runs earlier via `Builder::relevant_wallet_schemes`.
+		let build_committee = |seeds: &[crate::cli_parsers::SchemeSeed]| -> Vec<UnshieldedWallet> {
+			seeds
+				.iter()
+				.map(|s| {
+					let (seed, scheme) = s.resolve();
+					UnshieldedWallet::new(convert_wallet_seed(seed), convert_scheme(scheme))
+				})
+				.collect()
+		};
 
-		let current_committee = commitee_seeds
-			.iter()
-			.map(|s| UnshieldedWallet::default(s.clone()).signing_key().clone())
-			.collect();
-
-		let new_committee = new_commitee_seeds
-			.iter()
-			.map(|s| UnshieldedWallet::default(s.clone()).signing_key().clone())
-			.collect();
+		let current_committee = build_committee(&args.authority_seeds);
+		let new_committee = build_committee(&args.new_authority_seeds);
 
 		Self {
 			context,
@@ -106,7 +103,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxsExt<C> for ContractMaintenanceBuilder
 impl<C: BuilderContext<DefaultDB>> ContractMaintenanceBuilder<C> {
 	fn create_intent_info(
 		&self,
-		committee: Vec<SigningKey>,
+		committee: Vec<UnshieldedWallet>,
 		entrypoints_to_remove: Vec<(EntryPointBuf, ContractOperationVersion)>,
 		entrypoints_to_insert: Vec<(EntryPointBuf, ContractOperationVersionedVerifierKey)>,
 	) -> Box<dyn BuildIntent<DefaultDB, C>> {
@@ -175,15 +172,10 @@ pub enum ContractMaintenanceBuilderError {
 }
 
 fn check_committee(
-	provided_committee: &[VerifyingKey],
+	provided_committee: &[MaintenanceVerifyingKey],
 	authority: &ContractMaintenanceAuthority,
 ) -> Result<(), ContractMaintenanceBuilderError> {
-	if !provided_committee
-		.iter()
-		.cloned()
-		.map(maintenance_verifying_key)
-		.all(|c| authority.committee.contains(&c))
-	{
+	if !provided_committee.iter().all(|c| authority.committee.contains(c)) {
 		let provided_committee_display: Vec<String> = provided_committee
 			.iter()
 			.map(|v| hex::encode(serialize_untagged(&v).unwrap()))
@@ -232,19 +224,23 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for ContractMaintenanceBuilder<C> {
 			})?;
 
 		let mut committee = self.current_committee.clone();
-		let mut committee_verifying_keys: Vec<_> =
-			committee.iter().map(|s| s.verifying_key()).collect();
+		let mut committee_verifying_keys: Vec<MaintenanceVerifyingKey> = committee
+			.iter()
+			.map(|w| {
+				w.maintenance_verifying_key().expect("committee member must carry key material")
+			})
+			.collect();
 
-		let funding_signing_key =
-			UnshieldedWallet::default(self.funding_seed()).signing_key().clone();
-		let funding_verifying_key = funding_signing_key.verifying_key();
+		// The funding wallet is Schnorr (its seed is a plain, scheme-less flag). Add it to the
+		// signing set when it is itself a member of the on-chain committee.
+		let funding_wallet = UnshieldedWallet::default(self.funding_seed());
+		let funding_verifying_key = funding_wallet
+			.maintenance_verifying_key()
+			.expect("funding wallet always has key material");
 		if !committee_verifying_keys.contains(&funding_verifying_key)
-			&& contract_state
-				.maintenance_authority
-				.committee
-				.contains(&maintenance_verifying_key(funding_verifying_key.clone()))
+			&& contract_state.maintenance_authority.committee.contains(&funding_verifying_key)
 		{
-			committee.push(funding_signing_key.clone());
+			committee.push(funding_wallet);
 			committee_verifying_keys.push(funding_verifying_key);
 		}
 

@@ -147,7 +147,7 @@ pub trait BuildIntent<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
 	/// Signing keys for the unshielded offers this intent carries, returned as
 	/// `(guaranteed, fallible)` in the same order the offer inputs are built.
 	///
-	/// `StandardTrasactionInfo::apply_dust` uses these to re-sign the offers after it
+	/// `StandardTransactionInfo::apply_dust` uses these to re-sign the offers after it
 	/// attaches `dust_actions`: since ledger 9.1.0-rc.3, the dust fields are folded into the
 	/// intent's `data_to_sign`, so the signatures produced by [`Self::build`] (before the
 	/// dust existed) no longer match. Intents with no unshielded offer (the default) return

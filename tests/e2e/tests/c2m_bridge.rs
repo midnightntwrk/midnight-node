@@ -301,6 +301,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
             fetch_only_cached: false,
             fetch_cache: crate::fetch_cache_config(),
             ledger_state_db: String::new(),
+            replay_checkpoint_interval: 0,
         },
         destination: Destination {
             dest_urls: vec![],

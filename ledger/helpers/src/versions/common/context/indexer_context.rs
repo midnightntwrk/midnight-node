@@ -85,6 +85,10 @@ impl<D: DB + Clone> BuilderContext<D> for IndexerContext<D> {
 		todo!("indexer: R3 — unshieldedTransactions query")
 	}
 
+	async fn backs_dust_generation(&self, _utxo: &Utxo) -> bool {
+		todo!("indexer: dust generation status for a UTXO")
+	}
+
 	async fn zswap_state(&self) -> ZswapChainState<D> {
 		todo!("indexer: R4 — merkle update stream")
 	}
