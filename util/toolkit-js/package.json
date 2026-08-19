@@ -39,7 +39,7 @@
     "@types/node": "24.13.3",
     "shx": "0.4.0",
     "turbo": "2.9.14",
-    "typescript": "7.0.2",
+    "typescript": "5.9.3",
     "vitest": "4.1.0"
   },
   "overrides": {
