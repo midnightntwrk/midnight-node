@@ -136,13 +136,13 @@ jobs:
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node image (amd64)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node
           subject-digest: ${{ steps.digests.outputs.node }}
 
       - name: Attest toolkit image (amd64)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
@@ -320,13 +320,13 @@ jobs:
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node image (arm64)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node
           subject-digest: ${{ steps.digests.outputs.node }}
 
       - name: Attest toolkit image (arm64)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.digests.outputs.toolkit }}
@@ -533,13 +533,13 @@ jobs:
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node multi-arch manifest (GHCR)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node
           subject-digest: ${{ steps.ghcr-digests.outputs.node }}
 
       - name: Attest toolkit multi-arch manifest (GHCR)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnight-ntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.ghcr-digests.outputs.toolkit }}
@@ -587,13 +587,13 @@ jobs:
           echo "toolkit=${TOOLKIT_DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: Attest node commit-tagged image (GHCR midnightntwrk)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.midnightntwrk-digests.outputs.node }}
 
       - name: Attest toolkit commit-tagged image (GHCR midnightntwrk)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-digests.outputs.toolkit }}
@@ -694,42 +694,42 @@ jobs:
 
       - name: Attest Docker Hub node image (amd64)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.dockerhub-digests.outputs.node-amd64 }}
 
       - name: Attest Docker Hub node image (arm64)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.dockerhub-digests.outputs.node-arm64 }}
 
       - name: Attest Docker Hub toolkit image (amd64)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-amd64 }}
 
       - name: Attest Docker Hub toolkit image (arm64)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-arm64 }}
 
       - name: Attest Docker Hub node multi-arch manifest
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.dockerhub-digests.outputs.node-multi }}
 
       - name: Attest Docker Hub toolkit multi-arch manifest
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: index.docker.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.dockerhub-digests.outputs.toolkit-multi }}
@@ -745,14 +745,14 @@ jobs:
 
       - name: Attest node `latest-main` image (GHCR midnightntwrk)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node
           subject-digest: ${{ steps.midnightntwrk-latest-digests.outputs.node }}
 
       - name: Attest toolkit `latest-main` image (GHCR midnightntwrk)
         if: (github.event.inputs.branch || github.ref_name) == 'main'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/midnightntwrk/midnight-node-toolkit
           subject-digest: ${{ steps.midnightntwrk-latest-digests.outputs.toolkit }}
