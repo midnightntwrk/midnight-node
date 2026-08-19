@@ -8,7 +8,6 @@ license-file.workspace = true
 [dependencies]
 log = { workspace =  true }
 parity-db.workspace = true
-parity-scale-codec = { workspace = true, default-features = false, features = ["derive"] }
 sp-externalities = { workspace = true, default-features = false }
 prometheus-endpoint.workspace = true
 
@@ -16,5 +15,4 @@ prometheus-endpoint.workspace = true
 default = ["std"]
 std = [
     "sp-externalities/std",
-    "parity-scale-codec/std",
 ]

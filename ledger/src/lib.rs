@@ -344,9 +344,13 @@ pub mod types {
 /// storage still matches.
 ///
 /// `None` — `state_key` is not a known ledger version's state.
-/// `Some(true)` — a new wrapper was staged (not durable until
-/// [`flush_ledger_storage`]).
+/// `Some(true)` — a new wrapper was staged.
 /// `Some(false)` — that `(hash, inner)` wrapper already existed.
+///
+/// Does not flush. The swap stays in the write cache until the next
+/// block-boundary `flush_storage`, which runs after that block's tip is
+/// rooted. Flushing here would empty a cache that may hold in-flight
+/// allocations and let arena GC sweep mid-execution.
 #[cfg(feature = "std")]
 pub fn tag_anchored_tip(state_key: &[u8], block_hash: &[u8]) -> Option<bool> {
 	let tag = latest::persist_tag_from_block_hash(block_hash);
@@ -357,15 +361,6 @@ pub fn tag_anchored_tip(state_key: &[u8], block_hash: &[u8]) -> Option<bool> {
 		return Some(swapped);
 	}
 	ledger_7::storage::try_tag_anchored_tip(state_key, tag)
-}
-
-/// Flush staged ledger writes (tagged-root swaps included) for whichever
-/// versioned default storage is initialized.
-#[cfg(feature = "std")]
-pub fn flush_ledger_storage() {
-	ledger_9::storage::flush_if_initialized();
-	ledger_8::storage::flush_if_initialized();
-	ledger_7::storage::flush_if_initialized();
 }
 
 #[cfg(test)]

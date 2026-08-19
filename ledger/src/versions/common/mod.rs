@@ -42,8 +42,8 @@ pub mod storage;
 pub mod tagged_root;
 #[cfg(feature = "std")]
 pub use tagged_root::{
-	persist_tag_from_block_hash, persist_tagged, release_tagged, swap_raw_pin_for_tagged,
-	tagged_pin_count, tagged_roots,
+	persist_tag_from_block_hash, persist_tagged, release_tagged, release_tagged_if_quiescent,
+	swap_raw_pin_for_tagged, tagged_pin_count, tagged_roots,
 };
 
 #[cfg(feature = "std")]
@@ -262,8 +262,8 @@ where
 	/// hash-tagged wrapper via [`tagged_root::swap_raw_pin_for_tagged`].
 	/// Anchored states are never unpersisted on input by subsequent Bridge
 	/// calls — preserved for RPC/history within the Substrate pruning window,
-	/// and safe across sibling forks. The node GC worker reclaims them from
-	/// `StateKey` at finality once Substrate drops state for that block.
+	/// and safe across sibling forks. The node GC worker later
+	/// [`release_tagged`]s wrappers whose block hash has left that window.
 	///
 	/// If the input was `LedgerStateKey::Transient` (the last `apply_transaction`
 	/// output of this block), it is unpersisted once, dropping to rc=0.
@@ -1031,15 +1031,12 @@ where
 	///
 	/// Returns `None` if `state_key` is not a ledger state of this version
 	/// (caller should try another version). `Some(true)` if a new wrapper was
-	/// staged, `Some(false)` if it already existed. Not durable until flush.
+	/// staged, `Some(false)` if it already existed. Does not flush — the next
+	/// block-boundary `flush_storage` commits the overlay.
 	pub fn try_tag_anchored_tip(state_key: &[u8], tag: Vec<u8>) -> Option<bool> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key).ok()?;
-		Some(tagged_root::swap_raw_pin_for_tagged(
-			&default_storage::<D>().arena,
-			tag,
-			&ledger,
-		))
+		Some(tagged_root::swap_raw_pin_for_tagged(&default_storage::<D>().arena, tag, &ledger))
 	}
 
 	/// Decrement persist count once on every tagged wrapper whose tag is in

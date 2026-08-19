@@ -209,11 +209,7 @@ fn persist_refcount_invariants() {
 			Some(1),
 			"Anchored post-block-2 unaffected by block 3's first apply"
 		);
-		assert_eq!(
-			root_count(&post_block_1_key),
-			Some(1),
-			"Anchored post-block-1 still at rc=1"
-		);
+		assert_eq!(root_count(&post_block_1_key), Some(1), "Anchored post-block-1 still at rc=1");
 		assert_eq!(root_count(&genesis_key), Some(1), "Anchored genesis still at rc=1");
 
 		// Native import path: swap each Anchored raw pin for a hash-tagged

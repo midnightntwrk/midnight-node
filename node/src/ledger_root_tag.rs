@@ -18,6 +18,19 @@
 //! imported, this task reads `Midnight::StateKey` at that hash and stages
 //! `persist_tagged(hash, inner)` plus `unpersist` of the raw pin. Distinct
 //! hashes are distinct wrappers, so sibling forks release independently.
+//!
+//! The swap is not flushed here. Flushing the shared write cache from this
+//! task would empty it while another block may be mid-execution (authoring
+//! N+1 while tagging N), letting arena GC sweep unrooted in-flight nodes.
+//! Durability is the next block's `on_finalize` `flush_storage`, which runs
+//! after that tip is rooted. A crash before that flush leaves the raw pin on
+//! disk; catch-up re-swaps idempotently.
+//!
+//! Tagging must run for every executed import, including initial/gap/file
+//! sync. The filtered import stream is silent for those origins; this task
+//! therefore uses `every_import_notification_stream`. Catch-up only covers a
+//! restart window where state is still readable — it cannot retag a completed
+//! sync of pruned history.
 
 use futures::StreamExt;
 use midnight_node_ledger::types::LedgerStateKey;
@@ -33,7 +46,9 @@ use std::sync::Arc;
 const LOG_TARGET: &str = "midnight::ledger-root-tag";
 
 /// Import notifications are not replayed on restart; walk this many canonical
-/// parents from best to cover a crash between swap and flush.
+/// parents from best to cover a crash between swap and the next `on_finalize`
+/// flush. The raw pin is still on disk, so re-swap is idempotent. Not a
+/// substitute for tagging during sync: pruned `StateKey`s cannot be retagged.
 const CATCH_UP_MAX: u32 = 256;
 
 pub async fn watch<C, B>(client: Arc<C>)
@@ -46,15 +61,16 @@ where
 		+ 'static,
 	B: Backend<Block>,
 {
+	// Subscribe first so imports that land between catch-up and the loop are
+	// queued. Duplicates with catch-up are idempotent (`swap_raw_pin_for_tagged`).
+	let mut notifications = client.every_import_notification_stream();
 	catch_up(&*client);
 
-	let mut notifications = client.import_notification_stream();
 	while let Some(notification) = notifications.next().await {
 		if tag_hash(&*client, notification.hash) == Some(true) {
-			midnight_node_ledger::flush_ledger_storage();
 			log::debug!(
 				target: LOG_TARGET,
-				"Tagged anchored ledger tip with block hash {:?}",
+				"Staged hash-tag for anchored ledger tip {:?}",
 				notification.hash
 			);
 		}
@@ -91,8 +107,10 @@ where
 	}
 
 	if staged {
-		midnight_node_ledger::flush_ledger_storage();
-		log::info!(target: LOG_TARGET, "Caught up hash-tagging of anchored ledger tips");
+		log::info!(
+			target: LOG_TARGET,
+			"Caught up hash-tagging of anchored ledger tips (durable on next on_finalize flush)"
+		);
 	}
 }
 

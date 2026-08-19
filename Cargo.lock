@@ -8461,7 +8461,6 @@ version = "0.1.0"
 dependencies = [
  "log",
  "parity-db 0.5.4",
- "parity-scale-codec",
  "sp-externalities",
  "substrate-prometheus-endpoint",
 ]

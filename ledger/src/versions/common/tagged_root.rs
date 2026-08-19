@@ -34,9 +34,11 @@
 //!
 //! - Tag known at persist time: `persist_tagged(&arena, tag, &sp)`.
 //! - Tag known later (e.g. a block hash after the state is persisted): persist
-//!   `sp` normally first; once the tag is known, swap the raw pin for a tagged
-//!   one with `persist_tagged(&arena, tag, &sp)` followed by `sp.unpersist()`.
-//!   Both count changes stage together and flush in the same batch.
+//!   `sp` normally first; once the tag is known, [`swap_raw_pin_for_tagged`]
+//!   stages `persist_tagged` plus `unpersist` together. Do not flush the shared
+//!   write cache from the import watcher — the next `on_finalize` flush
+//!   commits after that block's tip is rooted. A crash before that flush
+//!   leaves the raw pin, so catch-up re-swaps.
 //! - Pruning: `release_tagged(&arena, &tags)`, then flush, then let the GC run.
 //!
 //! # Matching
@@ -51,7 +53,7 @@
 use super::ledger_storage_local::{
 	Storable,
 	arena::{Arena, ArenaHash, ArenaKey, Sp},
-	backend::OnDiskObject,
+	backend::{OnDiskObject, StorageBackend},
 	db::DB,
 	storable::{Loader, WellBehavedHasher},
 };
@@ -189,11 +191,7 @@ pub fn persist_tagged<T: Storable<D>, D: DB>(
 }
 
 /// True if a wrapper with `tag` already pins `inner_hash`.
-pub fn is_tagged<D: DB>(
-	arena: &Arena<D>,
-	tag: &[u8],
-	inner_hash: &ArenaHash<D::Hasher>,
-) -> bool {
+pub fn is_tagged<D: DB>(arena: &Arena<D>, tag: &[u8], inner_hash: &ArenaHash<D::Hasher>) -> bool {
 	arena.with_backend(|backend| {
 		for hash in backend.get_roots().into_keys() {
 			let Some((existing, child)) = backend.get(&hash).and_then(parse_wrapper) else {
@@ -217,7 +215,11 @@ pub fn is_tagged<D: DB>(
 /// and does not unpersist again.
 ///
 /// Returns `true` if anything was staged (new wrapper and/or leftover raw pin
-/// dropped), so the caller knows to flush.
+/// dropped). This does **not** flush: the shared write cache may hold
+/// in-flight block allocations, and flushing it would empty the cache so the
+/// arena sweep could run mid-execution. Durability is the next block-boundary
+/// `flush_storage` (after that tip is rooted). A crash before that flush
+/// leaves the raw pin on disk, so catch-up re-swaps.
 pub fn swap_raw_pin_for_tagged<T: Storable<D>, D: DB>(
 	arena: &Arena<D>,
 	tag: std::vec::Vec<u8>,
@@ -251,21 +253,46 @@ pub fn release_tagged<D: DB, M: AsRef<[u8]>>(arena: &Arena<D>, tags: &[M]) -> us
 	if tags.is_empty() {
 		return 0;
 	}
+	arena.with_backend(|backend| release_on_backend(backend, tags))
+}
+
+/// [`release_tagged`] plus a durability flush, only when the write cache is
+/// empty so the flush writes isolated GC decrements.
+///
+/// A dirty cache returns `Err` without changing root counts; the caller
+/// retries. Replay after a successful flush is a no-op (wrappers are gone
+/// from the root set).
+pub fn release_tagged_if_quiescent<D: DB, M: AsRef<[u8]>>(
+	arena: &Arena<D>,
+	tags: &[M],
+) -> Result<usize, &'static str> {
+	if tags.is_empty() {
+		return Ok(0);
+	}
 	arena.with_backend(|backend| {
-		let mut matched = std::vec::Vec::new();
-		for hash in backend.get_roots().into_keys() {
-			let Some((tag, _)) = backend.get(&hash).and_then(parse_wrapper) else {
-				continue;
-			};
-			if tags.iter().any(|t| t.as_ref() == tag.as_slice()) {
-				matched.push(hash);
-			}
+		if backend.get_write_cache_len() > 0 {
+			return Err("ledger write cache busy; tip reclaim deferred");
 		}
-		for hash in &matched {
-			backend.unpersist(hash);
-		}
-		matched.len()
+		let n = release_on_backend(backend, tags);
+		backend.flush_all_changes_to_db();
+		Ok(n)
 	})
+}
+
+fn release_on_backend<D: DB, M: AsRef<[u8]>>(backend: &mut StorageBackend<D>, tags: &[M]) -> usize {
+	let mut matched = std::vec::Vec::new();
+	for hash in backend.get_roots().into_keys() {
+		let Some((tag, _)) = backend.get(&hash).and_then(parse_wrapper) else {
+			continue;
+		};
+		if tags.iter().any(|t| t.as_ref() == tag.as_slice()) {
+			matched.push(hash);
+		}
+	}
+	for hash in &matched {
+		backend.unpersist(hash);
+	}
+	matched.len()
 }
 
 /// Enumerate all tagged roots, as `(wrapper hash, tag)` pairs.
@@ -435,5 +462,25 @@ mod tests {
 		assert_eq!(inner_root_count(&arena, &inner), None);
 		assert_eq!(tagged_pin_count(&arena, &inner.hash()), Some(1));
 		assert!(!swap_raw_pin_for_tagged(&arena, tag, &inner), "fully swapped is a no-op");
+	}
+
+	#[test]
+	fn late_tagging_does_not_flush() {
+		let arena = new_arena();
+		let mut inner = leaf(&arena, 7);
+		inner.persist();
+		arena.with_backend(|b| {
+			b.flush_all_changes_to_db();
+			assert_eq!(b.get_write_cache_len(), 0);
+		});
+
+		let tag = persist_tag_from_block_hash(&[9u8; 32]);
+		assert!(swap_raw_pin_for_tagged(&arena, tag, &inner));
+		arena.with_backend(|b| {
+			assert!(
+				b.get_write_cache_len() > 0,
+				"swap must leave isolated deltas in the cache; flushing is the block-boundary job"
+			);
+		});
 	}
 }

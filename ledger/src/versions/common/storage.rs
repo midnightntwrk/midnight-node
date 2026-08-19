@@ -244,7 +244,7 @@ pub fn init_storage_paritydb_unified<
 /// storage is initialized and `state_key` deserializes as this version's ledger.
 ///
 /// `None` — storage not initialized, or `state_key` is not this version.
-/// `Some(true)` — a new wrapper was staged.
+/// `Some(true)` — a new wrapper was staged (not flushed; next `on_finalize` commits).
 /// `Some(false)` — that `(tag, inner)` wrapper already existed.
 #[cfg(feature = "std")]
 pub fn try_tag_anchored_tip(state_key: &[u8], tag: std::vec::Vec<u8>) -> Option<bool> {
@@ -259,18 +259,4 @@ pub fn try_tag_anchored_tip(state_key: &[u8], tag: std::vec::Vec<u8>) -> Option<
 		);
 	}
 	None
-}
-
-/// Flush staged ledger writes if this version's default storage is initialized.
-#[cfg(feature = "std")]
-pub fn flush_if_initialized() {
-	use super::ledger_storage_local::storage::default_storage;
-
-	if try_get_default_storage::<DbSeparate>().is_some() {
-		default_storage::<DbSeparate>()
-			.with_backend(|backend| backend.flush_all_changes_to_db());
-	}
-	if try_get_default_storage::<DbUnified>().is_some() {
-		default_storage::<DbUnified>().with_backend(|backend| backend.flush_all_changes_to_db());
-	}
 }
