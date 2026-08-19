@@ -14,8 +14,8 @@
 //! Runtime migrations
 //!
 //! Fixed, one-shot migrations live in a pallet's `migrations` module and are wired into
-//! `SingleBlockMigrations` or [`crate::Migrations`]. The session-key cutover scaffolding below is
-//! wired only in the runtime where [`crate::opaque::SessionKeys`] changes shape.
+//! `SingleBlockMigrations` or [`crate::Migrations`]. Re-usable migrations such as
+//! `authority_keys` below are only wired in for the specific upgrade that needs them.
 
 pub mod authority_keys {
 	//! Runtime-side types for the session-key cutover (BABE added to
@@ -29,7 +29,7 @@ pub mod authority_keys {
 	use authority_selection_inherents::CommitteeMember;
 	use frame_support::{traits::OnRuntimeUpgrade, weights::Weight};
 	use pallet_consensus_engine::AddBabeSessionKeysMigrated;
-	use pallet_session_validator_management::migrations::authority_keys::{
+	use pallet_session_validator_management::migrations::v2::{
 		UpgradeCommitteeMember, V1ToV2Migration,
 	};
 	use parity_scale_codec::MaxEncodedLen;

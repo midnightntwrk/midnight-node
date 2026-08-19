@@ -5,26 +5,9 @@
 //! translating `CurrentCommittee`, the migration copies it to `QueuedCommittee` because the v1
 //! session integration treated the current committee as both active and queued.
 //!
-//! Do not compose a separate queue-seeding migration with an authority-keys migration in one
-//! runtime upgrade. A seed step reads committee storage with the current runtime type and can
-//! silently corrupt old-shaped bytes before they are translated. Do not bump this pallet's storage
-//! version for a runtime-local session-key change either. The version namespace belongs to this
-//! pallet's storage layout in upstream Partner Chains.
-//!
 //! # Usage
 //!
-//! Preserve the old authority keys type and implement [`Into`] for it, targeting the new
-//! `T::AuthorityKeys` — this works directly since session key types are always locally defined
-//! (via [`sp_runtime::impl_opaque_keys`]) in the consuming runtime. Keys added by the upgrade are
-//! filled with placeholder values; real keys become effective at a later session rotation from
-//! observed registration data. The old committee member type needs [`UpgradeCommitteeMember`]
-//! instead of a plain `Into`/`From`: most runtimes reuse
-//! `authority_selection_inherents::CommitteeMember<AuthorityId, AuthorityKeys>` directly as
-//! `T::CommitteeMember`, and implementing `From`/`Into` between two instantiations of a type
-//! that's foreign to the runtime crate would violate Rust's orphan rules.
-//!
-//! For example, if a chain that originally used Aura and Grandpa keys is being upgraded to
-//! also use Beefy, the definitions could look like this:
+//! For example, for a chain adding Beefy to Aura + Grandpa:
 //!
 //! ```rust,ignore
 //! impl_opaque_keys! {
@@ -38,7 +21,9 @@
 //!
 //! impl From<LegacyAuthorityKeys> for SessionKeys {
 //! 	fn from(old: LegacyAuthorityKeys) -> Self {
-//! 		SessionKeys { aura: old.aura, grandpa: old.grandpa, beefy: ecdsa::Public::default().into() }
+//! 		let mut placeholder = [0u8; 33];
+//! 		placeholder[1..].copy_from_slice(&old.aura.to_raw_vec());
+//! 		SessionKeys { aura: old.aura, grandpa: old.grandpa, beefy: ecdsa::Public::from_raw(placeholder).into() }
 //! 	}
 //! }
 //!
@@ -49,10 +34,10 @@
 //! }
 //! ```
 //!
-//! After implementing both, wire the migration into `Runtime`'s `SingleBlockMigrations`:
+//! Wired into `Runtime`'s `SingleBlockMigrations`:
 //! ```rust,ignore
 //! type SingleBlockMigrations = (
-//! 	pallet_session_validator_management::migrations::authority_keys::V1ToV2Migration<
+//! 	pallet_session_validator_management::migrations::v2::V1ToV2Migration<
 //! 		Runtime,
 //! 		LegacyCommitteeMember,
 //! 		LegacyAuthorityKeys,
@@ -61,9 +46,8 @@
 //! );
 //! ```
 //!
-//! Remove the migration from `SingleBlockMigrations` after all networks enact it. Leaving it wired
-//! is harmless: the versioned gate skips chains already at v2, including fresh-genesis chains with
-//! new-shaped bytes.
+//! The versioned gate makes the migration a no-op on chains already at v2, including
+//! fresh-genesis chains with new-shaped bytes.
 
 #[cfg(feature = "try-runtime")]
 extern crate alloc;
@@ -83,7 +67,8 @@ use crate::CommitteeMember as CommitteeMemberT;
 use crate::pallet::CommitteeInfo;
 
 /// Infallible cast from old to current `T::CommitteeMember`, used for committee storage
-/// migration. See the module docs for why this can't just be a plain `From`/`Into` impl.
+/// migration. Not a plain `From`/`Into` because orphan rules block impls between two
+/// instantiations of the foreign `CommitteeMember` type.
 pub trait UpgradeCommitteeMember<T: crate::Config> {
 	/// Should cast the old committee member type to the new one
 	fn upgrade(self) -> T::CommitteeMember;
@@ -252,24 +237,19 @@ where
 			pallet_session::NextKeys::<T>::iter_keys().count() == old_next_keys.len(),
 			"session NextKeys entry count should be preserved"
 		);
-		// Only key types present in both old and new keys are checked in `KeyOwner`: keys of a
-		// newly added type may be identical across validators (e.g. a shared default), in which
-		// case `upgrade_keys` leaves the entry pointing at whichever validator was processed last.
-		let common_key_types: Vec<_> = T::AuthorityKeys::key_ids()
-			.iter()
-			.filter(|id| OldAuthorityKeys::key_ids().contains(id))
-			.collect();
 		for (validator, old_keys) in old_next_keys {
 			let expected_keys: T::AuthorityKeys = old_keys.into();
 			ensure!(
 				pallet_session::NextKeys::<T>::get(&validator) == Some(expected_keys.clone()),
 				"session NextKeys should be upgraded in place"
 			);
-			for key_type in &common_key_types {
+			// Covers every key type, added ones included; a key shared between validators
+			// leaves `KeyOwner` pointing at only one of them.
+			for key_type in T::AuthorityKeys::key_ids() {
 				ensure!(
 					pallet_session::KeyOwner::<T>::get((
-						**key_type,
-						expected_keys.get_raw(**key_type).to_vec()
+						*key_type,
+						expected_keys.get_raw(*key_type).to_vec()
 					)) == Some(validator.clone()),
 					"KeyOwner should map each upgraded key back to its validator"
 				);
@@ -300,16 +280,13 @@ fn committee_fingerprint<T, OldCommitteeMember>(
 ) -> Vec<(T::AuthorityId, T::AuthorityKeys)>
 where
 	T: crate::Config,
-	OldCommitteeMember:
-		Clone + UpgradeCommitteeMember<T> + CommitteeMemberT<AuthorityId = T::AuthorityId>,
+	OldCommitteeMember: Clone + CommitteeMemberT<AuthorityId = T::AuthorityId>,
+	<OldCommitteeMember as CommitteeMemberT>::AuthorityKeys: Into<T::AuthorityKeys>,
 {
 	committee
 		.iter()
 		.cloned()
-		.map(|member| {
-			let member = <OldCommitteeMember as UpgradeCommitteeMember<T>>::upgrade(member);
-			(member.authority_id(), member.authority_keys())
-		})
+		.map(|m| (m.authority_id(), m.authority_keys().into()))
 		.collect()
 }
 

@@ -6,8 +6,7 @@ queue-seeding `V1ToV2Migration` and the `FROM`/`TO`-generic
 `AuthorityKeysMigration`) with a single `VersionedMigration<1, 2>` that
 translates `CurrentCommittee` and `NextCommittee`, seeds `QueuedCommittee`
 from the translated current committee, and upgrades `pallet_session` key
-storage in one step. The pallet storage version ends at 2; runtime-local
-session-key changes never bump it. The migration is unwired from
+storage in one step. The migration is unwired from
 `SingleBlockMigrations` until the runtime upgrade that changes the
 `SessionKeys` shape.
 
