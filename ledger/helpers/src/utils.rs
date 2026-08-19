@@ -22,7 +22,7 @@ const LEDGER_9_VERSION: &str = env!("LEDGER_9_VERSION");
 /// `Cargo.lock`.
 ///
 /// Registry deps return the bare semver (`"7.0.3"`); git deps include the locked ref, e.g.
-/// `"1.0.0 (tag: crate-ledger-9.1.0.0-rc.3, rev: 85e769a0e352518c979cb6f7a07901b63e1c124d)"`.
+/// `"1.0.0 (tag: ledger-9.1.0.0-rc.4, rev: cd652d7f97b34b805bb5f0310ce7434eb883af38)"`.
 /// Returns `None` for an unknown alias.
 pub fn find_dependency_version(alias: &str) -> Option<String> {
 	match alias {
