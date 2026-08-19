@@ -28,7 +28,7 @@ use crate::{
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
-use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage, TBlockCorrection};
+use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
@@ -367,7 +367,6 @@ pub fn new_partial(
 		.set_extensions_factory(ExtensionsFactory::<Block>::new(
 			Arc::new(Mutex::new(ledger_metrics)),
 			ledger_storage,
-			TBlockCorrection::from(&midnight_cfg),
 		));
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
