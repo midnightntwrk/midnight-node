@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use clap::Parser;
 
@@ -59,31 +59,23 @@ pub struct RunMidnight {
 
 	/// Run the wallet-facing indexer and GraphQL API in this node process.
 	///
-	/// The value is the indexer's YAML configuration file. This is intended for dedicated API
-	/// nodes because indexing replays ledger transactions and maintains separate SQL state.
-	#[arg(long, value_name = "PATH")]
-	pub embedded_indexer_config: Option<PathBuf>,
+	/// This is intended for dedicated API nodes because indexing replays ledger transactions and
+	/// maintains separate SQL state.
+	#[arg(long)]
+	pub indexer: bool,
 }
 
 #[cfg(test)]
 mod tests {
 	use super::RunMidnight;
 	use clap::Parser;
-	use std::path::PathBuf;
 
 	#[test]
-	fn parses_embedded_indexer_config() {
-		let command = RunMidnight::try_parse_from([
-			"midnight-node",
-			"--embedded-indexer-config",
-			"/etc/midnight/indexer.yaml",
-		])
-		.expect("embedded indexer arguments should parse");
+	fn parses_indexer_flag() {
+		let command = RunMidnight::try_parse_from(["midnight-node", "--indexer"])
+			.expect("indexer flag should parse");
 
-		assert_eq!(
-			command.embedded_indexer_config,
-			Some(PathBuf::from("/etc/midnight/indexer.yaml"))
-		);
+		assert!(command.indexer);
 	}
 }
 

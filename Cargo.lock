@@ -6491,24 +6491,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indexer-standalone"
-version = "4.4.0-rc.2"
-dependencies = [
- "anyhow",
- "byte-unit-serde",
- "chain-indexer",
- "humantime-serde",
- "indexer-api",
- "indexer-common",
- "log",
- "secrecy 0.10.3",
- "serde",
- "spo-indexer",
- "tokio",
- "wallet-indexer",
-]
-
-[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8652,10 +8634,13 @@ dependencies = [
 name = "midnight-node"
 version = "2.2.0"
 dependencies = [
+ "anyhow",
  "async-channel 1.9.0",
  "async-trait",
  "authority-selection-inherents",
  "blake2b_simd",
+ "byte-unit-serde",
+ "chain-indexer",
  "clap",
  "config",
  "derive-new",
@@ -8667,7 +8652,9 @@ dependencies = [
  "futures",
  "hex",
  "hostname",
- "indexer-standalone",
+ "humantime-serde",
+ "indexer-api",
+ "indexer-common",
  "jsonrpsee",
  "local-ip-address",
  "log",
@@ -8735,6 +8722,7 @@ dependencies = [
  "sc-transaction-pool-api",
  "sc-utils",
  "schemars 0.8.22",
+ "secrecy 0.10.3",
  "serde",
  "serde_json",
  "serde_valid",
@@ -8770,6 +8758,7 @@ dependencies = [
  "sp-timestamp",
  "sp-transaction-pool",
  "sp-version",
+ "spo-indexer",
  "sqlx",
  "substrate-build-script-utils",
  "substrate-frame-rpc-system",
@@ -8779,6 +8768,7 @@ dependencies = [
  "time-source",
  "tokio",
  "tokio-util",
+ "wallet-indexer",
  "yamux 0.13.10",
 ]
 

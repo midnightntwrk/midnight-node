@@ -340,13 +340,13 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		.await
 		.map_err(sc_cli::Error::Service)?;
 
-		if let Some(config_path) = run_midnight.embedded_indexer_config {
-			log::info!("starting embedded indexer with config {}", config_path.display());
+		if run_midnight.indexer {
+			log::info!("starting indexer");
 			task_manager.spawn_essential_handle().spawn_blocking(
 				"embedded-indexer",
 				Some("embedded-indexer"),
 				async move {
-					if let Err(error) = indexer_standalone::run_embedded(config_path) {
+					if let Err(error) = crate::indexer::run() {
 						log::error!("embedded indexer exited: {error:#}");
 					}
 				},
