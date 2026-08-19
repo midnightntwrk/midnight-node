@@ -21,39 +21,39 @@
 //!
 //! The swap is not flushed here. Durability is the next block's `on_finalize`
 //! `flush_storage`, which runs after that tip is rooted. A crash before that
-//! flush leaves the raw pin on disk; on restart only `best` (and genesis, which
-//! is imported before this task exists) can have been missed — later imports
-//! go through `every_import_notification_stream`, including initial sync.
-//! Each imported block's `on_finalize` flushes the previous swap, so at most
-//! the current tip is unflushed.
+//! flush leaves the raw pin on disk; on restart the stream is subscribed in
+//! `new_full` before this task is spawned (imports cannot miss the queue),
+//! then genesis and best are tagged once — they were imported before the
+//! stream existed. Later imports go through `every_import_notification_stream`,
+//! including initial sync. Warp ledger-sync tags the recovered arena itself
+//! (`persist_tagged` in the snapshot import flush) because that target's
+//! import notification already fired against an empty arena.
+//!
+//! `StateKey` is read via the warp ledger-sync `read_state_key` helper so the
+//! on-chain storage version picks the layout — the same authority
+//! `Pallet::state_key` uses. Byte-sniffing a pre-v3 raw `Vec<u8>` whose length
+//! is a multiple of 256 would misdecode it as `Transient` and skip the tip.
+//! Pre-v3 *block tips* therefore get tagged during a historical full sync.
+//! Pre-v3 *intra-block* intermediates still leak: v1 host functions persist
+//! every successor without unpersisting, and that is not recoverable from the
+//! native node.
 
 use futures::StreamExt;
-use midnight_node_ledger::types::LedgerStateKey;
-use midnight_node_runtime::{Runtime, opaque::Block};
-use pallet_midnight::StateKey;
-use parity_scale_codec::Decode;
-use sc_client_api::{Backend, BlockchainEvents, StorageProvider};
+use midnight_node_runtime::opaque::Block;
+use sc_client_api::{Backend, StorageProvider, client::ImportNotifications};
 use sp_blockchain::HeaderBackend;
-use sp_core::storage::StorageKey;
 use sp_runtime::traits::Block as BlockT;
 use std::sync::Arc;
 
+use crate::warp_ledger_sync::read_state_key;
+
 const LOG_TARGET: &str = "midnight::ledger-root-tag";
 
-pub async fn watch<C, B>(client: Arc<C>)
+pub async fn watch<C, B>(client: Arc<C>, mut notifications: ImportNotifications<Block>)
 where
-	C: BlockchainEvents<Block>
-		+ HeaderBackend<Block>
-		+ StorageProvider<Block, B>
-		+ Send
-		+ Sync
-		+ 'static,
+	C: HeaderBackend<Block> + StorageProvider<Block, B> + Send + Sync + 'static,
 	B: Backend<Block>,
 {
-	// Subscribe before tagging genesis/best so sync imports that race this
-	// task are queued rather than dropped.
-	let mut notifications = client.every_import_notification_stream();
-
 	let info = client.info();
 	for hash in [info.genesis_hash, info.best_hash] {
 		if tag_hash(&*client, hash) {
@@ -81,19 +81,13 @@ where
 	C: StorageProvider<Block, B>,
 	B: Backend<Block>,
 {
-	let storage_key = StorageKey(StateKey::<Runtime>::hashed_key().to_vec());
-	let Some(bytes) = client.storage(hash, &storage_key).ok().flatten() else {
-		return false;
+	let state_key = match read_state_key::<Block, _, B>(client, hash) {
+		Ok(Some(bytes)) => bytes,
+		Ok(None) => return false,
+		Err(e) => {
+			log::debug!(target: LOG_TARGET, "Skipping hash-tag at {hash:?}: {e}");
+			return false;
+		},
 	};
-	let Ok(state_key) = LedgerStateKey::decode(&mut &bytes.0[..]) else {
-		return false;
-	};
-	if !matches!(state_key, LedgerStateKey::Anchored(_)) {
-		log::debug!(
-			target: LOG_TARGET,
-			"Skipping hash-tag at {hash:?}: StateKey is not Anchored"
-		);
-		return false;
-	}
-	midnight_node_ledger::tag_anchored_tip(state_key.bytes(), hash.as_ref()) == Some(true)
+	midnight_node_ledger::tag_anchored_tip(&state_key, hash.as_ref()) == Some(true)
 }

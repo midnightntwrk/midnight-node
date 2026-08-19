@@ -42,7 +42,7 @@ pub mod storage;
 pub mod tagged_root;
 #[cfg(feature = "std")]
 pub use tagged_root::{
-	persist_tag_from_block_hash, persist_tagged, release_tagged, release_tagged_if_quiescent,
+	persist_tag_from_block_hash, persist_tagged, release_tagged,
 	swap_raw_pin_for_tagged, tagged_pin_count, tagged_roots,
 };
 
@@ -896,12 +896,16 @@ where
 	/// caller), never state corruption.
 	///
 	/// Persists + flushes into the live `default_storage` so `get_lazy(StateKey)` resolves —
-	/// in-process, no restart, via the same `alloc`/`persist`/`flush` path live block execution
-	/// uses. The caller (warp client driver) MUST hold the authoring/import gate so no block
+	/// in-process, no restart. The warp target hash is known here, so the root is a tagged
+	/// wrapper (`persist_tagged`) committed in this same flush — a raw pin would leak: the
+	/// target's import notification already fired against an empty arena, and restart
+	/// only re-tags genesis+best. A leftover raw pin on the same inner (re-import of genesis)
+	/// is dropped in that flush. The caller MUST hold the authoring/import gate so no block
 	/// executes against the arena concurrently — the arena is single-writer.
 	pub fn import_verified_ledger_snapshot(
 		blob: &[u8],
 		expected_state_key: &[u8],
+		block_hash: &[u8],
 	) -> Result<(), crate::SnapshotImportError> {
 		use crate::SnapshotImportError;
 
@@ -914,7 +918,7 @@ where
 		// arena; re-allocating the loaded value yields the persistable `Sp`.
 		let ledger: Ledger<D> =
 			helpers_local::deserialize(blob).map_err(SnapshotImportError::Deserialize)?;
-		let mut sp = default_storage::<D>().arena.alloc(ledger);
+		let sp = default_storage::<D>().arena.alloc(ledger);
 
 		// Cryptographic bind to the trie anchor: the reconstructed root must equal the on-chain
 		// `StateKey`. This is the whole security argument — reject anything else.
@@ -923,8 +927,16 @@ where
 			return Err(SnapshotImportError::RootMismatch);
 		}
 
-		sp.persist();
-		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+		let tag = persist_tag_from_block_hash(block_hash);
+		if !tagged_root::is_tagged(&default_storage::<D>().arena, &tag, &sp.hash()) {
+			persist_tagged(&default_storage::<D>().arena, tag, &sp);
+		}
+		default_storage::<D>().with_backend(|backend| {
+			if backend.get_roots().contains_key(&sp.hash()) {
+				backend.unpersist(&sp.hash());
+			}
+			backend.flush_all_changes_to_db();
+		});
 		log::info!(target: LOG_TARGET, "Imported verified ledger snapshot ({} bytes)", blob.len());
 		Ok(())
 	}

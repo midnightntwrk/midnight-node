@@ -29,23 +29,6 @@ use crate::ledger_9;
 type DbSeparate = ParityDb;
 type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
-/// Advisory: whether the initialized ledger backend's write cache is empty.
-///
-/// The GC worker checks this before reclaim/sweep. Purely advisory — the
-/// authoritative check runs under the backend lock inside
-/// [`release_tagged_tips`] / [`collect_garbage`]. Returns `true` when no
-/// storage is initialized (the reclaim path will then fail with its own error).
-pub fn ledger_quiescent() -> bool {
-	fn quiescent_in<D: DB + 'static>() -> Option<bool> {
-		try_get_default_storage::<D>()
-			.map(|storage| storage.with_backend(|backend| backend.get_write_cache_len() == 0))
-	}
-	quiescent_in::<DbSeparate>()
-		.or_else(quiescent_in::<DbUnified>)
-		.or_else(quiescent_in::<DefaultDB>)
-		.unwrap_or(true)
-}
-
 /// Tags of currently persisted wrapper roots (block hashes).
 pub fn tagged_root_tags() -> Vec<Vec<u8>> {
 	fn tags_in<D: DB + 'static>() -> Option<Vec<Vec<u8>>> {
@@ -65,42 +48,37 @@ pub fn tagged_root_tags() -> Vec<Vec<u8>> {
 		.unwrap_or_default()
 }
 
-/// Decrement each matching tagged wrapper once and flush, only when the write
-/// cache is empty. Replay of the same tags is a no-op. A dirty cache returns
-/// `Err` ("busy") without changing counts.
-pub fn release_tagged_tips<M: AsRef<[u8]>>(tags: &[M]) -> Result<usize, String> {
+/// Decrement each matching tagged wrapper once. Does not flush — durability is
+/// the next block-boundary `flush_storage`, same as hash-tagging. Replay of
+/// the same tags is a no-op. Returns 0 when ledger storage is not initialized.
+pub fn release_tagged_tips<M: AsRef<[u8]>>(tags: &[M]) -> usize {
 	if tags.is_empty() {
-		return Ok(0);
+		return 0;
 	}
-	if let Some(r) = release_in::<DbSeparate, M>(tags) {
-		return r;
+	if let Some(n) = release_in::<DbSeparate, M>(tags) {
+		return n;
 	}
-	if let Some(r) = release_in::<DbUnified, M>(tags) {
-		return r;
+	if let Some(n) = release_in::<DbUnified, M>(tags) {
+		return n;
 	}
-	if let Some(r) = release_in::<DefaultDB, M>(tags) {
-		return r;
+	if let Some(n) = release_in::<DefaultDB, M>(tags) {
+		return n;
 	}
-	Err("ledger storage is not initialized".into())
+	0
 }
 
-fn release_in<D: DB + 'static, M: AsRef<[u8]>>(tags: &[M]) -> Option<Result<usize, String>> {
+fn release_in<D: DB + 'static, M: AsRef<[u8]>>(tags: &[M]) -> Option<usize> {
 	if try_get_default_storage::<D>().is_none() {
 		return None;
 	}
-	Some(
-		ledger_9::release_tagged_if_quiescent(&default_storage::<D>().arena, tags)
-			.map_err(|e| e.to_string()),
-	)
+	Some(ledger_9::release_tagged(&default_storage::<D>().arena, tags))
 }
 
 /// Run incremental arena GC for up to `budget`. Returns culled node count.
 ///
-/// Sweeps only when the ledger write cache is quiescent (empty): the
-/// mark/sweep's reachability is DB-based and staged-but-unflushed state is
-/// invisible to it, so sweeping concurrently with an executing block could
-/// cull nodes the in-flight state still references. When the cache is dirty
-/// this returns `0` and the caller should retry after the next block flush.
+/// Sweeps only when the ledger write cache is empty: mark/sweep reachability
+/// is DB-based, so staged-but-unflushed state is invisible to it. A dirty
+/// cache returns `0`.
 pub fn collect_garbage(budget: Duration) -> Result<usize, String> {
 	if let Some(n) = gc_in::<DbSeparate>(budget)? {
 		return Ok(n);
@@ -156,26 +134,13 @@ mod tests {
 		ledger_9::tagged_pin_count(&default_storage::<DefaultDB>().arena, key.hash()).unwrap_or(0)
 	}
 
-	fn release_retrying(tags: &[Vec<u8>]) -> usize {
-		for _ in 0..50 {
-			match release_tagged_tips(tags) {
-				Ok(n) => return n,
-				Err(e) if e.contains("busy") => {
-					std::thread::sleep(Duration::from_millis(10));
-				},
-				Err(e) => panic!("release_tagged_tips failed: {e}"),
-			}
-		}
-		panic!("ledger write cache never became quiescent");
-	}
-
 	#[test]
 	fn release_decrements_once_per_tag() {
 		let (tag, tip) = persist_tagged_ledger("gc-once", &[1u8; 32]);
 		assert_eq!(pin_count(&tip), 1);
-		assert_eq!(release_retrying(std::slice::from_ref(&tag)), 1);
+		assert_eq!(release_tagged_tips(std::slice::from_ref(&tag)), 1);
 		assert_eq!(pin_count(&tip), 0);
-		assert_eq!(release_retrying(std::slice::from_ref(&tag)), 0);
+		assert_eq!(release_tagged_tips(std::slice::from_ref(&tag)), 0);
 	}
 
 	#[test]
@@ -194,22 +159,22 @@ mod tests {
 		let mut tip = vec![];
 		tagged_serialize(&inner.as_typed_key(), &mut tip).unwrap();
 		assert_eq!(pin_count(&tip), 2);
-		assert_eq!(release_retrying(std::slice::from_ref(&a)), 1);
+		assert_eq!(release_tagged_tips(std::slice::from_ref(&a)), 1);
 		assert_eq!(pin_count(&tip), 1);
-		assert_eq!(release_retrying(std::slice::from_ref(&b)), 1);
+		assert_eq!(release_tagged_tips(std::slice::from_ref(&b)), 1);
 		assert_eq!(pin_count(&tip), 0);
 	}
 
 	#[test]
 	fn unknown_tag_is_noop() {
 		let _ = default_storage::<DefaultDB>();
-		assert_eq!(release_retrying(&[vec![1, 2, 3]]), 0);
+		assert_eq!(release_tagged_tips(&[vec![1, 2, 3]]), 0);
 	}
 
 	#[test]
 	fn tagged_root_tags_lists_wrappers() {
 		let (tag, _) = persist_tagged_ledger("gc-list", &[9u8; 32]);
 		assert!(tagged_root_tags().iter().any(|t| t == &tag));
-		assert_eq!(release_retrying(std::slice::from_ref(&tag)), 1);
+		assert_eq!(release_tagged_tips(std::slice::from_ref(&tag)), 1);
 	}
 }

@@ -38,7 +38,7 @@ use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
-use sc_client_api::{Backend, BlockImportOperation, ExecutorProvider};
+use sc_client_api::{Backend, BlockImportOperation, BlockchainEvents, ExecutorProvider};
 use sc_consensus_aura::{SlotProportion, StartAuraParams};
 use sc_consensus_grandpa::SharedVoterState;
 use sc_consensus_slots::BackoffAuthoringOnFinalizedHeadLagging;
@@ -650,13 +650,14 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 
 	let state_pruning = config.state_pruning.clone();
 
-	// Subscribe to every import before the network starts syncing. Genesis is
-	// already in the client; the watcher one-shots genesis+best, then the
-	// stream covers subsequent imports (including initial sync).
+	// Subscribe before spawn (and before the network starts syncing) so imports
+	// cannot miss the stream. `watch` then one-shots genesis+best (already in
+	// the client) and drains the queued stream.
+	let ledger_root_imports = client.every_import_notification_stream();
 	task_manager.spawn_handle().spawn(
 		"ledger-root-tag",
 		None,
-		crate::ledger_root_tag::watch(client.clone()),
+		crate::ledger_root_tag::watch(client.clone(), ledger_root_imports),
 	);
 
 	let (network, system_rpc_tx, tx_handler_controller, sync_service) =

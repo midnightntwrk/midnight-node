@@ -32,7 +32,8 @@
 //!
 //! # Pruning usage
 //!
-//! - Tag known at persist time: `persist_tagged(&arena, tag, &sp)`.
+//! - Tag known at persist time: `persist_tagged(&arena, tag, &sp)` (warp snapshot
+//!   import uses this, flushed in the same call).
 //! - Tag known later (e.g. a block hash after the state is persisted): persist
 //!   `sp` normally first; once the tag is known, [`swap_raw_pin_for_tagged`]
 //!   stages `persist_tagged` plus `unpersist` together. Do not flush the shared
@@ -256,36 +257,14 @@ pub fn release_tagged<D: DB, M: AsRef<[u8]>>(arena: &Arena<D>, tags: &[M]) -> us
 	arena.with_backend(|backend| release_on_backend(backend, tags))
 }
 
-/// [`release_tagged`] plus a durability flush, only when the write cache is
-/// empty so the flush writes isolated GC decrements.
-///
-/// A dirty cache returns `Err` without changing root counts; the caller
-/// retries. Replay after a successful flush is a no-op (wrappers are gone
-/// from the root set).
-pub fn release_tagged_if_quiescent<D: DB, M: AsRef<[u8]>>(
-	arena: &Arena<D>,
-	tags: &[M],
-) -> Result<usize, &'static str> {
-	if tags.is_empty() {
-		return Ok(0);
-	}
-	arena.with_backend(|backend| {
-		if backend.get_write_cache_len() > 0 {
-			return Err("ledger write cache busy; tip reclaim deferred");
-		}
-		let n = release_on_backend(backend, tags);
-		backend.flush_all_changes_to_db();
-		Ok(n)
-	})
-}
-
 fn release_on_backend<D: DB, M: AsRef<[u8]>>(backend: &mut StorageBackend<D>, tags: &[M]) -> usize {
+	let wanted: std::collections::HashSet<&[u8]> = tags.iter().map(|t| t.as_ref()).collect();
 	let mut matched = std::vec::Vec::new();
 	for hash in backend.get_roots().into_keys() {
 		let Some((tag, _)) = backend.get(&hash).and_then(parse_wrapper) else {
 			continue;
 		};
-		if tags.iter().any(|t| t.as_ref() == tag.as_slice()) {
+		if wanted.contains(tag.as_slice()) {
 			matched.push(hash);
 		}
 	}

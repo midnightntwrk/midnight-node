@@ -30,7 +30,8 @@
 //!   `midnight_node_ledger::import_verified_ledger_snapshot`, which reuses the arena's **native**
 //!   multi-pass deserializer (`Arena::deserialize_sp`) for untrusted input rather than a bespoke
 //!   re-hash, then asserts the recomputed root equals `StateKey` before persisting in-process
-//!   (`alloc`/`persist`/`flush`, no restart).
+//!   (`alloc`/`persist_tagged(target)`/`flush`, no restart). The warp-point pin is tagged in that
+//!   flush: the target's import notification already fired against an empty arena.
 //! - [`monitor`] — detects warp completion, captures the target block, drives [`client`], releases
 //!   the gate. [`oracle`] keeps AURA from authoring until recovery is verified.
 

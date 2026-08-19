@@ -70,18 +70,33 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	let reassembled = compress_page_reassemble_decompress(&blob, 4096);
 	assert_eq!(reassembled, blob, "reassembled blob must be byte-identical to the server's");
 
-	// Client/import: verify root == StateKey and persist. Idempotent against the
-	// already-initialized arena (content-addressed; genesis nodes dedup).
-	midnight_node_ledger::import_verified_ledger_snapshot(false, &reassembled, &state_key)
-		.expect("verified import of a faithful snapshot should succeed");
+	// Client/import: verify root == StateKey and persist as a wrapper tagged with the warp
+	// target hash (committed in the same flush). Idempotent against the already-initialized
+	// arena (content-addressed; a leftover raw genesis pin is dropped).
+	let warp_hash = [0x42u8; 32];
+	midnight_node_ledger::import_verified_ledger_snapshot(
+		false,
+		&reassembled,
+		&state_key,
+		&warp_hash,
+	)
+	.expect("verified import of a faithful snapshot should succeed");
+	assert!(
+		midnight_node_ledger::gc::tagged_root_tags().iter().any(|t| t.as_slice() == warp_hash),
+		"warp-point persist must be a tagged wrapper so GC can reclaim it"
+	);
 
 	// Security property: tamper a byte well past the tag prefix (in the node-data region). The
 	// native multi-pass deserializer / root check must reject it — never a successful import.
 	let mut tampered = blob.clone();
 	let idx = tampered.len() / 2;
 	tampered[idx] ^= 0xFF;
-	let result =
-		midnight_node_ledger::import_verified_ledger_snapshot(false, &tampered, &state_key);
+	let result = midnight_node_ledger::import_verified_ledger_snapshot(
+		false,
+		&tampered,
+		&state_key,
+		&warp_hash,
+	);
 	assert!(
 		result.is_err(),
 		"a tampered snapshot must fail verification and not be imported, got {result:?}"

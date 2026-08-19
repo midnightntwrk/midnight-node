@@ -18,9 +18,10 @@
 //!
 //! Wrappers are staged at every executed import (`ledger_root_tag`, including
 //! initial sync) and become durable on the next `on_finalize` flush; this
-//! worker only decides *when* they may go. Under
-//! `ArchiveAll`, tip reclaim is skipped (history wrappers stay) but the arena
-//! GC loop still runs.
+//! worker only decides *when* they may go. Reclaim is also staged (no flush,
+//! no wait for an empty write cache). Arena mark/sweep still skips a dirty
+//! cache. Under `ArchiveAll`, tip reclaim is skipped (history wrappers stay)
+//! but the arena GC loop still runs.
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
@@ -161,29 +162,13 @@ fn reclaim_slice(
 	}
 
 	if !to_release.is_empty() {
-		if !midnight_node_ledger::gc::ledger_quiescent() {
-			debug!(
+		let n = midnight_node_ledger::gc::release_tagged_tips(&to_release);
+		if n > 0 {
+			info!(
 				target: LOG_TARGET,
-				"⏸️  Ledger write cache busy; deferring reclaim of {} wrapper(s)",
+				"🧹 Released {n} tagged wrapper(s) from {} pruned block(s)",
 				to_release.len()
 			);
-			return candidates;
-		}
-
-		match midnight_node_ledger::gc::release_tagged_tips(&to_release) {
-			Ok(n) => {
-				if n > 0 {
-					info!(
-						target: LOG_TARGET,
-						"🧹 Released {n} tagged wrapper(s) from {} pruned block(s)",
-						to_release.len()
-					);
-				}
-			},
-			Err(e) => {
-				debug!(target: LOG_TARGET, "⏸️  Tagged-root release deferred: {e}");
-				return candidates;
-			},
 		}
 	}
 
