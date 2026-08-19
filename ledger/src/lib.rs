@@ -231,21 +231,18 @@ impl std::error::Error for SnapshotImportError {}
 
 #[cfg(feature = "std")]
 /// Verify a `Ledger`-rooted warp snapshot `blob` against the on-chain `expected_state_key` and, on
-/// success, persist it as a wrapper tagged with `block_hash` (the warp target) so
+/// success, persist it as a wrapper tagged with `block_number` (the warp target height) so
 /// `get_lazy(StateKey)` resolves and GC can later `release_tagged` that pin. `unified` selects
 /// the DB instantiation, and dispatch on the `StateKey`'s `ledger-state[vNN]` tag picks the
 /// ledger module, as in [`serialize_ledger_snapshot`].
 ///
-/// The tag is committed in this function's flush. A later swap would reopen a crash hole:
-/// the target's import notification already fired against an empty arena, and restart
-/// only re-tags genesis+best.
-///
-/// The caller must hold the authoring/import gate (the arena is single-writer).
+/// The tag is committed in this function's flush. The caller must hold the authoring/import
+/// gate (the arena is single-writer).
 pub fn import_verified_ledger_snapshot(
 	unified: bool,
 	blob: &[u8],
 	expected_state_key: &[u8],
-	block_hash: &[u8],
+	block_number: u32,
 ) -> Result<(), SnapshotImportError> {
 	// Dispatch on the `StateKey`'s ledger-state version (the underlying method returns the shared
 	// `SnapshotImportError` for every version, so no error mapping is needed).
@@ -254,14 +251,14 @@ pub fn import_verified_ledger_snapshot(
 			bridge_arena_call!(
 				ledger_9,
 				unified,
-				import_verified_ledger_snapshot(blob, expected_state_key, block_hash)
+				import_verified_ledger_snapshot(blob, expected_state_key, block_number)
 			)
 		},
 		Some(13) => {
 			bridge_arena_call!(
 				ledger_8,
 				unified,
-				import_verified_ledger_snapshot(blob, expected_state_key, block_hash)
+				import_verified_ledger_snapshot(blob, expected_state_key, block_number)
 			)
 		},
 		other => Err(SnapshotImportError::StateKeyDecode(format!(
@@ -342,27 +339,6 @@ pub mod types {
 
 	pub use super::host_api::ledger_9::ledger_9_bridge as active_ledger_bridge;
 	pub use super::latest::types as active_version;
-}
-
-/// Swap the raw Anchored persist of `state_key` for a wrapper tagged with
-/// `block_hash`. Tries ledger 9, then 8, so a v8 key on shared v8/v9
-/// storage still matches.
-///
-/// `None` — `state_key` is not a known ledger version's state.
-/// `Some(true)` — a new wrapper was staged.
-/// `Some(false)` — that `(hash, inner)` wrapper already existed.
-///
-/// Does not flush. The swap stays in the write cache until the next
-/// block-boundary `flush_storage`, which runs after that block's tip is
-/// rooted. Flushing here would empty a cache that may hold in-flight
-/// allocations and let arena GC sweep mid-execution.
-#[cfg(feature = "std")]
-pub fn tag_anchored_tip(state_key: &[u8], block_hash: &[u8]) -> Option<bool> {
-	let tag = latest::persist_tag_from_block_hash(block_hash);
-	if let Some(swapped) = ledger_9::storage::try_tag_anchored_tip(state_key, tag.clone()) {
-		return Some(swapped);
-	}
-	ledger_8::storage::try_tag_anchored_tip(state_key, tag)
 }
 
 #[cfg(test)]

@@ -71,18 +71,19 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	assert_eq!(reassembled, blob, "reassembled blob must be byte-identical to the server's");
 
 	// Client/import: verify root == StateKey and persist as a wrapper tagged with the warp
-	// target hash (committed in the same flush). Idempotent against the already-initialized
+	// target number (committed in the same flush). Idempotent against the already-initialized
 	// arena (content-addressed; a leftover raw genesis pin is dropped).
-	let warp_hash = [0x42u8; 32];
+	let warp_number = 42u32;
+	let warp_tag = warp_number.to_le_bytes();
 	midnight_node_ledger::import_verified_ledger_snapshot(
 		false,
 		&reassembled,
 		&state_key,
-		&warp_hash,
+		warp_number,
 	)
 	.expect("verified import of a faithful snapshot should succeed");
 	assert!(
-		midnight_node_ledger::gc::tagged_root_tags().iter().any(|t| t.as_slice() == warp_hash),
+		midnight_node_ledger::gc::tagged_root_tags().iter().any(|t| t.as_slice() == warp_tag),
 		"warp-point persist must be a tagged wrapper so GC can reclaim it"
 	);
 
@@ -95,7 +96,7 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 		false,
 		&tampered,
 		&state_key,
-		&warp_hash,
+		warp_number,
 	);
 	assert!(
 		result.is_err(),

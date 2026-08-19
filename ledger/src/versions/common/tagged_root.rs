@@ -13,34 +13,13 @@
 
 //! GC-root tagging as ordinary content-addressed data.
 //!
-//! A [`TaggedRoot`] pins a value together with an opaque tag (e.g. a block
-//! hash) by wrapping it in a regular DAG node and persisting the *wrapper* as
-//! the GC root. The tag is part of the node's content, so it is staged,
-//! flushed, and crash-consistent through the existing node and root-count
-//! machinery: the tag and the persist that it describes commit in the same
-//! flush by construction, and no dedicated metadata storage is involved.
+//! A [`TaggedRoot`] pins a value together with an opaque tag (here: a block
+//! *number*) by wrapping it in a regular DAG node and persisting the *wrapper*
+//! as the GC root. The number is known in `on_finalize`, so the persist and
+//! the tag commit in the same `flush_storage`.
 //!
-//! [`release_tagged`] later releases wrappers given only their tags — one
-//! backend borrow, one scan of the root set — after which the GC collects
-//! each wrapper and, transitively, its inner value, unless something else
-//! still pins it.
-//!
-//! Because wrappers are content-addressed, distinct tags for the same inner
-//! value are distinct roots: two blocks pinning the same ledger state each
-//! hold their own wrapper, released independently. There is no
-//! one-tag-per-root limitation.
-//!
-//! # Pruning usage
-//!
-//! - Tag known at persist time: `persist_tagged(&arena, tag, &sp)` (warp snapshot
-//!   import uses this, flushed in the same call).
-//! - Tag known later (e.g. a block hash after the state is persisted): persist
-//!   `sp` normally first; once the tag is known, [`swap_raw_pin_for_tagged`]
-//!   stages `persist_tagged` plus `unpersist` together. Do not flush the shared
-//!   write cache from the import watcher — the next `on_finalize` flush
-//!   commits after that block's tip is rooted. A crash before that flush
-//!   leaves the raw pin; restart re-tags genesis and best.
-//! - Pruning: `release_tagged(&arena, &tags)`, then flush, then let the GC run.
+//! [`release_tagged`] later releases every wrapper whose tag is a pruned
+//! height. Forks at the same height share a tag and fall together.
 //!
 //! # Matching
 //!
@@ -67,22 +46,22 @@ const MAGIC: [u8; 15] = *b"tagged-root[v1]";
 /// Sanity cap on tag length when parsing candidate wrapper payloads.
 const MAX_TAG_LEN: usize = 1 << 16;
 
-/// Persist tag used for an anchored ledger tip: the block's header hash.
-///
-/// Distinct hashes are distinct wrappers, so sibling forks at the same height
-/// are released independently. The hash is not known in `on_finalize` (it
-/// includes the state root); callers persist the inner state first and swap
-/// the raw pin for this tag once the block is imported — see
-/// [`swap_raw_pin_for_tagged`].
-pub fn persist_tag_from_block_hash(hash: &[u8]) -> std::vec::Vec<u8> {
-	hash.to_vec()
+/// Persist tag for an anchored ledger tip: the block number, little-endian.
+pub fn persist_tag_from_block_number(number: u32) -> std::vec::Vec<u8> {
+	number.to_le_bytes().to_vec()
+}
+
+/// Parse a tag produced by [`persist_tag_from_block_number`].
+pub fn block_number_from_persist_tag(tag: &[u8]) -> Option<u32> {
+	let raw: [u8; 4] = tag.try_into().ok()?;
+	Some(u32::from_le_bytes(raw))
 }
 
 /// A GC-root wrapper pinning `inner` together with an opaque `tag`.
 ///
 /// See the [module docs](self).
 pub struct TaggedRoot<T: Storable<D>, D: DB> {
-	/// The opaque tag, e.g. a block hash from [`persist_tag_from_block_hash`].
+	/// The opaque tag, e.g. a block number from [`persist_tag_from_block_number`].
 	pub tag: std::vec::Vec<u8>,
 	/// The pinned value.
 	pub inner: Sp<T, D>,
@@ -206,41 +185,6 @@ pub fn is_tagged<D: DB>(arena: &Arena<D>, tag: &[u8], inner_hash: &ArenaHash<D::
 	})
 }
 
-/// Swap a raw `persist()` pin on `inner` for a tagged wrapper.
-///
-/// Used when the tag (block hash) is not known at persist time: `on_finalize`
-/// persists `inner` as a GC root; after import, this stages `persist_tagged`
-/// plus `unpersist` of the raw pin together. Idempotent if this `(tag, inner)`
-/// wrapper already exists and the raw pin is gone. A second call with a
-/// *different* tag (sibling fork sharing the same state) adds a second wrapper
-/// and does not unpersist again.
-///
-/// Returns `true` if anything was staged (new wrapper and/or leftover raw pin
-/// dropped). This does **not** flush: the shared write cache may hold
-/// in-flight block allocations, and flushing it would empty the cache so the
-/// arena sweep could run mid-execution. Durability is the next block-boundary
-/// `flush_storage` (after that tip is rooted). A crash before that flush
-/// leaves the raw pin on disk; restart re-tags genesis and best.
-pub fn swap_raw_pin_for_tagged<T: Storable<D>, D: DB>(
-	arena: &Arena<D>,
-	tag: std::vec::Vec<u8>,
-	inner: &Sp<T, D>,
-) -> bool {
-	let already = is_tagged(arena, &tag, &inner.hash());
-	if !already {
-		persist_tagged(arena, tag, inner);
-	}
-	let dropped_raw = arena.with_backend(|backend| {
-		if backend.get_roots().contains_key(&inner.hash()) {
-			backend.unpersist(&inner.hash());
-			true
-		} else {
-			false
-		}
-	});
-	!already || dropped_raw
-}
-
 /// Unpersist every tagged root whose tag equals one of `tags`, decrementing
 /// each matching wrapper once. Returns the number of wrappers released.
 ///
@@ -354,10 +298,18 @@ mod tests {
 	}
 
 	#[test]
+	fn persist_tag_from_block_number_roundtrips() {
+		let tag = persist_tag_from_block_number(42);
+		assert_eq!(block_number_from_persist_tag(&tag), Some(42));
+		assert_eq!(block_number_from_persist_tag(&[1, 2, 3]), None);
+		assert_eq!(persist_tag_from_block_number(0), 0u32.to_le_bytes().to_vec());
+	}
+
+	#[test]
 	fn persist_tagged_pins_wrapper_not_inner() {
 		let arena = new_arena();
 		let inner = leaf(&arena, 7);
-		let tag = persist_tag_from_block_hash(&[1u8; 32]);
+		let tag = persist_tag_from_block_number(1);
 		let wrapper = persist_tagged(&arena, tag.clone(), &inner);
 
 		assert_eq!(inner_root_count(&arena, &inner), None, "inner is not a raw GC root");
@@ -369,7 +321,7 @@ mod tests {
 	fn release_tagged_decrements_once_and_is_idempotent() {
 		let arena = new_arena();
 		let inner = leaf(&arena, 1);
-		let tag = vec![1u8; 4];
+		let tag = persist_tag_from_block_number(1);
 		let _w1 = persist_tagged(&arena, tag.clone(), &inner);
 		let _w2 = persist_tagged(&arena, tag.clone(), &inner);
 		assert_eq!(tagged_pin_count(&arena, &inner.hash()), Some(2));
@@ -384,7 +336,7 @@ mod tests {
 	#[test]
 	fn shared_inner_survives_partial_release() {
 		let arena = new_arena();
-		let (t1, t2) = (vec![1u8; 32], vec![2u8; 32]);
+		let (t1, t2) = (persist_tag_from_block_number(1), persist_tag_from_block_number(2));
 		let inner = leaf(&arena, 42);
 		let _w1 = persist_tagged(&arena, t1.clone(), &inner);
 		let _w2 = persist_tagged(&arena, t2.clone(), &inner);
@@ -400,66 +352,17 @@ mod tests {
 	}
 
 	#[test]
-	fn late_tagging_swap() {
+	fn same_height_tags_release_together() {
 		let arena = new_arena();
-		let mut inner = leaf(&arena, 7);
-		inner.persist();
-		assert_eq!(inner_root_count(&arena, &inner), Some(1));
-
-		let hash_a = persist_tag_from_block_hash(&[9u8; 32]);
-		assert!(swap_raw_pin_for_tagged(&arena, hash_a.clone(), &inner));
-		assert!(!swap_raw_pin_for_tagged(&arena, hash_a.clone(), &inner), "idempotent");
-		assert_eq!(inner_root_count(&arena, &inner), None);
-		assert_eq!(tagged_pin_count(&arena, &inner.hash()), Some(1));
-
-		// Sibling fork sharing the same inner state, different block hash:
-		// a second wrapper, inner stays un-rooted as a raw persist.
-		let hash_b = persist_tag_from_block_hash(&[8u8; 32]);
-		assert!(swap_raw_pin_for_tagged(&arena, hash_b.clone(), &inner));
-		assert_eq!(inner_root_count(&arena, &inner), None);
-		assert_eq!(tagged_pin_count(&arena, &inner.hash()), Some(2));
-
-		assert_eq!(release_tagged(&arena, &[&hash_a]), 1);
-		assert_eq!(tagged_pin_count(&arena, &inner.hash()), Some(1));
-		assert_eq!(release_tagged(&arena, &[&hash_b]), 1);
-		assert_eq!(tagged_pin_count(&arena, &inner.hash()), None);
-	}
-
-	#[test]
-	fn late_tagging_drops_leftover_raw_pin() {
-		let arena = new_arena();
-		let mut inner = leaf(&arena, 7);
-		inner.persist();
-		let tag = persist_tag_from_block_hash(&[9u8; 32]);
-		let _wrapper = persist_tagged(&arena, tag.clone(), &inner);
-		assert_eq!(inner_root_count(&arena, &inner), Some(1), "raw pin still present");
-
-		assert!(
-			swap_raw_pin_for_tagged(&arena, tag.clone(), &inner),
-			"already-tagged but leftover raw pin is dropped"
-		);
-		assert_eq!(inner_root_count(&arena, &inner), None);
-		assert_eq!(tagged_pin_count(&arena, &inner.hash()), Some(1));
-		assert!(!swap_raw_pin_for_tagged(&arena, tag, &inner), "fully swapped is a no-op");
-	}
-
-	#[test]
-	fn late_tagging_does_not_flush() {
-		let arena = new_arena();
-		let mut inner = leaf(&arena, 7);
-		inner.persist();
-		arena.with_backend(|b| {
-			b.flush_all_changes_to_db();
-			assert_eq!(b.get_write_cache_len(), 0);
-		});
-
-		let tag = persist_tag_from_block_hash(&[9u8; 32]);
-		assert!(swap_raw_pin_for_tagged(&arena, tag, &inner));
-		arena.with_backend(|b| {
-			assert!(
-				b.get_write_cache_len() > 0,
-				"swap must leave isolated deltas in the cache; flushing is the block-boundary job"
-			);
-		});
+		let tag = persist_tag_from_block_number(7);
+		let a = leaf(&arena, 1);
+		let b = leaf(&arena, 2);
+		let _w1 = persist_tagged(&arena, tag.clone(), &a);
+		let _w2 = persist_tagged(&arena, tag.clone(), &b);
+		assert_eq!(tagged_pin_count(&arena, &a.hash()), Some(1));
+		assert_eq!(tagged_pin_count(&arena, &b.hash()), Some(1));
+		assert_eq!(release_tagged(&arena, &[&tag]), 2);
+		assert_eq!(tagged_pin_count(&arena, &a.hash()), None);
+		assert_eq!(tagged_pin_count(&arena, &b.hash()), None);
 	}
 }

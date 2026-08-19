@@ -30,6 +30,8 @@ use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use alloc::vec::Vec;
 use frame_support::{StorageHasher, Twox128};
+#[cfg(feature = "std")]
+use parity_scale_codec::Decode;
 use sp_externalities::{Externalities, ExternalitiesExt};
 
 pub mod types;
@@ -42,8 +44,8 @@ pub mod storage;
 pub mod tagged_root;
 #[cfg(feature = "std")]
 pub use tagged_root::{
-	persist_tag_from_block_hash, persist_tagged, release_tagged,
-	swap_raw_pin_for_tagged, tagged_pin_count, tagged_roots,
+	block_number_from_persist_tag, persist_tag_from_block_number, persist_tagged, release_tagged,
+	tagged_pin_count, tagged_roots,
 };
 
 #[cfg(feature = "std")]
@@ -173,6 +175,19 @@ lazy_static! {
 }
 
 #[cfg(feature = "std")]
+/// Decode `System::Number` from SCALE storage. Production uses `u32`; the
+/// pallet mock runtime uses `u64`. Small values decode correctly either way.
+fn decode_system_block_number(raw: &[u8]) -> Option<u32> {
+	match raw.len() {
+		4 => Some(u32::from_le_bytes(raw.try_into().ok()?)),
+		8 => u32::try_from(u64::from_le_bytes(raw.try_into().ok()?)).ok(),
+		_ => u32::decode(&mut &raw[..])
+			.ok()
+			.or_else(|| u64::decode(&mut &raw[..]).ok().and_then(|n| u32::try_from(n).ok())),
+	}
+}
+
+#[cfg(feature = "std")]
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
 	_phantom: core::marker::PhantomData<(S, D)>,
 }
@@ -251,19 +266,37 @@ where
 		}
 	}
 
+	/// Persist `ledger` as a wrapper tagged with `System::Number`.
+	fn persist_anchored_tip(externalities: &mut dyn Externalities, ledger: &Sp<Ledger<D>, D>) {
+		let n = Self::system_block_number(externalities);
+		persist_tagged(
+			&default_storage::<D>().arena,
+			persist_tag_from_block_number(n),
+			ledger,
+		);
+	}
+
+	fn system_block_number(externalities: &mut dyn Externalities) -> u32 {
+		let mut key = [0u8; 32];
+		key[..16].copy_from_slice(&Twox128::hash(b"System"));
+		key[16..].copy_from_slice(&Twox128::hash(b"Number"));
+		let Some(raw) = externalities.storage(&key) else {
+			return 0;
+		};
+		decode_system_block_number(&raw).unwrap_or(0)
+	}
+
 	/// Apply the post-block transformation and produce the post-block ledger
 	/// state.
 	///
 	/// # Persist refcount contract
 	///
-	/// On success, returns `LedgerStateKey::Anchored` at rc=1 (raw persist of
-	/// the ledger hash). The block hash is not known yet — it includes this
-	/// state root — so the native import path later swaps that pin for a
-	/// hash-tagged wrapper via [`tagged_root::swap_raw_pin_for_tagged`].
-	/// Anchored states are never unpersisted on input by subsequent Bridge
-	/// calls — preserved for RPC/history within the Substrate pruning window,
-	/// and safe across sibling forks. The node GC worker later
-	/// [`release_tagged`]s wrappers whose block hash has left that window.
+	/// On success, returns `LedgerStateKey::Anchored` pinned by a wrapper
+	/// tagged with the current `System::Number`. Anchored states are never
+	/// unpersisted on input by subsequent Bridge calls — preserved for
+	/// RPC/history within the Substrate pruning window. The node GC worker
+	/// later [`release_tagged`]s wrappers whose height has left that window.
+	/// Forks at the same height share a tag.
 	///
 	/// If the input was `LedgerStateKey::Transient` (the last `apply_transaction`
 	/// output of this block), it is unpersisted once, dropping to rc=0.
@@ -272,7 +305,7 @@ where
 	///
 	/// On error, refcounts are unchanged.
 	pub fn post_block_update(
-		_externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &LedgerStateKey,
 		block_context: BlockContext,
 	) -> Result<LedgerStateKey, LedgerApiError> {
@@ -295,7 +328,7 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let mut ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
+		let ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
@@ -315,7 +348,7 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		ledger.persist();
+		Self::persist_anchored_tip(externalities, &ledger);
 		if state_key.is_transient() {
 			Self::unpersist_state(&api, state_key.bytes())?;
 		}
@@ -336,20 +369,19 @@ where
 	/// # Persist refcount contract
 	///
 	/// Same contract as [`Self::post_block_update`]: returns
-	/// `LedgerStateKey::Anchored` at rc=1 (raw persist). The native import
-	/// path later swaps that pin for a hash-tagged wrapper. A `Transient`
-	/// input is unpersisted once, and `Anchored` inputs are left alone. On
-	/// error, refcounts are unchanged.
+	/// `LedgerStateKey::Anchored` pinned by a number-tagged wrapper. A
+	/// `Transient` input is unpersisted once, and `Anchored` inputs are left
+	/// alone. On error, refcounts are unchanged.
 	pub fn apply_post_block_update(
-		_externalities: &mut dyn Externalities,
+		externalities: &mut dyn Externalities,
 		state_key: &LedgerStateKey,
 		block_context: BlockContext,
 	) -> Result<LedgerStateKey, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key.bytes())?;
-		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
-		ledger.persist();
+		Self::persist_anchored_tip(externalities, &ledger);
 		if state_key.is_transient() {
 			Self::unpersist_state(&api, state_key.bytes())?;
 		}
@@ -896,16 +928,15 @@ where
 	/// caller), never state corruption.
 	///
 	/// Persists + flushes into the live `default_storage` so `get_lazy(StateKey)` resolves —
-	/// in-process, no restart. The warp target hash is known here, so the root is a tagged
-	/// wrapper (`persist_tagged`) committed in this same flush — a raw pin would leak: the
-	/// target's import notification already fired against an empty arena, and restart
-	/// only re-tags genesis+best. A leftover raw pin on the same inner (re-import of genesis)
-	/// is dropped in that flush. The caller MUST hold the authoring/import gate so no block
-	/// executes against the arena concurrently — the arena is single-writer.
+	/// in-process, no restart. The warp target *number* is known here, so the root is a tagged
+	/// wrapper (`persist_tagged`) committed in this same flush. A leftover raw pin on the same
+	/// inner (re-import of a pre-tag genesis) is dropped in that flush. The caller MUST hold the
+	/// authoring/import gate so no block executes against the arena concurrently — the arena is
+	/// single-writer.
 	pub fn import_verified_ledger_snapshot(
 		blob: &[u8],
 		expected_state_key: &[u8],
-		block_hash: &[u8],
+		block_number: u32,
 	) -> Result<(), crate::SnapshotImportError> {
 		use crate::SnapshotImportError;
 
@@ -927,7 +958,7 @@ where
 			return Err(SnapshotImportError::RootMismatch);
 		}
 
-		let tag = persist_tag_from_block_hash(block_hash);
+		let tag = persist_tag_from_block_number(block_number);
 		if !tagged_root::is_tagged(&default_storage::<D>().arena, &tag, &sp.hash()) {
 			persist_tagged(&default_storage::<D>().arena, tag, &sp);
 		}
@@ -1036,19 +1067,6 @@ where
 		let key: ArenaKey<D::Hasher> = typed_key.into();
 		default_storage::<D>().with_backend(|backend| backend.unpersist(key.hash()));
 		Ok(())
-	}
-
-	/// Swap the raw Anchored persist of `state_key` for a wrapper tagged with
-	/// `tag` (the block hash). No-op if that wrapper already exists.
-	///
-	/// Returns `None` if `state_key` is not a ledger state of this version
-	/// (caller should try another version). `Some(true)` if a new wrapper was
-	/// staged, `Some(false)` if it already existed. Does not flush — the next
-	/// block-boundary `flush_storage` commits the overlay.
-	pub fn try_tag_anchored_tip(state_key: &[u8], tag: Vec<u8>) -> Option<bool> {
-		let api = api::new();
-		let ledger = Self::get_ledger(&api, state_key).ok()?;
-		Some(tagged_root::swap_raw_pin_for_tagged(&default_storage::<D>().arena, tag, &ledger))
 	}
 
 	/// Decrement persist count once on every tagged wrapper whose tag is in

@@ -37,10 +37,10 @@ impl From<Hash128> for WrappedHash {
 /// - `Anchored` — a finalized state that must be retained for history (chain
 ///   tip after `post_block_update`, or genesis). The Bridge never unpersists
 ///   these on input; multiple sibling forks built on the same Anchored parent
-///   leave it untouched. Anchored tips are first persisted as a raw GC root
-///   of the ledger hash (`on_finalize` / genesis). After import, that pin is
-///   swapped for a wrapper tagged with the block hash so sibling forks
-///   release independently.
+///   leave it untouched. Anchored tips are persisted as a wrapper tagged with
+///   the block *number* (`on_finalize` / genesis / warp import). The node GC
+///   worker later `release_tagged`s wrappers whose height has left the
+///   Substrate pruning window. Forks at the same height share a tag.
 /// - `Transient` — an intra-block intermediate state produced by
 ///   `apply_transaction` / `apply_system_transaction`. The Bridge unpersists
 ///   these when they're consumed as input to a successor call.

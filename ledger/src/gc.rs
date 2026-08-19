@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Reclaim hash-tagged Anchored wrappers and run incremental arena GC.
+//! Reclaim number-tagged Anchored wrappers and run incremental arena GC.
 
 use std::time::Duration;
 
@@ -29,7 +29,7 @@ use crate::ledger_9;
 type DbSeparate = ParityDb;
 type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFSET }>;
 
-/// Tags of currently persisted wrapper roots (block hashes).
+/// Tags of currently persisted wrapper roots (block numbers, little-endian).
 pub fn tagged_root_tags() -> Vec<Vec<u8>> {
 	fn tags_in<D: DB + 'static>() -> Option<Vec<Vec<u8>>> {
 		if try_get_default_storage::<D>().is_none() {
@@ -49,8 +49,8 @@ pub fn tagged_root_tags() -> Vec<Vec<u8>> {
 }
 
 /// Decrement each matching tagged wrapper once. Does not flush — durability is
-/// the next block-boundary `flush_storage`, same as hash-tagging. Replay of
-/// the same tags is a no-op. Returns 0 when ledger storage is not initialized.
+/// the next block-boundary `flush_storage`. Replay of the same tags is a
+/// no-op. Returns 0 when ledger storage is not initialized.
 pub fn release_tagged_tips<M: AsRef<[u8]>>(tags: &[M]) -> usize {
 	if tags.is_empty() {
 		return 0;
@@ -136,7 +136,7 @@ mod tests {
 
 	#[test]
 	fn release_decrements_once_per_tag() {
-		let (tag, tip) = persist_tagged_ledger("gc-once", &[1u8; 32]);
+		let (tag, tip) = persist_tagged_ledger("gc-once", &1u32.to_le_bytes());
 		assert_eq!(pin_count(&tip), 1);
 		assert_eq!(release_tagged_tips(std::slice::from_ref(&tag)), 1);
 		assert_eq!(pin_count(&tip), 0);
@@ -144,14 +144,14 @@ mod tests {
 	}
 
 	#[test]
-	fn sibling_hashes_release_independently() {
+	fn sibling_heights_release_independently() {
 		use crate::ledger_9::api::Ledger;
 		use mn_ledger_9::structure::LedgerState;
 
 		let state: LedgerState<DefaultDB> = LedgerState::new("gc-sib");
 		let inner = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
-		let a = vec![1u8; 32];
-		let b = vec![2u8; 32];
+		let a = 1u32.to_le_bytes().to_vec();
+		let b = 2u32.to_le_bytes().to_vec();
 		ledger_9::persist_tagged(&default_storage::<DefaultDB>().arena, a.clone(), &inner);
 		ledger_9::persist_tagged(&default_storage::<DefaultDB>().arena, b.clone(), &inner);
 		default_storage::<DefaultDB>().with_backend(|be| be.flush_all_changes_to_db());
@@ -173,7 +173,7 @@ mod tests {
 
 	#[test]
 	fn tagged_root_tags_lists_wrappers() {
-		let (tag, _) = persist_tagged_ledger("gc-list", &[9u8; 32]);
+		let (tag, _) = persist_tagged_ledger("gc-list", &9u32.to_le_bytes());
 		assert!(tagged_root_tags().iter().any(|t| t == &tag));
 		assert_eq!(release_tagged_tips(std::slice::from_ref(&tag)), 1);
 	}

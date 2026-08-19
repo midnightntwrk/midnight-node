@@ -189,7 +189,7 @@ async fn recover_and_release<B, Client, BE, Network>(
 	let driver = LedgerSyncClient::new(client, network.clone(), protocol_name, unified);
 	loop {
 		let peers = recovery_candidate_peers(&*network, &sync_service).await;
-		match driver.recover(target_hash, &peers).await {
+		match driver.recover(target_hash, target_number, &peers).await {
 			Ok(()) => break,
 			Err(e) => {
 				log::warn!(target: LOG_TARGET, "Ledger arena recovery attempt failed: {e}; retrying");
