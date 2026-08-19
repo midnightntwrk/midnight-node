@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "2.1.0"
+version = "2.2.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -89,6 +89,7 @@ frame-benchmarking-cli = {workspace = true, default-features = true }
 pallet-staking = { workspace = true, features = ["std"], optional = true }
 
 # Local Dependencies
+indexer-standalone = { path = "../indexer/indexer-standalone", features = ["standalone"] }
 midnight-node-runtime = { workspace = true, default-features = true }
 midnight-node-ledger = { workspace = true, default-features = true }
 midnight-node-ledger-helpers = {workspace = true, default-features = true, features = ["fixed-point-custom-serde"] }

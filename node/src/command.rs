@@ -340,6 +340,19 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		.await
 		.map_err(sc_cli::Error::Service)?;
 
+		if let Some(config_path) = run_midnight.embedded_indexer_config {
+			log::info!("starting embedded indexer with config {}", config_path.display());
+			task_manager.spawn_essential_handle().spawn_blocking(
+				"embedded-indexer",
+				Some("embedded-indexer"),
+				async move {
+					if let Err(error) = indexer_standalone::run_embedded(config_path) {
+						log::error!("embedded indexer exited: {error:#}");
+					}
+				},
+			);
+		}
+
 		// Stash the backend handle so it outlives the tokio runtime.
 		*backend_handle_inner.lock().expect("backend mutex poisoned") = Some(backend);
 

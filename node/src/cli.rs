@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 
 use clap::Parser;
 
@@ -56,6 +56,35 @@ pub struct RunMidnight {
 	/// that have no non-validator nodes. Nodes can warp-sync as clients regardless of this flag.
 	#[arg(long)]
 	pub serve_warp_ledger_sync: bool,
+
+	/// Run the wallet-facing indexer and GraphQL API in this node process.
+	///
+	/// The value is the indexer's YAML configuration file. This is intended for dedicated API
+	/// nodes because indexing replays ledger transactions and maintains separate SQL state.
+	#[arg(long, value_name = "PATH")]
+	pub embedded_indexer_config: Option<PathBuf>,
+}
+
+#[cfg(test)]
+mod tests {
+	use super::RunMidnight;
+	use clap::Parser;
+	use std::path::PathBuf;
+
+	#[test]
+	fn parses_embedded_indexer_config() {
+		let command = RunMidnight::try_parse_from([
+			"midnight-node",
+			"--embedded-indexer-config",
+			"/etc/midnight/indexer.yaml",
+		])
+		.expect("embedded indexer arguments should parse");
+
+		assert_eq!(
+			command.embedded_indexer_config,
+			Some(PathBuf::from("/etc/midnight/indexer.yaml"))
+		);
+	}
 }
 
 #[derive(Debug, clap::Parser)]

@@ -39,6 +39,7 @@ members = [
     "partner-chains/toolkit/consensus",
     "partner-chains/toolkit/consensus/primitives",
 ]
+exclude = ["indexer"]
 [workspace.package]
 license-file = "LICENSE"
 edition = "2024"
