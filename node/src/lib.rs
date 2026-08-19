@@ -29,6 +29,7 @@ mod filtering_pool;
 pub mod genesis;
 pub mod inherent_data;
 mod ledger_gc;
+pub mod ledger_root_tag;
 pub mod main_chain_follower;
 pub mod memory_monitor;
 pub mod metrics_push;

@@ -39,6 +39,14 @@ use types::LedgerApiError;
 pub mod storage;
 
 #[cfg(feature = "std")]
+pub mod tagged_root;
+#[cfg(feature = "std")]
+pub use tagged_root::{
+	persist_tag_from_block_hash, persist_tagged, release_tagged, swap_raw_pin_for_tagged,
+	tagged_pin_count, tagged_roots,
+};
+
+#[cfg(feature = "std")]
 pub mod api;
 
 #[cfg(feature = "std")]
@@ -248,11 +256,14 @@ where
 	///
 	/// # Persist refcount contract
 	///
-	/// On success, returns `LedgerStateKey::Anchored` at rc=1. Anchored states
-	/// are never unpersisted on input by subsequent Bridge calls — preserved
-	/// for RPC/history within the Substrate pruning window, and safe across
-	/// sibling forks. The node GC worker reclaims them from `StateKey` at
-	/// finality once Substrate drops state for that block.
+	/// On success, returns `LedgerStateKey::Anchored` at rc=1 (raw persist of
+	/// the ledger hash). The block hash is not known yet — it includes this
+	/// state root — so the native import path later swaps that pin for a
+	/// hash-tagged wrapper via [`tagged_root::swap_raw_pin_for_tagged`].
+	/// Anchored states are never unpersisted on input by subsequent Bridge
+	/// calls — preserved for RPC/history within the Substrate pruning window,
+	/// and safe across sibling forks. The node GC worker reclaims them from
+	/// `StateKey` at finality once Substrate drops state for that block.
 	///
 	/// If the input was `LedgerStateKey::Transient` (the last `apply_transaction`
 	/// output of this block), it is unpersisted once, dropping to rc=0.
@@ -325,8 +336,8 @@ where
 	/// # Persist refcount contract
 	///
 	/// Same contract as [`Self::post_block_update`]: returns
-	/// `LedgerStateKey::Anchored` at rc=1, so the post-block tip stays rooted
-	/// for RPC and history and is safe across sibling forks; a `Transient`
+	/// `LedgerStateKey::Anchored` at rc=1 (raw persist). The native import
+	/// path later swaps that pin for a hash-tagged wrapper. A `Transient`
 	/// input is unpersisted once, and `Anchored` inputs are left alone. On
 	/// error, refcounts are unchanged.
 	pub fn apply_post_block_update(
@@ -1013,6 +1024,28 @@ where
 		let key: ArenaKey<D::Hasher> = typed_key.into();
 		default_storage::<D>().with_backend(|backend| backend.unpersist(key.hash()));
 		Ok(())
+	}
+
+	/// Swap the raw Anchored persist of `state_key` for a wrapper tagged with
+	/// `tag` (the block hash). No-op if that wrapper already exists.
+	///
+	/// Returns `None` if `state_key` is not a ledger state of this version
+	/// (caller should try another version). `Some(true)` if a new wrapper was
+	/// staged, `Some(false)` if it already existed. Not durable until flush.
+	pub fn try_tag_anchored_tip(state_key: &[u8], tag: Vec<u8>) -> Option<bool> {
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key).ok()?;
+		Some(tagged_root::swap_raw_pin_for_tagged(
+			&default_storage::<D>().arena,
+			tag,
+			&ledger,
+		))
+	}
+
+	/// Decrement persist count once on every tagged wrapper whose tag is in
+	/// `tags`. Native-only helper for later reclaim; not durable until flush.
+	pub fn release_tagged_roots<M: AsRef<[u8]>>(tags: &[M]) -> usize {
+		tagged_root::release_tagged(&default_storage::<D>().arena, tags)
 	}
 
 	fn get_transaction_details(

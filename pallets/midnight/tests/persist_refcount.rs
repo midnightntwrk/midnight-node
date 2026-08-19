@@ -51,15 +51,21 @@ fn root_count(state_key: &LedgerStateKey) -> Option<u32> {
 	midnight_node_ledger::latest::storage::get_state_root_count(state_key.bytes())
 }
 
+fn tagged_pin_count(state_key: &LedgerStateKey) -> Option<u32> {
+	midnight_node_ledger::latest::storage::get_tagged_pin_count(state_key.bytes())
+}
+
 fn current_state_key() -> LedgerStateKey {
 	pallet_midnight::StateKey::<Test>::get()
 }
 
 /// Walks an entire block lifecycle and asserts the LedgerStateKey persist
 /// contract at every transition:
-///   - `Anchored` states (genesis, post-block tips) are persisted at rc=1 and
-///     are NEVER unpersisted by subsequent Bridge calls — so they survive
-///     sibling forks and remain queryable for history,
+///   - `Anchored` states (genesis, post-block tips) are persisted at rc=1 as a
+///     raw ledger-hash GC root and are NEVER unpersisted by subsequent Bridge
+///     calls — so they survive sibling forks and remain queryable for history.
+///     The native import path later swaps that raw pin for a wrapper tagged
+///     with the block hash (exercised at the end of this test).
 ///   - `Transient` states (intra-block intermediates) are persisted at rc=1
 ///     and unpersisted to rc=0 by their successor.
 ///
@@ -87,10 +93,11 @@ fn persist_refcount_invariants() {
 
 		let genesis_key = current_state_key();
 		assert!(matches!(genesis_key, LedgerStateKey::Anchored(_)), "genesis stored as Anchored");
+		assert_eq!(root_count(&genesis_key), Some(1), "genesis persisted at rc=1");
 		assert_eq!(
-			root_count(&genesis_key),
-			Some(1),
-			"genesis is persisted at rc=1 by alloc_with_initial_state"
+			tagged_pin_count(&genesis_key),
+			None,
+			"genesis is a raw persist until native hash-tagging"
 		);
 
 		// Read-only guard 1: validate_unsigned + pre_dispatch against the genesis
@@ -123,7 +130,7 @@ fn persist_refcount_invariants() {
 		);
 
 		// Finalize block 1. post_block_update unpersists the Transient predecessor
-		// (post_deploy → rc=0) and returns Anchored at rc=1.
+		// (post_deploy → rc=0) and returns Anchored at rc=1 (raw persist).
 		process_block(2, store_ctx.clone().into());
 		let post_block_1_key = current_state_key();
 		assert!(
@@ -139,7 +146,12 @@ fn persist_refcount_invariants() {
 		assert_eq!(
 			root_count(&post_block_1_key),
 			Some(1),
-			"Anchored post-block state at rc=1, retained for history"
+			"Anchored post-block state persisted at rc=1, retained for history"
+		);
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
+			None,
+			"post-block tip is a raw persist until native hash-tagging"
 		);
 
 		// Read-only guard 2: validate against the Anchored post-block tip. DEPLOY
@@ -179,7 +191,11 @@ fn persist_refcount_invariants() {
 			None,
 			"Transient last-apply output of block 2 unrooted by post_block_update"
 		);
-		assert_eq!(root_count(&post_block_2_key), Some(1), "Anchored post-block-2 at rc=1");
+		assert_eq!(
+			root_count(&post_block_2_key),
+			Some(1),
+			"Anchored post-block-2 persisted at rc=1"
+		);
 		assert_eq!(
 			root_count(&post_block_1_key),
 			Some(1),
@@ -193,7 +209,40 @@ fn persist_refcount_invariants() {
 			Some(1),
 			"Anchored post-block-2 unaffected by block 3's first apply"
 		);
-		assert_eq!(root_count(&post_block_1_key), Some(1), "Anchored post-block-1 still at rc=1");
+		assert_eq!(
+			root_count(&post_block_1_key),
+			Some(1),
+			"Anchored post-block-1 still at rc=1"
+		);
 		assert_eq!(root_count(&genesis_key), Some(1), "Anchored genesis still at rc=1");
+
+		// Native import path: swap each Anchored raw pin for a hash-tagged
+		// wrapper. Distinct hashes are independent roots; the same hash is
+		// idempotent.
+		assert_eq!(
+			midnight_node_ledger::tag_anchored_tip(genesis_key.bytes(), &[0x00; 32]),
+			Some(true)
+		);
+		assert_eq!(root_count(&genesis_key), None);
+		assert_eq!(tagged_pin_count(&genesis_key), Some(1));
+		assert_eq!(
+			midnight_node_ledger::tag_anchored_tip(genesis_key.bytes(), &[0x00; 32]),
+			Some(false),
+			"hash tagging is idempotent"
+		);
+
+		assert_eq!(
+			midnight_node_ledger::tag_anchored_tip(post_block_1_key.bytes(), &[0x01; 32]),
+			Some(true)
+		);
+		assert_eq!(
+			midnight_node_ledger::tag_anchored_tip(post_block_2_key.bytes(), &[0x02; 32]),
+			Some(true)
+		);
+		assert_eq!(root_count(&post_block_1_key), None);
+		assert_eq!(root_count(&post_block_2_key), None);
+		assert_eq!(tagged_pin_count(&post_block_1_key), Some(1));
+		assert_eq!(tagged_pin_count(&post_block_2_key), Some(1));
+		assert_eq!(tagged_pin_count(&genesis_key), Some(1));
 	});
 }

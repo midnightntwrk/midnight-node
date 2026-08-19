@@ -828,6 +828,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		tracing_execute_block: None,
 	})?;
 
+	task_manager.spawn_handle().spawn(
+		"ledger-root-tag",
+		None,
+		crate::ledger_root_tag::watch(client.clone()),
+	);
+
 	if let Some(hwbench) = hwbench {
 		sc_sysinfo::print_hwbench(&hwbench);
 		match MIDNIGHT_REFERENCE_HARDWARE.check_hardware(&hwbench, false) {

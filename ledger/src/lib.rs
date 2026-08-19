@@ -339,6 +339,35 @@ pub mod types {
 	pub use super::latest::types as active_version;
 }
 
+/// Swap the raw Anchored persist of `state_key` for a wrapper tagged with
+/// `block_hash`. Tries ledger 9, then 8, then 7, so a v8 key on shared v8/v9
+/// storage still matches.
+///
+/// `None` — `state_key` is not a known ledger version's state.
+/// `Some(true)` — a new wrapper was staged (not durable until
+/// [`flush_ledger_storage`]).
+/// `Some(false)` — that `(hash, inner)` wrapper already existed.
+#[cfg(feature = "std")]
+pub fn tag_anchored_tip(state_key: &[u8], block_hash: &[u8]) -> Option<bool> {
+	let tag = latest::persist_tag_from_block_hash(block_hash);
+	if let Some(swapped) = ledger_9::storage::try_tag_anchored_tip(state_key, tag.clone()) {
+		return Some(swapped);
+	}
+	if let Some(swapped) = ledger_8::storage::try_tag_anchored_tip(state_key, tag.clone()) {
+		return Some(swapped);
+	}
+	ledger_7::storage::try_tag_anchored_tip(state_key, tag)
+}
+
+/// Flush staged ledger writes (tagged-root swaps included) for whichever
+/// versioned default storage is initialized.
+#[cfg(feature = "std")]
+pub fn flush_ledger_storage() {
+	ledger_9::storage::flush_if_initialized();
+	ledger_8::storage::flush_if_initialized();
+	ledger_7::storage::flush_if_initialized();
+}
+
 #[cfg(test)]
 mod tests {
 	use frame_support::assert_ok;

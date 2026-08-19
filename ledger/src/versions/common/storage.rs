@@ -128,9 +128,10 @@ where
 	let state = Ledger::new(state);
 
 	let mut state = default_storage::<D>().arena.alloc(state);
-	// Genesis is treated as `LedgerStateKey::Anchored` — persist once at rc=1
-	// and rely on the Bridge never unpersisting Anchored inputs to retain it
-	// for history.
+	// Genesis is treated as `LedgerStateKey::Anchored` — persist at rc=1 and
+	// rely on the Bridge never unpersisting Anchored inputs to retain it for
+	// history. The block hash is not known yet; the native import path later
+	// swaps this raw pin for a hash-tagged wrapper.
 	state.persist();
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
@@ -159,6 +160,29 @@ pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
 	let key: ArenaKey<_> = typed_key.into();
 	default_storage::<ParityDb>()
 		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
+}
+
+/// Returns the persist refcount of tagged wrappers pinning the ledger state
+/// addressed by `state_key`, or `None` if no such wrapper is currently a GC
+/// root.
+///
+/// Anchored tips start as a raw persist of the ledger hash (`on_finalize` /
+/// genesis). After import they are swapped for a hash-tagged wrapper, at which
+/// point [`get_state_root_count`] is `None` and this helper reports the wrapper
+/// pin count.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn get_tagged_pin_count(state_key: &[u8]) -> Option<u32> {
+	use super::api::Ledger;
+	use super::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		db::ParityDb,
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+		super::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	super::tagged_root::tagged_pin_count(&default_storage::<ParityDb>().arena, key.hash())
 }
 
 #[cfg(feature = "std")]
@@ -214,4 +238,39 @@ pub fn init_storage_paritydb_unified<
 	alloc_with_initial_state::<super::TransactionSignature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(
 		genesis_state,
 	)
+}
+
+/// Swap a raw Anchored persist for a hash-tagged wrapper, if this version's
+/// storage is initialized and `state_key` deserializes as this version's ledger.
+///
+/// `None` — storage not initialized, or `state_key` is not this version.
+/// `Some(true)` — a new wrapper was staged.
+/// `Some(false)` — that `(tag, inner)` wrapper already existed.
+#[cfg(feature = "std")]
+pub fn try_tag_anchored_tip(state_key: &[u8], tag: std::vec::Vec<u8>) -> Option<bool> {
+	if try_get_default_storage::<DbSeparate>().is_some() {
+		return super::Bridge::<super::TransactionSignature, DbSeparate>::try_tag_anchored_tip(
+			state_key, tag,
+		);
+	}
+	if try_get_default_storage::<DbUnified>().is_some() {
+		return super::Bridge::<super::TransactionSignature, DbUnified>::try_tag_anchored_tip(
+			state_key, tag,
+		);
+	}
+	None
+}
+
+/// Flush staged ledger writes if this version's default storage is initialized.
+#[cfg(feature = "std")]
+pub fn flush_if_initialized() {
+	use super::ledger_storage_local::storage::default_storage;
+
+	if try_get_default_storage::<DbSeparate>().is_some() {
+		default_storage::<DbSeparate>()
+			.with_backend(|backend| backend.flush_all_changes_to_db());
+	}
+	if try_get_default_storage::<DbUnified>().is_some() {
+		default_storage::<DbUnified>().with_backend(|backend| backend.flush_all_changes_to_db());
+	}
 }

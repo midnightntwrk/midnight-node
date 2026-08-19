@@ -350,7 +350,10 @@ pub mod pallet {
 		}
 
 		fn on_finalize(_block: BlockNumberFor<T>) {
-			// Post Block Ledger Update
+			// Post Block Ledger Update. The block hash is not known here (it
+			// includes this state root), so the tip is persisted as a raw GC
+			// root. The native import path later swaps that pin for a wrapper
+			// tagged with the block hash.
 			let state_key = Self::state_key();
 			let block_context = Self::get_block_context();
 
