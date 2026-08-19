@@ -28,8 +28,9 @@
 //!   cnight's and still live), asks the host for each nonce's pre-wipe
 //!   `(value, owner)`, and applies one `CNightGeneratesDustUpdate` per batch.
 //!   `process_tokens` is gated off for the duration by the storage version. Each
-//!   batch is priced from the ledger's own cost model, and a step applies as many
-//!   as the MBM weight budget affords.
+//!   batch is priced from the ledger's own cost model *before* it is applied, and a
+//!   step applies as many as the MBM weight budget affords. A batch that prices
+//!   above what a whole block affords cancels the replay rather than overrunning it.
 //!
 //! The restored generation entries are field-for-field identical to the wiped
 //! ones. Only the accrual clock moves: the original `ctime` is not publicly
@@ -85,8 +86,8 @@ const LOG_TARGET: &str = "cnight-observation::migration";
 /// Nonces restored per batch, and hence per host call and per system transaction.
 ///
 /// This is the granularity at which [`MigrateV1ToV2::step`] packs the MBM weight
-/// budget — it keeps applying batches until the ledger's price for the next one no
-/// longer fits — so a smaller batch packs the budget more tightly (7 x 25 = 175
+/// budget — it prices each batch and stops at the first one the budget left cannot
+/// pay for — so a smaller batch packs the budget more tightly (7 x 25 = 175
 /// `Create`s per block against 3 x 50 = 150) and keeps the blast radius of a failed
 /// batch small. The cost is one extra `dust_generation_values_v8` call and one extra
 /// system transaction per batch, both negligible against the ledger work a batch
@@ -137,8 +138,10 @@ impl<T: Config> OnRuntimeUpgrade for RecordPreForkState<T> {
 pub struct MigrateV1ToV2<T: Config>(core::marker::PhantomData<T>);
 
 impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
-	/// The last `UtxoOwners` nonce processed.
-	type Cursor = T::Hash;
+	/// The last `UtxoOwners` nonce processed, or `None` for "no page done yet" —
+	/// which is a cursor [`Self::step`] can hand back, and so cannot be left to
+	/// `Option<Self::Cursor>` (there `None` already means "the migration is done").
+	type Cursor = Option<T::Hash>;
 	type Identifier = MigrationId<25>;
 
 	fn id() -> Self::Identifier {
@@ -146,7 +149,7 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 	}
 
 	fn step(
-		mut cursor: Option<Self::Cursor>,
+		cursor: Option<Self::Cursor>,
 		meter: &mut WeightMeter,
 	) -> Result<Option<Self::Cursor>, SteppedMigrationError> {
 		// `pallet_migrations` runs exactly one `step` per migration per block
@@ -154,8 +157,10 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 		// break", `substrate/frame/migrations/src/lib.rs`), so spending the block's
 		// MBM budget means looping here rather than charging a whole block per batch.
 		//
-		// The first batch of every step runs unconditionally and the loop stops by
-		// returning a cursor: `step` must never return
+		// Every batch is priced before it is applied (`SystemTransaction::cost` is
+		// pure), so the loop stops *before* spending weight it does not have, and hands
+		// back the page to retry — which on the first step is the cursor it was given,
+		// hence the nested `Option`. `step` must never return
 		// `SteppedMigrationError::InsufficientWeight`, because on the first step that
 		// routes to `upgrade_failed` and the runtime's `FreezeChainOnFailedMigration`
 		// freezes the chain. The same reason no path below returns `Err` — every
@@ -166,26 +171,25 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 		// also keeps the block inside the ledger's own per-block fullness accounting.
 		// Summing per-batch maxima over-approximates true per-dimension accumulation,
 		// so that side errs conservative and needs no separate cap.
+		let mut last = cursor.flatten();
 		loop {
-			match replay_batch::<T>(cursor) {
+			match replay_batch::<T>(last, meter) {
 				Batch::Done => return Ok(None),
 				// A batch that failed to apply ends the step: inside a loop "the next
 				// page" is the same block, where a fullness-driven rejection would
 				// repeat for every remaining page and tally them all as skipped. The
-				// next block retries with a fresh ledger fullness budget.
-				Batch::Failed(last) => return Ok(Some(last)),
-				Batch::Applied(last, cost, next) => {
-					if meter.try_consume(cost).is_err() {
-						// The batch is already applied, so bring `consumed` exactly to
-						// the limit rather than past it — `WeightMeter::consume`
-						// carries a `debug_assert!(consumed <= limit)`.
-						meter.consume(meter.remaining());
-						return Ok(Some(last));
-					}
-					cursor = Some(last);
-					if !meter.can_consume(next) {
-						return Ok(cursor);
-					}
+				// next block retries with a fresh ledger fullness budget. The ledger
+				// did the work before rejecting it, so it is charged all the same.
+				Batch::Failed(page, cost) => {
+					meter.consume(cost);
+					return Ok(Some(Some(page)));
+				},
+				// Priced above what is left of this block: nothing was applied, so the
+				// same page is retried next block against a fresh budget.
+				Batch::OutOfBudget => return Ok(Some(last)),
+				Batch::Applied(page, cost) => {
+					meter.consume(cost);
+					last = Some(page);
 				},
 			}
 		}
@@ -231,20 +235,25 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 
 /// The outcome of one [`replay_batch`] call.
 enum Batch<C> {
-	/// A page landed, ending at cursor `C`. The first weight is what it cost; the
-	/// second is what a full [`MAX_REAPPLY_BATCH`] costs, which is what the loop
-	/// looks ahead with. They differ on a short or partly-unresolved page, where
-	/// looking ahead at what *this* page cost would underestimate the next one.
-	Applied(C, Weight, Weight),
-	/// A page failed to apply and was tallied. `C` is past it, but the step ends.
-	Failed(C),
+	/// A page landed, ending at cursor `C`, having cost `Weight` — priced before it
+	/// was applied, so the meter can take the figure as it stands.
+	Applied(C, Weight),
+	/// A page failed to apply and was tallied, at the cost the ledger charged for
+	/// rejecting it. `C` is past it, but the step ends.
+	Failed(C, Weight),
+	/// The page prices above what is left of this step's budget. Nothing was applied
+	/// and the cursor has not moved; the same page is retried next block.
+	OutOfBudget,
 	/// The replay is wound up: `complete`/`cancel` have already deposited their
 	/// event, cleared the transient storage and bumped the storage version.
 	Done,
 }
 
 /// One page of `UtxoOwners` restored into the post-hardfork ledger state.
-fn replay_batch<T: Config>(cursor: Option<T::Hash>) -> Batch<T::Hash> {
+///
+/// `meter` is read-only here: it says whether the page's price fits, and
+/// [`MigrateV1ToV2::step`] does the consuming.
+fn replay_batch<T: Config>(cursor: Option<T::Hash>, meter: &WeightMeter) -> Batch<T::Hash> {
 	let Some(pre_fork_key) = PreForkStateKey::<T>::get() else {
 		log::info!(
 			target: LOG_TARGET,
@@ -326,19 +335,34 @@ fn replay_batch<T: Config>(cursor: Option<T::Hash>) -> Batch<T::Hash> {
 	let (restored_so_far, _) = DustReapplyProgress::<T>::get();
 	let mut applied = events.len() as u32;
 	let mut failed = false;
-	// What this page cost, and what a full page costs. A page that resolved to no
-	// events at all applies nothing and so measures nothing; charge the pessimistic
-	// figure rather than hand the loop a near-zero estimate it would then overrun.
-	let mut gas = fallback_gas::<T>();
-	let mut full_batch_gas = gas;
+	// The storage this page touched is chargeable whatever becomes of it, so check it
+	// before doing anything else. A page that resolved to no events — every nonce
+	// untracked in the v8 state, or unconstructible — applies nothing, so this is also
+	// all it costs.
+	let mut cost = batch_db_weight::<T>(batch_size);
+	if !meter.can_consume(cost) {
+		return Batch::OutOfBudget;
+	}
 
 	if !events.is_empty() {
-		match apply_batch::<T>(events) {
-			Ok((measured, full_batch)) => {
-				gas = measured;
-				full_batch_gas = full_batch;
+		match apply_batch::<T>(events, cost, meter) {
+			Ok(charged) => cost = charged,
+			Err(BatchFailure::OutOfBudget) => return Batch::OutOfBudget,
+			Err(BatchFailure::Hopeless(price)) => {
+				// Give up rather than bisect: a page is only 25 nonces (~11% of a
+				// block), so a batch that outprices a whole fresh budget will never fit
+				// one, and the observer is better off resuming than waiting.
+				log::error!(
+					target: LOG_TARGET,
+					"replay batch prices at {} ref_time, above the {} this migration may spend in a whole block; abandoning the replay",
+					price.ref_time(),
+					meter.limit().ref_time(),
+				);
+				cancel::<T>();
+				return Batch::Done;
 			},
-			Err(()) => {
+			Err(BatchFailure::Rejected(charged)) => {
+				cost = charged;
 				if restored_so_far == 0 {
 					// Nothing has been restored yet, so the likely reason is that the
 					// hardfork did not wipe dust after all: re-applying a surviving
@@ -376,14 +400,9 @@ fn replay_batch<T: Config>(cursor: Option<T::Hash>) -> Batch<T::Hash> {
 	});
 
 	if failed {
-		return Batch::Failed(last);
+		return Batch::Failed(last, cost);
 	}
-	let db = batch_db_weight::<T>(batch_size);
-	Batch::Applied(
-		last,
-		Weight::from_parts(gas, 0) + db,
-		Weight::from_parts(full_batch_gas, 0) + db,
-	)
+	Batch::Applied(last, cost)
 }
 
 /// Substrate storage the step touches per batch, on top of the ledger's own cost:
@@ -406,9 +425,26 @@ fn fallback_gas<T: Config>() -> u64 {
 	T::BlockWeights::get().max_block.ref_time() / 2
 }
 
-/// Applies one batch as a single `CNightGeneratesDustUpdate`, the same pair of
-/// calls `process_tokens` makes. Returns the ledger's own price for the batch and
-/// its price for a full [`MAX_REAPPLY_BATCH`], or (having logged) `Err` on failure.
+/// Why a batch did not apply, from [`apply_batch`].
+enum BatchFailure {
+	/// The ledger rejected it, or it could not even be constructed. The `Weight` is
+	/// what it cost anyway.
+	Rejected(Weight),
+	/// It prices above what is left of this step's budget, so it was not applied.
+	OutOfBudget,
+	/// It prices above what this migration may spend in a whole block, so no block
+	/// will ever afford it and retrying is pointless.
+	Hopeless(Weight),
+}
+
+/// Prices one batch, checks the price against the step's budget, and only then
+/// applies it as a single `CNightGeneratesDustUpdate` — the same pair of calls
+/// `process_tokens` makes. Returns what it cost, `db` included.
+///
+/// Pricing first is what keeps the meter honest: `SystemTransaction::cost` is pure
+/// ("a system transaction can be priced ahead of being applied",
+/// `ledger/src/versions/common/mod.rs`), so a batch that does not fit is never
+/// executed, rather than executed and then clamped to the limit.
 ///
 /// `execute_system_transaction` deposits `pallet_midnight_system`'s own
 /// `SystemTransactionApplied` event carrying the serialized transaction, which
@@ -428,13 +464,16 @@ fn fallback_gas<T: Config>() -> u64 {
 /// of them, which makes the replay look like it never ran past
 /// `DustReapplyStarted` (that one is emitted from `on_runtime_upgrade`, phase
 /// `Initialization`, so it is visible). They are all in `System::Events`.
-fn apply_batch<T: Config>(events: Vec<Vec<u8>>) -> Result<(u64, u64), ()> {
-	let count = events.len() as u64;
+fn apply_batch<T: Config>(
+	events: Vec<Vec<u8>>,
+	db: Weight,
+	meter: &WeightMeter,
+) -> Result<Weight, BatchFailure> {
 	let tx = match LedgerApi::construct_cnight_generates_dust_system_tx(events) {
 		Ok(tx) => tx,
 		Err(e) => {
 			log::error!(target: LOG_TARGET, "failed to construct replay system tx: {e:?}");
-			return Err(());
+			return Err(BatchFailure::Rejected(db));
 		},
 	};
 
@@ -449,33 +488,40 @@ fn apply_batch<T: Config>(events: Vec<Vec<u8>>) -> Result<(u64, u64), ()> {
 	// `Migrations` tuple runs `pallet_midnight::migrations::v2` in
 	// `on_runtime_upgrade`, before the `inherents_applied()` where MBM steps run, so
 	// by the first step it already points at the translated v9 root.
-	//
-	// Returned twice over: as measured, which is what this batch is charged, and
-	// divided out per nonce and scaled back up to `MAX_REAPPLY_BATCH`, which is the
-	// estimate for the *next* batch. They differ when this page was short or only
-	// partly resolvable, and then charging the measured figure to decide whether a
-	// full page still fits would overrun.
 	let gas = match LedgerApi::get_transaction_cost(
 		&T::LedgerStateProvider::get_ledger_state_key(),
 		&tx,
 		T::LedgerBlockContextProvider::get_block_context(),
 		T::BlockWeights::get().max_block.ref_time(),
 	) {
-		Ok(gas) => (gas, (gas / count.max(1)).saturating_mul(MAX_REAPPLY_BATCH.into())),
+		Ok(gas) => gas,
 		Err(e) => {
 			log::warn!(
 				target: LOG_TARGET,
 				"could not price the replay batch ({e:?}); charging the pessimistic fallback"
 			);
-			(fallback_gas::<T>(), fallback_gas::<T>())
+			fallback_gas::<T>()
 		},
 	};
+	let cost = db.saturating_add(Weight::from_parts(gas, 0));
+
+	// 90% of the limit, not all of it: the meter is block-wide and `pallet_migrations`
+	// charges its own bookkeeping against it before `step` runs, so a batch priced in
+	// the top sliver of the limit would never fit a block and would spin on the
+	// out-of-budget retry forever. `fallback_gas` (half a block) sits well inside 90%
+	// of the 80% budget, so an unpriceable batch still only ever costs latency.
+	if cost.ref_time() > meter.limit().ref_time() / 100 * 90 {
+		return Err(BatchFailure::Hopeless(cost));
+	}
+	if !meter.can_consume(cost) {
+		return Err(BatchFailure::OutOfBudget);
+	}
 
 	match T::MidnightSystemTransactionExecutor::execute_system_transaction(tx) {
-		Ok(_) => Ok(gas),
+		Ok(_) => Ok(cost),
 		Err(e) => {
 			log::error!(target: LOG_TARGET, "replay batch failed to apply: {e:?}");
-			Err(())
+			Err(BatchFailure::Rejected(cost))
 		},
 	}
 }

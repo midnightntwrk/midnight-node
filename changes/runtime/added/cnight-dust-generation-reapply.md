@@ -18,14 +18,23 @@ own slice of the ledger's dust generating set as a multi-block migration
   version gate in `process_tokens` covers it, so `NextCardanoPosition` does not
   advance and the observer re-delivers the same UTXOs afterwards.
 
-Each batch is priced from the ledger's own cost model. `process_tokens`' benchmark
-observes registration UTXOs, which never reach the ledger, so its weight says
-nothing about what dust `Create`s cost; instead the migration asks the ledger what
-the batch it just built is worth — a widened `get_transaction_cost` host function
-(version 2) that also prices system transactions, not just user ones — and applies
-batches until the next one would not fit the multi-block-migration weight budget.
-`pallet_migrations` runs exactly one step per block, so that packing loop is what
-sets throughput.
+Each batch is priced from the ledger's own cost model *before* it is applied.
+`process_tokens`' benchmark observes registration UTXOs, which never reach the
+ledger, so its weight says nothing about what dust `Create`s cost; instead the
+migration asks the ledger what the batch it has built is worth — a widened
+`get_transaction_cost` host function (version 2) that also prices system
+transactions, not just user ones — and applies it only if the price fits what is left
+of the multi-block-migration weight budget. `SystemTransaction::cost` is pure, so
+pricing ahead of applying costs nothing, and a step can never overrun its budget and
+then report having stayed inside it. A batch that does not fit is not applied at all:
+the step hands its cursor straight back and the next block retries that same page on a
+fresh budget. `pallet_migrations` runs exactly one step per block, so that packing
+loop is what sets throughput.
+
+A batch priced above what the migration may spend in a *whole* block gives up rather
+than retrying: a page is only 25 nonces, so no fresh budget would ever afford it. The
+replay emits `DustReapplySkipped` and bumps the storage version so observations resume,
+leaving whatever it had already restored in place.
 
 Nothing here is hardcoded: the figure comes from `SystemTransaction::cost`
 normalized against the ledger's own `parameters.limits.block_limits`, so the

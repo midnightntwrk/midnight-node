@@ -82,6 +82,19 @@ fn init_ledger_state() {
 	StorageVersion::new(1).put::<CNightObservation>();
 }
 
+/// The mock's block weight limit, which the ledger's own cost model is normalized
+/// against (`get_transaction_cost`'s `max_weight`).
+fn max_block() -> u64 {
+	let block_weights: frame_system::limits::BlockWeights =
+		<Test as frame_system::Config>::BlockWeights::get();
+	block_weights.max_block.ref_time()
+}
+
+/// A budget with room for exactly one batch — see [`run_to_completion`].
+fn one_batch_budget() -> Weight {
+	Weight::from_parts(max_block() / 100 * 15, u64::MAX)
+}
+
 fn nonce(byte: u8) -> H256 {
 	H256([byte; 32])
 }
@@ -125,14 +138,15 @@ fn seed_pre_fork_state(entries: &[(H256, u128)]) -> Vec<u8> {
 	root
 }
 
-/// Drive the replay to completion, one batch per step, returning the number of
+/// Drive the replay to completion, roughly a page per step, returning the number of
 /// steps taken.
 ///
-/// A one-picosecond meter is what pins a step to a single batch: `step` runs its
-/// first batch unconditionally (it must never report `InsufficientWeight`) and then
-/// stops as soon as the next batch's measured cost does not fit. `WeightMeter::new()`
-/// would drain the whole replay in one step and make the step counts below
-/// meaningless.
+/// A meter with room for one full batch is what paces the steps: a 25-nonce batch
+/// prices at ~11% of the mock's block, so 15% takes one and turns the next away, while
+/// leaving the batch itself well inside the 90%-of-limit ceiling above which the replay
+/// gives up entirely. A *short* page costs proportionally less and can still share a
+/// step. `WeightMeter::new()` would drain the whole replay in one step and make the
+/// step counts below meaningless.
 ///
 /// `Midnight::on_finalize` runs between steps because it is the only place the
 /// ledger's `block_fullness` resets; each step is a block.
@@ -140,7 +154,7 @@ fn run_to_completion() -> u32 {
 	let mut cursor = None;
 	let mut steps = 0;
 	loop {
-		let mut meter = WeightMeter::with_limit(Weight::from_parts(1, u64::MAX));
+		let mut meter = WeightMeter::with_limit(one_batch_budget());
 		cursor = MigrateV1ToV2::<Test>::step(cursor, &mut meter).expect("step must not fail");
 		steps += 1;
 		if cursor.is_none() {
@@ -198,7 +212,9 @@ fn replays_live_entries_from_pre_fork_state() {
 		// Live in the pallet but absent from the pre-fork ledger state.
 		UtxoOwners::<Test>::insert(nonce(9), owner_bytes());
 
-		assert_eq!(run_to_completion(), 2, "one batch, then the completing step");
+		// One page, and the empty page after it that completes the replay: seeing the
+		// end of `UtxoOwners` costs nothing but the read, so it happens in the same step.
+		assert_eq!(run_to_completion(), 1);
 
 		assert_eq!(cnight_events(), vec![Event::DustReapplyCompleted { applied: 3, skipped: 1 }],);
 		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
@@ -274,26 +290,30 @@ fn pages_across_steps_visiting_every_row_once() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
 
-		// Only a couple of rows resolve against the pre-fork state; the rest are
-		// tallied as skipped. Keeps the seeded v8 state small while still
-		// spanning three pages of `UtxoOwners`.
+		// Every generated row resolves, so each page prices off real ledger work and
+		// [`one_batch_budget`] takes exactly one of them per step. Two rows live only in
+		// the pallet and are tallied as skipped.
 		let rows = MAX_REAPPLY_BATCH * 2 + 5;
-		let entries = [(nonce(1), 100u128), (nonce(2), 250u128)];
+		let entries: Vec<(H256, u128)> = (0..rows)
+			.map(|i| (H256::from_low_u64_be(i as u64 + 1), 100u128 + i as u128))
+			.collect();
 		PreForkStateKey::<Test>::put(seed_pre_fork_state(&entries));
-		for i in 0..rows {
-			UtxoOwners::<Test>::insert(H256::from_low_u64_be(i as u64 + 1), owner_bytes());
-		}
 		for (nonce, _) in entries.iter() {
 			UtxoOwners::<Test>::insert(nonce, owner_bytes());
 		}
+		UtxoOwners::<Test>::insert(nonce(1), owner_bytes());
+		UtxoOwners::<Test>::insert(nonce(2), owner_bytes());
 		let total = UtxoOwners::<Test>::iter().count() as u32;
 
-		assert_eq!(run_to_completion(), 4, "three pages plus the completing step");
+		// Two steps for three pages: a full page all but fills [`one_batch_budget`], but
+		// the short last page and the read that completes the replay both fit in what is
+		// left after the second one.
+		assert_eq!(run_to_completion(), 2, "the cursor must hand off between steps");
 
 		let Some(Event::DustReapplyCompleted { applied, skipped }) = cnight_events().pop() else {
 			panic!("replay must complete, got {:?}", cnight_events());
 		};
-		assert_eq!(applied, 2);
+		assert_eq!(applied, rows);
 		assert_eq!(applied + skipped, total, "every row must be visited exactly once");
 		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
 	});
@@ -372,12 +392,8 @@ fn one_step_packs_several_batches_into_its_budget() {
 		}
 
 		// `runtime::MbmServiceWeight`.
-		let block_weights: frame_system::limits::BlockWeights =
-			<Test as frame_system::Config>::BlockWeights::get();
-		let mut meter = WeightMeter::with_limit(Weight::from_parts(
-			block_weights.max_block.ref_time() / 100 * 80,
-			u64::MAX,
-		));
+		let mut meter =
+			WeightMeter::with_limit(Weight::from_parts(max_block() / 100 * 80, u64::MAX));
 
 		let cursor = MigrateV1ToV2::<Test>::step(None, &mut meter).expect("step must not fail");
 
@@ -393,6 +409,75 @@ fn one_step_packs_several_batches_into_its_budget() {
 			"the step must not overrun its budget: consumed {:?} of {:?}",
 			meter.consumed(),
 			meter.limit(),
+		);
+	});
+}
+
+/// A batch that prices above what this migration may spend in a *whole* block can
+/// never be applied — pages are 25 nonces, so no retry will ever make it fit. The
+/// replay gives up instead of overrunning the budget or spinning forever.
+#[test]
+fn a_batch_that_outprices_a_whole_block_cancels() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		let entries = [(nonce(1), 100u128), (nonce(2), 250u128)];
+		PreForkStateKey::<Test>::put(seed_pre_fork_state(&entries));
+		for (nonce, _) in entries.iter() {
+			UtxoOwners::<Test>::insert(nonce, owner_bytes());
+		}
+
+		let mut meter = WeightMeter::with_limit(Weight::from_parts(1, u64::MAX));
+		let cursor = MigrateV1ToV2::<Test>::step(None, &mut meter).expect("step must not fail");
+
+		assert!(cursor.is_none(), "an unaffordable batch must end the replay, not retry it");
+		assert_eq!(cnight_events(), vec![Event::DustReapplySkipped]);
+		assert!(applied_dust_events().is_empty(), "nothing must have been applied");
+		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
+	});
+}
+
+/// A batch that fits a whole block but not what is *left* of this one is not applied
+/// at all: the step hands its cursor straight back and the next block, on a fresh
+/// budget, applies that same page exactly once.
+#[test]
+fn a_batch_that_doesnt_fit_the_remaining_budget_retries_next_block() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// A full page: a batch's price is per event, so a short page would fit the sliver
+		// of budget left below and land instead of bouncing.
+		let entries: Vec<(H256, u128)> = (0..MAX_REAPPLY_BATCH)
+			.map(|i| (H256::from_low_u64_be(i as u64 + 1), 100u128 + i as u128))
+			.collect();
+		PreForkStateKey::<Test>::put(seed_pre_fork_state(&entries));
+		for (nonce, _) in entries.iter() {
+			UtxoOwners::<Test>::insert(nonce, owner_bytes());
+		}
+
+		// A whole `MbmServiceWeight` budget, but 5% of the block left in it: less than
+		// the ~11% a batch prices at, while the *limit* stays a full budget so the batch
+		// is not hopeless — just too big for the rest of this block.
+		let mut meter =
+			WeightMeter::with_limit(Weight::from_parts(max_block() / 100 * 80, u64::MAX));
+		meter.consume(Weight::from_parts(max_block() / 100 * 75, 0));
+
+		let cursor = MigrateV1ToV2::<Test>::step(None, &mut meter).expect("step must not fail");
+
+		assert_eq!(cursor, Some(None), "the step must hand back the cursor it was given");
+		assert!(applied_dust_events().is_empty(), "nothing must have been applied");
+		assert_eq!(DustReapplyProgress::<Test>::get(), (0, 0));
+		assert!(cnight_events().is_empty(), "the replay must not be wound up");
+
+		// Next block, fresh budget: the same page lands, and only once.
+		<mock::Midnight as Hooks<u64>>::on_finalize(1);
+		let mut meter = WeightMeter::with_limit(one_batch_budget());
+		MigrateV1ToV2::<Test>::step(cursor, &mut meter).expect("step must not fail");
+
+		assert_eq!(applied_dust_events().len(), entries.len(), "the page must land exactly once");
+		assert_eq!(
+			cnight_events(),
+			vec![Event::DustReapplyCompleted { applied: MAX_REAPPLY_BATCH, skipped: 0 }],
 		);
 	});
 }
