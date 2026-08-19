@@ -1069,7 +1069,7 @@ jobs:
           docker push "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
           docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
 
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 #v2.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 #v2.9.2
         if: steps.image_meta.outputs.skip_build != 'true'
 
       - name: Configure git for private repos
