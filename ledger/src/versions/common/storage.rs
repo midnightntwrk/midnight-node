@@ -132,11 +132,7 @@ where
 	// Genesis is treated as `LedgerStateKey::Anchored` — persist as a wrapper
 	// tagged with block 0. The Bridge never unpersists Anchored inputs, so it
 	// stays queryable until GC releases that height.
-	persist_tagged(
-		&default_storage::<D>().arena,
-		persist_tag_from_block_number(0),
-		&state,
-	);
+	persist_tagged(&default_storage::<D>().arena, persist_tag_from_block_number(0), &state);
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
 	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes).unwrap();

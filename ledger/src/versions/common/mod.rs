@@ -175,8 +175,9 @@ lazy_static! {
 }
 
 #[cfg(feature = "std")]
-/// Decode `System::Number` from SCALE storage. Production uses `u32`; the
-/// pallet mock runtime uses `u64`. Small values decode correctly either way.
+/// Decode `System::Number` from SCALE storage. Used only by legacy host ABI
+/// (v1/v2), whose WASM does not pass the block number. Production uses `u32`;
+/// the pallet mock runtime uses `u64`.
 fn decode_system_block_number(raw: &[u8]) -> Option<u32> {
 	match raw.len() {
 		4 => Some(u32::from_le_bytes(raw.try_into().ok()?)),
@@ -185,6 +186,19 @@ fn decode_system_block_number(raw: &[u8]) -> Option<u32> {
 			.ok()
 			.or_else(|| u64::decode(&mut &raw[..]).ok().and_then(|n| u32::try_from(n).ok())),
 	}
+}
+
+/// `System::Number` from the overlay. Fallback for historical WASM that still
+/// calls `apply_post_block_update` v1/v2 without an explicit block number.
+#[cfg(feature = "std")]
+pub(crate) fn block_number_from_overlay(externalities: &mut dyn Externalities) -> u32 {
+	let mut key = [0u8; 32];
+	key[..16].copy_from_slice(&Twox128::hash(b"System"));
+	key[16..].copy_from_slice(&Twox128::hash(b"Number"));
+	let Some(raw) = externalities.storage(&key) else {
+		return 0;
+	};
+	decode_system_block_number(&raw).unwrap_or(0)
 }
 
 #[cfg(feature = "std")]
@@ -266,24 +280,13 @@ where
 		}
 	}
 
-	/// Persist `ledger` as a wrapper tagged with `System::Number`.
-	fn persist_anchored_tip(externalities: &mut dyn Externalities, ledger: &Sp<Ledger<D>, D>) {
-		let n = Self::system_block_number(externalities);
+	/// Persist `ledger` as a wrapper tagged with `block_number`.
+	fn persist_anchored_tip(ledger: &Sp<Ledger<D>, D>, block_number: u32) {
 		persist_tagged(
 			&default_storage::<D>().arena,
-			persist_tag_from_block_number(n),
+			persist_tag_from_block_number(block_number),
 			ledger,
 		);
-	}
-
-	fn system_block_number(externalities: &mut dyn Externalities) -> u32 {
-		let mut key = [0u8; 32];
-		key[..16].copy_from_slice(&Twox128::hash(b"System"));
-		key[16..].copy_from_slice(&Twox128::hash(b"Number"));
-		let Some(raw) = externalities.storage(&key) else {
-			return 0;
-		};
-		decode_system_block_number(&raw).unwrap_or(0)
 	}
 
 	/// Apply the post-block transformation and produce the post-block ledger
@@ -292,11 +295,11 @@ where
 	/// # Persist refcount contract
 	///
 	/// On success, returns `LedgerStateKey::Anchored` pinned by a wrapper
-	/// tagged with the current `System::Number`. Anchored states are never
-	/// unpersisted on input by subsequent Bridge calls — preserved for
-	/// RPC/history within the Substrate pruning window. The node GC worker
-	/// later [`release_tagged`]s wrappers whose height has left that window.
-	/// Forks at the same height share a tag.
+	/// tagged with `block_number` (the Substrate height from `on_finalize`).
+	/// Anchored states are never unpersisted on input by subsequent Bridge
+	/// calls — preserved for RPC/history within the Substrate pruning window.
+	/// The node GC worker later [`release_tagged`]s wrappers whose height has
+	/// left that window. Forks at the same height share a tag.
 	///
 	/// If the input was `LedgerStateKey::Transient` (the last `apply_transaction`
 	/// output of this block), it is unpersisted once, dropping to rc=0.
@@ -305,9 +308,9 @@ where
 	///
 	/// On error, refcounts are unchanged.
 	pub fn post_block_update(
-		externalities: &mut dyn Externalities,
 		state_key: &LedgerStateKey,
 		block_context: BlockContext,
+		block_number: u32,
 	) -> Result<LedgerStateKey, LedgerApiError> {
 		let start_tx_processing_time = Instant::now();
 		log::trace!(
@@ -348,7 +351,7 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		Self::persist_anchored_tip(externalities, &ledger);
+		Self::persist_anchored_tip(&ledger, block_number);
 		if state_key.is_transient() {
 			Self::unpersist_state(&api, state_key.bytes())?;
 		}
@@ -373,15 +376,15 @@ where
 	/// `Transient` input is unpersisted once, and `Anchored` inputs are left
 	/// alone. On error, refcounts are unchanged.
 	pub fn apply_post_block_update(
-		externalities: &mut dyn Externalities,
 		state_key: &LedgerStateKey,
 		block_context: BlockContext,
+		block_number: u32,
 	) -> Result<LedgerStateKey, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key.bytes())?;
 		let ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
-		Self::persist_anchored_tip(externalities, &ledger);
+		Self::persist_anchored_tip(&ledger, block_number);
 		if state_key.is_transient() {
 			Self::unpersist_state(&api, state_key.bytes())?;
 		}

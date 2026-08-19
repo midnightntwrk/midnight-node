@@ -83,7 +83,9 @@ fn ledger_snapshot_roundtrip_serialize_chunk_verify_import() {
 	)
 	.expect("verified import of a faithful snapshot should succeed");
 	assert!(
-		midnight_node_ledger::gc::tagged_root_tags().iter().any(|t| t.as_slice() == warp_tag),
+		midnight_node_ledger::gc::tagged_root_tags()
+			.iter()
+			.any(|t| t.as_slice() == warp_tag),
 		"warp-point persist must be a tagged wrapper so GC can reclaim it"
 	);
 

@@ -349,14 +349,16 @@ pub mod pallet {
 			ConfigurableOnInitializeWeight::<T>::get()
 		}
 
-		fn on_finalize(_block: BlockNumberFor<T>) {
+		fn on_finalize(block: BlockNumberFor<T>) {
 			// Post Block Ledger Update. The tip is persisted as a wrapper tagged
-			// with `System::Number` (known here; the block hash is not).
+			// with this block number (the hash is not known here).
 			let state_key = Self::state_key();
 			let block_context = Self::get_block_context();
+			let block_number = block.unique_saturated_into();
 
-			let state_root = LedgerApi::apply_post_block_update(state_key, block_context.clone())
-				.expect("FATAL: Apply post block update failed");
+			let state_root =
+				LedgerApi::apply_post_block_update(state_key, block_context.clone(), block_number)
+					.expect("FATAL: Apply post block update failed");
 
 			StateKey::<T>::put(state_root);
 

@@ -17,7 +17,7 @@
 //! the Substrate pruning window, then run incremental arena `gc`.
 //!
 //! Wrappers are persisted in the same `on_finalize` flush as the tip itself
-//! (`persist_tagged(System::Number)`). This worker only decides *when* they
+//! (`persist_tagged(block_number)`). This worker only decides *when* they
 //! may go. Reclaim is staged (no flush). Arena mark/sweep still skips a dirty
 //! cache. Under `ArchiveAll` and `ArchiveCanonical`, tip reclaim is skipped
 //! (history wrappers stay; stale forks at a shared height leak until — or,
