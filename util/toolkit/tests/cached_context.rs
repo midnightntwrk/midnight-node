@@ -150,7 +150,7 @@ async fn test_cache_and_restore(backend: &dyn WalletStateCaching, source: &Sourc
 
 	let raw = build_fork_aware_context_raw(&source, &seeds).into_ledger9().unwrap();
 
-	let cached = build_fork_aware_context_cached(&seeds, &source, Some(backend))
+	let cached = build_fork_aware_context_cached(&seeds, &source, Some(backend), 0)
 		.await
 		.into_ledger9()
 		.unwrap();
@@ -159,7 +159,7 @@ async fn test_cache_and_restore(backend: &dyn WalletStateCaching, source: &Sourc
 
 	assert_contexts_equal("2 seeds", &cached, &raw, &seeds);
 
-	let cached = build_fork_aware_context_cached(&seeds, &source, Some(backend)).await;
+	let cached = build_fork_aware_context_cached(&seeds, &source, Some(backend), 0).await;
 	verify_cache_state(backend, source.chain_id().unwrap(), source.blocks.len(), seeds.clone())
 		.await;
 
@@ -170,11 +170,11 @@ async fn test_cache_and_restore(backend: &dyn WalletStateCaching, source: &Sourc
 
 async fn test_split_cached(backend: &dyn WalletStateCaching, source: &SourceTransactions) {
 	let seed1 = vec![wallet_seed(0x01)];
-	let _ = build_fork_aware_context_cached(&seed1, &source, Some(backend)).await;
+	let _ = build_fork_aware_context_cached(&seed1, &source, Some(backend), 0).await;
 	verify_cache_state(backend, source.chain_id().unwrap(), source.blocks.len(), seed1).await;
 
 	let seeds = vec![wallet_seed(0x01), wallet_seed(0x02)];
-	let cached_ctx = build_fork_aware_context_cached(&seeds, &source, Some(backend)).await;
+	let cached_ctx = build_fork_aware_context_cached(&seeds, &source, Some(backend), 0).await;
 	verify_cache_state(backend, source.chain_id().unwrap(), source.blocks.len(), seeds.clone())
 		.await;
 

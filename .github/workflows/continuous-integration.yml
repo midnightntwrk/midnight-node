@@ -57,7 +57,7 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -88,7 +88,7 @@ jobs:
           echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -104,7 +104,7 @@ jobs:
       # the DOCKERHUB_* secrets, so this step would otherwise hard-fail there.
       - name: Login to Docker Hub
         continue-on-error: true
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
@@ -167,10 +167,6 @@ jobs:
           ACTIONS_CACHE_URL: ""
           ACTIONS_RUNTIME_URL: ""
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           # Retry the earthly invocation up to 3 times. Buildkit's default
           # response-header timeout for registry uploads (~30s in the
           # underlying containerd resolver) isn't tunable via buildkitd.toml,
@@ -223,7 +219,10 @@ jobs:
       image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
       sbom-artifact-name: sbom-midnight-node-ci
       skip-attestation: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   sbom-scan-toolkit:
     permissions:
@@ -238,7 +237,10 @@ jobs:
       image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ci
       skip-attestation: true
-    secrets: inherit
+    secrets:
+      MIDNIGHTCI_PACKAGES_WRITE: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+      DOCKERHUB_MIDNIGHTNTWRK_USER: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
+      DOCKERHUB_MIDNIGHTNTWRK_TOKEN: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
   run-arm64:
     name: Build node and images (arm64)
@@ -256,12 +258,12 @@ jobs:
           use-cache: false
 
       - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
       - name: Login to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -298,10 +300,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +images
 
       - name: Upload build artifacts
@@ -329,10 +327,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Login to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -395,7 +393,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -412,10 +410,6 @@ jobs:
       - name: Check Deps
         if: steps.guard.outputs.hit != 'true'
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           . ./.envrc && earthly +check-deps
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -436,7 +430,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -452,7 +446,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -472,10 +466,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          mkdir -p "$HOME"/.cargo
-          echo "[net]" >> "$HOME"/.cargo/config
-          echo "git-fetch-with-cli = true" >> "$HOME"/.cargo/config
-
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
             --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
@@ -497,7 +487,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -513,7 +503,7 @@ jobs:
 
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Run pallet fixture tests
         if: steps.guard.outputs.hit != 'true'
@@ -550,7 +540,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -574,7 +564,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -589,14 +579,14 @@ jobs:
       - name: Login to Docker Hub
         if: steps.guard.outputs.hit != 'true'
         continue-on-error: true
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
 
       - name: Free disk space
         if: steps.guard.outputs.hit != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       # Self-hosted-runner-specific: earthly's managed buildkitd defaults to TLS
       # but no certs are provisioned on the runner. Append tls_enabled: false
@@ -668,7 +658,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -694,7 +684,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -720,7 +710,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -746,7 +736,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -772,7 +762,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -798,7 +788,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -811,7 +801,7 @@ jobs:
           use-cache: false
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -839,7 +829,7 @@ jobs:
   #   runs-on: [self-hosted, "tier:medium"]
   #   steps:
   #     - name: Checkout
-  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+  #       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
 
   #     # Isolate docker config per runner slot — see the matching step in the
@@ -850,7 +840,7 @@ jobs:
   #         echo "DOCKER_CONFIG=$RUNNER_TEMP/.docker" >> "$GITHUB_ENV"
 
   #     - name: Login to GHCR
-  #       uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+  #       uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
   #       with:
   #         registry: ghcr.io
   #         username: MidnightCI
@@ -894,7 +884,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # 7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # 7.0.1
         with:
           submodules: true
       - id: guard
@@ -920,7 +910,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -944,10 +934,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
 
       - name: Login to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -967,7 +957,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
       - id: guard
@@ -997,7 +987,7 @@ jobs:
       wallet_indexer_image: ${{ steps.image_meta.outputs.wallet_indexer_image }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -1038,11 +1028,11 @@ jobs:
 
       - name: Free disk space
         if: steps.image_meta.outputs.skip_build != 'true' && runner.environment != 'self-hosted'
-        run: scripts/free-disk-space.sh
+        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@50414676f9f5d50a65992c6dd2ed02641263226c #v2.82.10
+        uses: taiki-e/install-action@cb33e69fad06166ca28a42b2575e4dadabf62ee8 #v2.85.8
         with:
           tool: just
 
@@ -1124,7 +1114,7 @@ jobs:
       actions: write
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -1194,7 +1184,7 @@ jobs:
   #     contents: read
   #   steps:
   #     - name: Checkout
-  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+  #       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
   #
   #     - name: Get Version and git commit
   #       id: meta

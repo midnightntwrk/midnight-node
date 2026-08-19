@@ -19,7 +19,7 @@ validator = false
 # MidnightEnv Defaults
 cardano_security_parameter = 432
 cardano_active_slots_coeff = 0.05
-block_stability_margin = 10
+block_stability_margin = 30
 
 mc__first_epoch_timestamp_millis = 1666656000000
 mc__first_epoch_number = 0
@@ -41,8 +41,7 @@ polling_period = 5
 # Setting of 0 means storage cache size is unlimited.
 # Will cause OOM errors if too much data is loaded.
 
-# Setting to a non-default value derived from the DEFAULT_CACHE_SIZE of the midnight-ledger crate:
-# https://github.com/midnightntwrk/midnight-ledger/blob/ledger-7.0.0-rc.2/storage/src/storage.rs#L54
+# Setting to a non-default value derived from the DEFAULT_CACHE_SIZE of the midnight-ledger crate.
 storage_cache_size = 100000
 storage_separation = "separate"
 

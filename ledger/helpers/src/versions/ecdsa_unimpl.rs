@@ -13,7 +13,7 @@
 
 //! Unimplemented ECDSA key stubs for pre-ledger-9 generations.
 //!
-//! Ledger 7 and 8 have no native ECDSA unshielded identity: their `coin-structure` provides no
+//! Ledger 8 has no native ECDSA unshielded identity: its `coin-structure` provides no
 //! `From<ecdsa::VerifyingKey> for UserAddress` conversion and their signature types carry no
 //! ECDSA variant. The shared `common` wallet code is generic over the signature scheme and must
 //! still compile against these generations, so it references these drop-in stub types in place
@@ -30,7 +30,9 @@ use super::midnight_serialize::{Deserializable, Serializable, Tagged};
 use std::borrow::Cow;
 use std::io;
 
-#[derive(Clone, Debug)]
+// Mirrors the real `base_crypto::ecdsa::VerifyingKey` trait surface (which derives these), so
+// generic/test code comparing verifying keys type-checks against all three generations.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifyingKeyEcdsa;
 
 #[derive(Clone, Debug)]
@@ -63,7 +65,7 @@ impl From<VerifyingKeyEcdsa> for UserAddress {
 }
 
 // Trait impls so the `UnshieldedWalletKeys` derives (`Serializable`/`Deserializable`/`Tagged`)
-// hold on ledger 7/8. `tag`/`tag_unique_factor` return real values because they may be consulted
+// hold on ledger 8. `tag`/`tag_unique_factor` return real values because they may be consulted
 // while computing the enclosing wallet's tag; the (de)serialization bodies are unreachable (see
 // the module docs).
 macro_rules! unimpl_serialize {
