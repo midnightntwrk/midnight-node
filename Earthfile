@@ -197,9 +197,11 @@ node-image-minimal:
     USER root
 
     RUN mkdir -p /node
-    COPY +build-node-only/artifacts-$NATIVEARCH/midnight-node /
+    COPY --chown=appuser:appuser +build-node-only/artifacts-$NATIVEARCH/midnight-node /
 
-    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
+    # Only /node (created above as root) needs fixing: everything else is copied
+    # with --chown, so no `chown -R` rewrites it into a duplicate layer.
+    RUN chown appuser:appuser /node
     SAVE IMAGE localhost/node-minimal:latest
 
 # Grabs metadata.scale file from the latest node
@@ -1454,8 +1456,8 @@ node-image:
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN mkdir -p node
 
-    COPY +build/artifacts-$NATIVEARCH/midnight-node /
-    COPY +build/artifacts-$NATIVEARCH/aiken-deployer /
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node /
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/aiken-deployer /
     COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
@@ -1469,7 +1471,9 @@ node-image:
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
-    RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
+    # Only /node needs fixing: the binaries are copied with --chown and the base
+    # image already owns ./bin and ./res, so no `chown -R` duplicates them.
+    RUN chown -R appuser:appuser /node
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
@@ -1546,20 +1550,20 @@ toolkit-image:
 
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
-        COPY +toolkit-js-prep/toolkit-js /toolkit-js
+        COPY --chown=appuser:appuser +toolkit-js-prep/toolkit-js /toolkit-js
         # compactc for run-compactc invocations from this image (e.g. genesis
         # compiling simple-merkle-tree.compact). Reuse the SAME compiler the CI
         # image selected per COMPACTC_VERSION (built or fetched) and that compiled
         # the contracts in +toolkit-js-prep — no rebuild, no risk of a divergent
         # compactc version between the CI and toolkit images.
-        COPY +toolkit-js-prep/compact-home /compact-home
+        COPY --chown=appuser:appuser +toolkit-js-prep/compact-home /compact-home
         ENV COMPACT_HOME=/compact-home
     ELSE
-        RUN mkdir -p /toolkit-js
+        RUN mkdir -p /toolkit-js && chown appuser:appuser /toolkit-js
     END
 
-    COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
-    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync && chown -R appuser:appuser /.cache
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
@@ -1567,7 +1571,6 @@ toolkit-image:
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
