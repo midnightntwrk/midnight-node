@@ -88,6 +88,25 @@ New events: `DustReapplyStarted`, `DustReapplyBatchFailed`,
 long as the gate above ignores observations, so a multi-minute stall is visible
 on chain rather than only in the node log.
 
+## Warp sync during the replay
+
+For the handful of blocks the replay runs, a node that *begins* warp sync targets a block whose
+`PreForkStateKey` points at the pre-fork ledger-8 arena root. That root is not part of the warp
+snapshot — the snapshot is rooted at `pallet_midnight::StateKey`, i.e. the v9 root, and the
+hardfork wiped the dust nodes out of it — so such a node could not read the pre-wipe values, would
+cancel the replay locally while every other node applied it, and would diverge on the state root.
+
+The node now detects this and refuses: `warp_ledger_sync`'s recovery monitor checks
+`CNightObservation::PreForkStateKey` at the warp target and, if it is set, leaves the recovery gate
+armed instead of completing recovery. That gate holds both authoring and block import, so the node
+stalls with a logged explanation rather than forking or authoring a block its peers reject. The
+refusal is terminal for that database — a restart re-reads the same finalized target — so the node
+must be re-synced from a purged database once the replay has finished.
+
+Warp-sync new nodes either before the runtime upgrade or after `DustReapplyCompleted`, not in
+between. Targets before the upgrade block are unaffected: their own `StateKey` *is* the ledger-8
+root, so the snapshot already carries what the replay later reads.
+
 ## Watching it happen
 
 **In a block explorer, `DustReapplyStarted` is the only replay event you will
