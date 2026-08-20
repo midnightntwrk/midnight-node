@@ -68,7 +68,7 @@ services:
       - *app__infra__pub_sub__password
     environment:
       RUST_LOG: "chain_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
-      APP__INFRA__NODE__URL: "ws://node:9944"
+      APP__INFRA__NODE__URL: "ws://node:9944" # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       APP__INFRA__STORAGE__HOST: "postgres"
       APP__INFRA__STORAGE__PASSWORD_FILE: "/run/secrets/app__infra__storage__password"
       APP__INFRA__PUB_SUB__URL: "nats:4222"
@@ -182,8 +182,8 @@ services:
     environment:
       RUST_LOG: "indexer_standalone=debug,chain_indexer=debug,indexer_api=debug,wallet_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
       APP__INFRA__SECRET_FILE: "/run/secrets/app__infra__secret"
-      APP__INFRA__NODE__URL: "ws://node:9944"
-      APP__INFRA__SPO_NODE__URL: "ws://node:9944"
+      APP__INFRA__NODE__URL: "ws://node:9944" # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+      APP__INFRA__SPO_NODE__URL: "ws://node:9944" # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
       APP__INFRA__SPO_NODE__BLOCKFROST_ID: ${APP__INFRA__SPO_NODE__BLOCKFROST_ID:-dummy-not-using-spo}
     healthcheck:
       test: ["CMD-SHELL", "cat /var/run/indexer-standalone/running"]

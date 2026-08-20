@@ -230,6 +230,7 @@ It is recommended to provide these environment variables via a `~/.midnight-inde
 ```bash
 export APP__INFRA__STORAGE__PASSWORD=postgres
 export APP__INFRA__PUB_SUB__PASSWORD=nats
+# nosemgrep: generic.secrets.security.detected-generic-secret.detected-generic-secret
 export APP__INFRA__SECRET=303132333435363738393031323334353637383930313233343536373839303132
 # export APP__INFRA__NODE__BLOCKFROST_ID=<your-blockfrost-api-key>  # required for spo-indexer (cloud mode)
 # export APP__INFRA__SPO_NODE__BLOCKFROST_ID=<your-blockfrost-api-key>  # required for indexer-standalone (any non-empty value works if not testing SPO features)
