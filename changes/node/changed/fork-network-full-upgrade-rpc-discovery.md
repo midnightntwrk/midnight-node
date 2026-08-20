@@ -17,5 +17,5 @@ finality-wait and `:code` verification steps. The decomposition is
 behaviour-identical to `full-upgrade` and completes the robustness work called
 out as a follow-up in the runtime-mode fix.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2032
 Issue:

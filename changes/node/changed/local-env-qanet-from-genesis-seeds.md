@@ -14,5 +14,5 @@ only from the generated `*_SEED_FILE` mounts, not `SEED_PHRASE`, so this changes
 nothing for snapshot/fork bring-up; the phrases themselves are still supplied at
 run time via `--env-file` or the environment.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2032
 Issue:
