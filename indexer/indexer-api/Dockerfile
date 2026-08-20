@@ -19,6 +19,7 @@ RUN cargo build -p indexer-api --locked --features cloud --profile $PROFILE && \
     mkdir -p /runtime/opt/indexer-api && \
     mv /build/indexer-api/config.yaml /runtime/opt/indexer-api
 
+# checkov:skip=CKV_DOCKER_2: Kubernetes owns the component health probe.
 FROM debian:trixie-slim@sha256:f6e2cfac5cf956ea044b4bd75e6397b4372ad88fe00908045e9a0d21712ae3ba AS runtime
 RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -c "" appuser && \
     passwd -l appuser && \

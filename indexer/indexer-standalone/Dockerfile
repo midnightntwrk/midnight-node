@@ -19,6 +19,7 @@ RUN cargo build -p indexer-standalone --locked --features standalone --profile $
     mkdir -p /runtime/opt/indexer-standalone && \
     mv /build/indexer-standalone/config.yaml /runtime/opt/indexer-standalone
 
+# checkov:skip=CKV_DOCKER_2: Kubernetes owns the component health probe.
 FROM debian:trixie-slim@sha256:f6e2cfac5cf956ea044b4bd75e6397b4372ad88fe00908045e9a0d21712ae3ba AS runtime
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates=20250419 && \
