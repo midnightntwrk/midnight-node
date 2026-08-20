@@ -35,6 +35,10 @@ npm run run:preprod -- --from-snapshot https://example.com/snapshots/preprod-lat
 npm run run:mainnet -- --from-snapshot https://example.com/snapshots/mainnet-latest.tar.gz
 ```
 
+Real snapshot URLs for each network can be resolved from the backup system's
+public index — see
+[Finding snapshot archives](../docs/fork-testing.md#finding-snapshot-archives).
+
 After that initial restore, the same network can be restarted without
 `--from-snapshot` as long as the restored `data/` directories and generated
 mock-authorities output are still present:
@@ -47,6 +51,59 @@ Before forking from a snapshot, confirm the chainspec embedded in the node
 image was built with the same `networkId` as the genesis used to produce the
 snapshot. Recent runtimes validate this at boot and the node will refuse to
 start on a mismatch.
+
+### Starting a well-known network from genesis
+
+`--from-genesis` skips the snapshot/fork flow entirely and brings up the
+network's base compose from block 0:
+
+```bash
+npm run run:devnet -- --from-genesis --env-file ../devnet.env
+```
+
+Unlike fork mode, nothing is mocked: each validator needs its real seed phrase
+(e.g. `MIDNIGHT_NODE_01_0_SEED`) supplied via `--env-file` or the process
+environment. The node only imports keystore keys from `AURA_SEED_FILE` /
+`GRANDPA_SEED_FILE` / `CROSS_CHAIN_SEED_FILE`, so the CLI writes each provided
+phrase to per-validator seed files under `genesis-config/` (gitignored) and
+generates a `<network>.genesis.override.yaml` that mounts them — the same
+phrase drives all three key types, as in the original genesis deployment. At
+least one seed phrase is required; validators without one start with empty
+keystores and cannot author blocks. Note that only holders of the network's
+genesis authority keys can produce blocks from genesis.
+
+Networks whose validators were deployed with a _distinct_ phrase per key type
+can set per-type vars instead: the base var's `_SEED` suffix is replaced by
+`_AURA_SEED` / `_GRANDPA_SEED` / `_CROSS_CHAIN_SEED` (e.g.
+`MIDNIGHT_NODE_01_0_AURA_SEED`). Each key type falls back to the base var when
+its per-type var is unset; a validator is seeded only when all three key types
+resolve.
+
+Each node also needs a main-chain data source: either the real db-sync
+connection strings (the `DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_*` vars) or
+the node's built-in mock follower, enabled through an extra override file:
+
+```yaml
+# mock-follower.override.yaml
+services:
+  node1: &mock
+    environment:
+      USE_MAIN_CHAIN_FOLLOWER_MOCK: "true"
+      MOCK_REGISTRATIONS_FILE: /res/mock-bridge-data/default-registrations.json
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ""
+  node2: *mock
+  # ... one entry per validator service
+```
+
+```bash
+npm run run:devnet -- --from-genesis --env-file ../devnet.env \
+  --compose-override ../mock-follower.override.yaml
+```
+
+The CLI warns about any compose variables left unset, and about existing
+`data/` directories (nodes resume from existing chain data; wipe the network's
+`data/` directories first for a clean block-0 start). Restarting a genesis
+environment uses the same flags.
 
 ### Upgrade rehearsals
 

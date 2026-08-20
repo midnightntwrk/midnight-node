@@ -29,6 +29,13 @@ impl Default for BlockContext {
 	}
 }
 
+impl BlockContext {
+	/// The parent block's timestamp. Always `Some` from ledger 8 onward.
+	pub fn parent_block_time(&self) -> Option<u64> {
+		Some(self.last_block_time)
+	}
+}
+
 #[cfg(feature = "std")]
 impl From<super::onchain_runtime_local::context::BlockContext> for BlockContext {
 	fn from(value: super::onchain_runtime_local::context::BlockContext) -> Self {
