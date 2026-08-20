@@ -54,6 +54,11 @@ impl Subscriber for InMemSubscriber {
                 BroadcastStream::new(receiver)
             }
 
+            Topic("BridgeEventIndexed") => {
+                let receiver = self.0.bridge_event_sender.subscribe();
+                BroadcastStream::new(receiver)
+            }
+
             // This must not happen; if it happens, we forgot to add an arm for the topic above!
             _ => panic!("unexpected topic {:?}", T::TOPIC),
         };
