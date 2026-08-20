@@ -24,7 +24,7 @@ pub mod state_translation_v8_to_v9;
 /// Strategy for ordering candidate coins/UTXOs during input selection.
 ///
 /// Defined at the crate root (not inside the version-specific `common` module) so that
-/// `ledger_7` and `ledger_8` see the same type, allowing it to flow through the toolkit's
+/// all versions see the same type, allowing it to flow through the toolkit's
 /// version-dispatched builders unchanged.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CoinSelectionStrategy {
@@ -38,128 +38,6 @@ pub enum CoinSelectionStrategy {
 /// Struct to store serialized verifying key bytes
 /// To be deserialized when constructing ContractOperations
 pub struct ContractVerifyingKeyBytes(pub Vec<u8>);
-
-#[path = "versions"]
-pub mod ledger_7 {
-	use crate::ContractVerifyingKeyBytes;
-
-	pub use super::CoinSelectionStrategy;
-	#[cfg(feature = "can-panic")]
-	pub use super::extract_tx_with_context::extract_tx_with_context_ledger_7 as extract_tx_with_context;
-
-	/// Ledger generation implemented by this module.
-	pub const LEDGER_VERSION: u32 = 7;
-	/// The contract-maintenance-authority verifying-key type for this generation. Pre-ledger-9
-	/// ledgers have no dedicated maintenance-key enum, so it is the plain signature verifying key.
-	pub type MaintenanceVerifyingKey = SignatureVerifyingKey;
-	/// Workspace dependency name of the ledger crate backing this module.
-	pub const CRATE_NAME: &str = "mn-ledger";
-	pub use {
-		base_crypto, coin_structure, ledger_storage, midnight_serialize, mn_ledger,
-		onchain_runtime, transient_crypto, zkir, zswap,
-	};
-
-	// Vendored test-utilities shim for v8.
-	#[allow(clippy::duplicate_mod)]
-	#[path = "test_utilities_compat.rs"]
-	pub mod test_utilities_local;
-
-	#[path = "block_context/pre_ledger_8.rs"]
-	mod block_context;
-	pub use block_context::*;
-
-	// ECDSA is only supported from ledger 9. Pre-9 dependency versions can't represent an
-	// ECDSA unshielded identity (coin-structure has no `From<ecdsa::VerifyingKey> for
-	// UserAddress`, and the signature enums have no ECDSA variant), so the shared `common`
-	// code compiles against these unimplemented stubs and fails loudly if ever exercised.
-	#[allow(clippy::duplicate_mod)]
-	mod ecdsa_unimpl;
-	pub use ecdsa_unimpl::{SigningKeyEcdsa, VerifyingKeyEcdsa};
-
-	#[allow(clippy::duplicate_mod)]
-	mod common;
-	pub use common::*;
-
-	pub use base_crypto::signatures::{
-		Signature as TransactionSignature, SigningKey as TransactionSigningKey,
-		VerifyingKey as SignatureVerifyingKey,
-	};
-	use midnight_serialize::tagged_deserialize;
-
-	/// Builds a contract operation from a verifier key. `_ir_source` is accepted
-	/// for cross-version call-site compatibility but silently dropped: pre-ledger-9
-	/// contract operations have no on-chain IR slot.
-	pub fn contract_operation_new(
-		vk: Option<ContractVerifyingKeyBytes>,
-		_ir_source: Option<Vec<u8>>,
-	) -> Result<onchain_runtime::state::ContractOperation, std::io::Error> {
-		let vk = vk
-			.map(|b| tagged_deserialize(&mut b.0.as_slice()).expect("failed to read verifier key"));
-		Ok(onchain_runtime::state::ContractOperation::new(vk))
-	}
-
-	/// Wraps a verifier key in the maintenance-update enum for this ledger generation.
-	/// Pre-ledger-9 ledgers expose only the `V3` (zk-stdlib v1) variant, which takes the
-	/// same `transient_crypto::proofs::VerifierKey` this module deserializes.
-	pub fn contract_operation_versioned_verifier_key(
-		vk: Vec<u8>,
-	) -> Result<mn_ledger::structure::ContractOperationVersionedVerifierKey, std::io::Error> {
-		let vk: transient_crypto::proofs::VerifierKey = tagged_deserialize(&mut &vk[..])?;
-		Ok(mn_ledger::structure::ContractOperationVersionedVerifierKey::V3(vk))
-	}
-
-	/// The verifier-key slot version for this ledger generation, used when *removing*
-	/// a key (the entry point alone doesn't say which slot the key lives in).
-	/// Pre-ledger-9 ledgers only have the `V3` slot, so removals target it. Mirrors
-	/// `contract_operation_versioned_verifier_key` above.
-	pub fn contract_operation_version_of(
-		_op: &onchain_runtime::state::ContractOperation,
-	) -> mn_ledger::structure::ContractOperationVersion {
-		mn_ledger::structure::ContractOperationVersion::V3
-	}
-
-	pub fn signature_verifying_key(
-		key: base_crypto::signatures::VerifyingKey,
-	) -> SignatureVerifyingKey {
-		key
-	}
-
-	pub fn transaction_signing_key(
-		key: &base_crypto::signatures::SigningKey,
-	) -> TransactionSigningKey {
-		key.clone()
-	}
-
-	pub fn transaction_signature(
-		signature: base_crypto::signatures::Signature,
-	) -> TransactionSignature {
-		signature
-	}
-
-	pub fn maintenance_verifying_key(
-		key: base_crypto::signatures::VerifyingKey,
-	) -> SignatureVerifyingKey {
-		key
-	}
-
-	pub fn signature_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
-		unimplemented!("ecdsa is only supported from ledger 9")
-	}
-
-	pub fn transaction_signing_key_ecdsa(_key: &SigningKeyEcdsa) -> TransactionSigningKey {
-		unimplemented!("ecdsa is only supported from ledger 9")
-	}
-
-	pub fn transaction_signature_ecdsa(
-		_signature: base_crypto::ecdsa::Signature,
-	) -> TransactionSignature {
-		unimplemented!("ecdsa is only supported from ledger 9")
-	}
-
-	pub fn maintenance_verifying_key_ecdsa(_key: VerifyingKeyEcdsa) -> SignatureVerifyingKey {
-		unimplemented!("ecdsa is only supported from ledger 9")
-	}
-}
 
 #[path = "versions"]
 pub mod ledger_8 {
@@ -192,7 +70,7 @@ pub mod ledger_8 {
 	mod block_context;
 	pub use block_context::*;
 
-	// ECDSA is only supported from ledger 9 (see the note in `ledger_7`).
+	// ECDSA is only supported from ledger 9 (see the note in `ledger_8`).
 	#[allow(clippy::duplicate_mod)]
 	mod ecdsa_unimpl;
 	pub use ecdsa_unimpl::{SigningKeyEcdsa, VerifyingKeyEcdsa};
