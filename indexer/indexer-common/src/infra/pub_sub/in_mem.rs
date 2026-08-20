@@ -28,6 +28,7 @@ pub struct InMemPubSub {
     block_indexed_sender: Sender<Value>,
     wallet_indexed_sender: Sender<Value>,
     unshielded_utxo_sender: Sender<Value>,
+    bridge_event_sender: Sender<Value>,
 }
 
 impl InMemPubSub {
@@ -47,11 +48,13 @@ impl Default for InMemPubSub {
         let (block_indexed_sender, block_indexed_receiver) = broadcast::channel(42);
         let (wallet_indexed_sender, wallet_indexed_receiver) = broadcast::channel(42);
         let (unshielded_utxo_sender, unshielded_utxo_receiver) = broadcast::channel(42);
+        let (bridge_event_sender, bridge_event_receiver) = broadcast::channel(42);
 
         let pub_sub = InMemPubSub {
             block_indexed_sender,
             wallet_indexed_sender,
             unshielded_utxo_sender,
+            bridge_event_sender,
         };
 
         // Keep one receiver alive per topic for as long as the `InMemPubSub`
@@ -63,6 +66,7 @@ impl Default for InMemPubSub {
         spawn_drain("block_indexed_receiver", block_indexed_receiver);
         spawn_drain("wallet_indexed_receiver", wallet_indexed_receiver);
         spawn_drain("unshielded_utxo_receiver", unshielded_utxo_receiver);
+        spawn_drain("bridge_event_receiver", bridge_event_receiver);
 
         pub_sub
     }
@@ -88,7 +92,10 @@ fn spawn_drain(name: &'static str, mut receiver: Receiver<Value>) {
 #[cfg(test)]
 mod tests {
     use crate::{
-        domain::{BlockIndexed, Publisher, Subscriber, WalletIndexed},
+        domain::{
+            BlockIndexed, BridgeEventIndexed, Publisher, Subscriber, WalletIndexed,
+            bridge::BridgeEvent,
+        },
         infra::pub_sub::in_mem::InMemPubSub,
     };
     use assert_matches::assert_matches;
@@ -121,6 +128,31 @@ mod tests {
 
         let message = messages.next().await;
         assert_matches!(message, Some(Ok(message)) if message == wallet_indexed);
+
+        Ok(())
+    }
+
+    /// Regression test: publishing a bridge event through the in-memory pub-sub used to panic
+    /// with "unexpected topic" because `BridgeEventIndexed` had no channel.
+    #[tokio::test]
+    async fn test_publish_subscribe_bridge_event() -> Result<(), Box<dyn StdError>> {
+        let pub_sub = InMemPubSub::default();
+
+        let subscriber = pub_sub.subscriber();
+        let mut messages = subscriber.subscribe::<BridgeEventIndexed>();
+
+        let bridge_event_indexed = BridgeEventIndexed {
+            block_height: 42,
+            event: BridgeEvent::ReserveTransfer {
+                mc_tx_hash: [1u8; 32].into(),
+                amount: 1_000_000,
+                midnight_tx_hash: [2u8; 32].into(),
+            },
+        };
+        pub_sub.publisher().publish(&bridge_event_indexed).await?;
+
+        let message = messages.next().await;
+        assert_matches!(message, Some(Ok(message)) if message == bridge_event_indexed);
 
         Ok(())
     }
