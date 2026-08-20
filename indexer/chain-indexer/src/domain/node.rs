@@ -12,11 +12,11 @@
 // limitations under the License.
 
 use crate::domain::{
-    self, BlockRef, ContractAction, DustRegistrationEvent, SystemParametersChange,
+    self, BlockRef, ContractAction, DParameter, DustRegistrationEvent, TermsAndConditions,
 };
 use futures::Stream;
 use indexer_common::domain::{
-    BlockAuthor, BlockHash, ByteVec, NodeVersion, ProtocolVersion, SerializedTransaction,
+    BlockAuthor, BlockHash, ByteVec, ProtocolVersion, SerializedTransaction,
     SerializedTransactionIdentifier, TransactionHash,
     ledger::{self, ZswapMerkleTreeRoot},
 };
@@ -43,15 +43,6 @@ where
         after: Option<BlockRef>,
     ) -> impl Stream<Item = Result<Block, Self::Error>>;
 
-    /// Fetch system parameters (D-Parameter and Terms & Conditions) at a given block.
-    async fn fetch_system_parameters(
-        &self,
-        block_hash: BlockHash,
-        block_height: u64,
-        timestamp: u64,
-        node_version: NodeVersion,
-    ) -> Result<SystemParametersChange, Self::Error>;
-
     /// Fetch serialized genesis ledger state from the chain spec's system properties.
     /// Returns the raw bytes of the genesis `LedgerState`, errs if unavailable.
     async fn fetch_genesis_ledger_state(&self) -> Result<ByteVec, Self::Error>;
@@ -70,6 +61,10 @@ pub struct Block {
     pub transactions: Vec<Transaction>,
     pub dust_registration_events: Vec<DustRegistrationEvent>,
     pub bridge_events: Vec<indexer_common::domain::bridge::BridgeEvent>,
+    /// D-parameter in this block's state, fetched alongside the block.
+    pub d_parameter: Option<DParameter>,
+    /// Terms and conditions in this block's state, if set.
+    pub terms_and_conditions: Option<TermsAndConditions>,
 }
 
 impl TryFrom<Block> for (domain::Block, Vec<Transaction>) {
