@@ -35,5 +35,5 @@ COPY node/bin/entrypoint.sh /entrypoint.sh
 
 USER appuser
 
-EXPOSE 30333 9933 9944 9615
+EXPOSE 30333 9933 9944 9615 8088
 ENTRYPOINT ["/entrypoint.sh"]

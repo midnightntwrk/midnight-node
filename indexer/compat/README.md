@@ -2,8 +2,9 @@
 
 The indexer replays blocks using the verifier version that accepted them when
 they were produced. These local crates preserve `midnight-ledger` and
-`midnight-zswap` 8.1.0 alongside the node's newer consensus versions without
-duplicating shared storage and serialization types.
+`midnight-zswap` 8.1.0 inside the indexer's independently locked worker build.
+The node's workspace patches therefore cannot alter the historical verifier's
+storage, serialization, or cryptography dependencies.
 
 The source is copied from the Apache-2.0 crates.io packages published from
 `midnightntwrk/midnight-ledger` commit

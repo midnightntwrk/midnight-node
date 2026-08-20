@@ -342,9 +342,9 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 
 		if run_midnight.indexer {
 			log::info!("starting indexer");
-			task_manager.spawn_handle().spawn_blocking(
-				"embedded-indexer",
-				Some("embedded-indexer"),
+			task_manager.spawn_handle().spawn(
+				"native-indexer-supervisor",
+				Some("native-indexer-supervisor"),
 				crate::indexer::run_supervised(),
 			);
 		}

@@ -20,9 +20,6 @@ name = "midnight-node"
 anyhow.workspace = true
 clap.workspace = true
 hex.workspace = true
-byte-unit-serde = "0.1"
-humantime-serde = "1.1"
-secrecy = "0.10"
 
 # preserve_order is required for cfg
 serde_json = { workspace = true, features = ["preserve_order"] }
@@ -93,11 +90,6 @@ frame-benchmarking-cli = {workspace = true, default-features = true }
 pallet-staking = { workspace = true, features = ["std"], optional = true }
 
 # Local Dependencies
-chain-indexer = { path = "../indexer/chain-indexer", features = ["standalone"] }
-indexer-api = { path = "../indexer/indexer-api", features = ["standalone"] }
-indexer-common = { path = "../indexer/indexer-common", features = ["standalone"] }
-spo-indexer = { path = "../indexer/spo-indexer", features = ["standalone"] }
-wallet-indexer = { path = "../indexer/wallet-indexer", features = ["standalone"] }
 midnight-node-runtime = { workspace = true, default-features = true }
 midnight-node-ledger = { workspace = true, default-features = true }
 midnight-node-ledger-helpers = {workspace = true, default-features = true, features = ["fixed-point-custom-serde"] }
@@ -168,7 +160,7 @@ shell-words = "1.1.1"
 derive-new.workspace = true
 
 sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
-tokio.workspace = true
+tokio = { workspace = true, features = ["process"] }
 blake2b_simd = "1.0"
 
 # FilteringTransactionPool feature dependency

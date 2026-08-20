@@ -165,7 +165,7 @@ that we are still in the process of being release. As such:
 - [Development Workflow](docs/development-workflow.md) - Best practices for cargo vs earthly, debugging, and common tasks
 - [OpenRPC API Specification](docs/openrpc.md) - Machine-readable API schema via `rpc.discover`
 - [Configuration Guide](docs/configuration-guide.md) - Comprehensive configuration guide for SREs
-- [Optional Indexer](docs/embedded-indexer.md) - Run the SQL indexer and API inside a dedicated node
+- [Optional Indexer](docs/native-indexer.md) - Run the SQL indexer and API on a dedicated node
 - [Rust Installation](docs/rust-setup.md) - Setup instructions and toolchain information
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation

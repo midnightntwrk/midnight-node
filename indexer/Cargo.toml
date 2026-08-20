@@ -23,8 +23,8 @@ documentation = "https://github.com/midnightntwrk/midnight-indexer"
 publish       = false
 
 [workspace.dependencies]
-# Historical Ledger 8 verifier crates are maintained locally so Cargo cannot
-# unify them with the node's semver-compatible consensus versions.
+# Historical Ledger 8 verifier crates are maintained locally and built with
+# this workspace's lockfile so replay remains independent of node consensus.
 midnight-base-crypto_v1      = { package = "midnight-base-crypto", version = "1" }
 midnight-coin-structure_v2   = { package = "midnight-coin-structure", version = "2" }
 midnight-ledger_v8           = { package = "midnight-ledger", path = "compat/ledger-v8" }

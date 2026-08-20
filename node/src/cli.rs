@@ -57,7 +57,7 @@ pub struct RunMidnight {
 	#[arg(long)]
 	pub serve_warp_ledger_sync: bool,
 
-	/// Run the wallet-facing indexer and GraphQL API in this node process.
+	/// Run the node-managed wallet indexer and GraphQL API.
 	///
 	/// This is intended for dedicated API nodes because indexing replays ledger transactions and
 	/// maintains separate SQL state.

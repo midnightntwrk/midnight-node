@@ -1357,11 +1357,23 @@ build:
     RUN \
         cargo auditable build --workspace --locked --release
 
+    # Build the directly ported indexer in its own Cargo workspace. Keeping its
+    # lockfile and dependency graph separate preserves historical ledger replay
+    # while midnight-node owns the worker lifecycle through --indexer.
+    RUN CARGO_TARGET_DIR=/target/indexer \
+        cargo auditable build \
+        --manifest-path indexer/Cargo.toml \
+        --package indexer-standalone \
+        --features standalone \
+        --locked \
+        --release
+
     # cp (not mv) so the linked binaries stay in the /target cache when it is mounted
     # (local, CI=false); otherwise cargo would re-link every binary on the next run even
     # when its inputs are unchanged.
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && cp /target/release/midnight-node /artifacts-$NATIVEARCH \
+        && cp /target/indexer/release/indexer-standalone /artifacts-$NATIVEARCH/midnight-indexer \
         && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && cp /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
@@ -1457,6 +1469,7 @@ node-image:
     RUN mkdir -p node
 
     COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node /
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-indexer /
     COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/aiken-deployer /
     COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
