@@ -33,12 +33,13 @@ use spo_indexer::{
 	application as spo_app,
 	infra::{spo_client::SPOClient, storage as spo_storage},
 };
-use std::thread;
+use std::{thread, time::Duration};
 use tokio::{
 	runtime::Builder,
 	select,
 	signal::unix::{SignalKind, signal},
 	task,
+	time::sleep,
 };
 use wallet_indexer::{application as wallet_app, infra::storage as wallet_storage};
 
@@ -134,8 +135,21 @@ pub fn run() -> anyhow::Result<()> {
 				let node = SPOClient::new(spo_node_config.into())
 					.await
 					.context("create indexer SPO client")?;
-				let sigterm =
+				let mut sigterm =
 					signal(SignalKind::terminate()).expect("SIGTERM handler can be registered");
+				loop {
+					match node.get_first_epoch_num().await {
+						Ok(_) => break,
+						Err(error) => {
+							log::info!(error:?; "waiting for block 1 before starting SPO indexer");
+						},
+					}
+
+					select! {
+						_ = sleep(Duration::from_secs(1)) => {},
+						_ = sigterm.recv() => return Ok(()),
+					}
+				}
 				spo_app::run(spo_config.into(), node, storage, sigterm).await
 			})
 		};
