@@ -18,7 +18,8 @@ image sets it to a bundled copy of
 start from that file. Set writable and distinct paths for `infra.storage.cnn_url` and
 `infra.ledger_db.cnn_url`, and provide secrets with the existing `APP__*_FILE` mechanism.
 
-The indexer is an essential node task. Invalid configuration or an indexer component failure stops
-the dedicated node so its process supervisor can restart it rather than leaving a false-healthy RPC
-node without the wallet API. Process-wide logging and tracing remain owned by `midnight-node`;
-indexer metrics keep their configured listener.
+The indexer runs as a supervised, non-essential node task. Invalid configuration or an indexer
+component failure leaves the node available and restarts the indexer after a short delay. The
+indexer's `/ready` endpoint remains unhealthy until indexing has recovered and caught up, so route
+wallet traffic using that readiness signal rather than node RPC readiness. Process-wide logging and
+tracing remain owned by `midnight-node`; indexer metrics keep their configured listener.
