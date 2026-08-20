@@ -182,13 +182,6 @@ pub mod pallet {
 		SystemTransactionApplied(SystemTransactionApplied),
 		/// The hardfork upgrade block armed the dust generation replay
 		/// (`migrations::v2`) by saving the pre-fork ledger state key.
-		///
-		/// The `DustReapply*` events other than this one are deposited from a
-		/// multi-block-migration step, which FRAME runs after the block's last
-		/// extrinsic — their phase is an `ApplyExtrinsic` index no extrinsic in
-		/// the block claims, so explorers that render events per extrinsic drop
-		/// them. They are in `System::Events` regardless. This one is emitted
-		/// from `on_runtime_upgrade`, i.e. phase `Initialization`, and is visible.
 		DustReapplyStarted,
 		/// One replay batch failed to apply; its nonces were not restored. The
 		/// replay continues with the next batch.
@@ -197,9 +190,6 @@ pub mod pallet {
 		},
 		/// The replay finished. `applied` entries were restored; `skipped` were
 		/// not (untracked, already destroyed, or in a failed batch).
-		///
-		/// Note this covers cnight's slice of the ledger's dust generating set
-		/// only — native-NIGHT generation entries are not restored here.
 		DustReapplyCompleted {
 			applied: u32,
 			skipped: u32,
@@ -208,11 +198,6 @@ pub mod pallet {
 		/// wipe dust state, no pre-fork state key was recorded, that key became
 		/// unreadable, or a batch priced above what a whole block affords. The
 		/// reason is logged.
-		///
-		/// The tallies are the same as [`Event::DustReapplyCompleted`]'s, and
-		/// carried here because the abandon paths other than "never started" can
-		/// fire on any page: `applied` entries are already restored and the rest
-		/// never will be. `applied: 0` is the "did not run at all" case.
 		DustReapplySkipped {
 			applied: u32,
 			skipped: u32,
@@ -223,11 +208,6 @@ pub mod pallet {
 		/// observer re-delivers these UTXOs once the migration winds up. Emitted
 		/// once per block for as long as the gate holds; the exact versions are
 		/// in the node log.
-		///
-		/// Unlike the `DustReapply*` events, this one comes from an inherent, so
-		/// a block explorer that groups events under their extrinsic does show
-		/// it. Appended rather than grouped with them so their variant indices
-		/// stay where the change file and the migration docs say they are.
 		ObservationsSkippedForMigration,
 	}
 
@@ -738,29 +718,12 @@ pub mod pallet {
 			// this pallet's storage is in flight; `NextCardanoPosition` stays
 			// unchanged so the next block's inherent re-presents the same UTXOs (plus
 			// any new ones) and we resume once the migration finishes.
-			//
-			// v0 -> v1 (`Mapping`): `unique_dust_key` (and therefore
-			// `handle_registration`, `handle_registration_removal`, `handle_create`)
-			// reads only v1, missing any v0 row not yet moved. Acting on that partial
-			// view would silently corrupt registration state — e.g. a deregistration
-			// whose v0 row is still pending would no-op here and then re-appear as
-			// live once the migration drains it.
-			//
-			// v1 -> v2 (dust generation replay): the replay re-applies `Create`
-			// events for every live `UtxoOwners` nonce. A concurrent spend would
-			// `take` a nonce the replay has not restored yet (its `Destroy` failing
-			// against a wiped ledger, then the nonce gone from the live set), and a
-			// concurrent create would race the replay's own system transaction.
-
 			if Pallet::<T>::on_chain_storage_version() < STORAGE_VERSION {
 				log::warn!(
 					"ObservationsSkippedForMigration: skipping process_tokens (on-chain storage version {:?} < {:?}); MBM in progress",
 					Pallet::<T>::on_chain_storage_version(),
 					STORAGE_VERSION,
 				);
-				// The log line alone is invisible to anyone watching the chain, and a
-				// gate that silently eats observations for minutes is exactly the
-				// thing you want to see from an explorer.
 				Self::deposit_event(Event::<T>::ObservationsSkippedForMigration);
 				return Ok(PostDispatchInfo {
 					actual_weight: Some(T::DbWeight::get().reads_writes(2, 1)),

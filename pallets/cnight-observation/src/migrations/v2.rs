@@ -27,35 +27,6 @@
 //!   (read-only: the provenance-and-liveness filter for which nonces are
 //!   cnight's and still live), asks the host for each nonce's pre-wipe
 //!   `(value, owner)`, and applies one `CNightGeneratesDustUpdate` per batch.
-//!   `process_tokens` is gated off for the duration by the storage version. Each
-//!   batch is priced from the ledger's own cost model *before* it is applied, and a
-//!   step applies as many as the MBM weight budget affords. A batch that prices
-//!   above what a whole block affords cancels the replay rather than overrunning it.
-//!   A batch the ledger turns away because the *block* is full — which pricing cannot
-//!   see, the price being per-batch and the fullness accounting block-wide — is
-//!   deferred to the next block with its page intact.
-//!
-//! The restored generation entries are field-for-field identical to the wiped
-//! ones. Only the accrual clock moves: the original `ctime` is not publicly
-//! visible in ledger state (it is stored as a commitment only), so the replay
-//! stamps `fork block time - dust.time_to_cap()`. DUST accrues linearly from
-//! `ctime` to a cap of `night_value * night_dust_ratio` reached after
-//! `time_to_cap` (~1 week), so backdating by exactly that much puts every holder
-//! at their cap the moment the replay lands — the pre-fork steady state, since
-//! anyone holding cNIGHT for a week was already capped.
-//!
-//! Stamping the fork block itself instead would be an equally arbitrary clock
-//! that starts everyone at zero and refills over a week, in proportion to
-//! holdings: large holders recover in minutes, small ones are locked out of
-//! paying fees for days. The real per-UTXO `ctime` is only available from
-//! db-sync, and would restore holders to the same cap anyway for all but the
-//! youngest UTXOs — while making the hardfork depend on a new
-//! consensus-critical mainchain query. The chosen offset over-credits only
-//! cNIGHT locked in the last week, bounded by a cap it would reach regardless.
-//!
-//! Only cnight's slice of the generating set is restored. Native NIGHT registers
-//! generation entries too, and nothing in this repo records which of those the
-//! wipe took.
 //!
 //! The wipe itself lives in the translation table
 //! (`midnight_node_ledger_helpers::state_translation_v8_to_v9`), which replaces
@@ -91,9 +62,7 @@ const LOG_TARGET: &str = "cnight-observation::migration";
 /// budget — it prices each batch and stops at the first one the budget left cannot
 /// pay for — so a smaller batch packs the budget more tightly (7 x 25 = 175
 /// `Create`s per block against 3 x 50 = 150) and keeps the blast radius of a failed
-/// batch small. The cost is one extra `dust_generation_values` call and one extra
-/// system transaction per batch, both negligible against the ledger work a batch
-/// does.
+/// batch small.
 pub const MAX_REAPPLY_BATCH: u32 = 25;
 
 /// Saves the pre-hardfork ledger-8 arena root for [`MigrateV1ToV2`] to read the
@@ -388,9 +357,6 @@ fn replay_batch<T: Config>(cursor: Option<T::Hash>, meter: &WeightMeter) -> Batc
 /// batch), `DustReapplyProgress` (1R for the tally + 1R/1W for the mutate),
 /// pallet-midnight's `StateKey` (1R/1W inside `execute_system_transaction`), and one
 /// `UtxoOwners` read per nonce.
-///
-/// Three orders of magnitude below a batch's ledger gas (~4e8 ps against ~2.2e11 at
-/// 25 nonces), but it is exactly the part the ledger's cost model does not see.
 fn batch_db_weight<T: Config>(nonces: u32) -> Weight {
 	T::DbWeight::get().reads_writes(5u64.saturating_add(nonces.into()), 3)
 }
