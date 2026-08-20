@@ -9,5 +9,5 @@ land without a manual re-port and the node stays aligned with downstream consume
 No behaviour change: the vendored copy's manual dust wipe is now upstream (midnight-ledger
 PR #707), which closes the `TODO` the vendored file carried.
 
-PR: <link>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2054
 Issue: https://github.com/midnightntwrk/midnight-node/issues/2049
