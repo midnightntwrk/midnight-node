@@ -8,6 +8,8 @@ members = [
     "indexer-standalone",
     "indexer-tests",
     "spo-indexer",
+    "compat/ledger-v8",
+    "compat/zswap-v8",
 ]
 
 [workspace.package]
@@ -21,18 +23,18 @@ documentation = "https://github.com/midnightntwrk/midnight-indexer"
 publish       = false
 
 [workspace.dependencies]
-# Keep the indexer's historical Ledger 8 verifier isolated from the node's
-# consensus ledger. Cargo otherwise unifies their semver-compatible versions.
-midnight-base-crypto_v1      = { package = "midnight-base-crypto", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-coin-structure_v2   = { package = "midnight-coin-structure", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-ledger_v8           = { package = "midnight-ledger", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-onchain-runtime_v3  = { package = "midnight-onchain-runtime", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-onchain-state_v3    = { package = "midnight-onchain-state", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-serialize_v1        = { package = "midnight-serialize", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-storage-core_v1     = { package = "midnight-storage-core", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-storage_v2          = { package = "midnight-storage", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-transient-crypto_v2 = { package = "midnight-transient-crypto", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
-midnight-zswap_v8            = { package = "midnight-zswap", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-8.1.0" }
+# Historical Ledger 8 verifier crates are maintained locally so Cargo cannot
+# unify them with the node's semver-compatible consensus versions.
+midnight-base-crypto_v1      = { package = "midnight-base-crypto", version = "1" }
+midnight-coin-structure_v2   = { package = "midnight-coin-structure", version = "2" }
+midnight-ledger_v8           = { package = "midnight-ledger", path = "compat/ledger-v8" }
+midnight-onchain-runtime_v3  = { package = "midnight-onchain-runtime", version = "3" }
+midnight-onchain-state_v3    = { package = "midnight-onchain-state", version = "3" }
+midnight-serialize_v1        = { package = "midnight-serialize", version = "1" }
+midnight-storage-core_v1     = { package = "midnight-storage-core", version = "1.2" }
+midnight-storage_v2          = { package = "midnight-storage", version = "2.0.1" }
+midnight-transient-crypto_v2 = { package = "midnight-transient-crypto", version = "2" }
+midnight-zswap_v8            = { package = "midnight-zswap", path = "compat/zswap-v8" }
 # Ledger v9, resolved via the [patch.crates-io] tags below.
 midnight-coin-structure_v3   = { package = "midnight-coin-structure", version = "3" }
 midnight-ledger_v9           = { package = "midnight-ledger-v9", version = "1.0" }

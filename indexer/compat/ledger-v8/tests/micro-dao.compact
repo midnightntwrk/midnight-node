@@ -1,0 +1,211 @@
+// This file is part of midnight-ledger.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+export {voteCommit, voteReveal, advance, setTopic, buyIn, cashOut}
+
+import CompactStandardLibrary;
+
+enum LedgerState { setup, commit, reveal, final, }
+enum LocalState { initial, committed, revealed, }
+
+ledger organizer: Bytes<32>;
+ledger state: LedgerState;
+ledger topic: Maybe<Opaque<"string">>;
+ledger beneficiary: Maybe<ZswapCoinPublicKey>;
+ledger yes: Counter;
+ledger no: Counter;
+ledger round: Counter;
+ledger committedVotes: MerkleTree<10, Bytes<32>>;
+ledger eligibleVoters: HistoricMerkleTree<10, Bytes<32>>;
+ledger committed: Set<Bytes<32>>;
+ledger revealed: Set<Bytes<32>>;
+
+ledger pot: QualifiedShieldedCoinInfo;
+ledger potHasCoin: Boolean;
+
+witness localSecretKey(): Bytes<32>;
+witness localState(): LocalState;
+witness localAdvanceState(): [];
+witness localRecordVote(vote: Boolean): [];
+witness localVoteCast(): Maybe<Boolean>;
+witness localPathOfPk(pk: Bytes<32>): Maybe<MerkleTreePath<10, Bytes<32>>>;
+witness localPathOfCm(cm: Bytes<32>): Maybe<MerkleTreePath<10, Bytes<32>>>;
+
+circuit voteCommit(ballot: Boolean): [] {
+  assert(
+    state == LedgerState.commit && localState() == LocalState.initial,
+    "In illegal state for committing");
+  localRecordVote(ballot);
+  const sk = localSecretKey();
+  const comNul = commitmentNullifier(sk);
+  assert(
+    !committed.member(comNul),
+    "Unexpected attempt to double use of nullifier");
+  const pk = publicKey(sk);
+  const path = localPathOfPk(pk);
+  const pathRoot =
+  assert(
+          disclose(path.is_some) &&
+          eligibleVoters.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path.value))) &&
+          pk == path.value.leaf,
+    "Attempted to vote without authorization - need to by in!");
+  const cm = commitWithSk(ballot ? pad(8, "yes") : pad(8, "no"), sk);
+  committedVotes.insert(disclose(cm));
+  committed.insert(comNul);
+  localAdvanceState();
+}
+
+circuit voteReveal(): [] {
+  assert(
+    state == LedgerState.reveal && localState() == LocalState.committed,
+    "In illegal state for revealing");
+  const sk = localSecretKey();
+  const revNul = revealNullifier(sk);
+  assert(
+    !revealed.member(revNul),
+    "Attempted to double vote");
+  const vote = localVoteCast();
+  assert(vote.is_some, "Must have voted to reveal");
+  const cm = commitWithSk(vote.value ? pad(8, "yes") : pad(8, "no"), sk);
+  const path = localPathOfCm(cm);
+  assert(
+          disclose(path.is_some) &&
+          committedVotes.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path.value))) &&
+          cm == path.value.leaf,
+    "Attempted to reveal incorrectly");
+  if(disclose(vote.value)) {
+    yes.increment(1);
+  } else {
+    no.increment(1);
+  }
+  revealed.insert(revNul);
+  localAdvanceState();
+}
+
+circuit advance(): [] {
+  const sk = localSecretKey();
+  const apk = publicKey(sk);
+  assert(
+    !(state == LedgerState.setup),
+    "Leave setup phase by setting the topic");
+  assert(
+    apk == organizer,
+    "Attempted to advance state without authorization");
+  state = successor(state);
+  if (state == LedgerState.final && yes.lessThan(no.read())) {
+    state = LedgerState.setup;
+    topic = none<Opaque<"string">>();
+    yes.resetToDefault();
+    no.resetToDefault();
+    beneficiary = none<ZswapCoinPublicKey>();
+    committedVotes.resetToDefault();
+    committed.resetToDefault();
+    revealed.resetToDefault();
+    round.increment(1);
+  }
+}
+
+circuit successor(state: LedgerState): LedgerState {
+  if (state == LedgerState.setup)
+    return LedgerState.commit;
+  else if (state == LedgerState.commit)
+    return LedgerState.reveal;
+  else
+    return LedgerState.final;
+}
+
+circuit setTopic(newTopic: Opaque<"string">, newBeneficiary: ZswapCoinPublicKey): [] {
+  const sk = localSecretKey();
+  const apk = publicKey(sk);
+  assert(
+    organizer == apk,
+    "Attempted to set topic without authorization");
+  assert(
+    state == LedgerState.setup,
+    "Attempted to set topic after setup phase");
+  topic = some<Opaque<"string">>(disclose(newTopic));
+  beneficiary = some<ZswapCoinPublicKey>(disclose(newBeneficiary));
+  state = LedgerState.commit;
+}
+
+circuit buyIn(coin: ShieldedCoinInfo): [] {
+  assert(
+    coin.value == 100000 && coin.color == nativeToken(),
+    "Invalid buy-in");
+  receiveShielded(disclose(coin));
+  if(!potHasCoin) {
+    pot.writeCoin(
+      disclose(coin),
+      right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    potHasCoin = true;
+  } else {
+    pot.writeCoin(
+      mergeCoinImmediate(pot, disclose(coin)),
+      right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+  }
+  const sk = localSecretKey();
+  const pk = publicKey(sk);
+  eligibleVoters.insert(pk);
+}
+
+circuit cashOut(): ShieldedCoinInfo {
+  const addr = ownPublicKey();
+  assert(
+          state == LedgerState.final &&
+          beneficiary.is_some &&
+          beneficiary.value == addr &&
+          no.lessThan(yes + 1 as Uint<32>),
+    "Attempted illegal cash-out.");
+  const coin = sendShielded(
+    pot,
+    left<ZswapCoinPublicKey, ContractAddress>(addr),
+    pot.value);
+  state = LedgerState.setup;
+  topic = none<Opaque<"string">>();
+  yes.resetToDefault();
+  no.resetToDefault();
+  beneficiary = none<ZswapCoinPublicKey>();
+  committedVotes.resetToDefault();
+  committed.resetToDefault();
+  revealed.resetToDefault();
+  pot = QualifiedShieldedCoinInfo {
+    nonce: pad(32, ""),
+    color: pad(32, ""),
+    value: 0,
+    mt_index: 0
+  };
+  potHasCoin = false;
+  round.increment(1);
+  return coin.sent;
+}
+
+struct RoundPreimage {
+  round: Uint<64>;
+  domainSep: Bytes<8>;
+}
+
+circuit commitmentNullifier(sk: Bytes<32>): Bytes<32> {
+  return persistentCommit<RoundPreimage>(RoundPreimage { round: round, domainSep: pad(8, "udao:cn") }, disclose(sk));
+}
+
+circuit revealNullifier(sk: Bytes<32>): Bytes<32> {
+  return persistentCommit<RoundPreimage>(RoundPreimage { round: round, domainSep: pad(8, "udao:rn") }, disclose(sk));
+}
+
+circuit publicKey(sk: Bytes<32>): Bytes<32> {
+  return persistentCommit<Bytes<13>>("lares:udao:pk", disclose(sk));
+}
+
+circuit commitWithSk(ballot: Bytes<8>, sk: Bytes<32>): Bytes<32> {
+  return persistentCommit<RoundPreimage>(RoundPreimage { round: round, domainSep: ballot }, disclose(sk));
+}

@@ -1,0 +1,76 @@
+[package]
+name = "midnight-ledger"
+edition = "2024"
+license.workspace = true
+version.workspace = true
+repository.workspace = true
+description = "Provides the transaction format and semantics for Midnight."
+
+[features]
+default = ["proof-verifying"]
+proving = []
+# marker: if this enabled, your ledger *isn't* a stable build!
+unstable = []
+proof-verifying = ["zswap/proof-verifying"]
+# Warning: This *disables* a small amount of well-formedness checking for test setups!
+test-utilities = ["dep:reqwest", "dep:zkir_v2"]
+proptest = ["dep:proptest", "dep:proptest-derive", "coin-structure/proptest"]
+mock-verify = ["transient-crypto/mock-verify"]
+fixed-point-custom-serde = [ "base-crypto/fixed-point-custom-serde" ]
+
+[dependencies]
+coin-structure = { version = "2.0.0", path = "../coin-structure", package = "midnight-coin-structure" }
+onchain-runtime = { version = "3.1.0", path = "../onchain-runtime", package = "midnight-onchain-runtime" }
+zswap = { version = "8.1.0", path = "../zswap", package = "midnight-zswap" }
+base-crypto = { version = "1.0.0", path = "../base-crypto", package = "midnight-base-crypto" }
+transient-crypto = { version = "2.0.0", path = "../transient-crypto", package = "midnight-transient-crypto" }
+storage = { version = "2.0.0", path = "../storage", package = "midnight-storage" }
+serialize = { version = "1.0.0", path = "../serialize", package = "midnight-serialize" }
+midnight-ledger-static = { version = "9.0.0", path = "../static", package = "midnight-ledger-static" }
+
+zkir_v2 = { version = "2.1.0", path = "../zkir", package = "midnight-zkir", optional = true }
+
+tokio = { version = "^1.46.1", features = ["rt", "macros"] }
+lazy_static = "^1.5.0"
+sha2 = "^0.10.9"
+introspection-derive = "0.1"
+introspection = "0.1"
+derive-where = "^1.6.1"
+anyhow = { version = "^1.0.102" }
+
+is_sorted = "^0.1.1"
+# rand 0.9.0 is not yet supported by some of our dependencies, we will
+# stick with 0.8.0 for now.
+rand = { version = "^0.8.4", features = ["getrandom"] }
+itertools = "^0.14.0"
+
+tracing = "^0.1.41"
+tracing-subscriber = "0.3.19"
+
+fake = { version = "^2.10.0", features = ["derive"] }
+futures = { version = "^0.3.31" }
+serde = { version = "^1.0.219", features = ["derive"] }
+reqwest = { version = "^0.13.0", default-features = false, features = ["rustls"], optional = true }
+rayon = "^1.10.0"
+zeroize = "^1.8.0"
+
+# proptest 1.7.0+ rely on rand 0.9.0, which we are not yet updating to.
+proptest = { version = "~1.6.0", optional = true }
+proptest-derive = { version = "0.8", optional = true }
+
+[dev-dependencies]
+midnight-ledger = { path = ".", features = ["test-utilities", "proptest", "fixed-point-custom-serde"] }
+onchain-vm = { path = "../onchain-vm", package = "midnight-onchain-vm" }
+storage = { path = "../storage", package = "midnight-storage", features = ["parity-db"] }
+storage-core = { path = "../storage-core", package = "midnight-storage-core", features = ["test-utilities", "layout-v2", "gc-v1"] }
+tokio = { version = "^1.46.1", features = ["rt", "rt-multi-thread", "macros"] }
+criterion = { version = "^0.5.1" }
+pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
+tempfile = "3.20"
+pastey = "0.2.1"
+serde_json = "^1.0.140"
+hex = "^0.4.3"
+
+[[bench]]
+name = "benchmarking"
+harness = false

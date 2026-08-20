@@ -1,0 +1,173 @@
+// This file is part of midnight-ledger.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import CompactStandardLibrary;
+
+ledger commitment_merkle_tree: HistoricMerkleTree<32, Field>;
+ledger generation_merkle_tree: HistoricMerkleTree<32, Field>;
+ledger nullifiers: Set<Field>;
+ledger parameters: DustParameters;
+ledger ctime: Uint<64>;
+ledger dust_spend: DustSpend;
+
+witness updatedValue(): Uint<128>;
+
+struct DustSecretKey {
+  key: Field;
+}
+
+struct DustPublicKey {
+  key: Field;
+}
+
+struct NoncePreimage {
+  initial_nonce: Bytes<32>,
+  seq_number: Uint<32>,
+  key: DustSecretKey,
+}
+
+struct DustPreimage {
+  initial_value: Uint<128>,
+  owner: Field,
+  nonce: Field,
+  ctime: Uint<64>,
+}
+
+struct DustOutput {
+  initial_value: Uint<128>,
+  owner: DustPublicKey,
+  nonce: Field,
+  seq_number: Uint<32>,
+  ctime: Uint<64>
+}
+
+struct DustGenerationInfo {
+	value: Uint<128>,
+	owner: DustPublicKey,
+	nonce: Bytes<32>,
+	dtime: Uint<64>,
+}
+
+struct DustSpend {
+	v_fee: Uint<128>,
+	old_nullifier: Field,
+	new_commitment: Field,
+}
+
+struct DustParameters {
+	night_dust_ratio: Uint<64>,
+	generation_decay_rate: Uint<32>,
+	dust_grace_period: Uint<32>,
+}
+
+export circuit spend(
+  dust: DustOutput,
+  sk: DustSecretKey,
+  gen: DustGenerationInfo,
+  commitment_path: MerkleTreePath<32, Bytes<32>>,
+  generation_path: MerkleTreePath<32, Bytes<32>>,
+  initial_nonce: Bytes<32>,
+  seq_no: Uint<32>,
+): [] {
+
+  assert(public_key(sk) == dust.owner, "Can only spend owned dust");
+
+  const commitment = transientCommit<DustPreimage>(
+    DustPreimage {
+		initial_value: dust.initial_value,
+		owner: dust.owner.key,
+		nonce: dust.nonce,
+		ctime: dust.ctime,
+    },
+    "mdn:dust:cm" as Field
+  );
+
+  assert(upgradeFromTransient(commitment) == commitment_path.leaf, "dust must be in merkle tree");
+  // First public transcript part: root check (commitment_merkle_tree)
+  commitment_merkle_tree.checkRoot(disclose(merkleTreePathRootNoLeafHash<32>(commitment_path)));
+
+  const gen_hash = transientHash<DustGenerationInfo>(gen);
+  assert(upgradeFromTransient(gen_hash) == generation_path.leaf, "gen info must be in merkle tree");
+  // Second public transcript part: root check
+  generation_merkle_tree.checkRoot(disclose(merkleTreePathRootNoLeafHash<32>(generation_path)));
+
+  const nul = disclose(transientCommit<DustPreimage>(
+    DustPreimage {
+      initial_value: dust.initial_value,
+      nonce: dust.nonce,
+      ctime: dust.ctime,
+      owner: sk.key,
+    },
+    "mdn:dust:nul" as Field
+  ));
+  // Third public transcript part: cell read (dust_spend)
+  const _spend = dust_spend;
+  assert(_spend.old_nullifier == nul, "cannot spend a spent coin");
+
+  // Fourth public transcript part: cell read ctime
+  // Fifth public transcript part: cell read parameters
+  const v_pre = updated_value(dust, gen, ctime, parameters);
+  assert(v_pre >= _spend.v_fee, "must have enough dust to pay the fee");
+  const v = v_pre - _spend.v_fee;
+  assert(v == updatedValue(), "should match computed value");
+
+  // Sixth public transcript part: set insert (nullifiers)
+  nullifiers.insert(nul);
+
+  const new_nonce = transientHash<NoncePreimage>(
+    NoncePreimage {
+	  initial_nonce: initial_nonce,
+	  seq_number: dust.seq_number + 1 as Uint<32>,
+      key: sk,
+	}
+  );
+  // Seventh public transcript part: cell read (ctime)
+  const new_com = disclose(transientCommit<DustPreimage>(
+    DustPreimage {
+      initial_value: v,
+      owner: dust.owner.key,
+      nonce: new_nonce,
+      ctime: ctime,
+    },
+    "mdn:dust:cm" as Field
+  ));
+  assert(_spend.new_commitment == new_com, "new commitment was computed correctly");
+  // Eighth public transcript part: merkle tree insert (commitment_merkle_tree)
+  commitment_merkle_tree.insertHash(upgradeFromTransient(new_com));
+}
+
+circuit public_key(sk: DustSecretKey): DustPublicKey {
+  const pk = transientHash<Vector<2, Field>>(["mdn:dust:pk" as Field, sk.key]);
+  return DustPublicKey { key: pk };
+}
+
+circuit updated_value(dust: DustOutput, gen: DustGenerationInfo, spend_ctime: Uint<64>, params: DustParameters): Uint<128> {
+	const vfull = (gen.value * params.night_dust_ratio) as Uint<128>;
+    const rate = (gen.value * params.generation_decay_rate) as Uint<128>;
+    const tstart_phase_1 = dust.ctime;
+    const tend_phase_12 = gen.dtime < spend_ctime ? gen.dtime : spend_ctime;
+    const value_phase_1_unchecked = ((
+          tstart_phase_1 <= tend_phase_12 ?
+          tend_phase_12 - tstart_phase_1 :
+          0
+    ) * rate + dust.initial_value) as Uint<128>;
+    const value_phase_12 = value_phase_1_unchecked < vfull ? value_phase_1_unchecked : vfull;
+    const tstart_phase_3 = gen.dtime;
+    const tend_phase_3 = spend_ctime;
+    const value_phase_3 = (value_phase_12 - (
+          tstart_phase_3 <= tend_phase_3 ?
+          tend_phase_3 - tstart_phase_3 :
+          0
+    ) * rate) as Uint<128>;
+    return value_phase_3;
+}
