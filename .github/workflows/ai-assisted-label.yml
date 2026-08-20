@@ -3,12 +3,12 @@ name: Label AI-assisted PRs
 # Dispatcher — calls the reusable workflow in midnightntwrk/workflows.
 # Applies bot:ai-assisted when a PR carries an AI-tooling signature.
 #
-# pull_request_target, not pull_request: GitHub gives fork-originated PRs a
-# read-only token regardless of the permissions requested, so labelling them
-# would silently fail. Safe here because the reusable never checks out or runs
-# PR code — it only reads PR metadata through the API.
+# Known gap: fork-originated PRs get a read-only token on pull_request, so they
+# are never labelled. pull_request_target would fix that and is safe here (the
+# reusable never checks out or runs PR code), but zizmor fails the scan gate on
+# that trigger unconditionally, so the gap stands pending a security decision.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, synchronize]
 
 permissions:
