@@ -395,14 +395,6 @@ fn batch_db_weight<T: Config>(nonces: u32) -> Weight {
 	T::DbWeight::get().reads_writes(5u64.saturating_add(nonces.into()), 3)
 }
 
-/// The charge for a batch the ledger could not price: half a block, which is what
-/// this migration charged unconditionally before it asked the ledger. Pessimistic,
-/// and already known to be accepted by the meter — `MbmServiceWeight` is 80% of the
-/// block — so it costs latency, never a stall.
-fn fallback_gas<T: Config>() -> u64 {
-	T::BlockWeights::get().max_block.ref_time() / 2
-}
-
 /// Why a batch did not apply, from [`apply_batch`].
 enum BatchFailure {
 	/// The ledger refused it because the block is already full, not because of
@@ -421,30 +413,6 @@ enum BatchFailure {
 /// Prices one batch, checks the price against the step's budget, and only then
 /// applies it as a single `CNightGeneratesDustUpdate` — the same pair of calls
 /// `process_tokens` makes. Returns what it cost, `db` included.
-///
-/// Pricing first is what keeps the meter honest: `SystemTransaction::cost` is pure
-/// ("a system transaction can be priced ahead of being applied",
-/// `ledger/src/versions/common/mod.rs`), so a batch that does not fit is never
-/// executed, rather than executed and then clamped to the limit.
-///
-/// `execute_system_transaction` deposits `pallet_midnight_system`'s own
-/// `SystemTransactionApplied` event carrying the serialized transaction, which
-/// is the indexer's hook — this pallet's variant is deliberately not emitted,
-/// its `CmstHeader` being a Cardano position that has no meaning here.
-///
-/// That event is **block-scoped, not extrinsic-scoped**: steps run in
-/// `inherents_applied()`, after the block's inherents, so the event's phase is an
-/// `ApplyExtrinsic` index one past the last extrinsic and no extrinsic claims it.
-/// Consumers must key on the event, not on a matching extrinsic — the indexer
-/// already does; the toolkit fetcher did not, and was fixed alongside this
-/// migration (`util/toolkit/src/fetcher/compute_task.rs`).
-///
-/// The same goes for everything else this migration deposits — `DustReapply*`
-/// here, and `pallet_migrations`' own `MigrationAdvanced`/`MigrationCompleted`.
-/// A block explorer that renders events grouped under their extrinsic shows none
-/// of them, which makes the replay look like it never ran past
-/// `DustReapplyStarted` (that one is emitted from `on_runtime_upgrade`, phase
-/// `Initialization`, so it is visible). They are all in `System::Events`.
 fn apply_batch<T: Config>(
 	events: Vec<Vec<u8>>,
 	db: Weight,
@@ -458,17 +426,7 @@ fn apply_batch<T: Config>(
 		},
 	};
 
-	// What the ledger says this batch costs, from its own cost model: the
-	// `CNightGeneratesDustUpdate` arm of `SystemTransaction::cost`, normalized
-	// against `parameters.limits.block_limits` and scaled to the block's max
-	// weight. Ledger picoseconds map 1:1 onto `ref_time` with `proof_size` 0, the
-	// same convention `pallet_midnight::get_tx_weight` and
-	// `pallet_midnight::migrations::v2` use — this chain doesn't build a PoV.
-	//
-	// Reading the live (post-hardfork) state key is safe here: the Executive
-	// `Migrations` tuple runs `pallet_midnight::migrations::v2` in
-	// `on_runtime_upgrade`, before the `inherents_applied()` where MBM steps run, so
-	// by the first step it already points at the translated v9 root.
+	// Calculate batch cost via Ledger's cost model.
 	let gas = match LedgerApi::get_transaction_cost(
 		&T::LedgerStateProvider::get_ledger_state_key(),
 		&tx,
@@ -479,9 +437,9 @@ fn apply_batch<T: Config>(
 		Err(e) => {
 			log::warn!(
 				target: LOG_TARGET,
-				"could not price the replay batch ({e:?}); charging the pessimistic fallback"
+				"could not price the replay batch ({e:?}); rejecting."
 			);
-			fallback_gas::<T>()
+			return Err(BatchFailure::Rejected(Weight::zero()));
 		},
 	};
 	let cost = db.saturating_add(Weight::from_parts(gas, 0));
@@ -489,8 +447,7 @@ fn apply_batch<T: Config>(
 	// 90% of the limit, not all of it: the meter is block-wide and `pallet_migrations`
 	// charges its own bookkeeping against it before `step` runs, so a batch priced in
 	// the top sliver of the limit would never fit a block and would spin on the
-	// out-of-budget retry forever. `fallback_gas` (half a block) sits well inside 90%
-	// of the 80% budget, so an unpriceable batch still only ever costs latency.
+	// out-of-budget retry forever.
 	if cost.ref_time() > meter.limit().ref_time() / 100 * 90 {
 		return Err(BatchFailure::Hopeless(cost));
 	}
