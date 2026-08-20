@@ -35,7 +35,6 @@ use serde::Deserialize;
 use std::{
     collections::{HashSet, VecDeque},
     error::Error as StdError,
-    future::ready,
     num::NonZeroUsize,
     pin::pin,
     sync::Arc,
@@ -44,6 +43,7 @@ use std::{
 use tokio::{
     select,
     signal::unix::Signal,
+    sync::mpsc,
     task::{self},
     time::sleep,
 };
@@ -219,9 +219,26 @@ pub async fn run(
         let node = node.clone();
 
         async move {
-            let blocks = node_blocks(highest_block_ref, node.clone())
-                .map(ready)
-                .buffered(blocks_buffer);
+            // Stream combinators only make progress while the consumer polls them, so a
+            // `buffered` adapter cannot fetch ahead while a block is being processed. Run the
+            // block stream on its own task feeding a bounded channel so fetching the next
+            // blocks overlaps indexing, with at most `blocks_buffer` blocks in flight.
+            let (block_tx, mut block_rx) = mpsc::channel(blocks_buffer.max(1));
+            task::spawn({
+                let node = node.clone();
+                async move {
+                    let blocks = node_blocks(highest_block_ref, node);
+                    let mut blocks = pin!(blocks);
+                    while let Some(block) = blocks.next().await
+                        && block_tx.send(block).await.is_ok()
+                    {}
+                }
+            });
+            let blocks = stream! {
+                while let Some(block) = block_rx.recv().await {
+                    yield block;
+                }
+            };
             let mut blocks = pin!(blocks);
             let mut caught_up = false;
             let mut parent_block_timestamp = initial_parent_block_timestamp;
