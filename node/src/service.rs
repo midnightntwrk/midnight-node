@@ -531,6 +531,10 @@ pub fn new_partial(
 	// outer layer runs the body-gated inherent check, withholding the body from BABE so BABE's own
 	// (redundant) inherent check is skipped while its header-based epoch/equivocation logic still
 	// runs; the body is then restored for the GRANDPA import beneath.
+	//
+	// Constructed at startup on the real client, including while the chain is still on AURA.
+	// `prune_finalized` skips headers with no BABE pre-digest (paritytech/polkadot-sdk#12754),
+	// so this no longer panics at genesis or on a finalized AURA block.
 	let babe_config = sc_consensus_babe::configuration(&*client)?;
 	let babe_slot_duration = babe_config.slot_duration();
 	let (babe_block_import, babe_link) = sc_consensus_babe::block_import(
@@ -923,13 +927,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				select_chain: select_chain.clone(),
 				block_import,
 				proposer_factory: aura_proposer_factory,
-				// Gate authoring to the AURA state so the AURA worker cannot author on a `Babe`
-				// parent during the flip handover (the supervisor also drops it at the flip).
-				create_inherent_data_providers: crate::babe_authoring::EngineGuardCidp::new(
-					client.clone(),
-					midnight_primitives_consensus_engine::ActiveEngine::Aura,
-					make_proposal_cidp(),
-				),
+				create_inherent_data_providers: make_proposal_cidp(),
 				force_authoring,
 				backoff_authoring_blocks: backoff_authoring_blocks.clone(),
 				keystore: AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
@@ -961,12 +959,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			block_import: babe_authoring_block_import,
 			sync_oracle: sync_service.clone(),
 			justification_sync_link: sync_service.clone(),
-			// Gate authoring to the BABE state (symmetric with the AURA worker's guard).
-			create_inherent_data_providers: crate::babe_authoring::EngineGuardCidp::new(
-				client.clone(),
-				midnight_primitives_consensus_engine::ActiveEngine::Babe,
-				make_proposal_cidp(),
-			),
+			create_inherent_data_providers: make_proposal_cidp(),
 			force_authoring,
 			backoff_authoring_blocks,
 			babe_link: babe_link.clone(),
@@ -975,8 +968,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
 		})?;
 
-		// A single supervisor drives AURA, then hands off to BABE at the flip (see
-		// `babe_authoring`). Only one engine authors at a time, so they never fork the chain.
+		// A single supervisor is the authoring gate: it drives AURA until the flip, seeds the
+		// BABE epoch tree, then drives BABE. Only one engine is polled at a time.
 		let authoring_supervisor = crate::babe_authoring::run_authoring_supervisor(
 			client.clone(),
 			babe_link,
@@ -998,6 +991,16 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				client.clone(),
 				AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
 			),
+		);
+	} else {
+		// Full nodes still need the epoch tree to import the first BABE block.
+		let client = client.clone();
+		task_manager.spawn_handle().spawn(
+			"babe-epoch-tree-bootstrap",
+			Some("babe"),
+			async move {
+				let _ = crate::babe_authoring::bootstrap_babe_at_flip(client, &babe_link).await;
+			},
 		);
 	}
 

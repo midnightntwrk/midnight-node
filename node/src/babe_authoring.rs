@@ -13,16 +13,15 @@
 
 //! Block-authoring supervision for the AURA→BABE consensus migration.
 //!
-//! A validator runs both authoring engines' machinery, but only one produces blocks at a time:
-//! AURA before the consensus flip, BABE after. The two slot workers cannot simply run
-//! concurrently — the inactive engine's slot worker would fail to fetch its authoring aux data
-//! every slot (BABE's epoch tree is empty before the flip) and spam warnings, and if both authored
-//! they would fork the chain locally.
+//! `BabeBlockImport` is constructed at node start (safe now that `prune_finalized` skips
+//! headers with no BABE pre-digest). The two slot workers still cannot run concurrently:
+//! the inactive one would spam failed aux-data fetches every slot, and if both authored they
+//! would fork the chain. [`run_authoring_supervisor`] is the single authoring gate: it polls
+//! AURA until the flip, bootstraps BABE's epoch tree, then polls BABE for the rest of the
+//! node's life. The switch is one-directional, so a restart after the flip skips AURA.
 //!
-//! [`run_authoring_supervisor`] therefore drives the AURA worker while watching the chain, and at
-//! the flip drops it, seeds BABE's epoch tree from the runtime, and hands over to the BABE worker
-//! for the rest of the node's life. The switch is one-directional (BABE never reverts to AURA), so
-//! on a restart after the flip the supervisor detects BABE immediately and skips AURA entirely.
+//! Full nodes (no authoring) still need the epoch tree to *import* the first BABE block;
+//! [`bootstrap_babe_at_flip`] is therefore also spawned for non-authority roles.
 
 use futures::StreamExt;
 use midnight_node_runtime::opaque::Block;
@@ -34,7 +33,6 @@ use sc_consensus_epochs::descendent_query;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
 use sp_consensus_babe::BabeApi;
-use sp_inherents::CreateInherentDataProviders;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::future::Future;
 use std::sync::Arc;
@@ -68,56 +66,9 @@ impl<C> SupervisorClient for C where
 {
 }
 
-/// Wraps a [`CreateInherentDataProviders`], refusing to produce inherent data unless the consensus
-/// engine active at the parent block matches `expected`.
-///
-/// A slot worker whose CIDP returns an error skips that slot (a single warn, no block). Gating each
-/// authoring worker's CIDP to its own engine keeps the AURA worker from authoring on a `Babe`-state
-/// parent (and vice-versa) during the flip handover window, closing the dual-production race — the
-/// supervisor still drops the AURA worker at the flip; this only guards the brief overlap.
-pub struct EngineGuardCidp<C, Inner> {
-	client: Arc<C>,
-	expected: ActiveEngine,
-	inner: Inner,
-}
-
-impl<C, Inner> EngineGuardCidp<C, Inner> {
-	pub fn new(client: Arc<C>, expected: ActiveEngine, inner: Inner) -> Self {
-		Self { client, expected, inner }
-	}
-}
-
-#[async_trait::async_trait]
-impl<C, Inner> CreateInherentDataProviders<Block, ()> for EngineGuardCidp<C, Inner>
-where
-	C: ProvideRuntimeApi<Block> + Send + Sync + 'static,
-	C::Api: ConsensusEngineApi<Block>,
-	Inner: CreateInherentDataProviders<Block, ()> + Send + Sync,
-{
-	type InherentDataProviders = Inner::InherentDataProviders;
-
-	async fn create_inherent_data_providers(
-		&self,
-		parent: Hash,
-		extra_args: (),
-	) -> Result<Self::InherentDataProviders, Box<dyn std::error::Error + Send + Sync>> {
-		// Read the engine before any `.await` so the runtime `ApiRef` is not held across it.
-		let engine = active_engine_at(&*self.client, parent);
-		if engine != self.expected {
-			return Err(format!(
-				"consensus engine active at parent {parent:?} is {engine:?}, not {:?}; \
-				 skipping authoring this slot",
-				self.expected,
-			)
-			.into());
-		}
-		self.inner.create_inherent_data_providers(parent, extra_args).await
-	}
-}
-
 /// The engine active in the state of `hash`, defaulting to AURA when the query fails (the safe
 /// pre-flip default, matching the import-queue dispatch).
-fn active_engine_at<C>(client: &C, hash: Hash) -> ActiveEngine
+pub(crate) fn active_engine_at<C>(client: &C, hash: Hash) -> ActiveEngine
 where
 	C: ProvideRuntimeApi<Block>,
 	C::Api: ConsensusEngineApi<Block>,
@@ -164,6 +115,25 @@ where
 
 	// The notification stream only ends when the node is shutting down.
 	client.info().best_hash
+}
+
+/// Wait for the consensus flip, then seed BABE's epoch tree (and chain-weight) at that block.
+///
+/// Returns the flip-block hash. Seeding is a no-op when the tree already covers the block
+/// (restart after the flip). Import of the first BABE block needs this even on non-authorities.
+pub async fn bootstrap_babe_at_flip<C>(client: Arc<C>, babe_link: &BabeLink<Block>) -> Hash
+where
+	C: SupervisorClient,
+	C::Api: BabeApi<Block> + ConsensusEngineApi<Block>,
+{
+	let at = wait_for_flip(&client).await;
+	if let Err(err) = seed_epoch_tree_if_needed(&client, babe_link, at) {
+		log::error!(
+			target: LOG_TARGET,
+			"failed to seed BABE epoch tree at {at:?}: {err}; BABE import/authoring may stall",
+		);
+	}
+	at
 }
 
 /// Seed BABE's epoch tree so authoring/verification can resolve epochs for children of `at`.
@@ -237,11 +207,12 @@ where
 	Ok(())
 }
 
-/// Drive AURA authoring until the consensus flip, then seed BABE's epoch tree and drive BABE
+/// Drive AURA authoring until the consensus flip, bootstrap BABE's epoch tree, then drive BABE
 /// authoring for the remainder of the node's life.
 ///
 /// `aura_worker` and `babe_worker` are the futures returned by `start_aura`/`start_babe`. The AURA
-/// future is polled only until the flip is observed, then dropped; the BABE future runs terminally.
+/// future is polled only until the flip is observed and the epoch tree is seeded, then dropped;
+/// the BABE future runs terminally.
 pub async fn run_authoring_supervisor<C>(
 	client: Arc<C>,
 	babe_link: BabeLink<Block>,
@@ -252,12 +223,12 @@ pub async fn run_authoring_supervisor<C>(
 	C::Api: BabeApi<Block> + ConsensusEngineApi<Block>,
 {
 	let flip_at = {
-		let watch = wait_for_flip(&client);
-		futures::pin_mut!(aura_worker, watch);
-		match futures::future::select(aura_worker, watch).await {
+		let bootstrap = bootstrap_babe_at_flip(client, &babe_link);
+		futures::pin_mut!(aura_worker, bootstrap);
+		match futures::future::select(aura_worker, bootstrap).await {
 			// The AURA worker is spawned as essential; if it returns first the service is going
 			// down anyway, so there is nothing to hand over to.
-			futures::future::Either::Left(((), _watch)) => {
+			futures::future::Either::Left(((), _bootstrap)) => {
 				log::warn!(target: LOG_TARGET, "AURA authoring worker exited before the consensus flip");
 				return;
 			},
@@ -266,13 +237,56 @@ pub async fn run_authoring_supervisor<C>(
 	};
 
 	log::info!(target: LOG_TARGET, "handing block authoring over from AURA to BABE at {flip_at:?}");
-	if let Err(err) = seed_epoch_tree_if_needed(&client, &babe_link, flip_at) {
-		log::error!(
-			target: LOG_TARGET,
-			"failed to seed BABE epoch tree at {flip_at:?}: {err}; BABE authoring may stall",
-		);
-	}
 
 	babe_worker.await;
 	log::warn!(target: LOG_TARGET, "BABE authoring worker exited");
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use sp_api::{ApiRef, ProvideRuntimeApi};
+
+	#[derive(Clone)]
+	struct TestApi {
+		engine: Option<ActiveEngine>,
+	}
+
+	impl ProvideRuntimeApi<Block> for TestApi {
+		type Api = TestApi;
+
+		fn runtime_api(&self) -> ApiRef<'_, Self::Api> {
+			self.clone().into()
+		}
+	}
+
+	fn api_error(msg: &'static str) -> sp_api::ApiError {
+		sp_api::ApiError::Application(Box::<dyn std::error::Error + Send + Sync>::from(msg))
+	}
+
+	sp_api::mock_impl_runtime_apis! {
+		impl ConsensusEngineApi<Block> for TestApi {
+			#[advanced]
+			fn active_engine(&self, _: Hash) -> Result<ActiveEngine, sp_api::ApiError> {
+				self.engine.ok_or_else(|| api_error("active_engine unavailable"))
+			}
+
+			#[advanced]
+			fn should_emit_babe_preruntime_digest(&self, _: Hash) -> Result<bool, sp_api::ApiError> {
+				unimplemented!("not read by active_engine_at")
+			}
+		}
+	}
+
+	#[test]
+	fn active_engine_at_returns_the_runtime_value() {
+		let api = TestApi { engine: Some(ActiveEngine::Babe) };
+		assert_eq!(active_engine_at(&api, Default::default()), ActiveEngine::Babe);
+	}
+
+	#[test]
+	fn active_engine_at_defaults_to_aura_when_the_runtime_query_fails() {
+		let api = TestApi { engine: None };
+		assert_eq!(active_engine_at(&api, Default::default()), ActiveEngine::Aura);
+	}
 }
