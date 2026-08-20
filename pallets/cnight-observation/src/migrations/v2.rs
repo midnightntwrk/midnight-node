@@ -31,6 +31,9 @@
 //!   batch is priced from the ledger's own cost model *before* it is applied, and a
 //!   step applies as many as the MBM weight budget affords. A batch that prices
 //!   above what a whole block affords cancels the replay rather than overrunning it.
+//!   A batch the ledger turns away because the *block* is full — which pricing cannot
+//!   see, the price being per-batch and the fullness accounting block-wide — is
+//!   deferred to the next block with its page intact.
 //!
 //! The restored generation entries are field-for-field identical to the wiped
 //! ones. Only the accrual clock moves: the original `ctime` is not publicly
@@ -56,11 +59,7 @@
 //!
 //! The wipe itself lives in the translation table
 //! (`midnight_node_ledger_helpers::state_translation_v8_to_v9`), which replaces
-//! the v8 dust state with the empty one. Should that ever stop being true, this
-//! migration self-cancels rather than corrupting state: the first replayed
-//! `Create` collides with `GenerationInfoAlreadyPresent` (see
-//! [`MigrateV1ToV2::step`]).
-
+//! the v8 dust state with the empty one.
 extern crate alloc;
 
 use alloc::vec::Vec;
@@ -156,30 +155,18 @@ impl<T: Config> SteppedMigration for MigrateV1ToV2<T> {
 		// ("A migration cannot progress more than one step per block, we therefore
 		// break", `substrate/frame/migrations/src/lib.rs`), so spending the block's
 		// MBM budget means looping here rather than charging a whole block per batch.
-		//
-		// Every batch is priced before it is applied (`SystemTransaction::cost` is
-		// pure), so the loop stops *before* spending weight it does not have, and hands
-		// back the page to retry — which on the first step is the cursor it was given,
-		// hence the nested `Option`. `step` must never return
-		// `SteppedMigrationError::InsufficientWeight`, because on the first step that
-		// routes to `upgrade_failed` and the runtime's `FreezeChainOnFailedMigration`
-		// freezes the chain. The same reason no path below returns `Err` — every
-		// failure winds the replay up instead and lets the observer resume.
-		//
-		// Because the ledger normalizes each batch's cost against its own
-		// `block_limits`, keeping the summed batch weight inside the meter's limit
-		// also keeps the block inside the ledger's own per-block fullness accounting.
-		// Summing per-batch maxima over-approximates true per-dimension accumulation,
-		// so that side errs conservative and needs no separate cap.
 		let mut last = cursor.flatten();
 		loop {
 			match replay_batch::<T>(last, meter) {
 				Batch::Done => return Ok(None),
-				// A batch that failed to apply ends the step: inside a loop "the next
-				// page" is the same block, where a fullness-driven rejection would
-				// repeat for every remaining page and tally them all as skipped. The
-				// next block retries with a fresh ledger fullness budget. The ledger
-				// did the work before rejecting it, so it is charged all the same.
+				// The block is full, so end the step *without* moving the cursor.
+				Batch::Deferred(cost) => {
+					meter.consume(cost);
+					return Ok(Some(last));
+				},
+				// A batch the ledger rejected on its merits was tallied and skipped, and
+				// ends the step for the same reason. This may happen if ledger work is applied
+				// eariler in the block via another pallet's inherent.
 				Batch::Failed(page, cost) => {
 					meter.consume(cost);
 					return Ok(Some(Some(page)));
@@ -238,8 +225,12 @@ enum Batch<C> {
 	/// A page landed, ending at cursor `C`, having cost `Weight` — priced before it
 	/// was applied, so the meter can take the figure as it stands.
 	Applied(C, Weight),
-	/// A page failed to apply and was tallied, at the cost the ledger charged for
-	/// rejecting it. `C` is past it, but the step ends.
+	/// The ledger turned a page away because the block is already full. Nothing was
+	/// tallied and the cursor has not moved, so the page is re-read next block; the
+	/// `Weight` is what the ledger charged for turning it away.
+	Deferred(Weight),
+	/// A page failed to apply on its merits and was tallied, at the cost the ledger
+	/// charged for rejecting it. `C` is past it, but the step ends.
 	Failed(C, Weight),
 	/// The page prices above what is left of this step's budget. Nothing was applied
 	/// and the cursor has not moved; the same page is retried next block.
@@ -332,7 +323,6 @@ fn replay_batch<T: Config>(cursor: Option<T::Hash>, meter: &WeightMeter) -> Batc
 		}
 	}
 
-	let (restored_so_far, _) = DustReapplyProgress::<T>::get();
 	let mut applied = events.len() as u32;
 	let mut failed = false;
 	// The storage this page touched is chargeable whatever becomes of it, so check it
@@ -361,24 +351,9 @@ fn replay_batch<T: Config>(cursor: Option<T::Hash>, meter: &WeightMeter) -> Batc
 				cancel::<T>();
 				return Batch::Done;
 			},
+			Err(BatchFailure::Deferred(charged)) => return Batch::Deferred(charged),
 			Err(BatchFailure::Rejected(charged)) => {
 				cost = charged;
-				if restored_so_far == 0 {
-					// Nothing has been restored yet, so the likely reason is that the
-					// hardfork did not wipe dust after all: re-applying a surviving
-					// `Create` fails with `GenerationInfoAlreadyPresent`. This is the
-					// self-cancel that keeps the migration inert against a
-					// translation that carries dust across. (Keyed on "nothing
-					// restored" rather than "first
-					// batch" because a leading page can legitimately resolve to no
-					// events at all, and then never apply anything.)
-					log::warn!(
-						target: LOG_TARGET,
-						"replay batch failed with nothing restored yet; assuming dust state survived the hardfork and cancelling the replay"
-					);
-					cancel::<T>();
-					return Batch::Done;
-				}
 				// A failed batch left the ledger state untouched (the ledger
 				// propagates the first event's error out of the whole system
 				// transaction, and `mut_ledger_state` only writes on success).
@@ -427,8 +402,11 @@ fn fallback_gas<T: Config>() -> u64 {
 
 /// Why a batch did not apply, from [`apply_batch`].
 enum BatchFailure {
-	/// The ledger rejected it, or it could not even be constructed. The `Weight` is
-	/// what it cost anyway.
+	/// The ledger refused it because the block is already full, not because of
+	/// anything about the batch. The `Weight` is what it cost anyway.
+	Deferred(Weight),
+	/// The ledger rejected it on its merits, or it could not even be constructed. The
+	/// `Weight` is what it cost anyway.
 	Rejected(Weight),
 	/// It prices above what is left of this step's budget, so it was not applied.
 	OutOfBudget,
@@ -519,6 +497,13 @@ fn apply_batch<T: Config>(
 
 	match T::MidnightSystemTransactionExecutor::execute_system_transaction(tx) {
 		Ok(_) => Ok(cost),
+		Err(e) if T::MidnightSystemTransactionExecutor::is_block_limit_exceeded(&e) => {
+			log::warn!(
+				target: LOG_TARGET,
+				"replay batch did not fit the rest of this block ({e:?}); deferring the same page to the next block"
+			);
+			Err(BatchFailure::Deferred(cost))
+		},
 		Err(e) => {
 			log::error!(target: LOG_TARGET, "replay batch failed to apply: {e:?}");
 			Err(BatchFailure::Rejected(cost))

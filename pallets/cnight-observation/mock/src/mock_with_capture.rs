@@ -166,6 +166,11 @@ impl MidnightSystemTransactionExecutor for MidnightSystemTx {
 		CAPTURED_SYSTEM_TXS.lock().unwrap().push(serialized_system_transaction);
 		Ok(midnight_node_ledger::types::Hash::default())
 	}
+
+	fn is_block_limit_exceeded(_err: &__private::DispatchError) -> bool {
+		// This mock captures rather than applies, so it never fails at all.
+		false
+	}
 }
 
 parameter_types! {

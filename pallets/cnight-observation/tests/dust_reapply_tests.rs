@@ -151,7 +151,11 @@ fn seed_pre_fork_state(entries: &[(H256, u128)]) -> Vec<u8> {
 /// `Midnight::on_finalize` runs between steps because it is the only place the
 /// ledger's `block_fullness` resets; each step is a block.
 fn run_to_completion() -> u32 {
-	let mut cursor = None;
+	run_from(None)
+}
+
+/// [`run_to_completion`], resuming from an in-flight cursor.
+fn run_from(mut cursor: Option<<MigrateV1ToV2<Test> as SteppedMigration>::Cursor>) -> u32 {
 	let mut steps = 0;
 	loop {
 		let mut meter = WeightMeter::with_limit(one_batch_budget());
@@ -251,38 +255,6 @@ fn replays_live_entries_from_pre_fork_state() {
 	});
 }
 
-/// The inert-today path, for real: re-applying entries that are still present
-/// fails with `GenerationInfoAlreadyPresent` on the first batch, which is how the
-/// replay detects that the hardfork did not wipe dust after all. Driven by
-/// replaying twice — the second run's ledger state already holds the entries.
-#[test]
-fn first_batch_failure_self_cancels() {
-	new_test_ext().execute_with(|| {
-		init_ledger_state();
-
-		let entries = [(nonce(1), 100u128), (nonce(2), 250u128)];
-		let pre_fork_key = seed_pre_fork_state(&entries);
-		PreForkStateKey::<Test>::put(pre_fork_key.clone());
-		for (nonce, _) in entries.iter() {
-			UtxoOwners::<Test>::insert(nonce, owner_bytes());
-		}
-		run_to_completion();
-
-		// Now the current (v9) state holds them, as it would if the hardfork had
-		// carried dust across instead of wiping it.
-		frame_system::Pallet::<Test>::reset_events();
-		StorageVersion::new(1).put::<CNightObservation>();
-		PreForkStateKey::<Test>::put(pre_fork_key);
-
-		assert_eq!(run_to_completion(), 1, "the failing first batch must end the replay");
-
-		assert_eq!(cnight_events(), vec![Event::DustReapplySkipped]);
-		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
-		assert!(PreForkStateKey::<Test>::get().is_none());
-		assert!(applied_dust_events().is_empty(), "nothing must have been applied");
-	});
-}
-
 /// More rows than one batch: the cursor hands off between steps and every row is
 /// visited exactly once (the tallies sum to the row count).
 #[test]
@@ -319,11 +291,13 @@ fn pages_across_steps_visiting_every_row_once() {
 	});
 }
 
-/// A batch that fails *after* something has already been restored is a genuine
-/// batch failure, not the "dust survived the hardfork" signal: report its nonces
-/// and carry on to the next page.
+/// A batch the ledger rejects on its merits — here a surviving `Create` colliding
+/// with `GenerationInfoAlreadyPresent`, which is also what the whole replay would hit
+/// if a translation ever stopped wiping dust — reports its nonces and carries on to
+/// the next page. Driven by replaying twice: the second run's ledger state already
+/// holds the entry.
 #[test]
-fn later_batch_failure_is_reported_and_the_replay_completes() {
+fn rejected_batch_is_reported_and_the_replay_completes() {
 	new_test_ext().execute_with(|| {
 		init_ledger_state();
 
@@ -332,23 +306,66 @@ fn later_batch_failure_is_reported_and_the_replay_completes() {
 		UtxoOwners::<Test>::insert(nonce(1), owner_bytes());
 		run_to_completion();
 
-		// Replay the same nonce again — it is now present in the ledger, so its
-		// batch fails — but against progress that says an earlier page landed.
 		frame_system::Pallet::<Test>::reset_events();
 		StorageVersion::new(1).put::<CNightObservation>();
 		PreForkStateKey::<Test>::put(pre_fork_key);
-		DustReapplyProgress::<Test>::put((5, 0));
 
-		assert_eq!(run_to_completion(), 2, "the replay must carry on past a failed batch");
+		assert_eq!(run_to_completion(), 2, "the replay must carry on past a rejected batch");
 
 		assert_eq!(
 			cnight_events(),
 			vec![
 				Event::DustReapplyBatchFailed { nonces: vec![nonce(1)] },
-				Event::DustReapplyCompleted { applied: 5, skipped: 1 },
+				Event::DustReapplyCompleted { applied: 0, skipped: 1 },
 			],
 		);
 		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
+	});
+}
+
+/// A block that fills up mid-replay must cost the replay latency, not a page.
+#[test]
+fn a_full_block_defers_the_page_rather_than_losing_it() {
+	new_test_ext().execute_with(|| {
+		init_ledger_state();
+
+		// More `Create`s than one block's ledger budget affords (~220 on the current
+		// parameters), so the step runs into the block limit before the last page.
+		let rows = 250u32;
+		let entries: Vec<(H256, u128)> = (0..rows)
+			.map(|i| (H256::from_low_u64_be(i as u64 + 1), 100u128 + i as u128))
+			.collect();
+		PreForkStateKey::<Test>::put(seed_pre_fork_state(&entries));
+		for (nonce, _) in entries.iter() {
+			UtxoOwners::<Test>::insert(nonce, owner_bytes());
+		}
+
+		let mut meter = WeightMeter::new();
+		let cursor = MigrateV1ToV2::<Test>::step(None, &mut meter).expect("step must not fail");
+
+		let applied_first_block = applied_dust_events().len() as u32;
+		assert!(cursor.is_some(), "the block filled up, so the replay cannot be finished");
+		assert!(
+			0 < applied_first_block && applied_first_block < rows,
+			"the block must have filled part-way through, got {applied_first_block} of {rows}",
+		);
+		assert_eq!(
+			DustReapplyProgress::<Test>::get(),
+			(applied_first_block, 0),
+			"a deferred page must not be tallied as skipped",
+		);
+		assert!(cnight_events().is_empty(), "a deferred page must not be evented as failed");
+
+		// Fresh block, fresh ledger fullness: the deferred page comes back, and by the
+		// end every single row has been restored.
+		<mock::Midnight as Hooks<u64>>::on_finalize(1);
+		run_from(cursor);
+
+		assert_eq!(applied_dust_events().len() as u32, rows, "no row may be lost to a full block");
+		let Some(Event::DustReapplyCompleted { applied, skipped }) = cnight_events().pop() else {
+			panic!("replay must complete, got {:?}", cnight_events());
+		};
+		assert_eq!((applied, skipped), (rows, 0));
 	});
 }
 

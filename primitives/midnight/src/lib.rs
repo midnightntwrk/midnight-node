@@ -50,6 +50,11 @@ pub trait MidnightSystemTransactionExecutor {
 	fn execute_system_transaction(
 		serialized_system_transaction: Vec<u8>,
 	) -> Result<Hash, DispatchError>;
+
+	/// True when `err` from [`Self::execute_system_transaction`] is the ledger refusing
+	/// the transaction because the block is already full, rather than rejecting the
+	/// transaction itself.
+	fn is_block_limit_exceeded(err: &DispatchError) -> bool;
 }
 
 #[derive(Clone, Encode, Decode, DecodeWithMemTracking, Debug, TypeInfo)]

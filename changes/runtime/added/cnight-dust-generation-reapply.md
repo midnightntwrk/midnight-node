@@ -40,7 +40,8 @@ Nothing here is hardcoded: the figure comes from `SystemTransaction::cost`
 normalized against the ledger's own `parameters.limits.block_limits`, so the
 migration paces itself to whatever limits a given network reports, and stays correct
 if `OverwriteParameters` moves them. It also means a block that stays inside the MBM
-budget stays inside the ledger's own per-block fullness accounting. On the current
+budget keeps the migration's own share inside the ledger's per-block fullness
+accounting. On the current
 parameters a dust `Create` prices at ~8.96e9 `ref_time`, so 80% of a 2e12 block
 affords 178 — 7 batches of 25, i.e. 175 restored per block. Measured live sets on
 2026-08-06: **mainnet 4870** nonces (finalized #2019697), **preview 1524**
@@ -78,9 +79,36 @@ The wipe itself is part of this change: the v8 -> v9 state translation now drops
 the dust state and installs the empty one genesis starts from, instead of
 carrying it across. The toolkit's `fork_context_8_to_9` mirrors that, resetting
 every wallet's local dust state so it does not try to spend dust the chain no
-longer has. Should a translation ever carry dust across again, the migration
-self-cancels rather than corrupting state: the first replayed event collides with
-`GenerationInfoAlreadyPresent` and it emits `DustReapplySkipped`.
+longer has. Should a translation ever carry dust across again, the replay corrupts
+nothing: every replayed event collides with `GenerationInfoAlreadyPresent`, and a
+rejected batch leaves the ledger state untouched, so the replay runs to completion
+having restored nothing and reporting every page as skipped.
+
+## A full block defers a page, it does not cost one
+
+The price above is per-batch, but the ledger admits a system transaction against the
+whole block: `apply_system_tx` checks `tx_cost + block_fullness` against
+`block_limits`. Ledger work applied earlier in the same block counts against the same
+limit — `pallet_partner_chains_bridge::handle_transfers` is a mandatory inherent
+carrying up to 256 C2M transfers, each applying a ledger system transaction, and
+inherents run *ahead* of the `inherents_applied()` where migration steps do. So a batch
+that priced to fit can still be turned away, and pricing cannot see it coming.
+
+The ledger says which case it is, so the migration asks rather than guesses:
+`MidnightSystemTransactionExecutor` gains an `is_block_limit_exceeded` hook, which
+`pallet-midnight-system` answers by comparing against its own
+`Error::BlockLimitExceededError`. A batch turned away because the block is full is
+*deferred* — the step ends with its cursor unmoved, tallying and eventing nothing, and
+the next block re-reads that same page against a `block_fullness` that starts at zero.
+Only a batch rejected on its own merits is skipped, reported through
+`DustReapplyBatchFailed`, and stepped over; with fullness ruled out, such a rejection is
+permanent and retrying it would be pointless.
+
+Deferral is deliberately unbounded. Room returns on any quieter block, applying anyway
+is a guaranteed rejection, and a stall is visible every block through
+`ObservationsSkippedForMigration`. It cannot deadlock either: a batch priced above 90%
+of the migration's whole-block budget is given up on before it is ever applied, so
+anything that reaches the ledger fits a quiet block.
 
 New events: `DustReapplyStarted`, `DustReapplyBatchFailed`,
 `DustReapplyCompleted`, `DustReapplySkipped`, and
