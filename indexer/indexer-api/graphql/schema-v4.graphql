@@ -489,10 +489,10 @@ type ContractCall implements ContractAction {
 	unshieldedBalances: [ContractBalance!]!
 	"""
 	Contract events emitted by this contract call.
-
+	
 	Only `ContractCall` exposes this field — `ContractDeploy` and
 	`ContractUpdate` don't execute circuits with the `emit` expression.
-
+	
 	Events are attributed to a call by matching contract address and entry
 	point within the transaction; if several calls in one transaction share
 	both, their events are not attributed here and remain reachable via the
@@ -1289,7 +1289,7 @@ type Query {
 	"""
 	Find contract events matching the filter, ordered by ID; `limit` defaults to 100 and is
 	capped at 500, `offset` defaults to 0.
-
+	
 	Block-range bounds (`fromBlock`, `toBlock`) live on `ContractEventFilter`
 	for symmetry with the subscription. `limit`/`offset` are top-level args.
 	"""
@@ -1926,7 +1926,7 @@ type Subscription {
 	blocks(offset: BlockOffset): Block!
 	"""
 	Subscribe to c2m-bridge events.
-
+	
 	Backfills events with id > `from` then live-tails new events. Filters apply across both
 	phases.
 	"""
@@ -2528,3 +2528,4 @@ schema {
 	mutation: Mutation
 	subscription: Subscription
 }
+
