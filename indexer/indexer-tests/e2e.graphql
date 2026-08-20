@@ -1,0 +1,894 @@
+query BlockQuery($block_offset: BlockOffset) {
+    block(offset: $block_offset) {
+        hash
+        height
+        protocolVersion
+        timestamp
+        author
+        zswapMerkleTreeRoot
+        ledgerParameters
+        systemParameters {
+            dParameter {
+                numPermissionedCandidates
+                numRegisteredCandidates
+            }
+            termsAndConditions {
+                hash
+                url
+            }
+        }
+        parent {
+            hash
+            height
+        }
+        transactions {
+            hash
+            protocolVersion
+            block {
+                hash
+            }
+            contractActions {
+                address
+                zswapState
+                transaction {
+                    hash
+                    block {
+                        hash
+                        height
+                    }
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+                unshieldedBalances {
+                    tokenType
+                    amount
+                }
+                __typename
+                ... on ContractCall {
+                    entryPoint
+                    deploy {
+                        address
+                    }
+                }
+            }
+            unshieldedCreatedOutputs {
+                owner
+                tokenType
+                value
+                outputIndex
+                intentHash
+                initialNonce
+                registeredForDustGeneration
+                createdAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+                spentAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+            }
+            unshieldedSpentOutputs {
+                owner
+                tokenType
+                value
+                outputIndex
+                intentHash
+                initialNonce
+                registeredForDustGeneration
+                createdAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+                spentAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+            }
+            zswapLedgerEvents {
+                id
+            }
+            dustLedgerEvents {
+                id
+                __typename
+                ... on DustInitialUtxo {
+                    output {
+                        nonce
+                    }
+                }
+            }
+            __typename
+            ... on RegularTransaction {
+                transactionResult {
+                    status
+                    segments {
+                        id
+                        success
+                    }
+                }
+                identifiers
+                zswapStartIndex
+                zswapEndIndex
+                fee
+            }
+        }
+    }
+}
+
+query TransactionsQuery($transaction_offset: TransactionOffset!) {
+    transactions(offset: $transaction_offset) {
+        hash
+        protocolVersion
+        block {
+            hash
+        }
+        contractActions {
+            address
+            zswapState
+            transaction {
+                hash
+                block {
+                    hash
+                    height
+                }
+                __typename
+                ... on RegularTransaction {
+                    transactionResult {
+                        status
+                        segments {
+                            id
+                            success
+                        }
+                    }
+                    identifiers
+                    zswapStartIndex
+                    zswapEndIndex
+                    fee
+                }
+            }
+            unshieldedBalances {
+                tokenType
+                amount
+            }
+            __typename
+            ... on ContractCall {
+                entryPoint
+                deploy {
+                    address
+                }
+            }
+        }
+        unshieldedCreatedOutputs {
+            owner
+            tokenType
+            value
+            outputIndex
+            intentHash
+            initialNonce
+            registeredForDustGeneration
+            createdAtTransaction {
+                hash
+                __typename
+                ... on RegularTransaction {
+                    transactionResult {
+                        status
+                        segments {
+                            id
+                            success
+                        }
+                    }
+                    identifiers
+                    zswapStartIndex
+                    zswapEndIndex
+                    fee
+                }
+            }
+            spentAtTransaction {
+                hash
+                __typename
+                ... on RegularTransaction {
+                    transactionResult {
+                        status
+                        segments {
+                            id
+                            success
+                        }
+                    }
+                    identifiers
+                    zswapStartIndex
+                    zswapEndIndex
+                    fee
+                }
+            }
+        }
+        unshieldedSpentOutputs {
+            owner
+            tokenType
+            value
+            outputIndex
+            intentHash
+            initialNonce
+            registeredForDustGeneration
+            createdAtTransaction {
+                hash
+                __typename
+                ... on RegularTransaction {
+                    transactionResult {
+                        status
+                        segments {
+                            id
+                            success
+                        }
+                    }
+                    identifiers
+                    zswapStartIndex
+                    zswapEndIndex
+                    fee
+                }
+            }
+            spentAtTransaction {
+                hash
+                __typename
+                ... on RegularTransaction {
+                    transactionResult {
+                        status
+                        segments {
+                            id
+                            success
+                        }
+                    }
+                    identifiers
+                    zswapStartIndex
+                    zswapEndIndex
+                    fee
+                }
+            }
+        }
+        zswapLedgerEvents {
+            id
+        }
+        dustLedgerEvents {
+            id
+            __typename
+            ... on DustInitialUtxo {
+                output {
+                    nonce
+                }
+            }
+        }
+        __typename
+        ... on RegularTransaction {
+            transactionResult {
+                status
+                segments {
+                    id
+                    success
+                }
+            }
+            identifiers
+            zswapStartIndex
+            zswapEndIndex
+            fee
+        }
+    }
+}
+
+query ContractActionQuery(
+    $address: HexEncoded!
+    $contract_action_offset: ContractActionOffset
+) {
+    contractAction(address: $address, offset: $contract_action_offset) {
+        address
+        zswapState
+        transaction {
+            hash
+            block {
+                hash
+                height
+            }
+            __typename
+            ... on RegularTransaction {
+                transactionResult {
+                    status
+                    segments {
+                        id
+                        success
+                    }
+                }
+                identifiers
+                zswapStartIndex
+                zswapEndIndex
+                fee
+            }
+        }
+        unshieldedBalances {
+            tokenType
+            amount
+        }
+        __typename
+        ... on ContractCall {
+            entryPoint
+            deploy {
+                address
+            }
+        }
+    }
+}
+
+mutation ConnectMutation($viewingKey: ViewingKey!) {
+    connect(viewingKey: $viewingKey)
+}
+
+mutation DisconnectMutation($sessionId: HexEncoded!) {
+    disconnect(sessionId: $sessionId)
+}
+
+subscription BlockSubscription($block_offset: BlockOffset) {
+    blocks(offset: $block_offset) {
+        hash
+        height
+        protocolVersion
+        timestamp
+        author
+        zswapMerkleTreeRoot
+        ledgerParameters
+        systemParameters {
+            dParameter {
+                numPermissionedCandidates
+                numRegisteredCandidates
+            }
+            termsAndConditions {
+                hash
+                url
+            }
+        }
+        parent {
+            hash
+            height
+        }
+        transactions {
+            hash
+            protocolVersion
+            block {
+                hash
+            }
+            contractActions {
+                address
+                zswapState
+                transaction {
+                    hash
+                    block {
+                        hash
+                        height
+                    }
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+                unshieldedBalances {
+                    tokenType
+                    amount
+                }
+                __typename
+                ... on ContractCall {
+                    entryPoint
+                    deploy {
+                        address
+                    }
+                }
+            }
+            unshieldedCreatedOutputs {
+                owner
+                tokenType
+                value
+                outputIndex
+                intentHash
+                initialNonce
+                registeredForDustGeneration
+                createdAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+                spentAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+            }
+            unshieldedSpentOutputs {
+                owner
+                tokenType
+                value
+                outputIndex
+                intentHash
+                initialNonce
+                registeredForDustGeneration
+                createdAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+                spentAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+            }
+            zswapLedgerEvents {
+                id
+            }
+            dustLedgerEvents {
+                id
+                __typename
+                ... on DustInitialUtxo {
+                    output {
+                        nonce
+                    }
+                }
+            }
+            __typename
+            ... on RegularTransaction {
+                transactionResult {
+                    status
+                    segments {
+                        id
+                        success
+                    }
+                }
+                identifiers
+                zswapStartIndex
+                zswapEndIndex
+                fee
+            }
+        }
+    }
+}
+
+subscription ContractActionSubscription(
+    $address: HexEncoded!
+    $contract_action_subscription_offset: BlockOffset
+) {
+    contractActions(
+        address: $address
+        offset: $contract_action_subscription_offset
+    ) {
+        address
+        zswapState
+        transaction {
+            hash
+            block {
+                hash
+                height
+            }
+            __typename
+            ... on RegularTransaction {
+                transactionResult {
+                    status
+                    segments {
+                        id
+                        success
+                    }
+                }
+                identifiers
+                zswapStartIndex
+                zswapEndIndex
+                fee
+            }
+        }
+        unshieldedBalances {
+            tokenType
+            amount
+        }
+        __typename
+        ... on ContractCall {
+            entryPoint
+            deploy {
+                address
+            }
+        }
+    }
+}
+
+subscription ShieldedTransactionsSubscription($sessionId: HexEncoded!) {
+    shieldedTransactions(sessionId: $sessionId) {
+        __typename
+        ... on RelevantTransaction {
+            transaction {
+                zswapStartIndex
+                zswapEndIndex
+            }
+            zswapCollapsedUpdate {
+                startIndex
+                endIndex
+            }
+        }
+        __typename
+        ... on ShieldedTransactionsProgress {
+            highestEndIndex
+            highestCheckedEndIndex
+            highestRelevantEndIndex
+        }
+    }
+}
+
+subscription UnshieldedTransactionsSubscription($address: UnshieldedAddress!) {
+    unshieldedTransactions(address: $address) {
+        __typename
+        ... on UnshieldedTransaction {
+            transaction {
+                hash
+                __typename
+                ... on RegularTransaction {
+                    transactionResult {
+                        status
+                        segments {
+                            id
+                            success
+                        }
+                    }
+                    identifiers
+                    zswapStartIndex
+                    zswapEndIndex
+                    fee
+                }
+            }
+            createdUtxos {
+                owner
+                tokenType
+                value
+                outputIndex
+                intentHash
+                initialNonce
+                registeredForDustGeneration
+                createdAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+            }
+            spentUtxos {
+                owner
+                tokenType
+                value
+                outputIndex
+                intentHash
+                initialNonce
+                registeredForDustGeneration
+                createdAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+                spentAtTransaction {
+                    hash
+                    __typename
+                    ... on RegularTransaction {
+                        transactionResult {
+                            status
+                            segments {
+                                id
+                                success
+                            }
+                        }
+                        identifiers
+                        zswapStartIndex
+                        zswapEndIndex
+                        fee
+                    }
+                }
+            }
+        }
+        __typename
+        ... on UnshieldedTransactionsProgress {
+            highestTransactionId
+        }
+    }
+}
+
+subscription ZswapLedgerEventsSubscription($id: Int) {
+    zswapLedgerEvents(id: $id) {
+        id
+    }
+}
+
+subscription DustLedgerEventsSubscription($id: Int) {
+    dustLedgerEvents(id: $id) {
+        id
+        __typename
+        ... on DustInitialUtxo {
+            output {
+                nonce
+            }
+        }
+    }
+}
+
+subscription DustGenerationsSubscription(
+    $dustAddress: DustAddress!
+    $blockHash: HexEncoded!
+    $dtimeCutoffHeight: Int!
+) {
+    dustGenerations(
+        dustAddress: $dustAddress
+        blockHash: $blockHash
+        dtimeCutoffHeight: $dtimeCutoffHeight
+    ) {
+        __typename
+        ... on DustGenerationsItem {
+            generationMtIndex
+        }
+        ... on DustGenerationsProgress {
+            highestIndex
+        }
+        ... on DustGenerationDtimeUpdateItem {
+            generationMtIndex
+            newDtime
+            treeInsertionPath
+        }
+    }
+}
+
+subscription ShieldedNullifierTransactionsSubscription(
+    $nullifierPrefixes: [HexEncoded!]!
+    $fromBlock: Int
+    $toBlock: Int
+) {
+    shieldedNullifierTransactions(
+        nullifierPrefixes: $nullifierPrefixes
+        fromBlock: $fromBlock
+        toBlock: $toBlock
+    ) {
+        nullifier
+        transactionId
+        blockHeight
+        blockHash
+    }
+}
+
+subscription DustNullifierTransactionsSubscription(
+    $nullifierLeBytesPrefixes: [HexEncoded!]!
+    $fromBlock: Int
+    $toBlock: Int
+) {
+    dustNullifierTransactions(
+        nullifierLeBytesPrefixes: $nullifierLeBytesPrefixes
+        fromBlock: $fromBlock
+        toBlock: $toBlock
+    ) {
+        nullifierLeBytes
+        commitmentLeBytes
+        transactionId
+        blockHeight
+        blockHash
+    }
+}
+
+query DustGenerationStatusQuery(
+    $cardanoRewardAddresses: [CardanoRewardAddress!]!
+) {
+    dustGenerationStatus(cardanoRewardAddresses: $cardanoRewardAddresses) {
+        cardanoRewardAddress
+        dustAddress
+        registered
+        nightBalance
+        generationRate
+        currentCapacity
+    }
+}
+
+query ZswapMerkleTreeCollapsedUpdateQuery(
+    $start_index: Int!
+    $end_index: Int!
+) {
+    zswapMerkleTreeCollapsedUpdate(
+        startIndex: $start_index
+        endIndex: $end_index
+    ) {
+        startIndex
+        endIndex
+        update
+        protocolVersion
+    }
+}
+
+query DustGenerationsQuery($cardanoRewardAddresses: [CardanoRewardAddress!]!) {
+    dustGenerations(cardanoRewardAddresses: $cardanoRewardAddresses) {
+        cardanoRewardAddress
+        registrations {
+            dustAddress
+            valid
+            nightBalance
+            generationRate
+            maxCapacity
+            currentCapacity
+            utxoTxHash
+            utxoOutputIndex
+        }
+    }
+}
+
+query DustCommitmentMerkleTreeUpdateQuery($startIndex: Int!, $endIndex: Int!) {
+    dustCommitmentMerkleTreeUpdate(startIndex: $startIndex, endIndex: $endIndex) {
+        startIndex
+        endIndex
+        update
+        protocolVersion
+    }
+}
+
+query DustGenerationMerkleTreeUpdateQuery($startIndex: Int!, $endIndex: Int!) {
+    dustGenerationMerkleTreeUpdate(startIndex: $startIndex, endIndex: $endIndex) {
+        startIndex
+        endIndex
+        update
+        protocolVersion
+    }
+}
+
+query DParameterHistoryQuery {
+    dParameterHistory {
+        blockHeight
+        blockHash
+        timestamp
+        numPermissionedCandidates
+        numRegisteredCandidates
+    }
+}
+
+query TermsAndConditionsHistoryQuery {
+    termsAndConditionsHistory {
+        blockHeight
+        blockHash
+        timestamp
+        hash
+        url
+    }
+}

@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@utils/*": ["utils/*"]
+    },
+    "types": ["vitest/globals"]
+  },
+  "include": [
+    "src",
+    "tests",
+    "types",
+    "coverage/src",
+    "setup",
+    "environment",
+    "utils",
+    // The three project configs import nothing but `path` and `vitest/config`,
+    // so they can be gated now. The root `vitest.config.ts` cannot: it imports
+    // the two reporters parked below.
+    "vitest.config.smoke.ts",
+    "vitest.config.integration.ts",
+    "vitest.config.e2e.ts"
+  ],
+  // Excluded pending #1423: both custom reporters implement the vitest<=3
+  // `onFinished` hook, which vitest 4 no longer dispatches. Deliberate,
+  // tracked park — when #1423 migrates them, drop the `utils/reporters/**`
+  // entry only and add `vitest.config.ts` to `include`. The `exclude` key
+  // and its `node_modules` entry must stay, for the reason below.
+  //
+  // `node_modules` is listed explicitly because naming `exclude` at all
+  // replaces TypeScript's implicit default of
+  // ["node_modules", "bower_components", "jspm_packages", outDir].
+  "exclude": ["node_modules", "utils/reporters/**"]
+}

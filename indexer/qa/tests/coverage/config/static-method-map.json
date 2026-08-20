@@ -1,0 +1,32 @@
+{
+  "methods": {
+    "getLatestBlock": [{ "rootType": "Query", "field": "block" }],
+    "getBlockByOffset": [{ "rootType": "Query", "field": "block" }],
+    "getTransactionByOffset": [{ "rootType": "Query", "field": "transactions" }],
+    "getContractAction": [{ "rootType": "Query", "field": "contractAction" }],
+    "getZswapMerkleTreeCollapsedUpdate": [
+      { "rootType": "Query", "field": "zswapMerkleTreeCollapsedUpdate" }
+    ],
+    "getDustGenerationStatus": [{ "rootType": "Query", "field": "dustGenerationStatus" }],
+    "getDustGenerations": [{ "rootType": "Query", "field": "dustGenerations" }],
+    "getDustCommitmentMerkleTreeUpdate": [
+      { "rootType": "Query", "field": "dustCommitmentMerkleTreeUpdate" }
+    ],
+    "subscribeToBlockEvents": [{ "rootType": "Subscription", "field": "blocks" }],
+    "subscribeToUnshieldedTransactionEvents": [
+      { "rootType": "Subscription", "field": "unshieldedTransactions" }
+    ],
+    "subscribeToShieldedTransactionEvents": [
+      { "rootType": "Subscription", "field": "shieldedTransactions" }
+    ],
+    "openWalletSession": [{ "rootType": "Mutation", "field": "connect" }],
+    "closeWalletSession": [{ "rootType": "Mutation", "field": "disconnect" }],
+    "subscribeToContractActionEvents": [{ "rootType": "Subscription", "field": "contractActions" }],
+    "subscribeToDustLedgerEvents": [{ "rootType": "Subscription", "field": "dustLedgerEvents" }],
+    "subscribeToZswapLedgerEvents": [{ "rootType": "Subscription", "field": "zswapLedgerEvents" }],
+    "subscribeToDustGenerations": [{ "rootType": "Subscription", "field": "dustGenerations" }],
+    "subscribeToDustNullifierTransactions": [
+      { "rootType": "Subscription", "field": "dustNullifierTransactions" }
+    ]
+  }
+}

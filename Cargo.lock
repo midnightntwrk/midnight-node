@@ -7888,6 +7888,7 @@ dependencies = [
 name = "midnight-node"
 version = "2.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "authority-selection-inherents",
  "blake2b_simd",

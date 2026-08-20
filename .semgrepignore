@@ -1,0 +1,9 @@
+# The ported indexer's local-only docs and test harnesses intentionally use
+# unencrypted loopback/container WebSockets and deterministic fixture secrets.
+indexer/README.md
+indexer/docker-compose.yaml
+indexer/indexer-tests/src/e2e.rs
+indexer/qa/scripts/test-hardfork-8to9.sh
+indexer/qa/scripts/test-runtime-upgrade.sh
+indexer/qa/tests/
+indexer/qa/tools/block-scanner/

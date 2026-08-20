@@ -1,0 +1,11 @@
+* @midnightntwrk/mn-codeowners-indexer @midnightntwrk/mn-sre
+/qa/ @midnightntwrk/mn-qa @midnightntwrk/mn-codeowners-indexer
+/.github/ISSUE_TEMPLATE/ @midnightntwrk/mn-security @midnightntwrk/mn-sre
+/.github/PULL_REQUEST_TEMPLATE/ @midnightntwrk/mn-security @midnightntwrk/mn-sre
+/.github/workflows/scan.yaml @midnightntwrk/mn-security @midnightntwrk/mn-sre
+/.github/workflows/dependabot.yml @midnightntwrk/mn-security @midnightntwrk/mn-sre
+CODE_OF_CONDUCT.md @midnightntwrk/mn-security @midnightntwrk/mn-sre
+CODEOWNERS @midnightntwrk/mn-security @midnightntwrk/mn-sre
+CONTRIBUTING.md @midnightntwrk/mn-security @midnightntwrk/mn-sre
+LICENSE @midnightntwrk/mn-security @midnightntwrk/mn-sre
+SECURITY.md @midnightntwrk/mn-security @midnightntwrk/mn-sre

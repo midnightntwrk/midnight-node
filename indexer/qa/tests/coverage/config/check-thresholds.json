@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "maxOverallCoverageDropPercent": 0.0,
+  "failOnNewMissingCritical": true,
+  "failOnCriticalRequirements": true,
+  "baselineFile": "qa/tests/coverage/baseline/coverage-baseline.json"
+}

@@ -1,0 +1,10 @@
+{
+  "existing": "mn_addr_dev1qvulx4x93nuqjwwv8cg57nc82tg77kmsu98vel5j70hfnwq4q0psqlg6gm",
+  "non-existing": "mn_addr_dev1lwl2l527l84y0j0ejsdaut0f74k9k07wgc34ex048jn97xuqpenqpm03q4",
+  "prefund-faucets": [
+    "mn_addr_dev1m008urkd83umdn3j2nznwyrp34ug5negs2tawcgvcxnmchx7v60qr7c804",
+    "mn_addr_dev1mavgmjzxr6pjk9753q00glkp7rdtvfmrfucueh6cz4wr9u8qp99qn9xeyu",
+    "mn_addr_dev1fe54s589ra8v0sa7qt029rhhyv9nzz62zrm0she8h8g42ne5yl5s87257c",
+    "mn_addr_dev1d2uj08agc6yten0cqxr90dhr7s95fp6qsk9g5vywvdzhydrkqn8q6kt0cd"
+  ]
+}

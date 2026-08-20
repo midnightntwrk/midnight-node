@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="42" failures="0" errors="0" time="234.14545271">
+    <testsuite name="tests/e2e/contract-actions-sequential.test.ts" timestamp="2026-06-05T08:14:13.267Z" hostname="black-box" tests="9" failures="0" errors="0" skipped="0" time="84.995617945">
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to deploy a smart contract &gt; should be reported by the indexer through a transaction query by hash" time="0.007384855">
+        </testcase>
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to deploy a smart contract &gt; should be reported by the indexer through a block query by hash" time="0.00837319">
+        </testcase>
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to deploy a smart contract &gt; should be reported by the indexer through a contract action query by address" time="0.005750782">
+        </testcase>
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to call a smart contract &gt; should be reported by the indexer through a transaction query by hash" time="0.005743027">
+        </testcase>
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to call a smart contract &gt; should be reported by the indexer through a block query by hash" time="0.006456954">
+        </testcase>
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to call a smart contract &gt; should be reported by the indexer through a contract action query by address" time="0.002303376">
+        </testcase>
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to update a smart contract &gt; should be reported by the indexer through a transaction query by hash" time="0.005909682">
+        </testcase>
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to update a smart contract &gt; should be reported by the indexer through a block query by hash" time="0.010234452">
+        </testcase>
+        <testcase classname="tests/e2e/contract-actions-sequential.test.ts" name="contract actions &gt; a transaction to update a smart contract &gt; should be reported by the indexer through a contract action query by address" time="0.008575702">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/e2e/shielded-transactions.test.ts" timestamp="2026-06-05T08:14:13.269Z" hostname="black-box" tests="8" failures="0" errors="0" skipped="0" time="51.788023167">
+        <testcase classname="tests/e2e/shielded-transactions.test.ts" name="shielded transactions &gt; a successful shielded transaction transferring 1 Shielded Token between two wallets &gt; should be reported by the indexer through a block query by hash" time="0.010298663">
+        </testcase>
+        <testcase classname="tests/e2e/shielded-transactions.test.ts" name="shielded transactions &gt; a successful shielded transaction transferring 1 Shielded Token between two wallets &gt; should be reported by the indexer through a transaction query by hash" time="0.008618593">
+        </testcase>
+        <testcase classname="tests/e2e/shielded-transactions.test.ts" name="shielded transactions &gt; a successful shielded transaction transferring 1 Shielded Token between two wallets &gt; should stream Zswap events followed by DustSpendProcessed after a shielded transaction" time="0.508136457">
+        </testcase>
+        <testcase classname="tests/e2e/shielded-transactions.test.ts" name="shielded transactions &gt; a successful shielded transaction transferring 1 Shielded Token between two wallets &gt; should increase the zswap Merkle tree end index" time="0.009378507">
+        </testcase>
+        <testcase classname="tests/e2e/shielded-transactions.test.ts" name="shielded transactions &gt; a successful shielded transaction transferring 1 Shielded Token between two wallets &gt; should increase the dust commitment Merkle tree end index" time="0.005303237">
+        </testcase>
+        <testcase classname="tests/e2e/shielded-transactions.test.ts" name="shielded transactions &gt; a confirmed shielded transfer streamed to wallet sessions by viewing key &gt; should stream the transaction to the source viewing key with a matching hash" time="4.984353123">
+        </testcase>
+        <testcase classname="tests/e2e/shielded-transactions.test.ts" name="shielded transactions &gt; a confirmed shielded transfer streamed to wallet sessions by viewing key &gt; should stream the transaction to the destination viewing key with a matching hash" time="2.025331976">
+        </testcase>
+        <testcase classname="tests/e2e/shielded-transactions.test.ts" name="shielded transactions &gt; a confirmed shielded transfer streamed to wallet sessions by viewing key &gt; should not stream the transaction to an unrelated viewing key" time="20.568223998">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/e2e/unshielded-transactions.test.ts" timestamp="2026-06-05T08:14:13.271Z" hostname="black-box" tests="9" failures="0" errors="0" skipped="0" time="34.778001682">
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should be reported by the indexer through a block query by hash" time="0.010477451">
+        </testcase>
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should be reported by the indexer through a transaction query by hash" time="0.007161915">
+        </testcase>
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should be reported by the indexer through an unshielded transaction event for the source address" time="0.000246656">
+        </testcase>
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should be reported by the indexer through an unshielded transaction event for the destination address" time="0.000182836">
+        </testcase>
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should have transferred 1 STAR from the source to the destination address" time="0.009011414">
+        </testcase>
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should be reported by the indexer through a progress update event for the source address" time="9.005493542">
+        </testcase>
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should be reported by the indexer through a progress update event for the destination address" time="3.001204601">
+        </testcase>
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should increase the dust commitment Merkle tree end index" time="0.008364804">
+        </testcase>
+        <testcase classname="tests/e2e/unshielded-transactions.test.ts" name="unshielded transactions &gt; a successful unshielded transaction transferring 1 STAR between two addresses &gt; should deliver dust events in correct sequence after unshielded transaction" time="0.002790957">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/e2e/wallet-subscriptions.test.ts" timestamp="2026-06-05T08:14:13.273Z" hostname="black-box" tests="7" failures="0" errors="0" skipped="4" time="59.438454268">
+        <testcase classname="tests/e2e/wallet-subscriptions.test.ts" name="wallet event subscriptions &gt; empty wallet scenario &gt; should emit only ProgressUpdate for empty wallet" time="2.553794797">
+        </testcase>
+        <testcase classname="tests/e2e/wallet-subscriptions.test.ts" name="wallet event subscriptions &gt; multi-destination transaction scenario &gt; should emit UnshieldedTransaction only for the target wallet (A &gt; B1)" time="30.090927604">
+        </testcase>
+        <testcase classname="tests/e2e/wallet-subscriptions.test.ts" name="wallet event subscriptions &gt; multi-destination transaction scenario &gt; should emit UnshieldedTransaction only for the target wallet (A &gt; B2)" time="21.664849809">
+        </testcase>
+        <testcase classname="tests/e2e/wallet-subscriptions.test.ts" name="wallet event subscriptions &gt; future coverage &gt; should not duplicate events after resubscription" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/e2e/wallet-subscriptions.test.ts" name="wallet event subscriptions &gt; future coverage &gt; should correctly handle multiple sequential A &gt; B transactions" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/e2e/wallet-subscriptions.test.ts" name="wallet event subscriptions &gt; future coverage &gt; should correctly handle mixed historical and new wallet subscriptions" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/e2e/wallet-subscriptions.test.ts" name="wallet event subscriptions &gt; future coverage &gt; should segregate shielded and unshielded events correctly" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/e2e/toolkit/dust-balance.test.ts" timestamp="2026-06-05T08:14:13.275Z" hostname="black-box" tests="1" failures="0" errors="0" skipped="0" time="0.676649312">
+        <testcase classname="tests/e2e/toolkit/dust-balance.test.ts" name="dust balance query using toolkit &gt; a dust balance query with a valid wallet seed &gt; should respond with a dust balance according to the requested schema" time="0.181578372">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/e2e/toolkit/key-material.test.ts" timestamp="2026-06-05T08:14:13.276Z" hostname="black-box" tests="6" failures="0" errors="0" skipped="0" time="0.972488729">
+        <testcase classname="tests/e2e/toolkit/key-material.test.ts" name="key material derivation validation &gt; a midnight shielded address &gt; should show with the expected prefix for the current network ID" time="0.037743721">
+        </testcase>
+        <testcase classname="tests/e2e/toolkit/key-material.test.ts" name="key material derivation validation &gt; a midnight shielded address &gt; should show with the expected prefix for all network IDs" time="0.163154306">
+        </testcase>
+        <testcase classname="tests/e2e/toolkit/key-material.test.ts" name="key material derivation validation &gt; a midnight unshielded address &gt; should show with the expected prefix for the current network ID" time="0.03702745">
+        </testcase>
+        <testcase classname="tests/e2e/toolkit/key-material.test.ts" name="key material derivation validation &gt; a midnight unshielded address &gt; should show with the expected prefix for all network IDs" time="0.126244339">
+        </testcase>
+        <testcase classname="tests/e2e/toolkit/key-material.test.ts" name="key material derivation validation &gt; a midnight viewing key &gt; should show with the expected prefix for the current network ID" time="0.023108575">
+        </testcase>
+        <testcase classname="tests/e2e/toolkit/key-material.test.ts" name="key material derivation validation &gt; a midnight viewing key &gt; should show with the expected prefix for all network IDs" time="0.121334844">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/e2e/toolkit/show-wallet-queries.test.ts" timestamp="2026-06-05T08:14:13.276Z" hostname="black-box" tests="2" failures="0" errors="0" skipped="0" time="1.496217607">
+        <testcase classname="tests/e2e/toolkit/show-wallet-queries.test.ts" name="show wallet queries using toolkit &gt; private wallet state query using toolkit &gt; should respond with a private wallet state according to the requested schema" time="0.546307572">
+        </testcase>
+        <testcase classname="tests/e2e/toolkit/show-wallet-queries.test.ts" name="show wallet queries using toolkit &gt; public wallet state query using toolkit &gt; should respond with a public wallet state according to the requested schema" time="0.464343278">
+        </testcase>
+    </testsuite>
+</testsuites>

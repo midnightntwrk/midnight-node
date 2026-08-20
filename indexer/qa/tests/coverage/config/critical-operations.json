@@ -1,0 +1,34 @@
+{
+  "criticalFields": [
+    {
+      "rootType": "Query",
+      "field": "block",
+      "requiredFacets": ["positive", "negative"],
+      "minimumProjects": 1
+    },
+    {
+      "rootType": "Query",
+      "field": "transactions",
+      "requiredFacets": ["positive", "negative"],
+      "minimumProjects": 1
+    },
+    {
+      "rootType": "Query",
+      "field": "dustGenerationStatus",
+      "requiredFacets": ["positive", "negative"],
+      "minimumProjects": 1
+    },
+    {
+      "rootType": "Subscription",
+      "field": "blocks",
+      "requiredFacets": ["streaming"],
+      "minimumProjects": 1
+    },
+    {
+      "rootType": "Subscription",
+      "field": "unshieldedTransactions",
+      "requiredFacets": ["streaming", "negative"],
+      "minimumProjects": 1
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+// Array of contract actions
+[
+  {
+    "contract-address": "<hex 64 bytes>",
+    "contract-actions": [
+      {
+        "action-type": "ContractDeploy",
+        "block-height": 1
+      }
+    ]
+  }
+]

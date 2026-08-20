@@ -1,0 +1,12 @@
+[install]
+# Use Bun's built-in package manager
+cache = true
+production = false
+
+[run]
+# Enable Bun's experimental features
+bun = true
+
+[test]
+# Test configuration
+preload = ["./src/test-setup.ts"]

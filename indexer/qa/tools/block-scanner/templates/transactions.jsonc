@@ -1,0 +1,6 @@
+{
+  // Array of up to 100 regular transactions
+  "regular-transactions": [],
+  // Array of up to 100 system transactions
+  "system-transactions": []
+}

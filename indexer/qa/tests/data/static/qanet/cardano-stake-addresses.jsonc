@@ -1,0 +1,81 @@
+{
+  // A cardano address that is registered for dust production and has cNIGHT balance
+  // Expected status: registered=true, dustAddress not null, nightBalance > 0, generationRate = nightBalance * 8267, currentCapacity = 5000000000 (at max)
+  "registered-with-dust": "stake_test1uz6x47zhnk6f3nnpeg65st75t6gw7fzxv2hezafxtcgycdgyyhzh8",
+  // A cardano address that is registered for dust production but has no cNIGHT balance
+  // Expected status: registered=true, dustAddress not null, nightBalance="0", generationRate="0", currentCapacity="0"
+  // Note: No dust is generated because there is no cNIGHT to generate from
+  "registered-without-dust": "stake_test1upqhex5hpc6nh9dxtqfuz9sxf3wmzk7g3k0e9qxu6cvh52qmf2vmk",
+  // A cardano address that has never been registered for dust production
+  // Expected status: registered=false, dustAddress=null, nightBalance="0", generationRate="0", currentCapacity="0"
+  "non-registered": "stake_test1uqg287q4tjltwaz55f3em78su32zn4as3n8sudhmelzyaws82w6gd",
+  // A cardano address that was previously registered for dust production but has been deregistered
+  // Expected status: registered=false, dustAddress=null, nightBalance="0", generationRate="0", currentCapacity="0"
+  // Note: This differs from non-registered in the execution path (deregistration vs never registered), but the status is the same
+  "deregistered": "stake_test1uqu5f7ctsrrfqys5rqf9843nwmrf2w0ea8hae0xe3f9fdcqucy6a8",
+  // A cardano address that is registered for dust production and has had backing NIGHT UTXOs spent
+  // on the Midnight chain, so a fresh dustGenerations(startIndex=0) subscription returns at least
+  // one DustGenerationDtimeUpdateItem. Used as the regression fixture for #1167.
+  // Observed on 2026-06-03: 19 DustGenerationsItem + 9 DustGenerationDtimeUpdateItem events.
+  // Also present in the multi-utxo array (first entry); duplicated here for named access.
+  "registered-with-dust-and-spent": "stake_test1uqg6d2c4nmmf8088j8cejsxdcanms5x6et5x87rg6v5x03shyhyd8",
+
+  // ---------------------------------------------------------------------------
+  // Multi-UTXO candidates for the #926 aggregation test (best-effort fixture).
+  //
+  // Each entry snapshots a Cardano stake credential whose wallet held multiple
+  // backing cNIGHT UTXOs on preview (the network qanet observes) at the
+  // snapshot date below. Fields:
+  //   - cardanoAddress: payment address currently holding the backing UTXOs
+  //   - cardanoStakeKey: CIP-19 stake address registered for DUST generation
+  //   - expectedUtxoCount: number of backing cNIGHT UTXOs at snapshot time
+  //   - expectedTotalRaw: sum of raw cNIGHT amounts across those UTXOs
+  //   - individualAmountsRaw: per-UTXO raw cNIGHT amounts (sum equals expectedTotalRaw)
+  //
+  // The test iterates this array and picks the first candidate whose snapshot
+  // is still intact (the indexer's status.nightBalance equals the total or
+  // matches one of the per-UTXO amounts). If a holder has moved/spent UTXOs
+  // since the snapshot was taken, that candidate is skipped.
+  //
+  // Snapshot date: 2026-05-11.
+  "multi-utxo": [
+    {
+      "cardanoAddress": "addr_test1qztptr5v7ztl2cu8zpn94qxmkqj0pfc5h9djqw6m040hq7q35643t8hkjw7w0y03n9qvm3m8hpgd4jhgv0ux35egvlrq39n895",
+      "cardanoStakeKey": "stake_test1uqg6d2c4nmmf8088j8cejsxdcanms5x6et5x87rg6v5x03shyhyd8",
+      "expectedUtxoCount": 10,
+      "expectedTotalRaw": 5000004000,
+      "individualAmountsRaw": [
+        500000400, 500000400, 500000400, 500000400, 500000400,
+        500000400, 500000400, 500000400, 500000400, 500000400
+      ]
+    },
+    {
+      "cardanoAddress": "addr_test1qp84q59csf2yhc3a3he20klnxtvgzc6uck5a6pvjra9t9zq8ljdz8cndgg4z4lsg7vqyf0jsztpg4zvglnz4ljhr5mtq3j68rw",
+      "cardanoStakeKey": "stake_test1uqrlex3rufk5y232lcy0xqzyhegp9s523xy0e32let36d4s5ee3rj",
+      "expectedUtxoCount": 4,
+      "expectedTotalRaw": 3500,
+      "individualAmountsRaw": [1000, 1000, 1000, 500]
+    },
+    {
+      "cardanoAddress": "addr_test1qp90avl77mgdjmldxkfwvxdm8r7375t87x8924l3zayyus42htzxcezl646tvslqh9e5e5j6m6s09es7u5gxwvqh3fsq7ycw37",
+      "cardanoStakeKey": "stake_test1uz4t43rvv30a2a9kg0stju6v6fddag8juc0w2yr8xqtc5cqtz6mvf",
+      "expectedUtxoCount": 3,
+      "expectedTotalRaw": 120950,
+      "individualAmountsRaw": [10950, 100000, 10000]
+    },
+    {
+      "cardanoAddress": "addr_test1qp24chce0j4970wdu9zseqwrm7lkdhyefeu74sxaygtuck643tuv7gnz3jrpgc80a9p9jlzsngj6fu30tx09umay3ggqv6sf9l",
+      "cardanoStakeKey": "stake_test1up2c47x0yf3geps5vrh7jsje03gf5fdy7gh4n8j7d7jg5yqdum7mv",
+      "expectedUtxoCount": 3,
+      "expectedTotalRaw": 300,
+      "individualAmountsRaw": [100, 100, 100]
+    },
+    {
+      "cardanoAddress": "addr_test1qq9l4u52ez4888n876jqvq2fcp8wr7hsluz9ne45rueqpzmf8rqfxzaxunht2lgv2knxzehf6h29c5cg8ezzfqckkdcqc2ayup",
+      "cardanoStakeKey": "stake_test1up5n3synpwnwfm4405x9tfnpvm5at4zu2vyru3pysvttxuq7c4rjs",
+      "expectedUtxoCount": 3,
+      "expectedTotalRaw": 300,
+      "individualAmountsRaw": [100, 100, 100]
+    }
+  ]
+}
