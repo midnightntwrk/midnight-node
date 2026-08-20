@@ -30,9 +30,7 @@ impl Default for BlockContext {
 }
 
 impl BlockContext {
-	/// The parent block's timestamp, when the ledger version carries one.
-	///
-	/// See the ledger-7 counterpart in `pre_ledger_8.rs`, which returns `None`.
+	/// The parent block's timestamp. Always `Some` from ledger 8 onward.
 	pub fn parent_block_time(&self) -> Option<u64> {
 		Some(self.last_block_time)
 	}
