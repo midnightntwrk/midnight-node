@@ -11,7 +11,7 @@ own slice of the generating set as a multi-block migration (storage version
 - `on_runtime_upgrade` saves the pre-fork ledger-8 arena root — the only place the
   wiped entries' night value and dust owner survive;
 - the MBM pages through `UtxoOwners`, reads each nonce's pre-wipe value and owner
-  through a new `dust_generation_values_v8` host function, and re-applies them in
+  through a new `dust_generation_values` host function, and re-applies them in
   batches of 25 as `CNightGeneratesDustUpdate` system transactions;
 - Cardano observations are ignored while it runs (the existing storage version
   gate in `process_tokens`), so `NextCardanoPosition` does not advance and the

@@ -24,13 +24,15 @@
 //!
 //! It reads the *v8* state through the arena root the migration saved before
 //! translation (`pallet_cnight_observation::PreForkStateKey`), which stays
-//! resolvable because the arena retains historical ledger states. Reading a v8
-//! state from the v9 bridge is the same trick `serve_pre_migration_v8_read!`
-//! plays in [`crate::host_api::ledger_9`].
+//! resolvable because the arena retains historical ledger states. It is served
+//! from [`crate::host_api::ledger_8`], which the post-fork runtime still
+//! imports.
 
-use crate::common::types::{DustGenerationEntry, DustGenerationValues};
-use crate::ledger_8::api::Ledger as Ledger8;
-use crate::ledger_9::types::{DeserializationError, LedgerApiError};
+use crate::host_api::ledger_8::{DustGenerationEntry, DustGenerationValues};
+use crate::ledger_8::{
+	api::Ledger as Ledger8,
+	types::{DeserializationError, LedgerApiError},
+};
 
 use base_crypto::{hash::HashOutput, time::Timestamp};
 use ledger_storage_ledger_8 as storage;
@@ -57,7 +59,7 @@ const LOG_TARGET: &str = "midnight::ledger::dust_generation";
 /// `RecordPreForkState` migration runs before the pallet-midnight translation,
 /// so a future reorder of the runtime `Migrations` tuple would otherwise
 /// silently restore nothing, chain-wide, detectable only by absent DUST.
-pub fn dust_generation_values_v8<D: DB>(
+pub fn dust_generation_values<D: DB>(
 	state_key: &[u8],
 	nonces: &[[u8; 32]],
 ) -> Result<DustGenerationValues, LedgerApiError> {
@@ -196,7 +198,7 @@ mod tests {
 		let root = v8_root(owner);
 
 		let DustGenerationValues { time_to_cap, entries } =
-			dust_generation_values_v8::<InMemoryDB>(
+			dust_generation_values::<InMemoryDB>(
 				&root,
 				&[NONCE_LIVE, NONCE_DESTROYED, NONCE_UNKNOWN],
 			)
@@ -226,7 +228,7 @@ mod tests {
 		)));
 
 		assert!(matches!(
-			dust_generation_values_v8::<InMemoryDB>(&root, &[NONCE_LIVE]),
+			dust_generation_values::<InMemoryDB>(&root, &[NONCE_LIVE]),
 			Err(LedgerApiError::NoLedgerState),
 		));
 	}

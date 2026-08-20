@@ -2,8 +2,7 @@
 use crate::ledger_9::Bridge;
 use crate::{
 	common::types::{
-		DustGenerationValues, GasCost, Hash, SystemTransactionAppliedStateRoot,
-		TransactionAppliedStateRoot, Tx,
+		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
 	},
 	ledger_9::{BlockContext, types::LedgerApiError},
 };
@@ -655,35 +654,6 @@ pub trait Ledger9Bridge {
 		} else {
 			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
 			crate::host_api::migration_8_to_9::migrate_state_v8_to_v9::<DbSeparate>(state_key)
-		}
-	}
-
-	/// Each requested nonce's still-generating entry in the *pre-fork*
-	/// (ledger-8) dust state, plus that state's dust `time_to_cap`.
-	///
-	/// Called by `pallet-cnight-observation`'s dust re-apply migration, which
-	/// rebuilds the cNIGHT generation entries the ledger 8 -> 9 hardfork wipes
-	/// and backdates their `ctime` by `time_to_cap`. `state_key` is the v8 arena
-	/// root it saved during the upgrade block; `Err(NoLedgerState)` means that
-	/// root no longer resolves, or is not a ledger-8 root at all.
-	fn dust_generation_values_v8(
-		&mut self,
-		state_key: PassFatPointerAndRead<&[u8]>,
-		nonces: PassFatPointerAndDecode<Vec<[u8; 32]>>,
-	) -> AllocateAndReturnByCodec<Result<DustGenerationValues, LedgerApiError>> {
-		// The migration runs in `inherents_applied()`, after pallet-midnight has
-		// initialized the arena, but `set_default_storage` is idempotent and
-		// keeps this callable from anywhere in the block.
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::set_default_storage(*self);
-			crate::host_api::dust_generation::dust_generation_values_v8::<DbUnified>(
-				state_key, &nonces,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
-			crate::host_api::dust_generation::dust_generation_values_v8::<DbSeparate>(
-				state_key, &nonces,
-			)
 		}
 	}
 

@@ -69,7 +69,10 @@ use frame_support::{
 	traits::OnRuntimeUpgrade,
 	weights::WeightMeter,
 };
-use midnight_node_ledger::types::{DustGenerationValues, active_ledger_bridge as LedgerApi};
+use midnight_node_ledger::{
+	host_api::ledger_8::{DustGenerationValues, ledger_8_bridge as Ledger8Api},
+	types::active_ledger_bridge as LedgerApi,
+};
 use midnight_primitives::{
 	LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
 };
@@ -88,7 +91,7 @@ const LOG_TARGET: &str = "cnight-observation::migration";
 /// budget — it prices each batch and stops at the first one the budget left cannot
 /// pay for — so a smaller batch packs the budget more tightly (7 x 25 = 175
 /// `Create`s per block against 3 x 50 = 150) and keeps the blast radius of a failed
-/// batch small. The cost is one extra `dust_generation_values_v8` call and one extra
+/// batch small. The cost is one extra `dust_generation_values` call and one extra
 /// system transaction per batch, both negligible against the ledger work a batch
 /// does.
 pub const MAX_REAPPLY_BATCH: u32 = 25;
@@ -269,7 +272,7 @@ fn replay_batch<T: Config>(cursor: Option<T::Hash>, meter: &WeightMeter) -> Batc
 
 	let raw_nonces: Vec<[u8; 32]> = nonces.iter().map(|nonce| nonce.0).collect();
 	let DustGenerationValues { time_to_cap, entries } =
-		match LedgerApi::dust_generation_values_v8(&pre_fork_key, raw_nonces) {
+		match Ledger8Api::dust_generation_values(&pre_fork_key, raw_nonces) {
 			Ok(values) => values,
 			Err(e) => {
 				// The pre-fork arena root has been reaped, or (defensively) is
