@@ -16,7 +16,7 @@ mod runtimes;
 
 use crate::{
     domain::{
-        BlockRef, SystemParametersChange,
+        BlockRef,
         node::{Block, Node, RegularTransaction, SystemTransaction, Transaction},
     },
     infra::subxt_node::{header::SubstrateHeaderExt, runtimes::BlockDetails},
@@ -378,6 +378,15 @@ impl SubxtNode {
             .try_collect::<Vec<_>>()
             .await?;
 
+        // System parameters live in this block's state; fetching them here lets the lookups
+        // ride the concurrent block prefetch instead of the sequential indexing path. Both are
+        // storage/runtime-API reads, so both use the runtime in this block's state, which at an
+        // enactment block is already the next one; see above.
+        let (d_parameter, terms_and_conditions) = tokio::try_join!(
+            runtimes::get_d_parameter(state_node_version, &block),
+            runtimes::get_terms_and_conditions(state_node_version, &block),
+        )?;
+
         Ok(RawBlock {
             header,
             state_node_version,
@@ -396,6 +405,8 @@ impl SubxtNode {
                 transactions,
                 dust_registration_events,
                 bridge_events,
+                d_parameter: Some(d_parameter),
+                terms_and_conditions,
             },
             client: block,
         })
@@ -591,34 +602,6 @@ impl Node for SubxtNode {
                 }
             }
         }
-    }
-
-    async fn fetch_system_parameters(
-        &self,
-        block_hash: BlockHash,
-        block_height: u64,
-        timestamp: u64,
-        _node_version: NodeVersion,
-    ) -> Result<SystemParametersChange, Self::Error> {
-        let block = self.block_at(H256(block_hash.0)).await?;
-
-        // Both are storage/runtime-API reads, so both need the runtime in this block's state,
-        // which at an enactment block is already the next one; see `make_block`. The
-        // `_node_version` parameter carries the MNSV based version and is deliberately unused.
-        let state_node_version = ProtocolVersion::try_from(block.spec_version())?.node_version();
-
-        let (d_parameter, terms_and_conditions) = tokio::try_join!(
-            runtimes::get_d_parameter(state_node_version, &block),
-            runtimes::get_terms_and_conditions(state_node_version, &block),
-        )?;
-
-        Ok(SystemParametersChange {
-            block_height,
-            block_hash,
-            timestamp,
-            d_parameter: Some(d_parameter),
-            terms_and_conditions,
-        })
     }
 
     async fn fetch_genesis_ledger_state(&self) -> Result<ByteVec, Self::Error> {

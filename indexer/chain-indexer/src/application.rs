@@ -16,7 +16,8 @@ mod metrics;
 use crate::{
     application::metrics::Metrics,
     domain::{
-        Block, BlockRef, LedgerState, SystemParametersChange, Transaction,
+        Block, BlockRef, DParameter, LedgerState, SystemParametersChange, TermsAndConditions,
+        Transaction,
         node::{self, Node},
         storage::Storage,
     },
@@ -256,7 +257,6 @@ pub async fn run(
                     &mut storage,
                     &publisher,
                     &metrics,
-                    &node,
                 )
                 .in_span(Span::root("get-and-index-block", SpanContext::random()))
                 .await?;
@@ -369,7 +369,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[trace]
-async fn get_and_index_block<E, N>(
+async fn get_and_index_block<E>(
     caught_up_max_distance: u32,
     caught_up_leeway: u32,
     blocks: &mut (impl Stream<Item = Result<node::Block, E>> + Unpin),
@@ -381,11 +381,9 @@ async fn get_and_index_block<E, N>(
     storage: &mut impl Storage,
     publisher: &impl Publisher,
     metrics: &Metrics,
-    node: &N,
 ) -> anyhow::Result<(LedgerState, SerializedLedgerStateKey)>
 where
     E: StdError + Send + Sync + 'static,
-    N: Node,
 {
     let block_fetch_started = Instant::now();
     let block = get_next_block(blocks).await?;
@@ -403,7 +401,6 @@ where
         storage,
         publisher,
         metrics,
-        node,
     )
     .await?;
 
@@ -426,7 +423,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[trace]
-async fn index_block<N>(
+async fn index_block(
     caught_up_max_distance: u32,
     caught_up_leeway: u32,
     block: node::Block,
@@ -438,16 +435,16 @@ async fn index_block<N>(
     storage: &mut impl Storage,
     publisher: &impl Publisher,
     metrics: &Metrics,
-    node: &N,
-) -> anyhow::Result<(LedgerState, SerializedLedgerStateKey)>
-where
-    N: Node,
-{
+) -> anyhow::Result<(LedgerState, SerializedLedgerStateKey)> {
     let block_processing_started = Instant::now();
 
     // Capture the node's zswap merkle tree root (domain type) before `try_into` serializes it, to
     // compare against the zswap merkle tree root in the ledger state below.
     let zswap_merkle_tree_root = block.zswap_merkle_tree_root;
+
+    // System parameters ride on the node block; capture them before the conversion consumes it.
+    let d_parameter = block.d_parameter.clone();
+    let terms_and_conditions = block.terms_and_conditions.clone();
 
     let block_conversion_started = Instant::now();
     let (mut block, transactions) = block.try_into().context("convert node block into domain")?;
@@ -607,9 +604,10 @@ where
 
     // Determine system parameters change if any.
     let system_parameters_started = Instant::now();
-    let system_parameters_change = determine_system_parameters_change(&block, storage, node)
-        .await
-        .context("determine system parameters change")?;
+    let system_parameters_change =
+        determine_system_parameters_change(&block, d_parameter, terms_and_conditions, storage)
+            .await
+            .context("determine system parameters change")?;
     metrics.record_system_parameters(system_parameters_started.elapsed());
 
     // Save the block with its related data and system parameters atomically.
@@ -689,27 +687,14 @@ where
     Ok((ledger_state, ledger_state_key))
 }
 
-/// Fetch system parameters from the node and determine if they changed.
+/// Determine whether the system parameters carried on the block differ from the stored ones.
 #[trace]
-async fn determine_system_parameters_change<N>(
+async fn determine_system_parameters_change(
     block: &Block,
+    d_parameter: Option<DParameter>,
+    terms_and_conditions: Option<TermsAndConditions>,
     storage: &mut impl Storage,
-    node: &N,
-) -> anyhow::Result<Option<SystemParametersChange>>
-where
-    N: Node,
-{
-    // Fetch current system parameters from the node.
-    let current = node
-        .fetch_system_parameters(
-            block.hash,
-            block.height,
-            block.timestamp,
-            block.protocol_version.node_version(),
-        )
-        .await
-        .map_err(|error| anyhow::anyhow!("fetch system parameters: {error}"))?;
-
+) -> anyhow::Result<Option<SystemParametersChange>> {
     // Get the latest stored parameters.
     let stored_d_param = storage
         .get_latest_d_parameter()
@@ -721,14 +706,14 @@ where
         .context("get latest terms and conditions")?;
 
     // Determine what has changed.
-    let d_param_changed = current.d_parameter.as_ref().is_some_and(|current_d| {
+    let d_param_changed = d_parameter.as_ref().is_some_and(|current_d| {
         stored_d_param.as_ref().is_none_or(|stored_d| {
             current_d.num_permissioned_candidates != stored_d.num_permissioned_candidates
                 || current_d.num_registered_candidates != stored_d.num_registered_candidates
         })
     });
 
-    let tc_changed = match (&current.terms_and_conditions, &stored_tc) {
+    let tc_changed = match (&terms_and_conditions, &stored_tc) {
         (Some(current_tc), Some(stored_tc)) => {
             current_tc.hash != stored_tc.hash || current_tc.url != stored_tc.url
         }
@@ -742,13 +727,9 @@ where
             block_height: block.height,
             block_hash: block.hash,
             timestamp: block.timestamp,
-            d_parameter: if d_param_changed {
-                current.d_parameter
-            } else {
-                None
-            },
+            d_parameter: if d_param_changed { d_parameter } else { None },
             terms_and_conditions: if tc_changed {
-                current.terms_and_conditions
+                terms_and_conditions
             } else {
                 None
             },
@@ -772,17 +753,14 @@ mod tests {
     use crate::{
         application::node_blocks,
         domain::{
-            BlockRef, SystemParametersChange,
+            BlockRef,
             node::{self, Node},
         },
     };
     use fake::{Fake, Faker};
     use futures::{Stream, StreamExt, TryStreamExt, stream};
     use indexer_common::{
-        domain::{
-            BlockHash, ByteArray, ByteVec, NodeVersion, ProtocolVersion,
-            ledger::ZswapMerkleTreeRoot,
-        },
+        domain::{BlockHash, ByteArray, ByteVec, ProtocolVersion, ledger::ZswapMerkleTreeRoot},
         error::BoxError,
     };
     use std::{convert::Infallible, sync::LazyLock};
@@ -820,22 +798,6 @@ mod tests {
                 .map(|block| Ok(block.to_owned()))
         }
 
-        async fn fetch_system_parameters(
-            &self,
-            block_hash: BlockHash,
-            block_height: u64,
-            timestamp: u64,
-            _node_version: NodeVersion,
-        ) -> Result<SystemParametersChange, Self::Error> {
-            Ok(SystemParametersChange {
-                block_height,
-                block_hash,
-                timestamp,
-                d_parameter: None,
-                terms_and_conditions: None,
-            })
-        }
-
         async fn fetch_genesis_ledger_state(&self) -> Result<ByteVec, Self::Error> {
             Ok(Default::default())
         }
@@ -853,6 +815,8 @@ mod tests {
         transactions: Default::default(),
         dust_registration_events: Default::default(),
         bridge_events: Default::default(),
+        d_parameter: None,
+        terms_and_conditions: None,
     });
 
     static BLOCK_1: LazyLock<node::Block> = LazyLock::new(|| node::Block {
@@ -867,6 +831,8 @@ mod tests {
         transactions: Default::default(),
         dust_registration_events: Default::default(),
         bridge_events: Default::default(),
+        d_parameter: None,
+        terms_and_conditions: None,
     });
 
     static BLOCK_2: LazyLock<node::Block> = LazyLock::new(|| node::Block {
@@ -881,6 +847,8 @@ mod tests {
         transactions: Default::default(),
         dust_registration_events: Default::default(),
         bridge_events: Default::default(),
+        d_parameter: None,
+        terms_and_conditions: None,
     });
 
     static BLOCK_3: LazyLock<node::Block> = LazyLock::new(|| node::Block {
@@ -895,6 +863,8 @@ mod tests {
         transactions: Default::default(),
         dust_registration_events: Default::default(),
         bridge_events: Default::default(),
+        d_parameter: None,
+        terms_and_conditions: None,
     });
 
     const ZERO_HASH: BlockHash = ByteArray([0; 32]);
