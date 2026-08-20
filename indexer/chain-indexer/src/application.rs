@@ -257,6 +257,7 @@ pub async fn run(
                     &mut storage,
                     &publisher,
                     &metrics,
+                    &node,
                 )
                 .in_span(Span::root("get-and-index-block", SpanContext::random()))
                 .await?;
@@ -369,7 +370,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[trace]
-async fn get_and_index_block<E>(
+async fn get_and_index_block<E, N>(
     caught_up_max_distance: u32,
     caught_up_leeway: u32,
     blocks: &mut (impl Stream<Item = Result<node::Block, E>> + Unpin),
@@ -381,9 +382,11 @@ async fn get_and_index_block<E>(
     storage: &mut impl Storage,
     publisher: &impl Publisher,
     metrics: &Metrics,
+    node: &N,
 ) -> anyhow::Result<(LedgerState, SerializedLedgerStateKey)>
 where
     E: StdError + Send + Sync + 'static,
+    N: Node,
 {
     let block_fetch_started = Instant::now();
     let block = get_next_block(blocks).await?;
@@ -401,6 +404,7 @@ where
         storage,
         publisher,
         metrics,
+        node,
     )
     .await?;
 
@@ -423,7 +427,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 #[trace]
-async fn index_block(
+async fn index_block<N>(
     caught_up_max_distance: u32,
     caught_up_leeway: u32,
     block: node::Block,
@@ -435,7 +439,11 @@ async fn index_block(
     storage: &mut impl Storage,
     publisher: &impl Publisher,
     metrics: &Metrics,
-) -> anyhow::Result<(LedgerState, SerializedLedgerStateKey)> {
+    node: &N,
+) -> anyhow::Result<(LedgerState, SerializedLedgerStateKey)>
+where
+    N: Node,
+{
     let block_processing_started = Instant::now();
 
     // Capture the node's zswap merkle tree root (domain type) before `try_into` serializes it, to
