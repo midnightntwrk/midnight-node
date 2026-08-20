@@ -197,12 +197,11 @@ mod tests {
 		let owner = DustPublicKey(Fr::from(7u64));
 		let root = v8_root(owner);
 
-		let DustGenerationValues { time_to_cap, entries } =
-			dust_generation_values::<InMemoryDB>(
-				&root,
-				&[NONCE_LIVE, NONCE_DESTROYED, NONCE_UNKNOWN],
-			)
-			.expect("v8 root must resolve");
+		let DustGenerationValues { time_to_cap, entries } = dust_generation_values::<InMemoryDB>(
+			&root,
+			&[NONCE_LIVE, NONCE_DESTROYED, NONCE_UNKNOWN],
+		)
+		.expect("v8 root must resolve");
 
 		let mut expected_owner = Vec::new();
 		Serializable::serialize(&owner, &mut expected_owner).unwrap();
