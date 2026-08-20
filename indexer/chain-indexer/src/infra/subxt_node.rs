@@ -40,7 +40,7 @@ use indexer_common::{
 use log::{debug, info, warn};
 use parity_scale_codec::Decode;
 use serde::Deserialize;
-use std::{future::ready, time::Duration};
+use std::{future::ready, pin::pin, time::Duration};
 use subxt::{
     OnlineClient, SubstrateConfig,
     config::{
@@ -70,6 +70,63 @@ pub(crate) struct ContentSource {
     pub(crate) extrinsic_bodies: Vec<Vec<u8>>,
 }
 
+/// A block with everything fetched except the author, which depends on the sequentially
+/// maintained authority cache. Produced by [SubxtNode::make_raw_block], possibly concurrently
+/// for multiple blocks, and completed in block order by [finish_block].
+struct RawBlock {
+    client: OnlineClientAtBlock,
+    header: SubstrateHeader<H256>,
+    state_node_version: NodeVersion,
+    content_node_version: NodeVersion,
+    babe_supported: bool,
+    new_session: bool,
+    block: Block,
+}
+
+/// Resolve the block author against the sequential authority cache and apply this block's
+/// session change to the cache. Must be called in block order.
+async fn finish_block(
+    authorities: &mut Option<Vec<[u8; 32]>>,
+    raw_block: RawBlock,
+) -> Result<Block, SubxtNodeError> {
+    let RawBlock {
+        client,
+        header,
+        state_node_version,
+        content_node_version,
+        babe_supported,
+        new_session,
+        mut block,
+    } = raw_block;
+
+    // Fetch authorities if `None`, either initially or because of a `NewSession` event in the
+    // previous block.
+    if authorities.is_none() {
+        *authorities = Some(runtimes::fetch_authorities(state_node_version, &client).await?);
+    }
+    block.author = authorities
+        .as_ref()
+        .map(|authorities| {
+            extract_block_author(&header, authorities, content_node_version, babe_supported)
+        })
+        .transpose()?
+        .flatten();
+
+    if new_session {
+        *authorities = None;
+    }
+
+    debug!(
+        hash:% = block.hash,
+        height = block.height,
+        parent_hash:% = block.parent_hash,
+        transactions_len = block.transactions.len();
+        "block made"
+    );
+
+    Ok(block)
+}
+
 const AURA_ENGINE_ID: ConsensusEngineId = [b'a', b'u', b'r', b'a'];
 const BABE_ENGINE_ID: ConsensusEngineId = [b'B', b'A', b'B', b'E'];
 
@@ -92,6 +149,7 @@ pub struct SubxtNode {
     rpc_client: ReconnectingRpcClient,
     online_client: OnlineClient<SubstrateConfig>,
     subscription_recovery_timeout: Duration,
+    fetch_concurrency: usize,
 }
 
 impl SubxtNode {
@@ -102,6 +160,7 @@ impl SubxtNode {
             reconnect_max_delay: retry_max_delay,
             reconnect_max_attempts: retry_max_attempts,
             subscription_recovery_timeout,
+            fetch_concurrency,
         } = config;
 
         let retry_policy = ExponentialBackoff::from_millis(10)
@@ -123,6 +182,7 @@ impl SubxtNode {
             rpc_client,
             online_client,
             subscription_recovery_timeout,
+            fetch_concurrency,
         })
     }
 
@@ -183,10 +243,18 @@ impl SubxtNode {
     }
 
     async fn make_block(
-        &mut self,
+        &self,
         authorities: &mut Option<Vec<[u8; 32]>>,
         block: OnlineClientAtBlock,
     ) -> Result<Block, SubxtNodeError> {
+        let raw_block = self.make_raw_block(block).await?;
+        finish_block(authorities, raw_block).await
+    }
+
+    /// Fetch and assemble everything of a block that does not depend on the sequential
+    /// authority cache, so it can run concurrently for multiple blocks. [finish_block]
+    /// resolves the author and applies session changes in block order.
+    async fn make_raw_block(&self, block: OnlineClientAtBlock) -> Result<RawBlock, SubxtNodeError> {
         let hash = block.block_hash().0.into();
         let height = block.block_number();
         let header = block_header(&block).await?;
@@ -232,23 +300,12 @@ impl SubxtNode {
             "making block"
         );
 
-        // Fetch authorities if `None`, either initially or because of a `NewSession` event (below).
-        if authorities.is_none() {
-            *authorities = Some(runtimes::fetch_authorities(state_node_version, &block).await?);
-        }
-        let author = authorities
-            .as_ref()
-            .map(|authorities| {
-                // The state metadata can only be newer than the runtime that authored the
-                // block, so this can never enable BABE recognition too late.
-                let babe_supported = block
-                    .metadata_ref()
-                    .runtime_api_trait_by_name(CONSENSUS_ENGINE_RUNTIME_API)
-                    .is_some();
-                extract_block_author(&header, authorities, content_node_version, babe_supported)
-            })
-            .transpose()?
-            .flatten();
+        // The state metadata can only be newer than the runtime that authored the
+        // block, so this can never enable BABE recognition too late.
+        let babe_supported = block
+            .metadata_ref()
+            .runtime_api_trait_by_name(CONSENSUS_ENGINE_RUNTIME_API)
+            .is_some();
 
         // The node's ledger-9 host API detects the v8 StateKey at the 8->9 enactment block and
         // dispatches this read to the v8 bridge. The MNSV protocol version remains the right
@@ -294,16 +351,12 @@ impl SubxtNode {
 
         let BlockDetails {
             timestamp,
+            new_session,
             transactions,
             mut dust_registration_events,
             bridge_events,
-        } = runtimes::make_block_details(
-            authorities,
-            content_node_version,
-            &block,
-            content_source.as_ref(),
-        )
-        .await?;
+        } = runtimes::make_block_details(content_node_version, &block, content_source.as_ref())
+            .await?;
 
         // At genesis, Substrate does not emit events (Parity PR #5463). Fetch cNight
         // registrations from pallet storage instead.
@@ -325,29 +378,27 @@ impl SubxtNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        let block = Block {
-            hash,
-            height,
-            parent_hash,
-            protocol_version,
-            author,
-            timestamp: timestamp.unwrap_or(0),
-            zswap_merkle_tree_root,
-            ledger_state_root,
-            transactions,
-            dust_registration_events,
-            bridge_events,
-        };
-
-        debug!(
-            hash:% = block.hash,
-            height = block.height,
-            parent_hash:% = block.parent_hash,
-            transactions_len = block.transactions.len();
-            "block made"
-        );
-
-        Ok(block)
+        Ok(RawBlock {
+            header,
+            state_node_version,
+            content_node_version,
+            babe_supported,
+            new_session,
+            block: Block {
+                hash,
+                height,
+                parent_hash,
+                protocol_version,
+                author: None,
+                timestamp: timestamp.unwrap_or(0),
+                zswap_merkle_tree_root,
+                ledger_state_root,
+                transactions,
+                dust_registration_events,
+                bridge_events,
+            },
+            client: block,
+        })
     }
 
     #[trace]
@@ -433,7 +484,22 @@ impl Node for SubxtNode {
                 // Initialize from the stored block hash so the first forward-fetched block
                 // is verified against it too.
                 let mut last_forward_hash = after_height.map(|_| H256(after_hash.0));
-                for height in start_height..safe_height {
+                // Fetch blocks for multiple heights concurrently; `buffered` preserves height
+                // order. Author resolution and parent-hash verification stay sequential below.
+                let fetch_node = self.clone();
+                let raw_blocks = stream::iter(start_height..safe_height)
+                    .map(move |height| {
+                        let fetch_node = fetch_node.clone();
+                        async move {
+                            let block = fetch_node.block_at_height(height).await?;
+                            fetch_node.make_raw_block(block).await
+                        }
+                    })
+                    .buffered(self.fetch_concurrency.max(1));
+                let mut raw_blocks = pin!(raw_blocks);
+
+                let mut height = start_height;
+                while let Some(raw_block) = raw_blocks.next().await {
                     if height % CATCH_UP_LOG_INTERVAL == 0 {
                         info!(
                             highest_stored_height:? = after_height,
@@ -442,9 +508,9 @@ impl Node for SubxtNode {
                             "catching up by height"
                         );
                     }
-                    let block = self.block_at_height(height).await?;
-                    let block_hash = block.block_hash();
-                    let made_block = self.make_block(&mut authorities, block).await?;
+                    let raw_block = raw_block?;
+                    let block_hash = raw_block.client.block_hash();
+                    let made_block = finish_block(&mut authorities, raw_block).await?;
                     if let Some(expected_parent) = last_forward_hash
                         && made_block.parent_hash.0 != expected_parent.0
                     {
@@ -455,6 +521,7 @@ impl Node for SubxtNode {
                         ))?;
                     }
                     last_forward_hash = Some(block_hash);
+                    height += 1;
                     yield made_block;
                 }
 
@@ -603,10 +670,19 @@ pub struct Config {
         default = "default_subscription_recovery_timeout"
     )]
     pub subscription_recovery_timeout: Duration,
+
+    /// Number of blocks fetched concurrently while catching up by height. Author resolution
+    /// stays sequential, so this only bounds in-flight block fetches. Defaults to 8.
+    #[serde(default = "default_fetch_concurrency")]
+    pub fetch_concurrency: usize,
 }
 
 fn default_subscription_recovery_timeout() -> Duration {
     Duration::from_secs(30)
+}
+
+fn default_fetch_concurrency() -> usize {
+    8
 }
 
 /// Error possibly returned by [SubxtNode::new].

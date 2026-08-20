@@ -30,6 +30,9 @@ use indexer_common::domain::{
 /// Runtime specific block details.
 pub struct BlockDetails {
     pub timestamp: Option<u64>,
+    /// True when this block emitted a `NewSession` event, i.e. the authority set used to
+    /// resolve block authors must be refetched for the next block.
+    pub new_session: bool,
     pub transactions: Vec<Transaction>,
     pub dust_registration_events: Vec<DustRegistrationEvent>,
     /// c2m-bridge events. Only populated for node 2.0+, where the
@@ -46,17 +49,16 @@ pub enum Transaction {
 
 /// Make block details depending on the given protocol version.
 pub async fn make_block_details(
-    authorities: &mut Option<Vec<[u8; 32]>>,
     node_version: NodeVersion,
     block: &OnlineClientAtBlock,
     content: Option<&ContentSource>,
 ) -> Result<BlockDetails, SubxtNodeError> {
     // TODO Replace this often repeated pattern with a macro?
     match node_version {
-        NodeVersion::V0_22 => v0_22_0::make_block_details(authorities, block, content).await,
-        NodeVersion::V1_0 => v1_0_0::make_block_details(authorities, block, content).await,
-        NodeVersion::V2_0 => v2_0_0::make_block_details(authorities, block, content).await,
-        NodeVersion::V2_1 => v2_1_0::make_block_details(authorities, block, content).await,
+        NodeVersion::V0_22 => v0_22_0::make_block_details(block, content).await,
+        NodeVersion::V1_0 => v1_0_0::make_block_details(block, content).await,
+        NodeVersion::V2_0 => v2_0_0::make_block_details(block, content).await,
+        NodeVersion::V2_1 => v2_1_0::make_block_details(block, content).await,
     }
 }
 
