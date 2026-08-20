@@ -102,6 +102,11 @@ pub fn run() -> anyhow::Result<()> {
 		 dust_generations.max_snapshot_age ({max_snapshot_age}): otherwise a snapshot can pass \
 		 the freshness check yet resolve to garbage-collected ledger state and panic on load"
 	);
+	if tracing_config.enabled {
+		log::warn!("indexer tracing is disabled because midnight-node owns global tracing");
+	}
+	// Outside the disposable indexer runtime, the exporter owns a process-lifetime runtime.
+	INIT_METRICS.call_once(|| telemetry::init_metrics(metrics_config));
 
 	let InfraConfig {
 		run_migrations,
@@ -120,11 +125,6 @@ pub fn run() -> anyhow::Result<()> {
 		.context("build embedded indexer Tokio runtime")?;
 
 	runtime.block_on(async {
-		if tracing_config.enabled {
-			log::warn!("indexer tracing is disabled because midnight-node owns global tracing");
-		}
-		INIT_METRICS.call_once(|| telemetry::init_metrics(metrics_config));
-
 		let pool = pool::sqlite::SqlitePool::new(storage_config)
 			.await
 			.context("create indexer SQLite pool")?;
