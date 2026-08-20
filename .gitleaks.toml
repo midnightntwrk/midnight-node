@@ -53,9 +53,3 @@ paths = [
   '''^relay/README\.md$''',
   '''^\.github/workflows/nightly-run-cnight-e2e-devnet\.yml$''',
 ]
-
-[[allowlists]]
-description = "published deterministic Ledger 8 key-derivation vectors"
-paths = [
-  '''^indexer/compat/(ledger-v8|zswap-v8)/key-derivation-test-vectors\.json$''',
-]

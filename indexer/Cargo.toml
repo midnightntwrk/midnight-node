@@ -8,8 +8,6 @@ members = [
     "indexer-standalone",
     "indexer-tests",
     "spo-indexer",
-    "compat/ledger-v8",
-    "compat/zswap-v8",
 ]
 
 [workspace.package]
@@ -23,18 +21,19 @@ documentation = "https://github.com/midnightntwrk/midnight-indexer"
 publish       = false
 
 [workspace.dependencies]
-# Historical Ledger 8 verifier crates are maintained locally and built with
-# this workspace's lockfile so replay remains independent of node consensus.
+# Ledger v8 from crates.io. base-crypto and serialize are patched to the rc
+# tags below and shared with v9 (within-major).
 midnight-base-crypto_v1      = { package = "midnight-base-crypto", version = "1" }
 midnight-coin-structure_v2   = { package = "midnight-coin-structure", version = "2" }
-midnight-ledger_v8           = { package = "midnight-ledger", path = "compat/ledger-v8" }
+midnight-ledger_v8           = { package = "midnight-ledger", version = "8" }
 midnight-onchain-runtime_v3  = { package = "midnight-onchain-runtime", version = "3" }
 midnight-onchain-state_v3    = { package = "midnight-onchain-state", version = "3" }
 midnight-serialize_v1        = { package = "midnight-serialize", version = "1" }
 midnight-storage-core_v1     = { package = "midnight-storage-core", version = "1.2" }
+# Full storage wrapper (state_translation framework); backs both ledger majors.
 midnight-storage_v2          = { package = "midnight-storage", version = "2.0.1" }
 midnight-transient-crypto_v2 = { package = "midnight-transient-crypto", version = "2" }
-midnight-zswap_v8            = { package = "midnight-zswap", path = "compat/zswap-v8" }
+midnight-zswap_v8            = { package = "midnight-zswap", version = "8" }
 # Ledger v9, resolved via the [patch.crates-io] tags below.
 midnight-coin-structure_v3   = { package = "midnight-coin-structure", version = "3" }
 midnight-ledger_v9           = { package = "midnight-ledger-v9", version = "1.0" }
