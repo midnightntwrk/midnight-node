@@ -55,8 +55,8 @@ INDEXER_API_PORT="${INDEXER_API_PORT:-8088}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 NATS_PORT="${NATS_PORT:-4222}"
 NODE_RPC_HTTP="http://localhost:${NODE_RPC_PORT}"
-NODE_RPC_WS_HOST="ws://localhost:${NODE_RPC_PORT}" # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- local container network
-NODE_RPC_WS_COMPOSE="ws://node:9944" # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- local Compose network
+NODE_RPC_WS_HOST="ws://localhost:${NODE_RPC_PORT}" # from a --network host toolkit container
+NODE_RPC_WS_COMPOSE="ws://node:9944"             # from inside the compose network
 INDEXER_API="http://localhost:${INDEXER_API_PORT}"
 
 echo "=== Hard-fork 8 -> 9 devnet rehearsal ==="
@@ -70,7 +70,6 @@ mkdir -p "$TMPDIR"
 # Compose project; callers can still supply their normal environment values.
 : "${APP__INFRA__STORAGE__PASSWORD:=hardfork-test-password}"
 : "${APP__INFRA__PUB_SUB__PASSWORD:=hardfork-test-password}"
-# nosemgrep: generic.secrets.security.detected-generic-secret.detected-generic-secret -- deterministic local rehearsal fixture
 : "${APP__INFRA__SECRET:=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
 export APP__INFRA__STORAGE__PASSWORD APP__INFRA__PUB_SUB__PASSWORD APP__INFRA__SECRET
 

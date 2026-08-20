@@ -50,7 +50,7 @@ if (
 
 export const INDEXER_WS_URL: string =
   TARGET_ENV === "undeployed"
-    ? `ws://${INDEXER_BASE_URL[TARGET_ENV]}/api/${INDEXER_API_VERSION}/graphql/ws` // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
+    ? `ws://${INDEXER_BASE_URL[TARGET_ENV]}/api/${INDEXER_API_VERSION}/graphql/ws`
     : `wss://${INDEXER_BASE_URL[TARGET_ENV]}/api/${INDEXER_API_VERSION}/graphql/ws`;
 
 export const INDEXER_HTTP_URL: string =

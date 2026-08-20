@@ -122,7 +122,6 @@ echo ">>> Step 5: Performing runtime upgrade via node-toolkit..."
 
 # Determine the docker network name for the toolkit container
 NETWORK_NAME="${DOCKER_PROJECT_NAME}_default"
-NODE_RPC_WS_URL="ws://node:9944" # nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket -- local Compose network
 
 docker run --rm \
   --network "${NETWORK_NAME}" \
@@ -130,7 +129,7 @@ docker run --rm \
   "midnightntwrk/midnight-node-toolkit:${NODE_TOOLKIT_TAG}" \
   runtime-upgrade \
   --wasm-file /wasm/runtime.wasm \
-  --rpc-url "${NODE_RPC_WS_URL}" \
+  --rpc-url ws://node:9944 \
   -c "//Eve" \
   -c "//Ferdie" \
   -c "//Dave" \

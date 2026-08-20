@@ -77,10 +77,7 @@ pub async fn run(network_id: NetworkId, host: &str, port: u16, secure: bool) -> 
         if secure {
             (format!("https://{core}"), format!("wss://{core}/ws"))
         } else {
-            (
-                format!("http://{core}"),
-                format!("ws://{core}/ws"), // nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
-            )
+            (format!("http://{core}"), format!("ws://{core}/ws"))
         }
     };
 
