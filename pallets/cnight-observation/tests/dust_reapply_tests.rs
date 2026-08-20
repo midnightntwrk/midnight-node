@@ -381,7 +381,7 @@ fn unreadable_pre_fork_key_cancels() {
 
 		assert_eq!(run_to_completion(), 1);
 
-		assert_eq!(cnight_events(), vec![Event::DustReapplySkipped]);
+		assert_eq!(cnight_events(), vec![Event::DustReapplySkipped { applied: 0, skipped: 0 }]);
 		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
 		assert!(applied_dust_events().is_empty());
 	});
@@ -448,7 +448,7 @@ fn a_batch_that_outprices_a_whole_block_cancels() {
 		let cursor = MigrateV1ToV2::<Test>::step(None, &mut meter).expect("step must not fail");
 
 		assert!(cursor.is_none(), "an unaffordable batch must end the replay, not retry it");
-		assert_eq!(cnight_events(), vec![Event::DustReapplySkipped]);
+		assert_eq!(cnight_events(), vec![Event::DustReapplySkipped { applied: 0, skipped: 0 }]);
 		assert!(applied_dust_events().is_empty(), "nothing must have been applied");
 		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
 	});

@@ -243,7 +243,11 @@ fn replay_without_pre_fork_key_cancels() {
 		let mut meter = WeightMeter::new();
 		assert!(MigrateV1ToV2::<Test>::step(None, &mut meter).unwrap().is_none());
 
-		assert_eq!(cnight_events(), vec![Event::DustReapplySkipped]);
+		assert_eq!(
+			cnight_events(),
+			vec![Event::DustReapplySkipped { applied: 5, skipped: 5 }],
+			"the wind-up event must report the tallies as they stood, not after the clear",
+		);
 		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
 		assert!(DustReapplyCtime::<Test>::get().is_none());
 		assert_eq!(DustReapplyProgress::<Test>::get(), (0, 0));

@@ -204,10 +204,19 @@ pub mod pallet {
 			applied: u32,
 			skipped: u32,
 		},
-		/// The replay did not run: the hardfork did not wipe dust state, no
-		/// pre-fork state key was recorded, or that key is unreadable. The
+		/// The replay was abandoned before the last page: the hardfork did not
+		/// wipe dust state, no pre-fork state key was recorded, that key became
+		/// unreadable, or a batch priced above what a whole block affords. The
 		/// reason is logged.
-		DustReapplySkipped,
+		///
+		/// The tallies are the same as [`Event::DustReapplyCompleted`]'s, and
+		/// carried here because the abandon paths other than "never started" can
+		/// fire on any page: `applied` entries are already restored and the rest
+		/// never will be. `applied: 0` is the "did not run at all" case.
+		DustReapplySkipped {
+			applied: u32,
+			skipped: u32,
+		},
 		/// `process_tokens` ignored this block's Cardano observations because a
 		/// multi-block migration of this pallet's storage is still running.
 		/// `NextCardanoPosition` is left unchanged, so nothing is lost — the

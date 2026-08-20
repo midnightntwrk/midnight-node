@@ -463,8 +463,9 @@ async fn hardfork_single_tx() {
 	//     Winding up is necessary but not sufficient, so the events say which
 	//     path it took. The fork-from chain-spec ships cNIGHT `UtxoOwners` with
 	//     matching ledger-8 dust generation entries, so the replay here is the
-	//     real restore — `DustReapplySkipped`, or a `DustReapplyCompleted` that
-	//     applied nothing, means the feature did nothing at all.
+	//     real restore — a `DustReapplySkipped`, or a `DustReapplyCompleted` that
+	//     applied nothing, means it fell short (both carry `applied`, so the log
+	//     line below says how far it got).
 	wait_for_finalized_block(&url, applied + 3, Duration::from_secs(60)).await;
 	let head_hash = block_hash_at(&rpc, applied + 3).await;
 	assert_eq!(

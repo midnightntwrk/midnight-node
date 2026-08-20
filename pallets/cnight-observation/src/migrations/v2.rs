@@ -514,13 +514,21 @@ fn apply_batch<T: Config>(
 	}
 }
 
-/// Wind the replay up without restoring anything, and let the observer resume.
+/// Wind the replay up short of the last page, and let the observer resume.
+///
+/// Reports the tallies like [`complete`] does: every caller but the missing-key one
+/// can fire on any page, so whatever was restored up to that page stays restored and
+/// is the operator's only record of how far the replay got.
 ///
 /// The caller has already logged *why*; this logs the event that goes with it.
 fn cancel<T: Config>() {
+	let (applied, skipped) = DustReapplyProgress::<T>::get();
 	clear_transient::<T>();
-	Pallet::<T>::deposit_event(Event::<T>::DustReapplySkipped);
-	log::warn!(target: LOG_TARGET, "DustReapplySkipped: dust generation replay abandoned, nothing restored");
+	Pallet::<T>::deposit_event(Event::<T>::DustReapplySkipped { applied, skipped });
+	log::warn!(
+		target: LOG_TARGET,
+		"DustReapplySkipped: dust generation replay abandoned, {applied} applied, {skipped} skipped"
+	);
 	finish::<T>()
 }
 
