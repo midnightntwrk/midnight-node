@@ -5,4 +5,5 @@ indexer/docker-compose.yaml
 indexer/indexer-tests/src/e2e.rs
 indexer/qa/scripts/test-hardfork-8to9.sh
 indexer/qa/scripts/test-runtime-upgrade.sh
-indexer/qa/tools/block-scanner/src/env.ts
+indexer/qa/tests/
+indexer/qa/tools/block-scanner/
