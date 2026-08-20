@@ -82,7 +82,7 @@ jobs:
         run: season build
 
       - name: Check changes files for link to PR
-        if: ${{ steps.pr.outputs.ci_title != 'true' && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
+        if: ${{ steps.pr.outputs.ci_title != 'true' && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') && !contains(fromJSON(steps.pr.outputs.labels), 'bot:renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'bot:dependencies') && !contains(fromJSON(steps.pr.outputs.labels), 'bot:github-actions') }}
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
@@ -95,7 +95,7 @@ jobs:
           fi
 
       - name: Check changes files for GitHub issue links
-        if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-jira') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-issue') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') }}
+        if: ${{ !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-all') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-jira') && !contains(fromJSON(steps.pr.outputs.labels), 'skip-changes-check-issue') && !contains(fromJSON(steps.pr.outputs.labels), 'renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'dependencies') && !contains(fromJSON(steps.pr.outputs.labels), 'bot:renovate') && !contains(fromJSON(steps.pr.outputs.labels), 'bot:dependencies') && !contains(fromJSON(steps.pr.outputs.labels), 'bot:github-actions') }}
         env:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
