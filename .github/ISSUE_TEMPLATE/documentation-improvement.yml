@@ -4,19 +4,20 @@ title: "[Docs] "
 type: Task
 labels:
   - status:untriaged
-  - area:documentation
+  - documentation
   - component:midnight-node
 body:
   - type: dropdown
-    id: component
+    id: components
     attributes:
-      label: Component
-      description: Which component does this affect?
+      label: Components
+      description: Which components does this affect?
+      multiple: true
       options:
-        - midnight-node
-        - contracts
-        - ledger
-        - midnight-toolkit
+        - component:midnight-node
+        - component:contracts
+        - component:ledger
+        - component:midnight-toolkit
     validations:
       required: true
 
