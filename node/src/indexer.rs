@@ -49,7 +49,7 @@ async fn run_worker() -> anyhow::Result<()> {
 		.spawn()
 		.with_context(|| format!("spawn native indexer worker at {}", worker.display()))?;
 
-	log::info!(pid = child.id().unwrap_or_default(); "native indexer worker started");
+	log::info!("native indexer worker started with pid {}", child.id().unwrap_or_default());
 	let status = child.wait().await.context("wait for native indexer worker")?;
 	anyhow::bail!("native indexer worker returned {status}")
 }
