@@ -33,7 +33,7 @@ use spo_indexer::{
 	application as spo_app,
 	infra::{spo_client::SPOClient, storage as spo_storage},
 };
-use std::{thread, time::Duration};
+use std::{sync::Once, thread, time::Duration};
 use tokio::{
 	runtime::Builder,
 	select,
@@ -44,6 +44,8 @@ use tokio::{
 use wallet_indexer::{application as wallet_app, infra::storage as wallet_storage};
 
 const RESTART_DELAY: Duration = Duration::from_secs(5);
+// The supervisor can recreate the indexer runtime, but the metrics recorder is process-global.
+static INIT_METRICS: Once = Once::new();
 
 pub async fn run_supervised() {
 	run_supervised_with(run_on_dedicated_thread, RESTART_DELAY).await;
@@ -121,7 +123,7 @@ pub fn run() -> anyhow::Result<()> {
 		if tracing_config.enabled {
 			log::warn!("indexer tracing is disabled because midnight-node owns global tracing");
 		}
-		telemetry::init_metrics(metrics_config);
+		INIT_METRICS.call_once(|| telemetry::init_metrics(metrics_config));
 
 		let pool = pool::sqlite::SqlitePool::new(storage_config)
 			.await
