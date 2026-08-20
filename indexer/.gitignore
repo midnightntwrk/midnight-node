@@ -1,0 +1,13 @@
+*.check
+.claude/*
+!.claude/skills/
+.DS_Store
+.envrc.local
+.idea
+.sync_cache
+.vscode
+.zed
+target
+
+# Toolkit Postgres data (local only)
+toolkit-postgres-data/

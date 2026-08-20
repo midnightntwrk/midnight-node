@@ -1,0 +1,16 @@
+{
+  // A cardano address that is registered for dust production and has cNIGHT balance
+  // Expected status: registered=true, dustAddress not null, nightBalance > 0, generationRate = nightBalance * 8267, currentCapacity = 5000000000 (at max)
+  "registered-with-dust": "stake_test1u9eymy9zumpz2lsuvuplllt89pfrgah7w6ak68xythvcddqjn8246",
+  // A cardano address that is registered for dust production but has no cNIGHT balance
+  // Expected status: registered=true, dustAddress not null, nightBalance="0", generationRate="0", currentCapacity="0"
+  // Note: No dust is generated because there is no cNIGHT to generate from
+  "registered-without-dust": "stake_test1u8z7zcltx4axaze2r0ueuunv0ed59vtexfxtd7zn4ewk28q00hg9k",
+  // A cardano address that has never been registered for dust production
+  // Expected status: registered=false, dustAddress=null, nightBalance="0", generationRate="0", currentCapacity="0"
+  "non-registered": "stake_test1uxetvfss3zgd689uc665m7dwgkktxt4gp6823jdla8pk6yc9uplm5",
+  // A cardano address that was previously registered for dust production but has been deregistered
+  // Expected status: registered=false, dustAddress=null, nightBalance="0", generationRate="0", currentCapacity="0"
+  // Note: This differs from non-registered in the execution path (deregistration vs never registered), but the status is the same
+  "deregistered": "PLACEHOLDER_TO_BE_POPULATED"
+}

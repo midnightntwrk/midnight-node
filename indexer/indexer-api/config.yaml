@@ -1,0 +1,79 @@
+thread_stack_size: "24MiB"
+
+application:
+  network_id: "undeployed"
+
+infra:
+  run_migrations: true
+
+  storage:
+    host: "localhost"
+    port: 5432
+    dbname: "indexer"
+    user: "indexer"
+    sslmode: "prefer"
+    max_connections: 25
+    idle_timeout: "1m"
+    max_lifetime: "5m"
+
+  ledger_db:
+    cache_max_nodes: 100000
+
+  pub_sub:
+    url: "localhost:4222"
+    username: "indexer"
+    max_reconnects: 4
+
+  api:
+    address: "0.0.0.0"
+    port: 8088
+    request_body_limit: "1MiB"
+    max_complexity: 200
+    max_depth: 15
+    subscription:
+      blocks:
+        batch_size: 20
+      contract_actions:
+        batch_size: 20
+      contract_events:
+        batch_size: 20
+      dust_generations:
+        batch_size: 20
+        # Snapshots older than this many blocks are rejected; keep well below
+        # chain-indexer's ledger_state_retention.
+        max_snapshot_age: 500
+      dust_ledger_events:
+        batch_size: 20
+      dust_nullifier_transactions:
+        batch_size: 20
+      shielded_nullifier_transactions:
+        batch_size: 20
+      shielded_transactions:
+        batch_size: 20
+        progress_update_interval: "30s"
+        # Heartbeat that keeps a subscribed wallet marked active for indexing.
+        # Must stay comfortably below the wallet-indexer's active_wallets_ttl (30m);
+        # 10m leaves a safe margin while minimising keep-alive writes.
+        keep_wallet_alive_interval: "10m"
+      unshielded_transactions:
+        batch_size: 20
+        progress_update_interval: "30s"
+      zswap_ledger_events:
+        batch_size: 20
+      progress_cache:
+        max_capacity: 10000
+        # Short TTL bounds how stale a shared progress value can be (about one block interval).
+        time_to_live: "5s"
+    quota:
+      max_concurrent_per_connection: 20
+      max_session_subscriptions_per_minute: 10
+
+telemetry:
+  tracing:
+    enabled: false
+    service_name: "indexer-api"
+    otlp_exporter_endpoint: "http://localhost:4317"
+  metrics:
+    enabled: false
+    address: "0.0.0.0"
+    port: 9000

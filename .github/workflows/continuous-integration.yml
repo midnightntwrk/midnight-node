@@ -1001,8 +1001,8 @@ jobs:
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
         run: |
-          # Use the indexer submodule's tree hash — indexer images depend on submodule content, not main repo
-          content_hash=$(git -C indexer rev-parse "HEAD^{tree}" | cut -c1-12)
+          # Indexer images are content-addressed by the ported source tree.
+          content_hash=$(git rev-parse "HEAD:indexer" | cut -c1-12)
           {
             echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${content_hash}"
             echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${content_hash}"
@@ -1057,13 +1057,13 @@ jobs:
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
 
-          # Retag with submodule's content hash
+          # Retag with the ported source tree's content hash.
           CONTENT_HASH="${{ steps.image_meta.outputs.content_hash }}"
-          SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
+          NODE_COMMIT=$(git rev-parse --short=8 HEAD)
 
-          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
-          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
-          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/indexer-api:${NODE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
+          docker tag "midnightntwrk/chain-indexer:${NODE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/wallet-indexer:${NODE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
 
           docker push "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
           docker push "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"

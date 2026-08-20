@@ -1,0 +1,187 @@
+name: ci-cloud
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/*
+      - release/*
+  workflow_dispatch:
+
+concurrency:
+  group: ${{github.workflow}}-${{github.head_ref || github.run_id}}
+  cancel-in-progress: true
+
+jobs:
+  # Detects whether the PR touches anything outside `qa/**`. Subsequent jobs
+  # only run when non-qa files changed, so qa-only PRs skip Rust CI while
+  # this workflow still reports success (keeping branch protection happy).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      non_qa: ${{steps.filter.outputs.non_qa}}
+      toolchain: ${{steps.set_toolchain.outputs.toolchain}}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Detect non-qa changes
+        id: filter
+        env:
+          EVENT_NAME: ${{github.event_name}}
+          BASE_SHA: ${{github.event.pull_request.base.sha}}
+          HEAD_SHA: ${{github.event.pull_request.head.sha}}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "Non-PR event; running full pipeline."
+            echo "non_qa=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Diffing $BASE_SHA..$HEAD_SHA"
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files:"
+          echo "$changed"
+          if echo "$changed" | grep -vE '^qa/' | grep -q .; then
+            echo "non_qa=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "non_qa=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set toolchain
+        id: set_toolchain
+        env:
+          toolchain_toml: "rust-toolchain.toml"
+        run: |
+          toolchain=$(grep channel rust-toolchain.toml | sed -r 's/channel = "(.*)"/\1/')
+          echo "toolchain=$toolchain" | tee -a "$GITHUB_OUTPUT"
+
+  fmt-check:
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.non_qa == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          components: rustfmt
+          toolchain: ${{needs.changes.outputs.toolchain}}
+
+      - name: Install just
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: just
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: just fmt-check
+        run: |
+          just feature=cloud fmt-check
+
+  lint:
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.non_qa == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{needs.changes.outputs.toolchain}}
+          components: clippy
+
+      - name: Install just
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: just
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Init Env Vars
+        uses: ./.github/actions/init-env
+
+      - name: just lint
+        run: |
+          rustup override set ${{needs.changes.outputs.toolchain}}
+          just feature=cloud lint
+
+  test:
+    runs-on: ubuntu-latest-8-core-x64
+    needs: [changes]
+    if: needs.changes.outputs.non_qa == 'true'
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Pre-pull Docker images
+        run: |
+          NODE_VERSION=$(tail -n 1 NODE_VERSIONS)
+          echo "Pre-pulling midnight-node:$NODE_VERSION..."
+          docker pull "midnightntwrk/midnight-node:$NODE_VERSION" || \
+          docker pull "midnightntwrk/midnight-node:$NODE_VERSION" || \
+          docker pull "midnightntwrk/midnight-node:$NODE_VERSION"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{needs.changes.outputs.toolchain}}
+
+      - name: Install nextest
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: nextest
+
+      - name: Install just
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: just
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Init Env Vars
+        uses: ./.github/actions/init-env
+
+      - name: just test
+        run: |
+          rustup override set ${{needs.changes.outputs.toolchain}}
+          just feature=cloud test
+
+  doc:
+    runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.non_qa == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          components: rust-docs
+          toolchain: ${{needs.changes.outputs.toolchain}}
+
+      - name: Install just
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          tool: just
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: just doc
+        run: |
+          git config --global url."https://@github.com".insteadOf "ssh://git@github.com"
+          just feature=cloud doc

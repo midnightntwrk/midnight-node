@@ -1,0 +1,11 @@
+name: Init Env Vars
+description: Initialize certain environment variables (secrets) with random values
+runs:
+  using: composite
+  steps:
+    - name: Generate random Env Vars
+      shell: bash
+      run: |
+        echo "APP__INFRA__PUB_SUB__PASSWORD=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+        echo "APP__INFRA__SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+        echo "APP__INFRA__STORAGE__PASSWORD=$(openssl rand -hex 32)" >> "$GITHUB_ENV"

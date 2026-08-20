@@ -1,0 +1,7 @@
+{
+  "negative": ["error", "invalid", "reject", "malformed", "mismatch", "fail", "negative"],
+  "schemaValidation": ["schema", "shape", "validation", "contract"],
+  "edgeCase": ["edge", "idempotency", "duplicate", "empty", "zero", "full range", "genesis"],
+  "streaming": ["stream", "subscription", "progress", "complete", "event"],
+  "positive": ["should return", "success", "valid", "latest", "by hash", "by height"]
+}

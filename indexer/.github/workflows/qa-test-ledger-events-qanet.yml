@@ -1,0 +1,19 @@
+name: Indexer QA Ledger Event Subscription Test (QAnet)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 30 minutes on workdays (Mon-Fri), covering UK and US working hours (07:00-21:00 UTC)
+    - cron: '*/30 7-21 * * 1-5'
+
+# no top level default permissions for security reasons
+permissions:
+  contents: read
+
+jobs:
+  test-ledger-events:
+    name: Test Ledger Events
+    uses: ./.github/workflows/qa-test-ledger-events-base-workflow.yml
+    with:
+      target_env: qanet
+      indexer_api_version: v4

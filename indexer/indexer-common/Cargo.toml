@@ -1,0 +1,90 @@
+[package]
+name          = "indexer-common"
+version       = "0.1.0"
+description   = "Common Indexer functionality"
+edition       = { workspace = true }
+license       = { workspace = true }
+readme        = { workspace = true }
+homepage      = { workspace = true }
+repository    = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [ "--cfg", "docsrs" ]
+
+[dependencies]
+# ledger v8 + shared
+midnight-base-crypto_v1      = { workspace = true }
+midnight-coin-structure_v2   = { workspace = true }
+midnight-ledger_v8           = { workspace = true }
+midnight-onchain-runtime_v3  = { workspace = true }
+midnight-onchain-state_v3    = { workspace = true }
+midnight-serialize_v1        = { workspace = true }
+midnight-storage-core_v1     = { workspace = true, features = [ "layout-v2", "gc-v1" ] }
+midnight-storage_v2          = { workspace = true, features = [ "state-translation" ] }
+midnight-transient-crypto_v2 = { workspace = true }
+midnight-zswap_v8            = { workspace = true }
+# ledger v9 rc (base-crypto, serialize and storage-core stay unified across v8
+# and v9; coin-structure and transient-crypto are cross-major at this rc, hence
+# their own v9 aliases)
+midnight-coin-structure_v3   = { workspace = true }
+midnight-ledger_v9           = { workspace = true }
+midnight-onchain-runtime_v4  = { workspace = true }
+midnight-onchain-state_v4    = { workspace = true }
+midnight-transient-crypto_v3 = { workspace = true }
+midnight-zswap_v9            = { workspace = true }
+async-nats                   = { workspace = true, optional = true }
+chacha20poly1305             = { workspace = true, features = [ "std" ] }
+const-hex                    = { workspace = true, features = [ "serde" ] }
+derive_more                  = { workspace = true, features = [ "as_ref", "debug", "deref", "display", "from", "into" ] }
+fastrace                     = { workspace = true }
+fastrace-opentelemetry       = { workspace = true }
+fastrace-tracing             = { workspace = true }
+figment                      = { workspace = true, features = [ "env", "yaml" ] }
+futures                      = { workspace = true }
+humantime-serde              = { workspace = true }
+indoc                        = { workspace = true }
+itertools                    = { workspace = true }
+log                          = { workspace = true, features = [ "kv_std" ] }
+logforth                     = { workspace = true, features = [ "append-fastrace", "diagnostic-fastrace", "starter-log" ] }
+metrics-exporter-prometheus  = { workspace = true, features = [ "http-listener" ] }
+opentelemetry                = { workspace = true }
+opentelemetry_sdk            = { workspace = true }
+opentelemetry-otlp           = { workspace = true, features = [ "grpc-tonic" ] }
+parity-scale-codec           = { workspace = true }
+secrecy                      = { workspace = true, features = [ "serde" ] }
+serde                        = { workspace = true, features = [ "derive" ] }
+serde_json                   = { workspace = true }
+serde_with                   = { workspace = true, optional = true }
+sha2                         = { workspace = true }
+sqlx                         = { workspace = true, features = [ "runtime-tokio", "uuid" ] }
+thiserror                    = { workspace = true }
+tokio                        = { workspace = true, features = [ "time" ] }
+tracing                      = { workspace = true }
+tracing-subscriber           = { workspace = true, features = [ "registry" ] }
+tokio-stream                 = { workspace = true, features = [ "sync" ] }
+trait-variant                = { workspace = true }
+uuid                         = { workspace = true }
+
+[dev-dependencies]
+anyhow                 = { workspace = true }
+assert_matches         = { workspace = true }
+bip32                  = { workspace = true }
+criterion              = { workspace = true }
+reqwest                = { workspace = true }
+tempfile               = { workspace = true }
+testcontainers         = { workspace = true }
+testcontainers-modules = { workspace = true, features = [ "postgres" ] }
+thiserror              = { workspace = true }
+tokio                  = { workspace = true, features = [ "macros", "rt-multi-thread" ] }
+
+[features]
+cloud      = [ "async-nats", "serde_with", "sqlx/postgres", "sqlx/tls-rustls" ]
+standalone = [ "sqlx/sqlite" ]
+
+[[bench]]
+name              = "ledger_transaction"
+harness           = false
+required-features = [ "standalone" ]

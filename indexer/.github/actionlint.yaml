@@ -1,0 +1,10 @@
+self-hosted-runner:
+  labels:
+    - ubuntu-latest-8-core-x64
+    - ubuntu-latest-16-core-x64
+
+paths:
+  .github/workflows/*.{yml,yaml}:
+    ignore:
+      - 'default value.*but.*also required'
+      - 'property.*is not defined in object type'

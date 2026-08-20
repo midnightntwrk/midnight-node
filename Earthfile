@@ -1991,7 +1991,7 @@ local-env-full-ci-localimg:
 # +local-env-ci (--pulls published images; needs GHCR creds + tags) and
 # +local-env-full-ci-localimg (loads pre-saved tarballs; needs the images built + saved
 # first), this builds the node + toolkit (earthly `--load`, like +start-local-env-latest)
-# and the 3 indexer images (docker build of the submodule, in-sandbox), all under fixed
+# and the 3 indexer images (built from the ported source, in-sandbox), all under fixed
 # :local tags, then runs the full integration suite. Just: `earthly -P +local-env-oneshot`.
 # First run is long (node + toolkit + indexer + CI-image builds); earthly caches node/
 # toolkit/CI-image after (the in-sandbox indexer builds re-run each time — ephemeral DinD).
@@ -2002,13 +2002,10 @@ local-env-oneshot:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     ENV RUSTFLAGS="-C debuginfo=1"
-    # Fail fast + kindly if the submodules aren't checked out: COPY of an empty submodule
-    # silently yields an empty dir, which would otherwise blow up later as "could not find
-    # indexer/...". Checked before the ~5-min e2e compile below. (CI always has them via
-    # checkout submodules:true; locally: git submodule update --init --recursive.)
+    # Fail fast if the ported indexer source or reserve-contracts submodule is missing.
     RUN test -f indexer/indexer-api/Dockerfile && test -f midnight-reserve-contracts/aiken.toml || { \
-        echo "Submodules not checked out — indexer/ and/or midnight-reserve-contracts/ are empty."; \
-        echo "Run:  git submodule update --init --recursive"; \
+        echo "Indexer source is missing or midnight-reserve-contracts is not checked out."; \
+        echo "Run: git submodule update --init midnight-reserve-contracts"; \
         exit 1; }
     RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
     # --load builds the node + toolkit images and loads them into the nested daemon under

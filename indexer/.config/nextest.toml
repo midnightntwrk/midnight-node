@@ -1,0 +1,12 @@
+# Nextest configuration for midnight-indexer
+# This configuration prevents nextest from cancelling long-running tests when other tests fail.
+# This is particularly important for e2e tests which take >60 seconds to complete.
+
+[profile.default]
+# Don't cancel test execution on first failure
+# This prevents issues where test_finalized_blocks_0_13 failure causes e2e.rs to be cancelled
+fail-fast = false
+
+# Terminate tests that take longer than 480s (240s * 2) to prevent indefinite hangs.
+# The e2e test depends on block production which can stall; this ensures cleanup.
+slow-timeout = { period = "240s", terminate-after = 2 }

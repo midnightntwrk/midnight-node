@@ -1,0 +1,10 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "security:openssf-scorecard",
+    ":semanticCommits"
+  ],
+  "dependencyDashboard": true,
+  "enabled": false
+}

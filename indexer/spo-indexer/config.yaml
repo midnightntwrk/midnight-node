@@ -1,0 +1,40 @@
+run_migrations: true
+
+application:
+  network_id: "preview"
+  interval: 5000
+  blocks_buffer: 10
+  save_ledger_state_after: 1000
+  caught_up_max_distance: 10
+  caught_up_leeway: 5
+  stake_refresh:
+    period_secs: 900 # every 15 minutes
+    page_size: 100 # scan this many pools per cycle
+    max_rps: 2 # throttle requests to avoid 402s
+
+infra:
+  storage:
+    host: "localhost" # use Docker service name inside Compose network
+    port: 5432
+    dbname: "indexer"
+    user: "indexer" # matches postgres service (POSTGRES_USER)
+    sslmode: "prefer"
+    max_connections: 10
+    idle_timeout: "1m"
+    max_lifetime: "5m"
+
+  node:
+    url: "wss://rpc.preview.midnight.network"
+    genesis_protocol_version: 16000
+    reconnect_max_delay: "10s" # 10ms, 100ms, 1s, 10s
+    reconnect_max_attempts: 30 # Roughly 5m
+
+telemetry:
+  tracing:
+    enabled: false
+    service_name: "spo-indexer"
+    otlp_exporter_endpoint: "http://localhost:4317"
+  metrics:
+    enabled: false
+    address: "0.0.0.0"
+    port: 9000

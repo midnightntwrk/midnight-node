@@ -1,0 +1,9 @@
+# Bun is the package manager and script launcher only.
+#
+# Do NOT add `[run] bun = true`: vitest must execute under Node (via its
+# `#!/usr/bin/env node` shebang), not Bun's runtime. vitest relies on Node
+# internals (worker_threads/tinypool, node:vm) that Bun does not fully match.
+# `bun run test` launches vitest under Node as long as this stays unset.
+
+[install]
+cache = true

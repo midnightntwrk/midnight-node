@@ -1,0 +1,56 @@
+name: rust-security-scan
+
+# NOTE: This workflow uses 'pull_request' event (not 'pull_request_target') because we need to
+# checkout and scan the PR code. This means fork PRs don't have access to secrets.
+# We cannot use 'pull_request_target' because that would be unsafe - it would give untrusted
+# fork PR code access to secrets.
+#
+# Fork PR behavior:
+# - cargo-deny runs successfully (no secrets needed)
+# - SARIF uploads to GitHub Security (no secrets needed)
+#
+# This is acceptable because fork PRs still get security scanning via cargo-deny.
+
+permissions:
+  contents: read
+  security-events: write # required for SARIF upload
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust-security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+        with:
+          # Pinned: cargo-deny 0.20.0 removed CLI flags without a major bump, so a floating
+          # version silently breaks this workflow. Bump deliberately.
+          tool: cargo-deny@0.20.2
+
+      - name: Run cargo-deny (produce SARIF for Security tab)
+        # `-f sarif` always exits 0 since findings are encoded in the SARIF, not the exit code.
+        # So this step never fails CI; advisory gating is in the second cargo-deny invocation below.
+        run: cargo deny -f sarif check -Aduplicate -Aunmaintained -Alicense-not-encountered -Aparse-error -Asource-not-allowed -Aunlicensed | tee scan.sarif
+        # `-Aunlicensed` allows upstream ledger crates without `license = ...` fields (e.g. midnight-circuits, midnight-zk-stdlib).
+        # Remove this flag once those upstream crates ship with explicit license fields.
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@7273f08caa1dcf2c2837f362f1982de0ab4dc344
+        with:
+          sarif_file: scan.sarif
+
+      - name: Run cargo-deny (gate CI on advisories)
+        # Re-runs cargo-deny without `-f sarif` so it exits non-zero on findings, gating CI.
+        # `--offline` reuses the advisory DB and registry cache warmed by the step above
+        # (it replaced the subcommand-level `--disable-fetch`, removed in cargo-deny 0.20.0),
+        # and must precede the `check` subcommand; `-Aunlicensed` rationale as above.
+        run: cargo deny --offline check -Aduplicate -Aunmaintained -Alicense-not-encountered -Aparse-error -Asource-not-allowed -Aunlicensed

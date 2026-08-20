@@ -11,6 +11,9 @@ Use this on dedicated API nodes rather than validators. The embedded indexer ret
 indexer behavior: it connects to the node's WebSocket RPC, replays ledger transactions into SQLite,
 and serves the GraphQL API on the address configured under `infra.api`.
 
+The indexer source is maintained directly under `indexer/` in this repository. It is not a Git
+submodule and does not require a separately released indexer component.
+
 The configuration schema and `APP__` environment overlays are identical to the standalone
 indexer. `CONFIG_FILE` selects its YAML file and defaults to `config.yaml`. The node container
 image sets it to a bundled copy of

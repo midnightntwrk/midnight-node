@@ -605,8 +605,8 @@ Comment on the PR to trigger:
 **Repos**
 - Node: https://github.com/midnightntwrk/midnight-node
 - Partner Chains (vendored — not a submodule): `partner-chains/`
+- Indexer (ported — not a submodule): `indexer/`
 - Submodules (see `.gitmodules`):
-  - Indexer — https://github.com/midnightntwrk/midnight-indexer (mounted at `indexer/`)
   - Reserve contracts — https://github.com/midnightntwrk/midnight-reserve-contracts (mounted at `midnight-reserve-contracts/`)
   - Compact compiler — https://github.com/LFDT-Minokawa/compact (mounted at `compact/`; pinned in `COMPACTC_VERSION`)
 
@@ -677,4 +677,3 @@ Comment on the PR to trigger:
 
 
 ---
-
