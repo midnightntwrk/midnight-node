@@ -60,9 +60,20 @@ pub struct RunMidnight {
 	/// Run the node-managed wallet indexer and GraphQL API.
 	///
 	/// This is intended for dedicated API nodes because indexing replays ledger transactions and
-	/// maintains separate SQL state.
+	/// maintains separate SQL state. It implies archive pruning for both state and blocks.
 	#[arg(long)]
 	pub indexer: bool,
+}
+
+impl RunMidnight {
+	pub(crate) fn apply_indexer_pruning(&self, run_cmd: &mut sc_cli::RunCmd) {
+		if self.indexer {
+			run_cmd.import_params.pruning_params.state_pruning =
+				Some(sc_cli::DatabasePruningMode::Archive);
+			run_cmd.import_params.pruning_params.blocks_pruning =
+				sc_cli::DatabasePruningMode::Archive;
+		}
+	}
 }
 
 #[cfg(test)]
@@ -76,6 +87,31 @@ mod tests {
 			.expect("indexer flag should parse");
 
 		assert!(command.indexer);
+	}
+
+	#[test]
+	fn indexer_uses_archive_pruning() {
+		let command = RunMidnight::try_parse_from([
+			"midnight-node",
+			"--indexer",
+			"--state-pruning",
+			"256",
+			"--blocks-pruning",
+			"256",
+		])
+		.expect("indexer arguments should parse");
+		let mut run_cmd = command.run.clone();
+
+		command.apply_indexer_pruning(&mut run_cmd);
+
+		assert_eq!(
+			run_cmd.import_params.pruning_params.state_pruning,
+			Some(sc_cli::DatabasePruningMode::Archive)
+		);
+		assert_eq!(
+			run_cmd.import_params.pruning_params.blocks_pruning,
+			sc_cli::DatabasePruningMode::Archive
+		);
 	}
 }
 
