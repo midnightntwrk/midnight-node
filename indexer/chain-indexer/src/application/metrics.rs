@@ -27,6 +27,14 @@ pub struct Metrics {
     gc_run_count: Counter,
     gc_culled_node_count: Counter,
     gc_duration_seconds: Histogram,
+    block_fetch_duration_seconds: Histogram,
+    block_conversion_duration_seconds: Histogram,
+    ledger_update_duration_seconds: Histogram,
+    ledger_persist_duration_seconds: Histogram,
+    system_parameters_duration_seconds: Histogram,
+    block_storage_duration_seconds: Histogram,
+    event_publish_duration_seconds: Histogram,
+    block_processing_duration_seconds: Histogram,
 }
 
 impl Metrics {
@@ -46,6 +54,20 @@ impl Metrics {
             gc_run_count: counter!("indexer_gc_run_count"),
             gc_culled_node_count: counter!("indexer_gc_culled_node_count"),
             gc_duration_seconds: histogram!("indexer_gc_duration_seconds"),
+            block_fetch_duration_seconds: histogram!("indexer_block_fetch_duration_seconds"),
+            block_conversion_duration_seconds: histogram!(
+                "indexer_block_conversion_duration_seconds"
+            ),
+            ledger_update_duration_seconds: histogram!("indexer_ledger_update_duration_seconds"),
+            ledger_persist_duration_seconds: histogram!("indexer_ledger_persist_duration_seconds"),
+            system_parameters_duration_seconds: histogram!(
+                "indexer_system_parameters_duration_seconds"
+            ),
+            block_storage_duration_seconds: histogram!("indexer_block_storage_duration_seconds"),
+            event_publish_duration_seconds: histogram!("indexer_event_publish_duration_seconds"),
+            block_processing_duration_seconds: histogram!(
+                "indexer_block_processing_duration_seconds"
+            ),
         };
 
         if let Some(block_height) = block_height {
@@ -147,5 +169,45 @@ impl Metrics {
         self.gc_run_count.increment(1);
         self.gc_culled_node_count.increment(nodes_culled as u64);
         self.gc_duration_seconds.record(duration.as_secs_f64());
+    }
+
+    pub fn record_block_fetch(&self, duration: Duration) {
+        self.block_fetch_duration_seconds
+            .record(duration.as_secs_f64());
+    }
+
+    pub fn record_block_conversion(&self, duration: Duration) {
+        self.block_conversion_duration_seconds
+            .record(duration.as_secs_f64());
+    }
+
+    pub fn record_ledger_update(&self, duration: Duration) {
+        self.ledger_update_duration_seconds
+            .record(duration.as_secs_f64());
+    }
+
+    pub fn record_ledger_persist(&self, duration: Duration) {
+        self.ledger_persist_duration_seconds
+            .record(duration.as_secs_f64());
+    }
+
+    pub fn record_system_parameters(&self, duration: Duration) {
+        self.system_parameters_duration_seconds
+            .record(duration.as_secs_f64());
+    }
+
+    pub fn record_block_storage(&self, duration: Duration) {
+        self.block_storage_duration_seconds
+            .record(duration.as_secs_f64());
+    }
+
+    pub fn record_event_publish(&self, duration: Duration) {
+        self.event_publish_duration_seconds
+            .record(duration.as_secs_f64());
+    }
+
+    pub fn record_block_processing(&self, duration: Duration) {
+        self.block_processing_duration_seconds
+            .record(duration.as_secs_f64());
     }
 }
