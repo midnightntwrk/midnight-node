@@ -342,14 +342,10 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 
 		if run_midnight.indexer {
 			log::info!("starting indexer");
-			task_manager.spawn_essential_handle().spawn_blocking(
+			task_manager.spawn_handle().spawn_blocking(
 				"embedded-indexer",
 				Some("embedded-indexer"),
-				async move {
-					if let Err(error) = crate::indexer::run_on_dedicated_thread() {
-						log::error!("embedded indexer exited: {error:#}");
-					}
-				},
+				crate::indexer::run_supervised(),
 			);
 		}
 

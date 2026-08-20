@@ -43,6 +43,27 @@ use tokio::{
 };
 use wallet_indexer::{application as wallet_app, infra::storage as wallet_storage};
 
+const RESTART_DELAY: Duration = Duration::from_secs(5);
+
+pub async fn run_supervised() {
+	run_supervised_with(run_on_dedicated_thread, RESTART_DELAY).await;
+}
+
+async fn run_supervised_with(mut run: impl FnMut() -> anyhow::Result<()>, restart_delay: Duration) {
+	loop {
+		match run() {
+			Ok(()) => {
+				log::warn!("embedded indexer exited normally; restarting in {restart_delay:?}")
+			},
+			Err(error) => {
+				log::error!("embedded indexer exited: {error:#}; restarting in {restart_delay:?}")
+			},
+		}
+
+		sleep(restart_delay).await;
+	}
+}
+
 pub fn run_on_dedicated_thread() -> anyhow::Result<()> {
 	run_in_thread(run)
 }
@@ -199,8 +220,9 @@ fn task_result(
 
 #[cfg(test)]
 mod tests {
-	use super::run_in_thread;
-	use tokio::runtime::Builder;
+	use super::{run_in_thread, run_supervised_with};
+	use std::time::Duration;
+	use tokio::{runtime::Builder, sync::mpsc, time::timeout};
 
 	#[tokio::test(flavor = "multi_thread")]
 	async fn dedicated_thread_can_own_a_tokio_runtime() {
@@ -212,5 +234,26 @@ mod tests {
 		});
 
 		assert!(result.is_ok());
+	}
+
+	#[tokio::test]
+	async fn supervisor_restarts_after_indexer_exit() {
+		let (attempt_tx, mut attempt_rx) = mpsc::unbounded_channel();
+		let supervisor = tokio::spawn(run_supervised_with(
+			move || {
+				attempt_tx.send(()).expect("attempt receiver should remain open");
+				anyhow::bail!("temporary failure")
+			},
+			Duration::ZERO,
+		));
+
+		for _ in 0..3 {
+			timeout(Duration::from_secs(1), attempt_rx.recv())
+				.await
+				.expect("indexer should be restarted promptly")
+				.expect("attempt sender should remain open");
+		}
+
+		supervisor.abort();
 	}
 }
