@@ -30,6 +30,8 @@ use transient_crypto_local::commitment::PureGeneratorPedersen;
 
 use alloc::vec::Vec;
 use frame_support::{StorageHasher, Twox128};
+#[cfg(feature = "std")]
+use parity_scale_codec::Decode;
 use sp_externalities::{Externalities, ExternalitiesExt};
 
 pub mod types;
@@ -37,6 +39,14 @@ use types::LedgerApiError;
 
 #[cfg(feature = "std")]
 pub mod storage;
+
+#[cfg(feature = "std")]
+pub mod tagged_root;
+#[cfg(feature = "std")]
+pub use tagged_root::{
+	block_number_from_persist_tag, persist_tag_from_block_number, persist_tagged, release_tagged,
+	tagged_pin_count, tagged_roots,
+};
 
 #[cfg(feature = "std")]
 pub mod api;
@@ -165,6 +175,33 @@ lazy_static! {
 }
 
 #[cfg(feature = "std")]
+/// Decode `System::Number` from SCALE storage. Used only by legacy host ABI
+/// (v1/v2), whose WASM does not pass the block number. Production uses `u32`;
+/// the pallet mock runtime uses `u64`.
+fn decode_system_block_number(raw: &[u8]) -> Option<u32> {
+	match raw.len() {
+		4 => Some(u32::from_le_bytes(raw.try_into().ok()?)),
+		8 => u32::try_from(u64::from_le_bytes(raw.try_into().ok()?)).ok(),
+		_ => u32::decode(&mut &raw[..])
+			.ok()
+			.or_else(|| u64::decode(&mut &raw[..]).ok().and_then(|n| u32::try_from(n).ok())),
+	}
+}
+
+/// `System::Number` from the overlay. Fallback for historical WASM that still
+/// calls `apply_post_block_update` v1/v2 without an explicit block number.
+#[cfg(feature = "std")]
+pub(crate) fn block_number_from_overlay(externalities: &mut dyn Externalities) -> u32 {
+	let mut key = [0u8; 32];
+	key[..16].copy_from_slice(&Twox128::hash(b"System"));
+	key[16..].copy_from_slice(&Twox128::hash(b"Number"));
+	let Some(raw) = externalities.storage(&key) else {
+		return 0;
+	};
+	decode_system_block_number(&raw).unwrap_or(0)
+}
+
+#[cfg(feature = "std")]
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
 	_phantom: core::marker::PhantomData<(S, D)>,
 }
@@ -243,16 +280,26 @@ where
 		}
 	}
 
+	/// Persist `ledger` as a wrapper tagged with `block_number`.
+	fn persist_anchored_tip(ledger: &Sp<Ledger<D>, D>, block_number: u32) {
+		persist_tagged(
+			&default_storage::<D>().arena,
+			persist_tag_from_block_number(block_number),
+			ledger,
+		);
+	}
+
 	/// Apply the post-block transformation and produce the post-block ledger
 	/// state.
 	///
 	/// # Persist refcount contract
 	///
-	/// On success, returns `LedgerStateKey::Anchored` at rc=1. Anchored states
-	/// are never unpersisted on input by subsequent Bridge calls, so the
-	/// post-block tip remains rooted forever — preserved for RPC and history,
-	/// and safe across sibling forks (a second fork built on the same parent
-	/// does not unpersist it).
+	/// On success, returns `LedgerStateKey::Anchored` pinned by a wrapper
+	/// tagged with `block_number` (the Substrate height from `on_finalize`).
+	/// Anchored states are never unpersisted on input by subsequent Bridge
+	/// calls — preserved for RPC/history within the Substrate pruning window.
+	/// The node GC worker later [`release_tagged`]s wrappers whose height has
+	/// left that window. Forks at the same height share a tag.
 	///
 	/// If the input was `LedgerStateKey::Transient` (the last `apply_transaction`
 	/// output of this block), it is unpersisted once, dropping to rc=0.
@@ -261,9 +308,9 @@ where
 	///
 	/// On error, refcounts are unchanged.
 	pub fn post_block_update(
-		mut _externalities: &mut dyn Externalities,
 		state_key: &LedgerStateKey,
 		block_context: BlockContext,
+		block_number: u32,
 	) -> Result<LedgerStateKey, LedgerApiError> {
 		let start_tx_processing_time = Instant::now();
 		log::trace!(
@@ -284,7 +331,7 @@ where
 			"⏱️  Post block update start (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let mut ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
+		let ledger = Ledger::post_block_update(ledger, block_context).inspect_err(|e| {
 			log::error!(
 				target: LOG_TARGET,
 				"Post Block Update error: {e:?}"
@@ -304,7 +351,7 @@ where
 			"⏱️  Persisting ledger (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		ledger.persist();
+		Self::persist_anchored_tip(&ledger, block_number);
 		if state_key.is_transient() {
 			Self::unpersist_state(&api, state_key.bytes())?;
 		}
@@ -325,20 +372,19 @@ where
 	/// # Persist refcount contract
 	///
 	/// Same contract as [`Self::post_block_update`]: returns
-	/// `LedgerStateKey::Anchored` at rc=1, so the post-block tip stays rooted
-	/// for RPC and history and is safe across sibling forks; a `Transient`
-	/// input is unpersisted once, and `Anchored` inputs are left alone. On
-	/// error, refcounts are unchanged.
+	/// `LedgerStateKey::Anchored` pinned by a number-tagged wrapper. A
+	/// `Transient` input is unpersisted once, and `Anchored` inputs are left
+	/// alone. On error, refcounts are unchanged.
 	pub fn apply_post_block_update(
-		mut _externalities: &mut dyn Externalities,
 		state_key: &LedgerStateKey,
 		block_context: BlockContext,
+		block_number: u32,
 	) -> Result<LedgerStateKey, LedgerApiError> {
 		let api = api::new();
 		let ledger = Self::get_ledger(&api, state_key.bytes())?;
-		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
+		let ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
-		ledger.persist();
+		Self::persist_anchored_tip(&ledger, block_number);
 		if state_key.is_transient() {
 			Self::unpersist_state(&api, state_key.bytes())?;
 		}
@@ -885,12 +931,15 @@ where
 	/// caller), never state corruption.
 	///
 	/// Persists + flushes into the live `default_storage` so `get_lazy(StateKey)` resolves —
-	/// in-process, no restart, via the same `alloc`/`persist`/`flush` path live block execution
-	/// uses. The caller (warp client driver) MUST hold the authoring/import gate so no block
-	/// executes against the arena concurrently — the arena is single-writer.
+	/// in-process, no restart. The warp target *number* is known here, so the root is a tagged
+	/// wrapper (`persist_tagged`) committed in this same flush. A leftover raw pin on the same
+	/// inner (re-import of a pre-tag genesis) is dropped in that flush. The caller MUST hold the
+	/// authoring/import gate so no block executes against the arena concurrently — the arena is
+	/// single-writer.
 	pub fn import_verified_ledger_snapshot(
 		blob: &[u8],
 		expected_state_key: &[u8],
+		block_number: u32,
 	) -> Result<(), crate::SnapshotImportError> {
 		use crate::SnapshotImportError;
 
@@ -903,7 +952,7 @@ where
 		// arena; re-allocating the loaded value yields the persistable `Sp`.
 		let ledger: Ledger<D> =
 			helpers_local::deserialize(blob).map_err(SnapshotImportError::Deserialize)?;
-		let mut sp = default_storage::<D>().arena.alloc(ledger);
+		let sp = default_storage::<D>().arena.alloc(ledger);
 
 		// Cryptographic bind to the trie anchor: the reconstructed root must equal the on-chain
 		// `StateKey`. This is the whole security argument — reject anything else.
@@ -912,8 +961,16 @@ where
 			return Err(SnapshotImportError::RootMismatch);
 		}
 
-		sp.persist();
-		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+		let tag = persist_tag_from_block_number(block_number);
+		if !tagged_root::is_tagged(&default_storage::<D>().arena, &tag, &sp.hash()) {
+			persist_tagged(&default_storage::<D>().arena, tag, &sp);
+		}
+		default_storage::<D>().with_backend(|backend| {
+			if backend.get_roots().contains_key(&sp.hash()) {
+				backend.unpersist(&sp.hash());
+			}
+			backend.flush_all_changes_to_db();
+		});
 		log::info!(target: LOG_TARGET, "Imported verified ledger snapshot ({} bytes)", blob.len());
 		Ok(())
 	}
@@ -1013,6 +1070,12 @@ where
 		let key: ArenaKey<D::Hasher> = typed_key.into();
 		default_storage::<D>().with_backend(|backend| backend.unpersist(key.hash()));
 		Ok(())
+	}
+
+	/// Decrement persist count once on every tagged wrapper whose tag is in
+	/// `tags`. Native-only helper for later reclaim; not durable until flush.
+	pub fn release_tagged_roots<M: AsRef<[u8]>>(tags: &[M]) -> usize {
+		tagged_root::release_tagged(&default_storage::<D>().arena, tags)
 	}
 
 	fn get_transaction_details(

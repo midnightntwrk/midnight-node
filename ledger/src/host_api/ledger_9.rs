@@ -47,6 +47,12 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
+/// Historical WASM (v1/v2) does not pass the block number; peek `System::Number`.
+#[cfg(feature = "std")]
+fn overlay_block_number(ext: &mut dyn Externalities) -> u32 {
+	crate::ledger_9::block_number_from_overlay(ext)
+}
+
 #[cfg(feature = "std")]
 use crate::ledger_8::Bridge as Bridge8;
 #[cfg(feature = "std")]
@@ -129,31 +135,75 @@ pub trait Ledger9Bridge {
 	///
 	/// Ledger 7 and 8 need no counterpart: the current runtime only ever calls the
 	/// ledger-9 bridge, so those two keep the legacy ABI and nothing else.
+	///
+	/// Tagging peeks `System::Number` from the overlay — this WASM cannot pass
+	/// the number. Version 3 takes it from `on_finalize(block)`.
 	fn post_block_update(
 		&mut self,
 		state_key: PassFatPointerAndRead<&[u8]>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let block_number = overlay_block_number(*self);
 		let result = if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::post_block_update(*self, &state_key, block_context)
+			Bridge::<Signature, DbUnified>::post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
 		} else {
-			Bridge::<Signature, DbSeparate>::post_block_update(*self, &state_key, block_context)
+			Bridge::<Signature, DbSeparate>::post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
 		};
 		result.map(LedgerStateKey::into_bytes)
 	}
 
-	// Current Enabled Version
+	/// `LedgerStateKey` ABI without an explicit block number. Overlay peek as in v1.
 	#[version(2)]
 	fn post_block_update(
 		&mut self,
 		state_key: PassFatPointerAndDecode<LedgerStateKey>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<LedgerStateKey, LedgerApiError>> {
+		let block_number = overlay_block_number(*self);
 		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::post_block_update(*self, &state_key, block_context)
+			Bridge::<Signature, DbUnified>::post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
 		} else {
-			Bridge::<Signature, DbSeparate>::post_block_update(*self, &state_key, block_context)
+			Bridge::<Signature, DbSeparate>::post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
+		}
+	}
+
+	// Current Enabled Version
+	#[version(3)]
+	fn post_block_update(
+		&mut self,
+		state_key: PassFatPointerAndDecode<LedgerStateKey>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		block_number: u32,
+	) -> AllocateAndReturnByCodec<Result<LedgerStateKey, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
 		}
 	}
 
@@ -164,40 +214,65 @@ pub trait Ledger9Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let block_number = overlay_block_number(*self);
 		let result = if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::apply_post_block_update(
-				*self,
 				&state_key,
 				block_context,
+				block_number,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_post_block_update(
-				*self,
 				&state_key,
 				block_context,
+				block_number,
 			)
 		};
 		result.map(LedgerStateKey::into_bytes)
 	}
 
-	// Current Enabled Version
+	/// `LedgerStateKey` ABI without an explicit block number. Overlay peek as in v1.
 	#[version(2)]
 	fn apply_post_block_update(
 		&mut self,
 		state_key: PassFatPointerAndDecode<LedgerStateKey>,
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<LedgerStateKey, LedgerApiError>> {
+		let block_number = overlay_block_number(*self);
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::apply_post_block_update(
-				*self,
 				&state_key,
 				block_context,
+				block_number,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_post_block_update(
-				*self,
 				&state_key,
 				block_context,
+				block_number,
+			)
+		}
+	}
+
+	// Current Enabled Version
+	#[version(3)]
+	fn apply_post_block_update(
+		&mut self,
+		state_key: PassFatPointerAndDecode<LedgerStateKey>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		block_number: u32,
+	) -> AllocateAndReturnByCodec<Result<LedgerStateKey, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_post_block_update(
+				&state_key,
+				block_context,
+				block_number,
 			)
 		}
 	}

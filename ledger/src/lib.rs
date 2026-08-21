@@ -25,6 +25,9 @@ extern crate alloc;
 pub mod json;
 
 #[cfg(feature = "std")]
+pub mod gc;
+
+#[cfg(feature = "std")]
 mod utils;
 
 pub mod host_api;
@@ -228,16 +231,18 @@ impl std::error::Error for SnapshotImportError {}
 
 #[cfg(feature = "std")]
 /// Verify a `Ledger`-rooted warp snapshot `blob` against the on-chain `expected_state_key` and, on
-/// success, persist it into the already-open arena backend so `get_lazy(StateKey)` resolves (warp
-/// ledger-sync verification + import). `unified` selects the DB instantiation, and dispatch on the
-/// `StateKey`'s `ledger-state[vNN]` tag picks the ledger module, as in
-/// [`serialize_ledger_snapshot`].
+/// success, persist it as a wrapper tagged with `block_number` (the warp target height) so
+/// `get_lazy(StateKey)` resolves and GC can later `release_tagged` that pin. `unified` selects
+/// the DB instantiation, and dispatch on the `StateKey`'s `ledger-state[vNN]` tag picks the
+/// ledger module, as in [`serialize_ledger_snapshot`].
 ///
-/// The caller must hold the authoring/import gate (the arena is single-writer).
+/// The tag is committed in this function's flush. The caller must hold the authoring/import
+/// gate (the arena is single-writer).
 pub fn import_verified_ledger_snapshot(
 	unified: bool,
 	blob: &[u8],
 	expected_state_key: &[u8],
+	block_number: u32,
 ) -> Result<(), SnapshotImportError> {
 	// Dispatch on the `StateKey`'s ledger-state version (the underlying method returns the shared
 	// `SnapshotImportError` for every version, so no error mapping is needed).
@@ -246,14 +251,14 @@ pub fn import_verified_ledger_snapshot(
 			bridge_arena_call!(
 				ledger_9,
 				unified,
-				import_verified_ledger_snapshot(blob, expected_state_key)
+				import_verified_ledger_snapshot(blob, expected_state_key, block_number)
 			)
 		},
 		Some(13) => {
 			bridge_arena_call!(
 				ledger_8,
 				unified,
-				import_verified_ledger_snapshot(blob, expected_state_key)
+				import_verified_ledger_snapshot(blob, expected_state_key, block_number)
 			)
 		},
 		other => Err(SnapshotImportError::StateKeyDecode(format!(

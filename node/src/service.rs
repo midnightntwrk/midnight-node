@@ -241,7 +241,7 @@ type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
 /// The minimum period of blocks on which justifications will be
 /// imported and generated.
-const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
+pub(crate) const GRANDPA_JUSTIFICATION_PERIOD: u32 = 512;
 
 type TransactionPool = FilteringTransactionPool<Block, FullClient>;
 
@@ -648,6 +648,8 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		Vec::default(),
 	));
 
+	let state_pruning = config.state_pruning.clone();
+
 	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
@@ -662,6 +664,13 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			block_relay: None,
 			metrics,
 		})?;
+
+	crate::ledger_gc::try_spawn(
+		&task_manager.spawn_handle(),
+		client.clone(),
+		backend.clone(),
+		&state_pruning,
+	);
 
 	// Capture peer_id before network is moved
 	let peer_id = network.local_peer_id().to_base58();

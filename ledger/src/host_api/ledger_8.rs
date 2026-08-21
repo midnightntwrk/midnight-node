@@ -46,6 +46,12 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
+/// Frozen ledger-8 ABI has no block-number argument; peek `System::Number`.
+#[cfg(feature = "std")]
+fn overlay_block_number(ext: &mut dyn Externalities) -> u32 {
+	crate::ledger_8::block_number_from_overlay(ext)
+}
+
 /// The body of version 1 of `apply_transaction`, which skews the `tblock` of a block's first
 /// ledger transaction (see the trait below).
 ///
@@ -153,10 +159,19 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let block_number = overlay_block_number(*self);
 		let result = if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::post_block_update(*self, &state_key, block_context)
+			Bridge::<Signature, DbUnified>::post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
 		} else {
-			Bridge::<Signature, DbSeparate>::post_block_update(*self, &state_key, block_context)
+			Bridge::<Signature, DbSeparate>::post_block_update(
+				&state_key,
+				block_context,
+				block_number,
+			)
 		};
 		result.map(LedgerStateKey::into_bytes)
 	}
@@ -167,17 +182,18 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 	) -> AllocateAndReturnByCodec<Result<Vec<u8>, LedgerApiError>> {
 		let state_key = LedgerStateKey::Anchored(state_key.to_vec());
+		let block_number = overlay_block_number(*self);
 		let result = if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::apply_post_block_update(
-				*self,
 				&state_key,
 				block_context,
+				block_number,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_post_block_update(
-				*self,
 				&state_key,
 				block_context,
+				block_number,
 			)
 		};
 		result.map(LedgerStateKey::into_bytes)

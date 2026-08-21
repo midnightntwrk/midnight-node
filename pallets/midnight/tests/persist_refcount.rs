@@ -42,13 +42,17 @@ fn init_ledger_state(block_context: BlockContext) {
 }
 
 fn process_block(block_number: u64, block_context: BlockContext) {
+	mock::System::set_block_number(block_number);
 	mock::Midnight::on_finalize(block_number);
-	mock::System::set_block_number(block_number + 1);
 	mock::Timestamp::set_timestamp(block_context.tblock * 1000);
 }
 
 fn root_count(state_key: &LedgerStateKey) -> Option<u32> {
 	midnight_node_ledger::latest::storage::get_state_root_count(state_key.bytes())
+}
+
+fn tagged_pin_count(state_key: &LedgerStateKey) -> Option<u32> {
+	midnight_node_ledger::latest::storage::get_tagged_pin_count(state_key.bytes())
 }
 
 fn current_state_key() -> LedgerStateKey {
@@ -57,9 +61,10 @@ fn current_state_key() -> LedgerStateKey {
 
 /// Walks an entire block lifecycle and asserts the LedgerStateKey persist
 /// contract at every transition:
-///   - `Anchored` states (genesis, post-block tips) are persisted at rc=1 and
-///     are NEVER unpersisted by subsequent Bridge calls — so they survive
-///     sibling forks and remain queryable for history,
+///   - `Anchored` states (genesis, post-block tips) are persisted as a
+///     number-tagged wrapper (inner is not a raw GC root) and are NEVER
+///     unpersisted by subsequent Bridge calls — so they survive sibling forks
+///     and remain queryable for history until GC releases that height.
 ///   - `Transient` states (intra-block intermediates) are persisted at rc=1
 ///     and unpersisted to rc=0 by their successor.
 ///
@@ -87,10 +92,11 @@ fn persist_refcount_invariants() {
 
 		let genesis_key = current_state_key();
 		assert!(matches!(genesis_key, LedgerStateKey::Anchored(_)), "genesis stored as Anchored");
+		assert_eq!(root_count(&genesis_key), None, "genesis inner is not a raw GC root");
 		assert_eq!(
-			root_count(&genesis_key),
+			tagged_pin_count(&genesis_key),
 			Some(1),
-			"genesis is persisted at rc=1 by alloc_with_initial_state"
+			"genesis is a number-tagged wrapper (block 0)"
 		);
 
 		// Read-only guard 1: validate_unsigned + pre_dispatch against the genesis
@@ -100,14 +106,18 @@ fn persist_refcount_invariants() {
 			&deploy_call
 		));
 		assert_eq!(current_state_key(), genesis_key);
-		assert_eq!(root_count(&genesis_key), Some(1), "validate_unsigned must not change tip rc");
+		assert_eq!(
+			tagged_pin_count(&genesis_key),
+			Some(1),
+			"validate_unsigned must not change tip pin"
+		);
 		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&deploy_call));
 		assert_eq!(current_state_key(), genesis_key);
-		assert_eq!(root_count(&genesis_key), Some(1), "pre_dispatch must not change tip rc");
+		assert_eq!(tagged_pin_count(&genesis_key), Some(1), "pre_dispatch must not change tip pin");
 
 		// Block 1: apply DEPLOY. Genesis is Anchored — Bridge must NOT unpersist
 		// it. (This is the property that makes sibling forks safe: a second fork
-		// applying its own first-tx on the same Anchored parent leaves rc=1.)
+		// applying its own first-tx on the same Anchored parent leaves the pin.)
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), deploy_tx));
 		let post_deploy_key = current_state_key();
 		assert!(
@@ -117,13 +127,13 @@ fn persist_refcount_invariants() {
 		assert_ne!(post_deploy_key, genesis_key);
 		assert_eq!(root_count(&post_deploy_key), Some(1), "new Transient state at rc=1");
 		assert_eq!(
-			root_count(&genesis_key),
+			tagged_pin_count(&genesis_key),
 			Some(1),
 			"Anchored genesis must NOT be unpersisted by apply_transaction"
 		);
 
 		// Finalize block 1. post_block_update unpersists the Transient predecessor
-		// (post_deploy → rc=0) and returns Anchored at rc=1.
+		// (post_deploy → rc=0) and returns Anchored pinned by a number-tagged wrapper.
 		process_block(2, store_ctx.clone().into());
 		let post_block_1_key = current_state_key();
 		assert!(
@@ -138,34 +148,39 @@ fn persist_refcount_invariants() {
 		);
 		assert_eq!(
 			root_count(&post_block_1_key),
+			None,
+			"Anchored post-block inner is not a raw GC root"
+		);
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
 			Some(1),
-			"Anchored post-block state at rc=1, retained for history"
+			"Anchored post-block state pinned by a number-tagged wrapper"
 		);
 
 		// Read-only guard 2: validate against the Anchored post-block tip. DEPLOY
-		// fails here (contract already deployed) but rc must be untouched on
+		// fails here (contract already deployed) but the pin must be untouched on
 		// either path.
 		let _ = <mock::Midnight as ValidateUnsigned>::validate_unsigned(
 			TransactionSource::External,
 			&deploy_call,
 		);
 		assert_eq!(
-			root_count(&post_block_1_key),
+			tagged_pin_count(&post_block_1_key),
 			Some(1),
-			"validate_unsigned against post-block tip must not change rc"
+			"validate_unsigned against post-block tip must not change pin"
 		);
 		let _ = <mock::Midnight as ValidateUnsigned>::pre_dispatch(&deploy_call);
 		assert_eq!(
-			root_count(&post_block_1_key),
+			tagged_pin_count(&post_block_1_key),
 			Some(1),
-			"pre_dispatch against post-block tip must not change rc"
+			"pre_dispatch against post-block tip must not change pin"
 		);
 
 		// Block 2: apply STORE. post_block_1 is Anchored — must NOT be unpersisted.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), store_tx));
 		let post_store_key = current_state_key();
 		assert_eq!(
-			root_count(&post_block_1_key),
+			tagged_pin_count(&post_block_1_key),
 			Some(1),
 			"Anchored post-block-1 must NOT be unpersisted by next block's first apply"
 		);
@@ -179,21 +194,29 @@ fn persist_refcount_invariants() {
 			None,
 			"Transient last-apply output of block 2 unrooted by post_block_update"
 		);
-		assert_eq!(root_count(&post_block_2_key), Some(1), "Anchored post-block-2 at rc=1");
 		assert_eq!(
-			root_count(&post_block_1_key),
+			tagged_pin_count(&post_block_2_key),
 			Some(1),
-			"prior Anchored post-block-1 unaffected, still at rc=1"
+			"Anchored post-block-2 pinned by a number-tagged wrapper"
+		);
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
+			Some(1),
+			"prior Anchored post-block-1 unaffected"
 		);
 
 		// Block 3: apply CHECK and confirm Anchored states remain untouched.
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), check_tx));
 		assert_eq!(
-			root_count(&post_block_2_key),
+			tagged_pin_count(&post_block_2_key),
 			Some(1),
 			"Anchored post-block-2 unaffected by block 3's first apply"
 		);
-		assert_eq!(root_count(&post_block_1_key), Some(1), "Anchored post-block-1 still at rc=1");
-		assert_eq!(root_count(&genesis_key), Some(1), "Anchored genesis still at rc=1");
+		assert_eq!(
+			tagged_pin_count(&post_block_1_key),
+			Some(1),
+			"Anchored post-block-1 still pinned"
+		);
+		assert_eq!(tagged_pin_count(&genesis_key), Some(1), "Anchored genesis still pinned");
 	});
 }

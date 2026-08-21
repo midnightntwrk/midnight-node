@@ -20,7 +20,7 @@
 //! fetch the Snappy-compressed `Ledger`-rooted arena blob in byte ranges from peers, decompress it
 //! to the canonical blob, then hand that blob to
 //! [`midnight_node_ledger::import_verified_ledger_snapshot`], which verifies its root against the
-//! `StateKey` and persists it on success.
+//! `StateKey` and persists it as a wrapper tagged with `target_number` on success.
 //!
 //! Verification + persistence live in the ledger crate (next to the arena); this module is pure
 //! network orchestration. No peer is trusted: a bad blob fails the root check and is discarded.
@@ -32,7 +32,7 @@ use sc_client_api::{Backend, StorageProvider};
 use sc_network::{
 	IfDisconnected, NetworkRequest, PeerId, ProtocolName, request_responses::RequestFailure,
 };
-use sp_runtime::traits::Block as BlockT;
+use sp_runtime::traits::{Block as BlockT, UniqueSaturatedInto};
 
 use super::{
 	LOG_TARGET,
@@ -78,10 +78,16 @@ where
 
 	/// Recover, verify, and import the ledger arena at `target` (the captured warp target N) by
 	/// trying `peers` in order. Returns `Ok` as soon as one peer yields a complete blob that
-	/// verifies against the on-chain `StateKey` and imports; otherwise [`ClientError::AllPeersFailed`].
+	/// verifies against the on-chain `StateKey` and is persisted as a wrapper tagged with
+	/// `target_number`; otherwise [`ClientError::AllPeersFailed`].
 	///
 	/// The caller must hold the authoring/import gate while this runs (single-writer arena).
-	pub async fn recover(&self, target: B::Hash, peers: &[PeerId]) -> Result<(), ClientError> {
+	pub async fn recover(
+		&self,
+		target: B::Hash,
+		target_number: sp_runtime::traits::NumberFor<B>,
+		peers: &[PeerId],
+	) -> Result<(), ClientError> {
 		let state_key = read_state_key::<B, Client, BE>(&self.client, target)?
 			.ok_or(ClientError::NoStateKey)?;
 
@@ -109,6 +115,7 @@ where
 			let unified = self.unified;
 			let blob_len = blob.len();
 			let state_key = state_key.clone();
+			let persist_tag_number: u32 = target_number.unique_saturated_into();
 			log::info!(
 				target: LOG_TARGET,
 				"Verifying + importing ledger arena snapshot from {peer} ({blob_len} bytes); \
@@ -116,7 +123,12 @@ where
 			);
 			let started = std::time::Instant::now();
 			let mut import = tokio::task::spawn_blocking(move || {
-				midnight_node_ledger::import_verified_ledger_snapshot(unified, &blob, &state_key)
+				midnight_node_ledger::import_verified_ledger_snapshot(
+					unified,
+					&blob,
+					&state_key,
+					persist_tag_number,
+				)
 			});
 			let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
 			heartbeat.tick().await; // consume the immediate first tick

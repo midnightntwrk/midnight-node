@@ -121,17 +121,18 @@ where
 {
 	use super::api::Ledger;
 	use super::ledger_storage_local::storage::default_storage;
+	use super::{persist_tag_from_block_number, persist_tagged};
 
 	let state: super::mn_ledger_local::structure::LedgerState<D> =
 		super::midnight_serialize_local::tagged_deserialize(&mut &initial_state[..])
 			.expect("failed to deserialize ledger genesis state");
 	let state = Ledger::new(state);
 
-	let mut state = default_storage::<D>().arena.alloc(state);
-	// Genesis is treated as `LedgerStateKey::Anchored` — persist once at rc=1
-	// and rely on the Bridge never unpersisting Anchored inputs to retain it
-	// for history.
-	state.persist();
+	let state = default_storage::<D>().arena.alloc(state);
+	// Genesis is treated as `LedgerStateKey::Anchored` — persist as a wrapper
+	// tagged with block 0. The Bridge never unpersists Anchored inputs, so it
+	// stays queryable until GC releases that height.
+	persist_tagged(&default_storage::<D>().arena, persist_tag_from_block_number(0), &state);
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
 	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes).unwrap();
@@ -159,6 +160,28 @@ pub fn get_state_root_count(state_key: &[u8]) -> Option<u32> {
 	let key: ArenaKey<_> = typed_key.into();
 	default_storage::<ParityDb>()
 		.with_backend(|backend| backend.get_roots().get(key.hash()).copied())
+}
+
+/// Returns the persist refcount of tagged wrappers pinning the ledger state
+/// addressed by `state_key`, or `None` if no such wrapper is currently a GC
+/// root.
+///
+/// Anchored tips (genesis, `on_finalize`, warp import) are number-tagged
+/// wrappers; [`get_state_root_count`] is then `None` and this helper reports
+/// the wrapper pin count. Transient intra-block states remain raw persists.
+#[cfg(all(feature = "std", feature = "test-utils"))]
+pub fn get_tagged_pin_count(state_key: &[u8]) -> Option<u32> {
+	use super::api::Ledger;
+	use super::ledger_storage_local::{
+		arena::{ArenaKey, TypedArenaKey},
+		db::ParityDb,
+		storage::default_storage,
+	};
+
+	let typed_key: TypedArenaKey<Ledger<ParityDb>, _> =
+		super::midnight_serialize_local::tagged_deserialize(&mut &state_key[..]).ok()?;
+	let key: ArenaKey<_> = typed_key.into();
+	super::tagged_root::tagged_pin_count(&default_storage::<ParityDb>().arena, key.hash())
 }
 
 #[cfg(feature = "std")]
