@@ -17,7 +17,7 @@ use frame_support::PalletError;
 use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use scale_info_derive::TypeInfo;
 
-pub use super::super::BlockContext;
+pub use crate::ledger_9::BlockContext;
 
 use DeserializationError::{
 	ContractAddress as DeserializationContractAddress, LedgerState as DeserializationLedgerState,
