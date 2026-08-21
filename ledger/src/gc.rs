@@ -32,9 +32,7 @@ type DbUnified = ParityDb<sha2::Sha256, OwnedDb, { LedgerStorageExt::COLUMN_OFFS
 /// Tags of currently persisted wrapper roots (block numbers, little-endian).
 pub fn tagged_root_tags() -> Vec<Vec<u8>> {
 	fn tags_in<D: DB + 'static>() -> Option<Vec<Vec<u8>>> {
-		if try_get_default_storage::<D>().is_none() {
-			return None;
-		}
+		try_get_default_storage::<D>()?;
 		Some(
 			ledger_9::tagged_roots(&default_storage::<D>().arena)
 				.into_iter()
@@ -68,9 +66,7 @@ pub fn release_tagged_tips<M: AsRef<[u8]>>(tags: &[M]) -> usize {
 }
 
 fn release_in<D: DB + 'static, M: AsRef<[u8]>>(tags: &[M]) -> Option<usize> {
-	if try_get_default_storage::<D>().is_none() {
-		return None;
-	}
+	try_get_default_storage::<D>()?;
 	Some(ledger_9::release_tagged(&default_storage::<D>().arena, tags))
 }
 
