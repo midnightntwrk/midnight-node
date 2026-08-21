@@ -29,9 +29,9 @@
 //!   cnight's and still live), asks the host for each nonce's pre-wipe
 //!   `(value, owner)`, and applies one `CNightGeneratesDustUpdate` per batch.
 //!
-//! The wipe itself lives in the translation table
-//! (`midnight_node_ledger_helpers::state_translation_v8_to_v9`), which replaces
-//! the v8 dust state with the empty one.
+//! The wipe itself lives in the ledger team's translation table (the
+//! `v8-to-v9-state-translation` crate), which replaces the v8 dust state with the
+//! empty one.
 extern crate alloc;
 
 use alloc::vec::Vec;

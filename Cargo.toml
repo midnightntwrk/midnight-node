@@ -85,7 +85,7 @@ zkir = { version = "^2.2.0", package = "midnight-zkir" }
 mn-ledger-8 = { version = "=8.1.1", package = "midnight-ledger" }
 # `state-translation` (needed by the v8->v9 storage migration) pulls in
 # `public-internal-structure`, exposing `merkle_patricia_trie`/`storable`/the
-# `state_translation` module used by `midnight_node_ledger::state_translation_v8_to_v9`.
+# `state_translation` module used by the `v8-to-v9-state-translation` crate.
 ledger-storage-ledger-8 = { version = "=2.0.2", package = "midnight-storage", features = ["parity-db", "state-translation"] }
 onchain-runtime-ledger-8 = { version = "=3.1.0", package = "midnight-onchain-runtime" }
 # Same `midnight-onchain-state` instance that `mn-ledger-8`'s `ContractState`
@@ -105,6 +105,13 @@ onchain-state-ledger-9 = { version = "=4.0.0", package = "midnight-onchain-state
 zswap-ledger-9 = { version = "=9.0.0", package = "midnight-zswap" }
 coin-structure-ledger-9 = { version = "=3.0.0", package = "midnight-coin-structure" }
 transient-crypto-ledger-9 = { version = "=3.0.0", package = "midnight-transient-crypto" }
+
+# v8->v9 state translation table, maintained by the ledger team. Unpublished and not in any
+# release tag - it lives only on the ledger repo's `state-translation/v8-to-v9` branch - so it
+# is pinned by rev. Its own dependency requirements resolve through the [patch.crates-io] rc
+# pins below, so it shares one `midnight-storage` / `midnight-onchain-state` instance with the
+# rest of the workspace.
+v8-to-v9-state-translation = { git = "https://github.com/midnightntwrk/midnight-ledger", rev = "da96e33d78ee9b7d3867b15c1037510d499cd909" }
 
 # Storage core v2 layout
 midnight-storage-core = { version = "1.2.0", features = ["layout-v2", "gc-v1"] }
