@@ -37,6 +37,13 @@ use tempfile::NamedTempFile;
 /// processes time to finish saving wallet states that reference them.
 const GC_GRACE_PERIOD: Duration = Duration::from_secs(5 * 60);
 
+/// The newest N ledger snapshots are always retained by GC, even when no
+/// cached wallet references their height. Wallet entries can lag behind the
+/// snapshot just saved (`write_wallet_if_newer` skips files whose recorded
+/// height didn't advance), and without this floor the reference-based GC
+/// deletes exactly the snapshot the next warm start needs.
+const MIN_SNAPSHOTS_RETAINED: usize = 2;
+
 pub struct FileBackend {
 	root: PathBuf,
 }
@@ -102,7 +109,10 @@ fn read_wallet_height(path: &Path) -> Option<u64> {
 /// Check happens after writing the temp file but before rename to minimize the TOCTOU window.
 /// A concurrent writer can still race between our read and rename — we accept that
 /// the consequence is a benign height regression (extra replay on next startup).
-fn write_wallet_if_newer(path: &Path, new_height: u64, data: &[u8]) -> io::Result<()> {
+///
+/// Returns `Ok(None)` when written, or `Ok(Some(existing_height))` when skipped
+/// because the file already records a same-or-newer height.
+fn write_wallet_if_newer(path: &Path, new_height: u64, data: &[u8]) -> io::Result<Option<u64>> {
 	let dir = path
 		.parent()
 		.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
@@ -110,12 +120,12 @@ fn write_wallet_if_newer(path: &Path, new_height: u64, data: &[u8]) -> io::Resul
 	fs::write(tmp.path(), data)?;
 	if let Some(existing) = read_wallet_height(path) {
 		if existing >= new_height {
-			return Ok(()); // tmp auto-deleted on drop
+			return Ok(Some(existing)); // tmp auto-deleted on drop
 		}
 	}
 	// persist() uses rename(2) on POSIX — atomic directory-entry swap
 	tmp.persist(path).map_err(|e| e.error)?;
-	Ok(())
+	Ok(None)
 }
 
 /// List filenames in a directory, returning empty vec if the directory doesn't exist.
@@ -237,21 +247,41 @@ impl WalletStateCaching for FileBackend {
 			.collect();
 
 		let count = items.len();
-		if let Err(e) = tokio::task::spawn_blocking(move || -> io::Result<()> {
+		let skipped = match tokio::task::spawn_blocking(move || -> io::Result<Vec<u64>> {
 			fs::create_dir_all(&dir)?;
+			let mut skipped = Vec::new();
 			for (path, new_height, data) in &items {
-				write_wallet_if_newer(path, *new_height, data)?;
+				if let Some(existing) = write_wallet_if_newer(path, *new_height, data)? {
+					skipped.push(existing);
+				}
 			}
-			Ok(())
+			Ok(skipped)
 		})
 		.await
 		.unwrap_or_else(|e| Err(io::Error::new(io::ErrorKind::Other, e)))
 		{
-			log::warn!("Failed to write wallet state files: {e}");
-			return;
-		}
+			Ok(skipped) => skipped,
+			Err(e) => {
+				log::warn!("Failed to write wallet state files: {e}");
+				return;
+			},
+		};
 
-		log::info!("Saved {} wallet cache entries", count);
+		if skipped.is_empty() {
+			log::info!("Saved {} wallet cache entries", count);
+		} else {
+			// Skips here mean the snapshot heights we just produced do not
+			// advance the on-disk entries — the ledger snapshot saved next to
+			// them will be unreferenced, so surface it loudly.
+			log::warn!(
+				"Saved {} wallet cache entries: {} written, {} skipped (existing files already at heights {}..={})",
+				count,
+				count - skipped.len(),
+				skipped.len(),
+				skipped.iter().min().copied().unwrap_or_default(),
+				skipped.iter().max().copied().unwrap_or_default(),
+			);
+		}
 	}
 
 	async fn delete_wallet_states(&self, chain_id: H256, seed_hashes: &[H256]) {
@@ -276,9 +306,15 @@ impl WalletStateCaching for FileBackend {
 
 	async fn gc_ledger_snapshots(&self, chain_id: H256, keep_heights: &[u64]) {
 		let dir = self.ledger_dir(chain_id);
-		let keep: std::collections::HashSet<u64> = keep_heights.iter().copied().collect();
+		let mut keep: std::collections::HashSet<u64> = keep_heights.iter().copied().collect();
 
 		let removed = tokio::task::spawn_blocking(move || {
+			// Always spare the newest MIN_SNAPSHOTS_RETAINED snapshots, referenced or not.
+			let mut heights: Vec<u64> =
+				list_dir(&dir).iter().filter_map(|n| parse_ledger_height(n)).collect();
+			heights.sort_unstable_by(|a, b| b.cmp(a));
+			keep.extend(heights.iter().take(MIN_SNAPSHOTS_RETAINED));
+
 			let mut removed = 0u64;
 			for name in list_dir(&dir) {
 				if let Some(height) = parse_ledger_height(&name) {
@@ -452,36 +488,67 @@ mod tests {
 		backend.set_ledger_snapshot(cid, test_snapshot(100)).await;
 		backend.set_ledger_snapshot(cid, test_snapshot(200)).await;
 		backend.set_ledger_snapshot(cid, test_snapshot(300)).await;
+		backend.set_ledger_snapshot(cid, test_snapshot(400)).await;
 
 		// Backdate files past grace period so GC can remove them
 		backdate_ledger_snapshot(&backend, cid, 100);
 		backdate_ledger_snapshot(&backend, cid, 200);
 		backdate_ledger_snapshot(&backend, cid, 300);
+		backdate_ledger_snapshot(&backend, cid, 400);
 
 		backend.gc_ledger_snapshots(cid, &[200]).await;
 
+		// 100 is unreferenced and outside the newest-2 retention floor.
+		assert!(backend.get_ledger_snapshot(cid, 100).await.is_none());
+		// 200 is referenced by a cached wallet height.
+		assert!(backend.get_ledger_snapshot(cid, 200).await.is_some());
+		// 300 and 400 are the newest MIN_SNAPSHOTS_RETAINED, kept unconditionally.
+		assert!(backend.get_ledger_snapshot(cid, 300).await.is_some());
+		assert!(backend.get_ledger_snapshot(cid, 400).await.is_some());
+	}
+
+	#[tokio::test]
+	async fn gc_retains_newest_snapshots_even_unreferenced() {
+		let (_, backend, cid) = test_fixture();
+
+		backend.set_ledger_snapshot(cid, test_snapshot(100)).await;
+		backend.set_ledger_snapshot(cid, test_snapshot(200)).await;
+		backend.set_ledger_snapshot(cid, test_snapshot(300)).await;
+
+		backdate_ledger_snapshot(&backend, cid, 100);
+		backdate_ledger_snapshot(&backend, cid, 200);
+		backdate_ledger_snapshot(&backend, cid, 300);
+
+		// No wallet references at all: the newest two must still survive.
+		backend.gc_ledger_snapshots(cid, &[]).await;
+
 		assert!(backend.get_ledger_snapshot(cid, 100).await.is_none());
 		assert!(backend.get_ledger_snapshot(cid, 200).await.is_some());
-		assert!(backend.get_ledger_snapshot(cid, 300).await.is_none());
+		assert!(backend.get_ledger_snapshot(cid, 300).await.is_some());
 	}
 
 	#[tokio::test]
 	async fn gc_spares_recent_snapshots() {
 		let (_, backend, cid) = test_fixture();
 
+		// 50 sits outside the newest-MIN_SNAPSHOTS_RETAINED floor ({100, 200})
+		// and is unreferenced, so only the grace period protects it.
+		backend.set_ledger_snapshot(cid, test_snapshot(50)).await;
 		backend.set_ledger_snapshot(cid, test_snapshot(100)).await;
 		backend.set_ledger_snapshot(cid, test_snapshot(200)).await;
 
-		// Backdate only height 100
-		backdate_ledger_snapshot(&backend, cid, 100);
-
 		backend.gc_ledger_snapshots(cid, &[]).await;
-
-		assert!(backend.get_ledger_snapshot(cid, 100).await.is_none());
 		assert!(
-			backend.get_ledger_snapshot(cid, 200).await.is_some(),
-			"recent snapshot should survive GC"
+			backend.get_ledger_snapshot(cid, 50).await.is_some(),
+			"recent snapshot should survive GC via the grace period"
 		);
+
+		// Once past the grace period, it is collected.
+		backdate_ledger_snapshot(&backend, cid, 50);
+		backend.gc_ledger_snapshots(cid, &[]).await;
+		assert!(backend.get_ledger_snapshot(cid, 50).await.is_none());
+		assert!(backend.get_ledger_snapshot(cid, 100).await.is_some());
+		assert!(backend.get_ledger_snapshot(cid, 200).await.is_some());
 	}
 
 	#[tokio::test]

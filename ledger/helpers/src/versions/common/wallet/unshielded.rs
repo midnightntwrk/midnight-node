@@ -13,12 +13,13 @@
 
 use super::super::{
 	ArenaKey, DB, DerivationPath, DeriveSeed, Deserializable, HRP_CONSTANT,
-	HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash, IntoWalletAddress, Loader, Role,
-	Serializable, Signature, SignatureVerifyingKey, SigningKeyEcdsa, SigningKeySchnorr, Storable,
-	Tagged, TransactionSigningKey, UserAddress, VerifyingKeyEcdsa, VerifyingKeySchnorr,
-	WalletAddress, WalletSeed, deserialize_untagged, serialize_untagged, signature_verifying_key,
-	signature_verifying_key_ecdsa, transaction_signature, transaction_signature_ecdsa,
-	transaction_signing_key, transaction_signing_key_ecdsa,
+	HRP_CREDENTIAL_UNSHIELDED, HashOutput, IntentHash, IntoWalletAddress, Loader,
+	MaintenanceVerifyingKey, Role, Serializable, Signature, SignatureVerifyingKey, SigningKeyEcdsa,
+	SigningKeySchnorr, Storable, Tagged, TransactionSigningKey, UserAddress, VerifyingKeyEcdsa,
+	VerifyingKeySchnorr, WalletAddress, WalletSeed, deserialize_untagged,
+	maintenance_verifying_key, maintenance_verifying_key_ecdsa, serialize_untagged,
+	signature_verifying_key, signature_verifying_key_ecdsa, transaction_signature,
+	transaction_signature_ecdsa, transaction_signing_key, transaction_signing_key_ecdsa,
 };
 use hex::FromHexError;
 use rand::{CryptoRng, Rng};
@@ -99,7 +100,7 @@ pub struct UnshieldedWallet {
 /// so a wallet can hold only the public half.
 #[derive(Clone, Serializable)]
 #[tag = "unshielded-wallet-keys[v1]"]
-// For ledger 7/8, the ECDSA variant of this enum is size 1 - so we ignore the clippy warning here
+// For ledger 8, the ECDSA variant of this enum is size 1 - so we ignore the clippy warning here
 #[allow(clippy::large_enum_variant)]
 pub enum UnshieldedWalletKeys {
 	Schnorr { verifying_key: VerifyingKeySchnorr, signing_key: Option<SigningKeySchnorr> },
@@ -158,7 +159,8 @@ impl UnshieldedWallet {
 		}
 	}
 
-	fn from_bytes_ecdsa(derived_seed: [u8; 32]) -> Self {
+	// `pub(crate)` for `ledger_9::ecdsa_wallet_tests`, which feeds uniform bytes in without HD.
+	pub(crate) fn from_bytes_ecdsa(derived_seed: [u8; 32]) -> Self {
 		let sk = SigningKeyEcdsa::from_bytes(&derived_seed)
 			.unwrap_or_else(|err| panic!("Error calculating the ECDSA `SigningKey`: {err}"));
 		let vk = sk.verifying_key();
@@ -208,6 +210,21 @@ impl UnshieldedWallet {
 		}
 	}
 
+	/// The verifying key wrapped in this ledger generation's contract-maintenance-authority key
+	/// type, dispatched by scheme. Used to build/deploy contract-maintenance committees.
+	/// Returns `None` for an address-only wallet (no key material to authorize maintenance with).
+	pub fn maintenance_verifying_key(&self) -> Option<MaintenanceVerifyingKey> {
+		match &self.keys {
+			Some(UnshieldedWalletKeys::Schnorr { verifying_key, .. }) => {
+				Some(maintenance_verifying_key(verifying_key.clone()))
+			},
+			Some(UnshieldedWalletKeys::Ecdsa { verifying_key, .. }) => {
+				Some(maintenance_verifying_key_ecdsa(verifying_key.clone()))
+			},
+			None => None,
+		}
+	}
+
 	/// The signing key wrapped in this ledger generation's transaction-signing-key type.
 	pub fn transaction_signing_key(&self) -> TransactionSigningKey {
 		match &self.keys {
@@ -242,6 +259,20 @@ impl UnshieldedWallet {
 		match &self.keys {
 			Some(UnshieldedWalletKeys::Schnorr { signing_key: Some(sk), .. }) => sk,
 			_ => panic!("Missing Schnorr `SigningKey` for the `UnshieldedWallet`"),
+		}
+	}
+
+	/// Test-only access to the raw ECDSA key material, so tests can drive sign/verify against the
+	/// wallet's actual keypair. `None` for non-ECDSA or address-only wallets.
+	// Only used by `ledger_9::ecdsa_wallet_tests`; unused on the pre-9 copies of `common`.
+	#[cfg(test)]
+	#[allow(dead_code)]
+	pub(crate) fn ecdsa_keys(&self) -> Option<(&VerifyingKeyEcdsa, &SigningKeyEcdsa)> {
+		match &self.keys {
+			Some(UnshieldedWalletKeys::Ecdsa { verifying_key, signing_key: Some(sk) }) => {
+				Some((verifying_key, sk))
+			},
+			_ => None,
 		}
 	}
 }
@@ -289,5 +320,28 @@ impl TryFrom<&WalletAddress> for UnshieldedWallet {
 impl From<UserAddress> for UnshieldedWallet {
 	fn from(user_address: UserAddress) -> Self {
 		Self { user_address, keys: None }
+	}
+}
+
+// `new`/`default` derive via HD (`derive_seed`, see `hd.rs`), which needs `can-panic`. ECDSA-only
+// tests live in `ledger_9::ecdsa_wallet_tests` — `common` compiles once per generation, so putting
+// them here would report a misleading `ledger_8::…::ecdsa_… ok` where they can't actually run.
+#[cfg(all(test, feature = "can-panic"))]
+mod tests {
+	use super::super::super::WalletSeed;
+	use super::{UnshieldedSignatureScheme, UnshieldedWallet};
+
+	/// Fixed, arbitrary root seed — stable so derivations are reproducible.
+	fn seed() -> WalletSeed {
+		WalletSeed::Short([0x42; 16])
+	}
+
+	/// `new(.., Schnorr)` must equal the historical `default(..)`. Runs on every generation.
+	#[test]
+	fn schnorr_new_matches_default() {
+		assert_eq!(
+			UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Schnorr).user_address,
+			UnshieldedWallet::default(seed()).user_address,
+		);
 	}
 }
