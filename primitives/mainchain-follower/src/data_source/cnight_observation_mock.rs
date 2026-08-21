@@ -111,8 +111,7 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		_config: &CNightAddresses,
 		start: &CardanoPosition,
 		_current_tip: McBlockHash,
-		_tx_capacity: usize,
-		_utxo_overestimate: usize,
+		_capacity: usize,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Calculate deterministic end position
 		let mut end = start.clone();
@@ -177,12 +176,12 @@ mod tests {
 		};
 
 		let result1 = mock
-			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100, 100)
+			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100)
 			.await
 			.unwrap();
 
 		let result2 = mock
-			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100, 100)
+			.get_utxos_up_to_capacity(&config, &start, McBlockHash([0u8; 32]), 100)
 			.await
 			.unwrap();
 
@@ -214,12 +213,12 @@ mod tests {
 		};
 
 		let result1 = mock
-			.get_utxos_up_to_capacity(&config, &start1, McBlockHash([0u8; 32]), 100, 100)
+			.get_utxos_up_to_capacity(&config, &start1, McBlockHash([0u8; 32]), 100)
 			.await
 			.unwrap();
 
 		let result2 = mock
-			.get_utxos_up_to_capacity(&config, &start2, McBlockHash([0u8; 32]), 100, 100)
+			.get_utxos_up_to_capacity(&config, &start2, McBlockHash([0u8; 32]), 100)
 			.await
 			.unwrap();
 
