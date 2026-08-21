@@ -21,10 +21,7 @@ use std::{path::Path, sync::Arc};
 use serde_json;
 use tokio::{fs::File, io::AsyncWriteExt};
 
-const TX_CAPACITY: usize = 1000;
-// Genesis is one-shot and not consensus-validated, so we use a generous over-fetch
-// factor to ensure we never split a transaction across a paged query.
-const UTXO_OVERESTIMATE: usize = TX_CAPACITY * 64;
+const UTXO_CAPACITY: usize = 1000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CNightGenesisError {
@@ -110,8 +107,7 @@ pub async fn generate_cnight_genesis(
 				&addresses,
 				&current_position,
 				cardano_tip.clone(),
-				TX_CAPACITY,
-				UTXO_OVERESTIMATE,
+				UTXO_CAPACITY,
 			)
 			.await
 			.map_err(CNightGenesisError::UtxoQueryError)?;
