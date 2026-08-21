@@ -843,6 +843,53 @@ where
 		Ok(gas_cost)
 	}
 
+	/// The cost of either a `Transaction` or a [`SystemTransaction`], dispatched on
+	/// the serialized header tag.
+	///
+	/// `get_transaction_cost` above only ever priced user transactions; its
+	/// semantics are frozen by finalized blocks, so the widening lives here.
+	pub fn get_any_transaction_cost(
+		state_key: &[u8],
+		tx: &[u8],
+		block_context: &BlockContext,
+		max_weight: u64,
+	) -> Result<GasCost, LedgerApiError> {
+		if is_system_transaction(tx) {
+			Self::get_system_transaction_cost(state_key, tx, max_weight)
+		} else {
+			Self::get_transaction_cost(state_key, tx, block_context, max_weight)
+		}
+	}
+
+	/// `SystemTransaction::cost` is pure and infallible — it takes only the ledger
+	/// parameters, with no `enforce_time_to_dismiss` flag and no apply — so a system
+	/// transaction can be priced ahead of being applied. `Ledger::apply_system_tx`
+	/// computes the same figure on the way in.
+	///
+	/// Note that `From<RunningCost> for SyntheticCost` hardcodes `block_usage: 0`, so
+	/// a system transaction never reports that dimension; the binding one is
+	/// whichever of the remaining four normalizes highest.
+	fn get_system_transaction_cost(
+		state_key: &[u8],
+		tx: &[u8],
+		max_weight: u64,
+	) -> Result<GasCost, LedgerApiError> {
+		let api = api::new();
+		let tx = api.tagged_deserialize::<SystemTransaction>(tx)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		let cost = tx.cost(&ledger.state.parameters);
+
+		log::trace!(target: LOG_TARGET, "⏱️  Estimated system tx cost: {cost:?}");
+
+		let limits = ledger.state.parameters.limits.block_limits;
+		let normalized = cost.normalize(limits).ok_or(LedgerApiError::BlockLimitExceededError)?;
+
+		log::trace!(target: LOG_TARGET, "⏱️  Normalized system tx cost: {normalized:?}");
+
+		Ok(scale_normalized_cost(&normalized, max_weight))
+	}
+
 	fn get_deserialized_ledger_parameters(state: &Ledger<D>) -> LedgerParameters {
 		state.get_parameters()
 	}
@@ -1185,6 +1232,23 @@ where
 	}
 }
 
+/// True when `bytes` is a tagged-serialized [`SystemTransaction`] rather than a
+/// `Transaction`. Mirrors `crate::is_ledger_8_state_key`: `peek_tag` reads the
+/// serialized header tag without deserializing the body.
+///
+/// Tested *for* `SystemTransaction` rather than against `Transaction`'s tag because
+/// the latter is generic-instantiated over signature and proof markers. The tag is
+/// taken from `Tagged`, never written out as a literal — it carries a version
+/// (`system-transaction[vN]`) that a literal would silently outlive.
+#[cfg(feature = "std")]
+fn is_system_transaction(bytes: &[u8]) -> bool {
+	let expected = <SystemTransaction as Tagged>::tag();
+	match midnight_serialize_local::peek_tag(&mut std::io::Cursor::new(bytes)) {
+		Ok(tag) => tag.as_str() == expected.as_ref(),
+		Err(_) => false,
+	}
+}
+
 #[cfg(feature = "std")]
 fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiError> {
 	match tx {
@@ -1425,6 +1489,97 @@ mod tests {
 		assert_eq!(over_one, max_weight);
 		assert!(half >= zero);
 		assert!(one >= half);
+	}
+
+	/// `pallet_cnight_observation::migrations::v2` prices its
+	/// `CNightGeneratesDustUpdate` batches through `get_any_transaction_cost`, and
+	/// divides the figure out per `Create` to estimate what the next batch will cost.
+	/// Pin both halves: the tag dispatch is real (v1's `get_transaction_cost` cannot
+	/// deserialize these bytes at all), and the gas is linear in the `Create` count.
+	#[test]
+	fn system_transaction_cost_is_linear_in_creates() {
+		use mn_ledger_local::dust::DustPublicKey;
+		use transient_crypto_local::curve::Fr;
+
+		if super::super::CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+
+		type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+
+		let api = api::new();
+
+		// The undeployed genesis `Ledger`, in the process-default (in-memory) arena:
+		// `get_any_transaction_cost` reads the batch's price out of that state's
+		// `parameters`, which is the whole point of asking the ledger rather than
+		// hardcoding a figure.
+		let genesis = midnight_node_res::networks::MidnightNetwork::genesis_state(
+			&midnight_node_res::networks::UndeployedNetwork,
+		);
+		let state: LedgerState<DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(genesis).unwrap();
+		let mut ledger = default_storage::<DefaultDB>().arena.alloc(Ledger::new(state));
+		ledger.persist();
+		let state_key = api.tagged_serialize(&ledger.as_typed_key()).unwrap();
+		let batch = |creates: u8| -> Vec<u8> {
+			let events = (0..creates)
+				.map(|i| CNightGeneratesDustEvent {
+					value: 1_000,
+					owner: DustPublicKey(Fr::from(7u64)),
+					time: Timestamp::from_secs(1_800_000_000),
+					action: CNightGeneratesDustActionType::Create,
+					nonce: InitialNonce(HashOutput([i; 32])),
+				})
+				.collect();
+			api.tagged_serialize(&SystemTransaction::CNightGeneratesDustUpdate { events })
+				.expect("serialize system tx")
+		};
+
+		// `res/cfg/default.toml`'s `max_block` ref_time, so the gas figures below are
+		// in the units the MBM `WeightMeter` actually spends.
+		const MAX_BLOCK: u64 = 2_000_000_000_000;
+		let block_context = BlockContext::default();
+		let gas = |creates: u8| {
+			TestBridge::get_any_transaction_cost(
+				&state_key,
+				&batch(creates),
+				&block_context,
+				MAX_BLOCK,
+			)
+			.expect("system transaction must be priceable")
+		};
+
+		let one = gas(1);
+		assert!(one > 0, "a dust `Create` must cost something");
+		for n in [2u8, 5, 25] {
+			// Linear to within the fixed-point rounding `into_atomic_units` does once
+			// per call — at most 1ps per `Create`, against ~9e9ps each.
+			assert!(
+				gas(n).abs_diff(one * n as u64) <= n as u64,
+				"batch gas must be linear in the `Create` count, so the migration can \
+				 divide it out per nonce: {} creates cost {}, one costs {one}",
+				n,
+				gas(n),
+			);
+		}
+		// Logged rather than asserted: which cost dimension binds is the live
+		// parameters' call, and the migration paces itself off whatever they say.
+		println!(
+			"per-`Create` gas: {one} ref_time; a full batch of 25 costs {}; \
+			 80% of a {MAX_BLOCK} block affords {} `Create`s",
+			one * 25,
+			(MAX_BLOCK / 100 * 80) / one,
+		);
+
+		// The dispatch is doing real work: these bytes are not a `Transaction`.
+		assert!(
+			matches!(
+				TestBridge::get_transaction_cost(&state_key, &batch(1), &block_context, MAX_BLOCK),
+				Err(LedgerApiError::Deserialization(_))
+			),
+			"v1 must still reject system transactions",
+		);
 	}
 
 	#[test]
