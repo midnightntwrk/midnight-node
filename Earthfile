@@ -749,15 +749,26 @@ node-ci-image-single-platform:
         rm node.tar.xz && \
         node --version && npm --version
 
-    # Docker compose-v2 plugin — needed by the +local-env-ci WITH DOCKER targets, whose
-    # `docker compose` calls run against earthly's injected docker CLI (which has no
-    # bundled plugin). uname -m (x86_64/aarch64) matches the release asset suffix directly.
+    # Docker compose + buildx plugins — needed by the +local-env-ci WITH DOCKER targets,
+    # whose `docker compose` calls run against earthly's injected docker CLI (which has no
+    # bundled plugins). compose v5 dropped its internal buildkit builder and delegates
+    # `build:` to Docker Bake, so buildx is not optional: without it the contract-compiler
+    # service in local-env's compose file fails to build.
+    # compose's asset suffix is uname -m (x86_64/aarch64); buildx's is Go-style
+    # (amd64/arm64), hence the mapping — same shape as the gh and node installs above.
     # renovate: datasource=github-releases packageName=docker/compose
-    ARG COMPOSE_VERSION=v2.31.0
+    ARG COMPOSE_VERSION=v5.5.0
+    # renovate: datasource=github-releases packageName=docker/buildx
+    ARG BUILDX_VERSION=v0.36.1
     RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
         curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
           -o /usr/local/lib/docker/cli-plugins/docker-compose && \
-        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
+        ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then BUILDX_ARCH="arm64"; else BUILDX_ARCH="amd64"; fi && \
+        curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${BUILDX_ARCH}" \
+          -o /usr/local/lib/docker/cli-plugins/docker-buildx && \
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
     # compactc is exposed via COMPACT_HOME; when it is set, toolkit-js scripts honour
     # it: `fetch-compactc` skips the download and `run-compactc` uses this compiler.
@@ -1399,10 +1410,12 @@ subwasm:
 # The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
 # reproducibility - srtool's environment is fixed and verified.
 srtool-build:
+    # Tag shape is `<rust version>-<srtool version>`, so renovate has to track the whole
+    # tag: given just `0.18.4` it reads the rust half as the image's version and offers
+    # `1.93.0` as a "v1 major", which resolves to a tag that does not exist.
     # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_VERSION=0.18.4
-    # srtool 1.93.0 uses Rust 1.93.0 - this is intentional for determinism
-    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
+    ARG SRTOOL_TAG=1.93.0-0.18.4
+    FROM paritytech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
     WORKDIR /build
@@ -1431,8 +1444,9 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    ARG SRTOOL_VERSION=0.18.4
-    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
+    # renovate: datasource=docker packageName=paritytech/srtool
+    ARG SRTOOL_TAG=1.93.0-0.18.4
+    FROM paritytech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
