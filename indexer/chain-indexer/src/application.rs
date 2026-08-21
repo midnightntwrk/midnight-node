@@ -36,7 +36,7 @@ use serde::Deserialize;
 use std::{
     collections::{HashSet, VecDeque},
     error::Error as StdError,
-    num::NonZeroUsize,
+    num::{NonZeroU64, NonZeroUsize},
     pin::pin,
     sync::Arc,
     time::{Duration, Instant},
@@ -61,10 +61,20 @@ pub struct Config {
     #[serde(with = "humantime_serde")]
     pub gc_bound: Duration,
 
+    /// Run the gc pass every this many blocks (default 1). During catch-up a pass rarely finds
+    /// orphans, so amortizing it over several blocks trades a slightly larger arena for less
+    /// per-block overhead; the time budget per pass stays gc_bound.
+    #[serde(default = "gc_block_interval_default")]
+    pub gc_block_interval: NonZeroU64,
+
     /// How many recent blocks' ledger state keys stay persisted as gc roots before the oldest
     /// is unpersisted. Must comfortably exceed indexer-api's block-hash snapshot reads, e.g.
     /// the dust generations subscription's max_snapshot_age, or those reads hit culled state.
     pub ledger_state_retention: NonZeroUsize,
+}
+
+fn gc_block_interval_default() -> NonZeroU64 {
+    NonZeroU64::MIN
 }
 
 pub async fn run(
@@ -80,6 +90,7 @@ pub async fn run(
         caught_up_max_distance,
         caught_up_leeway,
         gc_bound,
+        gc_block_interval,
         ledger_state_retention,
     } = config;
 
@@ -242,6 +253,7 @@ pub async fn run(
             };
             let mut blocks = pin!(blocks);
             let mut caught_up = false;
+            let mut blocks_since_gc = 0;
             let mut parent_block_timestamp = initial_parent_block_timestamp;
 
             loop {
@@ -278,8 +290,11 @@ pub async fn run(
                     }
                 }
 
-                // Run a time-bounded mark-and-sweep pass; skip when disabled.
-                if !gc_bound.is_zero() {
+                // Run a time-bounded mark-and-sweep pass every gc_block_interval blocks; skip
+                // when disabled.
+                blocks_since_gc += 1;
+                if !gc_bound.is_zero() && blocks_since_gc >= gc_block_interval.get() {
+                    blocks_since_gc = 0;
                     let started = Instant::now();
                     let nodes_culled = LedgerState::gc(gc_bound);
                     let elapsed = started.elapsed();
