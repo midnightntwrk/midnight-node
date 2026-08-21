@@ -22,5 +22,5 @@ unchanged, and `diff -r src/ledger_8 src/ledger_9` now shows exactly where the
 two generations diverge: `error_ext`, `guaranteed_validation`, `post_block_update`,
 `system_tx`, and `mod.rs`'s crate aliases.
 
-PR: <link to PR>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2059
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1768
