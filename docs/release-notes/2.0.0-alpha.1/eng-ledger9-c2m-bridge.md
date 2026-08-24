@@ -84,7 +84,7 @@ User (`Address`) transfers are subject to a single-use governance pre-approval c
 
 ### Subminimal transfer accumulation
 
-Transfers whose STAR amount is below the ledger's `c_to_m_bridge_min_amount` parameter are accumulated in `SubminimalTransfers` storage. When the running sum exceeds `SubminimalTransfersConfig::subminimal_transfers_flush_threshold`, the entire accumulated sum is flushed as a single `construct_unlock_to_treasury_system_tx` and a `SubminimalFlushTransfer` event is emitted. The genesis `SubminimalTransfersConfig` is set in the chain spec.
+Transfers whose STAR amount is below the ledger's `c_to_m_bridge_min_amount` parameter are accumulated in `SubminimalTransfers` storage. When the running sum exceeds `SubminimalTransfersConfig::subminimal_transfers_flush_threshold`, the entire accumulated sum is flushed as a single `construct_unlock_to_treasury_system_tx` and a `SubminimalFlushTransfer` event is emitted. If the flush system transaction fails (e.g. the block is full), the accumulator is preserved and the flush is retried on the next subminimal transfer. The genesis `SubminimalTransfersConfig` is set in the chain spec.
 
 ### Denomination: STAR not NIGHT
 
