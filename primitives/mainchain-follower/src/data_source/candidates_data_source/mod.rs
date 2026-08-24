@@ -15,7 +15,10 @@
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
 use crate::db::MultiAssetCache;
 use authority_selection_inherents::*;
-use db_sync_sqlx::{Address, Asset, BlockNumber, EpochNumber};
+use db_sync_sqlx::{
+	Address, Asset, BlockNumber, DbSyncQueryConfig, DbSyncSchemaMode, EpochNumber,
+	ResolvedDbSyncQueryConfig, candidate_index_specs, manage_indexes,
+};
 use itertools::Itertools;
 use log::error;
 use partner_chains_plutus_data::{
@@ -29,6 +32,9 @@ use std::error::Error;
 
 pub mod cached;
 mod db_model;
+
+#[cfg(test)]
+pub(crate) use db_model::get_utxos_for_address;
 
 #[derive(Clone, Debug)]
 struct ParsedCandidate {
@@ -57,8 +63,8 @@ pub struct CandidatesDataSourceImpl {
 	pool: PgPool,
 	/// Prometheus metrics client
 	metrics_opt: Option<MidnightDataSourceMetrics>,
-	/// Configuration used by Db-Sync
-	db_sync_config: db_model::DbSyncConfigurationProvider,
+	/// Validated query layout used by Db-Sync
+	db_sync_config: ResolvedDbSyncQueryConfig,
 	/// Cache for resolving multi_asset.id from (policy, name) pairs
 	multi_asset_cache: MultiAssetCache,
 }
@@ -141,16 +147,20 @@ impl CandidatesDataSourceImpl {
 		pool: PgPool,
 		metrics_opt: Option<MidnightDataSourceMetrics>,
 	) -> Result<CandidatesDataSourceImpl, Box<dyn std::error::Error + Send + Sync>> {
-		db_model::create_idx_ma_tx_out_ident(&pool).await?;
-		db_model::create_idx_tx_out_address(&pool).await?;
-		db_model::create_idx_ma_tx_out_id_ident(&pool).await?;
+		let config = DbSyncQueryConfig::default().resolve(&pool).await?;
+		manage_indexes(&pool, DbSyncSchemaMode::Apply, &candidate_index_specs(config)).await?;
+		Ok(Self::new_with_db_sync_config(pool, metrics_opt, config))
+	}
+
+	/// Creates a data source with an already validated db-sync query layout.
+	/// This constructor does not create or alter database objects.
+	pub fn new_with_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		db_sync_config: ResolvedDbSyncQueryConfig,
+	) -> CandidatesDataSourceImpl {
 		let multi_asset_cache = MultiAssetCache::new(pool.clone());
-		Ok(Self {
-			pool: pool.clone(),
-			metrics_opt,
-			db_sync_config: db_model::DbSyncConfigurationProvider::new(pool),
-			multi_asset_cache,
-		})
+		Self { pool, metrics_opt, db_sync_config, multi_asset_cache }
 	}
 
 	/// Creates a new caching instance of the data source
@@ -188,7 +198,7 @@ impl CandidatesDataSourceImpl {
 					&self.pool,
 					&address,
 					block,
-					self.db_sync_config.get_tx_in_config().await?,
+					self.db_sync_config,
 				)
 				.await?;
 				drop(_sq_timer);

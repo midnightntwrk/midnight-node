@@ -17,6 +17,7 @@ use crate::{
 	data_source::candidates_data_source::observed_async_trait, db::get_governance_body_utxo,
 };
 use cardano_serialization_lib::PlutusData;
+use db_sync_sqlx::ResolvedDbSyncQueryConfig;
 use derive_new::new;
 use midnight_primitives_federated_authority_observation::{
 	AuthoritiesData, AuthorityMemberPublicKey, FederatedAuthorityData,
@@ -31,6 +32,18 @@ pub struct FederatedAuthorityObservationDataSourceImpl {
 	pub metrics_opt: Option<MidnightDataSourceMetrics>,
 	#[allow(dead_code)]
 	cache_size: u16,
+	db_sync_config: ResolvedDbSyncQueryConfig,
+}
+
+impl FederatedAuthorityObservationDataSourceImpl {
+	pub fn new_with_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		cache_size: u16,
+		db_sync_config: ResolvedDbSyncQueryConfig,
+	) -> Self {
+		Self::new(pool, metrics_opt, cache_size, db_sync_config)
+	}
 }
 
 observed_async_trait!(
@@ -59,6 +72,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			&config.council.address,
 			&config.council.policy_id,
 			block_number,
+			self.db_sync_config,
 		)
 		.await?;
 		drop(_council_timer);
@@ -93,6 +107,7 @@ impl FederatedAuthorityObservationDataSource for FederatedAuthorityObservationDa
 			&config.technical_committee.address,
 			&config.technical_committee.policy_id,
 			block_number,
+			self.db_sync_config,
 		)
 		.await?;
 		drop(_techcomm_timer);

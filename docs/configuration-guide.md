@@ -58,6 +58,272 @@ CURRENT_VALUE: my_new_chain_id
 ...
 ```
 
+## Cardano db-sync compatibility
+
+Midnight reads Cardano data from an existing cardano-db-sync PostgreSQL database. The node can
+query both supported transaction-input representations and both supported address
+representations. Schema management is configured separately, so the PostgreSQL role used by the
+node can be read-only.
+
+| TOML key | Environment variable | Values | Default |
+|----------|----------------------|--------|---------|
+| `db_sync_tx_input_mode` | `DB_SYNC_TX_INPUT_MODE` | `auto`, `tx_in`, `consumed` | `auto` |
+| `db_sync_address_mode` | `DB_SYNC_ADDRESS_MODE` | `inline`, `address_table` | `inline` |
+| `db_sync_schema_mode` | `DB_SYNC_SCHEMA_MODE` | `apply`, `verify`, `skip` | `apply` |
+
+The defaults preserve the previous node behavior for initialized standard db-sync databases. An
+empty schema whose input representation cannot be inferred now fails safely. For production
+deployments, set the two layout options explicitly. Layout validation uses the connection's
+current PostgreSQL `search_path`, so the selected db-sync tables must resolve without
+schema-qualified names.
+
+### Selecting the db-sync layout
+
+`db_sync_tx_input_mode` maps to cardano-db-sync's `insert_options.tx_out` settings:
+
+| Midnight mode | Required db-sync representation |
+|---------------|---------------------------------|
+| `tx_in` | A complete `tx_in` table with `tx_in_id`, `tx_out_id`, and `tx_out_index`. This is produced by `tx_out.value = "enable"`, or by `tx_out.force_tx_in = true` with `tx_out.value = "consumed"`. |
+| `consumed` | A complete `tx_out.consumed_by_tx_id` history. This is produced by `tx_out.value = "consumed"`. |
+| `auto` | Uses `tx_in` when it has rows, otherwise uses `tx_out.consumed_by_tx_id` when at least one output records a consuming transaction. If both representations are structurally present but empty, startup fails as ambiguous and asks for an explicit mode. This does not prove that the selected representation has complete history. |
+
+`db_sync_address_mode` maps to `insert_options.tx_out.use_address_table`:
+
+| Midnight mode | db-sync setting | Required columns |
+|---------------|-----------------|------------------|
+| `inline` | `false` | `tx_out.address` |
+| `address_table` | `true` | `tx_out.address_id`, plus `address.id` and `address.address` |
+
+Both address layouts are supported. The transaction-output modes `prune`, `bootstrap`, and
+`disable` are not supported because they do not retain the complete output history required by
+Midnight queries. `consumed` with `force_tx_in = false` is supported with Midnight's `consumed`
+mode; `consumed` with `force_tx_in = true` can use either complete representation.
+
+The other db-sync data used by the main-chain follower must also be retained. In configurations
+that expose the individual switches, keep ledger-derived data, multi-assets, Plutus/datum data,
+and the C-to-M bridge metadata enabled. In current db-sync configuration terms, this means:
+
+- `insert_options.ledger = "enable"`
+- `insert_options.multi_asset.enable = true`
+- `insert_options.plutus.enable = true`
+- `insert_options.metadata.enable = true`
+- if `insert_options.metadata.keys` filters retained metadata, it includes key `6500973`
+- datum and metadata JSON data remains present. Both values of
+  `insert_options.remove_jsonb_from_schema` are supported; Midnight casts retained text values to
+  `jsonb` while reading them.
+
+The C-to-M bridge reads `tx_metadata` rows with key `6500973`. The current follower does not query
+db-sync governance tables, so `insert_options.governance` is not a compatibility requirement for
+this version.
+
+The db-sync `only_utxo`, `only_governance`, and `disable_all` presets are therefore not suitable
+for a full Midnight node. See the upstream
+[cardano-db-sync configuration reference](https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/configuration.md)
+for the behavior of these settings.
+
+#### Historical completeness
+
+Column presence is not proof of data completeness. In particular, changing a running db-sync
+instance from `tx_out.value = "enable"` to `"consumed"`, or enabling `force_tx_in` after part of
+the chain has already been synced, does not by itself guarantee that old spends have been
+backfilled. A pruned or bootstrapped database is also insufficient even when its current UTXO set
+is complete.
+
+Before selecting a mode, complete the cardano-db-sync migration or backfill procedure for the
+entire block and epoch range Midnight will query, or restore/resync from a compatible full-history
+snapshot. Validate the historical data separately. `auto` only detects schema shape and whether
+either input representation contains evidence; `verify` only checks schema shape and indexes. Neither mode audits
+historical completeness. Schema checks also cannot determine whether `tx_metadata` key `6500973`
+was filtered or whether its older rows are missing. Enabling the metadata key for new blocks does
+not backfill bridge metadata history.
+
+### Schema-management modes
+
+| Mode | Behavior | Database privileges |
+|------|----------|---------------------|
+| `apply` | Creates missing indexes for the current command with `CREATE INDEX CONCURRENTLY`. cNight genesis commands also set recommended per-table autovacuum reloptions. This is the backward-compatible default. | Ownership of the affected tables, or an equivalent administrative role, in addition to read access. |
+| `verify` | Performs read-only layout and index checks for the current command. A missing required index fails initialization. cNight genesis commands also warn about non-recommended autovacuum settings. | `CONNECT`, schema `USAGE`, table `SELECT`, and access to PostgreSQL catalog metadata. |
+| `skip` | Resolves and validates the selected layout but does not create, alter, or verify indexes and autovacuum settings. | Read access only, but the operator assumes responsibility for correctness and performance. |
+
+The managed manifest depends on the entry point:
+
+- Normal node startup and `generate-permissioned-candidates-genesis` apply or verify the
+  runtime/candidate manifest. It includes the selected transaction-input and address indexes.
+- `generate-c-night-genesis` applies or verifies the broader cNight genesis manifest and its
+  autovacuum recommendations. The cNight phase of `generate-genesis-config` does the same, and its
+  permissioned-candidates phase also manages the runtime/candidate manifest.
+- Standalone genesis commands that only resolve the query layout, such as ICS or reserve genesis,
+  do not manage an index manifest.
+
+Normal node startup does not enforce every cNight genesis index or autovacuum recommendation.
+Install the combined manifest below before using a read-only role for both genesis generation and
+normal operation. `db_sync_schema_mode` controls Midnight-issued `CREATE INDEX` and `ALTER TABLE`
+statements; the node never inserts, updates, or deletes Cardano chain data.
+
+#### Index manifests
+
+Verification is based on index structure, not index name. An existing index is accepted when it is
+valid, ready, non-partial, uses one of the listed access methods, and has the listed columns as its
+leading keys. For example, either `(tx_out_id)` or `(tx_out_id, ident)` satisfies the
+`ma_tx_out(tx_out_id)` requirement. This allows operators to retain standard db-sync indexes and
+their own index names.
+
+Layout-independent indexes in the combined runtime/candidate and cNight genesis manifests:
+
+| Relation | Access method | Leading keys | Managed by |
+|----------|---------------|--------------|------------|
+| `multi_asset` | btree | `policy`, `name` | cNight genesis |
+| `ma_tx_out` | btree | `ident` | Both |
+| `ma_tx_out` | btree | `tx_out_id` | Both |
+| `block` | btree | `block_no` | cNight genesis |
+| `tx` | btree | `block_id` | cNight genesis |
+| `tx_out` | btree | `tx_id` | cNight genesis |
+
+Additional indexes for the selected address layout:
+
+| Address mode | Relation | Access method | Leading keys | Managed by |
+|--------------|----------|---------------|--------------|------------|
+| `inline` | `tx_out` | hash or btree | `address` | Both |
+| `address_table` | `address` | hash or btree | `address` | Both |
+| `address_table` | `tx_out` | btree | `address_id` | Both |
+
+Additional indexes for the selected transaction-input layout:
+
+| Transaction-input mode | Relation | Access method | Leading keys | Managed by |
+|------------------------|----------|---------------|--------------|------------|
+| `tx_in` | `tx_in` | btree | `tx_in_id` | Both |
+| `tx_in` | `tx_in` | btree | `tx_out_id`, `tx_out_index` | Both |
+| `consumed` | `tx_out` | btree | `consumed_by_tx_id` | Both |
+
+#### Operator-managed SQL
+
+Run index creation as the db-sync table owner or a dedicated migration role, not as the Midnight
+read-only role. `CREATE INDEX CONCURRENTLY` must be run outside a transaction. The following names
+match the names used by `apply` mode; structurally compatible indexes with other names are also
+accepted. Do not blindly execute every statement: a normal db-sync database already contains
+several compatible indexes under different names, and PostgreSQL's `IF NOT EXISTS` only compares
+the proposed name. Run `verify` first (or inspect the catalog), then create only the structures it
+reports as missing.
+
+For the full combined manifest, independent of layout:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name
+    ON multi_asset (policy, name);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_ident
+    ON ma_tx_out (ident);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_id_ident
+    ON ma_tx_out (tx_out_id, ident);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_block_block_no
+    ON block (block_no);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_block_id
+    ON tx (block_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_tx_id
+    ON tx_out (tx_id);
+```
+
+The standard db-sync btree on `ma_tx_out(tx_out_id)` also satisfies the second requirement. Apply
+mode creates the covering `(tx_out_id, ident)` form only when no tx-out-id-leading index exists.
+
+For `db_sync_address_mode = "inline"`:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_address
+    ON tx_out USING hash (address);
+```
+
+For `db_sync_address_mode = "address_table"`:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_address_address
+    ON address USING hash (address);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_address_id
+    ON tx_out (address_id);
+```
+
+For `db_sync_tx_input_mode = "tx_in"`:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_in_id
+    ON tx_in (tx_in_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_in_tx_out_id_tx_out_index
+    ON tx_in (tx_out_id, tx_out_index);
+```
+
+For `db_sync_tx_input_mode = "consumed"`:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tx_out_consumed_by_tx_id
+    ON tx_out (consumed_by_tx_id);
+```
+
+After applying the manifest, start the node or run the genesis command once with
+`db_sync_schema_mode = "verify"`. This catches an invalid or partial index, including a name
+collision where `IF NOT EXISTS` left an incompatible index in place.
+
+#### Autovacuum recommendations
+
+When the cNight genesis schema manifest is managed, `apply` sets the following reloptions on the
+db-sync tables queried by cNight observation:
+
+```sql
+ALTER TABLE <table> SET (
+    autovacuum_analyze_scale_factor = 0.01,
+    autovacuum_vacuum_scale_factor = 0.05
+);
+```
+
+The base table set is `block`, `tx`, `tx_out`, `ma_tx_out`, and `datum`. It also includes `tx_in`
+for the `tx_in` layout and `address` for the `address_table` layout. A DBA can apply equivalent
+per-table or cluster-level tuning. `verify` warns about missing table reloptions but does not fail,
+because suitable cluster-level settings cannot be inferred from relation metadata alone.
+
+### Read-only deployment workflow
+
+For an existing db-sync database managed separately from Midnight:
+
+1. Confirm the db-sync layout and verify that the selected transaction-input representation has
+   complete history for the range Midnight will query.
+2. Grant a separate Midnight login `CONNECT` on the database, `USAGE` on the db-sync schema, and
+   `SELECT` on the db-sync tables. Do not grant table ownership, `CREATE`, `INSERT`, `UPDATE`, or
+   `DELETE`.
+3. Configure explicit layout modes and set `db_sync_schema_mode = "verify"`. Run the normal node
+   and each manifest-managing genesis entry point you plan to use to identify only the missing
+   index structures.
+4. As the db-sync owner or migration role, create those missing indexes. Apply the recommended
+   per-table autovacuum settings, or document equivalent cluster-level tuning; a mismatch is a
+   performance warning rather than a `verify` failure.
+5. Rerun `verify`. Use `SHOW_CONFIG=1` to confirm the effective values before the final genesis and
+   node runs. Each entry point fails initialization when an index required by its managed manifest
+   is absent or unusable.
+
+For a db-sync database configured with `tx_out.value = "consumed"`,
+`tx_out.force_tx_in = false`, and `tx_out.use_address_table = true`, the exact read-only profile is:
+
+```toml
+db_sync_tx_input_mode = "consumed"
+db_sync_address_mode = "address_table"
+db_sync_schema_mode = "verify"
+```
+
+The equivalent environment variables are:
+
+```sh
+export DB_SYNC_TX_INPUT_MODE=consumed
+export DB_SYNC_ADDRESS_MODE=address_table
+export DB_SYNC_SCHEMA_MODE=verify
+```
+
+The connection role can be made read-only at the PostgreSQL level as an additional guardrail. For
+example, run the grants as an administrator, substituting the actual database, schema, and role:
+
+```sql
+GRANT CONNECT ON DATABASE cexplorer TO midnight_reader;
+GRANT USAGE ON SCHEMA public TO midnight_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO midnight_reader;
+ALTER ROLE midnight_reader SET default_transaction_read_only = on;
+```
+
 ## Chainspecs
 
 To run the node, you must supply a chainspec file. Chainspec files for known networks are stored in `res/<network-name>/` and are named `chain-spec.json` (human-readable) or `chain-spec-raw.json` (encoded for production use).

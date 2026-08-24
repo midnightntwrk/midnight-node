@@ -101,13 +101,21 @@ For mainnet, you should see 11M+ blocks.
 
 ### Step 5: Create Indexes for Genesis Queries
 
-The genesis commands create required indexes automatically when connecting. However, if the restore was interrupted (e.g., disk space ran out), some standard DB Sync indexes may be missing. You can check with:
+Genesis commands use the same db-sync layout and schema-management settings as a running node:
+
+- `DB_SYNC_TX_INPUT_MODE=auto|tx_in|consumed`
+- `DB_SYNC_ADDRESS_MODE=inline|address_table`
+- `DB_SYNC_SCHEMA_MODE=apply|verify|skip`
+
+The default schema mode, `apply`, creates missing indexes for the cNight and candidate phases automatically; the cNight phase also applies recommended autovacuum settings. Use `verify` for a read-only database login after a DBA has installed the combined manifest. `verify` fails when an index required by the current phase is absent or unusable. `skip` performs neither operation and should only be used when the operator has validated the schema independently.
+
+If the restore was interrupted (for example, because disk space ran out), standard DB Sync indexes may also be missing. You can inspect the database with:
 
 ```bash
 PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U postgres -d cexplorer -c "\di"
 ```
 
-If key indexes like `idx_tx_out_address`, `idx_tx_block_id`, or `idx_ma_tx_out_tx_out_id` are missing, the genesis queries will be extremely slow. In that case, you'll need to restore again with sufficient disk space (see [Troubleshooting](#troubleshooting)).
+If key indexes are missing, genesis queries can be extremely slow. Restore the snapshot again when the restore itself was incomplete. Otherwise, have the database owner create the Midnight index manifest and run the command in `verify` mode. See [Cardano db-sync compatibility](../../docs/configuration-guide.md#cardano-db-sync-compatibility) for the supported layouts, operator-managed SQL, read-only workflow, and historical-completeness requirements.
 
 ### Connection String
 

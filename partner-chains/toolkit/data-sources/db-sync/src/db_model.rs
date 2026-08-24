@@ -9,14 +9,18 @@ use sidechain_domain::{
 	MainchainBlock, McBlockHash, McBlockNumber, McEpochNumber, McSlotNumber, McTxHash, UtxoId,
 	UtxoIndex,
 };
+#[cfg(feature = "bridge")]
+use sqlx::types::JsonValue;
 use sqlx::{
 	Decode, PgPool, Pool, Postgres, database::Database, error::BoxDynError, postgres::PgTypeInfo,
-	types::JsonValue,
 };
 use std::{cell::OnceCell, str::FromStr, sync::Arc};
 use tokio::sync::Mutex;
 
 /// Db-Sync `tx_in.value` configuration field
+///
+/// Retained for the `governed-map` feature, which predates the configurable
+/// query-layout system and has not been migrated to [ResolvedDbSyncQueryConfig].
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub(crate) enum TxInConfiguration {
 	/// Transaction inputs are linked using `tx_in` table
@@ -53,15 +57,66 @@ impl TxInConfiguration {
 pub struct DbSyncConfigurationProvider {
 	/// Postgres connection pool
 	pub(crate) pool: PgPool,
-	/// Transaction input configuration used by Db-Sync
+	/// Requested query layout
+	pub(crate) query_config: DbSyncQueryConfig,
+	/// Validated query layout used by Db-Sync
+	pub(crate) resolved_config: Arc<Mutex<OnceCell<ResolvedDbSyncQueryConfig>>>,
+	/// Transaction input configuration used by the `governed-map` feature
 	pub(crate) tx_in_config: Arc<Mutex<OnceCell<TxInConfiguration>>>,
 }
 
 impl DbSyncConfigurationProvider {
+	#[cfg(any(feature = "candidate-source", feature = "bridge", feature = "governed-map"))]
 	pub(crate) fn new(pool: PgPool) -> Self {
-		Self { tx_in_config: Arc::new(Mutex::new(OnceCell::new())), pool }
+		Self {
+			pool,
+			query_config: DbSyncQueryConfig::default(),
+			resolved_config: Arc::new(Mutex::new(OnceCell::new())),
+			tx_in_config: Arc::new(Mutex::new(OnceCell::new())),
+		}
 	}
 
+	#[cfg(any(feature = "candidate-source", feature = "bridge"))]
+	#[allow(dead_code)] // Not every partial feature combination exposes a caller.
+	pub(crate) fn new_with_config(pool: PgPool, query_config: DbSyncQueryConfig) -> Self {
+		Self {
+			pool,
+			query_config,
+			resolved_config: Arc::new(Mutex::new(OnceCell::new())),
+			tx_in_config: Arc::new(Mutex::new(OnceCell::new())),
+		}
+	}
+
+	pub(crate) fn from_resolved(pool: PgPool, config: ResolvedDbSyncQueryConfig) -> Self {
+		let resolved_config = OnceCell::new();
+		let _ = resolved_config.set(config);
+		Self {
+			pool,
+			query_config: DbSyncQueryConfig::default(),
+			resolved_config: Arc::new(Mutex::new(resolved_config)),
+			tx_in_config: Arc::new(Mutex::new(OnceCell::new())),
+		}
+	}
+
+	pub(crate) async fn get_config(
+		&self,
+	) -> std::result::Result<ResolvedDbSyncQueryConfig, DataSourceError> {
+		let lock = self.resolved_config.lock().await;
+		if let Some(config) = lock.get() {
+			return Ok(*config);
+		} else {
+			let config = self.query_config.resolve(&self.pool).await.map_err(SqlxError::from)?;
+			lock.set(config).map_err(|_| {
+				DataSourceError::InternalDataSourceError(
+					"Failed to cache db-sync query configuration".into(),
+				)
+			})?;
+			return Ok(config);
+		}
+	}
+
+	/// Used by the `governed-map` feature, which has not been migrated to
+	/// [Self::get_config]/[ResolvedDbSyncQueryConfig].
 	pub(crate) async fn get_tx_in_config(
 		&self,
 	) -> std::result::Result<TxInConfiguration, DataSourceError> {
@@ -422,7 +477,7 @@ pub(crate) async fn get_token_utxo_for_epoch(
         	origin_block.block_no AS tx_block_no,
         	origin_block.slot_no  AS tx_slot_no,
         	origin_tx.block_index AS tx_block_index,
-        	datum.value           AS datum
+			datum.value::jsonb    AS datum
         FROM ma_tx_out
         INNER JOIN multi_asset          ON ma_tx_out.ident = multi_asset.id
         INNER JOIN tx_out               ON ma_tx_out.tx_out_id = tx_out.id
@@ -661,14 +716,14 @@ pub(crate) async fn get_utxos_for_address(
 	pool: &Pool<Postgres>,
 	address: &Address,
 	block: BlockNumber,
-	tx_in_configuration: TxInConfiguration,
+	config: ResolvedDbSyncQueryConfig,
 ) -> Result<Vec<MainchainTxOutput>, SqlxError> {
-	match tx_in_configuration {
-		TxInConfiguration::Enabled => {
-			get_utxos_for_address_tx_in_enabled(pool, address, block).await
+	match config.tx_input_mode {
+		ResolvedDbSyncTxInputMode::TxIn => {
+			get_utxos_for_address_tx_in_enabled(pool, address, block, config.address_mode).await
 		},
-		TxInConfiguration::Consumed => {
-			get_utxos_for_address_tx_in_consumed(pool, address, block).await
+		ResolvedDbSyncTxInputMode::Consumed => {
+			get_utxos_for_address_tx_in_consumed(pool, address, block, config.address_mode).await
 		},
 	}
 }
@@ -678,18 +733,21 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
 	pool: &Pool<Postgres>,
 	address: &Address,
 	block: BlockNumber,
+	address_mode: ResolvedDbSyncAddressMode,
 ) -> Result<Vec<MainchainTxOutput>, SqlxError> {
-	let query = "SELECT
+	let (address_join, address_column) = address_query_parts(address_mode);
+	let query = format!("SELECT
           		origin_tx.hash as utxo_id_tx_hash,
           		tx_out.index as utxo_id_index,
           		origin_block.block_no as tx_block_no,
           		origin_block.slot_no as tx_slot_no,
           		origin_block.epoch_no as tx_epoch_no,
           		origin_tx.block_index as tx_index_in_block,
-          		tx_out.address,
-          		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index)) as tx_inputs
+					{address_column} as address,
+					datum.value::jsonb as datum,
+					array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index)) as tx_inputs
 			FROM tx_out
+			{address_join}
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
           	LEFT JOIN tx_in consuming_tx_in  ON tx_out.tx_id = consuming_tx_in.tx_out_id AND tx_out.index = consuming_tx_in.tx_out_index
@@ -700,7 +758,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
           	LEFT JOIN tx consumes_tx         ON consumes_tx.id = consumes_tx_out.tx_id
           	LEFT JOIN datum                  ON tx_out.data_hash = datum.hash
           	WHERE
-          		tx_out.address = $1 AND origin_block.block_no <= $2
+				{address_column} = $1 AND origin_block.block_no <= $2
           		AND (consuming_tx_in.id IS NULL OR consuming_block.block_no > $2)
           		GROUP BY (
 					utxo_id_tx_hash,
@@ -709,10 +767,10 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
 					tx_slot_no,
 					tx_epoch_no,
 					tx_index_in_block,
-					tx_out.address,
+					{address_column},
 					datum
-				)";
-	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(query)
+				)");
+	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(&query)
 		.bind(&address.0)
 		.bind(block)
 		.fetch_all(pool)
@@ -727,18 +785,22 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 	pool: &Pool<Postgres>,
 	address: &Address,
 	block: BlockNumber,
+	address_mode: ResolvedDbSyncAddressMode,
 ) -> Result<Vec<MainchainTxOutput>, SqlxError> {
-	let query = "SELECT
+	let (address_join, address_column) = address_query_parts(address_mode);
+	let query = format!(
+		"SELECT
           		origin_tx.hash as utxo_id_tx_hash,
           		tx_out.index as utxo_id_index,
           		origin_block.block_no as tx_block_no,
           		origin_block.slot_no as tx_slot_no,
           		origin_block.epoch_no as tx_epoch_no,
           		origin_tx.block_index as tx_index_in_block,
-          		tx_out.address,
-          		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index)) as tx_inputs
+					{address_column} as address,
+					datum.value::jsonb as datum,
+					array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index)) as tx_inputs
 			FROM tx_out
+			{address_join}
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
 			LEFT JOIN tx    consuming_tx     ON tx_out.consumed_by_tx_id = consuming_tx.id
@@ -747,7 +809,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 			LEFT JOIN tx consumes_tx         ON consumes_tx.id = consumes_tx_out.tx_id
 			LEFT JOIN datum                  ON tx_out.data_hash = datum.hash
           	WHERE
-          		tx_out.address = $1 AND origin_block.block_no <= $2
+				{address_column} = $1 AND origin_block.block_no <= $2
           		AND (tx_out.consumed_by_tx_id IS NULL OR consuming_block.block_no > $2)
           		GROUP BY (
 					utxo_id_tx_hash,
@@ -756,10 +818,11 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 					tx_slot_no,
 					tx_epoch_no,
 					tx_index_in_block,
-					tx_out.address,
+					{address_column},
 					datum
-				)";
-	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(query)
+				)"
+	);
+	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(&query)
 		.bind(&address.0)
 		.bind(block)
 		.fetch_all(pool)
@@ -767,20 +830,6 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 	let result: Result<Vec<MainchainTxOutput>, sqlx::Error> =
 		rows.into_iter().map(MainchainTxOutput::try_from).collect();
 	Ok(result?)
-}
-/// Used by `get_token_utxo_for_epoch` (CandidatesDataSourceImpl),
-#[cfg(feature = "candidate-source")]
-pub(crate) async fn create_idx_ma_tx_out_ident(pool: &Pool<Postgres>) -> Result<(), SqlxError> {
-	let exists = index_exists(pool, "idx_ma_tx_out_ident").await?;
-	if exists {
-		info!("Index 'idx_ma_tx_out_ident' already exists");
-	} else {
-		let sql = "CREATE INDEX IF NOT EXISTS idx_ma_tx_out_ident ON ma_tx_out(ident)";
-		info!("Executing '{}', this might take a while", sql);
-		sqlx::query(sql).execute(pool).await?;
-		info!("Index 'idx_ma_tx_out_ident' has been created");
-	}
-	Ok(())
 }
 
 /// Used by multiple queries across functionalities.
@@ -796,6 +845,16 @@ pub(crate) async fn create_idx_tx_out_address(pool: &Pool<Postgres>) -> Result<(
 		info!("Index 'idx_tx_out_address' has been created");
 	}
 	Ok(())
+}
+
+fn address_query_parts(address_mode: ResolvedDbSyncAddressMode) -> (&'static str, &'static str) {
+	match address_mode {
+		ResolvedDbSyncAddressMode::Inline => ("", "tx_out.address"),
+		ResolvedDbSyncAddressMode::AddressTable => (
+			"INNER JOIN address tx_out_address ON tx_out_address.id = tx_out.address_id",
+			"tx_out_address.address",
+		),
+	}
 }
 
 /// Check if the index exists.
@@ -820,17 +879,17 @@ mod tests {
 	use sqlx::PgPool;
 
 	#[sqlx::test(migrations = "./testdata/migrations-tx-in-enabled")]
-	async fn tx_in_configuration_is_enabled_if_tx_in_table_exists(pool: PgPool) {
-		let tx_in_config = TxInConfiguration::from_connection(&pool).await.unwrap();
+	async fn auto_configuration_uses_populated_tx_in_table(pool: PgPool) {
+		let config = DbSyncQueryConfig::default().resolve(&pool).await.unwrap();
 
-		assert_eq!(tx_in_config, TxInConfiguration::Enabled)
+		assert_eq!(config.tx_input_mode, ResolvedDbSyncTxInputMode::TxIn)
 	}
 
 	#[sqlx::test(migrations = false)]
-	async fn tx_in_configuration_is_consumed_if_tx_in_table_does_not_exist(pool: PgPool) {
-		let tx_in_config = TxInConfiguration::from_connection(&pool).await.unwrap();
+	async fn auto_configuration_rejects_missing_input_layout(pool: PgPool) {
+		let error = DbSyncQueryConfig::default().resolve(&pool).await.unwrap_err();
 
-		assert_eq!(tx_in_config, TxInConfiguration::Consumed)
+		assert!(error.to_string().contains("transaction-input layout is unsupported"))
 	}
 
 	#[sqlx::test(migrations = "./testdata/migrations-tx-in-consumed")]
@@ -922,7 +981,7 @@ WHERE tx.hash = $1
 
 #[cfg(feature = "bridge")]
 pub(crate) async fn get_bridge_txs(
-	tx_in_configuration: TxInConfiguration,
+	config: ResolvedDbSyncQueryConfig,
 	pool: &Pool<Postgres>,
 	icp_address: &Address,
 	native_token: Asset,
@@ -934,6 +993,7 @@ pub(crate) async fn get_bridge_txs(
 	use sqlx::QueryBuilder;
 
 	let max_rows = max_transfers.as_ref().map(ToString::to_string).unwrap_or("null".into());
+	let (address_join, address_column) = address_query_parts(config.address_mode);
 
 	let checkpoint_limit = match checkpoint {
 		ResolvedBridgeDataCheckpoint::Block { number } => {
@@ -970,29 +1030,38 @@ pub(crate) async fn get_bridge_txs(
 "
 	);
 
-	let inputs_subquery = match tx_in_configuration {
-		TxInConfiguration::Consumed => {
-			"
+	// Collects every native-token tx_out at the ICS address that has been consumed by another
+	// tx, attributed to the consuming tx and the native token it moved. Two variants depending on
+	// whether db-sync's `tx_out.consumed_by_tx_id` denormalization is populated.
+	let inputs_subquery = match config.tx_input_mode {
+		ResolvedDbSyncTxInputMode::Consumed => {
+			format!(
+				"
 			SELECT
 				  tx_out.consumed_by_tx_id  AS consuming_tx_id
                 , ma_tx_out.ident           AS native_token_id
                 , ma_tx_out.quantity        AS tokens_in
 			FROM tx_out
+				{address_join}
 			LEFT JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
-			WHERE tx_out.address = $1
+			WHERE {address_column} = $1
 		"
+			)
 		},
-		TxInConfiguration::Enabled => {
-			"
+		ResolvedDbSyncTxInputMode::TxIn => {
+			format!(
+				"
 			SELECT
                   tx_in.tx_in_id         AS consuming_tx_id
                 , ma_tx_out.ident        AS native_token_id
                 , ma_tx_out.quantity     AS tokens_in
 			FROM tx_out
+				{address_join}
 			LEFT JOIN ma_tx_out ON ma_tx_out.tx_out_id = tx_out.id
 			LEFT JOIN tx_in     ON tx_in.tx_out_id = tx_out.tx_id and tx_in.tx_out_index = tx_out.index
-			WHERE tx_out.address = $1
+			WHERE {address_column} = $1
 		"
+			)
 		},
 	};
 
