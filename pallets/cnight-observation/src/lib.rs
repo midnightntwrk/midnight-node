@@ -692,7 +692,18 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
-		#[pallet::weight((T::WeightInfo::process_tokens(CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE)), DispatchClass::Mandatory))]
+		// Reserve the worst-case ledger-event deposit cost pre-dispatch: each observed
+		// UTXO deposits at most one ledger event, so the event count is bounded by the
+		// UTXO capacity. The post-dispatch `actual_weight` refines this to the real count.
+		#[pallet::weight((
+			T::WeightInfo::process_tokens(
+				CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE),
+			)
+			.saturating_add(T::WeightInfo::ledger_event_deposit(
+				CardanoTxCapacityPerBlock::<T>::get().saturating_mul(UTXO_PER_TX_OVERESTIMATE),
+			)),
+			DispatchClass::Mandatory,
+		))]
 		pub fn process_tokens(
 			origin: OriginFor<T>,
 			utxos: Vec<ObservedUtxo>,
@@ -774,6 +785,10 @@ pub mod pallet {
 
 			NextCardanoPosition::<T>::set(next_cardano_position.clone());
 
+			// Count the ledger events the system transaction will deposit so the
+			// mandatory weight accounts for their `frame_system::Events` writes.
+			let ledger_event_count = events.len() as u32;
+
 			if !events.is_empty() {
 				// Construct the Ledger system transaction
 				// Note: this into-map should compile into a no-op
@@ -798,7 +813,10 @@ pub mod pallet {
 				}
 			}
 			Ok(PostDispatchInfo {
-				actual_weight: Some(T::WeightInfo::process_tokens(utxo_count)),
+				actual_weight: Some(
+					T::WeightInfo::process_tokens(utxo_count)
+						.saturating_add(T::WeightInfo::ledger_event_deposit(ledger_event_count)),
+				),
 				pays_fee: Pays::No,
 			})
 		}

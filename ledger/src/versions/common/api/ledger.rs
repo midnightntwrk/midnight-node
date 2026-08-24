@@ -28,6 +28,7 @@ use ledger_storage_local::{
 use helpers_local::{StorableSyntheticCost, compute_overall_fullness};
 use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
+	events::Event,
 	semantics::{TransactionContext, TransactionResult},
 	structure::{LedgerParameters, LedgerState, SignatureKind},
 };
@@ -151,13 +152,19 @@ impl<D: DB> Ledger<D> {
 	///
 	/// This is used when a `VerifiedTransaction` has been cached from a prior
 	/// validation step, avoiding redundant ZK proof verification.
+	///
+	/// Returns the applied stage classification and the per-transaction
+	/// `Event<D>` stream the ledger emitted. `TransactionResult::Failure`
+	/// produces no events and returns an error, matching the prior semantics.
+	// The return tuple carries the applied-stage classification alongside the ledger event stream.
+	#[allow(clippy::type_complexity)]
 	pub(crate) fn apply_verified_transaction<S: SignatureKind<D>>(
 		sp: Sp<Self, D>,
 		api: &Api,
 		tx: &Transaction<S, D>,
 		verified_tx: &mn_ledger_local::structure::VerifiedTransaction<D>,
 		ctx: &TransactionContext<D>,
-	) -> Result<(Sp<Self, D>, AppliedStage<D>), LedgerApiError> {
+	) -> Result<(Sp<Self, D>, AppliedStage<D>, Vec<Event<D>>), LedgerApiError> {
 		let tx_cost =
 			tx.0.cost(&sp.state.parameters, true)
 				.map_err(|_| LedgerApiError::FeeCalculationError)?;
@@ -175,15 +182,15 @@ impl<D: DB> Ledger<D> {
 			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() });
 
 		match result {
-			TransactionResult::Success(_) => Ok((new_sp, AppliedStage::AllApplied)),
-			TransactionResult::PartialSuccess(segments, _) => {
+			TransactionResult::Success(events) => Ok((new_sp, AppliedStage::AllApplied, events)),
+			TransactionResult::PartialSuccess(segments, events) => {
 				log::warn!(
 					target: LOG_TARGET,
 					"Non guaranteed part of the transaction failed tx_hash = {:?}, segments = {:?}",
 					tx.identifiers().map(|i| api.tagged_serialize(&i)).collect::<Vec<_>>(),
 					segments
 				);
-				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect())))
+				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect()), events))
 			},
 			TransactionResult::Failure(reason) => {
 				log::warn!(target: LOG_TARGET, "Error applying Transaction: {reason:?}");
@@ -246,14 +253,19 @@ impl<D: DB> Ledger<D> {
 			.alloc(Ledger { state: next_state, block_fullness: SyntheticCost::ZERO.into() })
 	}
 
+	/// Returns the new ledger snapshot together with the `Event<D>` stream the
+	/// ledger emitted for the system transaction (`ParamChange`,
+	/// `DustInitialUtxo`, dust-generation events, etc.).
+	// The return tuple carries the new ledger snapshot alongside the ledger event stream.
+	#[allow(clippy::type_complexity)]
 	pub(crate) fn apply_system_tx(
 		sp: Sp<Self, D>,
 		tx: &SystemTransaction,
 		tblock: Timestamp,
-	) -> Result<Sp<Self, D>, LedgerApiError> {
+	) -> Result<(Sp<Self, D>, Vec<Event<D>>), LedgerApiError> {
 		let tx_cost = tx.cost(&sp.state.parameters);
 		let next_block_fullness = tx_cost + sp.block_fullness.clone().into();
-		let (next_state, _) = sp.state.apply_system_tx(tx, tblock).map_err(|e| {
+		let (next_state, events) = sp.state.apply_system_tx(tx, tblock).map_err(|e| {
 			log::error!(target: LOG_TARGET, "Error applying System Transaction: {e:?}");
 			LedgerApiError::Transaction(TransactionError::SystemTransaction(e.into()))
 		})?;
@@ -265,9 +277,10 @@ impl<D: DB> Ledger<D> {
 			&next_state.parameters.limits.block_limits,
 			"apply_system_tx",
 		)?;
-		Ok(default_storage::<D>()
+		let new_sp = default_storage::<D>()
 			.arena
-			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() }))
+			.alloc(Ledger { state: next_state, block_fullness: next_block_fullness.into() });
+		Ok((new_sp, events))
 	}
 
 	pub(crate) fn get_unclaimed_amount(&self, beneficiary: UserAddress) -> Option<&u128> {
@@ -317,7 +330,7 @@ mod tests {
 		undeployed::transactions::{CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX},
 	};
 	use midnight_serialize_local::tagged_deserialize;
-	use mn_ledger_local::structure::LedgerState;
+	use mn_ledger_local::{events::EventDetails, structure::LedgerState};
 
 	fn prepare_ledger() -> Sp<Ledger<DefaultDB>> {
 		sp_tracing::try_init_simple();
@@ -338,7 +351,7 @@ mod tests {
 		ledger: &mut Sp<Ledger<DefaultDB>>,
 		bytes: &[u8],
 		block_context: &BlockContext,
-	) {
+	) -> Vec<Event<DefaultDB>> {
 		let tx = api
 			.tagged_deserialize::<Transaction<Signature, DefaultDB>>(bytes)
 			.expect("failed to deserialize tx");
@@ -350,16 +363,18 @@ mod tests {
 				tx_ctx.block_context.tblock,
 			)
 			.unwrap_or_else(|err| panic!("Transaction not well-formed: {err:?}"));
-		let (new_ledger_state, _applied_stage) = Ledger::<DefaultDB>::apply_verified_transaction(
-			ledger.clone(),
-			api,
-			&tx,
-			&verified_tx,
-			&tx_ctx,
-		)
-		.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
+		let (new_ledger_state, _applied_stage, events) =
+			Ledger::<DefaultDB>::apply_verified_transaction(
+				ledger.clone(),
+				api,
+				&tx,
+				&verified_tx,
+				&tx_ctx,
+			)
+			.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
 
 		*ledger = new_ledger_state;
+		events
 	}
 
 	fn assert_apply_transaction(
@@ -367,11 +382,13 @@ mod tests {
 		ledger: &mut Sp<Ledger<DefaultDB>>,
 		bytes: &[u8],
 		block_context: &BlockContext,
-	) {
-		assert_apply_transaction_only(api, ledger, bytes, block_context);
+	) -> Vec<Event<DefaultDB>> {
+		let events = assert_apply_transaction_only(api, ledger, bytes, block_context);
 
 		*ledger = Ledger::<DefaultDB>::post_block_update(ledger.clone(), block_context.clone())
 			.expect("Post block update failed");
+
+		events
 	}
 
 	/// `is_block_start` is the gate `well_formed_tblock` uses to decide whether a transaction
@@ -422,6 +439,29 @@ mod tests {
 		let mut ledger = prepare_ledger();
 		let (serialized_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
 		assert_apply_transaction(&api, &mut ledger, &serialized_tx, &block_context.into());
+	}
+
+	/// PR1849-TC-01/TC-02: a successful apply emits events, and each event's
+	/// tagged-serialised `content` round-trips back to an equal `EventDetails`.
+	#[test]
+	fn should_emit_events_whose_payload_round_trips() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let api = Api::new();
+		let mut ledger = prepare_ledger();
+		let (serialized_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
+		let events =
+			assert_apply_transaction(&api, &mut ledger, &serialized_tx, &block_context.into());
+
+		assert!(!events.is_empty(), "deploy should emit at least one event");
+		for ev in &events {
+			let bytes = api.tagged_serialize(&ev.content).expect("serialize event content");
+			let decoded: EventDetails<DefaultDB> =
+				tagged_deserialize(&bytes[..]).expect("round-trip decode");
+			assert_eq!(decoded, ev.content);
+		}
 	}
 
 	#[test]

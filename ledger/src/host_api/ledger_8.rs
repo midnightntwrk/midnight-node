@@ -2,7 +2,9 @@
 use crate::ledger_8::Bridge;
 use crate::{
 	common::types::{
-		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
+		GasCost, Hash, SystemTransactionAppliedStateRoot,
+		SystemTransactionAppliedStateRootWithEvents, TransactionAppliedStateRoot,
+		TransactionAppliedStateRootWithEvents, Tx,
 	},
 	ledger_8::{BlockContext, types::LedgerApiError},
 };
@@ -102,6 +104,9 @@ pub fn apply_transaction_v1(
 			/* skew_tblock */ true,
 		)
 	}
+	// The bridge now returns the events-carrying shape; v1 is the events-free host
+	// function, so drop them here rather than at each call site.
+	.map(Into::into)
 }
 
 /// Shared body of both versions of `validate_guaranteed_execution`; they differ only in
@@ -196,6 +201,16 @@ pub trait Ledger8Bridge {
 	/*
 	 * apply_transaction()
 	 *
+	 * The unversioned function returns the events-free `TransactionAppliedStateRoot`,
+	 * byte-identical to a pre-ledger-events binary; `#[version(3)]` carries the events.
+	 * (v3, not v2: v2 is already taken here by the tblock correction below. ledger_9 has no
+	 * such collision, so its events variant is `#[version(2)]`.)
+	 * WASM always calls the latest host-function version its imports declare, so this
+	 * split guards the reverse direction: an old (events-free) runtime on a new binary
+	 * decodes the events-free shape instead of silently truncating the events-carrying
+	 * one. (A new runtime on an old binary fails at instantiation on the missing
+	 * `#[version(3)]` import, not via a silent decode.)
+	 *
 	 * v1 skews the `tblock` of a block's first ledger transaction to
 	 * `parent_block_time + 12s`, reproducing the timestamp the producing node's warm strict
 	 * cache had verified it at. v2 does not. Which one runs is decided by whichever runtime
@@ -243,6 +258,38 @@ pub trait Ledger8Bridge {
 				/* skew_tblock */ false,
 			)
 		}
+		.map(Into::into)
+	}
+
+	#[version(3)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRootWithEvents, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+				true,
+				runtime_version,
+				/* skew_tblock */ false,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+				true,
+				runtime_version,
+				/* skew_tblock */ false,
+			)
+		}
 	}
 
 	fn apply_system_transaction(
@@ -252,6 +299,33 @@ pub trait Ledger8Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		_runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+		.map(Into::into)
+	}
+
+	#[version(2)]
+	fn apply_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRootWithEvents, LedgerApiError>>
+	{
 		if is_unified(*self) {
 			Bridge::<Signature, DbUnified>::apply_system_transaction(
 				*self,

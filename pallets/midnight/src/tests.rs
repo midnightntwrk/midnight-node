@@ -26,8 +26,11 @@ use frame_support::{
 	traits::{OnFinalize, OnInitialize},
 };
 use frame_system::RawOrigin;
-use midnight_node_ledger::types::active_version::{
-	BlockContext, DeserializationError, LedgerApiError, MalformedError, TransactionError,
+use midnight_node_ledger::types::{
+	LedgerEvent, LedgerEventSource,
+	active_version::{
+		BlockContext, DeserializationError, LedgerApiError, MalformedError, TransactionError,
+	},
 };
 use midnight_node_res::{
 	networks::{MidnightNetwork, UndeployedNetwork},
@@ -35,6 +38,7 @@ use midnight_node_res::{
 		CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX, ZSWAP_TX,
 	},
 };
+use parity_scale_codec::Encode;
 use sp_runtime::{
 	traits::ValidateUnsigned,
 	transaction_validity::{InvalidTransaction, TransactionSource, TransactionValidityError},
@@ -103,11 +107,88 @@ fn test_send_mn_transaction() {
 
 		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx));
 
-		// Check emitted events
+		// Check emitted events: ContractDeploy first, LedgerEvent(s) in between, TxApplied last.
 		let events = mock::midnight_events();
 		assert_matches!(events[0], Event::ContractDeploy(_));
-		assert_matches!(events[1], Event::TxApplied(_));
+		assert_matches!(events.last().unwrap(), Event::TxApplied(_));
+		assert!(events.iter().any(|e| matches!(e, Event::LedgerEvent(_))));
 	})
+}
+
+/// PR1849-TC-01: one `LedgerEvent` deposited per ledger event, all carrying the tx hash.
+#[test]
+fn test_send_mn_transaction_deposits_ledger_events() {
+	mock::new_test_ext().execute_with(|| {
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+		init_ledger_state(block_context.into());
+
+		assert_ok!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx));
+
+		let events = mock::midnight_events();
+		let ledger_events: Vec<_> = events
+			.iter()
+			.filter_map(|e| if let Event::LedgerEvent(le) = e { Some(le) } else { None })
+			.collect();
+		assert!(!ledger_events.is_empty(), "deploy should emit at least one ledger event");
+
+		let tx_hash = events
+			.iter()
+			.find_map(|e| if let Event::TxApplied(d) = e { Some(d.tx_hash) } else { None })
+			.expect("TxApplied present");
+		for le in &ledger_events {
+			assert_eq!(le.source.transaction_hash, tx_hash);
+		}
+	})
+}
+
+/// PR1849-TC-15: a failed transaction deposits no `LedgerEvent`.
+#[test]
+fn test_failed_transaction_deposits_no_ledger_event() {
+	mock::new_test_ext().execute_with(|| {
+		// STORE_TX with no prior deploy fails on the guaranteed part.
+		let (tx, block_context) =
+			midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(STORE_TX);
+		init_ledger_state(block_context.into());
+
+		let error: sp_runtime::DispatchError = Error::<Test>::Transaction(
+			TransactionError::Malformed(MalformedError::ContractNotPresent),
+		)
+		.into();
+		assert_err!(mock::Midnight::send_mn_transaction(RuntimeOrigin::none(), tx), error);
+
+		assert!(mock::midnight_events().iter().all(|e| !matches!(e, Event::LedgerEvent(_))));
+	})
+}
+
+/// PR1849-TC-17: dry-run validation (`pre_dispatch`) deposits no `LedgerEvent`.
+#[test]
+fn test_pre_dispatch_deposits_no_ledger_event() {
+	let (tx, block_context) =
+		midnight_node_ledger_helpers::ledger_9::extract_tx_with_context(DEPLOY_TX);
+	let call = MidnightCall::send_mn_transaction { midnight_tx: tx };
+	mock::new_test_ext().execute_with(|| {
+		init_ledger_state(block_context.into());
+
+		assert_ok!(<mock::Midnight as ValidateUnsigned>::pre_dispatch(&call));
+
+		assert!(mock::midnight_events().iter().all(|e| !matches!(e, Event::LedgerEvent(_))));
+	})
+}
+
+/// PR1849-TC-11: `LedgerEvent` is appended as the last variant (index 8);
+/// existing variant indices are unchanged.
+#[test]
+fn ledger_event_is_last_variant() {
+	let ledger_event = Event::LedgerEvent(LedgerEvent {
+		source: LedgerEventSource {
+			transaction_hash: [0u8; 32],
+			logical_segment: 0,
+			physical_segment: 0,
+		},
+		content_tagged_bytes: alloc::vec::Vec::new(),
+	});
+	assert_eq!(ledger_event.encode()[0], 8);
 }
 
 #[test]
