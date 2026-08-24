@@ -32,9 +32,9 @@ jobs:
       id-token: write
       attestations: write  # Required for GitHub native attestations
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -103,9 +103,9 @@ jobs:
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
         run: |
           echo "Images already exist for ${IMAGE_TAG}-amd64, skipping build"
-          . ./.envrc && earthly +extract-node-artifacts \
+          . ./.envrc && earth +extract-node-artifacts \
             --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-amd64"
-          . ./.envrc && earthly +extract-toolkit-artifacts \
+          . ./.envrc && earth +extract-toolkit-artifacts \
             --TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-amd64"
 
       - name: Free disk space
@@ -122,8 +122,8 @@ jobs:
         run: |
           # We don't use --ci as we want artifacts to be saved
           # AND we can't use --strict or --ci because we're using LOCALLY in both +node-image and +toolkit-image
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
       - name: Get image digests
         id: digests
@@ -250,9 +250,9 @@ jobs:
       id-token: write
       attestations: write  # Required for GitHub native attestations
     steps:
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -296,9 +296,9 @@ jobs:
           IMAGE_TAG: ${{ steps.check-images.outputs.IMAGE_TAG }}
         run: |
           echo "Images already exist for ${IMAGE_TAG}-arm64, skipping build"
-          . ./.envrc && earthly +extract-node-artifacts \
+          . ./.envrc && earth +extract-node-artifacts \
             --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${IMAGE_TAG}-arm64"
-          . ./.envrc && earthly +extract-toolkit-artifacts \
+          . ./.envrc && earth +extract-toolkit-artifacts \
             --TOOLKIT_IMAGE="ghcr.io/midnight-ntwrk/midnight-node-toolkit:${IMAGE_TAG}-arm64"
 
       - name: Run Node and toolkit builds
@@ -306,8 +306,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
         run: |
-          . ./.envrc && earthly -P --use-inline-cache --save-inline-cache --push +node-image
-          . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
+          . ./.envrc && earth -P --use-inline-cache --save-inline-cache --push +node-image
+          . ./.envrc && earth --secret GITHUB_TOKEN="$GITHUB_TOKEN" -P --push +toolkit-image
 
       - name: Get image digests
         id: digests

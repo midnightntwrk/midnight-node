@@ -35,10 +35,10 @@ jobs:
       - id: guard
         uses: ./.github/actions/tree-cache-guard
 
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+      - uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         if: steps.guard.outputs.hit != 'true'
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -93,7 +93,7 @@ jobs:
             exit 1
           fi
           echo "Using CACHE_KEY=$CACHE_KEY"
-          . ./.envrc && earthly -P \
+          . ./.envrc && earth -P \
             --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \

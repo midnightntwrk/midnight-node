@@ -84,9 +84,9 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Earthly
-        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        uses: EarthBuild/actions-setup@f4d20223e70dbb43b5fc08c4d857ab9cf0dbf3ae # v2.2.0
         with:
-          version: v0.8.16
+          version: v0.8.18
           github-token: ${{ github.token }}
           use-cache: false
 
@@ -104,7 +104,7 @@ jobs:
           # CI runners (see the CI ARG in the Earthfile).
           EARTHLY_BUILD_ARGS: CI=true
         run: |
-          earthly -P +rebuild-metadata
+          earth -P +rebuild-metadata
 
       - name: Commit and push changes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
