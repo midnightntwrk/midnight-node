@@ -11,4 +11,5 @@ runtime manifest includes the selected address and transaction-input indexes, ac
 operator-managed indexes regardless of name, and preserves the existing automatic behavior by
 default for initialized databases. Ambiguous empty input layouts now require an explicit mode.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2065
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1160

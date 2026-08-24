@@ -8,4 +8,5 @@ can verify operator-managed indexes without requiring database write privileges.
 `auto`/`inline`/`apply` behavior remains the default for initialized databases; ambiguous empty
 input layouts now fail with an actionable request for explicit configuration.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2065
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1160
