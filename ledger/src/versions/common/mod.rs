@@ -902,21 +902,21 @@ where
 		let api = api::new();
 		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx)?;
 		let ledger = Self::get_ledger(&api, state_key)?;
+		let params = &ledger.state.parameters;
 
-		let cost =
-			tx.0.cost(&ledger.state.parameters, true)
-				.map_err(|_| LedgerApiError::FeeCalculationError)?;
+		let base_synthetic =
+			tx.0.cost(params, true).map_err(|_| LedgerApiError::FeeCalculationError)?;
+		let (_, application_total) = tx.0.application_cost(&params.cost_model);
+		let cost = base_synthetic + application_total;
 
 		log::trace!(target: LOG_TARGET, "⏱️  Estimated cost: {cost:?}");
 
-		let limits = ledger.state.parameters.limits.block_limits;
+		let limits = params.limits.block_limits;
 		let normalized = cost.normalize(limits).ok_or(LedgerApiError::BlockLimitExceededError)?;
 
 		log::trace!(target: LOG_TARGET, "⏱️  Normalized cost: {normalized:?}");
 
-		let gas_cost = scale_normalized_cost(&normalized, max_weight);
-
-		Ok(gas_cost)
+		Ok(scale_normalized_cost(&normalized, max_weight))
 	}
 
 	/// The cost of either a `Transaction` or a [`SystemTransaction`], dispatched on

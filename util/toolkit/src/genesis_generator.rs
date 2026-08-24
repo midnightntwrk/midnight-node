@@ -661,7 +661,9 @@ impl GenesisGenerator {
 
 		let valid_tx =
 			tx.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)?;
-		self.fullness = self.fullness + tx.cost(&self.state.parameters, false)?;
+		let base_synthetic = tx.cost(&self.state.parameters, true)?;
+		let (_, application_total) = tx.application_cost(&self.state.parameters.cost_model);
+		self.fullness = self.fullness + base_synthetic + application_total;
 		let (state, result) = self.state.apply(&valid_tx, &tx_context);
 		match result {
 			TransactionResult::Success(_) => {

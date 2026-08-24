@@ -352,9 +352,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 				let valid_tx: VerifiedTransaction<_> = tx
 					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
 					.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
-				let cost = tx
-					.cost(&tx_context.ref_state.parameters, false)
+				let base_synthetic = tx
+					.cost(&tx_context.ref_state.parameters, true)
 					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
+				let (_, application_total) =
+					tx.application_cost(&tx_context.ref_state.parameters.cost_model);
+				let cost = base_synthetic + application_total;
 
 				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
 				let offers = Self::successful_shielded_offers(tx, &result);

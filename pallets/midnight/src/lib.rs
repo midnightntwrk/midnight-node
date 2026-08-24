@@ -636,7 +636,6 @@ pub mod pallet {
 			Self::get_transaction_cost(tx)
 				.map(|gas_cost| Weight::from_parts(gas_cost, 0))
 				.unwrap_or(crate::EXTRA_WEIGHT_TX_SIZE)
-				+ ConfigurableTransactionSizeWeight::<T>::get()
 		}
 	}
 }
