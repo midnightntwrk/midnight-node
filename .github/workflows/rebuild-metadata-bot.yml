@@ -100,10 +100,13 @@ jobs:
       - name: Run rebuild-metadata
         env:
           EARTHLY_CONFIG: .earthly/config.yml
-          # No .envrc here to forward it, so set directly: disable Earthly build caches on
-          # CI runners (see the CI ARG in the Earthfile).
-          EARTHLY_BUILD_ARGS: CI=true
+          PR_REF: ${{ steps.pr.outputs.ref }}
         run: |
+          # Scope the Earthly caches to the PR branch. This job does not source .envrc (it
+          # pins EARTHLY_CONFIG itself), and the GitHub ref vars .envrc would read point at
+          # the default branch on issue_comment events — using them would write this PR's
+          # artifacts into main's cache. Use the PR head ref, sanitized the same way.
+          export EARTHLY_BUILD_ARGS="CACHE_KEY=$(printf '%s' "$PR_REF" | tr -c 'A-Za-z0-9._-' '-')"
           earthly -P +rebuild-metadata
 
       - name: Commit and push changes

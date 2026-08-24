@@ -22,14 +22,6 @@ VERSION 0.8
 # daemon topology, at no cost (same-arch builds still share the cache).
 ARG --global CACHE_KEY=local
 
-# Set true when building on a CI runner. When true, targets declare NO persistent CACHE
-# mounts (cargo registry/git and /target), so every CI build is clean and nothing is served
-# from a shared, cross-run cache. Defaults false for local builds, which DO mount the caches
-# so cargo's incremental fingerprinting can reuse artifacts across runs. CI runs set this via
-# EARTHLY_BUILD_ARGS=CI=true (see .envrc and the rebuild-*-bot workflows), keyed off the CI
-# environment variable GitHub Actions always exports.
-ARG --global CI=false
-
 # renovate: datasource=node-version depName=node versioning=node
 ARG --global NODEJS_VERSION=24.18.0
 
@@ -172,11 +164,9 @@ build-node-only:
     # `locked` sharing: concurrent builds on the same CACHE_KEY serialize rather than
     # clobber each other, and different branches get a different CACHE_KEY (see top of
     # file) so they never share /target at all.
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
@@ -233,12 +223,10 @@ rebuild-sqlx:
     ARG USEROS
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     COPY local-environment/localenv_postgres.password .
     RUN \
         DATABASE_URL=postgres://postgres:$(cat localenv_postgres.password)@$([ "$USEROS" = "linux" ] && echo "172.17.0.1" || echo "host.docker.internal"):5432/cexplorer \
@@ -841,9 +829,21 @@ prep-no-copy:
     # the CI image's /.cargo/config.toml being found via the CWD=/ walk — that breaks the day a
     # target sets a non-/ WORKDIR. This is cargo's lowest-priority config source, so any
     # directory-level .cargo/config.toml still overrides it.
-    RUN mkdir -p "$CARGO_HOME" \
+    # Also point cargo's package-cache lock at the shared registry mount. cargo already
+    # serializes exactly the section that must not run concurrently — downloading and
+    # unpacking crates and updating git checkouts — with an flock on
+    # $CARGO_HOME/.package-cache, then downgrades to a shared lock so compiles still run in
+    # parallel. But that path sits in the image layer while registry/ and git/ are shared
+    # CACHE mounts, so concurrent builds on one buildkit daemon each flock their OWN private
+    # file and the exclusion is a no-op: they shred each other's downloads
+    # (`failed to unpack ... .cargo-ok: File exists`, `failed to stat <git checkout>`).
+    # Following the symlink onto the mount makes the lock span them. Buildkit's own
+    # CACHE --sharing locked is NOT an alternative here: a mount held locked by one build is
+    # not waited on by others, they are silently handed a fresh empty cache dir.
+    RUN mkdir -p "$CARGO_HOME" "$CARGO_HOME/registry" \
       && echo "[net]" >> "$CARGO_HOME/config.toml" \
-      && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml"
+      && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml" \
+      && ln -sfn "$CARGO_HOME/registry/.package-cache" "$CARGO_HOME/.package-cache"
 
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
@@ -1035,12 +1035,10 @@ check-deps:
 planner:
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     RUN cargo chef prepare --recipe-path recipe.json
     SAVE ARTIFACT recipe.json /recipe.json
 
@@ -1048,20 +1046,16 @@ check-rust-prepare:
     # NOTE: This just uses recipe.json - no src files!
     FROM +prep-no-copy
     # COPY +planner/recipe.json /recipe.json
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
 
     # Build dependencies - this is the caching Docker layer!
     # RUN SKIP_WASM_BUILD=1 cargo chef cook --clippy --workspace --all-targets  --features runtime-benchmarks --recipe-path /recipe.json
 
 check-rust:
     FROM +check-rust-prepare
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -1081,10 +1075,8 @@ check-rust:
 # catching issues where workspace feature unification masks missing dependencies.
 check-feature-unification:
     FROM +check-rust-prepare
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
@@ -1122,12 +1114,10 @@ test:
     ARG NATIVEARCH
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
 
     # Test
     RUN mkdir /test-artifacts
@@ -1177,12 +1167,10 @@ test-pallet-fixtures:
     ARG NATIVEARCH
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
 
     # These tests use a mock runtime (MockBlock<Test>), not the real WASM runtime.
     # Debug mode skips LLVM optimization passes, compiling faster than release on free CI runners.
@@ -1207,12 +1195,10 @@ build-test-toolkit:
     ARG NATIVEARCH
     FROM +prep
     ARG TARGETARCH
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
-    END
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # See top-of-file CACHE_KEY ARG for why this is scoped (and arch-suffixed; see top of file).
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
 
     # Install dependencies for Node.js and docker CLI (for hardfork e2e tests)
     RUN microdnf -y install tar gzip xz docker && \
@@ -1340,16 +1326,12 @@ build-prepare:
 build:
     FROM +build-prepare
     ARG TARGETARCH
-    # Caching is gated on CI (see top of file). Local builds (CI=false) mount the cargo
-    # registry/git caches and a per-branch-scoped /target dir so cargo's incremental
-    # fingerprinting can skip unchanged crates across runs. A CI build (CI=true) declares
-    # none of them and compiles from scratch.
-    IF [ "$CI" != "true" ]
-        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
-        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
-        # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
-        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
-    END
+    # Mount the shared cargo registry/git caches and a per-branch-scoped /target dir so
+    # cargo's incremental fingerprinting can skip unchanged crates across runs.
+    CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+    CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+    # See top-of-file CACHE_KEY ARG for why /target is scoped per branch.
+    CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
     ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
 
@@ -1368,9 +1350,8 @@ build:
     RUN \
         cargo auditable build --workspace --locked --release
 
-    # cp (not mv) so the linked binaries stay in the /target cache when it is mounted
-    # (local, CI=false); otherwise cargo would re-link every binary on the next run even
-    # when its inputs are unchanged.
+    # cp (not mv) so the linked binaries stay in the /target cache; otherwise cargo would
+    # re-link every binary on the next run even when its inputs are unchanged.
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && cp /target/release/midnight-node /artifacts-$NATIVEARCH \
         && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
