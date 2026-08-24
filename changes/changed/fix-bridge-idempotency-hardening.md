@@ -6,26 +6,24 @@ The bridge will not move checkpoint when transaction fails execution or serializ
 PC bridge pallet will retry it again in the next block. If it keeps failing, it perhaps
 means there is a bug that has to be fixed. Bridge will stop processing at this point.
 
-Future-proof enum (SCALE-friendly) error is introduced in case we would like to skip on some errors in the future.
+Future-proof single variant enum (SCALE-friendly, but not Rust idiomatic) error is introduced in case we would like to skip on some errors in the future.
 
 The exectly-once processing is quite complex because we still don't know if Cardano validator would prevent
 transactions that release from unlocked and reserve to ICS at the same time.
 
-A very unlikely corner case when bridge max transfers is configured to 1 and transaction mapped
-to two transfers is encountered has be reimplemented to stuck instead of silently skipping all
-transfer up to given block bound.
+One Cardano transaction yields at most two transfers: a _reserve transfer_, made when it takes
+tokens out of the reserve, followed by an _ICS transfer_ of the remaining tokens it locked in the
+illiquid circulating supply. Processing can therefore stop at one place inside a transaction, which
+the new `BridgeDataCheckpoint::TxReserveTransfer` variant names — it replaces `PartialTx`, which
+recorded a count of processed transfers. The kind of a transfer's recipient identifies which of the
+two transfers of its transaction it is, so `BridgeTransferV1::checkpoint_reached` derives the
+checkpoint of a handled transfer without any bookkeeping. `handle_transfers` uses it to record the
+last transfer it handled, and leaves the checkpoint untouched when it handled none.
 
-Before handling them, `handle_transfers` pairs every transfer with its index among the transfers of
-its Cardano transaction, counted over the whole transaction: for the transaction the current
-checkpoint points at, the count continues from the transfers already handled in an earlier block,
-which the observability layer leaves out of the data. That index is the number of transfers of the
-transaction that precede the one being handled.
-
-On a failure the checkpoint is therefore always a `PartialTx` of the failing transfer's Cardano
-transaction, with `transfers_processed` taken from that index — zero when the failing transfer is
-the first one of its transaction. `PartialTx` is inclusive of the transaction it points at, so this
-is the same resume point that a `Tx` checkpoint of the preceding transaction expressed, and the
-pallet no longer has to track which transactions were completed earlier in the block.
+Because a checkpoint can now point between the two transfers of a transaction, the observability
+layer no longer has to return them together, and cuts the transfers it returns at the configured
+limit wherever that falls. Any `MaxTransfersPerBlock` of at least one guarantees that processing
+progresses; the value only bounds throughput and the weight of the inherent.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/1980
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1979

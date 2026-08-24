@@ -107,11 +107,12 @@
 //! }
 //! ```
 //!
-//! In particular, the pallet needs to be configured with the value  `MaxTransfersPerBlock`,
-//! which determines the upper bound on the number of transactions that can be processed
-//! per block. All outstanding transfers beyond that limit will be processed in subsequent
-//! block. It is important to select a value high enough to guarantee that the chain will
-//! be able to keep up with the volume of transfers coming in.
+//! In particular, the pallet needs to be configured with the value `MaxTransfersPerBlock`,
+//! which determines the upper bound on the number of transfers that can be processed per
+//! block, and thus the weight of the pallet's inherent. All outstanding transfers beyond that
+//! limit are processed in subsequent blocks. Any value of at least one guarantees that
+//! processing progresses, so the value only needs to be selected high enough for the chain to
+//! keep up with the volume of transfers coming in.
 //!
 //! The last thing to implement in the runtime is the runtime API used by the observability
 //! layer to access the configuration stored in the pallet. This is straightforward and
@@ -220,9 +221,8 @@ pub trait TransferHandler<Recipient> {
 	/// Returning [TransferHandlerError] means that the transfer could *not* be applied and
 	/// should be handled again later. In that case the pallet:
 	/// 1. skips all remaining transfers of the current block, and
-	/// 2. sets the bridge data checkpoint to the [BridgeDataCheckpoint::PartialTx] of the failing
-	///    transfer's Cardano transaction, recording how many of that transaction's transfers are
-	///    done. That is zero if the failing transfer is its first one.
+	/// 2. sets the bridge data checkpoint to the position of the last transfer it did handle,
+	///    leaving it untouched if that is none.
 	///
 	/// This way all transfers that were not handled are observed again in one of the following
 	/// blocks. It is meant for failures that are expected to resolve on their own, such as the
@@ -360,19 +360,24 @@ pub mod pallet {
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
 
-			for (transfer, transfer_idx) in Self::index_transfers(transfers) {
+			// Checkpoint reached by the transfers handled so far. While it is `None`, the
+			// checkpoint in storage still describes everything that has been handled.
+			let mut reached: Option<BridgeDataCheckpoint> = None;
+
+			for transfer in transfers {
+				let checkpoint = transfer.checkpoint();
 				let mc_tx_hash = transfer.mc_tx_hash;
 				if T::TransferHandler::handle_incoming_transfer(transfer).is_err() {
 					log::warn!(
-						"⚠️ Handling of a bridge transfer from Cardano transaction {mc_tx_hash} (idx: {transfer_idx}) \
-						 failed. It and all transfers observed after it will be handled again in a later block."
+						"⚠️ Handling of a bridge transfer from Cardano transaction {mc_tx_hash} failed. \
+						 It and all transfers observed after it will be handled again in a later block."
 					);
-					DataCheckpoint::<T>::put(BridgeDataCheckpoint::PartialTx {
-						tx: mc_tx_hash,
-						transfers_processed: transfer_idx,
-					});
+					if let Some(reached) = reached {
+						DataCheckpoint::<T>::put(reached);
+					}
 					return Ok(());
 				}
+				reached = Some(checkpoint);
 			}
 
 			// Everything processed so store the node supported checkpoint.
@@ -441,52 +446,6 @@ pub mod pallet {
 		) -> Option<TokenBridgeTransfersV1<T::Recipient>> {
 			data.get_data(&INHERENT_IDENTIFIER)
 				.expect("Bridge inherent data is not encoded correctly")
-		}
-
-		/// Pairs every transfer with its index among the transfers of its Cardano transaction
-		///
-		/// A single Cardano transaction can result in more than one transfer, and its transfers can
-		/// be split between Partner Chain blocks. The index is counted over the whole transaction:
-		/// the transfers of the transaction the current checkpoint points at continue from the
-		/// number of them that were handled in an earlier block, because the observability layer
-		/// leaves those out and presents only the remaining ones.
-		///
-		/// The index of a transfer is therefore the number of transfers of its transaction that
-		/// have to be handled before it, which is exactly what [BridgeDataCheckpoint::PartialTx]
-		/// has to record when handling stops at that transfer.
-		fn index_transfers(
-			transfers: BoundedVec<BridgeTransferV1<T::Recipient>, T::MaxTransfersPerBlock>,
-		) -> BoundedVec<(BridgeTransferV1<T::Recipient>, u16), T::MaxTransfersPerBlock> {
-			let mut indexed = alloc::vec::Vec::with_capacity(transfers.len());
-			let mut current_tx: Option<(McTxHash, u16)> = None;
-
-			for transfer in transfers {
-				let mc_tx_hash = transfer.mc_tx_hash;
-				let transfer_idx = match current_tx {
-					Some((tx, idx)) if tx == mc_tx_hash => idx.saturating_add(1),
-					_ => Self::transfers_already_processed_of(mc_tx_hash),
-				};
-				current_tx = Some((mc_tx_hash, transfer_idx));
-				indexed.push((transfer, transfer_idx));
-			}
-
-			// Can not truncate: exactly one pair is produced per transfer of a bounded input.
-			BoundedVec::truncate_from(indexed)
-		}
-
-		/// Number of transfers derived from `tx` that were already handled in an earlier block
-		///
-		/// This is only ever non-zero for the transaction the current checkpoint points at, whose
-		/// remaining transfers the observability layer presents again.
-		fn transfers_already_processed_of(tx: McTxHash) -> u16 {
-			match DataCheckpoint::<T>::get() {
-				Some(BridgeDataCheckpoint::PartialTx { tx: partial_tx, transfers_processed })
-					if partial_tx == tx =>
-				{
-					transfers_processed
-				},
-				_ => 0,
-			}
 		}
 	}
 

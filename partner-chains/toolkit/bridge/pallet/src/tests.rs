@@ -131,20 +131,17 @@ mod handle_transfers {
 
 			// The failing transfer and everything observed after it is left for a later block.
 			assert_eq!(handled_transfers(), transfers[..1].to_vec());
-			// The checkpoint points at the failing Cardano transaction, none of whose transfers
-			// were handled.
+			// The checkpoint points at the last transfer that was handled, which is the only
+			// transfer of the Cardano transaction before the failing one.
 			assert_eq!(
 				DataCheckpoint::<Test>::get(),
-				Some(BridgeDataCheckpoint::PartialTx {
-					tx: transfers[1].mc_tx_hash,
-					transfers_processed: 0
-				})
+				Some(BridgeDataCheckpoint::Tx(transfers[0].mc_tx_hash))
 			);
 		})
 	}
 
 	#[test]
-	fn points_the_data_checkpoint_at_the_first_tx_when_no_transfer_could_be_handled() {
+	fn keeps_the_data_checkpoint_when_no_transfer_could_be_handled() {
 		new_test_ext().execute_with(|| {
 			DataCheckpoint::<Test>::put(data_checkpoint());
 			let transfers = transfers();
@@ -157,23 +154,17 @@ mod handle_transfers {
 			));
 
 			assert_eq!(handled_transfers(), vec![]);
-			// Nothing was handled, so the whole first Cardano transaction is to be presented again.
-			// The transactions before it, if any, had no transfers left to handle.
-			assert_eq!(
-				DataCheckpoint::<Test>::get(),
-				Some(BridgeDataCheckpoint::PartialTx {
-					tx: transfers[0].mc_tx_hash,
-					transfers_processed: 0
-				})
-			);
+			// Nothing was handled, so the checkpoint still describes everything that is done and
+			// all observed transfers are presented again.
+			assert_eq!(DataCheckpoint::<Test>::get(), Some(data_checkpoint()));
 		})
 	}
 
 	#[test]
-	fn records_how_many_transfers_of_a_partially_handled_cardano_tx_were_handled() {
+	fn records_the_reserve_transfer_of_a_partially_handled_cardano_tx_as_handled() {
 		new_test_ext().execute_with(|| {
-			// The second transfer of the second Cardano transaction fails, so that transaction is
-			// presented again — without the transfer that was handled.
+			// The ICS transfer of the second Cardano transaction fails, so that transaction is
+			// presented again — without its reserve transfer, which was handled.
 			let transfers = transfers_of_two_txs();
 			reject(&transfers[2]);
 
@@ -186,50 +177,18 @@ mod handle_transfers {
 			assert_eq!(handled_transfers(), transfers[..2].to_vec());
 			assert_eq!(
 				DataCheckpoint::<Test>::get(),
-				Some(BridgeDataCheckpoint::PartialTx {
-					tx: transfers[1].mc_tx_hash,
-					transfers_processed: 1
-				})
+				Some(BridgeDataCheckpoint::TxReserveTransfer(transfers[1].mc_tx_hash))
 			);
 		})
 	}
 
 	#[test]
-	fn counts_transfers_handled_for_a_partial_tx_in_an_earlier_block() {
+	fn keeps_a_reserve_transfer_checkpoint_when_the_ics_transfer_fails_again() {
 		new_test_ext().execute_with(|| {
 			let tx = McTxHash([2; 32]);
-			// One transfer of `tx` was handled before, so the observability layer left it out and
-			// presents the remaining two, keeping their index within `tx`.
-			DataCheckpoint::<Test>::put(BridgeDataCheckpoint::PartialTx {
-				tx,
-				transfers_processed: 1,
-			});
-			let transfers: BoundedVec<_, MaxTransfersPerBlock> = bounded_vec![
-				BridgeTransferV1 { amount: 200, mc_tx_hash: tx, recipient: Reserve },
-				BridgeTransferV1 { amount: 300, mc_tx_hash: tx, recipient: Invalid },
-			];
-			reject(&transfers[1]);
-
-			assert_ok!(Bridge::handle_transfers(
-				RuntimeOrigin::none(),
-				transfers.clone(),
-				final_checkpoint()
-			));
-
-			assert_eq!(handled_transfers(), transfers[..1].to_vec());
-			// One from the earlier block plus one from this one.
-			assert_eq!(
-				DataCheckpoint::<Test>::get(),
-				Some(BridgeDataCheckpoint::PartialTx { tx, transfers_processed: 2 })
-			);
-		})
-	}
-
-	#[test]
-	fn keeps_a_partial_tx_checkpoint_when_its_next_transfer_fails_again() {
-		new_test_ext().execute_with(|| {
-			let tx = McTxHash([2; 32]);
-			let checkpoint = BridgeDataCheckpoint::PartialTx { tx, transfers_processed: 1 };
+			// The reserve transfer of `tx` was handled in an earlier block, so the observability
+			// layer left it out and presents only the ICS transfer.
+			let checkpoint = BridgeDataCheckpoint::TxReserveTransfer(tx);
 			DataCheckpoint::<Test>::put(checkpoint.clone());
 			let transfers: BoundedVec<_, MaxTransfersPerBlock> =
 				bounded_vec![BridgeTransferV1 { amount: 300, mc_tx_hash: tx, recipient: Invalid }];
@@ -247,13 +206,10 @@ mod handle_transfers {
 	}
 
 	#[test]
-	fn moves_the_checkpoint_past_a_partial_tx_once_its_transfers_are_handled() {
+	fn moves_the_checkpoint_past_a_partially_handled_tx_once_its_transfers_are_handled() {
 		new_test_ext().execute_with(|| {
 			let tx = McTxHash([2; 32]);
-			DataCheckpoint::<Test>::put(BridgeDataCheckpoint::PartialTx {
-				tx,
-				transfers_processed: 1,
-			});
+			DataCheckpoint::<Test>::put(BridgeDataCheckpoint::TxReserveTransfer(tx));
 			let transfers: BoundedVec<_, MaxTransfersPerBlock> =
 				bounded_vec![BridgeTransferV1 { amount: 300, mc_tx_hash: tx, recipient: Invalid }];
 
@@ -265,6 +221,31 @@ mod handle_transfers {
 
 			assert_eq!(handled_transfers(), transfers.to_vec());
 			assert_eq!(DataCheckpoint::<Test>::get(), Some(final_checkpoint()));
+		})
+	}
+
+	#[test]
+	fn records_a_handled_reserve_transfer_when_the_ics_transfer_of_its_tx_fails() {
+		new_test_ext().execute_with(|| {
+			let tx = McTxHash([2; 32]);
+			DataCheckpoint::<Test>::put(data_checkpoint());
+			let transfers: BoundedVec<_, MaxTransfersPerBlock> = bounded_vec![
+				BridgeTransferV1 { amount: 200, mc_tx_hash: tx, recipient: Reserve },
+				BridgeTransferV1 { amount: 300, mc_tx_hash: tx, recipient: Invalid },
+			];
+			reject(&transfers[1]);
+
+			assert_ok!(Bridge::handle_transfers(
+				RuntimeOrigin::none(),
+				transfers.clone(),
+				final_checkpoint()
+			));
+
+			assert_eq!(handled_transfers(), transfers[..1].to_vec());
+			assert_eq!(
+				DataCheckpoint::<Test>::get(),
+				Some(BridgeDataCheckpoint::TxReserveTransfer(tx))
+			);
 		})
 	}
 

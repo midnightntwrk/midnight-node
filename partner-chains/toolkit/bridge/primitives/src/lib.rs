@@ -246,6 +246,25 @@ impl<RecipientAddress> BridgeTransferV1<RecipientAddress> {
 	pub fn new_invalid(mc_tx_hash: McTxHash, amount: u64) -> Self {
 		Self { mc_tx_hash, amount, recipient: TransferRecipient::Invalid }
 	}
+
+	/// Checkpoint that is reached once this transfer has been processed
+	///
+	/// If there is a Cardano Tx that carries *reserve transfer* and *ICS transfer* then
+	/// it is important that node presents *reserve transfer* first.
+	///
+	/// For a transaction that has *only* a reserve transfer this returns the looser
+	/// [BridgeDataCheckpoint::TxReserveTransfer] instead of [BridgeDataCheckpoint::Tx]. That is
+	/// safe, because such a transaction is presented again with its reserve transfer left out,
+	/// which leaves nothing of it to process. It only costs reading one Cardano transaction again.
+	/// This is a conscious trade-off in favor of code simplicity over marginal performance gain.
+	pub fn checkpoint(&self) -> BridgeDataCheckpoint {
+		match self.recipient {
+			TransferRecipient::Reserve => BridgeDataCheckpoint::TxReserveTransfer(self.mc_tx_hash),
+			TransferRecipient::Address { .. } | TransferRecipient::Invalid => {
+				BridgeDataCheckpoint::Tx(self.mc_tx_hash)
+			},
+		}
+	}
 }
 
 /// Details of bridge transfer recipient
@@ -312,11 +331,11 @@ pub enum TokenBridgeInherentDataProvider<RecipientAddress> {
 
 /// Value specifying the point in time up to which bridge transfers have been processed
 ///
-/// This type is an enum wrapping a block number, a transaction, or a transaction together with
-/// a number of its transfers, to handle the case where all transfers up to a block have been
-/// handled, the case where there were more transfers than the limit allows and observability
-/// needs to pick up after the last transaction that could be observed, and the case where
-/// processing stopped in the middle of a transaction's transfers
+/// A Cardano transaction yields at most two transfers — a reserve transfer followed by an ICS
+/// transfer, see [BridgeTransferV1::checkpoint_reached] — so processing can stop either between
+/// transactions or between those two transfers of one transaction. The variants of this type
+/// identify the last transfer that has been processed at the granularity needed for each of these
+/// cases, or the last Cardano block whose transfers are all processed.
 #[derive(
 	Clone, Debug, Encode, Decode, DecodeWithMemTracking, TypeInfo, PartialEq, Eq, MaxEncodedLen,
 )]
@@ -325,18 +344,13 @@ pub enum BridgeDataCheckpoint {
 	Tx(McTxHash),
 	/// Cardano block up to which data has been processed
 	Block(McBlockNumber),
-	/// A transaction of which only some transfers have been processed
+	/// A transaction of which only the reserve transfer has been processed
 	///
-	/// One Cardano transaction can result in more than one transfer, and processing them can
-	/// stop in the middle of such a transaction. This checkpoint keeps the transaction as the
-	/// resume point and records how many of its transfers are already done, so that the
-	/// observability layer can leave those out when it presents the transaction again.
-	PartialTx {
-		/// The partially processed transaction
-		tx: McTxHash,
-		/// Number of this transaction's transfers that have already been processed
-		transfers_processed: u16,
-	},
+	/// The ICS transfer of that transaction is still to be processed, so the observability layer
+	/// presents the transaction again, with its reserve transfer left out. A transaction that has
+	/// no ICS transfer is then presented with no transfers at all, which is why this checkpoint is
+	/// also a valid, if not the tightest, way to point at a fully processed transaction.
+	TxReserveTransfer(McTxHash),
 }
 
 /// Interface for data sources that can be used by [TokenBridgeInherentDataProvider]
@@ -345,8 +359,12 @@ pub enum BridgeDataCheckpoint {
 pub trait TokenBridgeDataSource<RecipientAddress>: Send + Sync {
 	/// Fetches at most `max_transfers` of token bridge transfers after `data_checkpoint` up to `current_mc_block`
 	///
-	/// A [BridgeDataCheckpoint::PartialTx] checkpoint includes the transaction it points at,
-	/// minus the transfers of it that have already been processed.
+	/// A [BridgeDataCheckpoint::TxReserveTransfer] checkpoint includes the transaction it points
+	/// at, minus its reserve transfer, which has already been processed.
+	///
+	/// Transfers are returned in the order they were made and can be cut off at any point, also
+	/// between the two transfers of one Cardano transaction, so any `max_transfers` limit of at
+	/// least one allows processing to progress.
 	async fn get_transfers(
 		&self,
 		main_chain_scripts: MainChainScripts,

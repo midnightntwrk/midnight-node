@@ -635,12 +635,11 @@ pub(crate) enum ResolvedBridgeDataCheckpoint {
 		block_number: BlockNumber,
 		tx_ix: TxIndexInBlock,
 	},
-	/// A transaction that has to be returned again, without its first `transfers_processed`
-	/// transfers, which have already been processed by the runtime.
-	PartialTx {
+	/// A transaction that has to be returned again, without its reserve transfer, which has
+	/// already been processed by the runtime.
+	TxReserveTransfer {
 		block_number: BlockNumber,
 		tx_ix: TxIndexInBlock,
-		transfers_processed: u16,
 	},
 	Block {
 		number: BlockNumber,
@@ -653,17 +652,7 @@ impl ResolvedBridgeDataCheckpoint {
 		match self {
 			ResolvedBridgeDataCheckpoint::Block { number } => *number,
 			ResolvedBridgeDataCheckpoint::Tx { block_number, .. } => *block_number,
-			ResolvedBridgeDataCheckpoint::PartialTx { block_number, .. } => *block_number,
-		}
-	}
-
-	/// Number of transfers to leave out of the first transaction returned
-	pub(crate) fn transfers_to_skip(&self) -> u16 {
-		match self {
-			ResolvedBridgeDataCheckpoint::PartialTx { transfers_processed, .. } => {
-				*transfers_processed
-			},
-			_ => 0,
+			ResolvedBridgeDataCheckpoint::TxReserveTransfer { block_number, .. } => *block_number,
 		}
 	}
 }
@@ -706,12 +695,12 @@ pub(crate) async fn get_bridge_txs(
 	native_token: Asset,
 	checkpoint: ResolvedBridgeDataCheckpoint,
 	to_block: BlockNumber,
-	max_transfers: Option<u32>,
+	max_txs: Option<u32>,
 ) -> Result<Vec<BridgeTx>, SqlxError> {
 	use partner_chains_plutus_data::bridge::TOKEN_TRANSFER_METADATUM_KEY;
 	use sqlx::QueryBuilder;
 
-	let max_rows = max_transfers.as_ref().map(ToString::to_string).unwrap_or("null".into());
+	let max_rows = max_txs.as_ref().map(ToString::to_string).unwrap_or("null".into());
 
 	let checkpoint_limit = match checkpoint {
 		ResolvedBridgeDataCheckpoint::Block { number } => {
@@ -720,8 +709,9 @@ pub(crate) async fn get_bridge_txs(
 		ResolvedBridgeDataCheckpoint::Tx { block_number, tx_ix } => {
 			format!("(block.block_no, tx.block_index) > ({}, {})", block_number.0, tx_ix.0)
 		},
-		// The transaction itself still has transfers left to process, so it is included.
-		ResolvedBridgeDataCheckpoint::PartialTx { block_number, tx_ix, .. } => {
+		// The transaction itself may still have its ICS transfer left to process, so it is
+		// included. Its reserve transfer is filtered out by the caller.
+		ResolvedBridgeDataCheckpoint::TxReserveTransfer { block_number, tx_ix } => {
 			format!("(block.block_no, tx.block_index) >= ({}, {})", block_number.0, tx_ix.0)
 		},
 	};
