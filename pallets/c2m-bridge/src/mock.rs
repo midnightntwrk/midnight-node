@@ -39,6 +39,11 @@ pub mod mock_pallet {
 			TransfersCount::<Test>::put(count + 1);
 			Ok([count; 32])
 		}
+
+		fn is_block_limit_exceeded(_err: &DispatchError) -> bool {
+			// This mock records rather than applies, so it never fails at all.
+			false
+		}
 	}
 
 	impl<T> MinBridgeAmountProvider for Pallet<T> {

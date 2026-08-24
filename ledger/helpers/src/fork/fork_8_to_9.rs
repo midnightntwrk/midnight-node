@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use tokio::sync::Mutex as MutexTokio;
 
-use crate::state_translation_v8_to_v9::StateTranslationTable;
 use base_crypto::cost_model::CostDuration;
 use ledger_storage_ledger_8::state_translation::TypedTranslationState;
+use v8_to_v9_state_translation::StateTranslationTable;
 
 type Db8 = crate::ledger_8::DefaultDB;
 type Db9 = crate::ledger_9::DefaultDB;
@@ -114,7 +114,7 @@ pub fn fork_context_8_to_9(
 				})
 			})
 			.transpose();
-		let new_wallet = Wallet {
+		let mut new_wallet = Wallet {
 			root_seed: v.root_seed.as_ref().map(|s| {
 				WalletSeed::try_from(s.as_bytes())
 					.expect("wallet seed different length between versions")
@@ -135,6 +135,12 @@ pub fn fork_context_8_to_9(
 			dust: (*old_to_new_sp::<_, DustWallet<Db8>>(crate::ledger_8::Sp::new(v.dust.clone()))?)
 				.clone(),
 		};
+		// The fork wipes the on-chain dust state (see the `v8-to-v9-state-translation`
+		// crate), so the wallet's view of its dust — UTxOs, generation info, merkle
+		// witnesses — is stale the moment we cross it.
+		// Reset it to a freshly-derived state under the v9 dust parameters; dust
+		// re-accrues from the post-fork generation entries the chain replays.
+		new_wallet.dust.wipe_local_state(&ledger_state.parameters);
 		let new_key: WalletSeed = old_to_new_ser_untagged(&k)?;
 		wallets.insert(new_key, new_wallet);
 	}

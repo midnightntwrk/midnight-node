@@ -100,6 +100,7 @@ pub async fn fetch_zswap_state(
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = source.ledger_state_db.clone();
 	let fetch_cache = source.fetch_cache.clone();
+	let replay_checkpoint_interval = source.replay_checkpoint_interval;
 	let source = TxGenerator::source(source, dry_run, rpc_request_timeout).await?;
 	if dry_run {
 		log::info!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
@@ -116,23 +117,11 @@ pub async fn fetch_zswap_state(
 		&[wallet_seed.clone()],
 		&received_tx,
 		wallet_cache.as_deref(),
+		replay_checkpoint_interval,
 	)
 	.await;
 
 	Ok(fork_ctx.dispatch(
-		|ctx| {
-			let seed_v7 =
-				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(
-					wallet_seed.clone(),
-				);
-			let cpk_v7 =
-				crate::tx_generator::builder::builders::ledger_7::type_convert::convert_coin_public_key(
-					coin_public,
-				);
-			crate::commands::fork::ledger_7::generate_intent::fetch_zswap_state_from_context(
-				&ctx, seed_v7, cpk_v7,
-			)
-		},
 		|ctx| {
 			let seed_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(

@@ -165,11 +165,6 @@ pub fn deserialize_transactions(
 				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
 				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
 			},
-			LedgerVersion::Ledger7 => {
-				use crate::commands::fork::ledger_7::show_transaction::ShowTransaction;
-				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
-				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
-			},
 		})
 		.collect()
 }

@@ -29,6 +29,7 @@ pub async fn execute(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
+	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 	let source = TxGenerator::source(args.source, args.dry_run, rpc_request_timeout)
 		.await
 		.expect("failed to init tx source");
@@ -42,15 +43,15 @@ pub async fn execute(
 	let blocks = source.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 
-	let fork_ctx = build_fork_aware_context_cached(&[], &blocks, wallet_cache.as_deref()).await;
+	let fork_ctx = build_fork_aware_context_cached(
+		&[],
+		&blocks,
+		wallet_cache.as_deref(),
+		replay_checkpoint_interval,
+	)
+	.await;
 
 	let serialized_state = fork_ctx.dispatch(
-		|ctx| {
-			crate::commands::fork::ledger_7::contract_state::get_contract_state(
-				&ctx,
-				args.contract_address,
-			)
-		},
 		|ctx| {
 			crate::commands::fork::ledger_8::contract_state::get_contract_state(
 				&ctx,
