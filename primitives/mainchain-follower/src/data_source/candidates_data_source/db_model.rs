@@ -14,17 +14,16 @@
 use cardano_serialization_lib::{
 	PlutusData, PlutusDatumSchema::DetailedSchema, encode_json_value_to_plutus_datum,
 };
-use db_sync_sqlx::{Address, BlockNumber, EpochNumber, SlotNumber, TxIndex, TxIndexInBlock};
-use log::info;
+use db_sync_sqlx::{
+	Address, BlockNumber, EpochNumber, ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig,
+	ResolvedDbSyncTxInputMode, SlotNumber, TxIndex, TxIndexInBlock,
+};
 use sidechain_domain::{McTxHash, UtxoId, UtxoIndex};
 use sqlx::error::BoxDynError;
 use sqlx::postgres::PgTypeInfo;
 use sqlx::types::JsonValue;
-use sqlx::{Decode, PgPool, Pool, Postgres};
-use std::cell::OnceCell;
+use sqlx::{Decode, Pool, Postgres};
 use std::str::FromStr;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Wraps PlutusData to provide sqlx::Decode and sqlx::Type implementations
 #[derive(Debug, Clone, PartialEq)]
@@ -88,70 +87,6 @@ impl From<SqlxError> for DataSourceError {
 impl From<SqlxError> for Box<dyn std::error::Error + Send + Sync> {
 	fn from(e: SqlxError) -> Self {
 		e.0.into()
-	}
-}
-
-/// Db-Sync `tx_in.value` configuration field
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub(crate) enum TxInConfiguration {
-	/// Transaction inputs are linked using `tx_in` table
-	Enabled,
-	/// Transaction inputs are linked using `consumed_by_tx_id` column in `tx_out` table
-	Consumed,
-}
-
-impl TxInConfiguration {
-	pub(crate) async fn from_connection(pool: &Pool<Postgres>) -> Result<Self, SqlxError> {
-		let tx_in_exists = sqlx::query_scalar::<_, i64>(
-			"select count(*) from information_schema.tables where table_name = 'tx_in';",
-		)
-		.fetch_one(pool)
-		.await? == 1;
-
-		if !tx_in_exists {
-			return Ok(Self::Consumed);
-		}
-
-		let tx_in_populated = sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM tx_in);")
-			.fetch_one(pool)
-			.await?;
-
-		if tx_in_populated {
-			return Ok(Self::Enabled);
-		}
-
-		Ok(Self::Consumed)
-	}
-}
-
-/// Structure that queries, caches and provides Db-Sync configuration
-pub struct DbSyncConfigurationProvider {
-	/// Postgres connection pool
-	pub(crate) pool: PgPool,
-	/// Transaction input configuration used by Db-Sync
-	pub(crate) tx_in_config: Arc<Mutex<OnceCell<TxInConfiguration>>>,
-}
-
-impl DbSyncConfigurationProvider {
-	pub(crate) fn new(pool: PgPool) -> Self {
-		Self { tx_in_config: Arc::new(Mutex::new(OnceCell::new())), pool }
-	}
-
-	pub(crate) async fn get_tx_in_config(
-		&self,
-	) -> std::result::Result<TxInConfiguration, DataSourceError> {
-		let lock = self.tx_in_config.lock().await;
-		if let Some(tx_in_config) = lock.get() {
-			Ok(*tx_in_config)
-		} else {
-			let tx_in_config = TxInConfiguration::from_connection(&self.pool).await?;
-			lock.set(tx_in_config).map_err(|_| {
-				DataSourceError::InternalDataSourceError(
-					"Failed to set tx_in_config in DbSyncConfigurationProvider".into(),
-				)
-			})?;
-			Ok(tx_in_config)
-		}
 	}
 }
 
@@ -293,7 +228,7 @@ pub(crate) async fn get_token_utxo_for_epoch(
         	origin_block.block_no AS tx_block_no,
         	origin_block.slot_no  AS tx_slot_no,
         	origin_tx.block_index AS tx_block_index,
-        	datum.value           AS datum
+			datum.value::jsonb    AS datum
         FROM ma_tx_out
         INNER JOIN tx_out               ON ma_tx_out.tx_out_id = tx_out.id
         INNER JOIN tx origin_tx         ON tx_out.tx_id = origin_tx.id
@@ -339,14 +274,14 @@ pub(crate) async fn get_utxos_for_address(
 	pool: &Pool<Postgres>,
 	address: &Address,
 	block: BlockNumber,
-	tx_in_configuration: TxInConfiguration,
+	config: ResolvedDbSyncQueryConfig,
 ) -> Result<Vec<MainchainTxOutput>, SqlxError> {
-	match tx_in_configuration {
-		TxInConfiguration::Enabled => {
-			get_utxos_for_address_tx_in_enabled(pool, address, block).await
+	match config.tx_input_mode {
+		ResolvedDbSyncTxInputMode::TxIn => {
+			get_utxos_for_address_tx_in_enabled(pool, address, block, config.address_mode).await
 		},
-		TxInConfiguration::Consumed => {
-			get_utxos_for_address_tx_in_consumed(pool, address, block).await
+		ResolvedDbSyncTxInputMode::Consumed => {
+			get_utxos_for_address_tx_in_consumed(pool, address, block, config.address_mode).await
 		},
 	}
 }
@@ -355,18 +290,21 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
 	pool: &Pool<Postgres>,
 	address: &Address,
 	block: BlockNumber,
+	address_mode: ResolvedDbSyncAddressMode,
 ) -> Result<Vec<MainchainTxOutput>, SqlxError> {
-	let query = "SELECT
+	let (address_join, address_column) = address_query_parts(address_mode);
+	let query = format!("SELECT
           		origin_tx.hash as utxo_id_tx_hash,
           		tx_out.index as utxo_id_index,
           		origin_block.block_no as tx_block_no,
           		origin_block.slot_no as tx_slot_no,
           		origin_block.epoch_no as tx_epoch_no,
           		origin_tx.block_index as tx_index_in_block,
-          		tx_out.address,
-          		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index)) as tx_inputs
+					{address_column} as address,
+					datum.value::jsonb as datum,
+					array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_in.tx_out_index)) as tx_inputs
 			FROM tx_out
+			{address_join}
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
           	LEFT JOIN tx_in consuming_tx_in  ON tx_out.tx_id = consuming_tx_in.tx_out_id AND tx_out.index = consuming_tx_in.tx_out_index
@@ -377,7 +315,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
           	LEFT JOIN tx consumes_tx         ON consumes_tx.id = consumes_tx_out.tx_id
           	LEFT JOIN datum                  ON tx_out.data_hash = datum.hash
           	WHERE
-          		tx_out.address = $1 AND origin_block.block_no <= $2
+				{address_column} = $1 AND origin_block.block_no <= $2
           		AND (consuming_tx_in.id IS NULL OR consuming_block.block_no > $2)
           		GROUP BY (
 					utxo_id_tx_hash,
@@ -386,10 +324,10 @@ pub(crate) async fn get_utxos_for_address_tx_in_enabled(
 					tx_slot_no,
 					tx_epoch_no,
 					tx_index_in_block,
-					tx_out.address,
+					{address_column},
 					datum
-				)";
-	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(query)
+				)");
+	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(&query)
 		.bind(&address.0)
 		.bind(block)
 		.fetch_all(pool)
@@ -403,18 +341,22 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 	pool: &Pool<Postgres>,
 	address: &Address,
 	block: BlockNumber,
+	address_mode: ResolvedDbSyncAddressMode,
 ) -> Result<Vec<MainchainTxOutput>, SqlxError> {
-	let query = "SELECT
+	let (address_join, address_column) = address_query_parts(address_mode);
+	let query = format!(
+		"SELECT
           		origin_tx.hash as utxo_id_tx_hash,
           		tx_out.index as utxo_id_index,
           		origin_block.block_no as tx_block_no,
           		origin_block.slot_no as tx_slot_no,
           		origin_block.epoch_no as tx_epoch_no,
           		origin_tx.block_index as tx_index_in_block,
-          		tx_out.address,
-          		datum.value as datum,
-          		array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index)) as tx_inputs
+					{address_column} as address,
+					datum.value::jsonb as datum,
+					array_agg(concat_ws('#', encode(consumes_tx.hash, 'hex'), consumes_tx_out.index)) as tx_inputs
 			FROM tx_out
+			{address_join}
 			INNER JOIN tx    origin_tx       ON tx_out.tx_id = origin_tx.id
 			INNER JOIN block origin_block    ON origin_tx.block_id = origin_block.id
 			LEFT JOIN tx    consuming_tx     ON tx_out.consumed_by_tx_id = consuming_tx.id
@@ -423,7 +365,7 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 			LEFT JOIN tx consumes_tx         ON consumes_tx.id = consumes_tx_out.tx_id
 			LEFT JOIN datum                  ON tx_out.data_hash = datum.hash
           	WHERE
-          		tx_out.address = $1 AND origin_block.block_no <= $2
+				{address_column} = $1 AND origin_block.block_no <= $2
           		AND (tx_out.consumed_by_tx_id IS NULL OR consuming_block.block_no > $2)
           		GROUP BY (
 					utxo_id_tx_hash,
@@ -432,10 +374,11 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 					tx_slot_no,
 					tx_epoch_no,
 					tx_index_in_block,
-					tx_out.address,
+					{address_column},
 					datum
-				)";
-	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(query)
+				)"
+	);
+	let rows = sqlx::query_as::<_, MainchainTxOutputRow>(&query)
 		.bind(&address.0)
 		.bind(block)
 		.fetch_all(pool)
@@ -445,52 +388,12 @@ pub(crate) async fn get_utxos_for_address_tx_in_consumed(
 	Ok(result?)
 }
 
-/// Used by `get_token_utxo_for_epoch` (CandidatesDataSourceImpl),
-pub(crate) async fn create_idx_ma_tx_out_ident(pool: &Pool<Postgres>) -> Result<(), SqlxError> {
-	let exists = index_exists(pool, "idx_ma_tx_out_ident").await?;
-	if exists {
-		info!("Index 'idx_ma_tx_out_ident' already exists");
-	} else {
-		let sql = "CREATE INDEX IF NOT EXISTS idx_ma_tx_out_ident ON ma_tx_out(ident)";
-		info!("Executing '{}', this might take a while", sql);
-		sqlx::query(sql).execute(pool).await?;
-		info!("Index 'idx_ma_tx_out_ident' has been created");
+fn address_query_parts(address_mode: ResolvedDbSyncAddressMode) -> (&'static str, &'static str) {
+	match address_mode {
+		ResolvedDbSyncAddressMode::Inline => ("", "tx_out.address"),
+		ResolvedDbSyncAddressMode::AddressTable => (
+			"INNER JOIN address tx_out_address ON tx_out_address.id = tx_out.address_id",
+			"tx_out_address.address",
+		),
 	}
-	Ok(())
-}
-
-/// Used by multiple queries across functionalities.
-pub(crate) async fn create_idx_tx_out_address(pool: &Pool<Postgres>) -> Result<(), SqlxError> {
-	let exists = index_exists(pool, "idx_tx_out_address").await?;
-	if exists {
-		info!("Index 'idx_tx_out_address' already exists");
-	} else {
-		let sql = "CREATE INDEX IF NOT EXISTS idx_tx_out_address ON tx_out USING hash (address)";
-		info!("Executing '{}', this might take a long time", sql);
-		sqlx::query(sql).execute(pool).await?;
-		info!("Index 'idx_tx_out_address' has been created");
-	}
-	Ok(())
-}
-
-pub(crate) async fn create_idx_ma_tx_out_id_ident(pool: &Pool<Postgres>) -> Result<(), SqlxError> {
-	let exists = index_exists(pool, "idx_ma_tx_out_id_ident").await?;
-	if exists {
-		info!("Index 'idx_ma_tx_out_id_ident' already exists");
-	} else {
-		let sql = "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ma_tx_out_id_ident ON ma_tx_out (tx_out_id, ident)";
-		info!("Executing '{}', this might take a while", sql);
-		sqlx::query(sql).execute(pool).await?;
-		info!("Index 'idx_ma_tx_out_id_ident' has been created");
-	}
-	Ok(())
-}
-
-/// Check if the index exists.
-async fn index_exists(pool: &Pool<Postgres>, index_name: &str) -> Result<bool, sqlx::Error> {
-	sqlx::query("select * from pg_indexes where indexname = $1")
-		.bind(index_name)
-		.fetch_all(pool)
-		.await
-		.map(|rows| rows.len() == 1)
 }

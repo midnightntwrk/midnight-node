@@ -11,7 +11,7 @@ A practical guide for SDETs working on `midnight-node`.
 - A **Substrate-based** blockchain that operates as a **Cardano Partner Chain**.
 - Privacy-preserving: uses **zero-knowledge proofs** for shielded transactions.
 - Consensus: **AURA** (6 s block time) + **GRANDPA** (finality) + **BEEFY** (bridge security).
-- Reads from Cardano (mainchain) via **db-sync** through the **partner-chains** follower — the node consumes Cardano data but never writes back.
+- Reads from Cardano (mainchain) via **db-sync** through the **partner-chains** follower — the node never changes indexed Cardano rows. The default `db_sync_schema_mode=apply` can create runtime indexes, and cNight genesis commands can also tune table autovacuum settings; use `verify` with an operator-managed read-only database role.
 
 ### 1.2 Layout (the parts you'll touch most)
 
@@ -677,4 +677,3 @@ Comment on the PR to trigger:
 
 
 ---
-

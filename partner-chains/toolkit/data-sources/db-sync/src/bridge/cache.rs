@@ -156,8 +156,46 @@ impl CachedTokenBridgeDataSourceImpl {
 		blocks: Arc<BlockDataSourceImpl>,
 		cache_lookahead: u32,
 	) -> Self {
+		Self::new_with_db_sync_config(
+			pool,
+			metrics_opt,
+			blocks,
+			cache_lookahead,
+			DbSyncQueryConfig::default(),
+		)
+	}
+
+	/// Creates a cached token bridge data source for the selected db-sync query layout.
+	pub fn new_with_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<McFollowerMetrics>,
+		blocks: Arc<BlockDataSourceImpl>,
+		cache_lookahead: u32,
+		query_config: DbSyncQueryConfig,
+	) -> Self {
 		Self {
-			db_sync_config: DbSyncConfigurationProvider::new(pool.clone()),
+			db_sync_config: DbSyncConfigurationProvider::new_with_config(
+				pool.clone(),
+				query_config,
+			),
+			pool,
+			metrics_opt,
+			blocks,
+			cache: Arc::new(Mutex::new(TokenUtxoCache::new())),
+			cache_lookahead,
+		}
+	}
+
+	/// Creates a cached token bridge data source with an already validated db-sync layout.
+	pub fn new_with_resolved_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<McFollowerMetrics>,
+		blocks: Arc<BlockDataSourceImpl>,
+		cache_lookahead: u32,
+		config: ResolvedDbSyncQueryConfig,
+	) -> Self {
+		Self {
+			db_sync_config: DbSyncConfigurationProvider::from_resolved(pool.clone(), config),
 			pool,
 			metrics_opt,
 			blocks,
@@ -199,7 +237,7 @@ impl CachedTokenBridgeDataSourceImpl {
 			min(to_block.saturating_add(self.cache_lookahead), latest_block);
 
 		let utxos = get_bridge_txs(
-			self.db_sync_config.get_tx_in_config().await?,
+			self.db_sync_config.get_config().await?,
 			&self.pool,
 			&main_chain_scripts.illiquid_circulation_supply_validator_address.clone().into(),
 			&main_chain_scripts.reserve_validator_address.clone().into(),

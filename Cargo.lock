@@ -3045,7 +3045,9 @@ name = "db-sync-sqlx"
 version = "1.8.1"
 dependencies = [
  "hex",
+ "log",
  "num-traits",
+ "serde",
  "sidechain-domain",
  "sqlx",
 ]
@@ -7836,6 +7838,7 @@ dependencies = [
  "blake2b_simd",
  "clap",
  "config",
+ "db-sync-sqlx",
  "derive-new",
  "documented",
  "frame-benchmarking",
@@ -8494,6 +8497,7 @@ dependencies = [
  "sp-runtime",
  "sqlx",
  "substrate-prometheus-endpoint",
+ "testcontainers-modules",
  "thiserror 2.0.18",
  "tokio",
 ]

@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use db_sync_sqlx::{DbSyncAddressMode, DbSyncSchemaMode, DbSyncTxInputMode};
 use documented::{Documented, DocumentedFields as _};
 use serde::{Deserialize, Serialize};
 use serde_valid::{Validate, validation};
@@ -83,6 +84,21 @@ pub struct MidnightCfg {
 	/// see partner-chains ConnectionConfig
 	#[doc_tag(secret)]
 	pub db_sync_postgres_connection_string: Option<String>,
+
+	/// Transaction-input representation used by db-sync queries: auto, tx_in, or consumed.
+	/// Explicit configuration is recommended for production deployments.
+	#[serde(default)]
+	pub db_sync_tx_input_mode: DbSyncTxInputMode,
+
+	/// Address representation used by db-sync queries: inline or address_table.
+	#[serde(default)]
+	pub db_sync_address_mode: DbSyncAddressMode,
+
+	/// Database schema management: apply changes, verify them read-only, or skip both.
+	/// This controls all Midnight-issued CREATE INDEX and ALTER TABLE statements.
+	/// Query-layout validation is always performed.
+	#[serde(default)]
+	pub db_sync_schema_mode: DbSyncSchemaMode,
 
 	/// see partner-chains CandidateDataSourceCacheConfig and DbSyncBlockDataSourceConfig
 	pub cardano_security_parameter: Option<u32>,
@@ -271,5 +287,13 @@ mod tests {
 			err.to_string().contains("mc__epoch_duration_millis"),
 			"validation error should name the offending parameter, got: {err}"
 		);
+	}
+
+	#[test]
+	fn db_sync_configuration_defaults_preserve_existing_behaviour() {
+		let cfg = MidnightCfg::default();
+		assert_eq!(cfg.db_sync_tx_input_mode, DbSyncTxInputMode::Auto);
+		assert_eq!(cfg.db_sync_address_mode, DbSyncAddressMode::Inline);
+		assert_eq!(cfg.db_sync_schema_mode, DbSyncSchemaMode::Apply);
 	}
 }
