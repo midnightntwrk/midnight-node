@@ -93,7 +93,15 @@ Replace with shaped placeholders — `<redacted:aws-key>`, not deletion — so t
 Well-known dev material (`//Alice`, the `dev` preset, `localhost:9944`) is not a secret; leaving it
 intact is what makes the steps runnable.
 
-Check for duplicates first: `gh issue list --search "<key error phrase>" --state all --limit 20`
+Check for duplicates first. Search **plain words only** — 3–6 distinctive terms, no punctuation:
+
+```bash
+gh issue list --search "no rust panics register dust" --state all --limit 20
+```
+
+Never paste a raw log line in. GitHub tokenizes the query, so `$`, backticks and quotes add nothing
+to recall — while a phrase lifted verbatim from a panic can carry `$(…)`, `` ` `` or `$VAR` that
+the shell expands before `gh` ever sees it.
 
 ## 2. Title
 
@@ -105,6 +113,10 @@ Good: `toolkit: panic when registering a DUST address — fails 'No Rust Panics 
 Good: `[HF v8→v9] Upgrade-block events cannot be decoded with post-upgrade metadata`
 Bad: `toolkit: panic at register_dust_address.rs:176:40` (code location, not an action)
 Bad: `Bug in toolkit` (no symptom)
+
+`--title` is a shell argument too: keep `$`, backticks and double quotes out of it. Single quotes
+around a quoted log fragment are fine — see the first Good example. The body is exempt because it
+goes through `-F <file>` (§3).
 
 ## 3. Body
 
