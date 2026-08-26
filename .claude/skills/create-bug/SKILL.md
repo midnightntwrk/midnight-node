@@ -27,6 +27,17 @@ Do **not** run `gh issue create`. Instead:
 **The user files it, never you.** If it is unclear whether the bug is exploitable, treat it as a
 vulnerability and use the private channel.
 
+## Draft, or file?
+
+This skill is also triggered by "write up that failure as a bug" — which asks for **text**, not a
+GitHub issue. Filing is public and notifies watchers; it is not yours to decide.
+
+- **Explicit filing verb** ("file", "create", "open", "raise an issue") → do the whole flow.
+- **Anything else** — "write up", "draft", "what would the issue look like" → produce the body
+  file, show it, **stop**. Do not run `gh issue create`.
+- **Unclear** → ask before filing. Drafting first costs nothing; an unwanted issue has to be
+  closed and explained.
+
 ## Filing a public bug
 
 Issue **types** are enabled on `midnightntwrk/midnight-node` (`Task`, `Bug`, `Feature`).
