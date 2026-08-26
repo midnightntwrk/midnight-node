@@ -80,6 +80,19 @@ logs, test output) or ask. Minimum bar:
 
 If something is unknown, write "unknown" in the issue rather than guessing.
 
+**Redact before you draft, not before you file.** "Verbatim" applies to the error, not to whatever
+else shared the line. The STOP gate catches bugs *about* secrets; it does not catch a credential
+that happened to be in an otherwise ordinary log. Strip from both commands and output:
+
+- seed phrases, mnemonics, `--seed` values, keystore contents, session and signing keys
+- AWS keys and session tokens, `.envrc.local` values, any environment dump
+- GitHub tokens (`ghp_…`, `github_pat_…`)
+- non-public RPC/node URLs, internal hostnames and IPs
+
+Replace with shaped placeholders — `<redacted:aws-key>`, not deletion — so the repro still reads.
+Well-known dev material (`//Alice`, the `dev` preset, `localhost:9944`) is not a secret; leaving it
+intact is what makes the steps runnable.
+
 Check for duplicates first: `gh issue list --search "<key error phrase>" --state all --limit 20`
 
 ## 2. Title
@@ -117,7 +130,7 @@ Follow `.github/ISSUE_TEMPLATE/bug-report.md` — its four sections, plus a work
 
 ### Actual behavior
 
-<what happened, with the verbatim log/error in a fenced block>
+<what happened, with the verbatim log/error in a fenced block — redacted per step 1>
 
 ### Workaround
 
