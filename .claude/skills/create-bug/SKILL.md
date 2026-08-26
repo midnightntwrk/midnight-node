@@ -1,9 +1,33 @@
 ---
 name: create-bug
-description: File a bug issue in midnight-node with GitHub's `type: Bug` field (not the `bug` label). Use when the user asks to create/file/report a bug or open a bug issue, or wants a bug write-up from a failure they just hit.
+description: File a bug issue in midnight-node with GitHub's `type: Bug` field (not the `bug` label). Use when the user asks to create/file/report a bug or open a bug issue, or wants a bug write-up from a failure they just hit. Security vulnerabilities are routed to private reporting, never a public issue.
 ---
 
 # Create a bug issue
+
+## STOP — is it a security vulnerability?
+
+Answer this before running anything. If the bug lets someone steal or mint funds, forge or censor
+transactions, break a privacy guarantee (deanonymize a user, leak witness data), halt or fork the
+chain, escalate privileges, or expose keys and secrets — **it does not go in a public issue.**
+
+`SECURITY.md` requires GitHub private vulnerability reporting. Filing publicly *is* the disclosure.
+
+Do **not** run `gh issue create`. Instead:
+
+1. Tell the user plainly that this looks like a vulnerability and the public tracker is the wrong
+   channel.
+2. Draft the write-up to a local file — it maps onto the advisory form. Note that a private report
+   *wants* the source pointers, root cause, PoC and impact analysis that a public bug report omits;
+   `SECURITY.md` lists the fields it asks for.
+3. Point the user at
+   <https://github.com/midnightntwrk/midnight-node/security/advisories/new>
+   (fallback: <security@midnight.foundation>).
+
+**The user files it, never you.** If it is unclear whether the bug is exploitable, treat it as a
+vulnerability and use the private channel.
+
+## Filing a public bug
 
 Issue **types** are enabled on `midnightntwrk/midnight-node` (`Task`, `Bug`, `Feature`).
 Set the type — do **not** add the legacy `bug` label.
@@ -102,7 +126,8 @@ The type carries "this is a bug". Add only what you actually know:
 | `component:node`, `component:ledger`, `component:midnight-toolkit`, `component:contracts` | the affected component |
 | `origin:shielded`, `origin:mnf`, `origin:public` | who found it |
 | `bot:ai-assisted` | always, when you drafted the issue |
-| `ci`, `security`, `test`, `breaking-change` | if applicable |
+| `ci`, `test`, `breaking-change` | if applicable |
+| `security` | hardening or dependency work that is **already public** — never for an unreported vulnerability (see the STOP gate) |
 
 Do **not** add:
 
