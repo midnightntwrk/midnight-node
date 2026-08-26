@@ -1,6 +1,6 @@
 ---
 name: create-bug
-description: File a bug issue in midnight-node with GitHub's `type: Bug` field (not the `bug` label). Use when the user asks to create/file/report a bug or open a bug issue, or wants a bug write-up from a failure they just hit. Security vulnerabilities are routed to private reporting, never a public issue.
+description: "File a bug issue in midnight-node with GitHub's `type: Bug` field (not the `bug` label). Use when the user asks to create/file/report a bug or open a bug issue, or wants a bug write-up from a failure they just hit. Security vulnerabilities are routed to private reporting, never a public issue."
 ---
 
 # Create a bug issue
@@ -86,7 +86,7 @@ Bad: `Bug in toolkit` (no symptom)
 
 Follow `.github/ISSUE_TEMPLATE/bug-report.md` — its four sections, plus a workaround section:
 
-```markdown
+````markdown
 ### Context & versions
 
 - **Node:** `main` @ `<sha>` — `<version>`, `specVersion <n>`, ledger `<v>`
@@ -111,7 +111,7 @@ Follow `.github/ISSUE_TEMPLATE/bug-report.md` — its four sections, plus a work
 ### Workaround
 
 <what unblocks the user, with exact commands/settings — or `None known.`>
-```
+````
 
 Write the body to a temporary file and pass `-F <file>` rather than `--body`. Bug bodies contain
 backticks, quotes and `$` from log output; quoting rules for those differ between shells, and a
