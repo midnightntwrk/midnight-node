@@ -350,10 +350,13 @@ pub mod rpc {
 		contract_address: &[u8],
 		paths: &[Vec<base_crypto::fab::AlignedValue>],
 	) -> Result<Vec<Result<Vec<u8>, String>>, types::active_version::LedgerApiError> {
-		use latest::{Bridge, ledger_storage_local};
-		type Signature = base_crypto::signatures::Signature;
+		use latest::{Bridge, TransactionSignature, ledger_storage_local};
 		type Database = ledger_storage_local::db::ParityDb;
-		Bridge::<Signature, Database>::query_contract_state(state_key, contract_address, paths)
+		Bridge::<TransactionSignature, Database>::query_contract_state(
+			state_key,
+			contract_address,
+			paths,
+		)
 	}
 }
 
