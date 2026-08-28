@@ -28,5 +28,5 @@ diverge: `mod.rs` (crate aliases, `LEDGER_VERSION`, `CRATE_NAME`, the
 signature/verifier-key helpers), `ecdsa.rs`, `test_utilities_local.rs`, and the
 ledger-9-only `ecdsa_wallet_tests.rs`.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2074
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1768
