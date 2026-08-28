@@ -74,6 +74,25 @@ impl core::fmt::Display for GetRootError {
 	}
 }
 
+/// Returns true if `genesis_state` is a tagged-serialized `LedgerState` of *this*
+/// ledger version (i.e. its `midnight:ledger-state[vN]:` header tag matches this
+/// version's `LedgerState::tag()`).
+///
+/// Used to pick the correct version-specific seeder for the genesis arena when a
+/// node boots on a chain-spec produced by an older runtime (e.g. the ledger 8->9
+/// hardfork, where a ledger-9 node starts from a ledger-8 `ledger-state[v13]`
+/// genesis before the runtime upgrade migrates it to v9).
+#[cfg(feature = "std")]
+pub fn genesis_matches_this_version(genesis_state: &[u8]) -> bool {
+	use super::ledger_storage_local::DefaultDB;
+	let expected = <super::mn_ledger_local::structure::LedgerState<DefaultDB> as Tagged>::tag();
+	// `peek_tag` reads the serialized header tag without deserializing the body.
+	match super::midnight_serialize_local::peek_tag(&mut std::io::Cursor::new(genesis_state)) {
+		Ok(tag) => tag.as_str() == expected.as_ref(),
+		Err(_) => false,
+	}
+}
+
 pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRootError> {
 	// Get empty state key
 	use super::api::Ledger;
@@ -122,7 +141,6 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
-	use super::base_crypto_local::signatures::Signature;
 	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
 
 	let res = set_default_storage(|| {
@@ -136,7 +154,7 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	alloc_with_initial_state::<Signature, ParityDb>(genesis_state)
+	alloc_with_initial_state::<super::TransactionSignature, ParityDb>(genesis_state)
 }
 
 #[cfg(feature = "std")]
@@ -157,7 +175,6 @@ pub fn init_storage_paritydb_unified<
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
-	use super::base_crypto_local::signatures::Signature;
 	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
 
 	let res = set_default_storage(|| {
@@ -168,5 +185,7 @@ pub fn init_storage_paritydb_unified<
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	alloc_with_initial_state::<Signature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(genesis_state)
+	alloc_with_initial_state::<super::TransactionSignature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(
+		genesis_state,
+	)
 }

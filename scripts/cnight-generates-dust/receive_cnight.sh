@@ -19,11 +19,11 @@ export CARDANO_NODE_NETWORK_ID=42
 # pass "alice" or "bob" as parameter to this script
 
 # Get the collateral UTxO
-COLLATERAL=d1e3850679fafcea533f97eed4cdd58d563719f319d1e3c21f2225f8ef4f65a9#0
+COLLATERAL=9fe54a554cf9b490b95c17284237126807b98f0544742ea7f66ca8d604ce4a11#0
 
 # Pick the first UTxO on the wallet that is not a collateral.
 # THIS IS VERY ERROR PRONE AND I EXPECT IT TO BREAK EVENTUALLY
-UTXO=d1e3850679fafcea533f97eed4cdd58d563719f319d1e3c21f2225f8ef4f65a9#1
+UTXO=eb0c7e90d54c87cf19965225b71a27cf8a4fc77b88e858ed146f78feb3294037#1
 
 rm receive-cnight-$1.tx 2>/dev/null
 rm receive-cnight-$1-signed.tx 2>/dev/null
@@ -31,9 +31,9 @@ rm receive-cnight-$1-signed.tx 2>/dev/null
 # Build transaction body, fees included
 cardano-cli conway transaction build \
   --tx-in $UTXO \
-  --tx-out $(< payment-$1.addr)+"1500000 lovelace + 10 $(< cnight_policy.hash)" \
+  --tx-out $(< payment-$1.addr)+"1500000 lovelace + 10000000000 $(< cnight_policy.hash)" \
   --tx-in-collateral $COLLATERAL \
-  --mint="10 $(< cnight_policy.hash)" \
+  --mint="10000000000 $(< cnight_policy.hash)" \
   --mint-script-file cnight_policy.plutus \
   --mint-redeemer-value "{}" \
   --change-address $(< payment-$1.addr) \

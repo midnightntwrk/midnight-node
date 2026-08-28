@@ -188,14 +188,18 @@ pub struct ScriptExecutionPriceLimits {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
 /// Represents the cost models for different Plutus language versions.
+///
+/// A network's protocol parameters only carry cost models for the Plutus versions its
+/// genesis enables (e.g. the midnight local-env Cardano defines only v1 + v3), so each
+/// field defaults to empty rather than failing the whole protocol-parameters parse.
 pub struct PlutusCostModels {
-	#[serde(rename = "plutus:v1")]
+	#[serde(rename = "plutus:v1", default)]
 	/// Cost model for Plutus v1.
 	pub plutus_v1: Vec<i128>,
-	#[serde(rename = "plutus:v2")]
+	#[serde(rename = "plutus:v2", default)]
 	/// Cost model for Plutus v2.
 	pub plutus_v2: Vec<i128>,
-	#[serde(rename = "plutus:v3")]
+	#[serde(rename = "plutus:v3", default)]
 	/// Cost model for Plutus v3.
 	pub plutus_v3: Vec<i128>,
 }

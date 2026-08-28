@@ -11,24 +11,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! v0 -> v1 storage migration tests.
+//! Storage migration tests that need no ledger.
 //!
 //! Drives `SteppedMigration::step` directly on the mock runtime; the MBM
 //! framework is not exercised here. Uses `mock_with_capture` to avoid the
-//! ledger dependency — the migration only touches pallet storage.
+//! ledger dependency — so this covers the v0 -> v1 migration in full, and the
+//! parts of the v1 -> v2 dust replay that stop short of a ledger read (the rest
+//! lives in `dust_reapply_tests.rs`, against a real ledger).
 
 use frame_support::{
 	migrations::{SteppedMigration, SteppedMigrationError},
 	pallet_prelude::*,
 	storage_alias,
+	traits::OnRuntimeUpgrade,
 	weights::{RuntimeDbWeight, WeightMeter},
 };
 use midnight_primitives_cnight_observation::{CardanoRewardAddressBytes, DustPublicKeyBytes};
 use pallet_cnight_observation::{
-	Config, Mapping, MappingEntry, Pallet,
+	Config, DustReapplyCtime, DustReapplyProgress, Event, Mapping, MappingEntry, Pallet,
+	PreForkStateKey,
 	migrations::v1::{MAX_ENTRIES_PER_ADDR, MigrateV0ToV1},
+	migrations::v2::{MigrateV1ToV2, RecordPreForkState},
 };
-use pallet_cnight_observation_mock::mock_with_capture::{Test, new_test_ext};
+use pallet_cnight_observation_mock::mock_with_capture::{
+	MockLedgerStateKey, RuntimeEvent, System, Test, new_test_ext,
+};
 use sidechain_domain::UtxoId;
 
 /// Matches the legacy pre-migration `Mappings` storage. Kept in a sub-module
@@ -164,6 +171,86 @@ fn returns_cursor_to_resume_when_meter_exhausts_mid_migration() {
 		let cursor = MigrateV0ToV1::<Test>::step(cursor, &mut meter).unwrap();
 		assert!(cursor.is_none());
 		assert!(legacy::Mappings::<Test>::iter().next().is_none());
+	});
+}
+
+fn cnight_events() -> Vec<Event<Test>> {
+	System::events()
+		.iter()
+		.filter_map(|record| match &record.event {
+			RuntimeEvent::CNightObservation(e) => Some(e.clone()),
+			_ => None,
+		})
+		.collect()
+}
+
+/// The upgrade block must capture the (still untranslated) ledger-8 state key,
+/// which is the only place the wiped dust entries' values and owners survive.
+#[test]
+fn records_pre_fork_state_key_on_upgrade() {
+	new_test_ext().execute_with(|| {
+		MockLedgerStateKey::set(vec![0xAB; 64]);
+		StorageVersion::new(1).put::<Pallet<Test>>();
+
+		RecordPreForkState::<Test>::on_runtime_upgrade();
+
+		assert_eq!(PreForkStateKey::<Test>::get(), Some(vec![0xAB; 64]));
+		assert_eq!(cnight_events(), vec![Event::DustReapplyStarted]);
+	});
+}
+
+/// Already-migrated chains (and fresh ledger-9 genesis) must not re-arm it.
+#[test]
+fn records_nothing_when_already_at_v2() {
+	new_test_ext().execute_with(|| {
+		MockLedgerStateKey::set(vec![0xAB; 64]);
+		StorageVersion::new(2).put::<Pallet<Test>>();
+
+		RecordPreForkState::<Test>::on_runtime_upgrade();
+
+		assert!(PreForkStateKey::<Test>::get().is_none());
+		assert!(cnight_events().is_empty());
+	});
+}
+
+/// `step` must never report `InsufficientWeight`: `pallet_migrations` routes that
+/// error to `upgrade_failed` when it comes from the first step of a migration, and
+/// the runtime's `FreezeChainOnFailedMigration` then freezes the chain. The step
+/// paces itself by returning a cursor instead, so even a meter with nothing left
+/// must come back `Ok`.
+#[test]
+fn replay_step_never_reports_insufficient_weight() {
+	new_test_ext().execute_with(|| {
+		StorageVersion::new(1).put::<Pallet<Test>>();
+		PreForkStateKey::<Test>::put(vec![0xAB; 64]);
+
+		let mut meter = WeightMeter::with_limit(Weight::zero());
+		assert!(
+			MigrateV1ToV2::<Test>::step(None, &mut meter).is_ok(),
+			"a starved meter must not freeze the chain",
+		);
+	});
+}
+
+/// Without a pre-fork state key there is nothing to replay (no v8 fork happened),
+/// so the migration must wind itself up rather than stall the observer.
+#[test]
+fn replay_without_pre_fork_key_cancels() {
+	new_test_ext().execute_with(|| {
+		StorageVersion::new(1).put::<Pallet<Test>>();
+		DustReapplyProgress::<Test>::put((5, 5));
+
+		let mut meter = WeightMeter::new();
+		assert!(MigrateV1ToV2::<Test>::step(None, &mut meter).unwrap().is_none());
+
+		assert_eq!(
+			cnight_events(),
+			vec![Event::DustReapplySkipped { applied: 5, skipped: 5 }],
+			"the wind-up event must report the tallies as they stood, not after the clear",
+		);
+		assert_eq!(Pallet::<Test>::on_chain_storage_version(), 2);
+		assert!(DustReapplyCtime::<Test>::get().is_none());
+		assert_eq!(DustReapplyProgress::<Test>::get(), (0, 0));
 	});
 }
 

@@ -13,8 +13,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ledger_8::BlockContext;
-use serde::{Deserialize, Serialize};
+use crate::ledger_9::BlockContext;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
+use std::str::FromStr;
+use strum::{AsRefStr, EnumString};
 
 /// Hex for human-readable formats (JSON), raw bytes for binary (postcard).
 mod hex_or_bytes {
@@ -56,11 +59,83 @@ mod hex_or_bytes_32 {
 }
 
 /// Which ledger version a block was produced under.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// The discriminants are wire format: they are what lands in the `raw_block_data_v2`
+/// block cache (redb and PostgreSQL both postcard-encode `RawBlockData` into it).
+/// Never renumber or reuse one - 0 stays burnt on the removed Ledger7 so a cache
+/// written before its removal decodes as itself, or fails, rather than silently
+/// shifting every block up a ledger version.
+///
+/// serde's derive numbers variants by declaration order and ignores the `= N` below,
+/// hence the hand-written impls. Both directions of both mappings are derived from the
+/// declaration (`num_enum` for the u8, `strum` for the name), so no hand-written table
+/// can drift from it.
+#[derive(
+	Debug,
+	Default,
+	Clone,
+	Copy,
+	PartialEq,
+	Eq,
+	IntoPrimitive,
+	TryFromPrimitive,
+	AsRefStr,
+	EnumString,
+)]
+#[repr(u8)]
 pub enum LedgerVersion {
-	Ledger7,
+	Ledger8 = 1,
 	#[default]
-	Ledger8,
+	Ledger9 = 2,
+}
+
+/// Discriminant burnt on the retired Ledger7, kept only so it can be rejected by name.
+const RETIRED_LEDGER_7: u8 = 0;
+
+impl Serialize for LedgerVersion {
+	fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+		if s.is_human_readable() {
+			s.serialize_str(self.as_ref())
+		} else {
+			s.serialize_u8((*self).into())
+		}
+	}
+}
+
+impl<'de> Deserialize<'de> for LedgerVersion {
+	fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+		let retired = |found: &str| {
+			D::Error::custom(format!(
+				"ledger version {found} is no longer supported: this block cache was written by a \
+				 toolkit that still had Ledger7; ledger 7 history is not replayable - delete the \
+				 cache (or drop the `raw_block_data_v2` rows) and re-fetch"
+			))
+		};
+
+		if d.is_human_readable() {
+			let s = String::deserialize(d)?;
+			if s == "Ledger7" {
+				return Err(retired("Ledger7"));
+			}
+			Self::from_str(&s).map_err(|_| {
+				D::Error::custom(format!(
+					"unknown ledger version {s:?}, expected `Ledger8` or `Ledger9`"
+				))
+			})
+		} else {
+			let n = u8::deserialize(d)?;
+			Self::try_from(n).map_err(|_| {
+				if n == RETIRED_LEDGER_7 {
+					retired("0 (Ledger7)")
+				} else {
+					D::Error::custom(format!(
+						"unknown ledger version discriminant {n}, expected 1 (Ledger8) or 2 \
+						 (Ledger9)"
+					))
+				}
+			})
+		}
+	}
 }
 
 /// A transaction stored as raw bytes, before version-specific deserialization.
@@ -84,7 +159,7 @@ impl RawTransaction {
 /// Version-agnostic block data that stores transactions as raw serialized bytes.
 ///
 /// Deserialization into version-specific ledger types happens lazily in
-/// `apply_block_7` / `apply_block_8`, which use the correct types for
+/// `apply_block_8` / `apply_block_9`, which use the correct types for
 /// the respective ledger version.
 ///
 /// The `spec_version` field stores the raw runtime spec version number.
@@ -114,13 +189,14 @@ pub struct RawBlockData {
 impl LedgerVersion {
 	/// Convert a raw spec version to a `LedgerVersion`.
 	///
-	/// Versions up to 0.21.x use Ledger7, version 0.22.0+ uses Ledger8.
+	/// Versions 0.22.0..=1.x.y use Ledger8, 2.0.0+ uses Ledger9. Versions below 0.22.0
+	/// (pre-ledger-8) are no longer supported.
 	pub fn from_spec_version(spec_version: u32) -> Option<Self> {
 		match spec_version {
 			#[allow(clippy::zero_prefixed_literal)]
-			000_017_000..=000_021_999 => Some(LedgerVersion::Ledger7),
+			000_022_000..=001_999_999 => Some(LedgerVersion::Ledger8),
 			#[allow(clippy::zero_prefixed_literal)]
-			000_022_000.. => Some(LedgerVersion::Ledger8),
+			002_000_000.. => Some(LedgerVersion::Ledger9),
 			_ => None,
 		}
 	}
@@ -231,5 +307,48 @@ impl TryFrom<&SerializedTxBatches> for Vec<RawBlockData> {
 		}
 
 		Ok(blocks)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Postcard encoding of `LedgerVersion` IS the on-disk cache format
+	/// (`raw_block_data_v2`, redb and PostgreSQL alike). These bytes are frozen: a
+	/// renumbering silently reinterprets every cached block as a different ledger.
+	#[test]
+	fn postcard_discriminants_are_pinned() {
+		assert_eq!(postcard::to_allocvec(&LedgerVersion::Ledger8).unwrap(), [1]);
+		assert_eq!(postcard::to_allocvec(&LedgerVersion::Ledger9).unwrap(), [2]);
+
+		assert_eq!(postcard::from_bytes::<LedgerVersion>(&[1]).unwrap(), LedgerVersion::Ledger8);
+		assert_eq!(postcard::from_bytes::<LedgerVersion>(&[2]).unwrap(), LedgerVersion::Ledger9);
+	}
+
+	/// Discriminant 0 is burnt on the retired Ledger7. A cache written before its
+	/// removal must fail loudly rather than decode as Ledger8.
+	#[test]
+	fn postcard_rejects_retired_ledger_7() {
+		assert!(postcard::from_bytes::<LedgerVersion>(&[RETIRED_LEDGER_7]).is_err());
+	}
+
+	#[test]
+	fn postcard_rejects_unknown_discriminant() {
+		assert!(postcard::from_bytes::<LedgerVersion>(&[3]).is_err());
+	}
+
+	/// Human-readable formats keep the variant names the derive used, so existing
+	/// `show-block --json` output and any hand-written fixtures still parse.
+	#[test]
+	fn json_uses_variant_names() {
+		assert_eq!(serde_json::to_string(&LedgerVersion::Ledger8).unwrap(), "\"Ledger8\"");
+		assert_eq!(serde_json::to_string(&LedgerVersion::Ledger9).unwrap(), "\"Ledger9\"");
+
+		assert_eq!(
+			serde_json::from_str::<LedgerVersion>("\"Ledger8\"").unwrap(),
+			LedgerVersion::Ledger8
+		);
+		assert!(serde_json::from_str::<LedgerVersion>("\"Ledger7\"").is_err());
 	}
 }

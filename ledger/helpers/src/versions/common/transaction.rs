@@ -18,9 +18,9 @@ use super::{
 	DustLocalState, DustParameters, DustPublicKey, DustRegistration, DustSpend, HashMapStorage,
 	Intent, Offer, OfferInfo, Pedersen, PedersenDowngradeable, PedersenRandomness, ProofKind,
 	ProofMarker, ProofPreimage, ProofPreimageMarker, ProofProvider, PureGeneratorPedersen,
-	SeedableRng, Segment, SegmentId, Serializable, Signature, SignatureKind, SigningKey, Sp,
-	SplittableRng, StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, WalletSeed,
-	serialize,
+	SeedableRng, Segment, SegmentId, Serializable, Signature, SignatureKind, Sp, SplittableRng,
+	StdRng, Storable, Tagged, Timestamp, TokenType, Transaction, TransactionSigningKey,
+	UnshieldedOffer, UnshieldedWallet, WalletSeed, serialize,
 };
 use std::{collections::HashMap, error::Error, fs, fs::File, io::Write, sync::Arc};
 
@@ -36,6 +36,15 @@ type Result<T, E = Box<dyn Error + Send + Sync>> = std::result::Result<T, E>;
 type DustSpendStates<D> = HashMap<WalletSeed, Sp<DustLocalState<D>, D>>;
 type GatheredDustSpends<D> = (Vec<DustSpend<ProofPreimageMarker, D>>, DustSpendStates<D>);
 
+/// Log target for the `[perf]` phase-timing records emitted while building transactions.
+///
+/// These records live in this helper crate but exist to instrument the toolkit's tx
+/// generation, so we tag them with the toolkit's target rather than this crate's. That way
+/// `midnight-node-toolkit --verbose` (which raises `midnight_node_toolkit=debug`) surfaces
+/// them alongside the toolkit's own `[perf]` lines, without also unmuting this crate's other
+/// (noisy, full-transaction) debug output.
+pub(super) const PERF_TARGET: &str = "midnight_node_toolkit";
+
 pub trait FromContext<D: DB + Clone, C: BuilderContext<D>> {
 	fn new_from_context(
 		context: Arc<C>,
@@ -49,12 +58,26 @@ pub trait FromContext<D: DB + Clone, C: BuilderContext<D>> {
 }
 
 pub struct DustRegistrationBuilder {
-	pub signing_key: SigningKey,
+	/// Scheme-agnostic signer for the registering NIGHT identity. The wallet wraps the
+	/// verifying key and signature in the right ledger-version types, so this builder no longer
+	/// leaks a concrete Schnorr key.
+	pub wallet: UnshieldedWallet,
 	pub dust_address: Option<DustPublicKey>,
 	pub allow_fee_payment: u128,
 }
 
 impl DustRegistrationBuilder {
+	/// Build the registration *without* a signature. The registration must be attached to
+	/// its intent before signing.
+	pub fn build_unsigned<D: DB>(&self) -> DustRegistration<Signature, D> {
+		DustRegistration {
+			night_key: self.wallet.verifying_key(),
+			dust_address: self.dust_address.map(|address| Sp::new(address)),
+			allow_fee_payment: self.allow_fee_payment,
+			signature: None,
+		}
+	}
+
 	pub fn build<
 		D: DB + Clone,
 		P: ProofKind<D>,
@@ -66,8 +89,8 @@ impl DustRegistrationBuilder {
 		segment_id: u16,
 	) -> DustRegistration<Signature, D> {
 		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
-		let signature = self.signing_key.sign(rng, &data_to_sign);
-		let night_key = self.signing_key.verifying_key();
+		let signature = self.wallet.sign(rng, &data_to_sign);
+		let night_key = self.wallet.verifying_key();
 
 		DustRegistration {
 			night_key,
@@ -78,7 +101,7 @@ impl DustRegistrationBuilder {
 	}
 }
 
-pub struct StandardTrasactionInfo<D: DB + Clone, C: BuilderContext<D>> {
+pub struct StandardTransactionInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub context: Arc<C>,
 	pub intents: HashMap<SegmentId, Box<dyn BuildIntent<D, C>>>,
 	pub guaranteed_offer: Option<OfferInfo<D, C>>,
@@ -90,7 +113,10 @@ pub struct StandardTrasactionInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub dust_registrations: Vec<DustRegistrationBuilder>,
 }
 
-impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTrasactionInfo<D, C> {
+#[deprecated(note = "misspelled; use `StandardTransactionInfo` instead")]
+pub type StandardTrasactionInfo<D, C> = StandardTransactionInfo<D, C>;
+
+impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTransactionInfo<D, C> {
 	fn new_from_context(
 		context: Arc<C>,
 		prover: Arc<dyn ProofProvider<D>>,
@@ -112,7 +138,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for StandardTrasacti
 	}
 }
 
-impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
+impl<D: DB + Clone, C: BuilderContext<D>> StandardTransactionInfo<D, C> {
 	pub fn set_guaranteed_offer(&mut self, offer: OfferInfo<D, C>) {
 		self.guaranteed_offer = Some(offer);
 	}
@@ -154,6 +180,8 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 		let delay = self.context.ledger_parameters().await.global_ttl;
 		let ttl = now + delay;
 
+		let build_offer_intents_start = std::time::Instant::now();
+
 		let guaranteed_offer: Option<Offer<ProofPreimage, D>> = self
 			.guaranteed_offer
 			.as_mut()
@@ -184,6 +212,12 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			intents = intents.insert(*segment_id, intent);
 		}
 
+		log::debug!(
+			target: PERF_TARGET,
+			"[perf] build_offer_intents took {:?}",
+			build_offer_intents_start.elapsed()
+		);
+
 		let network_id = self.context.network_id().await;
 
 		let tx = Transaction::new(network_id.clone(), intents, guaranteed_offer, fallible_offer);
@@ -212,8 +246,9 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 	) -> Result<FinalizedTransaction<D>> {
 		let mut missing_dust = 0;
 		let dust_params = self.context.ledger_parameters().await.dust;
+		let balance_start = std::time::Instant::now();
 
-		for _ in 0..10 {
+		for iteration in 1..=10 {
 			let (spends, updated_states) =
 				self.gather_dust_spends(missing_dust, now, &dust_params)?;
 			let mut paid_tx = tx.clone();
@@ -226,6 +261,12 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 					missing_dust += dust;
 				} else {
 					self.confirm_dust_spends(&spends, updated_states)?;
+					log::debug!(
+						target: PERF_TARGET,
+						"[perf] pay_fees balance_iters={} took {:?}",
+						iteration,
+						balance_start.elapsed()
+					);
 					return self.prove_tx(paid_tx).await;
 				}
 			} else {
@@ -235,10 +276,21 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 					missing_dust += dust;
 				} else {
 					self.confirm_dust_spends(&spends, updated_states)?;
+					log::debug!(
+						target: PERF_TARGET,
+						"[perf] pay_fees balance_iters={} took {:?}",
+						iteration,
+						balance_start.elapsed()
+					);
 					return Ok(proven_tx);
 				}
 			}
 		}
+		log::debug!(
+			target: PERF_TARGET,
+			"[perf] pay_fees balance_iters=10 (exhausted) took {:?}",
+			balance_start.elapsed()
+		);
 		Err("Could not balance TX".into())
 	}
 
@@ -247,11 +299,14 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 		let resolver = self.context.resolver().await;
 		let parameters = self.context.ledger_parameters().await;
 		let mut rng = self.rng.split();
-		Ok(self
+		let prove_start = std::time::Instant::now();
+		let proven = self
 			.prover
-			.prove(tx, rng.split(), resolver, &parameters.cost_model.runtime_cost_model)
+			.prove(tx, rng.split(), resolver, parameters.cost_model.runtime_cost_model.clone())
 			.await
-			.seal(rng))
+			.seal(rng);
+		log::debug!(target: PERF_TARGET, "[perf] prove_tx took {:?}", prove_start.elapsed());
+		Ok(proven)
 	}
 
 	#[cfg(feature = "erase-proof")]
@@ -301,13 +356,66 @@ impl<D: DB + Clone, C: BuilderContext<D>> StandardTrasactionInfo<D, C> {
 			Some(intent) => (*intent).clone(),
 			None => Intent::empty(&mut rng, ttl),
 		};
+		// Attach the registrations + spends unsigned first: since ledger 9.1.0-rc.3 these dust
+		// fields are folded into the intent's `data_to_sign`, so the whole intent must be
+		// assembled before anything in it is signed (mirrors the ledger's `Intent::sign`).
+		let unsigned_registrations = self
+			.dust_registrations
+			.iter()
+			.map(|registration| registration.build_unsigned())
+			.collect::<Vec<DustRegistration<Signature, D>>>();
+		intent.dust_actions = Some(Sp::new(DustActions {
+			spends: spends.to_vec().into(),
+			registrations: unsigned_registrations.into(),
+			ctime: now,
+		}));
+
+		// Compute `data_to_sign` once over the fully-assembled intent.
+		let data_to_sign = intent.erase_proofs().erase_signatures().data_to_sign(segment_id);
+
+		// Re-sign the unshielded offers. Their signatures were produced by `IntentInfo::build`
+		// — before `dust_actions` existed — so they no longer match `data_to_sign` and would
+		// otherwise fail validation with `IntentSignatureVerificationFailure`. The signing keys
+		// come from the `IntentInfo` still held for this segment.
+		let (guaranteed_signing_keys, fallible_signing_keys) = self
+			.intents
+			.get(&segment_id)
+			.map(|intent_info| intent_info.unshielded_signing_keys(self.context.clone()))
+			.unwrap_or_default();
+		let resign_offer = |offer: &Option<Sp<UnshieldedOffer<Signature, D>, D>>,
+		                    signing_keys: &[TransactionSigningKey],
+		                    rng: &mut StdRng|
+		 -> Option<Sp<UnshieldedOffer<Signature, D>, D>> {
+			offer.as_ref().map(|offer| {
+				let signatures = offer
+					.inputs
+					.iter()
+					.zip(signing_keys)
+					.map(|(_input, signing_key)| signing_key.sign(rng, &data_to_sign))
+					.collect::<Vec<_>>();
+				Sp::new(UnshieldedOffer {
+					inputs: offer.inputs.clone(),
+					outputs: offer.outputs.clone(),
+					signatures: signatures.into(),
+				})
+			})
+		};
+		intent.guaranteed_unshielded_offer =
+			resign_offer(&intent.guaranteed_unshielded_offer, &guaranteed_signing_keys, &mut rng);
+		intent.fallible_unshielded_offer =
+			resign_offer(&intent.fallible_unshielded_offer, &fallible_signing_keys, &mut rng);
+
+		// Sign the dust registrations over the same `data_to_sign`.
 		let registrations = self
 			.dust_registrations
 			.iter()
-			.map(|registration| registration.build(&intent, &mut rng, segment_id))
+			.map(|registration| {
+				let mut reg = registration.build_unsigned();
+				reg.signature = Some(Sp::new(registration.wallet.sign(&mut rng, &data_to_sign)));
+				reg
+			})
 			.collect::<Vec<_>>()
 			.into();
-
 		intent.dust_actions = Some(Sp::new(DustActions {
 			spends: spends.to_vec().into(),
 			registrations,
@@ -452,6 +560,7 @@ pub struct RewardsInfo {
 pub struct ClaimMintInfo<D: DB + Clone, C: BuilderContext<D>> {
 	pub context: Arc<C>,
 	pub coin: RewardsInfo,
+	pub kind: ClaimKind,
 	pub rng: StdRng,
 	pub prover: Arc<dyn ProofProvider<D>>,
 }
@@ -467,6 +576,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> FromContext<D, C> for ClaimMintInfo<D,
 		Self {
 			context,
 			coin: RewardsInfo { owner: WalletSeed::Short([0; 16]), value: 0 },
+			kind: ClaimKind::Reward,
 			rng,
 			prover,
 		}
@@ -478,6 +588,12 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 		self.coin = rewards;
 	}
 
+	/// Select which `ClaimKind` the built `ClaimRewardsTransaction` carries
+	/// (`Reward` for block rewards, `CardanoBridge` for c2m-bridged mNIGHT).
+	pub fn set_claim_kind(&mut self, kind: ClaimKind) {
+		self.kind = kind;
+	}
+
 	async fn build(&mut self) -> UnprovenTransaction<D> {
 		let nonce = self.rng.r#gen();
 		let network_id = self.context.network_id().await;
@@ -485,22 +601,21 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 			let unsigned_claim_mint: ClaimRewardsTransaction<(), D> = ClaimRewardsTransaction {
 				network_id: network_id.clone(),
 				value: self.coin.value,
-				owner: wallet.unshielded.signing_key().verifying_key(),
+				owner: wallet.unshielded.verifying_key(),
 				nonce,
 				signature: (),
-				kind: ClaimKind::Reward,
+				kind: self.kind,
 			};
 
 			let data_to_sign = unsigned_claim_mint.data_to_sign();
-			let signature = wallet.unshielded.signing_key().sign(&mut self.rng, &data_to_sign);
-
+			let signature = wallet.unshielded.sign(&mut self.rng, &data_to_sign);
 			ClaimRewardsTransaction {
 				network_id: network_id.clone(),
 				value: self.coin.value,
-				owner: wallet.unshielded.signing_key().verifying_key(),
+				owner: wallet.unshielded.verifying_key(),
 				nonce,
 				signature,
-				kind: ClaimKind::Reward,
+				kind: self.kind,
 			}
 		});
 
@@ -518,7 +633,7 @@ impl<D: DB + Clone, C: BuilderContext<D>> ClaimMintInfo<D, C> {
 				tx_unproven,
 				self.rng.clone(),
 				resolver,
-				&parameters.cost_model.runtime_cost_model,
+				parameters.cost_model.runtime_cost_model.clone(),
 			)
 			.await;
 		tx_proven.seal(self.rng.clone())

@@ -70,6 +70,64 @@ pub fn wallet_seed_decode(input: &str) -> Result<WalletSeed, clap::error::Error>
 	})
 }
 
+/// A NIGHT wallet seed together with its [`UnshieldedSignatureScheme`], parsed from a single CLI
+/// (or JSON) value: `[schnorr:|ecdsa:]<hex|lazy-hex|mnemonic>`. No prefix defaults to Schnorr —
+/// backwards compatible with the historical bare `--seed <seed>` form. An explicit `ecdsa:`
+/// prefix selects the ledger-9+ ECDSA scheme.
+#[derive(Clone, Debug)]
+pub struct SchemeSeed {
+	pub seed: WalletSeed,
+	pub scheme: UnshieldedSignatureScheme,
+}
+
+impl SchemeSeed {
+	/// The seed and its unshielded signature scheme, as a pair.
+	pub fn resolve(&self) -> (WalletSeed, UnshieldedSignatureScheme) {
+		(self.seed.clone(), self.scheme)
+	}
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SchemeSeedParseError {
+	#[error("unknown seed scheme '{0}', expected 'schnorr' or 'ecdsa'")]
+	UnknownScheme(String),
+	#[error(transparent)]
+	Seed(#[from] WalletSeedParseError),
+}
+
+impl FromStr for SchemeSeed {
+	type Err = SchemeSeedParseError;
+
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		let (scheme, rest) = match s.split_once(':') {
+			Some(("schnorr", rest)) => (UnshieldedSignatureScheme::Schnorr, rest),
+			Some(("ecdsa", rest)) => (UnshieldedSignatureScheme::Ecdsa, rest),
+			Some((prefix, _)) => return Err(SchemeSeedParseError::UnknownScheme(prefix.into())),
+			None => (UnshieldedSignatureScheme::Schnorr, s),
+		};
+		Ok(SchemeSeed { seed: rest.parse()?, scheme })
+	}
+}
+
+impl<'de> serde::Deserialize<'de> for SchemeSeed {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		let s = <String as serde::Deserialize>::deserialize(deserializer)?;
+		s.parse().map_err(serde::de::Error::custom)
+	}
+}
+
+/// Clap `value_parser` adapter for [`SchemeSeed`].
+pub fn scheme_seed_decode(input: &str) -> Result<SchemeSeed, clap::error::Error> {
+	input.parse().map_err(|e| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(format!("failed to parse seed: {}", e)),
+		);
+		err
+	})
+}
+
 pub fn keypair_from_str(input: &str) -> Result<Keypair, clap::error::Error> {
 	input.parse().map_err(|e| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
@@ -243,6 +301,26 @@ pub fn utxo_id_decode(input: &str) -> Result<UtxoId, clap::Error> {
 	})
 }
 
+// `--output` value type and parsing live in a dedicated submodule that does
+// not depend on clap. The wrapper below adapts its error to `clap::Error` so
+// the parser can be used as a clap `value_parser`.
+pub mod output_arg;
+pub use output_arg::OutputArg;
+
+/// Clap `value_parser` adapter for `--output`. Delegates the actual parsing
+/// to [`output_arg::decode`] and converts its [`output_arg::DecodeError`]
+/// into a `clap::Error` for surface in the CLI.
+pub fn output_arg_decode(input: &str) -> Result<OutputArg, clap::Error> {
+	output_arg::decode(input).map_err(|error| {
+		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
+		err.insert(
+			clap::error::ContextKind::Custom,
+			clap::error::ContextValue::String(error.to_string()),
+		);
+		err
+	})
+}
+
 pub fn semver_decode(input: &str) -> Result<semver::Version, clap::Error> {
 	semver::Version::parse(input.trim()).map_err(|error| {
 		let mut err = clap::Error::new(clap::error::ErrorKind::ValueValidation);
@@ -345,9 +423,72 @@ mod tests {
 		assert!(res.is_err(), "truncated input should be rejected");
 	}
 
+	// `--output` parser tests live in `cli_parsers::output_arg::tests`.
+
 	#[test]
 	fn hex_ledger_untagged_decode_rejects_invalid_hex() {
 		let res = hex_ledger_untagged_decode::<HashOutput>("not-valid-hex!!");
 		assert!(res.is_err(), "invalid hex should be rejected");
+	}
+
+	// `SchemeSeed::from_str` — the single Schnorr-vs-ECDSA decision point. The toolkit-js
+	// `ecdsa:`-rejection guard and the whole unshielded-scheme dispatch key off it, so its
+	// behaviour is pinned here: exact lowercase `schnorr:`/`ecdsa:` prefixes, a bare seed
+	// defaulting to Schnorr (historical `--seed` compatibility), and any other prefix a hard
+	// error — never a silent downgrade of an intended-ECDSA seed to Schnorr.
+
+	const TEST_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";
+
+	#[test]
+	fn scheme_seed_bare_defaults_to_schnorr() {
+		let parsed: SchemeSeed = TEST_SEED.parse().expect("bare seed should parse");
+		assert_eq!(parsed.scheme, UnshieldedSignatureScheme::Schnorr);
+	}
+
+	#[test]
+	fn scheme_seed_schnorr_prefix() {
+		let parsed: SchemeSeed = format!("schnorr:{TEST_SEED}")
+			.parse()
+			.expect("schnorr-prefixed seed should parse");
+		assert_eq!(parsed.scheme, UnshieldedSignatureScheme::Schnorr);
+		// The prefix is stripped: the resolved seed matches the bare form.
+		let bare: SchemeSeed = TEST_SEED.parse().unwrap();
+		assert_eq!(parsed.seed, bare.seed);
+	}
+
+	#[test]
+	fn scheme_seed_ecdsa_prefix() {
+		let parsed: SchemeSeed =
+			format!("ecdsa:{TEST_SEED}").parse().expect("ecdsa-prefixed seed should parse");
+		assert_eq!(parsed.scheme, UnshieldedSignatureScheme::Ecdsa);
+		let bare: SchemeSeed = TEST_SEED.parse().unwrap();
+		assert_eq!(parsed.seed, bare.seed);
+	}
+
+	#[test]
+	fn scheme_seed_rejects_wrong_case_prefix_never_downgrades() {
+		// The critical safety property: a mis-cased ECDSA prefix must be a hard error, NOT a
+		// silent fall-through to Schnorr (which would deploy a Schnorr authority for an
+		// intended-ECDSA seed). Guard against a future `to_lowercase()`/`starts_with` refactor.
+		for input in [format!("ECDSA:{TEST_SEED}"), format!("Ecdsa:{TEST_SEED}")] {
+			assert!(
+				matches!(input.parse::<SchemeSeed>(), Err(SchemeSeedParseError::UnknownScheme(_))),
+				"wrong-case ECDSA prefix must be rejected, not downgraded to Schnorr: {input}"
+			);
+		}
+	}
+
+	#[test]
+	fn scheme_seed_rejects_unknown_and_padded_prefix() {
+		for input in [
+			format!("foo:{TEST_SEED}"),
+			format!(" ecdsa:{TEST_SEED}"),
+			format!("SCHNORR:{TEST_SEED}"),
+		] {
+			assert!(
+				matches!(input.parse::<SchemeSeed>(), Err(SchemeSeedParseError::UnknownScheme(_))),
+				"unrecognized scheme prefix must be rejected: {input}"
+			);
+		}
 	}
 }

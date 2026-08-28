@@ -300,7 +300,22 @@ function replicateSnapshot(sourceDir: string, targets: string[]): void {
     for (const entry of entries) {
       const src = path.join(sourceDir, entry);
       const dest = path.join(target, entry);
-      fs.cpSync(src, dest, { recursive: true });
+      // The snapshot is replicated once per node data dir; on APFS use
+      // copy-on-write clones (cp -c) so N replicas cost ~zero extra disk.
+      // Node's own COPYFILE_FICLONE falls back to a full copy on macOS.
+      if (process.platform === "darwin") {
+        const clone = spawnSync("cp", ["-Rc", src, dest], {
+          stdio: "inherit",
+        });
+        if (clone.status !== 0) {
+          throw new Error(`cp -Rc failed for ${src} -> ${dest}`);
+        }
+      } else {
+        fs.cpSync(src, dest, {
+          recursive: true,
+          mode: fs.constants.COPYFILE_FICLONE,
+        });
+      }
     }
   }
 }

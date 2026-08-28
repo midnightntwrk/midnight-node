@@ -13,15 +13,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use crate::fork::fork_7_to_8::fork_context_7_to_8;
+pub use crate::fork::fork_8_to_9::fork_context_8_to_9;
 use crate::fork::raw_block_data::{LedgerVersion, RawBlockData, RawTransaction};
 
-type Db7 = crate::ledger_7::DefaultDB;
 type Db8 = crate::ledger_8::DefaultDB;
+type Db9 = crate::ledger_9::DefaultDB;
 
 pub enum ForkAwareLedgerContext {
-	Ledger7(crate::ledger_7::context::LedgerContext<Db7>),
 	Ledger8(crate::ledger_8::context::LedgerContext<Db8>),
+	Ledger9(crate::ledger_9::context::LedgerContext<Db9>),
 }
 
 impl ForkAwareLedgerContext {
@@ -29,11 +29,11 @@ impl ForkAwareLedgerContext {
 	pub fn new(version: LedgerVersion, network_id: impl Into<String>) -> Self {
 		let network_id = network_id.into();
 		match version {
-			LedgerVersion::Ledger7 => {
-				Self::Ledger7(crate::ledger_7::context::LedgerContext::new(network_id))
-			},
 			LedgerVersion::Ledger8 => {
 				Self::Ledger8(crate::ledger_8::context::LedgerContext::new(network_id))
+			},
+			LedgerVersion::Ledger9 => {
+				Self::Ledger9(crate::ledger_9::context::LedgerContext::new(network_id))
 			},
 		}
 	}
@@ -42,34 +42,67 @@ impl ForkAwareLedgerContext {
 	pub fn new_from_wallet_seeds(
 		version: LedgerVersion,
 		network_id: impl Into<String>,
-		seeds: &[crate::ledger_8::WalletSeed],
+		seeds: &[crate::ledger_9::WalletSeed],
 	) -> Self {
 		let network_id = network_id.into();
 		match version {
-			LedgerVersion::Ledger7 => {
-				// Convert ledger_8 WalletSeeds to ledger_7 WalletSeeds
-				let seeds_7: Vec<crate::ledger_7::WalletSeed> = seeds
+			LedgerVersion::Ledger8 => {
+				// Convert ledger_9 WalletSeeds to ledger_8 WalletSeeds
+				let seeds_8: Vec<crate::ledger_8::WalletSeed> = seeds
 					.iter()
 					.map(|s| {
-						crate::ledger_7::WalletSeed::try_from(s.as_bytes())
+						crate::ledger_8::WalletSeed::try_from(s.as_bytes())
 							.expect("ledger seed format should be backwards compatible")
 					})
 					.collect();
-				Self::Ledger7(crate::ledger_7::context::LedgerContext::new_from_wallet_seeds(
-					network_id, &seeds_7,
+				Self::Ledger8(crate::ledger_8::context::LedgerContext::new_from_wallet_seeds(
+					network_id, &seeds_8,
 				))
 			},
-			LedgerVersion::Ledger8 => Self::Ledger8(
-				crate::ledger_8::context::LedgerContext::new_from_wallet_seeds(network_id, seeds),
+			LedgerVersion::Ledger9 => Self::Ledger9(
+				crate::ledger_9::context::LedgerContext::new_from_wallet_seeds(network_id, seeds),
 			),
+		}
+	}
+
+	/// Like [`Self::new_from_wallet_seeds`] but with a per-seed unshielded signature scheme.
+	///
+	/// ECDSA identities are only representable from ledger 9. On an earlier generation any ECDSA
+	/// scheme is rejected with a clear panic here rather than being allowed to blow up deep inside
+	/// the ledger-8 ECDSA stubs.
+	pub fn new_from_wallet_seeds_with_schemes(
+		version: LedgerVersion,
+		network_id: impl Into<String>,
+		seeds: &[(crate::ledger_9::WalletSeed, crate::ledger_9::UnshieldedSignatureScheme)],
+	) -> Self {
+		let network_id = network_id.into();
+		match version {
+			LedgerVersion::Ledger9 => Self::Ledger9(
+				crate::ledger_9::context::LedgerContext::new_from_wallet_seeds_with_schemes(
+					network_id, seeds,
+				),
+			),
+			LedgerVersion::Ledger8 => {
+				assert!(
+					seeds.iter().all(|(_, scheme)| matches!(
+						scheme,
+						crate::ledger_9::UnshieldedSignatureScheme::Schnorr
+					)),
+					"ECDSA unshielded signatures are only supported from ledger 9; \
+					 the source chain is on {version:?}"
+				);
+				let plain: Vec<crate::ledger_9::WalletSeed> =
+					seeds.iter().map(|(s, _)| s.clone()).collect();
+				Self::new_from_wallet_seeds(version, network_id, &plain)
+			},
 		}
 	}
 
 	/// Get the current ledger version.
 	pub fn version(&self) -> LedgerVersion {
 		match self {
-			Self::Ledger7(_) => LedgerVersion::Ledger7,
 			Self::Ledger8(_) => LedgerVersion::Ledger8,
+			Self::Ledger9(_) => LedgerVersion::Ledger9,
 		}
 	}
 
@@ -77,42 +110,34 @@ impl ForkAwareLedgerContext {
 	/// appropriate closure.
 	pub fn dispatch<T>(
 		self,
-		f7: impl FnOnce(crate::ledger_7::context::LedgerContext<Db7>) -> T,
 		f8: impl FnOnce(crate::ledger_8::context::LedgerContext<Db8>) -> T,
+		f9: impl FnOnce(crate::ledger_9::context::LedgerContext<Db9>) -> T,
 	) -> T {
 		match self {
-			Self::Ledger7(ctx) => f7(ctx),
 			Self::Ledger8(ctx) => f8(ctx),
-		}
-	}
-
-	/// Extract the inner Ledger7 context, consuming self.
-	///
-	/// Returns `None` if the context has already forked to Ledger8.
-	pub fn into_ledger7(self) -> Option<crate::ledger_7::context::LedgerContext<Db7>> {
-		match self {
-			Self::Ledger7(ctx) => Some(ctx),
-			Self::Ledger8(_) => None,
+			Self::Ledger9(ctx) => f9(ctx),
 		}
 	}
 
 	/// Extract the inner Ledger8 context, consuming self.
 	///
-	/// Returns `None` if the context is still at Ledger7.
+	/// Returns `None` if the context is not Ledger8.
 	pub fn into_ledger8(self) -> Option<crate::ledger_8::context::LedgerContext<Db8>> {
 		match self {
+			Self::Ledger9(_) => None,
 			Self::Ledger8(ctx) => Some(ctx),
-			Self::Ledger7(_) => None,
 		}
 	}
-}
 
-pub fn block_context_from_raw_7(block: &RawBlockData) -> crate::ledger_7::BlockContext {
-	crate::ledger_7::make_block_context(
-		crate::ledger_7::Timestamp::from_secs(block.tblock_secs),
-		crate::ledger_7::HashOutput(block.parent_block_hash),
-		crate::ledger_7::Timestamp::from_secs(block.last_block_time_secs),
-	)
+	// Extract the inner Ledger9 context, consuming self.
+	///
+	/// Returns `None` if the context is still before Ledger9.
+	pub fn into_ledger9(self) -> Option<crate::ledger_9::context::LedgerContext<Db9>> {
+		match self {
+			Self::Ledger9(ctx) => Some(ctx),
+			Self::Ledger8(_) => None,
+		}
+	}
 }
 
 pub fn block_context_from_raw_8(block: &RawBlockData) -> crate::ledger_8::BlockContext {
@@ -123,48 +148,12 @@ pub fn block_context_from_raw_8(block: &RawBlockData) -> crate::ledger_8::BlockC
 	)
 }
 
-/// Deserialize raw transactions and apply to a Ledger7 context, returning dust events.
-pub fn apply_block_7(
-	ctx: &crate::ledger_7::context::LedgerContext<Db7>,
-	block: &RawBlockData,
-) -> Vec<crate::ledger_7::Event<Db7>> {
-	use crate::ledger_7::{
-		SerdeTransaction, SystemTransaction, midnight_serialize::tagged_deserialize,
-	};
-
-	type MnTx7 = crate::ledger_7::Transaction<
-		crate::ledger_7::Signature,
-		crate::ledger_7::ProofMarker,
-		crate::ledger_7::PureGeneratorPedersen,
-		Db7,
-	>;
-	type SerdeTx7 = SerdeTransaction<crate::ledger_7::Signature, crate::ledger_7::ProofMarker, Db7>;
-
-	let mut transactions: Vec<SerdeTx7> = Vec::new();
-	for raw_tx in &block.transactions {
-		match raw_tx {
-			RawTransaction::Midnight(bytes) => {
-				let tx: MnTx7 = tagged_deserialize(&mut bytes.as_slice())
-					.expect("failed to deserialize ledger 7 midnight transaction");
-				transactions.push(SerdeTx7::Midnight(tx));
-			},
-			RawTransaction::System(bytes) => {
-				let tx: SystemTransaction = tagged_deserialize(&mut bytes.as_slice())
-					.expect("failed to deserialize ledger 7 system transaction");
-				transactions.push(SerdeTx7::System(tx));
-			},
-		}
-	}
-
-	let block_context = block_context_from_raw_7(block);
-
-	ctx.update_from_block(
-		&transactions,
-		&block_context,
-		block.state_root.as_ref(),
-		block.state.as_ref(),
+pub fn block_context_from_raw_9(block: &RawBlockData) -> crate::ledger_9::BlockContext {
+	crate::ledger_9::make_block_context(
+		crate::ledger_9::Timestamp::from_secs(block.tblock_secs),
+		crate::ledger_9::HashOutput(block.parent_block_hash),
+		crate::ledger_9::Timestamp::from_secs(block.last_block_time_secs),
 	)
-	.expect("failed to update ledger 7 context from block")
 }
 
 /// Deserialize raw transactions and apply to a Ledger8 context, returning dust events.
@@ -209,4 +198,48 @@ pub fn apply_block_8(
 		block.state.as_ref(),
 	)
 	.expect("failed to update ledger 8 context from block")
+}
+
+/// Deserialize raw transactions and apply to a Ledger9 context, returning dust events.
+pub fn apply_block_9(
+	ctx: &crate::ledger_9::context::LedgerContext<Db9>,
+	block: &RawBlockData,
+) -> Vec<crate::ledger_9::Event<Db9>> {
+	use crate::ledger_9::{
+		SerdeTransaction, SystemTransaction, midnight_serialize::tagged_deserialize,
+	};
+
+	type MnTx9 = crate::ledger_9::Transaction<
+		crate::ledger_9::Signature,
+		crate::ledger_9::ProofMarker,
+		crate::ledger_9::PureGeneratorPedersen,
+		Db9,
+	>;
+	type SerdeTx9 = SerdeTransaction<crate::ledger_9::Signature, crate::ledger_9::ProofMarker, Db9>;
+
+	let mut transactions: Vec<SerdeTx9> = Vec::new();
+	for raw_tx in &block.transactions {
+		match raw_tx {
+			RawTransaction::Midnight(bytes) => {
+				let tx: MnTx9 = tagged_deserialize(&mut bytes.as_slice())
+					.expect("failed to deserialize ledger 9 midnight transaction");
+				transactions.push(SerdeTx9::Midnight(tx));
+			},
+			RawTransaction::System(bytes) => {
+				let tx: SystemTransaction = tagged_deserialize(&mut bytes.as_slice())
+					.expect("failed to deserialize ledger 9 system transaction");
+				transactions.push(SerdeTx9::System(tx));
+			},
+		}
+	}
+
+	let block_context = block_context_from_raw_9(block);
+
+	ctx.update_from_block(
+		&transactions,
+		&block_context,
+		block.state_root.as_ref(),
+		block.state.as_ref(),
+	)
+	.expect("failed to update ledger 9 context from block")
 }

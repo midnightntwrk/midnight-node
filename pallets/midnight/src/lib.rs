@@ -25,7 +25,7 @@ mod runtime_api;
 pub use runtime_api::*;
 
 pub use midnight_primitives::{
-	LedgerMutFn, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
+	LedgerMutFn, LedgerStateProvider, LedgerStateProviderMut, TransactionType, TransactionTypeV2,
 };
 
 pub use midnight_node_ledger::types::active_version::LedgerApiError;
@@ -60,11 +60,13 @@ pub mod pallet {
 	};
 	use sp_runtime::Weight;
 
-	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
+	impl<T: Config> super::LedgerStateProvider for Pallet<T> {
 		fn get_ledger_state_key() -> Vec<u8> {
 			StateKey::<T>::get()
 		}
+	}
 
+	impl<T: Config> super::LedgerStateProviderMut for Pallet<T> {
 		#[allow(clippy::unwrap_in_result)] // generic error type E cannot be constructed here
 		fn mut_ledger_state<F, E, R>(f: F) -> Result<R, E>
 		where
@@ -99,7 +101,10 @@ pub mod pallet {
 		}
 	}
 
-	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+	// v2: ledger v8 -> v9 state translation (see `migrations::v2`). A ledger-8
+	// runtime is at on-chain version 1; upgrading to this runtime runs the
+	// `MigrateV1ToV2` translation. Fresh ledger-9 genesis starts at version 2.
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 	// Manually add ~1% of block weight
 	pub const EXTRA_WEIGHT_TX_SIZE: Weight = Weight::from_parts(20_000_000_000, 0);
@@ -341,8 +346,8 @@ pub mod pallet {
 			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
 
-			let state_root = LedgerApi::post_block_update(&state_key, block_context.clone())
-				.expect("Post block update failed");
+			let state_root = LedgerApi::apply_post_block_update(&state_key, block_context.clone())
+				.expect("FATAL: Apply post block update failed");
 
 			StateKey::<T>::put(state_root);
 
@@ -439,6 +444,7 @@ pub mod pallet {
 	}
 
 	#[pallet::validate_unsigned]
+	#[allow(deprecated)]
 	impl<T: Config> ValidateUnsigned for Pallet<T> {
 		type Call = Call<T>;
 		fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {

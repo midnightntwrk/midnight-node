@@ -18,10 +18,10 @@
 # BASE STAGE: Common dependencies for all architectures
 # =============================================================================
 # renovate: datasource=docker depName=node
-FROM node:22-slim@sha256:7378f5a4830ef48eb36d1abf4ef398391db562b5c41a0bded83192fbcea21cc8 AS base
+FROM node:24-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS base
 
 # Install required tools
-# Package versions for Debian Bookworm (node:22-slim base)
+# Package versions for Debian Bookworm (node:24-slim base)
 # renovate: datasource=debian depName=jq versioning=deb
 # renovate: datasource=debian depName=curl versioning=deb
 # renovate: datasource=debian depName=ca-certificates versioning=deb
@@ -29,11 +29,11 @@ FROM node:22-slim@sha256:7378f5a4830ef48eb36d1abf4ef398391db562b5c41a0bded83192f
 # renovate: datasource=debian depName=unzip versioning=deb
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        jq=1.6-2.1+deb12u1 \
-        curl=7.88.1-10+deb12u14 \
-        ca-certificates=20230311+deb12u1 \
-        vim=2:9.0.1378-2+deb12u2 \
-        unzip=6.0-28 && \
+        jq \
+        curl \
+        ca-certificates \
+        vim \
+        unzip && \
     rm -rf /var/lib/apt/lists/*
 
 # Tool versions (shared across stages)
@@ -108,7 +108,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         build-essential=12.9 \
         pkg-config=1.8.1-1 \
-        libssl-dev=3.0.18-1~deb12u2 && \
+        libssl-dev=3.0.20-1~deb12u2 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Rust toolchain via pinned rustup-init binary with hash verification
