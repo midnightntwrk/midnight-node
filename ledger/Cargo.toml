@@ -25,6 +25,9 @@ zswap-ledger-9 = { workspace = true, optional = true }
 coin-structure-ledger-9 = { workspace = true, optional = true }
 transient-crypto-ledger-9 = { workspace = true, optional = true }
 
+# v8->v9 state translation table, driven by `host_api::migration_8_to_9` (std-only).
+v8-to-v9-state-translation = { workspace = true, optional = true }
+
 sp-runtime-interface.workspace = true
 sp-runtime.workspace = true
 sp-externalities.workspace = true
@@ -89,6 +92,7 @@ std = [
     "zswap-ledger-9",
     "coin-structure-ledger-9",
     "transient-crypto-ledger-9",
+    "v8-to-v9-state-translation",
     "sha2",
     "midnight-node-ledger-helpers",
     "derive-where"

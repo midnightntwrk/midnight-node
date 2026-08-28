@@ -7,6 +7,7 @@ use crate::{
 	ledger_8::{BlockContext, types::LedgerApiError},
 };
 use alloc::vec::Vec;
+use parity_scale_codec::{Decode, DecodeWithMemTracking, Encode};
 use sp_runtime_interface::pass_by::{
 	AllocateAndReturnByCodec, AllocateAndReturnFatPointer, PassFatPointerAndDecode,
 	PassFatPointerAndRead,
@@ -21,6 +22,27 @@ use {
 
 #[cfg(feature = "std")]
 type Signature = crate::ledger_8::base_crypto_local::signatures::Signature;
+
+/// A still-generating cNIGHT dust entry, read back out of the pre-fork
+/// (ledger-8) dust state by [`Ledger8Bridge::dust_generation_values`].
+#[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq)]
+pub struct DustGenerationEntry {
+	/// The entry's night value.
+	pub value: u128,
+	/// The (untagged) serialized `DustPublicKey`, i.e. exactly what
+	/// `construct_cnight_generates_dust_event` accepts for `owner`.
+	pub owner: Vec<u8>,
+}
+
+/// The result of one batched [`Ledger8Bridge::dust_generation_values`] read.
+#[derive(Encode, Decode, DecodeWithMemTracking, Debug, Clone, PartialEq)]
+pub struct DustGenerationValues {
+	/// The dust parameters' `time_to_cap`, in seconds.
+	pub time_to_cap: u64,
+	/// One per requested nonce and positionally aligned with them; `None` when
+	/// the nonce is not tracked, or has already been destroyed.
+	pub entries: Vec<Option<DustGenerationEntry>>,
+}
 
 // `Bridge<S, D>` instantiates `default_storage::<D>()` lookups against
 // `Storage<D>`'s TypeId. The two storage modes register storages with different
@@ -573,6 +595,34 @@ pub trait Ledger8Bridge {
 			Bridge::<Signature, DbUnified>::construct_distribute_treasury_system_tx(amount)
 		} else {
 			Bridge::<Signature, DbSeparate>::construct_distribute_treasury_system_tx(amount)
+		}
+	}
+
+	/// Each requested nonce's still-generating entry in the *pre-fork*
+	/// (ledger-8) dust state, plus that state's dust `time_to_cap`.
+	///
+	/// Called by `pallet-cnight-observation`'s dust re-apply migration, which
+	/// rebuilds the cNIGHT generation entries the ledger 8 -> 9 hardfork wipes
+	/// and backdates their `ctime` by `time_to_cap`. `state_key` is the v8 arena
+	/// root it saved during the upgrade block; `Err(NoLedgerState)` means that
+	/// root no longer resolves, or is not a ledger-8 root at all.
+	fn dust_generation_values(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		nonces: PassFatPointerAndDecode<Vec<[u8; 32]>>,
+	) -> AllocateAndReturnByCodec<Result<DustGenerationValues, LedgerApiError>> {
+		// `set_default_storage` is idempotent, so this stays callable from
+		// anywhere in the block.
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::set_default_storage(*self);
+			crate::host_api::dust_generation::dust_generation_values::<DbUnified>(
+				state_key, &nonces,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::set_default_storage(*self);
+			crate::host_api::dust_generation::dust_generation_values::<DbSeparate>(
+				state_key, &nonces,
+			)
 		}
 	}
 
