@@ -203,9 +203,11 @@ pub use pallet::*;
 use sp_partner_chains_bridge::BridgeTransferV1;
 
 /// Incoming transfer could not be handled by the [TransferHandler].
+///
+/// Single variant enum is not Rust idomatic, but it enables updates without breaking SCALE encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransferHandlerError {
-	/// Retry transfer later. Currently the only option. Currently skipping is not implemented.
+	/// Retry transfer later. Currently the only option, skipping is not implemented, so no error variant for it exists.
 	Retriable,
 }
 

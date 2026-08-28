@@ -1,4 +1,4 @@
-#node #runtime #c2m-bridge
+#node #c2m-bridge
 
 # Handling ledger transaction execution errors
 
