@@ -25,5 +25,5 @@ impls per version would still hit E0119.
 With this, no directory in the repo is compiled more than once:
 `grep -r '#\[path' --include='*.rs'` returns nothing.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2075
 Closes: https://github.com/midnightntwrk/midnight-node/issues/1768
