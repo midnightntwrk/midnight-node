@@ -1,4 +1,4 @@
-#node #runtime #c2m-bridge
+#runtime #c2m-bridge
 
 # Handling ledger transaction execution errors
 
@@ -8,17 +8,14 @@ means there is a bug that has to be fixed. Bridge will stop processing at this p
 
 Future-proof single variant enum (SCALE-friendly, but not Rust idiomatic) error is introduced in case we would like to skip on some errors in the future.
 
-The exectly-once processing is quite complex because we still don't know if Cardano validator would prevent
-transactions that release from unlocked and reserve to ICS at the same time.
-
 One Cardano transaction yields at most two transfers: a _reserve transfer_, made when it takes
 tokens out of the reserve, followed by an _ICS transfer_ of the remaining tokens it locked in the
-illiquid circulating supply. Processing can therefore stop at one place inside a transaction, which
-the new `BridgeDataCheckpoint::TxReserveTransfer` variant names — it replaces `PartialTx`, which
-recorded a count of processed transfers. The kind of a transfer's recipient identifies which of the
-two transfers of its transaction it is, so `BridgeTransferV1::checkpoint_reached` derives the
-checkpoint of a handled transfer without any bookkeeping. `handle_transfers` uses it to record the
-last transfer it handled, and leaves the checkpoint untouched when it handled none.
+illiquid circulating supply. Processing can therefore stop at one place inside a Cardano transaction,
+which the new `BridgeDataCheckpoint::TxReserveTransfer` variant denotes.
+The kind of a transfer's recipient identifies which of the two transfers of its transaction it is,
+so `BridgeTransferV1::checkpoint_reached` derives the checkpoint of a handled transfer without any
+bookkeeping. `handle_transfers` uses it to record the last transfer it handled, and leaves the checkpoint
+untouched when it handled none.
 
 Because a checkpoint can now point between the two transfers of a transaction, the observability
 layer no longer has to return them together, and cuts the transfers it returns at the configured
