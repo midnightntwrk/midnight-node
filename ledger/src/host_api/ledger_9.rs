@@ -150,6 +150,10 @@ pub trait Ledger9Bridge {
 
 	/*
 	 * apply_transaction()
+	 *
+	 * `skew_tblock` is always false here: the tblock correction only covers blocks produced
+	 * before the runtime upgrade that closed it, all of which are ledger 8 or older.
+	 * See <https://github.com/midnightntwrk/midnight-node/issues/1924>
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -166,6 +170,7 @@ pub trait Ledger9Bridge {
 				block_context,
 				true,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_transaction(
@@ -175,6 +180,7 @@ pub trait Ledger9Bridge {
 				block_context,
 				true,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		}
 	}
@@ -260,6 +266,7 @@ pub trait Ledger9Bridge {
 				tx,
 				block_context,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::validate_guaranteed_execution(
@@ -268,6 +275,7 @@ pub trait Ledger9Bridge {
 				tx,
 				block_context,
 				runtime_version,
+				/* skew_tblock */ false,
 			)
 		}
 	}
@@ -436,6 +444,42 @@ pub trait Ledger9Bridge {
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::get_transaction_cost(
+				state_key,
+				tx,
+				&block_context,
+				max_weight,
+			)
+		}
+	}
+
+	/*
+	 * As v1, but `tx` may also be a `SystemTransaction`: the version dispatches on
+	 * the serialized header tag. v1 could only price user transactions, which left
+	 * the cNIGHT dust replay migration with no way to ask what a
+	 * `CNightGeneratesDustUpdate` batch costs.
+	 *
+	 * A strict superset of v1 for `Transaction` bytes, and sp-runtime-interface
+	 * always binds the runtime to the highest version, so every existing caller
+	 * (`pallet_midnight::get_tx_weight` among them) moves here.
+	 */
+	// Current Enabled Version
+	#[version(2)]
+	fn get_transaction_cost(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		max_weight: u64,
+	) -> AllocateAndReturnByCodec<Result<GasCost, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::get_any_transaction_cost(
+				state_key,
+				tx,
+				&block_context,
+				max_weight,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::get_any_transaction_cost(
 				state_key,
 				tx,
 				&block_context,

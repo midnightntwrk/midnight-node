@@ -25,8 +25,8 @@ use crate::{
 		fetch_storage::{FetchStorage, FetchedBlock},
 		runtimes::{
 			MidnightMetadata, MidnightMetadata0_21_0, MidnightMetadata0_22_0,
-			MidnightMetadata1_0_0, MidnightMetadata2_0_0, MidnightMetadata2_1_0, RuntimeVersion,
-			RuntimeVersionError,
+			MidnightMetadata1_0_0, MidnightMetadata1_0_3, MidnightMetadata2_0_0,
+			MidnightMetadata2_1_0, RuntimeVersion, RuntimeVersionError,
 		},
 	},
 };
@@ -166,6 +166,14 @@ impl ComputeTask {
 				)
 				.await
 			},
+			RuntimeVersion::V1_0_3 => {
+				Self::process_block_with_protocol::<MidnightMetadata1_0_3>(
+					block,
+					&header,
+					spec_version,
+				)
+				.await
+			},
 			RuntimeVersion::V2_0_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata2_0_0>(
 					block,
@@ -194,7 +202,10 @@ impl ComputeTask {
 		let parent_block_hash = header.parent_hash;
 
 		let mut timestamp_ms = None;
-		let mut transactions = vec![];
+		// Collected with the phase index they execute at, then sorted into
+		// execution order — system transactions come from events, not calls, and
+		// not all of them belong to an extrinsic (see below).
+		let mut transactions: Vec<(u32, RawTransaction)> = vec![];
 
 		let block_number = block.block.block_number();
 
@@ -213,38 +224,52 @@ impl ComputeTask {
 			let Ok(call) = ext.decode_call_data_as::<M::Call>() else {
 				continue;
 			};
+			let ext_index = ext.index() as u32;
 			if let Some(ts) = M::timestamp_set(&call) {
 				if timestamp_ms.is_some() {
 					panic!("this block has two timestamps");
 				}
 				timestamp_ms = Some(ts);
 			} else if let Some(bytes) = M::send_mn_transaction(&call) {
-				transactions.push(RawTransaction::Midnight(bytes));
+				transactions.push((ext_index, RawTransaction::Midnight(bytes)));
 			} else if block_number == 0 {
 				// Genesis block: extract system transactions from extrinsics directly
 				// (genesis has no events since events are emitted during block execution)
 				if let Some(bytes) = M::send_mn_system_transaction(&call) {
-					transactions.push(RawTransaction::System(bytes));
-				}
-			}
-
-			// For non-genesis blocks: extract system transactions from events.
-			// This handles system transactions regardless of how they were triggered:
-			// - Direct send_mn_system_transaction calls
-			// - Governance-wrapped calls (FederatedAuthority::motion_dispatch)
-			// - CNightObservation-triggered system transactions
-			// - Any future wrapper patterns
-			let ext_index = ext.index() as u32;
-			for ev in events.iter().filter_map(Result::ok) {
-				if ev.phase() != subxt::events::Phase::ApplyExtrinsic(ext_index) {
-					continue;
-				}
-				if let Some(Ok(event)) = ev.decode_fields_as::<M::SystemTransactionAppliedEvent>() {
-					let bytes = M::system_transaction_applied(event);
-					transactions.push(RawTransaction::System(bytes));
+					transactions.push((ext_index, RawTransaction::System(bytes)));
 				}
 			}
 		}
+
+		// For non-genesis blocks: extract system transactions from events.
+		// This handles system transactions regardless of how they were triggered:
+		// - Direct send_mn_system_transaction calls
+		// - Governance-wrapped calls (FederatedAuthority::motion_dispatch)
+		// - CNightObservation-triggered system transactions
+		// - Runtime code that runs outside any extrinsic: a multi-block migration
+		//   steps in `inherents_applied()`, so its events carry an `ApplyExtrinsic`
+		//   index one past the block's last extrinsic (blocks admit only inherents
+		//   while an MBM is in flight). The cNIGHT dust generation replay applies
+		//   its system transactions there.
+		// - Any future wrapper patterns
+		//
+		// Hence: keyed on the event's own phase, never on an extrinsic claiming it.
+		// The sort is stable and events are pushed after calls, so a system
+		// transaction still lands behind the extrinsic that triggered it.
+		for ev in events.iter().filter_map(Result::ok) {
+			if let Some(Ok(event)) = ev.decode_fields_as::<M::SystemTransactionAppliedEvent>() {
+				let phase_index = match ev.phase() {
+					subxt::events::Phase::Initialization => 0,
+					subxt::events::Phase::ApplyExtrinsic(index) => index,
+					subxt::events::Phase::Finalization => u32::MAX,
+				};
+				let bytes = M::system_transaction_applied(event);
+				transactions.push((phase_index, RawTransaction::System(bytes)));
+			}
+		}
+		transactions.sort_by_key(|(phase_index, _)| *phase_index);
+		let transactions: Vec<RawTransaction> =
+			transactions.into_iter().map(|(_, tx)| tx).collect();
 
 		let timestamp_ms = timestamp_ms.expect("failed to find a timestamp extrinsic in block");
 		let tblock_secs = timestamp_ms / 1000;
