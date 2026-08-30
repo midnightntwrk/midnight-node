@@ -52,7 +52,6 @@ use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
-use midnight_primitives_consensus_engine::ActiveEngine;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
@@ -280,7 +279,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
-	system_version: 1,
+	system_version: 3,
 };
 
 /// This determines the average expected block time that we are targeting.
@@ -375,8 +374,6 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Needed if chain is upgradeing from before PC 1.6
-		pallet_session_validator_management::migrations::v1::LegacyToV1Migration<Runtime>,
 		// Initializes the QueuedCommittee storage added in v2
 		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
 		// See migrations::authority_keys when opaque::SessionKeys changes shape.
@@ -547,7 +544,11 @@ parameter_types! {
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	#[cfg(not(feature = "runtime-benchmarks"))]
-	type Migrations = (pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,);
+	// Append-only: `ActiveCursor.index` indexes this tuple.
+	type Migrations = (
+		pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,
+		pallet_cnight_observation::migrations::v2::MigrateV1ToV2<Runtime>,
+	);
 	// Benchmarks need mocked migrations to guarantee that they succeed.
 	#[cfg(feature = "runtime-benchmarks")]
 	type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
@@ -661,10 +662,9 @@ impl sp_sidechain::OnNewEpoch for LogBeneficiaries {
 
 impl pallet_sidechain::Config for Runtime {
 	fn current_slot_number() -> ScSlotNumber {
-		match ConsensusEngine::active_engine() {
-			ActiveEngine::Aura => ScSlotNumber(*pallet_aura::CurrentSlot::<Self>::get()),
-			ActiveEngine::Babe => ScSlotNumber(*pallet_babe::CurrentSlot::<Self>::get()),
-		}
+		// Single source of truth: active engine `CurrentSlot`. Babe (3) and Aura (2)
+		// both run before Sidechain (4), so storage is already updated for this block.
+		ScSlotNumber(*ConsensusEngine::current_slot())
 	}
 	type OnNewEpoch = LogBeneficiaries;
 }
@@ -944,11 +944,17 @@ impl pallet_throttle::Config for Runtime {
 	type WindowSize = WindowSize;
 }
 
+parameter_types! {
+	pub BabeEpochConfigurationValue: sp_consensus_babe::BabeEpochConfiguration =
+		BABE_GENESIS_EPOCH_CONFIG;
+}
+
 impl pallet_consensus_engine::Config for Runtime {
 	// Some state transitions are governance-driven: federated-authority motions dispatch approved
 	// calls as root.
 	type GovernanceOrigin = EnsureRoot<AccountId>;
 	type EpochDuration = SidechainEpochDuration;
+	type EpochConfiguration = BabeEpochConfigurationValue;
 	// Unit weights for now. Issue #1863.
 	type WeightInfo = ();
 }
@@ -959,6 +965,8 @@ parameter_types! {
 
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type LedgerStateProvider = Midnight;
+	type LedgerBlockContextProvider = Midnight;
 	type WeightInfo = weights::pallet_cnight_observation::WeightInfo<Runtime>;
 }
 
@@ -1056,8 +1064,10 @@ mod runtime {
 	pub type Timestamp = pallet_timestamp::Pallet<Runtime>;
 	#[runtime::pallet_index(2)]
 	pub type Aura = pallet_aura::Pallet<Runtime>;
+	// BABE immediately after AURA so both engines write `CurrentSlot` before
+	// `Sidechain` (4) reads it via `ConsensusEngine::current_slot()`.
 	#[runtime::pallet_index(3)]
-	pub type Grandpa = pallet_grandpa::Pallet<Runtime>;
+	pub type Babe = pallet_babe::Pallet<Runtime>;
 	#[runtime::pallet_index(4)]
 	pub type Sidechain = pallet_sidechain::Pallet<Runtime>;
 
@@ -1067,9 +1077,8 @@ mod runtime {
 	#[runtime::pallet_index(6)]
 	pub type MidnightSystem = pallet_midnight_system::Pallet<Runtime>;
 
-	// BABE consensus. Introduced ahead of a future AURA→BABE flip; not active.
 	#[runtime::pallet_index(7)]
-	pub type Babe = pallet_babe::Pallet<Runtime>;
+	pub type Grandpa = pallet_grandpa::Pallet<Runtime>;
 
 	#[runtime::pallet_index(8)]
 	pub type SessionCommitteeManagement = pallet_session_validator_management::Pallet<Runtime>;
@@ -1078,13 +1087,24 @@ mod runtime {
 	#[runtime::pallet_index(9)]
 	pub type Authorship = pallet_authorship::Pallet<Runtime>;
 
+	// Consensus engine transition state machine. Hook order (pallet index order) is
+	// load-bearing: its `on_initialize` digest guards must run after Babe (which
+	// consumes BABE pre-digests) but before anything that mutates the state they
+	// check against — Scheduler (18) can dispatch `arm_babe`/`schedule_flip` from
+	// its own `on_initialize`, and Session (30) rotates `pallet_aura::Authorities`,
+	// which the `authority_index == slot % n` transition guard compares with. Both
+	// the block author and the AURA seal verifier work from the parent state, so
+	// the guards must too.
+	#[runtime::pallet_index(10)]
+	pub type ConsensusEngine = pallet_consensus_engine::Pallet<Runtime>;
+
 	#[runtime::pallet_index(30)]
 	#[runtime::disable_call]
 	pub type Session = pallet_session::Pallet<Runtime>;
 	#[runtime::pallet_index(31)]
 	pub type Historical = pallet_session::historical::Pallet<Runtime>;
 	//#[cfg(feature = "experimental")]
-	//BlockRewards: pallet_block_rewards = 10,
+	//BlockRewards: pallet_block_rewards, (index 10 now taken by ConsensusEngine)
 
 	#[runtime::pallet_index(11)]
 	pub type NodeVersion = pallet_version::Pallet<Runtime>;
@@ -1145,10 +1165,6 @@ mod runtime {
 	// Throttling
 	#[runtime::pallet_index(51)]
 	pub type Throttle = pallet_throttle::Pallet<Runtime>;
-
-	// Consensus engine transition state machine
-	#[runtime::pallet_index(52)]
-	pub type ConsensusEngine = pallet_consensus_engine::Pallet<Runtime>;
 }
 
 /// The address format for describing accounts.
@@ -1190,7 +1206,18 @@ pub type Executive = frame_executive::Executive<
 /// Extrinsic type that has already been checked.
 pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, TxExtension>;
 /// Migrations to apply on runtime upgrade.
-pub type Migrations = (pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,);
+pub type Migrations = (
+	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
+	// MUST precede the pallet-midnight translation below: it captures the
+	// still-untranslated v8 state key, which the cNIGHT dust generation replay
+	// (`pallet_cnight_observation::migrations::v2::MigrateV1ToV2`) reads the
+	// wiped entries' values and owners from.
+	pallet_cnight_observation::migrations::v2::RecordPreForkState<Runtime>,
+	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
+	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
+	// this ledger-9 runtime (storage version 2).
+	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
+);
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime
 where
@@ -1763,7 +1790,7 @@ impl_runtime_apis! {
 		fn get_sidechain_status() -> SidechainStatus {
 			SidechainStatus {
 				epoch: Sidechain::current_epoch_number(),
-				slot: ScSlotNumber(*pallet_aura::CurrentSlot::<Runtime>::get()),
+				slot: <Runtime as pallet_sidechain::Config>::current_slot_number(),
 				slots_per_epoch: Sidechain::slots_per_epoch().0,
 			}
 		}
@@ -1779,6 +1806,10 @@ impl_runtime_apis! {
 		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
 			ConsensusEngine::active_engine()
 		}
+
+		fn should_emit_babe_preruntime_digest() -> bool {
+			ConsensusEngine::should_emit_babe_preruntime_digest()
+		}
 	}
 
 	impl sp_sidechain::GetGenesisUtxo<Block> for Runtime {
@@ -1788,6 +1819,10 @@ impl_runtime_apis! {
 	}
 
 	impl sidechain_slots::SlotApi<Block> for Runtime {
+		// The AURA slot duration needs no engine dispatch: it is the `SlotDuration`
+		// config constant, and BABE's (`MinimumPeriod * 2`) is the same 6s, so the
+		// value stays correct after the flip. `slot_duration_is_the_same_for_both_engines`
+		// guards that equality.
 		fn slot_config() -> sidechain_slots::ScSlotConfig {
 			sidechain_slots::ScSlotConfig {
 				slots_per_epoch: Sidechain::slots_per_epoch(),
@@ -2196,5 +2231,175 @@ mod tests {
 			.collect();
 
 		candidates
+	}
+
+	mod sidechain_slot_number {
+		use crate::Runtime;
+		use frame_support::traits::Hooks;
+		use pallet_consensus_engine::{EngineState, State};
+		use parity_scale_codec::Encode;
+		use sidechain_domain::ScSlotNumber;
+		use sp_consensus_babe::BABE_ENGINE_ID;
+		use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
+		use sp_consensus_slots::Slot;
+		use sp_runtime::{Digest, DigestItem};
+
+		fn babe_pre_digest(slot: u64) -> DigestItem {
+			DigestItem::PreRuntime(
+				BABE_ENGINE_ID,
+				PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+					authority_index: 0,
+					slot: Slot::from(slot),
+				})
+				.encode(),
+			)
+		}
+
+		fn initialize_block_with_logs(logs: Vec<DigestItem>) {
+			frame_system::Pallet::<Runtime>::initialize(&1, &Default::default(), &Digest { logs });
+		}
+
+		fn current_slot_number() -> ScSlotNumber {
+			<Runtime as pallet_sidechain::Config>::current_slot_number()
+		}
+
+		#[test]
+		fn is_read_from_aura_storage_pre_flip() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(7u64));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(99u64));
+				assert_eq!(current_slot_number(), ScSlotNumber(7));
+			});
+		}
+
+		#[test]
+		fn is_read_from_babe_storage_post_flip() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::Babe);
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(7u64));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(42u64));
+				assert_eq!(current_slot_number(), ScSlotNumber(42));
+			});
+		}
+
+		/// Regression: with Babe before Sidechain, Babe's `on_initialize` copies the
+		/// pre-digest into `CurrentSlot` before Sidechain reads it — so a stale
+		/// storage value is overwritten for this block.
+		#[test]
+		fn babe_hook_refreshes_storage_before_sidechain_reads() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::Babe);
+				// Suppress premature genesis init so Babe only updates CurrentSlot.
+				pallet_babe::GenesisSlot::<Runtime>::put(Slot::from(1u64));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(41u64));
+				initialize_block_with_logs(vec![babe_pre_digest(42)]);
+
+				pallet_babe::Pallet::<Runtime>::on_initialize(1);
+
+				assert_eq!(current_slot_number(), ScSlotNumber(42));
+			});
+		}
+	}
+
+	/// Tests for the slot reported by the `GetSidechainStatus` runtime API across the
+	/// AURA to BABE consensus flip.
+	mod sidechain_status {
+		use crate::Runtime;
+		use pallet_consensus_engine::{EngineState, State};
+		use sidechain_domain::{ScEpochNumber, ScSlotNumber};
+		use sp_consensus_slots::Slot;
+		use sp_sidechain::SidechainStatus;
+
+		/// Slot the AURA storage is left frozen at, standing in for the value
+		/// `pallet_aura::CurrentSlot` keeps forever once BABE takes over.
+		const STALE_AURA_SLOT: u64 = 41;
+		const BABE_SLOT: u64 = 4242;
+
+		fn get_sidechain_status() -> SidechainStatus {
+			<Runtime as sp_sidechain::runtime_decl_for_get_sidechain_status::GetSidechainStatus<
+				crate::Block,
+			>>::get_sidechain_status()
+		}
+
+		fn slots_per_epoch() -> u64 {
+			u64::from(crate::Sidechain::slots_per_epoch().0)
+		}
+
+		#[test]
+		fn slot_is_read_from_aura_storage_pre_flip() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				// Default engine state is Aura.
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+
+				let status = get_sidechain_status();
+
+				assert_eq!(status.slot, ScSlotNumber(STALE_AURA_SLOT));
+				assert_eq!(status.epoch, ScEpochNumber(STALE_AURA_SLOT / slots_per_epoch()));
+			});
+		}
+
+		// Regression test: this API used to read `pallet_aura::CurrentSlot`
+		// unconditionally, which stops advancing once BABE produces blocks, so the
+		// reported slot (and the epoch derived from it) froze at the flip.
+		#[test]
+		fn slot_is_read_from_babe_storage_post_flip() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::Babe);
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+
+				let status = get_sidechain_status();
+
+				assert_eq!(status.slot, ScSlotNumber(BABE_SLOT));
+				assert_eq!(status.epoch, ScEpochNumber(BABE_SLOT / slots_per_epoch()));
+			});
+		}
+
+		// The armed and scheduled states still produce AURA blocks, so the slot must
+		// keep coming from AURA until the flip actually completes.
+		#[test]
+		fn slot_is_read_from_aura_storage_while_the_flip_is_pending() {
+			for state in [State::ArmedBabe, State::ScheduledFlip] {
+				sp_io::TestExternalities::default().execute_with(|| {
+					EngineState::<Runtime>::put(state);
+					pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+					pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+
+					assert_eq!(
+						get_sidechain_status().slot,
+						ScSlotNumber(STALE_AURA_SLOT),
+						"unexpected slot in state {state:?}"
+					);
+				});
+			}
+		}
+	}
+
+	/// The slot duration reported by `SlotApi` comes from AURA's config, so it must not
+	/// diverge from BABE's once BABE produces the blocks.
+	mod slot_config {
+		use crate::{Block, Runtime};
+
+		fn slot_config() -> sidechain_slots::ScSlotConfig {
+			<Runtime as sidechain_slots::runtime_decl_for_slot_api::SlotApi<Block>>::slot_config()
+		}
+
+		#[test]
+		fn slot_duration_is_the_same_for_both_engines() {
+			sp_io::TestExternalities::default().execute_with(|| {
+				// Both are config constants — AURA's `SlotDuration` and BABE's
+				// `MinimumPeriod * 2` — so `slot_config` needs no engine dispatch as
+				// long as they agree. This test fails if a future config change makes
+				// them diverge.
+				assert_eq!(
+					crate::Aura::slot_duration(),
+					crate::Babe::slot_duration(),
+					"AURA and BABE slot durations diverged; SlotApi::slot_config must \
+					 dispatch on the active engine"
+				);
+				assert_eq!(slot_config().slot_duration.as_millis(), crate::SLOT_DURATION);
+			});
+		}
 	}
 }

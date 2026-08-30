@@ -1,10 +1,12 @@
-# Fix update-ledger-parameters block-limit flag mapping
+#toolkit #test
+# Extract block-limit flag mapping into a tested helper
 
-`update-ledger-parameters` now maps each `--block-limit-*` flag to its own
-field. Previously all five block limits were populated from
-`--block-limit-read-time`: the other four flags were parsed but silently
-ignored, and setting only the read-time limit overwrote every block limit
-with the same value.
+`update-ledger-parameters` block-limit mapping is extracted into an
+`apply_block_limit_updates` helper with regression tests. The underlying
+bug — all five block limits populated from `--block-limit-read-time` while
+the other four flags were silently ignored — was fixed in #2073; the tests
+here pin each `--block-limit-*` flag to its own field and verify that unset
+flags keep the base values, so the mapping cannot regress silently again.
 
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1904
 
