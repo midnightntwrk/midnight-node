@@ -1,12 +1,13 @@
 use super::build_txs_ext::BuildTxsExt;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildUtxoOutput, BuildUtxoSpend,
-	BuilderContext, ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction, ContractAddress,
-	ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input, IntentCustom,
-	IntentInfo, OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider,
-	PublicAddress, Recipient, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType,
-	TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
-	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, zswap,
+	BuilderContext, ClaimedUnshieldedSpendsKey, CoinInfo, CoinSelectionStrategy, ContractAction,
+	ContractAddress, ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input,
+	InputInfo, IntentCustom, IntentInfo, OfferInfo, Output, OutputInfo, ProofPreimage,
+	ProofPreimageMarker, ProofProvider, PublicAddress, Recipient, ShieldedCoinSelectionError,
+	ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType, TransactionWithContext,
+	Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo,
+	Wallet, WalletAddress, WalletSeed, zswap,
 };
 use crate::{
 	serde_def::SourceTransactions,
@@ -19,7 +20,10 @@ use crate::{
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use rand::SeedableRng;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::{BTreeMap, HashMap},
+	sync::Arc,
+};
 
 // --- Version-local type definitions ---
 
@@ -144,6 +148,64 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildInput<D, C> for EncodedInputInfo<
 	}
 }
 
+/// Adds `value` to the running total held for `token_type`.
+fn add_shielded_token_value(
+	totals: &mut BTreeMap<ShieldedTokenType, u128>,
+	token_type: ShieldedTokenType,
+	value: u128,
+) -> Result<(), CustomContractBuilderError> {
+	let total = totals.entry(token_type).or_insert(0);
+	*total = total
+		.checked_add(value)
+		.ok_or(CustomContractBuilderError::ShieldedBalanceOverflow)?;
+	Ok(())
+}
+
+/// The shielded value the calling wallet must supply, per token type: `outputs - inputs -
+/// mints`, floored at zero.
+///
+/// The offer built from the circuit's zswap local state does not balance on its own. A
+/// `receiveShielded` output is one the caller has to cover; a `mintShieldedToken` output is
+/// backed by the contract instead, recorded in `Effects::shielded_mints`. Coins the contract
+/// owns enter as inputs and pay for themselves, and transients net to zero — as in
+/// `OfferInfo::build`, which also derives its deltas from inputs and outputs only.
+fn shielded_shortfall<C: BuilderContext<DefaultDB>>(
+	outputs: &[Box<dyn BuildOutput<DefaultDB, C>>],
+	inputs: &[Box<dyn BuildInput<DefaultDB, C>>],
+	effects: &[ContractEffects<DefaultDB>],
+	contract_address: ContractAddress,
+) -> Result<Vec<(ShieldedTokenType, u128)>, CustomContractBuilderError> {
+	let mut owed = BTreeMap::new();
+	for output in outputs {
+		add_shielded_token_value(&mut owed, output.token_type(), output.value())?;
+	}
+
+	let mut covered = BTreeMap::new();
+	for input in inputs {
+		add_shielded_token_value(&mut covered, input.token_type(), input.value())?;
+	}
+	for effect in effects {
+		for entry in effect.shielded_mints.iter() {
+			let (domain_sep, value) = &*entry;
+			add_shielded_token_value(
+				&mut covered,
+				contract_address.custom_shielded_token_type(**domain_sep),
+				u128::from(**value),
+			)?;
+		}
+	}
+
+	Ok(owed
+		.into_iter()
+		.filter_map(|(token_type, total)| {
+			match total.saturating_sub(covered.get(&token_type).copied().unwrap_or(0)) {
+				0 => None,
+				shortfall => Some((token_type, shortfall)),
+			}
+		})
+		.collect())
+}
+
 // --- Builder ---
 
 #[derive(Debug, thiserror::Error)]
@@ -162,6 +224,10 @@ pub enum CustomContractBuilderError {
 	FailedToFindMatchingUtxo(UtxoId),
 	#[error("ClaimedUnshieldedSpendsKey contains non-unshielded token type")]
 	ClaimedUnshieldedSpendTokenTypeError(TokenType),
+	#[error("arithmetic overflow while balancing the shielded offer")]
+	ShieldedBalanceOverflow,
+	#[error("failed to select shielded coins to fund the contract call")]
+	ShieldedCoinSelection(#[from] ShieldedCoinSelectionError),
 }
 
 pub struct CustomContractBuilder<C: BuilderContext<DefaultDB>> {
@@ -451,6 +517,40 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 
 			for encoded_output_info in encoded_output_infos.values() {
 				outputs_info.push(encoded_output_info.clone());
+			}
+		}
+
+		// Cover the coins the circuit took from the caller, or the offer is unbalanced and
+		// the transaction is rejected. A call that moved no shielded value needs nothing.
+		if !outputs_info.is_empty() {
+			// Re-read: `find_outputs` consumed the earlier pair.
+			let (guaranteed, fallible) = contract_intent.find_effects();
+			let effects: Vec<ContractEffects<DefaultDB>> =
+				guaranteed.into_iter().chain(fallible).collect();
+			let shortfalls = shielded_shortfall(
+				&outputs_info,
+				&inputs_info,
+				&effects,
+				contract_intent.find_contract_address().expect("Contract address should be set"),
+			)?;
+			for (token_type, required) in shortfalls {
+				let (funding_inputs, change) = InputInfo::coins_to_cover_value(
+					self.context.clone(),
+					self.funding_seed(),
+					required,
+					token_type,
+					CoinSelectionStrategy::LargestFirst,
+				)?;
+				for funding_input in funding_inputs {
+					inputs_info.push(Box::new(funding_input));
+				}
+				if change > 0 {
+					outputs_info.push(Box::new(OutputInfo {
+						destination: self.funding_seed(),
+						token_type,
+						value: change,
+					}));
+				}
 			}
 		}
 
