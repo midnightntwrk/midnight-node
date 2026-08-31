@@ -148,7 +148,6 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildInput<D, C> for EncodedInputInfo<
 	}
 }
 
-/// Adds `value` to the running total held for `token_type`.
 fn add_shielded_token_value(
 	totals: &mut BTreeMap<ShieldedTokenType, u128>,
 	token_type: ShieldedTokenType,
@@ -164,11 +163,9 @@ fn add_shielded_token_value(
 /// The shielded value the calling wallet must supply, per token type: `outputs - inputs -
 /// mints`, floored at zero.
 ///
-/// The offer built from the circuit's zswap local state does not balance on its own. A
-/// `receiveShielded` output is one the caller has to cover; a `mintShieldedToken` output is
+/// A `receiveShielded` output is one the caller has to cover; a `mintShieldedToken` output is
 /// backed by the contract instead, recorded in `Effects::shielded_mints`. Coins the contract
-/// owns enter as inputs and pay for themselves, and transients net to zero — as in
-/// `OfferInfo::build`, which also derives its deltas from inputs and outputs only.
+/// owns enter as inputs and pay for themselves, and transients net to zero.
 fn shielded_shortfall<C: BuilderContext<DefaultDB>>(
 	outputs: &[Box<dyn BuildOutput<DefaultDB, C>>],
 	inputs: &[Box<dyn BuildInput<DefaultDB, C>>],
@@ -521,7 +518,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 		}
 
 		// Cover the coins the circuit took from the caller, or the offer is unbalanced and
-		// the transaction is rejected. A call that moved no shielded value needs nothing.
+		// the transaction is rejected.
 		if !outputs_info.is_empty() {
 			// Re-read: `find_outputs` consumed the earlier pair.
 			let (guaranteed, fallible) = contract_intent.find_effects();

@@ -44,7 +44,7 @@ export ledger committed_votes: MerkleTree<10, Bytes<32>>; // Merkle tree of vote
 export ledger committed_participants: Set<Bytes<32>>; // Participant nullifier set to prevent committing to multiple votes
 export ledger revealed_participants: Set<Bytes<32>>; // Another participant nullifier set to prevent revealing own votes multiple times
 
-export ledger pot: QualifiedShieldedCoinInfo; // Current pot, it has to be a cell containing `QualifiedCoingInfo` directly, so that compiler knows to provide `writeCoin` function
+export ledger pot: QualifiedShieldedCoinInfo; // Current pot, it has to be a cell containing `QualifiedShieldedCoinInfo` directly, so that compiler knows to provide `writeCoin` function
 export ledger pot_has_coin: Boolean; // Given the pot has to contain coin data directly, information about whether actual coin is there, has to be stored separately
 
 export ledger costs: Costs;

@@ -905,17 +905,12 @@ async fn tic_tac_toe_e2e() {
 /// DAO contract E2E ported from `midnight-contracts`: plays one full voting round, from
 /// buying a vote through to the beneficiary cashing out the pot.
 ///
-/// Moves shielded value into the contract: `buy_in`, `set_topic` and `vote_commit` each take
-/// a `ShieldedCoinInfo` the circuit `receiveShielded`s, funded from `FUNDING_SEED`. Also
-/// covers struct- and generic-typed arguments — the `Costs` constructor struct,
-/// `ShieldedCoinInfo`/`ZswapCoinPublicKey` circuit args, and the `Maybe<..>` witness returns.
-///
-/// One identity is both organizer and voter; `FUNDING_SEED` pays fees, supplies the coins and
-/// is the beneficiary.
+/// `buy_in`, `set_topic` and `vote_commit` each take a `ShieldedCoinInfo` the circuit
+/// `receiveShielded`s, so this also covers struct- and generic-typed circuit arguments. One
+/// identity is both organizer and voter; `FUNDING_SEED` pays fees, supplies the coins and is
+/// the beneficiary.
 #[cfg(feature = "compact-contract-tests")]
 #[tokio::test]
-// The last `call!` advances `step` and `prev_private` without anything reading them after.
-#[allow(unused_assignments)]
 async fn dao_e2e() {
 	let url = node_ws_url().await;
 	let helper = ToolkitTestHelper::new(url);
@@ -960,8 +955,7 @@ async fn dao_e2e() {
 	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
 	let dao_addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
 
-	// Runs one circuit against the latest on-chain state and submits it, threading the private
-	// state forward.
+	// Runs one circuit against the latest state, threading the private state forward.
 	let mut step = 0usize;
 	let mut prev_private = deploy.private_state.clone();
 	macro_rules! call {
@@ -997,8 +991,7 @@ async fn dao_e2e() {
 		}};
 	}
 
-	// Buy one vote: the coin goes to the pot and a voting token is minted back. Needs no
-	// particular phase, so it runs while still in setup.
+	// Buy one vote: the coin goes to the pot, a voting token is minted back. Any phase.
 	let buy_in_coin = format!(
 		r#"{{"nonce": "{BUY_IN_NONCE}", "color": "{NATIVE_TOKEN}", "value": {BUY_IN_DUST}}}"#
 	);
@@ -1006,22 +999,23 @@ async fn dao_e2e() {
 	// Nonce and color are derived on-chain, so take the coin from the circuit's return value.
 	let voting_coin = helper.shielded_coin_arg(&buy_in.result);
 
-	// Open the proposal: seeds the pot and moves setup -> commit. Organizer-only.
 	let seed_coin =
 		format!(r#"{{"nonce": "{SEED_NONCE}", "color": "{NATIVE_TOKEN}", "value": {SEED_DUST}}}"#);
 	let beneficiary = format!(r#"{{"bytes": "{coin_public}"}}"#);
-	call!("set_topic", &["Fund the community pool", beneficiary.as_str(), seed_coin.as_str()]);
 
-	// Commit a "yes" vote, spending and burning the voting token.
-	call!("vote_commit", &["true", voting_coin.as_str()]);
-
-	// commit -> reveal, reveal the vote, reveal -> final.
-	call!("advance", &[]);
-	call!("vote_reveal", &[]);
-	call!("advance", &[]);
-
-	// yes(1) > no(0), so the beneficiary may take the pot.
-	call!("cash_out", &[]);
+	// The rest of the round, in order: open the proposal (organizer-only, setup -> commit),
+	// commit a "yes" vote spending and burning the voting token, commit -> reveal, reveal the
+	// vote, reveal -> final, then cash out to the beneficiary now that yes(1) > no(0).
+	for (circuit, args) in [
+		("set_topic", vec!["Fund the community pool", beneficiary.as_str(), seed_coin.as_str()]),
+		("vote_commit", vec!["true", voting_coin.as_str()]),
+		("advance", vec![]),
+		("vote_reveal", vec![]),
+		("advance", vec![]),
+		("cash_out", vec![]),
+	] {
+		call!(circuit, args.as_slice());
+	}
 
 	// Confirm the round applied on-chain rather than merely finalizing.
 	let final_state = helper.work_dir.path().join("dao_state_final.mn");

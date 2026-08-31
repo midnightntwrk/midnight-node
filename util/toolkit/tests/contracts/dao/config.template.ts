@@ -22,10 +22,9 @@ import {
   type MerkleTreePath,
 } from './out/contract/index.js';
 
-// Voting is per-round, so the ballot and progress are keyed by the contract's `round` counter
-// and a new round starts back at `LocalState.initial`. Everything here round-trips through the
-// JSON private-state file, hence hex for the key (a Uint8Array would not survive) and plain
-// objects for the maps.
+// Voting is per-round, so the ballot and progress are keyed by the contract's `round` counter.
+// Everything here round-trips through the JSON private-state file, hence hex for the key (a
+// Uint8Array would not survive) and plain objects for the maps.
 type DaoPrivateState = {
   readonly secretKey: string;
   readonly ballots: Readonly<Record<string, boolean>>;

@@ -437,7 +437,6 @@ impl ToolkitTestHelper {
 		}
 	}
 
-	/// Reads a circuit's `--output-result` file.
 	pub fn read_result(&self, result_file: &Path) -> serde_json::Value {
 		let raw = std::fs::read_to_string(result_file)
 			.unwrap_or_else(|e| panic!("failed to read {}: {e}", result_file.display()));

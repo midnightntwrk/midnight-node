@@ -19,4 +19,4 @@ floats onto a dev build that semver orders above rc.1.
 Covered by a new `dao_e2e`, which ports the DAO voting contract from midnight-contracts and
 plays a full round.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/PR_NUMBER
+PR: https://github.com/midnightntwrk/midnight-node/pull/2077
