@@ -160,6 +160,24 @@ fn add_shielded_token_value(
 	Ok(())
 }
 
+/// Each call's effects, paired with its own contract address. One intent may span several
+/// contracts, and a mint's token type is derived from the contract that minted it.
+fn effects_by_contract(
+	intent: &IntentCustom<DefaultDB>,
+) -> Vec<(ContractAddress, ContractEffects<DefaultDB>)> {
+	let mut effects = Vec::new();
+	for action in intent.intent.actions.iter() {
+		if let ContractAction::Call(ref call) = *action.clone() {
+			for transcript in [&call.guaranteed_transcript, &call.fallible_transcript] {
+				if let Some(transcript) = transcript {
+					effects.push((call.address, transcript.effects.clone()));
+				}
+			}
+		}
+	}
+	effects
+}
+
 /// The shielded value the calling wallet must supply, per token type: `outputs - inputs -
 /// mints`, floored at zero.
 ///
@@ -169,8 +187,7 @@ fn add_shielded_token_value(
 fn shielded_shortfall<C: BuilderContext<DefaultDB>>(
 	outputs: &[Box<dyn BuildOutput<DefaultDB, C>>],
 	inputs: &[Box<dyn BuildInput<DefaultDB, C>>],
-	effects: &[ContractEffects<DefaultDB>],
-	contract_address: ContractAddress,
+	effects: &[(ContractAddress, ContractEffects<DefaultDB>)],
 ) -> Result<Vec<(ShieldedTokenType, u128)>, CustomContractBuilderError> {
 	let mut owed = BTreeMap::new();
 	for output in outputs {
@@ -181,7 +198,7 @@ fn shielded_shortfall<C: BuilderContext<DefaultDB>>(
 	for input in inputs {
 		add_shielded_token_value(&mut covered, input.token_type(), input.value())?;
 	}
-	for effect in effects {
+	for (contract_address, effect) in effects {
 		for entry in effect.shielded_mints.iter() {
 			let (domain_sep, value) = &*entry;
 			add_shielded_token_value(
@@ -520,16 +537,8 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 		// Cover the coins the circuit took from the caller, or the offer is unbalanced and
 		// the transaction is rejected.
 		if !outputs_info.is_empty() {
-			// Re-read: `find_outputs` consumed the earlier pair.
-			let (guaranteed, fallible) = contract_intent.find_effects();
-			let effects: Vec<ContractEffects<DefaultDB>> =
-				guaranteed.into_iter().chain(fallible).collect();
-			let shortfalls = shielded_shortfall(
-				&outputs_info,
-				&inputs_info,
-				&effects,
-				contract_intent.find_contract_address().expect("Contract address should be set"),
-			)?;
+			let effects = effects_by_contract(&contract_intent);
+			let shortfalls = shielded_shortfall(&outputs_info, &inputs_info, &effects)?;
 			for (token_type, required) in shortfalls {
 				let (funding_inputs, change) = InputInfo::coins_to_cover_value(
 					self.context.clone(),
