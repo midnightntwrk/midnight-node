@@ -32,6 +32,7 @@ use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
 use sidechain_domain::{AssetName, MainchainAddress, McTxHash};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_babe::AuthorityId as BabeId;
+use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
 use sp_partner_chains_bridge::{
@@ -114,6 +115,7 @@ pub fn authority_keys_from_seed(s: &str) -> AuthorityKeys {
 			aura: get_from_seed::<AuraId>(s),
 			grandpa: get_from_seed::<GrandpaId>(s),
 			babe: get_from_seed::<BabeId>(s),
+			beefy: get_from_seed::<BeefyId>(s),
 		},
 		cross_chain: get_from_seed::<CrossChainPublic>(s),
 	}
@@ -247,6 +249,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 				grandpa: keys.grandpa_pubkey.into(),
 				// Fall back to the AURA key when no BABE key is configured (both sr25519).
 				babe: keys.babe_pubkey.unwrap_or(keys.aura_pubkey).into(),
+				beefy: keys.beefy_pubkey.into(),
 			},
 			cross_chain: keys.crosschain_pubkey.into(),
 		})
@@ -262,14 +265,9 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		aura: Default::default(),
 		babe: Default::default(),
 		consensus_engine: Default::default(),
-		beefy: BeefyConfig {
-			authorities: genesis
-				.initial_authorities()
-				.iter()
-				.map(|v| v.beefy_pubkey.into())
-				.collect(),
-			genesis_block: Some(One::one()),
-		},
+		// Authorities stay empty: beefy is in `SessionKeys`, so the session genesis
+		// handler initializes them; populating both panics on double-initialization.
+		beefy: BeefyConfig { authorities: vec![], genesis_block: Some(One::one()) },
 		grandpa: Default::default(),
 		midnight: MidnightConfig {
 			_config: Default::default(),

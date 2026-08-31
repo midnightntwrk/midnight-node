@@ -47,8 +47,16 @@ pub mod authority_keys {
 
 	impl From<LegacySessionKeys> for SessionKeys {
 		fn from(old: LegacySessionKeys) -> Self {
-			let babe_from_aura = old.aura.clone().into_inner().into();
-			SessionKeys { aura: old.aura, grandpa: old.grandpa, babe: babe_from_aura }
+			let aura_raw = old.aura.clone().into_inner().0;
+			let mut beefy_raw = [0u8; 33];
+			beefy_raw[1..].copy_from_slice(&aura_raw);
+			SessionKeys {
+				babe: sp_core::sr25519::Public::from_raw(aura_raw).into(),
+				// Invalid SEC1 tag keeps the placeholder distinct from any real key.
+				beefy: sp_core::ecdsa::Public::from_raw(beefy_raw).into(),
+				aura: old.aura,
+				grandpa: old.grandpa,
+			}
 		}
 	}
 

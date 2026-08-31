@@ -167,9 +167,9 @@ pub mod opaque {
 	use super::*;
 	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ed25519, sr25519};
+	use sp_core::{ecdsa, ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, BEEFY, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -222,8 +222,7 @@ pub mod opaque {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
 			pub babe: Babe,
-			// todo: add the beefy
-			// pub beefy: Beefy,
+			pub beefy: Beefy,
 		}
 	}
 
@@ -237,7 +236,22 @@ pub mod opaque {
 				Some(raw_babe) => sr25519::Public::from_raw(raw_babe.try_into().ok()?),
 				None => aura,
 			};
-			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
+			// Fall back to the aura key behind the invalid SEC1 tag 0x00, matching the
+			// migration placeholder (distinct per validator, collides with no real key).
+			let beefy = match keys.find(BEEFY) {
+				Some(raw_beefy) => ecdsa::Public::from_raw(raw_beefy.try_into().ok()?),
+				None => {
+					let mut raw = [0u8; 33];
+					raw[1..].copy_from_slice(&aura.0);
+					ecdsa::Public::from_raw(raw)
+				},
+			};
+			Some(Self {
+				aura: aura.into(),
+				grandpa: grandpa.into(),
+				babe: babe.into(),
+				beefy: beefy.into(),
+			})
 		}
 	}
 
@@ -256,6 +270,7 @@ pub mod opaque {
 					GRANDPA,
 					value.grandpa.into_inner().to_raw().to_vec(),
 				),
+				sidechain_domain::CandidateKey::new(BEEFY, value.beefy.into_inner().to_raw_vec()),
 			])
 		}
 	}
