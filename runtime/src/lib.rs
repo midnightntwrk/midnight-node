@@ -161,9 +161,9 @@ pub mod opaque {
 	use super::*;
 	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
-	use sp_core::{ed25519, sr25519};
+	use sp_core::{ecdsa, ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, BEEFY, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -216,8 +216,7 @@ pub mod opaque {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
 			pub babe: Babe,
-			// todo: add the beefy
-			// pub beefy: Beefy,
+			pub beefy: Beefy,
 		}
 	}
 
@@ -229,7 +228,14 @@ pub mod opaque {
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
 			let babe = keys.find(BABE)?;
 			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
+			let beefy = keys.find(BEEFY).or_else(|| keys.find(CROSS_CHAIN))?;
+			let beefy = ecdsa::Public::from_raw(beefy.try_into().ok()?);
+			Some(Self {
+				aura: aura.into(),
+				grandpa: grandpa.into(),
+				babe: babe.into(),
+				beefy: beefy.into(),
+			})
 		}
 	}
 
@@ -248,6 +254,7 @@ pub mod opaque {
 					GRANDPA,
 					value.grandpa.into_inner().to_raw().to_vec(),
 				),
+				sidechain_domain::CandidateKey::new(BEEFY, value.beefy.into_inner().to_raw_vec()),
 			])
 		}
 	}
@@ -373,10 +380,10 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Initializes QueuedCommittee (v1 -> v2), adds BABE keys, and activates the
+		// Initializes QueuedCommittee (v1 -> v2), adds BABE and BEEFY keys, and activates the
 		// consensus-engine pallet (pre-seeds pallet-babe's GenesisSlot before its
 		// `on_initialize` sees the first BABE pre-digest).
-		crate::migrations::authority_keys::MigrateV1ToV2AddBabeSessionKeys,
+		crate::migrations::authority_keys::MigrateV1ToV2AddBabeAndBeefySessionKeys,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();

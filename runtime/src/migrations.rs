@@ -61,11 +61,13 @@ pub mod authority_keys {
 	use frame_support::{
 		migrations::VersionedMigration, traits::UncheckedOnRuntimeUpgrade, weights::Weight,
 	};
+	use pallet_session_validator_management::migrations::authority_keys::UpgradeCommitteeMember;
 	use pallet_session_validator_management::{
 		CommitteeInfo, CurrentCommittee, NextCommittee, QueuedCommittee,
 	};
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_runtime::{impl_opaque_keys, traits::OpaqueKeys};
+	use sp_session_validator_management::CommitteeMember as _;
 
 	impl_opaque_keys! {
 		#[derive(MaxEncodedLen, PartialOrd, Ord)]
@@ -75,17 +77,52 @@ pub mod authority_keys {
 		}
 	}
 
+	/// Fallback translation for a `pallet_session` entry whose validator is in none of the committees, so no
+	/// cross-chain key is recoverable from AccountId.
+	///
+	/// Aura bytes behind the invalid SEC1 tag `0x00` keep the placeholder distinct from any real
+	///
+	/// key rather than colliding with one.
+	/// BABE key is copied from AURA key.
 	impl From<PreUpgradeSessionKeys> for SessionKeys {
 		fn from(old: PreUpgradeSessionKeys) -> Self {
-			// BEEFY logic will go in here and it will look into storages to dig out matching key
+			let aura_raw = old.aura.clone().into_inner().0;
+			let mut beefy_raw = [0u8; 33];
+			beefy_raw[1..].copy_from_slice(&aura_raw);
+			let beefy_from_aura = sp_core::ecdsa::Public::from_raw(beefy_raw).into();
 			let babe_from_aura = old.aura.clone().into_inner().into();
-			SessionKeys { aura: old.aura, grandpa: old.grandpa, babe: babe_from_aura }
+			SessionKeys {
+				aura: old.aura,
+				babe: babe_from_aura,
+				beefy: beefy_from_aura,
+				grandpa: old.grandpa,
+			}
 		}
 	}
 
-	type PreUpgradeCommitteeMember = CommitteeMember<CrossChainPublic, PreUpgradeSessionKeys>;
+	/// Builds the post-upgrade keys for a validator whose cross-chain key is known.
+	///
+	/// The committee registers each validator's cross-chain key as its beefy key
+	/// (`beefy_pub_key == sidechain_pub_key`), and both are ECDSA, so the cross-chain key is the
+	/// beefy key this validator actually holds a secret for.
+	/// BABE key is copied from AURA key.
+	fn upgrade_with_cross_chain(
+		old: PreUpgradeSessionKeys,
+		cross_chain: CrossChainPublic,
+	) -> SessionKeys {
+		let babe_from_aura = old.aura.clone().into_inner().into();
+		SessionKeys {
+			aura: old.aura,
+			babe: babe_from_aura,
+			beefy: sp_core::ecdsa::Public::from(cross_chain.into_inner()).into(),
+			grandpa: old.grandpa,
+		}
+	}
 
-	type PreUpgradeCommitteeInfo = CommitteeInfo<
+	pub(crate) type PreUpgradeCommitteeMember =
+		CommitteeMember<CrossChainPublic, PreUpgradeSessionKeys>;
+
+	pub(crate) type PreUpgradeCommitteeInfo = CommitteeInfo<
 		<Runtime as pallet_session_validator_management::Config>::ScEpochNumber,
 		PreUpgradeCommitteeMember,
 		<Runtime as pallet_session_validator_management::Config>::MaxValidators,
@@ -101,13 +138,48 @@ pub mod authority_keys {
 		CommitteeInfo {
 			epoch: old.epoch,
 			committee: sp_runtime::BoundedVec::truncate_from(
-				old.committee.into_iter().map(|m| m.map_authority_keys(Into::into)).collect(),
+				old.committee.into_iter().map(|m| m.upgrade()).collect(),
 			),
 		}
 	}
 
-	/// The one-shot "introduce BABE" step of the runtime upgrade: translates the committee and
-	/// session keys to the shape that includes the BABE key, and activates
+	impl UpgradeCommitteeMember<Runtime> for PreUpgradeCommitteeMember {
+		fn upgrade(
+			self,
+		) -> <Runtime as pallet_session_validator_management::Config>::CommitteeMember {
+			// A committee member carries its own cross-chain key, so no lookup is needed here.
+			let cross_chain = self.authority_id();
+			self.map_authority_keys(|old| upgrade_with_cross_chain(old, cross_chain.clone()))
+		}
+	}
+
+	/// Reads the still-legacy-shaped committees and indexes their members' cross-chain keys by the
+	/// `pallet_session` validator id.
+	///
+	/// `pallet_session` keys validators by `AccountId`, which is `blake2_256` of the cross-chain
+	/// key and therefore not invertible — so the mapping is rebuilt by hashing each committee
+	/// member's `id` forward. The committees are the only on-chain source of these keys.
+	fn cross_chain_keys_by_validator() -> Vec<(crate::AccountId, CrossChainPublic)> {
+		let committees = [
+			frame_support::storage::unhashed::get::<PreUpgradeCommitteeInfo>(&CurrentCommittee::<
+				Runtime,
+			>::hashed_key()),
+			frame_support::storage::unhashed::get::<PreUpgradeCommitteeInfo>(&NextCommittee::<
+				Runtime,
+			>::hashed_key()),
+		];
+
+		let mut by_validator = Vec::new();
+		for member in committees.into_iter().flatten().flat_map(|info| info.committee) {
+			let cross_chain = member.authority_id();
+			let validator = crate::AccountId::from(cross_chain.clone());
+			if !by_validator.iter().any(|(known, _)| known == &validator) {
+				by_validator.push((validator, cross_chain));
+			}
+		}
+		by_validator
+	}
+
 	/// `pallet-consensus-engine` by pre-seeding `pallet_babe::GenesisSlot`.
 	///
 	/// The activation lives here, gated by `pallet-session-validator-management`'s storage version
@@ -116,9 +188,9 @@ pub mod authority_keys {
 	/// its in-code version before any migration runs, so a `VersionedMigration` keyed on the new
 	/// pallet never fires. The committee pallet exists on every chain being upgraded, so its
 	/// version transition is what identifies this upgrade exactly once.
-	pub struct InnerMigrateV1ToV2AddBabeSessionKeys;
+	pub struct InnerMigrateV1ToV2AddBabeAndBeefySessionKeys;
 
-	impl UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2AddBabeSessionKeys {
+	impl UncheckedOnRuntimeUpgrade for InnerMigrateV1ToV2AddBabeAndBeefySessionKeys {
 		fn on_runtime_upgrade() -> Weight {
 			log::info!("translating committee & session keys and initializing QueuedCommittee");
 			let db = <Runtime as frame_system::Config>::DbWeight::get();
@@ -129,6 +201,8 @@ pub mod authority_keys {
 			// epoch from it. Migrations run before all hooks, so this is early enough.
 			pallet_consensus_engine::Pallet::<Runtime>::activate();
 			weight = weight.saturating_add(db.writes(1));
+
+			let cross_chain_keys = cross_chain_keys_by_validator();
 
 			// `CurrentCommittee`/`NextCommittee` must be translated before anything reads them
 			// typed as the post-BABE `CommitteeMember` — reading them with the new type first
@@ -168,8 +242,24 @@ pub mod authority_keys {
 			// them when a validator rotates out, so the map may contain stale entries beyond the
 			// current/next committee union.
 			let validators = pallet_session::NextKeys::<Runtime>::iter_keys().count() as u64;
-			pallet_session::Pallet::<Runtime>::upgrade_keys(
-				|_id, old_keys: PreUpgradeSessionKeys| old_keys.into(),
+			pallet_session::Pallet::<Runtime>::upgrade_keys::<PreUpgradeSessionKeys, _>(
+				|validator, old_keys| match cross_chain_keys
+					.iter()
+					.find(|(known, _)| known == &validator)
+				{
+					Some((_, cross_chain)) => {
+						upgrade_with_cross_chain(old_keys, cross_chain.clone())
+					},
+					None => {
+						log::warn!(
+							target: "runtime::migration::add-beefy-session-keys",
+							"No committee member matches session validator {validator:?}; \
+							 its beefy key falls back to the aura placeholder. Such a validator \
+							 is not a BEEFY authority, so the placeholder is never used to sign.",
+						);
+						old_keys.into()
+					},
+				},
 			);
 			let old_key_types = PreUpgradeSessionKeys::key_ids().len() as u64;
 			let new_key_types = SessionKeys::key_ids().len() as u64;
@@ -323,10 +413,10 @@ pub mod authority_keys {
 		}
 	}
 
-	pub type MigrateV1ToV2AddBabeSessionKeys = VersionedMigration<
+	pub type MigrateV1ToV2AddBabeAndBeefySessionKeys = VersionedMigration<
 		1,
 		2,
-		InnerMigrateV1ToV2AddBabeSessionKeys,
+		InnerMigrateV1ToV2AddBabeAndBeefySessionKeys,
 		pallet_session_validator_management::Pallet<Runtime>,
 		<Runtime as frame_system::Config>::DbWeight,
 	>;
@@ -334,13 +424,21 @@ pub mod authority_keys {
 
 #[cfg(test)]
 mod tests {
-	use super::authority_keys::MigrateV1ToV2AddBabeSessionKeys;
-	use crate::{Runtime, SessionCommitteeManagement};
+	use super::authority_keys::*;
+	use crate::mock::{alice, bob, new_test_ext};
+	use crate::{AccountId, Runtime, SessionCommitteeManagement};
+	use authority_selection_inherents::CommitteeMember;
+	use frame_support::BoundedVec;
 	use frame_support::traits::{
 		BeforeAllRuntimeMigrations, GetStorageVersion, OnRuntimeUpgrade, StorageVersion,
+		UncheckedOnRuntimeUpgrade,
 	};
 	use pallet_consensus_engine::babe_genesis_slot_sentinel;
+	use pallet_session_validator_management::{CurrentCommittee, QueuedCommittee};
+	use sidechain_domain::ScEpochNumber;
 	use sp_consensus_slots::Slot;
+	use sp_core::Pair;
+	use sp_session_validator_management::CommitteeMember as _;
 
 	/// State of a chain about to take the upgrade: the committee pallet at storage version 1,
 	/// `pallet-babe` and `pallet-consensus-engine` not present at all.
@@ -364,12 +462,61 @@ mod tests {
 				crate::ConsensusEngine::in_code_storage_version(),
 				"FRAME initializes the new pallet's version before any migration runs"
 			);
-			MigrateV1ToV2AddBabeSessionKeys::on_runtime_upgrade();
+			MigrateV1ToV2AddBabeAndBeefySessionKeys::on_runtime_upgrade();
 
 			assert_eq!(pallet_babe::GenesisSlot::<Runtime>::get(), babe_genesis_slot_sentinel());
 			assert_eq!(
 				SessionCommitteeManagement::on_chain_storage_version(),
 				StorageVersion::new(2)
+			);
+		});
+	}
+
+	fn pre_upgrade_member(keys: &crate::mock::TestKeys) -> PreUpgradeCommitteeMember {
+		CommitteeMember::permissioned(
+			keys.cross_chain.public(),
+			PreUpgradeSessionKeys { aura: keys.aura.public(), grandpa: keys.grandpa.public() },
+		)
+	}
+
+	#[test]
+	fn migration_writes_the_cross_chain_key_as_the_beefy_key() {
+		new_test_ext().execute_with(|| {
+			let a = alice();
+			let cross_chain = a.cross_chain.public();
+			let validator = AccountId::from(cross_chain.clone());
+
+			// Pre-upgrade state: committee and session keys.
+			let legacy = PreUpgradeCommitteeInfo {
+				epoch: ScEpochNumber(7),
+				committee: BoundedVec::truncate_from(vec![pre_upgrade_member(&a)]),
+			};
+			frame_support::storage::unhashed::put(
+				&CurrentCommittee::<Runtime>::hashed_key(),
+				&legacy,
+			);
+			frame_support::storage::unhashed::put(
+				&pallet_session::NextKeys::<Runtime>::hashed_key_for(&validator),
+				&PreUpgradeSessionKeys { aura: a.aura.public(), grandpa: a.grandpa.public() },
+			);
+
+			InnerMigrateV1ToV2AddBabeAndBeefySessionKeys::on_runtime_upgrade();
+
+			let want: sp_consensus_beefy::ecdsa_crypto::AuthorityId =
+				sp_core::ecdsa::Public::from(cross_chain.clone().into_inner()).into();
+
+			let member = &CurrentCommittee::<Runtime>::get().committee[0];
+			assert_eq!(member.authority_keys().beefy, want, "committee member beefy key");
+			assert_eq!(member.authority_keys().aura, a.aura.public(), "aura preserved");
+
+			let session_keys = pallet_session::NextKeys::<Runtime>::get(&validator)
+				.expect("session keys translated");
+			assert_eq!(session_keys.beefy, want, "pallet_session beefy key");
+
+			assert_eq!(
+				QueuedCommittee::<Runtime>::get().committee,
+				CurrentCommittee::<Runtime>::get().committee,
+				"queued seeded from current"
 			);
 		});
 	}
@@ -383,9 +530,48 @@ mod tests {
 			StorageVersion::new(2).put::<SessionCommitteeManagement>();
 			pallet_babe::GenesisSlot::<Runtime>::put(Slot::from(1500));
 
-			MigrateV1ToV2AddBabeSessionKeys::on_runtime_upgrade();
+			MigrateV1ToV2AddBabeAndBeefySessionKeys::on_runtime_upgrade();
 
 			assert_eq!(pallet_babe::GenesisSlot::<Runtime>::get(), Slot::from(1500));
+		});
+	}
+
+	#[test]
+	fn unresolvable_session_validator_keeps_the_placeholder() {
+		new_test_ext().execute_with(|| {
+			let a = alice();
+			let stale = bob();
+			let stale_validator = AccountId::from(stale.cross_chain.public());
+
+			// Committee contains only alice; bob is a stale `NextKeys` entry. The genesis in
+			// `new_test_ext` seeds alice *and* bob, so the other two committee storages are
+			// cleared — otherwise bob stays resolvable through them.
+			frame_support::storage::unhashed::put(
+				&CurrentCommittee::<Runtime>::hashed_key(),
+				&PreUpgradeCommitteeInfo {
+					epoch: ScEpochNumber(7),
+					committee: BoundedVec::truncate_from(vec![pre_upgrade_member(&a)]),
+				},
+			);
+			frame_support::storage::unhashed::kill(&QueuedCommittee::<Runtime>::hashed_key());
+			frame_support::storage::unhashed::kill(
+				&pallet_session_validator_management::NextCommittee::<Runtime>::hashed_key(),
+			);
+			frame_support::storage::unhashed::put(
+				&pallet_session::NextKeys::<Runtime>::hashed_key_for(&stale_validator),
+				&PreUpgradeSessionKeys {
+					aura: stale.aura.public(),
+					grandpa: stale.grandpa.public(),
+				},
+			);
+
+			InnerMigrateV1ToV2AddBabeAndBeefySessionKeys::on_runtime_upgrade();
+
+			let keys = pallet_session::NextKeys::<Runtime>::get(&stale_validator)
+				.expect("stale entry still translated");
+			let raw = keys.beefy.clone().into_inner().0;
+			assert_eq!(raw[0], 0, "placeholder keeps the invalid SEC1 tag");
+			assert_eq!(&raw[1..], &stale.aura.public().into_inner().0, "placeholder is aura bytes");
 		});
 	}
 }
