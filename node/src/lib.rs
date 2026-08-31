@@ -24,6 +24,7 @@ pub mod chain_spec;
 pub mod cli;
 pub mod command;
 pub mod committee_membership;
+pub mod consensus_engine_dispatch;
 pub mod extensions;
 mod filtering_pool;
 pub mod genesis;

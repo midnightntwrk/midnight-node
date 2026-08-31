@@ -31,6 +31,7 @@ use midnight_primitives_cnight_observation::ObservedUtxos;
 use sc_chain_spec::{ChainSpecExtension, GenericChainSpec};
 use sidechain_domain::{AssetName, MainchainAddress, McTxHash};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
+use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{Encode, H256, Pair, Public};
 use sp_partner_chains_bridge::{
@@ -112,6 +113,7 @@ pub fn authority_keys_from_seed(s: &str) -> AuthorityKeys {
 		session: SessionKeys {
 			aura: get_from_seed::<AuraId>(s),
 			grandpa: get_from_seed::<GrandpaId>(s),
+			beefy: get_from_seed::<BeefyId>(s),
 		},
 		cross_chain: get_from_seed::<CrossChainPublic>(s),
 	}
@@ -243,6 +245,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			session: SessionKeys {
 				aura: keys.aura_pubkey.into(),
 				grandpa: keys.grandpa_pubkey.into(),
+				beefy: keys.beefy_pubkey.into(),
 			},
 			cross_chain: keys.crosschain_pubkey.into(),
 		})
