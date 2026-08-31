@@ -18,12 +18,15 @@
 //! `authority_keys` below are only wired in for the specific upgrade that needs them.
 
 pub mod authority_keys {
-	//! Runtime-side types for the session-key cutover (BABE added to
+	//! Runtime-side types for the session-key cutover (BABE and BEEFY added to
 	//! [`crate::opaque::SessionKeys`]). [`MigrateV1ToV2AddBabeSessionKeys`] translates committee
 	//! and [pallet_session] key storage in one versioned step and runs only on chains at pallet
 	//! storage version 1; [`SetAddBabeSessionKeysMigratedFlag`] then records the guard the
-	//! node-side committee decoders read. BABE placeholders reuse the validator's aura key; real
-	//! keys become effective at a later session rotation from observed Cardano registrations.
+	//! node-side committee decoders read.
+	//!
+	//! Placeholder keys, distinct per validator: babe reuses the validator's aura bytes (the same
+	//! sr25519 key the aura-to-babe migration keystore signs with); beefy prefixes them with the
+	//! invalid SEC1 tag `0x00`. Real keys arrive with re-registrations at a later rotation.
 	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
 	use alloc::vec::Vec;
 	use authority_selection_inherents::CommitteeMember;
@@ -45,8 +48,15 @@ pub mod authority_keys {
 
 	impl From<LegacySessionKeys> for SessionKeys {
 		fn from(old: LegacySessionKeys) -> Self {
-			let babe_from_aura = old.aura.clone().into_inner().into();
-			SessionKeys { aura: old.aura, grandpa: old.grandpa, babe: babe_from_aura }
+			let aura_raw = old.aura.clone().into_inner().0;
+			let mut beefy_raw = [0u8; 33];
+			beefy_raw[1..].copy_from_slice(&aura_raw);
+			SessionKeys {
+				babe: sp_core::sr25519::Public::from_raw(aura_raw).into(),
+				beefy: sp_core::ecdsa::Public::from_raw(beefy_raw).into(),
+				aura: old.aura,
+				grandpa: old.grandpa,
+			}
 		}
 	}
 

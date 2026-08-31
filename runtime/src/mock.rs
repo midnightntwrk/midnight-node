@@ -30,7 +30,7 @@ use sp_core::{ByteArray, H256, Pair, crypto::AccountId32};
 use sp_core::{ecdsa, ed25519, sr25519};
 use sp_runtime::{
 	BuildStorage, Digest, DigestItem, impl_opaque_keys,
-	key_types::{AURA, GRANDPA},
+	key_types::{AURA, BABE, BEEFY, GRANDPA},
 	traits::{BlakeTwo256, ConvertInto, IdentityLookup, OpaqueKeys},
 };
 use std::cmp::max;
@@ -471,9 +471,13 @@ impl MockValidator {
 
 	pub fn session_keys(&self) -> CandidateKeys {
 		let keys = self.account_keys();
+		let mut beefy = vec![2u8];
+		beefy.extend_from_slice(&keys.aura);
 		CandidateKeys(vec![
 			CandidateKey::new(AURA, keys.aura.to_vec()),
 			CandidateKey::new(GRANDPA, keys.grandpa.to_vec()),
+			CandidateKey::new(BABE, keys.aura.to_vec()),
+			CandidateKey::new(BEEFY, beefy),
 		])
 	}
 }
