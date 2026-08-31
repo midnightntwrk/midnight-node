@@ -2,7 +2,7 @@ use crate::mock::*;
 use crate::*;
 use frame_support::{assert_noop, assert_ok, traits::ConstU32};
 use midnight_primitives::BridgeRecipient;
-use pallet_partner_chains_bridge::TransferHandler;
+use pallet_partner_chains_bridge::{TransferHandler, TransferHandlerError};
 use sidechain_domain::McTxHash;
 use sp_partner_chains_bridge::*;
 use sp_runtime::{BoundedVec, BuildStorage, DispatchError};
@@ -59,9 +59,9 @@ fn emits_events() {
 		// Frame system drops events from block 0.
 		frame_system::Pallet::<Test>::set_block_number(1);
 		approve(McTxHash([1; 32]));
-		C2MBridge::handle_incoming_transfer(addressed_transfer());
-		C2MBridge::handle_incoming_transfer(reserve_transfer());
-		C2MBridge::handle_incoming_transfer(invalid_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(addressed_transfer()));
+		assert_ok!(C2MBridge::handle_incoming_transfer(reserve_transfer()));
+		assert_ok!(C2MBridge::handle_incoming_transfer(invalid_transfer()));
 
 		let events = frame_system::Pallet::<Test>::read_events_for_pallet::<Event<Test>>();
 
@@ -95,8 +95,8 @@ fn nonce_influences_addressed_transfers() {
 		let second = BridgeTransferV1 { mc_tx_hash: McTxHash([11; 32]), ..addressed_transfer() };
 		approve(first.mc_tx_hash);
 		approve(second.mc_tx_hash);
-		C2MBridge::handle_incoming_transfer(first);
-		C2MBridge::handle_incoming_transfer(second);
+		assert_ok!(C2MBridge::handle_incoming_transfer(first));
+		assert_ok!(C2MBridge::handle_incoming_transfer(second));
 		let transfers = mock_pallet::Transfers::<Test>::get();
 		let [first, second] = transfers.as_slice() else {
 			panic!("expected exactly two transfers");
@@ -110,7 +110,7 @@ fn unapproved_user_transfer_routes_to_treasury() {
 	new_test_ext().execute_with(|| {
 		frame_system::Pallet::<Test>::set_block_number(1);
 		// No approval inserted for `addressed_transfer().mc_tx_hash`.
-		C2MBridge::handle_incoming_transfer(addressed_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(addressed_transfer()));
 
 		let events = frame_system::Pallet::<Test>::read_events_for_pallet::<Event<Test>>();
 		assert_eq!(
@@ -134,11 +134,11 @@ fn approval_is_consumed_on_user_transfer() {
 		assert!(pallet::ApprovedMcTxHashes::<Test>::contains_key(tx.mc_tx_hash));
 
 		// First delivery is approved -> consumes the approval.
-		C2MBridge::handle_incoming_transfer(tx.clone());
+		assert_ok!(C2MBridge::handle_incoming_transfer(tx.clone()));
 		assert!(!pallet::ApprovedMcTxHashes::<Test>::contains_key(tx.mc_tx_hash));
 
 		// Second delivery of the same Cardano tx hash is unapproved.
-		C2MBridge::handle_incoming_transfer(tx);
+		assert_ok!(C2MBridge::handle_incoming_transfer(tx));
 
 		let events = frame_system::Pallet::<Test>::read_events_for_pallet::<Event<Test>>();
 		assert_eq!(
@@ -161,6 +161,116 @@ fn approval_is_consumed_on_user_transfer() {
 	})
 }
 
+fn set_executor_fails(fails: bool) {
+	mock_pallet::ExecutorFails::<Test>::put(fails);
+}
+
+#[test]
+fn failed_ledger_execution_is_reported_to_the_bridge_pallet() {
+	new_test_ext().execute_with(|| {
+		frame_system::Pallet::<Test>::set_block_number(1);
+		set_executor_fails(true);
+
+		let tx = addressed_transfer();
+		approve(tx.mc_tx_hash);
+		assert_eq!(C2MBridge::handle_incoming_transfer(tx), Err(TransferHandlerError::Retriable));
+		assert_eq!(
+			C2MBridge::handle_incoming_transfer(reserve_transfer()),
+			Err(TransferHandlerError::Retriable)
+		);
+		assert_eq!(
+			C2MBridge::handle_incoming_transfer(invalid_transfer()),
+			Err(TransferHandlerError::Retriable)
+		);
+		// An unapproved user transfer is routed to the treasury, which fails the same way.
+		assert_eq!(
+			C2MBridge::handle_incoming_transfer(BridgeTransferV1 {
+				mc_tx_hash: McTxHash([9; 32]),
+				..addressed_transfer()
+			}),
+			Err(TransferHandlerError::Retriable)
+		);
+
+		assert!(subminimal_events().is_empty());
+	})
+}
+
+#[test]
+fn approval_is_not_consumed_by_a_failed_user_transfer() {
+	new_test_ext().execute_with(|| {
+		frame_system::Pallet::<Test>::set_block_number(1);
+		let tx = addressed_transfer();
+		approve(tx.mc_tx_hash);
+
+		set_executor_fails(true);
+		assert_eq!(
+			C2MBridge::handle_incoming_transfer(tx.clone()),
+			Err(TransferHandlerError::Retriable)
+		);
+
+		assert!(pallet::ApprovedMcTxHashes::<Test>::contains_key(tx.mc_tx_hash));
+
+		// Retrying once the ledger accepts transactions again credits the recipient.
+		set_executor_fails(false);
+		assert_ok!(C2MBridge::handle_incoming_transfer(tx.clone()));
+		assert!(!pallet::ApprovedMcTxHashes::<Test>::contains_key(tx.mc_tx_hash));
+		assert_eq!(
+			subminimal_events(),
+			vec![Event::UserTransfer {
+				mc_tx_hash: tx.mc_tx_hash,
+				amount: 100,
+				recipient: recipient(),
+				midnight_tx_hash: [0u8; 32],
+			}],
+		);
+	})
+}
+
+#[test]
+fn failed_subminimal_flush_keeps_the_accumulator() {
+	new_test_ext().execute_with(|| {
+		frame_system::Pallet::<Test>::set_block_number(1);
+		set_flush_threshold(100);
+
+		// sum = 90, no flush yet.
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+
+		// sum would be 180 > 100, so this one flushes — and the flush fails.
+		set_executor_fails(true);
+		assert_eq!(
+			C2MBridge::handle_incoming_transfer(subminimal_transfer()),
+			Err(TransferHandlerError::Retriable)
+		);
+		// The failing transfer is not accounted for, so re-handling it can't double count it.
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 1, sum: 90 }
+		);
+		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
+		assert!(subminimal_events().is_empty());
+
+		// Retry flushes both transfers exactly once.
+		set_executor_fails(false);
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
+		assert_eq!(
+			pallet::SubminimalTransfers::<Test>::get(),
+			SubminimalTransfersState { count: 0, sum: 0 }
+		);
+		assert_eq!(
+			subminimal_events(),
+			vec![Event::SubminimalFlushTransfer {
+				amount: 180,
+				count: 2,
+				midnight_tx_hash: [0u8; 32],
+			}],
+		);
+	})
+}
+
 #[test]
 fn subminimal_transfer_handling() {
 	new_test_ext().execute_with(|| {
@@ -168,7 +278,7 @@ fn subminimal_transfer_handling() {
 			subminimal_transfers_flush_threshold: 250,
 		});
 		//90
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 1, sum: 90 }
@@ -176,14 +286,14 @@ fn subminimal_transfer_handling() {
 		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
 		assert!(frame_system::Pallet::<Test>::events().is_empty());
 		//180
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 2, sum: 180 }
 		);
 		assert!(mock_pallet::Transfers::<Test>::get().is_empty());
 		//270 > 250. Should flush everything in one transfer.
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 0, sum: 0 }
@@ -218,8 +328,8 @@ fn subminimal_no_flush_just_below_threshold() {
 	new_test_ext().execute_with(|| {
 		// sum = 180, threshold = 181 → 180 > 181 is false, no flush.
 		set_flush_threshold(181);
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 2, sum: 180 }
@@ -234,8 +344,8 @@ fn subminimal_no_flush_at_exact_threshold() {
 	new_test_ext().execute_with(|| {
 		// sum = 180, threshold = 180 → strict `sum > threshold` is false, no flush.
 		set_flush_threshold(180);
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 2, sum: 180 }
@@ -250,8 +360,8 @@ fn subminimal_flushes_just_above_threshold() {
 	new_test_ext().execute_with(|| {
 		// sum = 180, threshold = 179 → 180 > 179 is true, flush.
 		set_flush_threshold(179);
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 0, sum: 0 }
@@ -273,14 +383,14 @@ fn subminimal_state_resets_after_flush_and_accumulates_again() {
 	new_test_ext().execute_with(|| {
 		set_flush_threshold(180);
 		// Accumulate to (count=2, sum=180) — no flush at strict equality.
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 2, sum: 180 }
 		);
 		// 3rd transfer pushes sum to 270 > 180 → flush, storage reset.
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 0, sum: 0 }
@@ -289,7 +399,7 @@ fn subminimal_state_resets_after_flush_and_accumulates_again() {
 
 		// New subminimal after a flush must restart the accumulator from zero,
 		// not inherit any residue from the prior cycle.
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 1, sum: 90 }
@@ -320,7 +430,7 @@ fn subminimal_invalid_recipient_accumulates_not_unlocks() {
 			mc_tx_hash: McTxHash([42; 32]),
 			recipient: TransferRecipient::Invalid,
 		};
-		C2MBridge::handle_incoming_transfer(transfer);
+		assert_ok!(C2MBridge::handle_incoming_transfer(transfer));
 
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
@@ -344,7 +454,7 @@ fn subminimal_unapproved_user_accumulates_not_unlocks() {
 			recipient: TransferRecipient::Address { recipient: recipient() },
 		};
 		assert!(!pallet::ApprovedMcTxHashes::<Test>::contains_key(transfer.mc_tx_hash));
-		C2MBridge::handle_incoming_transfer(transfer);
+		assert_ok!(C2MBridge::handle_incoming_transfer(transfer));
 
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
@@ -360,7 +470,7 @@ fn regular_transfer_does_not_disturb_subminimal_accumulator() {
 	new_test_ext().execute_with(|| {
 		set_flush_threshold(1_000);
 		// Seed the accumulator.
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 1, sum: 90 }
@@ -371,7 +481,7 @@ fn regular_transfer_does_not_disturb_subminimal_accumulator() {
 		// subminimal accumulator untouched.
 		let tx = addressed_transfer();
 		approve(tx.mc_tx_hash);
-		C2MBridge::handle_incoming_transfer(tx);
+		assert_ok!(C2MBridge::handle_incoming_transfer(tx));
 		assert_eq!(mock_pallet::Transfers::<Test>::get().len(), 1);
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
@@ -379,7 +489,7 @@ fn regular_transfer_does_not_disturb_subminimal_accumulator() {
 		);
 
 		// Next subminimal continues accumulating from where it left off.
-		C2MBridge::handle_incoming_transfer(subminimal_transfer());
+		assert_ok!(C2MBridge::handle_incoming_transfer(subminimal_transfer()));
 		assert_eq!(
 			pallet::SubminimalTransfers::<Test>::get(),
 			SubminimalTransfersState { count: 2, sum: 180 }
