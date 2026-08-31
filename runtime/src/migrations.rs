@@ -29,13 +29,10 @@ pub mod authority_keys {
 	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
 	use alloc::vec::Vec;
 	use authority_selection_inherents::CommitteeMember;
-	use frame_support::{
-		traits::{OnRuntimeUpgrade, UncheckedOnRuntimeUpgrade},
-		weights::Weight,
-	};
+	use frame_support::{traits::OnRuntimeUpgrade, weights::Weight};
 	use pallet_consensus_engine::AddBabeSessionKeysMigrated;
-	use pallet_session_validator_management::migrations::authority_keys::{
-		InnerMigrateAuthorityKeys, UpgradeCommitteeMember,
+	use pallet_session_validator_management::migrations::v2::{
+		UpgradeCommitteeMember, V1ToV2Migration,
 	};
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_runtime::impl_opaque_keys;
@@ -68,9 +65,10 @@ pub mod authority_keys {
 
 	const LOG_TARGET: &str = "runtime::migration::v1-to-v2-add-babe-session-keys";
 
-	/// Authority-key translation from the pre-BABE [`LegacySessionKeys`] shape to the current
-	/// `SessionKeys` (adds the BABE key). Same logic as the pallet's `AuthorityKeysMigration`.
-	type Inner = InnerMigrateAuthorityKeys<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
+	/// Combined v1-to-v2 migration: committee translation from the pre-BABE
+	/// [`LegacySessionKeys`] shape, the `QueuedCommittee` seed, and the `pallet_session` key
+	/// upgrade, gated on the pallet's on-chain storage version.
+	type Inner = V1ToV2Migration<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
 
 	/// Migrates Current, Queued, and Next Committee storages and writes in consensus-engine
 	/// a trace that it was executed.
@@ -83,13 +81,13 @@ pub mod authority_keys {
 				target: LOG_TARGET,
 				"translating committee & session keys and initializing QueuedCommittee",
 			);
-			if AddBabeSessionKeysMigrated::<Runtime>::get() == true {
+			if AddBabeSessionKeysMigrated::<Runtime>::get() {
 				log::info!(
 					"SessionKeys migration that adds BABE authority keys was already executed. Migration can be removed from the runtime."
 				);
 				db.reads(1)
 			} else {
-				let weight = <Inner as UncheckedOnRuntimeUpgrade>::on_runtime_upgrade();
+				let weight = <Inner as OnRuntimeUpgrade>::on_runtime_upgrade();
 				AddBabeSessionKeysMigrated::<Runtime>::put(true);
 				weight.saturating_add(db.reads_writes(1, 1))
 			}

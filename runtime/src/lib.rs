@@ -60,7 +60,7 @@ pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
 pub use pallet_session_validator_management::{self, Config};
 use pallet_session_validator_management::{
-	CommitteeInfo, CurrentCommittee, migrations::authority_keys::UpgradeCommitteeMember,
+	CommitteeInfo, CurrentCommittee, migrations::v2::UpgradeCommitteeMember,
 };
 pub use pallet_timestamp::Call as TimestampCall;
 pub use pallet_version::VERSION_ID;
@@ -386,12 +386,8 @@ impl frame_system::Config for Runtime {
 	type OnSetCode = ();
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
-	type SingleBlockMigrations = (
-		// Initializes the QueuedCommittee storage added in v2
-		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
-		// Add BABE keys
-		crate::migrations::authority_keys::AddBabeToSessionKeysMigration,
-	);
+	type SingleBlockMigrations =
+		(crate::migrations::authority_keys::AddBabeToSessionKeysMigration,);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
 	type PostInherents = ();
@@ -2464,7 +2460,7 @@ mod tests {
 		};
 		use authority_selection_inherents::CommitteeMember;
 		use frame_support::BoundedVec;
-		use pallet_session_validator_management::migrations::authority_keys::UpgradeCommitteeMember;
+		use pallet_session_validator_management::migrations::v2::UpgradeCommitteeMember;
 		use parity_scale_codec::Encode;
 		use sidechain_domain::ScEpochNumber;
 		use sp_core::Pair;
