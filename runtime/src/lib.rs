@@ -58,6 +58,9 @@ use pallet_grandpa::AuthorityId as GrandpaId;
 pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
 pub use pallet_session_validator_management::{self, Config};
+use pallet_session_validator_management::{
+	CommitteeInfo, CurrentCommittee, migrations::v2::UpgradeCommitteeMember,
+};
 pub use pallet_timestamp::Call as TimestampCall;
 pub use pallet_version::VERSION_ID;
 use parity_scale_codec::Encode;
@@ -373,11 +376,8 @@ impl frame_system::Config for Runtime {
 	type OnSetCode = ();
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
-	type SingleBlockMigrations = (
-		// Initializes the QueuedCommittee storage added in v2
-		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
-		// See migrations::authority_keys when opaque::SessionKeys changes shape.
-	);
+	type SingleBlockMigrations =
+		(crate::migrations::authority_keys::AddBabeToSessionKeysMigration,);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
 	type PostInherents = ();
@@ -2400,6 +2400,69 @@ mod tests {
 				);
 				assert_eq!(slot_config().slot_duration.as_millis(), crate::SLOT_DURATION);
 			});
+		}
+	}
+
+	/// Tests for the guard-gated committee decode in `get_current_committee`/`get_next_committee`
+	/// and the node's committee-membership watcher.
+	///
+	/// Reproduces the two relevant states by pairing the add-babe-session-keys migration guard
+	/// (`pallet_consensus_engine::AddBabeSessionKeysMigrated`, a SCALE `bool`) with matching
+	/// committee bytes: guard `false`/absent (migration not run) ⇒ decode the legacy shape and
+	/// upgrade it; guard `true` ⇒ decode the current shape.
+	mod committee_decode_fallback {
+		use crate::migrations::authority_keys::LegacySessionKeys;
+		use crate::mock::{TestKeys, alice};
+		use crate::opaque::SessionKeys;
+		use crate::{
+			CrossChainPublic, CurrentCommitteeInfo, LegacyCommitteeInfo, LegacyCommitteeMember,
+			decode_current_committee,
+		};
+		use authority_selection_inherents::CommitteeMember;
+		use frame_support::BoundedVec;
+		use pallet_session_validator_management::migrations::v2::UpgradeCommitteeMember;
+		use parity_scale_codec::Encode;
+		use sidechain_domain::ScEpochNumber;
+		use sp_core::Pair;
+
+		/// A committee member encoded in the pre-migration (aura + grandpa, no babe) shape.
+		fn legacy_member(keys: &TestKeys) -> LegacyCommitteeMember {
+			CommitteeMember::permissioned(
+				keys.cross_chain.public(),
+				LegacySessionKeys { aura: keys.aura.public(), grandpa: keys.grandpa.public() },
+			)
+		}
+
+		/// The same member as the migration would leave it (babe derived from aura).
+		fn upgraded_member(keys: &TestKeys) -> CommitteeMember<CrossChainPublic, SessionKeys> {
+			legacy_member(keys).upgrade()
+		}
+
+		// `decode_current_committee` is the client-facing helper (used by the node's
+		// committee-membership watcher). It takes the raw state bytes directly, so these tests need
+		// no externalities.
+
+		#[test]
+		fn decode_current_committee_upgrades_legacy_bytes_when_not_migrated() {
+			let epoch = ScEpochNumber(5);
+			let legacy = LegacyCommitteeInfo {
+				epoch,
+				committee: BoundedVec::truncate_from(vec![legacy_member(&alice())]),
+			};
+			let (got_epoch, committee) = decode_current_committee(&legacy.encode(), false);
+			assert_eq!(got_epoch, epoch);
+			assert_eq!(committee, vec![upgraded_member(&alice())]);
+		}
+
+		#[test]
+		fn decode_current_committee_reads_current_bytes_when_migrated() {
+			let epoch = ScEpochNumber(6);
+			let committee = vec![upgraded_member(&alice())];
+			let current = CurrentCommitteeInfo {
+				epoch,
+				committee: BoundedVec::truncate_from(committee.clone()),
+			};
+			assert_eq!(decode_current_committee(&current.encode(), true), (epoch, committee));
 		}
 	}
 }

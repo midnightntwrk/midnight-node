@@ -38,8 +38,9 @@ pub mod authority_keys {
 	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
 	use alloc::vec::Vec;
 	use authority_selection_inherents::CommitteeMember;
-	use pallet_session_validator_management::migrations::authority_keys::{
-		AuthorityKeysMigration, UpgradeCommitteeMember,
+	use frame_support::{traits::OnRuntimeUpgrade, weights::Weight};
+	use pallet_session_validator_management::migrations::v2::{
+		UpgradeCommitteeMember, V1ToV2Migration,
 	};
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_runtime::impl_opaque_keys;
@@ -69,14 +70,45 @@ pub mod authority_keys {
 		}
 	}
 
-	// Trait bounds are not enforced on type aliases, so instantiating a bounded function is
-	// needed to actually prove at compile time that the scaffolding above satisfies the
-	// migration's requirements (`Keys = AuthorityKeys`, key types convertible, etc.).
-	#[allow(dead_code)]
-	fn assert_migration_is_wirable() {
-		fn assert_impls_on_runtime_upgrade<M: frame_support::traits::OnRuntimeUpgrade>() {}
-		assert_impls_on_runtime_upgrade::<
-			AuthorityKeysMigration<Runtime, LegacyCommitteeMember, LegacySessionKeys, 2, 3>,
-		>();
+	const LOG_TARGET: &str = "runtime::migration::v1-to-v2-add-babe-session-keys";
+
+	/// Combined v1-to-v2 migration: committee translation from the pre-BABE
+	/// [`LegacySessionKeys`] shape, the `QueuedCommittee` seed, and the `pallet_session` key
+	/// upgrade, gated on the pallet's on-chain storage version.
+	type Inner = V1ToV2Migration<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
+
+	/// Migrates Current, Queued, and Next Committee storages and writes in consensus-engine
+	/// a trace that it was executed.
+	pub struct AddBabeToSessionKeysMigration;
+
+	impl OnRuntimeUpgrade for AddBabeToSessionKeysMigration {
+		fn on_runtime_upgrade() -> Weight {
+			let db = <Runtime as frame_system::Config>::DbWeight::get();
+			log::info!(
+				target: LOG_TARGET,
+				"translating committee & session keys and initializing QueuedCommittee",
+			);
+			if AddBabeSessionKeysMigrated::<Runtime>::get() {
+				log::info!(
+					"SessionKeys migration that adds BABE authority keys was already executed. Migration can be removed from the runtime."
+				);
+				db.reads(1)
+			} else {
+				let weight = <Inner as OnRuntimeUpgrade>::on_runtime_upgrade();
+				AddBabeSessionKeysMigrated::<Runtime>::put(true);
+				weight.saturating_add(db.reads_writes(1, 1))
+			}
+		}
+
+		#[cfg(feature = "try-runtime")]
+		fn post_upgrade(_state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
+			// Key-translation correctness is enforced by the inner migrations' own decode asserts;
+			// here we confirm the guard the committee decoders depend on is set.
+			frame_support::ensure!(
+				AddBabeSessionKeysMigrated::<Runtime>::get(),
+				"add-babe-session-keys: guard not set after migration",
+			);
+			Ok(())
+		}
 	}
 }
