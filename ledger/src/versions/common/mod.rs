@@ -47,6 +47,13 @@ pub mod conversions;
 #[cfg(feature = "std")]
 pub mod utxo_ordering_override;
 
+/// Per-transaction block-budget accounting (`midnight::tx_budget` logs).
+#[cfg(feature = "std")]
+pub mod tx_budget;
+
+#[cfg(feature = "std")]
+mod tx_budget_aspects;
+
 #[cfg(feature = "std")]
 use {
 	api::{
@@ -433,8 +440,26 @@ where
 			"⏱️  Tx context ready (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
+		// Snapshot what the block had already consumed, and the parameters this
+		// transaction is priced against, before `ledger` is consumed by the apply.
+		let budget_input = tx_budget::enabled()
+			.then(|| (ledger.block_fullness(), (*ledger.state.parameters).clone()));
 		let (mut new_ledger, applied_stage) =
 			Ledger::apply_verified_transaction(ledger, &api, &tx, &verified_tx, &tx_ctx)?;
+		if let Some((fullness_before, parameters)) = budget_input {
+			let (cost, aspects) = tx_budget_aspects::aspects(&tx.0, &parameters);
+			tx_budget::log_tx(
+				tx_budget::Kind::User,
+				&tx_hash,
+				tx_size,
+				&block_context,
+				&cost,
+				&aspects,
+				&fullness_before,
+				&new_ledger.block_fullness(),
+				&parameters.limits.block_limits,
+			);
+		}
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger applied (stage={applied_stage:?}, elapsed_ms={})",
@@ -617,8 +642,31 @@ where
 		let tx_hash = tx.transaction_hash().0.0;
 		let ledger = Self::get_ledger(&api, state_key)?;
 
+		// System transactions accrue into the same block fullness as user ones, so
+		// they are billed to `midnight::tx_budget` too — otherwise a block's fill
+		// could not be reconciled with the transactions in it. Their cost is a
+		// single figure per variant, so the variant is the whole itemisation.
+		let budget_input = tx_budget::enabled()
+			.then(|| (ledger.block_fullness(), (*ledger.state.parameters).clone()));
+
 		let mut ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
+
+		if let Some((fullness_before, parameters)) = budget_input {
+			let cost = tx.cost(&parameters);
+			let aspect = tx_budget::Aspect::new(alloc::format!("system.{tx_type}"), 1, cost);
+			tx_budget::log_tx(
+				tx_budget::Kind::System,
+				&tx_hash,
+				tx_size,
+				&block_context,
+				&cost,
+				&[aspect],
+				&fullness_before,
+				&ledger.block_fullness(),
+				&parameters.limits.block_limits,
+			);
+		}
 
 		let event = SystemTransactionAppliedStateRoot {
 			state_root: api.tagged_serialize(&ledger.as_typed_key())?,

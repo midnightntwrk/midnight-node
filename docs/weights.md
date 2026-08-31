@@ -67,6 +67,14 @@ variable values, and repeated multiple times. One can then use the results of th
 tests to establish an approximate worst case weight to represent the resources required to execute 
 each function call and each code path.
 
+## Ledger block limits
+
+Substrate's weight is only one of the two budgets a Midnight transaction competes
+for. The ledger imposes its own five-dimensional per-block limit, and it is
+usually the one that binds first. See
+[Transaction Block-Budget Calculator](tx-budget.md) for how the two relate and
+for the per-transaction accounting the node can emit during a load run.
+
 ## External references
 - [Unit of weight in Polkadot SDK](https://docs.polkadot.com/polkadot-protocol/glossary/#weight)
 - [Default weight annotations](https://docs.polkadot.com/polkadot-protocol/basics/blocks-transactions-fees/fees/#default-weight-annotations)

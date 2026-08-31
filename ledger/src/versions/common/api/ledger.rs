@@ -38,6 +38,7 @@ use zswap_local::ledger::State as ZswapLedgerState;
 use super::{
 	super::super::BlockContext,
 	super::super::post_block_update,
+	super::tx_budget,
 	Api, ContractAddress, ContractState, DeserializableError, LOG_TARGET, SerializableError,
 	SystemTransaction, Transaction, TransactionInvalid, UserAddress, ZswapState,
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
@@ -116,6 +117,14 @@ impl<D: DB> Ledger<D> {
 	/// is equivalent to "nothing has touched the ledger state in this block yet".
 	pub(crate) fn is_block_start(&self) -> bool {
 		self.block_fullness.is_zero()
+	}
+
+	/// The cost accrued by the transactions applied in this block so far, against
+	/// which [`block_limits`](LedgerParameters) is charged. Read by the
+	/// `midnight::tx_budget` calculator to bracket each transaction within its
+	/// block.
+	pub(crate) fn block_fullness(&self) -> SyntheticCost {
+		self.block_fullness.clone().into()
 	}
 
 	pub(crate) fn get_zswap_state(
@@ -201,6 +210,9 @@ impl<D: DB> Ledger<D> {
 		let normalized_fullness =
 			helpers_local::clamp_and_normalize(&block_fullness, &block_limits, "post_block_update");
 		let overall_fullness = compute_overall_fullness(&normalized_fullness);
+		if tx_budget::enabled() {
+			tx_budget::log_block(&block_context, &block_fullness, &block_limits);
+		}
 		let next_state = sp
 			.state
 			.post_block_update(
@@ -235,6 +247,9 @@ impl<D: DB> Ledger<D> {
 			"apply_post_block_update",
 		);
 		let overall_fullness = compute_overall_fullness(&normalized_fullness);
+		if tx_budget::enabled() {
+			tx_budget::log_block(&block_context, &block_fullness, &block_limits);
+		}
 		let next_state = post_block_update::apply_post_block_update(
 			&sp.state,
 			Timestamp::from_secs(block_context.tblock),
