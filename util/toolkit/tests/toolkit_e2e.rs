@@ -902,6 +902,135 @@ async fn tic_tac_toe_e2e() {
 	}
 }
 
+/// DAO contract E2E ported from `midnight-contracts`: plays one full voting round, from
+/// buying a vote through to the beneficiary cashing out the pot.
+///
+/// Moves shielded value into the contract: `buy_in`, `set_topic` and `vote_commit` each take
+/// a `ShieldedCoinInfo` the circuit `receiveShielded`s, funded from `FUNDING_SEED`. Also
+/// covers struct- and generic-typed arguments — the `Costs` constructor struct,
+/// `ShieldedCoinInfo`/`ZswapCoinPublicKey` circuit args, and the `Maybe<..>` witness returns.
+///
+/// One identity is both organizer and voter; `FUNDING_SEED` pays fees, supplies the coins and
+/// is the beneficiary.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+// The last `call!` advances `step` and `prev_private` without anything reading them after.
+#[allow(unused_assignments)]
+async fn dao_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary key; `public_key(sk)` of it becomes the on-chain `organizer`.
+	const ORGANIZER_SK: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0";
+	// Base units; `tdust()` is 1_000_000, so both are 1 tDUST.
+	const SEED_DUST: u64 = 1_000_000;
+	const BUY_IN_DUST: u64 = 1_000_000;
+	// `nativeToken()`, which is what the dev genesis funds the seed wallet with.
+	const NATIVE_TOKEN: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+	// Received coins become fresh outputs, so their commitments must differ.
+	const BUY_IN_NONCE: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+	const SEED_NONCE: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+
+	let source = helper.load_contract_file("dao/dao.compact");
+	let compiled_dir = helper
+		.compile_contract(&source, "dao")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"dao/config.template.ts",
+		&[("SECRET_KEY", ORGANIZER_SK), ("COIN_PUBLIC", &coin_public), ("NETWORK", "undeployed")],
+	);
+	let config_file = helper.write_config(&config_content, "dao/contract.config.ts");
+
+	let costs = format!(r#"{{"seed_dust": {SEED_DUST}, "buy_in_dust": {BUY_IN_DUST}}}"#);
+	let deploy = helper
+		.generate_intent_deploy_with_args(&config_file, &coin_public, &[ORGANIZER_SK, &costs])
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, ORGANIZER_SK, "dao deploy");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let dao_addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	// Runs one circuit against the latest on-chain state and submits it, threading the private
+	// state forward.
+	let mut step = 0usize;
+	let mut prev_private = deploy.private_state.clone();
+	macro_rules! call {
+		($circuit:expr, $args:expr) => {{
+			let state = helper.work_dir.path().join(format!("dao_state_{step}.mn"));
+			helper
+				.contract_state(&dao_addr, &state)
+				.await
+				.expect("contract state fetch failed");
+			let out = helper
+				.generate_intent_circuit(
+					&config_file,
+					&coin_public,
+					&state,
+					&prev_private,
+					&dao_addr,
+					CircuitCall { circuit_id: $circuit, call_args: $args },
+				)
+				.await
+				.unwrap_or_else(|e| panic!("generate {} intent failed: {e}", $circuit));
+			let tx = helper
+				.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+				.await
+				.unwrap_or_else(|e| panic!("send {} intent failed: {e}", $circuit));
+			helper.assert_secret_not_in_tx(&tx, ORGANIZER_SK, $circuit);
+			helper
+				.submit_tx(&tx)
+				.await
+				.unwrap_or_else(|e| panic!("submit {} tx failed: {e}", $circuit));
+			prev_private = out.private_state.clone();
+			step += 1;
+			out
+		}};
+	}
+
+	// Buy one vote: the coin goes to the pot and a voting token is minted back. Needs no
+	// particular phase, so it runs while still in setup.
+	let buy_in_coin = format!(
+		r#"{{"nonce": "{BUY_IN_NONCE}", "color": "{NATIVE_TOKEN}", "value": {BUY_IN_DUST}}}"#
+	);
+	let buy_in = call!("buy_in", &[buy_in_coin.as_str(), "1"]);
+	// Nonce and color are derived on-chain, so take the coin from the circuit's return value.
+	let voting_coin = helper.shielded_coin_arg(&buy_in.result);
+
+	// Open the proposal: seeds the pot and moves setup -> commit. Organizer-only.
+	let seed_coin =
+		format!(r#"{{"nonce": "{SEED_NONCE}", "color": "{NATIVE_TOKEN}", "value": {SEED_DUST}}}"#);
+	let beneficiary = format!(r#"{{"bytes": "{coin_public}"}}"#);
+	call!("set_topic", &["Fund the community pool", beneficiary.as_str(), seed_coin.as_str()]);
+
+	// Commit a "yes" vote, spending and burning the voting token.
+	call!("vote_commit", &["true", voting_coin.as_str()]);
+
+	// commit -> reveal, reveal the vote, reveal -> final.
+	call!("advance", &[]);
+	call!("vote_reveal", &[]);
+	call!("advance", &[]);
+
+	// yes(1) > no(0), so the beneficiary may take the pot.
+	call!("cash_out", &[]);
+
+	// Confirm the round applied on-chain rather than merely finalizing.
+	let final_state = helper.work_dir.path().join("dao_state_final.mn");
+	helper
+		.contract_state(&dao_addr, &final_state)
+		.await
+		.expect("contract state fetch failed after cash_out");
+}
+
 /// End-to-end coverage for ledger-9 ECDSA unshielded-signature support in the toolkit
 /// (<https://github.com/midnightntwrk/midnight-node/issues/1542>), ported from the former
 /// `scripts/tests/toolkit-ecdsa-e2e.sh`. Runs against the shared `dev` node, whose genesis is

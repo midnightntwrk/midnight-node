@@ -42,6 +42,7 @@ pub struct CircuitOutput {
 	pub intent: PathBuf,
 	pub private_state: PathBuf,
 	pub zswap_state: PathBuf,
+	pub result: PathBuf,
 }
 
 pub struct CircuitCall<'a> {
@@ -381,6 +382,7 @@ impl ToolkitTestHelper {
 		let out_private_state =
 			self.work_dir.path().join(format!("{circuit_id}_private_state.json"));
 		let out_zswap_state = self.work_dir.path().join(format!("{circuit_id}_zswap_state.json"));
+		let out_result = self.work_dir.path().join(format!("{circuit_id}_result.json"));
 
 		let args = GenerateIntentArgs {
 			js_command: JsCommand::Circuit(CircuitCommandArgs {
@@ -401,7 +403,7 @@ impl ToolkitTestHelper {
 					output_onchain_state: None,
 					output_private_state: RelativePath(out_private_state.clone()),
 					output_zswap_state: RelativePath(out_zswap_state.clone()),
-					output_result: None,
+					output_result: Some(RelativePath(out_result.clone())),
 					output_events: None,
 					circuit_id: circuit_id.to_string(),
 					call_args: call_args.iter().map(|s| s.to_string()).collect(),
@@ -416,7 +418,65 @@ impl ToolkitTestHelper {
 			intent: out_intent,
 			private_state: out_private_state,
 			zswap_state: out_zswap_state,
+			result: out_result,
 		})
+	}
+
+	pub fn shielded_address(&self, seed: &str) -> String {
+		let args = ShowAddressArgs {
+			network: self.network.clone(),
+			seed: cli_parsers::SchemeSeed {
+				seed: cli_parsers::wallet_seed_decode(seed).expect("invalid wallet seed"),
+				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+			},
+			specific_address: SpecificAddressTypeArgs { shielded: true, ..Default::default() },
+		};
+		match show_address::execute(args) {
+			ShowAddress::SingleAddress(addr) => addr,
+			ShowAddress::Addresses(_) => panic!("expected single address"),
+		}
+	}
+
+	/// Reads a circuit's `--output-result` file.
+	pub fn read_result(&self, result_file: &Path) -> serde_json::Value {
+		let raw = std::fs::read_to_string(result_file)
+			.unwrap_or_else(|e| panic!("failed to read {}: {e}", result_file.display()));
+		serde_json::from_str(&raw)
+			.unwrap_or_else(|e| panic!("failed to parse {}: {e}", result_file.display()))
+	}
+
+	/// Re-encodes a `ShieldedCoinInfo` a circuit returned into the form the CLI parses.
+	/// Results render `Bytes<32>` as a byte array and `Uint<128>` as a string; arguments
+	/// want hex and a bare number.
+	pub fn shielded_coin_arg(&self, result_file: &Path) -> String {
+		let result = self.read_result(result_file);
+
+		let hex_field = |name: &str| -> String {
+			let bytes = result[name].as_array().unwrap_or_else(|| {
+				panic!("expected `{name}` to be a byte array in {}", result_file.display())
+			});
+			bytes
+				.iter()
+				.map(|b| {
+					let byte = b.as_u64().unwrap_or_else(|| {
+						panic!("non-numeric byte in `{name}` in {}", result_file.display())
+					});
+					format!("{byte:02x}")
+				})
+				.collect()
+		};
+
+		let value: u128 = result["value"]
+			.as_str()
+			.unwrap_or_else(|| panic!("expected `value` string in {}", result_file.display()))
+			.parse()
+			.unwrap_or_else(|e| panic!("invalid `value` in {}: {e}", result_file.display()));
+
+		format!(
+			r#"{{"nonce": "{}", "color": "{}", "value": {value}}}"#,
+			hex_field("nonce"),
+			hex_field("color"),
+		)
 	}
 
 	pub async fn send_intent(
@@ -442,7 +502,10 @@ impl ToolkitTestHelper {
 				intent_files: vec![path_to_string(intent_file)],
 				utxo_inputs: vec![],
 				zswap_state_file: zswap_state_file.map(path_to_string),
-				shielded_destinations: vec![],
+				shielded_destinations: vec![
+					cli_parsers::wallet_address(&self.shielded_address(funding_seed))
+						.expect("invalid shielded wallet address"),
+				],
 			},
 			dry_run: false,
 		};
