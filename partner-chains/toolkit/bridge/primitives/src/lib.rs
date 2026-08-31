@@ -332,7 +332,7 @@ pub enum TokenBridgeInherentDataProvider<RecipientAddress> {
 /// Value specifying the point in time up to which bridge transfers have been processed
 ///
 /// A Cardano transaction yields at most two transfers — a reserve transfer followed by an ICS
-/// transfer, see [BridgeTransferV1::checkpoint_reached] — so processing can stop either between
+/// transfer, see [BridgeTransferV1::checkpoint] — so processing can stop either between
 /// transactions or between those two transfers of one transaction. The variants of this type
 /// identify the last transfer that has been processed at the granularity needed for each of these
 /// cases, or the last Cardano block whose transfers are all processed.

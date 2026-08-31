@@ -13,7 +13,7 @@ tokens out of the reserve, followed by an _ICS transfer_ of the remaining tokens
 illiquid circulating supply. Processing can therefore stop at one place inside a Cardano transaction,
 which the new `BridgeDataCheckpoint::TxReserveTransfer` variant denotes.
 The kind of a transfer's recipient identifies which of the two transfers of its transaction it is,
-so `BridgeTransferV1::checkpoint_reached` derives the checkpoint of a handled transfer without any
+so `BridgeTransferV1::checkpoint` derives the checkpoint of a handled transfer without any
 bookkeeping. `handle_transfers` uses it to record the last transfer it handled, and leaves the checkpoint
 untouched when it handled none.
 
