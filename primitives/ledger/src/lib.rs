@@ -57,6 +57,11 @@ pub struct LedgerMetrics {
 	/// `proof_verify_duration`. The `batch` duration is per aggregate call, so dividing its `_sum`
 	/// by this counter yields the per-transaction batched cost.
 	pub proof_verify_txs: CounterVec<U64>,
+	/// Live ledger states held by the keep-alive caches (labeled by cache_type:
+	/// "transient" or "anchored"). Sampled once per block, at the post-block flush:
+	/// "transient" must read 0 there — a persistent non-zero value is a leaked
+	/// intra-block state.
+	pub ledger_state_cache_size: GaugeVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -225,6 +230,16 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			ledger_state_cache_size: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_state_cache_size",
+						"Current number of live ledger states held by the keep-alive caches",
+					),
+					&["cache_type"],
+				)?,
+				registry,
+			)?,
 		})
 	}
 }
@@ -341,6 +356,12 @@ impl LedgerMetricsExt {
 	pub fn set_tx_validation_cache_size(&mut self, cache_type: &str, size: u64) {
 		self.observe(|m| {
 			m.tx_validation_cache_size.with_label_values(&[cache_type]).set(size);
+		});
+	}
+
+	pub fn set_ledger_state_cache_size(&mut self, cache_type: &str, size: u64) {
+		self.observe(|m| {
+			m.ledger_state_cache_size.with_label_values(&[cache_type]).set(size);
 		});
 	}
 }

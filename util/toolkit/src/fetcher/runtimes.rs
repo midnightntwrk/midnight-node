@@ -11,6 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use strum::{EnumIter, IntoEnumIterator as _};
+use subxt::{
+	config::substrate::{ConsensusEngineId, DigestItem, SubstrateHeader},
+	utils::H256,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum RuntimeVersionError {
@@ -18,6 +22,8 @@ pub enum RuntimeVersionError {
 	InvalidProtocolVersion(parity_scale_codec::Error),
 	#[error("indexer received a block made with unsupported node version {0}")]
 	UnsupportedBlockVersion(u32),
+	#[error("block header is missing the MNSV runtime-version digest")]
+	MissingDigest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
@@ -56,6 +62,23 @@ impl RuntimeVersion {
 
 	pub fn latest_version() -> Self {
 		RuntimeVersion::iter().max().unwrap()
+	}
+
+	/// Extract the runtime version from a block header by parsing the `MNSV`
+	/// consensus digest written by the `version` pallet.
+	pub fn from_header(header: &SubstrateHeader<H256>) -> Result<Self, RuntimeVersionError> {
+		const VERSION_ID: ConsensusEngineId = *b"MNSV";
+		header
+			.digest
+			.logs
+			.iter()
+			.find_map(|item| match item {
+				DigestItem::Consensus(id, data) if *id == VERSION_ID => {
+					Some(RuntimeVersion::try_from(data.as_slice()))
+				},
+				_ => None,
+			})
+			.ok_or(RuntimeVersionError::MissingDigest)?
 	}
 }
 
