@@ -31,7 +31,7 @@ use std::{
 	time::Duration,
 };
 use subxt::utils::H256;
-use tempfile::NamedTempFile;
+use tempfile::{Builder as TempFileBuilder, NamedTempFile};
 
 /// Ledger snapshots younger than this are never GC'd, giving concurrent
 /// processes time to finish saving wallet states that reference them.
@@ -84,25 +84,56 @@ fn parse_seed_hash(filename: &str) -> Option<H256> {
 	if bytes.len() == 32 { Some(H256::from_slice(&bytes)) } else { None }
 }
 
+/// Create the staging file for an atomic replace inside `dir`.
+///
+/// [`NamedTempFile::new_in`] hard-codes mode 0600 and `persist()` renames, so that mode lands on
+/// the finished cache file — and no umask can widen it, since a umask only ever clears bits. A
+/// `--ledger-state-db` shared between users (perf boxes run jobs as one user and interactive
+/// sessions as another, both in a common group) therefore ends up holding entries only the
+/// writing user can open: every other user's run sees each seed as a cache miss and replays from
+/// genesis, and its snapshot GC sweep used to delete the entries it could not read.
+///
+/// So request 0666 and let the process umask narrow it — 0002 yields 0664, the usual 0022 yields
+/// 0644, and 0077 still yields 0600 for anyone who wants a private cache. Directories created by
+/// this backend are left to the umask the same way (`fs::create_dir_all` uses `0777 & !umask`),
+/// so a shared deployment sets one umask and both halves follow.
+fn staging_file(dir: &Path) -> io::Result<NamedTempFile> {
+	// `mut` is only needed by the `cfg(unix)` block below.
+	#[allow(unused_mut)]
+	let mut builder = TempFileBuilder::new();
+	#[cfg(unix)]
+	{
+		use std::os::unix::fs::PermissionsExt;
+		builder.permissions(fs::Permissions::from_mode(0o666));
+	}
+	builder.tempfile_in(dir)
+}
+
 /// Write to a unique temp file, then rename over `<path>`.
 fn write_via_tmp_and_rename(path: &Path, data: &[u8]) -> io::Result<()> {
 	let dir = path
 		.parent()
 		.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
-	let tmp = NamedTempFile::new_in(dir)?;
+	let tmp = staging_file(dir)?;
 	fs::write(tmp.path(), data)?;
 	// persist() uses rename(2) on POSIX — atomic directory-entry swap
 	tmp.persist(path).map_err(|e| e.error)?;
 	Ok(())
 }
 
-fn read_wallet_height(path: &Path) -> Option<u64> {
-	let mut file = fs::File::open(path).ok()?;
-	// Header is `[version: u8][block_height: u64 LE]` (9 bytes); a stale/old-format file yields
-	// `None` from `block_height_from_header` (version mismatch), which callers treat as absent.
+/// Read the recorded block height out of a wallet entry's header.
+///
+/// `Err(_)` means the file could not be read at all (missing, unreadable by this user, io error);
+/// `Ok(None)` means it was read but is not this format version (a stale entry from an older
+/// toolkit, whose cache key differs anyway — see `WALLET_CACHE_FORMAT_VERSION`). Callers must keep
+/// the two apart: an entry we merely cannot open right now is not a corrupt entry, and must never
+/// be deleted on that basis.
+fn read_wallet_height(path: &Path) -> io::Result<Option<u64>> {
+	let mut file = fs::File::open(path)?;
+	// Header is `[version: u8][block_height: u64 LE]` (9 bytes).
 	let mut header = [0u8; 9];
-	io::Read::read_exact(&mut file, &mut header).ok()?;
-	CachedWalletState::block_height_from_header(&header)
+	io::Read::read_exact(&mut file, &mut header)?;
+	Ok(CachedWalletState::block_height_from_header(&header))
 }
 
 /// Write wallet data only if `new_height` exceeds the existing file's height.
@@ -116,12 +147,20 @@ fn write_wallet_if_newer(path: &Path, new_height: u64, data: &[u8]) -> io::Resul
 	let dir = path
 		.parent()
 		.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
-	let tmp = NamedTempFile::new_in(dir)?;
+	let tmp = staging_file(dir)?;
 	fs::write(tmp.path(), data)?;
-	if let Some(existing) = read_wallet_height(path) {
-		if existing >= new_height {
+	match read_wallet_height(path) {
+		Ok(Some(existing)) if existing >= new_height => {
 			return Ok(Some(existing)); // tmp auto-deleted on drop
-		}
+		},
+		Ok(_) => {},
+		Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+		// Present but unreadable (e.g. written 0600 by another user before this backend started
+		// asking for 0666). We cannot compare heights, so we replace it — which also heals the
+		// permissions, since the replacement comes from `staging_file`.
+		Err(e) => log::warn!(
+			"Cannot read existing wallet cache entry {path:?} ({e}); replacing it at height {new_height}"
+		),
 	}
 	// persist() uses rename(2) on POSIX — atomic directory-entry swap
 	tmp.persist(path).map_err(|e| e.error)?;
@@ -208,12 +247,27 @@ impl WalletStateCaching for FileBackend {
 			paths
 				.into_iter()
 				.map(|(seed_hash, path)| {
-					let data = fs::read(&path).ok()?;
+					let data = match fs::read(&path) {
+						Ok(data) => data,
+						Err(e) if e.kind() == io::ErrorKind::NotFound => return None,
+						// A cache entry that exists but cannot be read is not a cache miss we
+						// should pass over in silence: it forces this seed's whole history to be
+						// replayed from genesis. The usual cause is a shared `ledger_state_db`
+						// holding another user's 0600 entries. Say so, and leave the file alone.
+						Err(e) => {
+							log::warn!(
+								"Wallet cache entry {path:?} exists but cannot be read ({e}); \
+								 treating as a miss — this seed will replay from genesis"
+							);
+							return None;
+						},
+					};
 					match CachedWalletState::from_value_bytes(&data, seed_hash) {
 						Ok(cached) => Some(cached),
 						Err(e) => {
-							// Stale/old-format or corrupt entry: treat as a miss and evict the
-							// file so it is not retried on every run (mirrors delete_wallet_states).
+							// Genuinely corrupt: the cache key folds in the format version, so a
+							// file under *this* key was written by a writer of this format. Treat
+							// as a miss and evict so it is not retried on every run.
 							log::warn!("Evicting undecodable wallet state file {path:?}: {e}");
 							let _ = fs::remove_file(&path);
 							None
@@ -354,18 +408,21 @@ impl WalletStateCaching for FileBackend {
 					continue;
 				}
 				let path = dir.join(&name);
-				let height = read_wallet_height(&path);
-				match height {
-					Some(h) => {
+				// Read-only on purpose. This scan feeds snapshot GC; it is reached from every
+				// cache save by every command, and it sees the *whole* directory rather than the
+				// seeds of the calling run. Deleting from here meant one command could destroy
+				// another user's — or an older toolkit build's — entries wholesale, on nothing
+				// more than a failed read. An entry it cannot account for is simply not counted
+				// as a snapshot reference.
+				match read_wallet_height(&path) {
+					Ok(Some(h)) => {
 						heights.insert(h);
 					},
-					None => {
-						log::error!(
-							"Removing corrupted wallet cache file {name}: \
-							 could not extract block_height"
-						);
-						let _ = fs::remove_file(&path);
-					},
+					Ok(None) => log::debug!(
+						"Ignoring wallet cache file {name}: not this cache format version"
+					),
+					Err(e) if e.kind() == io::ErrorKind::NotFound => {},
+					Err(e) => log::warn!("Ignoring unreadable wallet cache file {name}: {e}"),
 				}
 			}
 			heights.into_iter().collect()
@@ -606,20 +663,140 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn corrupted_wallet_file_is_deleted() {
+	async fn corrupted_wallet_file_is_evicted_on_read() {
 		let (_, backend, cid) = test_fixture();
 
 		let h1 = H256::from([0x01; 32]);
 
-		// Write a valid wallet, then overwrite with garbage
+		// Write a valid wallet, then overwrite with garbage. The cache key folds in the format
+		// version, so a file under this key can only have come from a writer of this format —
+		// undecodable content there is real corruption, and reading the seed evicts it.
 		backend.set_wallet_states(cid, &[test_wallet(h1, 300)]).await;
 		let path = backend.wallet_path(cid, h1);
 		assert!(path.exists());
 		fs::write(&path, b"short").unwrap();
 
-		// Height should not be found and the corrupted file should be deleted
+		assert!(backend.get_wallet_states(cid, &[h1]).await[0].is_none());
+		assert!(!path.exists(), "corrupt entry should have been evicted");
+	}
+
+	/// The mode a file gets from `open(O_CREAT, 0o666)` under this process's umask — what
+	/// `staging_file` should be producing, whatever the umask happens to be in CI.
+	#[cfg(unix)]
+	fn umask_default_file_mode(dir: &Path) -> u32 {
+		use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+		let probe = dir.join("umask-probe");
+		fs::OpenOptions::new()
+			.write(true)
+			.create_new(true)
+			.mode(0o666)
+			.open(&probe)
+			.unwrap();
+		let mode = fs::metadata(&probe).unwrap().permissions().mode() & 0o777;
+		fs::remove_file(&probe).unwrap();
+		mode
+	}
+
+	/// Cache files must not be owner-only: a `--ledger-state-db` is routinely shared between users
+	/// (a CI job and an interactive session on the same box), and 0600 entries make every other
+	/// user's run miss the whole cache and replay from genesis. `NamedTempFile` defaults to 0600
+	/// and `persist()` keeps it, so the mode has to be asked for explicitly — a umask cannot widen
+	/// it. Pinned against the umask rather than a literal so the intent survives any CI umask.
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn cache_files_are_written_at_the_umask_default_not_owner_only() {
+		use std::os::unix::fs::PermissionsExt;
+
+		let (tempdir, backend, cid) = test_fixture();
+		let expected = umask_default_file_mode(tempdir.path());
+
+		let h1 = H256::from([0x01; 32]);
+		backend.set_wallet_states(cid, &[test_wallet(h1, 100)]).await;
+		backend.set_ledger_snapshot(cid, test_snapshot(100)).await;
+
+		for path in [backend.wallet_path(cid, h1), backend.ledger_path(cid, 100)] {
+			let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+			assert_eq!(
+				mode, expected,
+				"{path:?} was written 0{mode:o}, expected the umask default 0{expected:o}"
+			);
+		}
+	}
+
+	/// A file this user cannot open is not a corrupt file. The sweep runs on every save by every
+	/// command and sees the whole directory, so deleting on a failed read let one command destroy
+	/// another user's warm cache.
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn sweep_ignores_unreadable_entry_instead_of_deleting_it() {
+		use std::os::unix::fs::PermissionsExt;
+
+		let (_, backend, cid) = test_fixture();
+		let (h1, h2) = (H256::from([0x01; 32]), H256::from([0x02; 32]));
+		backend
+			.set_wallet_states(cid, &[test_wallet(h1, 100), test_wallet(h2, 200)])
+			.await;
+
+		let unreadable = backend.wallet_path(cid, h1);
+		fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+
 		let heights = backend.get_all_cached_wallet_heights(cid).await;
-		assert!(heights.is_empty());
-		assert!(!path.exists(), "corrupted file should have been deleted");
+		assert_eq!(heights, vec![200], "unreadable entry must not be counted as a reference");
+		assert!(unreadable.exists(), "unreadable entry must not be deleted");
+
+		// And it reads back as a miss without being destroyed, so it still heals once the
+		// permissions are fixed.
+		assert!(backend.get_wallet_states(cid, &[h1]).await[0].is_none());
+		assert!(unreadable.exists());
+		fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o644)).unwrap();
+		assert_eq!(
+			backend.get_wallet_states(cid, &[h1]).await[0].as_ref().map(|w| w.block_height),
+			Some(100),
+			"entry should be usable again once readable"
+		);
+	}
+
+	/// An entry from an older cache format belongs to an older toolkit build, which keys its
+	/// entries differently and may still be in use against the same directory. Skip it; deleting
+	/// it made two builds sharing a directory wipe each other on every save.
+	#[tokio::test]
+	async fn sweep_ignores_foreign_format_entry_instead_of_deleting_it() {
+		let (_, backend, cid) = test_fixture();
+		let h1 = H256::from([0x01; 32]);
+		backend.set_wallet_states(cid, &[test_wallet(h1, 100)]).await;
+
+		// v1 layout: bare 8-byte LE block height, no version prefix.
+		let foreign = backend.wallet_path(cid, H256::from([0xaa; 32]));
+		let mut v1 = 100u64.to_le_bytes().to_vec();
+		v1.extend_from_slice(&[0u8; 32]);
+		fs::write(&foreign, &v1).unwrap();
+
+		assert_eq!(backend.get_all_cached_wallet_heights(cid).await, vec![100]);
+		assert!(foreign.exists(), "foreign-format entry must not be deleted");
+	}
+
+	/// Replacing an entry whose height cannot be read (another user's 0600 file, pre-fix) is how a
+	/// shared cache heals: the replacement is written at the umask default.
+	#[cfg(unix)]
+	#[tokio::test]
+	async fn unreadable_entry_is_replaced_and_permissions_heal() {
+		use std::os::unix::fs::PermissionsExt;
+
+		let (tempdir, backend, cid) = test_fixture();
+		let expected = umask_default_file_mode(tempdir.path());
+
+		let h1 = H256::from([0x01; 32]);
+		backend.set_wallet_states(cid, &[test_wallet(h1, 100)]).await;
+		let path = backend.wallet_path(cid, h1);
+		fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+
+		backend.set_wallet_states(cid, &[test_wallet(h1, 200)]).await;
+
+		let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+		assert_eq!(mode, expected, "replacement was written 0{mode:o}");
+		assert_eq!(
+			backend.get_wallet_states(cid, &[h1]).await[0].as_ref().map(|w| w.block_height),
+			Some(200),
+		);
 	}
 }
