@@ -44,6 +44,7 @@ pub mod server;
 #[cfg(test)]
 mod integration_tests;
 
+use midnight_node_runtime::Runtime;
 use parity_scale_codec::Decode;
 use sc_client_api::{Backend, StorageKey, StorageProvider};
 use sp_runtime::traits::Block as BlockT;
@@ -51,19 +52,11 @@ use sp_runtime::traits::Block as BlockT;
 /// Log target shared by the warp ledger-sync server and client.
 pub(crate) const LOG_TARGET: &str = "midnight-ledger-sync";
 
-/// Raw storage key for `pallet_midnight::StateKey`: `twox_128("Midnight") ++ twox_128("StateKey")`.
-/// No runtime API exposes `StateKey` (it has only a `#[pallet::getter]`), so both the server and
-/// client read it by raw key.
-pub(crate) fn state_key_storage_key() -> StorageKey {
-	let mut key = Vec::with_capacity(32);
-	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"Midnight"));
-	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"StateKey"));
-	StorageKey(key)
-}
-
-/// Read and decode the on-chain `StateKey` at `hash` — the tagged `TypedArenaKey<Ledger>` bytes the
-/// ledger arena is keyed by. The storage value is `SCALE(Vec<u8>)`; the inner bytes are the key.
-/// Returns `Ok(None)` if the pallet has no `StateKey` at that block.
+/// Read and decode the on-chain `pallet_midnight::StateKey` at `hash` — the tagged
+/// `TypedArenaKey<Ledger>` bytes the ledger arena is keyed by. No runtime API exposes `StateKey` (it
+/// has only a `#[pallet::getter]`), so the server and client read it by storage key. The stored
+/// value is `SCALE(Vec<u8>)`; the inner bytes are the key. Returns `Ok(None)` if the pallet has no
+/// `StateKey` at that block.
 pub(crate) fn read_state_key<B, Client, BE>(
 	client: &Client,
 	hash: B::Hash,
@@ -73,15 +66,14 @@ where
 	BE: Backend<B>,
 	Client: StorageProvider<B, BE>,
 {
-	match client.storage(hash, &state_key_storage_key())? {
-		Some(raw) => {
-			let inner = Vec::<u8>::decode(&mut &raw.0[..]).map_err(|e| {
-				sp_blockchain::Error::Backend(format!("failed to decode pallet StateKey: {e}"))
-			})?;
-			Ok(Some(inner))
-		},
-		None => Ok(None),
-	}
+	let key = StorageKey(pallet_midnight::StateKey::<Runtime>::hashed_key().to_vec());
+	let Some(raw) = client.storage(hash, &key)? else { return Ok(None) };
+
+	let inner = Vec::<u8>::decode(&mut &raw.0[..]).map_err(|e| {
+		sp_blockchain::Error::Backend(format!("failed to decode pallet StateKey: {e}"))
+	})?;
+
+	Ok(Some(inner))
 }
 
 /// Raw storage key for `pallet_cnight_observation::PreForkStateKey`:
