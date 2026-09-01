@@ -197,9 +197,11 @@ node-image-minimal:
     USER root
 
     RUN mkdir -p /node
-    COPY +build-node-only/artifacts-$NATIVEARCH/midnight-node /
+    COPY --chown=appuser:appuser +build-node-only/artifacts-$NATIVEARCH/midnight-node /
 
-    RUN chown -R appuser:appuser /midnight-node /node ./bin ./res
+    # Only /node (created above as root) needs fixing: everything else is copied
+    # with --chown, so no `chown -R` rewrites it into a duplicate layer.
+    RUN chown appuser:appuser /node
     SAVE IMAGE localhost/node-minimal:latest
 
 # Grabs metadata.scale file from the latest node
@@ -747,15 +749,26 @@ node-ci-image-single-platform:
         rm node.tar.xz && \
         node --version && npm --version
 
-    # Docker compose-v2 plugin — needed by the +local-env-ci WITH DOCKER targets, whose
-    # `docker compose` calls run against earthly's injected docker CLI (which has no
-    # bundled plugin). uname -m (x86_64/aarch64) matches the release asset suffix directly.
+    # Docker compose + buildx plugins — needed by the +local-env-ci WITH DOCKER targets,
+    # whose `docker compose` calls run against earthly's injected docker CLI (which has no
+    # bundled plugins). compose v5 dropped its internal buildkit builder and delegates
+    # `build:` to Docker Bake, so buildx is not optional: without it the contract-compiler
+    # service in local-env's compose file fails to build.
+    # compose's asset suffix is uname -m (x86_64/aarch64); buildx's is Go-style
+    # (amd64/arm64), hence the mapping — same shape as the gh and node installs above.
     # renovate: datasource=github-releases packageName=docker/compose
-    ARG COMPOSE_VERSION=v2.31.0
+    ARG COMPOSE_VERSION=v5.5.0
+    # renovate: datasource=github-releases packageName=docker/buildx
+    ARG BUILDX_VERSION=v0.36.1
     RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
         curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" \
           -o /usr/local/lib/docker/cli-plugins/docker-compose && \
-        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
+        ARCH=$(uname -m) && \
+        if [ "$ARCH" = "aarch64" ]; then BUILDX_ARCH="arm64"; else BUILDX_ARCH="amd64"; fi && \
+        curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${BUILDX_ARCH}" \
+          -o /usr/local/lib/docker/cli-plugins/docker-buildx && \
+        chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
     # compactc is exposed via COMPACT_HOME; when it is set, toolkit-js scripts honour
     # it: `fetch-compactc` skips the download and `run-compactc` uses this compiler.
@@ -1397,10 +1410,12 @@ subwasm:
 # The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
 # reproducibility - srtool's environment is fixed and verified.
 srtool-build:
+    # Tag shape is `<rust version>-<srtool version>`, so renovate has to track the whole
+    # tag: given just `0.18.4` it reads the rust half as the image's version and offers
+    # `1.93.0` as a "v1 major", which resolves to a tag that does not exist.
     # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_VERSION=0.18.4
-    # srtool 1.93.0 uses Rust 1.93.0 - this is intentional for determinism
-    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
+    ARG SRTOOL_TAG=1.93.0-0.18.4
+    FROM paritytech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
     WORKDIR /build
@@ -1429,8 +1444,9 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    ARG SRTOOL_VERSION=0.18.4
-    FROM paritytech/srtool:1.93.0-${SRTOOL_VERSION}
+    # renovate: datasource=docker packageName=paritytech/srtool
+    ARG SRTOOL_TAG=1.93.0-0.18.4
+    FROM paritytech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
@@ -1454,8 +1470,8 @@ node-image:
     RUN mkdir -p /artifacts-$NATIVEARCH
     RUN mkdir -p node
 
-    COPY +build/artifacts-$NATIVEARCH/midnight-node /
-    COPY +build/artifacts-$NATIVEARCH/aiken-deployer /
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node /
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/aiken-deployer /
     COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
     # Extract version from Cargo.toml to preserve semver pre-release suffix (e.g., 0.19.0-rc.1)
@@ -1469,7 +1485,9 @@ node-image:
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
-    RUN chown -R appuser:appuser /midnight-node /aiken-deployer /node ./bin ./res
+    # Only /node needs fixing: the binaries are copied with --chown and the base
+    # image already owns ./bin and ./res, so no `chown -R` duplicates them.
+    RUN chown -R appuser:appuser /node
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
@@ -1546,20 +1564,20 @@ toolkit-image:
 
     # Add toolkit-js (only when INCLUDE_TOOLKIT_JS=true)
     IF [ "$INCLUDE_TOOLKIT_JS" = "true" ]
-        COPY +toolkit-js-prep/toolkit-js /toolkit-js
+        COPY --chown=appuser:appuser +toolkit-js-prep/toolkit-js /toolkit-js
         # compactc for run-compactc invocations from this image (e.g. genesis
         # compiling simple-merkle-tree.compact). Reuse the SAME compiler the CI
         # image selected per COMPACTC_VERSION (built or fetched) and that compiled
         # the contracts in +toolkit-js-prep — no rebuild, no risk of a divergent
         # compactc version between the CI and toolkit images.
-        COPY +toolkit-js-prep/compact-home /compact-home
+        COPY --chown=appuser:appuser +toolkit-js-prep/compact-home /compact-home
         ENV COMPACT_HOME=/compact-home
     ELSE
-        RUN mkdir -p /toolkit-js
+        RUN mkdir -p /toolkit-js && chown appuser:appuser /toolkit-js
     END
 
-    COPY +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
-    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node-toolkit /
+    RUN mkdir -p /.cache/midnight/zk-params /.cache/sync && chown -R appuser:appuser /.cache
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
@@ -1567,7 +1585,6 @@ toolkit-image:
     ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
     LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
-    RUN chown -R appuser:appuser /midnight-node-toolkit /toolkit-js ./bin /.cache /test-static
     SAVE IMAGE --push \
         $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
         $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \

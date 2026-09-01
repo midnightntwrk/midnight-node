@@ -16,11 +16,6 @@ mod utils;
 pub use utils::find_dependency_version;
 pub mod extract_tx_with_context;
 
-/// v8 -> v9 ledger state translation table (ported from midnight-ledger PR #539).
-/// Consumed by the runtime storage migration (via the `ledger` crate) and by the
-/// toolkit fork boundary (`fork::fork_8_to_9`).
-pub mod state_translation_v8_to_v9;
-
 /// Strategy for ordering candidate coins/UTXOs during input selection.
 ///
 /// Defined at the crate root (not inside the version-specific `common` module) so that

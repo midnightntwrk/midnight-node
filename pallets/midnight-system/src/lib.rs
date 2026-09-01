@@ -240,6 +240,10 @@ pub mod pallet {
 
 			Ok(hash)
 		}
+
+		fn is_block_limit_exceeded(err: &DispatchError) -> bool {
+			*err == Error::<T>::BlockLimitExceededError.into()
+		}
 	}
 
 	// ===== Safe mode (multi-block-migration failure recovery) =====

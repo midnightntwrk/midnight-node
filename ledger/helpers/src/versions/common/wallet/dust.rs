@@ -69,6 +69,21 @@ impl<D: DB> DustWallet<D> {
 		Ok(Self::from_seed(derived_seed, params))
 	}
 
+	/// Drop everything this wallet knows about its dust — UTxOs, generation
+	/// info, merkle witnesses, in-flight spends — keeping only its keys, as if
+	/// it had just been derived. Used to mirror a hardfork that wipes the
+	/// on-chain dust state (ledger 8 -> 9): keeping the old local state would
+	/// have the wallet spend dust the chain no longer has.
+	///
+	/// A watch-only wallet (no local state) stays watch-only.
+	pub fn wipe_local_state(&mut self, params: &LedgerParameters) {
+		self.dust_local_state = self
+			.dust_local_state
+			.as_ref()
+			.map(|_| Sp::new(DustLocalState::new(params.dust)));
+		self.spent_utxos = HashSet::new();
+	}
+
 	pub fn replay_events<'a>(
 		&mut self,
 		events: impl IntoIterator<Item = &'a Event<D>>,
@@ -217,6 +232,38 @@ mod tests {
 	fn from_path_rejects_unshielded_role() {
 		let path = DerivationPath::default_for_role(Role::UnshieldedExternal);
 		assert!(DustWallet::<DefaultDB>::from_path(test_seed(), &path, None).is_err());
+	}
+
+	#[test]
+	fn wipe_local_state_resets_state_but_keeps_keys() {
+		let params = super::super::super::INITIAL_PARAMETERS;
+		let mut wallet = DustWallet::<DefaultDB>::default(test_seed(), Some(&params));
+		let public_key = wallet.public_key;
+
+		// Stand in for a synced-up wallet: a non-default local state, as it would
+		// look after replaying pre-fork dust events.
+		let mut synced = (**wallet.dust_local_state.as_ref().unwrap()).clone();
+		synced.sync_time = super::Timestamp::from_secs(1_000);
+		wallet.dust_local_state = Some(super::Sp::new(synced));
+
+		wallet.wipe_local_state(&params);
+
+		let wiped = wallet.dust_local_state.as_ref().unwrap();
+		assert_eq!(wiped.sync_time, super::Timestamp::default());
+		assert_eq!(wallet.public_key, public_key, "keys must survive the wipe");
+		assert!(
+			wallet
+				.speculative_spend(1, super::Timestamp::from_secs(1_000), &params.dust)
+				.is_ok()
+		);
+	}
+
+	/// A watch-only wallet (address-derived, no local state) must stay that way.
+	#[test]
+	fn wipe_local_state_leaves_watch_only_wallets_alone() {
+		let mut wallet = DustWallet::<DefaultDB>::default(test_seed(), None);
+		wallet.wipe_local_state(&super::super::super::INITIAL_PARAMETERS);
+		assert!(wallet.dust_local_state.is_none());
 	}
 }
 
