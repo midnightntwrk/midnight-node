@@ -36,6 +36,8 @@ use super::{LOG_TARGET, client::LedgerSyncClient, oracle::RecoveryGate};
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// Backoff between failed full recovery attempts.
 const RETRY_DELAY: Duration = Duration::from_secs(10);
+/// How often to repeat the "warp target is inside the dust replay" refusal, which is terminal.
+const REPLAY_TARGET_RELOG_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Run the recovery monitor to completion (warp path) or early exit (full sync). Intended to be
 /// spawned as a non-essential task.
@@ -180,6 +182,47 @@ async fn recover_and_release<B, Client, BE, Network>(
 	Client: HeaderBackend<B> + StorageProvider<B, BE> + Send + Sync + 'static,
 	Network: NetworkRequest + NetworkStatusProvider + NetworkPeers + Send + Sync + ?Sized + 'static,
 {
+	// The warp snapshot is rooted at `pallet_midnight::StateKey` alone. While the cNIGHT dust
+	// generation replay runs, executing a block *also* needs the pre-fork ledger-8 arena that
+	// `pallet_cnight_observation::PreForkStateKey` points at, and the hardfork wiped those nodes
+	// out of the v9 root, so no snapshot can carry them. A node that recovered here anyway would
+	// hit `NoLedgerState`, cancel the replay locally while every other node applied it, and
+	// diverge on the state root. Refuse instead: returning without `mark_ledger_verified` leaves
+	// the gate armed, which holds *both* authoring and import, so the node stalls rather than
+	// forking or authoring a block nobody accepts.
+	//
+	// A target before the fork block is fine (its own `StateKey` is the v8 root), as is any target
+	// after the replay wound up (`complete`/`cancel` kill the key).
+	// ponytail: transient ledger 8 -> 9 hardfork guard; delete with `migrations::v2`.
+	match super::has_pre_fork_state_key::<B, Client, BE>(&client, target_hash) {
+		Ok(true) => {
+			// A restart re-enters here with the same finalized target and the same key set, so
+			// this node is stuck for good; say so, and keep saying it — an operator reaching a
+			// hung node an hour later needs the reason in the tail of the log, not at its head.
+			loop {
+				log::error!(
+					target: LOG_TARGET,
+					"Warp target #{target_number} ({target_hash:?}) is inside the cNIGHT dust generation \
+					 replay (CNightObservation::PreForkStateKey is set at that block): the pre-fork \
+					 ledger-8 arena it points at is not part of the warp snapshot and cannot be \
+					 recovered. Authoring and block import stay gated; this node cannot proceed. \
+					 Purge its database and warp-sync again once the replay has finished — wait for \
+					 the CNightObservation::DustReapplyCompleted event, a few dozen blocks after the \
+					 runtime upgrade block."
+				);
+				tokio::time::sleep(REPLAY_TARGET_RELOG_INTERVAL).await;
+			}
+		},
+		Ok(false) => {},
+		// Can't read the trie at the target: proceed rather than guess. Recovery either succeeds
+		// (the common case — the chain is nowhere near the fork) or fails loudly on its own.
+		Err(e) => log::warn!(
+			target: LOG_TARGET,
+			"Failed to check for an in-flight dust replay at warp target #{target_number}: {e}; \
+			 continuing with ledger arena recovery"
+		),
+	}
+
 	log::info!(
 		target: LOG_TARGET,
 		"Recovering ledger arena at warp target #{target_number} ({target_hash:?})"

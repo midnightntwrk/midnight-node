@@ -288,8 +288,16 @@ each run to completion (`exit 0`) before the next phase starts.
 |     2 | `contract-compiler`                   | compile + deploy the Aiken governance contracts                                                                             |
 |     3 | `mint-cnight-supply`                  | mint the cNIGHT supply → Reserve / ICS / faucet pools, then send the c2m bridge transfer funding wallet `0x..01` (1B NIGHT) |
 |     4 | `midnight-setup`                      | build the chainspec/genesis (bridge checkpoint + pre-approved faucet tx)                                                    |
-|     5 | `midnight-node-1` … `midnight-node-5` | validators; produce + finalize blocks                                                                                       |
+|     5 | `midnight-node-1` … `midnight-node-6` | nodes 1–5: validators; produce + finalize blocks. node 6: non-validator archive follower                                    |
 |     6 | `init-mnight-faucet`                  | claim the bridged NIGHT + DUST-register wallet `0x..01`                                                                     |
+
+`midnight-node-6` is a non-validator archive node (`--state-pruning=archive
+--blocks-pruning=archive`, no keystore): it syncs from `midnight-node-1` and
+keeps full state and block history queryable over RPC. It publishes host ports
+30338 (p2p), 9945 (RPC), and 9620 (Prometheus), and persists its chain data in
+the `midnight-node-6-data` volume. It is labeled `io.midnight.role: archive`
+rather than `validator`, so `verify-finality` and the upgrade/consensus
+commands skip it.
 
 With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
 `wallet-indexer`, `indexer-api`) starts alongside the Cardano services.

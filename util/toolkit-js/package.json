@@ -36,16 +36,15 @@
   "devDependencies": {
     "@midnight-ntwrk/midnight-js-compact": "4.0.4",
     "@tsconfig/node24": "24.0.0",
-    "@types/node": "22.18.10",
+    "@types/node": "24.13.3",
     "shx": "0.4.0",
+    "turbo": "2.9.14",
     "typescript": "5.9.3",
-    "vitest": "4.1.0",
-    "turbo": "2.9.14"
+    "vitest": "4.1.0"
   },
   "overrides": {
     "esbuild": "0.28.1",
     "@midnightntwrk/ledger-v9": "1.0.0-rc.3",
-    "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3",
-    "nanoid": "3.3.18"
+    "@midnightntwrk/onchain-runtime-v4": "4.0.0-rc.3"
   }
 }
