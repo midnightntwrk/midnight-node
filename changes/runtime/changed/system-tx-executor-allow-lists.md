@@ -14,4 +14,4 @@ construct. The governance extrinsic path was rebuilt the same way, onto a new
 kept, unused by new code, for backward compatibility with already-published runtime
 WASM and historical block replay.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2080
