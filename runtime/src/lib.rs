@@ -47,7 +47,7 @@ pub use frame_support::{
 	},
 };
 pub use frame_system::Call as SystemCall;
-use frame_system::{EnsureNone, EnsureRoot};
+use frame_system::{EnsureNone, EnsureRoot, EnsureRootWithSuccess};
 use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
@@ -326,7 +326,7 @@ parameter_types! {
 
 impl frame_system::Config for Runtime {
 	/// The basic call filter to use in dispatchable.
-	type BaseCallFilter = TxPause;
+	type BaseCallFilter = InsideBoth<SafeMode, TxPause>;
 	/// The block type for the runtime.
 	type Block = Block;
 	/// The type for storing how many extrinsics an account has signed.
@@ -555,7 +555,7 @@ impl pallet_migrations::Config for Runtime {
 	type CursorMaxLen = ConstU32<65_536>;
 	type IdentifierMaxLen = ConstU32<256>;
 	type MigrationStatusHandler = ();
-	type FailedMigrationHandler = frame_support::migrations::FreezeChainOnFailedMigration;
+	type FailedMigrationHandler = migrations::EnterSafeModeAndUnstuckOnFailedMigration;
 	type MaxServiceWeight = MbmServiceWeight;
 	type WeightInfo = weights::pallet_migrations::WeightInfo<Runtime>;
 }
@@ -754,6 +754,40 @@ impl pallet_tx_pause::Config for Runtime {
 	type WhitelistedCalls = Nothing;
 	type MaxNameLen = ConstU32<256>;
 	type WeightInfo = weights::pallet_tx_pause::WeightInfo<Runtime>;
+}
+
+parameter_types! {
+	/// Nominal durations for the permissionless `enter`/`extend` calls. Inert in practice:
+	/// `EnterDepositAmount`/`ExtendDepositAmount` are `None`, which disables permissionless
+	/// entry entirely.
+	pub const SafeModeEnterDuration: BlockNumber = DAYS;
+	pub const SafeModeExtendDuration: BlockNumber = DAYS;
+	/// How long a single Root `force_enter`/`force_extend` lasts.
+	pub const SafeModeForceDuration: BlockNumber = 7 * DAYS;
+}
+
+impl pallet_safe_mode::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	// Deposits are disabled (`EnterDepositAmount`/`ExtendDepositAmount` = None), so the
+	// Currency is typecheck-only.
+	type Currency = CurrencyWaiver;
+	type RuntimeHoldReason = RuntimeHoldReason;
+	// While safe mode is entered only these calls (plus safe-mode's own, auto-exempted by
+	// pallet name) pass `BaseCallFilter`: the governance recovery path and the inherents
+	// block production depends on. Root bypasses the filter entirely.
+	type WhitelistedCalls =
+		(check_call_filter::GovernanceAuthorityCallFilter, check_call_filter::InherentCalls);
+	type EnterDuration = SafeModeEnterDuration;
+	type ExtendDuration = SafeModeExtendDuration;
+	type EnterDepositAmount = ();
+	type ExtendDepositAmount = ();
+	type ForceEnterOrigin = EnsureRootWithSuccess<AccountId, SafeModeForceDuration>;
+	type ForceExtendOrigin = EnsureRootWithSuccess<AccountId, SafeModeForceDuration>;
+	type ForceExitOrigin = EnsureRoot<AccountId>;
+	type ForceDepositOrigin = EnsureRoot<AccountId>;
+	type Notify = ();
+	type ReleaseDelay = ();
+	type WeightInfo = pallet_safe_mode::weights::SubstrateWeight<Runtime>;
 }
 
 pub const MOTION_DURATION: BlockNumber = 5 * DAYS;
@@ -1123,7 +1157,8 @@ mod runtime {
 	pub type Scheduler = pallet_scheduler::Pallet<Runtime>;
 	#[runtime::pallet_index(19)]
 	pub type TxPause = pallet_tx_pause::Pallet<Runtime>;
-	// SafeMode: pallet_safe_mode = 20,
+	#[runtime::pallet_index(20)]
+	pub type SafeMode = pallet_safe_mode::Pallet<Runtime>;
 
 	// BEEFY Bridges support.
 	#[runtime::pallet_index(21)]
@@ -2399,6 +2434,95 @@ mod tests {
 					 dispatch on the active engine"
 				);
 				assert_eq!(slot_config().slot_duration.as_millis(), crate::SLOT_DURATION);
+			});
+		}
+	}
+
+	mod failed_mbm_recovery {
+		use crate::{BlockNumber, Executive, Runtime, RuntimeCall, VERSION};
+		use frame_support::{assert_ok, migrations::MultiStepMigrator, traits::Contains};
+		use sp_runtime::{BuildStorage, ExtrinsicInclusionMode, traits::Header as _};
+
+		fn ongoing() -> bool {
+			<Runtime as frame_system::Config>::MultiBlockMigrator::ongoing()
+		}
+
+		fn can_set_code() -> frame_system::CanSetCodeResult<Runtime> {
+			frame_system::Pallet::<Runtime>::can_set_code(&[], false)
+		}
+
+		/// A failed multi-block migration must enter safe mode and unstuck the cursor
+		/// instead of freezing the chain (`can_set_code` blocked forever with no on-chain
+		/// recovery on a standalone chain).
+		#[test]
+		fn failed_mbm_enters_safe_mode_and_unstucks() {
+			let t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
+			sp_io::TestExternalities::from(t).execute_with(|| {
+				// Mark the runtime as already upgraded so `initialize_block` at block 2
+				// doesn't onboard the MBMs again.
+				frame_system::LastRuntimeUpgrade::<Runtime>::put(
+					frame_system::LastRuntimeUpgradeInfo::from(VERSION),
+				);
+				frame_system::Pallet::<Runtime>::set_block_number(1);
+
+				assert!(can_set_code().into_result().is_ok());
+
+				// Plant an active cursor for migration 0 (cnight v1 `MigrateV0ToV1`) whose
+				// 1-byte inner cursor fails to SCALE-decode as the migration's fixed-size
+				// cursor type -> `InvalidCursor` -> `FailedMigrationHandler`.
+				assert_ok!(crate::MultiBlockMigrations::force_set_active_cursor(
+					crate::RuntimeOrigin::root(),
+					0,
+					Some(vec![0u8].try_into().unwrap()),
+					Some(1),
+				));
+				assert!(ongoing());
+				assert!(matches!(
+					can_set_code(),
+					frame_system::CanSetCodeResult::MultiBlockMigrationsOngoing
+				));
+
+				// Step the MBMs the way Executive does after inherent application.
+				Executive::inherents_applied();
+
+				// Safe mode entered indefinitely, cursor unstuck, upgrades unblocked.
+				assert_eq!(
+					pallet_safe_mode::EnteredUntil::<Runtime>::get(),
+					Some(BlockNumber::MAX)
+				);
+				assert!(!ongoing());
+				assert!(can_set_code().into_result().is_ok());
+
+				// `BaseCallFilter` now blocks user calls...
+				type Filter = <Runtime as frame_system::Config>::BaseCallFilter;
+				assert!(!Filter::contains(&RuntimeCall::Midnight(
+					pallet_midnight::Call::send_mn_transaction { midnight_tx: vec![] }
+				)));
+				// ...but keeps the inherents, governance, and safe-mode recovery calls.
+				assert!(Filter::contains(&RuntimeCall::Timestamp(pallet_timestamp::Call::set {
+					now: 0
+				})));
+				assert!(Filter::contains(&RuntimeCall::Council(pallet_collective::Call::vote {
+					proposal: crate::Hash::default(),
+					index: 0,
+					approve: true,
+				})));
+				assert!(Filter::contains(&RuntimeCall::SafeMode(
+					pallet_safe_mode::Call::force_exit {}
+				)));
+
+				// The next block admits normal (non-inherent) extrinsics again.
+				let header = crate::Header::new(
+					2,
+					Default::default(),
+					Default::default(),
+					frame_system::Pallet::<Runtime>::parent_hash(),
+					Default::default(),
+				);
+				assert_eq!(
+					Executive::initialize_block(&header),
+					ExtrinsicInclusionMode::AllExtrinsics
+				);
 			});
 		}
 	}

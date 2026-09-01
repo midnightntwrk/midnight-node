@@ -9,7 +9,7 @@ use sp_runtime::{
 };
 
 /// Filter that whitelists Governance calls
-struct GovernanceAuthorityCallFilter;
+pub struct GovernanceAuthorityCallFilter;
 impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 	fn contains(call: &RuntimeCall) -> bool {
 		matches!(
@@ -19,6 +19,31 @@ impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 				| RuntimeCall::FederatedAuthority(
 					pallet_federated_authority::Call::motion_close { .. }
 				) | RuntimeCall::System(frame_system::Call::apply_authorized_upgrade { .. })
+		)
+	}
+}
+
+/// The runtime's inherent calls, whitelisted in safe mode.
+///
+/// `BaseCallFilter` filters every non-Root origin, including the None origin inherents
+/// dispatch with. A filtered Mandatory inherent means `BadMandatory`, i.e. no valid blocks
+/// can be built, so every inherent must be whitelisted for the chain to stay live while
+/// safe mode is entered. `Midnight::send_mn_transaction` (the unsigned user-transaction
+/// entry point) is deliberately NOT listed: filtering user traffic is the point of safe mode.
+pub struct InherentCalls;
+impl Contains<RuntimeCall> for InherentCalls {
+	fn contains(call: &RuntimeCall) -> bool {
+		matches!(
+			call,
+			RuntimeCall::Timestamp(pallet_timestamp::Call::set { .. })
+				| RuntimeCall::SessionCommitteeManagement(
+					pallet_session_validator_management::Call::set { .. }
+				) | RuntimeCall::CNightObservation(
+				pallet_cnight_observation::Call::process_tokens { .. }
+			) | RuntimeCall::Bridge(pallet_partner_chains_bridge::Call::handle_transfers { .. })
+				| RuntimeCall::FederatedAuthorityObservation(
+					pallet_federated_authority_observation::Call::reset_members { .. }
+				)
 		)
 	}
 }
