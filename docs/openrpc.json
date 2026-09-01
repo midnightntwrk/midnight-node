@@ -42,6 +42,55 @@
       ]
     },
     {
+      "name": "midnight_queryContractState",
+      "summary": "Queries specific fields from a deployed contract's state tree.",
+      "description": "Each query is a path of hex-encoded serialized `AlignedValue` keys that navigates the state tree (array index, map key, or merkle tree position, mirroring the VM's `idx` instruction). Returns one result per query, in the same order. Per-query failures (e.g. array index out of bounds, map miss) are reported in-line via the `error` field rather than aborting the batch. If `at` is null, the best block is used.",
+      "params": [
+        {
+          "name": "contract_address",
+          "description": "Hex-encoded contract address",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "queries",
+          "description": "List of state-tree path queries",
+          "required": true,
+          "schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RpcStateQuery"
+            }
+          }
+        },
+        {
+          "name": "at",
+          "description": "Block hash to query at (defaults to best block)",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/BlockHash"
+          }
+        }
+      ],
+      "result": {
+        "name": "results",
+        "description": "Per-query results, in input order",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/RpcStateQueryResult"
+          }
+        }
+      },
+      "errors": [
+        {
+          "$ref": "#/components/errors/StateRpcError"
+        }
+      ]
+    },
+    {
       "name": "midnight_zswapStateRoot",
       "summary": "Returns the Merkle root of the zswap (shielded transaction) state tree.",
       "description": "The root is returned as a byte array. If `at` is null, the best block is used.",
@@ -1463,6 +1512,43 @@
             ]
           }
         }
+      },
+      "RpcStateQuery": {
+        "type": "object",
+        "description": "A query into a contract's state tree. Each `path` element is a 0x-prefixed hex-encoded tagged-serialized AlignedValue (the tag carries the type/version), interpreted as array index, map key, or merkle tree position depending on the StateValue variant at each level.",
+        "properties": {
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^0x([0-9a-fA-F]{2})+$",
+              "description": "0x-prefixed hex of tagged-serialized AlignedValue (even length, at least one byte)"
+            }
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "RpcStateQueryResult": {
+        "type": "object",
+        "description": "Result of a single state-tree path query. Exactly one of `value` or `error` is set on success/failure; per-query failures do not abort the batch.",
+        "properties": {
+          "query": {
+            "$ref": "#/components/schemas/RpcStateQuery"
+          },
+          "value": {
+            "type": "string",
+            "description": "Hex-encoded tagged-serialized leaf StateValue (present when the path resolves successfully)"
+          },
+          "error": {
+            "type": "string",
+            "description": "Human-readable error for this query (e.g. 'array index 99 out of bounds')"
+          }
+        },
+        "required": [
+          "query"
+        ]
       },
       "PeerReputationInfo": {
         "type": "object",

@@ -24,6 +24,7 @@ use serde_json::{Value, json};
 /// Expected set of custom RPC method names (from all midnight-node + partner-chains traits).
 pub(crate) const CUSTOM_METHOD_NAMES: &[&str] = &[
 	"midnight_contractState",
+	"midnight_queryContractState",
 	"midnight_zswapStateRoot",
 	"midnight_ledgerStateRoot",
 	"midnight_apiVersions",
@@ -163,6 +164,40 @@ fn build_custom_method(name: &str) -> Option<Value> {
 				),
 			],
 			result("state", "Hex-encoded contract state", json!({"type": "string"})),
+			&[error_ref("StateRpcError")],
+		),
+		"midnight_queryContractState" => method_entry(
+			name,
+			"Queries specific fields from a deployed contract's state tree.",
+			"Each query is a path of hex-encoded serialized `AlignedValue` keys that navigates the state tree (array index, map key, or merkle tree position, mirroring the VM's `idx` instruction). Returns one result per query, in the same order. Per-query failures (e.g. array index out of bounds, map miss) are reported in-line via the `error` field rather than aborting the batch. If `at` is null, the best block is used.",
+			&[
+				param(
+					"contract_address",
+					"Hex-encoded contract address",
+					json!({"type": "string"}),
+				),
+				param(
+					"queries",
+					"List of state-tree path queries",
+					json!({
+						"type": "array",
+						"items": schema_ref("RpcStateQuery"),
+					}),
+				),
+				param_optional(
+					"at",
+					"Block hash to query at (defaults to best block)",
+					schema_ref("BlockHash"),
+				),
+			],
+			result(
+				"results",
+				"Per-query results, in input order",
+				json!({
+					"type": "array",
+					"items": schema_ref("RpcStateQueryResult"),
+				}),
+			),
 			&[error_ref("StateRpcError")],
 		),
 		"midnight_zswapStateRoot" => method_entry(
@@ -555,6 +590,37 @@ fn build_component_schemas() -> Value {
 		"Operation": operation_schema,
 		"MidnightRpcTransaction": midnight_tx_schema,
 		"RpcTransaction": rpc_tx_schema,
+		"RpcStateQuery": {
+			"type": "object",
+			"description": "A query into a contract's state tree. Each `path` element is a 0x-prefixed hex-encoded tagged-serialized AlignedValue (the tag carries the type/version), interpreted as array index, map key, or merkle tree position depending on the StateValue variant at each level.",
+			"properties": {
+				"path": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^0x([0-9a-fA-F]{2})+$",
+						"description": "0x-prefixed hex of tagged-serialized AlignedValue (even length, at least one byte)"
+					}
+				}
+			},
+			"required": ["path"]
+		},
+		"RpcStateQueryResult": {
+			"type": "object",
+			"description": "Result of a single state-tree path query. Exactly one of `value` or `error` is set on success/failure; per-query failures do not abort the batch.",
+			"properties": {
+				"query": { "$ref": "#/components/schemas/RpcStateQuery" },
+				"value": {
+					"type": "string",
+					"description": "Hex-encoded tagged-serialized leaf StateValue (present when the path resolves successfully)"
+				},
+				"error": {
+					"type": "string",
+					"description": "Human-readable error for this query (e.g. 'array index 99 out of bounds')"
+				}
+			},
+			"required": ["query"]
+		},
 		"PeerReputationInfo": {
 			"type": "object",
 			"description": "Peer information enriched with reputation and ban status",
@@ -926,8 +992,8 @@ mod tests {
 	fn ci_custom_method_count_drift_detection() {
 		assert_eq!(
 			CUSTOM_METHOD_NAMES.len(),
-			16,
-			"CUSTOM_METHOD_NAMES has {} entries but 16 are expected. \
+			17,
+			"CUSTOM_METHOD_NAMES has {} entries but 17 are expected. \
 			 If you added or removed a custom RPC method, update CUSTOM_METHOD_NAMES \
 			 and the OpenRPC metadata in build_custom_method().",
 			CUSTOM_METHOD_NAMES.len()

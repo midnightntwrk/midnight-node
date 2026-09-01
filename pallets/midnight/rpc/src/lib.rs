@@ -21,14 +21,32 @@ use jsonrpsee::{
 	types::error::{ErrorObject, ErrorObjectOwned, INVALID_PARAMS_CODE},
 };
 
+use midnight_node_ledger::rpc::query_contract_state;
 use pallet_midnight::{LedgerApiError, MidnightRuntimeApi};
 use sc_client_api::{BlockBackend, BlockchainEvents};
+
+// Re-exported so downstream callers (typed clients, e2e tests) can construct
+// `PathKey(AlignedValue::from(...))` without a direct `base-crypto` dependency.
+pub use base_crypto::fab::AlignedValue;
 use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::sync::Arc;
 
 pub const API_VERSIONS: [u32; 1] = [2];
+/// TODO: Consider making this a CLI argument so RPC providers can customize it.
+pub const MAX_STATE_QUERIES: usize = 100;
+
+/// Maximum byte length of a single serialized path key on the wire.
+/// Enforced inside `PathKey::deserialize` before the untagged deserialize
+/// step, so a single accepted request can't allocate megabytes per key
+/// before the deserializer rejects it.
+///
+/// Sized against the VM's `eq_valid_input` cap (64 untagged bytes per
+/// AlignedValue), with headroom for compound map keys (e.g. a struct of a
+/// few primitive fields). Worst-case per-request input bytes:
+/// `MAX_STATE_QUERIES * MAX_PATH_DEPTH * MAX_KEY_BYTES`.
+const MAX_KEY_BYTES: usize = 512;
 
 /// Midnight core RPC API.
 ///
@@ -72,6 +90,21 @@ pub trait MidnightApi<BlockHash> {
 	/// If `at` is `None`, the best block is used.
 	#[method(name = "midnight_ledgerVersion")]
 	fn get_ledger_version(&self, at: Option<BlockHash>) -> Result<String, BlockRpcError>;
+
+	/// Queries specific fields from a deployed contract's state tree.
+	///
+	/// Each query is a path of hex-encoded serialized `AlignedValue` keys that
+	/// navigates the state tree. Each key is interpreted based on the current
+	/// node type: array index, map key, or merkle tree position.
+	///
+	/// If `at` is `None`, the best block is used.
+	#[method(name = "midnight_queryContractState")]
+	fn query_contract_state(
+		&self,
+		contract_address: String,
+		queries: Vec<RpcStateQuery>,
+		at: Option<BlockHash>,
+	) -> Result<Vec<RpcStateQueryResult>, StateRpcError>;
 }
 
 #[derive(Debug)]
@@ -83,6 +116,7 @@ pub enum StateRpcError {
 	UnableToGetZSwapChainState,
 	UnableToGetZSwapStateRoot,
 	UnableToGetLedgerStateRoot,
+	TooManyQueries { max: usize, got: usize },
 }
 
 #[derive(Debug)]
@@ -151,6 +185,9 @@ impl Display for StateRpcError {
 			StateRpcError::UnableToGetLedgerStateRoot => {
 				write!(f, "Unable to get requested ledger state root")
 			},
+			StateRpcError::TooManyQueries { max, got } => {
+				write!(f, "Too many queries: got {got}, maximum is {max}")
+			},
 		}
 	}
 }
@@ -197,6 +234,76 @@ impl From<StateRpcError> for ErrorObjectOwned {
 	fn from(value: StateRpcError) -> Self {
 		ErrorObject::owned(INVALID_PARAMS_CODE, value.to_string(), None::<()>)
 	}
+}
+
+/// A query into a contract's state tree.
+///
+/// Each element in `path` is a [`PathKey`] (a typed `AlignedValue`
+/// transported as a 0x-prefixed hex string of its tagged binary form).
+/// Interpreted as array index, map key, or merkle tree position depending
+/// on the `StateValue` variant at each level.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcStateQuery {
+	pub path: Vec<PathKey>,
+}
+
+/// A typed `AlignedValue` for use in [`RpcStateQuery`]'s `path`.
+///
+/// Wire format: 0x-prefixed hex of the tagged-serialized `AlignedValue`
+/// (the tag carries the type/version so a future ledger upgrade that
+/// changes the untagged byte layout fails cleanly instead of silently
+/// mis-decoding). The Rust type holds the deserialized `AlignedValue`
+/// directly, so call sites don't repeat the bytes ↔ value conversion.
+#[derive(Debug, Clone)]
+pub struct PathKey(pub AlignedValue);
+
+impl Serialize for PathKey {
+	fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		let mut buf =
+			Vec::with_capacity(midnight_serialize::Serializable::serialized_size(&self.0));
+		midnight_serialize::Serializable::serialize(&self.0, &mut buf)
+			.map_err(serde::ser::Error::custom)?;
+		format!("0x{}", hex::encode(&buf)).serialize(serializer)
+	}
+}
+
+impl<'de> Deserialize<'de> for PathKey {
+	fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		let s = String::deserialize(deserializer)?;
+		let hex_str = s
+			.strip_prefix("0x")
+			.ok_or_else(|| serde::de::Error::custom("path key must be 0x-prefixed hex"))?;
+		if hex_str.len() > MAX_KEY_BYTES * 2 {
+			return Err(serde::de::Error::custom(format!(
+				"path key too large: {} hex chars exceeds the maximum of {}",
+				hex_str.len(),
+				MAX_KEY_BYTES * 2
+			)));
+		}
+		let bytes = hex::decode(hex_str).map_err(serde::de::Error::custom)?;
+		// Untagged deserialize does not enforce full consumption, so we
+		// check the reader is empty after the AlignedValue to keep the
+		// wire format canonical (no trailing junk).
+		let mut reader: &[u8] = &bytes;
+		let value: AlignedValue = midnight_serialize::Deserializable::deserialize(&mut reader, 0)
+			.map_err(serde::de::Error::custom)?;
+		if !reader.is_empty() {
+			return Err(serde::de::Error::custom(format!(
+				"path key has {} trailing byte(s) after a valid AlignedValue",
+				reader.len()
+			)));
+		}
+		Ok(PathKey(value))
+	}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcStateQueryResult {
+	pub query: RpcStateQuery,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub value: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub error: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -370,5 +477,62 @@ where
 			.map_err(|_e| BlockRpcError::BlockNotFound)?;
 
 		Ok(String::from_utf8_lossy(&ledger_version).to_string())
+	}
+
+	fn query_contract_state(
+		&self,
+		contract_address: String,
+		queries: Vec<RpcStateQuery>,
+		at: Option<<Block as BlockT>::Hash>,
+	) -> Result<Vec<RpcStateQueryResult>, StateRpcError> {
+		if queries.len() > MAX_STATE_QUERIES {
+			return Err(StateRpcError::TooManyQueries {
+				max: MAX_STATE_QUERIES,
+				got: queries.len(),
+			});
+		}
+		let dehexed_address = hex::decode(&contract_address)
+			.map_err(|_| StateRpcError::BadContractAddress(contract_address))?;
+
+		let api = self.client.runtime_api();
+		let at = at.unwrap_or_else(|| self.client.info().best_hash);
+
+		let api_version = get_api_version::<C, Block>(&api, at)
+			.map_err(|_| StateRpcError::UnableToGetContractState)?;
+		if api_version < 6 {
+			return Err(StateRpcError::UnableToGetContractState);
+		}
+
+		// Read the state key via the runtime API, then call the bridge directly.
+		// This avoids going through WASM for each query — the bridge navigates
+		// the contract state lazily in ParityDB (O(log n) per query).
+		let state_key =
+			api.get_state_key(at).map_err(|_| StateRpcError::UnableToGetContractState)?;
+
+		// The bridge enforces per-path depth and surfaces any per-query
+		// navigation failures (out-of-bounds, etc.) inline in its
+		// `Result<Vec<u8>, String>` slot, so the RPC layer can do a straight
+		// 1:1 zip back to `RpcStateQueryResult`. Key-size and wire-format
+		// validation already happened in `PathKey::deserialize`.
+		let paths: Vec<Vec<AlignedValue>> = queries
+			.iter()
+			.map(|q| q.path.iter().map(|key| key.0.clone()).collect())
+			.collect();
+		let bridge_results =
+			query_contract_state(&state_key, &dehexed_address, &paths).map_err(|e| match e {
+				LedgerApiError::ContractNotPresent => StateRpcError::ContractNotPresent,
+				_ => StateRpcError::UnableToGetContractState,
+			})?;
+
+		Ok(queries
+			.into_iter()
+			.zip(bridge_results.into_iter())
+			.map(|(query, result)| match result {
+				Ok(value) => {
+					RpcStateQueryResult { query, value: Some(hex::encode(value)), error: None }
+				},
+				Err(msg) => RpcStateQueryResult { query, value: None, error: Some(msg) },
+			})
+			.collect())
 	}
 }

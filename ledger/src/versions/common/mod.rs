@@ -748,6 +748,28 @@ where
 		Self::do_get_contract_state(&api, state_key, contract_address, f)
 	}
 
+	/// Query specific fields in a contract's state tree.
+	///
+	/// Returns one result per input path, in the same order. A per-query
+	/// `Err` is a recoverable navigation failure (out-of-bounds, etc.); the
+	/// outer `LedgerApiError` is reserved for whole-request failures
+	/// (address malformed, contract absent, ledger unreadable).
+	pub fn query_contract_state(
+		state_key: &[u8],
+		contract_address: &[u8],
+		paths: &[Vec<base_crypto_local::fab::AlignedValue>],
+	) -> Result<Vec<Result<Vec<u8>, String>>, LedgerApiError> {
+		let api = api::new();
+		let addr = api.deserialize::<ContractAddress>(contract_address)?;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		let contract_state =
+			ledger.get_contract_state(addr).ok_or(LedgerApiError::ContractNotPresent)?;
+
+		let root = contract_state.data.get_ref().clone();
+		Ok(paths.iter().map(|path| resolve_state_path(&root, path)).collect())
+	}
+
 	pub fn get_zswap_chain_state(
 		state_key: &[u8],
 		contract_address: &[u8],
@@ -1453,6 +1475,132 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 	.expect("Hard-coded array should not be empty");
 
 	max_fp.into_atomic_units(max_weight as u128).min(max_weight as u128) as u64
+}
+
+/// Maximum number of steps in a single path. Caps unbounded traversal
+/// before reaching the navigation work.
+const MAX_PATH_DEPTH: usize = 16;
+
+/// Navigate a contract's state tree along a single path and return the
+/// tagged-serialized leaf value.
+///
+/// Each element in `path` is an `AlignedValue` key, interpreted based on the
+/// current `StateValue` variant (array index, map key, or merkle tree
+/// position), mirroring the VM's `idx` instruction. Map and merkle-tree
+/// misses surface as a serialized `StateValue::Null`, matching VM
+/// semantics; out-of-bounds array indices and depth violations are
+/// recoverable per-query errors.
+///
+/// O(log n) — only the nodes along the path are loaded from storage.
+///
+/// TODO: This could be simplified by moving the navigation and leaf
+/// serialization logic to `midnight-ledger` (onchain-state) where it
+/// belongs.
+#[cfg(feature = "std")]
+fn resolve_state_path<D: DB>(
+	root: &onchain_runtime_local::state::StateValue<D>,
+	path: &[base_crypto_local::fab::AlignedValue],
+) -> Result<Vec<u8>, String> {
+	use base_crypto_local::fab::Value;
+	use onchain_runtime_local::state::StateValue;
+
+	// An empty path would return the entire serialized contract state — that
+	// defeats the lazy-access contract this RPC advertises (`O(log n)` per
+	// query). Reject explicitly rather than letting it through.
+	if path.is_empty() {
+		return Err("path cannot be empty; provide at least one step".into());
+	}
+	if path.len() > MAX_PATH_DEPTH {
+		return Err(format!(
+			"path too deep: {} steps exceeds the maximum of {MAX_PATH_DEPTH}",
+			path.len()
+		));
+	}
+
+	let serialize_value = |v: &StateValue<D>| -> Result<Vec<u8>, String> {
+		use midnight_serialize_local::Serializable;
+		let mut buf = Vec::with_capacity(Serializable::serialized_size(v));
+		Serializable::serialize(v, &mut buf)
+			.map_err(|e| format!("failed to serialize result: {e}"))?;
+		Ok(buf)
+	};
+
+	let mut current = root.clone();
+	for key in path {
+		current = match &current {
+			StateValue::Array(arr) => {
+				// Accept any AlignedValue integer width up to u64 and
+				// range-check against the array length; the previous
+				// `try_into::<u8>` rejected legitimate u16/u32/u64 widths.
+				let i: u64 = (&**AsRef::<Value>::as_ref(key))
+					.try_into()
+					.map_err(|e| format!("invalid array index: {e}"))?;
+				let idx: usize =
+					i.try_into().map_err(|_| format!("array index {i} does not fit in usize"))?;
+				arr.get(idx).cloned().ok_or_else(|| format!("array index {i} out of bounds"))?
+			},
+			StateValue::Map(map) => match map.get(key) {
+				Some(sp) => (*sp).clone(),
+				// VM `idx` substitutes Null for a map miss and continues the
+				// path against Null; any remaining step on Null then yields a
+				// clear "step cannot be indexed" error from the `_` arm below.
+				None => StateValue::Null,
+			},
+			StateValue::BoundedMerkleTree(tree) => {
+				let pos: u64 = (&**AsRef::<Value>::as_ref(key))
+					.try_into()
+					.map_err(|e| format!("invalid merkle tree position: {e}"))?;
+				// `1u64 << tree.height()` overflows once height >= 64 (panic
+				// in debug, silent wrap in release). Guard with checked_shl.
+				let max_leaves = 1u64.checked_shl(tree.height() as u32).ok_or_else(|| {
+					format!(
+						"merkle tree height {} exceeds the addressable u64 range",
+						tree.height()
+					)
+				})?;
+				if pos >= max_leaves {
+					return Err(format!("tree position {pos} out of range (max {max_leaves})"));
+				}
+				// `MerkleTreeNode::index` panics if any node along the
+				// traversal is `Collapsed { .. }` (the documented case in
+				// transient-crypto). Guard so a public RPC caller cannot
+				// crash the worker thread. Other panics are theoretically
+				// possible (allocator failure, integer overflow on a
+				// corrupted node) but extremely unlikely; report all of
+				// them honestly as "navigation panicked".
+				let leaf =
+					std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tree.index(pos)))
+						.map_err(|_| {
+							format!(
+								"merkle tree navigation panicked at position {pos} \
+								 (likely a collapsed sub-tree)"
+							)
+						})?;
+				match leaf {
+					Some((hash, ())) => {
+						StateValue::Cell(ledger_storage_local::arena::Sp::new(hash.into()))
+					},
+					// Empty BMT leaf mirrors the VM-style "no value" → Null
+					// and continues the path; any subsequent step on Null
+					// errors via the `_` arm below.
+					None => StateValue::Null,
+				}
+			},
+			_ => return Err("only array, map, and merkle tree can be indexed".into()),
+		};
+	}
+
+	// Refuse to serialize a non-leaf collection: Array/Map/BoundedMerkleTree
+	// can each be arbitrarily large, and walking the whole subtree breaks
+	// the documented `O(log n)` cost. Force callers to drill in further.
+	if matches!(
+		&current,
+		StateValue::Array(_) | StateValue::Map(_) | StateValue::BoundedMerkleTree(_)
+	) {
+		return Err("path resolves to a collection; provide a deeper path".into());
+	}
+
+	serialize_value(&current)
 }
 
 #[cfg(test)]

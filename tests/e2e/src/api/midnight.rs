@@ -63,6 +63,8 @@ pub struct AriadneParametersResponse {
     pub candidate_registrations: serde_json::Value,
 }
 
+pub use pallet_midnight_rpc::{AlignedValue, PathKey, RpcStateQuery, RpcStateQueryResult};
+
 /// C-to-M bridge data from all `Bridge::handle_transfers` calls of one block.
 #[derive(Debug)]
 pub struct C2MBridgePalletCalls {
@@ -1268,5 +1270,46 @@ impl MidnightClient {
             }
         };
         Ok(response)
+    }
+
+    /// Query specific fields from a contract's state tree at the best block
+    /// via `midnight_queryContractState`.
+    pub async fn query_contract_state(
+        &self,
+        contract_address: &str,
+        queries: Vec<RpcStateQuery>,
+    ) -> Result<Vec<RpcStateQueryResult>, Box<dyn std::error::Error>> {
+        self.query_contract_state_at(contract_address, queries, None)
+            .await
+    }
+
+    /// Query specific fields from a contract's state tree, optionally at a
+    /// specific block hash. Mirrors `get_contract_state_at` for the lazy
+    /// path-navigation RPC.
+    pub async fn query_contract_state_at(
+        &self,
+        contract_address: &str,
+        queries: Vec<RpcStateQuery>,
+        at: Option<H256>,
+    ) -> Result<Vec<RpcStateQueryResult>, Box<dyn std::error::Error>> {
+        let results: Vec<RpcStateQueryResult> = match at {
+            Some(hash) => {
+                self.rpc_client
+                    .request(
+                        "midnight_queryContractState",
+                        rpc_params![contract_address, queries, hash],
+                    )
+                    .await?
+            }
+            None => {
+                self.rpc_client
+                    .request(
+                        "midnight_queryContractState",
+                        rpc_params![contract_address, queries],
+                    )
+                    .await?
+            }
+        };
+        Ok(results)
     }
 }

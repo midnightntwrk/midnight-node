@@ -1379,6 +1379,9 @@ impl_runtime_apis! {
 	}
 
 	impl pallet_midnight::MidnightRuntimeApi<Block> for Runtime {
+		fn get_state_key() -> Vec<u8> {
+			Midnight::state_key()
+		}
 		fn get_contract_state(contract_address: Vec<u8>) -> Result<Vec<u8>, LedgerApiError> {
 			Midnight::get_contract_state(&contract_address)
 		}

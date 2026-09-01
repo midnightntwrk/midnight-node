@@ -11,6 +11,9 @@ jsonrpsee  = { workspace = true, features = [ "client", "server", "macros" ] }
 schemars.workspace = true
 serde.workspace = true
 hex.workspace = true
+midnight-node-ledger.workspace = true
+base-crypto.workspace = true
+midnight-serialize.workspace = true
 sc-client-api.workspace = true
 sp-api.workspace = true
 sp-runtime.workspace = true
