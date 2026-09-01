@@ -1093,7 +1093,11 @@ where
 			/// Deserialization or the non-crypto `well_formed` checks failed for this tx.
 			Failed(LedgerApiError),
 			/// Passed the non-crypto checks; carries what the cache-warming step needs.
-			Ready { key: TxValidationKey, tx: Transaction<S, D>, verified_tx: VerifiedTransaction<D> },
+			Ready {
+				key: TxValidationKey,
+				tx: Transaction<S, D>,
+				verified_tx: VerifiedTransaction<D>,
+			},
 		}
 
 		// Accumulate the per-tx non-crypto `well_formed` time (proofs deferred). Reported below as
@@ -1710,11 +1714,7 @@ where
 				let fresh =
 					cached.state.hash() == ledger.state.state_hash() && cached.tblock == tblock;
 				return if fresh {
-					Ok((
-						cached.verified_tx.clone(),
-						TxValidationCacheOutcome::StrictCacheHit,
-						None,
-					))
+					Ok((cached.verified_tx.clone(), TxValidationCacheOutcome::StrictCacheHit, None))
 				} else {
 					// Revalidation re-runs only the time/state-dependent delta checks — never the
 					// ZK crypto — so it contributes no inline proof-verify sample.
