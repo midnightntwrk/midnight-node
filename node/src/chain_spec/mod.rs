@@ -18,7 +18,7 @@ use serde_valid::Validate as _;
 use midnight_node_ledger_helpers::BlockContext;
 
 use midnight_node_runtime::{
-	AccountId, BeefyConfig, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
+	AccountId, Block, BridgeConfig, C2MBridgeConfig, CNightObservationCall,
 	CNightObservationConfig, CouncilConfig, CouncilMembershipConfig, CrossChainPublic,
 	FederatedAuthorityObservationConfig, MidnightCall, MidnightConfig, MidnightSystemCall,
 	RuntimeCall, RuntimeGenesisConfig, SessionCommitteeManagementConfig, SidechainConfig,
@@ -37,7 +37,7 @@ use sp_core::{Encode, H256, Pair, Public};
 use sp_partner_chains_bridge::{
 	MainChainScripts as BridgeMainChainScripts, SubminimalTransfersConfig,
 };
-use sp_runtime::traits::{IdentifyAccount, One, Verify};
+use sp_runtime::traits::{IdentifyAccount, Verify};
 use std::{fmt, str::FromStr};
 
 /// Parse asset name from config - accepts either hex-encoded string or plain UTF-8 string.
@@ -260,14 +260,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		system: Default::default(),
 		aura: Default::default(),
 		babe: Default::default(),
-		beefy: BeefyConfig {
-			authorities: genesis
-				.initial_authorities()
-				.iter()
-				.map(|v| v.beefy_pubkey.into())
-				.collect(),
-			genesis_block: Some(One::one()),
-		},
+		beefy: Default::default(),
 		grandpa: Default::default(),
 		midnight: MidnightConfig {
 			_config: Default::default(),

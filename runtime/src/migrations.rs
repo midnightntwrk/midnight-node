@@ -18,30 +18,33 @@
 //! `authority_keys` below are only wired in for the specific upgrade that needs them.
 
 pub mod authority_keys {
-	//! Scaffolding for migrating [`crate::opaque::SessionKeys`] with
-	//! [`pallet_session_validator_management::migrations::authority_keys::AuthorityKeysMigration`].
+	//! Migrates [`crate::opaque::SessionKeys`], and the committee storages keyed by it, from the
+	//! pre-beefy aura + grandpa shape.
 	//!
-	//! There is no pending `AuthorityKeys` shape change yet (`SessionKeys` is still aura + grandpa),
-	//! so nothing here is wired into `SingleBlockMigrations`. When a change lands (e.g. adding beefy):
+	//! This chain goes from pallet v1 to v2 in a single upgrade, which combines two changes the
+	//! toolkit ships separately: the `AuthorityKeys` shape change
+	//! ([`pallet_session_validator_management::migrations::authority_keys`]) and v2's new
+	//! `QueuedCommittee` ([`pallet_session_validator_management::migrations::v2`]). They cannot
+	//! simply be wired one after the other — both are versioned 1 => 2, so the first to run would
+	//! bump the version and gate the second out, and the toolkit's v2 migration seeds
+	//! `QueuedCommittee` by reading `CurrentCommittee` in the *current* shape, which is only
+	//! correct once the keys have been translated. Hence the combined inner below.
 	//!
-	//! 1. Update [`LegacySessionKeys`] and its `From` impl to match the pre-upgrade shape.
-	//! 2. Add `authority_keys::AuthorityKeysMigration<Runtime, LegacyCommitteeMember, LegacySessionKeys, FROM, TO>`
-	//!    to `SingleBlockMigrations`, with `FROM`/`TO` matching the pallet's on-chain storage
-	//!    version **at the moment this migration is wired in** (see
-	//!    [`pallet_session_validator_management::pallet::Pallet`]'s `#[pallet::storage_version]`).
-	//! 3. After the upgrade that runs this migration has landed on all live networks, remove the
-	//!    migration from `SingleBlockMigrations` **before** any genesis reset (devnet/qanet wipe) that
-	//!    builds state at the post-migration pallet version with the new `AuthorityKeys` shape. If the
-	//!    migration is still wired while on-chain storage remains at `FROM` but genesis already stores
-	//!    new-shaped committee bytes, the next upgrade will run `translate::<OldCommitteeInfo, _>(...)`
-	//!    and panic.
+	//! [`AddBeefyToSessionKeysMigration`] is wired into `SingleBlockMigrations`. It is gated on
+	//! `pallet_session_validator_management`'s on-chain storage version (1 => 2), so it runs once
+	//! and is a no-op afterwards — including on fresh-genesis chains, which already start at 2 with
+	//! new-shaped bytes. Drop it from `SingleBlockMigrations` once every live network is past it.
 	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
+	// Used by the `impl_opaque_keys!` expansion below, which is `Vec`-generic in no-std.
 	use alloc::vec::Vec;
 	use authority_selection_inherents::CommitteeMember;
-	use frame_support::{traits::OnRuntimeUpgrade, weights::Weight};
-	use pallet_session_validator_management::migrations::v2::{
-		UpgradeCommitteeMember, V1ToV2Migration,
+	use frame_support::migrations::VersionedMigration;
+	use frame_support::traits::UncheckedOnRuntimeUpgrade;
+	use frame_support::weights::Weight;
+	use pallet_session_validator_management::migrations::authority_keys::{
+		InnerMigrateAuthorityKeys, UpgradeCommitteeMember,
 	};
+	use pallet_session_validator_management::{CurrentCommittee, QueuedCommittee};
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_runtime::impl_opaque_keys;
 
@@ -78,45 +81,113 @@ pub mod authority_keys {
 		}
 	}
 
-	const LOG_TARGET: &str = "runtime::migration::v1-to-v2-add-babe-session-keys";
+	/// The toolkit's reusable `AuthorityKeys` translation, instantiated for this chain's
+	/// pre-beefy shape. Translates `CurrentCommittee`/`QueuedCommittee`/`NextCommittee` and
+	/// `pallet_session`'s key storage.
+	type TranslateKeys =
+		InnerMigrateAuthorityKeys<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
 
-	/// Combined v1-to-v2 migration: committee translation from the pre-BABE
-	/// [`LegacySessionKeys`] shape, the `QueuedCommittee` seed, and the `pallet_session` key
-	/// upgrade, gated on the pallet's on-chain storage version.
-	type Inner = V1ToV2Migration<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
+	/// Translates the committee and session keys, then seeds v2's `QueuedCommittee`.
+	pub struct InnerAddBeefyToSessionKeys;
 
-	/// Migrates Current, Queued, and Next Committee storages and writes in consensus-engine
-	/// a trace that it was executed.
-	pub struct AddBabeToSessionKeysMigration;
-
-	impl OnRuntimeUpgrade for AddBabeToSessionKeysMigration {
+	impl UncheckedOnRuntimeUpgrade for InnerAddBeefyToSessionKeys {
 		fn on_runtime_upgrade() -> Weight {
-			let db = <Runtime as frame_system::Config>::DbWeight::get();
-			log::info!(
-				target: LOG_TARGET,
-				"translating committee & session keys and initializing QueuedCommittee",
-			);
-			if AddBabeSessionKeysMigrated::<Runtime>::get() {
-				log::info!(
-					"SessionKeys migration that adds BABE authority keys was already executed. Migration can be removed from the runtime."
+			let weight = <TranslateKeys as UncheckedOnRuntimeUpgrade>::on_runtime_upgrade();
+
+			// At v1 `QueuedCommittee` does not exist, so the translation above left it absent.
+			// The v1 session integration applied committees immediately, making the current
+			// committee both the active and the queued validator set — seed it from the
+			// now-translated `CurrentCommittee`.
+			QueuedCommittee::<Runtime>::put(CurrentCommittee::<Runtime>::get());
+
+			weight.saturating_add(
+				<Runtime as frame_system::Config>::DbWeight::get().reads_writes(1, 1),
+			)
+		}
+
+		/// Captures the committees in their pre-upgrade shape. `CurrentCommittee`/`NextCommittee`
+		/// `.get()` would decode as the post-upgrade `SessionKeys`, so the on-chain bytes are read
+		/// through `unhashed` with [`LegacyCommitteeMember`]. `QueuedCommittee` does not exist at
+		/// v1, so there is nothing to capture for it.
+		///
+		/// [`TranslateKeys`]'s own `pre_upgrade`/`post_upgrade` pair is not reused: its
+		/// `post_upgrade` asserts `QueuedCommittee` is preserved, which the seed deliberately
+		/// breaks.
+		#[cfg(feature = "try-runtime")]
+		fn pre_upgrade() -> Result<Vec<u8>, sp_runtime::TryRuntimeError> {
+			use parity_scale_codec::Encode;
+
+			let current: crate::LegacyCommitteeInfo =
+				frame_support::storage::unhashed::get_or_default(
+					&CurrentCommittee::<Runtime>::hashed_key(),
 				);
-				db.reads(1)
-			} else {
-				let weight = <Inner as OnRuntimeUpgrade>::on_runtime_upgrade();
-				AddBabeSessionKeysMigrated::<Runtime>::put(true);
-				weight.saturating_add(db.reads_writes(1, 1))
-			}
+			let next: Option<crate::LegacyCommitteeInfo> = frame_support::storage::unhashed::get(
+				&pallet_session_validator_management::NextCommittee::<Runtime>::hashed_key(),
+			);
+
+			Ok((current, next).encode())
 		}
 
 		#[cfg(feature = "try-runtime")]
-		fn post_upgrade(_state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
-			// Key-translation correctness is enforced by the inner migrations' own decode asserts;
-			// here we confirm the guard the committee decoders depend on is set.
-			frame_support::ensure!(
-				AddBabeSessionKeysMigrated::<Runtime>::get(),
-				"add-babe-session-keys: guard not set after migration",
+		fn post_upgrade(state: Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
+			use frame_support::ensure;
+			use parity_scale_codec::{Decode, Encode};
+			use sp_session_validator_management::CommitteeMember as _;
+
+			let (old_current, old_next): (
+				crate::LegacyCommitteeInfo,
+				Option<crate::LegacyCommitteeInfo>,
+			) = Decode::decode(&mut state.as_slice()).map_err(|_| {
+				sp_runtime::TryRuntimeError::Other("Previously encoded state should be decodable")
+			})?;
+
+			// Committee membership is compared by authority id: the keys necessarily differ,
+			// since adding beefy is the point of the migration.
+			let ids = |committee: &[LegacyCommitteeMember]| -> Vec<CrossChainPublic> {
+				committee.iter().map(|m| m.authority_id()).collect()
+			};
+			let new_ids = |committee: &[<Runtime as pallet_session_validator_management::Config>::CommitteeMember]|
+			 -> Vec<CrossChainPublic> {
+				committee.iter().map(|m| m.authority_id()).collect()
+			};
+
+			let new_current = CurrentCommittee::<Runtime>::get();
+			ensure!(old_current.epoch == new_current.epoch, "current epoch should be preserved");
+			ensure!(
+				ids(&old_current.committee) == new_ids(&new_current.committee),
+				"current committee membership should be preserved"
 			);
+
+			let new_next = pallet_session_validator_management::NextCommittee::<Runtime>::get();
+			ensure!(
+				old_next.is_some() == new_next.is_some(),
+				"next committee presence should be preserved"
+			);
+			if let (Some(old_next), Some(new_next)) = (old_next, new_next) {
+				ensure!(old_next.epoch == new_next.epoch, "next epoch should be preserved");
+				ensure!(
+					ids(&old_next.committee) == new_ids(&new_next.committee),
+					"next committee membership should be preserved"
+				);
+			}
+
+			ensure!(
+				QueuedCommittee::<Runtime>::get().encode() == new_current.encode(),
+				"queued committee should be seeded from the current committee"
+			);
+
 			Ok(())
 		}
 	}
+
+	/// Combined v1-to-v2 migration: committee translation from the pre-beefy
+	/// [`LegacySessionKeys`] shape, the `QueuedCommittee` seed, and the `pallet_session` key
+	/// upgrade, gated on `pallet_session_validator_management`'s on-chain storage version.
+	pub type AddBeefyToSessionKeysMigration = VersionedMigration<
+		1,
+		2,
+		InnerAddBeefyToSessionKeys,
+		pallet_session_validator_management::Pallet<Runtime>,
+		<Runtime as frame_system::Config>::DbWeight,
+	>;
 }

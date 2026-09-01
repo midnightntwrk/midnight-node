@@ -1,4 +1,4 @@
-//! Tests for [`super::v2::V1ToV2Migration`].
+//! Tests for [`super::authority_keys::AuthorityKeysMigration`].
 //!
 //! The crate-level mock in [`crate::mock`] uses `u64` as `AuthorityKeys`, which cannot satisfy
 //! the migration's `pallet_session::Config<Keys = T::AuthorityKeys>` bound (session keys must be
@@ -7,32 +7,22 @@
 //! gaining an additional key (here `OldSessionKeys { foo }` -> `NewSessionKeys { foo, bar }`,
 //! with `bar` using a distinct `KeyTypeId`, like adding e.g. Beefy to Aura + Grandpa).
 
-use super::v2::{UpgradeCommitteeMember, V1ToV2Migration};
+use super::authority_keys::{AuthorityKeysMigration, UpgradeCommitteeMember};
 use crate::pallet::CommitteeInfo;
-use frame_support::traits::{ConstU32, Hooks, OnRuntimeUpgrade, StorageVersion};
+use frame_support::traits::{ConstU32, OnRuntimeUpgrade, StorageVersion};
 use frame_support::{derive_impl, parameter_types};
 use frame_system::EnsureRoot;
 use parity_scale_codec::{Encode, MaxEncodedLen};
-use sidechain_domain::byte_string::SizedByteString;
 use sp_application_crypto::RuntimeAppPublic;
 use sp_core::{ConstU128, crypto::key_types::DUMMY};
 use sp_runtime::traits::OpaqueKeys;
 use sp_runtime::{BoundedVec, BuildStorage, KeyTypeId, testing::UintAuthorityId};
 use sp_session_validator_management::MainChainScripts;
-use std::cell::RefCell;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
 type AccountId = u64;
 type AuthorityId = u64;
-
-thread_local! {
-	/// Sidechain epoch returned by the mock's `current_epoch_number`; tests advance it to
-	/// drive session rotations.
-	static CURRENT_EPOCH: RefCell<u64> = const { RefCell::new(0) };
-	/// Active `(validator, bar key)` set recorded by [`TestSessionHandler`] at each rotation.
-	static ACTIVE_BAR_KEYS: RefCell<Vec<Vec<(AccountId, Vec<u8>)>>> = const { RefCell::new(Vec::new()) };
-}
 
 /// Key type of the session key added by the tested upgrade.
 const BAR: KeyTypeId = KeyTypeId(*b"barr");
@@ -118,9 +108,8 @@ impl crate::pallet::Config for Test {
 		if input.is_empty() { None } else { Some(input) }
 	}
 
-	// Test-controlled (was a constant) so rotation tests can end sessions by advancing the epoch.
 	fn current_epoch_number() -> Self::ScEpochNumber {
-		CURRENT_EPOCH.with_borrow(|epoch| *epoch)
+		0
 	}
 
 	type WeightInfo = ();
@@ -140,20 +129,7 @@ impl pallet_session::SessionHandler<AccountId> for TestSessionHandler {
 
 	fn on_genesis_session<Ks: OpaqueKeys>(_validators: &[(AccountId, Ks)]) {}
 
-	fn on_new_session<Ks: OpaqueKeys>(
-		_: bool,
-		validators: &[(AccountId, Ks)],
-		_: &[(AccountId, Ks)],
-	) {
-		ACTIVE_BAR_KEYS.with_borrow_mut(|sessions| {
-			sessions.push(
-				validators
-					.iter()
-					.map(|(validator, keys)| (*validator, keys.get_raw(BAR).to_vec()))
-					.collect(),
-			)
-		});
-	}
+	fn on_new_session<Ks: OpaqueKeys>(_: bool, _: &[(AccountId, Ks)], _: &[(AccountId, Ks)]) {}
 
 	fn on_disabled(_: u32) {}
 }
@@ -186,7 +162,11 @@ impl pallet_session::historical::Config for Test {
 	type FullIdentificationOf = FullIdentificationOf;
 }
 
-type Migration = V1ToV2Migration<Test, OldCommitteeMember, OldSessionKeys>;
+/// Storage versions the migration is wired for in these tests.
+const FROM: u16 = 1;
+const TO: u16 = 2;
+
+type Migration = AuthorityKeysMigration<Test, OldCommitteeMember, OldSessionKeys, FROM, TO>;
 
 type OldCommitteeInfo = CommitteeInfo<u64, OldCommitteeMember, ConstU32<32>>;
 type NewCommitteeInfo = CommitteeInfo<u64, NewCommitteeMember, ConstU32<32>>;
@@ -203,11 +183,6 @@ fn old_keys(id: AuthorityId) -> OldSessionKeys {
 
 fn new_keys(id: AuthorityId) -> NewSessionKeys {
 	old_keys(id).into()
-}
-
-fn registered_keys(id: AuthorityId) -> NewSessionKeys {
-	let old = old_keys(id);
-	NewSessionKeys { foo: old.foo.clone(), bar: bar_key(old.foo.0 + 1000) }
 }
 
 fn old_committee(epoch: u64, members: &[AuthorityId]) -> OldCommitteeInfo {
@@ -234,8 +209,6 @@ fn assert_committees_eq(left: &NewCommitteeInfo, right: &NewCommitteeInfo) {
 }
 
 fn new_test_ext() -> sp_io::TestExternalities {
-	CURRENT_EPOCH.with_borrow_mut(|epoch| *epoch = 0);
-	ACTIVE_BAR_KEYS.with_borrow_mut(Vec::clear);
 	let session_committee_management = crate::GenesisConfig::<Test> {
 		initial_authorities: vec![(ALICE, new_keys(ALICE)), (BOB, new_keys(BOB))],
 		main_chain_scripts: MainChainScripts::default(),
@@ -246,31 +219,16 @@ fn new_test_ext() -> sp_io::TestExternalities {
 		.into()
 }
 
-fn advance_to_epoch(epoch: u64) {
-	CURRENT_EPOCH.with_borrow_mut(|current| *current = epoch);
-	let block = System::block_number();
-	Session::on_finalize(block);
-	System::set_block_number(block + 1);
-	Session::on_initialize(block + 1);
-}
-
-fn set_registered_committee(epoch: u64) {
-	let validators = BoundedVec::truncate_from(
-		[ALICE, BOB].into_iter().map(|id| (id, registered_keys(id))).collect(),
-	);
-	SessionCommitteeManagement::set(
-		RuntimeOrigin::none(),
-		validators,
-		epoch,
-		SizedByteString([0; 32]),
-	)
-	.expect("registered-key committee should be accepted");
-}
-
-/// Rewrites storage to the exact shape of a v1 chain.
-fn seed_old_state(current: &OldCommitteeInfo, next: Option<&OldCommitteeInfo>) {
+/// Rewrites storage to the exact shape a chain running the pre-upgrade runtime would have:
+/// old-shaped committees, old-shaped `NextKeys`/`QueuedKeys` and `KeyOwner` entries only for the
+/// old key types.
+fn seed_old_state(
+	current: &OldCommitteeInfo,
+	queued: &OldCommitteeInfo,
+	next: Option<&OldCommitteeInfo>,
+) {
 	frame_support::storage::unhashed::put(&crate::CurrentCommittee::<Test>::hashed_key(), current);
-	frame_support::storage::unhashed::kill(&crate::QueuedCommittee::<Test>::hashed_key());
+	frame_support::storage::unhashed::put(&crate::QueuedCommittee::<Test>::hashed_key(), queued);
 	match next {
 		Some(next) => {
 			frame_support::storage::unhashed::put(&crate::NextCommittee::<Test>::hashed_key(), next)
@@ -296,19 +254,23 @@ fn seed_old_state(current: &OldCommitteeInfo, next: Option<&OldCommitteeInfo>) {
 		&queued,
 	);
 
-	StorageVersion::new(1).put::<crate::Pallet<Test>>();
+	StorageVersion::new(FROM).put::<crate::Pallet<Test>>();
 }
 
 #[test]
 fn upgrades_committees_session_keys_and_storage_version() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[BOB])));
+		seed_old_state(
+			&old_committee(5, &[ALICE, BOB]),
+			&old_committee(5, &[ALICE, BOB]),
+			Some(&old_committee(6, &[BOB])),
+		);
 
 		Migration::on_runtime_upgrade();
 
 		assert_eq!(
 			StorageVersion::get::<crate::Pallet<Test>>(),
-			StorageVersion::new(2),
+			StorageVersion::new(TO),
 			"storage version should be bumped"
 		);
 
@@ -352,105 +314,41 @@ fn upgrades_committees_session_keys_and_storage_version() {
 #[test]
 fn handles_missing_next_committee() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), None);
+		seed_old_state(&old_committee(5, &[ALICE, BOB]), &old_committee(4, &[ALICE]), None);
 
 		Migration::on_runtime_upgrade();
 
-		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
+		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(TO));
 		assert_committees_eq(
 			&crate::CurrentCommittee::<Test>::get(),
 			&new_committee(5, &[ALICE, BOB]),
 		);
-		assert_committees_eq(
-			&crate::QueuedCommittee::<Test>::get(),
-			&new_committee(5, &[ALICE, BOB]),
-		);
+		assert_committees_eq(&crate::QueuedCommittee::<Test>::get(), &new_committee(4, &[ALICE]));
 		assert!(crate::NextCommittee::<Test>::get().is_none());
 	});
 }
 
 #[test]
-fn is_noop_when_run_again() {
+fn is_noop_when_storage_version_is_not_from() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[BOB])));
-		Migration::on_runtime_upgrade();
+		// A chain that already upgraded (or was genesis-reset at the new version) stores
+		// new-shaped values. Running the migration again must not touch them.
+		StorageVersion::new(TO).put::<crate::Pallet<Test>>();
 		let state_before = (
 			crate::CurrentCommittee::<Test>::get().encode(),
-			crate::QueuedCommittee::<Test>::get().encode(),
-			crate::NextCommittee::<Test>::get().encode(),
 			pallet_session::NextKeys::<Test>::iter().collect::<Vec<_>>(),
 			pallet_session::QueuedKeys::<Test>::get(),
 		);
 
 		Migration::on_runtime_upgrade();
 
-		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
+		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(TO));
 		let state_after = (
 			crate::CurrentCommittee::<Test>::get().encode(),
-			crate::QueuedCommittee::<Test>::get().encode(),
-			crate::NextCommittee::<Test>::get().encode(),
 			pallet_session::NextKeys::<Test>::iter().collect::<Vec<_>>(),
 			pallet_session::QueuedKeys::<Test>::get(),
 		);
 		assert_eq!(state_before, state_after);
-	});
-}
-
-#[test]
-fn is_noop_for_fresh_genesis() {
-	new_test_ext().execute_with(|| {
-		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
-		let state_before = (
-			crate::CurrentCommittee::<Test>::get().encode(),
-			crate::QueuedCommittee::<Test>::get().encode(),
-			crate::NextCommittee::<Test>::get().encode(),
-			pallet_session::NextKeys::<Test>::iter().collect::<Vec<_>>(),
-			pallet_session::QueuedKeys::<Test>::get(),
-		);
-
-		Migration::on_runtime_upgrade();
-
-		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
-		let state_after = (
-			crate::CurrentCommittee::<Test>::get().encode(),
-			crate::QueuedCommittee::<Test>::get().encode(),
-			crate::NextCommittee::<Test>::get().encode(),
-			pallet_session::NextKeys::<Test>::iter().collect::<Vec<_>>(),
-			pallet_session::QueuedKeys::<Test>::get(),
-		);
-		assert_eq!(state_before, state_after);
-	});
-}
-
-#[test]
-fn registered_keys_become_active_three_rotations_after_migration() {
-	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[ALICE, BOB])));
-		Migration::on_runtime_upgrade();
-		ACTIVE_BAR_KEYS.with_borrow_mut(Vec::clear);
-
-		advance_to_epoch(6);
-		set_registered_committee(7);
-		advance_to_epoch(7);
-		set_registered_committee(8);
-		advance_to_epoch(8);
-
-		let placeholder = [ALICE, BOB]
-			.into_iter()
-			.map(|id| (id, new_keys(id).bar.to_raw_vec()))
-			.collect::<Vec<_>>();
-		let registered = [ALICE, BOB]
-			.into_iter()
-			.map(|id| (id, registered_keys(id).bar.to_raw_vec()))
-			.collect::<Vec<_>>();
-		ACTIVE_BAR_KEYS.with_borrow(|sessions| {
-			assert_eq!(sessions.len(), 3);
-			assert_eq!(sessions[0], placeholder);
-			assert_eq!(sessions[1], placeholder);
-			// pallet_session applies keys returned at one rotation on the following rotation.
-			assert_eq!(sessions[2], registered);
-			assert!(sessions.iter().all(|validators| validators.len() == 2));
-		});
 	});
 }
 
@@ -458,10 +356,14 @@ fn registered_keys_become_active_three_rotations_after_migration() {
 #[test]
 fn try_runtime_hooks_pass() {
 	new_test_ext().execute_with(|| {
-		seed_old_state(&old_committee(5, &[ALICE, BOB]), Some(&old_committee(6, &[BOB])));
+		seed_old_state(
+			&old_committee(5, &[ALICE, BOB]),
+			&old_committee(5, &[ALICE, BOB]),
+			Some(&old_committee(6, &[BOB])),
+		);
 
 		Migration::try_on_runtime_upgrade(true).expect("pre/post upgrade hooks should pass");
 
-		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(2));
+		assert_eq!(StorageVersion::get::<crate::Pallet<Test>>(), StorageVersion::new(TO));
 	});
 }

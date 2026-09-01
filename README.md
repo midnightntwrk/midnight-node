@@ -288,6 +288,7 @@ Chain specifications are located in `/res/` directory.
 | AURA seed | `AURA_SEED_FILE=/path/to/seed` | - | Path to AURA consensus seed file |
 | GRANDPA seed | `GRANDPA_SEED_FILE=/path/to/seed` | - | Path to GRANDPA finality seed file |
 | Cross-chain seed | `CROSS_CHAIN_SEED_FILE=/path/to/seed` | - | Path to cross-chain seed file |
+| BEEFY seed | `BEEFY_SEED_FILE=/path/to/seed` | - | Path to BEEFY seed file (ECDSA, like cross-chain) |
 | Chain spec | `CHAIN=dev` | `--chain dev` | Network to connect to |
 | Base path | `BASE_PATH=/tmp/node-1` | `--base-path /tmp/node-1` | Data directory |
 | Validator mode | `VALIDATOR=true` | `--validator` | Run as validator (true/1/TRUE) |
