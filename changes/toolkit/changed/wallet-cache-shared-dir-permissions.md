@@ -53,4 +53,4 @@ Tests pin the file mode against the process umask rather than a literal
 unreadable and foreign-format entries alone, an unreadable entry
 recovering once it is readable again, and permissions healing on replace.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/PENDING
+PR: https://github.com/midnightntwrk/midnight-node/pull/2081
