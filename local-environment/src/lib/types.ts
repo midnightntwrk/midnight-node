@@ -16,6 +16,11 @@ export interface RunOptions {
   profiles?: string[];
   envFile?: string[];
   /**
+   * Number of mock validators to generate for a well-known network fork.
+   * This can only be changed while restoring a fresh snapshot.
+   */
+  numValidators?: number;
+  /**
    * Snapshot URI (http:// or https://) to fork the well-known network from.
    * Required on the first bring-up of a well-known network; later runs can
    * omit it to reuse existing restored data plus generated mock-authorities
