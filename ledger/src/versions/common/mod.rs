@@ -576,6 +576,116 @@ where
 		Ok(event)
 	}
 
+	/// Shared body for the caller-restricted `apply_*_system_transaction` wrappers: one
+	/// deserialize, one allow-list check, one FFI-crossing apply — as opposed to a
+	/// separate classifier call before `apply_system_transaction`, which would deserialize
+	/// and cross the WASM host-function boundary twice per call.
+	fn apply_system_transaction_checked(
+		mut externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		tx_serialized: &[u8],
+		block_context: BlockContext,
+		is_allowed: impl FnOnce(&SystemTransaction) -> bool,
+	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+		// Gather metrics for Prometheus
+		let start_system_tx_processing_time = Instant::now();
+		let tx_size = tx_serialized.len();
+
+		let api = api::new();
+		let tx = api.tagged_deserialize::<SystemTransaction>(tx_serialized)?;
+		if !is_allowed(&tx) {
+			return Err(LedgerApiError::Transaction(types::TransactionError::SystemTransaction(
+				types::SystemTransactionError::NotAllowedForCaller,
+			)));
+		}
+		let tx_type = Self::get_system_tx_type(&tx)?;
+		log::info!(
+			target: LOG_TARGET,
+			"⚙️  Processing SystemTx {tx:?}"
+		);
+		let tx_hash = tx.transaction_hash().0.0;
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		let mut ledger =
+			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
+
+		let event = SystemTransactionAppliedStateRoot {
+			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
+			tx_hash,
+			tx_type: tx_type.to_string(),
+		};
+
+		// Only update state after no errors
+		ledger.persist();
+
+		// Write Prometheus metrics
+		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
+		if let Some(metrics) = maybe_metrics {
+			let elapsed_time = start_system_tx_processing_time.elapsed().as_secs_f64();
+
+			metrics.observe_system_txs_processing_time(elapsed_time, tx_type);
+			metrics.observe_txs_size(tx_size as f64, tx_type);
+		}
+
+		Ok(event)
+	}
+
+	/// Applies a system transaction submitted through the root-origin governance
+	/// extrinsic. Only [`SystemTransaction::OverwriteParameters`] is allowed.
+	pub fn apply_governance_system_transaction(
+		externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		tx_serialized: &[u8],
+		block_context: BlockContext,
+	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+		Self::apply_system_transaction_checked(
+			externalities,
+			state_key,
+			tx_serialized,
+			block_context,
+			|tx| matches!(tx, SystemTransaction::OverwriteParameters(_)),
+		)
+	}
+
+	/// Applies a system transaction submitted by `pallet-cnight-observation`. Only
+	/// [`SystemTransaction::CNightGeneratesDustUpdate`] is allowed.
+	pub fn apply_cnight_system_transaction(
+		externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		tx_serialized: &[u8],
+		block_context: BlockContext,
+	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+		Self::apply_system_transaction_checked(
+			externalities,
+			state_key,
+			tx_serialized,
+			block_context,
+			|tx| matches!(tx, SystemTransaction::CNightGeneratesDustUpdate { .. }),
+		)
+	}
+
+	/// Applies a system transaction submitted by `pallet-c2m-bridge`. Only
+	/// `UnlockToTreasury`, `DistributeReserve`, and
+	/// `DistributeNight(ClaimKind::CardanoBridge, _)` are allowed.
+	pub fn apply_bridge_system_transaction(
+		externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		tx_serialized: &[u8],
+		block_context: BlockContext,
+	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
+		Self::apply_system_transaction_checked(
+			externalities,
+			state_key,
+			tx_serialized,
+			block_context,
+			|tx| {
+				matches!(tx, SystemTransaction::DistributeNight(ClaimKind::CardanoBridge, _))
+					|| super::system_tx::is_distribute_reserve_system_tx(tx)
+					|| super::system_tx::is_unlock_to_treasury_system_tx(tx)
+			},
+		)
+	}
+
 	pub fn validate_transaction(
 		mut externalities: &mut dyn Externalities,
 		state_key: &[u8],
