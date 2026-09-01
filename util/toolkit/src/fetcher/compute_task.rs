@@ -14,7 +14,10 @@
 use midnight_node_ledger_helpers::fork::raw_block_data::{
 	LedgerVersion, RawBlockData, RawTransaction,
 };
-use subxt::utils::H256;
+use subxt::{
+	config::substrate::{ConsensusEngineId, DigestItem},
+	utils::H256,
+};
 
 use crate::{
 	client::MidnightNodeClientConfig,
@@ -125,7 +128,19 @@ impl ComputeTask {
 
 	pub(crate) async fn extract_data(block: &FetchedBlock) -> Result<RawBlockData, ComputeError> {
 		let header = block.block.block_header().await?;
-		let spec_version = RuntimeVersion::from_header(&header)?;
+		let spec_version = header
+			.digest
+			.logs
+			.iter()
+			.find_map(|item| {
+				const VERSION_ID: ConsensusEngineId = *b"MNSV";
+				if let DigestItem::Consensus(VERSION_ID, data) = item {
+					Some(RuntimeVersion::try_from(data.as_slice()))
+				} else {
+					None
+				}
+			})
+			.expect("no runtime version found")?;
 		match spec_version {
 			RuntimeVersion::V0_21_0 => {
 				Self::process_block_with_protocol::<MidnightMetadata0_21_0>(

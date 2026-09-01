@@ -1206,11 +1206,6 @@ pub type Migrations = (
 	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
 	// this ledger-9 runtime (storage version 2).
 	pallet_midnight::migrations::v2::MigrateV1ToV2<Runtime>,
-	// `StateKey` re-encoded from `Vec<u8>` to `LedgerStateKey` (storage version
-	// 2 -> 3). Declared after the v8 -> v9 translation above, which still reads
-	// and writes the raw-bytes layout: this tuple applies its members in order,
-	// so a chain at version 1 crosses both in the same upgrade.
-	pallet_midnight::migrations::v3::Migration<Runtime>,
 );
 
 impl<LocalCall> frame_system::offchain::CreateTransaction<LocalCall> for Runtime

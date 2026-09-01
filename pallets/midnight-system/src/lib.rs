@@ -132,13 +132,13 @@ pub mod pallet {
 
 			let hash = <T as Config>::LedgerStateProviderMut::mut_ledger_state(|state_key| {
 				let result = LedgerApi::apply_system_transaction(
-					state_key,
+					&state_key,
 					&midnight_system_tx.clone(),
 					block_context,
 					runtime_version,
 				)
 				.map_err(Error::<T>::from)?;
-				Ok::<_, Error<T>>((result.state_root, result.tx_hash))
+				Ok::<(Vec<u8>, Hash), Error<T>>((result.state_root, result.tx_hash))
 			})?;
 
 			Self::deposit_event(Event::<T>::SystemTransactionApplied(
@@ -161,13 +161,13 @@ pub mod pallet {
 				let runtime_version = <frame_system::Pallet<T>>::runtime_version().spec_version;
 				let block_context = <T as Config>::LedgerBlockContextProvider::get_block_context();
 				let result = LedgerApi::apply_system_transaction(
-					state_key,
+					&state_key,
 					&serialized_system_transaction.clone(),
 					block_context,
 					runtime_version,
 				)
 				.map_err(Error::<T>::from)?;
-				Ok::<_, Error<T>>((result.state_root, result.tx_hash))
+				Ok::<(Vec<u8>, Hash), Error<T>>((result.state_root, result.tx_hash))
 			})?;
 
 			// Emit System Transaction for the indexer

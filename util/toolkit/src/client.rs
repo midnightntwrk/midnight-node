@@ -28,8 +28,6 @@ use subxt::{
 };
 use thiserror::Error;
 
-use crate::fetcher::runtimes::{RuntimeVersion, RuntimeVersionError};
-
 /// Maximum time to wait for a client connection before giving up.
 /// Set generously to handle rate-limiting (429) during concurrent connection attempts.
 const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -98,67 +96,24 @@ impl MidnightNodeClient {
 	pub async fn get_state_root_at(
 		&self,
 		at: Option<HashFor<MidnightNodeClientConfig>>,
-		runtime_version: Option<RuntimeVersion>,
 	) -> Result<Option<Vec<u8>>, ClientError> {
+		// Use a raw storage query to avoid IncompatibleCodegen errors when the
+		// toolkit is compiled against a different runtime version than the node.
+		// The storage key is stable: twox_128("Midnight") ++ twox_128("StateKey").
+		let key =
+			[sp_crypto_hashing::twox_128(b"Midnight"), sp_crypto_hashing::twox_128(b"StateKey")]
+				.concat();
 		let at_block = match at {
 			Some(hash) => self.api.at_block(hash).await?,
 			None => self.api.at_current_block().await?,
 		};
-
-		let runtime_version = match runtime_version {
-			Some(v) => v,
-			None => {
-				let header = at_block.block_header().await?;
-				RuntimeVersion::from_header(&header)?
-			},
+		let storage = at_block.storage();
+		let raw = match storage.fetch_raw(key).await {
+			Ok(bytes) => Some(bytes),
+			Err(subxt::error::StorageError::NoValueFound) => None,
+			Err(e) => return Err(e.into()),
 		};
-
-		match runtime_version {
-			RuntimeVersion::V0_21_0 => {
-				// V0_21_0 predates the `get_ledger_state_root` runtime API and stores
-				// `tagged_serialize(&Ledger::as_typed_key())` in `Midnight::StateKey`
-				// — i.e., the typed-key hash of `Ledger<D>` (which wraps `LedgerState`
-				// with a `block_fullness` field). The consumer (`LedgerContext::
-				// compute_state_root`) hashes `LedgerState<D>` directly to match the
-				// V0_22_0+ runtime API, so V0_21_0's stored hash is over a different
-				// struct and cannot be transformed to match. We have no way to derive
-				// the pure `LedgerState` typed key without the runtime API, so skip
-				// verification for V0_21_0 blocks.
-				Ok(None)
-			},
-			// V0_22_0 onwards all expose `get_ledger_state_root() -> Result<Vec<u8>,
-			// LedgerApiError>`. Call it raw: subxt's static codegen validates the
-			// method's type hash against the metadata of the block being queried, and
-			// the checked-in `midnight_metadata_<version>.scale` snapshots are not
-			// faithful to the released runtimes of the same name (e.g. the 1.0.0 file
-			// carries ledger-9 types and a `C2MBridge` pallet the 1.0.1 release does
-			// not have), so validation fails with `IncompatibleCodegen` against a real
-			// pre-fork node. `call_raw` skips validation; the wire shape is stable.
-			_ => {
-				let raw = at_block
-					.runtime_apis()
-					.call_raw("MidnightRuntimeApi_get_ledger_state_root", None)
-					.await?;
-				// `Result<Vec<u8>, LedgerApiError>`. The error variant's payload differs
-				// per runtime version, so decode it as opaque.
-				//
-				// Even the hardfork's `set_code` block answers — it commits the new
-				// `:code` over the old ledger layout, but `Pallet::state_key` reads
-				// that block's pre-v3 `StateKey` layout, so the ledger-8 arena tag
-				// survives, and the ledger-9 host API's read accessors dispatch on
-				// that tag back to the ledger-8 bridge. A failure here is a real
-				// fault, and must not be downgraded to `None`: that would skip
-				// `LedgerContext::verify_state_root` and hide ledger divergence.
-				match Result::<Vec<u8>, ()>::decode(&mut &raw[..]) {
-					Ok(Ok(root)) => Ok(Some(root)),
-					_ => Err(ClientError::LedgerApi(format!(
-						"get_ledger_state_root failed at block {:?} (raw: 0x{})",
-						at_block.block_ref().hash(),
-						hex::encode(&raw),
-					))),
-				}
-			},
-		}
+		Ok(raw.map(|bytes| Vec::<u8>::decode(&mut &bytes[..]).expect("failed to decode StateKey")))
 	}
 
 	pub async fn get_block_one_hash(
@@ -231,12 +186,6 @@ pub enum ClientError {
 	RuntimeApiError(#[from] subxt::error::RuntimeApiError),
 	#[error("storage error: {0}")]
 	StorageError(#[from] subxt::error::StorageError),
-	#[error("block error: {0}")]
-	BlockError(#[from] subxt::error::BlockError),
-	#[error("runtime version error: {0}")]
-	RuntimeVersion(#[from] RuntimeVersionError),
-	#[error("ledger runtime API returned an error: {0}")]
-	LedgerApi(String),
 	#[error("midnight node client received an unsupported network id")]
 	UnsupportedNetworkId(Vec<u8>),
 	#[error("failed to get block hash for block {0}")]

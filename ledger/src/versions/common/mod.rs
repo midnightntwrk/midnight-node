@@ -89,9 +89,8 @@ use {
 #[cfg(feature = "std")]
 use crate::common::batch::BatchVerifyFailure;
 use crate::common::types::{
-	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash,
-	LedgerStateKey, Op, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot,
-	TransactionDetails, Tx,
+	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, Op,
+	SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
 };
 
 use super::BlockContext;
@@ -335,28 +334,11 @@ where
 		}
 	}
 
-	/// Apply the post-block transformation and produce the post-block ledger
-	/// state.
-	///
-	/// # Persist refcount contract
-	///
-	/// On success, returns `LedgerStateKey::Anchored` at rc=1. Anchored states
-	/// are never unpersisted on input by subsequent Bridge calls, so the
-	/// post-block tip remains rooted forever — preserved for RPC and history,
-	/// and safe across sibling forks (a second fork built on the same parent
-	/// does not unpersist it).
-	///
-	/// If the input was `LedgerStateKey::Transient` (the last `apply_transaction`
-	/// output of this block), it is unpersisted once, dropping to rc=0.
-	/// `Anchored` inputs are left alone — though in practice the chain tip
-	/// prior to finalize is always Transient, so this branch is unreachable.
-	///
-	/// On error, refcounts are unchanged.
 	pub fn post_block_update(
 		mut _externalities: &mut dyn Externalities,
-		state_key: &LedgerStateKey,
+		state_key: &[u8],
 		block_context: BlockContext,
-	) -> Result<LedgerStateKey, LedgerApiError> {
+	) -> Result<Vec<u8>, LedgerApiError> {
 		let start_tx_processing_time = Instant::now();
 		log::trace!(
 			target: LOG_TARGET,
@@ -369,7 +351,7 @@ where
 			"⏱️  API ready (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
-		let ledger = Self::get_ledger(&api, state_key.bytes())?;
+		let ledger = Self::get_ledger(&api, state_key)?;
 
 		log::trace!(
 			target: LOG_TARGET,
@@ -397,72 +379,39 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 		ledger.persist();
-		if state_key.is_transient() {
-			Self::unpersist_state(&api, state_key.bytes())?;
-		}
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
-		Ok(LedgerStateKey::Anchored(state_root))
+		Ok(state_root)
 	}
 
 	/// The end-of-block ledger transition cannot fail on block limits (the limit check runs
 	/// per-transaction via prevalidation, and fullness is clamped before applying), so this is
 	/// suitable for `on_finalize`. Loading the ledger state and serializing the resulting key
 	/// remain fallible — those represent genuine bugs rather than block-content conditions.
-	///
-	/// # Persist refcount contract
-	///
-	/// Same contract as [`Self::post_block_update`]: returns
-	/// `LedgerStateKey::Anchored` at rc=1, so the post-block tip stays rooted
-	/// for RPC and history and is safe across sibling forks; a `Transient`
-	/// input is unpersisted once, and `Anchored` inputs are left alone. On
-	/// error, refcounts are unchanged.
 	pub fn apply_post_block_update(
 		mut _externalities: &mut dyn Externalities,
-		state_key: &LedgerStateKey,
+		state_key: &[u8],
 		block_context: BlockContext,
-	) -> Result<LedgerStateKey, LedgerApiError> {
+	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let ledger = Self::get_ledger(&api, state_key.bytes())?;
+		let ledger = Self::get_ledger(&api, state_key)?;
 		let mut ledger = Ledger::apply_post_block_update(ledger, block_context);
 		let state_root = api.tagged_serialize(&ledger.as_typed_key())?;
 		ledger.persist();
-		if state_key.is_transient() {
-			Self::unpersist_state(&api, state_key.bytes())?;
-		}
-		Ok(LedgerStateKey::Anchored(state_root))
+		Ok(state_root)
 	}
 
 	pub fn get_version() -> Vec<u8> {
 		crate::utils::find_crate_version(super::CRATE_NAME).unwrap_or(b"unknown".into())
 	}
 
-	/// Apply a user transaction and produce the resulting ledger state.
-	///
-	/// # Persist refcount contract
-	///
-	/// On success, the returned `state_root` field on `TransactionAppliedStateRoot`
-	/// is `LedgerStateKey::Transient` at rc=1 — the next Bridge call that
-	/// consumes it will unpersist it in turn.
-	///
-	/// If the input was `LedgerStateKey::Transient` (the prior intra-block
-	/// intermediate), it is unpersisted once, dropping to rc=0 — so within a
-	/// block, only the current intermediate tip from this block stays rooted;
-	/// older intermediates become GC-eligible.
-	///
-	/// If the input was `LedgerStateKey::Anchored` (a prior post-block tip or
-	/// genesis), it is left alone. Anchored states are retained for history
-	/// and shared across sibling forks. The caller must ensure the input is
-	/// currently rooted (refcount ≥ 1).
-	///
-	/// On error, refcounts are unchanged.
 	pub fn apply_transaction(
 		mut externalities: &mut dyn Externalities,
-		state_key: &LedgerStateKey,
+		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
 		should_skip_failed_segments: bool,
@@ -493,7 +442,7 @@ where
 			"📥 Applying transaction {}",
 			hex::encode(tx_hash)
 		);
-		let ledger = Self::get_ledger(&api, state_key.bytes())?;
+		let ledger = Self::get_ledger(&api, state_key)?;
 		utxo_ordering_override::set_network_id(&ledger.state.network_id);
 		log::trace!(
 			target: LOG_TARGET,
@@ -588,9 +537,7 @@ where
 		);
 
 		let mut event = TransactionAppliedStateRoot {
-			state_root: LedgerStateKey::Transient(
-				api.tagged_serialize(&new_ledger.as_typed_key())?,
-			),
+			state_root: api.tagged_serialize(&new_ledger.as_typed_key())?,
 			tx_hash,
 			all_applied,
 			call_addresses: vec![],
@@ -658,12 +605,6 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 		new_ledger.persist();
-		// Drop the persist on the predecessor only if it's Transient — Anchored
-		// states (post-block tips, genesis) are retained for history and may be
-		// shared by sibling forks, so we never unpersist them on input.
-		if state_key.is_transient() {
-			Self::unpersist_state(&api, state_key.bytes())?;
-		}
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ledger persisted (elapsed_ms={})",
@@ -699,17 +640,9 @@ where
 		Ok(event)
 	}
 
-	/// Apply a system transaction and produce the resulting ledger state.
-	///
-	/// # Persist refcount contract
-	///
-	/// Same contract as [`Self::apply_transaction`]: returns
-	/// `LedgerStateKey::Transient` at rc=1; a `Transient` input is unpersisted
-	/// once; `Anchored` inputs are left alone. On error, refcounts are
-	/// unchanged.
 	pub fn apply_system_transaction(
 		mut externalities: &mut dyn Externalities,
-		state_key: &LedgerStateKey,
+		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
 	) -> Result<SystemTransactionAppliedStateRoot, LedgerApiError> {
@@ -725,22 +658,19 @@ where
 			"⚙️  Processing SystemTx {tx:?}"
 		);
 		let tx_hash = tx.transaction_hash().0.0;
-		let ledger = Self::get_ledger(&api, state_key.bytes())?;
+		let ledger = Self::get_ledger(&api, state_key)?;
 
 		let mut ledger =
 			Ledger::apply_system_tx(ledger, &tx, Timestamp::from_secs(block_context.tblock))?;
 
 		let event = SystemTransactionAppliedStateRoot {
-			state_root: LedgerStateKey::Transient(api.tagged_serialize(&ledger.as_typed_key())?),
+			state_root: api.tagged_serialize(&ledger.as_typed_key())?,
 			tx_hash,
 			tx_type: tx_type.to_string(),
 		};
 
 		// Only update state after no errors
 		ledger.persist();
-		if state_key.is_transient() {
-			Self::unpersist_state(&api, state_key.bytes())?;
-		}
 
 		// Write Prometheus metrics
 		let maybe_metrics = externalities.extension::<LedgerMetricsExt>();
@@ -1409,21 +1339,6 @@ where
 			log::error!(target: LOG_TARGET, "Error loading Ledger State: {e:?}");
 			LedgerApiError::NoLedgerState
 		})
-	}
-
-	/// Decrement the persist refcount on a previously-persisted ledger state.
-	///
-	/// During block construction every successful tx apply adds one persist on the
-	/// resulting ledger state. Without a matching unpersist on the predecessor,
-	/// every intermediate within-block state would remain a GC root forever. This
-	/// helper is the symmetric companion: after persisting the new state, unpersist
-	/// the old one so only ledger states from historical blocks and the latest ledger
-	/// state stays rooted by default.
-	fn unpersist_state(api: &api::Api, state_key: &[u8]) -> Result<(), LedgerApiError> {
-		let typed_key: TypedArenaKey<Ledger<D>, D::Hasher> = api.tagged_deserialize(state_key)?;
-		let key: ArenaKey<D::Hasher> = typed_key.into();
-		default_storage::<D>().with_backend(|backend| backend.unpersist(key.hash()));
-		Ok(())
 	}
 
 	fn get_transaction_details(
