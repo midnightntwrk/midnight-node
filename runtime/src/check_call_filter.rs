@@ -48,6 +48,28 @@ impl Contains<RuntimeCall> for InherentCalls {
 	}
 }
 
+/// Calls the collectives dispatch internally (with their `Members` origin) when one of
+/// their proposals passes, whitelisted in safe mode.
+///
+/// `pallet_collective` dispatches an approved proposal through the origin's call filter,
+/// and its `Members` origin is not Root, so `BaseCallFilter` applies. Without these the
+/// safe-mode recovery flow dead-ends: neither body could record a
+/// `FederatedAuthority::motion_approve`, so no motion could ever be `motion_close`d to
+/// dispatch a fix as Root. Both calls are origin-gated to the collective proportion
+/// origins, so whitelisting them adds no exposure for signed or unsigned traffic.
+pub struct FederatedMotionCalls;
+impl Contains<RuntimeCall> for FederatedMotionCalls {
+	fn contains(call: &RuntimeCall) -> bool {
+		matches!(
+			call,
+			RuntimeCall::FederatedAuthority(
+				pallet_federated_authority::Call::motion_approve { .. }
+					| pallet_federated_authority::Call::motion_revoke { .. }
+			)
+		)
+	}
+}
+
 /// Nothing but Governance calls are allowed
 type CallFilter = GovernanceAuthorityCallFilter;
 

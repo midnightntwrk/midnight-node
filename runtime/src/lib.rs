@@ -773,10 +773,14 @@ impl pallet_safe_mode::Config for Runtime {
 	type Currency = CurrencyWaiver;
 	type RuntimeHoldReason = RuntimeHoldReason;
 	// While safe mode is entered only these calls (plus safe-mode's own, auto-exempted by
-	// pallet name) pass `BaseCallFilter`: the governance recovery path and the inherents
-	// block production depends on. Root bypasses the filter entirely.
-	type WhitelistedCalls =
-		(check_call_filter::GovernanceAuthorityCallFilter, check_call_filter::InherentCalls);
+	// pallet name) pass `BaseCallFilter`: the governance recovery path (including the
+	// motion calls the collectives dispatch internally) and the inherents block production
+	// depends on. Root bypasses the filter entirely.
+	type WhitelistedCalls = (
+		check_call_filter::GovernanceAuthorityCallFilter,
+		check_call_filter::InherentCalls,
+		check_call_filter::FederatedMotionCalls,
+	);
 	type EnterDuration = SafeModeEnterDuration;
 	type ExtendDuration = SafeModeExtendDuration;
 	type EnterDepositAmount = ();
@@ -2439,9 +2443,15 @@ mod tests {
 	}
 
 	mod failed_mbm_recovery {
-		use crate::{BlockNumber, Executive, Runtime, RuntimeCall, VERSION};
-		use frame_support::{assert_ok, migrations::MultiStepMigrator, traits::Contains};
-		use sp_runtime::{BuildStorage, ExtrinsicInclusionMode, traits::Header as _};
+		use crate::{AccountId, BlockNumber, Executive, Runtime, RuntimeCall, VERSION};
+		use frame_support::{
+			assert_ok, dispatch::GetDispatchInfo, migrations::MultiStepMigrator, traits::Contains,
+		};
+		use parity_scale_codec::Encode;
+		use sp_runtime::{
+			BuildStorage, ExtrinsicInclusionMode,
+			traits::{Dispatchable, Hash as _, Header as _},
+		};
 
 		fn ongoing() -> bool {
 			<Runtime as frame_system::Config>::MultiBlockMigrator::ongoing()
@@ -2451,6 +2461,40 @@ mod tests {
 			frame_system::Pallet::<Runtime>::can_set_code(&[], false)
 		}
 
+		/// Fail migration 0 (cnight v1 `MigrateV0ToV1`) by planting an active cursor whose
+		/// 1-byte inner cursor fails to SCALE-decode as the migration's fixed-size cursor
+		/// type -> `InvalidCursor` -> `FailedMigrationHandler`, then step the MBMs the way
+		/// Executive does after inherent application. Leaves the chain in safe mode with
+		/// the cursor unstuck.
+		fn fail_mbm_and_enter_safe_mode() {
+			// Mark the runtime as already upgraded so a later `initialize_block` doesn't
+			// onboard the MBMs again.
+			frame_system::LastRuntimeUpgrade::<Runtime>::put(
+				frame_system::LastRuntimeUpgradeInfo::from(VERSION),
+			);
+			frame_system::Pallet::<Runtime>::set_block_number(1);
+			assert!(can_set_code().into_result().is_ok());
+
+			assert_ok!(crate::MultiBlockMigrations::force_set_active_cursor(
+				crate::RuntimeOrigin::root(),
+				0,
+				Some(vec![0u8].try_into().unwrap()),
+				Some(1),
+			));
+			assert!(ongoing());
+			assert!(matches!(
+				can_set_code(),
+				frame_system::CanSetCodeResult::MultiBlockMigrationsOngoing
+			));
+
+			Executive::inherents_applied();
+
+			// Safe mode entered indefinitely, cursor unstuck, upgrades unblocked.
+			assert_eq!(pallet_safe_mode::EnteredUntil::<Runtime>::get(), Some(BlockNumber::MAX));
+			assert!(!ongoing());
+			assert!(can_set_code().into_result().is_ok());
+		}
+
 		/// A failed multi-block migration must enter safe mode and unstuck the cursor
 		/// instead of freezing the chain (`can_set_code` blocked forever with no on-chain
 		/// recovery on a standalone chain).
@@ -2458,40 +2502,7 @@ mod tests {
 		fn failed_mbm_enters_safe_mode_and_unstucks() {
 			let t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
 			sp_io::TestExternalities::from(t).execute_with(|| {
-				// Mark the runtime as already upgraded so `initialize_block` at block 2
-				// doesn't onboard the MBMs again.
-				frame_system::LastRuntimeUpgrade::<Runtime>::put(
-					frame_system::LastRuntimeUpgradeInfo::from(VERSION),
-				);
-				frame_system::Pallet::<Runtime>::set_block_number(1);
-
-				assert!(can_set_code().into_result().is_ok());
-
-				// Plant an active cursor for migration 0 (cnight v1 `MigrateV0ToV1`) whose
-				// 1-byte inner cursor fails to SCALE-decode as the migration's fixed-size
-				// cursor type -> `InvalidCursor` -> `FailedMigrationHandler`.
-				assert_ok!(crate::MultiBlockMigrations::force_set_active_cursor(
-					crate::RuntimeOrigin::root(),
-					0,
-					Some(vec![0u8].try_into().unwrap()),
-					Some(1),
-				));
-				assert!(ongoing());
-				assert!(matches!(
-					can_set_code(),
-					frame_system::CanSetCodeResult::MultiBlockMigrationsOngoing
-				));
-
-				// Step the MBMs the way Executive does after inherent application.
-				Executive::inherents_applied();
-
-				// Safe mode entered indefinitely, cursor unstuck, upgrades unblocked.
-				assert_eq!(
-					pallet_safe_mode::EnteredUntil::<Runtime>::get(),
-					Some(BlockNumber::MAX)
-				);
-				assert!(!ongoing());
-				assert!(can_set_code().into_result().is_ok());
+				fail_mbm_and_enter_safe_mode();
 
 				// `BaseCallFilter` now blocks user calls...
 				type Filter = <Runtime as frame_system::Config>::BaseCallFilter;
@@ -2523,6 +2534,148 @@ mod tests {
 					Executive::initialize_block(&header),
 					ExtrinsicInclusionMode::AllExtrinsics
 				);
+			});
+		}
+
+		fn account(b: u8) -> AccountId {
+			AccountId::from([b; 32])
+		}
+
+		/// Dispatch `call` the way an applied extrinsic would: through the signed origin,
+		/// which carries `BaseCallFilter`. This is what makes the test end-to-end — a call
+		/// filtered in safe mode fails here with `CallFiltered`.
+		fn dispatch_signed(call: RuntimeCall, who: AccountId) {
+			assert_ok!(call.dispatch(crate::RuntimeOrigin::signed(who)));
+		}
+
+		/// Governance must be able to execute the full set-code recovery flow while the
+		/// chain sits in post-failure safe mode: both collectives approve a
+		/// `FederatedAuthority` motion, and closing the motion dispatches
+		/// `System::authorize_upgrade` as Root (the fixed runtime is then applied via the
+		/// whitelisted `System::apply_authorized_upgrade`). The collectives dispatch
+		/// `motion_approve` internally with their (non-Root) `Members` origin, which goes
+		/// through `BaseCallFilter` — the safe-mode whitelist must let it through or
+		/// recovery dead-ends.
+		#[test]
+		fn governance_can_authorize_set_code_in_safe_mode() {
+			let mut t = frame_system::GenesisConfig::<Runtime>::default().build_storage().unwrap();
+			// Seed both governance bodies (membership genesis forwards to the collectives).
+			pallet_membership::GenesisConfig::<Runtime, pallet_membership::Instance1> {
+				members: vec![account(1), account(2)].try_into().unwrap(),
+				..Default::default()
+			}
+			.assimilate_storage(&mut t)
+			.unwrap();
+			pallet_membership::GenesisConfig::<Runtime, pallet_membership::Instance2> {
+				members: vec![account(1), account(2)].try_into().unwrap(),
+				..Default::default()
+			}
+			.assimilate_storage(&mut t)
+			.unwrap();
+
+			sp_io::TestExternalities::from(t).execute_with(|| {
+				fail_mbm_and_enter_safe_mode();
+
+				// The motion governance wants dispatched as Root: authorize the fixed
+				// runtime's code hash.
+				let motion = RuntimeCall::System(frame_system::Call::authorize_upgrade {
+					code_hash: crate::Hash::repeat_byte(7),
+				});
+				let motion_hash = <Runtime as frame_system::Config>::Hashing::hash_of(&motion);
+				assert!(frame_system::Pallet::<Runtime>::authorized_upgrade().is_none());
+
+				// Council: propose motion_approve, both members vote aye, close dispatches
+				// it with the Council's `Members` origin.
+				let proposal = RuntimeCall::FederatedAuthority(
+					pallet_federated_authority::Call::motion_approve {
+						call: alloc::boxed::Box::new(motion.clone()),
+					},
+				);
+				let len = proposal.encoded_size() as u32;
+				let weight = proposal.get_dispatch_info().call_weight;
+				let hash = <Runtime as frame_system::Config>::Hashing::hash_of(&proposal);
+
+				dispatch_signed(
+					RuntimeCall::Council(pallet_collective::Call::propose {
+						threshold: 2,
+						proposal: alloc::boxed::Box::new(proposal.clone()),
+						length_bound: len,
+					}),
+					account(1),
+				);
+				for who in [account(1), account(2)] {
+					dispatch_signed(
+						RuntimeCall::Council(pallet_collective::Call::vote {
+							proposal: hash,
+							index: 0,
+							approve: true,
+						}),
+						who,
+					);
+				}
+				dispatch_signed(
+					RuntimeCall::Council(pallet_collective::Call::close {
+						proposal_hash: hash,
+						index: 0,
+						proposal_weight_bound: weight,
+						length_bound: len,
+					}),
+					account(1),
+				);
+				// The inner motion_approve must have landed (do_approve_proposal swallows a
+				// filtered dispatch into an event, so check the motion actually exists).
+				assert!(
+					pallet_federated_authority::Motions::<Runtime>::get(motion_hash).is_some(),
+					"Council's motion_approve was not executed — blocked by BaseCallFilter?"
+				);
+
+				// Technical Committee: same flow.
+				dispatch_signed(
+					RuntimeCall::TechnicalCommittee(pallet_collective::Call::propose {
+						threshold: 2,
+						proposal: alloc::boxed::Box::new(proposal.clone()),
+						length_bound: len,
+					}),
+					account(1),
+				);
+				for who in [account(1), account(2)] {
+					dispatch_signed(
+						RuntimeCall::TechnicalCommittee(pallet_collective::Call::vote {
+							proposal: hash,
+							index: 0,
+							approve: true,
+						}),
+						who,
+					);
+				}
+				dispatch_signed(
+					RuntimeCall::TechnicalCommittee(pallet_collective::Call::close {
+						proposal_hash: hash,
+						index: 0,
+						proposal_weight_bound: weight,
+						length_bound: len,
+					}),
+					account(1),
+				);
+
+				// Both bodies approved: closing the motion dispatches it as Root.
+				dispatch_signed(
+					RuntimeCall::FederatedAuthority(
+						pallet_federated_authority::Call::motion_close {
+							motion_hash,
+							proposal_weight_bound: motion.get_dispatch_info().call_weight,
+						},
+					),
+					account(1),
+				);
+				assert!(
+					frame_system::Pallet::<Runtime>::authorized_upgrade().is_some(),
+					"authorize_upgrade did not execute — motion dispatch failed"
+				);
+
+				// And governance can lift safe mode once the fixed runtime is applied.
+				assert_ok!(crate::SafeMode::force_exit(crate::RuntimeOrigin::root()));
+				assert_eq!(pallet_safe_mode::EnteredUntil::<Runtime>::get(), None);
 			});
 		}
 	}
