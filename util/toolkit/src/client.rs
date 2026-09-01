@@ -32,6 +32,36 @@ use thiserror::Error;
 /// Set generously to handle rate-limiting (429) during concurrent connection attempts.
 const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Matches jsonrpsee's built-in default request timeout. Used by callers that
+/// have no CLI-provided value (e.g. tests, offline tooling).
+pub const DEFAULT_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Like [`RpcClient::from_insecure_url`], but honouring the given
+/// `request_timeout` (from `--rpc-request-timeout` / `MN_RPC_REQUEST_TIMEOUT`).
+/// Heavy requests (e.g. `Metadata_metadata_at_version`) can exceed jsonrpsee's
+/// fixed 60 s default on slow hardware or a loaded node.
+pub async fn rpc_client_with_timeout(
+	url: &str,
+	request_timeout: Duration,
+) -> Result<RpcClient, subxt::rpcs::Error> {
+	use jsonrpsee::{
+		client_transport::ws::{Url, WsTransportClientBuilder},
+		core::client::Client,
+	};
+
+	let url = Url::parse(url).map_err(|e| subxt::rpcs::Error::Client(Box::new(e)))?;
+	let (sender, receiver) = WsTransportClientBuilder::default()
+		.build(url)
+		.await
+		.map_err(|e| subxt::rpcs::Error::Client(Box::new(e)))?;
+	// Buffer capacity matches subxt's own jsonrpsee client construction.
+	let client = Client::builder()
+		.request_timeout(request_timeout)
+		.max_buffer_capacity_per_subscription(4096)
+		.build_with_tokio(sender, receiver);
+	Ok(RpcClient::new(client))
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct MidnightNodeClientConfig;
 
@@ -58,23 +88,38 @@ pub struct MidnightNodeClient {
 }
 
 impl MidnightNodeClient {
-	pub async fn new(rpc_url: &str, timeout: Option<Duration>) -> Result<Self, ClientError> {
+	/// Connects with a retry loop. `connect_timeout` bounds the total backoff
+	/// time spent retrying the connection (defaults to
+	/// [`CLIENT_CONNECT_TIMEOUT`]); `request_timeout` applies to every RPC
+	/// request made over the resulting client.
+	pub async fn new(
+		rpc_url: &str,
+		connect_timeout: Option<Duration>,
+		request_timeout: Duration,
+	) -> Result<Self, ClientError> {
 		let backoff = ExponentialBackoff {
-			max_elapsed_time: Some(timeout.unwrap_or(CLIENT_CONNECT_TIMEOUT)),
+			max_elapsed_time: Some(connect_timeout.unwrap_or(CLIENT_CONNECT_TIMEOUT)),
 			..ExponentialBackoff::default()
 		};
 
 		retry(backoff, || async {
-			MidnightNodeClient::new_without_timeout(rpc_url).await.map_err(|e| {
-				log::warn!("rpc connection attempt failed, retrying: {e}");
-				backoff::Error::transient(e)
-			})
+			MidnightNodeClient::new_without_timeout(rpc_url, request_timeout)
+				.await
+				.map_err(|e| {
+					log::warn!("rpc connection attempt failed, retrying: {e}");
+					backoff::Error::transient(e)
+				})
 		})
 		.await
 	}
 
-	pub async fn new_without_timeout(rpc_url: &str) -> Result<Self, ClientError> {
-		let rpc_client = RpcClient::from_insecure_url(rpc_url).await?;
+	/// Connects once, without the connect-retry loop of [`Self::new`]. The
+	/// given `request_timeout` still applies to every request.
+	pub async fn new_without_timeout(
+		rpc_url: &str,
+		request_timeout: Duration,
+	) -> Result<Self, ClientError> {
+		let rpc_client = rpc_client_with_timeout(rpc_url, request_timeout).await?;
 		let rpc = LegacyRpcMethods::<MidnightNodeClientConfig>::new(rpc_client.clone());
 		let api =
 			OnlineClient::<MidnightNodeClientConfig>::from_rpc_client(rpc_client.clone()).await?;

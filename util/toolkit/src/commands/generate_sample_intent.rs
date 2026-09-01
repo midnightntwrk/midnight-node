@@ -9,6 +9,7 @@ use crate::tx_generator::{
 use clap::Args;
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Args)]
 pub struct GenerateSampleIntentArgs {
@@ -27,13 +28,15 @@ pub struct GenerateSampleIntentArgs {
 	pub dry_run: bool,
 }
 
-pub async fn execute(args: GenerateSampleIntentArgs) {
+/// Run the generate-sample-intent command. `rpc_request_timeout` is the
+/// per-request RPC timeout applied when the source fetches from a node.
+pub async fn execute(args: GenerateSampleIntentArgs, rpc_request_timeout: Duration) {
 	log::info!("Generate a contract and save to file");
 
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
-	let source = TxGenerator::source(args.source, args.dry_run)
+	let source = TxGenerator::source(args.source, args.dry_run, rpc_request_timeout)
 		.await
 		.expect("failed to init tx source");
 	let prover_config = TxGenerator::prover_config(args.proof_server, args.dry_run);
@@ -240,7 +243,7 @@ mod test {
 			dry_run: false,
 		};
 
-		execute(args).await;
+		execute(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT).await;
 
 		let path = "1_deploy_intent.mn";
 

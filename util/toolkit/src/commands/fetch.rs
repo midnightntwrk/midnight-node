@@ -7,6 +7,7 @@ use crate::{
 	source::Source,
 };
 use clap::Args;
+use std::time::Duration;
 
 #[derive(Args)]
 pub struct FetchArgs {
@@ -17,7 +18,12 @@ pub struct FetchArgs {
 	seeds: Option<Vec<WalletSeed>>,
 }
 
-pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Run the fetch command. `rpc_request_timeout` is the per-request RPC timeout
+/// applied to every node connection the fetch makes.
+pub async fn execute(
+	args: FetchArgs,
+	rpc_request_timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let FetchArgs { src, seeds } = args;
 
 	if src.src_files.is_some() {
@@ -37,6 +43,7 @@ pub async fn execute(args: FetchArgs) -> Result<(), Box<dyn std::error::Error + 
 		src.dust_warp,
 		src.fetch_only_cached,
 		src.fetch_cache,
+		rpc_request_timeout,
 	)
 	.get_txs()
 	.await?;

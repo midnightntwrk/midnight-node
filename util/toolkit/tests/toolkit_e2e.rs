@@ -23,6 +23,7 @@ use common::{test_image, wait_for_node, wait_for_node::wait_for_finalized_block}
 use midnight_node_toolkit::tx_generator::builder::FUNDING_SEED;
 use midnight_node_toolkit::{
 	cli::{Cli, Commands, run_command},
+	client::DEFAULT_RPC_REQUEST_TIMEOUT,
 	commands::{contract_address, show_address},
 };
 use std::{path::Path, time::Duration};
@@ -104,7 +105,9 @@ async fn run_cli(args: &[&str]) {
 	let full_args: Vec<&str> =
 		std::iter::once("midnight-node-toolkit").chain(args.iter().copied()).collect();
 	let cli = Cli::parse_from(full_args);
-	run_command(cli.command).await.expect("CLI command failed");
+	run_command(cli.command, DEFAULT_RPC_REQUEST_TIMEOUT)
+		.await
+		.expect("CLI command failed");
 }
 
 const RNG_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000037";

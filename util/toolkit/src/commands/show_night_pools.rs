@@ -20,6 +20,7 @@ use crate::tx_generator::source::create_file_wallet_cache;
 use crate::{TxGenerator, WalletSeed};
 
 use clap::Args;
+use std::time::Duration;
 
 const STARS_PER_NIGHT: u128 = 1_000_000;
 
@@ -48,14 +49,17 @@ fn night(stars: u128) -> String {
 	format!("{}.{:06} NIGHT", stars / STARS_PER_NIGHT, stars % STARS_PER_NIGHT)
 }
 
+/// Run the show-night-pools command. `rpc_request_timeout` is the per-request
+/// RPC timeout applied when the source fetches from a node.
 pub async fn execute(
 	args: ShowNightPoolsArgs,
+	rpc_request_timeout: Duration,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 
-	let src = TxGenerator::source(args.source, false).await?;
+	let src = TxGenerator::source(args.source, false, rpc_request_timeout).await?;
 	let source_txs = src.get_txs().await?;
 	let wallet_cache = create_file_wallet_cache(&ledger_state_db, &fetch_cache);
 

@@ -18,7 +18,7 @@
 //! commands, which fails with `OnlyGenesisFinalized` until finality has reached
 //! block 1, so finality (not best-block) is what tests need to wait for.
 
-use midnight_node_toolkit::client::MidnightNodeClient;
+use midnight_node_toolkit::client::{DEFAULT_RPC_REQUEST_TIMEOUT, MidnightNodeClient};
 use std::time::{Duration, Instant};
 
 pub async fn wait_for_finalized_block(ws_url: &str, target_block: u64, timeout: Duration) {
@@ -60,7 +60,7 @@ pub async fn wait_for_next_finalized_block(ws_url: &str, timeout: Duration) {
 
 async fn connect(ws_url: &str, timeout: Duration) -> MidnightNodeClient {
 	let connect_timeout = timeout.min(Duration::from_secs(60));
-	MidnightNodeClient::new(ws_url, Some(connect_timeout))
+	MidnightNodeClient::new(ws_url, Some(connect_timeout), DEFAULT_RPC_REQUEST_TIMEOUT)
 		.await
 		.unwrap_or_else(|e| panic!("failed to connect to {ws_url}: {e}"))
 }

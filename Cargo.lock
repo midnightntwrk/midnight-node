@@ -8209,6 +8209,7 @@ dependencies = [
  "hex",
  "hex-literal 1.1.0",
  "indicatif 0.17.11",
+ "jsonrpsee",
  "log",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",

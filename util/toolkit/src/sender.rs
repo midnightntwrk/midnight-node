@@ -151,12 +151,20 @@ pub struct Sender {
 }
 
 impl Sender {
-	pub async fn new(urls: &[String], no_watch_progress: bool) -> Result<Self, ClientError> {
+	/// Connect a client per url. `rpc_request_timeout` is applied to every RPC
+	/// request made by the created clients.
+	pub async fn new(
+		urls: &[String],
+		no_watch_progress: bool,
+		rpc_request_timeout: Duration,
+	) -> Result<Self, ClientError> {
 		let clients: Result<Vec<ClientHandle>, ClientError> =
 			futures::future::try_join_all(urls.iter().map(|url| async move {
 				Ok(ClientHandle {
 					url: url.clone(),
-					client: Arc::new(MidnightNodeClient::new(url, None).await?),
+					client: Arc::new(
+						MidnightNodeClient::new(url, None, rpc_request_timeout).await?,
+					),
 				})
 			}))
 			.await;

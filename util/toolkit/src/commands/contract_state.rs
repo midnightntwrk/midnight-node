@@ -4,7 +4,7 @@ use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::create_file_wallet_cache;
 use clap::Args;
 use midnight_node_ledger_helpers::ContractAddress;
-use std::{fs, path::Path};
+use std::{fs, path::Path, time::Duration};
 
 #[derive(Args)]
 pub struct ContractStateArgs {
@@ -21,13 +21,16 @@ pub struct ContractStateArgs {
 	pub dry_run: bool,
 }
 
+/// Run the contract-state command. `rpc_request_timeout` is the per-request
+/// RPC timeout applied when the source fetches from a node.
 pub async fn execute(
 	args: ContractStateArgs,
+	rpc_request_timeout: Duration,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
-	let source = TxGenerator::source(args.source, args.dry_run)
+	let source = TxGenerator::source(args.source, args.dry_run, rpc_request_timeout)
 		.await
 		.expect("failed to init tx source");
 

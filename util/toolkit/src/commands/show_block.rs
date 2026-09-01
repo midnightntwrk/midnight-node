@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use core::fmt::Display;
+use std::time::Duration;
 
 use crate::{
 	cli_parsers as cli,
@@ -176,8 +177,11 @@ fn blocks_from_file(
 	Ok(blocks)
 }
 
+/// Run the show-block command. `rpc_request_timeout` is the per-request RPC
+/// timeout applied when fetching the block from a node.
 pub async fn execute(
 	args: ShowBlockArgs,
+	rpc_request_timeout: Duration,
 ) -> Result<ShowBlockValue, Box<dyn std::error::Error + Send + Sync>> {
 	if args.dry_run {
 		if let Some(ref src_file) = args.src_file {
@@ -207,7 +211,7 @@ pub async fn execute(
 
 	// Fetch from RPC
 	let block_number = args.block_number.unwrap();
-	let client = MidnightNodeClient::new(&args.src_url, None).await?;
+	let client = MidnightNodeClient::new(&args.src_url, None, rpc_request_timeout).await?;
 	let chain_id = client.get_block_one_hash().await?;
 
 	let block_hashes = FetchTask::fetch_block_hashes(&client, &[block_number]).await?;
@@ -253,15 +257,18 @@ mod test {
 
 	#[tokio::test]
 	async fn test_show_block_from_file() {
-		let result = super::execute(ShowBlockArgs {
-			src_file: Some("../../res/test-tx-deserialize/serialized_tx.mn".to_string()),
-			block_number: None,
-			json: true,
-			src_url: "".to_string(),
-			fetch_cache: FetchCacheConfig::InMemory,
-			fetch_only_cached: false,
-			dry_run: false,
-		})
+		let result = super::execute(
+			ShowBlockArgs {
+				src_file: Some("../../res/test-tx-deserialize/serialized_tx.mn".to_string()),
+				block_number: None,
+				json: true,
+				src_url: "".to_string(),
+				fetch_cache: FetchCacheConfig::InMemory,
+				fetch_only_cached: false,
+				dry_run: false,
+			},
+			crate::client::DEFAULT_RPC_REQUEST_TIMEOUT,
+		)
 		.await
 		.unwrap();
 

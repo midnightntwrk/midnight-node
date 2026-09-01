@@ -22,7 +22,7 @@ use crate::{
 use async_trait::async_trait;
 use clap::Args;
 use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
-use std::{fs::File, str::FromStr};
+use std::{fs::File, str::FromStr, time::Duration};
 use thiserror::Error;
 
 use crate::{client::ClientError, serde_def::SourceTransactions};
@@ -265,6 +265,8 @@ pub struct GetTxsFromUrl {
 	pub dust_warp: bool,
 	pub fetch_only_cache: bool,
 	pub fetch_cache_config: FetchCacheConfig,
+	/// Per-request RPC timeout applied to every client this source creates.
+	pub rpc_request_timeout: Duration,
 }
 
 impl GetTxsFromUrl {
@@ -275,6 +277,7 @@ impl GetTxsFromUrl {
 		dust_warp: bool,
 		fetch_only_cache: bool,
 		fetch_cache_config: FetchCacheConfig,
+		rpc_request_timeout: Duration,
 	) -> Self {
 		Self {
 			rpc_url: rpc_url.to_string(),
@@ -283,6 +286,7 @@ impl GetTxsFromUrl {
 			dust_warp,
 			fetch_only_cache,
 			fetch_cache_config,
+			rpc_request_timeout,
 		}
 	}
 }
@@ -301,6 +305,7 @@ impl GetTxs for GetTxsFromUrl {
 					self.num_compute_workers,
 					self.fetch_only_cache,
 					fetch_storage::InMemory::default(),
+					self.rpc_request_timeout,
 				)
 				.await?
 			},
@@ -311,6 +316,7 @@ impl GetTxs for GetTxsFromUrl {
 					self.num_compute_workers,
 					self.fetch_only_cache,
 					fetch_storage::redb_backend::RedbBackend::new(filename),
+					self.rpc_request_timeout,
 				)
 				.await?
 			},
@@ -321,6 +327,7 @@ impl GetTxs for GetTxsFromUrl {
 					self.num_compute_workers,
 					self.fetch_only_cache,
 					fetch_storage::postgres_backend::PostgresBackend::new(&database_url).await,
+					self.rpc_request_timeout,
 				)
 				.await?
 			},
@@ -328,7 +335,7 @@ impl GetTxs for GetTxsFromUrl {
 		log::debug!("[perf] fetch_all took {:?}", t.elapsed());
 
 		let t = std::time::Instant::now();
-		let client = MidnightNodeClient::new(&self.rpc_url, None).await?;
+		let client = MidnightNodeClient::new(&self.rpc_url, None, self.rpc_request_timeout).await?;
 		let network_id = client.get_network_id().await?;
 		log::debug!("[perf] get_network_id took {:?}", t.elapsed());
 

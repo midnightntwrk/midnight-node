@@ -6,6 +6,7 @@ use crate::{
 };
 use clap::Args;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -36,13 +37,19 @@ pub struct GenerateTxsArgs {
 	pub dry_run: bool,
 }
 
-pub async fn execute(args: GenerateTxsArgs) -> Result<(), GenerateTxsError> {
+/// Run the generate-txs command. `rpc_request_timeout` is the per-request RPC
+/// timeout applied to every node connection the generator makes.
+pub async fn execute(
+	args: GenerateTxsArgs,
+	rpc_request_timeout: Duration,
+) -> Result<(), GenerateTxsError> {
 	let generator = TxGenerator::new(
 		args.source,
 		args.destination,
 		args.builder,
 		args.proof_server,
 		args.dry_run,
+		rpc_request_timeout,
 	)
 	.await?;
 
@@ -225,6 +232,7 @@ mod tests {
 			args.builder,
 			args.proof_server,
 			args.dry_run,
+			crate::client::DEFAULT_RPC_REQUEST_TIMEOUT,
 		)
 		.await?;
 		let received_txs =
@@ -263,6 +271,7 @@ mod tests {
 			args.builder,
 			args.proof_server,
 			args.dry_run,
+			crate::client::DEFAULT_RPC_REQUEST_TIMEOUT,
 		)
 		.await
 		.unwrap();

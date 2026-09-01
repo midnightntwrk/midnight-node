@@ -17,6 +17,7 @@
 //! governance mechanism using proper governance.
 
 use std::str::FromStr;
+use std::time::Duration;
 
 use crate::cli_parsers as cli;
 use clap::Args;
@@ -110,7 +111,12 @@ pub enum RootCallError {
 	EventsError(#[from] subxt::error::EventsError),
 }
 
-pub async fn execute(args: RootCallArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Run the root-call command. `rpc_request_timeout` is the per-request RPC
+/// timeout applied to the node connection.
+pub async fn execute(
+	args: RootCallArgs,
+	rpc_request_timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	// Validate we have enough keys
 	if args.council_keys.len() < 2 {
 		return Err(RootCallError::NotEnoughCouncilKeys.into());
@@ -143,7 +149,9 @@ pub async fn execute(args: RootCallArgs) -> Result<(), Box<dyn std::error::Error
 
 	// Connect to the node
 	log::info!("Connecting to node at {}", args.rpc_url);
-	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
+	let rpc_client =
+		crate::client::rpc_client_with_timeout(&args.rpc_url, rpc_request_timeout).await?;
+	let api = OnlineClient::<SubstrateConfig>::from_rpc_client(rpc_client).await?;
 
 	// Execute the governance flow
 	execute_governance_call(&api, &encoded_call, &council_keypairs, &tc_keypairs).await?;

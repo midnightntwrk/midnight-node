@@ -111,7 +111,12 @@ pub struct RuntimeUpgradeArgs {
 	pub signer_key: String,
 }
 
-pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError> {
+/// Run the runtime-upgrade command. `rpc_request_timeout` is the per-request
+/// RPC timeout applied to every node connection this command makes.
+pub async fn execute(
+	args: RuntimeUpgradeArgs,
+	rpc_request_timeout: Duration,
+) -> Result<(), RuntimeUpgradeError> {
 	// Step 1: Read the WASM file
 	let code = std::fs::read(&args.wasm_file)?;
 	log::info!("Read WASM file: {} ({} bytes)", args.wasm_file, code.len());
@@ -121,7 +126,8 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 	log::info!("Code hash: 0x{}", hex::encode(code_hash));
 
 	// Step 3: Build System::authorize_upgrade call and encode it
-	let rpc_client = RpcClient::from_insecure_url(&args.rpc_url).await?;
+	let rpc_client =
+		crate::client::rpc_client_with_timeout(&args.rpc_url, rpc_request_timeout).await?;
 	let api = OnlineClient::<SubstrateConfig>::from_rpc_client(rpc_client.clone()).await?;
 	let authorize_upgrade_call =
 		dynamic::tx("System", "authorize_upgrade", vec![dynamic::Value::from_bytes(&code_hash)]);
@@ -129,13 +135,16 @@ pub async fn execute(args: RuntimeUpgradeArgs) -> Result<(), RuntimeUpgradeError
 
 	// Step 4: Execute the authorization through governance
 	log::info!("Executing authorize_upgrade via federated authority governance.");
-	root_call::execute(RootCallArgs {
-		rpc_url: args.rpc_url.clone(),
-		council_keys: args.council_members,
-		tc_keys: args.technical_committee_members,
-		encoded_call: Some(encoded_call),
-		encoded_call_file: None,
-	})
+	root_call::execute(
+		RootCallArgs {
+			rpc_url: args.rpc_url.clone(),
+			council_keys: args.council_members,
+			tc_keys: args.technical_committee_members,
+			encoded_call: Some(encoded_call),
+			encoded_call_file: None,
+		},
+		rpc_request_timeout,
+	)
 	.await
 	.map_err(RuntimeUpgradeError::RootCallError)?;
 

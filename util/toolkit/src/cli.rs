@@ -26,6 +26,7 @@ use crate::commands::{
 use crate::utils;
 use clap::{Parser, Subcommand};
 use midnight_node_ledger_helpers::find_dependency_version;
+use std::time::Duration;
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -122,26 +123,39 @@ pub struct Cli {
 	#[arg(long, global = true, env = "MN_REPLAY_CONCURRENCY")]
 	pub replay_concurrency: Option<usize>,
 
+	/// Node RPC request timeout in seconds. Defaults to 60. Raise this on slow
+	/// hardware or a loaded node, where heavy requests (e.g. metadata fetches)
+	/// can exceed the default.
+	#[arg(long, global = true, env = "MN_RPC_REQUEST_TIMEOUT")]
+	pub rpc_request_timeout: Option<u64>,
+
 	#[command(subcommand)]
 	pub command: Commands,
 }
 
-pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Dispatch a parsed CLI command. `rpc_request_timeout` is the per-request RPC
+/// timeout (from `--rpc-request-timeout` / `MN_RPC_REQUEST_TIMEOUT`, or
+/// [`crate::client::DEFAULT_RPC_REQUEST_TIMEOUT`]) threaded into every command
+/// that connects to a node.
+pub async fn run_command(
+	cmd: Commands,
+	rpc_request_timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	match cmd {
 		Commands::GenerateTxs(args) => {
-			generate_txs::execute(args).await?;
+			generate_txs::execute(args, rpc_request_timeout).await?;
 			Ok(())
 		},
 		Commands::GenerateIntent(args) => {
-			generate_intent::execute(args).await?;
+			generate_intent::execute(args, rpc_request_timeout).await?;
 			Ok(())
 		},
 		Commands::GenerateSampleIntent(args) => {
-			generate_sample_intent::execute(args).await;
+			generate_sample_intent::execute(args, rpc_request_timeout).await;
 			Ok(())
 		},
 		Commands::SendIntent(args) => {
-			send_intent::execute(args).await?;
+			send_intent::execute(args, rpc_request_timeout).await?;
 			Ok(())
 		},
 		Commands::GenerateGenesis(args) => {
@@ -150,7 +164,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::ShowWallet(args) => {
-			let result = show_wallet::execute(args).await?;
+			let result = show_wallet::execute(args, rpc_request_timeout).await?;
 			match result {
 				ShowWalletResult::Debug(wallet_debug, utxos) => {
 					println!("{}", wallet_debug);
@@ -176,7 +190,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::ShowLedgerParameters(args) => {
-			let result = show_ledger_parameters::execute(args.clone()).await?;
+			let result = show_ledger_parameters::execute(args.clone(), rpc_request_timeout).await?;
 			if args.serialize {
 				println!("{}", result.serialized);
 			} else {
@@ -185,11 +199,11 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::ShowNightPools(args) => {
-			show_night_pools::execute(args).await?;
+			show_night_pools::execute(args, rpc_request_timeout).await?;
 			Ok(())
 		},
 		Commands::UpdateLedgerParameters(args) => {
-			update_ledger_parameters::execute(args).await?;
+			update_ledger_parameters::execute(args, rpc_request_timeout).await?;
 			Ok(())
 		},
 		Commands::ShowSeed(args) => {
@@ -203,7 +217,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::ShowBlock(args) => {
-			let result = show_block::execute(args).await?;
+			let result = show_block::execute(args, rpc_request_timeout).await?;
 			match result {
 				ShowBlockValue::Json(json) => {
 					println!("{}", serde_json::to_string_pretty(&json)?);
@@ -228,7 +242,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			println!("{address}");
 			Ok(())
 		},
-		Commands::ContractState(args) => contract_state::execute(args).await,
+		Commands::ContractState(args) => contract_state::execute(args, rpc_request_timeout).await,
 		Commands::RandomAddress(args) => {
 			let address = random_address::execute(args);
 			println!("{}", address);
@@ -261,7 +275,7 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::DustBalance(args) => {
-			let result = dust_balance::execute(args).await?;
+			let result = dust_balance::execute(args, rpc_request_timeout).await?;
 			match result {
 				DustBalanceResult::Json(json) => {
 					println!("{}", serde_json::to_string_pretty(&json)?);
@@ -272,14 +286,14 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 			Ok(())
 		},
 		Commands::RuntimeUpgrade(args) => {
-			runtime_upgrade::execute(args).await?;
+			runtime_upgrade::execute(args, rpc_request_timeout).await?;
 			Ok(())
 		},
 		Commands::RootCall(args) => {
-			root_call::execute(args).await?;
+			root_call::execute(args, rpc_request_timeout).await?;
 			Ok(())
 		},
-		Commands::Fetch(args) => fetch::execute(args).await,
+		Commands::Fetch(args) => fetch::execute(args, rpc_request_timeout).await,
 		Commands::BridgeTransfer(args) => bridge_transfer::execute(args).await,
 	}
 }

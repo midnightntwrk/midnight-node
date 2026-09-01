@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use std::{fs::File, io::Write, sync::Arc};
+use std::{fs::File, io::Write, sync::Arc, time::Duration};
 
 use crate::sender::{SendBatchError, Sender};
 use midnight_node_ledger_helpers::fork::raw_block_data::{SerializedTx, SerializedTxBatches};
@@ -69,11 +69,18 @@ pub struct SendTxsToUrl {
 	urls: Vec<String>,
 	rate: f32,
 	no_watch_progress: bool,
+	/// Per-request RPC timeout applied to every client this destination creates.
+	rpc_request_timeout: Duration,
 }
 
 impl SendTxsToUrl {
-	pub fn new(urls: Vec<String>, rate: f32, no_watch_progress: bool) -> Self {
-		Self { urls, rate, no_watch_progress }
+	pub fn new(
+		urls: Vec<String>,
+		rate: f32,
+		no_watch_progress: bool,
+		rpc_request_timeout: Duration,
+	) -> Self {
+		Self { urls, rate, no_watch_progress, rpc_request_timeout }
 	}
 }
 
@@ -123,7 +130,9 @@ impl SendTxs for SendTxsToUrl {
 			return Err("rate must be greater than 0".into());
 		}
 
-		let sender = Arc::new(Sender::new(&self.urls, self.no_watch_progress).await?);
+		let sender = Arc::new(
+			Sender::new(&self.urls, self.no_watch_progress, self.rpc_request_timeout).await?,
+		);
 
 		let mut total_failed = 0;
 		for (i, batch) in txs.batches.iter().enumerate() {

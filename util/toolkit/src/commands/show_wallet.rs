@@ -11,6 +11,7 @@ use crate::{
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
+use std::time::Duration;
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -53,13 +54,16 @@ pub struct ShowWalletArgs {
 	pub dry_run: bool,
 }
 
+/// Run the show-wallet command. `rpc_request_timeout` is the per-request RPC
+/// timeout applied when the source fetches from a node.
 pub async fn execute(
 	args: ShowWalletArgs,
+	rpc_request_timeout: Duration,
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
-	let src = TxGenerator::source(args.source, args.dry_run).await?;
+	let src = TxGenerator::source(args.source, args.dry_run, rpc_request_timeout).await?;
 
 	// Exactly one of `--seed` / `--address` is set (clap's `wallet_id` group).
 	let resolved_seed = args.seed.as_ref().map(cli::SchemeSeed::resolve);
@@ -214,7 +218,7 @@ mod tests {
 			dry_run: false,
 		};
 
-		super::execute(args).await
+		super::execute(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT).await
 	}
 
 	#[test_case(test_fixture!("0000000000000000000000000000000000000000000000000000000000000001", "genesis/genesis_block_undeployed.mn") =>
@@ -269,7 +273,7 @@ mod tests {
 			dry_run: false,
 		};
 
-		super::execute(args).await
+		super::execute(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT).await
 	}
 
 	/// Seed 01 is funded for its *Schnorr* NIGHT identity in genesis. The ECDSA identity of the
@@ -310,7 +314,7 @@ mod tests {
 			dry_run: false,
 		};
 
-		let res = super::execute(args)
+		let res = super::execute(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
 			.await
 			.expect("ECDSA show-wallet should resolve on ledger 9");
 		assert!(

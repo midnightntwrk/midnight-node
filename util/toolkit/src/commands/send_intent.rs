@@ -5,6 +5,7 @@ use crate::tx_generator::{
 	source::Source,
 };
 use clap::Args;
+use std::time::Duration;
 
 #[derive(Args)]
 pub struct SendIntentArgs {
@@ -22,12 +23,23 @@ pub struct SendIntentArgs {
 	pub dry_run: bool,
 }
 
-pub async fn execute(args: SendIntentArgs) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+/// Run the send-intent command. `rpc_request_timeout` is the per-request RPC
+/// timeout applied to every node connection the generator makes.
+pub async fn execute(
+	args: SendIntentArgs,
+	rpc_request_timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let builder = Builder::ContractCustom(args.contract_args);
 
-	let generator =
-		TxGenerator::new(args.source, args.destination, builder, args.proof_server, args.dry_run)
-			.await?;
+	let generator = TxGenerator::new(
+		args.source,
+		args.destination,
+		builder,
+		args.proof_server,
+		args.dry_run,
+		rpc_request_timeout,
+	)
+	.await?;
 
 	if args.dry_run {
 		return Ok(());
@@ -100,7 +112,9 @@ mod test {
 			];
 			let cli = Cli::parse_from(args);
 
-			run_command(cli.command).await.expect("should work");
+			run_command(cli.command, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+				.await
+				.expect("should work");
 		}
 
 		let intent_file: String = fs::read_dir(&out_dir)
@@ -149,7 +163,9 @@ mod test {
 			dry_run: false,
 		};
 
-		execute(args).await.expect("should work during sending");
+		execute(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("should work during sending");
 		assert!(fs::exists(output_file).expect("should_exist"));
 	}
 }

@@ -11,6 +11,7 @@ use crate::{
 };
 use clap::Args;
 use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
+use std::time::Duration;
 
 #[derive(Args)]
 pub struct DustBalanceArgs {
@@ -55,9 +56,11 @@ pub enum DustBalanceResult {
 
 /// Single-seed entry point. Thin wrapper around [`execute_many`] — see that
 /// function for the batched form that amortises chain replay across multiple
-/// seeds in one pass.
+/// seeds in one pass. `rpc_request_timeout` is the per-request RPC timeout
+/// applied when the source fetches from a node.
 pub async fn execute(
 	args: DustBalanceArgs,
+	rpc_request_timeout: Duration,
 ) -> Result<DustBalanceResult, Box<dyn std::error::Error + Send + Sync>> {
 	let (seed, scheme) = args.seed.resolve();
 	let many = DustBalanceManyArgs {
@@ -65,7 +68,7 @@ pub async fn execute(
 		seeds: vec![(seed, scheme)],
 		dry_run: args.dry_run,
 	};
-	let mut results = execute_many(many).await?;
+	let mut results = execute_many(many, rpc_request_timeout).await?;
 	// `execute_many` returns one result per input seed; we passed exactly one.
 	Ok(results.pop().expect("execute_many with one seed must return one result").1)
 }
@@ -81,8 +84,11 @@ pub async fn execute(
 ///
 /// Empty `seeds` returns `Ok(vec![])` without touching the source. `dry_run`
 /// returns one [`DustBalanceResult::DryRun`] per seed and performs no fetch.
+/// `rpc_request_timeout` is the per-request RPC timeout applied when the
+/// source fetches from a node.
 pub async fn execute_many(
 	args: DustBalanceManyArgs,
+	rpc_request_timeout: Duration,
 ) -> Result<Vec<(WalletSeed, DustBalanceResult)>, Box<dyn std::error::Error + Send + Sync>> {
 	if args.seeds.is_empty() {
 		return Ok(Vec::new());
@@ -96,7 +102,7 @@ pub async fn execute_many(
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
 	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
-	let src = TxGenerator::source(args.source, args.dry_run).await?;
+	let src = TxGenerator::source(args.source, args.dry_run, rpc_request_timeout).await?;
 
 	if args.dry_run {
 		log::info!("Dry-run: fetching wallet state for {} seed(s)", args.seeds.len());
@@ -196,7 +202,9 @@ mod tests {
 			dry_run: false,
 		};
 
-		let res = execute(args).await.expect("result was not Ok");
+		let res = execute(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("result was not Ok");
 
 		assert!(matches!(res, DustBalanceResult::Json(DustBalanceJson { total, .. }) if total > 0));
 	}
@@ -219,7 +227,9 @@ mod tests {
 			dry_run: false,
 		};
 
-		let res = execute(args).await.expect("ECDSA dust-balance should resolve on ledger 9");
+		let res = execute(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("ECDSA dust-balance should resolve on ledger 9");
 
 		assert!(
 			matches!(res, DustBalanceResult::Json(_)),
@@ -251,7 +261,9 @@ mod tests {
 			dry_run: false,
 		};
 
-		let res = execute_many(args).await.expect("result was not Ok");
+		let res = execute_many(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("result was not Ok");
 
 		assert_eq!(res.len(), 2, "expected one result per input seed");
 		assert_eq!(&res[0].0, &seeds[0], "results should be in input order");
@@ -269,7 +281,9 @@ mod tests {
 			seeds: Vec::new(),
 			dry_run: false,
 		};
-		let res = execute_many(args).await.expect("result was not Ok");
+		let res = execute_many(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("result was not Ok");
 		assert!(res.is_empty(), "empty seeds should yield empty result without touching source");
 	}
 
@@ -348,7 +362,9 @@ mod tests {
 			ledger_state_db: ledger_state_db_str.clone(),
 			replay_checkpoint_interval: 0,
 		};
-		let src = TxGenerator::source(source, false).await.expect("build source");
+		let src = TxGenerator::source(source, false, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("build source");
 		let mut source_blocks = src.get_txs().await.expect("get_txs");
 
 		// The fixture is loaded with dust_warp=true so the last block is the
@@ -487,7 +503,9 @@ mod tests {
 			seeds: seeds.iter().cloned().map(|s| (s, UnshieldedSignatureScheme::Schnorr)).collect(),
 			dry_run: true,
 		};
-		let res = execute_many(args).await.expect("result was not Ok");
+		let res = execute_many(args, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("result was not Ok");
 		assert_eq!(res.len(), seeds.len(), "dry-run yields one DryRun per input seed");
 		for (i, (seed, result)) in res.iter().enumerate() {
 			assert_eq!(seed, &seeds[i], "dry-run preserves input order");

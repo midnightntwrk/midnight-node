@@ -298,7 +298,9 @@ mod test {
 		];
 
 		let cli = Cli::parse_from(args);
-		run_command(cli.command).await.expect("should work");
+		run_command(cli.command, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("should work");
 
 		let path = "out/genesis_state_undeployed.mn";
 		check_file(path);

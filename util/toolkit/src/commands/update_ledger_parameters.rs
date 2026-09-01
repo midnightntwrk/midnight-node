@@ -14,6 +14,8 @@ use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 pub enum LedgerParametersError {
 	#[error("Subxt error: {0}")]
 	SubxtError(#[from] subxt::Error),
+	#[error("subxt_rpc error: {0}")]
+	RpcClientError(#[from] subxt::rpcs::Error),
 	#[error("online client error: {0}")]
 	OnlineClientError(#[from] subxt::error::OnlineClientError),
 	#[error("online client at block error: {0}")]
@@ -154,9 +156,16 @@ pub struct UpdateLedgerParametersArgs {
 	params: UpdateableParams,
 }
 
-pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
+/// Run the update-ledger-parameters command. `rpc_request_timeout` is the
+/// per-request RPC timeout applied to every node connection this command makes.
+pub async fn execute(
+	args: UpdateLedgerParametersArgs,
+	rpc_request_timeout: std::time::Duration,
+) -> Result<(), LedgerParametersError> {
 	// Create a new API client
-	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
+	let rpc_client =
+		crate::client::rpc_client_with_timeout(&args.rpc_url, rpc_request_timeout).await?;
+	let api = OnlineClient::<SubstrateConfig>::from_rpc_client(rpc_client).await?;
 
 	let bytes = match args.parameters {
 		Some(parameters) => {
@@ -290,13 +299,16 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 		dynamic::tx("MidnightSystem", "send_mn_system_transaction", vec![serialized_system_tx]);
 	let send_system_tx_call_value = api.tx().await?.call_data(&send_system_tx_call)?;
 
-	root_call::execute(RootCallArgs {
-		rpc_url: args.rpc_url,
-		council_keys: args.council_members,
-		tc_keys: args.technical_committee_members,
-		encoded_call: Some(send_system_tx_call_value),
-		encoded_call_file: None,
-	})
+	root_call::execute(
+		RootCallArgs {
+			rpc_url: args.rpc_url,
+			council_keys: args.council_members,
+			tc_keys: args.technical_committee_members,
+			encoded_call: Some(send_system_tx_call_value),
+			encoded_call_file: None,
+		},
+		rpc_request_timeout,
+	)
 	.await
 	.map_err(|e| LedgerParametersError::RootCallError(e))
 }

@@ -9,6 +9,7 @@ use midnight_node_ledger_helpers::{
 	CoinPublicKey, DefaultDB, LedgerParameters, WalletSeed, WalletState, deserialize, serialize,
 };
 use std::io::Write;
+use std::time::Duration;
 
 #[derive(Subcommand)]
 pub enum JsCommand {
@@ -88,16 +89,19 @@ pub struct GenerateIntentArgs {
 	pub js_command: JsCommand,
 }
 
+/// Fetch the zswap state for a wallet seed. `rpc_request_timeout` is the
+/// per-request RPC timeout applied when the source fetches from a node.
 pub async fn fetch_zswap_state(
 	source: Source,
 	wallet_seed: WalletSeed,
 	coin_public: CoinPublicKey,
 	dry_run: bool,
+	rpc_request_timeout: Duration,
 ) -> Result<EncodedZswapLocalState, Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = source.ledger_state_db.clone();
 	let fetch_cache = source.fetch_cache.clone();
 	let replay_checkpoint_interval = source.replay_checkpoint_interval;
-	let source = TxGenerator::source(source, dry_run).await?;
+	let source = TxGenerator::source(source, dry_run, rpc_request_timeout).await?;
 	if dry_run {
 		log::info!("Dry-run: fetching zswap state for wallet seed {:?}", wallet_seed);
 		log::info!("Dry-run: attributing to coin-public {:?}", coin_public);
@@ -155,8 +159,11 @@ pub enum GenerateIntentError {
 	DeserializeLedgerParameters(Box<dyn std::error::Error + Send + Sync>),
 }
 
+/// Run the generate-intent command. `rpc_request_timeout` is the per-request
+/// RPC timeout applied to every node connection this command makes.
 pub async fn execute(
 	args: GenerateIntentArgs,
+	rpc_request_timeout: Duration,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	log::info!("Executing generate-intent");
 	match args.js_command {
@@ -184,6 +191,7 @@ pub async fn execute(
 					wallet_seed,
 					args.circuit_call.coin_public,
 					args.dry_run,
+					rpc_request_timeout,
 				)
 				.await?;
 				if args.dry_run {
@@ -202,22 +210,23 @@ pub async fn execute(
 				return Ok(());
 			}
 
-			let ledger_parameters =
-				if let Some(serialized_parameters) = args.custom_ledger_parameters {
-					let bytes = hex::decode(&serialized_parameters.replace("0x", ""))
-						.map_err(|e| GenerateIntentError::DecodeLedgerParameters(e.into()))?;
-					let parameters: LedgerParameters = deserialize(&mut &bytes[..])
-						.map_err(|e| GenerateIntentError::DeserializeLedgerParameters(e.into()))?;
-					parameters
-				} else {
-					let Some(rpc_url) = args.source.src_url else {
-						eprintln!("missing required --src-url argument");
-						return Err(GenerateIntentError::MissingSourceUrl.into());
-					};
-
-					let client = MidnightNodeClient::new(&rpc_url, None).await?;
-					client.get_ledger_parameters().await?
+			let ledger_parameters = if let Some(serialized_parameters) =
+				args.custom_ledger_parameters
+			{
+				let bytes = hex::decode(&serialized_parameters.replace("0x", ""))
+					.map_err(|e| GenerateIntentError::DecodeLedgerParameters(e.into()))?;
+				let parameters: LedgerParameters = deserialize(&mut &bytes[..])
+					.map_err(|e| GenerateIntentError::DeserializeLedgerParameters(e.into()))?;
+				parameters
+			} else {
+				let Some(rpc_url) = args.source.src_url else {
+					eprintln!("missing required --src-url argument");
+					return Err(GenerateIntentError::MissingSourceUrl.into());
 				};
+
+				let client = MidnightNodeClient::new(&rpc_url, None, rpc_request_timeout).await?;
+				client.get_ledger_parameters().await?
+			};
 
 			let temp_dir =
 				tempfile::tempdir().map_err(GenerateIntentError::FailedToCreateTempDir)?.keep();
@@ -333,7 +342,9 @@ mod test {
 			"0",
 		];
 		let cli = Cli::parse_from(args);
-		run_command(cli.command).await.expect("should work");
+		run_command(cli.command, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("should work");
 
 		assert!(fs::exists(&output_intent).unwrap());
 		assert!(fs::exists(&output_private_state).unwrap());
@@ -397,7 +408,9 @@ mod test {
 		];
 
 		let cli = Cli::parse_from(args);
-		run_command(cli.command).await.expect("should work");
+		run_command(cli.command, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("should work");
 
 		assert!(fs::exists(&output_intent).unwrap());
 		assert!(fs::exists(&output_private_state).unwrap());
@@ -449,7 +462,9 @@ mod test {
 			&signing_key_hex,
 		];
 		let cli = Cli::parse_from(args);
-		run_command(cli.command).await.expect("should work");
+		run_command(cli.command, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("should work");
 
 		assert!(fs::exists(&output_intent).unwrap());
 	}
@@ -501,7 +516,9 @@ mod test {
 			&verifier_path,
 		];
 		let cli = Cli::parse_from(args);
-		run_command(cli.command).await.expect("should work");
+		run_command(cli.command, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("should work");
 
 		assert!(fs::exists(&output_intent).unwrap());
 	}
@@ -549,7 +566,9 @@ mod test {
 			"increment",
 		];
 		let cli = Cli::parse_from(args);
-		run_command(cli.command).await.expect("should work");
+		run_command(cli.command, crate::client::DEFAULT_RPC_REQUEST_TIMEOUT)
+			.await
+			.expect("should work");
 
 		assert!(fs::exists(&output_intent).unwrap());
 	}
