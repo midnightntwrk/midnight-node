@@ -92,7 +92,9 @@ impl sc_partner_chains_consensus::SlotExtractor<Block> for AuraSlotExtractor {
 pub struct BabeSlotExtractor;
 
 impl sc_partner_chains_consensus::SlotExtractor<Block> for BabeSlotExtractor {
-	fn extract_slot(header: &<Block as BlockT>::Header) -> Result<sp_consensus_slots::Slot, String> {
+	fn extract_slot(
+		header: &<Block as BlockT>::Header,
+	) -> Result<sp_consensus_slots::Slot, String> {
 		sc_consensus_babe::find_pre_digest::<Block>(header)
 			.map(|pre_digest| pre_digest.slot())
 			.map_err(|e| e.to_string())
@@ -976,10 +978,12 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	// `babe-worker` task whose lifetime is tied to `babe_worker_handle`. We don't serve BABE
 	// epoch-data requests, but the handle must outlive the service or that task ends and takes the
 	// node down. Park it in a task that lives until shutdown.
-	task_manager.spawn_handle().spawn("babe-worker-handle-keepalive", Some("babe"), async move {
-		let _babe_worker_handle = babe_worker_handle;
-		futures::future::pending::<()>().await;
-	});
+	task_manager
+		.spawn_handle()
+		.spawn("babe-worker-handle-keepalive", Some("babe"), async move {
+			let _babe_worker_handle = babe_worker_handle;
+			futures::future::pending::<()>().await;
+		});
 
 	if role.is_authority() {
 		let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
@@ -1138,13 +1142,11 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 	} else {
 		// Full nodes still need the epoch tree to import the first BABE block.
 		let client = client.clone();
-		task_manager.spawn_handle().spawn(
-			"babe-epoch-tree-bootstrap",
-			Some("babe"),
-			async move {
+		task_manager
+			.spawn_handle()
+			.spawn("babe-epoch-tree-bootstrap", Some("babe"), async move {
 				let _ = crate::babe_authoring::bootstrap_babe_at_flip(client, &babe_link).await;
-			},
-		);
+			});
 	}
 
 	if enable_grandpa {

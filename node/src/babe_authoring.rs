@@ -184,10 +184,13 @@ where
 	let next = client.runtime_api().next_epoch(at).map_err(|e| e.to_string())?;
 	let (current_index, next_index) = (current.epoch_index, next.epoch_index);
 
-	babe_link
-		.epoch_changes()
-		.shared_data()
-		.reset(parent_hash, at, number, current.into(), next.into());
+	babe_link.epoch_changes().shared_data().reset(
+		parent_hash,
+		at,
+		number,
+		current.into(),
+		next.into(),
+	);
 
 	// Bootstrap the flip block's cumulative BABE chain weight to 0. The flip block was imported
 	// through the AURA pipeline, which records no BABE block weight, so the first BABE block (its

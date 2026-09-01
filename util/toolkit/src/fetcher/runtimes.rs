@@ -28,6 +28,7 @@ pub enum RuntimeVersion {
 	V1_0_3,
 	V2_0_0,
 	V2_1_0,
+	V2_1_1,
 }
 impl TryFrom<u32> for RuntimeVersion {
 	type Error = RuntimeVersionError;
@@ -39,6 +40,7 @@ impl TryFrom<u32> for RuntimeVersion {
 			001_000_003 => Ok(Self::V1_0_3),
 			002_000_000 => Ok(Self::V2_0_0),
 			002_001_000 => Ok(Self::V2_1_0),
+			002_001_001 => Ok(Self::V2_1_1),
 			_ => Err(RuntimeVersionError::UnsupportedBlockVersion(value)),
 		}
 	}
@@ -54,6 +56,7 @@ impl RuntimeVersion {
 			Self::V1_0_3 => 001_000_003,
 			Self::V2_0_0 => 002_000_000,
 			Self::V2_1_0 => 002_001_000,
+			Self::V2_1_1 => 002_001_001,
 		}
 	}
 
@@ -173,5 +176,13 @@ impl_midnight_metadata!(
 impl_midnight_metadata!(
 	MidnightMetadata2_1_0,
 	mn_meta_2_1_0,
+	midnight_node_metadata::midnight_metadata_2_1_0
+);
+
+// The 2.1.1 runtime (babe + beefy session keys) keeps the same extrinsic
+// envelope, so the 2.1.0 subxt metadata decodes it correctly.
+impl_midnight_metadata!(
+	MidnightMetadata2_1_1,
+	mn_meta_2_1_1,
 	midnight_node_metadata::midnight_metadata_2_1_0
 );
