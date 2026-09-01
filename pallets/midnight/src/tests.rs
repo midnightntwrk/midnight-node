@@ -404,7 +404,9 @@ fn sets_extra_transaction_size_weight() {
 	mock::new_test_ext().execute_with(|| {
 		let before_weight = mock::Midnight::configurable_transaction_size_weight();
 
-		assert_eq!(before_weight, crate::EXTRA_WEIGHT_TX_SIZE);
+		// The flat per-transaction add-on defaults to zero; `EXTRA_WEIGHT_TX_SIZE` now only
+		// backs `DefaultWeight` and the `get_tx_weight` fallback.
+		assert_eq!(before_weight, Weight::zero());
 
 		let new_weight = Weight::from_parts(42, 0);
 
