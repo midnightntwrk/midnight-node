@@ -275,7 +275,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 002_001_000,
+	spec_version: 002_002_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
@@ -326,7 +326,11 @@ parameter_types! {
 
 impl frame_system::Config for Runtime {
 	/// The basic call filter to use in dispatchable.
-	type BaseCallFilter = TxPause;
+	///
+	/// `TxPause` (governance-pausable individual calls) composed with the migration
+	/// safe mode: while `pallet_midnight_system::SafeMode` is active, only whitelisted
+	/// governance calls (and inherents) are permitted.
+	type BaseCallFilter = InsideBoth<pallet_midnight_system::SafeModeFilter<Runtime>, TxPause>;
 	/// The block type for the runtime.
 	type Block = Block;
 	/// The type for storing how many extrinsics an account has signed.
@@ -555,7 +559,10 @@ impl pallet_migrations::Config for Runtime {
 	type CursorMaxLen = ConstU32<65_536>;
 	type IdentifierMaxLen = ConstU32<256>;
 	type MigrationStatusHandler = ();
-	type FailedMigrationHandler = frame_support::migrations::FreezeChainOnFailedMigration;
+	// On a failed multi-block migration, enter safe mode (governance-only) and keep
+	// producing blocks, rather than freezing the chain into an unrecoverable
+	// `OnlyInherents` state. See `pallet_midnight_system::EnterSafeModeOnFailedMigration`.
+	type FailedMigrationHandler = pallet_midnight_system::EnterSafeModeOnFailedMigration<Runtime>;
 	type MaxServiceWeight = MbmServiceWeight;
 	type WeightInfo = weights::pallet_migrations::WeightInfo<Runtime>;
 }
@@ -723,6 +730,13 @@ impl pallet_midnight::Config for Runtime {
 impl pallet_midnight_system::Config for Runtime {
 	type LedgerStateProviderMut = Midnight;
 	type LedgerBlockContextProvider = Midnight;
+	// While safe mode is active only governance calls stay dispatchable. Reuse the same
+	// filter the always-on `CheckCallFilter` enforces, so the safe-mode whitelist and
+	// the normal governance-call set cannot drift apart. Privileged inner calls (e.g.
+	// `System::set_code`, `MultiBlockMigrations::force_*`, `MidnightSystem::exit_safe_mode`)
+	// run as Root and bypass the base call filter, and inherents are covered by
+	// `SafeModeFilter`'s `DispatchClass::Mandatory` carve-out, so neither is listed here.
+	type WhitelistedCalls = check_call_filter::GovernanceAuthorityCallFilter;
 }
 
 pub struct ValidatorSet;

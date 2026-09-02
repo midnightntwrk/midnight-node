@@ -8,8 +8,18 @@ use sp_runtime::{
 	transaction_validity::{InvalidTransaction, TransactionValidityError, ValidTransaction},
 };
 
-/// Filter that whitelists Governance calls
-struct GovernanceAuthorityCallFilter;
+/// Filter that whitelists Governance calls.
+///
+/// Single source of truth for "which calls the governance authority may submit". Used
+/// in two places:
+/// - [`CheckCallFilter`], enforced on every signed/general transaction at validation
+///   time (below);
+/// - `pallet_midnight_system::Config::WhitelistedCalls`, i.e. the set of calls that
+///   remain dispatchable while migration safe mode is active. Keeping a single filter
+///   guarantees the recovery path (Council/TechnicalCommittee motions,
+///   `FederatedAuthority::motion_close`, `System::apply_authorized_upgrade`) stays
+///   permitted under safe mode and cannot drift from what governance can normally do.
+pub struct GovernanceAuthorityCallFilter;
 impl Contains<RuntimeCall> for GovernanceAuthorityCallFilter {
 	fn contains(call: &RuntimeCall) -> bool {
 		matches!(
