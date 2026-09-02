@@ -129,6 +129,9 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Login to DockerHub
+        # Pull-side rate-limit relief for docker.io base images only; a repo without these
+        # credentials must not have the whole build fail before it starts.
+        continue-on-error: true
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
@@ -485,12 +488,12 @@ jobs:
           SKIP_RUNTIME: ${{ inputs.skip-runtime }}
         run: |
           if [ "$SKIP_NODE" != "true" ]; then
-            export SEASON_VAR_NODE_DOCKER_IMAGE="midnightntwrk/midnight-node:$IMAGE_TAG_RELEASE"
+            export SEASON_VAR_NODE_DOCKER_IMAGE="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:$IMAGE_TAG_RELEASE"
             export SEASON_VAR_NODE_VERSION="$NODE_VERSION"
             export SEASON_VAR_NODE_TAG="$IMAGE_TAG_RELEASE"
           fi
           if [ "$SKIP_TOOLKIT" != "true" ]; then
-            export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="midnightntwrk/midnight-node-toolkit:$TOOLKIT_TAG_RELEASE"
+            export SEASON_VAR_TOOLKIT_DOCKER_IMAGE="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}-toolkit:$TOOLKIT_TAG_RELEASE"
             export SEASON_VAR_TOOLKIT_VERSION="$TOOLKIT_VERSION"
             export SEASON_VAR_TOOLKIT_TAG="$TOOLKIT_TAG_RELEASE"
           fi
