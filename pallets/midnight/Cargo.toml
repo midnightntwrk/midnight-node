@@ -24,6 +24,14 @@ log.workspace = true
 midnight-node-ledger.workspace = true
 midnight-primitives.workspace = true
 sp-api.workspace = true
+sp-core = { workspace = true, optional = true }
+sp-io = { workspace = true, optional = true }
+# Dev-only in normal builds, but the `test-utils` feature compiles `mock.rs` into the lib (for the
+# persist_refcount integration test) where dev-dependencies are unavailable, so #744's metrics and
+# spec-version mocks need these as real optional dependencies too.
+sp-version = { workspace = true, optional = true }
+prometheus-endpoint = { workspace = true, optional = true }
+midnight-primitives-ledger = { workspace = true, features = ["std"], optional = true }
 sp-runtime.workspace = true
 pallet-timestamp.workspace = true
 hex = { workspace = true, optional = true }
@@ -76,6 +84,18 @@ runtime-benchmarks = [
     "midnight-node-ledger/runtime-benchmarks",
     ]
 try-runtime = ["frame-support/try-runtime"]
+test-utils = [
+    "sp-core",
+    "sp-io",
+    "dep:sp-version",
+    "dep:prometheus-endpoint",
+    "dep:midnight-primitives-ledger",
+    "midnight-node-ledger/test-utils",
+]
 
 [package.metadata.cargo-shear]
 ignored = ["parity-scale-codec"]
+
+[[test]]
+name = "persist_refcount"
+required-features = ["test-utils"]
