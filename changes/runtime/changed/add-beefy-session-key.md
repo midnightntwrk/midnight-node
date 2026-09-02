@@ -1,12 +1,14 @@
 #runtime #session-keys #beefy
+
 # Add the BEEFY session key
 
 `opaque::SessionKeys` gains `beefy`, translated by the
-`AddBeefyToSessionKeysMigration` cutover. The placeholder for validators
-already in the committee is the validator's aura bytes behind the invalid
-SEC1 tag `0x00` (distinct per validator, collides with no real key);
-candidate registrations without a BEEFY key fall back to the same
-derivation.
+`AddBeefyToSessionKeysMigration` cutover, which gives each validator its own
+cross-chain key as its beefy key. Both are ECDSA and the committee registers
+them as equal (`beefy_pub_key == sidechain_pub_key`), so the migrated
+authority set is one the validators actually hold secrets for — a derived
+placeholder would leave BEEFY unable to reach a quorum until the next
+committee rotation.
 
 Because BEEFY is now a session key, `pallet_session`'s genesis initializes
 the BEEFY authorities from the committee, so the chain spec no longer sets

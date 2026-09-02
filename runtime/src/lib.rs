@@ -238,11 +238,7 @@ pub mod opaque {
 					ecdsa::Public::from_raw(raw)
 				},
 			};
-			Some(Self {
-				aura: aura.into(),
-				grandpa: grandpa.into(),
-				beefy: beefy.into(),
-			})
+			Some(Self { aura: aura.into(), grandpa: grandpa.into(), beefy: beefy.into() })
 		}
 	}
 
