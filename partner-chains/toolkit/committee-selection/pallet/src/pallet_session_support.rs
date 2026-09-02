@@ -16,14 +16,16 @@
 //! registration, so re-proving ownership on-chain here would be redundant.
 //!
 //! Key registration is all-or-nothing. `set_keys` is treated as a black box: any error
-//! aborts the hand-off. The registration loop runs in a storage layer and is rolled back
-//! on failure, so a retained validator cannot keep rotated keys while committee storage
-//! still records the previous ones. `pallet_session` silently drops validators without
-//! `NextKeys`, so handing over a partial committee would desync `QueuedCommittee`/
-//! `CurrentCommittee` from the live authority set and make derived mappings (AURA author
-//! index, BEEFY stake matching) undefined. On failure `new_session` returns [`None`] so
-//! `pallet_session` keeps the previous authority set. The failed committee is not queued;
-//! the previous set stays as both current and queued. There is no reduced committee.
+//! aborts the hand-off. Account provisioning and the registration loop run in one storage
+//! layer and are rolled back together on failure, so a retained validator cannot keep
+//! rotated keys while committee storage still records the previous ones, and a rejected
+//! committee cannot leave behind otherwise-unused system accounts. `pallet_session`
+//! silently drops validators without `NextKeys`, so handing over a partial committee
+//! would desync `QueuedCommittee`/`CurrentCommittee` from the live authority set and
+//! make derived mappings (AURA author index, BEEFY stake matching) undefined. On failure
+//! `new_session` returns [`None`] so `pallet_session` keeps the previous authority set.
+//! The failed committee is not queued; the previous set stays as both current and queued.
+//! There is no reduced committee.
 use crate::CommitteeMember;
 use frame_support::storage::with_storage_layer;
 use frame_system::pallet_prelude::BlockNumberFor;
@@ -41,7 +43,6 @@ where
 	/// Sets the first validator-set by mapping the current committee from [crate::Pallet]
 	fn new_session_genesis(_new_index: SessionIndex) -> Option<Vec<T::AccountId>> {
 		let committee = crate::Pallet::<T>::current_committee_storage().committee;
-		provide_committee_accounts::<T>(&committee);
 		assert!(
 			register_committee_keys::<T>(&committee),
 			"genesis committee session key registration failed; refusing to start with a partial authority set"
@@ -54,7 +55,6 @@ where
 		info!("Session manager: new_session {new_index}, rotating the committee");
 		let next_committee = crate::Pallet::<T>::next_committee_storage()?;
 
-		provide_committee_accounts::<T>(&next_committee.committee);
 		if !register_committee_keys::<T>(&next_committee.committee) {
 			error!(
 				"Session manager: aborting committee hand-off for session {new_index}; keeping previous validator set"
@@ -88,7 +88,8 @@ fn committee_account_ids<T: crate::Config>(committee: &[T::CommitteeMember]) -> 
 ///
 /// Returns `true` iff every unique member's `set_keys` succeeded. `pallet_session` is a
 /// black box: any `Err` aborts, whatever the reason. The caller must not hand the committee
-/// over. The loop runs in a storage layer; on failure every `set_keys` write is rolled back.
+/// over. Account provisioning and `set_keys` run in one storage layer; on failure both
+/// are rolled back, so a consumed committee cannot leak provider-created accounts.
 pub(crate) fn register_committee_keys<
 	T: crate::Config + pallet_session::Config + pallet_session::historical::Config,
 >(
@@ -98,6 +99,7 @@ where
 	<T as pallet_session::Config>::Keys: From<T::AuthorityKeys>,
 {
 	with_storage_layer(|| {
+		provide_committee_accounts::<T>(new_committee);
 		let mut keys_added: BTreeSet<T::AccountId> = BTreeSet::new();
 		for member in new_committee.iter() {
 			let account_id = member.authority_id().into();
@@ -127,6 +129,10 @@ where
 //   and decreasing it afterwards, or
 // - considering account existence when selecting the committee
 // This will be addressed in later development.
+//
+// Session rotations must call this from inside `register_committee_keys`' storage layer so
+// a failed `set_keys` rolls the provider increments back. Genesis build calls it directly:
+// that path cannot fail into a consumed committee.
 pub(crate) fn provide_committee_accounts<T: crate::Config>(new_committee: &[T::CommitteeMember]) {
 	let new_accs: BTreeSet<T::AccountId> =
 		new_committee.iter().map(|m| m.authority_id().into()).collect();
@@ -234,6 +240,8 @@ mod tests {
 				Session::load_keys(&EVE.authority_id),
 				Some(SessionKeys { foo: UintAuthorityId(EVE.authority_keys) })
 			);
+			assert!(System::account_exists(&DAVE.authority_id));
+			assert!(System::account_exists(&EVE.authority_id));
 		});
 	}
 
@@ -371,10 +379,15 @@ mod tests {
 				ids_and_keys_fn(&[ALICE, BOB])
 			);
 			assert!(SessionCommitteeManagement::next_committee().is_none());
-			// The storage layer rolls back CHARLIE's successful `set_keys` together with
-			// DAVE's failed registration.
+			// The storage layer rolls back CHARLIE's successful `set_keys` and the
+			// provider increment that created CHARLIE's account, together with DAVE's
+			// failed registration.
 			assert_eq!(Session::load_keys(&CHARLIE.authority_id), None);
 			assert_eq!(Session::load_keys(&DAVE.authority_id), None);
+			assert!(!System::account_exists(&CHARLIE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+			assert_eq!(System::providers(&CHARLIE.authority_id), 0);
+			assert_eq!(System::providers(&DAVE.authority_id), 0);
 
 			increment_epoch();
 			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
@@ -420,6 +433,8 @@ mod tests {
 				ids_and_keys_fn(&[ALICE, BOB])
 			);
 			assert_eq!(Session::load_keys(&DAVE.authority_id), None);
+			assert!(System::account_exists(&ALICE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
 
 			increment_epoch();
 			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
@@ -457,6 +472,8 @@ mod tests {
 			);
 			assert_eq!(Session::load_keys(&DAVE.authority_id), None);
 			assert_eq!(Session::load_keys(&EVE.authority_id), None);
+			assert!(!System::account_exists(&DAVE.authority_id));
+			assert!(!System::account_exists(&EVE.authority_id));
 
 			increment_epoch();
 			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
@@ -474,6 +491,41 @@ mod tests {
 				SessionCommitteeManagement::queued_committee_storage().committee,
 				ids_and_keys_fn(&[CHARLIE, DAVE])
 			);
+		});
+	}
+
+	/// A rejected committee is consumed. Provider increments for members whose accounts
+	/// did not yet exist must roll back with `set_keys`, otherwise repeated rejections
+	/// permanently create otherwise-unused system accounts.
+	#[test]
+	fn aborted_registration_does_not_provision_unused_accounts() {
+		new_test_ext().execute_with(|| {
+			assert!(!System::account_exists(&CHARLIE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, dave_with_charlie_keys()], 1).unwrap();
+			advance_one_block();
+			assert!(!System::account_exists(&CHARLIE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+			assert_eq!(System::providers(&CHARLIE.authority_id), 0);
+			assert_eq!(System::providers(&DAVE.authority_id), 0);
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, dave_with_charlie_keys()], 2).unwrap();
+			advance_one_block();
+			assert!(!System::account_exists(&CHARLIE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+			assert_eq!(System::providers(&CHARLIE.authority_id), 0);
+			assert_eq!(System::providers(&DAVE.authority_id), 0);
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 3).unwrap();
+			advance_one_block();
+			assert!(System::account_exists(&CHARLIE.authority_id));
+			assert!(System::account_exists(&DAVE.authority_id));
+			assert!(System::account_exists(&ALICE.authority_id));
+			assert!(System::account_exists(&BOB.authority_id));
 		});
 	}
 
