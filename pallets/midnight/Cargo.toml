@@ -31,6 +31,9 @@ sp-tracing = { workspace = true}
 sidechain-domain.workspace = true
 
 [dev-dependencies]
+# Needed to build a `LedgerMetrics` and register `LedgerMetricsExt` on the test externalities,
+# so the tx-validation cache tests can assert on the hit/revalidation/miss counters.
+midnight-primitives-ledger = { workspace = true, features = ["std"] }
 sp-core.workspace = true
 sp-io.workspace = true
 sp-runtime.workspace = true
@@ -42,6 +45,8 @@ assert_matches.workspace = true
 tempfile.workspace = true
 midnight-node-ledger-helpers = { workspace = true, features = ["can-panic"] }
 midnight-node-ledger = { workspace = true, features = ["std", "test-utils"] }
+prometheus-endpoint.workspace = true
+sp-version.workspace = true
 test-log.workspace = true
 
 [features]

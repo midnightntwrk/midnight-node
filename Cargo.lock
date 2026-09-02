@@ -10450,6 +10450,7 @@ dependencies = [
  "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-primitives",
+ "midnight-primitives-ledger",
  "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
@@ -10459,6 +10460,8 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-tracing",
+ "sp-version",
+ "substrate-prometheus-endpoint",
  "tempfile",
  "test-log",
 ]
