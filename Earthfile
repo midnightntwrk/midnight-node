@@ -36,6 +36,23 @@ ARG --global NODEJS_VERSION=24.18.0
 # renovate: datasource=npm packageName=npm
 ARG --global NPM_VERSION=12.0.2
 
+# GHCR namespace images are published to. Defaults to the upstream private namespace.
+# Forks and private clones override it so a build never publishes into an org it
+# does not own. CI sets this via EARTHLY_BUILD_ARGS (see .github/workflows).
+ARG --global GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+
+# Public mirror namespace. Defaults to GHCR_REGISTRY, which makes the mirror tag a duplicate
+# of one the build already pushes -- i.e. a no-op. Only the canonical upstream repo sets this
+# to ghcr.io/midnightntwrk, so no fork can publish publicly by accident.
+ARG --global GHCR_REGISTRY_PUBLIC=ghcr.io/midnight-ntwrk
+
+# Image basename, so a fork publishes <owner>/<its-repo> instead of overwriting midnight-node.
+ARG --global IMAGE_REPO=midnight-node
+
+# Repo this build came from, for the OCI source label (GHCR links a package to the repo
+# named here). Workflows override it with $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.
+ARG --global IMAGE_SOURCE_URL=https://github.com/midnightntwrk/midnight-node
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -799,11 +816,12 @@ node-ci-image-single-platform:
     # Security patches land when the FROM @sha256 digest above is bumped (renovate);
     # a rebuild on the same digest reproduces identical packages by design.
     ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
-    LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
+    # Not repo-named: the CI base image keeps a literal name in whichever namespace builds it.
     SAVE IMAGE --push \
-        ghcr.io/midnight-ntwrk/midnight-node-ci:$IMAGE_TAG-$NATIVEARCH
+        $GHCR_REGISTRY/midnight-node-ci:$IMAGE_TAG-$NATIVEARCH
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
@@ -1152,8 +1170,9 @@ test:
     # snapshot, which buildkit may export to the remote cache on success.
     WITH DOCKER
         RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-            if [ -n "$DOCKERHUB_TOKEN" ]; then \
-              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            if [ -n "$DOCKERHUB_TOKEN" ] && \
+               ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+              echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
             fi && \
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
@@ -1284,8 +1303,9 @@ test-toolkit:
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-                if [ -n "$DOCKERHUB_TOKEN" ]; then \
-                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                if [ -n "$DOCKERHUB_TOKEN" ] && \
+                   ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+                  echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
                 fi && mkdir -p /root/.docker && \
                 docker run \
                 --network=host \
@@ -1301,8 +1321,9 @@ test-toolkit:
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-                if [ -n "$DOCKERHUB_TOKEN" ]; then \
-                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                if [ -n "$DOCKERHUB_TOKEN" ] && \
+                   ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+                  echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
                 fi && mkdir -p /root/.docker && \
                 docker run \
                 --network=host \
@@ -1479,20 +1500,22 @@ node-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GIT_CONTENT_HASH_SHORT="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
-    RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
+    RUN echo image tag=$IMAGE_REPO:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     # Only /node needs fixing: the binaries are copied with --chown and the base
     # image already owns ./bin and ./res, so no `chown -R` duplicates them.
     RUN chown -R appuser:appuser /node
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
+        $GHCR_REGISTRY/$IMAGE_REPO:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG \
+        $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG_DEV
+    # Public mirror. Only the canonical upstream repo points GHCR_REGISTRY_PUBLIC somewhere
+    # else; everywhere else this is a no-op, so a fork cannot publish publicly by accident.
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO:$IMAGE_TAG
+    END
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
@@ -1519,11 +1542,10 @@ node-benchmarks-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=midnight-node-benchmarks
     LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
     SAVE IMAGE --push \
@@ -1581,14 +1603,14 @@ toolkit-image:
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
+        $GHCR_REGISTRY/$IMAGE_REPO-toolkit:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/$IMAGE_REPO-toolkit:$IMAGE_TAG
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO-toolkit:$IMAGE_TAG
+    END
 
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
@@ -1869,11 +1891,11 @@ local-env-ci:
           && test -n "$CHAIN_INDEXER_IMAGE" && test -n "$WALLET_INDEXER_IMAGE" || { \
         echo "+local-env-ci needs all five image refs, e.g.:"; \
         echo "  earthly -P +local-env-ci \\"; \
-        echo "    --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag> \\"; \
-        echo "    --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag> \\"; \
-        echo "    --INDEXER_API_IMAGE=ghcr.io/midnight-ntwrk/indexer-api:<tag> \\"; \
-        echo "    --CHAIN_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/chain-indexer:<tag> \\"; \
-        echo "    --WALLET_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/wallet-indexer:<tag>"; \
+        echo "    --NODE_IMAGE=$GHCR_REGISTRY/$IMAGE_REPO:<tag> \\"; \
+        echo "    --TOOLKIT_IMAGE=$GHCR_REGISTRY/$IMAGE_REPO-toolkit:<tag> \\"; \
+        echo "    --INDEXER_API_IMAGE=$GHCR_REGISTRY/indexer-api:<tag> \\"; \
+        echo "    --CHAIN_INDEXER_IMAGE=$GHCR_REGISTRY/chain-indexer:<tag> \\"; \
+        echo "    --WALLET_INDEXER_IMAGE=$GHCR_REGISTRY/wallet-indexer:<tag>"; \
         echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
         exit 1; }
     # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
@@ -1897,8 +1919,9 @@ local-env-ci:
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
         RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-            if [ -n "$DOCKERHUB_TOKEN" ]; then \
-              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            if [ -n "$DOCKERHUB_TOKEN" ] && \
+               ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+              echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
             fi && \
             ROOT="$PWD" && \
             cd local-environment && \

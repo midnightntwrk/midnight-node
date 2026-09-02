@@ -76,6 +76,16 @@ jobs:
     name: Validate inputs
     runs-on: ubuntu-latest
     steps:
+      - name: Refuse to publish from a fork
+        # This workflow publishes to midnightntwrk's public GHCR namespace, Docker Hub and
+        # GitHub Releases under upstream's identity. Fail rather than skip: the downstream
+        # jobs are guarded with `!cancelled() && !failure()`, so they run straight through
+        # a skipped dependency.
+        if: github.repository != 'midnightntwrk/midnight-node'
+        run: |
+          echo "::error::release-image.yml publishes to midnightntwrk's registries; refusing to run from ${GITHUB_REPOSITORY}."
+          exit 1
+
       - name: Check at least one component is selected
         if: inputs.skip-node == true && inputs.skip-toolkit == true && inputs.skip-runtime == true
         run: |

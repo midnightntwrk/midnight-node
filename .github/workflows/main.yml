@@ -20,6 +20,10 @@ permissions: {}
 
 jobs:
   publish-amd64:
+    # Publishes to midnightntwrk's GHCR mirror, Docker Hub and the attestation log under
+    # upstream's identity. A fork or private clone must never do that, and every other job
+    # in this workflow needs this one, so gating here skips the whole publish chain.
+    if: github.repository == 'midnightntwrk/midnight-node'
     name: AMD Build and Publish
     runs-on: [self-hosted, "tier:large"]
     outputs:
@@ -240,6 +244,10 @@ jobs:
           path: RELEASE_NOTES.md
 
   publish-arm64:
+    # Publishes to midnightntwrk's GHCR mirror, Docker Hub and the attestation log under
+    # upstream's identity. A fork or private clone must never do that, and every other job
+    # in this workflow needs this one, so gating here skips the whole publish chain.
+    if: github.repository == 'midnightntwrk/midnight-node'
     name: ARM Build and Publish
     runs-on: ubuntu-latest-8-core-arm64
     env:
