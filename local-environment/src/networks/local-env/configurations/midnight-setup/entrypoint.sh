@@ -232,27 +232,37 @@ cat /res/local/c2m-bridge-config.json
 
 phase "Building chain-spec"
 
-# All chainspec inputs come from the `local` cfg preset (res/cfg/local.toml): the
-# chainspec_* paths there are relative (res/local/..., res/genesis/...) and the image
-# workdir is /, so they resolve through the /res repo mount — build-spec reads the
-# configs patched above, and a locally regenerated genesis takes effect on the next
-# bring-up without a node-image rebuild.
-export CFG_PRESET=local
+# Reuse the spec in the shared volume when there is one. Regenerating it rebuilds genesis
+# from the (possibly changed) configs and node image, which changes the genesis hash — the
+# nodes would then reject the chain data already in the volume as belonging to a different
+# chain. That makes in-place node/runtime upgrades on a running local-env impossible.
+# To force a fresh chain, drop the volume: `docker compose down -v`.
+if [ -f /shared/chain-spec.json ]; then
+  echo "/shared/chain-spec.json already exists — reusing it and skipping generation."
+  check_json_validity /shared/chain-spec.json
+else
+  # All chainspec inputs come from the `local` cfg preset (res/cfg/local.toml): the
+  # chainspec_* paths there are relative (res/local/..., res/genesis/...) and the image
+  # workdir is /, so they resolve through the /res repo mount — build-spec reads the
+  # configs patched above, and a locally regenerated genesis takes effect on the next
+  # bring-up without a node-image rebuild.
+  export CFG_PRESET=local
 
-./midnight-node build-spec --disable-default-bootnode > chain-spec.json
-echo "chain-spec.json file generated."
+  ./midnight-node build-spec --disable-default-bootnode > chain-spec.json
+  echo "chain-spec.json file generated."
 
-echo "Amending the chain spec..."
-echo "Configuring Epoch Length..."
-jq '.genesis.runtimeGenesis.config.sidechain.slotsPerEpoch = 5' chain-spec.json > tmp.json && mv tmp.json chain-spec.json
+  echo "Amending the chain spec..."
+  echo "Configuring Epoch Length..."
+  jq '.genesis.runtimeGenesis.config.sidechain.slotsPerEpoch = 5' chain-spec.json > tmp.json && mv tmp.json chain-spec.json
 
-check_json_validity chain-spec.json
+  check_json_validity chain-spec.json
 
-echo "Final chain spec"
+  echo "Final chain spec"
 
-echo "Copying chain-spec.json file to /shared/chain-spec.json..."
-cp chain-spec.json /shared/chain-spec.json
-echo "chain-spec.json generation complete."
+  echo "Copying chain-spec.json file to /shared/chain-spec.json..."
+  cp chain-spec.json /shared/chain-spec.json
+  echo "chain-spec.json generation complete."
+fi
 
 echo "Partnerchain configuration is complete, and will be able to start after two mainchain epochs."
 
