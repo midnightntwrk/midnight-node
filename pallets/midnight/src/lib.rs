@@ -177,6 +177,20 @@ pub mod pallet {
 		EXTRA_WEIGHT_TX_SIZE
 	}
 
+	/// Default for [`ConfigurableTransactionSizeWeight`]: no flat per-transaction add-on.
+	///
+	/// Deliberately separate from [`DefaultWeight`]. The flat 1%-of-block charge that
+	/// `EXTRA_WEIGHT_TX_SIZE` represents is the dominant term in a Midnight transaction's
+	/// weight — with real gas-metered costs available from `get_transaction_cost`, adding
+	/// it on top just caps block fullness far below what the node can actually execute.
+	/// `DefaultWeight` (and the `get_tx_weight` fallback for an unmeterable transaction)
+	/// keep using `EXTRA_WEIGHT_TX_SIZE`; only this add-on goes to zero. Still settable at
+	/// runtime via `set_tx_size_weight`.
+	#[pallet::type_value]
+	pub fn DefaultTransactionSizeWeight() -> Weight {
+		Weight::zero()
+	}
+
 	#[pallet::type_value]
 	pub fn DefaultMaxSkippedSlots() -> u8 {
 		1
@@ -185,7 +199,7 @@ pub mod pallet {
 	#[pallet::storage]
 	#[pallet::getter(fn configurable_transaction_size_weight)]
 	pub type ConfigurableTransactionSizeWeight<T> =
-		StorageValue<_, Weight, ValueQuery, DefaultWeight>;
+		StorageValue<_, Weight, ValueQuery, DefaultTransactionSizeWeight>;
 
 	#[pallet::storage]
 	pub type ConfigurableOnInitializeWeight<T> = StorageValue<_, Weight, ValueQuery, DefaultWeight>;
