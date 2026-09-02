@@ -78,13 +78,16 @@ jobs:
           COMPACTC_VERSION=$(cat COMPACTC_VERSION)
           VERSION="${RUST_VERSION}-${COMPACTC_VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          docker pull "${GHCR_REGISTRY}/midnight-node-ci:${VERSION}-${PLATFORM}"
+          # Matches the SAVE IMAGE in +node-ci-image-single-platform: repo-named, because
+          # GHCR_REGISTRY only isolates by owner.
+          CI_IMAGE="${GHCR_REGISTRY}/${GITHUB_REPOSITORY#*/}-ci"
+          docker pull "${CI_IMAGE}:${VERSION}-${PLATFORM}"
 
           # Docker Hub hosts the canonical CI image only. A fork publishes to its own GHCR
           # namespace (above) and must not push into midnightntwrk's Hub org.
           if [ "$GITHUB_REPOSITORY" = "midnightntwrk/midnight-node" ]; then
             echo "Tag and push ${VERSION} images"
-            docker tag "${GHCR_REGISTRY}/midnight-node-ci:${VERSION}-${PLATFORM}" "midnightntwrk/midnight-node-ci:${VERSION}-${PLATFORM}"
+            docker tag "${CI_IMAGE}:${VERSION}-${PLATFORM}" "midnightntwrk/midnight-node-ci:${VERSION}-${PLATFORM}"
 
             echo "Push ${VERSION} images to Docker Hub"
             docker push "midnightntwrk/midnight-node-ci:${VERSION}-${PLATFORM}"

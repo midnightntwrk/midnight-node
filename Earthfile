@@ -819,9 +819,11 @@ node-ci-image-single-platform:
     LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
-    # Not repo-named: the CI base image keeps a literal name in whichever namespace builds it.
+    # Repo-named like every other image here: GHCR_REGISTRY only isolates by *owner*, so two
+    # clones under one owner would otherwise write the same ref. IMAGE_REPO defaults to
+    # midnight-node, so the canonical name stays midnight-node-ci.
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node-ci:$IMAGE_TAG-$NATIVEARCH
+        $GHCR_REGISTRY/$IMAGE_REPO-ci:$IMAGE_TAG-$NATIVEARCH
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
