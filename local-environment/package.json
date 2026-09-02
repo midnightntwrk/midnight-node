@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --require ts-node/register --test src/lib/genesisComposeOverride.test.ts src/commands/run.test.ts",
+    "test": "node --require ts-node/register --test src/lib/*.test.ts src/commands/run.test.ts",
     "run:qanet": "ts-node src/index.ts run qanet",
     "run:devnet": "ts-node src/index.ts run devnet",
     "run:govnet": "ts-node src/index.ts run govnet",
