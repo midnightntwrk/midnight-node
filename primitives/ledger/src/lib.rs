@@ -40,12 +40,17 @@ pub struct LedgerMetrics {
 	pub storage_fetch_time: HistogramVec,
 	/// Storage flush time
 	pub storage_flush_time: HistogramVec,
-	/// Transaction validation cache hits (labeled by cache_type: "strict" or "soft")
+	/// Transaction validation cache hits (labeled by the type of cache hit: "strict" or "revalidation")
 	pub tx_validation_cache_hits: CounterVec<U64>,
 	/// Transaction validation cache misses
 	pub tx_validation_cache_misses: CounterVec<U64>,
-	/// Current cache entry count (labeled by cache_type: "strict" or "soft")
+	/// Current cache entry count
 	pub tx_validation_cache_size: GaugeVec<U64>,
+	/// Live ledger states held by the keep-alive caches (labeled by cache_type:
+	/// "transient" or "anchored"). Sampled once per block, at the post-block flush:
+	/// "transient" must read 0 there — a persistent non-zero value is a leaked
+	/// intra-block state.
+	pub ledger_state_cache_size: GaugeVec<U64>,
 }
 
 /// Time constants to build a Prometheus Histogram bucket
@@ -127,7 +132,7 @@ impl LedgerMetrics {
 						"Time spent for validating a transaction",
 					)
 					.buckets(time_buckets.clone()),
-					&["tx_type"],
+					&["tx_type", "cache_outcome"],
 				)?,
 				registry,
 			)?,
@@ -190,6 +195,16 @@ impl LedgerMetrics {
 				)?,
 				registry,
 			)?,
+			ledger_state_cache_size: prometheus::register(
+				GaugeVec::new(
+					Opts::new(
+						"ledger_state_cache_size",
+						"Current number of live ledger states held by the keep-alive caches",
+					),
+					&["cache_type"],
+				)?,
+				registry,
+			)?,
 		})
 	}
 }
@@ -233,9 +248,14 @@ impl LedgerMetricsExt {
 		});
 	}
 
-	pub fn observe_txs_validating_time(&mut self, time: f64, label: &'static str) {
+	pub fn observe_txs_validating_time(
+		&mut self,
+		time: f64,
+		tx_type: &'static str,
+		cache_outcome: &str,
+	) {
 		self.observe(|m| {
-			m.txs_validating_time.with_label_values(&[label]).observe(time);
+			m.txs_validating_time.with_label_values(&[tx_type, cache_outcome]).observe(time);
 		});
 	}
 
@@ -272,6 +292,12 @@ impl LedgerMetricsExt {
 	pub fn set_tx_validation_cache_size(&mut self, cache_type: &str, size: u64) {
 		self.observe(|m| {
 			m.tx_validation_cache_size.with_label_values(&[cache_type]).set(size);
+		});
+	}
+
+	pub fn set_ledger_state_cache_size(&mut self, cache_type: &str, size: u64) {
+		self.observe(|m| {
+			m.ledger_state_cache_size.with_label_values(&[cache_type]).set(size);
 		});
 	}
 }

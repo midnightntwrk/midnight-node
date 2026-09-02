@@ -509,7 +509,8 @@ pub trait Ledger8Bridge {
 	}
 
 	/*
-	 * Returns the pure ledger state root (without StorableLedgerState wrapping)
+	 * Returns the pure ledger state root: the untagged-serialized typed-key of
+	 * `LedgerState<D>` (without the surrounding `Ledger` block_fullness wrapper).
 	 */
 	fn get_ledger_state_root(
 		&mut self,
