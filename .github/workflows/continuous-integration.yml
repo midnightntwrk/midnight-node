@@ -155,13 +155,17 @@ jobs:
         id: check_images
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+          NODE_IMAGE: ${{ steps.image_tags.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ steps.image_tags.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
         run: |
           if [ "$FORCE_REBUILD" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          NODE_EXISTS=$(docker manifest inspect "${{ steps.image_tags.outputs.node_image }}:${{ steps.image_tags.outputs.node_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
-          TOOLKIT_EXISTS=$(docker manifest inspect "${{ steps.image_tags.outputs.toolkit_image }}:${{ steps.image_tags.outputs.toolkit_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          NODE_EXISTS=$(docker manifest inspect "${NODE_IMAGE}:${NODE_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
             echo "Images already exist, skipping build"
@@ -309,13 +313,17 @@ jobs:
         id: check_images
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+          NODE_IMAGE: ${{ steps.image_tags.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ steps.image_tags.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
         run: |
           if [ "$FORCE_REBUILD" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          NODE_EXISTS=$(docker manifest inspect "${{ steps.image_tags.outputs.node_image }}:${{ steps.image_tags.outputs.node_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
-          TOOLKIT_EXISTS=$(docker manifest inspect "${{ steps.image_tags.outputs.toolkit_image }}:${{ steps.image_tags.outputs.toolkit_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          NODE_EXISTS=$(docker manifest inspect "${NODE_IMAGE}:${NODE_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
             echo "Images already exist, skipping build"
@@ -493,10 +501,14 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          NODE_IMAGE: ${{ needs.run.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ needs.run.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
         run: |
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
-            --build-arg "NODE_IMAGE=${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}" \
-            --build-arg "TOOLKIT_IMAGE=${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}" \
+            --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
+            --build-arg "TOOLKIT_IMAGE=${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" \
             +rebuild-genesis
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -838,9 +850,12 @@ jobs:
 
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_IMAGE: ${{ needs.run.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
           . ./.envrc && earthly --ci -P \
-            --build-arg "NODE_IMAGE=${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}" \
+            --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -1069,6 +1084,7 @@ jobs:
         if: steps.image_meta.outputs.skip_build != 'true'
         env:
           REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          CONTENT_HASH: ${{ steps.image_meta.outputs.content_hash }}
         run: |
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
@@ -1086,8 +1102,7 @@ jobs:
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
 
-          # Retag with submodule's content hash
-          CONTENT_HASH="${{ steps.image_meta.outputs.content_hash }}"
+          # Retag with submodule's content hash (CONTENT_HASH comes from the step env)
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
 
           docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/indexer-api:${CONTENT_HASH}"
