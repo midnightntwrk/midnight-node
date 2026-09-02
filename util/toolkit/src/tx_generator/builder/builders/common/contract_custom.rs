@@ -4,10 +4,10 @@ use super::ledger_helpers_local::{
 	BuilderContext, ClaimedUnshieldedSpendsKey, CoinInfo, CoinSelectionStrategy, ContractAction,
 	ContractAddress, ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input,
 	InputInfo, IntentCustom, IntentInfo, OfferInfo, Output, OutputInfo, ProofPreimage,
-	ProofPreimageMarker, ProofProvider, PublicAddress, Recipient, ShieldedCoinSelectionError,
-	ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType, TransactionWithContext,
-	Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId, UtxoOutputInfo, UtxoSpendInfo,
-	Wallet, WalletAddress, WalletSeed, zswap,
+	ProofPreimageMarker, ProofProvider, PublicAddress, Recipient, Segment,
+	ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType,
+	TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
+	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, zswap,
 };
 use crate::{
 	serde_def::SourceTransactions,
@@ -160,17 +160,41 @@ fn add_shielded_token_value(
 	Ok(())
 }
 
-/// Each call's effects, paired with its own contract address. One intent may span several
-/// contracts, and a mint's token type is derived from the contract that minted it.
-fn effects_by_contract(
-	intent: &IntentCustom<DefaultDB>,
-) -> Vec<(ContractAddress, ContractEffects<DefaultDB>)> {
+const GUARANTEED_SEGMENT: u16 = Segment::Guaranteed as u16;
+
+/// One call transcript's effects, tagged with its contract and the segment the ledger accounts
+/// it under. The ledger balances each segment independently, so both have to survive
+/// aggregation: the contract gives a mint its token type, the segment gives it its tier.
+struct SegmentedEffects {
+	segment: u16,
+	address: ContractAddress,
+	effects: ContractEffects<DefaultDB>,
+}
+
+impl SegmentedEffects {
+	/// Whether this transcript moved any shielded value.
+	fn moves_shielded_value(&self) -> bool {
+		!self.effects.shielded_mints.is_empty()
+			|| !self.effects.claimed_shielded_receives.is_empty()
+			|| !self.effects.claimed_shielded_spends.is_empty()
+			|| !self.effects.claimed_nullifiers.is_empty()
+	}
+}
+
+fn call_effects(intent: &IntentCustom<DefaultDB>, fallible_segment: u16) -> Vec<SegmentedEffects> {
 	let mut effects = Vec::new();
 	for action in intent.intent.actions.iter() {
-		if let ContractAction::Call(ref call) = *action.clone() {
-			for transcript in [&call.guaranteed_transcript, &call.fallible_transcript] {
+		if let ContractAction::Call(call) = &*action {
+			for (segment, transcript) in [
+				(GUARANTEED_SEGMENT, &call.guaranteed_transcript),
+				(fallible_segment, &call.fallible_transcript),
+			] {
 				if let Some(transcript) = transcript {
-					effects.push((call.address, transcript.effects.clone()));
+					effects.push(SegmentedEffects {
+						segment,
+						address: call.address,
+						effects: transcript.effects.clone(),
+					});
 				}
 			}
 		}
@@ -185,9 +209,10 @@ fn effects_by_contract(
 /// backed by the contract instead, recorded in `Effects::shielded_mints`. Coins the contract
 /// owns enter as inputs and pay for themselves, and transients net to zero.
 fn shielded_shortfall<C: BuilderContext<DefaultDB>>(
+	segment: u16,
 	outputs: &[Box<dyn BuildOutput<DefaultDB, C>>],
 	inputs: &[Box<dyn BuildInput<DefaultDB, C>>],
-	effects: &[(ContractAddress, ContractEffects<DefaultDB>)],
+	effects: &[SegmentedEffects],
 ) -> Result<Vec<(ShieldedTokenType, u128)>, CustomContractBuilderError> {
 	let mut owed = BTreeMap::new();
 	for output in outputs {
@@ -198,12 +223,14 @@ fn shielded_shortfall<C: BuilderContext<DefaultDB>>(
 	for input in inputs {
 		add_shielded_token_value(&mut covered, input.token_type(), input.value())?;
 	}
-	for (contract_address, effect) in effects {
-		for entry in effect.shielded_mints.iter() {
+	// Only mints in this segment cover it: a fallible mint is conditional on its segment
+	// applying, so it cannot back a guaranteed output.
+	for effect in effects.iter().filter(|e| e.segment == segment) {
+		for entry in effect.effects.shielded_mints.iter() {
 			let (domain_sep, value) = &*entry;
 			add_shielded_token_value(
 				&mut covered,
-				contract_address.custom_shielded_token_type(**domain_sep),
+				effect.address.custom_shielded_token_type(**domain_sep),
 				u128::from(**value),
 			)?;
 		}
@@ -242,6 +269,8 @@ pub enum CustomContractBuilderError {
 	ShieldedBalanceOverflow,
 	#[error("failed to select shielded coins to fund the contract call")]
 	ShieldedCoinSelection(#[from] ShieldedCoinSelectionError),
+	#[error("segment {0} moves shielded value in a fallible transcript, which is not supported")]
+	FallibleShieldedEffects(u16),
 }
 
 pub struct CustomContractBuilder<C: BuilderContext<DefaultDB>> {
@@ -537,8 +566,17 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 		// Cover the coins the circuit took from the caller, or the offer is unbalanced and
 		// the transaction is rejected.
 		if !outputs_info.is_empty() {
-			let effects = effects_by_contract(&contract_intent);
-			let shortfalls = shielded_shortfall(&outputs_info, &inputs_info, &effects)?;
+			let effects = call_effects(&contract_intent, contract_segment);
+			// Every zswap element here goes into the guaranteed offer, so a transcript that
+			// moves shielded value in a fallible segment cannot be balanced correctly.
+			if let Some(fallible) = effects
+				.iter()
+				.find(|e| e.segment != GUARANTEED_SEGMENT && e.moves_shielded_value())
+			{
+				return Err(CustomContractBuilderError::FallibleShieldedEffects(fallible.segment));
+			}
+			let shortfalls =
+				shielded_shortfall(GUARANTEED_SEGMENT, &outputs_info, &inputs_info, &effects)?;
 			for (token_type, required) in shortfalls {
 				let (funding_inputs, change) = InputInfo::coins_to_cover_value(
 					self.context.clone(),
