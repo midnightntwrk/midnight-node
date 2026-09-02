@@ -1,0 +1,40 @@
+[package]
+name          = "spo-indexer"
+description   = "SPO Indexer"
+version       = { workspace = true }
+edition       = { workspace = true }
+license       = { workspace = true }
+readme        = { workspace = true }
+homepage      = { workspace = true }
+repository    = { workspace = true }
+documentation = { workspace = true }
+publish       = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [ "--cfg", "docsrs" ]
+
+[dependencies]
+anyhow          = { workspace = true }
+blake2          = { workspace = true }
+blockfrost      = { workspace = true }
+const-hex       = { workspace = true }
+fastrace        = { workspace = true, features = [ "enable" ] }
+http            = { workspace = true }
+humantime-serde = { workspace = true }
+indexer-common  = { path = "../indexer-common" }
+indoc           = { workspace = true }
+log             = { workspace = true, features = [ "kv_std" ] }
+serde           = { workspace = true, features = [ "derive" ] }
+serde_json      = { workspace = true }
+secrecy         = { workspace = true, features = [ "serde" ] }
+sqlx            = { workspace = true, features = [ "runtime-tokio", "time", "chrono", "macros" ] }
+subxt           = { workspace = true, features = [ "reconnecting-rpc-client" ] }
+thiserror       = { workspace = true }
+tokio           = { workspace = true, features = [ "macros", "rt-multi-thread", "time", "signal" ] }
+trait-variant   = { workspace = true }
+reqwest         = { workspace = true, features = [ "json", "rustls" ] }
+
+[features]
+cloud      = [ "indexer-common/cloud", "sqlx/postgres" ]
+standalone = [ "indexer-common/standalone", "sqlx/sqlite" ]

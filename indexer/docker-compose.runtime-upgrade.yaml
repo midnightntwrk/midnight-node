@@ -1,0 +1,6 @@
+services:
+  node:
+    volumes:
+      - ${CHAINSPEC_PATH:?CHAINSPEC_PATH must be set}:/chainspec/chainspec.json
+    environment:
+      CHAIN: "/chainspec/chainspec.json"

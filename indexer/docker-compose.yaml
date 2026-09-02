@@ -1,0 +1,251 @@
+# This file is part of https://github.com/midnightntwrk/midnight-indexer
+# Copyright (C) Midnight Foundation
+# SPDX-License-Identifier: Apache-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# NOTE: This Docker Compose file is for local development and testing
+#       and NOT meant for production use!
+
+# Secrets are sourced from the host environment but handed to the containers as files under
+# /run/secrets, which the Indexer reads via the matching APP__*_FILE variables. The secret
+# therefore never appears in a container's own environment, and so never in its
+# /proc/<pid>/environ - which is unscrubbable once the process has been exec'd.
+#
+# The host-side variables are unchanged, so no developer setup changes: see the "Environment
+# Variables" section of README.md.
+secrets:
+  app__infra__secret:
+    environment: "APP__INFRA__SECRET"
+  app__infra__storage__password:
+    environment: "APP__INFRA__STORAGE__PASSWORD"
+  app__infra__pub_sub__password:
+    environment: "APP__INFRA__PUB_SUB__PASSWORD"
+
+# Mounted 0400 and owned by the `appuser` (uid 10001) the Indexer images run as, rather than the
+# default world-readable 0444. Only for our own images: the postgres entrypoint reads
+# POSTGRES_PASSWORD_FILE after dropping privileges, and its uid varies by image, so that one keeps
+# the default.
+x-secrets:
+  app__infra__secret: &app__infra__secret
+    source: "app__infra__secret"
+    target: "app__infra__secret"
+    uid: "10001"
+    mode: 0400
+  app__infra__storage__password: &app__infra__storage__password
+    source: "app__infra__storage__password"
+    target: "app__infra__storage__password"
+    uid: "10001"
+    mode: 0400
+  app__infra__pub_sub__password: &app__infra__pub_sub__password
+    source: "app__infra__pub_sub__password"
+    target: "app__infra__pub_sub__password"
+    uid: "10001"
+    mode: 0400
+
+services:
+  chain-indexer:
+    profiles:
+      - cloud
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: "${IMAGE_REGISTRY:-midnightntwrk}/chain-indexer:${INDEXER_TAG:-latest}"
+    restart: "no"
+    secrets:
+      - *app__infra__storage__password
+      - *app__infra__pub_sub__password
+    environment:
+      RUST_LOG: "chain_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__NODE__URL: "ws://node:9944"
+      APP__INFRA__STORAGE__HOST: "postgres"
+      APP__INFRA__STORAGE__PASSWORD_FILE: "/run/secrets/app__infra__storage__password"
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD_FILE: "/run/secrets/app__infra__pub_sub__password"
+    healthcheck:
+      test: ["CMD-SHELL", "cat /var/run/chain-indexer/running"]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  wallet-indexer:
+    profiles:
+      - cloud
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: "${IMAGE_REGISTRY:-midnightntwrk}/wallet-indexer:${INDEXER_TAG:-latest}"
+    restart: "no"
+    secrets:
+      - *app__infra__secret
+      - *app__infra__storage__password
+      - *app__infra__pub_sub__password
+    environment:
+      RUST_LOG: "wallet_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__SECRET_FILE: "/run/secrets/app__infra__secret"
+      APP__INFRA__STORAGE__HOST: "postgres"
+      APP__INFRA__STORAGE__PASSWORD_FILE: "/run/secrets/app__infra__storage__password"
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD_FILE: "/run/secrets/app__infra__pub_sub__password"
+    healthcheck:
+      test: ["CMD-SHELL", "cat /var/run/wallet-indexer/running"]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  spo-indexer:
+    profiles:
+      - cloud
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+    image: "${IMAGE_REGISTRY:-midnightntwrk}/spo-indexer:${INDEXER_TAG:-latest}"
+    restart: "no"
+    secrets:
+      - *app__infra__storage__password
+    environment:
+      RUST_LOG: "spo_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__APPLICATION__NETWORK_ID: "preview"
+      APP__INFRA__NODE__URL: "wss://rpc.preview.midnight.network"
+      # Deliberately NOT a secret file: Compose fails to start a service whose env-sourced secret
+      # is unset, and this key is optional (see README). The Indexer warns when it is set directly.
+      APP__INFRA__NODE__BLOCKFROST_ID: "${APP__INFRA__NODE__BLOCKFROST_ID:-}"
+      APP__INFRA__STORAGE__HOST: "postgres"
+      APP__INFRA__STORAGE__PASSWORD_FILE: "/run/secrets/app__infra__storage__password"
+    healthcheck:
+      test: ["CMD-SHELL", "cat /var/run/spo-indexer/running || exit 0"]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  indexer-api:
+    profiles:
+      - cloud
+    depends_on:
+      postgres:
+        condition: "service_healthy"
+      nats:
+        condition: "service_started"
+    image: "${IMAGE_REGISTRY:-midnightntwrk}/indexer-api:${INDEXER_TAG:-latest}"
+    restart: "no"
+    ports:
+      - "8088:8088"
+    secrets:
+      - *app__infra__secret
+      - *app__infra__storage__password
+      - *app__infra__pub_sub__password
+    environment:
+      RUST_LOG: "indexer_api=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__SECRET_FILE: "/run/secrets/app__infra__secret"
+      APP__INFRA__STORAGE__HOST: "postgres"
+      APP__INFRA__STORAGE__PASSWORD_FILE: "/run/secrets/app__infra__storage__password"
+      APP__INFRA__PUB_SUB__URL: "nats:4222"
+      APP__INFRA__PUB_SUB__PASSWORD_FILE: "/run/secrets/app__infra__pub_sub__password"
+    healthcheck:
+      test: ["CMD-SHELL", "cat /var/run/indexer-api/running"]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  indexer-standalone:
+    profiles:
+      - standalone
+    depends_on:
+      - node
+    image: "${IMAGE_REGISTRY:-midnightntwrk}/indexer-standalone:${INDEXER_TAG:-latest}"
+    restart: "no"
+    ports:
+      - "8088:8088"
+    secrets:
+      - *app__infra__secret
+    environment:
+      RUST_LOG: "indexer_standalone=debug,chain_indexer=debug,indexer_api=debug,wallet_indexer=debug,indexer_common=debug,fastrace_opentelemetry=off,info"
+      APP__INFRA__SECRET_FILE: "/run/secrets/app__infra__secret"
+      APP__INFRA__NODE__URL: "ws://node:9944"
+      APP__INFRA__SPO_NODE__URL: "ws://node:9944"
+      APP__INFRA__SPO_NODE__BLOCKFROST_ID: ${APP__INFRA__SPO_NODE__BLOCKFROST_ID:-dummy-not-using-spo}
+    healthcheck:
+      test: ["CMD-SHELL", "cat /var/run/indexer-standalone/running"]
+      start_interval: "2s"
+      start_period: "30s"
+      interval: "5s"
+      timeout: "2s"
+      retries: 2
+
+  postgres:
+    profiles:
+      - cloud
+    image: "postgres:17.1-alpine"
+    restart: "always"
+    ports:
+      - "5432:5432"
+    volumes:
+      - "./target/data/postgres:/var/lib/postgresql/data"
+    secrets:
+      - app__infra__storage__password
+    environment:
+      POSTGRES_USER: "indexer"
+      POSTGRES_DB: "indexer"
+      # The official image's entrypoint resolves *_FILE the same way the Indexer does.
+      POSTGRES_PASSWORD_FILE: "/run/secrets/app__infra__storage__password"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indexer"]
+      interval: "3s"
+      timeout: "2s"
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+
+  nats:
+    profiles:
+      - cloud
+    image: "nats:2.12.3"
+    restart: "always"
+    # nats-server has no file-based equivalent of --pass, so the password stays on the command line.
+    # Local-development scaffolding only.
+    command:
+      ["--user", "indexer", "--pass", $APP__INFRA__PUB_SUB__PASSWORD, "-js"]
+    ports:
+      - "4222:4222"
+    volumes:
+      - "./target/data/nats:/tmp/nats"
+    security_opt:
+      - no-new-privileges:true
+
+  node:
+    profiles: [cloud, standalone]
+    image: "midnightntwrk/midnight-node:${NODE_TAG:-latest}"
+    restart: "always"
+    ports:
+      - "9944:9944"
+    volumes:
+      - node_data:/node
+    environment:
+      SHOW_CONFIG: "false"
+      CFG_PRESET: "dev"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  node_data:

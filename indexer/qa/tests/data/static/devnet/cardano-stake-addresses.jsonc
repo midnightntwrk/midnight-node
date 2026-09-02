@@ -1,0 +1,27 @@
+{
+  // A cardano address that is registered for dust production and has cNIGHT balance
+  // Expected status: registered=true, dustAddress not null, nightBalance > 0
+  // Verified on devnet 2026-07-10 via the dustGenerations query (nightBalance=100000000000)
+  "registered-with-dust": "stake_test1uz6x47zhnk6f3nnpeg65st75t6gw7fzxv2hezafxtcgycdgyyhzh8",
+  // A cardano address that is registered for dust production but has no cNIGHT balance
+  // Expected status: registered=true, dustAddress not null, nightBalance="0"
+  // Note: No dust is generated because there is no cNIGHT to generate from
+  // Verified on devnet 2026-07-10 via the dustGenerations query (nightBalance=0)
+  "registered-without-dust": "stake_test1upqhex5hpc6nh9dxtqfuz9sxf3wmzk7g3k0e9qxu6cvh52qmf2vmk",
+  // A cardano address that has never been registered for dust production
+  // Expected status: registered=false (empty registrations)
+  // Verified on devnet 2026-07-10 via the dustGenerations query (registrations=[])
+  "non-registered": "stake_test1uqg287q4tjltwaz55f3em78su32zn4as3n8sudhmelzyaws82w6gd",
+  // A cardano address that was previously registered for dust production but has been deregistered
+  // Expected status: registered=false (empty registrations)
+  // Note: This differs from non-registered in the execution path (deregistration vs never
+  // registered), but the status is the same
+  // Verified on devnet 2026-07-10 via the dustGenerations query (registrations=[])
+  "deregistered": "stake_test1uqu5f7ctsrrfqys5rqf9843nwmrf2w0ea8hae0xe3f9fdcqucy6a8",
+  // A cardano address that is registered for dust production and has had backing NIGHT UTXOs
+  // spent on the Midnight chain, so a fresh dustGenerations subscription with dtimeCutoffHeight=0
+  // replays at least one DustGenerationDtimeUpdateItem.
+  // Observed on devnet 2026-07-10: 19 DustGenerationsItem + 9 DustGenerationDtimeUpdateItem
+  // events on a tip-pinned subscription with dtimeCutoffHeight=0.
+  "registered-with-dust-and-spent": "stake_test1uqg6d2c4nmmf8088j8cejsxdcanms5x6et5x87rg6v5x03shyhyd8"
+}

@@ -1,0 +1,28 @@
+# Node dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Runtime files
+*.tsbuildinfo
+
+# Optional: OS & IDE-specific files
+.DS_Store
+.env
+dist/
+coverage/output/
+coverage/output/latest-run.json
+
+# Report files
+reports/
+xray_id.txt
+.tmp/
+
+data/static/*/blocks.jsonc
+data/static/*/contract-actions.jsonc
+data/static/*/contract-events.jsonc
+data/static/*/transactions.jsonc
+data/static/*/unshielded-token-types.jsonc

@@ -178,7 +178,7 @@ build-node-only:
         CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay partner-chains .
+    indexer ledger node pallets primitives metadata res runtime util tests relay partner-chains .
 
     ARG NATIVEARCH
 
@@ -852,7 +852,7 @@ prep:
     FROM +prep-no-copy
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .cargo .config .sqlx deny.toml docs \
-        ledger LICENSE node pallets primitives README.md res runtime \
+        indexer ledger LICENSE node pallets primitives README.md res runtime \
         metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     RUN rustup show
@@ -1064,7 +1064,7 @@ check-rust:
     END
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
-        ledger LICENSE node pallets primitives README.md res runtime \
+        indexer ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     RUN cargo fmt --all -- --check
@@ -1087,7 +1087,7 @@ check-feature-unification:
     END
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
-        ledger LICENSE node pallets primitives README.md res runtime \
+        indexer ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
 
     ENV SKIP_WASM_BUILD=1
@@ -1351,7 +1351,7 @@ build:
         CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
     END
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
+    indexer ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
 
     ARG NATIVEARCH
 
@@ -1368,11 +1368,23 @@ build:
     RUN \
         cargo auditable build --workspace --locked --release
 
+    # Build the directly ported indexer in its own Cargo workspace. Keeping its
+    # lockfile and dependency graph separate preserves historical ledger replay
+    # while midnight-node owns the worker lifecycle through --indexer.
+    RUN CARGO_TARGET_DIR=/target/indexer \
+        cargo auditable build \
+        --manifest-path indexer/Cargo.toml \
+        --package indexer-standalone \
+        --features standalone \
+        --locked \
+        --release
+
     # cp (not mv) so the linked binaries stay in the /target cache when it is mounted
     # (local, CI=false); otherwise cargo would re-link every binary on the next run even
     # when its inputs are unchanged.
     RUN mkdir -p /artifacts-$NATIVEARCH/midnight-node-runtime/ \
         && cp /target/release/midnight-node /artifacts-$NATIVEARCH \
+        && cp /target/indexer/release/indexer-standalone /artifacts-$NATIVEARCH/midnight-indexer \
         && cp /target/release/midnight-node-toolkit /artifacts-$NATIVEARCH \
         && cp /target/release/aiken-deployer /artifacts-$NATIVEARCH \
         && cp /target/release/wbuild/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/midnight-node-runtime/
@@ -1382,7 +1394,7 @@ build:
 build-benchmarks:
     FROM +build-prepare
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata relay res runtime util tests partner-chains .
+    indexer ledger node pallets primitives metadata relay res runtime util tests partner-chains .
 
     ARG NATIVEARCH
 
@@ -1424,7 +1436,7 @@ srtool-build:
     USER root
     COPY Cargo.lock Cargo.toml ./
     # Include .sqlx for offline query validation (sqlx macros need this)
-    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
+    COPY --dir .cargo .sqlx indexer ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
     # Fix ownership for builder user
     RUN chown -R builder:builder /build
 
@@ -1450,7 +1462,7 @@ srtool-info:
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
-    COPY --dir .cargo .sqlx ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
+    COPY --dir .cargo .sqlx indexer ledger node pallets primitives metadata res runtime util tests relay partner-chains docs ./
     RUN chown -R builder:builder /build
     ENV PACKAGE=midnight-node-runtime
     ENV RUNTIME_DIR=runtime
@@ -1471,6 +1483,7 @@ node-image:
     RUN mkdir -p node
 
     COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-node /
+    COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/midnight-indexer /
     COPY --chown=appuser:appuser +build/artifacts-$NATIVEARCH/aiken-deployer /
     COPY +build/artifacts-$NATIVEARCH/midnight-node-runtime/*.wasm /artifacts-$NATIVEARCH/
 
@@ -1748,7 +1761,7 @@ testnet-sync-e2e:
 local-env-e2e:
     FROM +prep
     COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
-    ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
+    indexer ledger node pallets primitives metadata res runtime util tests relay partner-chains local-environment scripts .
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     WORKDIR tests/e2e
@@ -2005,7 +2018,7 @@ local-env-full-ci-localimg:
 # +local-env-ci (--pulls published images; needs GHCR creds + tags) and
 # +local-env-full-ci-localimg (loads pre-saved tarballs; needs the images built + saved
 # first), this builds the node + toolkit (earthly `--load`, like +start-local-env-latest)
-# and the 3 indexer images (docker build of the submodule, in-sandbox), all under fixed
+# and the 3 indexer images (built from the ported source, in-sandbox), all under fixed
 # :local tags, then runs the full integration suite. Just: `earthly -P +local-env-oneshot`.
 # First run is long (node + toolkit + indexer + CI-image builds); earthly caches node/
 # toolkit/CI-image after (the in-sandbox indexer builds re-run each time — ephemeral DinD).
@@ -2016,13 +2029,10 @@ local-env-oneshot:
     COPY static/contracts/simple-merkle-tree /test-static/simple-merkle-tree
     ENV MIDNIGHT_LEDGER_TEST_STATIC_DIR=/test-static
     ENV RUSTFLAGS="-C debuginfo=1"
-    # Fail fast + kindly if the submodules aren't checked out: COPY of an empty submodule
-    # silently yields an empty dir, which would otherwise blow up later as "could not find
-    # indexer/...". Checked before the ~5-min e2e compile below. (CI always has them via
-    # checkout submodules:true; locally: git submodule update --init --recursive.)
+    # Fail fast if the ported indexer source or reserve-contracts submodule is missing.
     RUN test -f indexer/indexer-api/Dockerfile && test -f midnight-reserve-contracts/aiken.toml || { \
-        echo "Submodules not checked out — indexer/ and/or midnight-reserve-contracts/ are empty."; \
-        echo "Run:  git submodule update --init --recursive"; \
+        echo "Indexer source is missing or midnight-reserve-contracts is not checked out."; \
+        echo "Run: git submodule update --init midnight-reserve-contracts"; \
         exit 1; }
     RUN cd tests/e2e && cargo test --test e2e_tests --no-default-features --features local --no-run
     # --load builds the node + toolkit images and loads them into the nested daemon under

@@ -1,0 +1,17 @@
+// Contracts known to hold non-zero unshielded token balances on the qanet chain.
+// Used by the unshieldedBalances regression tests (midnightntwrk/midnight-indexer#1245):
+// the field returned an empty array for every contract from 3.0.0 to 4.3.3, so these
+// tests require an indexer with the #1246 fix and repaired history (backfill or
+// re-index). Snapshot date: 2026-06-11 (verified against qanet-blue after backfill).
+[
+  {
+    // QA boundary-test contract, latest action "check_balance"; holds u64::MAX of the token.
+    "contract-address": "c2290f97355fd7fc9a4350e74ec90243a0e633336c2cd153eb559bdd122a378e",
+    "token-type": "7b0d072c08aefac4d44a2ba29b6b2b632569ba02bf7a2e27983913e3281b43d0"
+  },
+  {
+    // QA token-test contract, balance 2000 of the token at snapshot date.
+    "contract-address": "90b21fdea1ad4c5ce131448a8df3fec76f89c709510f418675c2648749494ff5",
+    "token-type": "224487674c0c8d0912dc118a4a7f404df18f7aa501ebf82f90732a3658f24b7e"
+  }
+]

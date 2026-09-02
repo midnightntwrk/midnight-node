@@ -1,0 +1,25 @@
+{
+  "name": "bun-indexer-based-block-scanner",
+  "type": "module",
+  "scripts": {
+    "clean": "rm -rf logs/ dist tmp_scan",
+    "format": "bun run prettier --write '**/*.{js,jsx,json,ts,tsx,graphql,gql}'",
+    "format:check": "bun run prettier --check '**/*.{js,jsx,json,ts,tsx,graphql,gql}'",
+    "lint": "tsc",
+    "audit": "bun audit --audit-level=high",
+    "build:scanner": "bun build src/scanner.ts --compile --outfile scanner",
+    "scan": "bun run src/scanner.ts",
+    "generate:data": "bun run src/scanner.ts ../../tests/data/static/"
+  },
+  "dependencies": {
+    "comment-json": "^4.4.1",
+    "graphql-ws": "^6.0.5",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.23",
+    "@types/ws": "^8.18.1",
+    "prettier": "^3.5.3",
+    "typescript": "^6.0.3"
+  }
+}

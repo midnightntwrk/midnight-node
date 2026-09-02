@@ -17,6 +17,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 name = "midnight-node"
 
 [dependencies]
+anyhow.workspace = true
 clap.workspace = true
 hex.workspace = true
 
@@ -159,7 +160,7 @@ shell-words = "1.1.1"
 derive-new.workspace = true
 
 sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
-tokio.workspace = true
+tokio = { workspace = true, features = ["process"] }
 blake2b_simd = "1.0"
 
 # FilteringTransactionPool feature dependency

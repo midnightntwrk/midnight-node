@@ -286,23 +286,28 @@ pub(crate) async fn get_token_utxo_for_epoch(
 	ident: i64,
 	epoch: EpochNumber,
 ) -> Result<Option<TokenTxOutput>, SqlxError> {
-	let sql = "SELECT
+	// Keep generic prepared plans from scanning historical blocks before filtering the asset.
+	let sql = "WITH asset_outputs AS MATERIALIZED (
+			SELECT tx_out_id
+			FROM ma_tx_out
+			WHERE ident = $1
+		)
+		SELECT
 			origin_tx.hash        AS origin_tx_hash,
-        	tx_out.index          AS utxo_index,
-        	origin_block.epoch_no AS tx_epoch_no,
+			tx_out.index          AS utxo_index,
+			origin_block.epoch_no AS tx_epoch_no,
         	origin_block.block_no AS tx_block_no,
         	origin_block.slot_no  AS tx_slot_no,
         	origin_tx.block_index AS tx_block_index,
         	datum.value           AS datum
-        FROM ma_tx_out
-        INNER JOIN tx_out               ON ma_tx_out.tx_out_id = tx_out.id
-        INNER JOIN tx origin_tx         ON tx_out.tx_id = origin_tx.id
-        INNER JOIN block origin_block   ON origin_tx.block_id = origin_block.id
-        LEFT JOIN datum                 ON tx_out.data_hash = datum.hash
-        WHERE ma_tx_out.ident = $1
-        AND origin_block.epoch_no <= $2
-        ORDER BY tx_block_no DESC, origin_tx.block_index DESC
-        LIMIT 1";
+	        FROM asset_outputs
+	        INNER JOIN tx_out               ON asset_outputs.tx_out_id = tx_out.id
+	        INNER JOIN tx origin_tx         ON tx_out.tx_id = origin_tx.id
+	        INNER JOIN block origin_block   ON origin_tx.block_id = origin_block.id
+	        LEFT JOIN datum                 ON tx_out.data_hash = datum.hash
+	        WHERE origin_block.epoch_no <= $2
+	        ORDER BY tx_block_no DESC, origin_tx.block_index DESC
+	        LIMIT 1";
 	Ok(sqlx::query_as::<_, TokenTxOutput>(sql)
 		.bind(ident)
 		.bind(epoch)

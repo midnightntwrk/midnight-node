@@ -27,6 +27,7 @@ pub mod committee_membership;
 pub mod extensions;
 mod filtering_pool;
 pub mod genesis;
+mod indexer;
 pub mod inherent_data;
 pub mod main_chain_follower;
 pub mod memory_monitor;

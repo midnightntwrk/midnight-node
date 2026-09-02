@@ -1,0 +1,11 @@
+{
+  // The hash of the latest block captured by the scanner
+  "latest": null,
+
+  // Array of up to 100 block hashes going backwards from the latest
+  "other-blocks": [],
+
+  // The hash of the genesis block
+  "genesis": null
+
+}
