@@ -58,3 +58,9 @@ genesis-wallets-devnet-e2e NODE_IMAGE TOOLKIT_IMAGE:
 indexer-api-e2e:
   @scripts/tests/indexer-api-e2e.sh
   @echo "✅ Indexer GraphQL API E2E test completed successfully."
+
+# Full micro-dao circuit run (deploy, set_topic, buy_in, vote_commit, advance, vote_reveal, cash_out)
+# against a fresh local-env, with per-phase timings. Requires docker, direnv and the Node from Earthfile.
+microdao-local-env-e2e:
+  @scripts/tests/microdao-local-env-e2e.sh
+  @echo "✅ micro-dao local-env E2E test completed successfully."

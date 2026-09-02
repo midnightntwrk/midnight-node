@@ -366,3 +366,17 @@ Or:
 ```bash
 earthly +stop-local-env --NODE-IMAGE=ghcr.io/midnight-ntwrk/midnight-node:0.12.0
 ```
+
+### micro-dao end-to-end run
+
+`scripts/tests/microdao-local-env-e2e.sh` (or `just microdao-local-env-e2e`) brings up a fresh
+local-env and runs every circuit of `compact/test-center/test-contracts/micro-dao.compact` through
+the toolkit: deploy, `set_topic`, then per voter `buy_in` and `vote_commit`, `advance`, per voter
+`vote_reveal`, `advance`, `cash_out`. It checks that no secret key ever reaches the chain and that
+the wallet ends with the funds it started with. Each phase is timed and a summary is printed at
+the end.
+
+The coin circuits need shielded NIGHT, which the stock local genesis does not have, so the script
+regenerates `res/genesis/genesis_{state,block}_local.mn` with a funded DAO wallet, starts the env,
+and restores the committed files. Set `IMAGE_TAG` to run against a different node image (it must
+match the toolkit built from the checkout) and `OUTDIR` to keep the artifacts elsewhere.
