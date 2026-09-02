@@ -1,4 +1,5 @@
 #node #genesis #beefy
+
 # Let session seed the BEEFY genesis authorities
 
 Building genesis panicked once beefy became a session key:
@@ -22,5 +23,5 @@ lets `pallet_session` seed the BEEFY authorities from the committee's session
 keys. Note this changes genesis storage, and therefore the genesis hash, so it
 applies to chains created from this version onward.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1953
+PR: https://github.com/midnightntwrk/midnight-node/pull/2084
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1742

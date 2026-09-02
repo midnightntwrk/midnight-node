@@ -8,5 +8,5 @@ upgrade, which spans two changes the toolkit ships as separate migrations: the
 `QueuedCommittee` (`migrations::v2`). They cannot be wired one after the other,
 so a custom migration that combines both is added.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1953
+PR: https://github.com/midnightntwrk/midnight-node/pull/2084
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1742

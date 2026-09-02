@@ -1,4 +1,5 @@
 #node #keystore #beefy
+
 # Provide BEEFY keys via seed file, and add them to the local-env validators
 
 Added `BEEFY_SEED_FILE`, alongside the existing `AURA_SEED_FILE`,
@@ -18,5 +19,5 @@ existing cross-chain key material is reused rather than new keys generated:
 keystore entries for the keystore-mounted nodes, and `seeds/beefy.seed` plus
 `BEEFY_SEED_FILE` for the seed-file node.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1953
+PR: https://github.com/midnightntwrk/midnight-node/pull/2084
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1742

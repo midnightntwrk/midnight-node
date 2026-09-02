@@ -1,4 +1,5 @@
 #node #committee-selection #beefy
+
 # Decode the committee by pallet storage version in the membership watcher
 
 The committee-membership watcher called the `get_current_committee` runtime
@@ -14,5 +15,5 @@ matching shape (`committee_keys_migrated` / `decode_current_committee`),
 upgrading legacy-shaped members on the fly. Storage version `>= 2` means the
 committee carries beefy keys; absent or lower means it does not.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1953
+PR: https://github.com/midnightntwrk/midnight-node/pull/2084
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1742

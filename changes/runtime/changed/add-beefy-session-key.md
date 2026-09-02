@@ -16,5 +16,5 @@ the BEEFY authorities from the committee, so the chain spec no longer sets
 
 The runtime version moves to `002_001_001`.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/1953
+PR: https://github.com/midnightntwrk/midnight-node/pull/2084
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1742
