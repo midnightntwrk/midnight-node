@@ -1,10 +1,11 @@
 use super::build_txs_ext::BuildTxsExt;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildUtxoOutput, BuildUtxoSpend,
-	BuilderContext, ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction, ContractAddress,
-	ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input, IntentCustom,
-	IntentInfo, OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider,
-	PublicAddress, Recipient, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType,
+	BuilderContext, ClaimedUnshieldedSpendsKey, CoinInfo, CoinSelectionStrategy, ContractAction,
+	ContractAddress, ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input,
+	InputInfo, IntentCustom, IntentInfo, OfferInfo, Output, OutputInfo, ProofPreimage,
+	ProofPreimageMarker, ProofProvider, PublicAddress, Recipient, Segment,
+	ShieldedCoinSelectionError, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType,
 	TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
 	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, zswap,
 };
@@ -19,7 +20,10 @@ use crate::{
 use async_trait::async_trait;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
 use rand::SeedableRng;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+	collections::{BTreeMap, HashMap},
+	sync::Arc,
+};
 
 // --- Version-local type definitions ---
 
@@ -144,6 +148,105 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildInput<D, C> for EncodedInputInfo<
 	}
 }
 
+fn add_shielded_token_value(
+	totals: &mut BTreeMap<ShieldedTokenType, u128>,
+	token_type: ShieldedTokenType,
+	value: u128,
+) -> Result<(), CustomContractBuilderError> {
+	let total = totals.entry(token_type).or_insert(0);
+	*total = total
+		.checked_add(value)
+		.ok_or(CustomContractBuilderError::ShieldedBalanceOverflow)?;
+	Ok(())
+}
+
+const GUARANTEED_SEGMENT: u16 = Segment::Guaranteed as u16;
+
+/// One call transcript's effects, tagged with its contract and the segment the ledger accounts
+/// it under. The ledger balances each segment independently, so both have to survive
+/// aggregation: the contract gives a mint its token type, the segment gives it its tier.
+struct SegmentedEffects {
+	segment: u16,
+	address: ContractAddress,
+	effects: ContractEffects<DefaultDB>,
+}
+
+impl SegmentedEffects {
+	/// Whether this transcript moved any shielded value.
+	fn moves_shielded_value(&self) -> bool {
+		!self.effects.shielded_mints.is_empty()
+			|| !self.effects.claimed_shielded_receives.is_empty()
+			|| !self.effects.claimed_shielded_spends.is_empty()
+			|| !self.effects.claimed_nullifiers.is_empty()
+	}
+}
+
+fn call_effects(intent: &IntentCustom<DefaultDB>, fallible_segment: u16) -> Vec<SegmentedEffects> {
+	let mut effects = Vec::new();
+	for action in intent.intent.actions.iter() {
+		if let ContractAction::Call(call) = &*action {
+			for (segment, transcript) in [
+				(GUARANTEED_SEGMENT, &call.guaranteed_transcript),
+				(fallible_segment, &call.fallible_transcript),
+			] {
+				if let Some(transcript) = transcript {
+					effects.push(SegmentedEffects {
+						segment,
+						address: call.address,
+						effects: transcript.effects.clone(),
+					});
+				}
+			}
+		}
+	}
+	effects
+}
+
+/// The shielded value the calling wallet must supply, per token type: `outputs - inputs -
+/// mints`, floored at zero.
+///
+/// A `receiveShielded` output is one the caller has to cover; a `mintShieldedToken` output is
+/// backed by the contract instead, recorded in `Effects::shielded_mints`. Coins the contract
+/// owns enter as inputs and pay for themselves, and transients net to zero.
+fn shielded_shortfall<C: BuilderContext<DefaultDB>>(
+	segment: u16,
+	outputs: &[Box<dyn BuildOutput<DefaultDB, C>>],
+	inputs: &[Box<dyn BuildInput<DefaultDB, C>>],
+	effects: &[SegmentedEffects],
+) -> Result<Vec<(ShieldedTokenType, u128)>, CustomContractBuilderError> {
+	let mut owed = BTreeMap::new();
+	for output in outputs {
+		add_shielded_token_value(&mut owed, output.token_type(), output.value())?;
+	}
+
+	let mut covered = BTreeMap::new();
+	for input in inputs {
+		add_shielded_token_value(&mut covered, input.token_type(), input.value())?;
+	}
+	// Only mints in this segment cover it: a fallible mint is conditional on its segment
+	// applying, so it cannot back a guaranteed output.
+	for effect in effects.iter().filter(|e| e.segment == segment) {
+		for entry in effect.effects.shielded_mints.iter() {
+			let (domain_sep, value) = &*entry;
+			add_shielded_token_value(
+				&mut covered,
+				effect.address.custom_shielded_token_type(**domain_sep),
+				u128::from(**value),
+			)?;
+		}
+	}
+
+	Ok(owed
+		.into_iter()
+		.filter_map(|(token_type, total)| {
+			match total.saturating_sub(covered.get(&token_type).copied().unwrap_or(0)) {
+				0 => None,
+				shortfall => Some((token_type, shortfall)),
+			}
+		})
+		.collect())
+}
+
 // --- Builder ---
 
 #[derive(Debug, thiserror::Error)]
@@ -162,6 +265,12 @@ pub enum CustomContractBuilderError {
 	FailedToFindMatchingUtxo(UtxoId),
 	#[error("ClaimedUnshieldedSpendsKey contains non-unshielded token type")]
 	ClaimedUnshieldedSpendTokenTypeError(TokenType),
+	#[error("arithmetic overflow while balancing the shielded offer")]
+	ShieldedBalanceOverflow,
+	#[error("failed to select shielded coins to fund the contract call")]
+	ShieldedCoinSelection(#[from] ShieldedCoinSelectionError),
+	#[error("segment {0} moves shielded value in a fallible transcript, which is not supported")]
+	FallibleShieldedEffects(u16),
 }
 
 pub struct CustomContractBuilder<C: BuilderContext<DefaultDB>> {
@@ -451,6 +560,41 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 
 			for encoded_output_info in encoded_output_infos.values() {
 				outputs_info.push(encoded_output_info.clone());
+			}
+		}
+
+		// Cover the coins the circuit took from the caller, or the offer is unbalanced and
+		// the transaction is rejected.
+		if !outputs_info.is_empty() {
+			let effects = call_effects(&contract_intent, contract_segment);
+			// Every zswap element here goes into the guaranteed offer, so a transcript that
+			// moves shielded value in a fallible segment cannot be balanced correctly.
+			if let Some(fallible) = effects
+				.iter()
+				.find(|e| e.segment != GUARANTEED_SEGMENT && e.moves_shielded_value())
+			{
+				return Err(CustomContractBuilderError::FallibleShieldedEffects(fallible.segment));
+			}
+			let shortfalls =
+				shielded_shortfall(GUARANTEED_SEGMENT, &outputs_info, &inputs_info, &effects)?;
+			for (token_type, required) in shortfalls {
+				let (funding_inputs, change) = InputInfo::coins_to_cover_value(
+					self.context.clone(),
+					self.funding_seed(),
+					required,
+					token_type,
+					CoinSelectionStrategy::LargestFirst,
+				)?;
+				for funding_input in funding_inputs {
+					inputs_info.push(Box::new(funding_input));
+				}
+				if change > 0 {
+					outputs_info.push(Box::new(OutputInfo {
+						destination: self.funding_seed(),
+						token_type,
+						value: change,
+					}));
+				}
 			}
 		}
 

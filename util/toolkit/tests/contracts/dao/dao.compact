@@ -1,0 +1,262 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+pragma language_version >= 0.17.0;
+
+import CompactStandardLibrary;
+
+// DAO circuits to be exported
+export {vote_commit, vote_reveal, advance, set_topic, buy_in, cash_out}
+// Re-exports from std, these allow TypeScript types to be generated, which makes for nicer TypeScript experience
+export {Maybe, Either, ShieldedCoinInfo, QualifiedShieldedCoinInfo, MerkleTreePath}
+
+// Current phase of voting - stored on-chaining
+export enum LedgerState { setup, commit, reveal, final, }
+
+// Current state of voter - stored off-chain
+export enum LocalState { initial, committed, revealed, }
+
+export struct Costs {
+  seed_dust: Uint<64>,
+  buy_in_dust: Uint<64>
+}
+
+export ledger organizer: Bytes<32>; // Public key of organizer, to allow access control
+export ledger state: LedgerState;
+export ledger topic: Maybe<Opaque<"string">>;
+export ledger beneficiary: Maybe<ZswapCoinPublicKey>;
+export ledger yes: Counter;
+export ledger no: Counter;
+export ledger round: Counter; // Current round, as it is an input to commitment/nullifier functions, it makes votes between rounds indistinguishable
+export ledger committed_votes: MerkleTree<10, Bytes<32>>; // Merkle tree of vote commits, to prevent reveals inconsistent with previously commited votes
+export ledger committed_participants: Set<Bytes<32>>; // Participant nullifier set to prevent committing to multiple votes
+export ledger revealed_participants: Set<Bytes<32>>; // Another participant nullifier set to prevent revealing own votes multiple times
+
+export ledger pot: QualifiedShieldedCoinInfo; // Current pot, it has to be a cell containing `QualifiedShieldedCoinInfo` directly, so that compiler knows to provide `writeCoin` function
+export ledger pot_has_coin: Boolean; // Given the pot has to contain coin data directly, information about whether actual coin is there, has to be stored separately
+
+export ledger costs: Costs;
+
+// Taking organizer secret key through a constructor allows for separating deploy from contract ownership
+constructor(organizer_secret_key: Bytes<32>, costs_param: Costs) {
+  organizer = public_key(organizer_secret_key);
+  state = LedgerState.setup;
+  costs = disclose(costs_param);
+}
+
+witness local_secret_key(): Bytes<32>; // Secret key used to identify participant when performing an action
+witness local_state(): LocalState; // Current voter state
+witness local_advance_state(): []; // Function to advance local state after commiting or revealing a vote
+witness local_record_vote(vote: Boolean): [];
+witness local_vote_cast(): Maybe<Boolean>; // Returns vote for current round
+witness local_path_of_cm(cm: Bytes<32>): Maybe<MerkleTreePath<10, Bytes<32>>>; // Returns Merkle proof of committed vote
+
+/**
+ * Commits to a vote without revealing its contents
+ */
+circuit vote_commit(ballot: Boolean, votingCoin: ShieldedCoinInfo): [] {
+  assert(state == LedgerState.commit && local_state() == LocalState.initial, "In illegal state for committing");
+  assert(votingCoin.color == dao_voting_token(), "Expected own voting token to provided");
+  assert(votingCoin.value == 1, "Expected only one voting token");
+  const sk = local_secret_key();
+  const nullifier = commitment_nullifier(sk);
+  assert(!committed_participants.member(nullifier), "Attempted to double commit a vote");
+  receiveShielded(disclose(votingCoin));
+  sendImmediateShielded(disclose(votingCoin), left<ZswapCoinPublicKey, ContractAddress>(ZswapCoinPublicKey{pad(32, "")}), 1); // Burn the token to prevent usage in the future
+  local_record_vote(ballot);
+  const vote_commitment = commit_with_sk(ballot ? pad(32, "yes") : pad(32, "no"), sk);
+  committed_votes.insert(vote_commitment);
+  committed_participants.insert(nullifier);
+  local_advance_state();
+}
+
+/**
+ * Reveals a previously commited vote.
+ */
+circuit vote_reveal(): [] {
+  assert(state == LedgerState.reveal && local_state() == LocalState.committed, "In illegal state for revealing");
+  const sk = local_secret_key();
+  const rev_nul = reveal_nullifier(sk);
+  assert (!revealed_participants.member(rev_nul), "Attempted to double vote");
+  const vote = disclose(local_vote_cast());
+  assert(vote.is_some, "Must have voted to reveal");
+  const cm = commit_with_sk(vote.value ? pad(32, "yes") : pad(32, "no"), sk);
+  const path = disclose(local_path_of_cm(cm));
+  assert((path.is_some && committed_votes.checkRoot(path_root(path.value)) && cm == path.value.leaf), "Attempted to reveal incorrectly");
+  if(vote.value) {
+    yes.increment(1);
+  } else {
+    no.increment(1);
+  }
+  revealed_participants.insert(rev_nul);
+  local_advance_state();
+}
+
+/**
+ * Advance the voting stage - that is go:
+ * - from commit to reveal
+ * - from reveal to final
+ * - from final to setup (if voting status allows)
+ */
+circuit advance(): [] {
+  const sk = local_secret_key();
+  const apk = public_key(sk);
+  assert(!(state == LedgerState.setup), "Leave setup phase by setting the topic");
+  assert((apk == organizer), "Attempted to advance state without authorization");
+  if (state == LedgerState.final) {
+    assert((yes.lessThan((no.read() + 1) as Uint<64>)), "Attempted to advance state when a cash out is expected");
+    reset_state(false);
+  } else {
+    state = successor(state);
+  }
+}
+
+circuit successor(state: LedgerState): LedgerState {
+  if (state == LedgerState.setup)
+    return LedgerState.commit;
+  else if (state == LedgerState.commit)
+    return LedgerState.reveal;
+  else
+    return LedgerState.final;
+}
+
+/**
+ * Initialize a proposal:
+ * - set its topic
+ * - set beneficiary
+ * - provide seed coins for pot
+ */
+circuit set_topic(topic_param: Opaque<"string">, beneficiary_param: ZswapCoinPublicKey, seedCoin: ShieldedCoinInfo): [] {
+  assert((seedCoin.value == costs.seed_dust && seedCoin.color == nativeToken()), "Expected configured seed dust as seed");
+  const sk = local_secret_key();
+  const apk = public_key(sk);
+  assert((organizer == apk), "Attempted to set topic without authorization");
+  assert((state == LedgerState.setup), "Attempted to set topic after setup phase");
+  receiveShielded(disclose(seedCoin));
+  if(!pot_has_coin) {
+    pot.writeCoin(disclose(seedCoin), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    pot_has_coin = true;
+  } else {
+    pot.writeCoin(mergeCoinImmediate(pot, disclose(seedCoin)), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+  }
+  topic = some<Opaque<"string">>(disclose(topic_param));
+  beneficiary = some<ZswapCoinPublicKey>(disclose(beneficiary_param));
+  state = LedgerState.commit;
+}
+
+/**
+ * Buy `amount` rights to vote on following proposals. The right to vote is materialized as a freshly minted token for the caller.
+ * Each token costs defined amount of tDUST, so overall `amount * token_price` needs to be provided in the coin.
+ */
+circuit buy_in(coin: ShieldedCoinInfo, amount: Uint<64>): ShieldedCoinInfo {
+  assert((disclose(amount) != 0), "Invalid buy-in, expected positive integer");
+  assert((coin.value == costs.buy_in_dust * amount && coin.color == nativeToken()), "Invalid buy-in, expected configured buy_in for each voting token");
+  receiveShielded(disclose(coin));
+  if(!pot_has_coin) {
+    pot.writeCoin(disclose(coin), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+    pot_has_coin = true;
+  } else {
+    pot.writeCoin(mergeCoinImmediate(pot, disclose(coin)), right<ZswapCoinPublicKey, ContractAddress>(kernel.self()));
+  }
+  return mintShieldedToken(
+    dao_token_domain_separator(),
+    disclose(amount),
+    evolveNonce(0, disclose(coin.nonce)),
+    left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey())
+  );
+}
+
+/**
+ * Let beneficiary cash out if voting was in favor of proposal
+ */
+circuit cash_out(): ShieldedCoinInfo {
+  const addr = ownPublicKey();
+  assert((state == LedgerState.final && beneficiary.is_some && beneficiary.value == addr && no.lessThan(yes)), "Attempted illegal cash-out.");
+  const coin = sendShielded(
+    pot,
+    left<ZswapCoinPublicKey, ContractAddress>(addr),
+    pot.value);
+  reset_state(true);
+  return coin.sent;
+}
+
+circuit reset_state(reset_pot: Boolean): [] {
+  state = LedgerState.setup;
+  topic = none<Opaque<"string">>();
+  yes.resetToDefault();
+  no.resetToDefault();
+  beneficiary = none<ZswapCoinPublicKey>();
+  committed_votes.resetToDefault();
+  committed_participants.resetToDefault();
+  revealed_participants.resetToDefault();
+  round.increment(1);
+  if (reset_pot) {
+    pot = default<QualifiedShieldedCoinInfo>;
+    pot_has_coin = false;
+  }
+}
+
+/**
+ * A hash function of a participant secret key, used together with committed set to prevent committing to multiple votes
+ */
+circuit commitment_nullifier(sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "lares:udao:cm-nul:"), round as Field as Bytes<32>, sk]));
+}
+
+/**
+ * Very similar function to `commitment_nullifer`, this time to prevent revealing votes multiple times
+ */
+circuit reveal_nullifier(sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "lares:udao:rv-nul:"), round as Field as Bytes<32>, sk]));
+}
+
+export circuit public_key(sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "lares:udao:pk:"), sk]));
+}
+
+/**
+ * Commitment of a vote. When inserted into Merkle Tree allows gives a means to check that vote being revealed is the same as was earlier comitted to.
+ */
+circuit commit_with_sk(ballot: Bytes<32>, sk: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash<Vector<3, Bytes<32>>>([ballot, round as Field as Bytes<32>, sk]));
+}
+
+/**
+ * A root of Merkle tree calculated from provided path
+ */
+export circuit path_root(path: MerkleTreePath<10, Bytes<32>>): MerkleTreeDigest {
+  return merkleTreePathRoot<10, Bytes<32>>(path);
+}
+
+/**
+ * DAO Voting Token type for current instance
+ */
+export circuit dao_voting_token(): Bytes<32> {
+  return tokenType(dao_token_domain_separator(), kernel.self());
+}
+
+/**
+ * DAO Voting Token domain separator, so DApp can easily calculate token type for the contract instance
+ */
+export circuit dao_token_domain_separator(): Bytes<32> {
+  return pad(32, "dao_voting_token");
+}
+
+/**
+ * Amount of base units that makes 1 tDUST
+ */
+export circuit tdust(): Uint<64> {
+  return 1000000;
+}
