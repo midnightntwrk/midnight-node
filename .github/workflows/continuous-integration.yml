@@ -53,8 +53,6 @@ jobs:
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
       node_image: ${{ steps.image_tags.outputs.node_image }}
       toolkit_image: ${{ steps.image_tags.outputs.toolkit_image }}
-      node_image_public: ${{ steps.image_tags.outputs.node_image_public }}
-      toolkit_image_public: ${{ steps.image_tags.outputs.toolkit_image_public }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
@@ -147,8 +145,6 @@ jobs:
             echo "image_repo=${image_repo}"
             echo "node_image=${GHCR_REGISTRY}/${image_repo}"
             echo "toolkit_image=${GHCR_REGISTRY}/${image_repo}-toolkit"
-            echo "node_image_public=${GHCR_REGISTRY_PUBLIC}/${image_repo}"
-            echo "toolkit_image_public=${GHCR_REGISTRY_PUBLIC}/${image_repo}-toolkit"
           } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
@@ -395,11 +391,18 @@ jobs:
 
       - name: Push combined manifest for midnight-node
         env:
-          IMAGE: ${{ needs.run.outputs.node_image_public }}
           COMBINED_TAG: ${{ steps.tags.outputs.node_combined }}
           AMD64_TAG: ${{ steps.tags.outputs.node_amd64 }}
           ARM64_TAG: ${{ steps.tags.outputs.node_arm64 }}
         run: |
+          # Recomputed here rather than carried as a job output: Actions drops any output
+          # whose value contains a secret, and DOCKERHUB_MIDNIGHTNTWRK_USER is the literal
+          # string "midnightntwrk", which appears in the public image name. The output
+          # arrived empty and `imagetools create -t ":<tag>"` failed with "invalid
+          # reference format". The private ghcr.io/midnight-ntwrk name is hyphenated, so it
+          # is unaffected and still travels as an output.
+          IMAGE="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}"
+
           docker buildx imagetools create \
             -t "${IMAGE}:${COMBINED_TAG}" \
             "${IMAGE}:${AMD64_TAG}" \
@@ -408,11 +411,18 @@ jobs:
 
       - name: Push combined manifest for midnight-node-toolkit
         env:
-          IMAGE: ${{ needs.run.outputs.toolkit_image_public }}
           COMBINED_TAG: ${{ steps.tags.outputs.toolkit_combined }}
           AMD64_TAG: ${{ steps.tags.outputs.toolkit_amd64 }}
           ARM64_TAG: ${{ steps.tags.outputs.toolkit_arm64 }}
         run: |
+          # Recomputed here rather than carried as a job output: Actions drops any output
+          # whose value contains a secret, and DOCKERHUB_MIDNIGHTNTWRK_USER is the literal
+          # string "midnightntwrk", which appears in the public image name. The output
+          # arrived empty and `imagetools create -t ":<tag>"` failed with "invalid
+          # reference format". The private ghcr.io/midnight-ntwrk name is hyphenated, so it
+          # is unaffected and still travels as an output.
+          IMAGE="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}-toolkit"
+
           docker buildx imagetools create \
             -t "${IMAGE}:${COMBINED_TAG}" \
             "${IMAGE}:${AMD64_TAG}" \
