@@ -175,6 +175,22 @@ impl ComputeTask {
 				)
 				.await
 			},
+			// Spec 2_001_001 bumped only `frame_system::BlockLength` (a constant) and
+			// the default of `ConfigurableTransactionSizeWeight` (a storage-entry
+			// default). Both are metadata-visible, but neither touches the extrinsic
+			// envelope or the event types this decoder reads, so the 2.1.0 subxt
+			// snapshot decodes 2_001_001 blocks unchanged — the same reasoning that
+			// lets `MidnightMetadata2_0_0` reuse the 1.0.0 snapshot above. Give it its
+			// own `midnight_metadata_2.1.1.scale` once the runtime metadata is
+			// rebuilt for this spec.
+			RuntimeVersion::V2_1_1 => {
+				Self::process_block_with_protocol::<MidnightMetadata2_1_0>(
+					block,
+					&header,
+					spec_version,
+				)
+				.await
+			},
 		}
 	}
 
