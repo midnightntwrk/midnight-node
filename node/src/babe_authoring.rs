@@ -25,14 +25,16 @@
 //! - **About to author a BABE block** (authorities only): the supervisor seeds after
 //!   [`wait_for_flip`] and before starting the BABE worker. The validator that authors the very
 //!   first BABE block has imported no BABE block yet and its own blocks bypass the import queue, so
-//!   nothing else would seed before it proposes.
+//!   nothing else would seed before it proposes. `wait_for_flip` watches the origin-independent
+//!   every-import stream so the hand-over also happens while syncing across the flip.
 //! - **About to verify a BABE block** (every role): [`BabeEpochSeeder`], called by the import-queue
 //!   dispatcher right before it hands a BABE batch to the BABE queue. This is the only trigger that
 //!   works while *syncing* across the flip — the client emits no block-import notifications for
 //!   sync-origin imports, so a notification watcher never fires there — and it is what lets
 //!   non-authorities import the first BABE block; they run no flip watcher at all.
 //!
-//! Seeding is idempotent, so both triggers may run on an authority.
+//! Seeding is idempotent and its check-and-reset is atomic under the epoch-tree lock, so both
+//! triggers may run concurrently on an authority.
 
 use crate::consensus_engine_dispatch::EpochSeeder;
 use futures::StreamExt;
@@ -44,7 +46,7 @@ use sc_consensus_babe::{BabeBlockWeight, BabeLink, aux_schema::block_weight_key}
 use sc_consensus_epochs::descendent_query;
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
-use sp_consensus_babe::BabeApi;
+use sp_consensus_babe::{BABE_ENGINE_ID, BabeApi};
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
 use std::future::Future;
 use std::sync::Arc;
@@ -94,24 +96,51 @@ where
 	}
 }
 
+fn has_babe_pre_runtime_digest(header: &<Block as BlockT>::Header) -> bool {
+	header
+		.digest()
+		.logs()
+		.iter()
+		.any(|log| matches!(log.as_pre_runtime(), Some((id, _)) if id == BABE_ENGINE_ID))
+}
+
 /// Resolve once the best chain has flipped to BABE, yielding the best block hash at that point.
 ///
 /// Returns immediately if the chain is already on BABE (restart after the flip); otherwise watches
-/// best-block import notifications until one lands whose state selects BABE.
+/// new-best block imports until one lands whose state selects BABE.
+///
+/// This uses `every_import_notification_stream`, not `import_notification_stream`: the latter is
+/// silent for blocks imported with a sync origin, so a validator syncing across the flip would keep
+/// running the AURA worker until some *other* node's block arrived at the tip — each slot in between
+/// it would attempt an AURA proposal that the runtime rejects ("AURA pre-runtime digest present in
+/// state 'Babe'"), and if every validator were in that state nobody would ever produce that block.
+/// The every-import stream fires for sync-origin imports too, so the hand-over happens at the flip
+/// block wherever the node is relative to the tip. The BABE worker then simply idles (slot workers
+/// skip slots while major-syncing) until sync completes.
+///
+/// The stream is subscribed *before* reading the best block so a flip imported in between is not
+/// missed. Every-import sinks only receive imports that happen after they exist.
 pub async fn wait_for_flip<C>(client: &Arc<C>) -> Hash
 where
 	C: SupervisorClient,
 	C::Api: ConsensusEngineApi<Block>,
 {
+	let mut notifications = client.every_import_notification_stream();
+
 	let best = client.info().best_hash;
 	if active_engine_at(&**client, best) == ActiveEngine::Babe {
 		log::info!(target: LOG_TARGET, "chain already on BABE at startup (best {best:?})");
 		return best;
 	}
 
-	let mut notifications = client.import_notification_stream();
 	while let Some(notification) = notifications.next().await {
 		if !notification.is_new_best {
+			continue;
+		}
+		// Cheap pre-filter for the (possibly long) pre-arming history: the flip block, like every
+		// block from arming onward, carries a BABE pre-runtime digest. Blocks without one cannot be
+		// past the flip, so skip the runtime query for them.
+		if !has_babe_pre_runtime_digest(&notification.header) {
 			continue;
 		}
 		if active_engine_at(&**client, notification.hash) == ActiveEngine::Babe {
@@ -179,9 +208,13 @@ where
 		.map_err(|e| format!("flip block {at:?} has no BABE pre-digest: {e}"))?
 		.slot();
 
-	// Don't clobber a tree already loaded from the aux DB (restart after the flip).
+	// Hold the tree lock from the coverage check through the reset. Seeding has two triggers (the
+	// authoring supervisor and the import-path seeder) that can run concurrently around the flip;
+	// with check and reset under one lock the second caller sees the first one's result instead of
+	// racing it. Don't clobber a tree already loaded from the aux DB (restart after the flip) or
+	// already seeded by the other trigger.
 	{
-		let epoch_changes = babe_link.epoch_changes().shared_data();
+		let mut epoch_changes = babe_link.epoch_changes().shared_data();
 		let already_covered = epoch_changes
 			.epoch_descriptor_for_child_of(descendent_query(&**client), &at, number, slot)
 			.map(|descriptor| descriptor.is_some())
@@ -190,16 +223,16 @@ where
 			log::debug!(target: LOG_TARGET, "BABE epoch tree already covers {at:?}; not seeding");
 			return Ok(());
 		}
+
+		let current = client.runtime_api().current_epoch(at).map_err(|e| e.to_string())?;
+		let next = client.runtime_api().next_epoch(at).map_err(|e| e.to_string())?;
+		let (current_index, next_index) = (current.epoch_index, next.epoch_index);
+		epoch_changes.reset(parent_hash, at, number, current.into(), next.into());
+		log::info!(
+			target: LOG_TARGET,
+			"seeded BABE epoch tree at flip block #{number} ({at:?}): epochs {current_index} and {next_index}",
+		);
 	}
-
-	let current = client.runtime_api().current_epoch(at).map_err(|e| e.to_string())?;
-	let next = client.runtime_api().next_epoch(at).map_err(|e| e.to_string())?;
-	let (current_index, next_index) = (current.epoch_index, next.epoch_index);
-
-	babe_link
-		.epoch_changes()
-		.shared_data()
-		.reset(parent_hash, at, number, current.into(), next.into());
 
 	// Bootstrap the flip block's cumulative BABE chain weight to 0. The flip block was imported
 	// through the AURA pipeline, which records no BABE block weight, so the first BABE block (its
@@ -212,10 +245,7 @@ where
 		.insert_aux(&[(weight_key.as_slice(), weight_value.as_slice())], no_delete)
 		.map_err(|e| e.to_string())?;
 
-	log::info!(
-		target: LOG_TARGET,
-		"seeded BABE epoch tree and zero chain-weight at flip block #{number} ({at:?}): epochs {current_index} and {next_index}",
-	);
+	log::debug!(target: LOG_TARGET, "bootstrapped zero BABE chain-weight at flip block {at:?}");
 	Ok(())
 }
 

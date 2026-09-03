@@ -39,5 +39,16 @@ bootstrap remains only in the validator's authoring supervisor, where it sequenc
 the BABE worker authors the first BABE block; the separate `babe-epoch-tree-bootstrap` task for
 non-authorities is removed as redundant.
 
+**Authoring hand-over while syncing.** The supervisor's flip watcher used the plain
+import-notification stream, which is silent for sync-origin imports. A validator syncing across
+the flip therefore kept the AURA worker until another node's block arrived at the tip, and in
+each slot until then attempted an AURA proposal that the runtime rejects ("AURA pre-runtime
+digest present in state 'Babe'"); had every validator been in that state, none would have
+produced that block. The watcher now uses the origin-independent every-import stream
+(subscribed before the initial best-block check, with a cheap header pre-filter), so the
+hand-over happens at the flip block regardless of sync state; the BABE worker idles until sync
+completes. Seeding's check-and-reset is now atomic under the epoch-tree lock, since the
+supervisor and the import path can seed concurrently.
+
 PR:
 Issue:
