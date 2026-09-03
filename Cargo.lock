@@ -7828,7 +7828,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "async-channel 1.9.0",
  "async-trait",
@@ -8033,6 +8033,7 @@ dependencies = [
  "sp-runtime",
  "sp-runtime-interface",
  "sp-tracing",
+ "v8-to-v9-state-translation",
 ]
 
 [[package]]
@@ -8058,8 +8059,6 @@ dependencies = [
  "midnight-ledger-v9",
  "midnight-onchain-runtime 3.1.0",
  "midnight-onchain-runtime 4.0.0",
- "midnight-onchain-state 3.0.0",
- "midnight-onchain-state 4.0.0",
  "midnight-serialize",
  "midnight-storage",
  "midnight-transient-crypto 2.2.0",
@@ -8081,12 +8080,13 @@ dependencies = [
  "subxt-signer 0.50.0",
  "thiserror 2.0.18",
  "tokio",
+ "v8-to-v9-state-translation",
  "zeroize",
 ]
 
 [[package]]
 name = "midnight-node-metadata"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "subxt 0.50.0",
  "walkdir",
@@ -8116,7 +8116,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-runtime"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "authority-selection-inherents",
  "binary-merkle-tree",
@@ -8196,7 +8196,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-toolkit"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -19708,6 +19708,20 @@ dependencies = [
  "getrandom 0.4.2",
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "v8-to-v9-state-translation"
+version = "0.1.0"
+source = "git+https://github.com/midnightntwrk/midnight-ledger?rev=da96e33d78ee9b7d3867b15c1037510d499cd909#da96e33d78ee9b7d3867b15c1037510d499cd909"
+dependencies = [
+ "midnight-base-crypto",
+ "midnight-ledger",
+ "midnight-ledger-v9",
+ "midnight-onchain-state 3.0.0",
+ "midnight-onchain-state 4.0.0",
+ "midnight-serialize",
+ "midnight-storage",
 ]
 
 [[package]]

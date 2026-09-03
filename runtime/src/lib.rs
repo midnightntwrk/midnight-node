@@ -275,7 +275,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 002_001_000,
+	spec_version: 003_000_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
@@ -544,7 +544,11 @@ parameter_types! {
 impl pallet_migrations::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	#[cfg(not(feature = "runtime-benchmarks"))]
-	type Migrations = (pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,);
+	// Append-only: `ActiveCursor.index` indexes this tuple.
+	type Migrations = (
+		pallet_cnight_observation::migrations::v1::MigrateV0ToV1<Runtime>,
+		pallet_cnight_observation::migrations::v2::MigrateV1ToV2<Runtime>,
+	);
 	// Benchmarks need mocked migrations to guarantee that they succeed.
 	#[cfg(feature = "runtime-benchmarks")]
 	type Migrations = pallet_migrations::mock_helpers::MockedMigrations;
@@ -961,6 +965,8 @@ parameter_types! {
 
 impl pallet_cnight_observation::Config for Runtime {
 	type MidnightSystemTransactionExecutor = MidnightSystem;
+	type LedgerStateProvider = Midnight;
+	type LedgerBlockContextProvider = Midnight;
 	type WeightInfo = weights::pallet_cnight_observation::WeightInfo<Runtime>;
 }
 
@@ -1202,6 +1208,11 @@ pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, Tx
 /// Migrations to apply on runtime upgrade.
 pub type Migrations = (
 	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
+	// MUST precede the pallet-midnight translation below: it captures the
+	// still-untranslated v8 state key, which the cNIGHT dust generation replay
+	// (`pallet_cnight_observation::migrations::v2::MigrateV1ToV2`) reads the
+	// wiped entries' values and owners from.
+	pallet_cnight_observation::migrations::v2::RecordPreForkState<Runtime>,
 	// Ledger v8 -> v9 state translation (the ledger 8->9 hardfork). Runs once,
 	// when a ledger-8 runtime (pallet-midnight storage version 1) upgrades to
 	// this ledger-9 runtime (storage version 2).

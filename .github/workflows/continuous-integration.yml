@@ -5,6 +5,14 @@ env:
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
   AWS_REGION: ${{ secrets.AWS_REGION }}
   AWS_EKS_CLUSTER_NAME: ${{ secrets.AWS_EKS_CLUSTER_NAME }}
+  # Registry the images built here are pushed to and pulled from. Derived from the repo owner
+  # so a fork or private clone never touches midnightntwrk's registries. Upstream's private
+  # GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the canonical
+  # branch has to name the repo explicitly rather than derive it. GHCR_REGISTRY_PUBLIC is the
+  # public mirror, which only the canonical repo has; everywhere else it equals GHCR_REGISTRY
+  # and the mirror push is a no-op. Same derivation .envrc forwards to earthly as build args.
+  GHCR_REGISTRY: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnight-ntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
+  GHCR_REGISTRY_PUBLIC: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnightntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
 
 on:
   merge_group:
@@ -43,6 +51,8 @@ jobs:
       node_image_tag: ${{ steps.image_tags.outputs.node_image_tag }}
       node_image_tag_no_dev: ${{ steps.image_tags.outputs.node_image_tag_no_dev }}
       toolkit_image_tag: ${{ steps.image_tags.outputs.toolkit_image_tag }}
+      node_image: ${{ steps.image_tags.outputs.node_image }}
+      toolkit_image: ${{ steps.image_tags.outputs.toolkit_image }}
       skip_build: ${{ steps.check_images.outputs.skip_build }}
     steps:
       - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
@@ -124,21 +134,34 @@ jobs:
         run: |
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "node_image_tag=${version}-dev-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
-          echo "node_image_tag_no_dev=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-${content_hash}-amd64" >> "$GITHUB_OUTPUT"
+          # Image basename follows the repo name, so a fork publishes <owner>/<its-repo>
+          # rather than overwriting midnight-node. Taken from $GITHUB_REPOSITORY rather than
+          # github.event.repository.name, which is absent from merge_group/schedule payloads.
+          image_repo="${GITHUB_REPOSITORY#*/}"
+          {
+            echo "node_image_tag=${version}-dev-${content_hash}-amd64"
+            echo "node_image_tag_no_dev=${version}-${content_hash}-amd64"
+            echo "toolkit_image_tag=${version}-${content_hash}-amd64"
+            echo "image_repo=${image_repo}"
+            echo "node_image=${GHCR_REGISTRY}/${image_repo}"
+            echo "toolkit_image=${GHCR_REGISTRY}/${image_repo}-toolkit"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+          NODE_IMAGE: ${{ steps.image_tags.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ steps.image_tags.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
         run: |
           if [ "$FORCE_REBUILD" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${{ steps.image_tags.outputs.node_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
-          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.image_tags.outputs.toolkit_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          NODE_EXISTS=$(docker manifest inspect "${NODE_IMAGE}:${NODE_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
             echo "Images already exist, skipping build"
@@ -216,7 +239,7 @@ jobs:
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
-      image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+      image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
       sbom-artifact-name: sbom-midnight-node-ci
       skip-attestation: true
     secrets:
@@ -234,7 +257,7 @@ jobs:
     needs: [run]
     uses: ./.github/workflows/sbom-scan-image.yml
     with:
-      image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+      image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
       sbom-artifact-name: sbom-midnight-node-toolkit-ci
       skip-attestation: true
     secrets:
@@ -274,20 +297,29 @@ jobs:
         run: |
           content_hash=$(git rev-parse "HEAD^{tree}" | cut -c1-12)
           version=$(grep -m 1 '^version =' node/Cargo.toml | cut -d '"' -f2)
-          echo "node_image_tag=${version}-dev-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
-          echo "toolkit_image_tag=${version}-${content_hash}-arm64" >> "$GITHUB_OUTPUT"
+          image_repo="${GITHUB_REPOSITORY#*/}"
+          {
+            echo "node_image_tag=${version}-dev-${content_hash}-arm64"
+            echo "toolkit_image_tag=${version}-${content_hash}-arm64"
+            echo "node_image=${GHCR_REGISTRY}/${image_repo}"
+            echo "toolkit_image=${GHCR_REGISTRY}/${image_repo}-toolkit"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Check for existing images
         id: check_images
         env:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+          NODE_IMAGE: ${{ steps.image_tags.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ steps.image_tags.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ steps.image_tags.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ steps.image_tags.outputs.toolkit_image_tag }}
         run: |
           if [ "$FORCE_REBUILD" = "true" ]; then
             echo "skip_build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          NODE_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node:${{ steps.image_tags.outputs.node_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
-          TOOLKIT_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ steps.image_tags.outputs.toolkit_image_tag }}" > /dev/null 2>&1 && echo true || echo false)
+          NODE_EXISTS=$(docker manifest inspect "${NODE_IMAGE}:${NODE_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
+          TOOLKIT_EXISTS=$(docker manifest inspect "${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" > /dev/null 2>&1 && echo true || echo false)
           if [ "$NODE_EXISTS" = "true" ] && [ "$TOOLKIT_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
             echo "Images already exist, skipping build"
@@ -359,11 +391,18 @@ jobs:
 
       - name: Push combined manifest for midnight-node
         env:
-          IMAGE: ghcr.io/midnightntwrk/midnight-node
           COMBINED_TAG: ${{ steps.tags.outputs.node_combined }}
           AMD64_TAG: ${{ steps.tags.outputs.node_amd64 }}
           ARM64_TAG: ${{ steps.tags.outputs.node_arm64 }}
         run: |
+          # Recomputed here rather than carried as a job output: Actions drops any output
+          # whose value contains a secret, and DOCKERHUB_MIDNIGHTNTWRK_USER is the literal
+          # string "midnightntwrk", which appears in the public image name. The output
+          # arrived empty and `imagetools create -t ":<tag>"` failed with "invalid
+          # reference format". The private ghcr.io/midnight-ntwrk name is hyphenated, so it
+          # is unaffected and still travels as an output.
+          IMAGE="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}"
+
           docker buildx imagetools create \
             -t "${IMAGE}:${COMBINED_TAG}" \
             "${IMAGE}:${AMD64_TAG}" \
@@ -372,11 +411,18 @@ jobs:
 
       - name: Push combined manifest for midnight-node-toolkit
         env:
-          IMAGE: ghcr.io/midnightntwrk/midnight-node-toolkit
           COMBINED_TAG: ${{ steps.tags.outputs.toolkit_combined }}
           AMD64_TAG: ${{ steps.tags.outputs.toolkit_amd64 }}
           ARM64_TAG: ${{ steps.tags.outputs.toolkit_arm64 }}
         run: |
+          # Recomputed here rather than carried as a job output: Actions drops any output
+          # whose value contains a secret, and DOCKERHUB_MIDNIGHTNTWRK_USER is the literal
+          # string "midnightntwrk", which appears in the public image name. The output
+          # arrived empty and `imagetools create -t ":<tag>"` failed with "invalid
+          # reference format". The private ghcr.io/midnight-ntwrk name is hyphenated, so it
+          # is unaffected and still travels as an output.
+          IMAGE="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}-toolkit"
+
           docker buildx imagetools create \
             -t "${IMAGE}:${COMBINED_TAG}" \
             "${IMAGE}:${AMD64_TAG}" \
@@ -465,10 +511,14 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
+          NODE_IMAGE: ${{ needs.run.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
+          TOOLKIT_IMAGE: ${{ needs.run.outputs.toolkit_image }}
+          TOOLKIT_IMAGE_TAG: ${{ needs.run.outputs.toolkit_image_tag }}
         run: |
           . ./.envrc && earthly --secret GITHUB_TOKEN="$GITHUB_TOKEN" \
-            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
-            --build-arg "TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}" \
+            --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
+            --build-arg "TOOLKIT_IMAGE=${TOOLKIT_IMAGE}:${TOOLKIT_IMAGE_TAG}" \
             +rebuild-genesis
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -623,6 +673,7 @@ jobs:
           # +test's `Run build` step for the full rationale and why
           # EARTHLY_GIT_BRANCH is unsafe here.
           GITHUB_REF_RAW: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          NODE_IMAGE: ${{ needs.run.outputs.node_image }}
           NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
           PUSH_FLAG=""
@@ -639,9 +690,9 @@ jobs:
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             -P --strict $PUSH_FLAG \
-            --remote-cache=ghcr.io/midnight-ntwrk/midnight-node:cache-test-toolkit \
+            --remote-cache="${NODE_IMAGE}:cache-test-toolkit" \
             +test-toolkit \
-              --NODE_IMAGE="ghcr.io/midnight-ntwrk/midnight-node:${NODE_IMAGE_TAG}" \
+              --NODE_IMAGE="${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
               --CACHE_KEY="$CACHE_KEY"
 
       - uses: ./.github/actions/tree-cache-guard/save
@@ -667,8 +718,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -693,8 +744,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-update-ledger-parameters-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -719,8 +770,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-maintenance-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -745,8 +796,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-mint-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -771,8 +822,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-tokens-minter-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -809,9 +860,12 @@ jobs:
 
       - name: Run metadata check
         if: steps.guard.outputs.hit != 'true'
+        env:
+          NODE_IMAGE: ${{ needs.run.outputs.node_image }}
+          NODE_IMAGE_TAG: ${{ needs.run.outputs.node_image_tag }}
         run: |
           . ./.envrc && earthly --ci -P \
-            --build-arg "NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}" \
+            --build-arg "NODE_IMAGE=${NODE_IMAGE}:${NODE_IMAGE_TAG}" \
             +check-metadata
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -848,7 +902,7 @@ jobs:
 
   #     - name: Sync first 1000 blocks of mainnet
   #       env:
-  #         NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+  #         NODE_IMAGE: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
   #         SNAPSHOT: static/sync-test/snapshot.sql.xz
   #         CFG_PRESET: mainnet
   #         SYNC_UNTIL: "1000"
@@ -893,8 +947,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: toolkit-contracts-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -919,7 +973,7 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: startup-dev-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -945,7 +999,7 @@ jobs:
 
       - name: Run chainspec validation harness
         env:
-          MIDNIGHT_NODE_IMAGE: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
+          MIDNIGHT_NODE_IMAGE: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
         run: bash tests/chainspec-validation/run.sh
 
   genesis-undeployed-e2e:
@@ -966,8 +1020,8 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         with:
           just-command: genesis-wallets-undeployed-e2e
-          node-image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          node-image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           ghcr-password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
@@ -1004,9 +1058,9 @@ jobs:
           # Use the indexer submodule's tree hash — indexer images depend on submodule content, not main repo
           content_hash=$(git -C indexer rev-parse "HEAD^{tree}" | cut -c1-12)
           {
-            echo "indexer_api_image=ghcr.io/midnight-ntwrk/indexer-api:${content_hash}"
-            echo "chain_indexer_image=ghcr.io/midnight-ntwrk/chain-indexer:${content_hash}"
-            echo "wallet_indexer_image=ghcr.io/midnight-ntwrk/wallet-indexer:${content_hash}"
+            echo "indexer_api_image=${GHCR_REGISTRY}/indexer-api:${content_hash}"
+            echo "chain_indexer_image=${GHCR_REGISTRY}/chain-indexer:${content_hash}"
+            echo "wallet_indexer_image=${GHCR_REGISTRY}/wallet-indexer:${content_hash}"
             echo "content_hash=${content_hash}"
           } >> "$GITHUB_OUTPUT"
 
@@ -1015,9 +1069,9 @@ jobs:
             exit 0
           fi
 
-          API_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/indexer-api:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
-          CHAIN_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/chain-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
-          WALLET_EXISTS=$(docker manifest inspect "ghcr.io/midnight-ntwrk/wallet-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+          API_EXISTS=$(docker manifest inspect "${GHCR_REGISTRY}/indexer-api:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+          CHAIN_EXISTS=$(docker manifest inspect "${GHCR_REGISTRY}/chain-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
+          WALLET_EXISTS=$(docker manifest inspect "${GHCR_REGISTRY}/wallet-indexer:${content_hash}" > /dev/null 2>&1 && echo true || echo false)
 
           if [ "$API_EXISTS" = "true" ] && [ "$CHAIN_EXISTS" = "true" ] && [ "$WALLET_EXISTS" = "true" ]; then
             echo "skip_build=true" >> "$GITHUB_OUTPUT"
@@ -1032,7 +1086,7 @@ jobs:
 
       - name: Install just
         if: steps.image_meta.outputs.skip_build != 'true'
-        uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 #v2.85.11
+        uses: taiki-e/install-action@b6ff580856c41316412a0b9b60540fbc6f8c82cc #v2.86.7
         with:
           tool: just
 
@@ -1040,6 +1094,7 @@ jobs:
         if: steps.image_meta.outputs.skip_build != 'true'
         env:
           REGISTRY_TOKEN: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
+          CONTENT_HASH: ${{ steps.image_meta.outputs.content_hash }}
         run: |
           mkdir -p "$HOME/.cargo"
           echo "[net]" >> "$HOME/.cargo/config"
@@ -1057,17 +1112,16 @@ jobs:
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image chain-indexer
           DOCKER_DEFAULT_PLATFORM=linux/amd64 just build-docker-image wallet-indexer
 
-          # Retag with submodule's content hash
-          CONTENT_HASH="${{ steps.image_meta.outputs.content_hash }}"
+          # Retag with submodule's content hash (CONTENT_HASH comes from the step env)
           SUBMODULE_COMMIT=$(git rev-parse --short=8 HEAD)
 
-          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
-          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
-          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/indexer-api:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/indexer-api:${CONTENT_HASH}"
+          docker tag "midnightntwrk/chain-indexer:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/chain-indexer:${CONTENT_HASH}"
+          docker tag "midnightntwrk/wallet-indexer:${SUBMODULE_COMMIT}" "${GHCR_REGISTRY}/wallet-indexer:${CONTENT_HASH}"
 
-          docker push "ghcr.io/midnight-ntwrk/indexer-api:${CONTENT_HASH}"
-          docker push "ghcr.io/midnight-ntwrk/chain-indexer:${CONTENT_HASH}"
-          docker push "ghcr.io/midnight-ntwrk/wallet-indexer:${CONTENT_HASH}"
+          docker push "${GHCR_REGISTRY}/indexer-api:${CONTENT_HASH}"
+          docker push "${GHCR_REGISTRY}/chain-indexer:${CONTENT_HASH}"
+          docker push "${GHCR_REGISTRY}/wallet-indexer:${CONTENT_HASH}"
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 #v2.9.2
         if: steps.image_meta.outputs.skip_build != 'true'
@@ -1136,8 +1190,8 @@ jobs:
         uses: ./.github/actions/local-environment-tests
         with:
           tag: CI
-          image: ghcr.io/midnight-ntwrk/midnight-node:${{ needs.run.outputs.node_image_tag }}
-          toolkit-image: ghcr.io/midnight-ntwrk/midnight-node-toolkit:${{ needs.run.outputs.toolkit_image_tag }}
+          image: ${{ needs.run.outputs.node_image }}:${{ needs.run.outputs.node_image_tag }}
+          toolkit-image: ${{ needs.run.outputs.toolkit_image }}:${{ needs.run.outputs.toolkit_image_tag }}
           indexer-api-image: ${{ needs.build-indexer-images.outputs.indexer_api_image }}
           chain-indexer-image: ${{ needs.build-indexer-images.outputs.chain_indexer_image }}
           wallet-indexer-image: ${{ needs.build-indexer-images.outputs.wallet_indexer_image }}

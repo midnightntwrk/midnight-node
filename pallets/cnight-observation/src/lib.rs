@@ -68,14 +68,9 @@ pub enum UtxoActionType {
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
 
-/// Runtime acceptance envelope: upper bound on the UTXO-to-TX ratio that
-/// `process_tokens` and the worst-case weight will accept per inherent.
-///
-/// This is intentionally *wider* than the IDP's actual fetch factor (which the
-/// node binary picks per `CNightObservationApi` version — 4x at v2+, 64x at v1).
-/// The runtime must keep accepting the legacy 64x envelope so that v1 binaries
-/// pairing with a v2 runtime during the upgrade window can still have their
-/// inherents verified. Do not lower this to match the IDP fetch factor.
+/// Overestimate factor for UTXOs per Cardano transaction.
+/// The mainchain follower applies this multiplier to `CardanoTxCapacityPerBlock`
+/// when pre-allocating the UTXO buffer (see `get_utxos_up_to_capacity`).
 pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
 
 /// Upper bound on UTXO count per block, used for worst-case weight declaration.
@@ -84,7 +79,9 @@ pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
-	use midnight_primitives::MidnightSystemTransactionExecutor;
+	use midnight_primitives::{
+		LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
+	};
 	use midnight_primitives_cnight_observation::{
 		CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
 		CardanoRewardAddressBytes, DustPublicKeyBytes,
@@ -149,7 +146,9 @@ pub mod pallet {
 		pub system_transaction_hash: LedgerHash,
 	}
 
-	const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+	// v2: re-apply the cNIGHT dust generation entries the ledger 8 -> 9 hardfork
+	// wipes (see `migrations::v2`).
+	const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
 
 	#[pallet::pallet]
 	#[pallet::storage_version(STORAGE_VERSION)]
@@ -159,6 +158,11 @@ pub mod pallet {
 	#[pallet::config]
 	pub trait Config: frame_system::Config<Hash = H256> {
 		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
+		/// Reads the ledger state key, to capture the pre-hardfork (ledger-8)
+		/// one before the pallet-midnight translation replaces it.
+		type LedgerStateProvider: LedgerStateProvider;
+		/// Supplies the ledger time stamped on the replayed dust events.
+		type LedgerBlockContextProvider: LedgerBlockContextProvider;
 		/// Weight information for extrinsics in this pallet.
 		type WeightInfo: crate::weights::WeightInfo;
 	}
@@ -171,6 +175,35 @@ pub mod pallet {
 		MappingAdded(MappingEntry),
 		MappingRemoved(MappingEntry),
 		SystemTransactionApplied(SystemTransactionApplied),
+		/// The hardfork upgrade block armed the dust generation replay
+		/// (`migrations::v2`) by saving the pre-fork ledger state key.
+		DustReapplyStarted,
+		/// One replay batch failed to apply; its nonces were not restored. The
+		/// replay continues with the next batch.
+		DustReapplyBatchFailed {
+			nonces: Vec<T::Hash>,
+		},
+		/// The replay finished. `applied` entries were restored; `skipped` were
+		/// not (untracked, already destroyed, or in a failed batch).
+		DustReapplyCompleted {
+			applied: u32,
+			skipped: u32,
+		},
+		/// The replay was abandoned before the last page: the hardfork did not
+		/// wipe dust state, no pre-fork state key was recorded, that key became
+		/// unreadable, or a batch priced above what a whole block affords. The
+		/// reason is logged.
+		DustReapplySkipped {
+			applied: u32,
+			skipped: u32,
+		},
+		/// `process_tokens` ignored this block's Cardano observations because a
+		/// multi-block migration of this pallet's storage is still running.
+		/// `NextCardanoPosition` is left unchanged, so nothing is lost — the
+		/// observer re-delivers these UTXOs once the migration winds up. Emitted
+		/// once per block for as long as the gate holds; the exact versions are
+		/// in the node log.
+		ObservationsSkippedForMigration,
 	}
 
 	#[pallet::error]
@@ -293,6 +326,25 @@ pub mod pallet {
 
 	#[pallet::storage]
 	pub type InherentExecutedThisBlock<T: Config> = StorageValue<_, bool, ValueQuery>;
+
+	/// The ledger-8 arena root as of the hardfork upgrade block, retained so the
+	/// dust replay (`migrations::v2`) can read pre-wipe night values and owners
+	/// after `pallet_midnight::StateKey` has moved on to the v9 root. Mirrors
+	/// that item's shape. Killed when the replay finishes.
+	#[pallet::storage]
+	#[pallet::unbounded]
+	pub type PreForkStateKey<T: Config> = StorageValue<_, Vec<u8>, OptionQuery>;
+
+	/// Ledger time stamped on every replayed dust event: the fork block's own
+	/// time, backdated by the dust `time_to_cap` so every restored entry lands
+	/// at its DUST cap rather than at zero. Written by the first replay step.
+	#[pallet::storage]
+	pub type DustReapplyCtime<T: Config> = StorageValue<_, u64, OptionQuery>;
+
+	/// Running (applied, skipped) tallies of the dust replay — the only on-chain
+	/// evidence it ran to completion. Killed when the replay finishes.
+	#[pallet::storage]
+	pub type DustReapplyProgress<T: Config> = StorageValue<_, (u32, u32), ValueQuery>;
 
 	#[pallet::genesis_config]
 	#[derive(frame_support::DefaultNoBound)]
@@ -657,21 +709,17 @@ pub mod pallet {
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
 
-			// While a multi-block migration of `Mapping` is still draining v0 storage,
-			// `unique_dust_key` (and therefore `handle_registration`,
-			// `handle_registration_removal`, `handle_create`) reads only v1, missing
-			// any v0 row that hasn't been moved yet. Acting on that partial view would
-			// silently corrupt registration state — e.g. a deregistration whose v0
-			// row is still pending would no-op here and then re-appear as live once
-			// the migration drains it. Skip processing entirely; `NextCardanoPosition`
-			// stays unchanged so the next block's inherent re-presents the same UTXOs
-			// (plus any new ones) and we resume once the migration finishes.
+			// Skip observation processing entirely while any multi-block migration of
+			// this pallet's storage is in flight; `NextCardanoPosition` stays
+			// unchanged so the next block's inherent re-presents the same UTXOs (plus
+			// any new ones) and we resume once the migration finishes.
 			if Pallet::<T>::on_chain_storage_version() < STORAGE_VERSION {
 				log::warn!(
-					"cnight-observation: skipping process_tokens (on-chain storage version {:?} < {:?}); MBM in progress",
+					"ObservationsSkippedForMigration: skipping process_tokens (on-chain storage version {:?} < {:?}); MBM in progress",
 					Pallet::<T>::on_chain_storage_version(),
 					STORAGE_VERSION,
 				);
+				Self::deposit_event(Event::<T>::ObservationsSkippedForMigration);
 				return Ok(PostDispatchInfo {
 					actual_weight: Some(T::DbWeight::get().reads_writes(2, 1)),
 					pays_fee: Pays::No,
