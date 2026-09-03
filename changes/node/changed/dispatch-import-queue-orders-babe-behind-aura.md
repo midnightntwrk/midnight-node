@@ -35,7 +35,9 @@ batch right before handing the batch to the BABE queue; for a held batch that is
 after the AURA queue reported the flip block imported. Seeding only happens when the runtime
 state at that parent has flipped to BABE (so a peer cannot make the node reset the tree at an
 arbitrary block) and is a no-op once the tree covers the parent. The notification-driven
-bootstrap remains for authoring hand-over and as a harmless second path.
+bootstrap remains only in the validator's authoring supervisor, where it sequences seeding before
+the BABE worker authors the first BABE block; the separate `babe-epoch-tree-bootstrap` task for
+non-authorities is removed as redundant.
 
 PR:
 Issue:
