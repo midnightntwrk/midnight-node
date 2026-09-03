@@ -50,5 +50,16 @@ hand-over happens at the flip block regardless of sync state; the BABE worker id
 completes. Seeding's check-and-reset is now atomic under the epoch-tree lock, since the
 supervisor and the import path can seed concurrently.
 
+**Seeding no longer wipes the epoch tree on a repeat call.** The "already seeded?" check asked
+the tree for an epoch covering the flip block's children at the flip block's *own* slot. That
+slot is the last AURA slot, one below BABE's genesis slot, so no epoch ever matched and every
+call to seed at the flip block re-ran `reset`, discarding everything BABE had recorded since —
+in particular the epoch-1 descriptor announced at the first BABE block, whose authorities differ
+from the flip-time `next_epoch` because a session rotation happens in between. A node whose
+second seeding ran late (a validator's supervisor after the first BABE block was imported) kept
+the stale epoch 1, rejected the network's first epoch-1 block with "Bad signature", and forked.
+The check now queries at the first BABE slot, and seeding refuses to reset a non-empty tree that
+does not cover the flip block instead of clobbering it.
+
 PR:
 Issue:

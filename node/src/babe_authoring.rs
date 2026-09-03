@@ -43,11 +43,12 @@ use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
 use parity_scale_codec::Encode;
 use sc_client_api::{AuxStore, BlockchainEvents};
 use sc_consensus_babe::{BabeBlockWeight, BabeLink, aux_schema::block_weight_key};
-use sc_consensus_epochs::descendent_query;
+use sc_consensus_epochs::{EpochChanges, IsDescendentOfBuilder, descendent_query};
 use sp_api::ProvideRuntimeApi;
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
 use sp_consensus_babe::{BABE_ENGINE_ID, BabeApi};
-use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+use sp_consensus_slots::Slot;
+use sp_runtime::traits::{Block as BlockT, Header as HeaderT, NumberFor};
 use std::future::Future;
 use std::sync::Arc;
 
@@ -177,6 +178,30 @@ where
 	at
 }
 
+/// Whether `epoch_changes` can resolve an epoch for the children of the flip block `at`.
+///
+/// The children are queried at `flip_slot + 1`, the first BABE slot, **not** at the flip block's own
+/// slot: the flip happens at the last AURA slot of an epoch and BABE's genesis slot is the one
+/// after, so every epoch in a seeded tree starts *above* `flip_slot`. Querying at `flip_slot` finds
+/// no epoch and reports an already-seeded tree as uncovered, which would make every subsequent call
+/// re-seed — and `reset` wipes the tree.
+fn tree_covers_children_of<D>(
+	epoch_changes: &EpochChanges<Hash, NumberFor<Block>, sc_consensus_babe::Epoch>,
+	descendent_of_builder: D,
+	at: &Hash,
+	number: NumberFor<Block>,
+	flip_slot: Slot,
+) -> Result<bool, String>
+where
+	D: IsDescendentOfBuilder<Hash>,
+{
+	let first_babe_slot = flip_slot + 1;
+	epoch_changes
+		.epoch_descriptor_for_child_of(descendent_of_builder, at, number, first_babe_slot)
+		.map(|descriptor| descriptor.is_some())
+		.map_err(|e| e.to_string())
+}
+
 /// Seed BABE's epoch tree so authoring/verification can resolve epochs for children of `at`.
 ///
 /// Before the flip nothing is imported through the BABE pipeline, so its `EpochChanges` is empty
@@ -186,8 +211,10 @@ where
 /// epoch-0 genesis, and the flip block carries a BABE pre-digest (from the ArmedBabe proposer) so
 /// its slot is readable.
 ///
-/// It is a no-op when the tree already covers `at` — e.g. a restart after the flip, where
-/// `block_import` reloaded a populated tree from the aux DB that must not be clobbered.
+/// It is a no-op when the tree already covers children of `at` — the other trigger got there first,
+/// or a restart after the flip reloaded a populated tree from the aux DB. It refuses (with an error)
+/// to reset a non-empty tree that does not cover `at`: `reset` discards everything BABE has recorded
+/// since the flip, so that is never the right move for a block that is not the flip block.
 pub fn seed_epoch_tree_if_needed<C>(
 	client: &Arc<C>,
 	babe_link: &BabeLink<Block>,
@@ -211,17 +238,29 @@ where
 	// Hold the tree lock from the coverage check through the reset. Seeding has two triggers (the
 	// authoring supervisor and the import-path seeder) that can run concurrently around the flip;
 	// with check and reset under one lock the second caller sees the first one's result instead of
-	// racing it. Don't clobber a tree already loaded from the aux DB (restart after the flip) or
-	// already seeded by the other trigger.
+	// racing it.
 	{
 		let mut epoch_changes = babe_link.epoch_changes().shared_data();
-		let already_covered = epoch_changes
-			.epoch_descriptor_for_child_of(descendent_query(&**client), &at, number, slot)
-			.map(|descriptor| descriptor.is_some())
-			.unwrap_or(false);
-		if already_covered {
+		let covered =
+			tree_covers_children_of(&epoch_changes, descendent_query(&**client), &at, number, slot)
+				.map_err(|e| format!("epoch-tree lookup for children of {at:?} failed: {e}"))?;
+		if covered {
 			log::debug!(target: LOG_TARGET, "BABE epoch tree already covers {at:?}; not seeding");
 			return Ok(());
+		}
+
+		// `reset` discards the whole tree. A tree that has content but does not cover the flip
+		// block's children is not a seeding situation — it is either a bug in the coverage check
+		// or a block that is not the flip block — and wiping it would destroy the epochs BABE has
+		// recorded from block digests since the flip (which is exactly what a stale seed did once:
+		// the node kept the flip-time `next_epoch` for epoch 1 while the rest of the network used
+		// the epoch-1 descriptor announced at the first BABE block, and forked at the epoch
+		// boundary). Refuse loudly instead.
+		if epoch_changes.tree().iter().next().is_some() {
+			return Err(format!(
+				"BABE epoch tree is non-empty but does not cover children of {at:?}; refusing to \
+				 reset it",
+			));
 		}
 
 		let current = client.runtime_api().current_epoch(at).map_err(|e| e.to_string())?;
@@ -332,6 +371,7 @@ pub async fn run_authoring_supervisor<C>(
 mod tests {
 	use super::*;
 	use sp_api::{ApiRef, ProvideRuntimeApi};
+	use sp_core::H256;
 
 	#[derive(Clone)]
 	struct TestApi {
@@ -362,6 +402,64 @@ mod tests {
 				unimplemented!("not read by active_engine_at")
 			}
 		}
+	}
+
+	/// Ancestry for the coverage tests: a linear chain given as hashes from oldest to newest. The
+	/// epoch tree's "fake head" (a fresh block whose parent is the queried block) is handled via the
+	/// `current` hint the tree passes in.
+	struct LinearChain(Vec<H256>);
+	impl IsDescendentOfBuilder<H256> for &LinearChain {
+		type Error = sp_blockchain::Error;
+		type IsDescendentOf = Box<dyn Fn(&H256, &H256) -> Result<bool, sp_blockchain::Error>>;
+		fn build_is_descendent_of(&self, current: Option<(H256, H256)>) -> Self::IsDescendentOf {
+			let chain = self.0.clone();
+			Box::new(move |base, block| {
+				let pos = |h: &H256| chain.iter().position(|x| x == h);
+				let block_pos = match current {
+					Some((head, parent)) if *block == head => pos(&parent).map(|p| p + 1),
+					_ => pos(block),
+				};
+				Ok(matches!((pos(base), block_pos), (Some(b), Some(x)) if b < x))
+			})
+		}
+	}
+
+	fn epoch(index: u64, start_slot: u64) -> sc_consensus_babe::Epoch {
+		sp_consensus_babe::Epoch {
+			epoch_index: index,
+			start_slot: start_slot.into(),
+			duration: 5,
+			authorities: vec![],
+			randomness: [0; 32],
+			config: sp_consensus_babe::BabeEpochConfiguration {
+				c: (1, 4),
+				allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryPlainSlots,
+			},
+		}
+		.into()
+	}
+
+	#[test]
+	fn seeded_tree_covers_the_flip_blocks_children() {
+		// Flip block #56 at slot 809 (last AURA slot); BABE genesis slot 810 = epoch 0.
+		let (parent, flip) = (H256::repeat_byte(55), H256::repeat_byte(56));
+		let chain = LinearChain(vec![parent, flip]);
+		let mut tree = EpochChanges::<Hash, NumberFor<Block>, sc_consensus_babe::Epoch>::new();
+		let flip_slot = Slot::from(809u64);
+
+		assert!(!tree_covers_children_of(&tree, &chain, &flip, 56, flip_slot).unwrap());
+
+		tree.reset(parent, flip, 56, epoch(0, 810), epoch(1, 815));
+		assert!(
+			tree_covers_children_of(&tree, &chain, &flip, 56, flip_slot).unwrap(),
+			"a seeded tree must report the flip block's children as covered"
+		);
+		// The pitfall the helper exists for: at the flip block's *own* slot nothing matches.
+		assert!(
+			tree.epoch_descriptor_for_child_of(&chain, &flip, 56, flip_slot)
+				.unwrap()
+				.is_none()
+		);
 	}
 
 	#[test]
