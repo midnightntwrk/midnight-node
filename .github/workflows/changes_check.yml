@@ -21,6 +21,9 @@ on:
 
 jobs:
   check-changes:
+    # Change files reference upstream PRs and issues, so the link check only makes sense
+    # against the canonical repo. Forks and private clones carry copies of them verbatim.
+    if: github.repository == 'midnightntwrk/midnight-node'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
@@ -33,7 +36,7 @@ jobs:
           github.event_name != 'pull_request' ||
           github.event.pull_request.head.repo.fork == false
         with:
-          registry: ghcr.io/midnight-ntwrk
+          registry: ghcr.io
           username: MidnightCI
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
