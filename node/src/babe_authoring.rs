@@ -20,14 +20,19 @@
 //! AURA until the flip, bootstraps BABE's epoch tree, then polls BABE for the rest of the
 //! node's life. The switch is one-directional, so a restart after the flip skips AURA.
 //!
-//! Full nodes (no authoring) still need the epoch tree to *import* the first BABE block;
-//! [`bootstrap_babe_at_flip`] is therefore also spawned for non-authority roles.
+//! Seeding the epoch tree has two triggers, one implementation ([`seed_epoch_tree_if_needed`]):
 //!
-//! Neither of those can be relied on while a node is *syncing* across the flip: they are driven by
-//! block-import notifications, which the client does not emit for blocks imported with a sync
-//! origin. [`BabeEpochSeeder`] therefore also seeds from the import path — the import-queue
-//! dispatcher calls it right before it hands the first BABE block to the BABE queue, when the flip
-//! block is known to be imported. Seeding is idempotent, so both paths can run.
+//! - **About to author a BABE block** (authorities only): the supervisor seeds after
+//!   [`wait_for_flip`] and before starting the BABE worker. The validator that authors the very
+//!   first BABE block has imported no BABE block yet and its own blocks bypass the import queue, so
+//!   nothing else would seed before it proposes.
+//! - **About to verify a BABE block** (every role): [`BabeEpochSeeder`], called by the import-queue
+//!   dispatcher right before it hands a BABE batch to the BABE queue. This is the only trigger that
+//!   works while *syncing* across the flip — the client emits no block-import notifications for
+//!   sync-origin imports, so a notification watcher never fires there — and it is what lets
+//!   non-authorities import the first BABE block; they run no flip watcher at all.
+//!
+//! Seeding is idempotent, so both triggers may run on an authority.
 
 use crate::consensus_engine_dispatch::EpochSeeder;
 use futures::StreamExt;
@@ -127,7 +132,7 @@ where
 /// Wait for the consensus flip, then seed BABE's epoch tree (and chain-weight) at that block.
 ///
 /// Returns the flip-block hash. Seeding is a no-op when the tree already covers the block
-/// (restart after the flip). Import of the first BABE block needs this even on non-authorities.
+/// (restart after the flip). Non-authorities don't use this; their tree is seeded on the import path.
 pub async fn bootstrap_babe_at_flip<C>(client: Arc<C>, babe_link: &BabeLink<Block>) -> Hash
 where
 	C: SupervisorClient,
