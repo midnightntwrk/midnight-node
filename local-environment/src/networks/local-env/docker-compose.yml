@@ -417,6 +417,7 @@ services:
       AURA_SEED_FILE: "/seeds/aura.seed"
       CROSS_CHAIN_SEED_FILE: "/seeds/cross_chain.seed"
       GRANDPA_SEED_FILE: "/seeds/grandpa.seed"
+      BEEFY_SEED_FILE: "/seeds/beefy.seed"
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     labels:
       io.midnight.role: validator

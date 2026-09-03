@@ -57,6 +57,11 @@ pub struct MidnightCfg {
 	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
 	pub cross_chain_seed_file: Option<String>,
 
+	/// Path to file containing a secret string to use as the BEEFY seed (32 bytes)
+	/// Seed should be either a Phrase, hexadecimal string, or ss58-compatible string.
+	/// Docs: https://paritytech.github.io/polkadot-sdk/master/sp_core/crypto/struct.AddressUri.html#structfield.phrase
+	pub beefy_seed_file: Option<String>,
+
 	/// Mock ariadne parameters
 	pub use_main_chain_follower_mock: bool,
 	/// Required if use_main_chain_follower_mock is true
