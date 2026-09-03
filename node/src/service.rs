@@ -1129,15 +1129,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				"No Prometheus registry available; not reporting BABE key readiness",
 			),
 		}
-	} else {
-		// Full nodes still need the epoch tree to import the first BABE block.
-		let client = client.clone();
-		task_manager
-			.spawn_handle()
-			.spawn("babe-epoch-tree-bootstrap", Some("babe"), async move {
-				let _ = crate::babe_authoring::bootstrap_babe_at_flip(client, &babe_link).await;
-			});
 	}
+	// Non-authorities need no flip watcher: the epoch tree they need to *import* the first BABE
+	// block is seeded on the import path by `BabeEpochSeeder` (see `DispatchImportQueue`).
 
 	if enable_grandpa {
 		// if the node isn't actively participating in consensus then it doesn't
