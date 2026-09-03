@@ -34,10 +34,8 @@ type FetchResult = Result<ComputeTask, FetchTaskError>;
 
 #[derive(Default)]
 pub struct FetchCounters {
-	/// Blocks served from cache or fetched over RPC; drives the progress percentage.
 	pub processed: AtomicU64,
-	/// Blocks fetched over RPC only; drives the rate/ETA estimate - counting
-	/// cache hits would make a resumed sync report an absurd rate.
+	/// RPC only, so a resumed sync doesn't report cache hits as throughput.
 	pub fetched_rpc: AtomicU64,
 }
 
@@ -84,8 +82,6 @@ impl FetchTask {
 					.filter_map(|(i, b)| b.is_none().then_some(i))
 					.collect();
 
-				// The counters only drive the progress heartbeat: a retried job may
-				// count some blocks twice, which the reporter clamps.
 				let cached_count = (max - min) - uncached.len() as u64;
 				counters.processed.fetch_add(cached_count, Ordering::Relaxed);
 
@@ -186,11 +182,9 @@ impl FetchTask {
 			None
 		};
 
-		// Fetched here so the compute stage never touches the network. Always
-		// fetched, even for blocks that decode to a lone timestamp inherent: a
-		// multi-block migration steps in `inherents_applied()` and can emit
-		// `SystemTransactionApplied` there, and the block data derived from these
-		// events is cached permanently behind the verified watermark.
+		// Always fetched: even an inherents-only block can carry
+		// `SystemTransactionApplied` events (multi-block migrations step in
+		// `inherents_applied()`), and the derived block data is cached permanently.
 		let key = [sp_crypto_hashing::twox_128(b"System"), sp_crypto_hashing::twox_128(b"Events")]
 			.concat();
 		let backoff = ExponentialBackoff {

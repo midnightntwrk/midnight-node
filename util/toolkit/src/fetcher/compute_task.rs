@@ -221,8 +221,6 @@ impl ComputeTask {
 		// automatically resolves the correct schema for this block's spec version.
 		let extrinsics = block.block.extrinsics().from_bytes(block.raw_body.clone()).await;
 
-		// Events were fetched alongside the block body (see `FetchTask::fetch_block`)
-		// so this stage does no network I/O. Empty bytes decode as zero events.
 		let events = block.block.events().from_bytes(block.events.clone());
 
 		for ext in extrinsics.iter().filter_map(Result::ok) {

@@ -1080,20 +1080,17 @@ fn inject_cached_wallets(
 }
 
 /// Create the initial fork-aware context, either cold (genesis) or warm (snapshot restore).
-///
-/// A ledger-8 snapshot restore injects every entry of `cached` here and drains
-/// it: mid-replay injection exists only on the ledger-9 loop, and
-/// [`discard_unusable_cache`] guarantees the entries all sit at `start_height`.
+/// A ledger-8 restore injects and drains `cached` here (no mid-replay injection on ledger 8).
 async fn initialize_context(
 	received_tx: &SourceTransactions,
 	uncached_seeds: &[WalletSeed],
-	start_height: u64,
+	restore_height: Option<u64>,
 	storage: &dyn WalletStateCaching,
 	chain_id: H256,
 	schemes: &WalletSchemes,
 	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
 ) -> ForkAwareLedgerContext {
-	if start_height == 0 {
+	let Some(start_height) = restore_height else {
 		let seeds_with_schemes: Vec<(WalletSeed, UnshieldedSignatureScheme)> = uncached_seeds
 			.iter()
 			.map(|seed| (seed.clone(), scheme_of(schemes, seed)))
@@ -1106,7 +1103,7 @@ async fn initialize_context(
 				&seeds_with_schemes,
 			)
 		);
-	}
+	};
 
 	let snapshot = timed!(
 		"storage.get_ledger_snapshot",
@@ -1165,21 +1162,12 @@ async fn initialize_context(
 	}
 }
 
-/// The one place that decides which cache entries a replay can consume.
-///
-/// Entries the replay cannot inject at their own height are dropped and their
-/// seeds moved to `uncached_seeds`, which replays the whole context from genesis
-/// (the convention for a stale cache).
-///
-/// A wallet entry carries no generation tag: it was serialized under the ledger
-/// generation of the block at its height, recovered from `blocks` (sorted, from
-/// genesis).
-/// - Ledger-9 entries are injected mid-replay by `replay_blocks_9` at any height.
-/// - Ledger-8 entries can only be injected while restoring a ledger-8 snapshot
-///   (`initialize_context`), which needs every requested seed cached at that one
-///   height and a chain that has not crossed to ledger 9. Anything else would
-///   splice the entry into a later ledger-9 state, silently omitting the blocks
-///   in between.
+/// The one place deciding which cache entries a replay can consume; the rest are
+/// dropped and their seeds replayed from genesis. An entry's generation is that of
+/// the block at its height. Ledger-9 entries inject mid-replay at any height;
+/// ledger-8 entries only at a ledger-8 snapshot restore, which needs every seed
+/// cached at one height on a chain still on ledger 8 - anything else would splice
+/// the entry into a later ledger-9 state and silently skip the blocks in between.
 fn discard_unusable_cache(
 	uncached_seeds: &mut Vec<WalletSeed>,
 	cached: &mut Vec<(WalletSeed, CachedWalletState)>,
@@ -1206,8 +1194,6 @@ fn discard_unusable_cache(
 	} else if ledger8_entries == cached.len()
 		&& cached.iter().all(|(_, ws)| Some(ws.block_height) == restore_height)
 	{
-		// Every entry is ledger 8 at one height on a ledger-8 chain: the
-		// ledger-8 snapshot restore can take all of them.
 		return;
 	} else {
 		"the cached heights differ"
@@ -1234,8 +1220,6 @@ const DUST_BATCH_SIZE: usize = 1000;
 /// multi-hour replay so it doesn't look like the process has hung.
 const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Transactions that did not fully apply so far (process-wide, see
-/// `midnight_node_ledger_helpers::replay_stats`).
 fn replay_tx_failures() -> (u64, u64) {
 	use std::sync::atomic::Ordering::Relaxed;
 	(
@@ -1484,18 +1468,16 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 		&received_tx.blocks[..]
 	};
 
-	// 1. Load cache and partition wallets, then drop the entries this replay
-	//    cannot consume (see `discard_unusable_cache`).
+	// 1. Load cache and partition wallets.
 	let (mut uncached_seeds, mut cached) =
 		load_and_partition_cache(wallet_seeds, chain_id, storage, schemes).await;
 	discard_unusable_cache(&mut uncached_seeds, &mut cached, real_blocks);
 
-	// 2. Compute start height.
-	let start_height = if !uncached_seeds.is_empty() {
-		// An uncached wallet needs its full history scanned, which forces the
-		// replay back to genesis for the whole context — the dominant cost on
-		// long chains. Surface it loudly so a stray uncached seed is not
-		// mistaken for a broken cache.
+	// 2. Warm start only when every seed is cached: an uncached wallet needs its
+	//    full history scanned, which forces the replay back to genesis.
+	let restore_height = if uncached_seeds.is_empty() {
+		cached.first().map(|c| c.1.block_height)
+	} else {
 		log::warn!(
 			"{} of {} wallet seeds have no cache entry ({} cached) — full replay from genesis forced. \
 			 Warm the cache once with the complete seed set to avoid this.",
@@ -1503,17 +1485,14 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 			wallet_seeds.len(),
 			cached.len(),
 		);
-		0
-	} else {
-		cached.first().map(|c| c.1.block_height).unwrap_or(0)
+		None
 	};
 
-	// 3. Initialize context (cold genesis or warm snapshot restore). A ledger-8
-	//    restore consumes `cached` here.
+	// 3. Initialize context (cold genesis or warm snapshot restore).
 	let fork_ctx = initialize_context(
 		received_tx,
 		&uncached_seeds,
-		start_height,
+		restore_height,
 		storage,
 		chain_id,
 		schemes,
@@ -1521,18 +1500,15 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	)
 	.await;
 
-	// 4. Determine blocks to replay: the real chain (see above), from the
-	//    snapshot height on.
+	// 4. Determine blocks to replay.
 	//
 	// Warm path uses `partition_point` (O(log n) binary search) rather
 	// than a linear `.filter()` — `real_blocks` is sorted by `b.number`
 	// ascending (the rest of `replay_blocks_*` already relies on this).
 	// Cold path takes the whole slice.
-	let blocks: &[RawBlockData] = if start_height == 0 {
-		real_blocks
-	} else {
-		let i = real_blocks.partition_point(|b| b.number <= start_height);
-		&real_blocks[i..]
+	let blocks: &[RawBlockData] = match restore_height {
+		None => real_blocks,
+		Some(height) => &real_blocks[real_blocks.partition_point(|b| b.number <= height)..],
 	};
 
 	// 5. Replay with mid-replay wallet injection, optionally saving
@@ -1622,8 +1598,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	fork_ctx
 }
 
-/// Save the ledger snapshot + per-wallet cache at `block_height` for whichever
-/// ledger generation the context is on.
+/// Save the ledger snapshot + per-wallet cache at `block_height`.
 async fn try_save_cache_v2(
 	fork_ctx: &ForkAwareLedgerContext,
 	wallet_seeds: &[WalletSeed],
@@ -1956,8 +1931,6 @@ mod tests {
 		}
 	}
 
-	// --- discard_unusable_cache: the single cache-generation predicate ---
-
 	fn block(number: u64, version: LedgerVersion) -> RawBlockData {
 		RawBlockData {
 			hash: [0; 32],
@@ -2016,8 +1989,6 @@ mod tests {
 		assert_eq!(cached.len(), 2);
 	}
 
-	/// CR-1: a ledger-8 entry beside an uncached seed on a chain that crossed to
-	/// ledger 9 must not survive to be injected at the first ledger-9 block.
 	#[test]
 	fn cache_predicate_drops_ledger8_entry_once_chain_crossed() {
 		let (uncached, cached) = run(&[2], vec![entry(1, 3)], &chain(5, 5));
@@ -2025,8 +1996,6 @@ mod tests {
 		assert_eq!(uncached, vec![seed(2), seed(1)]);
 	}
 
-	/// CR-3: mixed ledger-8 heights on a crossed chain replay from genesis instead
-	/// of reaching the ledger-8 restore.
 	#[test]
 	fn cache_predicate_drops_mixed_ledger8_heights_once_chain_crossed() {
 		let (uncached, cached) = run(&[], vec![entry(1, 2), entry(2, 3)], &chain(5, 5));
@@ -2063,7 +2032,7 @@ mod tests {
 		assert_eq!(cached.len(), 2);
 	}
 
-	/// A cache ahead of the source (the queried node lags) belongs to the tip's generation.
+	/// A cache ahead of the source (the queried node lags).
 	#[test]
 	fn cache_predicate_treats_heights_beyond_tip_as_tip_generation() {
 		let (uncached, cached) = run(&[], vec![entry(1, 99), entry(2, 4)], &chain(0, 5));

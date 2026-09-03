@@ -202,13 +202,7 @@ async fn file_cached_context() {
 	test_split_cached(&backend2, &source).await;
 }
 
-// ---------------------------------------------------------------------------
-// Cache generation dispatch: ledger-8 chains and the 8->9 crossing
-// ---------------------------------------------------------------------------
-
-/// A synthetic chain of empty blocks: `l8` ledger-8 blocks from genesis followed
-/// by `l9` ledger-9 blocks. Empty blocks need no ledger-8 transaction fixture yet
-/// still drive the whole cache/restore/replay path per generation.
+/// `l8` empty ledger-8 blocks from genesis followed by `l9` empty ledger-9 blocks.
 fn synthetic_source(l8: u64, l9: u64) -> SourceTransactions {
 	let block = |number: u64, version: LedgerVersion| RawBlockData {
 		hash: [0; 32],
@@ -261,7 +255,6 @@ fn assert_contexts_equal_8(
 	}
 }
 
-/// Ledger-8 chain: cold replay saves a ledger-8 snapshot, the warm rerun restores it.
 #[tokio::test]
 async fn ledger8_chain_cache_and_restore() {
 	let source = synthetic_source(6, 0);
@@ -288,7 +281,6 @@ async fn ledger8_chain_cache_and_restore() {
 	verify_cache_state(&backend, chain_id, source.blocks.len(), seeds.clone()).await;
 	assert_contexts_equal_8("ledger-8 warm restore", &warm, &raw, &seeds);
 
-	// Chunked checkpoints work on ledger 8 too.
 	let tmp2 = tempfile::TempDir::new().unwrap();
 	let backend2 = FileBackend::new(tmp2.path());
 	let chunked = build_fork_aware_context_cached(&seeds, &source, Some(&backend2), 2)
@@ -298,23 +290,18 @@ async fn ledger8_chain_cache_and_restore() {
 	assert_contexts_equal_8("ledger-8 chunked", &chunked, &raw, &seeds);
 }
 
-/// A ledger-8 cache is discarded once the chain has crossed to ledger 9: the
-/// run replays from genesis (through the fork) instead of splicing stale
-/// wallet state into a ledger-9 block, and re-caches at ledger 9.
+/// A ledger-8 cache is discarded once the chain has crossed to ledger 9.
 #[tokio::test]
 async fn ledger8_cache_is_discarded_once_chain_crosses_to_ledger9() {
 	let tmp = tempfile::TempDir::new().unwrap();
 	let backend = FileBackend::new(tmp.path());
 
-	// Warm the cache on the ledger-8 chain for seed 1 only.
 	let l8_source = synthetic_source(6, 0);
 	let _ = build_fork_aware_context_cached(&[wallet_seed(0x01)], &l8_source, Some(&backend), 0)
 		.await
 		.into_ledger8()
 		.expect("ledger 8");
 
-	// Same chain, now with ledger-9 blocks appended; one cached and one uncached
-	// seed (the CR-1 shape) and the all-cached shape must both replay cleanly.
 	let crossed = synthetic_source(6, 4);
 	let chain_id = crossed.chain_id().unwrap();
 	for seeds in [vec![wallet_seed(0x01), wallet_seed(0x02)], vec![wallet_seed(0x01)]] {
@@ -330,8 +317,6 @@ async fn ledger8_cache_is_discarded_once_chain_crosses_to_ledger9() {
 	}
 }
 
-/// Mixed ledger-8 cache heights (the CR-3 shape) replay from genesis rather than
-/// aborting in the ledger-8 restore.
 #[tokio::test]
 async fn ledger8_cache_with_mixed_heights_replays_from_genesis() {
 	let tmp = tempfile::TempDir::new().unwrap();

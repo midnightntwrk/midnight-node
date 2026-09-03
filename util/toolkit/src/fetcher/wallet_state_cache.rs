@@ -318,7 +318,6 @@ pub fn create_ledger_snapshot_8(
 	drop(ledger_state);
 
 	let state_root = compute_state_root(&ledger_state_bytes);
-	// The ledger-8 `BlockContext` is a distinct type with the same shape.
 	let ctx8 = context.latest_block_context();
 	let serializable_context = SerializableBlockContext {
 		tblock_secs: ctx8.tblock.to_secs(),
@@ -398,8 +397,8 @@ pub fn restore_context_from_ledger_snapshot_8(
 		return Err(CacheError::StateRootMismatch);
 	}
 
-	// The trusted fast deserializer works for ledger-8 state too: both ledger
-	// generations share one `midnight-storage-core` (same arena/Sp types).
+	// Both ledger generations share one `midnight-storage-core`, so the trusted
+	// deserializer works for ledger-8 state too.
 	let ledger_state: ledger_8::LedgerState<ledger_8::DefaultDB> =
 		super::trusted_deserialize::trusted_deserialize_tagged::<
 			ledger_8::LedgerState<ledger_8::DefaultDB>,
@@ -442,7 +441,6 @@ pub fn inject_wallet_from_cache_8(
 ) -> Result<(), CacheError> {
 	let seed_8 = ledger_8::WalletSeed::try_from(seed.as_bytes())
 		.map_err(|_| CacheError::DeserializeWalletState("seed conversion to ledger 8".into()))?;
-	// `UnshieldedSignatureScheme` is a distinct type per ledger generation.
 	let scheme_8 = match scheme {
 		UnshieldedSignatureScheme::Schnorr => ledger_8::UnshieldedSignatureScheme::Schnorr,
 		UnshieldedSignatureScheme::Ecdsa => ledger_8::UnshieldedSignatureScheme::Ecdsa,
@@ -628,9 +626,7 @@ mod tests {
 		assert!(LedgerSnapshot::from_value_bytes(&[], 1).is_err());
 	}
 
-	/// A ledger-8 context with a wallet and a non-default ledger state. An empty
-	/// state agrees with any serializer, so it would prove nothing about the
-	/// hand-written fast path.
+	/// An empty state agrees with any serializer, so populate it.
 	fn populated_ledger8_context() -> (
 		midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
 			midnight_node_ledger_helpers::ledger_8::DefaultDB,
@@ -709,13 +705,9 @@ mod tests {
 			l8::serialize_untagged(&restored_wallets[&seed_8].shielded.state).unwrap();
 		assert_eq!(original_shielded, restored_shielded, "ledger-8 wallet state diverged");
 
-		// The ledger-9 restore must reject a ledger-8 snapshot.
 		assert!(restore_context_from_ledger_snapshot(&decoded).is_err());
 	}
 
-	/// Blocks carrying an on-chain state root take the relaxed verification path
-	/// (no proof/signature re-verification); its outcome must equal a fully
-	/// verified replay.
 	#[test]
 	fn relaxed_replay_with_state_roots_matches_strict_replay() {
 		use midnight_node_ledger_helpers::fork::fork_aware_context::apply_block_9;
@@ -724,7 +716,6 @@ mod tests {
 		assert!(source.blocks.iter().all(|b| b.state_root.is_none()));
 		assert!(source.blocks.iter().any(|b| !b.transactions.is_empty()));
 
-		// Strict replay, recording the local root after every block.
 		let strict = LedgerContext::<DefaultDB>::new(&source.network_id);
 		let mut roots = Vec::new();
 		for block in &source.blocks {
@@ -732,7 +723,6 @@ mod tests {
 			roots.push(strict.state_root().unwrap().expect("local root"));
 		}
 
-		// Relaxed replay of the same blocks with the recorded roots attached.
 		let relaxed = LedgerContext::<DefaultDB>::new(&source.network_id);
 		for (block, root) in source.blocks.iter().zip(&roots) {
 			let mut block = block.clone();

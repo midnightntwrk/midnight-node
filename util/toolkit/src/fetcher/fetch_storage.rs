@@ -75,7 +75,6 @@ pub struct FetchedBlock {
 	pub raw_body: Vec<Vec<u8>>,
 	pub state_root: Option<Vec<u8>>,
 	pub state: Option<Vec<u8>>,
-	/// Raw `System::Events` storage value at this block (empty when the block emitted none).
 	pub events: Vec<u8>,
 }
 

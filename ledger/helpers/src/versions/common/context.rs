@@ -158,9 +158,8 @@ impl<D: DB + Clone> LedgerContext<D> {
 
 	/// Apply all transactions in a block to the ledger, returning events without
 	/// processing wallets. Also applies `post_block_update` (fee adjustments).
-	///
 	/// `root_verified` must only be true when the caller checks the resulting
-	/// state root against the chain (`verify_state_root`).
+	/// state root against the chain.
 	fn apply_txs_collect_events<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		txs: &[SerdeTransaction<S, P, D>],
@@ -172,8 +171,6 @@ impl<D: DB + Clone> LedgerContext<D> {
 	{
 		let mut total_cost = SyntheticCost::ZERO;
 		let mut all_events: Vec<Event<D>> = Vec::new();
-		// Crypto re-verification of finalized history is skipped only when the
-		// per-block state-root check will catch any divergence.
 		let strictness = Self::strictness_for(block_context, root_verified);
 		for tx in txs {
 			let (events, cost) =
@@ -265,9 +262,8 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		// Relaxed verification requires the root check to cover the applied
-		// transactions: when `state` overrides the ledger (genesis), the root is
-		// computed over the override, not the tx effects, so verify fully.
+		// With a `state` override (genesis) the root is computed over the override,
+		// not the tx effects, so the root check cannot stand in for verification.
 		let root_verified = state_root.is_some() && state.is_none();
 		let events = self.apply_txs_collect_events(txs, block_context, root_verified)?;
 
@@ -322,9 +318,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 					});
 				},
 				Some(_) => {},
-				// Fail closed: replay may have skipped proof/signature checks on the
-				// strength of this comparison, so a root that cannot be computed is
-				// an error, not a warning.
+				// Fail closed: the relaxed replay relies on this comparison.
 				None => {
 					return Err(LedgerContextError::StateRootUnavailable {
 						expected: hex_encode(expected_root),
@@ -336,8 +330,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 		Ok(())
 	}
 
-	/// Local ledger state root in the same encoding as the on-chain `Midnight.StateKey`
-	/// value that `update_from_block` compares against.
+	/// Local ledger state root, in the encoding of the on-chain `Midnight.StateKey`.
 	pub fn state_root(&self) -> Result<Option<Vec<u8>>, LedgerContextError> {
 		let state = self
 			.ledger_state
@@ -353,28 +346,14 @@ impl<D: DB + Clone> LedgerContext<D> {
 		super::serialize(&sp.as_typed_key()).ok()
 	}
 
-	/// Genesis blocks skip balancing.
-	///
-	/// `replay` selects the relaxed verification used for finalized history. Its
-	/// effective scope is wider than the four flags cleared below, so it is spelled
-	/// out here: the transaction is verified in proof-erased form
-	/// (`erase_proofs()`), which means
-	/// - zero-knowledge proofs (zswap offers, contract calls) are not verified,
-	/// - signatures are not verified, including unshielded-input signatures (the
-	///   ledger drops that loop for erased transactions regardless of
-	///   `verify_signatures`),
-	/// - balancing is not enforced (fee estimation for an unproven transaction
-	///   differs from the proof-carrying one, so a faithful on-chain transaction
-	///   could false-fail the dust balance check),
-	/// - every remaining structural check (limits, nullifier/commitment
-	///   consistency, TTLs, ...) runs against the erased form.
-	///
-	/// What still holds the replay honest is the per-block comparison of the local
-	/// state root with the on-chain `Midnight.StateKey` (`verify_state_root`,
-	/// fail-closed): any divergence between what the node applied and what we
-	/// applied aborts the replay. This matches the toolkit's trust model - it is a
-	/// testing tool that trusts the node it talks to and re-derives state from it;
-	/// it is not a validator and does not re-establish chain security.
+	/// Genesis blocks skip balancing. `replay` selects the relaxed verification for
+	/// finalized history: the transaction is verified proof-erased, so ZK proofs,
+	/// signatures (including unshielded-input signatures, which the ledger skips
+	/// for erased transactions regardless of `verify_signatures`) and balancing
+	/// (fee estimation differs for unproven transactions) are not re-checked, and
+	/// the remaining structural checks run on the erased form. Correctness rests
+	/// on the fail-closed per-block state-root comparison; the toolkit trusts the
+	/// node it talks to and does not re-establish chain security.
 	fn strictness_for(block_context: &BlockContext, replay: bool) -> WellFormedStrictness {
 		let mut strictness: WellFormedStrictness = Default::default();
 		if block_context.parent_block_hash == Default::default() {
@@ -389,8 +368,6 @@ impl<D: DB + Clone> LedgerContext<D> {
 		strictness
 	}
 
-	/// Apply a transaction with full verification. For freshly built
-	/// transactions; block replay goes through `update_from_block` instead.
 	pub fn update_from_tx<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
@@ -428,11 +405,8 @@ impl<D: DB + Clone> LedgerContext<D> {
 		// Update Ledger State
 		let (new_ledger_state, offers, events, cost) = match &tx {
 			SerdeTransaction::Midnight(tx) => {
-				// With proof verification disabled, verify the proof-erased form:
-				// `(): ProofKind` makes zswap/contract proof checks no-ops while
-				// all structural checks run and the `VerifiedTransaction` is
-				// identical (`well_formed` erases proofs internally anyway). The
-				// ledger has no strictness knob for zswap offer proofs.
+				// `(): ProofKind` turns the zswap/contract proof checks into no-ops;
+				// the ledger has no strictness knob for zswap offer proofs.
 				let ref_state = &tx_context.ref_state;
 				let tblock = tx_context.block_context.tblock;
 				let valid_tx: VerifiedTransaction<_> = if strictness.verify_native_proofs {
@@ -450,8 +424,6 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
-						// Normal on-chain occurrence; debug so replay isn't noisy. Counted in
-						// `crate::replay_stats` so the replay heartbeat can still surface it.
 						crate::replay_stats::PARTIALLY_FAILED_TXS
 							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);

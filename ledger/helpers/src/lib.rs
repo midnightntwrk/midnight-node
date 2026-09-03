@@ -16,16 +16,12 @@ mod utils;
 pub use utils::find_dependency_version;
 pub mod extract_tx_with_context;
 
-/// Process-wide counters of transactions that did not fully apply during block
-/// replay, shared by every ledger generation's `LedgerContext`. Partially failed
-/// transactions are ordinary on-chain history (logged at debug), so the toolkit's
-/// replay progress reports these totals instead of printing one line per tx.
+/// Process-wide counters of replayed transactions that did not fully apply,
+/// shared by every ledger generation's `LedgerContext`.
 pub mod replay_stats {
 	use std::sync::atomic::AtomicU64;
 
-	/// Transactions whose guaranteed section applied but whose fallible section failed.
 	pub static PARTIALLY_FAILED_TXS: AtomicU64 = AtomicU64::new(0);
-	/// Transactions rejected outright (nothing applied).
 	pub static FAILED_TXS: AtomicU64 = AtomicU64::new(0);
 }
 
