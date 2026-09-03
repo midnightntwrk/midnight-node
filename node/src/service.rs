@@ -54,7 +54,7 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
-use crate::consensus_engine_dispatch::{DispatchImportQueue, RuntimeEngineResolver};
+use crate::consensus_engine_dispatch::DispatchImportQueue;
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
@@ -266,10 +266,10 @@ type TransactionPool = FilteringTransactionPool<Block, FullClient>;
 type GrandpaBlockImport =
 	sc_consensus_grandpa::GrandpaBlockImport<FullBackend, Block, FullClient, FullSelectChain>;
 
-/// Import queue that dispatches between the AURA and BABE pipelines per the consensus-engine state.
+/// Import queue that dispatches between the AURA and BABE pipelines by the engine that authored
+/// each block (its first AURA/BABE pre-runtime digest).
 type MidnightImportQueue = DispatchImportQueue<
 	Block,
-	RuntimeEngineResolver<FullClient>,
 	sc_consensus::DefaultImportQueue<Block>,
 	sc_consensus::DefaultImportQueue<Block>,
 >;
@@ -617,12 +617,9 @@ pub fn new_partial(
 			telemetry: None, //telemetry.as_ref().map(|x| x.handle()),
 		})?;
 
-	// Route each block to the AURA or BABE queue by the engine active at its parent.
-	let import_queue = DispatchImportQueue::new(
-		Arc::new(RuntimeEngineResolver::new(client.clone())),
-		aura_import_queue,
-		babe_import_queue,
-	);
+	// Route each block to the AURA or BABE queue by the engine that authored it (first AURA/BABE
+	// pre-runtime digest), and hold BABE batches behind in-flight AURA batches at the flip.
+	let import_queue = DispatchImportQueue::new(aura_import_queue, babe_import_queue);
 
 	let partial_components = sc_service::PartialComponents {
 		client: client.clone(),
