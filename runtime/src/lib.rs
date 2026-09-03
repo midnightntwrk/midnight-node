@@ -227,17 +227,8 @@ pub mod opaque {
 			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-
-			// Fall back to the aura key behind the invalid SEC1 tag 0x00, matching the
-			// migration placeholder (distinct per validator, collides with no real key).
-			let beefy = match keys.find(BEEFY) {
-				Some(raw_beefy) => ecdsa::Public::from_raw(raw_beefy.try_into().ok()?),
-				None => {
-					let mut raw = [0u8; 33];
-					raw[1..].copy_from_slice(&aura.0);
-					ecdsa::Public::from_raw(raw)
-				},
-			};
+			let beefy = keys.find(BEEFY).or_else(|| keys.find(CROSS_CHAIN))?;
+			let beefy = ecdsa::Public::from_raw(beefy.try_into().ok()?);
 			Some(Self { aura: aura.into(), grandpa: grandpa.into(), beefy: beefy.into() })
 		}
 	}
