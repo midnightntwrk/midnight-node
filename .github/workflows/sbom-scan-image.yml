@@ -116,6 +116,9 @@ jobs:
           password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE || github.token }}
 
       - name: Login to DockerHub
+        # Pull-side rate-limit relief only; the scan works fine anonymously, so a bad or
+        # missing credential must not take the job down with it.
+        continue-on-error: true
         if: ${{ github.actor != 'dependabot[bot]' && !github.event.pull_request.head.repo.fork }}
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
