@@ -151,14 +151,17 @@ earthly doc
 > The `--secret` flags are required even for local runs (empty values use
 > anonymous Docker Hub access).
 >
-> If you prefer running tests with `cargo` directly, exclude the toolkit crate
-> and the fixture-dependent tests:
+> If you prefer running tests with `cargo` directly, run them in release mode (with
+> compiler flags configured to avoid linker out-of-memory errors) and exclude the
+> toolkit crate as well as fixture-dependent tests using `--exact`:
 >
 > ```bash
-> cargo test --workspace --locked \
+> RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1" \
+> cargo test --release --workspace --locked \
 >   --exclude midnight-node-toolkit \
 >   --exclude partner-chains-cardano-offchain \
->   -- --skip tests::test_get_contract_state \
+>   -- --exact \
+>      --skip tests::test_get_contract_state \
 >      --skip tests::test_send_mn_transaction \
 >      --skip tests::test_validation_works
 > ```
