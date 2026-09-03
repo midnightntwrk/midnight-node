@@ -45,7 +45,24 @@ pub trait LedgerBlockContextProvider {
 	fn get_block_context() -> BlockContext;
 }
 
-pub trait MidnightSystemTransactionExecutor {
+/// Allows `pallet-cnight-observation` to execute only the system transaction
+/// variants it is permitted to construct (`CNightGeneratesDustUpdate`).
+pub trait MidnightSystemTransactionCNightExecutor {
+	/// Execute a Midnight System Transaction and return a SCALE-compatible result
+	fn execute_system_transaction(
+		serialized_system_transaction: Vec<u8>,
+	) -> Result<Hash, DispatchError>;
+
+	/// True when `err` from [`Self::execute_system_transaction`] is the ledger refusing
+	/// the transaction because the block is already full, rather than rejecting the
+	/// transaction itself.
+	fn is_block_limit_exceeded(err: &DispatchError) -> bool;
+}
+
+/// Allows `pallet-c2m-bridge` to execute only the system transaction variants it
+/// is permitted to construct (`UnlockToTreasury`, `DistributeReserve`,
+/// `DistributeNight(ClaimKind::CardanoBridge, _)`).
+pub trait MidnightSystemTransactionBridgeExecutor {
 	/// Execute a Midnight System Transaction and return a SCALE-compatible result
 	fn execute_system_transaction(
 		serialized_system_transaction: Vec<u8>,
