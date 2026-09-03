@@ -93,17 +93,6 @@ impl MidnightNodeClient {
 		Ok(network_id)
 	}
 
-	pub async fn get_state_root_at(
-		&self,
-		at: Option<HashFor<MidnightNodeClientConfig>>,
-	) -> Result<Option<Vec<u8>>, ClientError> {
-		let at_block = match at {
-			Some(hash) => self.api.at_block(hash).await?,
-			None => self.api.at_current_block().await?,
-		};
-		Self::state_root_from(&at_block).await
-	}
-
 	/// Fetch the Midnight state root via an existing at-block handle.
 	pub async fn state_root_from(
 		at_block: &subxt::client::OnlineClientAtBlock<MidnightNodeClientConfig>,

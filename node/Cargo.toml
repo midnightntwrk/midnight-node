@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "2.1.0"
+version = "3.0.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -25,6 +25,8 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 serde.workspace = true
 async-trait.workspace = true
 futures.workspace = true
+# Must match the version sc-network's `request_response_config` inbound queue expects (1.9).
+async-channel = "1.9"
 
 sc-cli.workspace = true
 sc-chain-spec.workspace = true
@@ -48,8 +50,12 @@ sc-consensus-slots.workspace = true
 sc-offchain.workspace = true
 sc-client-api.workspace = true
 sc-network.workspace = true
+sc-network-sync.workspace = true
 sc-utils.workspace = true
+sp-consensus.workspace = true
 sp-consensus-aura.workspace = true
+sp-consensus-babe.workspace = true
+sp-consensus-slots.workspace = true
 sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true
 sp-state-machine.workspace = true
@@ -96,6 +102,7 @@ midnight-primitives-system-parameters = { workspace = true, default-features = t
 midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
+midnight-primitives-consensus-engine = { workspace = true, default-features = true }
 midnight-primitives-session-info = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }

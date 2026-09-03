@@ -50,6 +50,10 @@ pub enum LedgerContextError {
 		"state root mismatch: expected {expected}, actual {actual} (parent block hash: {parent_block_hash})"
 	)]
 	StateRootMismatch { expected: String, actual: String, parent_block_hash: String },
+	#[error(
+		"could not compute the local ledger state root to compare against on-chain root {expected} (parent block hash: {parent_block_hash})"
+	)]
+	StateRootUnavailable { expected: String, parent_block_hash: String },
 	#[error("deserialization failed: {0}")]
 	Deserialization(String),
 	#[error("dust update failed for tx {tx_hash}: {reason}")]
@@ -318,10 +322,28 @@ impl<D: DB + Clone> LedgerContext<D> {
 					});
 				},
 				Some(_) => {},
-				None => log::warn!("Failed to compute local ledger state root for comparison"),
+				// Fail closed: replay may have skipped proof/signature checks on the
+				// strength of this comparison, so a root that cannot be computed is
+				// an error, not a warning.
+				None => {
+					return Err(LedgerContextError::StateRootUnavailable {
+						expected: hex_encode(expected_root),
+						parent_block_hash: hex_encode(block_context.parent_block_hash.0),
+					});
+				},
 			}
 		}
 		Ok(())
+	}
+
+	/// Local ledger state root in the same encoding as the on-chain `Midnight.StateKey`
+	/// value that `update_from_block` compares against.
+	pub fn state_root(&self) -> Result<Option<Vec<u8>>, LedgerContextError> {
+		let state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
+		Ok(Self::compute_state_root(&state))
 	}
 
 	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
@@ -331,13 +353,28 @@ impl<D: DB + Clone> LedgerContext<D> {
 		super::serialize(&sp.as_typed_key()).ok()
 	}
 
-	/// Genesis blocks skip balancing. `replay` additionally skips proof,
-	/// signature and balancing re-verification - only sound for finalized
-	/// history whose outcome is verified against the on-chain state root.
-	/// Balancing must not be re-checked here: replayed transactions are
-	/// verified proof-erased, and fee calculation for unproven transactions
-	/// estimates the size instead of using the real proof-carrying one, so a
-	/// faithful on-chain transaction can false-fail the dust balance check.
+	/// Genesis blocks skip balancing.
+	///
+	/// `replay` selects the relaxed verification used for finalized history. Its
+	/// effective scope is wider than the four flags cleared below, so it is spelled
+	/// out here: the transaction is verified in proof-erased form
+	/// (`erase_proofs()`), which means
+	/// - zero-knowledge proofs (zswap offers, contract calls) are not verified,
+	/// - signatures are not verified, including unshielded-input signatures (the
+	///   ledger drops that loop for erased transactions regardless of
+	///   `verify_signatures`),
+	/// - balancing is not enforced (fee estimation for an unproven transaction
+	///   differs from the proof-carrying one, so a faithful on-chain transaction
+	///   could false-fail the dust balance check),
+	/// - every remaining structural check (limits, nullifier/commitment
+	///   consistency, TTLs, ...) runs against the erased form.
+	///
+	/// What still holds the replay honest is the per-block comparison of the local
+	/// state root with the on-chain `Midnight.StateKey` (`verify_state_root`,
+	/// fail-closed): any divergence between what the node applied and what we
+	/// applied aborts the replay. This matches the toolkit's trust model - it is a
+	/// testing tool that trusts the node it talks to and re-derives state from it;
+	/// it is not a validator and does not re-establish chain security.
 	fn strictness_for(block_context: &BlockContext, replay: bool) -> WellFormedStrictness {
 		let mut strictness: WellFormedStrictness = Default::default();
 		if block_context.parent_block_hash == Default::default() {
@@ -396,18 +433,12 @@ impl<D: DB + Clone> LedgerContext<D> {
 				// all structural checks run and the `VerifiedTransaction` is
 				// identical (`well_formed` erases proofs internally anyway). The
 				// ledger has no strictness knob for zswap offer proofs.
+				let ref_state = &tx_context.ref_state;
+				let tblock = tx_context.block_context.tblock;
 				let valid_tx: VerifiedTransaction<_> = if strictness.verify_native_proofs {
-					tx.well_formed(
-						&tx_context.ref_state,
-						strictness,
-						tx_context.block_context.tblock,
-					)
+					tx.well_formed(ref_state, strictness, tblock)
 				} else {
-					tx.erase_proofs().well_formed(
-						&tx_context.ref_state,
-						strictness,
-						tx_context.block_context.tblock,
-					)
+					tx.erase_proofs().well_formed(ref_state, strictness, tblock)
 				}
 				.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
 				let cost = tx
@@ -419,7 +450,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
-						// Normal on-chain occurrence; debug so replay isn't noisy.
+						// Normal on-chain occurrence; debug so replay isn't noisy. Counted in
+						// `crate::replay_stats` so the replay heartbeat can still surface it.
+						crate::replay_stats::PARTIALLY_FAILED_TXS
+							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);
 						log::debug!(
 							"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
@@ -427,6 +461,8 @@ impl<D: DB + Clone> LedgerContext<D> {
 						(new_ledger_state, offers, events, cost)
 					},
 					TransactionResult::Failure(failure) => {
+						crate::replay_stats::FAILED_TXS
+							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);
 						log::warn!(
 							"Failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
@@ -658,6 +694,12 @@ impl<D: DB + Clone> BuilderContext<D> for LedgerContext<D> {
 					})
 					.collect::<Vec<_>>()
 			})
+		})
+	}
+
+	async fn backs_dust_generation(&self, utxo: &Utxo) -> bool {
+		self.with_ledger_state(|ledger_state| {
+			ledger_state.dust.generation.night_indices.contains_key(&utxo.initial_nonce())
 		})
 	}
 

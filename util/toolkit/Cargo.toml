@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node-toolkit"
-version = "2.0.0"
+version = "3.0.0"
 edition = "2024"
 license-file.workspace = true
 
@@ -59,6 +59,7 @@ stacker.workspace = true
 semver.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
 assert_matches.workspace = true
 test-case = "3.3.1"
 hex-literal.workspace = true

@@ -8,6 +8,14 @@ on:
       - "changes/**"
   push:
     branches: ["main"]
+env:
+  # Registry the images this workflow touches live in. Derived from the repo owner so a fork
+  # or private clone never reads from or writes to midnightntwrk's registries. Upstream's
+  # private GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the
+  # canonical branch has to name the repo explicitly rather than derive it.
+  # The cache tag lives in the public mirror namespace upstream; a fork keeps it in its own.
+  GHCR_REGISTRY_PUBLIC: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnightntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
+
 # no top level default permissions for security reasons
 permissions: {}
 concurrency:
@@ -47,7 +55,7 @@ jobs:
         run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
 
       - name: Log in to GHCR (for remote cache)
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.guard.outputs.hit != 'true'
         with:
           registry: ghcr.io
@@ -59,7 +67,7 @@ jobs:
       # Skipped on fork PRs where these secrets are not available.
       # If for some reason we can't log in we should proceed unauthed.
       - name: Log in to Docker Hub
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         continue-on-error: true
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
@@ -98,7 +106,7 @@ jobs:
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             --strict $PUSH_FLAG \
-            --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test \
+            --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test" \
             +test --CACHE_KEY="$CACHE_KEY"
 
       - name: Upload test report artifact

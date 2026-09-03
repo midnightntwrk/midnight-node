@@ -628,19 +628,62 @@ mod tests {
 		assert!(LedgerSnapshot::from_value_bytes(&[], 1).is_err());
 	}
 
+	/// A ledger-8 context with a wallet and a non-default ledger state. An empty
+	/// state agrees with any serializer, so it would prove nothing about the
+	/// hand-written fast path.
+	fn populated_ledger8_context() -> (
+		midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
+			midnight_node_ledger_helpers::ledger_8::DefaultDB,
+		>,
+		WalletSeed,
+	) {
+		use midnight_node_ledger_helpers::ledger_8 as l8;
+
+		let seed = WalletSeed::try_from_hex_str(
+			"0000000000000000000000000000000000000000000000000000000000000001",
+		)
+		.unwrap();
+		let seed_8 = l8::WalletSeed::try_from(seed.as_bytes()).unwrap();
+		let ctx = l8::context::LedgerContext::new_from_wallet_seeds("test", &[seed_8]);
+		{
+			let mut state = ctx.ledger_state.lock().unwrap();
+			let mut populated: l8::LedgerState<l8::DefaultDB> = (**state).clone();
+			populated.block_reward_pool = 1_000_000;
+			populated.locked_pool = 250;
+			populated.reserve_pool = 42;
+			populated.treasury = populated.treasury.insert(l8::TokenType::Unshielded(l8::NIGHT), 7);
+			*state = l8::Sp::new(populated);
+		}
+		(ctx, seed)
+	}
+
+	#[test]
+	fn fast_serialize_matches_default_8() {
+		let (ctx, _) = populated_ledger8_context();
+		let state = ctx.ledger_state.lock().unwrap();
+
+		let default_bytes =
+			midnight_node_ledger_helpers::ledger_8::serialize(&**state).expect("serialize failed");
+		let fast_bytes = serialize_ledger_state_fast_8(&state).expect("fast serialize failed");
+		assert_eq!(default_bytes, fast_bytes, "ledger-8 fast serializer diverged from default");
+	}
+
 	#[test]
 	fn ledger8_snapshot_roundtrip_and_version_dispatch() {
 		use midnight_node_ledger_helpers::ledger_8 as l8;
 
-		let ctx = l8::context::LedgerContext::new("test");
+		let (ctx, seed) = populated_ledger8_context();
 		let snapshot = create_ledger_snapshot_8(&ctx, 7).expect("snapshot failed");
 		assert_eq!(snapshot.ledger_version, LedgerVersion::Ledger8);
+		let wallet_snapshot =
+			create_wallet_snapshot_8(&ctx, &seed, UnshieldedSignatureScheme::Schnorr, 7)
+				.expect("wallet snapshot failed");
 
 		let bytes = snapshot.to_value_bytes().expect("serialize failed");
 		let decoded = LedgerSnapshot::from_value_bytes(&bytes, 7).expect("decode failed");
 		assert_eq!(decoded, snapshot);
 
-		let (restored, _, height) =
+		let (restored, ledger_state, height) =
 			restore_context_from_ledger_snapshot_8(&decoded).expect("restore failed");
 		assert_eq!(height, 7);
 		let original =
@@ -649,8 +692,73 @@ mod tests {
 			l8::serialize(&**restored.ledger_state.lock().unwrap()).expect("serialize failed");
 		assert_eq!(original, roundtrip, "ledger-8 state diverged across snapshot roundtrip");
 
-		// The ledger-9 restore must reject a ledger-8 snapshot, and vice versa.
+		inject_wallet_from_cache_8(
+			&restored,
+			&wallet_snapshot,
+			&seed,
+			UnshieldedSignatureScheme::Schnorr,
+			&ledger_state,
+		)
+		.expect("inject failed");
+		let seed_8 = l8::WalletSeed::try_from(seed.as_bytes()).unwrap();
+		let original_wallets = ctx.wallets.lock().unwrap();
+		let restored_wallets = restored.wallets.lock().unwrap();
+		let original_shielded =
+			l8::serialize_untagged(&original_wallets[&seed_8].shielded.state).unwrap();
+		let restored_shielded =
+			l8::serialize_untagged(&restored_wallets[&seed_8].shielded.state).unwrap();
+		assert_eq!(original_shielded, restored_shielded, "ledger-8 wallet state diverged");
+
+		// The ledger-9 restore must reject a ledger-8 snapshot.
 		assert!(restore_context_from_ledger_snapshot(&decoded).is_err());
+	}
+
+	/// Blocks carrying an on-chain state root take the relaxed verification path
+	/// (no proof/signature re-verification); its outcome must equal a fully
+	/// verified replay.
+	#[test]
+	fn relaxed_replay_with_state_roots_matches_strict_replay() {
+		use midnight_node_ledger_helpers::fork::fork_aware_context::apply_block_9;
+
+		let (source, _) = load_genesis_context(&[]);
+		assert!(source.blocks.iter().all(|b| b.state_root.is_none()));
+		assert!(source.blocks.iter().any(|b| !b.transactions.is_empty()));
+
+		// Strict replay, recording the local root after every block.
+		let strict = LedgerContext::<DefaultDB>::new(&source.network_id);
+		let mut roots = Vec::new();
+		for block in &source.blocks {
+			apply_block_9(&strict, block);
+			roots.push(strict.state_root().unwrap().expect("local root"));
+		}
+
+		// Relaxed replay of the same blocks with the recorded roots attached.
+		let relaxed = LedgerContext::<DefaultDB>::new(&source.network_id);
+		for (block, root) in source.blocks.iter().zip(&roots) {
+			let mut block = block.clone();
+			block.state_root = Some(root.clone());
+			apply_block_9(&relaxed, &block);
+		}
+
+		let strict_bytes =
+			midnight_node_ledger_helpers::serialize(&**strict.ledger_state.lock().unwrap())
+				.unwrap();
+		let relaxed_bytes =
+			midnight_node_ledger_helpers::serialize(&**relaxed.ledger_state.lock().unwrap())
+				.unwrap();
+		assert_eq!(strict_bytes, relaxed_bytes, "relaxed replay diverged from strict replay");
+	}
+
+	#[test]
+	#[should_panic(expected = "StateRootMismatch")]
+	fn relaxed_replay_aborts_on_state_root_mismatch() {
+		use midnight_node_ledger_helpers::fork::fork_aware_context::apply_block_9;
+
+		let (source, _) = load_genesis_context(&[]);
+		let ctx = LedgerContext::<DefaultDB>::new(&source.network_id);
+		let mut block = source.blocks[0].clone();
+		block.state_root = Some(vec![0xAB; 32]);
+		apply_block_9(&ctx, &block);
 	}
 
 	#[test]

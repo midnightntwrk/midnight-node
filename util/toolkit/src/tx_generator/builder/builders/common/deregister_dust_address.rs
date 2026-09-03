@@ -16,7 +16,7 @@ use std::{collections::VecDeque, convert::Infallible, sync::Arc};
 use super::ledger_helpers_local::{
 	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB,
 	DustRegistrationBuilder, FromContext, IntentInfo, NIGHT, ProofProvider, Segment,
-	StandardTrasactionInfo, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
+	StandardTransactionInfo, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
 	UtxoSpendInfo, WalletSeed,
 };
 use async_trait::async_trait;
@@ -83,7 +83,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> 
 
 		let context = self.context.clone();
 
-		let mut tx_info = StandardTrasactionInfo::new_from_context(
+		let mut tx_info = StandardTransactionInfo::new_from_context(
 			context.clone(),
 			self.prover.clone(),
 			self.rng_seed,

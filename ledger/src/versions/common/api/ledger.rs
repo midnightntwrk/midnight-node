@@ -97,6 +97,27 @@ impl<D: DB> Ledger<D> {
 		Self { state, block_fullness: SyntheticCost::ZERO.into() }
 	}
 
+	/// Builds a ledger with an arbitrary accrued `block_fullness`, so that
+	/// [`Self::is_block_start`] can be exercised without applying a real transaction.
+	#[cfg(test)]
+	pub(crate) fn new_with_block_fullness(
+		state: LedgerState<D>,
+		block_fullness: SyntheticCost,
+	) -> Self {
+		Self { state, block_fullness: block_fullness.into() }
+	}
+
+	/// True when no ledger transaction — user or system — has been applied yet in the
+	/// current block, i.e. [`Self::state`] is still exactly the parent's post-block state.
+	///
+	/// `block_fullness` is reset to zero by [`Self::post_block_update`] /
+	/// [`Self::apply_post_block_update`] and only ever accrues in
+	/// [`Self::apply_verified_transaction`] and [`Self::apply_system_tx`], so a zero fullness
+	/// is equivalent to "nothing has touched the ledger state in this block yet".
+	pub(crate) fn is_block_start(&self) -> bool {
+		self.block_fullness.is_zero()
+	}
+
 	pub(crate) fn get_zswap_state(
 		&self,
 		maybe_contract_address: Option<ContractAddress>,
@@ -310,7 +331,9 @@ mod tests {
 		Sp::new(ledger)
 	}
 
-	fn assert_apply_transaction(
+	/// Applies `bytes` to `ledger` without running the end-of-block update, leaving the
+	/// accrued `block_fullness` in place.
+	fn assert_apply_transaction_only(
 		api: &Api,
 		ledger: &mut Sp<Ledger<DefaultDB>>,
 		bytes: &[u8],
@@ -327,21 +350,53 @@ mod tests {
 				tx_ctx.block_context.tblock,
 			)
 			.unwrap_or_else(|err| panic!("Transaction not well-formed: {err:?}"));
-		let (mut new_ledger_state, _applied_stage) =
-			Ledger::<DefaultDB>::apply_verified_transaction(
-				ledger.clone(),
-				api,
-				&tx,
-				&verified_tx,
-				&tx_ctx,
-			)
-			.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
-
-		new_ledger_state =
-			Ledger::<DefaultDB>::post_block_update(new_ledger_state, block_context.clone())
-				.expect("Post block update failed");
+		let (new_ledger_state, _applied_stage) = Ledger::<DefaultDB>::apply_verified_transaction(
+			ledger.clone(),
+			api,
+			&tx,
+			&verified_tx,
+			&tx_ctx,
+		)
+		.unwrap_or_else(|err| panic!("Can't apply transaction: {err}"));
 
 		*ledger = new_ledger_state;
+	}
+
+	fn assert_apply_transaction(
+		api: &Api,
+		ledger: &mut Sp<Ledger<DefaultDB>>,
+		bytes: &[u8],
+		block_context: &BlockContext,
+	) {
+		assert_apply_transaction_only(api, ledger, bytes, block_context);
+
+		*ledger = Ledger::<DefaultDB>::post_block_update(ledger.clone(), block_context.clone())
+			.expect("Post block update failed");
+	}
+
+	/// `is_block_start` is the gate `well_formed_tblock` uses to decide whether a transaction
+	/// sits at the head of its block, so it must follow `block_fullness` exactly: true on a
+	/// fresh block, false once a transaction has been applied, true again after the
+	/// end-of-block update.
+	#[test]
+	fn is_block_start_tracks_applied_transactions() {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("This test should only be run with ledger latest");
+			return;
+		}
+		let api = Api::new();
+		let mut ledger = prepare_ledger();
+		let (deploy_tx, block_context) = extract_tx_with_context(DEPLOY_TX);
+		let block_context: BlockContext = block_context.into();
+
+		assert!(ledger.is_block_start(), "a fresh block has applied no transactions");
+
+		assert_apply_transaction_only(&api, &mut ledger, &deploy_tx, &block_context);
+		assert!(!ledger.is_block_start(), "a transaction has been applied in this block");
+
+		ledger = Ledger::<DefaultDB>::post_block_update(ledger.clone(), block_context)
+			.expect("Post block update failed");
+		assert!(ledger.is_block_start(), "the end-of-block update starts a new block");
 	}
 
 	#[test]

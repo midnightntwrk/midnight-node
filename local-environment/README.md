@@ -35,6 +35,10 @@ npm run run:preprod -- --from-snapshot https://example.com/snapshots/preprod-lat
 npm run run:mainnet -- --from-snapshot https://example.com/snapshots/mainnet-latest.tar.gz
 ```
 
+Real snapshot URLs for each network can be resolved from the backup system's
+public index — see
+[Finding snapshot archives](../docs/fork-testing.md#finding-snapshot-archives).
+
 After that initial restore, the same network can be restarted without
 `--from-snapshot` as long as the restored `data/` directories and generated
 mock-authorities output are still present:
@@ -47,6 +51,59 @@ Before forking from a snapshot, confirm the chainspec embedded in the node
 image was built with the same `networkId` as the genesis used to produce the
 snapshot. Recent runtimes validate this at boot and the node will refuse to
 start on a mismatch.
+
+### Starting a well-known network from genesis
+
+`--from-genesis` skips the snapshot/fork flow entirely and brings up the
+network's base compose from block 0:
+
+```bash
+npm run run:devnet -- --from-genesis --env-file ../devnet.env
+```
+
+Unlike fork mode, nothing is mocked: each validator needs its real seed phrase
+(e.g. `MIDNIGHT_NODE_01_0_SEED`) supplied via `--env-file` or the process
+environment. The node only imports keystore keys from `AURA_SEED_FILE` /
+`GRANDPA_SEED_FILE` / `CROSS_CHAIN_SEED_FILE`, so the CLI writes each provided
+phrase to per-validator seed files under `genesis-config/` (gitignored) and
+generates a `<network>.genesis.override.yaml` that mounts them — the same
+phrase drives all three key types, as in the original genesis deployment. At
+least one seed phrase is required; validators without one start with empty
+keystores and cannot author blocks. Note that only holders of the network's
+genesis authority keys can produce blocks from genesis.
+
+Networks whose validators were deployed with a _distinct_ phrase per key type
+can set per-type vars instead: the base var's `_SEED` suffix is replaced by
+`_AURA_SEED` / `_GRANDPA_SEED` / `_CROSS_CHAIN_SEED` (e.g.
+`MIDNIGHT_NODE_01_0_AURA_SEED`). Each key type falls back to the base var when
+its per-type var is unset; a validator is seeded only when all three key types
+resolve.
+
+Each node also needs a main-chain data source: either the real db-sync
+connection strings (the `DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_*` vars) or
+the node's built-in mock follower, enabled through an extra override file:
+
+```yaml
+# mock-follower.override.yaml
+services:
+  node1: &mock
+    environment:
+      USE_MAIN_CHAIN_FOLLOWER_MOCK: "true"
+      MOCK_REGISTRATIONS_FILE: /res/mock-bridge-data/default-registrations.json
+      DB_SYNC_POSTGRES_CONNECTION_STRING: ""
+  node2: *mock
+  # ... one entry per validator service
+```
+
+```bash
+npm run run:devnet -- --from-genesis --env-file ../devnet.env \
+  --compose-override ../mock-follower.override.yaml
+```
+
+The CLI warns about any compose variables left unset, and about existing
+`data/` directories (nodes resume from existing chain data; wipe the network's
+`data/` directories first for a clean block-0 start). Restarting a genesis
+environment uses the same flags.
 
 ### Upgrade rehearsals
 
@@ -127,6 +184,61 @@ npm run stop:mainnet
 See [fork-testing.md](../docs/fork-testing.md) for snapshot prerequisites and
 archive format details.
 
+### Attaching external services to a fork
+
+Downstream consumers (e.g. [midnight-indexer](https://github.com/midnightntwrk/midnight-indexer))
+can run their own services against a fork without any coupling to this repo's
+layout. The contract has two parts:
+
+1. **A named docker network.** The fork's compose project declares a stable
+   default-network name (mainnet: `midnight-fork-mainnet`). External compose
+   projects join it by declaring it `external: true`.
+2. **A connection manifest.** Every successful `run` writes
+   `artifacts/<network>.manifest.env` describing the fork:
+   `MIDNIGHT_FORK_NETWORK` (docker network name), `MIDNIGHT_FORK_NETWORK_ID`,
+   `MIDNIGHT_FORK_NODE_IMAGE` / `MIDNIGHT_FORK_NODE_TAG`,
+   `MIDNIGHT_FORK_NODE_WS` (in-network primary validator RPC on node1),
+   `MIDNIGHT_FORK_NODE_WS_HOST` (the same RPC published on localhost), plus
+   per-validator `MIDNIGHT_FORK_<SERVICE>_WS[_HOST]`
+   entries. The file reflects the most recent bring-up.
+
+A minimal consumer overlay, run as its own compose project from the consumer's
+repo:
+
+```yaml
+services:
+  my-service:
+    image: my-image
+    environment:
+      NODE_URL: ${MIDNIGHT_FORK_NODE_WS}
+    networks: [default, fork]
+
+networks:
+  fork:
+    name: ${MIDNIGHT_FORK_NETWORK}
+    external: true
+```
+
+```bash
+docker compose --env-file <midnight-node>/local-environment/artifacts/mainnet.manifest.env \
+  -f my-overlay.yaml up -d
+```
+
+Only services that talk to the node need to join the fork network; a
+consumer's private dependencies (databases, brokers) should stay on the
+overlay's own default network. Host-side (non-docker) consumers can use
+`MIDNIGHT_FORK_NODE_WS_HOST` directly and skip the network entirely.
+
+Caveats:
+
+- Tear down the consumer project before `npm run stop:<network>`; the fork
+  cannot remove its network while foreign containers are attached.
+- Don't combine an external indexer overlay with `-p withindexer` — the
+  in-tree indexer profile uses fixed container names (`nats`, `indexer-api`,
+  ...) that will collide with a second copy of the stack.
+- The manifest is regenerated on every `run`; consumers should re-source it
+  after a fork restart rather than caching values.
+
 ### Local environment
 
 In addition to the fork-based workflows above, you can launch a dynamic local
@@ -176,8 +288,16 @@ each run to completion (`exit 0`) before the next phase starts.
 |     2 | `contract-compiler`                   | compile + deploy the Aiken governance contracts                                                                             |
 |     3 | `mint-cnight-supply`                  | mint the cNIGHT supply → Reserve / ICS / faucet pools, then send the c2m bridge transfer funding wallet `0x..01` (1B NIGHT) |
 |     4 | `midnight-setup`                      | build the chainspec/genesis (bridge checkpoint + pre-approved faucet tx)                                                    |
-|     5 | `midnight-node-1` … `midnight-node-5` | validators; produce + finalize blocks                                                                                       |
+|     5 | `midnight-node-1` … `midnight-node-6` | nodes 1–5: validators; produce + finalize blocks. node 6: non-validator archive follower                                    |
 |     6 | `init-mnight-faucet`                  | claim the bridged NIGHT + DUST-register wallet `0x..01`                                                                     |
+
+`midnight-node-6` is a non-validator archive node (`--state-pruning=archive
+--blocks-pruning=archive`, no keystore): it syncs from `midnight-node-1` and
+keeps full state and block history queryable over RPC. It publishes host ports
+30338 (p2p), 9945 (RPC), and 9620 (Prometheus), and persists its chain data in
+the `midnight-node-6-data` volume. It is labeled `io.midnight.role: archive`
+rather than `validator`, so `verify-finality` and the upgrade/consensus
+commands skip it.
 
 With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
 `wallet-indexer`, `indexer-api`) starts alongside the Cardano services.

@@ -26,6 +26,7 @@ use std::{
 	time::Duration,
 };
 
+use backoff::{ExponentialBackoff, future::retry_notify};
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use subxt::{client::OnlineClientAtBlock, rpcs, utils::H256};
 use tokio::task::JoinSet;
@@ -47,10 +48,15 @@ const BLOCKS_PER_JOB: u64 = 100;
 /// Maximum time to wait for a block fetch before giving up.
 pub const BLOCK_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Job retries per fetch worker before failing the whole fetch. A dropped
-/// WebSocket permanently poisons the jsonrpsee client ("restart required"),
-/// so each retry reconnects first.
-const MAX_JOB_ATTEMPTS: usize = 10;
+/// How long a fetch worker keeps retrying one job (reconnecting before every
+/// attempt - a dropped WebSocket permanently poisons the jsonrpsee client,
+/// "restart required") before the whole sync fails.
+const JOB_RETRY_MAX_ELAPSED: Duration = Duration::from_secs(10 * 60);
+const JOB_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How long a fetch worker retries its initial connection before giving up and
+/// leaving the work to the other workers.
+const WORKER_CONNECT_MAX_ELAPSED: Duration = Duration::from_secs(30);
 
 #[derive(Debug, thiserror::Error)]
 pub enum FetchError {
@@ -79,19 +85,22 @@ enum TaskResult {
 	JobPusher,
 	FetchWorker,
 	ComputeWorker,
-	ProgressReporter,
 }
 
 const PROGRESS_REPORT_INTERVAL: Duration = Duration::from_secs(10);
 
-/// EWMA smoothing factor for the fetch rate: each report contributes 30%,
-/// giving a ~20s half-life - steady ETA despite batchy per-tick rates, yet
-/// converging within a few ticks after an outage or cache burst.
-const RATE_SMOOTHING_ALPHA: f64 = 0.3;
-
-/// Below this rate (blocks/s) the ETA projection is meaningless (a stall would
-/// print millennia-scale ETAs), so report "unknown" instead.
-const ETA_MIN_RATE: f64 = 0.1;
+/// Totals of one sync run. The tip-chasing job pusher grows them while the
+/// progress reporter and the receive loop read them.
+struct SyncTotals {
+	/// Blocks to fetch.
+	span: AtomicU64,
+	/// Fetch jobs planned.
+	jobs: AtomicU64,
+	/// Finalized height the sync is heading for.
+	target_height: AtomicU64,
+	/// The pusher could not re-check the chain tip and stopped early.
+	truncated: AtomicBool,
+}
 
 fn format_eta(secs: u64) -> String {
 	if secs >= 3600 {
@@ -215,11 +224,15 @@ pub async fn fetch_from_rpc(
 	let num_jobs = fetch_span.div_ceil(blocks_per_job);
 	let num_workers = num_workers.min(num_jobs as usize).max(1);
 
-	// Shared atomics: the tip-chasing pusher grows them while the progress
-	// reporter and receive loop read them.
-	let total_span = Arc::new(AtomicU64::new(fetch_span));
-	let total_jobs = Arc::new(AtomicU64::new(num_jobs));
-	let target_height = Arc::new(AtomicU64::new(finalized_height));
+	// A zero-capacity channel panics; one compute worker is the floor.
+	let num_compute_workers = num_compute_workers.max(1);
+
+	let totals = Arc::new(SyncTotals {
+		span: AtomicU64::new(fetch_span),
+		jobs: AtomicU64::new(num_jobs),
+		target_height: AtomicU64::new(finalized_height),
+		truncated: AtomicBool::new(false),
+	});
 
 	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 
@@ -234,9 +247,7 @@ pub async fn fetch_from_rpc(
 	{
 		let job_tx = fetch_job_tx.clone();
 		let url = url.to_string();
-		let total_span = total_span.clone();
-		let total_jobs = total_jobs.clone();
-		let target_height = target_height.clone();
+		let totals = totals.clone();
 		join_set.spawn(async move {
 			let mut next_min = min_height;
 			let mut planned_to = max_height.max(min_height);
@@ -252,22 +263,19 @@ pub async fn fetch_from_rpc(
 				next_min = planned_to;
 
 				// Fresh client: a multi-hour sync outlives idle sockets.
-				let new_finalized = match MidnightNodeClient::new(&url, None).await {
-					Ok(client) => match client.get_finalized_height().await {
-						Ok(h) => h,
-						Err(e) => {
-							log::warn!(
-								"could not re-check chain tip ({e}); finishing sync at block {}",
-								planned_to.saturating_sub(1)
-							);
-							break;
-						},
-					},
+				let tip: Result<u64, FetchError> = async {
+					let client = MidnightNodeClient::new(&url, None).await?;
+					Ok(client.get_finalized_height().await?)
+				}
+				.await;
+				let new_finalized = match tip {
+					Ok(height) => height,
 					Err(e) => {
 						log::warn!(
-							"could not reconnect to re-check chain tip ({e}); finishing sync at block {}",
+							"could not re-check the chain tip ({e}); finishing sync at block {}",
 							planned_to.saturating_sub(1)
 						);
+						totals.truncated.store(true, Ordering::Relaxed);
 						break;
 					},
 				};
@@ -280,9 +288,9 @@ pub async fn fetch_from_rpc(
 				}
 				// Publish new totals before queueing so the receive loop can't
 				// observe completion of the old total first.
-				total_span.fetch_add(added_blocks, Ordering::Relaxed);
-				total_jobs.fetch_add(added_blocks.div_ceil(blocks_per_job), Ordering::Relaxed);
-				target_height.store(new_finalized, Ordering::Relaxed);
+				totals.span.fetch_add(added_blocks, Ordering::Relaxed);
+				totals.jobs.fetch_add(added_blocks.div_ceil(blocks_per_job), Ordering::Relaxed);
+				totals.target_height.store(new_finalized, Ordering::Relaxed);
 				log::info!(
 					"chain advanced to {new_finalized} during sync, fetching {added_blocks} more blocks..."
 				);
@@ -300,116 +308,115 @@ pub async fn fetch_from_rpc(
 
 	let counters = Arc::new(FetchCounters::default());
 	let jobs_verified = Arc::new(AtomicU64::new(0));
-	let pipeline_done = Arc::new(AtomicBool::new(false));
 
 	// Spawn fetch workers
 	for worker_id in 0..num_workers {
-		let job_rx = fetch_job_rx.clone();
+		let fetch_job_rx = fetch_job_rx.clone();
 		let work_job_tx = fetch_to_compute_tx.clone();
 		let fetch_storage = fetch_storage.clone();
 		let url = url.to_string();
 		let counters = counters.clone();
 		join_set.spawn(async move {
-			let Ok(mut client) = MidnightNodeClient::new(&url, None).await else {
-				log::warn!(
-					"fetch worker {worker_id} could not connect to {url}, exiting. \
-					 This may be due to connection limits on the remote node."
-				);
+			// A worker that cannot connect exits without taking a job; the other
+			// workers carry on (the endpoint may cap concurrent connections) and
+			// the receive loop decides whether that is fatal.
+			let Ok(client) = connect_with_retry(&url, worker_id).await else {
 				return Ok(TaskResult::FetchWorker);
 			};
+			// `None` after a failed job: the client is poisoned, reconnect first.
+			let client = tokio::sync::Mutex::new(Some(client));
 
-			log::debug!("fetch worker {worker_id} connected successfully");
-
-			loop {
-				let Ok(job) = job_rx.recv().await else {
-					return Ok(TaskResult::FetchWorker);
-				};
-
+			while let Ok(job) = fetch_job_rx.recv().await {
 				log::debug!("worker {worker_id}: received new job...");
 
-				let mut attempts = 0;
-				let work_job = loop {
-					attempts += 1;
-					match job
-						.clone()
-						.fetch(chain_id, &client, fetch_storage.clone(), &counters)
-						.await
-					{
-						Ok(work_job) => break work_job,
-						Err(e) if attempts < MAX_JOB_ATTEMPTS => {
-							let backoff_secs = (1u64 << attempts.min(6)).min(60);
-							log::warn!(
-								"worker {worker_id}: fetch job failed (attempt {attempts}/{MAX_JOB_ATTEMPTS}): {e:?}; reconnecting in {backoff_secs}s..."
-							);
-							tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
-							match MidnightNodeClient::new(&url, None).await {
-								Ok(new_client) => client = new_client,
-								Err(ce) => log::warn!(
-									"worker {worker_id}: reconnect to {url} failed: {ce}; will retry"
-								),
-							}
-						},
-						Err(e) => return Err(e.into()),
-					}
+				let backoff = ExponentialBackoff {
+					max_elapsed_time: Some(JOB_RETRY_MAX_ELAPSED),
+					max_interval: JOB_RETRY_MAX_INTERVAL,
+					..ExponentialBackoff::default()
 				};
+				let work_job = retry_notify(
+					backoff,
+					|| async {
+						let mut guard = client.lock().await;
+						if guard.is_none() {
+							let reconnected = MidnightNodeClient::new(&url, None)
+								.await
+								.map_err(|e| backoff::Error::transient(FetchError::from(e)))?;
+							*guard = Some(reconnected);
+						}
+						let result = job
+							.clone()
+							.fetch(
+								chain_id,
+								guard.as_ref().expect("connected above"),
+								fetch_storage.clone(),
+								&counters,
+							)
+							.await;
+						result.map_err(|e| {
+							*guard = None;
+							backoff::Error::transient(FetchError::from(e))
+						})
+					},
+					|e: FetchError, wait: Duration| {
+						log::warn!(
+							"worker {worker_id}: fetch job failed ({e}); reconnecting and retrying in {:.0}s...",
+							wait.as_secs_f32()
+						);
+					},
+				)
+				.await?;
 
 				work_job_tx.send(work_job).await.expect("failed to push job on work queue");
 				log::debug!("worker {worker_id}: completed job.");
 			}
+			Ok(TaskResult::FetchWorker)
 		});
 	}
 
-	// Progress reporter, independent of pipeline stages so it can't be starved.
-	{
+	// Progress reporter, independent of the pipeline stages so it can't be
+	// starved. Aborted once all jobs are in (the JoinSet drain below tolerates
+	// the cancellation).
+	let reporter = {
 		let counters = counters.clone();
 		let jobs_verified = jobs_verified.clone();
-		let pipeline_done = pipeline_done.clone();
 		let extract_backlog = fetch_to_compute_rx.clone();
 		let verify_backlog = compute_to_compute_rx.clone();
-		let total_span = total_span.clone();
-		let total_jobs = total_jobs.clone();
+		let totals = totals.clone();
 		join_set.spawn(async move {
+			let started = std::time::Instant::now();
+			let mut interval = tokio::time::interval(PROGRESS_REPORT_INTERVAL);
+			// The first tick completes immediately.
+			interval.tick().await;
 			let mut last_fetched = 0u64;
-			let mut last_tick = std::time::Instant::now();
-			let mut ewma_rate: Option<f64> = None;
 			loop {
-				tokio::time::sleep(Duration::from_secs(1)).await;
-				if pipeline_done.load(Ordering::Relaxed) {
-					return Ok(TaskResult::ProgressReporter);
-				}
-				if last_tick.elapsed() < PROGRESS_REPORT_INTERVAL {
-					continue;
-				}
-				let processed = counters.processed.load(Ordering::Relaxed);
+				interval.tick().await;
+				let span = totals.span.load(Ordering::Relaxed);
+				let jobs = totals.jobs.load(Ordering::Relaxed);
+				// Counters only feed this line and a retried job can double count.
+				let processed = counters.processed.load(Ordering::Relaxed).min(span);
 				let fetched = counters.fetched_rpc.load(Ordering::Relaxed);
-				let span = total_span.load(Ordering::Relaxed);
-				let jobs = total_jobs.load(Ordering::Relaxed);
-				let rate =
-					fetched.saturating_sub(last_fetched) as f64 / last_tick.elapsed().as_secs_f64();
+				let rate = fetched.saturating_sub(last_fetched) as f64
+					/ PROGRESS_REPORT_INTERVAL.as_secs_f64();
 				last_fetched = fetched;
-				last_tick = std::time::Instant::now();
-
-				let smoothed = match ewma_rate {
-					Some(prev) => prev * (1.0 - RATE_SMOOTHING_ALPHA) + rate * RATE_SMOOTHING_ALPHA,
-					None => rate,
-				};
-				ewma_rate = Some(smoothed);
-
-				let eta = if smoothed >= ETA_MIN_RATE {
-					format_eta((span.saturating_sub(processed) as f64 / smoothed) as u64)
+				// ETA from the average RPC rate so far; cache hits are free and only
+				// count towards `processed`.
+				let eta = if fetched > 0 {
+					let avg_rate = fetched as f64 / started.elapsed().as_secs_f64();
+					format_eta(((span - processed) as f64 / avg_rate) as u64)
 				} else {
-					"unknown (stalled?)".to_string()
+					"unknown".to_string()
 				};
+				let percent = if span == 0 { 100.0 } else { processed as f64 / span as f64 * 100.0 };
 				log::info!(
-					"fetch progress: {processed}/{span} blocks ({:.1}%), {rate:.0} blocks/s, ETA {eta}, verified {}/{jobs} jobs, backlog: {} extract / {} verify jobs",
-					processed as f64 / span as f64 * 100.0,
+					"fetch progress: {processed}/{span} blocks ({percent:.1}%), {rate:.0} blocks/s, ETA {eta}, verified {}/{jobs} jobs, backlog: {} extract / {} verify jobs",
 					jobs_verified.load(Ordering::Relaxed),
 					extract_backlog.len(),
 					verify_backlog.len(),
 				);
 			}
-		});
-	}
+		})
+	};
 
 	log::info!("spawning {num_compute_workers} compute workers");
 
@@ -461,26 +468,33 @@ pub async fn fetch_from_rpc(
 
 	log::debug!("final verify step");
 	// The job total grows while the pusher chases the tip.
-	let mut jobs = Vec::with_capacity(total_jobs.load(Ordering::Relaxed) as usize);
+	let mut jobs = Vec::with_capacity(totals.jobs.load(Ordering::Relaxed) as usize);
 	let mut received: u64 = 0;
 	let mut fetch_workers_exited = 0;
 	let mut pusher_done = false;
-	while !(pusher_done && received >= total_jobs.load(Ordering::Relaxed)) {
+	// Re-evaluates the conditions below even when no task or job event arrives,
+	// e.g. after the pusher queued more work with no worker left to take it.
+	let mut watchdog = tokio::time::interval(Duration::from_secs(1));
+	loop {
+		let total_jobs = totals.jobs.load(Ordering::Relaxed);
+		if pusher_done && received >= total_jobs {
+			break;
+		}
+		// Losing every worker is fatal only with work outstanding: a warm sync
+		// with nothing to fetch still spawns one worker that may fail to connect.
+		if fetch_workers_exited == num_workers && received < total_jobs {
+			log::error!(
+				"all fetch workers exited before completing all jobs ({received}/{total_jobs} received)"
+			);
+			join_set.abort_all();
+			return Err(FetchError::NoWorkersConnected);
+		}
 		tokio::select! {
 			Some(result) = join_set.join_next() => {
 				match result {
-					Ok(Ok(TaskResult::JobPusher)) => {
-						pusher_done = true;
-					},
-					Ok(Ok(TaskResult::FetchWorker)) => {
-						fetch_workers_exited += 1;
-						if fetch_workers_exited == num_workers {
-							log::error!("all fetch workers exited before completing all jobs ({received}/{} received)", total_jobs.load(Ordering::Relaxed));
-							join_set.abort_all();
-							return Err(FetchError::NoWorkersConnected);
-						}
-					},
-					Ok(Ok(_)) => {}, // ComputeWorker or ProgressReporter exited normally
+					Ok(Ok(TaskResult::JobPusher)) => pusher_done = true,
+					Ok(Ok(TaskResult::FetchWorker)) => fetch_workers_exited += 1,
+					Ok(Ok(TaskResult::ComputeWorker)) => {},
 					Ok(Err(e)) => {
 						join_set.abort_all();
 						return Err(e);
@@ -497,13 +511,14 @@ pub async fn fetch_from_rpc(
 				jobs.push(job.expect("..."));
 				received += 1;
 				jobs_verified.store(received, Ordering::Relaxed);
-				log::debug!("verify progress: {received}/{} jobs", total_jobs.load(Ordering::Relaxed));
-			}
+				log::debug!("verify progress: {received}/{total_jobs} jobs");
+			},
+			_ = watchdog.tick() => {},
 		}
 	}
 
 	log::debug!("finished loop");
-	pipeline_done.store(true, Ordering::Relaxed);
+	reporter.abort();
 
 	log::info!("all blocks fetched, running final boundary verification...");
 	for job in jobs {
@@ -535,7 +550,7 @@ pub async fn fetch_from_rpc(
 	// queried node lags the cache, blocks beyond its finalized height are
 	// already verified, and read_blocks_from_cache bases its read range on
 	// this value — lowering it would hide them.
-	let final_height = target_height.load(Ordering::Relaxed);
+	let final_height = totals.target_height.load(Ordering::Relaxed);
 	if final_height > min_height {
 		fetch_storage.set_highest_verified_block(chain_id, final_height).await;
 	}
@@ -543,13 +558,64 @@ pub async fn fetch_from_rpc(
 	let blocks = read_blocks_from_cache(chain_id, fetch_storage).await?;
 	log::debug!("[perf] fetch_from_rpc read_blocks_from_cache took {:?}", t.elapsed());
 
-	let final_span = total_span.load(Ordering::Relaxed);
+	let final_span = totals.span.load(Ordering::Relaxed);
 	log::info!(
-		"fetched {} blocks, read {} blocks from cache, total transactions: {}",
+		"fetched {} blocks, read {} blocks from cache, total transactions: {}; synced to block {final_height}",
 		final_span,
 		blocks.len().saturating_sub(final_span as usize),
 		blocks.iter().fold(0, |acc, b| acc + b.transactions.len()),
 	);
+	if totals.truncated.load(Ordering::Relaxed) {
+		log::warn!(
+			"sync stopped at block {final_height} without confirming the chain tip (the tip re-check failed); \
+			 results are as of that block - rerun to catch up"
+		);
+	}
 
 	Ok(blocks)
+}
+
+/// Connect a fetch worker, retrying briefly so a transient blip at startup
+/// doesn't cost a worker for the whole sync.
+async fn connect_with_retry(url: &str, worker_id: usize) -> Result<MidnightNodeClient, FetchError> {
+	let backoff = ExponentialBackoff {
+		max_elapsed_time: Some(WORKER_CONNECT_MAX_ELAPSED),
+		..ExponentialBackoff::default()
+	};
+	retry_notify(
+		backoff,
+		|| async {
+			MidnightNodeClient::new(url, None)
+				.await
+				.map_err(|e| backoff::Error::transient(FetchError::from(e)))
+		},
+		|e: FetchError, wait: Duration| {
+			log::warn!(
+				"fetch worker {worker_id} could not connect to {url} ({e}); retrying in {:.0}s...",
+				wait.as_secs_f32()
+			);
+		},
+	)
+	.await
+	.inspect_err(|e| {
+		log::warn!(
+			"fetch worker {worker_id} gave up connecting to {url}: {e}. \
+			 This may be due to connection limits on the remote node."
+		)
+	})
+}
+
+#[cfg(test)]
+mod tests {
+	use super::format_eta;
+
+	#[test]
+	fn format_eta_branches() {
+		assert_eq!(format_eta(0), "0s");
+		assert_eq!(format_eta(59), "59s");
+		assert_eq!(format_eta(60), "1m00s");
+		assert_eq!(format_eta(3599), "59m59s");
+		assert_eq!(format_eta(3600), "1h00m");
+		assert_eq!(format_eta(3661), "1h01m");
+	}
 }

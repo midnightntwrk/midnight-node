@@ -61,12 +61,6 @@ pub enum FetchTaskError {
 	BlockHashMissing(u64),
 }
 
-#[derive(Default)]
-struct AddedCounts {
-	processed: u64,
-	rpc: u64,
-}
-
 #[derive(Clone)]
 pub enum FetchTask {
 	FetchBlocks { min: u64, max: u64 },
@@ -83,57 +77,33 @@ impl FetchTask {
 	) -> FetchResult {
 		match self {
 			FetchTask::FetchBlocks { min, max } => {
-				let mut added = AddedCounts::default();
-				let result =
-					Self::fetch_blocks(min, max, chain_id, client, storage, counters, &mut added)
-						.await;
-				if result.is_err() {
-					// Roll back progress so a retried job doesn't double-count.
-					counters.processed.fetch_sub(added.processed, Ordering::Relaxed);
-					counters.fetched_rpc.fetch_sub(added.rpc, Ordering::Relaxed);
+				log::debug!("fetching blocks {min}..{max}");
+				let cached_blocks = storage.get_block_data_range(chain_id, min..max).await;
+				let uncached: Vec<u64> = (min..max)
+					.zip(cached_blocks)
+					.filter_map(|(i, b)| b.is_none().then_some(i))
+					.collect();
+
+				// The counters only drive the progress heartbeat: a retried job may
+				// count some blocks twice, which the reporter clamps.
+				let cached_count = (max - min) - uncached.len() as u64;
+				counters.processed.fetch_add(cached_count, Ordering::Relaxed);
+
+				let hashes = Self::fetch_block_hashes(client, &uncached).await?;
+
+				let mut futs: FuturesOrdered<_> =
+					hashes.into_iter().map(|hash| Self::fetch_block(client, hash)).collect();
+				let mut blocks = Vec::new();
+				while let Some(result) = futs.next().await {
+					blocks.push(result?);
+					counters.processed.fetch_add(1, Ordering::Relaxed);
+					counters.fetched_rpc.fetch_add(1, Ordering::Relaxed);
 				}
-				result
+				log::debug!("fetching blocks {min}..{max}: complete");
+				Ok(ComputeTask::ExtractBlockData { min, max, blocks })
 			},
 			FetchTask::NoOp => Ok(ComputeTask::NoOp),
 		}
-	}
-
-	async fn fetch_blocks(
-		min: u64,
-		max: u64,
-		chain_id: H256,
-		client: &MidnightNodeClient,
-		storage: impl FetchStorage,
-		counters: &Arc<FetchCounters>,
-		added: &mut AddedCounts,
-	) -> FetchResult {
-		log::debug!("fetching blocks {min}..{max}");
-		let cached_blocks = storage.get_block_data_range(chain_id, min..max).await;
-		let uncached: Vec<u64> = (min..max)
-			.zip(cached_blocks)
-			.filter_map(|(i, b)| b.is_none().then_some(i))
-			.collect();
-
-		let cached_count = (max - min) - uncached.len() as u64;
-		if cached_count > 0 {
-			counters.processed.fetch_add(cached_count, Ordering::Relaxed);
-			added.processed += cached_count;
-		}
-
-		let hashes = Self::fetch_block_hashes(client, &uncached).await?;
-
-		let mut futs: FuturesOrdered<_> =
-			hashes.into_iter().map(|hash| Self::fetch_block(client, hash)).collect();
-		let mut blocks = Vec::new();
-		while let Some(result) = futs.next().await {
-			blocks.push(result?);
-			counters.processed.fetch_add(1, Ordering::Relaxed);
-			counters.fetched_rpc.fetch_add(1, Ordering::Relaxed);
-			added.processed += 1;
-			added.rpc += 1;
-		}
-		log::debug!("fetching blocks {min}..{max}: complete");
-		Ok(ComputeTask::ExtractBlockData { min, max, blocks })
 	}
 
 	/// Fetch block hashes for a batch of block numbers in a single RPC call.
@@ -216,31 +186,28 @@ impl FetchTask {
 			None
 		};
 
-		// Fetched here so the compute stage never touches the network. A
-		// timestamp-only block can't carry SystemTransactionApplied events.
-		let events = if raw_body.len() >= 2 {
-			let key =
-				[sp_crypto_hashing::twox_128(b"System"), sp_crypto_hashing::twox_128(b"Events")]
-					.concat();
-			let backoff = ExponentialBackoff {
-				max_elapsed_time: Some(BLOCK_FETCH_TIMEOUT),
-				..ExponentialBackoff::default()
-			};
-			let bytes = retry(backoff, || async {
-				match block.storage().fetch_raw(key.clone()).await {
-					Ok(bytes) => Ok(Some(bytes)),
-					Err(subxt::error::StorageError::NoValueFound) => Ok(None),
-					Err(e) => {
-						log::warn!("events fetch failed, retrying: {e}");
-						Err(backoff::Error::transient(e))
-					},
-				}
-			})
-			.await?;
-			Some(bytes.unwrap_or_default())
-		} else {
-			None
+		// Fetched here so the compute stage never touches the network. Always
+		// fetched, even for blocks that decode to a lone timestamp inherent: a
+		// multi-block migration steps in `inherents_applied()` and can emit
+		// `SystemTransactionApplied` there, and the block data derived from these
+		// events is cached permanently behind the verified watermark.
+		let key = [sp_crypto_hashing::twox_128(b"System"), sp_crypto_hashing::twox_128(b"Events")]
+			.concat();
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(BLOCK_FETCH_TIMEOUT),
+			..ExponentialBackoff::default()
 		};
+		let events = retry(backoff, || async {
+			match block.storage().fetch_raw(key.clone()).await {
+				Ok(bytes) => Ok(bytes),
+				Err(subxt::error::StorageError::NoValueFound) => Ok(Vec::new()),
+				Err(e) => {
+					log::warn!("events fetch failed, retrying: {e}");
+					Err(backoff::Error::transient(e))
+				},
+			}
+		})
+		.await?;
 
 		Ok(FetchedBlock { block, header, raw_body, state_root, state, events })
 	}

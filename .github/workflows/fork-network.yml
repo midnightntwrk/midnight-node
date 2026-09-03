@@ -15,6 +15,15 @@ name: fork-network
 #             federated-authority governance flow
 #   full    - production-shaped rehearsal: image rollout first, then the
 #             runtime upgrade via governance
+#
+# node_image / new_node_image take full Docker image references — anything
+# `docker pull` accepts. Git branches, commit shas, and repo URLs are NOT
+# accepted. Examples:
+#   ghcr.io/midnight-ntwrk/midnight-node:1.0.0                            (release tag)
+#   ghcr.io/midnight-ntwrk/midnight-node:1.0.1-dev-6587676a9bb2-amd64     (CI build of a commit)
+# CI tags a per-commit image <version>-dev-<12-char-tree-hash>-amd64; find it
+# in the commit's continuous-integration run (image_tags step) or compute the
+# hash with `git rev-parse HEAD^{tree} | cut -c1-12`.
 
 on:
   workflow_dispatch:
@@ -32,10 +41,10 @@ on:
         required: true
         default: "368fd98"
       node_image:
-        description: "midnight-node image to fork from (must match the snapshot's runtime host fns)"
+        description: "Full Docker image reference to fork from, e.g. ghcr.io/midnight-ntwrk/midnight-node:1.0.0 or a CI tag like ghcr.io/midnight-ntwrk/midnight-node:1.0.1-dev-<tree-hash>-amd64 — not a git branch/sha/URL. Must match the snapshot's runtime host fns"
         required: true
       new_node_image:
-        description: "midnight-node image to upgrade to (image rollout target and/or runtime wasm source, per upgrade_mode)"
+        description: "Full Docker image reference to upgrade to (image rollout target and/or runtime wasm source, per upgrade_mode). Same format as node_image"
         required: true
       upgrade_mode:
         description: "Upgrade shape: roll the node image, submit a runtime upgrade via governance, or both in sequence"
@@ -106,13 +115,16 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version: "24.18.0"
+
+      - name: Update NPM
+        run: npm install -g npm@12.0.2
 
       # `act` injects ACT=true; on local runs we skip the login and rely on
       # the pull-or-inspect fallback below to hit cached images.
       - name: Login to GHCR
         if: ${{ env.ACT != 'true' }}
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -282,13 +294,15 @@ jobs:
             --executor-uri //Alice \
             "${same_version_flag[@]}"
 
-      # NOTE: full-upgrade brings the fork up itself (image rollout) and has no
-      # --skip-run, so we cannot pre-resolve node1's bridge IP the way the
-      # runtime step does. It therefore still relies on the host published port;
-      # on a runner where the loopback path is black-holed this will time out.
-      # Making full-upgrade robust needs a tooling-side change (resolve the
-      # node's reachable endpoint after its internal bring-up).
-      - name: Run full-upgrade
+      # full mode is deliberately driven as its two constituent phases rather
+      # than the all-in-one `full-upgrade` command, so the runtime step's RPC
+      # endpoint discovery can run in between. `full-upgrade` brings the fork up
+      # internally and always targets the host published port, which is
+      # black-holed on some self-hosted runners (see the runtime step above).
+      # The decomposition is behaviour-identical: `image-upgrade` is
+      # full-upgrade's phase 1 (bring-up + client image rollout) and
+      # `governance-runtime-upgrade --skip-run` is its phase 2.
+      - name: Run full-upgrade (image rollout + governance)
         if: inputs.upgrade_mode == 'full'
         working-directory: local-environment
         env:
@@ -299,10 +313,58 @@ jobs:
           if [ "$ALLOW_SAME_VERSION" = "true" ]; then
             same_version_flag=(--allow-same-version)
           fi
-          npm run "full-upgrade:${NETWORK}" -- \
-            --from-snapshot "$SNAPSHOT_URL" \
+
+          # Phase 1: restore, bring the fork up, and roll validators to the new
+          # client image (full-upgrade phase 1).
+          npm run "image-upgrade:${NETWORK}" -- --from-snapshot "$SNAPSHOT_URL"
+
+          # Probe for a reachable RPC endpoint before submitting -- mirrors the
+          # runtime step: prefer the host published port, fall back to node1's
+          # docker bridge IP, which is routable even where the loopback ->
+          # published-port path is black-holed.
+          node1_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' node1 | tr -d '[:space:]')"
+          echo "node1 bridge IP: ${node1_ip:-<none>}"
+          candidates="127.0.0.1:9950 [::1]:9950"
+          [ -n "$node1_ip" ] && candidates="$candidates ${node1_ip}:9944"
+
+          probe() {
+            curl -sS --max-time 5 -o /dev/null \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}' \
+              "http://$1"
+          }
+
+          # `compose up -d` returns before the node binds its RPC port, so poll
+          # all candidates until one answers system_health or the deadline hits.
+          rpc_ws=""
+          deadline=$((SECONDS + 120))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            for target in $candidates; do
+              if probe "$target" 2>/dev/null; then
+                echo "RPC reachable at http://${target}"
+                rpc_ws="ws://${target}"
+                echo "RPC_HTTP=http://${target}" >> "$GITHUB_ENV"
+                break 2
+              fi
+            done
+            echo "RPC not ready yet (${SECONDS}s elapsed); retrying..."
+            sleep 3
+          done
+          if [ -z "$rpc_ws" ]; then
+            echo "No reachable RPC endpoint found after ${SECONDS}s; per-target errors:" >&2
+            for target in $candidates; do
+              echo "--- http://${target}" >&2
+              probe "$target" || true
+            done
+            exit 1
+          fi
+
+          # Phase 2: governance runtime upgrade against the reachable endpoint
+          # (full-upgrade phase 2; --skip-run because the fork is already up).
+          npm run "governance-runtime-upgrade:${NETWORK}" -- \
+            --skip-run \
             --wasm "$WASM_REL" \
-            --rpc-url ws://127.0.0.1:9950 \
+            --rpc-url "$rpc_ws" \
             --council-uris //Dave //Eve //Ferdie \
             --technical-uris //Alice //Bob //Charlie \
             --executor-uri //Alice \

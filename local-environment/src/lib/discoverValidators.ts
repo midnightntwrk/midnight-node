@@ -25,6 +25,14 @@ interface PortMapping {
   container: number;
 }
 
+export interface ValidatorService {
+  name: string;
+  /** Container port serving substrate RPC (from the rpc-port label). */
+  rpcPort: number;
+  /** Host port the RPC port is published on. */
+  hostRpcPort: number;
+}
+
 /**
  * Walk a docker-compose file and return one host RPC endpoint per service
  * tagged as a validator. A service is a validator if it carries the
@@ -39,6 +47,18 @@ interface PortMapping {
 export function discoverValidatorEndpoints(
   composeFile: string,
 ): NodeEndpoint[] {
+  return discoverValidators(composeFile).map(({ name, hostRpcPort }) => ({
+    name,
+    url: `http://localhost:${hostRpcPort}`,
+  }));
+}
+
+/**
+ * Same discovery as {@link discoverValidatorEndpoints}, but returns the raw
+ * service/port triples so callers can build both in-network
+ * and localhost WebSocket addresses — the fork manifest needs both.
+ */
+export function discoverValidators(composeFile: string): ValidatorService[] {
   const raw = fs.readFileSync(composeFile, "utf-8");
   const parsed = YAML.parse(raw) as { services?: Record<string, unknown> };
   const services = parsed?.services;
@@ -46,7 +66,7 @@ export function discoverValidatorEndpoints(
     throw new Error(`Compose file has no services: ${composeFile}`);
   }
 
-  const endpoints: NodeEndpoint[] = [];
+  const validators: ValidatorService[] = [];
   for (const [serviceName, service] of Object.entries(services)) {
     const labels = readLabels(service);
     if (labels.get(VALIDATOR_ROLE_LABEL) !== VALIDATOR_ROLE) continue;
@@ -71,20 +91,21 @@ export function discoverValidatorEndpoints(
       );
     }
 
-    endpoints.push({
+    validators.push({
       name: serviceName,
-      url: `http://localhost:${hostPort}`,
+      rpcPort: containerPort,
+      hostRpcPort: hostPort,
     });
   }
 
-  if (endpoints.length === 0) {
+  if (validators.length === 0) {
     throw new Error(
       `No validator services found in compose file ${composeFile}. ` +
         `Expected at least one service with label '${VALIDATOR_ROLE_LABEL}: ${VALIDATOR_ROLE}'.`,
     );
   }
 
-  return endpoints;
+  return validators;
 }
 
 function readLabels(service: unknown): Map<string, string> {

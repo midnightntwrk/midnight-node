@@ -5,16 +5,12 @@ edition = "2024"
 license-file.workspace = true
 
 [dependencies]
-mn-ledger = { workspace = true, features = ["proving"], optional = true }
 base-crypto = { workspace = true, optional = true }
 coin-structure = { workspace = true, optional = true }
-onchain-runtime = { workspace = true, optional = true }
 midnight-serialize = { workspace = true, optional = true }
-ledger-storage = { workspace = true, optional = true }
 midnight-storage-core = { workspace = true, optional = true }
 parity-db = { workspace = true, optional = true }
 transient-crypto = { workspace = true, optional = true }
-zswap = { workspace = true, optional = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"], optional = true }
 onchain-runtime-ledger-8 = { workspace = true, optional = true }
@@ -28,6 +24,9 @@ onchain-state-ledger-9 = { workspace = true, optional = true }
 zswap-ledger-9 = { workspace = true, optional = true }
 coin-structure-ledger-9 = { workspace = true, optional = true }
 transient-crypto-ledger-9 = { workspace = true, optional = true }
+
+# v8->v9 state translation table, driven by `host_api::migration_8_to_9` (std-only).
+v8-to-v9-state-translation = { workspace = true, optional = true }
 
 sp-runtime-interface.workspace = true
 sp-runtime.workspace = true
@@ -76,16 +75,12 @@ std = [
     "log",
     "lazy_static",
     "moka",
-    "mn-ledger",
     "base-crypto",
     "coin-structure",
-    "onchain-runtime",
     "midnight-serialize",
-    "ledger-storage",
     "midnight-storage-core",
     "parity-db",
     "transient-crypto",
-    "zswap",
     "mn-ledger-8",
     "onchain-runtime-ledger-8",
     "onchain-state-ledger-8",
@@ -97,6 +92,7 @@ std = [
     "zswap-ledger-9",
     "coin-structure-ledger-9",
     "transient-crypto-ledger-9",
+    "v8-to-v9-state-translation",
     "sha2",
     "midnight-node-ledger-helpers",
     "derive-where"
