@@ -823,7 +823,7 @@ node-ci-image-single-platform:
     # clones under one owner would otherwise write the same ref. IMAGE_REPO defaults to
     # midnight-node, so the canonical name stays midnight-node-ci.
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/$IMAGE_REPO-ci:$IMAGE_TAG-$NATIVEARCH
+        ${GHCR_REGISTRY}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
