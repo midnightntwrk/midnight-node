@@ -67,6 +67,21 @@
 //! Held batches are always eventually submitted — never dropped — because sync's bookkeeping
 //! (`queue_blocks`, import backpressure) expects a result for every block it handed to the queue.
 //!
+//! # Seeding BABE's epoch tree on the import path
+//!
+//! Nothing is imported through the BABE pipeline before the flip, so `BabeLink`'s `EpochChanges`
+//! is empty and the first BABE block has no epoch to be verified under ("Could not fetch epoch at
+//! <flip block>"). The tree has to be seeded at the flip block *after* it is imported and *before*
+//! its child reaches the BABE verifier. Block-import notifications cannot drive that: the client
+//! emits none for `BlockOrigin::NetworkInitialSync` (and other sync origins), and even at the tip a
+//! notification-driven task runs asynchronously to the BABE worker.
+//!
+//! The dispatcher is the one place that knows both facts, so it asks an [`EpochSeeder`] to cover
+//! the parent of the first block of every BABE batch immediately before submitting the batch — for
+//! a held batch, that is right after the AURA queue reported the batch containing the flip block.
+//! The seeder must be idempotent and cheap once the tree covers the parent, since this runs for
+//! every BABE batch.
+//!
 //! Justifications are finality (GRANDPA) and engine-agnostic; they are routed to the AURA queue,
 //! whose block import owns the GRANDPA justification import.
 
@@ -126,6 +141,18 @@ fn split_by_engine<Block: BlockT>(
 	(aura, babe)
 }
 
+/// Makes BABE's epoch tree able to resolve epochs for the children of a given parent block.
+///
+/// Called by the dispatcher right before a batch is handed to the BABE queue (see the module docs).
+/// Implementations must be idempotent, cheap when the tree already covers `parent`, and must refuse
+/// to seed at a block whose state has not flipped to BABE — the parent is taken from a peer-supplied
+/// header, so this is what stops a peer from resetting the tree at an arbitrary block.
+pub trait EpochSeeder<Block: BlockT>: Send + Sync {
+	/// Best-effort: `parent` may not be imported (the BABE queue then rejects the child with
+	/// `UnknownParent` and sync re-offers it later).
+	fn ensure_seeded_for_child_of(&self, parent: Block::Hash);
+}
+
 /// Orders the BABE queue behind the AURA queue (see the module docs).
 ///
 /// Owns the single handle through which every BABE batch is submitted, so held and direct
@@ -136,12 +163,24 @@ struct BabeGate<Block: BlockT> {
 	aura_in_flight: usize,
 	/// BABE batches held until `aura_in_flight` drops to zero, in submission order.
 	held: VecDeque<(BlockOrigin, Vec<IncomingBlock<Block>>)>,
+	seeder: Arc<dyn EpochSeeder<Block>>,
 	babe: Box<dyn ImportQueueService<Block>>,
 }
 
 impl<Block: BlockT> BabeGate<Block> {
-	fn new(babe: Box<dyn ImportQueueService<Block>>) -> Self {
-		Self { aura_in_flight: 0, held: VecDeque::new(), babe }
+	fn new(seeder: Arc<dyn EpochSeeder<Block>>, babe: Box<dyn ImportQueueService<Block>>) -> Self {
+		Self { aura_in_flight: 0, held: VecDeque::new(), seeder, babe }
+	}
+
+	/// Hand a batch to the BABE queue, first making sure the epoch tree covers the parent of its
+	/// first block. Later blocks in the batch descend from the first, so covering it covers them.
+	fn submit_to_babe(&mut self, origin: BlockOrigin, blocks: Vec<IncomingBlock<Block>>) {
+		if let Some(parent) =
+			blocks.first().and_then(|b| b.header.as_ref()).map(|h| *h.parent_hash())
+		{
+			self.seeder.ensure_seeded_for_child_of(parent);
+		}
+		self.babe.import_blocks(origin, blocks);
 	}
 
 	/// Record that a batch is about to be submitted to the AURA queue.
@@ -158,8 +197,9 @@ impl<Block: BlockT> BabeGate<Block> {
 				"AURA queue drained; releasing {} held BABE batch(es)",
 				self.held.len(),
 			);
-			for (origin, blocks) in self.held.drain(..) {
-				self.babe.import_blocks(origin, blocks);
+			let held: Vec<_> = self.held.drain(..).collect();
+			for (origin, blocks) in held {
+				self.submit_to_babe(origin, blocks);
 			}
 		}
 	}
@@ -167,7 +207,7 @@ impl<Block: BlockT> BabeGate<Block> {
 	/// Submit a BABE batch now, or hold it while the AURA queue still has work in flight.
 	fn submit_babe(&mut self, origin: BlockOrigin, blocks: Vec<IncomingBlock<Block>>) {
 		if self.aura_in_flight == 0 && self.held.is_empty() {
-			self.babe.import_blocks(origin, blocks);
+			self.submit_to_babe(origin, blocks);
 		} else {
 			log::debug!(
 				target: LOG_TARGET,
@@ -268,8 +308,8 @@ where
 	Aura: ImportQueue<Block>,
 	Babe: ImportQueue<Block>,
 {
-	pub fn new(aura: Aura, babe: Babe) -> Self {
-		let gate = Arc::new(Mutex::new(BabeGate::new(babe.service())));
+	pub fn new(seeder: Arc<dyn EpochSeeder<Block>>, aura: Aura, babe: Babe) -> Self {
+		let gate = Arc::new(Mutex::new(BabeGate::new(seeder, babe.service())));
 		let service = DispatchImportQueueService { aura: aura.service(), gate: gate.clone() };
 		Self { aura, babe, gate, service }
 	}
@@ -333,6 +373,20 @@ mod tests {
 		}
 	}
 
+	/// Records the parents it was asked to seed at (first byte of each hash).
+	#[derive(Clone, Default)]
+	struct SeedRecorder(Arc<Mutex<Vec<u8>>>);
+	impl SeedRecorder {
+		fn parents(&self) -> Vec<u8> {
+			self.0.lock().unwrap().clone()
+		}
+	}
+	impl EpochSeeder<Block> for SeedRecorder {
+		fn ensure_seeded_for_child_of(&self, parent: H256) {
+			self.0.lock().unwrap().push(parent.as_ref()[0]);
+		}
+	}
+
 	/// Link with the trait's no-op defaults, standing in for the sync engine.
 	struct NoopLink;
 	impl Link<Block> for NoopLink {}
@@ -343,15 +397,20 @@ mod tests {
 		gate: Arc<Mutex<BabeGate<Block>>>,
 		aura: Recorder,
 		babe: Recorder,
+		seeder: SeedRecorder,
 	}
 
 	impl Harness {
 		fn new() -> Self {
-			let (aura, babe) = (Recorder::default(), Recorder::default());
-			let gate = Arc::new(Mutex::new(BabeGate::new(Box::new(babe.clone()))));
+			let (aura, babe, seeder) =
+				(Recorder::default(), Recorder::default(), SeedRecorder::default());
+			let gate = Arc::new(Mutex::new(BabeGate::new(
+				Arc::new(seeder.clone()),
+				Box::new(babe.clone()),
+			)));
 			let service =
 				DispatchImportQueueService { aura: Box::new(aura.clone()), gate: gate.clone() };
-			Self { service, gate, aura, babe }
+			Self { service, gate, aura, babe, seeder }
 		}
 
 		fn import(&mut self, blocks: Vec<IncomingBlock<Block>>) {
@@ -377,12 +436,12 @@ mod tests {
 		DigestItem::PreRuntime(id, vec![0])
 	}
 
-	fn header_with(logs: Vec<DigestItem>) -> Header {
+	fn header_with(parent_first_byte: u8, logs: Vec<DigestItem>) -> Header {
 		let mut header = Header::new(
 			1,
 			Default::default(),
 			Default::default(),
-			Default::default(),
+			hash_with_first_byte(parent_first_byte),
 			Default::default(),
 		);
 		for log in logs {
@@ -407,13 +466,17 @@ mod tests {
 	}
 
 	/// A pre-arming AURA block: AURA pre-runtime digest only (plus the mc-hash one), AURA seal.
+	/// Its parent is the block whose hash starts with `hash - 1`.
 	fn aura_block(hash: u8) -> IncomingBlock<Block> {
 		incoming(
-			Some(header_with(vec![
-				pre_runtime(OTHER_ENGINE_ID),
-				pre_runtime(AURA_ENGINE_ID),
-				DigestItem::Seal(AURA_ENGINE_ID, vec![1]),
-			])),
+			Some(header_with(
+				hash - 1,
+				vec![
+					pre_runtime(OTHER_ENGINE_ID),
+					pre_runtime(AURA_ENGINE_ID),
+					DigestItem::Seal(AURA_ENGINE_ID, vec![1]),
+				],
+			)),
 			hash,
 		)
 	}
@@ -422,12 +485,15 @@ mod tests {
 	/// one, in the order `pallet-consensus-engine` enforces. AURA seal.
 	fn armed_aura_block(hash: u8) -> IncomingBlock<Block> {
 		incoming(
-			Some(header_with(vec![
-				pre_runtime(OTHER_ENGINE_ID),
-				pre_runtime(AURA_ENGINE_ID),
-				pre_runtime(BABE_ENGINE_ID),
-				DigestItem::Seal(AURA_ENGINE_ID, vec![1]),
-			])),
+			Some(header_with(
+				hash - 1,
+				vec![
+					pre_runtime(OTHER_ENGINE_ID),
+					pre_runtime(AURA_ENGINE_ID),
+					pre_runtime(BABE_ENGINE_ID),
+					DigestItem::Seal(AURA_ENGINE_ID, vec![1]),
+				],
+			)),
 			hash,
 		)
 	}
@@ -435,11 +501,14 @@ mod tests {
 	/// A post-flip BABE block: BABE pre-runtime digest only, BABE seal.
 	fn babe_block(hash: u8) -> IncomingBlock<Block> {
 		incoming(
-			Some(header_with(vec![
-				pre_runtime(OTHER_ENGINE_ID),
-				pre_runtime(BABE_ENGINE_ID),
-				DigestItem::Seal(BABE_ENGINE_ID, vec![2]),
-			])),
+			Some(header_with(
+				hash - 1,
+				vec![
+					pre_runtime(OTHER_ENGINE_ID),
+					pre_runtime(BABE_ENGINE_ID),
+					DigestItem::Seal(BABE_ENGINE_ID, vec![2]),
+				],
+			)),
 			hash,
 		)
 	}
@@ -463,16 +532,17 @@ mod tests {
 
 	#[test]
 	fn other_engines_pre_runtime_digests_are_skipped() {
-		let header = header_with(vec![pre_runtime(OTHER_ENGINE_ID), pre_runtime(BABE_ENGINE_ID)]);
+		let header =
+			header_with(0, vec![pre_runtime(OTHER_ENGINE_ID), pre_runtime(BABE_ENGINE_ID)]);
 		assert_eq!(engine_from_pre_runtime_digest::<Block>(&header), Some(ActiveEngine::Babe));
 	}
 
 	#[test]
 	fn header_without_an_aura_or_babe_pre_runtime_digest_has_no_engine() {
-		let header = header_with(vec![
-			pre_runtime(OTHER_ENGINE_ID),
-			DigestItem::Seal(BABE_ENGINE_ID, vec![]),
-		]);
+		let header = header_with(
+			0,
+			vec![pre_runtime(OTHER_ENGINE_ID), DigestItem::Seal(BABE_ENGINE_ID, vec![])],
+		);
 		assert_eq!(engine_from_pre_runtime_digest::<Block>(&header), None);
 	}
 
@@ -503,7 +573,7 @@ mod tests {
 	fn service_routes_block_without_engine_digest_to_aura() {
 		let mut h = Harness::new();
 
-		h.import(vec![incoming(Some(header_with(vec![pre_runtime(OTHER_ENGINE_ID)])), 43)]);
+		h.import(vec![incoming(Some(header_with(0, vec![pre_runtime(OTHER_ENGINE_ID)])), 43)]);
 
 		assert_eq!(h.aura.hashes(), vec![43]);
 		assert!(h.babe.hashes().is_empty());
@@ -516,12 +586,43 @@ mod tests {
 		// The flip-boundary sync batch: the last AURA block (97), then the first BABE blocks.
 		h.import(vec![armed_aura_block(96), armed_aura_block(97), babe_block(98), babe_block(99)]);
 
-		// AURA got its part immediately; BABE gets nothing until the AURA worker reports.
+		// AURA got its part immediately; BABE gets nothing until the AURA worker reports, and the
+		// epoch tree is not touched before the flip block is in.
 		assert_eq!(h.aura.hashes(), vec![96, 97]);
 		assert!(h.babe.hashes().is_empty());
+		assert!(h.seeder.parents().is_empty());
 
 		h.aura_batch_done();
+		// Seeded once, at the flip block (parent of the first BABE block), before submission.
+		assert_eq!(h.seeder.parents(), vec![97]);
 		assert_eq!(h.babe.hashes(), vec![98, 99]);
+	}
+
+	#[test]
+	fn seeding_happens_at_the_first_babe_blocks_parent_on_every_babe_submission() {
+		let mut h = Harness::new();
+
+		// Direct path: nothing in flight, seeded at 19 then submitted.
+		h.import(vec![babe_block(20), babe_block(21)]);
+		assert_eq!(h.seeder.parents(), vec![19]);
+		assert_eq!(h.babe.hashes(), vec![20, 21]);
+
+		// Held path: two batches released together are each seeded at their own first parent.
+		h.import(vec![aura_block(10)]);
+		h.import(vec![babe_block(30)]);
+		h.import(vec![babe_block(40), babe_block(41)]);
+		assert_eq!(h.seeder.parents(), vec![19]);
+		h.aura_batch_done();
+		assert_eq!(h.seeder.parents(), vec![19, 29, 39]);
+		assert_eq!(h.babe.hashes(), vec![20, 21, 30, 40, 41]);
+	}
+
+	#[test]
+	fn aura_only_batches_never_seed() {
+		let mut h = Harness::new();
+		h.import(vec![aura_block(10), armed_aura_block(11)]);
+		h.aura_batch_done();
+		assert!(h.seeder.parents().is_empty());
 	}
 
 	#[test]
@@ -610,7 +711,10 @@ mod tests {
 		}
 
 		let inner = Counting(Mutex::new((0, 0, 0)));
-		let gate = Arc::new(Mutex::new(BabeGate::new(Box::new(Recorder::default()))));
+		let gate = Arc::new(Mutex::new(BabeGate::new(
+			Arc::new(SeedRecorder::default()),
+			Box::new(Recorder::default()),
+		)));
 		let link = AuraLink { inner: &inner, gate };
 
 		link.blocks_processed(0, 0, vec![]);

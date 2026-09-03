@@ -22,7 +22,14 @@
 //!
 //! Full nodes (no authoring) still need the epoch tree to *import* the first BABE block;
 //! [`bootstrap_babe_at_flip`] is therefore also spawned for non-authority roles.
+//!
+//! Neither of those can be relied on while a node is *syncing* across the flip: they are driven by
+//! block-import notifications, which the client does not emit for blocks imported with a sync
+//! origin. [`BabeEpochSeeder`] therefore also seeds from the import path — the import-queue
+//! dispatcher calls it right before it hands the first BABE block to the BABE queue, when the flip
+//! block is known to be imported. Seeding is idempotent, so both paths can run.
 
+use crate::consensus_engine_dispatch::EpochSeeder;
 use futures::StreamExt;
 use midnight_node_runtime::opaque::Block;
 use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
@@ -205,6 +212,50 @@ where
 		"seeded BABE epoch tree and zero chain-weight at flip block #{number} ({at:?}): epochs {current_index} and {next_index}",
 	);
 	Ok(())
+}
+
+/// [`EpochSeeder`] for the import-queue dispatcher: seeds BABE's epoch tree at `parent` when the
+/// first BABE block is about to be verified and `parent` is the flip block.
+///
+/// Seeds only when the runtime state at `parent` has flipped to BABE. The parent hash comes from a
+/// peer-supplied header, so without that check a peer could make us reset the tree at an
+/// arbitrary imported block; with it, the only block that is both post-flip *and* not yet covered by
+/// the tree is the flip block itself (every later block is imported through the BABE pipeline,
+/// which records its epoch).
+pub struct BabeEpochSeeder<C> {
+	client: Arc<C>,
+	babe_link: BabeLink<Block>,
+}
+
+impl<C> BabeEpochSeeder<C> {
+	pub fn new(client: Arc<C>, babe_link: BabeLink<Block>) -> Self {
+		Self { client, babe_link }
+	}
+}
+
+impl<C> EpochSeeder<Block> for BabeEpochSeeder<C>
+where
+	C: SupervisorClient,
+	C::Api: BabeApi<Block> + ConsensusEngineApi<Block>,
+{
+	fn ensure_seeded_for_child_of(&self, parent: Hash) {
+		// Not imported (yet): nothing to seed at; the BABE queue will report `UnknownParent` and
+		// sync re-offers the block later.
+		if !matches!(self.client.header(parent), Ok(Some(_))) {
+			log::debug!(target: LOG_TARGET, "parent {parent:?} of a BABE block is not imported; not seeding");
+			return;
+		}
+		if active_engine_at(&*self.client, parent) != ActiveEngine::Babe {
+			log::debug!(target: LOG_TARGET, "state at {parent:?} has not flipped to BABE; not seeding");
+			return;
+		}
+		if let Err(err) = seed_epoch_tree_if_needed(&self.client, &self.babe_link, parent) {
+			log::error!(
+				target: LOG_TARGET,
+				"failed to seed BABE epoch tree at {parent:?} on the import path: {err}; BABE import may stall",
+			);
+		}
+	}
 }
 
 /// Drive AURA authoring until the consensus flip, bootstrap BABE's epoch tree, then drive BABE

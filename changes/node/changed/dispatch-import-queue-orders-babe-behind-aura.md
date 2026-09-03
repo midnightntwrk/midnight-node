@@ -26,5 +26,16 @@ queue drains. Held batches are never dropped, since sync expects a result for ev
 queued. AURA never waits for BABE, and outside the transition only one side is ever non-empty,
 so the gate is inert before and after the flip.
 
+**Epoch-tree seeding on the import path.** The first BABE block failed verification with
+"Could not fetch epoch at <flip block>": BABE's epoch tree is empty before the flip and was
+seeded by a task watching block-import notifications, which the client does not emit for
+blocks imported with a sync origin and which in any case runs asynchronously to the BABE
+worker. The dispatcher now seeds the tree at the parent of the first block of every BABE
+batch right before handing the batch to the BABE queue; for a held batch that is immediately
+after the AURA queue reported the flip block imported. Seeding only happens when the runtime
+state at that parent has flipped to BABE (so a peer cannot make the node reset the tree at an
+arbitrary block) and is a no-op once the tree covers the parent. The notification-driven
+bootstrap remains for authoring hand-over and as a harmless second path.
+
 PR:
 Issue:
