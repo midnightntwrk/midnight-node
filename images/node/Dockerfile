@@ -23,11 +23,14 @@ RUN microdnf -y install \
     rm -f /tmp/bytehound.tgz && \
     microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-COPY .envrc ./bin/.envrc
-COPY res/ ./res/
+# Create appuser before the COPYs so files land already owned by it: a later
+# `chown -R` rewrites every copied file into a duplicate image layer.
+RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
+
+COPY --chown=appuser:appuser .envrc ./bin/.envrc
+COPY --chown=appuser:appuser res/ ./res/
 COPY node/bin/entrypoint.sh /entrypoint.sh
 
-RUN useradd -u 10001 -d /nonexistent -s /usr/sbin/nologin -M -U -c "" appuser
 USER appuser
 
 EXPOSE 30333 9933 9944 9615

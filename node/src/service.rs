@@ -14,6 +14,11 @@
 //! Service and ServiceFactory implementation. Specialized wrapper over substrate service.
 
 use crate::aura_to_babe_migration_keystore::AuraToBabeMigrationKeystore;
+use crate::babe_key_readiness::{
+	self,
+	probe::{BabeKeyProbe, ProbeCandidatesDataSource},
+	reporter::BabeKeyMetrics,
+};
 use crate::backend::{create_database_source, open_paritydb};
 use crate::cfg::midnight_cfg::StorageSeparation;
 use crate::main_chain_follower::create_cached_main_chain_follower_data_sources;
@@ -29,7 +34,7 @@ use crate::{
 use futures::FutureExt;
 use midnight_node_runtime::storage::child::StateVersion;
 use midnight_node_runtime::{self, RuntimeApi, opaque::Block};
-use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage, TBlockCorrection};
+use midnight_primitives_ledger::{LedgerMetrics, LedgerStorage};
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use parity_scale_codec::{Decode, Encode};
 use partner_chains_db_sync_data_sources::register_metrics_warn_errors;
@@ -215,7 +220,6 @@ pub fn construct_genesis_block<Block: BlockT>(
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	frame_benchmarking::benchmarking::HostFunctions,
-	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
 );
@@ -223,7 +227,6 @@ pub type HostFunctions = (
 #[cfg(not(feature = "runtime-benchmarks"))]
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
-	midnight_node_ledger::host_api::ledger_7::ledger_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
 	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
 );
@@ -293,22 +296,9 @@ pub fn new_partial(
 	let mc_follower_metrics = register_metrics_warn_errors(config.prometheus_registry());
 	let midnight_metrics =
 		MidnightDataSourceMetrics::register_warn_errors(config.prometheus_registry());
-	// Build the genesis storage once (reused for the genesis block builder below)
-	// and recover the cNIGHT follower genesis from it — the cnight-observation
-	// pallet genesis is baked into every chainspec, so the separate cnight-genesis
-	// file is only a fallback.
-	let genesis_storage = config
-		.chain_spec
-		.as_storage_builder()
-		.build_storage()
-		.map_err(sp_blockchain::Error::Storage)?;
-	let cnight_follower_genesis =
-		crate::main_chain_follower::cnight_follower_genesis_from_storage(&genesis_storage);
-
 	let data_sources = tokio::task::block_in_place(|| {
 		config.tokio_handle.block_on(create_cached_main_chain_follower_data_sources(
 			midnight_cfg.clone(),
-			cnight_follower_genesis,
 			mc_follower_metrics.clone(),
 			midnight_metrics.clone(),
 		))
@@ -364,6 +354,13 @@ pub fn new_partial(
 	);
 
 	let is_warp_sync = config.network.sync_mode.is_warp();
+
+	let genesis_storage = config
+		.chain_spec
+		.as_storage_builder()
+		.build_storage()
+		.map_err(sp_blockchain::Error::Storage)?;
+
 	let genesis_block_builder = GenesisBlockBuilder::<Block, _, _>::new(
 		genesis_storage,
 		!is_warp_sync,
@@ -413,7 +410,6 @@ pub fn new_partial(
 		.set_extensions_factory(ExtensionsFactory::<Block>::new(
 			Arc::new(Mutex::new(ledger_metrics)),
 			ledger_storage,
-			TBlockCorrection::from(&midnight_cfg),
 		));
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
@@ -897,6 +893,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 			.map_err(sp_blockchain::Error::from)?;
 		let time_source = Arc::new(SystemTimeSource);
+		let babe_key_readiness_epoch_config = epoch_config.clone();
 		let inherent_config =
 			CreateInherentDataConfig::new(epoch_config, sc_slot_config.clone(), time_source)
 				.map_err(|e| {
@@ -951,6 +948,39 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				AuraToBabeMigrationKeystore::new_arc(keystore_container.keystore()),
 			),
 		);
+
+		// Report whether this validator holds a BABE key registered on Cardano, so
+		// operators can fix their keystore before the switch to BABE consensus.
+		// Remove after mainnet switch to BABE.
+		match prometheus_registry.as_ref().map(BabeKeyMetrics::register) {
+			Some(Ok(metrics)) => {
+				let candidates = ProbeCandidatesDataSource::new(
+					client.clone(),
+					data_sources.authority_selection.clone(),
+					babe_key_readiness_epoch_config,
+					Arc::new(SystemTimeSource),
+				);
+				let probe = BabeKeyProbe::new(Arc::new(candidates), keystore_container.keystore());
+
+				task_manager.spawn_handle().spawn(
+					"babe-key-readiness",
+					None,
+					babe_key_readiness::reporter::run(
+						probe,
+						metrics,
+						babe_key_readiness::reporter::DEFAULT_PROBE_INTERVAL,
+					),
+				);
+			},
+			Some(Err(err)) => log::error!(
+				target: "prometheus",
+				"Failed to register BABE key readiness metric: {err}",
+			),
+			None => log::debug!(
+				target: "prometheus",
+				"No Prometheus registry available; not reporting BABE key readiness",
+			),
+		}
 	}
 
 	if enable_grandpa {

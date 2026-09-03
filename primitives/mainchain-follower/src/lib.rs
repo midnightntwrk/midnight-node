@@ -55,8 +55,7 @@ pub mod inherent_provider {
 			config: &CNightAddresses,
 			start_position: &CardanoPosition,
 			current_tip: McBlockHash,
-			tx_capacity: usize,
-			utxo_overestimate: usize,
+			capacity: usize,
 		) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>>;
 	}
 
