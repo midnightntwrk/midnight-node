@@ -618,8 +618,13 @@ pub fn new_partial(
 		})?;
 
 	// Route each block to the AURA or BABE queue by the engine that authored it (first AURA/BABE
-	// pre-runtime digest), and hold BABE batches behind in-flight AURA batches at the flip.
-	let import_queue = DispatchImportQueue::new(aura_import_queue, babe_import_queue);
+	// pre-runtime digest), hold BABE batches behind in-flight AURA batches at the flip, and seed
+	// BABE's epoch tree at the flip block right before its child is handed to the BABE queue.
+	let import_queue = DispatchImportQueue::new(
+		Arc::new(crate::babe_authoring::BabeEpochSeeder::new(client.clone(), babe_link.clone())),
+		aura_import_queue,
+		babe_import_queue,
+	);
 
 	let partial_components = sc_service::PartialComponents {
 		client: client.clone(),
