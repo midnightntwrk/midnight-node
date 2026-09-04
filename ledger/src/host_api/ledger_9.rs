@@ -1,7 +1,7 @@
 #[cfg(feature = "std")]
 use crate::ledger_9::Bridge;
 use crate::{
-	common::types::{
+	boundary::types::{
 		GasCost, Hash, SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, Tx,
 	},
 	ledger_9::{BlockContext, types::LedgerApiError},

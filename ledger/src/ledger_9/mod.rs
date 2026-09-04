@@ -11,15 +11,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "std")]
-pub(crate) use super::TransactionSignature;
+//! Ledger generation 9: the current ledger.
+//!
+//! Every module under `ledger_9/` binds the v9 ledger crates through the
+//! `*_local` aliases declared below. Its `ledger_8/` counterpart is a separate
+//! copy on purpose: `diff -r ledger_8 ledger_9` shows exactly where the two
+//! generations diverge, and an edit here cannot leak into v8.
 
 #[cfg(feature = "std")]
-use super::{
-	base_crypto_local, coin_structure_local, helpers_local, ledger_storage_local,
-	midnight_serialize_local, mn_ledger_local, onchain_runtime_local, transient_crypto_local,
-	zswap_local,
+pub(crate) use {
+	base_crypto as base_crypto_local, coin_structure_ledger_9 as coin_structure_local,
+	ledger_storage_ledger_8 as ledger_storage_local,
+	midnight_node_ledger_helpers::ledger_9 as helpers_local,
+	midnight_serialize as midnight_serialize_local, mn_ledger_9 as mn_ledger_local,
+	onchain_runtime_ledger_9 as onchain_runtime_local,
+	transient_crypto_ledger_9 as transient_crypto_local, zswap_ledger_9 as zswap_local,
 };
+
+pub const CRATE_NAME: &str = "mn-ledger-9";
+
+#[cfg(feature = "std")]
+pub(crate) type TransactionSignature = mn_ledger_local::structure::Signature;
+
+mod block_context;
+pub use block_context::*;
+
+mod error_ext;
+mod guaranteed_validation;
+mod post_block_update;
+mod system_tx;
 
 #[cfg(feature = "std")]
 use midnight_serialize_local::Tagged;
@@ -81,13 +101,11 @@ use {
 	},
 };
 
-use crate::common::types::{
+use crate::boundary::types::{
 	ContractCallsDetails, FallibleCoinsDetails, GasCost, GuaranteedCoinsDetails, Hash, Op,
 	SystemTransactionAppliedStateRoot, TransactionAppliedStateRoot, TransactionDetails, Tx,
 	WrappedHash,
 };
-
-use super::BlockContext;
 
 #[cfg(feature = "std")]
 use {lazy_static::lazy_static, moka::sync::Cache};
@@ -315,7 +333,7 @@ where
 	}
 
 	pub fn get_version() -> Vec<u8> {
-		crate::utils::find_crate_version(super::CRATE_NAME).unwrap_or(b"unknown".into())
+		crate::utils::find_crate_version(CRATE_NAME).unwrap_or(b"unknown".into())
 	}
 
 	pub fn apply_transaction(
@@ -773,6 +791,82 @@ where
 		api.serialize(&ledger_state.as_typed_key())
 	}
 
+	/// Serialize the full ledger arena snapshot at `state_key` into the canonical, `Ledger`-rooted
+	/// transfer blob used by trustless warp ledger-sync: `derived_tag_prefix ‖
+	/// TopoSortedNodes(Ledger DAG)`.
+	///
+	/// Mirrors the single-pass technique of the toolkit's `serialize_ledger_state_fast`, but roots
+	/// at `Ledger` (the `Sp` from `get_ledger` is an `Sp<Ledger>`) rather than `LedgerState`.
+	/// Because the blob is rooted at `Ledger`, its recomputed content-address root key equals the
+	/// on-chain `pallet_midnight::StateKey`, which is exactly what the client verifies against. The
+	/// tag prefix is **derived** (`GLOBAL_TAG ‖ <Ledger as Tagged>::tag()`), never hardcoded, so it
+	/// stays in lockstep with the ledger serialization format.
+	pub fn serialize_ledger_snapshot(state_key: &[u8]) -> Result<Vec<u8>, LedgerApiError> {
+		use ledger_storage_local::arena::TopoSortedNodes;
+		use midnight_serialize_local::{GLOBAL_TAG, Serializable};
+		use types::SerializationError;
+
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+
+		// One `serialize_to_node_list()` pass (the derived `Serializable` impl would do two — once
+		// for `serialized_size`, once for `serialize` — each a full topo-sort of a multi-million
+		// node DAG), written directly. Byte-identical to the default impl's output.
+		let nodes: TopoSortedNodes = ledger.serialize_to_node_list();
+		let tag_prefix = format!("{}{}:", GLOBAL_TAG, <Ledger<D> as Tagged>::tag());
+		let mut bytes = Vec::with_capacity(tag_prefix.len() + nodes.serialized_size());
+		bytes.extend_from_slice(tag_prefix.as_bytes());
+		nodes.serialize(&mut bytes).map_err(|e| {
+			log::error!(target: LOG_TARGET, "Failed to serialize ledger snapshot: {e:?}");
+			LedgerApiError::Serialization(SerializationError::LedgerState)
+		})?;
+		Ok(bytes)
+	}
+
+	/// Import a verified, `Ledger`-rooted warp snapshot `blob` into the already-open arena backend,
+	/// binding it to the trie anchor `expected_state_key` (the on-chain `pallet_midnight::StateKey`
+	/// the warp-recovered trie already holds).
+	///
+	/// Reconstruction uses the arena's **native multi-pass deserializer**
+	/// (`Arena::deserialize_sp`, designed for untrusted wire input — it re-hashes every node), then
+	/// asserts the reconstructed root key equals `expected_state_key` before persisting. So a
+	/// malicious or faulty peer can at worst cause a rejected import (→ peer report + retry by the
+	/// caller), never state corruption.
+	///
+	/// Persists + flushes into the live `default_storage` so `get_lazy(StateKey)` resolves —
+	/// in-process, no restart, via the same `alloc`/`persist`/`flush` path live block execution
+	/// uses. The caller (warp client driver) MUST hold the authoring/import gate so no block
+	/// executes against the arena concurrently — the arena is single-writer.
+	pub fn import_verified_ledger_snapshot(
+		blob: &[u8],
+		expected_state_key: &[u8],
+	) -> Result<(), crate::SnapshotImportError> {
+		use crate::SnapshotImportError;
+
+		let api = api::new();
+		let expected: TypedArenaKey<Ledger<D>, D::Hasher> = api
+			.tagged_deserialize(expected_state_key)
+			.map_err(|e| SnapshotImportError::StateKeyDecode(format!("{e:?}")))?;
+
+		// Native verifying (untrusted-safe) deserialize of the `Ledger`-rooted blob into the live
+		// arena; re-allocating the loaded value yields the persistable `Sp`.
+		let ledger: Ledger<D> =
+			helpers_local::deserialize(blob).map_err(SnapshotImportError::Deserialize)?;
+		let mut sp = default_storage::<D>().arena.alloc(ledger);
+
+		// Cryptographic bind to the trie anchor: the reconstructed root must equal the on-chain
+		// `StateKey`. This is the whole security argument — reject anything else.
+		let computed: TypedArenaKey<Ledger<D>, D::Hasher> = sp.as_typed_key();
+		if computed != expected {
+			return Err(SnapshotImportError::RootMismatch);
+		}
+
+		sp.persist();
+		default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
+		log::info!(target: LOG_TARGET, "Imported verified ledger snapshot ({} bytes)", blob.len());
+		Ok(())
+	}
+
 	pub fn get_unclaimed_amount(
 		state_key: &[u8],
 		beneficiary: &[u8],
@@ -1079,11 +1173,8 @@ where
 		// Dry-run the guaranteed segment against the current state.
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
-		match super::guaranteed_validation::validate_guaranteed_execution(
-			&ledger.state,
-			verified_tx,
-			&ctx,
-		) {
+		match guaranteed_validation::validate_guaranteed_execution(&ledger.state, verified_tx, &ctx)
+		{
 			Ok(()) => {
 				log::info!(
 					target: LOG_TARGET,
@@ -1136,11 +1227,8 @@ where
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
-		match super::guaranteed_validation::validate_guaranteed_execution(
-			&ledger.state,
-			verified_tx,
-			&ctx,
-		) {
+		match guaranteed_validation::validate_guaranteed_execution(&ledger.state, verified_tx, &ctx)
+		{
 			Ok(()) => Ok(was_cached),
 			Err(reason) => {
 				log::warn!(
@@ -1213,13 +1301,13 @@ where
 
 	pub fn construct_distribute_reserve_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let system_tx = super::system_tx::distribute_reserve_system_tx(amount);
+		let system_tx = system_tx::distribute_reserve_system_tx(amount);
 		api.tagged_serialize(&system_tx)
 	}
 
 	pub fn construct_unlock_to_treasury_system_tx(amount: u128) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let system_tx = super::system_tx::unlock_to_treasury_system_tx(amount)?;
+		let system_tx = system_tx::unlock_to_treasury_system_tx(amount)?;
 		api.tagged_serialize(&system_tx)
 	}
 
@@ -1227,7 +1315,7 @@ where
 		amount: u128,
 	) -> Result<Vec<u8>, LedgerApiError> {
 		let api = api::new();
-		let system_tx = super::system_tx::distribute_treasury_system_tx(amount)?;
+		let system_tx = system_tx::distribute_treasury_system_tx(amount)?;
 		api.tagged_serialize(&system_tx)
 	}
 }
@@ -1260,8 +1348,8 @@ fn get_system_tx_type(tx: &SystemTransaction) -> Result<&'static str, LedgerApiE
 		SystemTransaction::PayBlockRewardsToTreasury { .. } => Ok("pay_block_rewards_to_treasury"),
 		SystemTransaction::PayFromTreasuryShielded { .. } => Ok("pay_from_treasury_shielded"),
 		SystemTransaction::PayFromTreasuryUnshielded { .. } => Ok("pay_from_treasury_unshielded"),
-		tx if super::system_tx::is_distribute_reserve_system_tx(tx) => Ok("distribute_reserve"),
-		tx if super::system_tx::is_unlock_to_treasury_system_tx(tx) => Ok("unlock_to_treasury"),
+		tx if system_tx::is_distribute_reserve_system_tx(tx) => Ok("distribute_reserve"),
+		tx if system_tx::is_unlock_to_treasury_system_tx(tx) => Ok("unlock_to_treasury"),
 		SystemTransaction::CNightGeneratesDustUpdate { .. } => Ok("cnight_generates_dust_update"),
 		other => {
 			log::error!(
@@ -1501,7 +1589,7 @@ mod tests {
 		use mn_ledger_local::dust::DustPublicKey;
 		use transient_crypto_local::curve::Fr;
 
-		if super::super::CRATE_NAME != crate::latest::CRATE_NAME {
+		if CRATE_NAME != crate::latest::CRATE_NAME {
 			println!("This test should only be run with ledger latest");
 			return;
 		}
@@ -1621,7 +1709,7 @@ mod tests {
 
 	#[test]
 	fn get_system_tx_type_distribute_reserve() {
-		let tx = super::super::system_tx::distribute_reserve_system_tx(0);
+		let tx = system_tx::distribute_reserve_system_tx(0);
 		assert_eq!(get_system_tx_type(&tx).unwrap(), "distribute_reserve");
 	}
 
@@ -1633,7 +1721,7 @@ mod tests {
 
 	#[test]
 	fn get_system_tx_type_unlock_to_treasury() {
-		if let Ok(tx) = super::super::system_tx::unlock_to_treasury_system_tx(0) {
+		if let Ok(tx) = system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
 	}

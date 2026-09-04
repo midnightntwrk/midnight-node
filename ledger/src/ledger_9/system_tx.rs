@@ -15,7 +15,7 @@
 
 #![cfg(feature = "std")]
 
-use super::{common::types::LedgerApiError, mn_ledger_local::structure::SystemTransaction};
+use crate::ledger_9::{mn_ledger_local::structure::SystemTransaction, types::LedgerApiError};
 
 pub fn distribute_reserve_system_tx(amount: u128) -> SystemTransaction {
 	SystemTransaction::DistributeReserve { amount }

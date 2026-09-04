@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
+use crate::ledger_9::{
 	ledger_storage_local, mn_ledger_local,
 	types::{
 		DisjointCheckErrorCode, EffectsCheckErrorCode, FeeCalculationErrorCode, InvalidError,
@@ -35,7 +35,7 @@ use zswap_local::error::{MalformedOffer, TransactionInvalid as ZswapTransactionI
 // supplies its own implementation that matches only the variants it knows
 // about, so future upstream additions fall through to the `UnknownError + log`
 // arm rather than being silently misclassified.
-use super::super::error_ext;
+use crate::ledger_9::error_ext;
 
 impl From<TransactionApplicationError> for TransactionApplicationErrorCode {
 	fn from(error: TransactionApplicationError) -> Self {

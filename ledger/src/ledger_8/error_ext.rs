@@ -11,19 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Ledger-9-only mappings for variants that don't exist in ledgers 7 and 8. Each
-//! helper handles only the variants we know are ledger-9-specific and returns
+//! Ledger-8-only mappings for variants that don't exist in earlier generations. Each
+//! helper handles only the variants we know are ledger-8-specific and returns
 //! `Err` for anything else, so the shared common conversion can fall back to
 //! its `UnknownError + log` arm rather than misclassifying future additions.
 
 #![cfg(feature = "std")]
 
-use super::{
-	common::types::{InvalidError, SystemTransactionError, ZswapInvalidErrorCode},
+use crate::ledger_8::{
 	ledger_storage_local::db::DB,
 	mn_ledger_local::error::{
 		SystemTransactionError as LedgerSystemTransactionError, TransactionInvalid,
 	},
+	types::{InvalidError, SystemTransactionError, ZswapInvalidErrorCode},
 	zswap_local::error::TransactionInvalid as ZswapTransactionInvalid,
 };
 
@@ -32,7 +32,7 @@ pub fn try_convert_extra_invalid<D: DB>(
 ) -> Result<InvalidError, TransactionInvalid<D>> {
 	match err {
 		TransactionInvalid::MerkleTreeError(_) => Ok(InvalidError::MerkleTreeError),
-		TransactionInvalid::InitialNonceAlreadyPresent(_) => {
+		TransactionInvalid::GenerationInfoAlreadyPresent(_) => {
 			Ok(InvalidError::GenerationInfoAlreadyPresent)
 		},
 		other => Err(other),
@@ -55,7 +55,7 @@ pub fn try_convert_extra_system_tx(
 		LedgerSystemTransactionError::MerkleTreeError(_) => {
 			Ok(SystemTransactionError::MerkleTreeError)
 		},
-		LedgerSystemTransactionError::InitialNonceAlreadyPresent(_) => {
+		LedgerSystemTransactionError::GenerationInfoAlreadyPresent(_) => {
 			Ok(SystemTransactionError::GenerationInfoAlreadyPresent)
 		},
 		other => Err(other),

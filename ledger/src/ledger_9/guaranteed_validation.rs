@@ -11,18 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Ledger-8 dry-run validation of the guaranteed transaction segment.
+//! Ledger-9 dry-run validation of the guaranteed transaction segment.
 //!
-//! Ledger 8 has no `apply_guaranteed_only`; fall back to a full `apply()` dry-run
-//! and treat `PartialSuccess` as acceptable (guaranteed segment succeeded).
+//! Uses ledger 9's split-phase `apply_guaranteed_only` API so validation does not
+//! execute the fallible segment.
 
 #![cfg(feature = "std")]
 
-use super::{
+use crate::ledger_9::{
 	ledger_storage_local::db::DB,
 	mn_ledger_local::{
 		error::TransactionInvalid,
-		semantics::{TransactionContext, TransactionResult},
+		semantics::TransactionContext,
 		structure::{LedgerState, VerifiedTransaction},
 	},
 };
@@ -32,9 +32,5 @@ pub fn validate_guaranteed_execution<D: DB>(
 	verified_tx: VerifiedTransaction<D>,
 	ctx: &TransactionContext<D>,
 ) -> Result<(), TransactionInvalid<D>> {
-	let (_next_state, result) = state.apply(&verified_tx, ctx);
-	match result {
-		TransactionResult::Success(_) | TransactionResult::PartialSuccess(_, _) => Ok(()),
-		TransactionResult::Failure(reason) => Err(reason),
-	}
+	state.apply_guaranteed_only(verified_tx, ctx).map(|_| ())
 }

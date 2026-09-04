@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
+use crate::ledger_9::{
 	base_crypto_local, helpers_local, ledger_storage_local, midnight_serialize_local,
 	mn_ledger_local, transient_crypto_local, zswap_local,
 };
@@ -36,12 +36,11 @@ use transient_crypto_local::merkle_tree::MerkleTreeDigest;
 use zswap_local::ledger::State as ZswapLedgerState;
 
 use super::{
-	super::super::BlockContext,
-	super::super::post_block_update,
 	Api, ContractAddress, ContractState, DeserializableError, LOG_TARGET, SerializableError,
 	SystemTransaction, Transaction, TransactionInvalid, UserAddress, ZswapState,
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
+use crate::ledger_9::{BlockContext, post_block_update};
 
 #[derive(Debug)]
 pub enum AppliedStage<D: DB> {
@@ -306,11 +305,11 @@ impl<D: DB> Borrow<LedgerState<D>> for Ledger<D> {
 // grcov-excl-start
 #[cfg(test)]
 mod tests {
-	use super::super::super::super::{
-		CRATE_NAME, TransactionSignature as Signature, helpers_local::extract_tx_with_context,
-	};
 	use super::super::Api;
 	use super::*;
+	use crate::ledger_9::{
+		CRATE_NAME, TransactionSignature as Signature, helpers_local::extract_tx_with_context,
+	};
 	use ledger_storage_local::DefaultDB;
 	use midnight_node_res::{
 		networks::{MidnightNetwork, UndeployedNetwork},

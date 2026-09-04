@@ -17,20 +17,20 @@
 
 #![cfg(feature = "std")]
 
-use super::{
+use crate::ledger_8::{
 	base_crypto_local::{
 		cost_model::{FixedPoint, NormalizedCost},
 		time::Timestamp,
 	},
-	common::types::LedgerApiError,
 	ledger_storage_local::db::DB,
 	mn_ledger_local::structure::LedgerState,
+	types::LedgerApiError,
 };
 
 pub fn prevalidate_post_block_update<D: DB>(
 	_state: &LedgerState<D>,
-	_block_fullness: &super::base_crypto_local::cost_model::SyntheticCost,
-	_block_limits: &super::base_crypto_local::cost_model::SyntheticCost,
+	_block_fullness: &crate::ledger_8::base_crypto_local::cost_model::SyntheticCost,
+	_block_limits: &crate::ledger_8::base_crypto_local::cost_model::SyntheticCost,
 	_context: &str,
 ) -> Result<(), LedgerApiError> {
 	Ok(())

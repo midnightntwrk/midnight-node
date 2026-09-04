@@ -1,5 +1,5 @@
 #[cfg(feature = "std")]
-use super::base_crypto_local::{hash::HashOutput, time::Timestamp};
+use crate::ledger_8::base_crypto_local::{hash::HashOutput, time::Timestamp};
 
 use alloc::vec::Vec;
 use scale_info::prelude::vec;
@@ -37,8 +37,8 @@ impl BlockContext {
 }
 
 #[cfg(feature = "std")]
-impl From<super::onchain_runtime_local::context::BlockContext> for BlockContext {
-	fn from(value: super::onchain_runtime_local::context::BlockContext) -> Self {
+impl From<crate::ledger_8::onchain_runtime_local::context::BlockContext> for BlockContext {
+	fn from(value: crate::ledger_8::onchain_runtime_local::context::BlockContext) -> Self {
 		Self {
 			tblock: value.tblock.to_secs(),
 			tblock_err: value.tblock_err,
@@ -49,7 +49,7 @@ impl From<super::onchain_runtime_local::context::BlockContext> for BlockContext 
 }
 
 #[cfg(feature = "std")]
-impl TryFrom<BlockContext> for super::onchain_runtime_local::context::BlockContext {
+impl TryFrom<BlockContext> for crate::ledger_8::onchain_runtime_local::context::BlockContext {
 	type Error = Vec<u8>;
 
 	fn try_from(value: BlockContext) -> Result<Self, Self::Error> {

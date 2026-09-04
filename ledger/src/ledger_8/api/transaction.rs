@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 
-use super::{
+use crate::ledger_8::{
 	base_crypto_local, coin_structure_local, ledger_storage_local, midnight_serialize_local,
 	mn_ledger_local, transient_crypto_local,
 };
@@ -42,7 +42,7 @@ use super::{
 	types::{DeserializationError, LedgerApiError, SerializationError, TransactionError},
 };
 use crate::{
-	common::types::{Hash, SegmentId, UtxoInfo},
+	boundary::types::{Hash, SegmentId, UtxoInfo},
 	types::PERSISTENT_HASH_BYTES,
 };
 
@@ -434,20 +434,18 @@ pub enum Operation {
 // grcov-excl-start
 #[cfg(test)]
 mod tests {
-	use super::super::super::{
-		super::{
-			CRATE_NAME, TransactionSignature as Signature, helpers_local::extract_tx_with_context,
-		},
-		BlockContext, api,
-	};
 	use super::*;
+	use crate::ledger_8::{
+		BlockContext, CRATE_NAME, TransactionSignature as Signature, api,
+		helpers_local::extract_tx_with_context,
+	};
 	use ledger_storage_local::DefaultDB;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
 	use mn_ledger_local::structure::LedgerState;
 
 	const DEPLOY: &[u8] = midnight_node_res::undeployed::transactions::DEPLOY_TX;
-	const MALFORMED: &[u8] = include_bytes!("../../../../test-data/malformed_tx.json");
+	const MALFORMED: &[u8] = include_bytes!("../../../test-data/malformed_tx.json");
 
 	fn prepare_ledger() -> Ledger<DefaultDB> {
 		sp_tracing::try_init_simple();
