@@ -58,6 +58,40 @@ fn is_unified(mut ext: &mut dyn Externalities) -> bool {
 	)
 }
 
+/// Shared body of both versions of `apply_transaction`; they differ only in
+/// `filter_only_failed_segments` (see the trait below).
+#[cfg(feature = "std")]
+fn apply_transaction_inner(
+	externalities: &mut dyn Externalities,
+	state_key: &[u8],
+	tx: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+	filter_only_failed_segments: bool,
+) -> Result<TransactionAppliedStateRoot, LedgerApiError> {
+	if is_unified(externalities) {
+		Bridge::<Signature, DbUnified>::apply_transaction(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			filter_only_failed_segments,
+			runtime_version,
+			/* skew_tblock */ false,
+		)
+	} else {
+		Bridge::<Signature, DbSeparate>::apply_transaction(
+			externalities,
+			state_key,
+			tx,
+			block_context,
+			filter_only_failed_segments,
+			runtime_version,
+			/* skew_tblock */ false,
+		)
+	}
+}
+
 #[cfg(feature = "std")]
 use crate::ledger_8::Bridge as Bridge8;
 #[cfg(feature = "std")]
@@ -166,6 +200,13 @@ pub trait Ledger9Bridge {
 	 * `skew_tblock` is always false here: the tblock correction only covers blocks produced
 	 * before the runtime upgrade that closed it, all of which are ledger 8 or older.
 	 * See <https://github.com/midnightntwrk/midnight-node/issues/1924>
+	 *
+	 * v1 withholds the contract events of *every* segment a partial-success transaction
+	 * attempted, so such a transaction emitted no `ContractCall`/`ContractDeploy`/
+	 * `ContractMaintain` event at all — not even for the guaranteed segment, which always
+	 * executed. v2 withholds only the segments that actually failed. `System::Events` is in
+	 * the state trie, so the correction has to be gated: historical blocks replay against
+	 * whichever runtime was on-chain at that height, and pre-upgrade wasm imports v1.
 	 */
 	fn apply_transaction(
 		&mut self,
@@ -174,27 +215,32 @@ pub trait Ledger9Bridge {
 		block_context: PassFatPointerAndDecode<BlockContext>,
 		runtime_version: u32,
 	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
-		if is_unified(*self) {
-			Bridge::<Signature, DbUnified>::apply_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				true,
-				runtime_version,
-				/* skew_tblock */ false,
-			)
-		} else {
-			Bridge::<Signature, DbSeparate>::apply_transaction(
-				*self,
-				state_key,
-				tx,
-				block_context,
-				true,
-				runtime_version,
-				/* skew_tblock */ false,
-			)
-		}
+		apply_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* filter_only_failed_segments */ false,
+		)
+	}
+
+	#[version(2)]
+	fn apply_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<TransactionAppliedStateRoot, LedgerApiError>> {
+		apply_transaction_inner(
+			*self,
+			state_key,
+			tx,
+			block_context,
+			runtime_version,
+			/* filter_only_failed_segments */ true,
+		)
 	}
 
 	fn apply_system_transaction(
