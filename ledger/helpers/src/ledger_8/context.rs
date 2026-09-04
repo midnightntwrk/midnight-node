@@ -17,13 +17,14 @@ use crate::ledger_8::{
 	Offer, OutputMode, PUBLIC_PARAMS, PedersenDowngradeable, ProofKind, PureGeneratorPedersen,
 	Resolver, SerdeTransaction, Serializable, SignatureKind, Sp, Storable, SyntheticCost, Tagged,
 	Timestamp, Transaction, TransactionContext, TransactionResult, UnshieldedSignatureScheme, Utxo,
-	VerifiedTransaction, Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState,
-	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
-	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
+	Wallet, WalletAddress, WalletSeed, WellFormedStrictness, ZswapChainState, clamp_and_normalize,
+	compute_overall_fullness, default_storage, deserialize, mn_ledger_serialize as serialize,
+	mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
 use derive_where::derive_where;
 use hex::encode as hex_encode;
 use lazy_static::lazy_static;
+use mn_ledger_8::{error::MalformedTransaction, structure::VerifiedTransaction};
 use std::{
 	collections::{HashMap, HashSet},
 	sync::Mutex,
@@ -409,37 +410,60 @@ impl<D: DB + Clone> LedgerContext<D> {
 				// the ledger has no strictness knob for zswap offer proofs.
 				let ref_state = &tx_context.ref_state;
 				let tblock = tx_context.block_context.tblock;
-				let valid_tx: VerifiedTransaction<_> = if strictness.verify_native_proofs {
-					tx.well_formed(ref_state, strictness, tblock)
-				} else {
-					tx.erase_proofs().well_formed(ref_state, strictness, tblock)
-				}
-				.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
-				let cost = tx
-					.cost(&tx_context.ref_state.parameters, false)
-					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
+				let valid_tx: Result<VerifiedTransaction<_>, MalformedTransaction<_>> =
+					if strictness.verify_native_proofs {
+						tx.well_formed(ref_state, strictness, tblock)
+					} else {
+						tx.erase_proofs().well_formed(ref_state, strictness, tblock)
+					};
 
-				let (new_ledger_state, result) = tx_context.ref_state.apply(&valid_tx, &tx_context);
-				let offers = Self::successful_shielded_offers(tx, &result);
-				match result {
-					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
-					TransactionResult::PartialSuccess(failure, events) => {
-						crate::replay_stats::PARTIALLY_FAILED_TXS
-							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-						let hash = hex::encode(tx.transaction_hash().0.0);
-						log::debug!(
-							"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
-						);
-						(new_ledger_state, offers, events, cost)
+				match valid_tx {
+					Ok(valid_tx) => {
+						let cost = tx
+							.cost(&tx_context.ref_state.parameters, false)
+							.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
+
+						let (new_ledger_state, result) =
+							tx_context.ref_state.apply(&valid_tx, &tx_context);
+						let offers = Self::successful_shielded_offers(tx, &result);
+						match result {
+							TransactionResult::Success(events) => {
+								(new_ledger_state, offers, events, cost)
+							},
+							TransactionResult::PartialSuccess(failure, events) => {
+								crate::replay_stats::PARTIALLY_FAILED_TXS
+									.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+								let hash = hex::encode(tx.transaction_hash().0.0);
+								log::debug!(
+									"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
+								);
+								(new_ledger_state, offers, events, cost)
+							},
+							TransactionResult::Failure(failure) => {
+								crate::replay_stats::FAILED_TXS
+									.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+								let hash = hex::encode(tx.transaction_hash().0.0);
+								log::warn!(
+									"Failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
+								);
+								(new_ledger_state, offers, vec![], SyntheticCost::ZERO)
+							},
+						}
 					},
-					TransactionResult::Failure(failure) => {
-						crate::replay_stats::FAILED_TXS
-							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+					Err(err) => {
+						// A `well_formed` failure (e.g. `OutOfDustValidityWindow` from a dust
+						// action whose `ctime` lands a couple of seconds past the including
+						// block's `tblock`) is not evidence of an invalid block: on-chain,
+						// `pallet_midnight::send_mn_transaction` hits this same check via
+						// `LedgerApi::apply_transaction` and simply fails that one extrinsic's
+						// dispatch (storage rolled back, `ExtrinsicFailed` emitted) without
+						// affecting block validity. Mirror that here instead of hard-failing
+						// the whole replay.
 						let hash = hex::encode(tx.transaction_hash().0.0);
 						log::warn!(
-							"Failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
+							"Failing result {err:?} of validating tx 0x{hash} \nto update Local Ledger State"
 						);
-						(new_ledger_state, offers, vec![], SyntheticCost::ZERO)
+						(tx_context.ref_state.clone(), vec![], vec![], SyntheticCost::ZERO)
 					},
 				}
 			},
