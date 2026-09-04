@@ -13,8 +13,8 @@
 
 use midnight_primitives_ledger::LedgerStorageExt;
 
-use super::LOG_TARGET;
-use super::ledger_storage_local::{
+use crate::ledger_8::LOG_TARGET;
+use crate::ledger_8::ledger_storage_local::{
 	db::{ParityDb, paritydb::OwnedDb},
 	storage::{try_get_default_storage, unsafe_drop_default_storage},
 };
@@ -45,10 +45,10 @@ pub fn drop_default_storage_if_exists() {
 
 #[cfg(feature = "std")]
 use {
-	super::ledger_storage_local::db::DB,
-	super::midnight_serialize_local::Tagged,
-	super::mn_ledger_local::structure::{ProofMarker, SignatureKind, Transaction},
-	super::transient_crypto_local::commitment::PureGeneratorPedersen,
+	crate::ledger_8::ledger_storage_local::db::DB,
+	crate::ledger_8::midnight_serialize_local::Tagged,
+	crate::ledger_8::mn_ledger_local::structure::{ProofMarker, SignatureKind, Transaction},
+	crate::ledger_8::transient_crypto_local::commitment::PureGeneratorPedersen,
 };
 
 #[derive(Debug)]
@@ -84,10 +84,13 @@ impl core::fmt::Display for GetRootError {
 /// genesis before the runtime upgrade migrates it to v9).
 #[cfg(feature = "std")]
 pub fn genesis_matches_this_version(genesis_state: &[u8]) -> bool {
-	use super::ledger_storage_local::DefaultDB;
-	let expected = <super::mn_ledger_local::structure::LedgerState<DefaultDB> as Tagged>::tag();
+	use crate::ledger_8::ledger_storage_local::DefaultDB;
+	let expected =
+		<crate::ledger_8::mn_ledger_local::structure::LedgerState<DefaultDB> as Tagged>::tag();
 	// `peek_tag` reads the serialized header tag without deserializing the body.
-	match super::midnight_serialize_local::peek_tag(&mut std::io::Cursor::new(genesis_state)) {
+	match crate::ledger_8::midnight_serialize_local::peek_tag(&mut std::io::Cursor::new(
+		genesis_state,
+	)) {
 		Ok(tag) => tag.as_str() == expected.as_ref(),
 		Err(_) => false,
 	}
@@ -95,11 +98,11 @@ pub fn genesis_matches_this_version(genesis_state: &[u8]) -> bool {
 
 pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRootError> {
 	// Get empty state key
-	use super::api::Ledger;
-	use super::ledger_storage_local::{DefaultDB, storage::default_storage};
+	use crate::ledger_8::api::Ledger;
+	use crate::ledger_8::ledger_storage_local::{DefaultDB, storage::default_storage};
 
-	let state: super::mn_ledger_local::structure::LedgerState<DefaultDB> =
-		super::midnight_serialize_local::tagged_deserialize(state)
+	let state: crate::ledger_8::mn_ledger_local::structure::LedgerState<DefaultDB> =
+		crate::ledger_8::midnight_serialize_local::tagged_deserialize(state)
 			.map_err(GetRootError::DeserializationFailure)?;
 	let state = Ledger::new(state);
 
@@ -109,7 +112,7 @@ pub fn get_root(state: &[u8], network_id: Option<&str>) -> Result<Vec<u8>, GetRo
 
 	let state = default_storage::<DefaultDB>().arena.alloc(state);
 	let mut bytes = vec![];
-	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
+	crate::ledger_8::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
 		.map_err(GetRootError::SerializationFailure)?;
 	Ok(bytes)
 }
@@ -119,11 +122,11 @@ fn alloc_with_initial_state<S: SignatureKind<D>, D: DB>(initial_state: &[u8]) ->
 where
 	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Tagged,
 {
-	use super::api::Ledger;
-	use super::ledger_storage_local::storage::default_storage;
+	use crate::ledger_8::api::Ledger;
+	use crate::ledger_8::ledger_storage_local::storage::default_storage;
 
-	let state: super::mn_ledger_local::structure::LedgerState<D> =
-		super::midnight_serialize_local::tagged_deserialize(&mut &initial_state[..])
+	let state: crate::ledger_8::mn_ledger_local::structure::LedgerState<D> =
+		crate::ledger_8::midnight_serialize_local::tagged_deserialize(&mut &initial_state[..])
 			.expect("failed to deserialize ledger genesis state");
 	let state = Ledger::new(state);
 
@@ -131,7 +134,8 @@ where
 	state.persist();
 	default_storage::<D>().with_backend(|backend| backend.flush_all_changes_to_db());
 	let mut bytes = vec![];
-	super::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes).unwrap();
+	crate::ledger_8::midnight_serialize_local::tagged_serialize(&state.as_typed_key(), &mut bytes)
+		.unwrap();
 	bytes
 }
 
@@ -141,7 +145,9 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
-	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
+	use crate::ledger_8::ledger_storage_local::{
+		Storage, db::ParityDb, storage::set_default_storage,
+	};
 
 	let res = set_default_storage(|| {
 		std::fs::create_dir_all(dir.as_ref())
@@ -154,7 +160,7 @@ pub fn init_storage_paritydb_separate<P: AsRef<std::path::Path>>(
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	alloc_with_initial_state::<super::TransactionSignature, ParityDb>(genesis_state)
+	alloc_with_initial_state::<crate::ledger_8::TransactionSignature, ParityDb>(genesis_state)
 }
 
 #[cfg(feature = "std")]
@@ -175,7 +181,9 @@ pub fn init_storage_paritydb_unified<
 	genesis_state: &[u8],
 	cache_size: usize,
 ) -> Vec<u8> {
-	use super::ledger_storage_local::{Storage, db::ParityDb, storage::set_default_storage};
+	use crate::ledger_8::ledger_storage_local::{
+		Storage, db::ParityDb, storage::set_default_storage,
+	};
 
 	let res = set_default_storage(|| {
 		let db = ParityDb::<sha2::Sha256, D, COLUMN_OFFSET>::from_existing_db(db_instance);
@@ -185,7 +193,8 @@ pub fn init_storage_paritydb_unified<
 		log::warn!("Warning: Failed to set default storage: {res:?}");
 	}
 
-	alloc_with_initial_state::<super::TransactionSignature, ParityDb<sha2::Sha256, D, COLUMN_OFFSET>>(
-		genesis_state,
-	)
+	alloc_with_initial_state::<
+		crate::ledger_8::TransactionSignature,
+		ParityDb<sha2::Sha256, D, COLUMN_OFFSET>,
+	>(genesis_state)
 }
