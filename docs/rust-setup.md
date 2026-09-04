@@ -1,18 +1,16 @@
 ---
-title: Installation
+title: Prerequisites & Setup
 ---
 
 ## Prerequisites
 
-Midnight-node is built with the Rust programming language on top of Polkadot SDK.
+Midnight-node is built with the Rust programming language on top of the Polkadot SDK. The build and test processes also rely on containerized build systems and task runners.
+
+### 1. Rust Toolchain
 
 For detailed installation instructions for Rust and Polkadot SDK dependencies, please refer to the official Polkadot SDK documentation:
 
 **[Install Polkadot SDK Dependencies](https://docs.polkadot.com/develop/parachains/install-polkadot-sdk/)**
-
-This guide covers all the necessary build dependencies for different operating systems (Ubuntu, macOS, Windows via WSL, etc.).
-
-## Rust Toolchain
 
 This repository includes a `rust-toolchain.toml` file that specifies the exact Rust version to use. The toolchain will be automatically installed when you run any `cargo` command.
 
@@ -22,18 +20,82 @@ To verify your Rust installation:
 rustup show
 ```
 
-## Midnight-Specific Setup
+### 2. Docker or Podman (Container Runtime)
 
-### Direnv (Optional)
+Earthly runs every build target inside a container, so a container runtime must be installed and running **before** you install or use Earthly.
 
-The repository includes an `.envrc` file for environment configuration. You can use direnv to automatically load environment variables:
+**macOS:**
+Install [Docker Desktop for Mac](https://docs.docker.com/desktop/setup/install/mac-install/) and start it. (Note: While [Podman](https://podman.io/docs/installation#macos) is an alternative, Earthly's `WITH DOCKER` targets like `+test` require rootful Podman which requires additional configuration).
+
+**Ubuntu/Debian:**
+```bash
+# Docker (Recommended)
+sudo apt-get update && sudo apt-get install -y docker.io
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"   # log out & back in for group to take effect
+
+# — or Podman (Requires rootful mode for Earthly tests) —
+sudo apt-get update && sudo apt-get install -y podman
+sudo systemctl enable --now podman.socket
+```
+
+**Windows (WSL2):**
+Install [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) and enable the **WSL 2 backend** in Settings → General.
+
+To verify the container runtime:
+```bash
+docker info   # or: podman info
+```
+
+### 3. Earthly (Containerized Builds)
+
+Earthly is required for building Docker images, regenerating metadata, and rebuilding genesis state.
+
+**macOS:**
+```bash
+brew install earthly
+```
+
+**Ubuntu/Debian:**
+```bash
+ARCH=$(uname -m); case "$ARCH" in aarch64) ARCH=arm64;; x86_64) ARCH=amd64;; esac
+sudo wget "https://github.com/earthly/earthly/releases/latest/download/earthly-linux-${ARCH}" -O /usr/local/bin/earthly
+sudo chmod +x /usr/local/bin/earthly
+```
+
+**Windows (WSL2):**
+Install via the Ubuntu instructions above inside your WSL2 terminal.
+
+To verify Earthly:
+```bash
+earthly --version
+```
+
+### 4. Just (Command Runner)
+
+`just` is required for running end-to-end (E2E) tests and toolkit compilation.
+
+**macOS / Linux / Windows:**
+```bash
+cargo install just
+```
+
+To verify Just:
+```bash
+just --version
+```
+
+## Environment Setup
+
+### Option A: Direnv (Recommended)
+
+The repository includes an `.envrc` file for environment configuration. You can use direnv to automatically load environment variables when entering the directory:
 
 ```bash
-# Install direnv
-# macOS:
+# Install direnv (macOS)
 brew install direnv
 
-# Ubuntu/Debian:
+# Install direnv (Ubuntu/Debian)
 sudo apt install direnv
 
 # Add to your shell (~/.bashrc or ~/.zshrc)
@@ -44,22 +106,64 @@ cd /path/to/midnight-node
 direnv allow
 ```
 
-**Manual alternative:** If you don't want to use direnv, source `.envrc` manually before running commands:
+### Option B: Nix (Alternative)
+
+If you prefer Nix, the repository provides a Nix flake that sets up most dependencies (Rust, Earthly) automatically in an isolated environment. Note that **Just** is not included in the Nix flake and still needs to be installed separately (see step 4 above).
+
+```bash
+# Start the Nix development shell
+nix develop
+```
+
+*Note: You still need to load environment variables via `direnv allow` or by manually sourcing `.envrc` after entering the Nix shell.*
+
+### Option C: Manual
+
+If you don't want to use direnv or Nix, source `.envrc` manually before running commands:
 
 ```bash
 source .envrc
 cargo check
-cargo test
 ```
 
 ## Verify Setup
 
-After completing the setup, verify everything works:
+After completing the setup, verify everything works by running the basic development commands:
 
 ```bash
-# Check cargo commands work
+# Check that the workspace compiles
 cargo check
 
-# Check earthly is available
-earthly --version
+# Check earthly targets
+earthly doc
 ```
+
+> **Note:** Do not run a bare `cargo test` to verify your setup. The
+> `midnight-node-toolkit` crate depends on generated npm artifacts that are only
+> available after running the toolkit prep step, and some pallet fixture tests
+> depend on `.mn` files that must be regenerated with the toolkit. To run the
+> core test suite, use Earthly which automatically excludes these:
+>
+> ```bash
+> earthly -P +test --secret DOCKERHUB_USER= --secret DOCKERHUB_TOKEN=
+> ```
+>
+> The `--secret` flags are required even for local runs (empty values use
+> anonymous Docker Hub access).
+>
+> If you prefer running tests with `cargo` directly, run them in release mode (with
+> compiler flags configured to avoid linker out-of-memory errors) and exclude the
+> toolkit crate as well as fixture-dependent tests using `--exact`:
+>
+> ```bash
+> RUSTFLAGS="-C target-cpu=native -C opt-level=2 -C debuginfo=1" \
+> cargo test --release --workspace --locked \
+>   --exclude midnight-node-toolkit \
+>   --exclude partner-chains-cardano-offchain \
+>   -- --exact \
+>      --skip tests::test_get_contract_state \
+>      --skip tests::test_send_mn_transaction \
+>      --skip tests::test_validation_works
+> ```
+
+For troubleshooting common setup or build issues, see [Troubleshooting](troubleshooting.md).
