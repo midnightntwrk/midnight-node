@@ -4,9 +4,9 @@ use super::ledger_helpers_local::{
 	BuilderContext, ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction, ContractAddress,
 	ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input, IntentCustom,
 	IntentInfo, OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider,
-	PublicAddress, Recipient, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType,
-	TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
-	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, zswap,
+	PublicAddress, QualifiedInfo, Recipient, ShieldedTokenType, ShieldedWallet, Sp, StdRng,
+	TokenInfo, TokenType, TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet,
+	UtxoId, UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, WalletState, zswap,
 };
 use crate::{
 	serde_def::SourceTransactions,
@@ -117,7 +117,36 @@ pub struct EncodedInputInfo<D: DB + Clone> {
 	pub chain_zswap_state: zswap::ledger::State<D>,
 }
 
+pub struct UserOwnedEncodedInputInfo {
+	pub encoded_qualified_info: EncodedQualifiedShieldedCoinInfo,
+	pub segment: u16,
+	pub origin: WalletSeed,
+}
+
+fn encoded_input_matches_wallet_coin<D: DB + Clone>(
+	wallet_state: &WalletState<D>,
+	encoded_input: &EncodedQualifiedShieldedCoinInfo,
+) -> Option<Sp<QualifiedInfo, D>> {
+	wallet_state.coins.iter().find_map(|(_nullifier, coin)| {
+		(coin.nonce.0.0 == encoded_input.nonce
+			&& coin.type_.0.0 == encoded_input.color
+			&& coin.value == encoded_input.value
+			&& coin.mt_index == encoded_input.mt_index)
+			.then(|| coin.clone())
+	})
+}
+
 impl<D: DB + Clone> TokenInfo for EncodedInputInfo<D> {
+	fn token_type(&self) -> ShieldedTokenType {
+		ShieldedTokenType(HashOutput(self.encoded_qualified_info.color))
+	}
+
+	fn value(&self) -> u128 {
+		self.encoded_qualified_info.value
+	}
+}
+
+impl TokenInfo for UserOwnedEncodedInputInfo {
 	fn token_type(&self) -> ShieldedTokenType {
 		ShieldedTokenType(HashOutput(self.encoded_qualified_info.color))
 	}
@@ -141,6 +170,31 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildInput<D, C> for EncodedInputInfo<
 			&self.chain_zswap_state.coin_coms,
 		)
 		.expect("Failed to construct Input")
+	}
+}
+
+impl<D: DB + Clone, C: BuilderContext<D>> BuildInput<D, C> for UserOwnedEncodedInputInfo {
+	fn build(
+		&mut self,
+		rng: &mut rand::prelude::StdRng,
+		context: Arc<C>,
+	) -> Input<ProofPreimage, D> {
+		context.with_wallet_from_seed(self.origin.clone(), |wallet| {
+			let coin = encoded_input_matches_wallet_coin(
+				&wallet.shielded.state,
+				&self.encoded_qualified_info,
+			)
+			.expect("failed to find exact wallet coin for encoded zswap input");
+
+			let (updated_wallet, input) = wallet
+				.shielded
+				.state
+				.spend(rng, wallet.shielded.secret_keys(), &coin, Some(self.segment))
+				.expect("Failed to construct Input");
+
+			wallet.shielded.state = updated_wallet;
+			input
+		})
 	}
 }
 
@@ -294,9 +348,10 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 
 		// - LedgerContext and TransactionInfo
 		let (context, mut tx_info) = self.context_and_tx_info();
+		let funding_seed = self.funding_seed();
 
 		let funding_utxos: Vec<_> = context
-			.unshielded_utxos(self.funding_seed())
+			.unshielded_utxos(funding_seed.clone())
 			.await
 			.into_iter()
 			.map(|(utxo, _ctime)| utxo)
@@ -353,7 +408,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 
 			let input = Box::new(UtxoSpendInfo {
 				value: funding_match.value,
-				owner: self.funding_seed(),
+				owner: funding_seed.clone(),
 				token_type: funding_match.type_,
 				intent_hash: Some(funding_match.intent_hash),
 				output_number: Some(funding_match.output_no),
@@ -438,13 +493,31 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 						transients_info.push(Box::new(transient));
 						encoded_output_infos.remove(&coin_info);
 					} else {
-						let input = EncodedInputInfo {
-							encoded_qualified_info: encoded_input,
-							segment: 0,
-							contract_address,
-							chain_zswap_state: chain_zswap_state.clone(),
-						};
-						inputs_info.push(Box::new(input));
+						let user_owned =
+							context.with_wallet_from_seed(funding_seed.clone(), |wallet| {
+								encoded_input_matches_wallet_coin(
+									&wallet.shielded.state,
+									&encoded_input,
+								)
+								.is_some()
+							});
+
+						if user_owned {
+							let input = UserOwnedEncodedInputInfo {
+								encoded_qualified_info: encoded_input,
+								segment: 0,
+								origin: funding_seed.clone(),
+							};
+							inputs_info.push(Box::new(input));
+						} else {
+							let input = EncodedInputInfo {
+								encoded_qualified_info: encoded_input,
+								segment: 0,
+								contract_address,
+								chain_zswap_state: chain_zswap_state.clone(),
+							};
+							inputs_info.push(Box::new(input));
+						}
 					}
 				}
 			}
@@ -459,7 +532,7 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 
 		tx_info.set_guaranteed_offer(offer_info);
 
-		tx_info.set_funding_seeds(vec![self.funding_seed()]);
+		tx_info.set_funding_seeds(vec![funding_seed]);
 		tx_info.use_mock_proofs_for_fees(false);
 
 		#[cfg(not(feature = "erase-proof"))]
@@ -474,5 +547,97 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
 		Ok(super::tx_serialization::build_single(tx_with_context))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use midnight_node_ledger_helpers::{DefaultDB, HashOutput, LedgerContext};
+
+	fn test_seed() -> WalletSeed {
+		WalletSeed::Short([0x42; 16])
+	}
+
+	fn test_context(seed: &WalletSeed) -> Arc<LedgerContext<DefaultDB>> {
+		Arc::new(LedgerContext::<DefaultDB>::new_from_wallet_seeds("undeployed", &[seed.clone()]))
+	}
+
+	fn insert_user_owned_coin(
+		ctx: &LedgerContext<DefaultDB>,
+		seed: WalletSeed,
+	) -> EncodedQualifiedShieldedCoinInfo {
+		let mut rng = StdRng::from_seed([7u8; 32]);
+		let token_type = ShieldedTokenType(HashOutput([3u8; 32]));
+		ctx.with_wallet_from_seed(seed, |wallet| {
+			let coin_info = CoinInfo::new(&mut rng, 42, token_type);
+			wallet.shielded.state = wallet
+				.shielded
+				.state
+				.watch_for(&wallet.shielded.secret_keys().coin_public_key(), &coin_info);
+
+			let coin = wallet
+				.shielded
+				.state
+				.coins
+				.iter()
+				.next()
+				.expect("wallet should contain the inserted coin")
+				.1
+				.clone();
+
+			EncodedQualifiedShieldedCoinInfo {
+				nonce: coin.nonce.0.0,
+				color: coin.type_.0.0,
+				value: coin.value,
+				mt_index: coin.mt_index,
+			}
+		})
+	}
+
+	#[test]
+	fn encoded_input_matches_wallet_coin_only_for_exact_coin() {
+		let seed = test_seed();
+		let ctx = test_context(&seed);
+		let encoded = insert_user_owned_coin(ctx.as_ref(), seed.clone());
+
+		ctx.with_wallet_from_seed(seed, |wallet| {
+			assert!(
+				encoded_input_matches_wallet_coin(&wallet.shielded.state, &encoded).is_some(),
+				"expected the inserted coin to match exactly",
+			);
+
+			let mut wrong_mt_index = encoded.clone();
+			wrong_mt_index.mt_index += 1;
+			assert!(
+				encoded_input_matches_wallet_coin(&wallet.shielded.state, &wrong_mt_index)
+					.is_none(),
+				"a different qualified coin must not be treated as the same user-owned input",
+			);
+		});
+	}
+
+	#[test]
+	fn user_owned_encoded_input_spends_the_wallet_coin() {
+		let seed = test_seed();
+		let ctx = test_context(&seed);
+		let encoded = insert_user_owned_coin(ctx.as_ref(), seed.clone());
+
+		let before = ctx.with_wallet_from_seed(seed.clone(), |wallet| {
+			wallet.shielded.state.coins.iter().count()
+		});
+		assert_eq!(before, 1, "expected one coin before the spend");
+
+		let mut input = UserOwnedEncodedInputInfo {
+			encoded_qualified_info: encoded,
+			segment: 0,
+			origin: seed.clone(),
+		};
+		let mut rng = StdRng::from_seed([9u8; 32]);
+		let _built = input.build(&mut rng, ctx.clone());
+
+		let after =
+			ctx.with_wallet_from_seed(seed, |wallet| wallet.shielded.state.coins.iter().count());
+		assert_eq!(after, 0, "user-owned input spend should consume the wallet coin");
 	}
 }
