@@ -236,8 +236,6 @@ pub async fn fetch_from_rpc(
 	let (fetch_job_tx, fetch_job_rx) = async_channel::bounded(num_workers * 2);
 	let (fetch_to_compute_tx, fetch_to_compute_rx) =
 		async_channel::bounded(num_compute_workers * 2);
-	// We use a separate unbounded channel here because compute workers produce recursive tasks
-	let (compute_to_compute_tx, compute_to_compute_rx) = async_channel::unbounded();
 	let (final_jobs_tx, final_jobs_rx) = async_channel::bounded(num_compute_workers * 2);
 
 	// Push jobs into queue, then keep chasing the finalized tip until caught up
@@ -381,7 +379,6 @@ pub async fn fetch_from_rpc(
 		let counters = counters.clone();
 		let jobs_verified = jobs_verified.clone();
 		let extract_backlog = fetch_to_compute_rx.clone();
-		let verify_backlog = compute_to_compute_rx.clone();
 		let totals = totals.clone();
 		join_set.spawn(async move {
 			let started = std::time::Instant::now();
@@ -406,10 +403,9 @@ pub async fn fetch_from_rpc(
 				};
 				let percent = if span == 0 { 100.0 } else { processed as f64 / span as f64 * 100.0 };
 				log::info!(
-					"fetch progress: {processed}/{span} blocks ({percent:.1}%), {rate:.0} blocks/s, ETA {eta}, verified {}/{jobs} jobs, backlog: {} extract / {} verify jobs",
+					"fetch progress: {processed}/{span} blocks ({percent:.1}%), {rate:.0} blocks/s, ETA {eta}, verified {}/{jobs} jobs, backlog: {} extract jobs",
 					jobs_verified.load(Ordering::Relaxed),
 					extract_backlog.len(),
-					verify_backlog.len(),
 				);
 			}
 		})
@@ -420,43 +416,28 @@ pub async fn fetch_from_rpc(
 	// Spawn compute workers
 	for _ in 0..num_compute_workers {
 		let fetch_to_compute_rx = fetch_to_compute_rx.clone();
-		let compute_to_compute_rx = compute_to_compute_rx.clone();
-		let compute_to_compute_tx = compute_to_compute_tx.clone();
 		let final_jobs_tx = final_jobs_tx.clone();
 		let fetch_storage = fetch_storage.clone();
 		join_set.spawn(async move {
 			loop {
-				// No `biased`: preferring fresh fetch results starves the
-				// recursive Verify tasks whenever fetch outpaces compute.
-				let job = tokio::select! {
-					job = fetch_to_compute_rx.recv() => {
-						match job {
-							Ok(job) => job,
-							Err(_) => return Ok(TaskResult::ComputeWorker),
-						}
-					},
-					job = compute_to_compute_rx.recv() => {
-						match job {
-							Ok(job) => job,
-							Err(_) => return Ok(TaskResult::ComputeWorker),
-						}
-					},
+				let Ok(mut job) = fetch_to_compute_rx.recv().await else {
+					return Ok(TaskResult::ComputeWorker);
 				};
 
 				log::debug!("received new work job...");
 
-				let work_job = job.work(chain_id, fetch_storage.clone()).await?;
+				// The compute chain is linear per job (ExtractBlockData ->
+				// Verify -> FinalVerify over the same range), so drive it here
+				// instead of round-tripping through a queue.
+				while !matches!(job, ComputeTask::FinalVerify { .. } | ComputeTask::NoOp) {
+					job = job.work(chain_id, fetch_storage.clone()).await?;
+				}
 
-				match &work_job {
-					ComputeTask::FinalVerify { .. } => {
-						final_jobs_tx.send(work_job).await.expect("failed to push final job");
-					},
-					ComputeTask::NoOp => continue,
-					_ => compute_to_compute_tx
-						.send(work_job)
-						.await
-						.expect("failed to push job on work queue"),
-				};
+				// FinalVerify reads block `max`, owned by the next job, so it
+				// runs only once every insert has landed.
+				if matches!(job, ComputeTask::FinalVerify { .. }) {
+					final_jobs_tx.send(job).await.expect("failed to push final job");
+				}
 			}
 		});
 	}
@@ -523,7 +504,6 @@ pub async fn fetch_from_rpc(
 	// Close channels to exit workers
 	fetch_job_rx.close();
 	fetch_to_compute_rx.close();
-	compute_to_compute_rx.close();
 	final_jobs_rx.close();
 
 	// Wait for all workers to fully exit so their Arc<Database> handles are dropped.
