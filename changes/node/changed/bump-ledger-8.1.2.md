@@ -2,4 +2,4 @@
 
 Release notes: https://github.com/midnightntwrk/midnight-ledger/releases/tag/ledger-8.1.2
 
-PR: <todo>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2096
