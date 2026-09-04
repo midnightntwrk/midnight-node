@@ -18,15 +18,16 @@
 
 #![cfg(feature = "std")]
 
-use super::{
+use crate::ledger_9::{
+	LOG_TARGET,
 	base_crypto_local::{
 		cost_model::{FixedPoint, NormalizedCost, SyntheticCost},
 		time::Timestamp,
 	},
-	common::{LOG_TARGET, types::LedgerApiError},
 	helpers_local::compute_overall_fullness,
 	ledger_storage_local::db::DB,
 	mn_ledger_local::{error::BlockLimitExceeded, structure::LedgerState},
+	types::LedgerApiError,
 };
 
 pub fn prevalidate_post_block_update<D: DB>(

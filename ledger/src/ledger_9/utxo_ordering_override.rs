@@ -20,9 +20,9 @@
 
 use std::{collections::HashMap, sync::OnceLock};
 
-use crate::common::types::{Hash, UtxoInfo};
+use crate::boundary::types::{Hash, UtxoInfo};
 
-use super::LOG_TARGET;
+use crate::ledger_9::LOG_TARGET;
 
 static NETWORK_ID: OnceLock<String> = OnceLock::new();
 static OVERRIDES: OnceLock<HashMap<Hash, UtxoOrdering>> = OnceLock::new();
