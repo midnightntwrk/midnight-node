@@ -112,6 +112,17 @@ fn format_eta(secs: u64) -> String {
 	}
 }
 
+/// Blocks per fetch job. A span too small to give every worker a full
+/// `BLOCKS_PER_JOB` batch is split evenly instead, floored so that a tiny span
+/// doesn't degenerate into one job per block.
+fn blocks_per_job(fetch_span: u64, num_workers: usize) -> u64 {
+	if fetch_span < BLOCKS_PER_JOB * num_workers as u64 {
+		fetch_span.div_ceil(num_workers as u64).max(5)
+	} else {
+		BLOCKS_PER_JOB
+	}
+}
+
 /// Split `from..to` into `blocks_per_job`-sized fetch jobs.
 fn plan_jobs(from: u64, to: u64, blocks_per_job: u64) -> Vec<FetchTask> {
 	(from..to)
@@ -459,11 +470,7 @@ pub async fn fetch_from_rpc(
 	// node lags behind the node the cache was built from); saturate to zero so we
 	// serve from cache instead of underflowing.
 	let fetch_span = max_height.saturating_sub(min_height);
-	let blocks_per_job = if fetch_span < BLOCKS_PER_JOB * num_workers as u64 {
-		fetch_span.div_ceil(num_workers as u64).max(5)
-	} else {
-		BLOCKS_PER_JOB
-	};
+	let blocks_per_job = blocks_per_job(fetch_span, num_workers);
 
 	// Cap workers to the number of jobs to avoid unnecessary connections.
 	let num_jobs = fetch_span.div_ceil(blocks_per_job);
@@ -636,7 +643,140 @@ async fn connect_with_retry(url: &str, worker_id: usize) -> Result<MidnightNodeC
 
 #[cfg(test)]
 mod tests {
-	use super::format_eta;
+	use super::*;
+
+	fn ranges(jobs: &[FetchTask]) -> Vec<(u64, u64)> {
+		jobs.iter()
+			.map(|job| match job {
+				FetchTask::FetchBlocks { min, max } => (*min, *max),
+				FetchTask::NoOp => panic!("the planner never emits NoOp"),
+			})
+			.collect()
+	}
+
+	/// Answers each tip re-check from a canned list, then reports failure -
+	/// which is what ends the stream.
+	fn canned_recheck(heights: Vec<u64>) -> impl FnMut() -> std::future::Ready<Option<u64>> {
+		let mut heights = heights.into_iter();
+		move || std::future::ready(heights.next())
+	}
+
+	/// `job_stream` only re-checks once the planned round is verified, so tests
+	/// have to mark the jobs it already handed out as done.
+	fn verify_all(totals: &SyncTotals) {
+		totals.verified.store(totals.jobs.load(Ordering::Relaxed), Ordering::Relaxed);
+	}
+
+	#[test]
+	fn blocks_per_job_splits_a_short_span_across_workers() {
+		// Long enough to give every worker a full batch: fixed size.
+		assert_eq!(blocks_per_job(BLOCKS_PER_JOB * 8, 8), BLOCKS_PER_JOB);
+		assert_eq!(blocks_per_job(100_000, 8), BLOCKS_PER_JOB);
+
+		// One block short of that: split evenly instead. This is the branch the
+		// e2e tests never reach.
+		assert_eq!(blocks_per_job(BLOCKS_PER_JOB * 8 - 1, 8), 100);
+		assert_eq!(blocks_per_job(400, 8), 50);
+		assert_eq!(blocks_per_job(37, 8), 5);
+
+		// ... but never finer than the floor, however small the span.
+		assert_eq!(blocks_per_job(7, 8), 5);
+		assert_eq!(blocks_per_job(1, 8), 5);
+		assert_eq!(blocks_per_job(0, 8), 5);
+	}
+
+	#[test]
+	fn plan_jobs_covers_the_span_exactly_once() {
+		assert_eq!(ranges(&plan_jobs(0, 250, 100)), [(0, 100), (100, 200), (200, 250)]);
+		// Exact multiple: no empty trailing job.
+		assert_eq!(ranges(&plan_jobs(0, 200, 100)), [(0, 100), (100, 200)]);
+		// Resuming from a cache watermark.
+		assert_eq!(ranges(&plan_jobs(150, 260, 100)), [(150, 250), (250, 260)]);
+		// The small-span branch's job size.
+		assert_eq!(ranges(&plan_jobs(0, 7, 5)), [(0, 5), (5, 7)]);
+		// Nothing to fetch.
+		assert!(plan_jobs(10, 10, 5).is_empty());
+		assert!(plan_jobs(10, 5, 5).is_empty());
+	}
+
+	#[tokio::test]
+	async fn job_stream_extends_while_the_tip_moves() {
+		let totals = Arc::new(SyncTotals {
+			span: AtomicU64::new(100),
+			jobs: AtomicU64::new(2),
+			..Default::default()
+		});
+		let t = totals.clone();
+		// 139 twice: the tip advances once, then stops moving.
+		let jobs = job_stream(0, 100, 50, totals.clone(), canned_recheck(vec![139, 139]))
+			.inspect(move |_| verify_all(&t))
+			.collect::<Vec<_>>()
+			.await;
+
+		assert_eq!(ranges(&jobs), [(0, 50), (50, 100), (100, 140)]);
+		// Totals grew once, by the extension only.
+		assert_eq!(totals.span.load(Ordering::Relaxed), 140);
+		assert_eq!(totals.jobs.load(Ordering::Relaxed), 3);
+		assert_eq!(totals.target_height.load(Ordering::Relaxed), 139);
+		assert!(!totals.truncated.load(Ordering::Relaxed));
+	}
+
+	#[tokio::test]
+	async fn job_stream_flags_truncation_when_the_tip_recheck_fails() {
+		let totals = Arc::new(SyncTotals {
+			span: AtomicU64::new(100),
+			jobs: AtomicU64::new(2),
+			..Default::default()
+		});
+		let t = totals.clone();
+		// No canned heights: the first re-check "fails". The planned window is
+		// still handed out in full, and the sync ends flagged rather than failed.
+		let jobs = job_stream(0, 100, 50, totals.clone(), canned_recheck(vec![]))
+			.inspect(move |_| verify_all(&t))
+			.collect::<Vec<_>>()
+			.await;
+
+		assert_eq!(ranges(&jobs), [(0, 50), (50, 100)]);
+		assert_eq!(totals.span.load(Ordering::Relaxed), 100);
+		assert!(totals.truncated.load(Ordering::Relaxed));
+	}
+
+	#[tokio::test]
+	async fn job_stream_gives_up_after_max_tip_chase_rounds() {
+		let totals = Arc::new(SyncTotals::default());
+		let t = totals.clone();
+		// A tip that always stays a window ahead, so only the round cap stops it.
+		let rechecks = Arc::new(AtomicU64::new(0));
+		let counter = rechecks.clone();
+		let mut next = 100u64;
+		job_stream(0, 0, 100, totals.clone(), move || {
+			counter.fetch_add(1, Ordering::Relaxed);
+			next += 100;
+			std::future::ready(Some(next))
+		})
+		.inspect(move |_| verify_all(&t))
+		.collect::<Vec<_>>()
+		.await;
+
+		// The cap is on rounds, not jobs: round MAX+1 breaks before re-checking.
+		assert_eq!(rechecks.load(Ordering::Relaxed), MAX_TIP_CHASE_ROUNDS as u64);
+		assert!(totals.truncated.load(Ordering::Relaxed));
+	}
+
+	#[tokio::test]
+	async fn job_stream_with_nothing_to_fetch_still_chases() {
+		// A cache watermark at or past the tip plans no jobs, but must still
+		// re-check once and then terminate rather than spinning.
+		let totals = Arc::new(SyncTotals::default());
+		let t = totals.clone();
+		let jobs = job_stream(500, 400, 100, totals.clone(), canned_recheck(vec![549]))
+			.inspect(move |_| verify_all(&t))
+			.collect::<Vec<_>>()
+			.await;
+
+		assert_eq!(ranges(&jobs), [(500, 550)]);
+		assert_eq!(totals.span.load(Ordering::Relaxed), 50);
+	}
 
 	#[test]
 	fn format_eta_branches() {
