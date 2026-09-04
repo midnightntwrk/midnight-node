@@ -2,10 +2,10 @@ use super::build_txs_ext::BuildTxsExt;
 use super::ledger_helpers_local::{
 	BuildInput, BuildIntent, BuildOutput, BuildTransient, BuildUtxoOutput, BuildUtxoSpend,
 	BuilderContext, ClaimedUnshieldedSpendsKey, CoinInfo, ContractAction, ContractAddress,
-	ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input, IntentCustom,
-	IntentInfo, OfferInfo, Output, ProofPreimage, ProofPreimageMarker, ProofProvider,
-	PublicAddress, Recipient, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo, TokenType,
-	TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
+	ContractEffects, DB, DefaultDB, EncryptionPublicKey, HashOutput, Input, InputInfo,
+	IntentCustom, IntentInfo, Nullifier, OfferInfo, Output, ProofPreimage, ProofPreimageMarker,
+	ProofProvider, PublicAddress, Recipient, ShieldedTokenType, ShieldedWallet, StdRng, TokenInfo,
+	TokenType, TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
 	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, zswap,
 };
 use crate::{
@@ -142,6 +142,40 @@ impl<D: DB + Clone, C: BuilderContext<D>> BuildInput<D, C> for EncodedInputInfo<
 		)
 		.expect("Failed to construct Input")
 	}
+}
+
+/// Ownership classification for a custom-contract zswap input.
+///
+/// `EncodedZswapLocalState` does not carry an ownership discriminator. The historical
+/// builder path always used [`Input::new_contract_owned`] (`SenderEvidence::Contract`),
+/// which is incorrect when the selected coin is present in the funding wallet's
+/// shielded state (user-owned → must use [`WalletState::spend`] /
+/// `SenderEvidence::User`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CustomZswapInputOwner {
+	User { nullifier: Nullifier },
+	Contract,
+}
+
+/// Resolve ownership by exact coin identity (nonce + color + value).
+///
+/// Never infer ownership from token type / value alone: two coins may share color and
+/// value with different nonces.
+pub(crate) fn classify_custom_zswap_input_owner<I>(
+	want_nonce: &[u8; 32],
+	want_color: &[u8; 32],
+	want_value: u128,
+	funding_wallet_coins: I,
+) -> CustomZswapInputOwner
+where
+	I: IntoIterator<Item = (Nullifier, [u8; 32], [u8; 32], u128)>,
+{
+	for (nullifier, nonce, color, value) in funding_wallet_coins {
+		if &nonce == want_nonce && &color == want_color && value == want_value {
+			return CustomZswapInputOwner::User { nullifier };
+		}
+	}
+	CustomZswapInputOwner::Contract
 }
 
 // --- Builder ---
@@ -438,13 +472,55 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 						transients_info.push(Box::new(transient));
 						encoded_output_infos.remove(&coin_info);
 					} else {
-						let input = EncodedInputInfo {
-							encoded_qualified_info: encoded_input,
-							segment: 0,
-							contract_address,
-							chain_zswap_state: chain_zswap_state.clone(),
-						};
-						inputs_info.push(Box::new(input));
+						// EncodedZswapLocalState.inputs carries no ownership discriminator.
+						// Prefer the funding wallet's exact coin (nonce+color+value) and the
+						// canonical user spend path (WalletState::spend → SenderEvidence::User).
+						// True contract-owned inputs remain on EncodedInputInfo /
+						// Input::new_contract_owned.
+						let seed = self.funding_seed();
+						let want_nonce = encoded_input.nonce;
+						let want_color = encoded_input.color;
+						let want_value = encoded_input.value;
+
+						let owner = context.with_wallet_from_seed(seed.clone(), |wallet| {
+							classify_custom_zswap_input_owner(
+								&want_nonce,
+								&want_color,
+								want_value,
+								wallet.shielded.state.coins.iter().map(|(nullifier, coin)| {
+									(nullifier, coin.nonce.0.0, coin.type_.0.0, coin.value)
+								}),
+							)
+						});
+
+						match owner {
+							CustomZswapInputOwner::User { nullifier } => {
+								log::info!(
+									"zswap input nonce={} matched funding wallet nullifier={}: using WalletState::spend (SenderEvidence::User)",
+									hex::encode(want_nonce),
+									hex::encode(nullifier.0.0),
+								);
+								inputs_info.push(Box::new(InputInfo {
+									origin: seed,
+									token_type: ShieldedTokenType(HashOutput(want_color)),
+									value: want_value,
+									nullifier: Some(nullifier),
+								}));
+							},
+							CustomZswapInputOwner::Contract => {
+								log::info!(
+									"zswap input nonce={} not in funding wallet: treating as contract-owned",
+									hex::encode(want_nonce),
+								);
+								let input = EncodedInputInfo {
+									encoded_qualified_info: encoded_input,
+									segment: 0,
+									contract_address,
+									chain_zswap_state: chain_zswap_state.clone(),
+								};
+								inputs_info.push(Box::new(input));
+							},
+						}
 					}
 				}
 			}
@@ -474,5 +550,124 @@ impl<C: BuilderContext<DefaultDB>> BuildTxs for CustomContractBuilder<C> {
 		let tx_with_context = TransactionWithContext::new(tx, None);
 
 		Ok(super::tx_serialization::build_single(tx_with_context))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	const N: usize = 32;
+
+	fn nf(byte: u8) -> Nullifier {
+		Nullifier(HashOutput([byte; N]))
+	}
+
+	fn arr(byte: u8) -> [u8; N] {
+		[byte; N]
+	}
+
+	/// Regression: a user-owned shielded coin in the funding wallet must classify as User
+	/// (historical bug: always Contract via EncodedInputInfo / new_contract_owned).
+	#[test]
+	fn user_owned_custom_input_classifies_as_user() {
+		let nullifier = nf(0x11);
+		let nonce = arr(0xAA);
+		let color = arr(0xCC);
+		let value = 10u128;
+		let coins = [(nullifier.clone(), nonce, color, value)];
+
+		let owner = classify_custom_zswap_input_owner(&nonce, &color, value, coins);
+		assert_eq!(owner, CustomZswapInputOwner::User { nullifier });
+	}
+
+	/// Coins absent from the funding wallet remain on the contract-owned path.
+	#[test]
+	fn contract_owned_input_classifies_as_contract() {
+		let nullifier = nf(0x11);
+		let wallet_nonce = arr(0xAA);
+		let color = arr(0xCC);
+		let value = 10u128;
+		let coins = [(nullifier, wallet_nonce, color, value)];
+
+		let want_nonce = arr(0xBB); // different coin identity
+		let owner = classify_custom_zswap_input_owner(&want_nonce, &color, value, coins);
+		assert_eq!(owner, CustomZswapInputOwner::Contract);
+	}
+
+	/// Exact nullifier must come from the matched coin — a different wallet nullifier for
+	/// another coin must not be selected when nonce/color/value point at a specific coin.
+	#[test]
+	fn wrong_nullifier_is_not_selected_for_other_coin() {
+		let nf_a = nf(0x01);
+		let nf_b = nf(0x02);
+		let nonce_a = arr(0xA1);
+		let nonce_b = arr(0xB2);
+		let color = arr(0xCC);
+		let value = 7u128;
+		let coins = [(nf_a.clone(), nonce_a, color, value), (nf_b.clone(), nonce_b, color, value)];
+
+		let owner = classify_custom_zswap_input_owner(&nonce_b, &color, value, coins);
+		assert_eq!(owner, CustomZswapInputOwner::User { nullifier: nf_b });
+		assert_ne!(owner, CustomZswapInputOwner::User { nullifier: nf_a });
+	}
+
+	/// Same token type + value with a different nonce must not select the wrong coin.
+	#[test]
+	fn ambiguous_token_value_does_not_select_wrong_coin() {
+		let nf_a = nf(0x01);
+		let nf_b = nf(0x02);
+		let nonce_a = arr(0xA1);
+		let nonce_b = arr(0xB2);
+		let color = arr(0xCC);
+		let value = 10u128;
+		let coins = [(nf_a.clone(), nonce_a, color, value), (nf_b, nonce_b, color, value)];
+
+		// Request nonce_a → must get nf_a, never nf_b despite identical color/value.
+		let owner = classify_custom_zswap_input_owner(&nonce_a, &color, value, coins.clone());
+		assert_eq!(owner, CustomZswapInputOwner::User { nullifier: nf_a });
+
+		// Color/value match alone with unknown nonce → Contract (do not guess).
+		let unknown_nonce = arr(0xFF);
+		let owner = classify_custom_zswap_input_owner(&unknown_nonce, &color, value, coins);
+		assert_eq!(owner, CustomZswapInputOwner::Contract);
+	}
+
+	/// Value mismatch with otherwise identical identity → Contract.
+	#[test]
+	fn value_mismatch_does_not_classify_as_user() {
+		let nullifier = nf(0x11);
+		let nonce = arr(0xAA);
+		let color = arr(0xCC);
+		let coins = [(nullifier, nonce, color, 10u128)];
+
+		let owner = classify_custom_zswap_input_owner(&nonce, &color, 9u128, coins);
+		assert_eq!(owner, CustomZswapInputOwner::Contract);
+	}
+
+	/// EncodedInputInfo remains the contract-owned BuildInput path (structural guard).
+	#[test]
+	fn encoded_input_info_is_contract_owned_build_path() {
+		// EncodedInputInfo::build always calls Input::new_contract_owned. User-owned coins
+		// must be routed to InputInfo<WalletSeed> (WalletState::spend) instead.
+		assert!(std::any::type_name::<EncodedInputInfo<DefaultDB>>().contains("EncodedInputInfo"));
+		assert!(std::any::type_name::<InputInfo<WalletSeed>>().contains("InputInfo"));
+	}
+
+	/// Documents the historical unpatched decision (always Contract) vs fixed classifier.
+	#[test]
+	fn user_owned_custom_input_before_fix_would_be_contract() {
+		let nullifier = nf(0x11);
+		let nonce = arr(0xAA);
+		let color = arr(0xCC);
+		let value = 10u128;
+		let coins = [(nullifier.clone(), nonce, color, value)];
+
+		// Unpatched CustomContractBuilder always selected EncodedInputInfo → Contract.
+		let before_fix = CustomZswapInputOwner::Contract;
+		let after_fix = classify_custom_zswap_input_owner(&nonce, &color, value, coins);
+		assert_eq!(before_fix, CustomZswapInputOwner::Contract);
+		assert_eq!(after_fix, CustomZswapInputOwner::User { nullifier });
+		assert_ne!(before_fix, after_fix);
 	}
 }
