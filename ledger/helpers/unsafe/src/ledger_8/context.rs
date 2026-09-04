@@ -173,10 +173,26 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let mut all_events: Vec<Event<D>> = Vec::new();
 		let strictness = Self::strictness_for(block_context, root_verified);
 		for tx in txs {
-			let (events, cost) =
-				self.update_from_tx_with_strictness(tx, block_context, strictness)?;
-			all_events.extend(events);
-			total_cost = total_cost + cost;
+			match self.update_from_tx_with_strictness(tx, block_context, strictness) {
+				Ok((events, cost)) => {
+					all_events.extend(events);
+					total_cost = total_cost + cost;
+				},
+				// A `well_formed` rejection (e.g. `OutOfDustValidityWindow` from a dust action
+				// whose `ctime` lands a couple of seconds past the including block's `tblock`)
+				// is not evidence of an invalid block: on-chain, `pallet_midnight::send_mn_transaction`
+				// hits this same check via `LedgerApi::apply_transaction` and simply fails that
+				// one extrinsic's dispatch (storage rolled back, `ExtrinsicFailed` emitted)
+				// without affecting block validity. Already-committed, external chain history is
+				// replayed here, so mirror that instead of aborting the whole replay.
+				Err(LedgerContextError::InvalidTransaction(reason)) => {
+					let hash = hex::encode(tx.transaction_hash().0.0);
+					log::warn!(
+						"Tolerating well_formed rejection {reason} of tx 0x{hash} while replaying block"
+					);
+				},
+				Err(e) => return Err(e),
+			}
 		}
 
 		let mut latest_ledger_state = self
@@ -383,6 +399,11 @@ impl<D: DB + Clone> LedgerContext<D> {
 		)
 	}
 
+	/// A `well_formed` rejection surfaces as `Err(LedgerContextError::InvalidTransaction(_))`,
+	/// distinct from every other (fatal) error variant, so callers can decide for themselves
+	/// whether to tolerate it: `apply_txs_collect_events` (block replay) does, `update_from_tx`
+	/// (this function's only other caller, used to validate a transaction the caller is about
+	/// to build more transactions on top of or submit itself) does not.
 	fn update_from_tx_with_strictness<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
