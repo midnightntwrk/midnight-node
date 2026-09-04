@@ -69,7 +69,36 @@ pub struct TokenBridgeDataSourceImpl {
 impl TokenBridgeDataSourceImpl {
 	/// Crates a new token bridge data source
 	pub fn new(pool: PgPool, metrics_opt: Option<McFollowerMetrics>) -> Self {
-		Self { db_sync_config: DbSyncConfigurationProvider::new(pool.clone()), pool, metrics_opt }
+		Self::new_with_db_sync_config(pool, metrics_opt, DbSyncQueryConfig::default())
+	}
+
+	/// Creates a token bridge data source for the selected db-sync query layout.
+	pub fn new_with_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<McFollowerMetrics>,
+		query_config: DbSyncQueryConfig,
+	) -> Self {
+		Self {
+			db_sync_config: DbSyncConfigurationProvider::new_with_config(
+				pool.clone(),
+				query_config,
+			),
+			pool,
+			metrics_opt,
+		}
+	}
+
+	/// Creates a token bridge data source with an already validated db-sync layout.
+	pub fn new_with_resolved_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<McFollowerMetrics>,
+		config: ResolvedDbSyncQueryConfig,
+	) -> Self {
+		Self {
+			db_sync_config: DbSyncConfigurationProvider::from_resolved(pool.clone(), config),
+			pool,
+			metrics_opt,
+		}
 	}
 }
 
@@ -116,7 +145,7 @@ observed_async_trait!(
 			};
 
 			let txs = get_bridge_txs(
-				self.db_sync_config.get_tx_in_config().await?,
+				self.db_sync_config.get_config().await?,
 				&self.pool,
 				&main_chain_scripts.illiquid_circulation_supply_validator_address.into(),
 				&main_chain_scripts.reserve_validator_address.into(),

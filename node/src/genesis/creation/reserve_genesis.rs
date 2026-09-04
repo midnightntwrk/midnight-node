@@ -17,6 +17,9 @@
 //! for cNIGHT tokens locked at the reserve contract address.
 
 // Re-export ReserveAddresses for use in command.rs
+use db_sync_sqlx::{
+	ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig, ResolvedDbSyncTxInputMode,
+};
 pub use midnight_primitives_reserve_observation::ReserveAddresses;
 use midnight_primitives_reserve_observation::{ReserveConfig, ReserveUtxo};
 use sidechain_domain::McBlockHash;
@@ -50,6 +53,7 @@ async fn query_reserve_utxos(
 	policy_id: &str,
 	asset_name: &str,
 	at_block: &McBlockHash,
+	db_sync_config: ResolvedDbSyncQueryConfig,
 ) -> Result<Vec<ReserveUtxo>, ReserveGenesisError> {
 	let block_hash_hex = hex::encode(at_block.0);
 
@@ -75,26 +79,18 @@ async fn query_reserve_utxos(
 	// 2. Joining with ma_tx_out/multi_asset to filter only outputs containing
 	//    the specific cNIGHT token (identified by policy_id and asset_name)
 	// 3. Filtering to outputs created at or before the reference block
-	// 4. Excluding spent outputs using NOT EXISTS - a UTxO is spent if there's
-	//    a tx_in referencing it (by tx_id and output index) in a block at or
-	//    before the reference block
+	// 4. Excluding outputs spent at or before the reference block, using either
+	//    tx_in or tx_out.consumed_by_tx_id according to the configured layout
 	// 5. Ordering deterministically by block number, tx index, and output index
-	let utxos: Vec<(String, i16, i64)> = sqlx::query_as::<_, (String, i16, i64)>(
-		r#"
-		SELECT
-			encode(tx.hash, 'hex') as tx_hash,
-			txo.index as output_index,
-			ma.quantity::BIGINT as amount
-		FROM tx_out txo
-		JOIN tx ON tx.id = txo.tx_id
-		JOIN block b ON b.id = tx.block_id
-		JOIN block ref_block ON ref_block.hash = decode($1, 'hex')
-		JOIN ma_tx_out ma ON ma.tx_out_id = txo.id
-		JOIN multi_asset asset ON asset.id = ma.ident
-		WHERE txo.address = $2
-		  AND encode(asset.policy, 'hex') = $3
-		  AND encode(asset.name, 'hex') = $4
-		  AND b.block_no <= ref_block.block_no
+	let (address_join, address_column) = match db_sync_config.address_mode {
+		ResolvedDbSyncAddressMode::Inline => ("", "txo.address"),
+		ResolvedDbSyncAddressMode::AddressTable => {
+			("JOIN address txo_address ON txo_address.id = txo.address_id", "txo_address.address")
+		},
+	};
+	let spent_filter = match db_sync_config.tx_input_mode {
+		ResolvedDbSyncTxInputMode::TxIn => {
+			r#"
 		  AND NOT EXISTS (
 			SELECT 1 FROM tx_in ti
 			JOIN tx spend_tx ON spend_tx.id = ti.tx_in_id
@@ -102,16 +98,46 @@ async fn query_reserve_utxos(
 			WHERE ti.tx_out_id = txo.tx_id
 			  AND ti.tx_out_index = txo.index
 			  AND spend_block.block_no <= ref_block.block_no
-		  )
+		  )"#
+		},
+		ResolvedDbSyncTxInputMode::Consumed => {
+			r#"
+		  AND NOT EXISTS (
+			SELECT 1 FROM tx spend_tx
+			JOIN block spend_block ON spend_block.id = spend_tx.block_id
+			WHERE spend_tx.id = txo.consumed_by_tx_id
+			  AND spend_block.block_no <= ref_block.block_no
+		  )"#
+		},
+	};
+	let sql = format!(
+		r#"
+		SELECT
+			encode(tx.hash, 'hex') as tx_hash,
+			txo.index as output_index,
+			ma.quantity::BIGINT as amount
+		FROM tx_out txo
+		{address_join}
+		JOIN tx ON tx.id = txo.tx_id
+		JOIN block b ON b.id = tx.block_id
+		JOIN block ref_block ON ref_block.hash = decode($1, 'hex')
+		JOIN ma_tx_out ma ON ma.tx_out_id = txo.id
+		JOIN multi_asset asset ON asset.id = ma.ident
+		WHERE {address_column} = $2
+		  AND asset.policy = decode($3, 'hex')
+		  AND asset.name = decode($4, 'hex')
+		  AND b.block_no <= ref_block.block_no
+		  {spent_filter}
 		ORDER BY b.block_no, tx.block_index, txo.index
-		"#,
-	)
-	.bind(&block_hash_hex)
-	.bind(reserve_address)
-	.bind(policy_id)
-	.bind(asset_name)
-	.fetch_all(pool)
-	.await?;
+		"#
+	);
+	let utxos: Vec<(String, i16, i64)> = sqlx::query_as::<_, (String, i16, i64)>(&sql)
+		.bind(&block_hash_hex)
+		.bind(reserve_address)
+		.bind(policy_id)
+		.bind(asset_name)
+		.fetch_all(pool)
+		.await?;
 
 	Ok(utxos
 		.into_iter()
@@ -128,6 +154,7 @@ pub async fn generate_reserve_genesis(
 	addresses: ReserveAddresses,
 	pool: &PgPool,
 	cardano_tip: McBlockHash,
+	db_sync_config: ResolvedDbSyncQueryConfig,
 	output_path: impl AsRef<Path>,
 ) -> Result<(), ReserveGenesisError> {
 	let output_path = output_path.as_ref();
@@ -150,6 +177,7 @@ pub async fn generate_reserve_genesis(
 		&policy_id_hex,
 		&asset_name_hex,
 		&cardano_tip,
+		db_sync_config,
 	)
 	.await?;
 
