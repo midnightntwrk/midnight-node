@@ -42,6 +42,40 @@ pub struct SendBatchError {
 	pub failed_count: usize,
 }
 
+/// Minimum number of finalized blocks to scan backwards when neither the
+/// watch stream nor the known-block finality check confirmed the tx. The
+/// effective depth scales with the configured finalization timeout (see
+/// [`Sender::finalized_fallback_scan_depth`]): a longer wait lets the
+/// finalized head advance further past the block that carried the tx, so a
+/// fixed window would miss it.
+const FINALIZED_FALLBACK_MIN_SCAN_DEPTH: u32 = 64;
+
+/// Expected block production interval, used to convert the finalization
+/// timeout into a scan depth.
+const EXPECTED_BLOCK_SECONDS: u64 = 6;
+
+/// Extra blocks scanned beyond the timeout-derived depth, covering finality
+/// lag and the retraction/re-inclusion window.
+const FINALIZED_FALLBACK_SCAN_MARGIN: u32 = 16;
+
+/// The finalized-chain fallback scan could not run to completion, so the
+/// tx's finality is unknown rather than refuted.
+#[derive(Debug, Error)]
+pub enum FinalityScanError {
+	#[error("failed to fetch the finalized head: {0}")]
+	FinalizedHead(subxt::rpcs::Error),
+	#[error("failed to fetch finalized block {hash}: {source}")]
+	FetchBlock {
+		hash: String,
+		#[source]
+		source: subxt::rpcs::Error,
+	},
+	#[error("finalized block {hash} not returned by the node")]
+	MissingBlock { hash: String },
+	#[error("extrinsic hash {hash} is not valid hex")]
+	InvalidTargetHash { hash: String },
+}
+
 #[derive(Debug, Error)]
 pub enum SenderError {
 	#[error(
@@ -54,6 +88,17 @@ pub enum SenderError {
 	FailedToReachBestBlock { last_status: String },
 	#[error("tx reached best block but was not finalized within timeout: {reason}")]
 	FailedToFinalize { reason: String },
+	#[error(
+		"tx reached best block, finality was not confirmed ({watch_reason}), and the \
+		 finalized-chain check could not complete: {source}. Finality is UNKNOWN — \
+		 the tx may have landed; do not treat this exit as proof of failure for \
+		 at-most-once operations."
+	)]
+	FinalityUnverified {
+		watch_reason: String,
+		#[source]
+		source: FinalityScanError,
+	},
 	#[error("runtime reported tx invalid: {message}")]
 	InvalidTransaction { message: String },
 	#[error("tx was dropped from the pool: {message}")]
@@ -306,6 +351,84 @@ impl Sender {
 	/// Waits until the tx lands in a block. The `bool` in the success value is
 	/// true when the subscription skipped straight to `InFinalizedBlock`
 	/// (event coalescing under load) — the caller can skip the finality wait.
+	/// Read a duration override (in seconds) from the environment, falling back
+	/// to `default`. Lets slow or fault-injected environments stretch the send
+	/// watch phases without a CLI change (see #1853/#1854).
+	fn duration_from_env(var: &str, default: Duration) -> Duration {
+		std::env::var(var)
+			.ok()
+			.and_then(|v| v.parse::<u64>().ok())
+			.map(Duration::from_secs)
+			.unwrap_or(default)
+	}
+
+	/// Scan depth for the finalized-chain fallback, scaled to the configured
+	/// finalization timeout: while the watcher waited out the timeout on a dead
+	/// branch, the finalized head advanced ~timeout/block_time blocks past the
+	/// block that re-included the tx.
+	fn finalized_fallback_scan_depth(finalized_timeout: Duration) -> u32 {
+		let timeout_blocks =
+			u32::try_from(finalized_timeout.as_secs() / EXPECTED_BLOCK_SECONDS).unwrap_or(u32::MAX);
+		FINALIZED_FALLBACK_MIN_SCAN_DEPTH
+			.max(timeout_blocks.saturating_add(FINALIZED_FALLBACK_SCAN_MARGIN))
+	}
+
+	/// Check the finalized chain directly for an extrinsic, newest block first,
+	/// up to `max_depth` blocks below the finalized head.
+	///
+	/// The known-block finality check (#1943) cannot see a tx that a fork
+	/// retraction re-included in a *different* block: the watch stream stays
+	/// silent and `is_block_finalized` on the original block answers false while
+	/// the tx is finalized elsewhere (#1854). The chain itself is the source of
+	/// truth, so consult it before declaring a landed tx failed.
+	///
+	/// `Ok(Some(hash))` means the extrinsic is finalized in `hash`; `Ok(None)`
+	/// means the scan completed and the extrinsic is definitively absent from
+	/// the window; `Err` means the scan could not complete (RPC failure), so
+	/// finality is unknown — callers must not read it as absence.
+	pub async fn find_in_finalized_chain(
+		client: &MidnightNodeClient,
+		extrinsic_hash_hex: &str,
+		max_depth: u32,
+	) -> Result<Option<String>, FinalityScanError> {
+		let target = hex::decode(extrinsic_hash_hex.trim_start_matches("0x")).map_err(|_| {
+			FinalityScanError::InvalidTargetHash { hash: extrinsic_hash_hex.to_string() }
+		})?;
+
+		let mut hash = client
+			.rpc
+			.chain_get_finalized_head()
+			.await
+			.map_err(FinalityScanError::FinalizedHead)?;
+
+		for _ in 0..max_depth {
+			let block = match client.rpc.chain_get_block(Some(hash)).await {
+				Ok(Some(b)) => b,
+				Ok(None) => {
+					return Err(FinalityScanError::MissingBlock { hash: hash_to_str(hash) });
+				},
+				Err(e) => {
+					return Err(FinalityScanError::FetchBlock {
+						hash: hash_to_str(hash),
+						source: e,
+					});
+				},
+			};
+
+			for ext in &block.block.extrinsics {
+				if sp_crypto_hashing::blake2_256(&ext.0)[..] == target[..] {
+					return Ok(Some(hash_to_str(hash)));
+				}
+			}
+
+			if block.block.header.number == 0 {
+				return Ok(None);
+			}
+			hash = block.block.header.parent_hash;
+		}
+		Ok(None)
+	}
+
 	async fn wait_for_best_block(
 		mut progress: Progress,
 	) -> (
@@ -356,18 +479,20 @@ impl Sender {
 			})
 		};
 
-		match tokio::time::timeout(BEST_BLOCK_TIMEOUT, wait_future).await {
+		let best_block_timeout =
+			Self::duration_from_env("MN_SEND_BEST_BLOCK_TIMEOUT", BEST_BLOCK_TIMEOUT);
+		match tokio::time::timeout(best_block_timeout, wait_future).await {
 			Ok(result) => (progress, result),
 			Err(_) => {
 				log::warn!(
 					url = progress.url;
 					"Timeout waiting for best block after {} seconds",
-					BEST_BLOCK_TIMEOUT.as_secs()
+					best_block_timeout.as_secs()
 				);
 				let err = SenderError::FailedToReachBestBlock {
 					last_status: format!(
 						"{last_status} (no terminal status after {}s)",
-						BEST_BLOCK_TIMEOUT.as_secs()
+						best_block_timeout.as_secs()
 					),
 				};
 				(progress, Err(err))
@@ -383,8 +508,10 @@ impl Sender {
 		const FINALITY_POLL_INTERVAL: Duration = Duration::from_secs(2);
 		const MIN_FALLBACK_WINDOW: Duration = Duration::from_secs(10);
 
+		let finalized_timeout =
+			Self::duration_from_env("MN_SEND_FINALIZED_TIMEOUT", FINALIZED_TIMEOUT);
 		let url = progress.url.clone();
-		let deadline = tokio::time::Instant::now() + FINALIZED_TIMEOUT;
+		let deadline = tokio::time::Instant::now() + finalized_timeout;
 
 		let watch_future = async {
 			while let Some(prog) = progress.tx_progress.next().await {
@@ -398,6 +525,18 @@ impl Sender {
 					},
 					Ok(TransactionStatus::Error { message }) => {
 						format!("pool reported Error: {message}")
+					},
+					// A fork retraction: the block that carried the tx fell off
+					// the best chain. The tx normally returns to the pool for
+					// re-inclusion, so keep watching — and make the retraction
+					// visible, since it is the precursor of the lost-tx failure
+					// mode (#1854).
+					Ok(TransactionStatus::NoLongerInBestBlock) => {
+						log::warn!(
+							url = url;
+							"tx retracted from best block; watching for re-inclusion"
+						);
+						continue;
 					},
 					Ok(_) => continue,
 					Err(e) => format!("subscription error: {e}"),
@@ -416,7 +555,7 @@ impl Sender {
 		let watch_reason = match tokio::time::timeout_at(deadline, watch_future).await {
 			Ok(Ok(())) => return Ok(Finalized::Subscription),
 			Ok(Err(reason)) => reason,
-			Err(_) => format!("no finalization event after {}s", FINALIZED_TIMEOUT.as_secs()),
+			Err(_) => format!("no finalization event after {}s", finalized_timeout.as_secs()),
 		};
 
 		// The subscription is not authoritative for a tx that already reached a best
@@ -451,7 +590,7 @@ impl Sender {
 		log::warn!(
 			url = url;
 			"including block not finalized within {}s ({watch_reason})",
-			FINALIZED_TIMEOUT.as_secs()
+			finalized_timeout.as_secs()
 		);
 		Err(watch_reason)
 	}
@@ -519,17 +658,83 @@ impl Sender {
 				);
 				Ok(())
 			},
-			Err(reason) => {
-				log::info!(
-					url = &url,
-					extrinsic_hash = &tx_hashes.extrinsic_hash,
-					midnight_tx_hash = &tx_hashes.midnight_tx_hash,
-					block_hash = hash_to_str(best_block.block_hash()).as_str(),
-					reason = reason.as_str();
-					"FAILED_TO_FINALIZE"
-				);
-				Err(SenderError::FailedToFinalize { reason })
+			Err(watch_reason) => {
+				// Neither the subscription nor the known-block check confirmed
+				// finality — but a fork retraction can re-include the tx in a
+				// *different* block that both of them are blind to (#1854).
+				// Scan the finalized chain for the extrinsic itself before
+				// declaring a landed tx failed.
+				let finalized_timeout =
+					Self::duration_from_env("MN_SEND_FINALIZED_TIMEOUT", Duration::from_secs(60));
+				let scan = match self.clients.iter().find(|c| c.url == url) {
+					Some(handle) => {
+						Self::find_in_finalized_chain(
+							&handle.client,
+							&tx_hashes.extrinsic_hash,
+							Self::finalized_fallback_scan_depth(finalized_timeout),
+						)
+						.await
+					},
+					None => Ok(None),
+				};
+				match scan {
+					Ok(Some(found_hash)) => {
+						log::info!(
+							url = &url,
+							extrinsic_hash = &tx_hashes.extrinsic_hash,
+							midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+							block_hash = found_hash.as_str(),
+							reason = watch_reason.as_str();
+							"FINALIZED_AFTER_RETRACTION"
+						);
+						Ok(())
+					},
+					Ok(None) => {
+						log::info!(
+							url = &url,
+							extrinsic_hash = &tx_hashes.extrinsic_hash,
+							midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+							block_hash = hash_to_str(best_block.block_hash()).as_str(),
+							reason = watch_reason.as_str();
+							"FAILED_TO_FINALIZE"
+						);
+						Err(SenderError::FailedToFinalize { reason: watch_reason })
+					},
+					Err(source) => {
+						log::info!(
+							url = &url,
+							extrinsic_hash = &tx_hashes.extrinsic_hash,
+							midnight_tx_hash = &tx_hashes.midnight_tx_hash,
+							block_hash = hash_to_str(best_block.block_hash()).as_str(),
+							reason = source.to_string().as_str();
+							"FINALITY_UNVERIFIED"
+						);
+						Err(SenderError::FinalityUnverified { watch_reason, source })
+					},
+				}
 			},
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn fallback_scan_depth_keeps_minimum_for_default_timeout() {
+		// 60s / 6s = 10 blocks + 16 margin = 26, below the 64 floor.
+		assert_eq!(Sender::finalized_fallback_scan_depth(Duration::from_secs(60)), 64);
+	}
+
+	#[test]
+	fn fallback_scan_depth_scales_with_long_timeouts() {
+		// 600s / 6s = 100 blocks + 16 margin — a fixed 64 would miss the tx.
+		assert_eq!(Sender::finalized_fallback_scan_depth(Duration::from_secs(600)), 116);
+	}
+
+	#[test]
+	fn fallback_scan_depth_saturates_on_absurd_timeouts() {
+		assert_eq!(Sender::finalized_fallback_scan_depth(Duration::from_secs(u64::MAX)), u32::MAX);
 	}
 }
