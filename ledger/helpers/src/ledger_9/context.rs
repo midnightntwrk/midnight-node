@@ -50,6 +50,10 @@ pub enum LedgerContextError {
 		"state root mismatch: expected {expected}, actual {actual} (parent block hash: {parent_block_hash})"
 	)]
 	StateRootMismatch { expected: String, actual: String, parent_block_hash: String },
+	#[error(
+		"could not compute the local ledger state root to compare against on-chain root {expected} (parent block hash: {parent_block_hash})"
+	)]
+	StateRootUnavailable { expected: String, parent_block_hash: String },
 	#[error("deserialization failed: {0}")]
 	Deserialization(String),
 	#[error("dust update failed for tx {tx_hash}: {reason}")]
@@ -154,18 +158,23 @@ impl<D: DB + Clone> LedgerContext<D> {
 
 	/// Apply all transactions in a block to the ledger, returning events without
 	/// processing wallets. Also applies `post_block_update` (fee adjustments).
+	/// `root_verified` must only be true when the caller checks the resulting
+	/// state root against the chain.
 	fn apply_txs_collect_events<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		txs: &[SerdeTransaction<S, P, D>],
 		block_context: &BlockContext,
+		root_verified: bool,
 	) -> Result<Vec<Event<D>>, LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
 		let mut total_cost = SyntheticCost::ZERO;
 		let mut all_events: Vec<Event<D>> = Vec::new();
+		let strictness = Self::strictness_for(block_context, root_verified);
 		for tx in txs {
-			let (events, cost) = self.update_from_tx(tx, block_context)?;
+			let (events, cost) =
+				self.update_from_tx_with_strictness(tx, block_context, strictness)?;
 			all_events.extend(events);
 			total_cost = total_cost + cost;
 		}
@@ -253,7 +262,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
 	{
-		let events = self.apply_txs_collect_events(txs, block_context)?;
+		// With a `state` override (genesis) the root is computed over the override,
+		// not the tx effects, so the root check cannot stand in for verification.
+		let root_verified = state_root.is_some() && state.is_none();
+		let events = self.apply_txs_collect_events(txs, block_context, root_verified)?;
 
 		// Genesis block: overwrite ledger state with the canonical genesis state,
 		// since constructor params aren't directly observable from genesis txs.
@@ -306,10 +318,25 @@ impl<D: DB + Clone> LedgerContext<D> {
 					});
 				},
 				Some(_) => {},
-				None => println!("Failed to compute local ledger state root for comparison"),
+				// Fail closed: the relaxed replay relies on this comparison.
+				None => {
+					return Err(LedgerContextError::StateRootUnavailable {
+						expected: hex_encode(expected_root),
+						parent_block_hash: hex_encode(block_context.parent_block_hash.0),
+					});
+				},
 			}
 		}
 		Ok(())
+	}
+
+	/// Local ledger state root, in the encoding of the on-chain `Midnight.StateKey`.
+	pub fn state_root(&self) -> Result<Option<Vec<u8>>, LedgerContextError> {
+		let state = self
+			.ledger_state
+			.lock()
+			.map_err(|e| LedgerContextError::MutexPoisoned(format!("ledger_state: {e:?}")))?;
+		Ok(Self::compute_state_root(&state))
 	}
 
 	fn compute_state_root(state: &LedgerState<D>) -> Option<Vec<u8>> {
@@ -319,10 +346,48 @@ impl<D: DB + Clone> LedgerContext<D> {
 		crate::ledger_9::serialize(&sp.as_typed_key()).ok()
 	}
 
+	/// Genesis blocks skip balancing. `replay` selects the relaxed verification for
+	/// finalized history: the transaction is verified proof-erased, so ZK proofs,
+	/// signatures (including unshielded-input signatures, which the ledger skips
+	/// for erased transactions regardless of `verify_signatures`) and balancing
+	/// (fee estimation differs for unproven transactions) are not re-checked, and
+	/// the remaining structural checks run on the erased form. Correctness rests
+	/// on the fail-closed per-block state-root comparison; the toolkit trusts the
+	/// node it talks to and does not re-establish chain security.
+	fn strictness_for(block_context: &BlockContext, replay: bool) -> WellFormedStrictness {
+		let mut strictness: WellFormedStrictness = Default::default();
+		if block_context.parent_block_hash == Default::default() {
+			strictness.enforce_balancing = false;
+		}
+		if replay {
+			strictness.verify_native_proofs = false;
+			strictness.verify_contract_proofs = false;
+			strictness.verify_signatures = false;
+			strictness.enforce_balancing = false;
+		}
+		strictness
+	}
+
 	pub fn update_from_tx<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
 		block_context: &BlockContext,
+	) -> Result<(Vec<Event<D>>, SyntheticCost), LedgerContextError>
+	where
+		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
+	{
+		self.update_from_tx_with_strictness(
+			tx,
+			block_context,
+			Self::strictness_for(block_context, false),
+		)
+	}
+
+	fn update_from_tx_with_strictness<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
+		&self,
+		tx: &SerdeTransaction<S, P, D>,
+		block_context: &BlockContext,
+		strictness: WellFormedStrictness,
 	) -> Result<(Vec<Event<D>>, SyntheticCost), LedgerContextError>
 	where
 		Transaction<S, P, PureGeneratorPedersen, D>: Tagged,
@@ -337,21 +402,19 @@ impl<D: DB + Clone> LedgerContext<D> {
 			whitelist: None,
 		};
 
-		let strictness: WellFormedStrictness =
-			if block_context.parent_block_hash == Default::default() {
-				let mut lax: WellFormedStrictness = Default::default();
-				lax.enforce_balancing = false;
-				lax
-			} else {
-				Default::default()
-			};
-
 		// Update Ledger State
 		let (new_ledger_state, offers, events, cost) = match &tx {
 			SerdeTransaction::Midnight(tx) => {
-				let valid_tx: VerifiedTransaction<_> = tx
-					.well_formed(&tx_context.ref_state, strictness, tx_context.block_context.tblock)
-					.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
+				// `(): ProofKind` turns the zswap/contract proof checks into no-ops;
+				// the ledger has no strictness knob for zswap offer proofs.
+				let ref_state = &tx_context.ref_state;
+				let tblock = tx_context.block_context.tblock;
+				let valid_tx: VerifiedTransaction<_> = if strictness.verify_native_proofs {
+					tx.well_formed(ref_state, strictness, tblock)
+				} else {
+					tx.erase_proofs().well_formed(ref_state, strictness, tblock)
+				}
+				.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
 				let cost = tx
 					.cost(&tx_context.ref_state.parameters, false)
 					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
@@ -361,16 +424,20 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
+						crate::replay_stats::PARTIALLY_FAILED_TXS
+							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);
-						println!(
+						log::debug!(
 							"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
 						);
 						(new_ledger_state, offers, events, cost)
 					},
 					TransactionResult::Failure(failure) => {
+						crate::replay_stats::FAILED_TXS
+							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);
-						println!(
-							"Failing result {failure:?} of applying tx 0x{hash} \nto update Local Ledger State"
+						log::warn!(
+							"Failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
 						);
 						(new_ledger_state, offers, vec![], SyntheticCost::ZERO)
 					},
@@ -382,7 +449,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 					Ok((new_state, events)) => (new_state, vec![], events, cost),
 					Err(err) => {
 						let hash = hex::encode(tx.transaction_hash().0.0);
-						println!(
+						log::warn!(
 							"Failing result {err:?} of applying system tx {hash} to update Local Ledger State"
 						);
 						(tx_context.ref_state.clone(), vec![], vec![], cost)
