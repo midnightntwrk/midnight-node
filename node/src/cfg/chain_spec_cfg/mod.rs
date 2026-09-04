@@ -12,7 +12,11 @@
 // limitations under the License.
 
 use super::validation_utils::{maybe, path_exists};
-use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
+use super::{
+	CfgHelp, HelpField, cfg_help,
+	error::CfgError,
+	util::{case_insensitive_enum_opt, get_keys},
+};
 use documented::{Documented, DocumentedFields as _};
 use serde::{Deserialize, Serialize};
 use serde_valid::{Validate, validation};
@@ -42,7 +46,7 @@ pub struct ChainSpecCfg {
 
 	/// Required for generic Live network chain spec
 	/// Chain type e.g. live
-	#[serde(default)]
+	#[serde(default, deserialize_with = "case_insensitive_enum_opt")]
 	pub chainspec_chain_type: Option<sc_service::ChainType>,
 	/// Required for generic Live network chain spec
 	/// Partner Chains Chain config file e.g. devnet/pc-chain-config.json

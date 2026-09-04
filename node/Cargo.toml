@@ -152,7 +152,7 @@ frame-system.workspace = true
 frame-support.workspace = true
 time-source.workspace = true
 parity-scale-codec = { workspace = true, features = ["derive"] }
-config = "0.14.0"
+config = "0.15.22"
 serde_valid.workspace = true
 documented.workspace = true
 shell-words = "1.1.1"
