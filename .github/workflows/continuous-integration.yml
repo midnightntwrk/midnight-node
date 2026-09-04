@@ -1218,6 +1218,24 @@ jobs:
           docker volume ls -q --filter "label=com.docker.compose.project=${proj}" \
             | xargs -r docker volume rm -f || true
 
+      # Bound the shared earthly-buildkitd cache. It accumulates pulled base
+      # images and cache mounts (e.g. nixos/nix for compactc) across all slots
+      # on the self-hosted host, and is NOT covered by the local-env teardown
+      # above. Left unbounded it creeps toward the 1.7 TB /var ceiling and large
+      # link steps die with "No space left on device". buildctl prune is
+      # concurrency-safe (it skips records held by in-flight builds), and
+      # --keep-duration keeps a day of hot cache so other PRs still hit it. This
+      # does not change the daemon's settings hash, so it never restarts the
+      # shared buildkitd. The host-side reaper timer (shielded-iac runner role)
+      # is the backstop for slots whose job is hard-killed before this runs.
+      - name: Prune stale earthly buildkit cache (defensive)
+        if: always()
+        shell: bash
+        run: |
+          if docker inspect earthly-buildkitd >/dev/null 2>&1; then
+            docker exec earthly-buildkitd buildctl prune --keep-duration=24h || true
+          fi
+
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'
         with:
