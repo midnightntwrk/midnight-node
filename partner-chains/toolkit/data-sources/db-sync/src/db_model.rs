@@ -356,6 +356,7 @@ pub(crate) async fn get_stake_distribution(
 }
 
 /// Returns the token data of the given policy at the given slot.
+/// Excludes outputs of failing script transactions (tx.valid_contract).
 #[cfg(feature = "candidate-source")]
 pub(crate) async fn get_token_utxo_for_epoch(
 	pool: &Pool<Postgres>,
@@ -380,6 +381,7 @@ pub(crate) async fn get_token_utxo_for_epoch(
         LEFT JOIN datum                 ON tx_out.data_hash = datum.hash
         WHERE multi_asset.policy = $1
 		AND multi_asset.name = $2
+        AND origin_tx.valid_contract = true
         AND origin_block.epoch_no <= $3
         ORDER BY tx_block_no DESC, origin_tx.block_index DESC
         LIMIT 1";
@@ -808,6 +810,12 @@ pub(crate) async fn get_bridge_txs(
 
 	// TODO: improve query by using metadata.ident "cache" and tx, tx_out, ma_tx_out,
 	// tx_metadata and tx_in ids boundaries. https://github.com/midnightntwrk/partner-chains/issues/26
+	//
+	// Deliberately NOT filtered by tx.valid_contract: a failing script transaction's
+	// collateral return can move tokens to the bridge address — a genuine lock on
+	// Cardano. Every locked token must surface on the Midnight side (user transfer,
+	// reserve, or treasury via TransferRecipient::Invalid), so such deposits are
+	// observed like any other.
 	let mut query_builder = QueryBuilder::new(&format!(
 		"
 		WITH
