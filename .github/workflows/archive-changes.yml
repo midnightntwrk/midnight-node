@@ -96,18 +96,30 @@ jobs:
       pull-requests: write
     env:
       FORCE_COLOR: 1
+    defaults:
+      run:
+        working-directory: release-tree
     steps:
       - name: Checkout repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
+          path: ci-assets
+          persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Checkout release ref
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+        with:
+          path: release-tree
+          persist-credentials: false
           submodules: true
           ref: ${{ inputs.ref }}
 
       - name: Install Season
-        uses: ./.github/actions/install-season
+        uses: ./ci-assets/.github/actions/install-season
         with:
           gh-token: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
-          config: ./.github/season.yml
+          config: ${{ github.workspace }}/ci-assets/.github/season.yml
 
       - name: Setup Env
         shell: bash
@@ -133,7 +145,9 @@ jobs:
         if: inputs.archive-changes == true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: git fetch origin tag "$GIT_TAG_RELEASE"
+        run: >-
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: bearer $GH_TOKEN"
+          fetch origin tag "$GIT_TAG_RELEASE"
 
       - name: Archive changes
         if: inputs.archive-changes == true
