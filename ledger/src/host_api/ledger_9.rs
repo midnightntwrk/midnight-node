@@ -52,9 +52,8 @@ type Signature8 = crate::ledger_8::TransactionSignature;
 
 /// Translate a ledger-8 `LedgerApiError` into its ledger-9 counterpart.
 ///
-/// The two are distinct types generated from the same source
-/// (`versions/common/types.rs`) by module parameterization, so their SCALE
-/// encodings are identical by construction. Round-tripping keeps this correct
+/// The two are distinct types declared identically in `ledger_8/types.rs` and
+/// `ledger_9/types.rs`, so their SCALE encodings are identical by construction. Round-tripping keeps this correct
 /// when a variant is added, where a hand-written match would need editing in
 /// lockstep. `ledger_8_error_encoding_matches_ledger_9` guards the assumption.
 #[cfg(feature = "std")]
@@ -697,8 +696,8 @@ mod tests {
 	use crate::{ledger_8::types as v8, ledger_9::types as v9};
 
 	/// `as_ledger_9_error` relies on the two versions' `LedgerApiError` sharing a
-	/// SCALE encoding, which holds because both are generated from
-	/// `versions/common/types.rs`. Pin that down — including a nested payload and
+	/// SCALE encoding, which holds because `ledger_8/types.rs` and
+	/// `ledger_9/types.rs` declare it identically. Pin that down — including a nested payload and
 	/// the last variant, which is where a divergence would first show up — so a
 	/// future edit to one version's enum fails here rather than silently turning
 	/// every pre-migration read error into `HostApiError`.
