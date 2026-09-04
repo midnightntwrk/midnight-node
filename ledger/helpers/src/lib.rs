@@ -16,6 +16,15 @@ mod utils;
 pub use utils::find_dependency_version;
 pub mod extract_tx_with_context;
 
+/// Process-wide counters of replayed transactions that did not fully apply,
+/// shared by every ledger generation's `LedgerContext`.
+pub mod replay_stats {
+	use std::sync::atomic::AtomicU64;
+
+	pub static PARTIALLY_FAILED_TXS: AtomicU64 = AtomicU64::new(0);
+	pub static FAILED_TXS: AtomicU64 = AtomicU64::new(0);
+}
+
 /// Strategy for ordering candidate coins/UTXOs during input selection.
 ///
 /// Defined at the crate root (not inside the version-specific `common` module) so that
