@@ -7830,7 +7830,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "async-channel 1.9.0",
  "async-trait",
@@ -8089,7 +8089,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-metadata"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "subxt 0.50.0",
  "walkdir",
@@ -8119,7 +8119,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-runtime"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "authority-selection-inherents",
  "binary-merkle-tree",
@@ -8199,7 +8199,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-node-toolkit"
-version = "2.1.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "assert_matches",
