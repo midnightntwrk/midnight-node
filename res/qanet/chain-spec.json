@@ -189,6 +189,15 @@
                   "grandpa": "5EDJsbdFDee4cx2dDFx2NJmQQEDuS3kvkYRSKnsKBYpAgoo9"
                 }
               }
+            },
+            {
+              "Permissioned": {
+                "id": "KW5voq3n7CtiAXFNw1f9btkQ4gN9VFcA2ezgy6h3gWr4WqWdq",
+                "keys": {
+                  "aura": "5CDr2NQ9DsYDTyTaU32iDd33ogBTET7RnrmvrmJ6MaxNpdU4",
+                  "grandpa": "5FkgaMe5SkcHAD2Qkm3y3ZmkvjKyQiAJbZaPaXnDgVb3dWhx"
+                }
+              }
             }
           ],
           "mainChainScripts": {
@@ -33651,7 +33660,8 @@
             "KW3Hn6s7XJRwqRCwb3rT3ZA6kbRLDZCtq8J9vqqNMeKWhT9UC",
             "KWDbnHGfJb93C13RbRGFxKZTFainiuWAtjFrM3wUQQDRkRixt",
             "KWBsFYZVSkv1AN6CAmaHSQfT7zjrvYGR2BfhHcVZUcLJEEE18",
-            "KW46FafjGXQyvknevTQr5b3tvAGRj9zRsgEDDg9hzSJXMdAbe"
+            "KW46FafjGXQyvknevTQr5b3tvAGRj9zRsgEDDg9hzSJXMdAbe",
+            "KW5voq3n7CtiAXFNw1f9btkQ4gN9VFcA2ezgy6h3gWr4WqWdq"
           ],
           "genesisBlock": 1
         },
@@ -33697,6 +33707,13 @@
               {
                 "aura": "5G4Tv3XviedqWR2svJhgFZ39NBV6y9KcLF9CXDp1wkzPKdWq",
                 "grandpa": "5EDJsbdFDee4cx2dDFx2NJmQQEDuS3kvkYRSKnsKBYpAgoo9"
+              }
+            ],
+            [
+              "5FD6HaQLBDJ3JYdnveKU6nUWa8mxRyJrRCvucCdsyHCrfot3",
+              {
+                "aura": "5CDr2NQ9DsYDTyTaU32iDd33ogBTET7RnrmvrmJ6MaxNpdU4",
+                "grandpa": "5FkgaMe5SkcHAD2Qkm3y3ZmkvjKyQiAJbZaPaXnDgVb3dWhx"
               }
             ]
           ]
@@ -33752,7 +33769,7 @@
             "url": "https://www.midnight.gd/global-terms-txt"
           },
           "dParameter": {
-            "num_permissioned_candidates": 6,
+            "num_permissioned_candidates": 7,
             "num_registered_candidates": 0
           }
         }
