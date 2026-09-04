@@ -522,9 +522,56 @@ pub fn new_partial(
 	Ok(partial_components)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn new_full(
+	config: Configuration,
+	epoch_config: MainchainEpochConfig,
+	midnight_cfg: MidnightCfg,
+	storage_monitor_params: sc_storage_monitor::StorageMonitorParams,
+	memory_monitor_params: crate::memory_monitor::MemoryMonitorParams,
+	storage_config: StorageInit,
+	metrics_push_config: Option<MetricsPushConfig>,
+	hwbench: Option<sc_sysinfo::HwBench>,
+	tx_filter_config: TxFilterConfig,
+	max_finality_subscriptions: u32,
+) -> Result<(TaskManager, Arc<FullBackend>), ServiceError> {
+	match config.network.network_backend {
+		sc_network::config::NetworkBackendType::Libp2p => {
+			new_full_base::<sc_network::NetworkWorker<_, _>>(
+				config,
+				epoch_config,
+				midnight_cfg,
+				storage_monitor_params,
+				memory_monitor_params,
+				storage_config,
+				metrics_push_config,
+				hwbench,
+				tx_filter_config,
+				max_finality_subscriptions,
+			)
+			.await
+		},
+		sc_network::config::NetworkBackendType::Litep2p => {
+			new_full_base::<sc_network::Litep2pNetworkBackend>(
+				config,
+				epoch_config,
+				midnight_cfg,
+				storage_monitor_params,
+				memory_monitor_params,
+				storage_config,
+				metrics_push_config,
+				hwbench,
+				tx_filter_config,
+				max_finality_subscriptions,
+			)
+			.await
+		},
+	}
+}
+
 /// Builds a new service for a full client.
 #[allow(clippy::too_many_arguments)]
-pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
+pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as BlockT>::Hash>>(
 	config: Configuration,
 	epoch_config: MainchainEpochConfig,
 	midnight_cfg: MidnightCfg,

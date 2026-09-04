@@ -323,8 +323,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 				}
 			});
 
-		//For litep2p use `sc_network::Litep2pNetworkBackend<_, _>``
-		let (task_manager, backend) = service::new_full::<sc_network::NetworkWorker<_, _>>(
+		let (task_manager, backend) = service::new_full(
 			config,
 			epoch_config,
 			midnight_cfg,
