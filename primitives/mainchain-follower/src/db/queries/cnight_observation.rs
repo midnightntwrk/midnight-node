@@ -386,6 +386,29 @@ WHERE hash = $1
 	.await
 }
 
+/// Query to get the block by its block number
+pub(crate) async fn get_block_by_block_no(
+	pool: &Pool<Postgres>,
+	block_no: u32,
+) -> Result<Option<Block>, SqlxError> {
+	sqlx::query_as::<_, Block>(
+		r#"
+SELECT
+    block_no AS block_number,
+    hash AS hash,
+    epoch_no AS epoch_number,
+    slot_no AS slot_number,
+    time,
+    tx_count
+FROM block
+WHERE block_no = $1
+"#,
+	)
+	.bind(block_no as i32)
+	.fetch_optional(pool)
+	.await
+}
+
 /// Gets coarse bounds of table ids.
 /// Guarantees:
 /// * tx_id belongs to a transaction made before given block

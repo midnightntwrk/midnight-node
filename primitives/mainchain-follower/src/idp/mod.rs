@@ -22,9 +22,6 @@ pub mod cnight_observation;
 pub mod federated_authority_observation;
 
 #[cfg(feature = "std")]
-pub use cnight_observation::{
-	DEFAULT_CARDANO_BLOCK_WINDOW_SIZE, IDPCreationError,
-	MidnightCNightObservationInherentDataProvider,
-};
+pub use cnight_observation::{IDPCreationError, MidnightCNightObservationInherentDataProvider};
 #[cfg(feature = "std")]
 pub use federated_authority_observation::FederatedAuthorityInherentDataProvider;

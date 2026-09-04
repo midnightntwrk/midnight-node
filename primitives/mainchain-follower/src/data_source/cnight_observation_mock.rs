@@ -112,6 +112,7 @@ impl MidnightCNightObservationDataSource for CNightObservationDataSourceMock {
 		start: &CardanoPosition,
 		_current_tip: McBlockHash,
 		_capacity: usize,
+		_block_window_size: u32,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		// Calculate deterministic end position
 		let mut end = start.clone();

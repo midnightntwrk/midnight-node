@@ -59,6 +59,8 @@ pub struct TxPosition {
 pub enum MidnightCNightObservationDataSourceError {
 	#[error("missing reference for block hash `{0}` in db-sync")]
 	MissingBlockReference(McBlockHash),
+	#[error("missing reference for block number `{0}` in db-sync")]
+	MissingBlockNumber(u32),
 	#[error("Error querying database: {0}")]
 	DBQueryError(#[from] sqlx::error::Error),
 	#[error("Error extracting network id from Cardano address")]
@@ -110,6 +112,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
+		block_window_size: u32,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		let cnight_asset_name = config.cnight_asset_name.as_bytes();
 
@@ -153,11 +156,29 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 
 		// Get end position from cardano block hash
 		let _block_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_block_by_hash");
-		let end: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
+		let tip: CardanoPosition = crate::db::get_block_by_hash(&self.pool, current_tip.clone())
 			.await?
 			.ok_or(MidnightCNightObservationDataSourceError::MissingBlockReference(current_tip))?
 			.into();
 		drop(_block_timer);
+
+		// Clamp the upper query bound to `start + block_window_size`. Without this, every
+		// per-block invocation scans from `start_position` to the current Cardano tip, which
+		// for sparse assets (e.g. cNight) means scanning the whole chain on every Midnight
+		// block. The runtime API exposes the window so it can be tuned without a node release.
+		let max_block_no = start_position.block_number.saturating_add(block_window_size);
+		let end: CardanoPosition = if tip.block_number > max_block_no {
+			let _bounded_timer =
+				start_sub_query_timer(&self.metrics_opt, "cnight_get_block_by_block_no");
+			crate::db::get_block_by_block_no(&self.pool, max_block_no)
+				.await?
+				.ok_or(MidnightCNightObservationDataSourceError::MissingBlockNumber(
+					max_block_no,
+				))?
+				.into()
+		} else {
+			tip
+		};
 
 		let (low_bounds, high_bounds) = tokio::try_join!(
 			async {

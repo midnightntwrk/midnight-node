@@ -25,8 +25,6 @@ use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::{error::Error, string::FromUtf8Error, sync::Arc};
 
-pub const DEFAULT_CARDANO_BLOCK_WINDOW_SIZE: u32 = 10000;
-
 pub struct MidnightCNightObservationInherentDataProvider {
 	pub utxos: Vec<ObservedUtxo>,
 	pub next_cardano_position: CardanoPosition,
@@ -105,6 +103,7 @@ impl MidnightCNightObservationInherentDataProvider {
 			.try_into()
 			.map_err(|_| IDPCreationError::AuthTokenAssetNameNotString)?;
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
+		let block_window_size = api.get_cardano_block_window_size(parent_hash)?;
 
 		let config = CNightAddresses {
 			mapping_validator_address,
@@ -123,6 +122,7 @@ impl MidnightCNightObservationInherentDataProvider {
 				&cardano_position_start,
 				mc_hash,
 				utxo_capacity as usize,
+				block_window_size,
 			)
 			.await
 			.map_err(IDPCreationError::DataSourceError)?;

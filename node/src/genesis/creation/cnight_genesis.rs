@@ -108,6 +108,7 @@ pub async fn generate_cnight_genesis(
 				&current_position,
 				cardano_tip.clone(),
 				UTXO_CAPACITY,
+				u32::MAX,
 			)
 			.await
 			.map_err(CNightGenesisError::UtxoQueryError)?;
