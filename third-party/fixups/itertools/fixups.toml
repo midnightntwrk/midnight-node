@@ -1,0 +1,3 @@
+# no_std runtime: drop std-ish features on wasm32 (itertools uses use_std).
+['cfg(target_arch = "wasm32")']
+omit_features = ["std", "use_std"]

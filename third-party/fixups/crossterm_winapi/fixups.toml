@@ -1,0 +1,4 @@
+# Windows-only crate. Midnight only buckifies for macOS/Linux, so mark it
+# incompatible with non-Windows platforms — `buck2 //...` then skips it cleanly
+# instead of failing the compatibility check on its transitive Windows deps.
+target_compatible_with = ["config//os:windows"]

@@ -105,3 +105,8 @@ toolkit-image.tar
 
 # Generated compactc wrapper from `just compactc` (points into the nix store)
 .compact-home/
+
+# buck2
+/buck-out/
+/third-party/.cargo/
+/wasm-deps/.cargo/

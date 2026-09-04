@@ -1,0 +1,478 @@
+{
+ "authority-selection-inherents": {
+  "deps": [
+   "frame-support",
+   "log",
+   "minicbor",
+   "parity-scale-codec",
+   "plutus",
+   "plutus-datum-derive",
+   "scale-info",
+   "selection",
+   "serde",
+   "sidechain-domain",
+   "sp-api",
+   "sp-consensus-slots",
+   "sp-core",
+   "sp-inherents",
+   "sp-runtime",
+   "sp-session-validator-management"
+  ],
+  "features": []
+ },
+ "byte-string-derive": {
+  "deps": [
+   "quote",
+   "syn"
+  ],
+  "features": []
+ },
+ "midnight-node-ledger": {
+  "deps": [
+   "frame-support",
+   "parity-scale-codec",
+   "scale-info",
+   "scale-info-derive",
+   "sp-externalities",
+   "sp-runtime",
+   "sp-runtime-interface",
+   "sp-tracing"
+  ],
+  "features": []
+ },
+ "midnight-node-runtime": {
+  "deps": [
+   "authority-selection-inherents",
+   "binary-merkle-tree",
+   "frame-executive",
+   "frame-support",
+   "frame-system",
+   "frame-system-rpc-runtime-api",
+   "log",
+   "midnight-node-ledger",
+   "midnight-primitives",
+   "midnight-primitives-beefy",
+   "midnight-primitives-cnight-observation",
+   "midnight-primitives-federated-authority-observation",
+   "midnight-primitives-session-info",
+   "pallet-aura",
+   "pallet-beefy",
+   "pallet-beefy-mmr",
+   "pallet-c2m-bridge",
+   "pallet-cnight-observation",
+   "pallet-collective",
+   "pallet-federated-authority",
+   "pallet-federated-authority-observation",
+   "pallet-grandpa",
+   "pallet-membership",
+   "pallet-midnight",
+   "pallet-midnight-system",
+   "pallet-migrations",
+   "pallet-mmr",
+   "pallet-partner-chains-bridge",
+   "pallet-partner-chains-session",
+   "pallet-preimage",
+   "pallet-scheduler",
+   "pallet-session",
+   "pallet-session-validator-management",
+   "pallet-sidechain",
+   "pallet-system-parameters",
+   "pallet-throttle",
+   "pallet-timestamp",
+   "pallet-tx-pause",
+   "pallet-version",
+   "parity-scale-codec",
+   "runtime-common",
+   "scale-info",
+   "sidechain-domain",
+   "sidechain-slots",
+   "sp-api",
+   "sp-block-builder",
+   "sp-consensus-aura",
+   "sp-consensus-beefy",
+   "sp-consensus-grandpa",
+   "sp-consensus-slots",
+   "sp-core",
+   "sp-genesis-builder",
+   "sp-inherents",
+   "sp-offchain",
+   "sp-partner-chains-bridge",
+   "sp-runtime",
+   "sp-session",
+   "sp-session-validator-management",
+   "sp-sidechain",
+   "sp-staking",
+   "sp-storage",
+   "sp-transaction-pool",
+   "sp-version"
+  ],
+  "features": []
+ },
+ "midnight-primitives": {
+  "deps": [
+   "hex-literal",
+   "midnight-node-ledger",
+   "parity-scale-codec",
+   "scale-info",
+   "sp-core",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "midnight-primitives-beefy": {
+  "deps": [
+   "parity-scale-codec",
+   "sp-api",
+   "sp-consensus-beefy",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "midnight-primitives-cnight-observation": {
+  "deps": [
+   "frame-support",
+   "hex",
+   "parity-scale-codec",
+   "scale-info",
+   "serde",
+   "sidechain-domain",
+   "sp-api",
+   "sp-inherents"
+  ],
+  "features": []
+ },
+ "midnight-primitives-federated-authority-observation": {
+  "deps": [
+   "hex",
+   "parity-scale-codec",
+   "scale-info",
+   "sidechain-domain",
+   "sp-api",
+   "sp-core",
+   "sp-inherents",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "midnight-primitives-mainchain-follower": {
+  "deps": [
+   "log",
+   "midnight-primitives-cnight-observation",
+   "midnight-primitives-federated-authority-observation",
+   "parity-scale-codec",
+   "rand",
+   "scale-info",
+   "sidechain-domain",
+   "sp-api",
+   "sp-core",
+   "sp-inherents",
+   "sp-keyring",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "midnight-primitives-session-info": {
+  "deps": [
+   "sp-api"
+  ],
+  "features": []
+ },
+ "pallet-c2m-bridge": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "log",
+   "midnight-node-ledger",
+   "midnight-primitives",
+   "pallet-partner-chains-bridge",
+   "parity-scale-codec",
+   "scale-info",
+   "sidechain-domain",
+   "sp-api",
+   "sp-core",
+   "sp-partner-chains-bridge"
+  ],
+  "features": []
+ },
+ "pallet-cnight-observation": {
+  "deps": [
+   "derive-new",
+   "frame-support",
+   "frame-system",
+   "hex",
+   "log",
+   "midnight-node-ledger",
+   "midnight-primitives",
+   "midnight-primitives-cnight-observation",
+   "midnight-primitives-mainchain-follower",
+   "parity-scale-codec",
+   "scale-info",
+   "serde",
+   "sidechain-domain",
+   "sp-core",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "pallet-federated-authority": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "impl-trait-for-tuples",
+   "log",
+   "parity-scale-codec",
+   "scale-info",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "pallet-federated-authority-observation": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "log",
+   "midnight-primitives-federated-authority-observation",
+   "parity-scale-codec",
+   "scale-info",
+   "sidechain-domain",
+   "sp-inherents"
+  ],
+  "features": []
+ },
+ "pallet-midnight": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "log",
+   "midnight-node-ledger",
+   "midnight-primitives",
+   "pallet-timestamp",
+   "parity-scale-codec",
+   "scale-info",
+   "sidechain-domain",
+   "sp-api",
+   "sp-runtime",
+   "sp-tracing"
+  ],
+  "features": []
+ },
+ "pallet-midnight-system": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "midnight-node-ledger",
+   "midnight-primitives",
+   "parity-scale-codec",
+   "scale-info"
+  ],
+  "features": []
+ },
+ "pallet-partner-chains-bridge": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "log",
+   "parity-scale-codec",
+   "scale-info",
+   "sidechain-domain",
+   "sp-partner-chains-bridge"
+  ],
+  "features": []
+ },
+ "pallet-partner-chains-session": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "impl-trait-for-tuples",
+   "log",
+   "pallet-session",
+   "parity-scale-codec",
+   "scale-info",
+   "sp-runtime",
+   "sp-staking",
+   "sp-std"
+  ],
+  "features": [
+   "pallet-session",
+   "pallet-session-compat"
+  ]
+ },
+ "pallet-session-validator-management": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "log",
+   "parity-scale-codec",
+   "scale-info",
+   "sidechain-domain",
+   "sp-core",
+   "sp-runtime",
+   "sp-session-validator-management",
+   "sp-std"
+  ],
+  "features": []
+ },
+ "pallet-sidechain": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "log",
+   "parity-scale-codec",
+   "scale-info",
+   "sidechain-domain",
+   "sidechain-slots",
+   "sp-core",
+   "sp-runtime",
+   "sp-sidechain",
+   "sp-std"
+  ],
+  "features": []
+ },
+ "pallet-system-parameters": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "parity-scale-codec",
+   "scale-info",
+   "serde",
+   "sidechain-domain",
+   "sp-api",
+   "sp-core",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "pallet-throttle": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "parity-scale-codec",
+   "scale-info",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "pallet-version": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "parity-scale-codec",
+   "scale-info",
+   "sp-runtime",
+   "sp-version"
+  ],
+  "features": []
+ },
+ "plutus": {
+  "deps": [
+   "hex",
+   "minicbor",
+   "num-bigint",
+   "num-traits"
+  ],
+  "features": []
+ },
+ "plutus-datum-derive": {
+  "deps": [
+   "quote",
+   "syn"
+  ],
+  "features": []
+ },
+ "runtime-common": {
+  "deps": [
+   "frame-support",
+   "frame-system",
+   "pallet-collective",
+   "pallet-membership",
+   "sp-runtime"
+  ],
+  "features": []
+ },
+ "selection": {
+  "deps": [
+   "rand",
+   "rand_chacha"
+  ],
+  "features": []
+ },
+ "sidechain-domain": {
+  "deps": [
+   "blake2b_simd",
+   "byte-string-derive",
+   "derive-where",
+   "derive_more",
+   "hex",
+   "k256",
+   "num-derive",
+   "num-traits",
+   "parity-scale-codec",
+   "plutus",
+   "plutus-datum-derive",
+   "scale-info",
+   "secp256k1",
+   "serde",
+   "sp-core",
+   "sp-io",
+   "sp-std"
+  ],
+  "features": [
+   "serde"
+  ]
+ },
+ "sidechain-slots": {
+  "deps": [
+   "parity-scale-codec",
+   "scale-info",
+   "serde",
+   "sidechain-domain",
+   "sp-api",
+   "sp-consensus-slots",
+   "sp-core",
+   "sp-runtime"
+  ],
+  "features": [
+   "serde"
+  ]
+ },
+ "sp-partner-chains-bridge": {
+  "deps": [
+   "async-trait",
+   "log",
+   "parity-scale-codec",
+   "scale-info",
+   "serde",
+   "sidechain-domain",
+   "sp-api",
+   "sp-core",
+   "sp-inherents",
+   "thiserror"
+  ],
+  "features": []
+ },
+ "sp-session-validator-management": {
+  "deps": [
+   "parity-scale-codec",
+   "scale-info",
+   "serde",
+   "sidechain-domain",
+   "sp-api",
+   "sp-core",
+   "sp-inherents",
+   "sp-std"
+  ],
+  "features": [
+   "serde"
+  ]
+ },
+ "sp-sidechain": {
+  "deps": [
+   "frame-support",
+   "parity-scale-codec",
+   "scale-info",
+   "sidechain-domain",
+   "sp-api"
+  ],
+  "features": []
+ }
+}

@@ -1,0 +1,33 @@
+name: install pinned buck2
+description: >
+  Download a PINNED facebook/buck2 dated release (not the rolling `latest`) for
+  reproducible builds. `latest` moves per-commit; the 2026-08-10 prelude change
+  restructured cpu/constraints (dropped the standalone `:wasm32` target that
+  //platforms:wasm32v1-none references), silently breaking the build. Pin instead.
+inputs:
+  version:
+    description: facebook/buck2 release tag (a dated release, e.g. 2026-08-01)
+    required: false
+    default: "2026-08-01"
+runs:
+  using: composite
+  steps:
+    - name: Download + install pinned buck2
+      env:
+        BUCK2_VERSION: ${{ inputs.version }}
+        BUCK2_TMP: ${{ runner.temp }}/install-buck2
+      run: |
+        set -euo pipefail
+        # Runners here are always x86_64 linux (ubuntu-latest).
+        plat=x86_64-unknown-linux-gnu
+        mkdir -p "$BUCK2_TMP/bin"
+        curl -L --fail --silent --show-error --retry 5 \
+          "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/buck2-${plat}.zst" \
+          -o "$BUCK2_TMP/buck2.zst"
+        zstd -d "$BUCK2_TMP/buck2.zst" -o "$BUCK2_TMP/bin/buck2"
+        chmod +x "$BUCK2_TMP/bin/buck2"
+        ln -sf "$BUCK2_TMP/bin/buck2" "$BUCK2_TMP/bin/buck"
+        echo "$BUCK2_TMP/bin" >> "$GITHUB_PATH"
+      shell: bash
+    - run: buck2 --version
+      shell: bash

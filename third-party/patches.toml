@@ -1,0 +1,9 @@
+# Extra [patch] entries merged into the generated third-party/Cargo.toml by
+# scripts/buck2/gen-third-party.py (local entries win over workspace ones).
+
+[crates-io]
+# proc-macro-crate resolves `codec = { workspace = true }` renames by invoking
+# cargo — unavailable in a buck2 sandbox. Patched with the same Cargo.toml-scan
+# fallback midnight-node's bazel build uses (patches/proc-macro-crate-bazel-
+# fallback.patch there). Only affects the 3.x line; 1.1.3 consumers unpatched.
+proc-macro-crate = { path = "patched/proc-macro-crate" }

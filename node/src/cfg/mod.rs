@@ -602,7 +602,8 @@ mod tests {
 
 	#[test]
 	fn load_all_presets() {
-		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
+		*midnight_node_res::CFG_ROOT.lock().unwrap() =
+			Some(midnight_node_res::locate_workspace_root().to_string_lossy().into_owned());
 		for config in midnight_node_res::list_configs() {
 			println!("loading {config}...");
 			let preset_cfg = Config::builder()
@@ -618,7 +619,8 @@ mod tests {
 
 	#[test]
 	fn dev_cfg_preset_deserializes_without_errors() {
-		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
+		*midnight_node_res::CFG_ROOT.lock().unwrap() =
+			Some(midnight_node_res::locate_workspace_root().to_string_lossy().into_owned());
 		let preset_cfg = Config::builder()
 			.add_source(File::from_str(&default_cfg(), FileFormat::Toml))
 			.add_source(
@@ -638,7 +640,8 @@ mod tests {
 	}
 
 	fn get_unused(preset_keys: &[String]) -> Vec<String> {
-		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
+		*midnight_node_res::CFG_ROOT.lock().unwrap() =
+			Some(midnight_node_res::locate_workspace_root().to_string_lossy().into_owned());
 		let cfg_keys = [
 			get_keys(ChainSpecCfg::default()).unwrap(),
 			get_keys(MemoryMonitorCfg::default()).unwrap(),
@@ -656,7 +659,8 @@ mod tests {
 
 	#[test]
 	fn assert_no_ignored_defaults() {
-		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
+		*midnight_node_res::CFG_ROOT.lock().unwrap() =
+			Some(midnight_node_res::locate_workspace_root().to_string_lossy().into_owned());
 		let default_cfg = Cfg::get_default_config().unwrap();
 		let default_value: serde_json::Value = default_cfg.try_deserialize().unwrap();
 		let default_keys = get_keys(default_value).unwrap();
@@ -672,7 +676,8 @@ mod tests {
 
 	#[test]
 	fn assert_no_ignored_cfg_presets() {
-		*midnight_node_res::CFG_ROOT.lock().unwrap() = Some("../".to_string());
+		*midnight_node_res::CFG_ROOT.lock().unwrap() =
+			Some(midnight_node_res::locate_workspace_root().to_string_lossy().into_owned());
 		for config in midnight_node_res::list_configs() {
 			let cfg = CfgPreset(config.clone());
 			let preset_cfg = Config::builder()

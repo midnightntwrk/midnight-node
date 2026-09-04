@@ -1,0 +1,2 @@
+# prost codegen, same as sc-network
+buildscript.run = true

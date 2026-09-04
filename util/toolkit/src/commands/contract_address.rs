@@ -84,17 +84,19 @@ mod test {
 
 	// todo: need more samples
 	#[test_case::test_case(
-		"../../res/test-contract/contract_tx_1_deploy_undeployed.mn",
-		"../../res/test-contract/contract_address_undeployed.mn";
+		"test-contract/contract_tx_1_deploy_undeployed.mn",
+		"test-contract/contract_address_undeployed.mn";
 		"undeployed case"
 	)]
 	fn test_contract_address(src_file: &str, untagged_address_file: &str) {
+		let src_file = crate::test_paths::res(src_file);
+		let untagged_address_file = crate::test_paths::res(untagged_address_file);
 		let args =
-			ContractAddressArgs { src_file: src_file.to_string(), tagged: false, untagged: false };
+			ContractAddressArgs { src_file: src_file.clone(), tagged: false, untagged: false };
 		let res = execute(args).expect("execution failed");
 
 		let untagged =
-			std::fs::read_to_string(untagged_address_file).expect("failed to read address file");
+			std::fs::read_to_string(&untagged_address_file).expect("failed to read address file");
 		assert_eq!(res, untagged.trim());
 
 		let args =

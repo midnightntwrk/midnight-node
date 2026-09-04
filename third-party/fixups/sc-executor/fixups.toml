@@ -1,0 +1,9 @@
+cargo_env = true
+
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
+[extra_mapped_srcs]
+"substrate/client/executor/benches/kusama_runtime.wasm" = "benches/kusama_runtime.wasm"
+"substrate/client/executor/wasmtime/src/test-guard-page-skip.wat" = "wasmtime/src/test-guard-page-skip.wat"
