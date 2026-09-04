@@ -71,9 +71,11 @@ pub trait WalletStateCaching: Send + Sync {
 #[derive(Clone)]
 pub struct FetchedBlock {
 	pub block: MidnightClientAtBlock,
+	pub header: <crate::client::MidnightNodeClientConfig as subxt::Config>::Header,
 	pub raw_body: Vec<Vec<u8>>,
 	pub state_root: Option<Vec<u8>>,
 	pub state: Option<Vec<u8>>,
+	pub events: Vec<u8>,
 }
 
 /// Storage backend for fetched block data.
