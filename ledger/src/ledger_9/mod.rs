@@ -96,6 +96,7 @@ use {
 	},
 	std::{
 		any::Any,
+		collections::BTreeMap,
 		sync::Arc,
 		time::{Duration, Instant},
 	},
@@ -341,7 +342,7 @@ where
 		state_key: &[u8],
 		tx_serialized: &[u8],
 		block_context: BlockContext,
-		should_skip_failed_segments: bool,
+		filter_only_failed_segments: bool,
 		runtime_version: u32,
 		skew_tblock: bool,
 	) -> Result<TransactionAppliedStateRoot, LedgerApiError>
@@ -416,7 +417,7 @@ where
 			if let TransactionAppliedStage::PartialSuccess(segments) = applied_stage {
 				// Remove from `utxos` the `segments` that failed
 				utxos.remove_failed_segments(&segments);
-				Some(segments.keys().copied().collect())
+				Some(segments_to_exclude(&segments, filter_only_failed_segments))
 			} else {
 				None
 			};
@@ -427,8 +428,7 @@ where
 			start_tx_processing_time.elapsed().as_millis()
 		);
 
-		let operations =
-			tx.calls_and_deploys(should_skip_failed_segments.then_some(failed_segments).flatten());
+		let operations = tx.calls_and_deploys(failed_segments);
 		log::trace!(
 			target: LOG_TARGET,
 			"⏱️  Ops built (elapsed_ms={})",
@@ -1467,6 +1467,22 @@ fn well_formed_tblock<D: DB>(
 	}
 }
 
+/// Segments whose contract actions are withheld from the emitted event.
+///
+/// `only_failed = false` reproduces the original behaviour: *every attempted* segment is excluded,
+/// the guaranteed segment and every succeeding fallible segment included, so a partial-success
+/// transaction emitted no contract events at all. `System::Events` is in the state trie, so blocks
+/// produced under a runtime that imports v1 of `apply_transaction` must keep replaying that way —
+/// hence the host-function version gate rather than a fix in place.
+#[cfg(feature = "std")]
+fn segments_to_exclude<E>(segments: &BTreeMap<u16, Result<(), E>>, only_failed: bool) -> Vec<u16> {
+	segments
+		.iter()
+		.filter(|(_, result)| !only_failed || result.is_err())
+		.map(|(segment_id, _)| *segment_id)
+		.collect()
+}
+
 /// Key for a `VerifiedTransaction` in the strict cache.
 ///
 /// Keyed on the timestamp [`well_formed_tblock`] resolves to rather than `block_context.tblock`,
@@ -1763,5 +1779,17 @@ mod tests {
 		if let Ok(tx) = system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
+	}
+
+	#[test]
+	fn segments_to_exclude_v2_withholds_only_failed_segments() {
+		let segments: BTreeMap<u16, Result<(), ()>> =
+			[(0, Ok(())), (1, Err(())), (2, Ok(()))].into_iter().collect();
+
+		// v2: the guaranteed segment and the succeeding fallible segment keep their events.
+		assert_eq!(segments_to_exclude(&segments, true), vec![1]);
+
+		// v1: everything attempted is withheld — the historical behaviour blocks replay against.
+		assert_eq!(segments_to_exclude(&segments, false), vec![0, 1, 2]);
 	}
 }
