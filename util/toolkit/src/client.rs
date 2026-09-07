@@ -11,7 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::Duration;
+use std::{
+	collections::HashMap,
+	sync::{Arc, LazyLock, RwLock},
+	time::Duration,
+};
 
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
@@ -32,8 +36,26 @@ use thiserror::Error;
 /// Set generously to handle rate-limiting (429) during concurrent connection attempts.
 const CLIENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Debug, Default)]
-pub struct MidnightNodeClientConfig;
+/// Runtime metadata by spec version, shared by every client in the process.
+///
+/// subxt asks the config for metadata each time an at-block handle is created
+/// and, when the config has none, downloads the full metadata (~130KB) from the
+/// node for that block. Without this cache a chain sync fetched it once per
+/// block, which dominated the fetch time.
+type MetadataCache = Arc<RwLock<HashMap<u32, subxt::metadata::ArcMetadata>>>;
+
+static METADATA_CACHE: LazyLock<MetadataCache> = LazyLock::new(Default::default);
+
+#[derive(Clone, Debug)]
+pub struct MidnightNodeClientConfig {
+	metadata: MetadataCache,
+}
+
+impl Default for MidnightNodeClientConfig {
+	fn default() -> Self {
+		Self { metadata: METADATA_CACHE.clone() }
+	}
+}
 
 impl Config for MidnightNodeClientConfig {
 	type AccountId = AccountId32;
@@ -43,6 +65,20 @@ impl Config for MidnightNodeClientConfig {
 	type Header = SubstrateHeader<<Self::Hasher as subxt::config::Hasher>::Hash>;
 	type TransactionExtensions = SubstrateExtrinsicParams<Self>;
 	type AssetId = u32;
+
+	fn metadata_for_spec_version(&self, spec_version: u32) -> Option<subxt::metadata::ArcMetadata> {
+		self.metadata.read().ok()?.get(&spec_version).cloned()
+	}
+
+	fn set_metadata_for_spec_version(
+		&self,
+		spec_version: u32,
+		metadata: subxt::metadata::ArcMetadata,
+	) {
+		if let Ok(mut cache) = self.metadata.write() {
+			cache.insert(spec_version, metadata);
+		}
+	}
 }
 
 impl subxt::rpcs::RpcConfig for MidnightNodeClientConfig {
@@ -93,9 +129,9 @@ impl MidnightNodeClient {
 		Ok(network_id)
 	}
 
-	pub async fn get_state_root_at(
-		&self,
-		at: Option<HashFor<MidnightNodeClientConfig>>,
+	/// Fetch the Midnight state root via an existing at-block handle.
+	pub async fn state_root_from(
+		at_block: &subxt::client::OnlineClientAtBlock<MidnightNodeClientConfig>,
 	) -> Result<Option<Vec<u8>>, ClientError> {
 		// Use a raw storage query to avoid IncompatibleCodegen errors when the
 		// toolkit is compiled against a different runtime version than the node.
@@ -103,10 +139,6 @@ impl MidnightNodeClient {
 		let key =
 			[sp_crypto_hashing::twox_128(b"Midnight"), sp_crypto_hashing::twox_128(b"StateKey")]
 				.concat();
-		let at_block = match at {
-			Some(hash) => self.api.at_block(hash).await?,
-			None => self.api.at_current_block().await?,
-		};
 		let storage = at_block.storage();
 		let raw = match storage.fetch_raw(key).await {
 			Ok(bytes) => Some(bytes),

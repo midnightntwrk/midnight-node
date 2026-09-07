@@ -769,6 +769,9 @@ async fn initialize_context(
 		.unwrap_or_else(|| {
 			panic!("ledger snapshot missing at height {} — clear caches and retry", start_height)
 		});
+		log::info!(
+			"restoring ledger snapshot at block {start_height} (skipping replay of everything before it)"
+		);
 
 		let (ctx, _, _) = timed!(
 			"restore_context_from_ledger_snapshot",
@@ -790,12 +793,33 @@ type Db8 = midnight_node_ledger_helpers::ledger_8::DefaultDB;
 
 const DUST_BATCH_SIZE: usize = 1000;
 
+/// Cadence of the `info`-level replay progress line, so a multi-hour replay
+/// doesn't look like the process has hung.
+const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn replay_tx_failures() -> (u64, u64) {
+	use std::sync::atomic::Ordering::Relaxed;
+	(
+		midnight_node_ledger_helpers::replay_stats::PARTIALLY_FAILED_TXS.load(Relaxed),
+		midnight_node_ledger_helpers::replay_stats::FAILED_TXS.load(Relaxed),
+	)
+}
+
+fn log_replay_progress(done: usize, total: usize) {
+	let (partial, failed) = replay_tx_failures();
+	log::info!(
+		"replay progress: {done}/{total} blocks ({:.1}%); historical txs partially failed: {partial}, failed: {failed}",
+		done as f64 / total as f64 * 100.0,
+	);
+}
+
 fn replay_blocks_7(
 	ctx: &midnight_node_ledger_helpers::ledger_7::context::LedgerContext<Db7>,
 	blocks_sorted_by_height: &[&RawBlockData],
 ) {
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_7::Event<Db7>> = Vec::new();
 	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
 		events.extend(apply_block_7(ctx, block));
@@ -805,6 +829,13 @@ fn replay_blocks_7(
 			ctx.update_dust_from_events(events.as_slice());
 			events.clear();
 			log::debug!("[perf] replay_blocks_7 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// Heartbeat lives outside the flush branch so a long stretch of blocks
+		// with no dust events still gets a "still alive" signal.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log_replay_progress(i + 1, total);
+			last_info_at = std::time::Instant::now();
 		}
 	}
 
@@ -821,6 +852,7 @@ fn replay_blocks_8(
 	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
+	let mut last_info_at = std::time::Instant::now();
 
 	for (i, block) in blocks_sorted_by_height.iter().enumerate() {
 		let n = remaining.partition_point(|(_, ws)| ws.block_height < block.number);
@@ -842,6 +874,12 @@ fn replay_blocks_8(
 			ctx.update_dust_from_events(events.as_slice());
 			events.clear();
 			log::debug!("[perf] replay_blocks_8 progress: {}/{} blocks", i + 1, total);
+		}
+
+		// See note in `replay_blocks_7`: evaluated every iteration, not only on flush.
+		if last_info_at.elapsed() >= REPLAY_INFO_HEARTBEAT {
+			log_replay_progress(i + 1, total);
+			last_info_at = std::time::Instant::now();
 		}
 	}
 
@@ -898,6 +936,13 @@ pub(crate) fn replay_blocks(
 	};
 
 	log::debug!("[perf] block replay: {} blocks in {:?}", blocks.len(), t_replay.elapsed());
+	let (partial, failed) = replay_tx_failures();
+	if partial + failed > 0 {
+		log::info!(
+			"replayed {} blocks; historical txs partially failed: {partial}, failed: {failed} (normal on-chain history, details at debug level)",
+			blocks.len()
+		);
+	}
 	result
 }
 
@@ -929,6 +974,17 @@ pub async fn build_fork_aware_context_cached(
 
 	// 2. Compute start height.
 	let start_height = if !uncached_seeds.is_empty() {
+		// An uncached wallet needs its full history scanned, which forces the
+		// replay back to genesis for the whole context — the dominant cost on
+		// long chains. Surface it loudly so a stray uncached seed is not
+		// mistaken for a broken cache.
+		log::warn!(
+			"{} of {} wallet seeds have no cache entry ({} cached) — full replay from genesis forced. \
+			 Warm the cache once with the complete seed set to avoid this.",
+			uncached_seeds.len(),
+			wallet_seeds.len(),
+			cached.len(),
+		);
 		0
 	} else {
 		cached.first().map(|c| c.1.block_height).unwrap_or(0)

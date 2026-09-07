@@ -451,6 +451,49 @@ mod tests {
 	}
 
 	#[test]
+	fn relaxed_replay_with_state_roots_matches_strict_replay() {
+		use midnight_node_ledger_helpers::fork::fork_aware_context::apply_block_8;
+
+		let (source, _) = load_genesis_context(&[]);
+		assert!(source.blocks.iter().all(|b| b.state_root.is_none()));
+		assert!(source.blocks.iter().any(|b| !b.transactions.is_empty()));
+
+		let strict = LedgerContext::<DefaultDB>::new(&source.network_id);
+		let mut roots = Vec::new();
+		for block in &source.blocks {
+			apply_block_8(&strict, block);
+			roots.push(strict.state_root().unwrap().expect("local root"));
+		}
+
+		let relaxed = LedgerContext::<DefaultDB>::new(&source.network_id);
+		for (block, root) in source.blocks.iter().zip(&roots) {
+			let mut block = block.clone();
+			block.state_root = Some(root.clone());
+			apply_block_8(&relaxed, &block);
+		}
+
+		let strict_bytes =
+			midnight_node_ledger_helpers::serialize(&**strict.ledger_state.lock().unwrap())
+				.unwrap();
+		let relaxed_bytes =
+			midnight_node_ledger_helpers::serialize(&**relaxed.ledger_state.lock().unwrap())
+				.unwrap();
+		assert_eq!(strict_bytes, relaxed_bytes, "relaxed replay diverged from strict replay");
+	}
+
+	#[test]
+	#[should_panic(expected = "StateRootMismatch")]
+	fn relaxed_replay_aborts_on_state_root_mismatch() {
+		use midnight_node_ledger_helpers::fork::fork_aware_context::apply_block_8;
+
+		let (source, _) = load_genesis_context(&[]);
+		let ctx = LedgerContext::<DefaultDB>::new(&source.network_id);
+		let mut block = source.blocks[0].clone();
+		block.state_root = Some(vec![0xAB; 32]);
+		apply_block_8(&ctx, &block);
+	}
+
+	#[test]
 	fn ledger_snapshot_roundtrip() {
 		let wallet_seed = WalletSeed::try_from_hex_str(
 			"0000000000000000000000000000000000000000000000000000000000000001",
