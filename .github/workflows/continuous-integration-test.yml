@@ -8,6 +8,14 @@ on:
       - "changes/**"
   push:
     branches: ["main"]
+env:
+  # Registry the images this workflow touches live in. Derived from the repo owner so a fork
+  # or private clone never reads from or writes to midnightntwrk's registries. Upstream's
+  # private GHCR namespace is hyphenated (midnight-ntwrk) while the org login is not, so the
+  # canonical branch has to name the repo explicitly rather than derive it.
+  # The cache tag lives in the public mirror namespace upstream; a fork keeps it in its own.
+  GHCR_REGISTRY_PUBLIC: ${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnightntwrk' || format('ghcr.io/{0}', github.repository_owner) }}
+
 # no top level default permissions for security reasons
 permissions: {}
 concurrency:
@@ -98,7 +106,7 @@ jobs:
             --secret DOCKERHUB_USER="$DOCKERHUB_USER" \
             --secret DOCKERHUB_TOKEN="$DOCKERHUB_TOKEN" \
             --strict $PUSH_FLAG \
-            --remote-cache=ghcr.io/midnightntwrk/midnight-node:cache-test \
+            --remote-cache="${GHCR_REGISTRY_PUBLIC}/${GITHUB_REPOSITORY#*/}:cache-test" \
             +test --CACHE_KEY="$CACHE_KEY"
 
       - name: Upload test report artifact
