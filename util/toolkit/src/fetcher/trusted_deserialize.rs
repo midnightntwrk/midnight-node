@@ -25,7 +25,7 @@
 //! let state: LedgerState<DefaultDB> = trusted_deserialize_tagged(&cached_bytes)?;
 //! ```
 
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	DefaultDB, Sp, Storable,
 	mn_ledger_serialize::{Deserializable, GLOBAL_TAG, Serializable, Tagged},
 	mn_ledger_storage::{
@@ -157,7 +157,7 @@ impl Loader<DefaultDB> for TrustedCacheLoader<'_> {
 
 /// Deserialize a tagged `Storable` type from bytes, trusting the data integrity.
 ///
-/// This is functionally equivalent to `midnight_node_ledger_helpers::deserialize` but
+/// This is functionally equivalent to `midnight_ledger_unsafe_helpers::deserialize` but
 /// performs a single hash pass instead of two, and skips the re-serialization verification.
 pub fn trusted_deserialize_tagged<T: Storable<DefaultDB> + Deserializable + Tagged>(
 	bytes: &[u8],
@@ -231,7 +231,7 @@ pub fn trusted_deserialize_tagged<T: Storable<DefaultDB> + Deserializable + Tagg
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use midnight_node_ledger_helpers::{LedgerContext, LedgerState};
+	use midnight_ledger_unsafe_helpers::{LedgerContext, LedgerState};
 
 	fn load_genesis_context() -> LedgerContext<DefaultDB> {
 		let genesis_path =
@@ -268,14 +268,14 @@ mod tests {
 
 		let ledger_state = context.ledger_state.lock().unwrap();
 		let original_bytes =
-			midnight_node_ledger_helpers::serialize(&*ledger_state).expect("serialize failed");
+			midnight_ledger_unsafe_helpers::serialize(&*ledger_state).expect("serialize failed");
 		drop(ledger_state);
 
 		let restored: LedgerState<DefaultDB> =
 			trusted_deserialize_tagged(&original_bytes).expect("trusted deserialize failed");
 
 		let roundtrip_bytes =
-			midnight_node_ledger_helpers::serialize(&restored).expect("re-serialize failed");
+			midnight_ledger_unsafe_helpers::serialize(&restored).expect("re-serialize failed");
 
 		assert_eq!(
 			original_bytes,
@@ -292,18 +292,18 @@ mod tests {
 	#[test]
 	fn trusted_deser_matches_upstream() {
 		let state = LedgerState::<DefaultDB>::new("test");
-		let bytes = midnight_node_ledger_helpers::serialize(&state).expect("serialize failed");
+		let bytes = midnight_ledger_unsafe_helpers::serialize(&state).expect("serialize failed");
 
 		let standard: LedgerState<DefaultDB> =
-			midnight_node_ledger_helpers::deserialize(&bytes[..])
+			midnight_ledger_unsafe_helpers::deserialize(&bytes[..])
 				.expect("standard deserialize failed");
 		let trusted: LedgerState<DefaultDB> =
 			trusted_deserialize_tagged(&bytes).expect("trusted deserialize failed");
 
-		let standard_bytes = midnight_node_ledger_helpers::serialize(&standard)
+		let standard_bytes = midnight_ledger_unsafe_helpers::serialize(&standard)
 			.expect("re-serialize standard failed");
-		let trusted_bytes =
-			midnight_node_ledger_helpers::serialize(&trusted).expect("re-serialize trusted failed");
+		let trusted_bytes = midnight_ledger_unsafe_helpers::serialize(&trusted)
+			.expect("re-serialize trusted failed");
 
 		assert_eq!(
 			standard_bytes,

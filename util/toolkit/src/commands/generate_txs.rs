@@ -92,8 +92,8 @@ mod tests {
 			source::FetchCacheConfig,
 		},
 	};
-	use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
-	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
+	use midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme;
+	use midnight_ledger_unsafe_helpers::{NIGHT, WalletAddress};
 	use test_case::test_case;
 
 	fn resource_file(path: &str) -> String {

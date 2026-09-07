@@ -5,7 +5,7 @@ use crate::commands::show_wallet::WalletInfoJson;
 use crate::serde_def::{QualifiedInfoSer, UtxoSer};
 use hex::ToHex;
 use ledger_helpers_local::{DefaultDB, UnshieldedWallet, WalletSeed, serialize_untagged};
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 pub fn show_wallet_from_seed(
 	context: &ledger_helpers_local::context::LedgerContext<DefaultDB>,

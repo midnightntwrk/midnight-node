@@ -14,7 +14,9 @@
 // limitations under the License.
 
 pub use crate::fork::fork_8_to_9::fork_context_8_to_9;
-use crate::fork::raw_block_data::{LedgerVersion, RawBlockData, RawTransaction};
+use midnight_node_ledger_helpers::fork::raw_block_data::{
+	LedgerVersion, RawBlockData, RawTransaction,
+};
 
 type Db8 = crate::ledger_8::DefaultDB;
 type Db9 = crate::ledger_9::DefaultDB;

@@ -435,11 +435,9 @@ pub enum Operation {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::ledger_9::{
-		BlockContext, CRATE_NAME, TransactionSignature as Signature, api,
-		helpers_local::extract_tx_with_context,
-	};
+	use crate::ledger_9::{BlockContext, CRATE_NAME, TransactionSignature as Signature, api};
 	use ledger_storage_local::DefaultDB;
+	use midnight_ledger_unsafe_helpers::ledger_9::extract_tx_with_context;
 	use midnight_node_res::networks::{MidnightNetwork, UndeployedNetwork};
 	use midnight_serialize_local::tagged_deserialize;
 	use mn_ledger_local::structure::LedgerState;

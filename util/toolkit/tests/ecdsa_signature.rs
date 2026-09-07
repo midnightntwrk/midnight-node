@@ -21,7 +21,7 @@
 //! so these use the crate-level (ledger-9) types. The rest of `well_formed` (balancing, proofs) is
 //! scheme-independent and covered elsewhere; a full build+submit lives in the devnet-backed suite.
 
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	DefaultDB, Signature, SignatureKind, SignatureVerifyingKey, UnshieldedSignatureScheme,
 	UnshieldedWallet, WalletSeed,
 };

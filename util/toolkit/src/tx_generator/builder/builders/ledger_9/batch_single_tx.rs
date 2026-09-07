@@ -23,7 +23,7 @@ use ledger_helpers_local::{
 	TransactionWithContext, UnshieldedTokenType, UnshieldedWallet, UtxoSelectionError,
 	WalletAddress,
 };
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 use tracing::Instrument as _;
 
 use crate::{Progress, serde_def::SourceTransactions, tx_generator::builder::BatchSingleTxArgs};
@@ -103,7 +103,7 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 		if let Some(amount) = spec.unshielded_amount {
 			let hash = parse_hash_output(spec.unshielded_token_type.as_deref());
 			let token_type: UnshieldedTokenType = convert_unshielded_token_type(
-				midnight_node_ledger_helpers::UnshieldedTokenType(hash),
+				midnight_ledger_unsafe_helpers::UnshieldedTokenType(hash),
 			);
 
 			let dest_wallet: UnshieldedWallet = (&dest_address)
@@ -123,8 +123,9 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 
 		if let Some(amount) = spec.shielded_amount {
 			let hash = parse_hash_output(spec.shielded_token_type.as_deref());
-			let token_type: ShieldedTokenType =
-				convert_shielded_token_type(midnight_node_ledger_helpers::ShieldedTokenType(hash));
+			let token_type: ShieldedTokenType = convert_shielded_token_type(
+				midnight_ledger_unsafe_helpers::ShieldedTokenType(hash),
+			);
 
 			let dest_wallet: ShieldedWallet<DefaultDB> =
 				(&dest_address).try_into().expect("destination is not a valid shielded address");
@@ -164,10 +165,10 @@ impl<C: BuilderContext<DefaultDB>> BatchSingleTxBuilder<C> {
 	}
 }
 
-fn parse_hash_output(hex_str: Option<&str>) -> midnight_node_ledger_helpers::HashOutput {
+fn parse_hash_output(hex_str: Option<&str>) -> midnight_ledger_unsafe_helpers::HashOutput {
 	let hex_str =
 		hex_str.unwrap_or("0000000000000000000000000000000000000000000000000000000000000000");
-	midnight_node_ledger_helpers::HashOutput(
+	midnight_ledger_unsafe_helpers::HashOutput(
 		hex::decode(hex_str)
 			.expect("invalid token_type hex")
 			.try_into()

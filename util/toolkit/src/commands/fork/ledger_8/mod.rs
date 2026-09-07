@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+pub use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 
 pub mod contract_address;
 pub mod contract_state;

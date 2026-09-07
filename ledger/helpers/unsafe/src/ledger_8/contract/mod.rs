@@ -36,16 +36,12 @@ pub use crate::ledger_8::test_resolver;
 
 mod call;
 mod deploy;
-#[cfg(feature = "can-panic")]
 mod maintenance;
-#[cfg(feature = "can-panic")]
 mod merkle_tree;
 
 pub use call::*;
 pub use deploy::*;
-#[cfg(feature = "can-panic")]
 pub use maintenance::*;
-#[cfg(feature = "can-panic")]
 pub use merkle_tree::*;
 
 #[async_trait]

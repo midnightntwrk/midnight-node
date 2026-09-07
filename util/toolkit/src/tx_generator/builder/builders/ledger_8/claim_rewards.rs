@@ -18,7 +18,7 @@ use ledger_helpers_local::{
 	BuilderContext, ClaimKind, ClaimMintInfo, DefaultDB, FromContext, ProofProvider, RewardsInfo,
 	TransactionWithContext, WalletSeed,
 };
-use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 
 use crate::{
 	serde_def::SourceTransactions,

@@ -19,7 +19,7 @@ use ledger_helpers_local::{
 	StandardTransactionInfo, TransactionWithContext, UnshieldedOfferInfo, UnshieldedTokenType,
 	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletSeed,
 };
-use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 use std::{collections::HashMap, sync::Arc};
 use tokio::{sync::Semaphore, task::JoinError};
 

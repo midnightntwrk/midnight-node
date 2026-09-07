@@ -1,7 +1,7 @@
 use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 
 use ledger_helpers_local::*;
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 pub fn from_serde_tx<S, P>(tx: &SerdeTransaction<S, P, DefaultDB>) -> RawTransaction
 where
