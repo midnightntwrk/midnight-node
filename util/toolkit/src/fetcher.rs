@@ -55,6 +55,13 @@ const JOB_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(60);
 
 const WORKER_CONNECT_MAX_ELAPSED: Duration = Duration::from_secs(30);
 
+/// A long-lived connection can get throttled by the remote node (observed
+/// against public RPC endpoints: full speed for ~10 minutes, then a 25x drop
+/// with no error); a fresh connection runs at full speed again. A job this much
+/// slower than the worker's best is treated as a slow connection and recycled.
+const SLOW_CONNECTION_FACTOR: f64 = 4.0;
+const SLOW_CONNECTION_MIN_JOB_TIME: Duration = Duration::from_secs(10);
+
 /// Tip re-checks after the initial span; each one only picks up blocks finalized
 /// while the previous round was processed, so a few rounds reach the head.
 const MAX_TIP_CHASE_ROUNDS: usize = 20;
@@ -327,9 +334,11 @@ pub async fn fetch_from_rpc(
 			};
 			// `None` after a failed job: the client is poisoned, reconnect first.
 			let client = tokio::sync::Mutex::new(Some(client));
+			let mut best_rate = 0f64;
 
 			while let Ok(job) = fetch_job_rx.recv().await {
 				log::debug!("worker {worker_id}: received new job...");
+				let job_started = std::time::Instant::now();
 
 				let backoff = ExponentialBackoff {
 					max_elapsed_time: Some(JOB_RETRY_MAX_ELAPSED),
@@ -368,6 +377,26 @@ pub async fn fetch_from_rpc(
 					},
 				)
 				.await?;
+
+				let fetched = match &work_job {
+					ComputeTask::ExtractBlockData { blocks, .. } => blocks.len(),
+					_ => 0,
+				};
+				let elapsed = job_started.elapsed();
+				if fetched > 0 {
+					let rate = fetched as f64 / elapsed.as_secs_f64();
+					if elapsed >= SLOW_CONNECTION_MIN_JOB_TIME
+						&& rate * SLOW_CONNECTION_FACTOR < best_rate
+					{
+						log::info!(
+							"worker {worker_id}: connection slowed to {rate:.0} blocks/s (best {best_rate:.0}); reconnecting"
+						);
+						*client.lock().await = None;
+						best_rate = 0.0;
+					} else {
+						best_rate = best_rate.max(rate);
+					}
+				}
 
 				work_job_tx.send(work_job).await.expect("failed to push job on work queue");
 				log::debug!("worker {worker_id}: completed job.");
