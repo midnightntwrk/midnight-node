@@ -1,0 +1,167 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{collections::VecDeque, convert::Infallible, sync::Arc};
+
+use async_trait::async_trait;
+use ledger_helpers_local::{
+	BuildIntent, BuildUtxoOutput, BuildUtxoSpend, BuilderContext, DefaultDB,
+	DustRegistrationBuilder, FromContext, IntentInfo, NIGHT, ProofProvider, Segment,
+	StandardTransactionInfo, TransactionWithContext, UnshieldedOfferInfo, UtxoOutputInfo,
+	UtxoSpendInfo, WalletSeed,
+};
+use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+
+use crate::{
+	progress::Spin,
+	serde_def::SourceTransactions,
+	tx_generator::builder::{BuildTxs, DeregisterDustAddressArgs},
+};
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
+
+/// Builder for generating DUST address deregistration transactions.
+///
+/// This builder creates a transaction that removes the DUST address mapping
+/// for a wallet from the Midnight network. The wallet's unshielded UTXOs are
+/// spent back to self while the deregistration is processed.
+///
+/// Deregistration is useful for:
+/// - Migrating to a new DUST address
+/// - Cleaning up test registrations
+/// - Revoking access before rotating wallet keys
+pub struct DeregisterDustAddressBuilder<C: BuilderContext<DefaultDB>> {
+	context: Arc<C>,
+	prover: Arc<dyn ProofProvider<DefaultDB>>,
+	seed: WalletSeed,
+	rng_seed: Option<[u8; 32]>,
+	funding_seed: WalletSeed,
+}
+
+impl<C: BuilderContext<DefaultDB>> DeregisterDustAddressBuilder<C> {
+	pub fn new(
+		args: DeregisterDustAddressArgs,
+		context: Arc<C>,
+		prover: Arc<dyn ProofProvider<DefaultDB>>,
+	) -> Self {
+		use super::type_convert::convert_wallet_seed;
+
+		// Only the seed values are stored; their schemes are applied at context build time (see
+		// `Builder::relevant_wallet_schemes`).
+		let (wallet_seed, _) = args.wallet_seed.resolve();
+		let (funding_seed, _) = args.funding_seed.resolve();
+		Self {
+			context,
+			prover,
+			seed: convert_wallet_seed(wallet_seed),
+			rng_seed: args.rng_seed,
+			funding_seed: convert_wallet_seed(funding_seed),
+		}
+	}
+}
+
+#[async_trait]
+impl<C: BuilderContext<DefaultDB>> BuildTxs for DeregisterDustAddressBuilder<C> {
+	type Error = Infallible;
+
+	async fn build_txs_from(
+		&self,
+		_received_tx: SourceTransactions,
+	) -> Result<SerializedTxBatches, Self::Error> {
+		let spin = Spin::new("building deregister dust address transaction...");
+
+		let seed = self.seed.clone();
+		let funding_seed = self.funding_seed.clone();
+
+		let context = self.context.clone();
+
+		let mut tx_info = StandardTransactionInfo::new_from_context(
+			context.clone(),
+			self.prover.clone(),
+			self.rng_seed,
+		);
+
+		let inputs: Vec<UtxoSpendInfo<_>> = context
+			.unshielded_utxos(seed.clone())
+			.await
+			.into_iter()
+			.map(|(utxo, _ctime)| utxo)
+			.filter(|utxo| utxo.type_ == NIGHT)
+			.map(|utxo| UtxoSpendInfo {
+				value: utxo.value,
+				owner: seed.clone(),
+				token_type: NIGHT,
+				intent_hash: Some(utxo.intent_hash),
+				output_number: Some(utxo.output_no),
+			})
+			.collect();
+
+		let mut outputs: VecDeque<Box<dyn BuildUtxoOutput<DefaultDB, C>>> = inputs
+			.iter()
+			.map(|input| {
+				let output: Box<dyn BuildUtxoOutput<DefaultDB, C>> = Box::new(UtxoOutputInfo {
+					value: input.value,
+					owner: input.owner.clone(),
+					token_type: input.token_type,
+				});
+				output
+			})
+			.collect();
+
+		let mut inputs: VecDeque<Box<dyn BuildUtxoSpend<DefaultDB, C>>> = inputs
+			.into_iter()
+			.map(|input| {
+				let input: Box<dyn BuildUtxoSpend<DefaultDB, C>> = Box::new(input);
+				input
+			})
+			.collect();
+
+		let guaranteed_inputs = inputs.pop_front().into_iter().collect();
+		let guaranteed_outputs = outputs.pop_front().into_iter().collect();
+		let guaranteed_unshielded_offer =
+			UnshieldedOfferInfo { inputs: guaranteed_inputs, outputs: guaranteed_outputs };
+
+		let fallible_unshielded_offer = if !inputs.is_empty() && !outputs.is_empty() {
+			Some(UnshieldedOfferInfo { inputs: inputs.into(), outputs: outputs.into() })
+		} else {
+			None
+		};
+		let intent_info = IntentInfo {
+			guaranteed_unshielded_offer: Some(guaranteed_unshielded_offer),
+			fallible_unshielded_offer,
+			actions: vec![],
+		};
+
+		let boxed_intent: Box<dyn BuildIntent<DefaultDB, C>> = Box::new(intent_info);
+		tx_info.add_intent(Segment::Fallible.into(), boxed_intent);
+
+		// Deregistration: pass dust_address: None instead of Some(dust_address)
+		context.with_wallet_from_seed(seed.clone(), |wallet| {
+			tx_info.add_dust_registration(DustRegistrationBuilder {
+				wallet: wallet.unshielded.clone(),
+				dust_address: None,
+				allow_fee_payment: 0,
+			});
+		});
+
+		tx_info.set_funding_seeds(vec![funding_seed]);
+		tx_info.use_mock_proofs_for_fees(true);
+
+		let tx = tx_info.prove().await.expect("Balancing TX failed");
+
+		let tx_with_context = TransactionWithContext::new(tx, None);
+
+		spin.finish("generated tx.");
+
+		Ok(super::tx_serialization::build_single(tx_with_context))
+	}
+}
