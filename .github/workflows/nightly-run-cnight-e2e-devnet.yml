@@ -28,7 +28,7 @@ jobs:
     # upgrades — #1661 tracks replacing this with a baked CI image
     # that closes the drift.
     container:
-      image: rust:1.95-trixie
+      image: rust:1.95-trixie@sha256:f49565f188ee00bc2a18dd418183f2c5f23ef7d6e691890517ed341a598f67c3
     timeout-minutes: 480
 
     steps:

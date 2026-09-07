@@ -5,7 +5,7 @@ services:
     # shared volume once at startup; using the multi-arch busybox image lets Docker
     # fetch the right arch automatically, so no per-arch binaries are vendored.
     container_name: busybox-init
-    image: busybox:1.35.0-uclibc
+    image: busybox:1.35.0-uclibc@sha256:e5877866756a3714cd11309f0b34e7c2c62406fdbfcae39c96beabb5dd4005a7
     platform: ${ARCHITECTURE}
     command: ["sh", "-c", "cp /bin/busybox /shared/busybox && chmod 0755 /shared/busybox"]
     security_opt:
