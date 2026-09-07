@@ -297,6 +297,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		},
 		tx_pause: Default::default(),
 		pallet_session: Default::default(),
+		safe_mode: Default::default(),
 		c_night_observation: CNightObservationConfig {
 			config: cnight_genesis,
 			_marker: Default::default(),
