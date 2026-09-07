@@ -25,6 +25,7 @@ use ledger_storage_local::{
 	storage::default_storage,
 };
 
+use crate::utils::SegmentResults;
 use helpers_local::{StorableSyntheticCost, compute_overall_fullness};
 use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
@@ -176,19 +177,11 @@ impl<D: DB> Ledger<D> {
 		match result {
 			TransactionResult::Success(_) => Ok((new_sp, AppliedStage::AllApplied)),
 			TransactionResult::PartialSuccess(segments, _) => {
-				let rendered = segments
-					.iter()
-					.map(|(id, res)| match res {
-						Ok(()) => format!("{id}: ok"),
-						Err(reason) => format!("{id}: {reason}"),
-					})
-					.collect::<Vec<_>>()
-					.join(", ");
 				log::warn!(
 					target: LOG_TARGET,
 					"Non guaranteed part of the transaction failed tx_hash = {:?}, segments = [{}]",
 					tx.identifiers().map(|i| api.tagged_serialize(&i)).collect::<Vec<_>>(),
-					rendered
+					SegmentResults(&segments)
 				);
 				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect())))
 			},
