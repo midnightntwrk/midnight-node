@@ -12,4 +12,4 @@ Switch all of them to `Display` (the segment map is now rendered as
 node-side `InvalidError` code returned to callers is unchanged, so nothing
 downstream of the log is affected.
 
-PR: <link>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2105
