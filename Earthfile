@@ -168,7 +168,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.95-trixie
+    FROM rust:1.97-trixie@sha256:b1b3c9c0d921d7fa0a6d1f9ec7e4eab87f8c8ec97644c3d791450f131dec813f
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -828,7 +828,7 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     # Read versions from files (multi-FROM so we don't depend on env vars propagating)
-    FROM alpine:3.20
+    FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
     COPY rust-toolchain.toml COMPACTC_VERSION .
     ARG NATIVEARCH
     ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
@@ -2135,7 +2135,7 @@ sync-mainnet-1000-snapshot:
     ARG MIN_EPOCH=617
     # postgres:17.4-alpine matches the loader image used by run-sync.sh and
     # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
-    FROM postgres:17.4-alpine
+    FROM postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     RUN apk add --no-cache bash xz
     WORKDIR /work
     COPY scripts/sync-test/build-snapshot.sh ./
