@@ -1188,7 +1188,7 @@ where
 			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
-					"🚫 Rejected transaction {} from mempool: guaranteed execution would fail: {reason:?}",
+					"🚫 Rejected transaction {} from mempool: guaranteed execution would fail: {reason}",
 					tx_hash_hex
 				);
 				// Do NOT cache failures — tx will be fully re-checked on next revalidation
@@ -1233,7 +1233,7 @@ where
 			Err(reason) => {
 				log::warn!(
 					target: LOG_TARGET,
-					"🚫 Rejecting transaction {} at pre-dispatch: guaranteed execution would fail: {reason:?}",
+					"🚫 Rejecting transaction {} at pre-dispatch: guaranteed execution would fail: {reason}",
 					hex::encode(tx.hash())
 				);
 				Err(LedgerApiError::Transaction(types::TransactionError::Invalid(reason.into())))

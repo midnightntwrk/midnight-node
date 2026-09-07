@@ -176,16 +176,24 @@ impl<D: DB> Ledger<D> {
 		match result {
 			TransactionResult::Success(_) => Ok((new_sp, AppliedStage::AllApplied)),
 			TransactionResult::PartialSuccess(segments, _) => {
+				let rendered = segments
+					.iter()
+					.map(|(id, res)| match res {
+						Ok(()) => format!("{id}: ok"),
+						Err(reason) => format!("{id}: {reason}"),
+					})
+					.collect::<Vec<_>>()
+					.join(", ");
 				log::warn!(
 					target: LOG_TARGET,
-					"Non guaranteed part of the transaction failed tx_hash = {:?}, segments = {:?}",
+					"Non guaranteed part of the transaction failed tx_hash = {:?}, segments = [{}]",
 					tx.identifiers().map(|i| api.tagged_serialize(&i)).collect::<Vec<_>>(),
-					segments
+					rendered
 				);
 				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect())))
 			},
 			TransactionResult::Failure(reason) => {
-				log::warn!(target: LOG_TARGET, "Error applying Transaction: {reason:?}");
+				log::warn!(target: LOG_TARGET, "Error applying Transaction: {reason}");
 				Err(LedgerApiError::Transaction(TransactionError::Invalid(reason.into())))
 			},
 		}
