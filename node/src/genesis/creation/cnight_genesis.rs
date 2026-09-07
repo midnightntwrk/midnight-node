@@ -33,6 +33,12 @@ pub enum CNightGenesisError {
 
 	#[error("I/O error: {0}")]
 	IoError(#[from] std::io::Error),
+
+	#[error(
+		"cNIGHT genesis scan stalled at {0}: the observation query cannot advance past this \
+		 position (a single Cardano transaction exceeds its row limit)"
+	)]
+	ScanStalled(CardanoPosition),
 }
 
 fn create_inherent(
@@ -112,17 +118,28 @@ pub async fn generate_cnight_genesis(
 			.await
 			.map_err(CNightGenesisError::UtxoQueryError)?;
 
-		current_position = observed.end;
 		log::info!(
-			"Fetched {} cNight utxos. Current tip: {current_position:?}",
+			"Fetched {} cNight utxos. Current tip: {:?}",
 			observed.utxos.len(),
+			observed.end,
 		);
 		all_utxos.extend(observed.utxos);
 
-		// Optional: break early if position is past the tip
-		if current_position.block_hash == cardano_tip {
-			break;
+		// Terminate on no progress, not on reaching the tip block: the query
+		// stops on a whole-transaction boundary, which can fall inside the tip
+		// block (capacity cap) or short of it (row-limit cut), and breaking
+		// there would lose every event past the boundary. Once the cursor sits
+		// one past the tip the next query returns that same position with
+		// nothing new, which is the real end of the scan; a cursor that fails
+		// to advance anywhere else means a single Cardano transaction exceeds
+		// the query's row limit and the scan would spin forever.
+		if observed.end == current_position {
+			if current_position.block_hash == cardano_tip {
+				break;
+			}
+			return Err(CNightGenesisError::ScanStalled(current_position));
 		}
+		current_position = observed.end;
 	}
 
 	// Collect all Cardano reward addresses that appear in any Registration or Deregistration.

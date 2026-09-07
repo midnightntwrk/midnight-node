@@ -40,6 +40,13 @@ pub const CNIGHT_POLICY_ID_LENGTH: u32 = 28;
 /// Cardano native-asset name maximum length in bytes.
 pub const CARDANO_ASSET_NAME_MAX_LENGTH: u32 = 32;
 
+/// Overestimate factor for UTXOs per Cardano transaction.
+/// The mainchain follower applies this multiplier to `CardanoTxCapacityPerBlock`
+/// to turn a transaction capacity into the row limit its queries use (see
+/// `get_utxos_up_to_capacity`); the pallet applies it for the matching bound on
+/// the inherent's UTXO count.
+pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
+
 #[derive(
 	Encode,
 	Decode,

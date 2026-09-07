@@ -12,6 +12,7 @@
 // limitations under the License.
 
 use crate::data_source::candidates_data_source::observed_async_trait;
+use crate::data_source::cnight_grouped::{merge_gap_free, truncate_to_tx_capacity};
 use crate::data_source::metrics::{MidnightDataSourceMetrics, start_sub_query_timer};
 use crate::db::{MultiAssetCache, PagedQuery, get_deregistrations, get_registrations};
 use crate::{
@@ -24,6 +25,7 @@ use cardano_serialization_lib::{
 };
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+	UTXO_PER_TX_OVERESTIMATE,
 };
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
@@ -182,7 +184,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		// The "capacity" argument is capacity in terms of TRANSACTIONS,
 		// but the various sql queries below want a capacity in terms of UTXOs.
 		// Use a generous overestimate of how many UTXOs each TX _may_ have.
-		let utxo_capacity = tx_capacity * 64;
+		let utxo_capacity = tx_capacity * UTXO_PER_TX_OVERESTIMATE as usize;
 
 		// Call db methods to get UTXOs (offset + limit) until we reach our capacity
 		// TODO: (possibly) Replace this with grabbing from a queue that's filled async by an offchain thread
@@ -209,7 +211,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
+					None => Ok((vec![], None)),
 				}
 			},
 			async {
@@ -232,7 +234,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
+					None => Ok((vec![], None)),
 				}
 			},
 			async {
@@ -245,53 +247,45 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 					)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into),
-					None => Ok(vec![]),
+					None => Ok((vec![], None)),
 				}
 			}
 		)?;
 
-		let mut utxos = Vec::with_capacity(
-			registration_utxos.len()
-				+ deregistration_utxos.len()
-				+ asset_create_utxos.len()
-				+ asset_spend_utxos.len(),
+		// Each category is row-limited independently, so a saturated one covers its
+		// category only up to the position of its last row. Cut the merged set at the
+		// earliest such frontier: below the cut every category is provably complete.
+		let (grouped, cut) = merge_gap_free(vec![
+			registration_utxos,
+			deregistration_utxos,
+			asset_create_utxos,
+			asset_spend_utxos,
+		]);
+		if let Some(cut) = &cut {
+			log::warn!(
+				"cNIGHT observation hit the {utxo_capacity}-row limit; results cut to the \
+				 proven-complete prefix, cursor resumes at {cut}"
+			);
+		}
+		let covered_end = cut.unwrap_or(end);
+
+		// The shipped loop admitted at most `tx_capacity - 1` transactions. Keep that:
+		// validators re-derive this inherent locally, so changing the admitted set is
+		// consensus-visible whenever the cap fires.
+		let observed = truncate_to_tx_capacity(
+			grouped,
+			tx_capacity.saturating_sub(1),
+			utxo_capacity,
+			start_position,
+			covered_end,
 		);
-		utxos.extend(registration_utxos);
-		utxos.extend(deregistration_utxos);
-		utxos.extend(asset_create_utxos);
-		utxos.extend(asset_spend_utxos);
-
-		utxos.sort();
-
-		// Truncate UTXOs but include full transactions
-		let mut truncated_utxos = Vec::with_capacity(utxo_capacity);
-		let mut num_txs = 0;
-		let mut cur_tx: Option<CardanoPosition> = None;
-		for utxo in utxos {
-			if cur_tx.as_ref().is_none_or(|tx| tx < &utxo.header.tx_position) {
-				num_txs += 1;
-				cur_tx = Some(utxo.header.tx_position.clone());
-			}
-			if num_txs == tx_capacity {
-				break;
-			}
-			truncated_utxos.push(utxo);
+		if observed.end == *start_position {
+			log::error!(
+				"cNIGHT observation cursor cannot advance past {start_position}: a single \
+				 Cardano tx exceeds the {utxo_capacity}-row limit; raise CardanoTxCapacityPerBlock"
+			);
 		}
-
-		if num_txs < tx_capacity {
-			// We couldn't find enough UTXOs in the range, which means we're up-to-date with the
-			// current_tip
-			Ok(ObservedUtxos { start: start_position.clone(), end, utxos: truncated_utxos })
-		} else {
-			Ok(ObservedUtxos {
-				start: start_position.clone(),
-				end: truncated_utxos
-					.last()
-					.map_or(start_position.clone(), |u| u.header.tx_position.clone())
-					.increment(),
-				utxos: truncated_utxos,
-			})
-		}
+		Ok(observed)
 	}
 }
 );
@@ -347,8 +341,18 @@ impl MidnightCNightObservationDataSourceImpl {
 		auth_token_ident: i64,
 		address: &str,
 		query: &PagedQuery<'_>,
-	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+	) -> Result<
+		(Vec<ObservedUtxo>, Option<CardanoPosition>),
+		MidnightCNightObservationDataSourceError,
+	> {
 		let rows = get_registrations(&self.pool, address, auth_token_ident, query).await?;
+
+		// A query that returned its full row limit may have more rows behind it, so it
+		// is only proven complete below the position of its last row. Count raw rows,
+		// not surviving events: the filters below drop rows, and a saturated query
+		// that loses most of them would otherwise look complete.
+		let num_rows = rows.len();
+		let mut last_position = None;
 
 		let mut utxos = Vec::new();
 
@@ -364,6 +368,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_tx_hash: McTxHash(row.tx_hash.0),
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
+			last_position = Some(header.tx_position.clone());
 
 			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
@@ -392,7 +397,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			utxos.push(utxo);
 		}
 
-		Ok(utxos)
+		Ok((utxos, (num_rows >= query.limit).then_some(last_position).flatten()))
 	}
 
 	async fn get_deregistration_utxos(
@@ -400,8 +405,18 @@ impl MidnightCNightObservationDataSourceImpl {
 		cardano_network: u8,
 		address: &str,
 		query: &PagedQuery<'_>,
-	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+	) -> Result<
+		(Vec<ObservedUtxo>, Option<CardanoPosition>),
+		MidnightCNightObservationDataSourceError,
+	> {
 		let rows = get_deregistrations(&self.pool, address, query).await?;
+
+		// A query that returned its full row limit may have more rows behind it, so it
+		// is only proven complete below the position of its last row. Count raw rows,
+		// not surviving events: the filters below drop rows, and a saturated query
+		// that loses most of them would otherwise look complete.
+		let num_rows = rows.len();
+		let mut last_position = None;
 
 		let mut utxos = Vec::new();
 
@@ -417,6 +432,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
+			last_position = Some(header.tx_position.clone());
 
 			let Some(constr) = row.full_datum.0.as_constr_plutus_data() else {
 				log::error!("Plutus data for mapping validator not Constr ({header:?})");
@@ -445,7 +461,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			utxos.push(utxo);
 		}
 
-		Ok(utxos)
+		Ok((utxos, (num_rows >= query.limit).then_some(last_position).flatten()))
 	}
 
 	async fn get_asset_create_utxos(
@@ -453,8 +469,18 @@ impl MidnightCNightObservationDataSourceImpl {
 		cardano_network: u8,
 		ident: i64,
 		query: &PagedQuery<'_>,
-	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+	) -> Result<
+		(Vec<ObservedUtxo>, Option<CardanoPosition>),
+		MidnightCNightObservationDataSourceError,
+	> {
 		let rows = crate::db::get_asset_creates(&self.pool, ident, query).await?;
+
+		// A query that returned its full row limit may have more rows behind it, so it
+		// is only proven complete below the position of its last row. Count raw rows,
+		// not surviving events: the filters below drop rows, and a saturated query
+		// that loses most of them would otherwise look complete.
+		let num_rows = rows.len();
+		let mut last_position = None;
 
 		let mut utxos = Vec::new();
 
@@ -470,6 +496,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_tx_hash: McTxHash(row.tx_hash.0),
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
+			last_position = Some(header.tx_position.clone());
 
 			let Some(cardano_address) =
 				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
@@ -502,7 +529,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			utxos.push(utxo);
 		}
 
-		Ok(utxos)
+		Ok((utxos, (num_rows >= query.limit).then_some(last_position).flatten()))
 	}
 
 	async fn get_asset_spend_utxos(
@@ -510,8 +537,18 @@ impl MidnightCNightObservationDataSourceImpl {
 		cardano_network: u8,
 		ident: i64,
 		query: &PagedQuery<'_>,
-	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
+	) -> Result<
+		(Vec<ObservedUtxo>, Option<CardanoPosition>),
+		MidnightCNightObservationDataSourceError,
+	> {
 		let rows = crate::db::get_asset_spends(&self.pool, ident, query).await?;
+
+		// A query that returned its full row limit may have more rows behind it, so it
+		// is only proven complete below the position of its last row. Count raw rows,
+		// not surviving events: the filters below drop rows, and a saturated query
+		// that loses most of them would otherwise look complete.
+		let num_rows = rows.len();
+		let mut last_position = None;
 
 		let mut utxos = Vec::new();
 
@@ -527,6 +564,7 @@ impl MidnightCNightObservationDataSourceImpl {
 				utxo_tx_hash: McTxHash(row.utxo_tx_hash.0),
 				utxo_index: UtxoIndexInTx(row.utxo_index.0),
 			};
+			last_position = Some(header.tx_position.clone());
 
 			let Some(cardano_address) =
 				cardano_serialization_lib::Address::from_bech32(&row.holder_address).ok()
@@ -560,6 +598,6 @@ impl MidnightCNightObservationDataSourceImpl {
 			utxos.push(utxo);
 		}
 
-		Ok(utxos)
+		Ok((utxos, (num_rows >= query.limit).then_some(last_position).flatten()))
 	}
 }

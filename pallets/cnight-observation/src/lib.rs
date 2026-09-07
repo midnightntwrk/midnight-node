@@ -68,10 +68,7 @@ pub enum UtxoActionType {
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
 
-/// Overestimate factor for UTXOs per Cardano transaction.
-/// The mainchain follower applies this multiplier to `CardanoTxCapacityPerBlock`
-/// when pre-allocating the UTXO buffer (see `get_utxos_up_to_capacity`).
-pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
+pub use midnight_primitives_cnight_observation::UTXO_PER_TX_OVERESTIMATE;
 
 /// Upper bound on UTXO count per block, used for worst-case weight declaration.
 pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER_TX_OVERESTIMATE;
