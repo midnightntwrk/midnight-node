@@ -27,4 +27,4 @@ limit — the case that previously dropped events. A test reimplements the shipp
 truncation loop and asserts the new pipeline produces identical events and
 cursor over generated inputs.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2102
