@@ -87,6 +87,9 @@ pub enum SystemTransactionError {
 	TreasuryDisabled,
 	MerkleTreeError,
 	UnknownError,
+	/// The caller's `apply_*_system_transaction` guard rejected this transaction's
+	/// variant — it isn't in the caller-specific allow-list.
+	NotAllowedForCaller,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -535,6 +538,7 @@ impl From<LedgerApiError> for u8 {
 					SystemTransactionError::TreasuryDisabled => 210,
 					SystemTransactionError::MerkleTreeError => 211,
 					SystemTransactionError::UnknownError => 204,
+					SystemTransactionError::NotAllowedForCaller => 140,
 				},
 			},
 			// Reserved from [150-255) for future Errors
