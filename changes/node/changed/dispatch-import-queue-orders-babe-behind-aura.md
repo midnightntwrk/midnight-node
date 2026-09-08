@@ -1,11 +1,12 @@
 #node #consensus #babe #aura
+
 # Route by authoring engine and order BABE behind AURA in `DispatchImportQueue`
 
 Two fixes to how `DispatchImportQueue` hands blocks to the AURA and BABE import queues
 across the AURA→BABE flip, both of which showed up when syncing a batch that straddles the
 flip block.
 
-**Routing key.** Blocks were routed by the engine active in the *parent's* runtime state.
+**Routing key.** Blocks were routed by the engine active in the _parent's_ runtime state.
 That state does not exist for the first BABE block in a sync batch, whose parent (the flip
 block) is still in the same batch, so the query failed, fell back to AURA, and the block was
 rejected by the AURA verifier. Sync then dropped the peer and restarted, advancing one BABE
@@ -51,7 +52,7 @@ completes. Seeding's check-and-reset is now atomic under the epoch-tree lock, si
 supervisor and the import path can seed concurrently.
 
 **Seeding no longer wipes the epoch tree on a repeat call.** The "already seeded?" check asked
-the tree for an epoch covering the flip block's children at the flip block's *own* slot. That
+the tree for an epoch covering the flip block's children at the flip block's _own_ slot. That
 slot is the last AURA slot, one below BABE's genesis slot, so no epoch ever matched and every
 call to seed at the flip block re-ran `reset`, discarding everything BABE had recorded since —
 in particular the epoch-1 descriptor announced at the first BABE block, whose authorities differ
@@ -61,5 +62,4 @@ the stale epoch 1, rejected the network's first epoch-1 block with "Bad signatur
 The check now queries at the first BABE slot, and seeding refuses to reset a non-empty tree that
 does not cover the flip block instead of clobbering it.
 
-PR:
-Issue:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2113
