@@ -17,7 +17,9 @@ import { globSync } from "glob";
 import { parse } from "dotenv";
 import { spawn } from "child_process";
 import { ImageUpgradeOptions } from "../lib/types";
+import { discoverValidators } from "../lib/discoverValidators";
 import { mockOverridePath } from "../lib/mockComposeOverride";
+import { writeForkManifest } from "../lib/forkManifest";
 
 // Command functionality we can depend on
 import { run } from "./run";
@@ -128,9 +130,32 @@ export async function imageUpgrade(
     if (waitBetweenMs > 0) await sleep(waitBetweenMs);
   }
 
-  console.log(
-    `\n Rollout complete! All selected services are now on ${toTag}.`,
-  );
+  console.log(`\n Rollout complete! Selected services are now on ${toTag}.`);
+
+  const primaryValidator = discoverValidators(composeFile)[0].name;
+  if (shouldRefreshForkManifest(services, primaryValidator)) {
+    // The manifest written during the initial `run()` records the starting
+    // image. Its bare node endpoint describes the primary validator, so refresh
+    // the advertised image only when that validator was rolled. `writeForkManifest`
+    // reads the node image from `env.NODE_IMAGE`, so update it there regardless
+    // of which env var drove the rollout.
+    env[imageEnvVar] = toTag;
+    env.NODE_IMAGE = toTag;
+    const manifestPath = writeForkManifest({ namespace, composeFile, env });
+    console.log(`Fork manifest refreshed with rolled image: ${manifestPath}`);
+  } else {
+    console.log(
+      `Fork manifest left unchanged: primary validator ${primaryValidator} was not rolled.`,
+    );
+  }
+}
+
+/** The global manifest image describes the primary validator endpoint. */
+export function shouldRefreshForkManifest(
+  rolledServices: readonly string[],
+  primaryValidator: string,
+): boolean {
+  return rolledServices.includes(primaryValidator);
 }
 
 function resolveNetworkCompose(namespace: string): string {

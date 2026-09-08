@@ -20,7 +20,7 @@ pub type MaxTransfersPerBlock = ConstU32<32>;
 pub mod mock_pallet {
 	use frame_support::pallet_prelude::*;
 
-	use crate::TransferHandler;
+	use crate::{TransferHandler, TransferHandlerError};
 
 	use super::*;
 
@@ -34,9 +34,21 @@ pub mod mock_pallet {
 	#[pallet::unbounded]
 	pub type Transfers<T: Config> = StorageValue<_, Vec<BridgeTransferV1<RecipientAddress>>>;
 
+	/// Transfers that the handler rejects instead of recording.
+	#[pallet::storage]
+	#[pallet::unbounded]
+	pub type FailingTransfers<T: Config> =
+		StorageValue<_, Vec<BridgeTransferV1<RecipientAddress>>, ValueQuery>;
+
 	impl<T> TransferHandler<RecipientAddress> for Pallet<T> {
-		fn handle_incoming_transfer(transfer: BridgeTransferV1<RecipientAddress>) {
+		fn handle_incoming_transfer(
+			transfer: BridgeTransferV1<RecipientAddress>,
+		) -> Result<(), TransferHandlerError> {
+			if FailingTransfers::<Test>::get().contains(&transfer) {
+				return Err(TransferHandlerError::Retriable);
+			}
 			Transfers::<Test>::append(transfer);
+			Ok(())
 		}
 	}
 }

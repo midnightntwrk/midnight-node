@@ -46,7 +46,7 @@ use midnight_node_ledger::{
 	types::active_ledger_bridge as LedgerApi,
 };
 use midnight_primitives::{
-	LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
+	LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionCNightExecutor,
 };
 
 use super::PALLET_MIGRATIONS_ID;

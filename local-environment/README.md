@@ -145,6 +145,32 @@ Use `--allow-same-version` only for local rehearsals where the candidate wasm
 does not bump `spec_version`. It deliberately bypasses the runtime-side version
 check and should not be used for production-shaped validation.
 
+### Consensus engine (AURA → BABE) transitions
+
+`pallet-consensus-engine`'s `arm_babe` and `schedule_flip` calls are gated by
+governance motion filter, like runtime upgrades.
+
+`consensus-upgrade-arm-babe` moves the engine from `Aura` to `ArmedBabe`.
+
+```bash
+npm run consensus-upgrade-arm-babe:local-env -- \
+  --technical-uris //One //Two //Three \
+  --council-uris //Four //Five //Six \
+  --executor-uri //One
+```
+
+`consensus-upgrade-schedule-flip` moves it from `ArmedBabe` to `ScheduledFlip`
+Run it only after the finalized blocks have BABE pre-runtime digests.
+
+```bash
+npm run consensus-upgrade-schedule-flip:local-env -- \
+  --technical-uris //One //Two //Three \
+  --council-uris //Four //Five //Six \
+  --executor-uri //One
+```
+
+Both commands will error if the pallet is not a state expected for given call.
+
 ### Stopping networks
 
 ```bash
@@ -157,6 +183,61 @@ npm run stop:mainnet
 
 See [fork-testing.md](../docs/fork-testing.md) for snapshot prerequisites and
 archive format details.
+
+### Attaching external services to a fork
+
+Downstream consumers (e.g. [midnight-indexer](https://github.com/midnightntwrk/midnight-indexer))
+can run their own services against a fork without any coupling to this repo's
+layout. The contract has two parts:
+
+1. **A named docker network.** The fork's compose project declares a stable
+   default-network name (mainnet: `midnight-fork-mainnet`). External compose
+   projects join it by declaring it `external: true`.
+2. **A connection manifest.** Every successful `run` writes
+   `artifacts/<network>.manifest.env` describing the fork:
+   `MIDNIGHT_FORK_NETWORK` (docker network name), `MIDNIGHT_FORK_NETWORK_ID`,
+   `MIDNIGHT_FORK_NODE_IMAGE` / `MIDNIGHT_FORK_NODE_TAG`,
+   `MIDNIGHT_FORK_NODE_WS` (in-network primary validator RPC on node1),
+   `MIDNIGHT_FORK_NODE_WS_HOST` (the same RPC published on localhost), plus
+   per-validator `MIDNIGHT_FORK_<SERVICE>_WS[_HOST]`
+   entries. The file reflects the most recent bring-up.
+
+A minimal consumer overlay, run as its own compose project from the consumer's
+repo:
+
+```yaml
+services:
+  my-service:
+    image: my-image
+    environment:
+      NODE_URL: ${MIDNIGHT_FORK_NODE_WS}
+    networks: [default, fork]
+
+networks:
+  fork:
+    name: ${MIDNIGHT_FORK_NETWORK}
+    external: true
+```
+
+```bash
+docker compose --env-file <midnight-node>/local-environment/artifacts/mainnet.manifest.env \
+  -f my-overlay.yaml up -d
+```
+
+Only services that talk to the node need to join the fork network; a
+consumer's private dependencies (databases, brokers) should stay on the
+overlay's own default network. Host-side (non-docker) consumers can use
+`MIDNIGHT_FORK_NODE_WS_HOST` directly and skip the network entirely.
+
+Caveats:
+
+- Tear down the consumer project before `npm run stop:<network>`; the fork
+  cannot remove its network while foreign containers are attached.
+- Don't combine an external indexer overlay with `-p withindexer` — the
+  in-tree indexer profile uses fixed container names (`nats`, `indexer-api`,
+  ...) that will collide with a second copy of the stack.
+- The manifest is regenerated on every `run`; consumers should re-source it
+  after a fork restart rather than caching values.
 
 ### Local environment
 
@@ -200,15 +281,23 @@ chain epochs.
 (`contract-compiler` → `mint-cnight-supply` → `midnight-setup` → `init-mnight-faucet`)
 each run to completion (`exit 0`) before the next phase starts.
 
-| Phase | Container(s) | Does |
-|------:|--------------|------|
-| 0 | `cardano-node-1`, `postgres` | base |
-| 1 | `ogmios`, `kupo`, `db-sync` | Cardano API + chain indexing |
-| 2 | `contract-compiler` | compile + deploy the Aiken governance contracts |
-| 3 | `mint-cnight-supply` | mint the cNIGHT supply → Reserve / ICS / faucet pools, then send the c2m bridge transfer funding wallet `0x..01` (1B NIGHT) |
-| 4 | `midnight-setup` | build the chainspec/genesis (bridge checkpoint + pre-approved faucet tx) |
-| 5 | `midnight-node-1` … `midnight-node-5` | validators; produce + finalize blocks |
-| 6 | `init-mnight-faucet` | claim the bridged NIGHT + DUST-register wallet `0x..01` |
+| Phase | Container(s)                          | Does                                                                                                                        |
+| ----: | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+|     0 | `cardano-node-1`, `postgres`          | base                                                                                                                        |
+|     1 | `ogmios`, `kupo`, `db-sync`           | Cardano API + chain indexing                                                                                                |
+|     2 | `contract-compiler`                   | compile + deploy the Aiken governance contracts                                                                             |
+|     3 | `mint-cnight-supply`                  | mint the cNIGHT supply → Reserve / ICS / faucet pools, then send the c2m bridge transfer funding wallet `0x..01` (1B NIGHT) |
+|     4 | `midnight-setup`                      | build the chainspec/genesis (bridge checkpoint + pre-approved faucet tx)                                                    |
+|     5 | `midnight-node-1` … `midnight-node-6` | nodes 1–5: validators; produce + finalize blocks. node 6: non-validator archive follower                                    |
+|     6 | `init-mnight-faucet`                  | claim the bridged NIGHT + DUST-register wallet `0x..01`                                                                     |
+
+`midnight-node-6` is a non-validator archive node (`--state-pruning=archive
+--blocks-pruning=archive`, no keystore): it syncs from `midnight-node-1` and
+keeps full state and block history queryable over RPC. It publishes host ports
+30338 (p2p), 9945 (RPC), and 9620 (Prometheus), and persists its chain data in
+the `midnight-node-6-data` volume. It is labeled `io.midnight.role: archive`
+rather than `validator`, so `verify-finality` and the upgrade/consensus
+commands skip it.
 
 With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
 `wallet-indexer`, `indexer-api`) starts alongside the Cardano services.
@@ -219,13 +308,13 @@ The `local` network ships an **unfunded** genesis (no faucet wallets), so all NI
 enters through the real cNIGHT→mNIGHT bridge. Two one-shot services drive this:
 
 - **`mint-cnight-supply`** seeds the Cardano side of the bridge (#1778). It runs after
-  the governance contracts are deployed and *before* `midnight-setup` captures the
+  the governance contracts are deployed and _before_ `midnight-setup` captures the
   bridge observation checkpoint. In one `cardano-cli` tx it mints the full cNIGHT
   supply and splits it to mirror the Midnight genesis pools — Reserve (`C.R = M.R`),
   ICS (`C.L = M.U`), and the funded/faucet address (`C.U = M.L`) — so the cross-chain
   pool invariants hold from block 0. It then sends a c2m bridge transfer locking 1B
   NIGHT of the circulating cNIGHT to ICS for the dev wallet `0x..01`; because that
-  transfer spends the seeding tx's outputs it lands strictly *after* the checkpoint and
+  transfer spends the seeding tx's outputs it lands strictly _after_ the checkpoint and
   is observed as a user transfer, and `midnight-setup` pre-approves its tx hash in the
   c2m-bridge genesis config (`approved_txs`), so claiming it needs no governance round.
 
