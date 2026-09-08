@@ -87,8 +87,6 @@ pub enum SystemTransactionError {
 	TreasuryDisabled,
 	MerkleTreeError,
 	UnknownError,
-	/// The caller's `apply_*_system_transaction` guard rejected this transaction's
-	/// variant — it isn't in the caller-specific allow-list.
 	NotAllowedForCaller,
 }
 
