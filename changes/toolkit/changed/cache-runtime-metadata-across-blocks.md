@@ -9,5 +9,5 @@ process idle. With the cache the same fetch runs at ~600 blocks/s with 8 fetch
 workers. The cache is per client, so a process talking to several chains never
 mixes their metadata.
 
-PR:
+PR: https://github.com/midnightntwrk/midnight-node/pull/2111
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1937
