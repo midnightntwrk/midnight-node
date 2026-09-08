@@ -617,7 +617,12 @@ pub mod pallet {
 		pub fn get_transaction_cost(tx: &[u8]) -> Result<GasCost, LedgerApiError> {
 			let state_key = StateKey::<T>::get();
 			let block_context = Self::get_block_context();
-			let max_weight = T::BlockWeights::get().max_block.ref_time();
+			let weights = T::BlockWeights::get();
+			let max_weight = weights
+				.get(frame_support::dispatch::DispatchClass::Normal)
+				.max_total
+				.unwrap_or(weights.max_block)
+				.ref_time();
 			LedgerApi::get_transaction_cost(&state_key, tx, block_context, max_weight)
 		}
 
