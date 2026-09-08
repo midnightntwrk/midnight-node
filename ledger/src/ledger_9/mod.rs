@@ -563,7 +563,7 @@ where
 		let api = api::new();
 		let tx = api.tagged_deserialize::<SystemTransaction>(tx_serialized)?;
 		let tx_type = Self::get_system_tx_type(&tx)?;
-		log::info!(
+		log::debug!(
 			target: LOG_TARGET,
 			"⚙️  Processing SystemTx {tx:?}"
 		);
