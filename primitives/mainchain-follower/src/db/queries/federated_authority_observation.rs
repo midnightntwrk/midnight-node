@@ -26,6 +26,9 @@ use sqlx::{Pool, Postgres, error::Error as SqlxError};
 /// - A provided policy ID (for the native asset)
 ///
 /// It is assumed that spending governance UTXO is always replacement and never removal, so the query does not check if the UTXO is spent.
+///
+/// Outputs of failing script transactions are excluded (see "Handling of failed
+/// script transactions" in the crate README).
 pub async fn get_governance_body_utxo(
 	pool: &Pool<Postgres>,
 	script_address: &str,
@@ -49,6 +52,7 @@ FROM tx_out
     JOIN multi_asset ma ON ma.id = ma_tx_out.ident
 WHERE tx_out.address = $1
     AND ma.policy = $2
+    AND tx.valid_contract = true
     AND block.block_no <= $3
 ORDER BY block.block_no DESC, tx.block_index DESC
 LIMIT 1
