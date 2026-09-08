@@ -17,6 +17,42 @@
 //! `SingleBlockMigrations` or [`crate::Migrations`]. Re-usable migrations such as
 //! `authority_keys` below are only wired in for the specific upgrade that needs them.
 
+use frame_support::{
+	migrations::{FailedMigrationHandler, FailedMigrationHandling, FreezeChainOnFailedMigration},
+	traits::SafeMode as SafeModeTrait,
+};
+
+/// On a failed multi-block migration: enter safe mode indefinitely and force-unstuck the
+/// migration cursor, so the chain keeps producing blocks (with user calls filtered) and
+/// governance can ship a fixed runtime and `force_exit` safe mode.
+///
+/// Upstream's `FreezeChainOnFailedMigration` (and `EnterSafeModeOnFailedMigration`, which
+/// falls back to `KeepStuck` — see paritytech/polkadot-sdk#12921) leave the cursor `Stuck`:
+/// `MultiBlockMigrator::ongoing()` stays true forever, Executive admits only inherents, and
+/// `frame_system::can_set_code` rejects upgrades — a permanent liveness failure with no
+/// on-chain recovery on a standalone chain. Hence this custom handler.
+pub struct EnterSafeModeAndUnstuckOnFailedMigration;
+impl FailedMigrationHandler for EnterSafeModeAndUnstuckOnFailedMigration {
+	fn failed(migration: Option<u32>) -> FailedMigrationHandling {
+		// `enter(MAX)` saturates `EnteredUntil` to `BlockNumber::MAX`: safe mode never
+		// auto-exits, only governance's `force_exit` lifts it.
+		let entered = if crate::SafeMode::is_entered() {
+			<crate::SafeMode as SafeModeTrait>::extend(crate::BlockNumber::MAX)
+		} else {
+			<crate::SafeMode as SafeModeTrait>::enter(crate::BlockNumber::MAX)
+		};
+		if entered.is_err() {
+			// Fail closed: freezing is still safer than running unfiltered on half-migrated state.
+			return FreezeChainOnFailedMigration::failed(migration);
+		}
+		log::error!(
+			"Multi-block migration {migration:?} failed; entered safe mode and unstuck the \
+			 cursor. Governance must ship a fixed runtime and force_exit safe mode."
+		);
+		FailedMigrationHandling::ForceUnstuck
+	}
+}
+
 pub mod authority_keys {
 	//! Scaffolding for migrating [`crate::opaque::SessionKeys`] with
 	//! [`pallet_session_validator_management::migrations::authority_keys::AuthorityKeysMigration`].
