@@ -1,3 +1,10 @@
+<!-- Available GitHub Bot commands (Leave a comment on your PR, let the bot do the rest):
+- /bot rebuild-metadata — Rebuild runtime metadata
+- /bot rebuild-chainspec <network1> <network2> — Rebuild chainspecs for specified networks
+- /bot cargo-fmt — Run cargo fmt
+- /bot fix-metadata-conflicts <accept-current|accept-incoming> — Fix metadata conflicts automatically
+-->
+
 # Overview
 
 <!-- Describe your changes briefly here, with some context as to why this is needed. -->
