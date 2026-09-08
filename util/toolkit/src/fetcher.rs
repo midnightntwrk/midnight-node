@@ -338,7 +338,9 @@ pub async fn fetch_from_rpc(
 
 			while let Ok(job) = fetch_job_rx.recv().await {
 				log::debug!("worker {worker_id}: received new job...");
-				let job_started = std::time::Instant::now();
+				// Reset per attempt: a retried job includes the failed attempt and its
+				// backoff, which would otherwise read as a slow connection.
+				let attempt_started = std::sync::Mutex::new(std::time::Instant::now());
 
 				let backoff = ExponentialBackoff {
 					max_elapsed_time: Some(JOB_RETRY_MAX_ELAPSED),
@@ -355,6 +357,8 @@ pub async fn fetch_from_rpc(
 								.map_err(|e| backoff::Error::transient(FetchError::from(e)))?;
 							*guard = Some(reconnected);
 						}
+						*attempt_started.lock().expect("attempt_started poisoned") =
+							std::time::Instant::now();
 						let result = job
 							.clone()
 							.fetch(
@@ -382,7 +386,7 @@ pub async fn fetch_from_rpc(
 					ComputeTask::ExtractBlockData { blocks, .. } => blocks.len(),
 					_ => 0,
 				};
-				let elapsed = job_started.elapsed();
+				let elapsed = attempt_started.lock().expect("attempt_started poisoned").elapsed();
 				if fetched > 0 {
 					let rate = fetched as f64 / elapsed.as_secs_f64();
 					if elapsed >= SLOW_CONNECTION_MIN_JOB_TIME
