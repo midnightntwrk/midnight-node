@@ -27,6 +27,7 @@ async-trait.workspace = true
 futures.workspace = true
 # Must match the version sc-network's `request_response_config` inbound queue expects (1.9).
 async-channel = "1.9"
+lru.workspace = true
 
 sc-cli.workspace = true
 sc-chain-spec.workspace = true

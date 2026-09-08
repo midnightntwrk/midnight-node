@@ -336,6 +336,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 			tx_filter_config,
 			run_midnight.rpc_max_finality_subscriptions,
 			run_midnight.serve_warp_ledger_sync,
+			run_midnight.no_serve_warp_ledger_sync,
 		)
 		.await
 		.map_err(sc_cli::Error::Service)?;
@@ -422,6 +423,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					midnight_cfg,
 					storage_config,
 					tx_filter_config,
+					// Subcommands never serve warp sync.
+					false,
 				)?;
 				Ok((client, task_manager, other.5.authority_selection))
 			};
@@ -443,6 +446,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						cfg.midnight_cfg.clone(),
 						storage_config,
 						tx_filter_config,
+						// Subcommands never serve warp sync.
+						false,
 					)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
@@ -458,6 +463,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					cfg.midnight_cfg.clone(),
 					storage_config,
 					tx_filter_config,
+					// Subcommands never serve warp sync.
+					false,
 				)?;
 				Ok((cmd.run(client, config.database), task_manager))
 			})
@@ -472,6 +479,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					cfg.midnight_cfg.clone(),
 					storage_config,
 					tx_filter_config,
+					// Subcommands never serve warp sync.
+					false,
 				)?;
 				Ok((cmd.run(client, config.chain_spec), task_manager))
 			})
@@ -488,6 +497,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 						cfg.midnight_cfg.clone(),
 						storage_config,
 						tx_filter_config,
+						// Subcommands never serve warp sync.
+						false,
 					)?;
 				Ok((cmd.run(client, import_queue), task_manager))
 			})
@@ -507,6 +518,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 					cfg.midnight_cfg.clone(),
 					storage_config,
 					tx_filter_config,
+					// Subcommands never serve warp sync.
+					false,
 				)?;
 				let aux_revert = Box::new(|client, _, blocks| {
 					sc_consensus_grandpa::revert(client, blocks)?;
@@ -547,6 +560,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							cfg.midnight_cfg.clone(),
 							storage_config,
 							tx_filter_config,
+							// Subcommands never serve warp sync.
+							false,
 						)?;
 
 						cmd.run(partial.client)
@@ -567,6 +582,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							cfg.midnight_cfg.clone(),
 							storage_config,
 							tx_filter_config,
+							// Subcommands never serve warp sync.
+							false,
 						)?;
 						let db = partial.backend.expose_db();
 						let storage = partial.backend.expose_storage();
@@ -583,6 +600,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							cfg.midnight_cfg.clone(),
 							storage_config,
 							tx_filter_config,
+							// Subcommands never serve warp sync.
+							false,
 						)?;
 						let ext_builder = RemarkBuilder::new(partial.client.clone());
 
@@ -605,6 +624,8 @@ fn run_subcommand(subcommand: Subcommand, cfg: Cfg) -> sc_cli::Result<()> {
 							cfg.midnight_cfg.clone(),
 							storage_config,
 							tx_filter_config,
+							// Subcommands never serve warp sync.
+							false,
 						)?;
 						// Register the *Remark* and *TKA* builders.
 						let ext_factory = ExtrinsicFactory(vec![Box::new(RemarkBuilder::new(
