@@ -1,0 +1,38 @@
+# Substrate/polkadot crate deriving Encode/Decode (parity-scale-codec): the derive
+# uses proc-macro-crate which reads CARGO_MANIFEST_DIR; buck2 doesn't set it by
+# default, so the derive can't resolve the codec crate and associated types go
+# missing (E0220/E0277 cascade). cargo_env supplies the CARGO_* vars.
+cargo_env = true
+
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
+[extra_mapped_srcs]
+"substrate/frame/broker/README.md" = "broker/README.md"
+"substrate/frame/contracts/fixtures/build/Cargo.toml" = "contracts/fixtures/build/Cargo.toml"
+"substrate/frame/revive/README.md" = "revive/README.md"
+"substrate/frame/revive/fixtures/build/_Cargo.toml" = "revive/fixtures/build/_Cargo.toml"
+"substrate/frame/revive/src/precompiles/builtin/testdata/1-ecRecover.json" = "revive/src/precompiles/builtin/testdata/1-ecRecover.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/2-sha256.json" = "revive/src/precompiles/builtin/testdata/2-sha256.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/256-p256_verify.json" = "revive/src/precompiles/builtin/testdata/256-p256_verify.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/3-ripemd160.json" = "revive/src/precompiles/builtin/testdata/3-ripemd160.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/5-modexp_eip2565.json" = "revive/src/precompiles/builtin/testdata/5-modexp_eip2565.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add-failure.json" = "revive/src/precompiles/builtin/testdata/6-bn128add-failure.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/6-bn128add.json" = "revive/src/precompiles/builtin/testdata/6-bn128add.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/7-bn128mul.json" = "revive/src/precompiles/builtin/testdata/7-bn128mul.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/8-bn128pairing.json" = "revive/src/precompiles/builtin/testdata/8-bn128pairing.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f-failures.json" = "revive/src/precompiles/builtin/testdata/9-blake2f-failures.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/9-blake2f.json" = "revive/src/precompiles/builtin/testdata/9-blake2f.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_128.json" = "revive/src/precompiles/builtin/testdata/900-blake2_128.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/900-blake2_256.json" = "revive/src/precompiles/builtin/testdata/900-blake2_256.json"
+"substrate/frame/revive/src/precompiles/builtin/testdata/900-to_account_id.json" = "revive/src/precompiles/builtin/testdata/900-to_account_id.json"
+"substrate/frame/revive/src/tests/json_trace/call_evm.json" = "revive/src/tests/json_trace/call_evm.json"
+"substrate/frame/revive/src/tests/json_trace/call_pvm.json" = "revive/src/tests/json_trace/call_pvm.json"
+"substrate/frame/revive/src/tests/json_trace/delegatecall_evm.json" = "revive/src/tests/json_trace/delegatecall_evm.json"
+"substrate/frame/revive/src/tests/json_trace/delegatecall_pvm.json" = "revive/src/tests/json_trace/delegatecall_pvm.json"
+"substrate/frame/revive/src/tests/json_trace/fibonacci_evm.json" = "revive/src/tests/json_trace/fibonacci_evm.json"
+"substrate/frame/revive/src/tests/json_trace/fibonacci_pvm.json" = "revive/src/tests/json_trace/fibonacci_pvm.json"
+"substrate/frame/sassafras/src/data/25_tickets_100_auths.bin" = "sassafras/src/data/25_tickets_100_auths.bin"
+"substrate/frame/support/test/example-readme.md" = "support/test/example-readme.md"
+"substrate/frame/system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm" = "system/benchmarking/res/kitchensink_runtime.compact.compressed.wasm"

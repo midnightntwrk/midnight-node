@@ -1,0 +1,14 @@
+# Local override of the shared ittapi-sys fixup, which sets `buildscript.run =
+# false`. That omits the build script entirely, so `jitprofiling.c` /
+# `ittnotify_static.c` (which define the Intel JIT-profiling symbols
+# `iJIT_NotifyEvent`, `iJIT_GetNewMethodID`) are never compiled or linked. On
+# Linux the node pulls `ittapi` (via wasmtime's profiling support) and references
+# those symbols, so the final link fails with `undefined symbol: iJIT_*`. The
+# build script is a plain cc-rs compile (no dynamic loading), which reindeer
+# handles fine — so re-enable it. macOS doesn't pull ittapi, so this is a no-op
+# there. The `[buildscript.run.env]` table below re-enables the build script
+# (its presence signals run) with the OPT_LEVEL cc-rs needs.
+cargo_env = true
+
+[buildscript.run.env]
+OPT_LEVEL = "3"

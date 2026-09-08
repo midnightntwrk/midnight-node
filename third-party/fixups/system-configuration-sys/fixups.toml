@@ -1,0 +1,5 @@
+# Override the shared run=false: the build script emits
+# cargo:rustc-link-lib=framework=SystemConfiguration when TARGET is apple
+# (a no-op elsewhere). Needed so crates that call SCDynamicStore* (hickory
+# resolver etc., pulled by some test dev-deps) link on macOS.
+buildscript.run = true

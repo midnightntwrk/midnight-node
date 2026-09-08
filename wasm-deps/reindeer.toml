@@ -1,0 +1,37 @@
+# Reindeer config for the no_std WASM crate universe (crates_wasm).
+# Reuses the same shared + local fixups as the std universe (fixups/ symlinks
+# to ../third-party/fixups). Non-vendored; --cfg substrate_runtime is applied
+# globally by the wasm rust toolchain, not here.
+vendor = false
+
+cargo_env = [
+    "CARGO_MANIFEST_DIR", "CARGO_PKG_NAME", "CARGO_PKG_VERSION",
+    "CARGO_PKG_VERSION_MAJOR", "CARGO_PKG_VERSION_MINOR", "CARGO_PKG_VERSION_PATCH",
+    "CARGO_PKG_AUTHORS", "CARGO_PKG_DESCRIPTION", "CARGO_PKG_REPOSITORY",
+]
+
+shared_fixups = [
+    { git_origin = "https://github.com/gilescope/buck2-fixups.git", commit_hash = "00ae2fe40f78e39c3aec7ddaf780ec60ffe1911e", subdir = "fixups" },
+]
+
+# Cross-compilation feature resolution (reindeer's fix for issue #77): features
+# enabled by a build script / proc macro on the non-exec wasm platform don't
+# leak onto the no_std target (e.g. frame-support-procedural -> aho-corasick ->
+# memchr/std must NOT enable std on memchr for wasm, though the host build of
+# memchr keeps std). Platform names match the prelude's reindeer-platform map.
+[platform.macos-arm64]
+target = "aarch64-apple-darwin"
+execution-platform = true
+
+[platform.linux-arm64]
+target = "aarch64-unknown-linux-gnu"
+execution-platform = true
+
+[platform.linux-x86_64]
+target = "x86_64-unknown-linux-gnu"
+execution-platform = true
+
+[platform.wasm32]
+target = "wasm32v1-none"
+execution-platform = false
+

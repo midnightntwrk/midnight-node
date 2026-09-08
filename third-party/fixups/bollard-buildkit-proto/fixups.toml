@@ -1,0 +1,2 @@
+# build.rs is an empty main() returning Ok
+buildscript.run = false

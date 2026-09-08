@@ -1,0 +1,12 @@
+# Host build tool: zstd-compress a wasm runtime blob in the substrate
+# sp-maybe-compressed-blob format (8-byte magic prefix + zstd level 3).
+# Standalone (not a cargo workspace member) — consumed by the runtime-wasm genrule.
+rust_binary(
+    name = "wasm-compress",
+    crate = "wasm_compress",
+    crate_root = "src/main.rs",
+    edition = "2021",
+    srcs = glob(["src/**"]),
+    deps = ["root//third-party:zstd"],
+    visibility = ["PUBLIC"],
+)

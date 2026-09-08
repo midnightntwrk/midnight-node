@@ -1,0 +1,9 @@
+# indexmap 1.x has a build script (autocfg probe -> has_std); indexmap 2.x has
+# none. Version-gate so reindeer doesn't warn about an unused buildscript fixup
+# on 2.x, and drop `std` on wasm32 for the no_std runtime universe.
+['cfg(version = "<2")']
+buildscript.run = false
+cfgs = ["has_std"]
+
+['cfg(target_arch = "wasm32")']
+omit_features = ["std"]

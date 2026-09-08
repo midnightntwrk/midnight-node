@@ -1,0 +1,5 @@
+cargo_env = true
+
+# cc-rs needs OPT_LEVEL to compile the cxxbridge glue
+[buildscript.run.env]
+OPT_LEVEL = "3"

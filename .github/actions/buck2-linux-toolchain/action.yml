@@ -1,0 +1,99 @@
+name: buck2 Linux toolchain
+description: >-
+  Install the toolchain the buck2 build needs on an ubuntu-latest runner: a
+  pinned rustc (+ the wasm32v1-none target for the on-chain runtime blob), a
+  wasm-capable clang/lld (Apple/stock clang lacks the WebAssembly backend but
+  distro LLVM ships it), and wasm-opt (binaryen). Used identically by the
+  rebuck2 driver and worker jobs so a dispatched compile action finds the same
+  tools on whichever runner executes it.
+
+inputs:
+  rust-version:
+    description: Pinned rustc. A floating rustc changes action digests → stale cache hits.
+    default: "1.95"
+
+runs:
+  using: composite
+  steps:
+    # Pinned rustc + wasm target + the components rust-toolchain.toml pins.
+    # Install them up front (single-threaded) so rustc never triggers rustup to
+    # fetch them on-the-fly during the build: parallel rustc actions each honour
+    # rust-toolchain.toml and race the component install, hitting
+    # "detected conflict: bin/cargo-clippy". dtolnay/rust-toolchain@master.
+    # targets + components must match rust-toolchain.toml exactly, else rustc
+    # auto-installs the missing ones on-the-fly (racing under parallel actions).
+    # rust-toolchain.toml pins targets = [wasm32v1-none, aarch64-unknown-linux-gnu].
+    - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
+      with:
+        toolchain: ${{ inputs.rust-version }}
+        targets: wasm32v1-none, aarch64-unknown-linux-gnu
+        components: rust-src, rustfmt, clippy, llvm-tools-preview, rust-analyzer
+
+    - name: Install clang + lld + llvm + protoc
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        # clang/lld/llvm: the wasm C + link toolchain. libssl-dev + pkg-config:
+        # openssl-sys's build script probes the system openssl to set its version
+        # cfgs (ossl3xx) — without the headers it sets the wrong ones and
+        # openssl's ffi bindings don't resolve ("not found in `ffi`"). cmake +
+        # perl: aws-lc-sys builds AWS-LC (C crypto) from source via cmake.
+        # protobuf-compiler: substrate's networking crates (sc-network*, litep2p)
+        # codegen protobufs at build time via prost-build, which needs `protoc`.
+        # curl/xz-utils: fetch the pinned binaryen below. (binaryen is NOT from
+        # apt — see next step: 24.04 ships v108, too old for --signext-lowering.)
+        sudo apt-get install -y --no-install-recommends \
+          clang lld llvm libssl-dev pkg-config cmake perl protobuf-compiler \
+          curl ca-certificates xz-utils
+        # Some ubuntu images ship only version-suffixed binaries; expose the
+        # unsuffixed names the buck toolchain (toolchains/BUCK) expects.
+        for t in clang clang++ llvm-ar; do
+          if ! command -v "$t" >/dev/null; then
+            cand="$(ls /usr/bin/${t}-* 2>/dev/null | sort -V | tail -1 || true)"
+            [ -n "$cand" ] && sudo ln -sf "$cand" "/usr/bin/${t}"
+          fi
+        done
+        # Fail fast if the distro clang can't target wasm (the whole runtime
+        # blob build depends on it).
+        clang --print-targets | grep -qi wasm \
+          || { echo "clang has no WebAssembly backend"; exit 1; }
+        for t in clang clang++ llvm-ar protoc; do
+          echo "$t -> $(command -v "$t")"
+        done
+
+    # Pinned binaryen. Ubuntu 24.04's apt binaryen is v108, which lacks
+    # `--signext-lowering` — the runtime-wasm blob genrule (root BUCK) runs
+    # `wasm-opt … --signext-lowering` to lower sign-extension ops for MVP-only
+    # substrate executors, so an old wasm-opt fails the blob with
+    # "Unknown option '--signext-lowering'". Fetch a pinned release + verify sha.
+    - name: Install pinned binaryen (wasm-opt)
+      shell: bash
+      env:
+        BINARYEN_VERSION: version_130
+        BINARYEN_SHA256: 0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc
+      run: |
+        set -euo pipefail
+        url="https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+        curl -fsSL --retry 5 "$url" -o /tmp/binaryen.tgz
+        echo "${BINARYEN_SHA256}  /tmp/binaryen.tgz" | sha256sum -c -
+        sudo tar xzf /tmp/binaryen.tgz -C /usr/local --strip-components=1
+        sudo ldconfig || true
+        wasm-opt --version
+        wasm-opt --help 2>&1 | grep -q signext-lowering \
+          || { echo "wasm-opt lacks --signext-lowering"; exit 1; }
+
+    # Install the wasm CC/AR wrappers to a stable absolute path present on every
+    # runner. rebuck2 dispatches compile actions to workers, and the buck cc shim
+    # bakes the [wasm] cc path at analysis time on the driver — a $GITHUB_WORKSPACE
+    # path wouldn't necessarily resolve on the worker. /usr/local/bin is uniform.
+    - name: Install wasm toolchain wrappers
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo install -m755 toolchains/wasm-cc.sh /usr/local/bin/wasm-cc.sh
+        sudo install -m755 toolchains/wasm-ar.sh /usr/local/bin/wasm-ar.sh
+        # The wasm linker wrapper too: workers run the wasm cdylib link remotely,
+        # and toolchains/BUCK's relative path doesn't resolve in the staged action
+        # cwd. Installed absolute + selected via `-c wasm.linker` (BUCK_WASM_CFG).
+        sudo install -m755 toolchains/wasm-lld.sh /usr/local/bin/wasm-lld.sh

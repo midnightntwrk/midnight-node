@@ -234,8 +234,10 @@ mod tests {
 	use midnight_node_ledger_helpers::{LedgerContext, LedgerState};
 
 	fn load_genesis_context() -> LedgerContext<DefaultDB> {
-		let genesis_path =
-			format!("{}/test-data/genesis/genesis_block_undeployed.mn", env!("CARGO_MANIFEST_DIR"));
+		let genesis_path = format!(
+			"{}/test-data/genesis/genesis_block_undeployed.mn",
+			crate::test_paths::manifest_dir()
+		);
 		let batches =
 			crate::tx_generator::source::GetTxsFromFile::load_single_or_multiple(&genesis_path)
 				.expect("failed to load genesis file");

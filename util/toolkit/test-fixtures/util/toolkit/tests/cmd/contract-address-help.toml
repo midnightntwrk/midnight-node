@@ -1,0 +1,30 @@
+bin.name = "midnight-node-toolkit"
+args = ["contract-address", "--help"]
+status.code = 0
+stderr = ""
+
+stdout = """
+Show and save in a file the Contract Address included in a DeployContract tx
+
+Usage: midnight-node-toolkit contract-address [OPTIONS] --src-file <SRC_FILE>
+
+Options:
+      --tagged
+          Serialize Tagged
+  -v, --verbose
+          Enable verbose output (sets log level to debug) [env: MN_VERBOSE=]
+      --verbose-ledger
+...
+  -s, --src-file <SRC_FILE>
+          Serialized Transaction
+      --verbose-fetch
+...
+  -q, --quiet
+          Suppress info-level logs (only show warnings and errors) [env: MN_QUIET=]
+      --log-json
+          Output logs in JSON format (for machine parsing) [env: MN_LOG_JSON=]
+      --replay-concurrency <REPLAY_CONCURRENCY>
+...
+  -h, --help
+          Print help
+"""
