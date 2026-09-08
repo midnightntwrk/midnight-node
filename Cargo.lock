@@ -8566,6 +8566,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-rpc-api"
+version = "0.1.0"
+dependencies = [
+ "jsonrpsee",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "midnight-serialize"
 version = "1.2.0"
 source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=ledger-9.1.0.0-rc.5#dd6c68b06070f4411c5487b647c3ea23350c41be"
@@ -10470,6 +10479,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "jsonrpsee",
+ "midnight-rpc-api",
  "pallet-midnight",
  "sc-client-api",
  "schemars 0.8.22",
