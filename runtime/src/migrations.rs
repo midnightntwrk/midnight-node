@@ -54,14 +54,6 @@ impl FailedMigrationHandler for EnterSafeModeAndUnstuckOnFailedMigration {
 }
 
 pub mod authority_keys {
-	//! Scaffolding for migrating [`crate::opaque::SessionKeys`] alongside
-	//! `pallet_session_validator_management`'s own `V1ToV2` storage migration.
-	//!
-	//! When the `SessionKeys` shape changes (here: adding the BABE key), the committee and
-	//! `pallet_session` keys stored on an existing chain must be translated to the new shape. On
-	//! Midnight this coincides with the pallet's v1 → v2 storage upgrade, so
-	//! [`MigrateV1ToV2AddBabeSessionKeys`] combines both: the authority-key translation and the
-	//! v1 → v2 `QueuedCommittee` initialization, gated on the pallet's on-chain storage version.
 	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
 	use alloc::vec::Vec;
 	use authority_selection_inherents::CommitteeMember;
@@ -102,10 +94,8 @@ pub mod authority_keys {
 		}
 	}
 
-	const LOG_TARGET: &str = "runtime::migration::v1-to-v2-add-babe-session-keys";
+	const LOG_TARGET: &str = "runtime::migration::add-babe-session-keys";
 
-	/// Authority-key translation from the pre-BABE [`LegacySessionKeys`] shape to the current
-	/// `SessionKeys` (adds the BABE key). Same logic as the pallet's `AuthorityKeysMigration`.
 	type Inner = InnerMigrateAuthorityKeys<Runtime, LegacyCommitteeMember, LegacySessionKeys>;
 
 	/// Migrates Current, Queued, and Next Committee storages and writes in consensus-engine
