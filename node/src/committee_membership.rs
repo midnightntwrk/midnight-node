@@ -42,10 +42,8 @@ const LOG_TARGET: &str = "committee-membership";
 pub async fn watch<C>(client: Arc<C>, keystore: KeystorePtr)
 where
 	C: ProvideRuntimeApi<Block> + sc_client_api::BlockchainEvents<Block> + Send + Sync + 'static,
-	C::Api: SessionInfoApi<Block>
-		+ ConsensusEngineApi<Block>
-		+ AuraApi<Block, AuraId>
-		+ BabeApi<Block>,
+	C::Api:
+		SessionInfoApi<Block> + ConsensusEngineApi<Block> + AuraApi<Block, AuraId> + BabeApi<Block>,
 {
 	let mut notifications = client.import_notification_stream();
 	let mut last_session: Option<u32> = None;
@@ -126,8 +124,8 @@ where
 		ActiveEngine::Aura => api
 			.authorities(block_hash)
 			.map(|authorities| authorities.into_iter().map(Into::into).collect()),
-		ActiveEngine::Babe => api.current_epoch(block_hash).map(|epoch| {
-			epoch.authorities.into_iter().map(|(id, _weight)| id.into()).collect()
-		}),
+		ActiveEngine::Babe => api
+			.current_epoch(block_hash)
+			.map(|epoch| epoch.authorities.into_iter().map(|(id, _weight)| id.into()).collect()),
 	}
 }
