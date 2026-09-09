@@ -24,38 +24,38 @@ extern crate frame_benchmarking;
 extern crate alloc;
 use alloc::string::String;
 use authority_selection_inherents::{
-	select_authorities, validate_permissioned_candidate_data, AuthoritySelectionInputs,
-	CommitteeMember, PermissionedCandidateDataError, RegistrationDataError, StakeError,
+	AuthoritySelectionInputs, CommitteeMember, PermissionedCandidateDataError,
+	RegistrationDataError, StakeError, select_authorities, validate_permissioned_candidate_data,
 };
 
 pub use frame_support::{
+	BoundedVec, PalletId, StorageValue,
 	genesis_builder_helper::{build_state, get_preset},
 	pallet_prelude::DispatchResult,
 	parameter_types, storage,
 	traits::{
-		ConstBool, ConstU128, ConstU32, ConstU64, ConstU8, Contains, EitherOfDiverse,
+		ConstBool, ConstU8, ConstU32, ConstU64, ConstU128, Contains, EitherOfDiverse,
 		EqualPrivilegeOnly, InsideBoth, KeyOwnerProofSystem, NeverEnsureOrigin, Nothing,
 		Randomness, StorageInfo,
 	},
 	weights::{
+		IdentityFee, Weight,
 		constants::{
 			BlockExecutionWeight, ExtrinsicBaseWeight, ParityDbWeight, WEIGHT_PROOF_SIZE_PER_KB,
 			WEIGHT_REF_TIME_PER_SECOND,
 		},
-		IdentityFee, Weight,
 	},
-	BoundedVec, PalletId, StorageValue,
 };
 pub use frame_system::Call as SystemCall;
 use frame_system::{EnsureNone, EnsureRoot, EnsureRootWithSuccess};
-use midnight_node_ledger::types::{active_version::LedgerApiError, GasCost, Tx};
+use midnight_node_ledger::types::{GasCost, Tx, active_version::LedgerApiError};
 use midnight_primitives::BridgeRecipient;
 use midnight_primitives_beefy::BeefyStakes;
 use midnight_primitives_cnight_observation::CardanoPosition;
 use opaque::{CrossChainKey, SessionKeys};
 pub use pallet_cnight_observation::Call as CNightObservationCall;
 use pallet_grandpa::AuthorityId as GrandpaId;
-pub use pallet_midnight::{pallet::Call as MidnightCall, TransactionTypeV2};
+pub use pallet_midnight::{TransactionTypeV2, pallet::Call as MidnightCall};
 pub use pallet_midnight_system::Call as MidnightSystemCall;
 pub use pallet_session_validator_management::{self, Config};
 pub use pallet_timestamp::Call as TimestampCall;
@@ -68,30 +68,29 @@ use sidechain_domain::{
 use sp_api::impl_runtime_apis;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_beefy::{
+	OpaqueKeyOwnershipProof,
 	ecdsa_crypto::{AuthorityId as BeefyId, Signature as BeefySignature},
 	mmr::{BeefyAuthoritySet, BeefyNextAuthoritySet, MmrLeafVersion},
-	OpaqueKeyOwnershipProof,
 };
-use sp_core::{crypto::KeyTypeId, ByteArray, OpaqueMetadata};
+use sp_core::{ByteArray, OpaqueMetadata, crypto::KeyTypeId};
 use sp_partner_chains_bridge::{BridgeDataCheckpoint, MainChainScripts as BridgeMainChainScripts};
 #[cfg(feature = "runtime-benchmarks")]
 use sp_partner_chains_bridge::{BridgeTransferV1, TransferRecipient};
-use sp_runtime::traits::StaticLookup;
 use sp_runtime::SaturatedConversion;
+use sp_runtime::traits::StaticLookup;
 
 //#[cfg(feature = "experimental")]
 //use sp_block_rewards::GetBlockRewardPoints;
-use sp_runtime::traits::{Convert, ConvertInto, Keccak256};
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
+use sp_runtime::traits::{Convert, ConvertInto, Keccak256};
 use sp_runtime::{
-	generic, impl_opaque_keys,
+	ApplyExtrinsicResult, Cow, MultiSignature, OpaqueValue, generic, impl_opaque_keys,
 	traits::{
 		AccountIdLookup, BlakeTwo256, Block as BlockT, Get, IdentifyAccount, NumberFor, OpaqueKeys,
 		Verify,
 	},
 	transaction_validity::{TransactionSource, TransactionValidity},
-	ApplyExtrinsicResult, Cow, MultiSignature, OpaqueValue,
 };
 pub use sp_runtime::{Perbill, Permill};
 #[allow(deprecated)]
@@ -163,8 +162,8 @@ pub mod opaque {
 	use authority_selection_inherents::MaybeFromCandidateKeys;
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_core::{ed25519, sr25519};
-	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
+	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -181,9 +180,9 @@ pub mod opaque {
 		use alloc::vec::Vec;
 		use parity_scale_codec::MaxEncodedLen;
 		use sp_core::crypto::AccountId32;
+		use sp_runtime::MultiSigner;
 		use sp_runtime::app_crypto::{app_crypto, ecdsa};
 		use sp_runtime::traits::IdentifyAccount;
-		use sp_runtime::MultiSigner;
 
 		app_crypto!(ecdsa, CROSS_CHAIN);
 		impl MaxEncodedLen for Signature {
@@ -1054,8 +1053,8 @@ impl pallet_partner_chains_bridge::benchmarking::BenchmarkHelper<Runtime>
 /// Provider for the minimum bridge transfer amount from the Midnight ledger.
 pub struct MidnightMinBridgeAmount;
 impl pallet_c2m_bridge::pallet::MinBridgeAmountProvider for MidnightMinBridgeAmount {
-	fn get_c_to_m_bridge_min_amount(
-	) -> Result<u128, midnight_node_ledger::types::active_version::LedgerApiError> {
+	fn get_c_to_m_bridge_min_amount()
+	-> Result<u128, midnight_node_ledger::types::active_version::LedgerApiError> {
 		Midnight::get_c_to_m_bridge_min_amount()
 	}
 }
@@ -1961,7 +1960,7 @@ impl_runtime_apis! {
 #[cfg(test)]
 mod tests {
 	use crate::mock::*;
-	use crate::{select_authorities_optionally_overriding, SystemParameters};
+	use crate::{SystemParameters, select_authorities_optionally_overriding};
 	use authority_selection_inherents::{AuthoritySelectionInputs, RegisterValidatorSignedMessage};
 	use frame_support::{
 		assert_ok,
@@ -1975,7 +1974,7 @@ mod tests {
 		MainchainSignature, PermissionedCandidateData, RegistrationData, ScEpochNumber,
 		SidechainSignature, StakeDelegation, StakePoolPublicKey, UtxoId, UtxoInfo,
 	};
-	use sp_core::{ed25519, hexdisplay::HexDisplay, Pair};
+	use sp_core::{Pair, ed25519, hexdisplay::HexDisplay};
 	use sp_inherents::InherentData;
 	use sp_runtime::traits::Zero;
 	use std::collections::HashSet;
@@ -2270,8 +2269,8 @@ mod tests {
 		use pallet_consensus_engine::{EngineState, State};
 		use parity_scale_codec::Encode;
 		use sidechain_domain::ScSlotNumber;
-		use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
 		use sp_consensus_babe::BABE_ENGINE_ID;
+		use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
 		use sp_consensus_slots::Slot;
 		use sp_runtime::{Digest, DigestItem};
 
@@ -2441,8 +2440,8 @@ mod tests {
 		};
 		use parity_scale_codec::Encode;
 		use sp_runtime::{
-			traits::{Dispatchable, Hash as _, Header as _},
 			BuildStorage, ExtrinsicInclusionMode,
+			traits::{Dispatchable, Hash as _, Header as _},
 		};
 
 		fn ongoing() -> bool {
