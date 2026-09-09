@@ -15,8 +15,6 @@ use core::ops::Div;
 use frame_support::{
 	dispatch::DispatchResult,
 	traits::{
-		BalanceStatus, Currency, ExistenceRequirement, Imbalance, ReservableCurrency, SameOrOther,
-		SignedImbalance, TryDrop, WithdrawReasons,
 		fungible::{
 			Inspect as FungibleInspect, InspectHold as FungibleInspectHold,
 			Mutate as FungibleMutate, MutateHold as FungibleMutateHold,
@@ -26,9 +24,11 @@ use frame_support::{
 		tokens::{
 			DepositConsequence, Fortitude, Precision, Preservation, Provenance, WithdrawConsequence,
 		},
+		BalanceStatus, Currency, ExistenceRequirement, Imbalance, ReservableCurrency, SameOrOther,
+		SignedImbalance, TryDrop, WithdrawReasons,
 	},
 };
-use sp_runtime::{DispatchError, traits::Saturating};
+use sp_runtime::{traits::Saturating, DispatchError};
 
 pub struct CurrencyWaiver;
 
