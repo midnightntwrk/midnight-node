@@ -109,7 +109,7 @@ pub mod authority_keys {
 				target: LOG_TARGET,
 				"translating committee & session keys and initializing QueuedCommittee",
 			);
-			if AddBabeSessionKeysMigrated::<Runtime>::get() == true {
+			if AddBabeSessionKeysMigrated::<Runtime>::get() {
 				log::info!(
 					"SessionKeys migration that adds BABE authority keys was already executed. Migration can be removed from the runtime."
 				);

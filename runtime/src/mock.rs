@@ -30,7 +30,7 @@ use sp_core::{ByteArray, H256, Pair, crypto::AccountId32};
 use sp_core::{ecdsa, ed25519, sr25519};
 use sp_runtime::{
 	BuildStorage, Digest, DigestItem, impl_opaque_keys,
-	key_types::{AURA, GRANDPA},
+	key_types::{AURA, BABE, GRANDPA},
 	traits::{BlakeTwo256, ConvertInto, IdentityLookup, OpaqueKeys},
 };
 use std::cmp::max;
@@ -60,6 +60,7 @@ type Block = frame_system::mocking::MockBlock<Test>;
 )]
 pub struct AccountKeys {
 	pub aura: [u8; 32],
+	pub babe: [u8; 32],
 	pub grandpa: [u8; 32],
 }
 
@@ -67,9 +68,15 @@ impl AccountKeys {
 	pub fn from_seed(seed: &str) -> AccountKeys {
 		let mut aura = format!("aura-{seed}").into_bytes();
 		aura.resize(32, 0);
+		let mut babe = format!("babe-{seed}").into_bytes();
+		babe.resize(32, 0);
 		let mut grandpa = format!("grandpa-{seed}").into_bytes();
 		grandpa.resize(32, 0);
-		AccountKeys { aura: aura.try_into().unwrap(), grandpa: grandpa.try_into().unwrap() }
+		AccountKeys {
+			aura: aura.try_into().unwrap(),
+			babe: babe.try_into().unwrap(),
+			grandpa: grandpa.try_into().unwrap(),
+		}
 	}
 }
 
@@ -413,12 +420,18 @@ const BOB_SEED: &str = "//2";
 pub struct TestKeys {
 	pub cross_chain: CrossChainPair,
 	pub aura: sp_consensus_aura::sr25519::AuthorityPair,
+	pub babe: sp_consensus_babe::AuthorityPair,
 	pub grandpa: sp_consensus_grandpa::AuthorityPair,
 }
 
 impl TestKeys {
 	pub fn from_seed(s: &str) -> Self {
-		Self { cross_chain: pair_from_seed(s), aura: pair_from_seed(s), grandpa: pair_from_seed(s) }
+		Self {
+			cross_chain: pair_from_seed(s),
+			aura: pair_from_seed(s),
+			babe: pair_from_seed(s),
+			grandpa: pair_from_seed(s),
+		}
 	}
 	pub fn session(&self) -> TestSessionKeys {
 		TestSessionKeys { aura: self.aura.public(), grandpa: self.grandpa.public() }
@@ -426,6 +439,7 @@ impl TestKeys {
 	pub fn candidate_keys(&self) -> CandidateKeys {
 		CandidateKeys(vec![
 			CandidateKey::new(AURA, self.aura.public().as_slice().into()),
+			CandidateKey::new(BABE, self.babe.public().as_slice().into()),
 			CandidateKey::new(GRANDPA, self.grandpa.public().as_slice().into()),
 		])
 	}
@@ -473,6 +487,7 @@ impl MockValidator {
 		let keys = self.account_keys();
 		CandidateKeys(vec![
 			CandidateKey::new(AURA, keys.aura.to_vec()),
+			CandidateKey::new(BABE, keys.babe.to_vec()),
 			CandidateKey::new(GRANDPA, keys.grandpa.to_vec()),
 		])
 	}
