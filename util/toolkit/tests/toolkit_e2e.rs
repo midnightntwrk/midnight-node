@@ -1363,6 +1363,104 @@ async fn election_e2e() {
 	call!(authority_private, AUTHORITY_SK, "advance", &[]);
 }
 
+/// Shielded-pool contract E2E ported from `midnight-contracts`: mint a coin into the
+/// commitment tree, then spend it to a recipient.
+///
+/// The coins are the contract's own, not the ledger's: `spend` publishes a nullifier, proves
+/// a depth-32 path to the old commitment in a `HistoricMerkleTree`, and inserts a fresh one.
+/// Its two arguments are nested structs, one carrying an `Opaque<"Uint8Array">`.
+/// `FUNDING_SEED` pays every fee; the spending key is a private witness.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn shielded_pool_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary key; `derive_zk_public_key` of it owns the minted coin.
+	const SPENDER_SK: &str = "5ec4e70000000000000000000000000000000000000000000000000000000001";
+	// The first coin `context$new_coin_info` hands out, per the counter in the template.
+	const COIN_0_NONCE: &str = "1010101010101010101010101010101010101010101010101010101010101010";
+	const COIN_0_OPENING: &str = "4040404040404040404040404040404040404040404040404040404040404040";
+	// The recipient is off-contract, so its keys are opaque to us and can be anything.
+	const DEST_ZK_PK: &str = "dededededededededededededededededededededededededededededededede";
+	const DEST_ENCRYPTION_PK: &str =
+		"beefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef";
+
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+
+	let source = helper.load_contract_file("shielded-pool/shielded_pool.compact");
+	let compiled_dir = helper
+		.compile_contract(&source, "shielded-pool")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"shielded-pool/config.template.ts",
+		&[("SECRET_KEY", SPENDER_SK), ("COIN_PUBLIC", &coin_public), ("NETWORK", "undeployed")],
+	);
+	let config_file = helper.write_config(&config_content, "shielded-pool/contract.config.ts");
+
+	let deploy = helper
+		.generate_intent_deploy(&config_file, &coin_public)
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, SPENDER_SK, "shielded-pool deploy");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	// Runs one circuit against the latest state, threading the private state forward and
+	// checking the spending key never reaches the wire.
+	let mut step = 0usize;
+	macro_rules! call {
+		($private:ident, $circuit:expr, $args:expr) => {{
+			step += 1;
+			let state = helper.work_dir.path().join(format!("shielded_pool_state_{step}.mn"));
+			helper.contract_state(&addr, &state).await.expect("contract state fetch failed");
+			let out = helper
+				.generate_intent_circuit(
+					&config_file,
+					&coin_public,
+					&state,
+					&$private,
+					&addr,
+					CircuitCall { circuit_id: $circuit, call_args: $args },
+				)
+				.await
+				.unwrap_or_else(|e| panic!("generate {} intent failed: {e}", $circuit));
+			let tx = helper
+				.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+				.await
+				.unwrap_or_else(|e| panic!("send {} intent failed: {e}", $circuit));
+			helper.assert_secret_not_in_tx(&tx, SPENDER_SK, $circuit);
+			helper
+				.submit_tx(&tx)
+				.await
+				.unwrap_or_else(|e| panic!("submit {} tx failed: {e}", $circuit));
+			out
+		}};
+	}
+
+	let mut private_state = deploy.private_state.clone();
+
+	// Mints coin 0 to the spender's own key and records it in the wallet.
+	private_state = call!(private_state, "mint", &[]).private_state;
+
+	// Nested struct arguments: a public key holding a struct and opaque bytes, and the coin
+	// holding two structs. Spending proves the minted commitment is in the tree.
+	let dest_public_key =
+		format!(r#"{{"zk": {{"bytes": "{DEST_ZK_PK}"}}, "encryption": "{DEST_ENCRYPTION_PK}"}}"#);
+	let input_coin = format!(
+		r#"{{"nonce": {{"bytes": "{COIN_0_NONCE}"}}, "opening": {{"bytes": "{COIN_0_OPENING}"}}}}"#
+	);
+	call!(private_state, "spend", &[dest_public_key.as_str(), input_coin.as_str()]);
+}
+
 /// End-to-end coverage for ledger-9 ECDSA unshielded-signature support in the toolkit
 /// (<https://github.com/midnightntwrk/midnight-node/issues/1542>), ported from the former
 /// `scripts/tests/toolkit-ecdsa-e2e.sh`. Runs against the shared `dev` node, whose genesis is

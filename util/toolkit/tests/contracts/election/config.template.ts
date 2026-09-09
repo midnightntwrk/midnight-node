@@ -23,8 +23,8 @@ import {
   type MerkleTreePath,
 } from './out/contract/index.js';
 
-// Round-trips through the JSON private-state file, so the key is hex and the two enums
-// are their numeric values. `ballot` is null until `vote$commit` records one.
+// Round-trips through the JSON private-state file: hex key, numeric enums, and a `ballot`
+// that is null until `vote_commit` records one.
 type ElectionPrivateState = {
   readonly secretKey: string;
   readonly state: PrivateState;
@@ -37,7 +37,7 @@ const ElectionContract = ElectionContract_;
 const some = <T>(value: T): Maybe<T> => ({ is_some: true, value });
 const none = <T>(placeholder: T): Maybe<T> => ({ is_some: false, value: placeholder });
 
-// Compact serializes the value carried by an absent Maybe, so its fixed-depth path must be valid.
+// Compact serializes the value inside an absent Maybe, so its path must still be valid.
 const absentMerklePath: MerkleTreePath<Uint8Array> = {
   leaf: new Uint8Array(32),
   path: Array.from({ length: 10 }, () => ({
@@ -50,8 +50,7 @@ const maybePath = (path: MerkleTreePath<Uint8Array> | undefined): Maybe<MerkleTr
   path === undefined ? none(absentMerklePath) : some(path);
 
 const witnesses: Contract.Contract.Witnesses<ElectionContract> = {
-  // `public_key(sk)` of this is the leaf the authority allowlists, and the identity every
-  // authority-gated circuit checks.
+  // `public_key(sk)` of this is the allowlisted leaf and the authority identity.
   private$secret_key: ({ privateState }) => [
     privateState,
     new Uint8Array(Buffer.from(privateState.secretKey, 'hex')),
@@ -66,7 +65,7 @@ const witnesses: Contract.Contract.Witnesses<ElectionContract> = {
     return [{ ...privateState, state: next }, []];
   },
 
-  // Recorded at commit time so `vote$reveal` can reproduce the same commitment.
+  // Recorded at commit time so `vote_reveal` can reproduce the same commitment.
   private$vote$record: ({ privateState }, ballot) => [{ ...privateState, ballot }, []],
 
   private$vote: ({ privateState }) => [
@@ -74,7 +73,7 @@ const witnesses: Contract.Contract.Witnesses<ElectionContract> = {
     privateState.ballot ?? PermissibleVotes.no,
   ],
 
-  // Read from the projected ledger so each path matches the tree whose root the circuit checks.
+  // From the projected ledger, so each path matches the root the circuit checks.
   context$eligible_voters$path_of: (
     { privateState, ledger }: { privateState: ElectionPrivateState; ledger: Ledger },
     pk: Uint8Array,

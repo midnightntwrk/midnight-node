@@ -1,0 +1,110 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * Shielded Pool Contract
+ *
+ * Shielded coins held by the contract rather than the ledger. A coin is a commitment in a
+ * HistoricMerkleTree; spending publishes a nullifier, proves a path to the old commitment,
+ * and inserts a fresh one for the recipient with a ciphertext only they can open.
+ *
+ * Test intent: `HistoricMerkleTree`, a depth-32 path over a struct leaf, and nested struct
+ * circuit arguments carrying `Opaque<"Uint8Array">`.
+ */
+
+pragma language_version >= 0.17.0;
+
+import CompactStandardLibrary;
+
+export {mint, spend}
+
+struct Nonce { bytes: Bytes<32>; }
+struct opening { bytes: Bytes<32>; }
+struct nullifier { bytes: Bytes<32>; }
+struct zk_secret_key { bytes: Bytes<32>; }
+struct zk_public_key { bytes: Bytes<32>; }
+struct commitment { bytes: Bytes<32>; }
+
+struct coin_info {
+  nonce: Nonce;
+  opening: opening;
+}
+struct public_key {
+  zk: zk_public_key;
+  encryption: Opaque<"Uint8Array">;
+}
+
+witness private$zk_secret_key(): zk_secret_key;
+witness private$remove_coin(coin: coin_info): [];
+witness private$zk_public_key(): zk_public_key;
+witness private$add_coin(coin: coin_info): [];
+witness context$path_of(cm: commitment): MerkleTreePath<32, commitment>;
+witness context$new_coin_info(): coin_info;
+witness context$encrypt(pk: Opaque<"Uint8Array">, coin: coin_info): Opaque<"Uint8Array">;
+
+export ledger nullifiers: Set<nullifier>;
+export ledger commitments: HistoricMerkleTree<32, commitment>;
+  // This is a hack, really we want a Sink ADT that doesn't store anything.
+export ledger ciphertexts: Opaque<"Uint8Array">;
+
+circuit spend(dest_public_key: public_key, input_coin: coin_info): [] {
+  const source_secret_key = private$zk_secret_key();
+  const old_nullifier = derive_nullifier(input_coin, source_secret_key);
+  assert (!nullifiers.member(old_nullifier), "spend: Coin already spent");
+  nullifiers.insert(old_nullifier);
+  const source_public_key = derive_zk_public_key(source_secret_key);
+  const old_commitment = commitment_from_coin_info(input_coin, source_public_key);
+  const commitment_path = disclose(context$path_of(old_commitment));
+  assert (commitments.checkRoot(merkleTreePathRoot<32, commitment>(commitment_path)) &&
+         old_commitment == commitment_path.leaf,
+         "spend: Illegal state: merkle path not recognized by public state");
+  const fresh_coin_info = context$new_coin_info();
+  const fresh_commitment = commitment_from_coin_info(fresh_coin_info, dest_public_key.zk);
+  commitments.insert(fresh_commitment);
+  const ciphertext = disclose(context$encrypt(dest_public_key.encryption, fresh_coin_info));
+  ciphertexts = ciphertext;
+  private$remove_coin(input_coin);
+}
+
+circuit mint(): [] {
+  const coin = context$new_coin_info();
+  const pk = private$zk_public_key();
+  private$add_coin(coin);
+  const cm = commitment_from_coin_info(coin, pk);
+  commitments.insert(cm);
+}
+
+
+circuit derive_nullifier(coin: coin_info, sk: zk_secret_key): nullifier {
+  return nullifier{ bytes: disclose(persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "lares:shielded-pool:commit"),
+    coin.nonce.bytes,
+    coin.opening.bytes,
+    sk.bytes
+  ]))};
+}
+
+circuit derive_zk_public_key(sk: zk_secret_key): zk_public_key {
+  return zk_public_key{ bytes: persistentHash<Bytes<32>>(sk.bytes)};
+}
+
+circuit commitment_from_coin_info(coin: coin_info, pk: zk_public_key): commitment {
+  return commitment{ bytes: disclose(persistentHash<Vector<4, Bytes<32>>>([
+    pad(32, "lares:shielded-pool:commit"),
+    coin.nonce.bytes,
+    coin.opening.bytes,
+    pk.bytes
+  ]))};
+}

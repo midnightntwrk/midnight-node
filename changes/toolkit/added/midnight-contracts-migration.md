@@ -16,8 +16,14 @@ commit-reveal ballot through to the final phase. Covers two Merkle trees where
 membership in one gates writes to the other, and an enum crossing the witness
 boundary.
 
+**shielded-pool** — mints a coin into the commitment tree, then spends it to a
+recipient. The coins are the contract's own rather than the ledger's, so this
+covers `HistoricMerkleTree`, a depth-32 path over a struct leaf, and nested
+struct circuit arguments carrying `Opaque<"Uint8Array">`.
+
 Each contract asserts its own outcome on-chain, so a completed run is the
-assertion: battleship's `withdraw` requires the winning state, and election's
-reveals require a matching commitment in the tree.
+assertion: battleship's `withdraw` requires the winning state, election's reveals
+require a matching commitment in the tree, and the shielded pool's `spend` requires an
+unspent nullifier and a path the tree's root recognises.
 
 PR: <link to PR>
