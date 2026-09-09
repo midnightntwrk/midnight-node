@@ -1072,6 +1072,154 @@ async fn dao_e2e() {
 	);
 }
 
+/// Battleship contract E2E ported from `midnight-contracts`: two players wager on a 3x3
+/// board, Blue sinks Red's ship, Red concedes and Blue withdraws the pot.
+///
+/// Every move re-opens the player's hidden board against the commitment `start` wrote, so
+/// this covers a witness the circuit writes back (`local_set_board`) plus the
+/// `QualifiedShieldedCoinInfo` cells the contract merges and pays out. `FUNDING_SEED` pays
+/// fees and supplies every coin; the red/blue identities are private witnesses.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn battleship_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary keys; `red_pk(sk)`/`blue_pk(sk)` of these become the on-chain identities.
+	const RED_SK: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
+	const BLUE_SK: &str = "b1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f91";
+	// Blinds each board commitment; distinct so both differ even on the same square.
+	const RED_BOARD_NONCE: &str = "11111111111111111111";
+	const BLUE_BOARD_NONCE: &str = "22222222222222222222";
+	// Ship positions on the 3x3 board (1..9).
+	const RED_SHIP: &str = "1";
+	const BLUE_SHIP: &str = "7";
+	// The contract asserts the deposit; the wager is free, but Blue's must match Red's.
+	const DEPOSIT_DUST: u64 = 100_000;
+	const WAGER_DUST: u64 = 1_000_000;
+	// `nativeToken()`, which is what the dev genesis funds the seed wallet with.
+	const NATIVE_TOKEN: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+	// Received coins become fresh outputs, so their commitments must differ.
+	const RED_WAGER_NONCE: &str =
+		"1111111111111111111111111111111111111111111111111111111111111111";
+	const RED_DEPOSIT_NONCE: &str =
+		"2222222222222222222222222222222222222222222222222222222222222222";
+	const BLUE_WAGER_NONCE: &str =
+		"3333333333333333333333333333333333333333333333333333333333333333";
+	const BLUE_DEPOSIT_NONCE: &str =
+		"4444444444444444444444444444444444444444444444444444444444444444";
+
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+
+	let source = helper.load_contract_file("battleship/battleship.compact");
+	let compiled_dir = helper
+		.compile_contract(&source, "battleship")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"battleship/config.template.ts",
+		&[
+			("SECRET_KEY", RED_SK),
+			("BOARD_NONCE", RED_BOARD_NONCE),
+			("COIN_PUBLIC", &coin_public),
+			("NETWORK", "undeployed"),
+		],
+	);
+	let config_file = helper.write_config(&config_content, "battleship/contract.config.ts");
+
+	let deploy = helper
+		.generate_intent_deploy(&config_file, &coin_public)
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, RED_SK, "battleship deploy");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	// Runs one circuit against the latest state, threading that player's private state
+	// forward and checking their secret never reaches the wire.
+	let mut step = 0usize;
+	macro_rules! call {
+		($private:ident, $secret:expr, $circuit:expr, $args:expr) => {{
+			step += 1;
+			let state = helper.work_dir.path().join(format!("battleship_state_{step}.mn"));
+			helper.contract_state(&addr, &state).await.expect("contract state fetch failed");
+			let out = helper
+				.generate_intent_circuit(
+					&config_file,
+					&coin_public,
+					&state,
+					&$private,
+					&addr,
+					CircuitCall { circuit_id: $circuit, call_args: $args },
+				)
+				.await
+				.unwrap_or_else(|e| panic!("generate {} intent failed: {e}", $circuit));
+			let tx = helper
+				.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+				.await
+				.unwrap_or_else(|e| panic!("send {} intent failed: {e}", $circuit));
+			helper.assert_secret_not_in_tx(&tx, $secret, $circuit);
+			helper
+				.submit_tx(&tx)
+				.await
+				.unwrap_or_else(|e| panic!("submit {} tx failed: {e}", $circuit));
+			out
+		}};
+	}
+
+	// Red's private state comes from the deploy; Blue's is the same shape, own key and nonce.
+	let mut red_private = deploy.private_state.clone();
+	let mut blue_private = helper.work_dir.path().join("battleship_blue_private_state.json");
+	std::fs::write(
+		&blue_private,
+		serde_json::json!({
+			"secretKey": BLUE_SK,
+			"boardNonce": BLUE_BOARD_NONCE,
+			"boardPosition": "0",
+		})
+		.to_string(),
+	)
+	.expect("write blue private state");
+
+	let coin = |nonce: &str, value: u64| {
+		format!(r#"{{"nonce": "{nonce}", "color": "{NATIVE_TOKEN}", "value": {value}}}"#)
+	};
+	let red_wager = coin(RED_WAGER_NONCE, WAGER_DUST);
+	let red_deposit = coin(RED_DEPOSIT_NONCE, DEPOSIT_DUST);
+	let blue_wager = coin(BLUE_WAGER_NONCE, WAGER_DUST);
+	let blue_deposit = coin(BLUE_DEPOSIT_NONCE, DEPOSIT_DUST);
+
+	// First `start` is Red and seeds the pot; the second is Blue, whose matching wager
+	// `start` merges into the same pot coin.
+	red_private =
+		call!(red_private, RED_SK, "start", &[RED_SHIP, red_wager.as_str(), red_deposit.as_str()])
+			.private_state;
+	blue_private = call!(
+		blue_private,
+		BLUE_SK,
+		"start",
+		&[BLUE_SHIP, blue_wager.as_str(), blue_deposit.as_str()]
+	)
+	.private_state;
+
+	// Blue moves first (`blue_started` is Blue's turn) and lands on Red's ship.
+	blue_private = call!(blue_private, BLUE_SK, "guess", &[RED_SHIP]).private_state;
+
+	// Red is sunk, so `concede` is its only legal move: it proves the guess hit, records
+	// `blue_wins` and refunds Red's deposit.
+	call!(red_private, RED_SK, "concede", &[]);
+
+	// `withdraw` asserts `state == blue_wins`, so the payout itself proves the outcome.
+	call!(blue_private, BLUE_SK, "withdraw", &[]);
+}
+
 /// End-to-end coverage for ledger-9 ECDSA unshielded-signature support in the toolkit
 /// (<https://github.com/midnightntwrk/midnight-node/issues/1542>), ported from the former
 /// `scripts/tests/toolkit-ecdsa-e2e.sh`. Runs against the shared `dev` node, whose genesis is
