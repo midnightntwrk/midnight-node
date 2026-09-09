@@ -10486,9 +10486,17 @@ dependencies = [
  "frame-support",
  "frame-system",
  "midnight-node-ledger",
+ "midnight-node-ledger-helpers",
+ "midnight-node-res",
  "midnight-primitives",
+ "pallet-midnight",
+ "pallet-timestamp",
  "parity-scale-codec",
  "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "tempfile",
 ]
 
 [[package]]
