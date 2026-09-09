@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Logs whether this validator's AURA key is in the committee on each session
+//! Logs whether this validator's producing key is in the committee on each session
 //! change.
 //!
 //! Motivated by an incident where a validator silently failed to produce blocks
@@ -19,43 +19,42 @@
 //! indication. This task watches imported blocks, dedupes by substrate session
 //! index, and emits a single INFO (in committee) or WARN (not in committee)
 //! line per session.
+//!
+//! Which authority set to read is [`ConsensusEngineApi::active_engine`]: AURA
+//! uses [`AuraApi::authorities`], BABE uses [`BabeApi::current_epoch`]. Both
+//! encodings are stable; `SessionKeys` is never decoded on the native side.
+//! A runtime older than `ConsensusEngineApi` is treated as AURA.
 
 use futures::StreamExt;
-use midnight_node_runtime::{
-	add_babe_session_keys_migrated_storage_key, current_committee_storage_key,
-	decode_current_committee, opaque::Block,
-};
+use midnight_node_runtime::opaque::Block;
+use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
 use midnight_primitives_session_info::SessionInfoApi;
-use parity_scale_codec::Decode;
-use sc_client_api::{Backend, BlockchainEvents, StorageProvider};
 use sp_api::ProvideRuntimeApi;
-use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_core::crypto::key_types::AURA as AURA_KEY_TYPE;
-use sp_core::storage::StorageKey;
+use sp_consensus_aura::{AuraApi, sr25519::AuthorityId as AuraId};
+use sp_consensus_babe::BabeApi;
+use sp_core::{crypto::key_types, sr25519};
 use sp_keystore::{Keystore, KeystorePtr};
-use sp_session_validator_management::CommitteeMember as _;
+use sp_runtime::traits::Block as BlockT;
 use std::sync::Arc;
 
 const LOG_TARGET: &str = "committee-membership";
 
-pub async fn watch<C, B>(client: Arc<C>, keystore: KeystorePtr)
+pub async fn watch<C>(client: Arc<C>, keystore: KeystorePtr)
 where
-	C: ProvideRuntimeApi<Block>
-		+ BlockchainEvents<Block>
-		+ StorageProvider<Block, B>
-		+ Send
-		+ Sync
-		+ 'static,
-	B: Backend<Block>,
-	C::Api: SessionInfoApi<Block>,
+	C: ProvideRuntimeApi<Block> + sc_client_api::BlockchainEvents<Block> + Send + Sync + 'static,
+	C::Api: SessionInfoApi<Block>
+		+ ConsensusEngineApi<Block>
+		+ AuraApi<Block, AuraId>
+		+ BabeApi<Block>,
 {
 	let mut notifications = client.import_notification_stream();
 	let mut last_session: Option<u32> = None;
 
 	while let Some(notification) = notifications.next().await {
 		let block_hash = notification.hash;
+		let api = client.runtime_api();
 
-		let session_index = match client.runtime_api().current_session_index(block_hash) {
+		let session_index = match api.current_session_index(block_hash) {
 			Ok(idx) => idx,
 			Err(err) => {
 				log::error!(
@@ -71,70 +70,64 @@ where
 		}
 		last_session = Some(session_index);
 
-		// Read `CurrentCommittee` and the consensus-engine add-babe-session-keys migration guard
-		// straight from state, then let the runtime decode the committee in the shape matching
-		// whether that migration has run.
-		let migrated_bytes = match client
-			.storage(block_hash, &StorageKey(add_babe_session_keys_migrated_storage_key()))
-		{
-			Ok(bytes) => bytes.unwrap_or_default(),
+		let engine = api.active_engine(block_hash).unwrap_or(ActiveEngine::Aura);
+		let producers = match producing_authorities(&*client, block_hash, engine) {
+			Ok(producers) => producers,
 			Err(err) => {
 				log::error!(
 					target: LOG_TARGET,
-					"Failed to read add-babe-session-keys migration guard at {block_hash:?}: {err}",
+					"Failed to read block producers at {block_hash:?}: {err}",
 				);
 				continue;
 			},
 		};
-		let committee_bytes =
-			match client.storage(block_hash, &StorageKey(current_committee_storage_key())) {
-				Ok(bytes) => bytes.unwrap_or_default(),
-				Err(err) => {
-					log::error!(
-						target: LOG_TARGET,
-						"Failed to read current committee at {block_hash:?}: {err}",
-					);
-					continue;
-				},
-			};
 
-		// A missing or undecodable guard means the add-babe-session-keys migration has not run, so
-		// the committee is still in the legacy shape.
-		let migrated = bool::decode(&mut migrated_bytes.0.as_slice()).unwrap_or(false);
-
-		let (_epoch, committee) = decode_current_committee(committee_bytes.0.as_slice(), migrated);
-
-		let local_aura_keys: Vec<AuraId> = keystore
-			.sr25519_public_keys(AURA_KEY_TYPE)
-			.into_iter()
-			.map(AuraId::from)
-			.collect();
-		let committee_aura_keys: Vec<AuraId> =
-			committee.iter().map(|m| m.authority_keys().aura.clone()).collect();
-		let committee_size = committee_aura_keys.len();
-
-		let local_match = local_aura_keys
-			.iter()
-			.find(|local| committee_aura_keys.iter().any(|c| c == *local));
+		let (key_type, engine_label) = match engine {
+			ActiveEngine::Aura => (key_types::AURA, "AURA"),
+			ActiveEngine::Babe => (key_types::BABE, "BABE"),
+		};
+		let local_keys = keystore.sr25519_public_keys(key_type);
+		let committee_size = producers.len();
+		let local_match = local_keys.iter().find(|local| producers.iter().any(|p| p == *local));
 
 		match local_match {
 			Some(key) => log::info!(
 				target: LOG_TARGET,
 				"Session {session_index}: this node IS in the committee for this session \
-				 (AURA key: 0x{}, committee size: {committee_size})",
+				 ({engine_label} key: 0x{}, committee size: {committee_size})",
 				hex::encode(AsRef::<[u8]>::as_ref(key)),
 			),
 			None => {
-				let local_hex: Vec<String> = local_aura_keys
+				let local_hex: Vec<String> = local_keys
 					.iter()
 					.map(|k| format!("0x{}", hex::encode(AsRef::<[u8]>::as_ref(k))))
 					.collect();
 				log::info!(
 					target: LOG_TARGET,
 					"Session {session_index}: this node IS NOT in the committee \
-					 for this session (local AURA keys: {local_hex:?}, committee size: {committee_size})."
+					 for this session (local {engine_label} keys: {local_hex:?}, committee size: {committee_size})."
 				);
 			},
 		}
+	}
+}
+
+fn producing_authorities<C>(
+	client: &C,
+	block_hash: <Block as BlockT>::Hash,
+	engine: ActiveEngine,
+) -> Result<Vec<sr25519::Public>, sp_api::ApiError>
+where
+	C: ProvideRuntimeApi<Block>,
+	C::Api: AuraApi<Block, AuraId> + BabeApi<Block>,
+{
+	let api = client.runtime_api();
+	match engine {
+		ActiveEngine::Aura => api
+			.authorities(block_hash)
+			.map(|authorities| authorities.into_iter().map(Into::into).collect()),
+		ActiveEngine::Babe => api.current_epoch(block_hash).map(|epoch| {
+			epoch.authorities.into_iter().map(|(id, _weight)| id.into()).collect()
+		}),
 	}
 }

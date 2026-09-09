@@ -13,20 +13,21 @@
 
 use alloc::vec::Vec;
 use authority_selection_inherents::{
-	AriadneInherentDataProvider, AuthoritySelectionInputs, CommitteeMember, MaybeFromCandidateKeys,
-	RegisterValidatorSignedMessage, filter_trustless_candidates_registrations,
+	filter_trustless_candidates_registrations, AriadneInherentDataProvider,
+	AuthoritySelectionInputs, CommitteeMember, MaybeFromCandidateKeys,
+	RegisterValidatorSignedMessage,
 };
 use frame_support::{
-	Hashable,
 	pallet_prelude::*,
 	parameter_types,
 	traits::{ConstBool, ConstU64},
+	Hashable,
 };
 use frame_system::EnsureRoot;
 use sidechain_domain::*;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::crypto::CryptoType;
-use sp_core::{ByteArray, H256, Pair, crypto::AccountId32};
+use sp_core::{crypto::AccountId32, ByteArray, Pair, H256};
 use sp_core::{ecdsa, ed25519, sr25519};
 use sp_runtime::{
 	BuildStorage, Digest, DigestItem, impl_opaque_keys,
@@ -208,7 +209,11 @@ impl pallet_session_validator_management::Config for Test {
 		.into_iter()
 		.map(|c| c.0.into())
 		.collect();
-		if candidates.is_empty() { None } else { Some(BoundedVec::truncate_from(candidates)) }
+		if candidates.is_empty() {
+			None
+		} else {
+			Some(BoundedVec::truncate_from(candidates))
+		}
 	}
 
 	fn current_epoch_number() -> ScEpochNumber {
@@ -476,7 +481,7 @@ impl MockValidator {
 	}
 
 	pub fn sidechain_pub_key(&self) -> SidechainPublicKey {
-		SidechainPublicKey(self.account_id().0.0.to_vec())
+		SidechainPublicKey(self.account_id().0 .0.to_vec())
 	}
 
 	pub fn account_keys(&self) -> AccountKeys {

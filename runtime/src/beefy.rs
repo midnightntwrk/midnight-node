@@ -5,7 +5,7 @@ use core::marker::PhantomData;
 
 use authority_selection_inherents::CommitteeMember;
 
-use midnight_primitives_beefy::{BEEFY_LOG_TARGET, BeefyStakes};
+use midnight_primitives_beefy::{BeefyStakes, BEEFY_LOG_TARGET};
 use pallet_beefy_mmr::{Config as BeefyMmrConfig, Pallet as BeefyMmrPallet};
 use pallet_mmr::Config as MmrConfig;
 
@@ -13,7 +13,7 @@ use pallet_session_validator_management::{
 	CommitteeInfo, Config as SessionValidatorMngConfig, Pallet as SessionValidatorMngPallet,
 };
 use sp_consensus_beefy::{
-	OnNewValidatorSet, ValidatorSetId, ecdsa_crypto::AuthorityId as BeefyId, mmr::BeefyAuthoritySet,
+	ecdsa_crypto::AuthorityId as BeefyId, mmr::BeefyAuthoritySet, OnNewValidatorSet, ValidatorSetId,
 };
 
 use alloc::vec::Vec;
