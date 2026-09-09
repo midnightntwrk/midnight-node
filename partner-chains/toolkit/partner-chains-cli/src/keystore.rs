@@ -18,7 +18,7 @@ impl<'a> KeyDefinition<'a> {
 /// Well known definition of AURA key
 pub const AURA: KeyDefinition<'static> =
 	KeyDefinition { name: "AURA", scheme: "sr25519", key_type: "aura" };
-/// Well known definition of AURA key
+/// Well known definition of BABE key
 pub const BABE: KeyDefinition<'static> =
 	KeyDefinition { name: "BABE", scheme: "sr25519", key_type: "babe" };
 /// Well known definition of Grandpa key

@@ -245,8 +245,7 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 			session: SessionKeys {
 				aura: keys.aura_pubkey.into(),
 				grandpa: keys.grandpa_pubkey.into(),
-				// Fall back to the AURA key when no BABE key is configured (both sr25519).
-				babe: keys.babe_pubkey.unwrap_or(keys.aura_pubkey).into(),
+				babe: keys.babe_pubkey.into(),
 			},
 			cross_chain: keys.crosschain_pubkey.into(),
 		})
