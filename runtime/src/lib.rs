@@ -232,7 +232,7 @@ pub mod opaque {
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
 			let babe = keys.find(BABE)?;
-			let babe = sr25519::Public::from_raw(raw_babe.try_into().ok()?);
+			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
 			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
 		}
 	}
