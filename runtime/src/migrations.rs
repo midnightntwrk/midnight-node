@@ -54,7 +54,7 @@ impl FailedMigrationHandler for EnterSafeModeAndUnstuckOnFailedMigration {
 }
 
 pub mod authority_keys {
-	use crate::{CrossChainPublic, Runtime, opaque::SessionKeys};
+	use crate::{opaque::SessionKeys, CrossChainPublic, Runtime};
 	use alloc::vec::Vec;
 	use authority_selection_inherents::CommitteeMember;
 	use frame_support::{
