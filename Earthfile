@@ -696,7 +696,6 @@ node-ci-image-single-platform:
         libpq-devel \
         sqlite-devel \
         openssl \
-        perl-core \
         protobuf-compiler \
         pkgconfig \
         openssh-clients \
