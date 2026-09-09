@@ -63,6 +63,19 @@ fn path_to_string(path: &Path) -> String {
 	path.to_string_lossy().to_string()
 }
 
+/// Hex-encodes a JSON byte array, the form circuit results render `Bytes<N>` in.
+/// `what` names the value for the panic message.
+fn hex_bytes(value: &serde_json::Value, what: &std::fmt::Arguments<'_>) -> String {
+	let bytes = value.as_array().unwrap_or_else(|| panic!("expected {what} to be a byte array"));
+	bytes
+		.iter()
+		.map(|b| {
+			let byte = b.as_u64().unwrap_or_else(|| panic!("non-numeric byte in {what}"));
+			format!("{byte:02x}")
+		})
+		.collect()
+}
+
 fn default_source() -> Source {
 	Source {
 		src_url: None,
@@ -446,18 +459,7 @@ impl ToolkitTestHelper {
 		let result = self.read_result(result_file);
 
 		let hex_field = |name: &str| -> String {
-			let bytes = result[name].as_array().unwrap_or_else(|| {
-				panic!("expected `{name}` to be a byte array in {}", result_file.display())
-			});
-			bytes
-				.iter()
-				.map(|b| {
-					let byte = b.as_u64().unwrap_or_else(|| {
-						panic!("non-numeric byte in `{name}` in {}", result_file.display())
-					});
-					format!("{byte:02x}")
-				})
-				.collect()
+			hex_bytes(&result[name], &format_args!("`{name}` in {}", result_file.display()))
 		};
 
 		let value: u128 = result["value"]
@@ -477,6 +479,13 @@ impl ToolkitTestHelper {
 			hex_field("nonce"),
 			hex_field("color"),
 		)
+	}
+
+	/// Re-encodes a `Bytes<32>` a circuit returned into the hex form the CLI parses.
+	/// Results render `Bytes<32>` as a byte array; arguments want hex.
+	pub fn result_bytes_to_hex(&self, result_file: &Path) -> String {
+		let result = self.read_result(result_file);
+		hex_bytes(&result, &format_args!("{}", result_file.display()))
 	}
 
 	pub async fn send_intent(

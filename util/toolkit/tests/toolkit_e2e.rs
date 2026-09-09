@@ -1220,6 +1220,149 @@ async fn battleship_e2e() {
 	call!(blue_private, BLUE_SK, "withdraw", &[]);
 }
 
+/// Election contract E2E ported from `midnight-contracts`: the authority allowlists two
+/// voters, opens a topic, and runs a commit-reveal ballot through to the final phase.
+///
+/// Voting rights are Merkle-tree membership rather than a token, so `vote_commit` proves
+/// inclusion in `eligible_voters` before writing into `committed_votes`, which `vote_reveal`
+/// then proves against. `FUNDING_SEED` pays every fee; the authority and voter identities
+/// are private witnesses.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn election_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary keys; `public_key(sk)` of the first becomes the on-chain `authority`, and of
+	// the others the leaves it allowlists.
+	const AUTHORITY_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000001";
+	const VOTER_A_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000002";
+	const VOTER_B_SK: &str = "c0ffee0000000000000000000000000000000000000000000000000000000003";
+	const YES: &str = "true";
+	const NO: &str = "false";
+
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+
+	let source = helper.load_contract_file("election/election.compact");
+	let compiled_dir = helper
+		.compile_contract(&source, "election")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"election/config.template.ts",
+		&[("SECRET_KEY", AUTHORITY_SK), ("COIN_PUBLIC", &coin_public), ("NETWORK", "undeployed")],
+	);
+	let config_file = helper.write_config(&config_content, "election/contract.config.ts");
+
+	let deploy = helper
+		.generate_intent_deploy_with_args(&config_file, &coin_public, &[AUTHORITY_SK])
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, AUTHORITY_SK, "election deploy");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	// Runs one circuit against the latest state, threading that identity's private state
+	// forward and checking its secret never reaches the wire.
+	let mut step = 0usize;
+	macro_rules! call {
+		($private:ident, $secret:expr, $circuit:expr, $args:expr) => {{
+			step += 1;
+			let state = helper.work_dir.path().join(format!("election_state_{step}.mn"));
+			helper.contract_state(&addr, &state).await.expect("contract state fetch failed");
+			let out = helper
+				.generate_intent_circuit(
+					&config_file,
+					&coin_public,
+					&state,
+					&$private,
+					&addr,
+					CircuitCall { circuit_id: $circuit, call_args: $args },
+				)
+				.await
+				.unwrap_or_else(|e| panic!("generate {} intent failed: {e}", $circuit));
+			let tx = helper
+				.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+				.await
+				.unwrap_or_else(|e| panic!("send {} intent failed: {e}", $circuit));
+			helper.assert_secret_not_in_tx(&tx, $secret, $circuit);
+			helper
+				.submit_tx(&tx)
+				.await
+				.unwrap_or_else(|e| panic!("submit {} tx failed: {e}", $circuit));
+			out
+		}};
+	}
+
+	let mut authority_private = deploy.private_state.clone();
+	let voter_state = |name: &str, secret_key: &str| {
+		let state = helper.work_dir.path().join(format!("election_{name}_private_state.json"));
+		std::fs::write(
+			&state,
+			serde_json::json!({ "secretKey": secret_key, "state": 0, "ballot": null }).to_string(),
+		)
+		.expect("write voter private state");
+		state
+	};
+	let mut voter_a_private = voter_state("voter_a", VOTER_A_SK);
+	let mut voter_b_private = voter_state("voter_b", VOTER_B_SK);
+
+	// `add_voter` takes a public key, so each voter derives its own. The circuit only reads
+	// state, so generating the intent to read the result is enough; nothing to submit.
+	macro_rules! voter_pk {
+		($private:ident, $name:expr) => {{
+			let state = helper.work_dir.path().join(format!("election_pk_state_{}.mn", $name));
+			helper.contract_state(&addr, &state).await.expect("contract state fetch failed");
+			let out = helper
+				.generate_intent_circuit(
+					&config_file,
+					&coin_public,
+					&state,
+					&$private,
+					&addr,
+					CircuitCall { circuit_id: "voter_public_key", call_args: &[] },
+				)
+				.await
+				.expect("generate voter_public_key intent failed");
+			helper.result_bytes_to_hex(&out.result)
+		}};
+	}
+	let voter_a_pk = voter_pk!(voter_a_private, "a");
+	let voter_b_pk = voter_pk!(voter_b_private, "b");
+
+	// Setup: allowlist both voters and open the topic, all gated on the authority identity.
+	authority_private =
+		call!(authority_private, AUTHORITY_SK, "add_voter", &[voter_a_pk.as_str()]).private_state;
+	authority_private =
+		call!(authority_private, AUTHORITY_SK, "add_voter", &[voter_b_pk.as_str()]).private_state;
+	authority_private =
+		call!(authority_private, AUTHORITY_SK, "set_topic", &["Adopt the proposal"]).private_state;
+
+	// setup -> commit.
+	authority_private = call!(authority_private, AUTHORITY_SK, "advance", &[]).private_state;
+
+	// Each commit proves membership in `eligible_voters`, then inserts into `committed_votes`.
+	voter_a_private = call!(voter_a_private, VOTER_A_SK, "vote_commit", &[YES]).private_state;
+	voter_b_private = call!(voter_b_private, VOTER_B_SK, "vote_commit", &[NO]).private_state;
+
+	// commit -> reveal.
+	authority_private = call!(authority_private, AUTHORITY_SK, "advance", &[]).private_state;
+
+	// Each reveal reproduces its commitment from private state and proves it is in the tree.
+	call!(voter_a_private, VOTER_A_SK, "vote_reveal", &[]);
+	call!(voter_b_private, VOTER_B_SK, "vote_reveal", &[]);
+
+	// reveal -> final. Reaching it is the assertion that both reveals tallied.
+	call!(authority_private, AUTHORITY_SK, "advance", &[]);
+}
+
 /// End-to-end coverage for ledger-9 ECDSA unshielded-signature support in the toolkit
 /// (<https://github.com/midnightntwrk/midnight-node/issues/1542>), ported from the former
 /// `scripts/tests/toolkit-ecdsa-e2e.sh`. Runs against the shared `dev` node, whose genesis is
