@@ -231,10 +231,8 @@ pub mod opaque {
 			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-			let babe = match keys.find(BABE) {
-				Some(raw_babe) => sr25519::Public::from_raw(raw_babe.try_into().ok()?),
-				None => aura,
-			};
+			let babe = keys.find(BABE)?;
+			let babe = sr25519::Public::from_raw(raw_babe.try_into().ok()?);
 			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
 		}
 	}
