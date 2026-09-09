@@ -49,8 +49,7 @@ pub struct PermissionedCandidateEntry {
 	/// AURA public key (32 bytes, hex with 0x prefix)
 	pub aura_pub_key: String,
 	/// BABE public key (32 bytes, hex with 0x prefix)
-	#[serde(default, skip_serializing_if = "Option::is_none")]
-	pub babe_pub_key: Option<String>,
+	pub babe_pub_key: String,
 	/// GRANDPA public key (32 bytes, hex with 0x prefix)
 	pub grandpa_pub_key: String,
 	/// Sidechain/cross-chain public key (33 bytes compressed, hex with 0x prefix)
@@ -149,17 +148,17 @@ pub async fn generate_permissioned_candidates_genesis(
 			.or_else(|| candidate.keys.find(CROSS_CHAIN).map(|k| format!("0x{}", hex::encode(k))))
 			.unwrap_or_else(|| sidechain_key.clone());
 
-		if let (Some(aura), Some(grandpa)) = (aura_key, grandpa_key) {
+		if let (Some(aura), Some(babe), Some(grandpa)) = (aura_key, babe_key, grandpa_key) {
 			entries.push(PermissionedCandidateEntry {
 				aura_pub_key: aura,
-				babe_pub_key: babe_key,
+				babe_pub_key: babe,
 				grandpa_pub_key: grandpa,
 				sidechain_pub_key: sidechain_key,
 				beefy_pub_key: beefy_key,
 			});
 		} else {
 			log::warn!(
-				"Skipping candidate with missing AURA or GRANDPA key: sidechain_public_key={}",
+				"Skipping candidate with missing AURA, BABE or GRANDPA key: sidechain_public_key={}",
 				hex::encode(&candidate.sidechain_public_key.0)
 			);
 		}
