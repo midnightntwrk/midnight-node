@@ -42,6 +42,7 @@ import {
   MOCKED_CONFIG_DIRNAME,
   readMockValidatorSelection,
 } from "../lib/mockComposeOverride";
+import { writeForkManifest } from "../lib/forkManifest";
 import { generateGenesisComposeOverride } from "../lib/genesisComposeOverride";
 
 /**
@@ -108,6 +109,15 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
 
   const networkConfig = loadNetworkConfig(namespace);
   const mock = requireMockConfig(namespace, networkConfig);
+
+  // Fail before the (potentially hours-long) snapshot restore rather than at
+  // compose interpolation time. Fork mode has no .envrc fallback: consumers
+  // running from a sparse checkout must provide the image explicitly.
+  if (!env.NODE_IMAGE) {
+    throw new Error(
+      `NODE_IMAGE is not set. Export it or pass an --env-file, e.g. NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag>`,
+    );
+  }
 
   const validatorSelection = resolveMockValidatorSelection(
     mock,
@@ -187,6 +197,13 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     profiles: runOptions.profiles,
     detach: true,
   });
+
+  const manifestPath = writeForkManifest({
+    namespace,
+    composeFile,
+    env,
+  });
+  console.log(`Fork manifest written: ${manifestPath}`);
 }
 
 /**

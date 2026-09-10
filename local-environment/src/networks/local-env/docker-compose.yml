@@ -496,6 +496,39 @@ services:
           cpus: ${CPU_MIDNIGHT_NODE:-}
           memory: ${MEM_MIDNIGHT_NODE:-}
 
+  # Non-validator archive node: follows the chain, keeps full state and block
+  # history for RPC inspection. Not labeled io.midnight.role: validator, so
+  # finality verification and upgrade tooling skip it.
+  midnight-node-6:
+    container_name: midnight-node-6
+    image: ${MIDNIGHT_NODE_IMAGE}
+    platform: ${ARCHITECTURE}
+    depends_on:
+      midnight-setup:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - midnight-node-6-data:/data
+      - shared-volume:/shared
+      - ./configurations/midnight-nodes/midnight-node-6/entrypoint.sh:/entrypoint.sh
+    environment:
+      DB_SYNC_POSTGRES_CONNECTION_STRING: "postgres://postgres:${LOCALENV_POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/cexplorer"
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+    labels:
+      io.midnight.role: archive
+      io.midnight.rpc-port: "9945"
+    ports:
+      - "30338:30338"
+      - "9945:9945"
+      - "9620:9620"
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: ${CPU_MIDNIGHT_NODE:-}
+          memory: ${MEM_MIDNIGHT_NODE:-}
+
   midnight-setup:
     container_name: midnight-setup
     image: ${MIDNIGHT_NODE_IMAGE}
@@ -583,6 +616,7 @@ volumes:
   midnight-node-3-data: {}
   midnight-node-4-data: {}
   midnight-node-5-data: {}
+  midnight-node-6-data: {}
   nats-data: {}
   postgres-indexer-data: {}
   ogmios-data: {}

@@ -83,3 +83,58 @@ where
 		None => Ok(None),
 	}
 }
+
+/// Raw storage key for `pallet_cnight_observation::PreForkStateKey`:
+/// `twox_128("CNightObservation") ++ twox_128("PreForkStateKey")`.
+///
+/// Read by raw key for the same reason [`state_key_storage_key`] is: no runtime API exposes it.
+// ponytail: transient ledger 8 -> 9 hardfork machinery; delete together with
+// `pallet_cnight_observation::migrations::v2` once that fork is behind us.
+pub(crate) fn pre_fork_state_key_storage_key() -> StorageKey {
+	let mut key = Vec::with_capacity(32);
+	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"CNightObservation"));
+	key.extend_from_slice(&sp_crypto_hashing::twox_128(b"PreForkStateKey"));
+	StorageKey(key)
+}
+
+/// Whether `pallet_cnight_observation::PreForkStateKey` is set at `hash`, i.e. whether the cNIGHT
+/// dust generation replay (`pallet_cnight_observation::migrations::v2`) is mid-flight at that
+/// block. Presence is the whole answer — the value is a ledger-8 arena root this node cannot
+/// resolve anyway — so it is never decoded.
+///
+/// The key is written in the hardfork upgrade block and killed when the replay completes *or*
+/// cancels, so it marks exactly the blocks whose execution needs the pre-fork arena.
+pub(crate) fn has_pre_fork_state_key<B, Client, BE>(
+	client: &Client,
+	hash: B::Hash,
+) -> Result<bool, sp_blockchain::Error>
+where
+	B: BlockT,
+	BE: Backend<B>,
+	Client: StorageProvider<B, BE>,
+{
+	Ok(client.storage(hash, &pre_fork_state_key_storage_key())?.is_some())
+}
+
+#[cfg(test)]
+mod storage_key_tests {
+	use midnight_node_runtime::Runtime;
+
+	/// Both raw keys above are hand-built from pallet/item name strings, so a pallet rename is a
+	/// silent break: the server would stop finding `StateKey`, and — worse, because it fails
+	/// *open* — the dust-replay guard would stop firing with no compile error. Pin them to the
+	/// real runtime's derived keys.
+	#[test]
+	fn raw_storage_keys_match_the_runtime() {
+		assert_eq!(
+			super::state_key_storage_key().0,
+			pallet_midnight::StateKey::<Runtime>::hashed_key().to_vec(),
+			"pallet_midnight::StateKey moved; update state_key_storage_key()"
+		);
+		assert_eq!(
+			super::pre_fork_state_key_storage_key().0,
+			pallet_cnight_observation::PreForkStateKey::<Runtime>::hashed_key().to_vec(),
+			"pallet_cnight_observation::PreForkStateKey moved; update pre_fork_state_key_storage_key()"
+		);
+	}
+}

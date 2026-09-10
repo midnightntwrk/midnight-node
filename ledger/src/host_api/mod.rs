@@ -17,3 +17,8 @@ pub mod ledger_9;
 /// Host-side v8 -> v9 ledger state translation used by the runtime storage migration.
 #[cfg(feature = "std")]
 pub mod migration_8_to_9;
+
+/// Host-side read of the pre-fork (ledger-8) dust generation state, used by the
+/// cNIGHT dust re-apply migration.
+#[cfg(feature = "std")]
+pub mod dust_generation;

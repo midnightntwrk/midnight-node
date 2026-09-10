@@ -15,7 +15,6 @@ use frame_support::{
 		},
 	},
 };
-use pallet_session::HoldReason;
 use sp_runtime::{DispatchError, traits::Saturating};
 
 pub struct CurrencyWaiver;
@@ -255,7 +254,7 @@ impl<AccountId: Eq> FungibleMutate<AccountId> for CurrencyWaiver {
 }
 
 impl<AccountId> FungibleInspectHold<AccountId> for CurrencyWaiver {
-	type Reason = HoldReason;
+	type Reason = crate::RuntimeHoldReason;
 	fn balance_on_hold(_: &Self::Reason, _: &AccountId) -> u128 {
 		0
 	}
@@ -274,11 +273,11 @@ impl<AccountId> FungibleInspectHold<AccountId> for CurrencyWaiver {
 }
 
 impl<AccountId> FungibleMutateHold<AccountId> for CurrencyWaiver {
-	fn hold(_: &HoldReason, _: &AccountId, _: u128) -> Result<(), DispatchError> {
+	fn hold(_: &Self::Reason, _: &AccountId, _: u128) -> Result<(), DispatchError> {
 		Ok(())
 	}
 	fn release(
-		_: &HoldReason,
+		_: &Self::Reason,
 		_: &AccountId,
 		_: u128,
 		_: Precision,

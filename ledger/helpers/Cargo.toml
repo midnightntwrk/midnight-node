@@ -11,7 +11,6 @@ cargo_metadata = "0.15"
 
 [dependencies]
 hex.workspace = true
-sha2.workspace = true
 
 base-crypto = { workspace = true }
 coin-structure = { workspace = true }
@@ -23,48 +22,36 @@ reqwest = { workspace = true }
 
 mn-ledger-8 = { workspace = true, features = ["proving"] }
 onchain-runtime-ledger-8 = { workspace = true }
-onchain-state-ledger-8 = { workspace = true }
 ledger-storage-ledger-8 = { workspace = true }
 zswap-ledger-8 = { workspace = true }
 
 mn-ledger-9 = { workspace = true, features = ["proving", "test-utilities"] }
 onchain-runtime-ledger-9 = { workspace = true }
-onchain-state-ledger-9 = { workspace = true }
 zswap-ledger-9 = { workspace = true }
 coin-structure-ledger-9 = { workspace = true }
 transient-crypto-ledger-9 = { workspace = true }
 
 rand = { version = "0.8.4", features = ["small_rng", "getrandom"] }
-rayon.workspace = true
 log.workspace = true
 lazy_static.workspace = true
-itertools = { workspace = true, features = ["use_alloc"] }
 thiserror.workspace = true
-tokio.workspace = true
-async-trait.workspace = true
-futures.workspace = true
-bip32.workspace = true
 derive-where.workspace = true
 serde = { workspace = true, features = ["derive"] }
 # Derive the u8 <-> variant and name <-> variant mappings from the enum declaration
 # itself, so `LedgerVersion`'s wire discriminants can't drift from a hand-written table.
 num_enum = "0.7"
 strum.workspace = true
-bech32 = "0.11.0"
 bip39 = "2.2.2"
 subxt.workspace = true
 subxt-signer.workspace = true
-serde_json.workspace = true
 serde_bytes = "0.11"
 zeroize = { workspace = true }
 
 [dev-dependencies]
 # Pins the cache wire format of `LedgerVersion` (see raw_block_data.rs tests).
 postcard = { version = "1.1", features = ["alloc"] }
+serde_json.workspace = true
 
 [features]
 default = []
-can-panic = []
-erase-proof = []
-test-utils = []
 fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]

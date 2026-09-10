@@ -20,7 +20,7 @@ use midnight_primitives_cnight_observation::{
 };
 use parity_scale_codec::Decode;
 use sidechain_domain::McBlockHash;
-use sp_api::{ApiError, ApiExt, ProvideRuntimeApi};
+use sp_api::{ApiError, ApiExt, Core, ProvideRuntimeApi};
 use sp_blockchain::HeaderBackend;
 use sp_runtime::traits::Block as BlockT;
 use std::{error::Error, string::FromUtf8Error, sync::Arc};
@@ -48,8 +48,6 @@ pub enum IDPCreationError {
 	InvalidOnchainStateCNight(String),
 	#[error("Auth token asset name is not a string")]
 	AuthTokenAssetNameNotString,
-	#[error("CNightObservationApi version not reported by runtime")]
-	CNightObservationApiUnavailable,
 }
 
 impl MidnightCNightObservationInherentDataProvider {
@@ -99,18 +97,7 @@ impl MidnightCNightObservationInherentDataProvider {
 		let api = client.runtime_api();
 		let mapping_validator_address =
 			String::from_utf8(api.get_mapping_validator_address(parent_hash)?)?;
-		let tx_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
-
-		// The over-fetch quantity used when querying db-sync is consensus-affecting:
-		// validators must agree on it to produce identical inherents. The reduction
-		// from 64x to 4x is therefore gated on the on-chain `CNightObservationApi`
-		// version: v2+ runtimes use the new factor, older runtimes keep the legacy
-		// 64x used by node binaries that shipped against v1.
-		let api_version = api
-			.api_version::<dyn CNightObservationApi<Block>>(parent_hash)?
-			.ok_or(IDPCreationError::CNightObservationApiUnavailable)?;
-		let overestimate_factor: u32 = if api_version >= 2 { 4 } else { 64 };
-		let utxo_overestimate = tx_capacity.saturating_mul(overestimate_factor);
+		let utxo_capacity = api.get_utxo_capacity_per_block(parent_hash)?;
 
 		let (cnight_policy_id, cnight_asset_name) = api.get_cnight_token_identifier(parent_hash)?;
 		let auth_token_asset_name: String = api
@@ -118,6 +105,7 @@ impl MidnightCNightObservationInherentDataProvider {
 			.try_into()
 			.map_err(|_| IDPCreationError::AuthTokenAssetNameNotString)?;
 		let cardano_position_start = api.get_next_cardano_position(parent_hash)?;
+		let spec_version = api.version(parent_hash)?.spec_version;
 
 		let config = CNightAddresses {
 			mapping_validator_address,
@@ -135,8 +123,8 @@ impl MidnightCNightObservationInherentDataProvider {
 				&config,
 				&cardano_position_start,
 				mc_hash,
-				tx_capacity as usize,
-				utxo_overestimate as usize,
+				utxo_capacity as usize,
+				spec_version,
 			)
 			.await
 			.map_err(IDPCreationError::DataSourceError)?;

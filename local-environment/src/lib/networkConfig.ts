@@ -54,6 +54,7 @@ export function loadNetworkConfig(namespace: string): NetworkConfig {
   } catch (error) {
     throw new Error(
       `Failed to parse network config at ${configPath}: ${(error as Error).message}`,
+      { cause: error },
     );
   }
 }
