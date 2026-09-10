@@ -18,7 +18,7 @@
  *
  * Shielded coins held by the contract rather than the ledger. A coin is a commitment in a
  * HistoricMerkleTree; spending publishes a nullifier, proves a path to the old commitment,
- * and inserts a fresh one for the recipient with a ciphertext only they can open.
+ * and inserts a fresh one for the recipient.
  *
  * Test intent: `HistoricMerkleTree`, a depth-32 path over a struct leaf, and nested struct
  * circuit arguments carrying `Opaque<"Uint8Array">`.
@@ -30,7 +30,7 @@ import CompactStandardLibrary;
 
 export {mint, spend}
 
-struct Nonce { bytes: Bytes<32>; }
+struct nonce { bytes: Bytes<32>; }
 struct opening { bytes: Bytes<32>; }
 struct nullifier { bytes: Bytes<32>; }
 struct zk_secret_key { bytes: Bytes<32>; }
@@ -38,7 +38,7 @@ struct zk_public_key { bytes: Bytes<32>; }
 struct commitment { bytes: Bytes<32>; }
 
 struct coin_info {
-  nonce: Nonce;
+  nonce: nonce;
   opening: opening;
 }
 struct public_key {
@@ -56,7 +56,7 @@ witness context$encrypt(pk: Opaque<"Uint8Array">, coin: coin_info): Opaque<"Uint
 
 export ledger nullifiers: Set<nullifier>;
 export ledger commitments: HistoricMerkleTree<32, commitment>;
-  // This is a hack, really we want a Sink ADT that doesn't store anything.
+// This is a hack, really we want a Sink ADT that doesn't store anything.
 export ledger ciphertexts: Opaque<"Uint8Array">;
 
 circuit spend(dest_public_key: public_key, input_coin: coin_info): [] {
@@ -86,10 +86,10 @@ circuit mint(): [] {
   commitments.insert(cm);
 }
 
-
+// Keep nullifiers and commitments in separate hash domains.
 circuit derive_nullifier(coin: coin_info, sk: zk_secret_key): nullifier {
   return nullifier{ bytes: disclose(persistentHash<Vector<4, Bytes<32>>>([
-    pad(32, "lares:shielded-pool:commit"),
+    pad(32, "lares:shielded-pool:nullifier"),
     coin.nonce.bytes,
     coin.opening.bytes,
     sk.bytes

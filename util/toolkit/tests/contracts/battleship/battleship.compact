@@ -106,19 +106,19 @@ constructor () {
   last_guess = none<Field>();
 }
 
-export circuit red_pk(sk: Bytes<32>): Bytes<32> {
+circuit red_pk(sk: Bytes<32>): Bytes<32> {
   return disclose(persistentHash<Vector<2, Bytes<32>>>([sk, pad(32, "battleship:red")]));
 }
 
-export circuit is_red(sk: Bytes<32>, pk: Bytes<32>): Boolean {
+circuit is_red(sk: Bytes<32>, pk: Bytes<32>): Boolean {
   return pk == persistentHash<Vector<2, Bytes<32>>>([sk, pad(32, "battleship:red")]);
 }
 
-export circuit blue_pk(sk: Bytes<32>): Bytes<32> {
+circuit blue_pk(sk: Bytes<32>): Bytes<32> {
   return disclose(persistentHash<Vector<2, Bytes<32>>>([sk, pad(32, "battleship:blue")]));
 }
 
-export circuit is_blue(sk: Bytes<32>, pk: Bytes<32>): Boolean {
+circuit is_blue(sk: Bytes<32>, pk: Bytes<32>): Boolean {
   return pk == persistentHash<Vector<2, Bytes<32>>>([sk, pad(32, "battleship:blue")]);
 }
 
@@ -153,7 +153,7 @@ circuit is_red_turn(state: State): Boolean {
   return state == State.red_turn;
 }
 
-export circuit is_player_alive(local_board: Committable<Board>, guess: Field): Boolean {
+circuit is_player_alive(local_board: Committable<Board>, guess: Field): Boolean {
   return !(local_board.contents.position == guess);
 }
 
