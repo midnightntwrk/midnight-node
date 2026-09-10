@@ -410,13 +410,13 @@ fn flip_postpones_when_babe_authorities_empty() {
 		assert_eq!(EngineState::<Test>::get(), State::ScheduledFlip);
 
 		// Once Authorities is populated, the next epoch-end flip proceeds
-		// (and currently panics on Issue #1742 after migrate).
 		seed_babe_authorities();
 		start_block_with_babe_pre_digest(1799);
 		let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
 			on_initialize();
 		}));
-		assert!(result.is_err());
+		assert!(result.is_ok());
+		assert_eq!(EngineState::<Test>::get(), State::Babe);
 	});
 }
 
@@ -481,7 +481,7 @@ fn migrate_to_babe_writes_epoch_config_when_absent() {
 		let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
 			on_initialize();
 		}));
-		assert!(result.is_err(), "flip still panics on Issue #1742");
+		assert!(result.is_ok());
 
 		assert_eq!(pallet_babe::EpochConfig::<Test>::get(), Some(TestBabeEpochConfig::get()));
 	});
