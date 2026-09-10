@@ -12,6 +12,9 @@
 // limitations under the License.
 
 use authority_selection_inherents::AuthoritySelectionDataSource;
+use db_sync_sqlx::{
+	DbSyncQueryConfig, ResolvedDbSyncQueryConfig, candidate_index_specs, manage_indexes,
+};
 use midnight_primitives_mainchain_follower::CandidatesDataSourceImpl;
 use midnight_primitives_mainchain_follower::MidnightDataSourceMetrics;
 use pallet_sidechain_rpc::SidechainRpcDataSource;
@@ -26,7 +29,6 @@ use partner_chains_mock_data_sources::{
 use sc_service::error::Error as ServiceError;
 use sidechain_mc_hash::McHashDataSource;
 use sp_partner_chains_bridge::TokenBridgeDataSource;
-use sqlx::{Pool, Postgres};
 
 use super::cfg::midnight_cfg::MidnightCfg;
 use midnight_primitives::BridgeRecipient;
@@ -113,41 +115,6 @@ pub async fn create_mock_data_sources(
 	})
 }
 
-pub async fn create_index_if_not_exists(pool: &Pool<Postgres>) {
-	// Check if index already exists
-	let index_exists: bool = sqlx::query_scalar(
-		r#"
-			SELECT EXISTS (
-				SELECT 1 FROM pg_indexes
-				WHERE indexname = 'idx_multi_asset_policy_name_hex'
-			)
-		"#,
-	)
-	.fetch_one(pool)
-	.await
-	.unwrap_or(false);
-
-	if index_exists {
-		log::info!("Index idx_multi_asset_policy_name_hex already exists, skipping creation.");
-	} else {
-		log::info!("Creating idx_multi_asset_policy_name_hex index. This may take a while.");
-		let index_query_result = sqlx::query(
-			r#"
-				CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_multi_asset_policy_name_hex
-				ON multi_asset ((encode(policy, 'hex')), (encode(name, 'hex')));
-			"#,
-		)
-		.execute(pool)
-		.await;
-
-		if let Err(e) = index_query_result {
-			log::warn!(
-				"Warning: failed to create idx_multi_asset_policy_name_hex index (is your db-sync readonly?). Performance may be degraded: {e}"
-			);
-		}
-	}
-}
-
 const DB_SYNC_STARTUP_PROBE_WARN_THRESHOLD: StdDuration = StdDuration::from_millis(500);
 
 async fn log_db_sync_startup_probe(block_data_source: &BlockDataSourceImpl) {
@@ -225,6 +192,21 @@ const BRIDGE_POOL_CFG: DbPoolCfg =
 const ICS_POOL_CFG: DbPoolCfg =
 	DbPoolCfg { acquire_timeout: std::time::Duration::from_secs(30), max_connections: 5 };
 
+fn db_sync_query_config(cfg: &MidnightCfg) -> DbSyncQueryConfig {
+	DbSyncQueryConfig {
+		tx_input_mode: cfg.db_sync_tx_input_mode,
+		address_mode: cfg.db_sync_address_mode,
+	}
+}
+
+/// Resolve and validate the configured db-sync query layout against a connected database.
+pub async fn resolve_db_sync_query_config(
+	pool: &sqlx::PgPool,
+	cfg: &MidnightCfg,
+) -> Result<ResolvedDbSyncQueryConfig, sqlx::Error> {
+	db_sync_query_config(cfg).resolve(pool).await
+}
+
 fn warn_deprecated_allow_non_ssl(cfg: &MidnightCfg) {
 	if cfg.allow_non_ssl {
 		log::warn!(
@@ -240,8 +222,9 @@ pub async fn create_cached_data_sources(
 	midnight_metrics_opt: Option<MidnightDataSourceMetrics>,
 ) -> Result<DataSources, Box<dyn Error + Send + Sync + 'static>> {
 	warn_deprecated_allow_non_ssl(&cfg);
-	let postgres_uri = &cfg
+	let postgres_uri = cfg
 		.db_sync_postgres_connection_string
+		.as_deref()
 		.ok_or(missing("db_sync_postgres_connection_string"))?;
 
 	let db_sync_block_data_source_config = DbSyncBlockDataSourceConfig {
@@ -274,16 +257,21 @@ pub async fn create_cached_data_sources(
 				e
 			})?;
 
-	// All these pools are connections to the same database, so we can use any pool to create the index
-	create_index_if_not_exists(&candidates_pool).await;
+	// All data-source pools connect to the same db-sync database. Resolve the layout once so
+	// every query family uses the same validated representation.
+	let db_sync_config = resolve_db_sync_query_config(&candidates_pool, &cfg).await?;
+	manage_indexes(
+		&candidates_pool,
+		cfg.db_sync_schema_mode,
+		&candidate_index_specs(db_sync_config),
+	)
+	.await?;
 
-	let candidates_data_source =
-		CandidatesDataSourceImpl::new(candidates_pool, midnight_metrics_opt.clone())
-			.await
-			.map_err(|e| {
-				log::warn!("Failed to initialise candidates data source: {e}");
-				e
-			})?;
+	let candidates_data_source = CandidatesDataSourceImpl::new_with_db_sync_config(
+		candidates_pool,
+		midnight_metrics_opt.clone(),
+		db_sync_config,
+	);
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE).map_err(|e| {
 			log::warn!("Failed to create candidates data source cache: {e}");
@@ -329,10 +317,11 @@ pub async fn create_cached_data_sources(
 				log::warn!("Failed to connect to database for cnight_observation data source: {e}");
 				e
 			})?;
-	let cnight_observation = MidnightCNightObservationDataSourceImpl::new(
+	let cnight_observation = MidnightCNightObservationDataSourceImpl::new_with_db_sync_config(
 		cnight_observation_pool,
 		midnight_metrics_opt.clone(),
 		1000,
+		db_sync_config,
 	);
 
 	let federated_authority_observation_pool = get_connection(
@@ -347,11 +336,13 @@ pub async fn create_cached_data_sources(
 		);
 		e
 	})?;
-	let federated_authority_observation = FederatedAuthorityObservationDataSourceImpl::new(
-		federated_authority_observation_pool,
-		midnight_metrics_opt,
-		1000,
-	);
+	let federated_authority_observation =
+		FederatedAuthorityObservationDataSourceImpl::new_with_db_sync_config(
+			federated_authority_observation_pool,
+			midnight_metrics_opt,
+			1000,
+			db_sync_config,
+		);
 
 	let bridge_pool = get_connection(postgres_uri, BRIDGE_POOL_CFG, cfg.ssl_root_cert.as_deref())
 		.await
@@ -360,11 +351,12 @@ pub async fn create_cached_data_sources(
 			e
 		})?;
 
-	let bridge = CachedTokenBridgeDataSourceImpl::new(
+	let bridge = CachedTokenBridgeDataSourceImpl::new_with_resolved_db_sync_config(
 		bridge_pool,
 		mc_metrics_opt,
 		sidechain_block_data_source,
 		BRIDGE_TRANSFER_CACHE_LOOKAHEAD,
+		db_sync_config,
 	);
 
 	Ok(DataSources {
@@ -384,18 +376,28 @@ pub async fn create_cnight_observation_data_source(
 ) -> Result<Arc<dyn MidnightCNightObservationDataSource>, Box<dyn Error + Send + Sync + 'static>> {
 	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
-		&cfg.db_sync_postgres_connection_string
+		cfg.db_sync_postgres_connection_string
+			.as_deref()
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CNIGHT_OBSERVATION_POOL_CFG,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 
-	midnight_primitives_mainchain_follower::db::create_cnight_observation_indexes(&pool).await?;
-	midnight_primitives_mainchain_follower::db::apply_cnight_observation_autovacuum_tuning(&pool)
-		.await?;
+	let db_sync_config = resolve_db_sync_query_config(&pool, &cfg).await?;
+	midnight_primitives_mainchain_follower::db::manage_cnight_observation_schema(
+		&pool,
+		db_sync_config,
+		cfg.db_sync_schema_mode,
+	)
+	.await?;
 
-	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new(pool, metrics_opt, 1000)))
+	Ok(Arc::new(MidnightCNightObservationDataSourceImpl::new_with_db_sync_config(
+		pool,
+		metrics_opt,
+		1000,
+		db_sync_config,
+	)))
 }
 
 pub async fn create_federated_authority_observation_data_source(
@@ -405,14 +407,21 @@ pub async fn create_federated_authority_observation_data_source(
 {
 	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
-		&cfg.db_sync_postgres_connection_string
+		cfg.db_sync_postgres_connection_string
+			.as_deref()
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		FEDERATED_AUTHORITY_OBSERVATION_POOL_CFG,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 
-	Ok(Arc::new(FederatedAuthorityObservationDataSourceImpl::new(pool, metrics_opt, 1000)))
+	let db_sync_config = resolve_db_sync_query_config(&pool, &cfg).await?;
+	Ok(Arc::new(FederatedAuthorityObservationDataSourceImpl::new_with_db_sync_config(
+		pool,
+		metrics_opt,
+		1000,
+		db_sync_config,
+	)))
 }
 
 pub async fn create_authority_selection_data_source(
@@ -436,14 +445,21 @@ pub async fn create_authority_selection_data_source_with_pool(
 > {
 	warn_deprecated_allow_non_ssl(&cfg);
 	let pool = get_connection(
-		&cfg.db_sync_postgres_connection_string
+		cfg.db_sync_postgres_connection_string
+			.as_deref()
 			.ok_or(missing("db_sync_postgres_connection_string"))?,
 		CANDIDATES_POOL_CFG,
 		cfg.ssl_root_cert.as_deref(),
 	)
 	.await?;
 
-	let candidates_data_source = CandidatesDataSourceImpl::new(pool.clone(), metrics_opt).await?;
+	let db_sync_config = resolve_db_sync_query_config(&pool, &cfg).await?;
+	manage_indexes(&pool, cfg.db_sync_schema_mode, &candidate_index_specs(db_sync_config)).await?;
+	let candidates_data_source = CandidatesDataSourceImpl::new_with_db_sync_config(
+		pool.clone(),
+		metrics_opt,
+		db_sync_config,
+	);
 	let candidates_data_source_cached =
 		candidates_data_source.cached(CANDIDATES_FOR_EPOCH_CACHE_SIZE)?;
 

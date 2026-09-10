@@ -36,6 +36,7 @@ tokio = { workspace = true, features = ["full"], optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"]}
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
 
 [features]
 default = ["std"]

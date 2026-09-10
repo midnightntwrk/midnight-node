@@ -20,6 +20,9 @@ validator = false
 cardano_security_parameter = 432
 cardano_active_slots_coeff = 0.05
 block_stability_margin = 30
+db_sync_tx_input_mode = "auto"
+db_sync_address_mode = "inline"
+db_sync_schema_mode = "apply"
 
 mc__first_epoch_timestamp_millis = 1666656000000
 mc__first_epoch_number = 0

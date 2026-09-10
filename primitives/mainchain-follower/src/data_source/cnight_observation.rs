@@ -22,6 +22,9 @@ use cardano_serialization_lib::{
 	Address, BaseAddress, ConstrPlutusData, Credential, Ed25519KeyHash, EnterpriseAddress,
 	PlutusData, RewardAddress, ScriptHash,
 };
+use db_sync_sqlx::{
+	ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig, ResolvedDbSyncTxInputMode,
+};
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
 };
@@ -89,6 +92,7 @@ pub struct MidnightCNightObservationDataSourceImpl {
 	#[allow(dead_code)]
 	cache_size: u16,
 	multi_asset_cache: MultiAssetCache,
+	db_sync_config: ResolvedDbSyncQueryConfig,
 }
 
 impl MidnightCNightObservationDataSourceImpl {
@@ -97,8 +101,25 @@ impl MidnightCNightObservationDataSourceImpl {
 		metrics_opt: Option<MidnightDataSourceMetrics>,
 		cache_size: u16,
 	) -> Self {
+		Self::new_with_db_sync_config(
+			pool,
+			metrics_opt,
+			cache_size,
+			ResolvedDbSyncQueryConfig {
+				tx_input_mode: ResolvedDbSyncTxInputMode::TxIn,
+				address_mode: ResolvedDbSyncAddressMode::Inline,
+			},
+		)
+	}
+
+	pub fn new_with_db_sync_config(
+		pool: PgPool,
+		metrics_opt: Option<MidnightDataSourceMetrics>,
+		cache_size: u16,
+		db_sync_config: ResolvedDbSyncQueryConfig,
+	) -> Self {
 		let multi_asset_cache = MultiAssetCache::new(pool.clone());
-		Self { pool, metrics_opt, cache_size, multi_asset_cache }
+		Self { pool, metrics_opt, cache_size, multi_asset_cache, db_sync_config }
 	}
 }
 
@@ -162,13 +183,21 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		let (low_bounds, high_bounds) = tokio::try_join!(
 			async {
 				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_low_bounds");
-				crate::db::get_low_bounds(&self.pool, start_position.block_number.into())
+				crate::db::get_low_bounds(
+					&self.pool,
+					start_position.block_number.into(),
+					self.db_sync_config,
+				)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
 			async {
 				let _sq_timer = start_sub_query_timer(&self.metrics_opt, "cnight_get_high_bounds");
-				crate::db::get_high_bounds(&self.pool, end.block_number.into())
+				crate::db::get_high_bounds(
+					&self.pool,
+					end.block_number.into(),
+					self.db_sync_config,
+				)
 					.await
 					.map_err(Into::<Box<dyn std::error::Error + Send + Sync>>::into)
 			},
@@ -348,7 +377,9 @@ impl MidnightCNightObservationDataSourceImpl {
 		address: &str,
 		query: &PagedQuery<'_>,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = get_registrations(&self.pool, address, auth_token_ident, query).await?;
+		let rows =
+			get_registrations(&self.pool, address, auth_token_ident, query, self.db_sync_config)
+				.await?;
 
 		let mut utxos = Vec::new();
 
@@ -401,7 +432,7 @@ impl MidnightCNightObservationDataSourceImpl {
 		address: &str,
 		query: &PagedQuery<'_>,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = get_deregistrations(&self.pool, address, query).await?;
+		let rows = get_deregistrations(&self.pool, address, query, self.db_sync_config).await?;
 
 		let mut utxos = Vec::new();
 
@@ -454,7 +485,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		ident: i64,
 		query: &PagedQuery<'_>,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = crate::db::get_asset_creates(&self.pool, ident, query).await?;
+		let rows =
+			crate::db::get_asset_creates(&self.pool, ident, query, self.db_sync_config).await?;
 
 		let mut utxos = Vec::new();
 
@@ -511,7 +543,8 @@ impl MidnightCNightObservationDataSourceImpl {
 		ident: i64,
 		query: &PagedQuery<'_>,
 	) -> Result<Vec<ObservedUtxo>, MidnightCNightObservationDataSourceError> {
-		let rows = crate::db::get_asset_spends(&self.pool, ident, query).await?;
+		let rows =
+			crate::db::get_asset_spends(&self.pool, ident, query, self.db_sync_config).await?;
 
 		let mut utxos = Vec::new();
 

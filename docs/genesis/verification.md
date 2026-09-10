@@ -240,7 +240,14 @@ Outputs status markers:
 |----------|-------------|
 | `CFG_PRESET` | Network preset (e.g., `qanet`, `preview`, `devnet`) |
 | `DB_SYNC_POSTGRES_CONNECTION_STRING` | PostgreSQL connection to Cardano db-sync |
+| `DB_SYNC_TX_INPUT_MODE` | Step 1 regeneration only: db-sync transaction-input layout (`auto`, `tx_in`, or `consumed`) |
+| `DB_SYNC_ADDRESS_MODE` | Step 1 regeneration only: db-sync address layout (`inline` or `address_table`) |
+| `DB_SYNC_SCHEMA_MODE` | Step 1 regeneration only: schema handling (`apply`, read-only `verify`, or `skip`) |
 | `ALLOW_NON_SSL` | Allow non-SSL database connections (dev only) |
+
+The layout and schema variables are consumed by the `generate-*-genesis` commands used in Step
+1. Verification-only commands do not resolve those settings or manage indexes; their database
+queries require only read access to the tables they inspect.
 
 ## Input Files
 
@@ -290,6 +297,11 @@ For a guided verification experience, use the interactive shell script:
 2. **Access to Cardano db-sync database**:
    - Local: `postgres://postgres:postgres@localhost:5432/cexplorer`
    - Or a remote db-sync instance
+   - Verification-only commands need only a read-only login with `SELECT` access.
+   - Step 1 of the interactive tool also regenerates genesis files. For that step, configure the
+     same explicit layout modes used during construction. With a read-only login, pre-create the
+     required indexes and use `DB_SYNC_SCHEMA_MODE=verify`; see [Cardano db-sync
+     compatibility](../configuration-guide.md#cardano-db-sync-compatibility).
 
 3. **Generated chain specification** and config files for the network
 

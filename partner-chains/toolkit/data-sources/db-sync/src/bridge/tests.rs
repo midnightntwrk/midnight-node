@@ -1,7 +1,9 @@
 extern crate alloc;
 
 use crate::bridge::cache::CachedTokenBridgeDataSourceImpl;
+use crate::tests::normalize_tx_out_addresses;
 use crate::{BlockDataSourceImpl, DbSyncBlockDataSourceConfig, TokenBridgeDataSourceImpl};
+use db_sync_sqlx::{DbSyncAddressMode, DbSyncQueryConfig, DbSyncTxInputMode};
 use hex_literal::hex;
 use sidechain_domain::byte_string::ByteString;
 use sidechain_domain::mainchain_epoch::{Duration, MainchainEpochConfig, Timestamp};
@@ -234,6 +236,47 @@ fn create_cached_source(pool: PgPool) -> CachedTokenBridgeDataSourceImpl {
 	));
 	let cache_lookahead = 32;
 	CachedTokenBridgeDataSourceImpl::new(pool, None, blocks, cache_lookahead)
+}
+
+async fn assert_address_table_bridge_flow(pool: PgPool, tx_input_mode: DbSyncTxInputMode) {
+	normalize_tx_out_addresses(&pool).await;
+	let data_source = TokenBridgeDataSourceImpl::new_with_db_sync_config(
+		pool,
+		None,
+		DbSyncQueryConfig { tx_input_mode, address_mode: DbSyncAddressMode::AddressTable },
+	);
+
+	let (transfers, new_checkpoint) = data_source
+		.get_transfers(
+			main_chain_scripts(),
+			BridgeDataCheckpoint::Tx(init_ics_tx_hash()),
+			5,
+			block_4_hash(),
+		)
+		.await
+		.unwrap();
+
+	assert_eq!(
+		transfers,
+		vec![
+			reserve_transfer(),
+			user_transfer_1(),
+			user_transfer_2(),
+			invalid_transfer_1(),
+			invalid_transfer_2(),
+		]
+	);
+	assert_eq!(new_checkpoint, BridgeDataCheckpoint::Block(McBlockNumber(4)));
+}
+
+#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-enabled")]
+async fn address_table_bridge_flow_tx_in(pool: PgPool) {
+	assert_address_table_bridge_flow(pool, DbSyncTxInputMode::TxIn).await;
+}
+
+#[sqlx::test(migrations = "./testdata/bridge/migrations-tx-in-consumed")]
+async fn address_table_bridge_flow_consumed(pool: PgPool) {
+	assert_address_table_bridge_flow(pool, DbSyncTxInputMode::Consumed).await;
 }
 
 with_migration_versions_and_caching! {
