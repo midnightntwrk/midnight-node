@@ -362,6 +362,7 @@ async fn assert_ledger_state_readable(rpc: &RpcClient, height: u64, label: &str)
 	eprintln!("[hardfork_e2e] ledger state readable at {label} (#{height})");
 }
 
+#[ignore = "In CI, this tries to fork from v1.0.1 to the current PR. Migration to Babe requires forking from a state where BabeApi is present (it is not in v1.0.1) in order to start the new version."]
 #[test_log::test(tokio::test)]
 async fn hardfork_single_tx() {
 	// 1. Generate chain-spec from fork-from node
