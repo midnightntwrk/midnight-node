@@ -24,6 +24,7 @@ use cardano_serialization_lib::{
 };
 use midnight_primitives_cnight_observation::{
 	CNightAddresses, CardanoPosition, CardanoRewardAddressBytes, DustPublicKeyBytes, ObservedUtxos,
+	sort_observed_utxos,
 };
 use sidechain_domain::{McBlockHash, McBlockNumber, McTxHash, McTxIndexInBlock, TX_HASH_SIZE};
 pub use sqlx::PgPool;
@@ -110,6 +111,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		start_position: &CardanoPosition,
 		current_tip: McBlockHash,
 		tx_capacity: usize,
+		spec_version: u32,
 	) -> Result<ObservedUtxos, Box<dyn std::error::Error + Send + Sync>> {
 		let cnight_asset_name = config.cnight_asset_name.as_bytes();
 
@@ -261,7 +263,7 @@ impl MidnightCNightObservationDataSource for MidnightCNightObservationDataSource
 		utxos.extend(asset_create_utxos);
 		utxos.extend(asset_spend_utxos);
 
-		utxos.sort();
+		sort_observed_utxos(&mut utxos, spec_version);
 
 		// Truncate UTXOs but include full transactions
 		let mut truncated_utxos = Vec::with_capacity(utxo_capacity);
