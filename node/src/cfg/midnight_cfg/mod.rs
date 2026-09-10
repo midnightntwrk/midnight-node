@@ -103,13 +103,17 @@ pub struct MidnightCfg {
 	/// Whether substrate and midnight storage should be separate or unified
 	pub storage_separation: StorageSeparation,
 
-	/// Deprecated: plaintext database connections are no longer permitted.
-	/// This flag is ignored — all connections use TLS. It will be removed in a future release.
+	/// Allow plaintext database connections when the server does not support TLS.
+	/// When set, connections use PgSslMode::Prefer: TLS when the server offers it,
+	/// plaintext otherwise. Ignored when ssl_root_cert is set. Intended for
+	/// databases reached over an already-secured transport (localhost, a VPN or
+	/// mesh network). Defaults to false (TLS required).
 	pub allow_non_ssl: bool,
 
 	/// Path to SSL root certificate for database connections.
 	/// When set, connections use PgSslMode::VerifyFull (certificate + hostname validation).
-	/// When absent, connections use PgSslMode::Require (encrypted but no certificate validation).
+	/// When absent, connections use PgSslMode::Require (encrypted but no certificate
+	/// validation), or PgSslMode::Prefer when allow_non_ssl is set.
 	#[validate(custom = |s| maybe(s, path_exists))]
 	pub ssl_root_cert: Option<String>,
 
