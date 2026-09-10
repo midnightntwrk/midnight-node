@@ -19,3 +19,5 @@ to 61% loss per run.
   send still succeeds but logs `NO_POOL_VERDICT` with the reason, so unknown
   outcomes stay countable.
 - The `--no-watch-progress` help text describes the new behaviour.
+
+PR: https://github.com/midnightntwrk/midnight-node/pull/2138
