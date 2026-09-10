@@ -2,7 +2,7 @@ use crate::cli_parsers::{self as cli};
 use crate::{DefaultDB, IntoWalletAddress, ShieldedWallet, UnshieldedWallet};
 use clap::Args;
 use hex::ToHex;
-use midnight_node_ledger_helpers::{DustWallet, serialize, serialize_untagged};
+use midnight_ledger_unsafe_helpers::{DustWallet, serialize, serialize_untagged};
 use serde::Serialize;
 
 #[derive(Args, Clone)]
@@ -140,7 +140,7 @@ mod test {
 					"0000000000000000000000000000000000000000000000000000000000000001",
 				)
 				.unwrap(),
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
 			},
 			specific_address,
 		};
@@ -165,7 +165,7 @@ mod test {
 					"0000000000000000000000000000000000000000000000000000000000000001",
 				)
 				.unwrap(),
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
 			},
 			specific_address,
 		};
@@ -186,7 +186,7 @@ mod test {
 					"0000000000000000000000000000000000000000000000000000000000000001",
 				)
 				.unwrap(),
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
 			},
 			specific_address: Default::default(),
 		};
@@ -201,9 +201,9 @@ mod test {
 		let unshielded_for = |ecdsa: bool| {
 			let seed = WalletSeed::try_from_hex_str(hex).unwrap();
 			let scheme = if ecdsa {
-				midnight_node_ledger_helpers::UnshieldedSignatureScheme::Ecdsa
+				midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Ecdsa
 			} else {
-				midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr
+				midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr
 			};
 			let seed = cli::SchemeSeed { seed, scheme };
 			match super::execute(ShowAddressArgs {

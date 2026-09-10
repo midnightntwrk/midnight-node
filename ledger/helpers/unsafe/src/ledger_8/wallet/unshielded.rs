@@ -130,7 +130,6 @@ impl std::fmt::Debug for UnshieldedWallet {
 
 impl DeriveSeed for UnshieldedWallet {}
 
-#[cfg(feature = "can-panic")]
 impl IntoWalletAddress for UnshieldedWallet {
 	fn address(&self, network_id: &str) -> WalletAddress {
 		let hrp_string = format!(
@@ -255,7 +254,6 @@ impl UnshieldedWallet {
 
 	/// The raw Schnorr signing key, for the Schnorr-only contract-maintenance committee and
 	/// key-serialization paths. Panics for a non-Schnorr or address-only wallet.
-	#[cfg(feature = "can-panic")]
 	pub fn signing_key(&self) -> &SigningKeySchnorr {
 		match &self.keys {
 			Some(UnshieldedWalletKeys::Schnorr { signing_key: Some(sk), .. }) => sk,
@@ -327,7 +325,7 @@ impl From<UserAddress> for UnshieldedWallet {
 // `new`/`default` derive via HD (`derive_seed`, see `hd.rs`), which needs `can-panic`. ECDSA-only
 // tests live in the ledger-9 copy's `ecdsa_wallet_tests`: this file has one copy per generation,
 // so putting them here would report a misleading `…::ecdsa_… ok` where they can't actually run.
-#[cfg(all(test, feature = "can-panic"))]
+#[cfg(test)]
 mod tests {
 	use super::{UnshieldedSignatureScheme, UnshieldedWallet};
 	use crate::ledger_8::WalletSeed;

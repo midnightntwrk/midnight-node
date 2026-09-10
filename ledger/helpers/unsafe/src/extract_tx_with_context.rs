@@ -1,7 +1,5 @@
-#[cfg(feature = "can-panic")]
-use crate::fork::raw_block_data::{RawTransaction, SerializedTx};
+use midnight_node_ledger_helpers::fork::raw_block_data::{RawTransaction, SerializedTx};
 
-#[cfg(feature = "can-panic")]
 pub fn extract_tx_with_context_ledger_9(bytes: &[u8]) -> (Vec<u8>, crate::ledger_9::BlockContext) {
 	let serialized_tx: SerializedTx =
 		serde_json::from_slice(bytes).expect("failed to deserialize as SerializedTx");
@@ -13,10 +11,7 @@ pub fn extract_tx_with_context_ledger_9(bytes: &[u8]) -> (Vec<u8>, crate::ledger
 	(tx_bytes, block_context)
 }
 
-#[cfg(feature = "can-panic")]
 pub fn extract_tx_with_context_ledger_8(bytes: &[u8]) -> (Vec<u8>, crate::ledger_8::BlockContext) {
-	use crate::fork::raw_block_data::RawTransaction;
-
 	let serialized_tx: SerializedTx =
 		serde_json::from_slice(bytes).expect("failed to deserialize as SerializedTx");
 	let RawTransaction::Midnight(tx_bytes) = serialized_tx.tx else {

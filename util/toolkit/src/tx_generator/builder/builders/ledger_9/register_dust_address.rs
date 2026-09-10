@@ -7,7 +7,7 @@ use ledger_helpers_local::{
 	ProofProvider, Segment, StandardTransactionInfo, Timestamp, TransactionWithContext,
 	UnshieldedOfferInfo, Utxo, UtxoOutputInfo, UtxoSpendInfo, WalletAddress, WalletSeed,
 };
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 use crate::{
 	progress::Spin,

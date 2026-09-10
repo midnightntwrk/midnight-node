@@ -11,8 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "can-panic")]
-
 use crate::ledger_8::WalletSeed;
 use bech32::{Bech32m, Hrp};
 use bip32::{DerivationPath as Bip32DerivationPath, XPrv};

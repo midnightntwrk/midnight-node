@@ -308,10 +308,9 @@ impl<D: DB> Borrow<LedgerState<D>> for Ledger<D> {
 mod tests {
 	use super::super::Api;
 	use super::*;
-	use crate::ledger_8::{
-		CRATE_NAME, TransactionSignature as Signature, helpers_local::extract_tx_with_context,
-	};
+	use crate::ledger_8::{CRATE_NAME, TransactionSignature as Signature};
 	use ledger_storage_local::DefaultDB;
+	use midnight_ledger_unsafe_helpers::ledger_8::extract_tx_with_context;
 	use midnight_node_res::{
 		networks::{MidnightNetwork, UndeployedNetwork},
 		undeployed::transactions::{CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX},

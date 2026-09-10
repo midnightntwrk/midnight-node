@@ -3,7 +3,7 @@ use crate::cli_parsers as cli;
 use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::create_file_wallet_cache;
 use clap::Args;
-use midnight_node_ledger_helpers::ContractAddress;
+use midnight_ledger_unsafe_helpers::ContractAddress;
 use std::{fs, path::Path};
 
 #[derive(Args)]

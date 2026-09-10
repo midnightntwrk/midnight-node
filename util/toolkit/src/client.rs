@@ -19,7 +19,7 @@ use std::{
 
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
-use midnight_node_ledger_helpers::{LedgerParameters, deserialize};
+use midnight_ledger_unsafe_helpers::{LedgerParameters, deserialize};
 use midnight_node_metadata::midnight_metadata_latest as mn_meta;
 use parity_scale_codec::Decode;
 use subxt::config::HashFor;
