@@ -206,3 +206,20 @@ export function hasEvent(
       evt.event.method === method,
   );
 }
+
+// Read the runtime `spec_version`, optionally at a specific block hash.
+//
+// `state_getRuntimeVersion` decodes the runtime's `Core_version` result, not the
+// block's events storage, so it is immune to the metadata-resolution mismatch at
+// an upgrade block (where a client resolves post-upgrade metadata for events that
+// were encoded by the parent runtime). This makes it a reliable signal for
+// confirming that a runtime upgrade actually took effect.
+export async function getSpecVersion(
+  api: ApiPromise,
+  at?: Uint8Array | string,
+): Promise<number> {
+  const version = at
+    ? await api.rpc.state.getRuntimeVersion(at)
+    : await api.rpc.state.getRuntimeVersion();
+  return version.specVersion.toNumber();
+}
