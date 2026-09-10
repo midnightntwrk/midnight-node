@@ -11,8 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg(feature = "can-panic")]
-
 use crate::ledger_9::{
 	CoinPublicKey, DB, DerivationPath, DerivationPathError, DeriveSeed, Deserializable,
 	EncryptionPublicKey, HRP_CONSTANT, HRP_CREDENTIAL_SHIELDED, HRP_CREDENTIAL_SHIELDED_ESK,
@@ -85,7 +83,6 @@ impl<D: DB + Clone> ShieldedWallet<D> {
 		Self { state, coin_public_key, enc_public_key, secret_keys: None }
 	}
 
-	#[cfg(feature = "can-panic")]
 	pub fn secret_keys(&self) -> &SecretKeys {
 		self.secret_keys.as_ref().expect("Missing `SecretKeys` for the `ShieldedWallet")
 	}

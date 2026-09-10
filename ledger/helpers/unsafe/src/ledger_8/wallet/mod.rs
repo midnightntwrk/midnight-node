@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ledger_9::{
+use crate::ledger_8::{
 	DB, IntoWalletState, LedgerState, Storable, Utxo, WalletSeed,
 	mn_ledger::{error::EventReplayError, events::Event},
 	onchain_runtime::context::BlockContext,
@@ -101,7 +101,6 @@ impl<D: DB + Clone> Wallet<D> {
 		utxos
 	}
 
-	#[cfg(feature = "can-panic")]
 	pub fn increment_seed(s: &str) -> Result<String, &'static str> {
 		let num = u128::from_str_radix(s, 2).expect("Invalid wallet seed");
 		let result = num.checked_add(1).ok_or("wallet seed overflow")?;
@@ -109,7 +108,6 @@ impl<D: DB + Clone> Wallet<D> {
 		Ok(format!("{result:0width$b}"))
 	}
 
-	#[cfg(feature = "can-panic")]
 	pub fn wallet_seed_decode(input: &str) -> WalletSeed {
 		input.parse().expect("failed to decode seed")
 	}
@@ -118,7 +116,7 @@ impl<D: DB + Clone> Wallet<D> {
 #[cfg(test)]
 mod tests {
 	use super::Wallet;
-	type TestDB = crate::ledger_9::DefaultDB;
+	type TestDB = crate::ledger_8::DefaultDB;
 
 	#[test]
 	fn test_increment_seed_normal() {

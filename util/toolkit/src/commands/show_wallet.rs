@@ -262,7 +262,7 @@ mod tests {
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
 			}),
 			address: None,
 			debug: false,
@@ -303,7 +303,7 @@ mod tests {
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Ecdsa,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Ecdsa,
 			}),
 			address: None,
 			debug: false,

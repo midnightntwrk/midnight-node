@@ -22,8 +22,8 @@ use ledger_helpers_local::{
 	DefaultDB, IntentInfo, MerkleTreeContract, OfferInfo, ProofProvider, TransactionWithContext,
 	UnshieldedWallet, Wallet, WalletSeed,
 };
+use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
-use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
 use std::{convert::Infallible, marker::PhantomData, sync::Arc};
 
 pub struct ContractDeployBuilder<C: BuilderContext<DefaultDB>> {

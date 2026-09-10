@@ -1,9 +1,9 @@
 use ledger_helpers_local::{ContractAddress, DefaultDB, HashOutput, serialize, serialize_untagged};
-use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 
 pub fn get_contract_state(
 	context: &ledger_helpers_local::context::LedgerContext<DefaultDB>,
-	contract_address: midnight_node_ledger_helpers::ContractAddress,
+	contract_address: midnight_ledger_unsafe_helpers::ContractAddress,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
 	// ContractAddress is a HashOutput newtype in both coin-structure 2.x and 3.x;
 	// identity in the ledger-9 copy.

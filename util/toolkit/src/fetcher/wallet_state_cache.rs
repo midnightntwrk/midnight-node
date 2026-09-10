@@ -16,11 +16,12 @@
 //! Ledger snapshots are stored once per block height, while individual
 //! wallet state is cached per seed. Ledger snapshots unused by any wallets are eventually gced.
 
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	BlockContext, DefaultDB, DustLocalState, HashOutput, LedgerContext, LedgerState, Sp, Timestamp,
-	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged,
-	fork::raw_block_data::LedgerVersion, ledger_8, serialize_untagged,
+	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged, ledger_8,
+	serialize_untagged,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subxt::utils::H256;
@@ -150,7 +151,7 @@ fn serialize_ledger_state(state: &LedgerState<DefaultDB>) -> Result<Vec<u8>, Cac
 pub fn serialize_ledger_state_fast(
 	state: &LedgerState<DefaultDB>,
 ) -> Result<Vec<u8>, std::io::Error> {
-	use midnight_node_ledger_helpers::mn_ledger_serialize::{GLOBAL_TAG, Serializable, Tagged};
+	use midnight_ledger_unsafe_helpers::mn_ledger_serialize::{GLOBAL_TAG, Serializable, Tagged};
 
 	let sp = Sp::new(state.clone());
 	let nodes = sp.serialize_to_node_list();
@@ -168,7 +169,7 @@ pub fn serialize_ledger_state_fast(
 pub fn serialize_ledger_state_fast_8(
 	state: &ledger_8::LedgerState<ledger_8::DefaultDB>,
 ) -> Result<Vec<u8>, std::io::Error> {
-	use midnight_node_ledger_helpers::mn_ledger_serialize::{GLOBAL_TAG, Serializable, Tagged};
+	use midnight_ledger_unsafe_helpers::mn_ledger_serialize::{GLOBAL_TAG, Serializable, Tagged};
 
 	let sp = ledger_8::Sp::new(state.clone());
 	let nodes = sp.serialize_to_node_list();
@@ -628,12 +629,12 @@ mod tests {
 
 	/// An empty state agrees with any serializer, so populate it.
 	fn populated_ledger8_context() -> (
-		midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
-			midnight_node_ledger_helpers::ledger_8::DefaultDB,
+		midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<
+			midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 		>,
 		WalletSeed,
 	) {
-		use midnight_node_ledger_helpers::ledger_8 as l8;
+		use midnight_ledger_unsafe_helpers::ledger_8 as l8;
 
 		let seed = WalletSeed::try_from_hex_str(
 			"0000000000000000000000000000000000000000000000000000000000000001",
@@ -658,15 +659,15 @@ mod tests {
 		let (ctx, _) = populated_ledger8_context();
 		let state = ctx.ledger_state.lock().unwrap();
 
-		let default_bytes =
-			midnight_node_ledger_helpers::ledger_8::serialize(&**state).expect("serialize failed");
+		let default_bytes = midnight_ledger_unsafe_helpers::ledger_8::serialize(&**state)
+			.expect("serialize failed");
 		let fast_bytes = serialize_ledger_state_fast_8(&state).expect("fast serialize failed");
 		assert_eq!(default_bytes, fast_bytes, "ledger-8 fast serializer diverged from default");
 	}
 
 	#[test]
 	fn ledger8_snapshot_roundtrip_and_version_dispatch() {
-		use midnight_node_ledger_helpers::ledger_8 as l8;
+		use midnight_ledger_unsafe_helpers::ledger_8 as l8;
 
 		let (ctx, seed) = populated_ledger8_context();
 		let snapshot = create_ledger_snapshot_8(&ctx, 7).expect("snapshot failed");
@@ -710,7 +711,7 @@ mod tests {
 
 	#[test]
 	fn relaxed_replay_with_state_roots_matches_strict_replay() {
-		use midnight_node_ledger_helpers::fork::fork_aware_context::apply_block_9;
+		use midnight_ledger_unsafe_helpers::fork::fork_aware_context::apply_block_9;
 
 		let (source, _) = load_genesis_context(&[]);
 		assert!(source.blocks.iter().all(|b| b.state_root.is_none()));
@@ -731,10 +732,10 @@ mod tests {
 		}
 
 		let strict_bytes =
-			midnight_node_ledger_helpers::serialize(&**strict.ledger_state.lock().unwrap())
+			midnight_ledger_unsafe_helpers::serialize(&**strict.ledger_state.lock().unwrap())
 				.unwrap();
 		let relaxed_bytes =
-			midnight_node_ledger_helpers::serialize(&**relaxed.ledger_state.lock().unwrap())
+			midnight_ledger_unsafe_helpers::serialize(&**relaxed.ledger_state.lock().unwrap())
 				.unwrap();
 		assert_eq!(strict_bytes, relaxed_bytes, "relaxed replay diverged from strict replay");
 	}
@@ -742,7 +743,7 @@ mod tests {
 	#[test]
 	#[should_panic(expected = "StateRootMismatch")]
 	fn relaxed_replay_aborts_on_state_root_mismatch() {
-		use midnight_node_ledger_helpers::fork::fork_aware_context::apply_block_9;
+		use midnight_ledger_unsafe_helpers::fork::fork_aware_context::apply_block_9;
 
 		let (source, _) = load_genesis_context(&[]);
 		let ctx = LedgerContext::<DefaultDB>::new(&source.network_id);
@@ -917,11 +918,11 @@ mod tests {
 		// Verify ledger state matches
 		let original_bytes = {
 			let state = context.ledger_state.lock().unwrap();
-			midnight_node_ledger_helpers::serialize(&*state).expect("serialize failed")
+			midnight_ledger_unsafe_helpers::serialize(&*state).expect("serialize failed")
 		};
 		let restored_bytes = {
 			let state = restored.ledger_state.lock().unwrap();
-			midnight_node_ledger_helpers::serialize(&*state).expect("serialize failed")
+			midnight_ledger_unsafe_helpers::serialize(&*state).expect("serialize failed")
 		};
 		assert_eq!(original_bytes, restored_bytes, "ledger state bytes differ");
 
@@ -1002,7 +1003,7 @@ mod tests {
 	#[test]
 	fn cache_restore_then_incremental_replay() {
 		use crate::tx_generator::builder::build_fork_aware_context;
-		use midnight_node_ledger_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
+		use midnight_ledger_unsafe_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
 
 		let wallet_seed = WalletSeed::try_from_hex_str(
 			"0000000000000000000000000000000000000000000000000000000000000001",
@@ -1062,11 +1063,11 @@ mod tests {
 		// Compare ledger state
 		let full_bytes = {
 			let state = full_context.ledger_state.lock().unwrap();
-			midnight_node_ledger_helpers::serialize(&**state).expect("serialize failed")
+			midnight_ledger_unsafe_helpers::serialize(&**state).expect("serialize failed")
 		};
 		let incremental_bytes = {
 			let state = incremental_context.ledger_state.lock().unwrap();
-			midnight_node_ledger_helpers::serialize(&**state).expect("serialize failed")
+			midnight_ledger_unsafe_helpers::serialize(&**state).expect("serialize failed")
 		};
 		assert_eq!(full_bytes, incremental_bytes, "ledger state diverged");
 
@@ -1127,7 +1128,7 @@ mod tests {
 		let state = context.ledger_state.lock().unwrap();
 
 		let default_bytes =
-			midnight_node_ledger_helpers::serialize(&*state).expect("default serialize failed");
+			midnight_ledger_unsafe_helpers::serialize(&*state).expect("default serialize failed");
 		let fast_bytes = serialize_ledger_state_fast(&state).expect("fast serialize failed");
 
 		assert_eq!(

@@ -24,12 +24,12 @@ pub mod ledger_8;
 use crate::toolkit_js::encoded_zswap_local_state::{
 	EncodedOutput, EncodedQualifiedShieldedCoinInfo, EncodedRecipient,
 };
-use midnight_node_ledger_helpers::ledger_8::{
+use midnight_ledger_unsafe_helpers::ledger_8::{
 	CoinInfo as CoinInfoV2, CoinPublicKey as CoinPublicKeyV2, ContractAddress as ContractAddressV2,
 	Nonce as NonceV2, QualifiedInfo as QualifiedInfoV2, Recipient as RecipientV2,
 	ShieldedTokenType as ShieldedTokenTypeV2,
 };
-use midnight_node_ledger_helpers::ledger_9::{
+use midnight_ledger_unsafe_helpers::ledger_9::{
 	CoinInfo, CoinPublicKey, ContractAddress, HashOutput, Nonce, QualifiedInfo, Recipient,
 	ShieldedTokenType,
 };

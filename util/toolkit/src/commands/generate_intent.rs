@@ -5,7 +5,7 @@ use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::{Source, create_file_wallet_cache};
 use crate::{cli_parsers as cli, tx_generator::TxGenerator};
 use clap::{Args, Subcommand};
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	CoinPublicKey, DefaultDB, LedgerParameters, WalletSeed, WalletState, deserialize, serialize,
 };
 use std::io::Write;
@@ -269,7 +269,7 @@ pub async fn execute(
 /// $ earthly -P +rebuild-genesis-state-undeployed
 #[cfg(test)]
 mod test {
-	use midnight_node_ledger_helpers::{INITIAL_PARAMETERS, Serializable, SigningKey, serialize};
+	use midnight_ledger_unsafe_helpers::{INITIAL_PARAMETERS, Serializable, SigningKey, serialize};
 	use std::path::PathBuf;
 
 	use crate::cli::{Cli, run_command};

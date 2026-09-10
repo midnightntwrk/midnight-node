@@ -14,34 +14,6 @@
 mod utils;
 
 pub use utils::find_dependency_version;
-pub mod extract_tx_with_context;
-
-/// Process-wide counters of replayed transactions that did not fully apply,
-/// shared by every ledger generation's `LedgerContext`.
-pub mod replay_stats {
-	use std::sync::atomic::AtomicU64;
-
-	pub static PARTIALLY_FAILED_TXS: AtomicU64 = AtomicU64::new(0);
-	pub static FAILED_TXS: AtomicU64 = AtomicU64::new(0);
-}
-
-/// Strategy for ordering candidate coins/UTXOs during input selection.
-///
-/// Defined at the crate root (not inside `ledger_8`/`ledger_9`) so that all versions
-/// see the same type, allowing it to flow through the toolkit's version-dispatched
-/// builders unchanged.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum CoinSelectionStrategy {
-	/// Use the largest coins/UTXOs first. Minimizes the number of inputs.
-	#[default]
-	LargestFirst,
-	/// Use the smallest coins/UTXOs first. Consolidates dust.
-	SmallestFirst,
-}
-
-/// Struct to store serialized verifying key bytes
-/// To be deserialized when constructing ContractOperations
-pub struct ContractVerifyingKeyBytes(pub Vec<u8>);
 
 pub mod ledger_8;
 pub mod ledger_9;
