@@ -54,12 +54,13 @@ use sidechain_mc_hash::McHashInherentDigest;
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use sp_consensus_beefy::ecdsa_crypto::AuthorityId as BeefyId;
 
-use crate::consensus_engine_dispatch::DispatchImportQueue;
+use crate::consensus_engine_dispatch::{EngineDispatchBlockImport, EngineDispatchVerifier};
 use crate::filtering_pool::{FilteringMetrics, FilteringTransactionPool, TxFilterConfig};
 use crate::reference_hardware::MIDNIGHT_REFERENCE_HARDWARE;
 use mmr_gadget::MmrGadget;
 use sc_partner_chains_consensus::{
 	PartnerChainsBlockImport, PartnerChainsBodyRestore, PartnerChainsProposerFactory,
+	PartnerChainsVerifier,
 };
 use sc_rpc::SubscriptionTaskExecutor;
 use sp_core::storage::Storage;
@@ -268,11 +269,7 @@ type GrandpaBlockImport =
 
 /// Import queue that dispatches between the AURA and BABE pipelines by the engine that authored
 /// each block (its first AURA/BABE pre-runtime digest).
-type MidnightImportQueue = DispatchImportQueue<
-	Block,
-	sc_consensus::DefaultImportQueue<Block>,
-	sc_consensus::DefaultImportQueue<Block>,
->;
+type MidnightImportQueue = sc_consensus::DefaultImportQueue<Block>;
 
 type MidnightService = sc_service::PartialComponents<
 	FullClient,
@@ -294,10 +291,6 @@ type MidnightService = sc_service::PartialComponents<
 		// Raw BABE block import (sharing `BabeLink`'s epoch tree) for the BABE authoring worker.
 		// Boxed because the concrete type embeds an unnameable CIDP closure.
 		sc_consensus::BoxBlockImport<Block>,
-		// Handle to the BABE import queue's `answer_requests` task. It must be kept alive for the
-		// service's lifetime: dropping it closes the request channel, ending that *essential* task
-		// and taking the whole service down with it.
-		sc_consensus_babe::BabeWorkerHandle<Block>,
 	),
 >;
 
@@ -481,14 +474,9 @@ pub fn new_partial(
 		})?;
 
 	// Warp ledger-sync recovery gate, shared by the import queue (below), the authoring oracle, and
-	// the recovery monitor (both in `new_full`). Wrapping the import queue's block import here holds
+	// the recovery monitor (both in `new_full`). Wrapping the import queue's block import holds
 	// post-warp block imports until the arena is recovered + verified.
 	let recovery_gate = crate::warp_ledger_sync::oracle::RecoveryGate::new();
-	let gated_block_import = crate::warp_ledger_sync::block_import::GatedBlockImport::new(
-		grandpa_block_import.clone(),
-		recovery_gate.clone(),
-		backend.clone(),
-	);
 
 	let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
 
@@ -509,35 +497,22 @@ pub fn new_partial(
 		},
 	);
 
-	let verifier = sc_partner_chains_consensus::PartnerChainsVerifier::<
-		_,
-		_,
-		_,
-		_,
-		AuraSlotExtractor,
-		McHashInherentDigest,
-	>::new(
-		aura_verifier,
+	let verifier_cidp = VerifierCIDP::new(
+		inherent_config.clone(),
 		client.clone(),
-		VerifierCIDP::new(
-			inherent_config.clone(),
-			client.clone(),
-			data_sources.mc_hash.clone(),
-			data_sources.authority_selection.clone(),
-			data_sources.cnight_observation.clone(),
-			data_sources.federated_authority_observation.clone(),
-			data_sources.bridge.clone(),
-		),
+		data_sources.mc_hash.clone(),
+		data_sources.authority_selection.clone(),
+		data_sources.cnight_observation.clone(),
+		data_sources.federated_authority_observation.clone(),
+		data_sources.bridge.clone(),
 	);
 
-	let aura_import_queue = sc_consensus::import_queue::BasicQueue::new(
-		verifier,
-		// Warp ledger-sync: gate post-warp block imports until the arena is recovered + verified.
-		Box::new(gated_block_import),
-		Some(Box::new(grandpa_block_import.clone())),
-		&task_manager.spawn_essential_handle(),
-		config.prometheus_registry(),
-	);
+	let aura_verifier =
+		PartnerChainsVerifier::<_, _, _, _, AuraSlotExtractor, McHashInherentDigest>::new(
+			aura_verifier,
+			client.clone(),
+			verifier_cidp.clone(),
+		);
 
 	// BABE import pipeline (post-flip). Composed as the partner-chains "sandwich"
 	// `PartnerChainsBlockImport<BabeBlockImport<PartnerChainsBodyRestore<GrandpaBlockImport>>>`: the
@@ -551,7 +526,7 @@ pub fn new_partial(
 	let babe_config = sc_consensus_babe::configuration(&*client)?;
 	let babe_slot_duration = babe_config.slot_duration();
 	let (babe_block_import, babe_link) = sc_consensus_babe::block_import(
-		babe_config.clone(),
+		babe_config,
 		PartnerChainsBodyRestore::new(grandpa_block_import.clone()),
 		client.clone(),
 		move |_parent, ()| async move {
@@ -567,6 +542,22 @@ pub fn new_partial(
 		OffchainTransactionPoolFactory::new(transaction_pool.clone()),
 	)?;
 
+	// Like AURA, the BABE verifier is wrapped by the partner-chains verifier, which withholds the
+	// body from it (skipping its inherent check against the minimal CIDP) and runs the full
+	// Partner Chains inherent check with `VerifierCIDP` itself.
+	let babe_verifier =
+		PartnerChainsVerifier::<_, _, _, _, BabeSlotExtractor, McHashInherentDigest>::new(
+			sc_consensus_babe::build_verifier(sc_consensus_babe::BuildVerifierParams {
+				client: client.clone(),
+				slot_duration: babe_slot_duration,
+				config: babe_link.config().clone(),
+				epoch_changes: babe_link.epoch_changes().clone(),
+				telemetry: telemetry.as_ref().map(|x| x.handle()),
+			}),
+			client.clone(),
+			verifier_cidp.clone(),
+		);
+
 	// The BABE authoring worker imports its own blocks through the *same* partner-chains sandwich as
 	// the import queue — not the raw `BabeBlockImport`. `BabeBlockImport::import_block` always runs
 	// its own body-gated inherent check against inherent data built from the minimal CIDP above
@@ -578,15 +569,7 @@ pub fn new_partial(
 		PartnerChainsBlockImport::<_, _, _, Block, BabeSlotExtractor, McHashInherentDigest>::new(
 			babe_block_import.clone(),
 			client.clone(),
-			VerifierCIDP::new(
-				inherent_config.clone(),
-				client.clone(),
-				data_sources.mc_hash.clone(),
-				data_sources.authority_selection.clone(),
-				data_sources.cnight_observation.clone(),
-				data_sources.federated_authority_observation.clone(),
-				data_sources.bridge.clone(),
-			),
+			verifier_cidp.clone(),
 		),
 	);
 
@@ -594,36 +577,32 @@ pub fn new_partial(
 		PartnerChainsBlockImport::<_, _, _, Block, BabeSlotExtractor, McHashInherentDigest>::new(
 			babe_block_import,
 			client.clone(),
-			VerifierCIDP::new(
-				inherent_config.clone(),
-				client.clone(),
-				data_sources.mc_hash.clone(),
-				data_sources.authority_selection.clone(),
-				data_sources.cnight_observation.clone(),
-				data_sources.federated_authority_observation.clone(),
-				data_sources.bridge.clone(),
-			),
+			verifier_cidp,
 		);
 
-	let (babe_import_queue, babe_worker_handle) =
-		sc_consensus_babe::import_queue(sc_consensus_babe::ImportQueueParams {
-			link: babe_link.clone(),
-			block_import: babe_block_import,
-			justification_import: None,
-			client: client.clone(),
-			slot_duration: babe_slot_duration,
-			spawner: &task_manager.spawn_essential_handle(),
-			registry: None,  //config.prometheus_registry(),
-			telemetry: None, //telemetry.as_ref().map(|x| x.handle()),
-		})?;
-
-	// Route each block to the AURA or BABE queue by the engine that authored it (first AURA/BABE
-	// pre-runtime digest), hold BABE batches behind in-flight AURA batches at the flip, and seed
-	// BABE's epoch tree at the flip block right before its child is handed to the BABE queue.
-	let import_queue = DispatchImportQueue::new(
-		Arc::new(crate::babe_authoring::BabeEpochSeeder::new(client.clone(), babe_link.clone())),
-		aura_import_queue,
-		babe_import_queue,
+	// One import queue serves both engines. Each block is routed to the AURA or BABE verifier and
+	// block import by the engine that authored it (its first AURA/BABE pre-runtime digest), and
+	// BABE's epoch tree is seeded at the flip block right before its first child is verified. The
+	// queue's single worker verifies and imports blocks in order, so the first BABE block is only
+	// verified once the flip block is in. Warp ledger-sync gates every post-warp import, whichever
+	// engine authored it, until the arena is recovered + verified.
+	let import_queue = sc_consensus::import_queue::BasicQueue::new(
+		EngineDispatchVerifier::new(
+			Arc::new(crate::babe_authoring::BabeEpochSeeder::new(
+				client.clone(),
+				babe_link.clone(),
+			)),
+			aura_verifier,
+			babe_verifier,
+		),
+		Box::new(crate::warp_ledger_sync::block_import::GatedBlockImport::new(
+			EngineDispatchBlockImport::new(grandpa_block_import.clone(), babe_block_import),
+			recovery_gate.clone(),
+			backend.clone(),
+		)),
+		Some(Box::new(grandpa_block_import.clone())),
+		&task_manager.spawn_essential_handle(),
+		config.prometheus_registry(),
 	);
 
 	let partial_components = sc_service::PartialComponents {
@@ -644,7 +623,6 @@ pub fn new_partial(
 			recovery_gate,
 			babe_link,
 			babe_authoring_block_import,
-			babe_worker_handle,
 		),
 	};
 
@@ -692,7 +670,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 				warp_ledger_recovery_gate,
 				babe_link,
 				babe_authoring_block_import,
-				babe_worker_handle,
 			),
 	} = new_partial_components;
 
@@ -967,17 +944,6 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		}
 	}
 
-	// The BABE import queue (built in `new_partial` for every role) spawns an essential
-	// `babe-worker` task whose lifetime is tied to `babe_worker_handle`. We don't serve BABE
-	// epoch-data requests, but the handle must outlive the service or that task ends and takes the
-	// node down. Park it in a task that lives until shutdown.
-	task_manager
-		.spawn_handle()
-		.spawn("babe-worker-handle-keepalive", Some("babe"), async move {
-			let _babe_worker_handle = babe_worker_handle;
-			futures::future::pending::<()>().await;
-		});
-
 	if role.is_authority() {
 		let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 			.map_err(sp_blockchain::Error::from)?;
@@ -1132,7 +1098,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		}
 	}
 	// Non-authorities need no flip watcher: the epoch tree they need to *import* the first BABE
-	// block is seeded on the import path by `BabeEpochSeeder` (see `DispatchImportQueue`).
+	// block is seeded on the import path by `BabeEpochSeeder` (see `EngineDispatchVerifier`).
 
 	if enable_grandpa {
 		// if the node isn't actively participating in consensus then it doesn't

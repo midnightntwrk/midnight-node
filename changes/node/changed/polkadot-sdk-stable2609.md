@@ -1,22 +1,22 @@
-#node #runtime #consensus #babe #grandpa
+#node #consensus #babe #polkadot-sdk
 
-# Move polkadot-sdk back to upstream paritytech branch stable2609
+# Use the shieldedtech polkadot-sdk fork (stable2609 + BABE `build_verifier`) and unify the import queue
 
-THIS IS WIP. It should be a change to polkadotsdk-stable2609. Do not merge without fixing it and editing this file
+Points all polkadot-sdk dependencies at `shieldedtech/polkadot-sdk` branch `origin/stable2609`.
+The branch is upstream `paritytech/polkadot-sdk` `stable2609` plus paritytech/polkadot-sdk#13061,
+which exposes `sc_consensus_babe::build_verifier` / `BuildVerifierParams` (the Aura equivalent) so
+a BABE verifier can be composed into a custom import queue.
 
-Points all polkadot-sdk dependencies at `paritytech/polkadot-sdk` branch `stable2609`
-instead of the temporary `shieldedtech/polkadot-sdk` fork branch `test-polkadot-stable2606`.
+With that, the AURA→BABE migration no longer runs two whole import queues behind a dispatcher
+(`DispatchImportQueue`, with its cross-queue ordering gate and held BABE batches). The node has one
+`BasicQueue` whose verifier and block import route each block to the AURA or BABE pipeline by the
+engine that authored it (`EngineDispatchVerifier` / `EngineDispatchBlockImport`). Ordering at the
+flip follows from the single import worker, BABE's epoch tree is seeded right before the first BABE
+block is verified, and the BABE `answer_requests` worker (plus its keep-alive task) is gone. The
+warp ledger-sync import gate now wraps both pipelines, so post-warp BABE blocks are held during
+arena recovery like AURA blocks.
 
-The fork only carried two upstream fixes on top of stable2606, both of which are
-included in stable2609:
-
-- paritytech/polkadot-sdk#12754: `sc_consensus_babe::prune_finalized` skips epoch
-  pruning when the finalized header has no BABE pre-digest (lets `BabeBlockImport`
-  be constructed on an AURA chain).
-- paritytech/polkadot-sdk#12506: `GrandpaBlockImport::import_justification` verifies
-  the justification atomically with finalization, removing a double-finalization race.
-
-The `shieldedtech/polkadot-sdk` source is removed from `deny.toml`'s git allow-list.
+`shieldedtech/polkadot-sdk` is added to `deny.toml`'s git allow-list.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2113
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1757
