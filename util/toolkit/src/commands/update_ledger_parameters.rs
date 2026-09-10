@@ -154,6 +154,24 @@ pub struct UpdateLedgerParametersArgs {
 	params: UpdateableParams,
 }
 
+/// Merge the CLI's `--block-limit-*` overrides into the current block limits.
+/// Flags left unset keep the base values.
+fn apply_block_limit_updates(base: SyntheticCost, params: &UpdateableParams) -> SyntheticCost {
+	SyntheticCost {
+		read_time: params
+			.block_limit_read_time
+			.map(|t| CostDuration::from_picoseconds(t))
+			.unwrap_or(base.read_time),
+		compute_time: params
+			.block_limit_compute_time
+			.map(|t| CostDuration::from_picoseconds(t))
+			.unwrap_or(base.compute_time),
+		block_usage: params.block_limit_block_usage.unwrap_or(base.block_usage),
+		bytes_written: params.block_limit_bytes_written.unwrap_or(base.bytes_written),
+		bytes_churned: params.block_limit_bytes_churned.unwrap_or(base.bytes_churned),
+	}
+}
+
 pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParametersError> {
 	// Create a new API client
 	let api = OnlineClient::<SubstrateConfig>::from_insecure_url(&args.rpc_url).await?;
@@ -183,25 +201,7 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 
 	let parameters = LedgerParameters {
 		limits: TransactionLimits {
-			block_limits: SyntheticCost {
-				read_time: params
-					.block_limit_read_time
-					.map(|t| CostDuration::from_picoseconds(t))
-					.unwrap_or(base.limits.block_limits.read_time),
-				compute_time: params
-					.block_limit_compute_time
-					.map(|t| CostDuration::from_picoseconds(t))
-					.unwrap_or(base.limits.block_limits.compute_time),
-				block_usage: params
-					.block_limit_block_usage
-					.unwrap_or(base.limits.block_limits.block_usage),
-				bytes_written: params
-					.block_limit_bytes_written
-					.unwrap_or(base.limits.block_limits.bytes_written),
-				bytes_churned: params
-					.block_limit_bytes_churned
-					.unwrap_or(base.limits.block_limits.bytes_churned),
-			},
+			block_limits: apply_block_limit_updates(base.limits.block_limits, params),
 			..base.limits
 		},
 		fee_prices: FeePrices {
@@ -299,4 +299,66 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 	})
 	.await
 	.map_err(|e| LedgerParametersError::RootCallError(e))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use clap::Parser;
+
+	#[derive(Parser)]
+	struct TestArgs {
+		#[command(flatten)]
+		params: UpdateableParams,
+	}
+
+	fn parse(args: &[&str]) -> UpdateableParams {
+		let mut argv = vec!["test"];
+		argv.extend_from_slice(args);
+		TestArgs::parse_from(argv).params
+	}
+
+	fn base() -> SyntheticCost {
+		SyntheticCost {
+			read_time: CostDuration::from_picoseconds(1),
+			compute_time: CostDuration::from_picoseconds(2),
+			block_usage: 3,
+			bytes_written: 4,
+			bytes_churned: 5,
+		}
+	}
+
+	#[test]
+	fn each_block_limit_flag_maps_to_its_own_field() {
+		let updated = apply_block_limit_updates(
+			base(),
+			&parse(&[
+				"--block-limit-read-time",
+				"11",
+				"--block-limit-compute-time",
+				"12",
+				"--block-limit-block-usage",
+				"13",
+				"--block-limit-bytes-written",
+				"14",
+				"--block-limit-bytes-churned",
+				"15",
+			]),
+		);
+		assert!(updated.read_time == CostDuration::from_picoseconds(11));
+		assert!(updated.compute_time == CostDuration::from_picoseconds(12));
+		assert_eq!(updated.block_usage, 13);
+		assert_eq!(updated.bytes_written, 14);
+		assert_eq!(updated.bytes_churned, 15);
+	}
+
+	#[test]
+	fn unset_block_limit_flags_keep_base_values() {
+		let updated = apply_block_limit_updates(base(), &parse(&["--block-limit-read-time", "11"]));
+		assert!(updated.read_time == CostDuration::from_picoseconds(11));
+		assert!(updated.compute_time == base().compute_time);
+		assert_eq!(updated.block_usage, base().block_usage);
+		assert_eq!(updated.bytes_written, base().bytes_written);
+		assert_eq!(updated.bytes_churned, base().bytes_churned);
+	}
 }
