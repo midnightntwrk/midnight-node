@@ -2,6 +2,9 @@ use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::e2e_test;
 
+// Local-env-only (funds via `ensure_dev_wallet_funded`); gated so an unfiltered
+// `--features qanet` run doesn't try to run it and hang.
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 /// PR367-TC-0003-03 E2E: Valid Transaction Succeeds
 ///
 /// A well-formed contract deploy, built dynamically against the live chain and
@@ -28,6 +31,9 @@ async fn valid_deploy_transaction_succeeds_via_rpc() {
     tracing::info!("✓ valid DEPLOY_TX accepted and included");
 }
 
+// Local-env-only (funds via `ensure_dev_wallet_funded`); gated so an unfiltered
+// `--features qanet` run doesn't try to run it and hang.
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 /// Regression guard: the toolkit must not hang on exit when sending with
 /// multiple `--dest-url` options (ported from the old
 /// scripts/tests/toolkit-multi-dest-e2e.sh, which assumed the unfunded
@@ -121,6 +127,8 @@ async fn toolkit_multi_dest_send_does_not_hang() {
     unreachable!("multi-dest send loop returns or panics");
 }
 
+// Local-env-only (drives the local faucet); gated to the local features.
+#[cfg(any(feature = "local", feature = "local-dev", feature = "local-ci"))]
 /// One-shot cleanup task: consolidates fragmented UTXOs at the funded faucet
 /// address. Useful when the faucet has accumulated many small change UTXOs
 /// from prior runs. Opt-in via `cargo test --ignored consolidate_faucet`.
