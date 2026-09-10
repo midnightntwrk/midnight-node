@@ -27,16 +27,16 @@
 //!   first BABE block has imported no BABE block yet and its own blocks bypass the import queue, so
 //!   nothing else would seed before it proposes. `wait_for_flip` watches the origin-independent
 //!   every-import stream so the hand-over also happens while syncing across the flip.
-//! - **About to verify a BABE block** (every role): [`BabeEpochSeeder`], called by the import
-//!   queue's dispatching verifier right before it hands a BABE block to the BABE verifier. This is
-//!   the only trigger that works while *syncing* across the flip — the client emits no block-import
-//!   notifications for sync-origin imports, so a notification watcher never fires there — and it is
-//!   what lets non-authorities import the first BABE block; they run no flip watcher at all.
+//! - **About to verify a BABE block** (every role): [`BabeEpochSeeder`], called by the import-queue
+//!   dispatcher right before it hands a BABE batch to the BABE queue. This is the only trigger that
+//!   works while *syncing* across the flip — the client emits no block-import notifications for
+//!   sync-origin imports, so a notification watcher never fires there — and it is what lets
+//!   non-authorities import the first BABE block; they run no flip watcher at all.
 //!
 //! Seeding is idempotent and its check-and-reset is atomic under the epoch-tree lock, so both
 //! triggers may run concurrently on an authority.
 
-use crate::consensus_engine_dispatch::{EpochSeeder, engine_from_pre_runtime_digest};
+use crate::consensus_engine_dispatch::EpochSeeder;
 use futures::StreamExt;
 use midnight_node_runtime::opaque::Block;
 use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
@@ -288,15 +288,14 @@ where
 	Ok(())
 }
 
-/// [`EpochSeeder`] for the import queue's dispatching verifier: seeds BABE's epoch tree at `parent`
-/// when the first BABE block is about to be verified and `parent` is the flip block.
+/// [`EpochSeeder`] for the import-queue dispatcher: seeds BABE's epoch tree at `parent` when the
+/// first BABE block is about to be verified and `parent` is the flip block.
 ///
-/// Called for every BABE block, so the common case must be cheap: a BABE-authored parent had its
-/// epoch recorded by the BABE import that brought it in and is skipped on its header alone. For any
-/// other parent it seeds only when the runtime state at `parent` has flipped to BABE. The parent
-/// hash comes from a peer-supplied header, so without that check a peer could make us reset the
-/// tree at an arbitrary imported block; with it, the only block that is both post-flip *and* not yet
-/// covered by the tree is the flip block itself.
+/// Seeds only when the runtime state at `parent` has flipped to BABE. The parent hash comes from a
+/// peer-supplied header, so without that check a peer could make us reset the tree at an
+/// arbitrary imported block; with it, the only block that is both post-flip *and* not yet covered by
+/// the tree is the flip block itself (every later block is imported through the BABE pipeline,
+/// which records its epoch).
 pub struct BabeEpochSeeder<C> {
 	client: Arc<C>,
 	babe_link: BabeLink<Block>,
@@ -314,15 +313,10 @@ where
 	C::Api: BabeApi<Block> + ConsensusEngineApi<Block>,
 {
 	fn ensure_seeded_for_child_of(&self, parent: Hash) {
-		// Not imported (yet): nothing to seed at; the BABE block import will report `UnknownParent`
-		// and sync re-offers the block later.
-		let Ok(Some(parent_header)) = self.client.header(parent) else {
+		// Not imported (yet): nothing to seed at; the BABE queue will report `UnknownParent` and
+		// sync re-offers the block later.
+		if !matches!(self.client.header(parent), Ok(Some(_))) {
 			log::debug!(target: LOG_TARGET, "parent {parent:?} of a BABE block is not imported; not seeding");
-			return;
-		};
-		// A BABE-authored parent is already covered by the tree (see the type docs); only the flip
-		// block — an AURA-authored parent of a BABE block — can need seeding.
-		if engine_from_pre_runtime_digest::<Block>(&parent_header) == Some(ActiveEngine::Babe) {
 			return;
 		}
 		if active_engine_at(&*self.client, parent) != ActiveEngine::Babe {

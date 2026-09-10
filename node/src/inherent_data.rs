@@ -224,23 +224,6 @@ pub struct VerifierCIDP<T> {
 	bridge_data_source: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
-// Manual impl: a derive would require `T: Clone`, but the client is only ever held behind an `Arc`.
-impl<T> Clone for VerifierCIDP<T> {
-	fn clone(&self) -> Self {
-		Self {
-			config: self.config.clone(),
-			client: self.client.clone(),
-			mc_hash_data_source: self.mc_hash_data_source.clone(),
-			authority_selection_data_source: self.authority_selection_data_source.clone(),
-			cnight_observation_data_source: self.cnight_observation_data_source.clone(),
-			federated_authority_observation_data_source: self
-				.federated_authority_observation_data_source
-				.clone(),
-			bridge_data_source: self.bridge_data_source.clone(),
-		}
-	}
-}
-
 #[async_trait]
 impl<T> CreateInherentDataProviders<Block, (Slot, McBlockHash)> for VerifierCIDP<T>
 where
