@@ -13,7 +13,7 @@
 
 use std::str::FromStr;
 
-use midnight_node_ledger_helpers::*;
+use midnight_ledger_unsafe_helpers::*;
 use serde::Deserialize;
 
 use crate::tx_generator::source::FetchCacheConfig;

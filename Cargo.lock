@@ -7790,6 +7790,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-ledger-unsafe-helpers"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bech32 0.11.1",
+ "bip32",
+ "derive-where",
+ "futures",
+ "hex",
+ "itertools 0.14.0",
+ "lazy_static",
+ "log",
+ "midnight-base-crypto",
+ "midnight-ledger",
+ "midnight-ledger-v9",
+ "midnight-node-ledger-helpers",
+ "midnight-serialize",
+ "midnight-storage",
+ "midnight-transient-crypto 2.2.0",
+ "rand 0.8.5",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "v8-to-v9-state-translation",
+]
+
+[[package]]
 name = "midnight-ledger-v9"
 version = "1.0.0"
 source = "git+https://github.com/midnightntwrk/midnight-ledger?tag=crate-ledger-9.1.0.0-rc.5#6abe9b16f1a2a9965a3317729cd72fd1f7fbfc03"
@@ -7966,8 +7996,8 @@ dependencies = [
  "aiken-contracts-lib",
  "blake2 0.10.6",
  "hex",
+ "midnight-ledger-unsafe-helpers",
  "midnight-node-e2e-macros",
- "midnight-node-ledger-helpers",
  "midnight-node-metadata",
  "midnight-node-toolkit",
  "ogmios-client",
@@ -8006,6 +8036,7 @@ dependencies = [
  "midnight-coin-structure 2.0.2",
  "midnight-coin-structure 3.0.0",
  "midnight-ledger",
+ "midnight-ledger-unsafe-helpers",
  "midnight-ledger-v9",
  "midnight-node-ledger-helpers",
  "midnight-node-res",
@@ -8041,15 +8072,10 @@ name = "midnight-node-ledger-helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
- "bech32 0.11.1",
- "bip32",
  "bip39",
  "cargo_metadata 0.15.4",
  "derive-where",
- "futures",
  "hex",
- "itertools 0.14.0",
  "lazy_static",
  "log",
  "midnight-base-crypto",
@@ -8069,18 +8095,14 @@ dependencies = [
  "num_enum",
  "postcard",
  "rand 0.8.5",
- "rayon",
  "reqwest 0.12.28",
  "serde",
  "serde_bytes",
  "serde_json",
- "sha2 0.11.0",
  "strum 0.28.0",
  "subxt 0.50.0",
  "subxt-signer 0.50.0",
  "thiserror 2.0.18",
- "tokio",
- "v8-to-v9-state-translation",
  "zeroize",
 ]
 
@@ -8211,6 +8233,7 @@ dependencies = [
  "hex-literal 1.1.0",
  "indicatif 0.17.11",
  "log",
+ "midnight-ledger-unsafe-helpers",
  "midnight-node-ledger-helpers",
  "midnight-node-metadata",
  "midnight-primitives-ics-observation",
@@ -10449,8 +10472,8 @@ dependencies = [
  "frame-system",
  "hex",
  "log",
+ "midnight-ledger-unsafe-helpers",
  "midnight-node-ledger",
- "midnight-node-ledger-helpers",
  "midnight-node-res",
  "midnight-primitives",
  "pallet-timestamp",

@@ -147,7 +147,7 @@ async fn consolidate_faucet() {
 #[ignore = "wiring smoke test for Postgres-backed fetch cache; \
             opt-in with `cargo test --ignored dust_balance_smoke`"]
 async fn dust_balance_smoke() {
-    use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
+    use midnight_ledger_unsafe_helpers::{UnshieldedSignatureScheme, WalletSeed};
     use midnight_node_toolkit::cli_parsers::SchemeSeed;
     use midnight_node_toolkit::commands::dust_balance::{self, DustBalanceArgs};
     use midnight_node_toolkit::tx_generator::source::Source;
@@ -203,7 +203,7 @@ async fn dust_balance_smoke() {
 #[ignore = "wiring smoke test for batched dust_balance; \
             opt-in with `cargo test --ignored dust_balance_smoke_many`"]
 async fn dust_balance_smoke_many() {
-    use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
+    use midnight_ledger_unsafe_helpers::{UnshieldedSignatureScheme, WalletSeed};
     use midnight_node_toolkit::commands::dust_balance::{
         self, DustBalanceJson, DustBalanceManyArgs, DustBalanceResult,
     };

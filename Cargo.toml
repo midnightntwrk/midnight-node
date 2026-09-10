@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "ledger",
     "ledger/helpers",
+    "ledger/helpers/unsafe",
     "metadata",
     "node",
     "pallets/midnight",
@@ -126,7 +127,8 @@ midnight-serialize = { version = "=1.2.0", package = "midnight-serialize" }
 # Midnight local dependencies
 midnight-node-ledger = { path = "ledger", default-features = false }
 midnight-node-metadata = { path = "metadata", default-features = false }
-midnight-node-ledger-helpers = { path = "ledger/helpers", default-features = false, features = ["test-utils"] }
+midnight-node-ledger-helpers = { path = "ledger/helpers", default-features = false }
+midnight-ledger-unsafe-helpers = { path = "ledger/helpers/unsafe", default-features = false }
 midnight-node-res = { path = "res", default-features = false }
 midnight-node-toolkit = { path = "util/toolkit", default-features = true }
 pallet-midnight = { path = "pallets/midnight", default-features = false }

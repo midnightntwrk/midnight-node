@@ -20,7 +20,7 @@ use ledger_helpers_local::{
 	TransactionWithContext, UnshieldedWallet, UpdateInfo, Wallet, WalletSeed,
 	contract_operation_version_of, contract_operation_versioned_verifier_key, serialize_untagged,
 };
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 use std::{path::PathBuf, sync::Arc};
 
 use super::build_txs_ext::BuildTxsExt;

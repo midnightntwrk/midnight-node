@@ -20,56 +20,58 @@ use ledger_helpers_local::{
 	CoinPublicKey, ContractAddress, HashOutput, IntentHash, ShieldedTokenType,
 	UnshieldedSignatureScheme, UnshieldedTokenType, UtxoId, WalletSeed,
 };
-use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 use std::str::FromStr;
 
 pub fn convert_scheme(
-	s: midnight_node_ledger_helpers::UnshieldedSignatureScheme,
+	s: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme,
 ) -> UnshieldedSignatureScheme {
 	match s {
-		midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr => {
+		midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr => {
 			UnshieldedSignatureScheme::Schnorr
 		},
-		midnight_node_ledger_helpers::UnshieldedSignatureScheme::Ecdsa => {
+		midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Ecdsa => {
 			UnshieldedSignatureScheme::Ecdsa
 		},
 	}
 }
 
 pub fn convert_shielded_token_type(
-	stt: midnight_node_ledger_helpers::ShieldedTokenType,
+	stt: midnight_ledger_unsafe_helpers::ShieldedTokenType,
 ) -> ShieldedTokenType {
 	ShieldedTokenType(HashOutput(stt.0.0))
 }
 
 pub fn convert_unshielded_token_type(
-	utt: midnight_node_ledger_helpers::UnshieldedTokenType,
+	utt: midnight_ledger_unsafe_helpers::UnshieldedTokenType,
 ) -> UnshieldedTokenType {
 	UnshieldedTokenType(HashOutput(utt.0.0))
 }
 
 pub fn convert_contract_address(
-	ca: midnight_node_ledger_helpers::ContractAddress,
+	ca: midnight_ledger_unsafe_helpers::ContractAddress,
 ) -> ContractAddress {
 	ContractAddress(HashOutput(ca.0.0))
 }
 
-pub fn convert_wallet_seed(ws: midnight_node_ledger_helpers::WalletSeed) -> WalletSeed {
+pub fn convert_wallet_seed(ws: midnight_ledger_unsafe_helpers::WalletSeed) -> WalletSeed {
 	WalletSeed::try_from(ws.as_bytes()).expect("wallet seed conversion between versions")
 }
 
-pub fn convert_coin_public_key(cpk: midnight_node_ledger_helpers::CoinPublicKey) -> CoinPublicKey {
+pub fn convert_coin_public_key(
+	cpk: midnight_ledger_unsafe_helpers::CoinPublicKey,
+) -> CoinPublicKey {
 	CoinPublicKey(HashOutput(cpk.0.0))
 }
 
 pub fn convert_wallet_address(
-	wa: &midnight_node_ledger_helpers::WalletAddress,
+	wa: &midnight_ledger_unsafe_helpers::WalletAddress,
 ) -> ledger_helpers_local::WalletAddress {
 	ledger_helpers_local::WalletAddress::from_str(&wa.to_bech32())
 		.expect("wallet address conversion between versions")
 }
 
-pub fn convert_utxo_id(id: &midnight_node_ledger_helpers::UtxoId) -> UtxoId {
+pub fn convert_utxo_id(id: &midnight_ledger_unsafe_helpers::UtxoId) -> UtxoId {
 	UtxoId {
 		intent_hash: IntentHash(HashOutput(id.intent_hash.0.0)),
 		output_number: id.output_number,

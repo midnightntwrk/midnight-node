@@ -19,7 +19,7 @@ use ledger_helpers_local::{
 	BuildIntent, BuilderContext, DefaultDB, FromContext, ProofProvider, StandardTransactionInfo,
 	WalletSeed,
 };
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 /// An extension to help build transactions.
 pub trait BuildTxsExt<C: BuilderContext<DefaultDB>> {

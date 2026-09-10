@@ -1,7 +1,7 @@
+use midnight_ledger_unsafe_helpers::{UnshieldedSignatureScheme, WalletSeed};
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::config::Settings;
 use midnight_node_e2e::faucet::FaucetManager;
-use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
 use midnight_node_toolkit::commands::dust_balance;
 use midnight_node_toolkit::tx_generator::source::{FetchCacheConfig, Source};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -350,7 +350,7 @@ pub(crate) const DEV_WALLET_SEED: &str =
 /// just-started env poll here (rather than flake) while the faucet job runs and
 /// DUST accrues. Panics with a clear message if funding never arrives.
 pub(crate) async fn ensure_dev_wallet_funded() {
-    use midnight_node_ledger_helpers::WalletSeed;
+    use midnight_ledger_unsafe_helpers::WalletSeed;
     use midnight_node_toolkit::commands::show_wallet::{self, ShowWalletArgs, ShowWalletResult};
 
     let settings = Settings::default();
@@ -373,7 +373,7 @@ pub(crate) async fn ensure_dev_wallet_funded() {
             },
             seed: Some(midnight_node_toolkit::cli_parsers::SchemeSeed {
                 seed: seed.clone(),
-                scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+                scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
             }),
             address: None,
             debug: false,
@@ -494,7 +494,7 @@ pub(crate) async fn deploy_and_confirm(
     client: &midnight_node_e2e::api::midnight::MidnightClient,
     url: &str,
 ) -> (Vec<u8>, String) {
-    use midnight_node_ledger_helpers::extract_tx_with_context;
+    use midnight_ledger_unsafe_helpers::extract_tx_with_context;
     use midnight_node_toolkit::commands::contract_address::{self, ContractAddressArgs};
 
     let tempdir = tempfile::tempdir().expect("create tempdir");
@@ -562,7 +562,7 @@ pub(crate) async fn build_unshielded_self_transfer(url: &str, dest: &std::path::
             unshielded_token_type: vec![],
             source_seed: cli::SchemeSeed {
                 seed,
-                scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+                scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
             },
             funding_seed: None,
             destination_address: vec![recipient],

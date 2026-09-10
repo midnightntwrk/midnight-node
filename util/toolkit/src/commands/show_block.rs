@@ -172,7 +172,7 @@ fn blocks_from_file(
 	path: &str,
 ) -> Result<Vec<RawBlockData>, Box<dyn std::error::Error + Send + Sync>> {
 	let batches = GetTxsFromFile::load_single_or_multiple(path)?;
-	let blocks: Vec<RawBlockData> = (&batches).try_into()?;
+	let blocks = midnight_ledger_unsafe_helpers::fork::raw_block_data_from_batches(&batches)?;
 	Ok(blocks)
 }
 

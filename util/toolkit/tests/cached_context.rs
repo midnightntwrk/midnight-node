@@ -14,11 +14,10 @@
 //! Integration tests verifying `build_fork_aware_context_cached` produces the
 //! same result as `build_fork_aware_context_raw` across all cache scenarios.
 
-use midnight_node_ledger_helpers::{
-	DefaultDB, LedgerContext, UnshieldedSignatureScheme, WalletSeed,
-	fork::raw_block_data::{LedgerVersion, RawBlockData},
-	ledger_8, serialize_untagged,
+use midnight_ledger_unsafe_helpers::{
+	DefaultDB, LedgerContext, UnshieldedSignatureScheme, WalletSeed, ledger_8, serialize_untagged,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
 use midnight_node_toolkit::fetcher::wallet_state_cache::{
 	serialize_ledger_state_fast, serialize_ledger_state_fast_8, wallet_cache_key,
 };

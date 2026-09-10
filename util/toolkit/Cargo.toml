@@ -12,11 +12,12 @@ path = "src/main.rs"
 
 [features]
 default = []
-erase-proof = ["midnight-node-ledger-helpers/erase-proof"]
+erase-proof = ["midnight-ledger-unsafe-helpers/erase-proof"]
 compact-contract-tests = []
 
 [dependencies]
-midnight-node-ledger-helpers = { workspace = true, features = ["can-panic", "test-utils", "fixed-point-custom-serde"] }
+midnight-node-ledger-helpers = { workspace = true, features = ["fixed-point-custom-serde"] }
+midnight-ledger-unsafe-helpers = { workspace = true, features = ["test-utils", "fixed-point-custom-serde"] }
 midnight-node-metadata.workspace = true
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+pub use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 pub mod batch_single_tx;
 mod batches;
@@ -44,10 +44,10 @@ pub use deregister_dust_address::*;
 pub use do_nothing::*;
 pub use register_dust_address::*;
 
-use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
-use midnight_node_ledger_helpers::ledger_9::{
+use midnight_ledger_unsafe_helpers::ledger_9::{
 	DefaultDB, ProofMarker, Signature, TransactionWithContext,
 };
+use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
 
 pub fn serialize_tx(
 	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,
