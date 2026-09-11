@@ -16,7 +16,7 @@ use subxt::{OnlineClient, SubstrateConfig, dynamic};
 use thiserror::Error;
 
 use crate::commands::root_call::{self, RootCallArgs};
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	CostDuration, Duration, DustParameters, FeePrices, FixedPoint, SyntheticCost, deserialize,
 	mn_ledger::structure::{LedgerParameters, SystemTransaction, TransactionLimits},
 	serialize,
@@ -202,17 +202,17 @@ pub async fn execute(args: UpdateLedgerParametersArgs) -> Result<(), LedgerParam
 					.map(|t| CostDuration::from_picoseconds(t))
 					.unwrap_or(base.limits.block_limits.read_time),
 				compute_time: params
-					.block_limit_read_time
+					.block_limit_compute_time
 					.map(|t| CostDuration::from_picoseconds(t))
 					.unwrap_or(base.limits.block_limits.compute_time),
 				block_usage: params
-					.block_limit_read_time
+					.block_limit_block_usage
 					.unwrap_or(base.limits.block_limits.block_usage),
 				bytes_written: params
-					.block_limit_read_time
+					.block_limit_bytes_written
 					.unwrap_or(base.limits.block_limits.bytes_written),
 				bytes_churned: params
-					.block_limit_read_time
+					.block_limit_bytes_churned
 					.unwrap_or(base.limits.block_limits.bytes_churned),
 			},
 			..base.limits

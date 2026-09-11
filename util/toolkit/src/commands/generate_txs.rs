@@ -105,8 +105,8 @@ mod tests {
 			source::FetchCacheConfig,
 		},
 	};
-	use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
-	use midnight_node_ledger_helpers::{NIGHT, WalletAddress};
+	use midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme;
+	use midnight_ledger_unsafe_helpers::{NIGHT, WalletAddress};
 	use test_case::test_case;
 
 	fn resource_file(path: &str) -> String {
@@ -131,6 +131,7 @@ mod tests {
 					fetch_only_cached: false,
 					fetch_cache: FetchCacheConfig::InMemory,
 					ledger_state_db: String::new(),
+					replay_checkpoint_interval: 0,
 				},
 				destination: Destination {
 					dest_urls: vec![],

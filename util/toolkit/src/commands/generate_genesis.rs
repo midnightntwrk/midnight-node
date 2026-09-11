@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use crate::genesis_generator::{
 	FundingArgs, GENESIS_NONCE_SEED, GenesisGenerator, IcsConfig, ReserveConfig,
 };
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	LedgerParameters, Serializable, SystemTransaction, Tagged, WalletSeed,
 	midnight_serialize::tagged_deserialize, serialize,
 };
@@ -254,7 +254,7 @@ mod test {
 	use crate::cli::{Cli, run_command};
 	use crate::{DefaultDB, LedgerState};
 	use clap::Parser;
-	use midnight_node_ledger_helpers::INITIAL_PARAMETERS;
+	use midnight_ledger_unsafe_helpers::INITIAL_PARAMETERS;
 	use std::{
 		env::temp_dir,
 		fs::{self, remove_file},

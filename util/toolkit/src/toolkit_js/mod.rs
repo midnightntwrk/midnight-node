@@ -18,7 +18,7 @@ use clap::{
 	builder::{PathBufValueParser, TypedValueParser},
 };
 use hex::ToHex;
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	CoinPublicKey, ContractAddress, UnshieldedSignatureScheme, UnshieldedWallet, WalletSeed,
 	serialize_untagged,
 };
@@ -536,7 +536,7 @@ impl ToolkitJs {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use midnight_node_ledger_helpers::{HashOutput, PERSISTENT_HASH_BYTES, WalletSeed};
+	use midnight_ledger_unsafe_helpers::{HashOutput, PERSISTENT_HASH_BYTES, WalletSeed};
 
 	fn deploy_args(scheme: UnshieldedSignatureScheme) -> DeployArgs {
 		let seed = WalletSeed::try_from_hex_str(

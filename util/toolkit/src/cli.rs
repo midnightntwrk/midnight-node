@@ -250,9 +250,9 @@ pub async fn run_command(cmd: Commands) -> Result<(), Box<dyn std::error::Error 
 		},
 		Commands::Version => {
 			let node_version = utils::find_crate_version!("../../../node/Cargo.toml");
-			let ledger_generation = midnight_node_ledger_helpers::latest::LEDGER_VERSION;
+			let ledger_generation = midnight_ledger_unsafe_helpers::latest::LEDGER_VERSION;
 			let ledger_semver =
-				find_dependency_version(midnight_node_ledger_helpers::latest::CRATE_NAME)
+				find_dependency_version(midnight_ledger_unsafe_helpers::latest::CRATE_NAME)
 					.expect("missing ledger version");
 			let compactc_version = include_str!("../../../COMPACTC_VERSION").trim();
 

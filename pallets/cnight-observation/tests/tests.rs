@@ -1541,18 +1541,20 @@ fn position_guard_works_with_utxos_present() {
 	});
 }
 
-/// While the v0 -> v1 MBM is still draining, `process_tokens` must short-circuit:
-/// reading only v1 mid-migration would silently corrupt registration state for any
-/// reward address whose v0 row hasn't been moved yet (e.g. a deregistration would
-/// no-op here and then re-appear as live once the migration completes).
+/// While any MBM of this pallet's storage is still draining, `process_tokens`
+/// must short-circuit: mid v0 -> v1 it would read only v1 and silently corrupt
+/// registration state for any reward address whose v0 row hasn't been moved yet
+/// (e.g. a deregistration would no-op here and then re-appear as live once the
+/// migration completes); mid v1 -> v2 it would race the dust generation replay.
 ///
-/// This test forces `on_chain_storage_version` back to 0 to simulate a block where
-/// the MBM is mid-flight, then asserts that an inherent carrying real UTXOs:
+/// This test forces `on_chain_storage_version` back to 0, then to 1, to simulate
+/// blocks where either MBM is mid-flight, and asserts that an inherent carrying
+/// real UTXOs:
 /// - leaves `NextCardanoPosition` unchanged,
 /// - writes nothing to `Mapping`,
 /// - emits no pallet events.
-/// After flipping the version to 1 (migration complete), the same call processes
-/// normally and updates state.
+/// After flipping the version to 2 (both migrations complete), the same call
+/// processes normally and updates state.
 #[test]
 fn process_tokens_skips_during_mbm_then_resumes() {
 	new_test_ext().execute_with(|| {
@@ -1587,11 +1589,24 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 			"no Mapping rows must be written during MBM",
 		);
 		assert!(
+			any_event(|e| matches!(
+				e,
+				RuntimeEvent::CNightObservation(crate::Event::ObservationsSkippedForMigration),
+			)),
+			"the skip must be visible on-chain, not just in the node log",
+		);
+		assert!(
 			!any_event(|e| matches!(
 				e,
-				RuntimeEvent::CNightObservation(_) | RuntimeEvent::MidnightSystem(_),
+				RuntimeEvent::CNightObservation(
+					crate::Event::Registration(_)
+						| crate::Event::Deregistration(_)
+						| crate::Event::MappingAdded(_)
+						| crate::Event::MappingRemoved(_)
+						| crate::Event::SystemTransactionApplied(_)
+				) | RuntimeEvent::MidnightSystem(_),
 			)),
-			"no pallet events must be emitted during MBM",
+			"no observation-derived events must be emitted during MBM",
 		);
 
 		// Duplicate-inherent guard still holds during MBM: the gate runs after the
@@ -1608,9 +1623,30 @@ fn process_tokens_skips_during_mbm_then_resumes() {
 
 		advance_block_and_reset_events();
 
-		// Migration completes: storage version flips to 1; the next inherent
-		// processes the same UTXOs normally.
+		// Same at version 1, where the v1 -> v2 dust generation replay is the
+		// migration in flight.
 		StorageVersion::new(1).put::<CNightObservation>();
+
+		let inherent = create_inherent(utxos.clone(), test_position(10, 1));
+		let call = CNightObservation::create_inherent(&inherent).unwrap();
+		assert_ok!(RuntimeCall::CNightObservation(call).dispatch(RawOrigin::None.into()));
+
+		assert_eq!(
+			NextCardanoPosition::<Test>::get(),
+			position_before,
+			"NextCardanoPosition must not advance during the v1 -> v2 MBM",
+		);
+		assert_eq!(
+			Mapping::<Test>::iter_prefix_values(cardano_reward_address).count(),
+			0,
+			"no Mapping rows must be written during the v1 -> v2 MBM",
+		);
+
+		advance_block_and_reset_events();
+
+		// Migrations complete: storage version flips to 2; the next inherent
+		// processes the same UTXOs normally.
+		StorageVersion::new(2).put::<CNightObservation>();
 
 		let inherent = create_inherent(utxos, test_position(10, 1));
 		let call = CNightObservation::create_inherent(&inherent).unwrap();

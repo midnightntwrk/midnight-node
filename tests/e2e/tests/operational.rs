@@ -91,6 +91,7 @@ async fn toolkit_multi_dest_send_does_not_hang() {
                 fetch_only_cached: false,
                 fetch_cache: crate::fetch_cache_config(),
                 ledger_state_db: String::new(),
+                replay_checkpoint_interval: 0,
             },
             destination: Destination {
                 dest_urls: vec![url.clone(); N_DEST_URLS],
@@ -159,7 +160,7 @@ async fn consolidate_faucet() {
 #[ignore = "wiring smoke test for Postgres-backed fetch cache; \
             opt-in with `cargo test --ignored dust_balance_smoke`"]
 async fn dust_balance_smoke() {
-    use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
+    use midnight_ledger_unsafe_helpers::{UnshieldedSignatureScheme, WalletSeed};
     use midnight_node_toolkit::cli_parsers::SchemeSeed;
     use midnight_node_toolkit::commands::dust_balance::{self, DustBalanceArgs};
     use midnight_node_toolkit::tx_generator::source::Source;
@@ -181,6 +182,7 @@ async fn dust_balance_smoke() {
             fetch_only_cached: false,
             fetch_cache: crate::fetch_cache_config(),
             ledger_state_db: String::new(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed,
@@ -214,7 +216,7 @@ async fn dust_balance_smoke() {
 #[ignore = "wiring smoke test for batched dust_balance; \
             opt-in with `cargo test --ignored dust_balance_smoke_many`"]
 async fn dust_balance_smoke_many() {
-    use midnight_node_ledger_helpers::{UnshieldedSignatureScheme, WalletSeed};
+    use midnight_ledger_unsafe_helpers::{UnshieldedSignatureScheme, WalletSeed};
     use midnight_node_toolkit::commands::dust_balance::{
         self, DustBalanceJson, DustBalanceManyArgs, DustBalanceResult,
     };
@@ -260,6 +262,7 @@ async fn dust_balance_smoke_many() {
             fetch_only_cached: false,
             fetch_cache: crate::fetch_cache_config(),
             ledger_state_db,
+            replay_checkpoint_interval: 0,
         },
         // These deterministic smoke-test wallets are all Schnorr NIGHT identities.
         seeds: seeds

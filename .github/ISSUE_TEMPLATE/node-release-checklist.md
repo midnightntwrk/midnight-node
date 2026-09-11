@@ -33,6 +33,7 @@ type: Task
     - [ ] `local-environment` works and is upgraded accordingly following Partner Chains matrix compatibility release notes.
 
 # QA checklist
+ - [ ] Re-run substrate benchmarks on the benchmark machine (and land corresponding PR).
  - [ ] Deployed and burned in for 24h in qanet?
  - [ ] Sync Test Completed?
  - [ ] Try-Runtime tests run against preview/pre-prod/mainnet?

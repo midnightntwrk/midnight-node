@@ -19,7 +19,6 @@ use crate::{
 	commands::show_block::{ShowBlockJson, ShowBlockTransaction},
 	tx_generator::source::GetTxsFromFile,
 };
-use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 
 pub struct ShowTransactionResult {
 	pub txs: Vec<ShowBlockTransaction>,
@@ -45,7 +44,7 @@ pub fn execute(
 	args: ShowTransactionArgs,
 ) -> Result<ShowTransactionResult, Box<dyn std::error::Error + Send + Sync>> {
 	let batches = GetTxsFromFile::load_single_or_multiple(&args.src_file)?;
-	let blocks: Vec<RawBlockData> = (&batches).try_into()?;
+	let blocks = midnight_ledger_unsafe_helpers::fork::raw_block_data_from_batches(&batches)?;
 	let mut txs = Vec::new();
 	for block in blocks {
 		let show_block = ShowBlockJson::new(&block)?;

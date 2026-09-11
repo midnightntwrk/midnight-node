@@ -164,11 +164,6 @@ pub fn deserialize_transactions(
 				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
 				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
 			},
-			LedgerVersion::Ledger7 => {
-				use crate::commands::fork::ledger_7::show_transaction::ShowTransaction;
-				let ShowTransaction { tx_type, size_bytes, hash, debug_str } = raw.try_into()?;
-				Ok(ShowBlockTransaction { index: i, tx_type, size_bytes, hash, debug_str })
-			},
 		})
 		.collect()
 }
@@ -177,7 +172,7 @@ fn blocks_from_file(
 	path: &str,
 ) -> Result<Vec<RawBlockData>, Box<dyn std::error::Error + Send + Sync>> {
 	let batches = GetTxsFromFile::load_single_or_multiple(path)?;
-	let blocks: Vec<RawBlockData> = (&batches).try_into()?;
+	let blocks = midnight_ledger_unsafe_helpers::fork::raw_block_data_from_batches(&batches)?;
 	Ok(blocks)
 }
 

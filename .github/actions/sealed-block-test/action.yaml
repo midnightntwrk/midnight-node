@@ -23,19 +23,24 @@ runs:
   steps:
     - name: Wait for epoch and block proposal log
       shell: bash
+      env:
+        DEPLOYMENT: ${{ inputs.deployment }}
+        EPOCH: ${{ inputs.epoch }}
+        NODE: ${{ inputs.node }}
+        CARDANO_NODE: ${{ inputs.cardano-node }}
       run: |
-        echo "🔁 Deployment type: ${{ inputs.deployment }}"
-        echo "🎯 Target epoch: ${{ inputs.epoch }}"
-        echo "📦 Node: ${{ inputs.node }}"
+        echo "🔁 Deployment type: $DEPLOYMENT"
+        echo "🎯 Target epoch: $EPOCH"
+        echo "📦 Node: $NODE"
 
-        if [ "${{ inputs.deployment }}" == "docker" ]; then
+        if [ "$DEPLOYMENT" == "docker" ]; then
           echo "🗓 Waiting for epoch in Docker..."
 
-          epoch=$(docker exec "${{ inputs.cardano-node }}" cardano-cli latest query tip --testnet-magic 42 | jq -r .epoch)
-          while [ "$epoch" -lt "${{ inputs.epoch }}" ]; do
+          epoch=$(docker exec "$CARDANO_NODE" cardano-cli latest query tip --testnet-magic 42 | jq -r .epoch)
+          while [ "$epoch" -lt "$EPOCH" ]; do
             echo "Epoch: $epoch"
             sleep 10
-            epoch=$(docker exec "${{ inputs.cardano-node }}" cardano-cli latest query tip --testnet-magic 42 | jq -r .epoch)
+            epoch=$(docker exec "$CARDANO_NODE" cardano-cli latest query tip --testnet-magic 42 | jq -r .epoch)
           done
           echo "Epoch: $epoch"
 
@@ -44,11 +49,11 @@ runs:
 
           echo "🔍 Watching for pre-sealed block log..."
 
-          MAX_ATTEMPTS=10  
+          MAX_ATTEMPTS=10
           FOUND_LOG=0
 
           for ((i=1; i<=MAX_ATTEMPTS; i++)); do
-            if docker logs "${{ inputs.node }}" 2>&1 | grep -q "Pre-sealed block for proposal at"; then
+            if docker logs "$NODE" 2>&1 | grep -q "Pre-sealed block for proposal at"; then
               echo "✅ Found pre-sealed block log (attempt $i)"
               FOUND_LOG=1
               break
@@ -64,6 +69,6 @@ runs:
           fi
 
         else
-          echo "❌ Invalid deployment type: ${{ inputs.deployment }}"
+          echo "❌ Invalid deployment type: $DEPLOYMENT"
           exit 1
         fi

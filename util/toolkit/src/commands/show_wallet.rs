@@ -71,6 +71,7 @@ pub async fn execute(
 ) -> Result<ShowWalletResult, Box<dyn std::error::Error + Send + Sync>> {
 	let ledger_state_db = args.source.ledger_state_db.clone();
 	let fetch_cache = args.source.fetch_cache.clone();
+	let replay_checkpoint_interval = args.source.replay_checkpoint_interval;
 	let src = TxGenerator::source(args.source, args.dry_run).await?;
 
 	// Exactly one of `--seed` / `--address` is set (clap's `wallet_id` group).
@@ -98,18 +99,11 @@ pub async fn execute(
 			&source_blocks,
 			wallet_cache.as_deref(),
 			&schemes,
+			replay_checkpoint_interval,
 		)
 		.await;
 
 		Ok(fork_ctx.dispatch(
-			|ctx| {
-				let seed_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_seed(seed.clone());
-				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_seed(
-					&ctx, seed_v7, args.debug,
-				);
-				fork_wallet_result_v7(result)
-			},
 			|ctx| {
 			let seed_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(seed.clone());
@@ -136,21 +130,12 @@ pub async fn execute(
 			&source_blocks,
 			wallet_cache.as_deref(),
 			&WalletSchemes::new(),
+			replay_checkpoint_interval,
 		)
 		.await;
 
 		let address_clone = address.clone();
 		Ok(fork_ctx.dispatch(
-			|ctx| {
-				let addr_v7 =
-					crate::tx_generator::builder::builders::ledger_7::type_convert::convert_wallet_address(
-						&address_clone,
-					);
-				let result = crate::commands::fork::ledger_7::show_wallet::show_wallet_from_address(
-					&ctx, addr_v7,
-				);
-				fork_wallet_result_v7(result)
-			},
 			|ctx| {
 				let addr_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_address(
@@ -185,16 +170,6 @@ fn fork_wallet_result_v8(
 	result: crate::commands::fork::ledger_8::show_wallet::ShowWalletResult,
 ) -> ShowWalletResult {
 	use crate::commands::fork::ledger_8::show_wallet::ShowWalletResult as R;
-	match result {
-		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
-		R::Json(j) => ShowWalletResult::Json(j),
-	}
-}
-
-fn fork_wallet_result_v7(
-	result: crate::commands::fork::ledger_7::show_wallet::ShowWalletResult,
-) -> ShowWalletResult {
-	use crate::commands::fork::ledger_7::show_wallet::ShowWalletResult as R;
 	match result {
 		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
 		R::Json(j) => ShowWalletResult::Json(j),
@@ -244,6 +219,7 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: None,
 			address: Some(cli::wallet_address(addr).unwrap()),
@@ -295,10 +271,11 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
 			}),
 			address: None,
 			debug: false,
@@ -335,10 +312,11 @@ mod tests {
 				fetch_only_cached: false,
 				fetch_cache: FetchCacheConfig::InMemory,
 				ledger_state_db: String::new(),
+				replay_checkpoint_interval: 0,
 			},
 			seed: Some(cli::SchemeSeed {
 				seed,
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Ecdsa,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Ecdsa,
 			}),
 			address: None,
 			debug: false,

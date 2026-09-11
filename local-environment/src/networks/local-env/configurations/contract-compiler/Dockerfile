@@ -18,10 +18,10 @@
 # BASE STAGE: Common dependencies for all architectures
 # =============================================================================
 # renovate: datasource=docker depName=node
-FROM node:22-slim@sha256:53ada149d435c38b14476cb57e4a7da73c15595aba79bd6971b547ceb6d018bf AS base
+FROM node:24-slim@sha256:3638d9a6fe4030bd716be989438248074489337ba3275657f93595428be4fc03 AS base
 
 # Install required tools
-# Package versions for Debian Bookworm (node:22-slim base)
+# Package versions for Debian Bookworm (node:24-slim base)
 # renovate: datasource=debian depName=jq versioning=deb
 # renovate: datasource=debian depName=curl versioning=deb
 # renovate: datasource=debian depName=ca-certificates versioning=deb

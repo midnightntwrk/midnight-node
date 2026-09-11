@@ -13,7 +13,7 @@
 
 use crate::cli_parsers::{self as cli};
 use clap::Args;
-use midnight_node_ledger_helpers::{ContractAddress, HashOutput};
+use midnight_ledger_unsafe_helpers::{ContractAddress, HashOutput};
 use serde::Serialize;
 
 #[derive(Args, Clone)]
@@ -73,7 +73,7 @@ pub fn execute(args: ShowTokenTypeArgs) -> ShowTokenType {
 
 #[cfg(test)]
 mod test {
-	use midnight_node_ledger_helpers::Deserializable;
+	use midnight_ledger_unsafe_helpers::Deserializable;
 
 	use super::*;
 

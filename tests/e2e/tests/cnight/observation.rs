@@ -11,11 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme;
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::{self, Settings};
 use midnight_node_e2e::e2e_test;
-use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
     Deregistration, Registration,
 };
@@ -496,6 +496,7 @@ async fn register_2_cardano_same_dust_address_production() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -673,6 +674,7 @@ async fn cnight_produces_dust() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -709,6 +711,7 @@ async fn cnight_produces_dust() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -853,6 +856,7 @@ async fn deregister_from_dust_production() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1448,6 +1452,7 @@ async fn register_twice_with_same_cardano_address() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1477,6 +1482,7 @@ async fn register_twice_with_same_cardano_address() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2,
@@ -1677,6 +1683,7 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -1713,6 +1720,7 @@ async fn deregister_with_valid_cnight_utxo() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -1834,6 +1842,7 @@ async fn deregister_first_mapping() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -1908,6 +1917,7 @@ async fn deregister_first_mapping() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed2,
@@ -1982,6 +1992,7 @@ async fn deregister_first_mapping() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2018,6 +2029,7 @@ async fn deregister_first_mapping() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -2115,6 +2127,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2189,6 +2202,7 @@ async fn produce_dust_from_tokens_owned_before_registration() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -2370,6 +2384,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2414,6 +2429,7 @@ async fn stop_dust_producing_after_deregistration_and_rotation() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,
@@ -2585,6 +2601,7 @@ async fn spend_cnight_producing_dust() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed.clone(),
@@ -2629,6 +2646,7 @@ async fn spend_cnight_producing_dust() {
             fetch_only_cached: false,
             fetch_compute_concurrency: None,
             ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
         },
         seed: SchemeSeed {
             seed: midnight_wallet_seed,

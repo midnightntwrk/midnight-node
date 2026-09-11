@@ -26,11 +26,8 @@
 use cargo_metadata::MetadataCommand;
 
 /// Workspace dependency alias (as cargo normalises it: hyphens → underscores) → env var name.
-const LEDGER_ALIASES: [(&str, &str); 3] = [
-	("mn_ledger", "LEDGER_7_VERSION"),
-	("mn_ledger_8", "LEDGER_8_VERSION"),
-	("mn_ledger_9", "LEDGER_9_VERSION"),
-];
+const LEDGER_ALIASES: [(&str, &str); 2] =
+	[("mn_ledger_8", "LEDGER_8_VERSION"), ("mn_ledger_9", "LEDGER_9_VERSION")];
 
 fn main() {
 	let meta = MetadataCommand::new()
