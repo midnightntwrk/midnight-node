@@ -35,8 +35,11 @@
     "@tsconfig/node24": "24.0.0",
     "@types/node": "22.18.10",
     "shx": "0.4.0",
+    "turbo": "2.9.14",
     "typescript": "5.9.3",
-    "vitest": "3.2.6",
-    "turbo": "2.8.17"
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "toml": "^4.3.0"
   }
 }
