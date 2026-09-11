@@ -3,7 +3,6 @@
 
 Moves the ledger 8 pin from 8.1.1 to the
 8.1.2 release
-(`tkerber/ledger-8.1.2-prep`, rev `14b98d5a`), which carries that fix plus:
 
 - hardening of low-level deserialization across `serialize`, `base-crypto`,
   `storage`, `onchain-state`, `onchain-vm` and `transient-crypto` — non-canonical
