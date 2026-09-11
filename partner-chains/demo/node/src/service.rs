@@ -274,7 +274,7 @@ pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as 
 		Vec::default(),
 	));
 
-	let (network, system_rpc_tx, tx_handler_controller, sync_service) =
+	let (network, system_rpc_tx, tx_handler_controller, sync_service, _bitswap_handle) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
 			net_config,
@@ -287,6 +287,7 @@ pub async fn new_full_base<Network: sc_network::NetworkBackend<Block, <Block as 
 			warp_sync_config: Some(WarpSyncConfig::WithProvider(warp_sync)),
 			block_relay: None,
 			metrics,
+			gap_sync_body_policy: None,
 		})?;
 
 	let role = config.role;
