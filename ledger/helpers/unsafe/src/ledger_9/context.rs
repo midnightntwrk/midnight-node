@@ -21,6 +21,7 @@ use crate::ledger_9::{
 	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
 	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
+use crate::replay_stats::{FAILED_TXS, PARTIALLY_FAILED_TXS};
 use derive_where::derive_where;
 use hex::encode as hex_encode;
 use lazy_static::lazy_static;
@@ -435,7 +436,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 				} else {
 					tx.erase_proofs().well_formed(ref_state, strictness, tblock)
 				}
-				.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
+				.map_err(|e| {
+					FAILED_TXS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+					LedgerContextError::InvalidTransaction(format!("{e:?}"))
+				})?;
 				let cost = tx
 					.cost(&tx_context.ref_state.parameters, false)
 					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
@@ -445,8 +449,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
-						crate::replay_stats::PARTIALLY_FAILED_TXS
-							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+						PARTIALLY_FAILED_TXS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);
 						log::debug!(
 							"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
@@ -454,8 +457,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 						(new_ledger_state, offers, events, cost)
 					},
 					TransactionResult::Failure(failure) => {
-						crate::replay_stats::FAILED_TXS
-							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+						FAILED_TXS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);
 						log::warn!(
 							"Failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
