@@ -24,11 +24,20 @@ export interface MockAuthoritiesConvertOptions {
   chainId: string;
   /** Number of validators to materialize. */
   numValidators: number;
-  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:0f347c5). */
+  /** mock-authorities docker image (e.g. ghcr.io/shieldedtech/mock-authorities:4d8d772). */
   image: string;
 }
 
-const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:0f347c5";
+// Must be a build that carries the GRANDPA client-side aux-storage rewrite
+// (mock-authorities PR #77 "grandpa-finality-storage-fix", merged as 4d8d772).
+// Older images (e.g. 0f347c5, 368fd98) only rewrite the runtime Grandpa state
+// and rotate the client voter via a ForcedChange digest, which deadlocks the
+// substrate GRANDPA voter on >=2.0.0 runtimes: the client set-id freezes below
+// the runtime's CurrentSetId, no prevotes are ever counted (not even a node's
+// own), and finality stalls forever while AURA keeps producing blocks. 4d8d772
+// plants the post-rotation voter set directly in aux storage with the client
+// set-id == runtime CurrentSetId, so finality resumes immediately after restart.
+const DEFAULT_IMAGE = "ghcr.io/shieldedtech/mock-authorities:4d8d772";
 
 export function defaultMockAuthoritiesImage(): string {
   return process.env.MOCK_AUTHORITIES_IMAGE ?? DEFAULT_IMAGE;

@@ -40,6 +40,11 @@ export async function ensureRunningAndConnect(
   namespace: string,
   opts: RunOptions & { skipRun?: boolean; rpcUrl?: string },
 ): Promise<NetworkConnection> {
+  if (opts.skipRun && opts.numValidators !== undefined) {
+    throw new Error(
+      "--num-validators cannot be combined with --skip-run because no fork would be regenerated.",
+    );
+  }
   if (opts.skipRun) {
     console.log("Skipping docker-compose bring-up (--skip-run)");
   } else {
@@ -48,6 +53,7 @@ export async function ensureRunningAndConnect(
       profiles: opts.profiles,
       envFile: opts.envFile,
       fromSnapshot: opts.fromSnapshot,
+      numValidators: opts.numValidators,
     });
   }
 
