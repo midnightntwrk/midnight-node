@@ -35,6 +35,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
+          # Nothing here pushes; the token is only needed for the clone itself,
+          # so don't leave it in .git/config for later steps to reach.
+          persist-credentials: false
           # The merge commit plus both parents, so HEAD^1 (the base) is
           # available for the scope diff below.
           fetch-depth: 2

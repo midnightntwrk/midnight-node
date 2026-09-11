@@ -5,6 +5,6 @@
   "type": "module",
   "description": "Repo CI/dev scripts (TypeScript, run directly via node type-stripping).",
   "dependencies": {
-    "smol-toml": "^1.6.1"
+    "smol-toml": "^1.7.1"
   }
 }
