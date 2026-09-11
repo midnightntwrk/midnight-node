@@ -14,7 +14,15 @@
 
 // Print the package selection for `cargo hack check --no-dev-deps`: "-p a -p b"
 // (only these need re-checking), "--workspace --exclude ..." (everything
-// affected), or "" (skip). Union of two sets:
+// affected), or "" (skip).
+//
+// Deliberately under-approximates. Only GLOBAL inputs escalate to the whole
+// workspace; a changed file that no crate owns seeds nothing at all. The check
+// is advisory, not a gate, so a crate that quietly stopped building standalone
+// is caught by the next PR that touches it or its dependents -- cheaper than
+// paying a full ~37min workspace run because a PR carried a change file.
+//
+// Union of two sets:
 //   1. changed file -> owning crate -> reverse-dependency closure over
 //      workspace normal/build edges (dev edges can't reach past a
 //      no-dev-deps check);
@@ -39,20 +47,6 @@ const MAX_BUFFER = 512 * 1024 * 1024; // ~0.4MB today; headroom, not a limit
 const GLOBAL = [/^\.cargo\//, /^\.config\//, /^rust-toolchain/];
 // Handled out-of-band by the lock/manifest diff below (root manifests only).
 const HANDLED = [/^Cargo\.toml$/, /^Cargo\.lock$/];
-// Never compile-relevant (consulted only for files outside every crate dir);
-// the Earthfile and the scoper's own files are deliberately here -- build-recipe
-// or scoper edits can't change whether crates compile.
-const IGNORE = [
-	/^changes\//,
-	/^\.changes_archive\//,
-	/^\.github\//,
-	/\.md$/,
-	/^LICENSE/,
-	/^Earthfile$/,
-	/^\.gitignore$/,
-	/^scripts\/feature-unification-scope\.ts$/,
-	/^scripts\/package(-lock)?\.json$/,
-];
 
 interface LockPkg {
 	name: string;
@@ -226,18 +220,16 @@ function main(): void {
 		extra = affected;
 	}
 
-	// Split the diffable files into those a crate owns and those nothing owns
-	// and IGNORE does not excuse (which force a full check).
+	// Files a crate owns; anything else contributes nothing. An unowned file is
+	// not a reason to re-check the world: the check is advisory, and a crate that
+	// stopped building standalone surfaces on the next PR that touches it.
 	const files = changed.filter((f) => !HANDLED.some((re) => re.test(f)));
 	const touched = files
 		.map((f) => owningCrate(f, crates))
 		.filter((x): x is string => x !== null);
-	const unattributable = files.filter(
-		(f) => owningCrate(f, crates) === null && !IGNORE.some((re) => re.test(f)),
-	);
 
 	let out: string;
-	if (changed.some((f) => GLOBAL.some((re) => re.test(f))) || unattributable.length > 0) {
+	if (changed.some((f) => GLOBAL.some((re) => re.test(f)))) {
 		out = WORKSPACE_ARGS;
 	} else {
 		const closure = reverseClosure(deps, names, [...new Set([...touched, ...extra])]).filter(
