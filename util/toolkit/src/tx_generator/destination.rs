@@ -30,7 +30,8 @@ pub struct Destination {
 	/// Output filename to write generated transaction.
 	#[arg(long, conflicts_with = "dest_urls", global = true)]
 	pub dest_file: Option<String>,
-	/// Do not wait for finalization when sending transactions. May cause errors when sending batches.
+	/// Do not wait for finalization when sending transactions; still waits for the pool's first
+	/// verdict, so a rejected or dropped tx fails the send. May cause errors when sending batches.
 	#[arg(long, conflicts_with = "dest_file", env = "MN_DONT_WATCH_PROGRESS", global = true)]
 	pub no_watch_progress: bool,
 }
