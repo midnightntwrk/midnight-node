@@ -8,7 +8,7 @@ use midnight_node_metadata::midnight_metadata_latest::c_night_observation::event
 };
 use midnight_node_toolkit::cli_parsers::SchemeSeed;
 use midnight_node_toolkit::commands::dust_balance::{
-    self, DustBalanceArgs, DustBalanceJson, DustBalanceResult,
+    DustBalanceArgs, DustBalanceJson, DustBalanceResult,
 };
 use midnight_node_toolkit::tx_generator::source::Source;
 use std::collections::HashMap;
@@ -2733,4 +2733,322 @@ async fn two_utxo_with_only_one_dust_producing() {
     let nonce_new =
         MidnightClient::calculate_nonce(prefix2, cnight_new.transaction.id, cnight_new.index);
     tracing::info!("Calculated nonce for cNIGHT UTXO: {}", nonce_new);
+}
+
+/// Rotates a registration to a different Midnight DUST address and rotates the
+/// holder's cNIGHT in the *same* Cardano transaction, then checks the new
+/// cNIGHT UTXO generates DUST to the new address.
+#[e2e_test]
+async fn update_registration_to_new_dust_address_while_rotating_cnight_issue_2121() {
+    let settings = Settings::default();
+    let ogmios_settings = settings.ogmios_client.clone();
+    let cardano_client =
+        CardanoClient::new(settings.ogmios_client.clone(), settings.constants.clone()).await;
+    let midnight_client = MidnightClient::new(settings.node_client.clone()).await;
+
+    let address_bech32 = cardano_client.address_as_bech32();
+    tracing::info!("New Cardano wallet created: {:?}", address_bech32);
+
+    // Two Midnight wallets: the registration moves from A to B, and only B may
+    // end up owning the consolidated cNIGHT UTXO.
+    let seed_a = MidnightClient::new_seed();
+    register_test_seed(seed_a.clone());
+    let dust_hex_a = MidnightClient::new_dust_hex(seed_a.clone());
+    let dust_bytes_a: Vec<u8> = hex::decode(&dust_hex_a).expect("Failed to decode DUST hex A");
+
+    let seed_b = MidnightClient::new_seed();
+    register_test_seed(seed_b.clone());
+    let dust_hex_b = MidnightClient::new_dust_hex(seed_b.clone());
+    let dust_bytes_b: Vec<u8> = hex::decode(&dust_hex_b).expect("Failed to decode DUST hex B");
+    assert_ne!(
+        dust_hex_a, dust_hex_b,
+        "the rotation must target a different DUST address"
+    );
+    tracing::info!(
+        "Rotating Cardano wallet {address_bech32} from DUST {dust_hex_a} to {dust_hex_b}"
+    );
+
+    let faucet = global_faucet_manager().await;
+    let collateral_utxo = faucet.request_tokens(&address_bech32, 5_000_000).await;
+    let tx_in = faucet.request_tokens(&address_bech32, 10_000_000).await;
+    // The stake registration pays the protocol key deposit on top of fees.
+    let stake_reg_utxo = faucet.request_tokens(&address_bech32, 10_000_000).await;
+
+    // Phase 1: make sure the validator's own stake credential exists. The
+    // validator only permits the zero-mint spend that rewrites a registration
+    // datum when the transaction withdraws from its own credential, and a
+    // credential must be registered before it can be withdrawn from.
+    match cardano_client
+        .register_mapping_validator_stake_credential(&stake_reg_utxo)
+        .await
+    {
+        Ok(res) => {
+            let stake_reg_tx_id = res.transaction.id;
+            tracing::info!(
+                "Mapping validator stake credential registration submitted: {}",
+                hex::encode(stake_reg_tx_id)
+            );
+            cardano_client
+                .wait_for_tx_inclusion(&stake_reg_tx_id, &address_bech32, TX_INCLUSION_TIMEOUT)
+                .await
+                .expect("stake credential registration should be included within timeout");
+        }
+        Err(e) if midnight_node_e2e::api::cardano::is_already_registered_error(&e) => {
+            tracing::info!("Mapping validator stake credential already registered: {e:?}");
+        }
+        Err(e) => panic!(
+            "Failed to register the mapping validator stake credential, so the \
+             registration update below cannot be authorised: {e:?}"
+        ),
+    }
+
+    // Phase 2: register to DUST address A → find its validator UTXO.
+    let register_tx_id = cardano_client
+        .register(&dust_hex_a, &tx_in, &collateral_utxo)
+        .await
+        .expect("Failed to register")
+        .transaction
+        .id;
+    tracing::info!(
+        "Registration transaction submitted with hash: {}",
+        hex::encode(register_tx_id)
+    );
+
+    let validator_address = config::mapping_validator_address();
+    let registration_utxo = cardano_client
+        .find_utxo_by_tx_id(&validator_address, hex::encode(register_tx_id))
+        .await
+        .expect("No registration UTXO found after registering");
+    tracing::info!("Found registration UTXO: {:?}", registration_utxo);
+
+    // Phase 3: mint the cNIGHT the rotation will consolidate.
+    let amount = 100;
+    let mint_tx_id = cardano_client
+        .mint_tokens(amount, &collateral_utxo)
+        .await
+        .expect("Failed to mint tokens")
+        .transaction
+        .id;
+    tracing::info!("Minted {} cNIGHT. Tx: {}", amount, hex::encode(mint_tx_id));
+
+    // FIXME: it returns first utxo, find by native token or return all utxos
+    let cnight_utxo = cardano_client
+        .find_utxo_by_tx_id(&address_bech32, hex::encode(mint_tx_id))
+        .await
+        .expect("No cNIGHT UTXO found after minting");
+    let old_nonce = MidnightClient::calculate_nonce(
+        b"asset_create",
+        cnight_utxo.transaction.id,
+        cnight_utxo.index,
+    );
+    tracing::info!("Nonce of the cNIGHT UTXO being consolidated: {}", old_nonce);
+
+    // Phase 4: the transaction under test. Funding input must be neither the
+    // collateral nor the cNIGHT UTXO — those are spent for other purposes.
+    let utxos = cardano_client.utxos().await;
+    let funding_utxo = utxos
+        .iter()
+        .filter(|u| {
+            let is = |other: &ogmios_client::types::OgmiosUtxo| {
+                u.transaction.id == other.transaction.id && u.index == other.index
+            };
+            !is(&collateral_utxo) && !is(&cnight_utxo)
+        })
+        .max_by_key(|u| u.value.lovelace)
+        .expect("No funding UTXO available for the registration update");
+
+    let update_tx_id = cardano_client
+        .update_registration_with_cnight_rotation(
+            &dust_hex_b,
+            &registration_utxo,
+            &cnight_utxo,
+            funding_utxo,
+            &collateral_utxo,
+        )
+        .await
+        .expect("Failed to update the registration")
+        .transaction
+        .id;
+    tracing::info!(
+        "Registration update transaction submitted with hash: {}",
+        hex::encode(update_tx_id)
+    );
+
+    cardano_client
+        .wait_for_tx_inclusion(&update_tx_id, &address_bech32, TX_INCLUSION_TIMEOUT)
+        .await
+        .expect("registration update tx should be included within timeout");
+
+    // The consolidated cNIGHT UTXO is the change output the update paid back to
+    // the wallet; output 0 went to the validator address.
+    let new_cnight_utxo = cardano_client
+        .find_utxo_by_tx_id(&address_bech32, hex::encode(update_tx_id))
+        .await
+        .expect("No consolidated cNIGHT UTXO found after the update");
+    let new_nonce = MidnightClient::calculate_nonce(
+        b"asset_create",
+        new_cnight_utxo.transaction.id,
+        new_cnight_utxo.index,
+    );
+    tracing::info!("Nonce of the consolidated cNIGHT UTXO: {}", new_nonce);
+
+    let reward_address = cardano_client.reward_address_bytes();
+
+    let all_events = midnight_client
+        .await_cnight_observations(
+            &[register_tx_id, mint_tx_id, update_tx_id],
+            &ogmios_settings,
+            OBSERVATION_AWAIT_TIMEOUT,
+        )
+        .await
+        .expect("all three cNIGHT observations should arrive within timeout");
+
+    let observed = || {
+        all_events
+            .iter()
+            .flat_map(|e| e.iter().filter_map(|x| x.ok()))
+    };
+
+    // The old mapping is gone...
+    let deregistration = observed()
+        .filter_map(|evt| {
+            evt.decode_fields_as::<Deregistration>()
+                .and_then(|r| r.ok())
+        })
+        .find(|dereg| {
+            dereg.0.cardano_reward_address.0 == reward_address
+                && dereg.0.dust_public_key.0.0 == dust_bytes_a
+        });
+    assert!(
+        deregistration.is_some(),
+        "Did not find a Deregistration event for the old DUST address"
+    );
+    tracing::info!(
+        "Matching Deregistration event found: {}",
+        fmt_deregistration(&deregistration.unwrap())
+    );
+
+    // ...and the new one is live.
+    let registration = observed()
+        .filter_map(|evt| evt.decode_fields_as::<Registration>().and_then(|r| r.ok()))
+        .find(|reg| {
+            reg.0.cardano_reward_address.0 == reward_address
+                && reg.0.dust_public_key.0.0 == dust_bytes_b
+        });
+    assert!(
+        registration.is_some(),
+        "Did not find a Registration event for the new DUST address"
+    );
+    tracing::info!(
+        "Matching Registration event found: {}",
+        fmt_registration(&registration.unwrap())
+    );
+
+    let mapping_removed = observed()
+        .filter_map(|evt| decode_mapping_event(&evt, "MappingRemoved"))
+        .find(|entry| {
+            entry.cardano_reward_address == reward_address
+                && entry.dust_public_key == dust_bytes_a
+                && entry.utxo_tx_hash == register_tx_id
+        });
+    assert!(
+        mapping_removed.is_some(),
+        "Did not find MappingRemoved for the spent registration UTXO"
+    );
+    tracing::info!(
+        "Matching MappingRemoved event found: {}",
+        fmt_mapping_entry(&mapping_removed.unwrap())
+    );
+
+    let mapping_added = observed()
+        .filter_map(|evt| decode_mapping_event(&evt, "MappingAdded"))
+        .find(|entry| {
+            entry.cardano_reward_address == reward_address
+                && entry.dust_public_key == dust_bytes_b
+                && entry.utxo_tx_hash == update_tx_id
+        });
+    assert!(
+        mapping_added.is_some(),
+        "Did not find MappingAdded for the registration UTXO the update created"
+    );
+    tracing::info!(
+        "Matching MappingAdded event found: {}",
+        fmt_mapping_entry(&mapping_added.unwrap())
+    );
+
+    // The consolidated UTXO's predecessor stopped generating: `handle_spend`
+    // takes the owner entry.
+    assert!(
+        midnight_client
+            .query_night_utxo_owners(old_nonce)
+            .await
+            .expect("Failed to query UTXO owners")
+            .is_none(),
+        "The spent cNIGHT UTXO should no longer have an owner entry"
+    );
+
+    // The regression guard for #2121: the consolidated UTXO created by the same
+    // transaction that rewrote the mapping must be owned by the NEW address. If
+    // the AssetCreate were processed before the mapping settled, the address
+    // would resolve to two mappings, no owner would be recorded, and that UTXO
+    // would never generate DUST.
+    let new_owner = midnight_client
+        .query_night_utxo_owners(new_nonce)
+        .await
+        .expect("Failed to query UTXO owners")
+        .expect("The consolidated cNIGHT UTXO should have an owner immediately after observation");
+    assert_eq!(
+        hex::encode(new_owner.0.0),
+        dust_hex_b,
+        "The consolidated cNIGHT UTXO should be owned by the new address"
+    );
+
+    // End to end: DUST accrues to the new address and keeps growing.
+    let dust_balance_args = |seed| DustBalanceArgs {
+        source: Source {
+            src_files: None,
+            src_url: Some(settings.node_client.base_url.clone()),
+            fetch_concurrency: crate::fetch_concurrency(),
+            dust_warp: true,
+            ignore_block_context: false,
+            fetch_cache: crate::fetch_cache_config(),
+            fetch_only_cached: false,
+            fetch_compute_concurrency: None,
+            ledger_state_db: warmup_ledger_state_db(),
+            replay_checkpoint_interval: 0,
+        },
+        seed: SchemeSeed {
+            seed,
+            scheme: UnshieldedSignatureScheme::Schnorr,
+        },
+        dry_run: false,
+    };
+
+    let result = crate::gated_dust_balance(dust_balance_args(seed_b.clone()))
+        .await
+        .expect("dust-balance error");
+    let mut balance: u128 = 0;
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result {
+        tracing::info!("Total dust balance of the new address: {}", total);
+        balance = *total;
+    }
+    assert!(
+        balance > 0,
+        "The new DUST address should be generating after the rotation"
+    );
+
+    // Midnight block time is 6s; 12s ≈ 2 blocks, enough to observe growth
+    // without flakiness.
+    tokio::time::sleep(Duration::from_secs(12)).await;
+
+    let result2 = crate::gated_dust_balance(dust_balance_args(seed_b))
+        .await
+        .expect("dust-balance error");
+    if let DustBalanceResult::Json(DustBalanceJson { total, .. }) = &result2 {
+        tracing::info!("Total dust balance of the new address: {}", total);
+    }
+    assert!(
+        matches!(result2, DustBalanceResult::Json(DustBalanceJson{total, ..}) if total > balance),
+        "DUST should keep accruing to the new address"
+    );
 }
