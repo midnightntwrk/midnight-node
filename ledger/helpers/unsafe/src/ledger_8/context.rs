@@ -21,6 +21,7 @@ use crate::ledger_8::{
 	clamp_and_normalize, compute_overall_fullness, default_storage, deserialize,
 	mn_ledger_serialize as serialize, mn_ledger_storage as storage, types::StorableSyntheticCost,
 };
+use crate::replay_stats::{FAILED_TXS, PARTIALLY_FAILED_TXS};
 use derive_where::derive_where;
 use hex::encode as hex_encode;
 use lazy_static::lazy_static;
@@ -173,10 +174,26 @@ impl<D: DB + Clone> LedgerContext<D> {
 		let mut all_events: Vec<Event<D>> = Vec::new();
 		let strictness = Self::strictness_for(block_context, root_verified);
 		for tx in txs {
-			let (events, cost) =
-				self.update_from_tx_with_strictness(tx, block_context, strictness)?;
-			all_events.extend(events);
-			total_cost = total_cost + cost;
+			match self.update_from_tx_with_strictness(tx, block_context, strictness) {
+				Ok((events, cost)) => {
+					all_events.extend(events);
+					total_cost = total_cost + cost;
+				},
+				// A `well_formed` rejection (e.g. `OutOfDustValidityWindow` from a dust action
+				// whose `ctime` lands a couple of seconds past the including block's `tblock`)
+				// is not evidence of an invalid block: on-chain, `pallet_midnight::send_mn_transaction`
+				// hits this same check via `LedgerApi::apply_transaction` and simply fails that
+				// one extrinsic's dispatch (storage rolled back, `ExtrinsicFailed` emitted)
+				// without affecting block validity. Already-committed, external chain history is
+				// replayed here, so mirror that instead of aborting the whole replay.
+				Err(LedgerContextError::InvalidTransaction(reason)) => {
+					let hash = hex::encode(tx.transaction_hash().0.0);
+					log::warn!(
+						"Tolerating well_formed rejection {reason} of tx 0x{hash} while replaying block"
+					);
+				},
+				Err(e) => return Err(e),
+			}
 		}
 
 		let mut latest_ledger_state = self
@@ -383,6 +400,11 @@ impl<D: DB + Clone> LedgerContext<D> {
 		)
 	}
 
+	/// A `well_formed` rejection surfaces as `Err(LedgerContextError::InvalidTransaction(_))`,
+	/// distinct from every other (fatal) error variant, so callers can decide for themselves
+	/// whether to tolerate it: `apply_txs_collect_events` (block replay) does, `update_from_tx`
+	/// (this function's only other caller, used to validate a transaction the caller is about
+	/// to build more transactions on top of or submit itself) does not.
 	fn update_from_tx_with_strictness<S: SignatureKind<D>, P: ProofKind<D> + std::fmt::Debug>(
 		&self,
 		tx: &SerdeTransaction<S, P, D>,
@@ -414,7 +436,10 @@ impl<D: DB + Clone> LedgerContext<D> {
 				} else {
 					tx.erase_proofs().well_formed(ref_state, strictness, tblock)
 				}
-				.map_err(|e| LedgerContextError::InvalidTransaction(format!("{e:?}")))?;
+				.map_err(|e| {
+					FAILED_TXS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+					LedgerContextError::InvalidTransaction(format!("{e:?}"))
+				})?;
 				let cost = tx
 					.cost(&tx_context.ref_state.parameters, false)
 					.map_err(|e| LedgerContextError::CostCalculation(format!("{e:?}")))?;
@@ -424,8 +449,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 				match result {
 					TransactionResult::Success(events) => (new_ledger_state, offers, events, cost),
 					TransactionResult::PartialSuccess(failure, events) => {
-						crate::replay_stats::PARTIALLY_FAILED_TXS
-							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+						PARTIALLY_FAILED_TXS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);
 						log::debug!(
 							"Partially failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
@@ -433,8 +457,7 @@ impl<D: DB + Clone> LedgerContext<D> {
 						(new_ledger_state, offers, events, cost)
 					},
 					TransactionResult::Failure(failure) => {
-						crate::replay_stats::FAILED_TXS
-							.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+						FAILED_TXS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 						let hash = hex::encode(tx.transaction_hash().0.0);
 						log::warn!(
 							"Failing result {failure:?} of applying tx 0x{hash} to update Local Ledger State"
