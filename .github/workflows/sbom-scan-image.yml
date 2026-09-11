@@ -92,12 +92,12 @@ jobs:
 
       - name: Install Syft
         id: syft
-        uses: anchore/sbom-action/download-syft@aa80c8c5bd439a416a62804f2151ab38c671a638 # v0.24.1
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
 
       - name: Install Grype
         if: ${{ !inputs.skip-scan }}
         id: grype
-        uses: anchore/scan-action/download-grype@8964e60c6fabdb85fdbbbfd9834d8f19c97a3086 # v7.4.1
+        uses: anchore/scan-action/download-grype@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
 
       - name: Add Syft to PATH
         run: |
