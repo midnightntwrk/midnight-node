@@ -14,9 +14,22 @@
 //! callers and (unlike the `set_keys` extrinsic) does not require an ownership proof — a
 //! validator's session keys are already authenticated off-chain as part of their Cardano
 //! registration, so re-proving ownership on-chain here would be redundant.
+//!
+//! Key registration is all-or-nothing. `set_keys` is treated as a black box: any error
+//! aborts the hand-off. Account provisioning and the registration loop run in one storage
+//! layer and are rolled back together on failure, so a retained validator cannot keep
+//! rotated keys while committee storage still records the previous ones, and a rejected
+//! committee cannot leave behind otherwise-unused system accounts. `pallet_session`
+//! silently drops validators without `NextKeys`, so handing over a partial committee
+//! would desync `QueuedCommittee`/`CurrentCommittee` from the live authority set and
+//! make derived mappings (AURA author index, BEEFY stake matching) undefined. On failure
+//! `new_session` returns [`None`] so `pallet_session` keeps the previous authority set.
+//! The failed committee is not queued; the previous set stays as both current and queued.
+//! There is no reduced committee.
 use crate::CommitteeMember;
+use frame_support::storage::with_storage_layer;
 use frame_system::pallet_prelude::BlockNumberFor;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use pallet_session::SessionInterface;
 use sp_staking::SessionIndex;
 use sp_std::collections::btree_set::BTreeSet;
@@ -30,28 +43,28 @@ where
 	/// Sets the first validator-set by mapping the current committee from [crate::Pallet]
 	fn new_session_genesis(_new_index: SessionIndex) -> Option<Vec<T::AccountId>> {
 		let committee = crate::Pallet::<T>::current_committee_storage().committee;
-		provide_committee_accounts::<T>(&committee);
-		register_committee_keys::<T>(&committee);
-		Some(
-			committee
-				.into_iter()
-				.map(|member| member.authority_id().into())
-				.collect::<Vec<_>>(),
-		)
+		assert!(
+			register_committee_keys::<T>(&committee),
+			"genesis committee session key registration failed; refusing to start with a partial authority set"
+		);
+		Some(committee_account_ids::<T>(&committee))
 	}
 
 	/// Rotates the committee in [crate::Pallet] and plans this new committee as upcoming validator-set.
 	fn new_session(new_index: SessionIndex) -> Option<Vec<T::AccountId>> {
 		info!("Session manager: new_session {new_index}, rotating the committee");
+		let next_committee = crate::Pallet::<T>::next_committee_storage()?;
+
+		if !register_committee_keys::<T>(&next_committee.committee) {
+			error!(
+				"Session manager: aborting committee hand-off for session {new_index}; keeping previous validator set"
+			);
+			crate::Pallet::<T>::skip_unregistered_next_committee();
+			return None;
+		}
+
 		let new_committee = crate::Pallet::<T>::rotate_committee_to_next_epoch()?;
-
-		provide_committee_accounts::<T>(&new_committee);
-		register_committee_keys::<T>(&new_committee);
-
-		let new_committee_accounts =
-			new_committee.into_iter().map(|member| member.authority_id().into()).collect();
-
-		Some(new_committee_accounts)
+		Some(committee_account_ids::<T>(&new_committee))
 	}
 
 	fn end_session(end_index: SessionIndex) {
@@ -65,33 +78,47 @@ where
 	}
 }
 
-// Registers keys of new committee members in the session pallet. This is necessary, as the pallet
-// requires the keys to be registered prior to session start and we do not wish to force block
-// producers to do it manually.
+fn committee_account_ids<T: crate::Config>(committee: &[T::CommitteeMember]) -> Vec<T::AccountId> {
+	committee.iter().map(|member| member.authority_id().into()).collect()
+}
+
+/// Registers keys of new committee members in the session pallet. This is necessary, as the pallet
+/// requires the keys to be registered prior to session start and we do not wish to force block
+/// producers to do it manually.
+///
+/// Returns `true` iff every unique member's `set_keys` succeeded. `pallet_session` is a
+/// black box: any `Err` aborts, whatever the reason. The caller must not hand the committee
+/// over. Account provisioning and `set_keys` run in one storage layer; on failure both
+/// are rolled back, so a consumed committee cannot leak provider-created accounts.
 pub(crate) fn register_committee_keys<
 	T: crate::Config + pallet_session::Config + pallet_session::historical::Config,
 >(
 	new_committee: &[T::CommitteeMember],
-) where
+) -> bool
+where
 	<T as pallet_session::Config>::Keys: From<T::AuthorityKeys>,
 {
-	let mut keys_added: BTreeSet<T::AccountId> = BTreeSet::new();
-	for member in new_committee.iter() {
-		let account_id = member.authority_id().into();
+	with_storage_layer(|| {
+		provide_committee_accounts::<T>(new_committee);
+		let mut keys_added: BTreeSet<T::AccountId> = BTreeSet::new();
+		for member in new_committee.iter() {
+			let account_id = member.authority_id().into();
+			if !keys_added.insert(account_id.clone()) {
+				continue;
+			}
 
-		if keys_added.contains(&account_id) {
-			continue;
+			let keys = <T as pallet_session::Config>::Keys::from(member.authority_keys());
+			match <pallet_session::Pallet<T> as SessionInterface>::set_keys(&account_id, keys) {
+				Ok(_) => debug!("set_keys for {account_id:?}"),
+				Err(e) => {
+					error!("Could not set_keys for {account_id:?}, error: {:?}", e);
+					return Err(e);
+				},
+			}
 		}
-
-		keys_added.insert(account_id.clone());
-		let keys = <T as pallet_session::Config>::Keys::from(member.authority_keys());
-		let call_result =
-			<pallet_session::Pallet<T> as SessionInterface>::set_keys(&account_id, keys);
-		match call_result {
-			Ok(_) => debug!("set_keys for {account_id:?}"),
-			Err(e) => info!("Could not set_keys for {account_id:?}, error: {:?}", e),
-		}
-	}
+		Ok(())
+	})
+	.is_ok()
 }
 
 // Ensures that all accounts tied to new committee members exist by incrementing their
@@ -102,6 +129,10 @@ pub(crate) fn register_committee_keys<
 //   and decreasing it afterwards, or
 // - considering account existence when selecting the committee
 // This will be addressed in later development.
+//
+// Session rotations must call this from inside `register_committee_keys`' storage layer so
+// a failed `set_keys` rolls the provider increments back. Genesis build calls it directly:
+// that path cannot fail into a consumed committee.
 pub(crate) fn provide_committee_accounts<T: crate::Config>(new_committee: &[T::CommitteeMember]) {
 	let new_accs: BTreeSet<T::AccountId> =
 		new_committee.iter().map(|m| m.authority_id().into()).collect();
@@ -209,6 +240,8 @@ mod tests {
 				Session::load_keys(&EVE.authority_id),
 				Some(SessionKeys { foo: UintAuthorityId(EVE.authority_keys) })
 			);
+			assert!(System::account_exists(&DAVE.authority_id));
+			assert!(System::account_exists(&EVE.authority_id));
 		});
 	}
 
@@ -271,5 +304,261 @@ mod tests {
 			);
 			assert_eq!(SessionCommitteeManagement::current_committee_storage().epoch, 2);
 		});
+	}
+
+	fn dave_with_charlie_keys() -> MockValidator {
+		MockValidator {
+			name: "DaveWithCharlieKeys",
+			authority_keys: CHARLIE.authority_keys,
+			authority_id: DAVE.authority_id,
+		}
+	}
+
+	fn dave_with_alice_keys() -> MockValidator {
+		MockValidator {
+			name: "DaveWithAliceKeys",
+			authority_keys: ALICE.authority_keys,
+			authority_id: DAVE.authority_id,
+		}
+	}
+
+	fn eve_with_bob_keys() -> MockValidator {
+		MockValidator {
+			name: "EveWithBobKeys",
+			authority_keys: BOB.authority_keys,
+			authority_id: EVE.authority_id,
+		}
+	}
+
+	fn bob_with_alice_keys() -> MockValidator {
+		MockValidator {
+			name: "BobWithAliceKeys",
+			authority_keys: ALICE.authority_keys,
+			authority_id: BOB.authority_id,
+		}
+	}
+
+	fn queued_session_validator_ids() -> Vec<u64> {
+		Session::queued_keys().into_iter().map(|(id, _)| id).collect()
+	}
+
+	fn queued_session_key_values() -> Vec<(u64, u64)> {
+		Session::queued_keys().into_iter().map(|(id, keys)| (id, keys.foo.0)).collect()
+	}
+
+	fn alice_with_rotated_keys() -> MockValidator {
+		MockValidator { name: "AliceRotated", authority_keys: 99, authority_id: ALICE.authority_id }
+	}
+
+	fn dave_with_bob_keys() -> MockValidator {
+		MockValidator {
+			name: "DaveWithBobKeys",
+			authority_keys: BOB.authority_keys,
+			authority_id: DAVE.authority_id,
+		}
+	}
+
+	/// `set_keys` rejects DAVE (here because CHARLIE already claimed the same key). Any
+	/// rejection skips the whole incoming committee; both views keep the previous full set.
+	#[test]
+	fn set_keys_failure_skips_entire_incoming_committee() {
+		new_test_ext().execute_with(|| {
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, dave_with_charlie_keys()], 1).unwrap();
+			advance_one_block();
+
+			assert_eq!(Session::current_index(), 1);
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(queued_session_validator_ids(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert!(SessionCommitteeManagement::next_committee().is_none());
+			// The storage layer rolls back CHARLIE's successful `set_keys` and the
+			// provider increment that created CHARLIE's account, together with DAVE's
+			// failed registration.
+			assert_eq!(Session::load_keys(&CHARLIE.authority_id), None);
+			assert_eq!(Session::load_keys(&DAVE.authority_id), None);
+			assert!(!System::account_exists(&CHARLIE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+			assert_eq!(System::providers(&CHARLIE.authority_id), 0);
+			assert_eq!(System::providers(&DAVE.authority_id), 0);
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
+			advance_one_block();
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+		});
+	}
+
+	/// A retained validator's `set_keys` succeeds (rotated keys) before a later member
+	/// is rejected. Without a storage-layer rollback, `rotate_session` would re-queue the
+	/// retained set with those new keys while committee storage still recorded the old
+	/// ones. After rollback both views keep the pre-abort keys.
+	#[test]
+	fn aborted_registration_does_not_rotate_retained_validator_keys() {
+		new_test_ext().execute_with(|| {
+			increment_epoch();
+			set_validators_directly(&[alice_with_rotated_keys(), dave_with_bob_keys()], 1).unwrap();
+			advance_one_block();
+
+			assert_eq!(Session::current_index(), 1);
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(
+				queued_session_key_values(),
+				vec![
+					(ALICE.authority_id, ALICE.authority_keys),
+					(BOB.authority_id, BOB.authority_keys),
+				]
+			);
+			assert_eq!(
+				Session::load_keys(&ALICE.authority_id),
+				Some(SessionKeys { foo: UintAuthorityId(ALICE.authority_keys) })
+			);
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(Session::load_keys(&DAVE.authority_id), None);
+			assert!(System::account_exists(&ALICE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
+			advance_one_block();
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(
+				Session::load_keys(&ALICE.authority_id),
+				Some(SessionKeys { foo: UintAuthorityId(ALICE.authority_keys) })
+			);
+		});
+	}
+
+	/// Every incoming member's `set_keys` is rejected (colliding with live keys). Same skip.
+	#[test]
+	fn all_set_keys_failures_keep_previous_committee_in_sync_with_session() {
+		new_test_ext().execute_with(|| {
+			increment_epoch();
+			set_validators_directly(&[dave_with_alice_keys(), eve_with_bob_keys()], 1).unwrap();
+			advance_one_block();
+
+			assert_eq!(Session::current_index(), 1);
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(queued_session_validator_ids(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(Session::load_keys(&DAVE.authority_id), None);
+			assert_eq!(Session::load_keys(&EVE.authority_id), None);
+			assert!(!System::account_exists(&DAVE.authority_id));
+			assert!(!System::account_exists(&EVE.authority_id));
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
+			advance_one_block();
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(
+				queued_session_validator_ids(),
+				vec![CHARLIE.authority_id, DAVE.authority_id]
+			);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[ALICE, BOB])
+			);
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().committee,
+				ids_and_keys_fn(&[CHARLIE, DAVE])
+			);
+		});
+	}
+
+	/// A rejected committee is consumed. Provider increments for members whose accounts
+	/// did not yet exist must roll back with `set_keys`, otherwise repeated rejections
+	/// permanently create otherwise-unused system accounts.
+	#[test]
+	fn aborted_registration_does_not_provision_unused_accounts() {
+		new_test_ext().execute_with(|| {
+			assert!(!System::account_exists(&CHARLIE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, dave_with_charlie_keys()], 1).unwrap();
+			advance_one_block();
+			assert!(!System::account_exists(&CHARLIE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+			assert_eq!(System::providers(&CHARLIE.authority_id), 0);
+			assert_eq!(System::providers(&DAVE.authority_id), 0);
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, dave_with_charlie_keys()], 2).unwrap();
+			advance_one_block();
+			assert!(!System::account_exists(&CHARLIE.authority_id));
+			assert!(!System::account_exists(&DAVE.authority_id));
+			assert_eq!(System::providers(&CHARLIE.authority_id), 0);
+			assert_eq!(System::providers(&DAVE.authority_id), 0);
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 3).unwrap();
+			advance_one_block();
+			assert!(System::account_exists(&CHARLIE.authority_id));
+			assert!(System::account_exists(&DAVE.authority_id));
+			assert!(System::account_exists(&ALICE.authority_id));
+			assert!(System::account_exists(&BOB.authority_id));
+		});
+	}
+
+	#[test]
+	fn recovers_on_next_valid_committee_after_set_keys_failure() {
+		new_test_ext().execute_with(|| {
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, dave_with_charlie_keys()], 1).unwrap();
+			advance_one_block();
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 2).unwrap();
+			advance_one_block();
+			assert_eq!(Session::validators(), vec![ALICE.authority_id, BOB.authority_id]);
+			assert_eq!(
+				SessionCommitteeManagement::queued_committee_storage().committee,
+				ids_and_keys_fn(&[CHARLIE, DAVE])
+			);
+
+			increment_epoch();
+			set_validators_directly(&[CHARLIE, DAVE], 3).unwrap();
+			advance_one_block();
+			assert_eq!(Session::validators(), vec![CHARLIE.authority_id, DAVE.authority_id]);
+			assert_eq!(
+				SessionCommitteeManagement::current_committee_storage().committee,
+				ids_and_keys_fn(&[CHARLIE, DAVE])
+			);
+		});
+	}
+
+	#[test]
+	#[should_panic(expected = "genesis committee session key registration failed")]
+	fn genesis_panics_if_session_key_registration_fails() {
+		let _ = new_test_ext_with_genesis_initial_authorities(&[ALICE, bob_with_alice_keys()]);
 	}
 }
