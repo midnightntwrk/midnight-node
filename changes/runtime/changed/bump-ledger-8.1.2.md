@@ -1,8 +1,8 @@
 #runtime #ledger #security
 # Bump ledger 8 to 8.1.2 (onyx-coyote security release)
 
-Moves the ledger 8 pin from 8.1.0 + the Array signature-verification fix to the
-8.1.2 candidate on `shieldedtech/shadow-midnight-ledger`
+Moves the ledger 8 pin from 8.1.1 to the
+8.1.2 release
 (`tkerber/ledger-8.1.2-prep`, rev `14b98d5a`), which carries that fix plus:
 
 - hardening of low-level deserialization across `serialize`, `base-crypto`,
