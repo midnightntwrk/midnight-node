@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use midnight_node_toolkit::{
 	cli_parsers,
@@ -17,7 +18,7 @@ use midnight_node_toolkit::{
 	},
 	toolkit_js::{CircuitArgs, DeployArgs, RelativePath, ToolkitJs},
 	tx_generator::{
-		builder::{Builder, CustomContractArgs},
+		builder::{Builder, CustomContractArgs, FUNDING_SEED},
 		destination::Destination,
 		source::{FetchCacheConfig, Source},
 	},
@@ -42,11 +43,105 @@ pub struct CircuitOutput {
 	pub intent: PathBuf,
 	pub private_state: PathBuf,
 	pub zswap_state: PathBuf,
+	pub result: PathBuf,
 }
 
 pub struct CircuitCall<'a> {
 	pub circuit_id: &'a str,
 	pub call_args: &'a [&'a str],
+}
+
+pub struct ContractSpec<'a> {
+	pub dir: &'a str,
+	pub source: &'a str,
+	pub vars: &'a [(&'a str, &'a str)],
+	pub constructor_args: &'a [&'a str],
+	pub secrets: &'a [&'a str],
+}
+
+impl<'a> ContractSpec<'a> {
+	pub fn new(dir: &'a str) -> Self {
+		Self { dir, source: dir, vars: &[], constructor_args: &[], secrets: &[] }
+	}
+
+	pub fn source(mut self, source: &'a str) -> Self {
+		self.source = source;
+		self
+	}
+
+	pub fn vars(mut self, vars: &'a [(&'a str, &'a str)]) -> Self {
+		self.vars = vars;
+		self
+	}
+
+	pub fn constructor_args(mut self, args: &'a [&'a str]) -> Self {
+		self.constructor_args = args;
+		self
+	}
+
+	pub fn secrets(mut self, secrets: &'a [&'a str]) -> Self {
+		self.secrets = secrets;
+		self
+	}
+}
+
+/// A deployed contract and its call context.
+pub struct ContractSession<'a> {
+	helper: &'a ToolkitTestHelper,
+	label: String,
+	config_file: PathBuf,
+	compiled_dir: PathBuf,
+	coin_public: String,
+	address: String,
+	step: AtomicUsize,
+}
+
+impl ContractSession<'_> {
+	/// Runs a read-only circuit call against the latest state.
+	pub async fn read(&self, private_state: &Path, call: CircuitCall<'_>) -> CircuitOutput {
+		let circuit = call.circuit_id;
+		let step = self.step.fetch_add(1, Ordering::Relaxed);
+		let state = self.helper.work_dir.path().join(format!("{}_state_{step}.mn", self.label));
+		self.helper
+			.contract_state(&self.address, &state)
+			.await
+			.unwrap_or_else(|e| panic!("{} contract state fetch failed: {e}", self.label));
+		self.helper
+			.generate_intent_circuit(
+				&self.config_file,
+				&self.coin_public,
+				&state,
+				private_state,
+				&self.address,
+				call,
+			)
+			.await
+			.unwrap_or_else(|e| panic!("generate {circuit} intent failed: {e}"))
+	}
+
+	/// Proves, privacy-checks, and submits a circuit call.
+	pub async fn call(
+		&self,
+		private_state: &Path,
+		secrets: &[&str],
+		call: CircuitCall<'_>,
+	) -> CircuitOutput {
+		let circuit = call.circuit_id;
+		let out = self.read(private_state, call).await;
+		let tx = self
+			.helper
+			.send_intent(&out.intent, &self.compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+			.await
+			.unwrap_or_else(|e| panic!("send {circuit} intent failed: {e}"));
+		for secret in secrets {
+			self.helper.assert_secret_not_in_tx(&tx, secret, circuit);
+		}
+		self.helper
+			.submit_tx(&tx)
+			.await
+			.unwrap_or_else(|e| panic!("submit {circuit} tx failed: {e}"));
+		out
+	}
 }
 
 pub struct ToolkitTestHelper {
@@ -59,6 +154,19 @@ pub struct ToolkitTestHelper {
 
 fn path_to_string(path: &Path) -> String {
 	path.to_string_lossy().to_string()
+}
+
+/// Hex-encodes a JSON byte array, the form circuit results render `Bytes<N>` in.
+/// `what` names the value for the panic message.
+fn hex_bytes(value: &serde_json::Value, what: &std::fmt::Arguments<'_>) -> String {
+	let bytes = value.as_array().unwrap_or_else(|| panic!("expected {what} to be a byte array"));
+	bytes
+		.iter()
+		.map(|b| {
+			let byte = b.as_u64().unwrap_or_else(|| panic!("non-numeric byte in {what}"));
+			format!("{byte:02x}")
+		})
+		.collect()
 }
 
 fn default_source() -> Source {
@@ -244,7 +352,7 @@ impl ToolkitTestHelper {
 
 	pub fn load_template(&self, name: &str, vars: &[(&str, &str)]) -> String {
 		let mut content = self.load_contract_file(name);
-		for (key, value) in vars {
+		for (key, value) in vars.iter().chain([&("NETWORK", self.network.as_str())]) {
 			content = content.replace(&format!("{{{{{key}}}}}"), value);
 		}
 		content
@@ -326,6 +434,14 @@ impl ToolkitTestHelper {
 		}
 	}
 
+	/// Work-dir stem for one `generate_intent_*` call's outputs; the sequence number keeps
+	/// repeat calls to the same circuit from overwriting each other.
+	fn out_prefix(&self, label: &str) -> PathBuf {
+		static SEQ: AtomicUsize = AtomicUsize::new(0);
+		let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+		self.work_dir.path().join(format!("{seq:03}_{label}"))
+	}
+
 	pub async fn generate_intent_deploy(
 		&self,
 		config_file: &Path,
@@ -341,9 +457,11 @@ impl ToolkitTestHelper {
 		coin_public: &str,
 		constructor_args: &[&str],
 	) -> Result<DeployOutput, Box<dyn std::error::Error + Send + Sync>> {
-		let intent = self.work_dir.path().join("deploy_intent.bin");
-		let private_state = self.work_dir.path().join("deploy_private_state.json");
-		let zswap_state = self.work_dir.path().join("deploy_zswap_state.json");
+		let out = self.out_prefix("deploy");
+		// `send_intent` derives the tx filename by rewriting `_intent`, so keep that in here.
+		let intent = out.with_extension("deploy_intent.bin");
+		let private_state = out.with_extension("private_state.json");
+		let zswap_state = out.with_extension("zswap_state.json");
 
 		let args = GenerateIntentArgs {
 			js_command: JsCommand::Deploy(DeployCommandArgs {
@@ -367,6 +485,52 @@ impl ToolkitTestHelper {
 		Ok(DeployOutput { intent, private_state, zswap_state })
 	}
 
+	/// Compiles, configures, and deploys a test contract.
+	pub async fn deploy_contract(&self, spec: ContractSpec<'_>) -> (ContractSession<'_>, PathBuf) {
+		let coin_public = self.show_address_coin_public(FUNDING_SEED);
+
+		let source = self.load_contract_file(&format!("{}/{}.compact", spec.dir, spec.source));
+		let compiled_dir = self
+			.compile_contract(&source, spec.dir)
+			.await
+			.unwrap_or_else(|e| panic!("{} contract compilation failed: {e}", spec.dir));
+
+		let mut vars = spec.vars.to_vec();
+		vars.push(("COIN_PUBLIC", coin_public.as_str()));
+		let config_content = self.load_template(&format!("{}/config.template.ts", spec.dir), &vars);
+		let config_file =
+			self.write_config(&config_content, &format!("{}/contract.config.ts", spec.dir));
+
+		let deploy = self
+			.generate_intent_deploy_with_args(&config_file, &coin_public, spec.constructor_args)
+			.await
+			.unwrap_or_else(|e| panic!("generate {} deploy intent failed: {e}", spec.dir));
+		let deploy_tx = self
+			.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+			.await
+			.unwrap_or_else(|e| panic!("send {} deploy intent failed: {e}", spec.dir));
+		for secret in spec.secrets {
+			self.assert_secret_not_in_tx(&deploy_tx, secret, &format!("{} deploy", spec.dir));
+		}
+		self.submit_tx(&deploy_tx)
+			.await
+			.unwrap_or_else(|e| panic!("submit {} deploy tx failed: {e}", spec.dir));
+		let address = self
+			.contract_address(&deploy_tx)
+			.unwrap_or_else(|e| panic!("{} contract address extraction failed: {e}", spec.dir));
+
+		let session = ContractSession {
+			helper: self,
+			label: spec.dir.replace('-', "_"),
+			config_file,
+			compiled_dir,
+			coin_public,
+			address,
+			step: AtomicUsize::new(0),
+		};
+		(session, deploy.private_state)
+	}
+
 	pub async fn generate_intent_circuit(
 		&self,
 		config_file: &Path,
@@ -377,10 +541,11 @@ impl ToolkitTestHelper {
 		call: CircuitCall<'_>,
 	) -> Result<CircuitOutput, Box<dyn std::error::Error + Send + Sync>> {
 		let CircuitCall { circuit_id, call_args } = call;
-		let out_intent = self.work_dir.path().join(format!("{circuit_id}_intent.bin"));
-		let out_private_state =
-			self.work_dir.path().join(format!("{circuit_id}_private_state.json"));
-		let out_zswap_state = self.work_dir.path().join(format!("{circuit_id}_zswap_state.json"));
+		let out = self.out_prefix(circuit_id);
+		let out_intent = out.with_extension("intent.bin");
+		let out_private_state = out.with_extension("private_state.json");
+		let out_zswap_state = out.with_extension("zswap_state.json");
+		let out_result = out.with_extension("result.json");
 
 		let args = GenerateIntentArgs {
 			js_command: JsCommand::Circuit(CircuitCommandArgs {
@@ -401,7 +566,7 @@ impl ToolkitTestHelper {
 					output_onchain_state: None,
 					output_private_state: RelativePath(out_private_state.clone()),
 					output_zswap_state: RelativePath(out_zswap_state.clone()),
-					output_result: None,
+					output_result: Some(RelativePath(out_result.clone())),
 					output_events: None,
 					circuit_id: circuit_id.to_string(),
 					call_args: call_args.iter().map(|s| s.to_string()).collect(),
@@ -416,7 +581,51 @@ impl ToolkitTestHelper {
 			intent: out_intent,
 			private_state: out_private_state,
 			zswap_state: out_zswap_state,
+			result: out_result,
 		})
+	}
+
+	pub fn read_result(&self, result_file: &Path) -> serde_json::Value {
+		let raw = std::fs::read_to_string(result_file)
+			.unwrap_or_else(|e| panic!("failed to read {}: {e}", result_file.display()));
+		serde_json::from_str(&raw)
+			.unwrap_or_else(|e| panic!("failed to parse {}: {e}", result_file.display()))
+	}
+
+	/// Re-encodes a `ShieldedCoinInfo` a circuit returned into the form the CLI parses.
+	/// Results render `Bytes<32>` as a byte array and `Uint<128>` as a string; arguments
+	/// want hex and a bare number.
+	pub fn shielded_coin_arg(&self, result_file: &Path) -> String {
+		let result = self.read_result(result_file);
+
+		let hex_field = |name: &str| -> String {
+			hex_bytes(&result[name], &format_args!("`{name}` in {}", result_file.display()))
+		};
+
+		let value: u128 = result["value"]
+			.as_str()
+			.unwrap_or_else(|| panic!("expected `value` string in {}", result_file.display()))
+			.parse()
+			.unwrap_or_else(|e| panic!("invalid `value` in {}: {e}", result_file.display()));
+		// Temporary guard until compact-js-command accepts quoted bigint JSON fields.
+		const MAX_SAFE_INTEGER: u128 = (1 << 53) - 1;
+		assert!(
+			value <= MAX_SAFE_INTEGER,
+			"`value` {value} exceeds JavaScript's safe integer limit ({MAX_SAFE_INTEGER})"
+		);
+
+		format!(
+			r#"{{"nonce": "{}", "color": "{}", "value": {value}}}"#,
+			hex_field("nonce"),
+			hex_field("color"),
+		)
+	}
+
+	/// Re-encodes a `Bytes<32>` a circuit returned into the hex form the CLI parses.
+	/// Results render `Bytes<32>` as a byte array; arguments want hex.
+	pub fn result_bytes_to_hex(&self, result_file: &Path) -> String {
+		let result = self.read_result(result_file);
+		hex_bytes(&result, &format_args!("{}", result_file.display()))
 	}
 
 	pub async fn send_intent(
