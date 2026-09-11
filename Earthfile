@@ -1120,14 +1120,15 @@ check-feature-unification:
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    # Pinned so it can't drift from the version in the CI base image.
+    # The CI base image ships an unpinned cargo-hack; pin here so the check
+    # doesn't silently change behaviour when that image is rebuilt.
     # renovate: datasource=crate packageName=cargo-hack
     ARG CARGO_HACK_VERSION=0.6.45
     RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
     RUN PACKAGES="$(node scripts/feature-unification-scope.ts \
             .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
         if [ -z "$PACKAGES" ]; then \
-            echo "feature-unification: nothing affected — skipping"; exit 0; \
+            echo "feature-unification: nothing affected - skipping"; exit 0; \
         fi && \
         echo "feature-unification scope: $PACKAGES" && \
         cargo hack check $PACKAGES --no-dev-deps

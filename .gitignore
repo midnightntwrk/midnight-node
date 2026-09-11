@@ -103,7 +103,8 @@ AGENTS.local.md
 local-env-images.tar
 toolkit-image.tar
 
-# Scratch dir written by the +feature-unification-inputs LOCALLY target
+# Scratch dir written by the feature-unification workflow's "Collect scope
+# inputs" step, then COPYed into the +check-feature-unification container
 .scope/
 
 # Generated compactc wrapper from `just compactc` (points into the nix store)

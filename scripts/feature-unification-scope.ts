@@ -23,7 +23,8 @@
 //      edits never touch the lock), reverse-walked to the members using them.
 //
 // Usage: node feature-unification-scope.ts <changed-files> <base-lock> <toml-diff>
-// (git-derived files in .scope/ -- see the Earthfile target). Node >= 22.18.
+// (git-derived files in .scope/, written by the feature-unification workflow
+// and COPYed in by the Earthfile target). Node >= 22.18.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -31,9 +32,10 @@ import { parse as parseToml } from "smol-toml";
 
 const EXCLUDED = ["partner-chains-demo-node", "partner-chains-demo-runtime"];
 const WORKSPACE_ARGS = `--workspace ${EXCLUDED.map((e) => `--exclude ${e}`).join(" ")}`;
-const MAX_BUFFER = 512 * 1024 * 1024; // cargo metadata can be MBs
+const MAX_BUFFER = 512 * 1024 * 1024; // ~0.4MB today; headroom, not a limit
 
-// Global inputs with no diffable crate mapping: toolchain and cargo config.
+// Global inputs with no diffable crate mapping: cargo config, test-runner
+// config, toolchain pin.
 const GLOBAL = [/^\.cargo\//, /^\.config\//, /^rust-toolchain/];
 // Handled out-of-band by the lock/manifest diff below (root manifests only).
 const HANDLED = [/^Cargo\.toml$/, /^Cargo\.lock$/];
@@ -148,7 +150,8 @@ function reverseClosure(deps: Map<string, string[]>, names: string[], seeds: str
 }
 
 // The crate whose directory contains `file`; longest prefix wins, so nested
-// crates (e.g. pallets/x/mock) beat their parent. Null if unowned.
+// crates (e.g. pallets/cnight-observation/mock) beat their parent. Null if
+// unowned.
 function owningCrate(file: string, crates: Crate[]): string | null {
 	let best: Crate | null = null;
 	for (const c of crates)
@@ -223,7 +226,8 @@ function main(): void {
 		extra = affected;
 	}
 
-	// Sort the changed files into owned / ignored / unattributable.
+	// Split the diffable files into those a crate owns and those nothing owns
+	// and IGNORE does not excuse (which force a full check).
 	const files = changed.filter((f) => !HANDLED.some((re) => re.test(f)));
 	const touched = files
 		.map((f) => owningCrate(f, crates))
