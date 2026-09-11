@@ -18,4 +18,5 @@ Follow-up to the Least Authority A2 Suggestion 3 work in #1217, which hardened
   of the longer slice; a caller that miscounted got a partial update and no
   signal. There are no production callers yet, so nothing downstream changes.
 
+PR: https://github.com/midnightntwrk/midnight-node/pull/2142
 Ticket: https://shielded.atlassian.net/browse/PM-22038
