@@ -720,6 +720,8 @@ node-ci-image-single-platform:
     # Install rust with minimal profile + only the components we need
     RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain $RUST_VERSION --profile minimal
     ENV PATH="/root/.cargo/bin:${PATH}"
+    # See +prep-no-copy: litep2p/str0m enable vendored OpenSSL; use the system library.
+    ENV OPENSSL_NO_VENDOR=1
     RUN rustup component add clippy rustfmt
 
     RUN rustup target add wasm32v1-none # aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
@@ -857,6 +859,10 @@ prep-no-copy:
     # on PATH from the CI image, and are unaffected — CARGO_HOME only moves cargo's data/bin home.)
     ENV CARGO_HOME=/usr/local/cargo
     ENV PATH="/usr/local/cargo/bin:${PATH}"
+    # litep2p (polkadot-sdk 2609 sc-network) enables str0m's `vendored` OpenSSL feature,
+    # which compiles OpenSSL from source via perl. AL2023-minimal's perl is incomplete
+    # (Configure exits 2). openssl-devel is already in the CI image, so use that instead.
+    ENV OPENSSL_NO_VENDOR=1
     # Pin git-fetch-with-cli at CARGO_HOME (canonical, workdir-independent) rather than relying on
     # the CI image's /.cargo/config.toml being found via the CWD=/ walk — that breaks the day a
     # target sets a non-/ WORKDIR. This is cargo's lowest-priority config source, so any

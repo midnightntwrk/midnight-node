@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "3.0.0"
+version = "4.0.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -41,6 +41,8 @@ sc-transaction-pool.workspace = true
 sc-transaction-pool-api.workspace = true
 sc-consensus.workspace = true
 sc-consensus-aura.workspace = true
+sc-consensus-babe.workspace = true
+sc-consensus-epochs.workspace = true
 sc-consensus-beefy.workspace = true
 sc-consensus-beefy-rpc.workspace = true
 sc-consensus-grandpa.workspace = true
