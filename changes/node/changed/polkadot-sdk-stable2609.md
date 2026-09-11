@@ -24,5 +24,9 @@ Code adjustments for the new SDK API:
 - `sp_version::NativeVersion` was removed upstream; the unused `native_version()` helper is
   dropped from the runtime.
 
+CI: litep2p (via `sc-network`) now enables str0m's vendored OpenSSL feature, which builds
+OpenSSL from source with perl. The CI image's perl lacks `FindBin.pm`, so the Earthfile sets
+`OPENSSL_NO_VENDOR=1` to keep linking against the system OpenSSL already installed there.
+
 PR:
 Issue:
