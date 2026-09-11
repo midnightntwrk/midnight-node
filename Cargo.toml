@@ -456,20 +456,34 @@ zeroize = { opt-level = 3 }
 [patch.crates-io]
 yamux = { git = "https://github.com/midnightntwrk/rust-yamux", branch = "yamux-v0.12.2" }
 parity-db = { git = "https://github.com/midnightntwrk/parity-db.git", branch = "master" }
-midnight-ledger-v9            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-zswap                = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-coin-structure       = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-base-crypto          = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-base-crypto-derive   = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-transient-crypto     = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
+# Ledger 9.1.0.0-rc.5, pinned per crate rather than by the single `ledger-9.1.0.0-rc.5`
+# workspace tag. Two reasons: the workspace tag is mutable (it was re-pointed from dd6c68b0
+# to 67f9f972 four days after we locked it), and it drags every crate out of one checkout
+# whose manifests still carry `path = "../x"` deps. The per-crate `isolate <tag>` commits are
+# the same tree with those path deps rewritten to version deps, so cargo resolves each crate
+# through this table instead of implicitly through one repo's directory layout. That is why
+# `midnight-ledger-static` needs an entry here: under the workspace tag it arrived free via
+# `path = "../static"`, but crates.io has no 10.0.0.
+midnight-ledger-v9            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.1.0.0-rc.5" }
+midnight-ledger-static        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "crate-ledger-9.1.0.0-rc.5" }
+midnight-zswap                = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zswap-9.0.0-rc.5" }
+midnight-coin-structure       = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "coin-structure-3.0.0-rc.2" }
+midnight-base-crypto          = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-1.1.0-rc.3" }
+midnight-base-crypto-derive   = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "base-crypto-derive-1.1.0-rc.2" }
+midnight-transient-crypto     = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-3.0.0-rc.3" }
 midnight-transient-crypto-old = { package = "midnight-transient-crypto", git = "https://github.com/midnightntwrk/midnight-ledger", tag = "transient-crypto-2.2.0-rc.1" }
-midnight-onchain-vm           = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-onchain-state        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-onchain-runtime      = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-zkir                 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-serialize            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-storage              = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
-midnight-storage-core         = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "ledger-9.1.0.0-rc.5" }
+midnight-onchain-vm           = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-vm-4.0.0-rc.3" }
+midnight-onchain-state        = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-state-4.0.0-rc.4" }
+midnight-onchain-runtime      = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "onchain-runtime-4.0.0-rc.4" }
+midnight-zkir                 = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zkir-2.2.0-rc.4" }
+# zkir-v3 is `publish = false`, so it is never on crates.io; the ledger team's published
+# patchset omits it because only `test-utilities` (which we enable) activates it. Its
+# source is byte-identical between this isolate tag and the rc.5 tree - only the manifest
+# differs - so the older rc.1 tag is the right pin.
+midnight-zkir-v3              = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "zkir-v3-3.0.0-rc.1" }
+midnight-serialize            = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "serialize-1.2.0-rc.2" }
+midnight-storage              = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-2.0.4-rc.1" }
+midnight-storage-core         = { git = "https://github.com/midnightntwrk/midnight-ledger", tag = "storage-core-1.2.2-rc.1" }
 
 [workspace.metadata.cargo-shear]
 ignored = []
