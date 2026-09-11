@@ -30,4 +30,4 @@ voter set. Verified by forking devnet (`2.0.0-rc.3`) from a snapshot with
 `--num-validators 3` and `4d8d772`, where all three validators finalize and the
 client and runtime GRANDPA set-ids match.
 
-PR: <link>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2008
