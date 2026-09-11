@@ -28,6 +28,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # tree-cache-guard's `gh cache list` lookup needs the Actions scope;
+      # without it the call 403s and the guard degrades to a permanent miss,
+      # so an already-green tree is re-checked on every rerun. Read is
+      # enough: actions/cache/save authenticates with ACTIONS_RUNTIME_TOKEN,
+      # not this token.
+      actions: read
     env:
       FORCE_COLOR: 1
     steps:
