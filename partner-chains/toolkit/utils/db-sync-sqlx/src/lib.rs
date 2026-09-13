@@ -12,6 +12,15 @@
 //! [Db-Sync]: https://github.com/IntersectMBO/cardano-db-sync
 //! [Db-Sync schema]: https://github.com/IntersectMBO/cardano-db-sync/blob/master/doc/schema.md
 
+mod configuration;
+mod schema;
+
+pub use configuration::{
+	DbSyncAddressMode, DbSyncQueryConfig, DbSyncSchemaMode, DbSyncTxInputMode,
+	ResolvedDbSyncAddressMode, ResolvedDbSyncQueryConfig, ResolvedDbSyncTxInputMode,
+};
+pub use schema::{DbSyncIndexSpec, candidate_index_specs, manage_indexes};
+
 use num_traits::ToPrimitive;
 use sidechain_domain::*;
 use sqlx::database::Database;
