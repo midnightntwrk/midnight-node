@@ -1,0 +1,17 @@
+# Local override of the shared secp256k1-sys fixup (preserves its config, adds a
+# wasm CFLAG). secp256k1-sys's vendored wasm/wasm-sysroot predates clang making
+# implicit function declarations a hard error (C99+); a newer distro clang
+# (ubuntu clang-18 in CI) fails the wasm.c compile. Demote it to a warning — the
+# symbols resolve at link from the real wasi/libc. See AGENTS.md
+# "Troubleshooting WASM runtime builds (Linux)".
+cargo_env = true
+
+[buildscript.run.env]
+OPT_LEVEL = "3"
+# secp256k1-sys 0.10's build.rs emits wasm codegen flags (-mcpu=mvp
+# -mmutable-globals) but relies on cc-rs to add the clang target; cc-rs does NOT
+# recognise the `wasm32v1-none` rust target name, so no `--target` reaches clang
+# and it rejects `-mcpu=mvp` as an x86 CPU (empty stderr under buck). Force the
+# wasm clang target explicitly. -Wno-error keeps the vendored wasm-sysroot's
+# implicit decls non-fatal on newer clang. See AGENTS.md.
+CFLAGS_wasm32v1_none = "--target=wasm32-unknown-unknown -Wno-error=implicit-function-declaration"

@@ -280,6 +280,10 @@ mod test {
 			.expect("failed to open seed file as writer");
 		serde_json::to_writer(&mut dest, &seed_map).expect("failed to write seed file");
 
+		let cnight = crate::test_paths::res("dev/cnight-config.json");
+		let ics = crate::test_paths::res("dev/ics-config.json");
+		let reserve = crate::test_paths::res("dev/reserve-config.json");
+		let ledger_params = crate::test_paths::res("dev/ledger-parameters-config.json");
 		let args = vec![
 			"midnight-node-toolkit",
 			"generate-genesis",
@@ -288,13 +292,13 @@ mod test {
 			"--seeds-file",
 			path.to_str().unwrap(),
 			"--cnight-generates-dust-config",
-			"../../res/dev/cnight-config.json",
+			&cnight,
 			"--ics-config",
-			"../../res/dev/ics-config.json",
+			&ics,
 			"--reserve-config",
-			"../../res/dev/reserve-config.json",
+			&reserve,
 			"--ledger-parameters-config",
-			"../../res/dev/ledger-parameters-config.json",
+			&ledger_params,
 		];
 
 		let cli = Cli::parse_from(args);
@@ -317,7 +321,8 @@ mod test {
 	#[test]
 	fn test_deserialize_ledger_parameters_config() {
 		let json_str =
-			std::fs::read_to_string("../../res/dev/ledger-parameters-config.json").unwrap();
+			std::fs::read_to_string(crate::test_paths::res("dev/ledger-parameters-config.json"))
+				.unwrap();
 		let _params: super::LedgerParameters = serde_json::from_str(&json_str)
 			.expect("failed to deserialize ledger parameters config");
 	}

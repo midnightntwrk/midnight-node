@@ -1,0 +1,20 @@
+# substrate-wasm-builder can't run under buck; skip it and overlay the
+# WASM_BINARY=None stub the build script would emit. Same pattern as
+# frame-storage-access-test-runtime; OUT_DIR = crate manifest dir (the git-fetch
+# subdir hash tracks the polkadot-sdk pin — regenerate on bump).
+buildscript.run = false
+cargo_env = true
+overlay = "overlay"
+
+[env]
+OUT_DIR = "polkadot-sdk-eff3836c89051857/substrate/test-utils/runtime"
+
+# git-dep include_str!/include_bytes!/mermaid! non-.rs inputs referenced as
+# git sub-target srcs (buck2 prunes the .rs closure of a whole-tree src on
+# remote workers). Symlinked dirs (e.g. docs -> workspace docs) are mapped
+# whole, since buck2 can't project a file through a symlink.
+[extra_mapped_srcs]
+"substrate/test-utils/runtime/res/default_genesis_config.json" = "res/default_genesis_config.json"
+"substrate/test-utils/runtime/res/default_genesis_config_incomplete.json" = "res/default_genesis_config_incomplete.json"
+"substrate/test-utils/runtime/res/default_genesis_config_invalid.json" = "res/default_genesis_config_invalid.json"
+"substrate/test-utils/runtime/res/default_genesis_config_invalid_2.json" = "res/default_genesis_config_invalid_2.json"

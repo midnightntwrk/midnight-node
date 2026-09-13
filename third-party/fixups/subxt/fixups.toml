@@ -1,0 +1,2 @@
+# writes a docs-link version file to OUT_DIR; falls back to "master" without git
+buildscript.run = true

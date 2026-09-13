@@ -97,7 +97,7 @@ mod tests {
 	use test_case::test_case;
 
 	fn resource_file(path: &str) -> String {
-		format!("../../res/{path}")
+		crate::test_paths::res(path)
 	}
 
 	// TODO: we need to consider using `proptest` here.

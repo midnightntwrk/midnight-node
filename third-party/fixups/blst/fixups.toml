@@ -1,0 +1,6 @@
+cargo_env = true
+
+# run = true implied by the env table; cc-rs in blst build.rs requires
+# OPT_LEVEL (same as shared aws-lc-sys fixup)
+[buildscript.run.env]
+OPT_LEVEL = "3"

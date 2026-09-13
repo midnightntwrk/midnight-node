@@ -169,6 +169,7 @@ that we are still in the process of being release. As such:
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
+- [Buck2 Build Notes](docs/buck2-notes.md) - Experimental buck2 build of the node, toolkit, and tests
 - [Governance](docs/governance/overview.md) - Federated Authority Governance System documentation
   - [Runtime Upgrade Guide](docs/governance/example/runtime-upgrade.md) - Step-by-step guide for runtime upgrades via governance
 - [Security](docs/security/image-signing.md) - Container image signing and verification
