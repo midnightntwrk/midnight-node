@@ -1,0 +1,14 @@
+[package]
+name = "midnight-rpc-api"
+version = "0.1.0"
+edition = "2024"
+license-file.workspace = true
+description = "RPC trait and types for the Midnight pallet."
+
+[dependencies]
+jsonrpsee = { workspace = true, features = ["client", "macros"] }
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
