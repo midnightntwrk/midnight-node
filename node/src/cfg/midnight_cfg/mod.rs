@@ -17,7 +17,11 @@ use serde_valid::{Validate, validation};
 use sidechain_domain::mainchain_epoch::MainchainEpochConfig;
 
 use super::validation_utils::{maybe, path_exists};
-use super::{CfgHelp, HelpField, cfg_help, error::CfgError, util::get_keys};
+use super::{
+	CfgHelp, HelpField, cfg_help,
+	error::CfgError,
+	util::{case_insensitive_enum, get_keys},
+};
 
 pub mod invariants;
 use invariants::check_mainchain_epoch_invariants;
@@ -101,6 +105,7 @@ pub struct MidnightCfg {
 	pub storage_cache_size: usize,
 
 	/// Whether substrate and midnight storage should be separate or unified
+	#[serde(deserialize_with = "case_insensitive_enum")]
 	pub storage_separation: StorageSeparation,
 
 	/// Deprecated: plaintext database connections are no longer permitted.
