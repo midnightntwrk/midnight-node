@@ -1095,3 +1095,46 @@ async fn ecdsa_contract_committees_e2e() {
 	])
 	.await;
 }
+
+/// Regression coverage for #1854: when the watch stream fails to report
+/// finality (e.g. the tx was retracted with a fork and re-included in a block
+/// the stream never surfaced), the sender falls back to scanning the finalized
+/// chain. Verify the scan finds a real finalized extrinsic and does not claim
+/// an unknown one.
+#[tokio::test]
+async fn finalized_chain_scan_finds_real_extrinsic() {
+	use midnight_node_toolkit::{client::MidnightNodeClient, sender::Sender};
+
+	let url = node_ws_url().await;
+	let client = MidnightNodeClient::new(url, None).await.expect("failed to create client");
+
+	// Take a real extrinsic from the finalized head — every block carries at
+	// least the timestamp inherent, so this is deterministic.
+	let head = client
+		.rpc
+		.chain_get_finalized_head()
+		.await
+		.expect("failed to get finalized head");
+	let block = client
+		.rpc
+		.chain_get_block(Some(head))
+		.await
+		.expect("failed to fetch finalized head block")
+		.expect("finalized head block missing");
+	let ext = block.block.extrinsics.first().expect("finalized block has no extrinsics");
+	let ext_hash = format!("0x{}", hex::encode(sp_crypto_hashing::blake2_256(&ext.0)));
+
+	let found = Sender::find_in_finalized_chain(&client, &ext_hash, 64)
+		.await
+		.expect("scan against a live node must complete");
+	assert!(found.is_some(), "scan should find an extrinsic taken from the finalized head");
+
+	let missing = Sender::find_in_finalized_chain(
+		&client,
+		"0x0000000000000000000000000000000000000000000000000000000000000000",
+		64,
+	)
+	.await
+	.expect("scan against a live node must complete");
+	assert!(missing.is_none(), "scan must not claim an unknown extrinsic hash");
+}
