@@ -50,12 +50,21 @@ pub struct RunMidnight {
 
 	/// Serve Midnight ledger snapshots to warp-syncing peers even when running as a validator.
 	///
-	/// Non-validator nodes always serve. Validators don't by default — serializing the ledger
-	/// arena is the warp ledger-sync protocol's most CPU-expensive operation and competes with
+	/// Non-validator nodes serve by default. Validators don't — serializing the ledger arena is the
+	/// warp ledger-sync protocol's most CPU-expensive operation and competes with
 	/// authoring/finality duties — but can opt in with this flag, e.g. on small or local networks
 	/// that have no non-validator nodes. Nodes can warp-sync as clients regardless of this flag.
 	#[arg(long)]
 	pub serve_warp_ledger_sync: bool,
+
+	/// Never serve Midnight ledger snapshots to warp-syncing peers.
+	///
+	/// The opt-out counterpart of `--serve-warp-ledger-sync`, for non-validators that must not
+	/// spend CPU on other nodes' warp sync — public RPC endpoints and bootnodes, whose exposure to
+	/// arbitrary peers is highest. Overrides the serve-by-default for non-validators; passing both
+	/// flags is rejected rather than silently resolved. The node can still warp-sync as a client.
+	#[arg(long, conflicts_with = "serve_warp_ledger_sync")]
+	pub no_serve_warp_ledger_sync: bool,
 }
 
 #[derive(Debug, clap::Parser)]
@@ -538,3 +547,44 @@ impl std::fmt::Display for NotImplementedError {
 	}
 }
 impl core::error::Error for NotImplementedError {}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use clap::Parser;
+
+	/// Serving is off by default for validators (they must opt in) and the opt-out is separate, so
+	/// neither flag may be set unless the operator asked for it.
+	#[test]
+	fn warp_ledger_sync_flags_default_off() {
+		let run = RunMidnight::try_parse_from(["midnight-node"]).expect("bare run parses");
+		assert!(!run.serve_warp_ledger_sync);
+		assert!(!run.no_serve_warp_ledger_sync);
+	}
+
+	#[test]
+	fn warp_ledger_sync_flags_parse_individually() {
+		let opt_in = RunMidnight::try_parse_from(["midnight-node", "--serve-warp-ledger-sync"])
+			.expect("opt-in parses");
+		assert!(opt_in.serve_warp_ledger_sync);
+		assert!(!opt_in.no_serve_warp_ledger_sync);
+
+		let opt_out = RunMidnight::try_parse_from(["midnight-node", "--no-serve-warp-ledger-sync"])
+			.expect("opt-out parses");
+		assert!(opt_out.no_serve_warp_ledger_sync);
+		assert!(!opt_out.serve_warp_ledger_sync);
+	}
+
+	/// "Serve" and "never serve" together is operator error, not something to resolve by silent
+	/// precedence — the operator should be told which one they meant.
+	#[test]
+	fn warp_ledger_sync_flags_conflict() {
+		let err = RunMidnight::try_parse_from([
+			"midnight-node",
+			"--serve-warp-ledger-sync",
+			"--no-serve-warp-ledger-sync",
+		])
+		.expect_err("both flags together must be rejected");
+		assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+	}
+}
