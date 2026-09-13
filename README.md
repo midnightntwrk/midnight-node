@@ -65,7 +65,7 @@ Implementation of the Midnight blockchain node, providing consensus, transaction
 ```
 [1] [Midnight Indexer](https://github.com/midnightntwrk/midnight-indexer)
 
-> **Security Note:** Database connections to PostgreSQL require SSL/TLS by default. Set `ALLOW_NON_SSL=true` only for local development environments without SSL certificates.
+> **Security Note:** Database connections to PostgreSQL require SSL/TLS by default. Plaintext connections are not supported.
 > 
 > Please also see https://docs.polkadot.com/infrastructure/running-a-validator/onboarding-and-offboarding/set-up-validator/ for further security recommendations on running validators.
 
@@ -165,7 +165,8 @@ that we are still in the process of being release. As such:
 - [Development Workflow](docs/development-workflow.md) - Best practices for cargo vs earthly, debugging, and common tasks
 - [OpenRPC API Specification](docs/openrpc.md) - Machine-readable API schema via `rpc.discover`
 - [Configuration Guide](docs/configuration-guide.md) - Comprehensive configuration guide for SREs
-- [Rust Installation](docs/rust-setup.md) - Setup instructions and toolchain information
+- [Setup & Prerequisites](docs/rust-setup.md) - Setup instructions for Rust, Earthly, Nix, and Just
+- [Troubleshooting](docs/troubleshooting.md) - Solutions for common build, setup, and ledger upgrade errors
 - [Chain Specifications](docs/chain_specs.md) - Working with different networks
 - [Block Weights](docs/weights.md) - Runtime weights documentation
 - [Actionlint Guide](docs/actionlint-guide.md) - GitHub Actions validation
@@ -295,7 +296,6 @@ Chain specifications are located in `/res/` directory.
 | RPC port | - | `--rpc-port 9944` | WebSocket RPC port (default: 9944) |
 | Node key | `NODE_KEY_FILE=/path/to/key` | `--node-key "0x..."` | Network identity key file |
 | Bootstrap nodes | `BOOTNODES="/ip4/... /ip4/..."` | `--bootnodes "/ip4/..."` | Space-separated initial peers |
-| Allow non-SSL DB | `ALLOW_NON_SSL=false` | - | Allow non-SSL PostgreSQL connections |
 | Remote write | `PROMETHEUS_PUSH_ENDPOINT=https://thanos:9091/api/v1/receive` | - | Push metrics via Prometheus Remote Write (Thanos, Cortex, Mimir) |
 | Push interval | `PROMETHEUS_PUSH_INTERVAL_SECS=15` | - | Seconds between metric pushes (default: 15) |
 | Push job name | `PROMETHEUS_PUSH_JOB_NAME=midnight-node` | - | Job label for pushed metrics (default: midnight-node) |
