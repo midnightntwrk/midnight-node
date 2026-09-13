@@ -2,6 +2,7 @@
 
 CLI tool for interacting with the Midnight blockchain. Supports transaction generation, wallet management, contract deployment, and testing.
 
+See [Architecture](docs/architecture.md) for a high-level overview of the toolkit's components and data flow.
 For background, scope, users, and roadmap, see the [Toolkit PRD](./PRD.md).
 
 ---
@@ -125,13 +126,45 @@ Since the introduction of the Ledger's `ReplayProtection` mechanism, the `TxGene
 
 If the user needs to know the `Transaction` value, it can make use of the command [`get-tx-from-context`](#get-a-serialized-transaction-from-a-serialized-transactionwithcontext) using as `--src-file` the previously generated `TransactionWithContext`.
 
-### Caching fetched transactions
+### Caching
 
-The toolkit implements a caching mechanism to avoid fetching the entire chain each time you generate a new transaction. The caching mechanism implements three backends, which can be set using the `MN_FETCH_CACHE` environment variable:
+The toolkit uses two independent caching systems to avoid redundant work across runs.
 
-- `inmemory` - no persistence, fetched transactions are not stored to disk
-- `redb:<filename>` - persists fetched transactions to disk. Toolkit process must have exclusive access to this file
-- `postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]` - persists fetched transactions to a postgres database. Supports concurrent readers/writers.
+#### Fetch cache (`MN_FETCH_CACHE`)
+
+Caches serialized block data fetched from the node, so subsequent runs don't need to re-fetch blocks already seen. Defaults to `redb:toolkit_cache/fetch_cache.db`.
+
+Set via the `MN_FETCH_CACHE` environment variable. Three backends are supported:
+
+- `inmemory` — no persistence; cache is lost when the process exits
+- `redb:<filename>` — persists to a local file using [redb](https://github.com/cberner/redb). The toolkit process must have exclusive write access to this file (single-writer, concurrent readers)
+- `postgres://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]` — persists to a PostgreSQL database; supports multiple concurrent readers and writers
+
+Example:
+```shell
+MN_FETCH_CACHE=redb:my_cache.db midnight-node-toolkit generate-txs ...
+MN_FETCH_CACHE=inmemory midnight-node-toolkit generate-txs ...
+MN_FETCH_CACHE="postgres://user:pass@localhost/toolkit" midnight-node-toolkit generate-txs ...
+```
+
+#### Ledger wallet cache (`MN_LEDGER_CACHE_DB`)
+
+Caches local wallet state (ledger snapshots and per-wallet state) to disk, so the toolkit can resume from a known checkpoint rather than replaying the entire chain from scratch. Defaults to `toolkit_cache/ledger_cache_db`.
+
+Set via the `MN_LEDGER_CACHE_DB` environment variable. Set to an empty string to disable:
+
+```shell
+MN_LEDGER_CACHE_DB=/path/to/cache midnight-node-toolkit generate-txs ...
+MN_LEDGER_CACHE_DB="" midnight-node-toolkit generate-txs ...  # disable wallet caching
+```
+
+The cache directory is structured as:
+```
+<root>/<chain_id_hex>/ledger/<block_height>.zstd   # ledger snapshots (~49MB each, zstd-compressed)
+<root>/<chain_id_hex>/wallets/<seed_hash_hex>.bin   # per-wallet state (5–15KB each)
+```
+
+Ledger snapshots are shared across wallets; only one snapshot per block height is stored regardless of how many wallets are tracked. Unused snapshots are garbage-collected automatically after a grace period.
 
 Wallet state reconstructed during block replay is cached per seed in `--ledger-state-db` (`MN_LEDGER_CACHE_DB`), so repeat queries only replay new blocks. This works on ledger-8 and ledger-9 chains; a cache written under ledger 8 is discarded (with a warning, falling back to a full replay) once the chain has moved on to ledger 9. During a long replay, `--replay-checkpoint-interval <BLOCKS>` (`MN_REPLAY_CHECKPOINT_INTERVAL`) saves intermediate checkpoints so an interrupted run resumes from the last one instead of genesis.
 
