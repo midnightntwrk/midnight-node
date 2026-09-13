@@ -26,6 +26,22 @@ use subxt::utils::H256;
 use subxt::{OnlineClient, SubstrateConfig};
 use tokio::time::{sleep, timeout, Instant};
 
+/// Typed error from submitting a Midnight transaction via [`MidnightClient`].
+#[derive(Debug, thiserror::Error)]
+pub enum SubmitError {
+    /// Building or submitting the extrinsic failed at the subxt layer. Also
+    /// covers the node rejecting it at submission time (e.g. "already imported"
+    /// / "temporarily banned") before it is watched, which a caller may treat
+    /// as an expected rejection.
+    #[error("submit error: {0}")]
+    Submit(String),
+    /// The transaction was submitted and watched, but did not finalize
+    /// successfully: it failed pre_dispatch/execution, or ended in an
+    /// `Error`/`Invalid`/`Dropped` status.
+    #[error("transaction not finalized: {0}")]
+    NotFinalized(String),
+}
+
 /// D-Parameter response from RPC
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1144,9 +1160,12 @@ impl MidnightClient {
     // ========== Midnight Transaction Submission Methods ==========
     // Used for DDoS mitigation E2E tests (TC-0003-06)
 
-    /// Submit a raw Midnight transaction and watch for result.
-    /// Returns the transaction progress if submission succeeds.
-    pub async fn submit_midnight_tx(
+    /// Submit a raw Midnight transaction and start watching its progress.
+    ///
+    /// Low-level primitive shared by [`Self::submit_midnight_tx`] and
+    /// [`Self::submit_expecting_success`]; returns the [`TransactionProgress`]
+    /// so each caller can drive it to whichever inclusion level it needs.
+    async fn submit_and_watch(
         &self,
         tx_bytes: Vec<u8>,
     ) -> Result<
@@ -1154,59 +1173,51 @@ impl MidnightClient {
             SubstrateConfig,
             subxt::client::OnlineClientAtBlockImpl<SubstrateConfig>,
         >,
-        Box<dyn std::error::Error>,
+        SubmitError,
     > {
         let mn_tx = mn_meta::tx().midnight().send_mn_transaction(tx_bytes);
-        let unsigned_extrinsic = self.online_client().tx().await?.create_unsigned(&mn_tx)?;
-        Ok(unsigned_extrinsic.submit_and_watch().await?)
+        let unsigned_extrinsic = self
+            .online_client()
+            .tx()
+            .await
+            .map_err(|e| SubmitError::Submit(e.to_string()))?
+            .create_unsigned(&mn_tx)
+            .map_err(|e| SubmitError::Submit(e.to_string()))?;
+        unsigned_extrinsic
+            .submit_and_watch()
+            .await
+            .map_err(|e| SubmitError::Submit(e.to_string()))
     }
 
-    /// Submit a Midnight transaction expecting it to be rejected at pre_dispatch.
-    /// Returns Ok(error_message) if rejected as expected.
-    /// Returns Err if the transaction was unexpectedly accepted.
-    pub async fn submit_expecting_rejection(
+    /// Submit a raw Midnight transaction and wait for it to finalize.
+    ///
+    /// Returns the finalized block's [`ExtrinsicEvents`] on success, or a typed
+    /// [`SubmitError`] describing how it was rejected: [`SubmitError::Submit`]
+    /// for a submission-time rejection (e.g. "already imported" / "temporarily
+    /// banned"), or [`SubmitError::NotFinalized`] when the tx was watched but
+    /// failed pre_dispatch/execution. Callers that expect success use `?` /
+    /// `expect`; callers that expect a rejection match on the `Err`.
+    pub async fn submit_midnight_tx(
         &self,
         tx_bytes: Vec<u8>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        tracing::info!("Submitting transaction expecting rejection...");
-        // A rejection can surface two ways, both valid:
-        //  (1) submit_and_watch errors at submission time — e.g. "already imported" /
-        //      "temporarily banned", common when replaying a tx whose original is still in
-        //      (or was just pruned from) the pool;
-        //  (2) the tx is watched and then fails pre_dispatch/execution.
-        // Only case (2) reaches wait_for_finalized_success, so catch case (1) here rather
-        // than propagating it as an unexpected error.
-        let progress = match self.submit_midnight_tx(tx_bytes).await {
-            Ok(progress) => progress,
-            Err(e) => {
-                tracing::info!("Transaction rejected at submission as expected: {e}");
-                return Ok(e.to_string());
-            }
-        };
-        match progress.wait_for_finalized_success().await {
-            Err(e) => {
-                tracing::info!("Transaction rejected as expected: {}", e);
-                Ok(e.to_string())
-            }
-            Ok(_) => Err(
-                "Transaction was unexpectedly accepted - should have been rejected at pre_dispatch"
-                    .into(),
-            ),
-        }
+    ) -> Result<ExtrinsicEvents<SubstrateConfig>, SubmitError> {
+        self.submit_and_watch(tx_bytes)
+            .await?
+            .wait_for_finalized_success()
+            .await
+            .map_err(|e| SubmitError::NotFinalized(e.to_string()))
     }
 
-    /// Submit a Midnight transaction expecting it to succeed.
-    /// Waits for the transaction to be included in a block.
-    pub async fn submit_expecting_success(
-        &self,
-        tx_bytes: Vec<u8>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    /// Submit a Midnight transaction expecting it to succeed, returning as soon
+    /// as it is included in a best or finalized block (faster than waiting for
+    /// finalization).
+    pub async fn submit_expecting_success(&self, tx_bytes: Vec<u8>) -> Result<(), SubmitError> {
         tracing::info!("Submitting transaction expecting success...");
-        let mut progress = self.submit_midnight_tx(tx_bytes).await?;
+        let mut progress = self.submit_and_watch(tx_bytes).await?;
 
-        // Wait for inclusion in block
+        // Wait for inclusion in a block.
         while let Some(status) = progress.next().await {
-            match status? {
+            match status.map_err(|e| SubmitError::NotFinalized(e.to_string()))? {
                 subxt::tx::TransactionStatus::InBestBlock(block_info) => {
                     tracing::info!(
                         "Transaction included in best block: {:?}",
@@ -1222,20 +1233,22 @@ impl MidnightClient {
                     return Ok(());
                 }
                 subxt::tx::TransactionStatus::Error { message } => {
-                    return Err(format!("Transaction error: {}", message).into());
+                    return Err(SubmitError::NotFinalized(format!("error: {message}")));
                 }
                 subxt::tx::TransactionStatus::Invalid { message } => {
-                    return Err(format!("Transaction invalid: {}", message).into());
+                    return Err(SubmitError::NotFinalized(format!("invalid: {message}")));
                 }
                 subxt::tx::TransactionStatus::Dropped { message } => {
-                    return Err(format!("Transaction dropped: {}", message).into());
+                    return Err(SubmitError::NotFinalized(format!("dropped: {message}")));
                 }
                 _ => {
-                    // Continue waiting for other statuses
+                    // Keep waiting for a terminal status.
                 }
             }
         }
-        Err("Transaction progress ended without confirmation".into())
+        Err(SubmitError::NotFinalized(
+            "transaction progress ended without confirmation".into(),
+        ))
     }
 
     /// Get the state of a contract by its address at the best block.

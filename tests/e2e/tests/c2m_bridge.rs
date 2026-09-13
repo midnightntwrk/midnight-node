@@ -333,10 +333,7 @@ async fn bridge_transfer_cnight_to_midnight_address() {
     let claim_events = midnight_client
         .submit_midnight_tx(claim_tx_bytes)
         .await
-        .expect("claim tx rejected by RPC at submission")
-        .wait_for_finalized_success()
-        .await
-        .expect("ClaimRewards(CardanoBridge) extrinsic should finalize successfully");
+        .expect("ClaimRewards(CardanoBridge) claim tx should finalize successfully");
 
     // Sum the NIGHT credited to the recipient by this claim and require it to equal
     // the claimed amount (i.e. the recipient's balance increased by exactly that).
