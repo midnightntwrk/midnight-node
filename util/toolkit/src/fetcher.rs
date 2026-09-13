@@ -19,17 +19,20 @@ pub mod trusted_deserialize;
 pub mod wallet_state_cache;
 
 use std::{
+	future::Future,
+	pin::Pin,
 	sync::{
 		Arc,
 		atomic::{AtomicBool, AtomicU64, Ordering},
 	},
+	task::{Context, Poll},
 	time::Duration,
 };
 
 use backoff::{ExponentialBackoff, future::retry_notify};
+use futures::{Stream, StreamExt, TryStreamExt, stream};
 use midnight_node_ledger_helpers::fork::raw_block_data::RawBlockData;
 use subxt::{client::OnlineClientAtBlock, rpcs, utils::H256};
-use tokio::task::JoinSet;
 
 use crate::{
 	client::{ClientError, MidnightNodeClient, MidnightNodeClientConfig},
@@ -59,6 +62,9 @@ const WORKER_CONNECT_MAX_ELAPSED: Duration = Duration::from_secs(30);
 /// while the previous round was processed, so a few rounds reach the head.
 const MAX_TIP_CHASE_ROUNDS: usize = 20;
 
+/// How often the job planner re-checks whether the planned round has drained.
+const TIP_CHASE_POLL: Duration = Duration::from_millis(500);
+
 #[derive(Debug, thiserror::Error)]
 pub enum FetchError {
 	#[error("subxt error while fetching")]
@@ -81,19 +87,17 @@ pub enum FetchError {
 	NoWorkersConnected,
 }
 
-/// Identifies the type of task that completed in the join set.
-enum TaskResult {
-	JobPusher,
-	FetchWorker,
-	ComputeWorker,
-}
-
 const PROGRESS_REPORT_INTERVAL: Duration = Duration::from_secs(10);
 
-/// Grown by the tip-chasing job pusher, read by the reporter and the receive loop.
+/// `span`/`jobs` are grown by the job planner as it chases the tip;
+/// `fetched`/`verified` are advanced by the pipeline stages. The planner waits
+/// on `verified` before each re-check, and the reporter reads all of them.
+#[derive(Default)]
 struct SyncTotals {
 	span: AtomicU64,
 	jobs: AtomicU64,
+	fetched: AtomicU64,
+	verified: AtomicU64,
 	target_height: AtomicU64,
 	truncated: AtomicBool,
 }
@@ -105,6 +109,262 @@ fn format_eta(secs: u64) -> String {
 		format!("{}m{:02}s", secs / 60, secs % 60)
 	} else {
 		format!("{secs}s")
+	}
+}
+
+/// Blocks per fetch job. A span too small to give every worker a full
+/// `BLOCKS_PER_JOB` batch is split evenly instead, floored so that a tiny span
+/// doesn't degenerate into one job per block.
+fn blocks_per_job(fetch_span: u64, num_workers: usize) -> u64 {
+	if fetch_span < BLOCKS_PER_JOB * num_workers as u64 {
+		fetch_span.div_ceil(num_workers as u64).max(5)
+	} else {
+		BLOCKS_PER_JOB
+	}
+}
+
+/// Split `from..to` into `blocks_per_job`-sized fetch jobs.
+fn plan_jobs(from: u64, to: u64, blocks_per_job: u64) -> Vec<FetchTask> {
+	(from..to)
+		.step_by(blocks_per_job as usize)
+		.map(|min| FetchTask::FetchBlocks { min, max: u64::min(min + blocks_per_job, to) })
+		.collect()
+}
+
+/// Streams the fetch jobs for `min_height..max_height`, then keeps chasing the
+/// finalized tip. A round is only re-checked once the work it planned has been
+/// verified, so each round picks up real lag rather than the time the re-check
+/// itself took.
+///
+/// `recheck` returning `None` means the node stopped answering; like exhausting
+/// `MAX_TIP_CHASE_ROUNDS`, that finishes the sync at what is already planned and
+/// flags it truncated rather than failing it. Injecting `recheck` keeps the
+/// tip-chasing logic testable without a node.
+fn job_stream<F, Fut>(
+	min_height: u64,
+	max_height: u64,
+	blocks_per_job: u64,
+	totals: Arc<SyncTotals>,
+	recheck: F,
+) -> impl Stream<Item = FetchTask>
+where
+	F: FnMut() -> Fut,
+	Fut: Future<Output = Option<u64>>,
+{
+	// A `None` window end has to be re-read from the node. The first window is
+	// already known, so it is handed out before any re-check happens.
+	let init = (min_height, Some(max_height.max(min_height)), 0usize, recheck);
+	stream::unfold(init, move |(from, known_to, rounds, mut recheck)| {
+		let totals = totals.clone();
+		async move {
+			let (to, rounds) = match known_to {
+				Some(to) => (to, rounds),
+				None => {
+					while totals.verified.load(Ordering::Relaxed)
+						< totals.jobs.load(Ordering::Relaxed)
+					{
+						tokio::time::sleep(TIP_CHASE_POLL).await;
+					}
+					let rounds = rounds + 1;
+					if rounds > MAX_TIP_CHASE_ROUNDS {
+						log::warn!(
+							"chain keeps advancing faster than it is fetched; finishing sync at block {}",
+							from.saturating_sub(1)
+						);
+						totals.truncated.store(true, Ordering::Relaxed);
+						return None;
+					}
+					let Some(finalized) = recheck().await else {
+						log::warn!(
+							"could not re-check the chain tip; finishing sync at block {}",
+							from.saturating_sub(1)
+						);
+						totals.truncated.store(true, Ordering::Relaxed);
+						return None;
+					};
+					let to = finalized + 1;
+					if to <= from {
+						log::info!("caught up with the tip");
+						return None;
+					}
+					let added = to - from;
+					// Publish new totals before queueing so the reporter can't
+					// observe completion of the old total first.
+					totals.span.fetch_add(added, Ordering::Relaxed);
+					totals.jobs.fetch_add(added.div_ceil(blocks_per_job), Ordering::Relaxed);
+					totals.target_height.store(finalized, Ordering::Relaxed);
+					log::info!(
+						"chain advanced to {finalized} during sync, fetching {added} more blocks..."
+					);
+					(to, rounds)
+				},
+			};
+			Some((stream::iter(plan_jobs(from, to, blocks_per_job)), (to, None, rounds, recheck)))
+		}
+	})
+	.flatten()
+}
+
+/// Connected clients, one checked out per in-flight fetch job.
+///
+/// `MidnightNodeClient::new` downloads runtime metadata and remote nodes cap
+/// inbound connections, so clients are warmed once up front and reused rather
+/// than created per job.
+struct ClientPool {
+	url: String,
+	connected: usize,
+	tx: async_channel::Sender<MidnightNodeClient>,
+	rx: async_channel::Receiver<MidnightNodeClient>,
+}
+
+impl ClientPool {
+	/// Connects up to `size` clients concurrently. A client that fails to
+	/// connect is skipped and the pool simply runs narrower; if none connect
+	/// there is nothing to fetch with.
+	async fn connect(url: &str, size: usize) -> Result<Self, FetchError> {
+		let (tx, rx) = async_channel::bounded(size.max(1));
+		stream::iter(0..size)
+			.for_each_concurrent(size, |id| {
+				let tx = tx.clone();
+				async move {
+					if let Ok(client) = connect_with_retry(url, id).await {
+						// Capacity is the pool size, so this never blocks.
+						let _ = tx.try_send(client);
+					}
+				}
+			})
+			.await;
+
+		let connected = rx.len();
+		if connected == 0 {
+			return Err(FetchError::NoWorkersConnected);
+		}
+		log::info!("connected {connected} of {size} fetch clients");
+		Ok(Self { url: url.to_string(), connected, tx, rx })
+	}
+
+	async fn checkout(&self) -> MidnightNodeClient {
+		self.rx.recv().await.expect("pool sender is held for the pool's lifetime")
+	}
+
+	fn give_back(&self, client: MidnightNodeClient) {
+		// Capacity is the pool size and only checked-out clients come back.
+		let _ = self.tx.try_send(client);
+	}
+
+	/// Clients currently checked out, i.e. fetch jobs in flight.
+	fn in_flight(&self) -> usize {
+		self.connected.saturating_sub(self.rx.len())
+	}
+}
+
+/// A pipeline stage running on its own tokio task.
+///
+/// `buffer_unordered` polls everything it holds from a single task, so the
+/// CPU-bound compute stage has to be spawned to reach more than one core.
+/// Dropping the handle aborts the task instead of detaching it, so tearing the
+/// pipeline down on error can't leave a task writing to storage behind our back
+/// - the guarantee the old `JoinSet::abort_all` provided. Folding `JoinError`
+/// into `FetchError` here is also what makes this usable with
+/// `try_buffer_unordered`, which a bare `JoinHandle` is not.
+struct Stage<T>(tokio::task::JoinHandle<Result<T, FetchError>>);
+
+fn stage<T: Send + 'static>(
+	fut: impl Future<Output = Result<T, FetchError>> + Send + 'static,
+) -> Stage<T> {
+	Stage(tokio::spawn(fut))
+}
+
+impl<T> Future for Stage<T> {
+	type Output = Result<T, FetchError>;
+
+	fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+		Pin::new(&mut self.get_mut().0)
+			.poll(cx)
+			.map(|joined| joined.unwrap_or_else(|e| Err(FetchError::WorkerPanic(e.to_string()))))
+	}
+}
+
+impl<T> Drop for Stage<T> {
+	fn drop(&mut self) {
+		self.0.abort();
+	}
+}
+
+/// Fetches one job's blocks. A failed attempt poisons the client, so the next
+/// one reconnects first.
+async fn run_fetch_job(
+	job: FetchTask,
+	chain_id: H256,
+	pool: &ClientPool,
+	storage: impl FetchStorage + Clone + 'static,
+	counters: &Arc<FetchCounters>,
+	totals: &SyncTotals,
+) -> Result<ComputeTask, FetchError> {
+	let FetchTask::FetchBlocks { min, max } = job else { return Ok(ComputeTask::NoOp) };
+
+	// `None` after a failed job: the client is poisoned, reconnect first.
+	let client = tokio::sync::Mutex::new(Some(pool.checkout().await));
+	let backoff = ExponentialBackoff {
+		max_elapsed_time: Some(JOB_RETRY_MAX_ELAPSED),
+		max_interval: JOB_RETRY_MAX_INTERVAL,
+		..ExponentialBackoff::default()
+	};
+	let work_job = retry_notify(
+		backoff,
+		|| async {
+			let mut guard = client.lock().await;
+			if guard.is_none() {
+				let reconnected = MidnightNodeClient::new(&pool.url, None)
+					.await
+					.map_err(|e| backoff::Error::transient(FetchError::from(e)))?;
+				*guard = Some(reconnected);
+			}
+			let result = (FetchTask::FetchBlocks { min, max })
+				.fetch(
+					chain_id,
+					guard.as_ref().expect("connected above"),
+					storage.clone(),
+					counters,
+				)
+				.await;
+			result.map_err(|e| {
+				*guard = None;
+				backoff::Error::transient(FetchError::from(e))
+			})
+		},
+		|e: FetchError, wait: Duration| {
+			log::warn!(
+				"fetch job {min}..{max} failed ({e}); reconnecting and retrying in {:.0}s...",
+				wait.as_secs_f32()
+			);
+		},
+	)
+	.await?;
+
+	// The reconnected client is what goes back, so a retry heals the pool.
+	if let Some(client) = client.into_inner() {
+		pool.give_back(client);
+	}
+	totals.fetched.fetch_add(1, Ordering::Relaxed);
+	Ok(work_job)
+}
+
+/// Drives one job's compute chain, which is strictly linear over the same range
+/// (`ExtractBlockData` -> `Verify` -> `FinalVerify`). Returns the `FinalVerify`
+/// step: it reads block `max`, owned by the next job, so it can only run once
+/// every job's inserts have landed.
+async fn run_compute_job(
+	mut task: ComputeTask,
+	chain_id: H256,
+	storage: impl FetchStorage + Clone + 'static,
+) -> Result<Option<ComputeTask>, FetchError> {
+	loop {
+		match task.work(chain_id, storage.clone()).await? {
+			done @ ComputeTask::FinalVerify { .. } => return Ok(Some(done)),
+			ComputeTask::NoOp => return Ok(None),
+			next => task = next,
+		}
 	}
 }
 
@@ -210,11 +470,7 @@ pub async fn fetch_from_rpc(
 	// node lags behind the node the cache was built from); saturate to zero so we
 	// serve from cache instead of underflowing.
 	let fetch_span = max_height.saturating_sub(min_height);
-	let blocks_per_job = if fetch_span < BLOCKS_PER_JOB * num_workers as u64 {
-		fetch_span.div_ceil(num_workers as u64).max(5)
-	} else {
-		BLOCKS_PER_JOB
-	};
+	let blocks_per_job = blocks_per_job(fetch_span, num_workers);
 
 	// Cap workers to the number of jobs to avoid unnecessary connections.
 	let num_jobs = fetch_span.div_ceil(blocks_per_job);
@@ -226,164 +482,19 @@ pub async fn fetch_from_rpc(
 		span: AtomicU64::new(fetch_span),
 		jobs: AtomicU64::new(num_jobs),
 		target_height: AtomicU64::new(finalized_height),
-		truncated: AtomicBool::new(false),
+		..Default::default()
 	});
 
-	let mut join_set: JoinSet<Result<TaskResult, FetchError>> = JoinSet::new();
 	let counters = Arc::new(FetchCounters::default());
-	let jobs_verified = Arc::new(AtomicU64::new(0));
+	let pool = Arc::new(ClientPool::connect(url, num_workers).await?);
+	log::info!("computing with up to {num_compute_workers} concurrent workers");
 
-	let (fetch_job_tx, fetch_job_rx) = async_channel::bounded(num_workers * 2);
-	let (fetch_to_compute_tx, fetch_to_compute_rx) =
-		async_channel::bounded(num_compute_workers * 2);
-	// We use a separate unbounded channel here because compute workers produce recursive tasks
-	let (compute_to_compute_tx, compute_to_compute_rx) = async_channel::unbounded();
-	let (final_jobs_tx, final_jobs_rx) = async_channel::bounded(num_compute_workers * 2);
-
-	// Push jobs into queue, then keep chasing the finalized tip until caught up
-	{
-		let job_tx = fetch_job_tx.clone();
-		let url = url.to_string();
-		let totals = totals.clone();
-		let jobs_verified = jobs_verified.clone();
-		let mut client = client;
-		join_set.spawn(async move {
-			let mut next_min = min_height;
-			let mut planned_to = max_height.max(min_height);
-			let mut rounds = 0;
-			loop {
-				for min in (next_min..planned_to).step_by(blocks_per_job as usize) {
-					let max = u64::min(min + blocks_per_job, planned_to);
-					log::debug!("pushing new fetch job {min} -> {max}...");
-					job_tx
-						.send(FetchTask::FetchBlocks { min, max })
-						.await
-						.expect("failed to push job on channel");
-				}
-				next_min = planned_to;
-
-				// Re-check only once the planned work is processed, so a round picks
-				// up real lag rather than the time the re-check itself took.
-				while jobs_verified.load(Ordering::Relaxed) < totals.jobs.load(Ordering::Relaxed) {
-					tokio::time::sleep(Duration::from_millis(500)).await;
-				}
-				rounds += 1;
-				if rounds > MAX_TIP_CHASE_ROUNDS {
-					log::warn!(
-						"chain keeps advancing faster than it is fetched; finishing sync at block {}",
-						planned_to.saturating_sub(1)
-					);
-					totals.truncated.store(true, Ordering::Relaxed);
-					break;
-				}
-				let new_finalized = match fetch_finalized_height(&mut client, &url).await {
-					Ok(height) => height,
-					Err(e) => {
-						log::warn!(
-							"could not re-check the chain tip ({e}); finishing sync at block {}",
-							planned_to.saturating_sub(1)
-						);
-						totals.truncated.store(true, Ordering::Relaxed);
-						break;
-					},
-				};
-
-				let new_max = new_finalized + 1;
-				let added_blocks = new_max.saturating_sub(planned_to);
-				if added_blocks == 0 {
-					log::info!("caught up with the tip");
-					break;
-				}
-				// Publish new totals before queueing so the receive loop can't
-				// observe completion of the old total first.
-				totals.span.fetch_add(added_blocks, Ordering::Relaxed);
-				totals.jobs.fetch_add(added_blocks.div_ceil(blocks_per_job), Ordering::Relaxed);
-				totals.target_height.store(new_finalized, Ordering::Relaxed);
-				log::info!(
-					"chain advanced to {new_finalized} during sync, fetching {added_blocks} more blocks..."
-				);
-				planned_to = new_max;
-			}
-
-			Ok(TaskResult::JobPusher)
-		});
-	}
-
-	log::info!(
-		"spawning {num_workers} fetch workers (capped from requested, {num_jobs} jobs); \
-		 each worker connects and downloads runtime metadata first, which can take a while..."
-	);
-
-	// Spawn fetch workers
-	for worker_id in 0..num_workers {
-		let fetch_job_rx = fetch_job_rx.clone();
-		let work_job_tx = fetch_to_compute_tx.clone();
-		let fetch_storage = fetch_storage.clone();
-		let url = url.to_string();
-		let counters = counters.clone();
-		join_set.spawn(async move {
-			let Ok(client) = connect_with_retry(&url, worker_id).await else {
-				return Ok(TaskResult::FetchWorker);
-			};
-			// `None` after a failed job: the client is poisoned, reconnect first.
-			let client = tokio::sync::Mutex::new(Some(client));
-
-			while let Ok(job) = fetch_job_rx.recv().await {
-				log::debug!("worker {worker_id}: received new job...");
-
-				let backoff = ExponentialBackoff {
-					max_elapsed_time: Some(JOB_RETRY_MAX_ELAPSED),
-					max_interval: JOB_RETRY_MAX_INTERVAL,
-					..ExponentialBackoff::default()
-				};
-				let work_job = retry_notify(
-					backoff,
-					|| async {
-						let mut guard = client.lock().await;
-						if guard.is_none() {
-							let reconnected = MidnightNodeClient::new(&url, None)
-								.await
-								.map_err(|e| backoff::Error::transient(FetchError::from(e)))?;
-							*guard = Some(reconnected);
-						}
-						let result = job
-							.clone()
-							.fetch(
-								chain_id,
-								guard.as_ref().expect("connected above"),
-								fetch_storage.clone(),
-								&counters,
-							)
-							.await;
-						result.map_err(|e| {
-							*guard = None;
-							backoff::Error::transient(FetchError::from(e))
-						})
-					},
-					|e: FetchError, wait: Duration| {
-						log::warn!(
-							"worker {worker_id}: fetch job failed ({e}); reconnecting and retrying in {:.0}s...",
-							wait.as_secs_f32()
-						);
-					},
-				)
-				.await?;
-
-				work_job_tx.send(work_job).await.expect("failed to push job on work queue");
-				log::debug!("worker {worker_id}: completed job.");
-			}
-			Ok(TaskResult::FetchWorker)
-		});
-	}
-
-	// Aborted once all jobs are in; the drain loop below tolerates the cancellation.
+	// Progress reporter, on its own task so pipeline stages can't starve it.
 	let reporter = {
 		let counters = counters.clone();
-		let jobs_verified = jobs_verified.clone();
-		let extract_backlog = fetch_to_compute_rx.clone();
-		let verify_backlog = compute_to_compute_rx.clone();
 		let totals = totals.clone();
-		join_set.spawn(async move {
+		let pool = pool.clone();
+		tokio::spawn(async move {
 			let started = std::time::Instant::now();
 			let mut interval = tokio::time::interval(PROGRESS_REPORT_INTERVAL);
 			interval.tick().await;
@@ -395,6 +506,8 @@ pub async fn fetch_from_rpc(
 				// A retried job can double count.
 				let processed = counters.processed.load(Ordering::Relaxed).min(span);
 				let fetched = counters.fetched_rpc.load(Ordering::Relaxed);
+				let jobs_fetched = totals.fetched.load(Ordering::Relaxed);
+				let jobs_verified = totals.verified.load(Ordering::Relaxed);
 				let rate = fetched.saturating_sub(last_fetched) as f64
 					/ PROGRESS_REPORT_INTERVAL.as_secs_f64();
 				last_fetched = fetched;
@@ -404,138 +517,57 @@ pub async fn fetch_from_rpc(
 				} else {
 					"unknown".to_string()
 				};
-				let percent = if span == 0 { 100.0 } else { processed as f64 / span as f64 * 100.0 };
+				let percent =
+					if span == 0 { 100.0 } else { processed as f64 / span as f64 * 100.0 };
 				log::info!(
-					"fetch progress: {processed}/{span} blocks ({percent:.1}%), {rate:.0} blocks/s, ETA {eta}, verified {}/{jobs} jobs, backlog: {} extract / {} verify jobs",
-					jobs_verified.load(Ordering::Relaxed),
-					extract_backlog.len(),
-					verify_backlog.len(),
+					"fetch progress: {processed}/{span} blocks ({percent:.1}%), {rate:.0} blocks/s, ETA {eta}, verified {jobs_verified}/{jobs} jobs, in flight: {} fetch / {} compute jobs",
+					pool.in_flight(),
+					jobs_fetched.saturating_sub(jobs_verified),
 				);
 			}
 		})
 	};
 
-	log::info!("spawning {num_compute_workers} compute workers");
-
-	// Spawn compute workers
-	for _ in 0..num_compute_workers {
-		let fetch_to_compute_rx = fetch_to_compute_rx.clone();
-		let compute_to_compute_rx = compute_to_compute_rx.clone();
-		let compute_to_compute_tx = compute_to_compute_tx.clone();
-		let final_jobs_tx = final_jobs_tx.clone();
-		let fetch_storage = fetch_storage.clone();
-		join_set.spawn(async move {
-			loop {
-				// No `biased`: preferring fresh fetch results starves the
-				// recursive Verify tasks whenever fetch outpaces compute.
-				let job = tokio::select! {
-					job = fetch_to_compute_rx.recv() => {
-						match job {
-							Ok(job) => job,
-							Err(_) => return Ok(TaskResult::ComputeWorker),
-						}
-					},
-					job = compute_to_compute_rx.recv() => {
-						match job {
-							Ok(job) => job,
-							Err(_) => return Ok(TaskResult::ComputeWorker),
-						}
-					},
-				};
-
-				log::debug!("received new work job...");
-
-				let work_job = job.work(chain_id, fetch_storage.clone()).await?;
-
-				match &work_job {
-					ComputeTask::FinalVerify { .. } => {
-						final_jobs_tx.send(work_job).await.expect("failed to push final job");
-					},
-					ComputeTask::NoOp => continue,
-					_ => compute_to_compute_tx
-						.send(work_job)
-						.await
-						.expect("failed to push job on work queue"),
-				};
+	// The socket may drop while a round is processed, so the re-check reuses one
+	// client and reconnects it once rather than building a fresh one each time.
+	let recheck = {
+		let url = url.to_string();
+		let client = Arc::new(tokio::sync::Mutex::new(client));
+		move || {
+			let url = url.clone();
+			let client = client.clone();
+			async move {
+				let mut guard = client.lock().await;
+				fetch_finalized_height(&mut guard, &url)
+					.await
+					.inspect_err(|e| log::warn!("could not re-check the chain tip ({e})"))
+					.ok()
 			}
-		});
-	}
-
-	log::debug!("receive blocks");
-
-	log::debug!("final verify step");
-	let mut jobs = Vec::with_capacity(totals.jobs.load(Ordering::Relaxed) as usize);
-	let mut received: u64 = 0;
-	let mut fetch_workers_exited = 0;
-	let mut pusher_done = false;
-	// The pusher may add jobs after the last worker exited; nothing else wakes the loop then.
-	let mut watchdog = tokio::time::interval(Duration::from_secs(1));
-	loop {
-		let total_jobs = totals.jobs.load(Ordering::Relaxed);
-		if pusher_done && received >= total_jobs {
-			break;
 		}
-		// A warm sync with nothing to fetch still spawns one worker that may fail to connect.
-		if fetch_workers_exited == num_workers && received < total_jobs {
-			log::error!(
-				"all fetch workers exited before completing all jobs ({received}/{total_jobs} received)"
-			);
-			join_set.abort_all();
-			return Err(FetchError::NoWorkersConnected);
-		}
-		tokio::select! {
-			Some(result) = join_set.join_next() => {
-				match result {
-					Ok(Ok(TaskResult::JobPusher)) => pusher_done = true,
-					Ok(Ok(TaskResult::FetchWorker)) => fetch_workers_exited += 1,
-					Ok(Ok(TaskResult::ComputeWorker)) => {},
-					Ok(Err(e)) => {
-						join_set.abort_all();
-						return Err(e);
-					}
-					Err(join_err) if join_err.is_panic() => {
-						join_set.abort_all();
-						return Err(FetchError::WorkerPanic(join_err.to_string()));
-					}
-					// Task was cancelled (expected after abort_all())
-					Err(_) => {}
-				}
-			},
-			job = final_jobs_rx.recv() => {
-				jobs.push(job.expect("..."));
-				received += 1;
-				jobs_verified.store(received, Ordering::Relaxed);
-				log::debug!("verify progress: {received}/{total_jobs} jobs");
-			},
-			_ = watchdog.tick() => {},
-		}
-	}
+	};
 
-	log::debug!("finished loop");
+	let final_jobs = job_stream(min_height, max_height, blocks_per_job, totals.clone(), recheck)
+		.map(|job| run_fetch_job(job, chain_id, &pool, fetch_storage.clone(), &counters, &totals))
+		.buffer_unordered(num_workers)
+		.map_ok(|task| stage(run_compute_job(task, chain_id, fetch_storage.clone())))
+		.try_buffer_unordered(num_compute_workers)
+		.inspect_ok(|_| {
+			totals.verified.fetch_add(1, Ordering::Relaxed);
+		})
+		.try_collect::<Vec<Option<ComputeTask>>>()
+		.await?;
+
+	// `try_collect` resolved every stage, so no task holding a `fetch_storage`
+	// clone outlives this point (see `Stage`) - which is what lets a later
+	// `fetch_all` in the same process reopen the cache file. Only the reporter
+	// is still running.
 	reporter.abort();
 
 	log::info!("all blocks fetched, running final boundary verification...");
-	for job in jobs {
+	for job in final_jobs.into_iter().flatten() {
 		job.work(chain_id, fetch_storage.clone()).await?;
 	}
 	log::info!("all blocks verified");
-
-	// Close channels to exit workers
-	fetch_job_rx.close();
-	fetch_to_compute_rx.close();
-	compute_to_compute_rx.close();
-	final_jobs_rx.close();
-
-	// Wait for all workers to fully exit so their Arc<Database> handles are dropped.
-	// Without this, the JoinSet drop aborts tasks but doesn't synchronously release
-	// resources, causing "DatabaseAlreadyOpen" when the DB is reopened.
-	while let Some(result) = join_set.join_next().await {
-		if let Err(join_err) = result {
-			if join_err.is_panic() {
-				log::warn!("Worker task panicked during cleanup: {}", join_err);
-			}
-		}
-	}
 
 	log::debug!("[perf] fetch_from_rpc RPC pipeline took {:?}", t_rpc_total.elapsed());
 
@@ -611,7 +643,140 @@ async fn connect_with_retry(url: &str, worker_id: usize) -> Result<MidnightNodeC
 
 #[cfg(test)]
 mod tests {
-	use super::format_eta;
+	use super::*;
+
+	fn ranges(jobs: &[FetchTask]) -> Vec<(u64, u64)> {
+		jobs.iter()
+			.map(|job| match job {
+				FetchTask::FetchBlocks { min, max } => (*min, *max),
+				FetchTask::NoOp => panic!("the planner never emits NoOp"),
+			})
+			.collect()
+	}
+
+	/// Answers each tip re-check from a canned list, then reports failure -
+	/// which is what ends the stream.
+	fn canned_recheck(heights: Vec<u64>) -> impl FnMut() -> std::future::Ready<Option<u64>> {
+		let mut heights = heights.into_iter();
+		move || std::future::ready(heights.next())
+	}
+
+	/// `job_stream` only re-checks once the planned round is verified, so tests
+	/// have to mark the jobs it already handed out as done.
+	fn verify_all(totals: &SyncTotals) {
+		totals.verified.store(totals.jobs.load(Ordering::Relaxed), Ordering::Relaxed);
+	}
+
+	#[test]
+	fn blocks_per_job_splits_a_short_span_across_workers() {
+		// Long enough to give every worker a full batch: fixed size.
+		assert_eq!(blocks_per_job(BLOCKS_PER_JOB * 8, 8), BLOCKS_PER_JOB);
+		assert_eq!(blocks_per_job(100_000, 8), BLOCKS_PER_JOB);
+
+		// One block short of that: split evenly instead. This is the branch the
+		// e2e tests never reach.
+		assert_eq!(blocks_per_job(BLOCKS_PER_JOB * 8 - 1, 8), 100);
+		assert_eq!(blocks_per_job(400, 8), 50);
+		assert_eq!(blocks_per_job(37, 8), 5);
+
+		// ... but never finer than the floor, however small the span.
+		assert_eq!(blocks_per_job(7, 8), 5);
+		assert_eq!(blocks_per_job(1, 8), 5);
+		assert_eq!(blocks_per_job(0, 8), 5);
+	}
+
+	#[test]
+	fn plan_jobs_covers_the_span_exactly_once() {
+		assert_eq!(ranges(&plan_jobs(0, 250, 100)), [(0, 100), (100, 200), (200, 250)]);
+		// Exact multiple: no empty trailing job.
+		assert_eq!(ranges(&plan_jobs(0, 200, 100)), [(0, 100), (100, 200)]);
+		// Resuming from a cache watermark.
+		assert_eq!(ranges(&plan_jobs(150, 260, 100)), [(150, 250), (250, 260)]);
+		// The small-span branch's job size.
+		assert_eq!(ranges(&plan_jobs(0, 7, 5)), [(0, 5), (5, 7)]);
+		// Nothing to fetch.
+		assert!(plan_jobs(10, 10, 5).is_empty());
+		assert!(plan_jobs(10, 5, 5).is_empty());
+	}
+
+	#[tokio::test]
+	async fn job_stream_extends_while_the_tip_moves() {
+		let totals = Arc::new(SyncTotals {
+			span: AtomicU64::new(100),
+			jobs: AtomicU64::new(2),
+			..Default::default()
+		});
+		let t = totals.clone();
+		// 139 twice: the tip advances once, then stops moving.
+		let jobs = job_stream(0, 100, 50, totals.clone(), canned_recheck(vec![139, 139]))
+			.inspect(move |_| verify_all(&t))
+			.collect::<Vec<_>>()
+			.await;
+
+		assert_eq!(ranges(&jobs), [(0, 50), (50, 100), (100, 140)]);
+		// Totals grew once, by the extension only.
+		assert_eq!(totals.span.load(Ordering::Relaxed), 140);
+		assert_eq!(totals.jobs.load(Ordering::Relaxed), 3);
+		assert_eq!(totals.target_height.load(Ordering::Relaxed), 139);
+		assert!(!totals.truncated.load(Ordering::Relaxed));
+	}
+
+	#[tokio::test]
+	async fn job_stream_flags_truncation_when_the_tip_recheck_fails() {
+		let totals = Arc::new(SyncTotals {
+			span: AtomicU64::new(100),
+			jobs: AtomicU64::new(2),
+			..Default::default()
+		});
+		let t = totals.clone();
+		// No canned heights: the first re-check "fails". The planned window is
+		// still handed out in full, and the sync ends flagged rather than failed.
+		let jobs = job_stream(0, 100, 50, totals.clone(), canned_recheck(vec![]))
+			.inspect(move |_| verify_all(&t))
+			.collect::<Vec<_>>()
+			.await;
+
+		assert_eq!(ranges(&jobs), [(0, 50), (50, 100)]);
+		assert_eq!(totals.span.load(Ordering::Relaxed), 100);
+		assert!(totals.truncated.load(Ordering::Relaxed));
+	}
+
+	#[tokio::test]
+	async fn job_stream_gives_up_after_max_tip_chase_rounds() {
+		let totals = Arc::new(SyncTotals::default());
+		let t = totals.clone();
+		// A tip that always stays a window ahead, so only the round cap stops it.
+		let rechecks = Arc::new(AtomicU64::new(0));
+		let counter = rechecks.clone();
+		let mut next = 100u64;
+		job_stream(0, 0, 100, totals.clone(), move || {
+			counter.fetch_add(1, Ordering::Relaxed);
+			next += 100;
+			std::future::ready(Some(next))
+		})
+		.inspect(move |_| verify_all(&t))
+		.collect::<Vec<_>>()
+		.await;
+
+		// The cap is on rounds, not jobs: round MAX+1 breaks before re-checking.
+		assert_eq!(rechecks.load(Ordering::Relaxed), MAX_TIP_CHASE_ROUNDS as u64);
+		assert!(totals.truncated.load(Ordering::Relaxed));
+	}
+
+	#[tokio::test]
+	async fn job_stream_with_nothing_to_fetch_still_chases() {
+		// A cache watermark at or past the tip plans no jobs, but must still
+		// re-check once and then terminate rather than spinning.
+		let totals = Arc::new(SyncTotals::default());
+		let t = totals.clone();
+		let jobs = job_stream(500, 400, 100, totals.clone(), canned_recheck(vec![549]))
+			.inspect(move |_| verify_all(&t))
+			.collect::<Vec<_>>()
+			.await;
+
+		assert_eq!(ranges(&jobs), [(500, 550)]);
+		assert_eq!(totals.span.load(Ordering::Relaxed), 50);
+	}
 
 	#[test]
 	fn format_eta_branches() {
