@@ -83,3 +83,43 @@ export function runDockerCompose(options: DockerComposeOptions): Promise<void> {
     });
   });
 }
+
+/**
+ * Stop and remove selected services while preserving their named/bind-mounted
+ * data. Used when a regenerated fork reduces its active validator count so
+ * containers from the previous topology cannot keep participating.
+ */
+export function removeDockerComposeServices(
+  options: DockerComposeOptions,
+  services: string[],
+): Promise<void> {
+  if (services.length === 0) return Promise.resolve();
+
+  const args = [...fileArgs(options), "rm", "--stop", "--force", ...services];
+  if (options.profiles) {
+    for (const profile of options.profiles) {
+      args.unshift(`--profile=${profile}`);
+    }
+  }
+  args.unshift("compose");
+
+  return new Promise((resolve, reject) => {
+    const docker = spawn("docker", args, {
+      stdio: "inherit",
+      env: options.env,
+    });
+
+    docker.on("error", reject);
+    docker.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `docker compose rm exited with code ${code} for services: ${services.join(", ")}`,
+        ),
+      );
+    });
+  });
+}

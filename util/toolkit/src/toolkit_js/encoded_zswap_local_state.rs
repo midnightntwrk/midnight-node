@@ -1,4 +1,4 @@
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	CoinPublicKey, ContractAddress, DB, Deserializable, HashOutput, PERSISTENT_HASH_BYTES,
 	Serializable, WalletState,
 };
@@ -209,8 +209,8 @@ mod bytes {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use midnight_node_ledger_helpers::coin_structure::coin::Nullifier;
-	use midnight_node_ledger_helpers::{
+	use midnight_ledger_unsafe_helpers::coin_structure::coin::Nullifier;
+	use midnight_ledger_unsafe_helpers::{
 		CoinPublicKey, DefaultDB, HashOutput, Nonce, PERSISTENT_HASH_BYTES, QualifiedInfo,
 		ShieldedTokenType, WalletState,
 	};

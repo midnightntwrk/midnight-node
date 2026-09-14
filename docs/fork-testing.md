@@ -63,6 +63,22 @@ On the first bring-up of a well-known network, pass the snapshot URL to `run`,
 npm run run:qanet -- --from-snapshot https://example.com/snapshots/qanet-latest.tar.zst
 ```
 
+To run fewer validators than the network's checked-in Compose topology, pass a
+positive `--num-validators` value no larger than the configured
+`mock.validatorServices` list:
+
+```bash
+npm run run:qanet -- \
+  --from-snapshot https://example.com/snapshots/qanet-latest.tar.zst \
+  --num-validators 3
+```
+
+The option selects the first N configured validator services, disables the
+remaining validator services in the generated Compose override, and asks
+`mock-authorities convert` to generate N keysets. It must be used with
+`--from-snapshot`; changing an existing fork's count without regenerating its
+authority data is rejected.
+
 The restore flow:
 
 1. Downloads and extracts the archive.
@@ -70,7 +86,8 @@ The restore flow:
    selected network.
 3. Runs `mock-authorities convert` over the restored state.
 4. Generates a compose override that mounts the generated validator seeds and
-   switches the main-chain follower into mock mode.
+   switches the main-chain follower into mock mode. When `--num-validators` is
+   provided, the override also disables validator services above that count.
 
 ## Reusing an existing local fork
 

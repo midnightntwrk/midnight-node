@@ -3,7 +3,7 @@ use crate::toolkit_js::encoded_zswap_local_state::{
 	EncodedCoinPublic, EncodedOutput, EncodedRecipient, EncodedShieldedCoinInfo,
 };
 use ledger_helpers_local::{CoinPublicKey, DefaultDB, WalletSeed};
-use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 
 pub fn fetch_zswap_state_from_context(
 	context: &ledger_helpers_local::context::LedgerContext<DefaultDB>,

@@ -30,7 +30,7 @@
 use ledger_helpers_local::{
 	DefaultDB, ShieldedTokenType, ShieldedWallet, UnshieldedTokenType, UnshieldedWallet,
 };
-use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 
 use crate::{cli_parsers::OutputArg, tx_generator::builder::SingleTxArgs};
 
@@ -216,8 +216,8 @@ pub(crate) fn resolve_outputs_from_triples(
 		if let Ok(sw) = <ShieldedWallet<DefaultDB>>::try_from(&local_addr) {
 			let token_type = match triple.token_type {
 				Some(bytes) => {
-					convert_shielded_token_type(midnight_node_ledger_helpers::ShieldedTokenType(
-						midnight_node_ledger_helpers::HashOutput(bytes),
+					convert_shielded_token_type(midnight_ledger_unsafe_helpers::ShieldedTokenType(
+						midnight_ledger_unsafe_helpers::HashOutput(bytes),
 					))
 				},
 				None => ShieldedTokenType::default(),
@@ -230,8 +230,8 @@ pub(crate) fn resolve_outputs_from_triples(
 		} else if let Ok(uw) = UnshieldedWallet::try_from(&local_addr) {
 			let token_type = match triple.token_type {
 				Some(bytes) => convert_unshielded_token_type(
-					midnight_node_ledger_helpers::UnshieldedTokenType(
-						midnight_node_ledger_helpers::HashOutput(bytes),
+					midnight_ledger_unsafe_helpers::UnshieldedTokenType(
+						midnight_ledger_unsafe_helpers::HashOutput(bytes),
 					),
 				),
 				None => UnshieldedTokenType::default(),

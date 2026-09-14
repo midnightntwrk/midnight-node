@@ -14,15 +14,13 @@
 use async_trait::async_trait;
 use builders::{DoNothingBuilder, compute_batches_seeds};
 use clap::{Args, Subcommand, ValueEnum};
-pub use midnight_node_ledger_helpers::CoinSelectionStrategy;
-use midnight_node_ledger_helpers::fork::{
-	fork_aware_context::{
-		ForkAwareLedgerContext, apply_block_8, apply_block_9, block_context_from_raw_8,
-		block_context_from_raw_9, fork_context_8_to_9,
-	},
-	raw_block_data::{LedgerVersion, RawBlockData},
+pub use midnight_ledger_unsafe_helpers::CoinSelectionStrategy;
+use midnight_ledger_unsafe_helpers::fork::fork_aware_context::{
+	ForkAwareLedgerContext, apply_block_8, apply_block_9, block_context_from_raw_8,
+	block_context_from_raw_9, fork_context_8_to_9,
 };
-use midnight_node_ledger_helpers::*;
+use midnight_ledger_unsafe_helpers::*;
+use midnight_node_ledger_helpers::fork::raw_block_data::{LedgerVersion, RawBlockData};
 use serde::Deserialize;
 use std::{
 	collections::{HashMap, HashSet},
@@ -789,13 +787,13 @@ impl Builder {
 	fn make_prover_v8(
 		config: &ProverConfig,
 	) -> Arc<
-		dyn midnight_node_ledger_helpers::ledger_8::ProofProvider<
-				midnight_node_ledger_helpers::ledger_8::DefaultDB,
+		dyn midnight_ledger_unsafe_helpers::ledger_8::ProofProvider<
+				midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 			>,
 	> {
 		match config {
 			ProverConfig::Local => {
-				Arc::new(midnight_node_ledger_helpers::ledger_8::LocalProofServer::new())
+				Arc::new(midnight_ledger_unsafe_helpers::ledger_8::LocalProofServer::new())
 			},
 			ProverConfig::Remote(url) => {
 				Arc::new(crate::remote_prover::RemoteProofServer::new(url.clone()))
@@ -863,13 +861,13 @@ impl Builder {
 	fn to_builder_v8(
 		self,
 		context: Arc<
-			midnight_node_ledger_helpers::ledger_8::context::LedgerContext<
-				midnight_node_ledger_helpers::ledger_8::DefaultDB,
+			midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<
+				midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 			>,
 		>,
 		prover: Arc<
-			dyn midnight_node_ledger_helpers::ledger_8::ProofProvider<
-					midnight_node_ledger_helpers::ledger_8::DefaultDB,
+			dyn midnight_ledger_unsafe_helpers::ledger_8::ProofProvider<
+					midnight_ledger_unsafe_helpers::ledger_8::DefaultDB,
 				>,
 		>,
 	) -> Box<dyn BuildTxs<Error = DynamicError>> {
@@ -1209,8 +1207,8 @@ fn discard_unusable_cache(
 	uncached_seeds.extend(dropped.into_iter().map(|(seed, _)| seed));
 }
 
-type Db8 = midnight_node_ledger_helpers::ledger_8::DefaultDB;
-type Db9 = midnight_node_ledger_helpers::ledger_9::DefaultDB;
+type Db8 = midnight_ledger_unsafe_helpers::ledger_8::DefaultDB;
+type Db9 = midnight_ledger_unsafe_helpers::ledger_9::DefaultDB;
 
 const DUST_BATCH_SIZE: usize = 1000;
 
@@ -1223,8 +1221,8 @@ const REPLAY_INFO_HEARTBEAT: std::time::Duration = std::time::Duration::from_sec
 fn replay_tx_failures() -> (u64, u64) {
 	use std::sync::atomic::Ordering::Relaxed;
 	(
-		midnight_node_ledger_helpers::replay_stats::PARTIALLY_FAILED_TXS.load(Relaxed),
-		midnight_node_ledger_helpers::replay_stats::FAILED_TXS.load(Relaxed),
+		midnight_ledger_unsafe_helpers::replay_stats::PARTIALLY_FAILED_TXS.load(Relaxed),
+		midnight_ledger_unsafe_helpers::replay_stats::FAILED_TXS.load(Relaxed),
 	)
 }
 
@@ -1237,10 +1235,10 @@ fn log_replay_progress(done: usize, total: usize) {
 }
 
 fn replay_blocks_8(
-	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
+	ctx: &midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	blocks_sorted_by_height: &[RawBlockData],
 ) {
-	let mut events: Vec<midnight_node_ledger_helpers::ledger_8::Event<Db8>> = Vec::new();
+	let mut events: Vec<midnight_ledger_unsafe_helpers::ledger_8::Event<Db8>> = Vec::new();
 
 	let total = blocks_sorted_by_height.len();
 	let mut last_info_at = std::time::Instant::now();
@@ -1269,12 +1267,12 @@ fn replay_blocks_8(
 }
 
 fn replay_blocks_9(
-	ctx: &midnight_node_ledger_helpers::ledger_9::context::LedgerContext<Db9>,
+	ctx: &midnight_ledger_unsafe_helpers::ledger_9::context::LedgerContext<Db9>,
 	blocks_sorted_by_height: &[RawBlockData],
 	wallets_sorted_by_height: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
 ) {
-	let mut events: Vec<midnight_node_ledger_helpers::ledger_9::Event<Db9>> = Vec::new();
+	let mut events: Vec<midnight_ledger_unsafe_helpers::ledger_9::Event<Db9>> = Vec::new();
 	let mut remaining = wallets_sorted_by_height;
 	let total = blocks_sorted_by_height.len();
 	let mut last_info_at = std::time::Instant::now();
@@ -1327,7 +1325,7 @@ fn replay_blocks_9(
 /// ledger-9 blocks, if any. Returns the ledger-8 context unchanged when there are
 /// no ledger-9 blocks.
 fn fork_8_to_9_if_needed(
-	ctx8: midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
+	ctx8: midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	l9_blocks: &[RawBlockData],
 	cached: &[(WalletSeed, CachedWalletState)],
 	schemes: &WalletSchemes,
@@ -1619,7 +1617,7 @@ async fn try_save_cache_v2(
 
 /// Ledger-8 twin of [`save_cache_ledger9`].
 async fn save_cache_ledger8(
-	ctx: &midnight_node_ledger_helpers::ledger_8::context::LedgerContext<Db8>,
+	ctx: &midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<Db8>,
 	wallet_seeds: &[WalletSeed],
 	chain_id: H256,
 	block_height: u64,

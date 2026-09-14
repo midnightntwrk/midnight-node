@@ -21,5 +21,5 @@ CLI argument; `2.5.5-rc.8` adds that, so `generate-intent deploy`/`circuit` now 
 Covered by a new `dao_e2e`, which ports the DAO voting contract from midnight-contracts and
 plays a full round.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/2077
+PR: https://github.com/midnightntwrk/midnight-node/pull/2148
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1772
