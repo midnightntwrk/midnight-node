@@ -48,6 +48,8 @@ async fn node_ws_url() -> &'static str {
 				.with_wait_for(WaitFor::message_on_stderr("Running JSON-RPC server"))
 				.with_exposed_port(ContainerPort::Tcp(9944))
 				.with_env_var("CFG_PRESET", "dev")
+				// Each toolkit command opens its own RPC client, outrunning the default cap of 100.
+				.with_env_var("APPEND_ARGS", "--rpc-max-connections 1000")
 				.start()
 				.await
 				.expect("failed to start midnight-node container");
@@ -900,6 +902,174 @@ async fn tic_tac_toe_e2e() {
 			.unwrap_or_else(|e| panic!("submit {circuit} tx failed: {e}"));
 		prev_private = out.private_state;
 	}
+}
+
+/// DAO contract E2E ported from `midnight-contracts`: plays one full voting round, from
+/// buying a vote through to the beneficiary cashing out the pot.
+///
+/// `buy_in`, `set_topic` and `vote_commit` each take a `ShieldedCoinInfo` the circuit
+/// `receiveShielded`s, so this also covers struct- and generic-typed circuit arguments. One
+/// identity is both organizer and voter; `FUNDING_SEED` pays fees, supplies the coins and is
+/// the beneficiary.
+#[cfg(feature = "compact-contract-tests")]
+#[tokio::test]
+async fn dao_e2e() {
+	let url = node_ws_url().await;
+	let helper = ToolkitTestHelper::new(url);
+
+	assert!(helper.prerequisites_ready(), "contract test prerequisites must be available");
+
+	// Arbitrary key; `public_key(sk)` of it becomes the on-chain `organizer`.
+	const ORGANIZER_SK: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0";
+	const VOTER_A_SK: &str = "1f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f1";
+	const VOTER_B_SK: &str = "2f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f2";
+	const VOTER_C_SK: &str = "3f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f3";
+	// Base units; `tdust()` is 1_000_000, so both are 1 tDUST.
+	const SEED_DUST: u64 = 1_000_000;
+	const BUY_IN_DUST: u64 = 1_000_000;
+	// `nativeToken()`, which is what the dev genesis funds the seed wallet with.
+	const NATIVE_TOKEN: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+	// Received coins become fresh outputs, so their commitments must differ.
+	const BUY_IN_NONCE_A: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+	const BUY_IN_NONCE_B: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+	const BUY_IN_NONCE_C: &str = "4444444444444444444444444444444444444444444444444444444444444444";
+	const SEED_NONCE: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+	const RESEED_NONCE: &str = "5555555555555555555555555555555555555555555555555555555555555555";
+
+	let coin_public = helper.show_address_coin_public(FUNDING_SEED);
+
+	let source = helper.load_contract_file("dao/dao.compact");
+	let compiled_dir = helper
+		.compile_contract(&source, "dao")
+		.await
+		.expect("contract compilation failed");
+
+	let config_content = helper.load_template(
+		"dao/config.template.ts",
+		&[("SECRET_KEY", ORGANIZER_SK), ("COIN_PUBLIC", &coin_public), ("NETWORK", "undeployed")],
+	);
+	let config_file = helper.write_config(&config_content, "dao/contract.config.ts");
+
+	let costs = format!(r#"{{"seed_dust": {SEED_DUST}, "buy_in_dust": {BUY_IN_DUST}}}"#);
+	let deploy = helper
+		.generate_intent_deploy_with_args(&config_file, &coin_public, &[ORGANIZER_SK, &costs])
+		.await
+		.expect("generate deploy intent failed");
+	let deploy_tx = helper
+		.send_intent(&deploy.intent, &compiled_dir, FUNDING_SEED, None)
+		.await
+		.expect("send deploy intent failed");
+	helper.assert_secret_not_in_tx(&deploy_tx, ORGANIZER_SK, "dao deploy");
+	helper.submit_tx(&deploy_tx).await.expect("submit deploy tx failed");
+	let dao_addr = helper.contract_address(&deploy_tx).expect("contract address extraction failed");
+
+	// Runs one circuit against the latest state, threading the private state forward.
+	let mut step = 0usize;
+	let mut organizer_private = deploy.private_state.clone();
+	macro_rules! call {
+		($private:ident, $circuit:expr, $args:expr) => {{
+			step += 1;
+			let state = helper.work_dir.path().join(format!("dao_state_{step}.mn"));
+			helper
+				.contract_state(&dao_addr, &state)
+				.await
+				.expect("contract state fetch failed");
+			let out = helper
+				.generate_intent_circuit(
+					&config_file,
+					&coin_public,
+					&state,
+					&$private,
+					&dao_addr,
+					CircuitCall { circuit_id: $circuit, call_args: $args },
+				)
+				.await
+				.unwrap_or_else(|e| panic!("generate {} intent failed: {e}", $circuit));
+			let tx = helper
+				.send_intent(&out.intent, &compiled_dir, FUNDING_SEED, Some(&out.zswap_state))
+				.await
+				.unwrap_or_else(|e| panic!("send {} intent failed: {e}", $circuit));
+			helper.assert_secret_not_in_tx(&tx, ORGANIZER_SK, $circuit);
+			helper
+				.submit_tx(&tx)
+				.await
+				.unwrap_or_else(|e| panic!("submit {} tx failed: {e}", $circuit));
+			out
+		}};
+	}
+
+	let voter_state = |name: &str, secret_key: &str| {
+		let state = helper.work_dir.path().join(format!("dao_{name}_private_state.json"));
+		std::fs::write(
+			&state,
+			serde_json::json!({ "secretKey": secret_key, "ballots": {}, "states": {} }).to_string(),
+		)
+		.expect("write voter private state");
+		state
+	};
+	let mut voter_a_private = voter_state("voter_a", VOTER_A_SK);
+	let mut voter_b_private = voter_state("voter_b", VOTER_B_SK);
+	let mut voter_c_private = voter_state("voter_c", VOTER_C_SK);
+
+	let seed_coin =
+		format!(r#"{{"nonce": "{SEED_NONCE}", "color": "{NATIVE_TOKEN}", "value": {SEED_DUST}}}"#);
+	let beneficiary = format!(r#"{{"bytes": "{coin_public}"}}"#);
+
+	// The organizer opens the proposal before voters buy voting rights.
+	organizer_private = call!(
+		organizer_private,
+		"set_topic",
+		&["Fund the community pool", beneficiary.as_str(), seed_coin.as_str()]
+	)
+	.private_state;
+
+	// Each buy-in adds to the pot and returns a distinct voting token.
+	let buy_in_coin_a = format!(
+		r#"{{"nonce": "{BUY_IN_NONCE_A}", "color": "{NATIVE_TOKEN}", "value": {BUY_IN_DUST}}}"#
+	);
+	let buy_in_coin_b = format!(
+		r#"{{"nonce": "{BUY_IN_NONCE_B}", "color": "{NATIVE_TOKEN}", "value": {BUY_IN_DUST}}}"#
+	);
+	let buy_in_coin_c = format!(
+		r#"{{"nonce": "{BUY_IN_NONCE_C}", "color": "{NATIVE_TOKEN}", "value": {BUY_IN_DUST}}}"#
+	);
+	let buy_in_a = call!(organizer_private, "buy_in", &[buy_in_coin_a.as_str(), "1"]);
+	organizer_private = buy_in_a.private_state.clone();
+	let voting_coin_a = helper.shielded_coin_arg(&buy_in_a.result);
+	let buy_in_b = call!(organizer_private, "buy_in", &[buy_in_coin_b.as_str(), "1"]);
+	organizer_private = buy_in_b.private_state.clone();
+	let voting_coin_b = helper.shielded_coin_arg(&buy_in_b.result);
+	let buy_in_c = call!(organizer_private, "buy_in", &[buy_in_coin_c.as_str(), "1"]);
+	organizer_private = buy_in_c.private_state.clone();
+	let voting_coin_c = helper.shielded_coin_arg(&buy_in_c.result);
+
+	// Two yes votes and one no vote exercise both counters while leaving a cash-out majority.
+	voter_a_private =
+		call!(voter_a_private, "vote_commit", &["true", voting_coin_a.as_str()]).private_state;
+	voter_b_private =
+		call!(voter_b_private, "vote_commit", &["true", voting_coin_b.as_str()]).private_state;
+	voter_c_private =
+		call!(voter_c_private, "vote_commit", &["false", voting_coin_c.as_str()]).private_state;
+
+	// Move to reveal, then use each voter's private state to reproduce its commitment path.
+	organizer_private = call!(organizer_private, "advance", &[]).private_state;
+	call!(voter_a_private, "vote_reveal", &[]);
+	call!(voter_b_private, "vote_reveal", &[]);
+	call!(voter_c_private, "vote_reveal", &[]);
+
+	// Finalize the round and pay the pot to the configured beneficiary.
+	organizer_private = call!(organizer_private, "advance", &[]).private_state;
+	organizer_private = call!(organizer_private, "cash_out", &[]).private_state;
+
+	// Proves cash_out applied: set_topic asserts `state == setup`, which only reset_state sets.
+	let reseed_coin = format!(
+		r#"{{"nonce": "{RESEED_NONCE}", "color": "{NATIVE_TOKEN}", "value": {SEED_DUST}}}"#
+	);
+	call!(
+		organizer_private,
+		"set_topic",
+		&["Second round after cash-out", beneficiary.as_str(), reseed_coin.as_str()]
+	);
 }
 
 /// End-to-end coverage for ledger-9 ECDSA unshielded-signature support in the toolkit

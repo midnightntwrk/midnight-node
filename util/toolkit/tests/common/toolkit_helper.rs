@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use midnight_node_toolkit::{
 	cli_parsers,
@@ -42,6 +43,7 @@ pub struct CircuitOutput {
 	pub intent: PathBuf,
 	pub private_state: PathBuf,
 	pub zswap_state: PathBuf,
+	pub result: PathBuf,
 }
 
 pub struct CircuitCall<'a> {
@@ -326,6 +328,14 @@ impl ToolkitTestHelper {
 		}
 	}
 
+	/// Work-dir stem for one `generate_intent_*` call's outputs; the sequence number keeps
+	/// repeat calls to the same circuit from overwriting each other.
+	fn out_prefix(&self, label: &str) -> PathBuf {
+		static SEQ: AtomicUsize = AtomicUsize::new(0);
+		let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+		self.work_dir.path().join(format!("{seq:03}_{label}"))
+	}
+
 	pub async fn generate_intent_deploy(
 		&self,
 		config_file: &Path,
@@ -342,8 +352,9 @@ impl ToolkitTestHelper {
 		constructor_args: &[&str],
 	) -> Result<DeployOutput, Box<dyn std::error::Error + Send + Sync>> {
 		let intent = self.work_dir.path().join("deploy_intent.bin");
-		let private_state = self.work_dir.path().join("deploy_private_state.json");
-		let zswap_state = self.work_dir.path().join("deploy_zswap_state.json");
+		let out = self.out_prefix("deploy");
+		let private_state = out.with_extension("private_state.json");
+		let zswap_state = out.with_extension("zswap_state.json");
 
 		let args = GenerateIntentArgs {
 			js_command: JsCommand::Deploy(DeployCommandArgs {
@@ -377,10 +388,11 @@ impl ToolkitTestHelper {
 		call: CircuitCall<'_>,
 	) -> Result<CircuitOutput, Box<dyn std::error::Error + Send + Sync>> {
 		let CircuitCall { circuit_id, call_args } = call;
-		let out_intent = self.work_dir.path().join(format!("{circuit_id}_intent.bin"));
-		let out_private_state =
-			self.work_dir.path().join(format!("{circuit_id}_private_state.json"));
-		let out_zswap_state = self.work_dir.path().join(format!("{circuit_id}_zswap_state.json"));
+		let out = self.out_prefix(circuit_id);
+		let out_intent = out.with_extension("intent.bin");
+		let out_private_state = out.with_extension("private_state.json");
+		let out_zswap_state = out.with_extension("zswap_state.json");
+		let out_result = out.with_extension("result.json");
 
 		let args = GenerateIntentArgs {
 			js_command: JsCommand::Circuit(CircuitCommandArgs {
@@ -401,7 +413,7 @@ impl ToolkitTestHelper {
 					output_onchain_state: None,
 					output_private_state: RelativePath(out_private_state.clone()),
 					output_zswap_state: RelativePath(out_zswap_state.clone()),
-					output_result: None,
+					output_result: Some(RelativePath(out_result.clone())),
 					output_events: None,
 					circuit_id: circuit_id.to_string(),
 					call_args: call_args.iter().map(|s| s.to_string()).collect(),
@@ -416,7 +428,55 @@ impl ToolkitTestHelper {
 			intent: out_intent,
 			private_state: out_private_state,
 			zswap_state: out_zswap_state,
+			result: out_result,
 		})
+	}
+
+	pub fn read_result(&self, result_file: &Path) -> serde_json::Value {
+		let raw = std::fs::read_to_string(result_file)
+			.unwrap_or_else(|e| panic!("failed to read {}: {e}", result_file.display()));
+		serde_json::from_str(&raw)
+			.unwrap_or_else(|e| panic!("failed to parse {}: {e}", result_file.display()))
+	}
+
+	/// Re-encodes a `ShieldedCoinInfo` a circuit returned into the form the CLI parses.
+	/// Results render `Bytes<32>` as a byte array and `Uint<128>` as a string; arguments
+	/// want hex and a bare number.
+	pub fn shielded_coin_arg(&self, result_file: &Path) -> String {
+		let result = self.read_result(result_file);
+
+		let hex_field = |name: &str| -> String {
+			let bytes = result[name].as_array().unwrap_or_else(|| {
+				panic!("expected `{name}` to be a byte array in {}", result_file.display())
+			});
+			bytes
+				.iter()
+				.map(|b| {
+					let byte = b.as_u64().unwrap_or_else(|| {
+						panic!("non-numeric byte in `{name}` in {}", result_file.display())
+					});
+					format!("{byte:02x}")
+				})
+				.collect()
+		};
+
+		let value: u128 = result["value"]
+			.as_str()
+			.unwrap_or_else(|| panic!("expected `value` string in {}", result_file.display()))
+			.parse()
+			.unwrap_or_else(|e| panic!("invalid `value` in {}: {e}", result_file.display()));
+		// Temporary guard until compact-js-command accepts quoted bigint JSON fields.
+		const MAX_SAFE_INTEGER: u128 = (1 << 53) - 1;
+		assert!(
+			value <= MAX_SAFE_INTEGER,
+			"`value` {value} exceeds JavaScript's safe integer limit ({MAX_SAFE_INTEGER})"
+		);
+
+		format!(
+			r#"{{"nonce": "{}", "color": "{}", "value": {value}}}"#,
+			hex_field("nonce"),
+			hex_field("color"),
+		)
 	}
 
 	pub async fn send_intent(
