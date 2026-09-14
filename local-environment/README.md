@@ -145,32 +145,6 @@ Use `--allow-same-version` only for local rehearsals where the candidate wasm
 does not bump `spec_version`. It deliberately bypasses the runtime-side version
 check and should not be used for production-shaped validation.
 
-### Consensus engine (AURA → BABE) transitions
-
-`pallet-consensus-engine`'s `arm_babe` and `schedule_flip` calls are gated by
-governance motion filter, like runtime upgrades.
-
-`consensus-upgrade-arm-babe` moves the engine from `Aura` to `ArmedBabe`.
-
-```bash
-npm run consensus-upgrade-arm-babe:local-env -- \
-  --technical-uris //One //Two //Three \
-  --council-uris //Four //Five //Six \
-  --executor-uri //One
-```
-
-`consensus-upgrade-schedule-flip` moves it from `ArmedBabe` to `ScheduledFlip`
-Run it only after the finalized blocks have BABE pre-runtime digests.
-
-```bash
-npm run consensus-upgrade-schedule-flip:local-env -- \
-  --technical-uris //One //Two //Three \
-  --council-uris //Four //Five //Six \
-  --executor-uri //One
-```
-
-Both commands will error if the pallet is not a state expected for given call.
-
 ### Stopping networks
 
 ```bash
