@@ -5,7 +5,7 @@ services:
     # shared volume once at startup; using the multi-arch busybox image lets Docker
     # fetch the right arch automatically, so no per-arch binaries are vendored.
     container_name: busybox-init
-    image: busybox:1.35.0-uclibc
+    image: busybox:1.38.0-uclibc@sha256:297dda192bda2157ddf40abb47a45a1090caff1864db9cfb9ce4b901ba318a3c
     platform: ${ARCHITECTURE}
     command: ["sh", "-c", "cp /bin/busybox /shared/busybox && chmod 0755 /shared/busybox"]
     security_opt:
@@ -307,7 +307,7 @@ services:
     profiles: ["withindexer"]
     container_name: postgres-indexer
     platform: ${ARCHITECTURE}
-    image: "postgres:17.1-alpine@sha256:0d9624535618a135c5453258fd629f4963390338b11aaffb92292c12df3a6c17"
+    image: "postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73"
     restart: "always"
     volumes:
       - postgres-indexer-data:/var/lib/postgresql/data
@@ -326,7 +326,7 @@ services:
   nats:
     profiles: ["withindexer"]
     container_name: nats
-    image: "nats:2.11.8@sha256:e7ecc3cf81f4ccada9d24f8466d157ff472c20a12a5f8dddaeb26d71e7b42ee1"
+    image: "nats:2.14.5@sha256:026a66a4497c6d7d3eed741781770099c48c755bf3a55b6950d76dd210596eb3"
     restart: "always"
     command:
       ["--user", "indexer", "--pass", "${APP__INFRA__PUB_SUB__PASSWORD}", "-js"]
