@@ -141,7 +141,7 @@ generate-keys:
     ARG D_PERMISSIONED
     ARG NUM_BOOT_NODES
     ARG NUM_VALIDATOR_NODES
-    FROM earthly/dind:alpine-3.20-docker-26.1.5-r0
+    FROM earthly/dind:alpine-3.20-docker-26.1.5-r0@sha256:d5e41b181f38e04078c7b57e4ceae16465931ecd8f55092332a80f53f68a81d9
     RUN apk add --no-cache python3
     COPY scripts/generate-keys.py .
     COPY --if-exists secrets/$NETWORK-seeds-aws.json secrets/seeds-aws.json
@@ -168,7 +168,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.95-trixie
+    FROM rust:1.95-trixie@sha256:f49565f188ee00bc2a18dd418183f2c5f23ef7d6e691890517ed341a598f67c3
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -828,7 +828,7 @@ node-ci-image-single-platform:
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
     # Read versions from files (multi-FROM so we don't depend on env vars propagating)
-    FROM alpine:3.20
+    FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
     COPY rust-toolchain.toml COMPACTC_VERSION .
     ARG NATIVEARCH
     ARG RUST_VERSION=$(grep '^channel' rust-toolchain.toml | sed 's/.*"\(.*\)".*/\1/')
@@ -1279,7 +1279,7 @@ test-toolkit:
     ARG NODE_IMAGE
     ARG FORK_FROM_NODE_IMAGE
     ARG RUN_COMPACT_CONTRACT_TESTS
-    FROM earthly/dind:alpine
+    FROM earthly/dind:alpine@sha256:8de4d6a322a9cdde70daa58c7c9c4eba7f2fb79190c4396789bb8ba057366950
     RUN mkdir -p /artifacts
 
     LET EXTRA_DOCKER_ENV=""
@@ -1437,7 +1437,7 @@ srtool-build:
     # tag: given just `0.18.4` it reads the rust half as the image's version and offers
     # `1.93.0` as a "v1 major", which resolves to a tag that does not exist.
     # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_TAG=1.93.0-0.18.4
+    ARG SRTOOL_TAG=1.93.0-0.18.4@sha256:8638a668bd6d29111dc01953fbead6eb08c062e1cc62d3047a245a52b6edb3bf
     FROM paritytech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
@@ -1468,7 +1468,7 @@ srtool-build:
 # srtool-info displays information about the srtool build without building
 srtool-info:
     # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_TAG=1.93.0-0.18.4
+    ARG SRTOOL_TAG=1.93.0-0.18.4@sha256:8638a668bd6d29111dc01953fbead6eb08c062e1cc62d3047a245a52b6edb3bf
     FROM paritytech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root
@@ -1801,7 +1801,7 @@ chain-params-check:
 
 # compares addresses with testnet-02
 addresses-check:
-    FROM node:iron-alpine3.21
+    FROM node:iron-alpine3.21@sha256:eb0b81f6eb35ec5ecd1cab181801f93a6314127580b416e6e290363b724e1686
     RUN apk add --no-cache nodejs yarn
     COPY res/testnet-02/addresses.json /addresses.json
     COPY --dir scripts /
@@ -2135,7 +2135,7 @@ sync-mainnet-1000-snapshot:
     ARG MIN_EPOCH=617
     # postgres:17.4-alpine matches the loader image used by run-sync.sh and
     # ships psql + pg_dump out of the box. xz/bash are added for build-snapshot.sh.
-    FROM postgres:17.4-alpine
+    FROM postgres:17.4-alpine@sha256:7062a2109c4b51f3c792c7ea01e83ed12ef9a980886e3b3d380a7d2e5f6ce3f5
     RUN apk add --no-cache bash xz
     WORKDIR /work
     COPY scripts/sync-test/build-snapshot.sh ./
