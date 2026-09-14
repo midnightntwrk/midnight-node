@@ -465,6 +465,7 @@ pub fn new_partial(
 
 	let sc_slot_config = sidechain_slots::runtime_api_client::slot_config(&*client)
 		.map_err(sp_blockchain::Error::from)?;
+	let slots_per_epoch = sc_slot_config.slots_per_epoch.0;
 
 	let time_source = Arc::new(SystemTimeSource);
 	let inherent_config = CreateInherentDataConfig::new(epoch_config, sc_slot_config, time_source)
@@ -522,8 +523,12 @@ pub fn new_partial(
 	//
 	// Constructed at startup on the real client, including while the chain is still on AURA.
 	// `prune_finalized` skips headers with no BABE pre-digest (paritytech/polkadot-sdk#12754),
-	// so this no longer panics at genesis or on a finalized AURA block.
-	let babe_config = sc_consensus_babe::configuration(&*client)?;
+	// so this no longer panics at genesis or on a finalized AURA block. The configuration
+	// helper also tolerates a runtime that does not yet implement `BabeApi` (AURA-only WASM
+	// before the pallet-babe upgrade): it synthesizes a placeholder so start does not fail
+	// with `VersionInvalid`.
+	let babe_config =
+		crate::babe_authoring::configuration_at_startup(&*client, slot_duration, slots_per_epoch)?;
 	let babe_slot_duration = babe_config.slot_duration();
 	let (babe_block_import, babe_link) = sc_consensus_babe::block_import(
 		babe_config,

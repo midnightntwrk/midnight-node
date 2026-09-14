@@ -35,19 +35,27 @@
 //!
 //! Seeding is idempotent and its check-and-reset is atomic under the epoch-tree lock, so both
 //! triggers may run concurrently on an authority.
+//!
+//! [`configuration_at_startup`] is the other start-of-day seam: `BabeBlockImport` is built in
+//! `new_partial` even while the chain is still on AURA, but `sc_consensus_babe::configuration`
+//! requires on-chain `BabeApi`. A node binary rolled out *before* the runtime upgrade that adds
+//! `pallet-babe` would otherwise refuse to start. When the WASM at best/genesis has no `BabeApi`,
+//! the helper synthesizes a placeholder from the AURA slot duration and sidechain epoch length
+//! so the idle BABE pipeline can still be constructed. Real epoch descriptors are seeded from
+//! `BabeApi` at the flip, not from that placeholder.
 
 use crate::consensus_engine_dispatch::{EpochSeeder, engine_from_pre_runtime_digest};
 use futures::StreamExt;
 use midnight_node_runtime::opaque::Block;
 use midnight_primitives_consensus_engine::{ActiveEngine, ConsensusEngineApi};
 use parity_scale_codec::Encode;
-use sc_client_api::{AuxStore, BlockchainEvents};
+use sc_client_api::{AuxStore, BlockchainEvents, UsageProvider};
 use sc_consensus_babe::{BabeBlockWeight, BabeLink, aux_schema::block_weight_key};
 use sc_consensus_epochs::{EpochChanges, IsDescendentOfBuilder, descendent_query};
-use sp_api::ProvideRuntimeApi;
+use sp_api::{ApiExt, ProvideRuntimeApi};
 use sp_blockchain::{HeaderBackend, HeaderMetadata};
-use sp_consensus_babe::{BABE_ENGINE_ID, BabeApi};
-use sp_consensus_slots::Slot;
+use sp_consensus_babe::{BABE_ENGINE_ID, BabeApi, BabeConfiguration};
+use sp_consensus_slots::{Slot, SlotDuration};
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT, NumberFor};
 use std::future::Future;
 use std::sync::Arc;
@@ -79,6 +87,62 @@ impl<C> SupervisorClient for C where
 		+ Sync
 		+ 'static
 {
+}
+
+/// BABE configuration used to construct `BabeBlockImport` at node start.
+///
+/// Prefers the on-chain [`BabeApi`] at best (or genesis, when there is no finalized state),
+/// matching [`sc_consensus_babe::configuration`]. If that WASM does not implement `BabeApi`
+/// yet — an AURA-only runtime, before the upgrade that introduces `pallet-babe` — returns a
+/// placeholder built from the AURA slot duration and the sidechain epoch length instead of
+/// failing start with `VersionInvalid("Unsupported or invalid BabeApi version")`.
+///
+/// The placeholder copies [`midnight_node_runtime::BABE_GENESIS_EPOCH_CONFIG`] so `c` and
+/// `allowed_slots` match what `BabeApi::configuration` will report after the upgrade (the
+/// pallet's `EpochConfig` is unset until the flip). Epoch descriptors used to verify/author
+/// BABE blocks are seeded from `BabeApi` at the flip, not from this value.
+pub fn configuration_at_startup<C>(
+	client: &C,
+	aura_slot_duration: SlotDuration,
+	slots_per_epoch: u32,
+) -> sp_blockchain::Result<BabeConfiguration>
+where
+	C: AuxStore + ProvideRuntimeApi<Block> + UsageProvider<Block>,
+	C::Api: BabeApi<Block>,
+{
+	let at_hash = if client.usage_info().chain.finalized_state.is_some() {
+		client.usage_info().chain.best_hash
+	} else {
+		client.usage_info().chain.genesis_hash
+	};
+
+	match client.runtime_api().api_version::<dyn BabeApi<Block>>(at_hash)? {
+		None => {
+			log::warn!(
+				target: LOG_TARGET,
+				"BabeApi is not implemented at {at_hash:?}; constructing the BABE import pipeline \
+				 from AURA slot duration and sidechain epoch length. BABE stays idle until the \
+				 runtime upgrade exposes BabeApi.",
+			);
+			Ok(placeholder_configuration(aura_slot_duration, slots_per_epoch))
+		},
+		Some(_) => sc_consensus_babe::configuration(client),
+	}
+}
+
+pub(crate) fn placeholder_configuration(
+	aura_slot_duration: SlotDuration,
+	slots_per_epoch: u32,
+) -> BabeConfiguration {
+	let epoch_config = midnight_node_runtime::BABE_GENESIS_EPOCH_CONFIG;
+	BabeConfiguration {
+		slot_duration: aura_slot_duration.as_millis(),
+		epoch_length: u64::from(slots_per_epoch),
+		c: epoch_config.c,
+		authorities: Vec::new(),
+		randomness: [0u8; 32],
+		allowed_slots: epoch_config.allowed_slots,
+	}
 }
 
 /// The engine active in the state of `hash`, defaulting to AURA when the query fails (the safe
@@ -478,5 +542,21 @@ mod tests {
 	fn active_engine_at_defaults_to_aura_when_the_runtime_query_fails() {
 		let api = TestApi { engine: None };
 		assert_eq!(active_engine_at(&api, Default::default()), ActiveEngine::Aura);
+	}
+
+	#[test]
+	fn placeholder_configuration_matches_runtime_genesis_epoch_and_aura_timing() {
+		let slots_per_epoch = 10;
+		let config = placeholder_configuration(
+			SlotDuration::from_millis(midnight_node_runtime::SLOT_DURATION),
+			slots_per_epoch,
+		);
+		let genesis = midnight_node_runtime::BABE_GENESIS_EPOCH_CONFIG;
+		assert_eq!(config.slot_duration, midnight_node_runtime::SLOT_DURATION);
+		assert_eq!(config.epoch_length, u64::from(slots_per_epoch));
+		assert_eq!(config.c, genesis.c);
+		assert_eq!(config.allowed_slots, genesis.allowed_slots);
+		assert!(config.authorities.is_empty());
+		assert_eq!(config.randomness, [0u8; 32]);
 	}
 }
