@@ -316,7 +316,7 @@ impl ToolkitTestHelper {
 			network: self.network.clone(),
 			seed: cli_parsers::SchemeSeed {
 				seed: cli_parsers::wallet_seed_decode(seed).expect("invalid wallet seed"),
-				scheme: midnight_node_ledger_helpers::UnshieldedSignatureScheme::Schnorr,
+				scheme: midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme::Schnorr,
 			},
 			specific_address: SpecificAddressTypeArgs { coin_public: true, ..Default::default() },
 		};

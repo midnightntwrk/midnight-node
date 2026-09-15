@@ -17,8 +17,8 @@ use ledger_helpers_local::{
 	TransactionWithContext, Transient, UnshieldedOfferInfo, UnshieldedWallet, UtxoId,
 	UtxoOutputInfo, UtxoSpendInfo, Wallet, WalletAddress, WalletSeed, zswap,
 };
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTxBatches;
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
 use rand::SeedableRng;
 use std::{collections::HashMap, sync::Arc};
 

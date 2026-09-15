@@ -1,8 +1,8 @@
+use midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme;
 use midnight_node_e2e::api::cardano::CardanoClient;
 use midnight_node_e2e::api::midnight::MidnightClient;
 use midnight_node_e2e::config::{self, Settings};
 use midnight_node_e2e::e2e_test;
-use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::events::{
     Deregistration, Registration,
 };

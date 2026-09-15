@@ -1,7 +1,7 @@
 use crate::commands::contract_address::{ContractAddressBoth, ContractAddressError};
 use hex::ToHex;
 use ledger_helpers_local::{DefaultDB, FinalizedTransaction, mn_ledger_serialize};
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 pub fn extract_contract_address(
 	tx_bytes: &[u8],

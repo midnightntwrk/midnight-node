@@ -1,5 +1,5 @@
 use hex::ToHex as _;
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
 	DustGenerationInfo, InitialNonce, QualifiedDustOutput, QualifiedInfo, Timestamp, Utxo,
 	persistent_commit, serialize_untagged,
 };
