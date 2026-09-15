@@ -13,7 +13,7 @@
 
 use crate::commands::show_night_pools::NightPools;
 use ledger_helpers_local::DefaultDB;
-use midnight_node_ledger_helpers::ledger_9 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_9 as ledger_helpers_local;
 
 /// Read the NIGHT pools (Reserved / Locked / Unlocked + the rest of the supply
 /// breakdown) off the full `LedgerState` held by a replayed `LedgerContext`.

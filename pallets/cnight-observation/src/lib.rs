@@ -80,7 +80,7 @@ pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER
 pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
 	use midnight_primitives::{
-		LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
+		LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionCNightExecutor,
 	};
 	use midnight_primitives_cnight_observation::{
 		CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
@@ -157,7 +157,7 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config<Hash = H256> {
-		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
+		type MidnightSystemTransactionExecutor: MidnightSystemTransactionCNightExecutor;
 		/// Reads the ledger state key, to capture the pre-hardfork (ledger-8)
 		/// one before the pallet-midnight translation replaces it.
 		type LedgerStateProvider: LedgerStateProvider;

@@ -25,6 +25,7 @@ use ledger_storage_local::{
 	storage::default_storage,
 };
 
+use crate::utils::SegmentResults;
 use helpers_local::{StorableSyntheticCost, compute_overall_fullness};
 use midnight_serialize_local::{self as serialize, Tagged};
 use mn_ledger_local::{
@@ -178,14 +179,14 @@ impl<D: DB> Ledger<D> {
 			TransactionResult::PartialSuccess(segments, _) => {
 				log::warn!(
 					target: LOG_TARGET,
-					"Non guaranteed part of the transaction failed tx_hash = {:?}, segments = {:?}",
+					"Non guaranteed part of the transaction failed tx_hash = {:?}, segments = [{}]",
 					tx.identifiers().map(|i| api.tagged_serialize(&i)).collect::<Vec<_>>(),
-					segments
+					SegmentResults(&segments)
 				);
 				Ok((new_sp, AppliedStage::PartialSuccess(segments.into_iter().collect())))
 			},
 			TransactionResult::Failure(reason) => {
-				log::warn!(target: LOG_TARGET, "Error applying Transaction: {reason:?}");
+				log::warn!(target: LOG_TARGET, "Error applying Transaction: {reason}");
 				Err(LedgerApiError::Transaction(TransactionError::Invalid(reason.into())))
 			},
 		}
@@ -307,10 +308,9 @@ impl<D: DB> Borrow<LedgerState<D>> for Ledger<D> {
 mod tests {
 	use super::super::Api;
 	use super::*;
-	use crate::ledger_8::{
-		CRATE_NAME, TransactionSignature as Signature, helpers_local::extract_tx_with_context,
-	};
+	use crate::ledger_8::{CRATE_NAME, TransactionSignature as Signature};
 	use ledger_storage_local::DefaultDB;
+	use midnight_ledger_unsafe_helpers::ledger_8::extract_tx_with_context;
 	use midnight_node_res::{
 		networks::{MidnightNetwork, UndeployedNetwork},
 		undeployed::transactions::{CHECK_TX, CONTRACT_ADDR, DEPLOY_TX, MAINTENANCE_TX, STORE_TX},

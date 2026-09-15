@@ -1,6 +1,6 @@
 use crate::cli_parsers as cli;
 use clap::Args;
-use midnight_node_ledger_helpers::{DefaultDB, DerivationPath, Role, ShieldedWallet, WalletSeed};
+use midnight_ledger_unsafe_helpers::{DefaultDB, DerivationPath, Role, ShieldedWallet, WalletSeed};
 #[derive(Args)]
 pub struct ShowViewingKeyArgs {
 	/// Target network

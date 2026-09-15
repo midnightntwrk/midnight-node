@@ -2,7 +2,7 @@ use midnight_node_ledger_helpers::fork::raw_block_data::RawTransaction;
 use serde::{Deserialize, Serialize};
 
 use ledger_helpers_local::{DefaultDB, PureGeneratorPedersen, SystemTransaction, deserialize};
-use midnight_node_ledger_helpers::ledger_8 as ledger_helpers_local;
+use midnight_ledger_unsafe_helpers::ledger_8 as ledger_helpers_local;
 
 type Signature = ledger_helpers_local::Signature;
 type ProofMarker = ledger_helpers_local::ProofMarker;

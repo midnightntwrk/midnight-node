@@ -3,7 +3,7 @@ use crate::config::{NodeClientSettings, OgmiosClientSettings};
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use hex::ToHex;
-use midnight_node_ledger_helpers::{
+use midnight_ledger_unsafe_helpers::{
     DefaultDB, DustWallet, LedgerParameters, WalletSeed, deserialize, serialize_untagged,
 };
 use midnight_node_metadata::midnight_metadata_latest::c_night_observation::storage::utxo_owners::Output as UtxoOwners;

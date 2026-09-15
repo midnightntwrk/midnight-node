@@ -10,7 +10,7 @@ use crate::{
 	serde_def::{DustGenerationInfoSer, QualifiedDustOutputSer},
 };
 use clap::Args;
-use midnight_node_ledger_helpers::UnshieldedSignatureScheme;
+use midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme;
 
 #[derive(Args)]
 pub struct DustBalanceArgs {
@@ -324,7 +324,7 @@ mod tests {
 		// `get_ledger_snapshot`) come into scope via the `&dyn
 		// WalletStateCaching` trait object type that `create_file_wallet_cache`
 		// returns — no explicit `use` import needed for method dispatch.
-		use midnight_node_ledger_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
+		use midnight_ledger_unsafe_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
 		use std::time::{SystemTime, UNIX_EPOCH};
 
 		let tempdir = tempfile::tempdir().expect("create tempdir for cache");

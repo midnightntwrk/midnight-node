@@ -1,7 +1,7 @@
 use frame_support::{construct_runtime, derive_impl, traits::ConstU32};
 use frame_system::EnsureRoot;
 use midnight_node_ledger::types::Hash;
-use midnight_primitives::MidnightSystemTransactionExecutor;
+use midnight_primitives::MidnightSystemTransactionBridgeExecutor;
 use sp_io::TestExternalities;
 use sp_runtime::{AccountId32, BuildStorage};
 
@@ -36,7 +36,7 @@ pub mod mock_pallet {
 	#[pallet::storage]
 	pub type ExecutorFails<T: Config> = StorageValue<_, bool, ValueQuery>;
 
-	impl<T> MidnightSystemTransactionExecutor for Pallet<T> {
+	impl<T> MidnightSystemTransactionBridgeExecutor for Pallet<T> {
 		fn execute_system_transaction(tx: Vec<u8>) -> Result<Hash, DispatchError> {
 			if ExecutorFails::<Test>::get() {
 				return Err(DispatchError::Other("ledger rejected the system transaction"));
