@@ -330,8 +330,8 @@ We **don't run the Rust e2e suite** automatically against these. We do support
 - `npm run full-upgrade:<network>` — image + governance, sequentially.
 
 For the exact invocations — required env vars (`NODE_IMAGE`, `NEW_NODE_IMAGE`)
-and CLI options (`--wasm`, `--council-uris`, `--technical-uris`,
-`--executor-uri`, `--from-snapshot`) — see
+and CLI options (`--wasm` / `--wasm-from-image`, `--council-uris`,
+`--technical-uris`, `--executor-uri`, `--from-snapshot`) — see
 [`local-environment/README.md`](../../local-environment/README.md).
 
 Networks other than `dev` require AWS access to rebuild genesis — ping the node team.

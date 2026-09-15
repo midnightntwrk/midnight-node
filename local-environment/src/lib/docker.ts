@@ -55,33 +55,104 @@ export function stopDockerCompose(options: DockerComposeOptions) {
   });
 }
 
-export function runDockerCompose(options: DockerComposeOptions): Promise<void> {
-  const args = [...fileArgs(options), "up", "--build"];
-  if (options.detach) {
-    args.push("--detach");
-  }
-  if (options.profiles) {
-    for (const profile of options.profiles) {
-      args.unshift(`--profile=${profile}`);
-    }
-  }
-  args.unshift("compose");
-
+function spawnDockerCompose(args: string[], env: Record<string, string>, onFail: (code: number | null) => Error): Promise<void> {
   return new Promise((resolve, reject) => {
-    const docker = spawn("docker", args, {
-      stdio: "inherit",
-      env: options.env,
-    });
-
+    const docker = spawn("docker", args, { stdio: "inherit", env });
     docker.on("error", reject);
     docker.on("exit", (code) => {
       if (code === 0) {
         resolve();
         return;
       }
-      reject(new Error(`docker compose up exited with code ${code}`));
+      reject(onFail(code));
     });
   });
+}
+
+function runDocker(args: string[], env: Record<string, string>): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const docker = spawn("docker", args, { stdio: "inherit", env });
+    docker.on("error", reject);
+    docker.on("exit", (code) => resolve(code ?? 1));
+  });
+}
+
+/**
+ * Make sure `image` is available and up to date: pull it so a moved tag isn't
+ * served stale, but if the pull fails (no such repository, offline, ...) fall
+ * back to a local copy rather than pulling. Only fails if the image is in
+ * neither place.
+ */
+export async function ensureImageAvailable(
+  image: string,
+  env: Record<string, string>,
+): Promise<void> {
+  if ((await runDocker(["pull", image], env)) === 0) return;
+
+  const inspectCode = await new Promise<number>((resolve, reject) => {
+    const docker = spawn("docker", ["image", "inspect", image], {
+      stdio: "ignore",
+      env,
+    });
+    docker.on("error", reject);
+    docker.on("exit", (code) => resolve(code ?? 1));
+  });
+  if (inspectCode !== 0) {
+    throw new Error(`Image '${image}' was not found locally or in a registry.`);
+  }
+  console.warn(`⚠️  Could not pull ${image}; using the local copy.`);
+}
+
+function resolveComposeImages(options: DockerComposeOptions): Promise<string[]> {
+  const args = [
+    "compose",
+    ...(options.profiles ?? []).map((p) => `--profile=${p}`),
+    ...fileArgs(options),
+    "config",
+    "--images",
+  ];
+  return new Promise((resolve, reject) => {
+    const docker = spawn("docker", args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: options.env,
+    });
+    let stdout = "";
+    let stderr = "";
+    docker.stdout.on("data", (chunk) => (stdout += chunk));
+    docker.stderr.on("data", (chunk) => (stderr += chunk));
+    docker.on("error", reject);
+    docker.on("exit", (code) => {
+      if (code !== 0) {
+        reject(new Error(`docker compose config --images failed: ${stderr.trim()}`));
+        return;
+      }
+      resolve(
+        stdout
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
+    });
+  });
+}
+
+export async function runDockerCompose(options: DockerComposeOptions): Promise<void> {
+  const images = new Set(await resolveComposeImages(options));
+  for (const image of images) {
+    await ensureImageAvailable(image, options.env);
+  }
+
+  const profileArgs = (options.profiles ?? []).map((p) => `--profile=${p}`);
+  const args = ["compose", ...profileArgs, ...fileArgs(options), "up", "--build"];
+  if (options.detach) {
+    args.push("--detach");
+  }
+
+  await spawnDockerCompose(
+    args,
+    options.env,
+    (code) => new Error(`docker compose up exited with code ${code}`),
+  );
 }
 
 /**

@@ -133,8 +133,31 @@ npm run image-upgrade:preview -- --from-snapshot https://example.com/snapshots/p
 ```
 
 `governance-runtime-upgrade` submits the federated-authority flow against a
-running fork. The wasm path must resolve under the repo-level `artifacts/`
-directory.
+running fork. The candidate runtime comes either from a node image or from a
+`--wasm` path, which must resolve under the repo-level `artifacts/` directory.
+
+Node images ship the runtime they were built with under `/artifacts-<arch>/`, so
+the simplest form takes it straight from the image being rolled out — no
+pre-populated `artifacts/` needed. With `--wasm` omitted it defaults to
+`$NEW_NODE_IMAGE`, else `$NODE_IMAGE` / `$MIDNIGHT_NODE_IMAGE`:
+
+```bash
+NEW_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:new \
+npm run governance-runtime-upgrade:preview -- \
+  --council-uris //Dave //Eve //Ferdie \
+  --technical-uris //Alice //Bob //Charlie \
+  --executor-uri //Alice
+```
+
+`--wasm-from-image <image>` names the source image explicitly. The blob is
+extracted with `docker create` + `docker cp` (nothing in the image is executed),
+the `*.compact.compressed.wasm` variant is preferred — what production upgrades
+submit — and it lands in `artifacts/from-image/<image>/`, re-extracted on every
+run so a moved tag never leaves a stale runtime behind.
+
+Use `--wasm` when the blob is not in an image: notably a **release asset**, which
+is the srtool deterministic build rather than the Earthly build an image carries.
+That is the one to validate before a real release.
 
 ```bash
 npm run governance-runtime-upgrade:preview -- \
@@ -144,6 +167,10 @@ npm run governance-runtime-upgrade:preview -- \
   --executor-uri //Alice
 ```
 
+Taking the runtime from the image the network is already running gives a
+candidate with the same `spec_version`, which the runtime rejects; the command
+warns and points at `--allow-same-version` for local rehearsals.
+
 `full-upgrade` runs the production-shaped rehearsal: first the image rollout,
 then the governance runtime upgrade against the running fork.
 
@@ -152,7 +179,6 @@ NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:old \
 NEW_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:new \
 npm run full-upgrade:preview -- \
   --from-snapshot https://example.com/snapshots/preview-latest.tar.zst \
-  --wasm upgrade/midnight_node_runtime.compact.wasm \
   --council-uris //Dave //Eve //Ferdie \
   --technical-uris //Alice //Bob //Charlie \
   --executor-uri //Alice

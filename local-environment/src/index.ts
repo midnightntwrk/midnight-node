@@ -59,7 +59,8 @@ interface ImageUpgradeCliOpts {
 }
 
 interface FederatedRuntimeUpgradeCliOpts {
-  wasm: string;
+  wasm?: string;
+  wasmFromImage?: string;
   rpcUrl?: string;
   councilUris: string[];
   technicalUris: string[];
@@ -94,7 +95,8 @@ interface FullUpgradeCliOpts {
   healthTimeout?: number;
   requireHealthy?: boolean;
   // governance runtime upgrade surface
-  wasm: string;
+  wasm?: string;
+  wasmFromImage?: string;
   rpcUrl?: string;
   councilUris: string[];
   technicalUris: string[];
@@ -261,7 +263,14 @@ program
 
 program
   .command("governance-runtime-upgrade <network>")
-  .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
+  .option(
+    "--wasm <path>",
+    "Path to the runtime wasm blob, relative to local-environment/artifacts/",
+  )
+  .option(
+    "--wasm-from-image <image>",
+    "Take the runtime wasm from this node image instead of --wasm (node images ship it under /artifacts-<arch>/). Defaults to $NEW_NODE_IMAGE, else $NODE_IMAGE / $MIDNIGHT_NODE_IMAGE, when --wasm is omitted.",
+  )
   .requiredOption(
     "--council-uris <uri...>",
     "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
@@ -324,6 +333,7 @@ program
 
     const opts: FederatedRuntimeUpgradeOptions = {
       wasmPath: cliOpts.wasm,
+      wasmFromImage: cliOpts.wasmFromImage,
       rpcUrl: cliOpts.rpcUrl,
       skipRun: cliOpts.skipRun,
       profiles,
@@ -341,7 +351,14 @@ program
 
 program
   .command("full-upgrade <network>")
-  .requiredOption("--wasm <path>", "Path to the runtime wasm blob")
+  .option(
+    "--wasm <path>",
+    "Path to the runtime wasm blob, relative to local-environment/artifacts/",
+  )
+  .option(
+    "--wasm-from-image <image>",
+    "Take the runtime wasm from this node image instead of --wasm (node images ship it under /artifacts-<arch>/). Defaults to $NEW_NODE_IMAGE, else $NODE_IMAGE / $MIDNIGHT_NODE_IMAGE, when --wasm is omitted.",
+  )
   .requiredOption(
     "--council-uris <uri...>",
     "Space-separated sr25519 URIs for council proposers and voters (must meet the 2/3 threshold)",
@@ -434,6 +451,7 @@ program
       requireHealthy: cliOpts.requireHealthy !== false,
       // runtime upgrade surface
       wasmPath: cliOpts.wasm,
+      wasmFromImage: cliOpts.wasmFromImage,
       rpcUrl: cliOpts.rpcUrl,
       councilUris,
       techCommitteeUris: techUris,
