@@ -20,6 +20,39 @@
 #![cfg(feature = "std")]
 
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Whether the mempool batch-verification ingress point is enabled on this node.
+///
+/// Set once during node startup via [`set_batch_verify_enabled`]; defaults to `false` so any
+/// embedder that never calls it (tests, the toolkit, node subcommands) stays quiet.
+static BATCH_VERIFY_MEMPOOL_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the block-import batch-verification ingress point is enabled on this node. See
+/// [`BATCH_VERIFY_MEMPOOL_ENABLED`].
+static BATCH_VERIFY_BLOCK_IMPORT_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Records which batch-verification ingress points are enabled for this process. Called once from
+/// node startup.
+pub fn set_batch_verify_enabled(mempool: bool, block_import: bool) {
+	BATCH_VERIFY_MEMPOOL_ENABLED.store(mempool, Ordering::Relaxed);
+	BATCH_VERIFY_BLOCK_IMPORT_ENABLED.store(block_import, Ordering::Relaxed);
+}
+
+/// Whether a transaction reaching **mempool** validation should already carry a batch-verified
+/// proof result. Only the mempool ingress point warms the cache before that happens.
+pub fn batch_verify_mempool_enabled() -> bool {
+	BATCH_VERIFY_MEMPOOL_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Whether a transaction reaching **block execution** (`pre_dispatch`, then dispatch) should
+/// already carry a batch-verified proof result. Either ingress point can have warmed it: the
+/// mempool worker pool on the node that authored the block, or the block-import wrapper on a node
+/// importing someone else's.
+pub fn batch_verify_block_enabled() -> bool {
+	BATCH_VERIFY_MEMPOOL_ENABLED.load(Ordering::Relaxed)
+		|| BATCH_VERIFY_BLOCK_IMPORT_ENABLED.load(Ordering::Relaxed)
+}
 
 /// Why an aggregate batch proof verification failed.
 ///
@@ -39,4 +72,41 @@ pub enum BatchVerifyFailure {
 	/// not localize (the legacy v2 proof batch, verifier-key initialization). Nothing may be
 	/// concluded about any individual transaction in the batch.
 	Unlocalized,
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{
+		batch_verify_block_enabled, batch_verify_mempool_enabled, set_batch_verify_enabled,
+	};
+
+	/// Both flags must default to `false` so an embedder that never sets them (tests, the toolkit,
+	/// node subcommands) does not get the batching-on error logging.
+	///
+	/// The block-execution flag is deliberately the OR of the two ingress points, while the
+	/// mempool flag tracks only its own: with block-import batching on but the mempool path off,
+	/// a transaction entering the pool has legitimately not been batch-verified, and treating that
+	/// as an error would log once per transaction in the configuration the presets recommend.
+	#[test]
+	fn batch_verify_flags_default_off_and_track_their_own_ingress() {
+		assert!(!batch_verify_mempool_enabled(), "mempool default must be off");
+		assert!(!batch_verify_block_enabled(), "block default must be off");
+
+		set_batch_verify_enabled(false, true);
+		assert!(!batch_verify_mempool_enabled(), "block-import alone must not arm the mempool");
+		assert!(batch_verify_block_enabled(), "block-import alone arms block execution");
+
+		set_batch_verify_enabled(true, false);
+		assert!(batch_verify_mempool_enabled());
+		assert!(
+			batch_verify_block_enabled(),
+			"the mempool warms the cache for block execution too"
+		);
+
+		// Restore: the flags are process-global, and leaving them set would make every later
+		// `get_verified_transaction` miss in this process log at ERROR.
+		set_batch_verify_enabled(false, false);
+		assert!(!batch_verify_mempool_enabled());
+		assert!(!batch_verify_block_enabled());
+	}
 }

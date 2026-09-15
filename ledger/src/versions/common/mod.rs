@@ -420,6 +420,7 @@ where
 			&block_context,
 			&cache_key,
 			tblock_correction,
+			crate::common::batch::batch_verify_block_enabled(),
 		)?;
 		log::trace!(
 			target: LOG_TARGET,
@@ -1409,12 +1410,19 @@ where
 	/// path — where `well_formed` verified the proofs itself — and `None` on a strict-cache hit or a
 	/// proof-cache hit (crypto deferred). Callers record `Some` as the `mode="inline"` proof-verify
 	/// metric, the per-transaction baseline the batched cost is compared against.
+	///
+	/// `batching_expected` says whether the ingress point that covers *this* call site is enabled,
+	/// so a proof-cache miss can be reported at the right severity. The caller decides, because
+	/// the two ingress points cover different call sites: the mempool worker pool warms the cache
+	/// for mempool validation, while block execution is covered by either it (on the authoring
+	/// node) or the block-import wrapper (on an importing one).
 	fn get_verified_transaction(
 		ledger: &Ledger<D>,
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
 		tblock_correction: Option<&TBlockCorrection>,
+		batching_expected: bool,
 	) -> Result<(VerifiedTransaction<D>, Option<std::time::Duration>), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
@@ -1472,12 +1480,23 @@ where
 			},
 			None => {
 				verifies_proofs_inline = true;
-				log::error!(
-					target: LOG_TARGET,
-					"proof-verification cache miss for {}: verifying inline (slow). Proofs should \
-					 have been batch-verified at ingress (mempool/import).",
-					hex::encode(tx_hash.0),
-				);
+				// Only a problem when the ingress point covering this call site was supposed to
+				// have batch-verified the transaction already. Otherwise inline verification *is*
+				// the expected path, and an error per transaction would be pure noise.
+				if batching_expected {
+					log::error!(
+						target: LOG_TARGET,
+						"proof-verification cache miss for {}: verifying inline (slow). Proofs should \
+						 have been batch-verified at ingress (mempool/import).",
+						hex::encode(tx_hash.0),
+					);
+				} else {
+					log::trace!(
+						target: LOG_TARGET,
+						"verifying proofs inline for {} (batch verification disabled)",
+						hex::encode(tx_hash.0),
+					);
+				}
 			},
 		}
 
@@ -1525,20 +1544,24 @@ where
 
 		// Cache miss: transaction is entering the mempool or being re-validated
 		let tx_hash_hex = hex::encode(tx.hash());
-		// The inline proof-verify duration (`.1`) is recorded on the block-import path
-		// (`apply_transaction`); the mempool path is not instrumented here.
-		let verified_tx =
-			match Self::get_verified_transaction(ledger, tx, block_context, tx_hash, None) {
-				Ok((vt, _)) => vt,
-				Err(e) => {
-					log::warn!(
-						target: LOG_TARGET,
-						"🚫 Rejected transaction {} from mempool: {e}",
-						tx_hash_hex
-					);
-					return Err(e);
-				},
-			};
+		let (verified_tx, inline_proof_verify) = match Self::get_verified_transaction(
+			ledger,
+			tx,
+			block_context,
+			tx_hash,
+			None,
+			crate::common::batch::batch_verify_mempool_enabled(),
+		) {
+			Ok(vt) => vt,
+			Err(e) => {
+				log::warn!(
+					target: LOG_TARGET,
+					"🚫 Rejected transaction {} from mempool: {e}",
+					tx_hash_hex
+				);
+				return Err(e);
+			},
+		};
 
 		// Dry-run the guaranteed segment against the current state.
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
@@ -1604,8 +1627,14 @@ where
 		};
 		let was_cached = STRICT_TX_VALIDATION_CACHE.get(&strict_key).is_some();
 
-		let (verified_tx, inline_proof_verify) =
-			Self::get_verified_transaction(ledger, tx, block_context, tx_hash, tblock_correction)?;
+		let (verified_tx, inline_proof_verify) = Self::get_verified_transaction(
+			ledger,
+			tx,
+			block_context,
+			tx_hash,
+			tblock_correction,
+			crate::common::batch::batch_verify_block_enabled(),
+		)?;
 
 		let ctx = ledger.get_transaction_context(block_context.clone())?;
 
