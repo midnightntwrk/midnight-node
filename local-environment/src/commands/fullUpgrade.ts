@@ -54,6 +54,7 @@ export async function fullUpgrade(
     numValidators: undefined,
     skipRun: true,
     wasmPath: opts.wasmPath,
+    wasmFromImage: opts.wasmFromImage,
     rpcUrl: opts.rpcUrl,
     councilUris: opts.councilUris,
     techCommitteeUris: opts.techCommitteeUris,

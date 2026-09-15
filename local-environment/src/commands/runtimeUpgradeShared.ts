@@ -20,6 +20,7 @@ import {
   loadRuntimeWasm,
   resolveRpcUrl,
 } from "../lib/runtimeUpgradeUtils";
+import { resolveRuntimeWasmPath } from "../lib/runtimeWasmImage";
 
 export interface NetworkConnection {
   api: ApiPromise;
@@ -68,7 +69,11 @@ export async function prepareRuntimeUpgrade(
   namespace: string,
   opts: RuntimeUpgradeBaseOptions,
 ): Promise<PreparedRuntimeUpgrade> {
-  const wasm = loadRuntimeWasm(opts.wasmPath);
+  const wasmPath = resolveRuntimeWasmPath({
+    wasmPath: opts.wasmPath,
+    wasmFromImage: opts.wasmFromImage,
+  });
+  const wasm = loadRuntimeWasm(wasmPath);
 
   console.log(`Loaded runtime wasm from ${wasm.path} (${wasm.length} bytes)`);
   console.log(`Runtime code hash: ${wasm.hash}`);

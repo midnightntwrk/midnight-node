@@ -62,8 +62,18 @@ export interface ImageUpgradeOptions extends RunOptions {
 }
 
 export interface RuntimeUpgradeBaseOptions extends RunOptions {
-  /** absolute or relative path to the runtime wasm artifact */
-  wasmPath: string;
+  /**
+   * Path to the runtime wasm artifact, relative to `local-environment/artifacts/`.
+   * Omit it to take the runtime from a node image instead (`wasmFromImage`, or the
+   * NEW_NODE_IMAGE / MIDNIGHT_NODE_IMAGE default); exactly one source must resolve.
+   */
+  wasmPath?: string;
+  /**
+   * Node image to extract the runtime wasm from. Node images ship the runtime they
+   * were built with under `/artifacts-<arch>/`, so this keeps the candidate runtime
+   * and the client binary in lockstep without a pre-populated artifacts directory.
+   */
+  wasmFromImage?: string;
   /** skip bringing up docker-compose before submitting the upgrade */
   skipRun?: boolean;
   /** websocket endpoint for the node under upgrade (default ws://localhost:9944) */
