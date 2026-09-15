@@ -295,8 +295,9 @@ chain epochs.
 #### Startup phases
 
 `docker compose up` brings the stack up in dependency order: the one-shot jobs
-(`contract-compiler` → `mint-cnight-supply` → `midnight-setup` → `init-mnight-faucet`)
-each run to completion (`exit 0`) before the next phase starts.
+(`contract-compiler` → `mint-cnight-supply` → `midnight-setup-configs` →
+`midnight-setup-genesis` → `midnight-setup` → `init-mnight-faucet`) each run to
+completion (`exit 0`) before the next phase starts.
 
 | Phase | Container(s)                          | Does                                                                                                                        |
 | ----: | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -304,9 +305,52 @@ each run to completion (`exit 0`) before the next phase starts.
 |     1 | `ogmios`, `kupo`, `db-sync`           | Cardano API + chain indexing                                                                                                |
 |     2 | `contract-compiler`                   | compile + deploy the Aiken governance contracts                                                                             |
 |     3 | `mint-cnight-supply`                  | mint the cNIGHT supply → Reserve / ICS / faucet pools, then send the c2m bridge transfer funding wallet `0x..01` (1B NIGHT) |
-|     4 | `midnight-setup`                      | build the chainspec/genesis (bridge checkpoint + pre-approved faucet tx)                                                    |
-|     5 | `midnight-node-1` … `midnight-node-6` | nodes 1–5: validators; produce + finalize blocks. node 6: non-validator archive follower                                    |
-|     6 | `init-mnight-faucet`                  | claim the bridged NIGHT + DUST-register wallet `0x..01`                                                                     |
+|     4 | `midnight-setup-configs`              | patch `res/local/*` with the deployed addresses, policy ids and UTxOs (bridge checkpoint + pre-approved faucet tx)          |
+|     5 | `midnight-setup-genesis`              | build the genesis ledger state with `${TOOLKIT_IMAGE}` into `/shared/genesis`                                               |
+|     6 | `midnight-setup`                      | build the chainspec from the patched configs + that genesis, then wait for the D-parameter                                  |
+|     7 | `midnight-node-1` … `midnight-node-6` | nodes 1–5: validators; produce + finalize blocks. node 6: non-validator archive follower                                    |
+|     8 | `init-mnight-faucet`                  | claim the bridged NIGHT + DUST-register wallet `0x..01`                                                                     |
+
+#### Genesis is built at bring-up, not read from the repo
+
+`midnight-setup-genesis` runs `generate-genesis` on `${TOOLKIT_IMAGE}` instead of using
+the committed `res/genesis/genesis_*_local.mn`. Those blobs carry a version-bound
+serialization tag (`midnight:ledger-state[v18]:…`) and are rebuilt from the checkout, so
+an older `${MIDNIGHT_NODE_IMAGE}` rejects them outright:
+
+```
+ChainSpec GenesisState error: Failed to deserialize genesis state:
+expected header tag 'midnight:ledger-state[v13]:', got 'midnight:ledger-state[v18]:'
+```
+
+Generating genesis with the toolkit that matches the node image removes that coupling, so
+local-env boots on released images (verified on `1.0.0` and on the current build) as well
+as on a local build. `midnight-setup` then points the node's `chainspec_genesis_state` /
+`chainspec_genesis_block` at `/shared/genesis` via env override; on the current image this
+produces exactly the same chain spec as before.
+
+Two things to know when pinning an old image:
+
+- Pin `TOOLKIT_IMAGE` to the **same release** as `MIDNIGHT_NODE_IMAGE` (`local-environment/.envrc`
+  derives both from `MIDNIGHT_NODE_TAG`). A mismatched pair reintroduces the tag error.
+- `res/local/*` tracks the checkout, so an old toolkit can reject a config over a field it
+  still requires. `configurations/midnight-setup/genesis-compat/ledger-parameters-legacy-fields.json`
+  fills those gaps (currently `cost_model.parallelism_factor`, required up to `node-1.0.x`);
+  values in `res/local` always win and newer toolkits ignore the extras. Add a field there if
+  an older toolkit rejects the config.
+
+Genesis is generated once per chain: if `/shared/chain-spec.json` already exists, both the
+genesis and chainspec steps skip, so in-place node/runtime upgrades keep the chain. Drop the
+volume (`docker compose down -v`) for a fresh chain.
+
+The same shadowing applies to the node's own config: `default_cfg()` reads
+`res/cfg/default.toml` from disk at runtime, so a node older than the checkout can abort with
+`missing field <key>` for a key the current default.toml has dropped.
+`configurations/legacy-node-cfg.env` supplies those keys as environment variables (a config
+source of their own), and is wired into every service that runs the node binary. It is a no-op
+for images built from the checkout — build-spec output is byte-identical with and without it.
+Across `node-0.22.1` … `node-2.1.0` only `node-1.0.2` needs any (`tblock_correction_offset`,
+`tblock_correction_disable_after`); add a key there if an older image reports one missing.
 
 `midnight-node-6` is a non-validator archive node (`--state-pruning=archive
 --blocks-pruning=archive`, no keystore): it syncs from `midnight-node-1` and
