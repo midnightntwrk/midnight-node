@@ -225,28 +225,6 @@ jobs:
           OWNER="${GITHUB_REPOSITORY%%/*}"
           REPO="${GITHUB_REPOSITORY##*/}"
 
-          # Stage all working-tree changes so we can diff them
-          git add -A
-
-          # Collect added/modified files with base64-encoded contents
-          ADDITIONS_JSON=$(git diff --cached --name-only -z --diff-filter=AM | \
-            while IFS= read -r -d '' file; do
-              CONTENT_B64=$(base64 -w 0 "$file")
-              jq -n --arg path "$file" --arg contents "$CONTENT_B64" \
-                '{path: $path, contents: $contents}'
-            done | jq -s '.')
-
-          # Collect deleted files
-          DELETIONS_JSON=$(git diff --cached --name-only -z --diff-filter=D | \
-            while IFS= read -r -d '' file; do
-              jq -n --arg path "$file" '{path: $path}'
-            done | jq -s '.')
-
-          if [ "$ADDITIONS_JSON" = "[]" ] && [ "$DELETIONS_JSON" = "[]" ]; then
-            echo "No changes to commit."
-            exit 0
-          fi
-
           # Get repo ID and main branch HEAD OID
           # shellcheck disable=SC2016
           QUERY_RESULT=$(gh api graphql -f query='
@@ -262,6 +240,48 @@ jobs:
 
           REPO_ID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.id')
           MAIN_OID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.defaultBranchRef.target.oid')
+
+          # The working tree is a checkout of `inputs.ref` (usually a release branch),
+          # but the commit is created on a branch cut from main. A change file that
+          # was archived on main in an earlier release still exists on the release
+          # branch, so `season archive-changes` deletes it here and we would then ask
+          # GitHub to delete a path that main's tree does not contain:
+          #   "A path was requested for deletion which does not exist as of commit oid ..."
+          # List main's exact tree (pinned to the same OID we send as
+          # expectedHeadOid, so there is no TOCTOU) and drop those deletions.
+          MAIN_PATHS="$RUNNER_TEMP/main-paths.txt"
+          MAIN_TREE=$(gh api "repos/${OWNER}/${REPO}/git/trees/${MAIN_OID}?recursive=1")
+          if [ "$(echo "$MAIN_TREE" | jq -r '.truncated')" = "true" ]; then
+            echo "::error::Tree listing for ${MAIN_OID} was truncated; cannot safely filter deletions."
+            exit 1
+          fi
+          echo "$MAIN_TREE" | jq -r '.tree[] | select(.type == "blob") | .path' > "$MAIN_PATHS"
+
+          # Stage all working-tree changes so we can diff them
+          git add -A
+
+          # Collect added/modified files with base64-encoded contents
+          ADDITIONS_JSON=$(git diff --cached --name-only -z --diff-filter=AM | \
+            while IFS= read -r -d '' file; do
+              CONTENT_B64=$(base64 -w 0 "$file")
+              jq -n --arg path "$file" --arg contents "$CONTENT_B64" \
+                '{path: $path, contents: $contents}'
+            done | jq -s '.')
+
+          # Collect deleted files, skipping any path main does not have
+          DELETIONS_JSON=$(git diff --cached --name-only -z --diff-filter=D | \
+            while IFS= read -r -d '' file; do
+              if grep -qxF -e "$file" -- "$MAIN_PATHS"; then
+                jq -n --arg path "$file" '{path: $path}'
+              else
+                echo "Skipping deletion of $file: already absent from main" >&2
+              fi
+            done | jq -s '.')
+
+          if [ "$ADDITIONS_JSON" = "[]" ] && [ "$DELETIONS_JSON" = "[]" ]; then
+            echo "No changes to commit."
+            exit 0
+          fi
 
           # Create branch at main HEAD, or force-update if it already exists
           # shellcheck disable=SC2016
