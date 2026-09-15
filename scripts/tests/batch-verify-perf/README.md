@@ -135,6 +135,47 @@ on the ON run. If `batches_total` is 0, the node silently fell back to inline
 verification (e.g. it couldn't build the native block context) — the timing is
 then meaningless; check the syncer logs (`docker logs bv-syncer`).
 
+## Counting proof re-verifications (`proof-reverification.sh`, no Docker)
+
+`benchmark.sh` answers "how much faster is import with batching on?". A different
+question is "how many times does one transaction's proofs get verified at all?" —
+which is what the batch work exists to reduce. `proof-reverification.sh` measures
+that directly, on a single authoring node, with no images and no archive:
+
+```bash
+just batch-verify-perf-reverify 3        # or: ./proof-reverification.sh 3
+```
+
+It starts a dev node, derives a destination, submits N freshly-proved shielded
+transfers over RPC, and diffs the ledger's `ledger_proof_verify_txs_total`
+counters across their `mode` labels:
+
+- `inline_mempool` — proofs verified while admitting the tx to the pool
+- `inline` — proofs verified at `pre_dispatch`, during block authoring/execution
+- `batch` — proofs verified in an aggregate call at a batch ingress point
+
+A transaction counted under **both** inline labels had its proofs verified twice
+on one node. Measured on the shipped defaults:
+
+```
+batch_verify_mempool                : false
+transactions submitted              : 3
+mempool admission  (inline_mempool) : 3
+block execution    (inline)         : 3
+inline verifications per tx         : 2.00x
+```
+
+and with `BATCH_VERIFY_MEMPOOL=true`, `batch=3` with both inline counters at 0
+(0.00x) — the proof cache removes both. Any node config can be forced through the
+environment, e.g. `BATCH_VERIFY_MEMPOOL=true BATCH_VERIFY_WORKERS=1 ...`.
+
+Prerequisites are host binaries rather than images — `cargo build --release -p
+midnight-node -p midnight-node-toolkit` — plus locally compiled proving keys
+(`just seed-zk-keys`), since this branch's `static/version` is not published. The
+unit-test counterpart, which pins the same behaviour against a synthetic state, is
+`proofs_are_reverified_when_a_transaction_reaches_a_new_block` in
+`ledger/src/versions/common/mod.rs`.
+
 ## The prime workload
 
 `batch-single-tx` builds each transfer independently and doesn't reserve coins
