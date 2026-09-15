@@ -1284,6 +1284,11 @@ mod benches {
 	define_benchmarks!(
 		[frame_benchmarking, BaselineBench::<Runtime>]
 		[frame_system, SystemBench::<Runtime>]
+		// The `TxExtension` checks every signed transaction pays for. Without this
+		// entry `frame_system::Config::ExtensionsWeightInfo` falls back to upstream's
+		// `()` impl, whose numbers are Parity's reference hardware and RocksDB —
+		// this runtime is ParityDb.
+		[frame_system_extensions, SystemExtensionsBench::<Runtime>]
 		[pallet_beefy_mmr, BeefyMmrLeaf]
 		[pallet_grandpa, Grandpa]
 		[pallet_timestamp, Timestamp]
@@ -1292,6 +1297,10 @@ mod benches {
 		[pallet_preimage, Preimage]
 		[pallet_scheduler, Scheduler]
 		[pallet_tx_pause, TxPause]
+		// Load-bearing since #2079 made safe mode the failed-migration handler.
+		// `enter`/`extend`/`release_deposit` report Weightless here: deposits are
+		// disabled in this runtime, so those calls are unusable by design.
+		[pallet_safe_mode, SafeMode]
 		[pallet_collective, Council]
 		[pallet_collective, TechnicalCommittee]
 		[pallet_membership, CouncilMembership]
@@ -1303,6 +1312,8 @@ mod benches {
 		[pallet_cnight_observation, CNightObservation]
 		[pallet_c2m_bridge, C2MBridge]
 		[pallet_partner_chains_bridge, Bridge]
+		// No extrinsics; the benchmark measures the per-block `on_initialize` digest write.
+		[pallet_version, NodeVersion]
 	);
 }
 
@@ -1647,6 +1658,7 @@ impl_runtime_apis! {
 			use frame_benchmarking::{baseline, BenchmarkList};
 			use frame_support::traits::StorageInfoTrait;
 			use frame_system_benchmarking::Pallet as SystemBench;
+			use frame_system_benchmarking::extensions::Pallet as SystemExtensionsBench;
 			use baseline::Pallet as BaselineBench;
 
 			let mut list = Vec::<BenchmarkList>::new();
@@ -1665,6 +1677,7 @@ impl_runtime_apis! {
 			use sp_storage::TrackedStorageKey;
 
 			use frame_system_benchmarking::Pallet as SystemBench;
+			use frame_system_benchmarking::extensions::Pallet as SystemExtensionsBench;
 			use baseline::Pallet as BaselineBench;
 
 			impl frame_system_benchmarking::Config for Runtime {}

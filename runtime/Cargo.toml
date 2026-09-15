@@ -191,6 +191,7 @@ runtime-benchmarks = [
     "pallet-timestamp/runtime-benchmarks",
     "pallet-tx-pause/runtime-benchmarks",
     "pallet-safe-mode/runtime-benchmarks",
+    "pallet-version/runtime-benchmarks",
     "pallet-migrations/runtime-benchmarks",
     "pallet-membership/runtime-benchmarks",
     "pallet-collective/runtime-benchmarks",

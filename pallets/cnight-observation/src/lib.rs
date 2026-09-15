@@ -807,7 +807,10 @@ pub mod pallet {
 		///
 		/// This extrinsic needs Root origin
 		#[pallet::call_index(2)]
-		#[pallet::weight((T::DbWeight::get().writes(1), DispatchClass::Normal))]
+		#[pallet::weight((
+			T::WeightInfo::set_mapping_validator_contract_address(),
+			DispatchClass::Normal
+		))]
 		pub fn set_mapping_validator_contract_address(
 			origin: OriginFor<T>,
 			address: Vec<u8>,
