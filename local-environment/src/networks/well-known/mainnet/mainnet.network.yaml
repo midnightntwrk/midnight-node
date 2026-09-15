@@ -583,3 +583,11 @@ volumes:
   node-data-8:
   node-data-9:
   node-data-10:
+
+networks:
+  # Stable name so external consumers (e.g. the midnight-indexer overlay) can
+  # attach with `external: true` instead of guessing the compose-derived
+  # `mainnet_default`. Renaming this is a breaking change for consumers; it is
+  # also recorded in the generated artifacts/mainnet.manifest.env.
+  default:
+    name: midnight-fork-mainnet

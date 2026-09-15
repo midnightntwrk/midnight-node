@@ -11,6 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::{
+	Arc,
+	atomic::{AtomicU64, Ordering},
+};
+
 use backoff::{ExponentialBackoff, future::retry};
 use futures::stream::{FuturesOrdered, StreamExt};
 use hex::ToHex as _;
@@ -27,6 +32,13 @@ use crate::{
 
 type FetchResult = Result<ComputeTask, FetchTaskError>;
 
+#[derive(Default)]
+pub struct FetchCounters {
+	pub processed: AtomicU64,
+	/// RPC only, so a resumed sync doesn't report cache hits as throughput.
+	pub fetched_rpc: AtomicU64,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum FetchTaskError {
 	#[error("subxt error while fetching")]
@@ -41,10 +53,13 @@ pub enum FetchTaskError {
 	ExtrinsicError(#[from] subxt::error::ExtrinsicError),
 	#[error("block error: {0}")]
 	BlockError(#[from] subxt::error::BlockError),
+	#[error("storage error: {0}")]
+	StorageError(#[from] subxt::error::StorageError),
 	#[error("block hash missing for block number {0}")]
 	BlockHashMissing(u64),
 }
 
+#[derive(Clone)]
 pub enum FetchTask {
 	FetchBlocks { min: u64, max: u64 },
 	NoOp,
@@ -56,6 +71,7 @@ impl FetchTask {
 		chain_id: H256,
 		client: &MidnightNodeClient,
 		storage: impl FetchStorage,
+		counters: &Arc<FetchCounters>,
 	) -> FetchResult {
 		match self {
 			FetchTask::FetchBlocks { min, max } => {
@@ -66,6 +82,9 @@ impl FetchTask {
 					.filter_map(|(i, b)| b.is_none().then_some(i))
 					.collect();
 
+				let cached_count = (max - min) - uncached.len() as u64;
+				counters.processed.fetch_add(cached_count, Ordering::Relaxed);
+
 				let hashes = Self::fetch_block_hashes(client, &uncached).await?;
 
 				let mut futs: FuturesOrdered<_> =
@@ -73,6 +92,8 @@ impl FetchTask {
 				let mut blocks = Vec::new();
 				while let Some(result) = futs.next().await {
 					blocks.push(result?);
+					counters.processed.fetch_add(1, Ordering::Relaxed);
+					counters.fetched_rpc.fetch_add(1, Ordering::Relaxed);
 				}
 				log::debug!("fetching blocks {min}..{max}: complete");
 				Ok(ComputeTask::ExtractBlockData { min, max, blocks })
@@ -135,8 +156,8 @@ impl FetchTask {
 		})
 		.await?;
 
-		let state_root = client.get_state_root_at(Some(block.block_hash())).await?;
-		let raw_body = block
+		let state_root = MidnightNodeClient::state_root_from(&block).await?;
+		let raw_body: Vec<Vec<u8>> = block
 			.extrinsics()
 			.fetch()
 			.await?
@@ -161,6 +182,27 @@ impl FetchTask {
 			None
 		};
 
-		Ok(FetchedBlock { block, raw_body, state_root, state })
+		// Always fetched: even an inherents-only block can carry
+		// `SystemTransactionApplied` events (multi-block migrations step in
+		// `inherents_applied()`), and the derived block data is cached permanently.
+		let key = [sp_crypto_hashing::twox_128(b"System"), sp_crypto_hashing::twox_128(b"Events")]
+			.concat();
+		let backoff = ExponentialBackoff {
+			max_elapsed_time: Some(BLOCK_FETCH_TIMEOUT),
+			..ExponentialBackoff::default()
+		};
+		let events = retry(backoff, || async {
+			match block.storage().fetch_raw(key.clone()).await {
+				Ok(bytes) => Ok(bytes),
+				Err(subxt::error::StorageError::NoValueFound) => Ok(Vec::new()),
+				Err(e) => {
+					log::warn!("events fetch failed, retrying: {e}");
+					Err(backoff::Error::transient(e))
+				},
+			}
+		})
+		.await?;
+
+		Ok(FetchedBlock { block, header, raw_body, state_root, state, events })
 	}
 }

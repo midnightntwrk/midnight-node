@@ -17,8 +17,8 @@ pub use ledger_9::*;
 pub mod ledger_8;
 
 // Conversion impls for encoded zswap types to ledger types.
-// These live here (not in common/) because common/ is compiled once per ledger
-// version, which would cause E0119 conflicts wherever versions share types.
+// These live here (not in ledger_8/ or ledger_9/) because those directories are
+// a copy each, which would cause E0119 conflicts wherever versions share types.
 // Ledger 9 uses coin-structure 3.x; ledger 8 uses coin-structure 2.x,
 // so there are exactly two impl sets.
 use crate::toolkit_js::encoded_zswap_local_state::{

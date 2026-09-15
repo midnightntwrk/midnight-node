@@ -1,0 +1,106 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use std::{any::Any, sync::Arc};
+
+use async_trait::async_trait;
+
+use crate::ledger_8::{
+	AlignedValue, BuilderContext, ContractAddress, ContractCallPrototype, ContractDeploy,
+	ContractOperation, DB, Intent, LedgerParameters, Op, PedersenRandomness, ProofPreimageMarker,
+	Resolver, ResultModeGather, ResultModeVerify, Signature, Sp, StdRng, Transcripts,
+};
+
+// Re-export types needed by submodules
+pub use crate::ledger_8::{
+	ChargedState, ContractMaintenanceAuthority, ContractOperationVersion, ContractState,
+	DUST_EXPECTED_FILES, DustResolver, EntryPointBuf, FetchMode, HashMapStorage,
+	HistoricMerkleTree_check_root, HistoricMerkleTree_insert, Key, KeyLocation, MerkleTree,
+	MidnightDataProvider, OutputMode, PUBLIC_PARAMS, PreTranscript, QueryContext, Rng, StateValue,
+	UnshieldedWallet, ValueReprAlignedValue, VerifyingKey, key, leaf_hash, partition_transcripts,
+	stval, verifier_key,
+};
+
+#[cfg(feature = "test-utils")]
+pub use crate::ledger_8::test_resolver;
+
+mod call;
+mod deploy;
+#[cfg(feature = "can-panic")]
+mod maintenance;
+#[cfg(feature = "can-panic")]
+mod merkle_tree;
+
+pub use call::*;
+pub use deploy::*;
+#[cfg(feature = "can-panic")]
+pub use maintenance::*;
+#[cfg(feature = "can-panic")]
+pub use merkle_tree::*;
+
+#[async_trait]
+pub trait Contract<D: DB + Clone>: Send + Sync {
+	async fn deploy(
+		&self,
+		commitee: &[UnshieldedWallet],
+		commitee_threshold: u32,
+		rng: &mut StdRng,
+	) -> Result<ContractDeploy<D>, std::io::Error>;
+
+	fn resolver(&self) -> &'static Resolver;
+
+	/// Build the call transcripts against a pre-fetched contract state and ledger parameters.
+	///
+	/// State is fetched by the async caller (via [`BuilderContext`]) and passed in, keeping this
+	/// method synchronous and free of any backend dependency.
+	fn transcript(
+		&self,
+		key: &str,
+		input: &Box<dyn Any + Send + Sync>,
+		address: &ContractAddress,
+		contract_state: &ContractState<D>,
+		parameters: &LedgerParameters,
+	) -> (AlignedValue, Vec<AlignedValue>, Vec<Transcripts<D>>);
+
+	fn operation(
+		&self,
+		key: &str,
+		address: &ContractAddress,
+		contract_state: &ContractState<D>,
+	) -> Sp<ContractOperation, D>;
+
+	fn program_with_results(
+		prog: &[Op<ResultModeGather, D>],
+		results: &[AlignedValue],
+	) -> Vec<Op<ResultModeVerify, D>>;
+
+	fn contract_call(
+		&self,
+		address: &ContractAddress,
+		key: &'static str,
+		input: &Box<dyn Any + Send + Sync>,
+		rng: &mut StdRng,
+		contract_state: &ContractState<D>,
+		parameters: &LedgerParameters,
+	) -> ContractCallPrototype<D>;
+}
+
+#[async_trait]
+pub trait BuildContractAction<D: DB + Clone, C: BuilderContext<D>>: Send + Sync {
+	async fn build(
+		&mut self,
+		rng: &mut StdRng,
+		context: Arc<C>,
+		intent: &Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>,
+	) -> Intent<Signature, ProofPreimageMarker, PedersenRandomness, D>;
+}

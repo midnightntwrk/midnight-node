@@ -3,6 +3,7 @@
 runtime-values/
 
 # generated fork-mode state for well-known network rehearsals
+artifacts/*.manifest.env
 src/networks/well-known/**/*.mock.override.yaml
 src/networks/well-known/**/mocked-config/
 src/networks/well-known/**/res/mock-bridge-data/*-mock.json
