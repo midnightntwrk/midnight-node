@@ -98,8 +98,6 @@ use sp_sidechain::SidechainStatus;
 // use sp_staking::SessionIndex;
 use crate::{constants::time_units::HOURS, currency::CurrencyWaiver};
 use alloc::{vec, vec::Vec};
-#[cfg(feature = "std")]
-use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 
 // Make the WASM binary available.
@@ -165,7 +163,7 @@ pub mod opaque {
 	use parity_scale_codec::MaxEncodedLen;
 	use sp_core::{ed25519, sr25519};
 	pub use sp_runtime::OpaqueExtrinsic as UncheckedExtrinsic;
-	use sp_runtime::key_types::{AURA, GRANDPA};
+	use sp_runtime::key_types::{AURA, BABE, GRANDPA};
 
 	/// Opaque block header type.
 	pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
@@ -217,6 +215,7 @@ pub mod opaque {
 		pub struct SessionKeys {
 			pub aura: Aura,
 			pub grandpa: Grandpa,
+			pub babe: Babe,
 			// todo: add the beefy
 			// pub beefy: Beefy,
 		}
@@ -228,7 +227,9 @@ pub mod opaque {
 			let aura = sr25519::Public::from_raw(aura.try_into().ok()?);
 			let grandpa = keys.find(GRANDPA)?;
 			let grandpa = ed25519::Public::from_raw(grandpa.try_into().ok()?);
-			Some(Self { aura: aura.into(), grandpa: grandpa.into() })
+			let babe = keys.find(BABE)?;
+			let babe = sr25519::Public::from_raw(babe.try_into().ok()?);
+			Some(Self { aura: aura.into(), grandpa: grandpa.into(), babe: babe.into() })
 		}
 	}
 
@@ -238,6 +239,10 @@ pub mod opaque {
 				sidechain_domain::CandidateKey::new(
 					AURA,
 					value.aura.into_inner().to_raw().to_vec(),
+				),
+				sidechain_domain::CandidateKey::new(
+					BABE,
+					value.babe.into_inner().to_raw().to_vec(),
 				),
 				sidechain_domain::CandidateKey::new(
 					GRANDPA,
@@ -275,7 +280,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
-	spec_version: 003_000_000,
+	spec_version: 004_000_000,
 	impl_version: 0,
 	apis: RUNTIME_API_VERSIONS,
 	transaction_version: 4,
@@ -298,12 +303,6 @@ pub const BABE_GENESIS_EPOCH_CONFIG: sp_consensus_babe::BabeEpochConfiguration =
 		c: (1, 4),
 		allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
 	};
-
-/// The version information used to identify this runtime when compiled natively.
-#[cfg(feature = "std")]
-pub fn native_version() -> NativeVersion {
-	NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
-}
 
 const NORMAL_DISPATCH_RATIO: Perbill = Perbill::from_percent(75);
 
@@ -374,9 +373,8 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Initializes the QueuedCommittee storage added in v2
-		pallet_session_validator_management::migrations::v2::V1ToV2Migration<Runtime>,
-		// See migrations::authority_keys when opaque::SessionKeys changes shape.
+		// Add BABE keys
+		crate::migrations::authority_keys::AddBabeToSessionKeysMigration,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
@@ -723,13 +721,6 @@ impl pallet_midnight::Config for Runtime {
 impl pallet_midnight_system::Config for Runtime {
 	type LedgerStateProviderMut = Midnight;
 	type LedgerBlockContextProvider = Midnight;
-}
-
-pub struct ValidatorSet;
-impl Get<BoundedVec<AuraId, MaxAuthorities>> for ValidatorSet {
-	fn get() -> BoundedVec<AuraId, MaxAuthorities> {
-		pallet_aura::Authorities::<Runtime>::get()
-	}
 }
 
 /// Configure the pallet-upgrade in pallets/upgrade.
