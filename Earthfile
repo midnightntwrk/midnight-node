@@ -570,7 +570,12 @@ rebuild-genesis-state-stagenet:
 rebuild-all-genesis-states:
     BUILD +rebuild-genesis-state-undeployed
     BUILD +rebuild-genesis-state-local
-    BUILD +rebuild-genesis-state-devnet
+    # Devnet is restored to the 1.0.300 genesis, which is ledger 8
+    # (system-transaction[v6]). The toolkit's generate-genesis is hard-wired to
+    # ledger 9 (midnight_ledger_unsafe_helpers re-exports `latest` = ledger_9), so it
+    # cannot reproduce a ledger-8 genesis - it fails on the header tag. Rebuild only
+    # once devnet is regenerated for the current ledger.
+    #BUILD +rebuild-genesis-state-devnet
     # Perfnet genesis is not meant to be rebuild in PR CI
     #BUILD +rebuild-genesis-state-perfnet
     # Govnet genesis is not meant to be rebuild in PR CI
@@ -630,7 +635,9 @@ rebuild-chainspec:
 # rebuild-all-chainspecs Rebuild all chainspecs. No secrets required.
 # Use DETERMINISTIC=true for reproducible srtool builds (slower but verifiable)
 rebuild-all-chainspecs:
-    BUILD +rebuild-chainspec --NETWORK=devnet
+    # Devnet is pinned to the restored 1.0.300 chain spec; rebuilding would swap in the
+    # current runtime wasm and invalidate res/devnet/chain-spec-hash.json
+    #BUILD +rebuild-chainspec --NETWORK=devnet
     # Govnet genesis is not meant to be rebuild in PR CI
     #BUILD +rebuild-chainspec --NETWORK=govnet
     # QANet genesis is not meant to be rebuild in PR CI
