@@ -663,7 +663,7 @@ where
 
 		// No `tblock` correction on the mempool path: `validate_unsigned` already skews the
 		// block context it passes here by `slot_duration * (1 + MaxSkippedSlots)`.
-		let was_cached =
+		let (was_cached, inline_proof_verify) =
 			Self::do_validate_transaction(&ledger, &tx, &block_context, &wrapped_cache_key)?;
 
 		let tx_details = if get_tx_details {
@@ -686,6 +686,13 @@ where
 				let tx_type = Self::get_tx_type(&tx);
 				let elapsed_time = start_tx_validation_time.elapsed().as_secs_f64();
 				metrics.observe_txs_validating_time(elapsed_time, tx_type);
+			}
+
+			// The mempool half of the per-transaction proof cost (`mode="inline_mempool"`). Kept
+			// separate from `mode="inline"` (block execution) so the two can be compared: a
+			// transaction that shows up in both has had its proofs verified twice on this node.
+			if let Some(pv) = inline_proof_verify {
+				metrics.observe_inline_mempool_proof_verify(pv.as_secs_f64());
 			}
 
 			// Report current cache sizes
@@ -1525,13 +1532,17 @@ where
 	/// Uses `tx_hash` only for quick revalidation of transactions already in the pool.
 	/// The soft cache prevents redundant ZK proof verification for mempool housekeeping.
 	///
-	/// Returns `true` if the validation was served from cache, `false` if validation was performed.
+	/// Returns whether the validation was served from the soft cache, together with the wall-clock
+	/// time spent running the ZK crypto inline (`Some` only when `get_verified_transaction`
+	/// verified the proofs itself). The caller records the duration as the
+	/// `mode="inline_mempool"` proof-verify metric — the mempool half of a transaction's total
+	/// proof-verification cost.
 	fn do_validate_transaction(
 		ledger: &Ledger<D>,
 		tx: &Transaction<S, D>,
 		block_context: &BlockContext,
 		tx_hash: &WrappedHash,
-	) -> Result<bool, LedgerApiError>
+	) -> Result<(bool, Option<std::time::Duration>), LedgerApiError>
 	where
 		VerifiedTransaction<D>: Send + Sync + 'static,
 	{
@@ -1539,7 +1550,7 @@ where
 
 		// Check soft cache first (quick tx_hash-only lookup for mempool revalidation)
 		if let Some(cached) = SOFT_TX_VALIDATION_CACHE.get(&soft_key) {
-			return cached.map(|_| true);
+			return cached.map(|_| (true, None));
 		}
 
 		// Cache miss: transaction is entering the mempool or being re-validated
@@ -1579,7 +1590,7 @@ where
 				);
 				// Cache the success (only successes are cached)
 				SOFT_TX_VALIDATION_CACHE.insert(soft_key, Ok(()));
-				Ok(false)
+				Ok((false, inline_proof_verify))
 			},
 			Err(reason) => {
 				log::warn!(
@@ -1832,10 +1843,15 @@ fn scale_normalized_cost(normalized: &LedgerNormalizedCost, max_weight: u64) -> 
 
 #[cfg(test)]
 mod tests {
+	use super::super::helpers_local::extract_tx_with_context;
 	use super::*;
 	use base_crypto_local::cost_model::{FixedPoint, SyntheticCost};
 	use coin_structure_local::coin::{ShieldedTokenType, UnshieldedTokenType};
 	use ledger_storage_local::DefaultDB;
+	use midnight_node_res::{
+		networks::{MidnightNetwork, UndeployedNetwork},
+		undeployed::transactions::{DEPLOY_TX, STORE_TX},
+	};
 	use mn_ledger_local::structure::LedgerState;
 
 	/// Matches `res/cfg/default.toml`: `slot_duration_secs * (1 + MaxSkippedSlots)` = 6 * 2.
@@ -2021,5 +2037,186 @@ mod tests {
 		if let Ok(tx) = super::super::system_tx::unlock_to_treasury_system_tx(0) {
 			assert_eq!(get_system_tx_type(&tx).unwrap(), "unlock_to_treasury");
 		}
+	}
+
+	// ------------------------------------------------------------------------------------------
+	// Cross-block ZK-proof re-verification
+	// ------------------------------------------------------------------------------------------
+
+	/// A `runtime_version` used only by the re-verification test, so its entries in the
+	/// process-global validation caches cannot collide with any other test running in the same
+	/// process (the cache key is `Twox128(runtime_version ++ tx_bytes)`).
+	const REVERIFY_RUNTIME_VERSION: u32 = 0xDEAD_0001;
+
+	/// `pallet_midnight::validate_unsigned` skews the mempool's `tblock` forward by
+	/// `slot_duration_secs * (1 + MaxSkippedSlots)` — `6 * (1 + 1)` with the shipped defaults — so a
+	/// transaction near the edge of its dust-validity window is not falsely rejected while blocks
+	/// are being produced. `pre_dispatch` applies no such skew, so the two paths always disagree on
+	/// this component of the strict-cache key.
+	const MEMPOOL_TBLOCK_SKEW: u64 = 12;
+
+	type TestBridge = Bridge<TransactionSignature, DefaultDB>;
+	type TestTx = Transaction<TransactionSignature, DefaultDB>;
+
+	/// Did `get_verified_transaction` run the ZK crypto *inline* for this call?
+	///
+	/// The `Option<Duration>` it returns is `Some` exactly when `well_formed` verified the proofs
+	/// itself (strict-cache miss **and** proof-cache miss), and `None` on either cache hit — so it
+	/// is a direct, non-invasive probe for "did we pay for the proofs again?".
+	fn reverified(
+		label: &str,
+		ledger: &Ledger<DefaultDB>,
+		tx: &TestTx,
+		block_context: &BlockContext,
+		key: &WrappedHash,
+	) -> bool {
+		let verified =
+			TestBridge::get_verified_transaction(ledger, tx, block_context, key, None, false)
+				.unwrap_or_else(|e| {
+					panic!("{label}: fixture transaction must be well-formed: {e:?}")
+				})
+				.1
+				.is_some();
+		let state_hash: Hash = ledger.state.state_hash().0.into();
+		println!(
+			"  {label:<46} state_hash={} tblock={:<12} proofs_verified={}",
+			&hex::encode(state_hash)[..8],
+			block_context.tblock,
+			if verified { "YES (crypto ran)" } else { "no  (cache hit)" },
+		);
+		verified
+	}
+
+	/// Applies `tx` to `ledger` and closes the block, as `execute_block` would.
+	fn apply_and_close(
+		api: &api::Api,
+		ledger: &mut Sp<Ledger<DefaultDB>>,
+		tx: &TestTx,
+		block_context: &BlockContext,
+	) {
+		let tx_ctx = ledger.get_transaction_context(block_context.clone()).expect("tx context");
+		let verified_tx =
+			tx.0.well_formed(
+				&tx_ctx.ref_state,
+				mn_ledger_local::verify::WellFormedStrictness::default(),
+				tx_ctx.block_context.tblock,
+			)
+			.unwrap_or_else(|e| panic!("fixture transaction must be well-formed: {e:?}"));
+		let (next, _) = Ledger::<DefaultDB>::apply_verified_transaction(
+			ledger.clone(),
+			api,
+			tx,
+			&verified_tx,
+			&tx_ctx,
+		)
+		.unwrap_or_else(|e| panic!("can't apply transaction: {e}"));
+		*ledger = Ledger::<DefaultDB>::post_block_update(next, block_context.clone())
+			.expect("post block update");
+	}
+
+	/// A transaction's ZK proofs are verified again every time it crosses from the mempool into a
+	/// block, and again for every later block it is validated against.
+	///
+	/// `STRICT_TX_VALIDATION_CACHE` is keyed by `{state_hash, tx_hash, block_context_tblock}`, and
+	/// **both** non-`tx_hash` components move between mempool admission and block execution:
+	///
+	/// - `block_context_tblock` — the mempool skews it forward by [`MEMPOOL_TBLOCK_SKEW`]
+	///   (`pallet_midnight::validate_unsigned`); `pre_dispatch` does not.
+	/// - `state_hash` — `pallet_midnight` re-puts `StateKey` after every applied extrinsic, so it
+	///   moves within a block as well as between blocks.
+	///
+	/// Either one alone misses the cache, and a miss re-runs the full `well_formed`, proofs
+	/// included. This is what the transaction-hash-keyed `PROOF_VERIFICATION_CACHE` exists to fix;
+	/// the last phase pins that it does.
+	#[test]
+	fn proofs_are_reverified_when_a_transaction_reaches_a_new_block() {
+		if super::super::CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("fixtures are ledger-9 only; skipping on {}", super::super::CRATE_NAME);
+			return;
+		}
+		sp_tracing::try_init_simple();
+
+		let api = api::new();
+		let state: LedgerState<DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(UndeployedNetwork.genesis_state())
+				.expect("genesis state must deserialize");
+		let mut ledger = Sp::new(Ledger::new(state));
+
+		// The fixtures record the block context each transaction was originally applied under, i.e.
+		// the *block* context. The mempool would have seen the same context skewed forward.
+		let (deploy_bytes, deploy_ctx) = extract_tx_with_context(DEPLOY_TX);
+		let deploy_block_ctx: BlockContext = deploy_ctx.into();
+		let deploy_mempool_ctx = BlockContext {
+			tblock: deploy_block_ctx.tblock + MEMPOOL_TBLOCK_SKEW,
+			..deploy_block_ctx.clone()
+		};
+		let deploy: TestTx = api.tagged_deserialize(&deploy_bytes).expect("deploy tx");
+		let deploy_key =
+			TestBridge::tx_validation_cache_key(REVERIFY_RUNTIME_VERSION, &deploy_bytes);
+
+		let (store_bytes, store_ctx) = extract_tx_with_context(STORE_TX);
+		let store_block_ctx: BlockContext = store_ctx.into();
+		let store_mempool_ctx = BlockContext {
+			tblock: store_block_ctx.tblock + MEMPOOL_TBLOCK_SKEW,
+			..store_block_ctx.clone()
+		};
+		let store: TestTx = api.tagged_deserialize(&store_bytes).expect("store tx");
+		let store_key = TestBridge::tx_validation_cache_key(REVERIFY_RUNTIME_VERSION, &store_bytes);
+
+		println!("\n── block N: `deploy` is submitted, then included ──");
+		assert!(
+			reverified("1. mempool admission", &ledger, &deploy, &deploy_mempool_ctx, &deploy_key),
+			"a transaction entering the mempool must have its proofs verified",
+		);
+		assert!(
+			!reverified(
+				"2. mempool revalidation (same key)",
+				&ledger,
+				&deploy,
+				&deploy_mempool_ctx,
+				&deploy_key
+			),
+			"repeating the identical call must hit the strict cache — the cache does work when \
+			 every key component matches",
+		);
+		assert!(
+			reverified(
+				"3. block N execution (tblock differs)",
+				&ledger,
+				&deploy,
+				&deploy_block_ctx,
+				&deploy_key
+			),
+			"THE FINDING: the mempool's tblock skew alone misses the strict cache, so the proofs \
+			 this node verified moments ago at step 1 are verified a second time",
+		);
+
+		apply_and_close(&api, &mut ledger, &deploy, &deploy_block_ctx);
+
+		println!("── block N+1: `store` is submitted against the new state, then included ──");
+		assert!(
+			reverified("4. mempool admission", &ledger, &store, &store_mempool_ctx, &store_key),
+			"a transaction entering the mempool must have its proofs verified",
+		);
+		assert!(
+			reverified("5. block N+1 execution", &ledger, &store, &store_block_ctx, &store_key),
+			"THE FINDING: verified a second time here too",
+		);
+
+		println!("── with the proof cache warm (what batch ingress populates) ──");
+		insert_proof_result(&store_key, true);
+		let warm_ctx =
+			BlockContext { tblock: store_block_ctx.tblock + 1, ..store_block_ctx.clone() };
+		assert!(
+			!reverified(
+				"6. block execution, proof cache warm",
+				&ledger,
+				&store,
+				&warm_ctx,
+				&store_key
+			),
+			"a warm PROOF_VERIFICATION_CACHE entry must defer the crypto even though the strict \
+			 key misses — this is the branch's fix for phases 3 and 5",
+		);
 	}
 }

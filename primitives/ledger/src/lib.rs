@@ -290,6 +290,20 @@ impl LedgerMetricsExt {
 		});
 	}
 
+	/// Records one inline **mempool** per-transaction proof verification: a `well_formed` call
+	/// that ran the ZK crypto while admitting a transaction to the pool.
+	///
+	/// Deliberately a separate `mode` from `inline`: `inline` is the block-execution baseline the
+	/// batch A/B benchmark diffs against, and folding mempool samples into it would corrupt that
+	/// comparison. Kept apart, the two together show how many times one transaction's proofs are
+	/// verified on its journey from submission to inclusion.
+	pub fn observe_inline_mempool_proof_verify(&mut self, time: f64) {
+		self.observe(|m| {
+			m.proof_verify_duration.with_label_values(&["inline_mempool"]).observe(time);
+			m.proof_verify_txs.with_label_values(&["inline_mempool"]).inc();
+		});
+	}
+
 	/// Records one aggregate (ON-path) `batch_verify_proofs` call over `tx_count` transactions.
 	/// Per-transaction batched cost = `_sum{mode="batch"}` / `_txs_total{mode="batch"}`.
 	pub fn observe_batch_proof_verify(&mut self, time: f64, tx_count: u64) {
