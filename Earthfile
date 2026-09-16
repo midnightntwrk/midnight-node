@@ -1453,9 +1453,9 @@ subwasm:
 # rust-toolchain.toml anyway.
 srtool-build:
     # Tag shape for srtool is: `<rust version>-<srtool version>`
-    # renovate: datasource=docker packageName=shieldedtech/srtool
+    # renovate: datasource=docker packageName=midnightntwrk/srtool
     ARG SRTOOL_TAG=1.98.1-0.18.5
-    FROM shieldedtech/srtool:${SRTOOL_TAG}
+    FROM midnightntwrk/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
     WORKDIR /build
@@ -1485,9 +1485,9 @@ srtool-build:
 # srtool-info displays information about the srtool build without building
 srtool-info:
     # Tag shape for srtool is: `<rust version>-<srtool version>`
-    # renovate: datasource=docker packageName=shieldedtech/srtool
+    # renovate: datasource=docker packageName=midnightntwrk/srtool
     ARG SRTOOL_TAG=1.98.1-0.18.5
-    FROM shieldedtech/srtool:${SRTOOL_TAG}
+    FROM midnightntwrk/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
