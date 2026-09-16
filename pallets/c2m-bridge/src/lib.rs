@@ -190,12 +190,8 @@ pub mod pallet {
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-		// Pre-account for on_finalize weight (storage write to reset the transfer counter).
-		// `on_finalize` cannot return weight, so the block's budget has to reserve it here.
-		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
-			T::DbWeight::get().writes(1)
-		}
-
+		// TransferCounter is absent at both block boundaries, so this kill never reaches
+		// the trie and needs no weight reserved for it in on_initialize.
 		fn on_finalize(_n: BlockNumberFor<T>) {
 			TransferCounter::<T>::kill();
 		}

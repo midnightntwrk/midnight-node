@@ -16,6 +16,9 @@ name: Benchmark build
 # Publishes nothing: no registry, no release, no image. The binary leaves only as a
 # workflow artifact, so a fork running this writes nowhere it does not own.
 #
+# No GHCR login: +build-benchmarks pulls its base image from docker.io (Earthfile
+# +prep-no-copy) and ends in SAVE ARTIFACT, so it touches GHCR at neither end.
+#
 # The payload deliberately mirrors the release archive layout (`midnight-node` + `res/`,
 # see the "Create release archives" step in main.yml). Two reasons:
 #   - `res/` must sit next to the binary: CFG_PRESET defaults to "dev", and every
@@ -66,6 +69,13 @@ jobs:
           submodules: true
           ref: ${{ github.event.inputs.branch || github.ref_name }}
 
+      # EarthBuild/actions-setup defaults to TLS for its managed buildkitd, which has no
+      # certs on a fresh self-hosted runner. Appending keeps the repo's other settings.
+      - name: Disable earthly TLS (self-hosted runner has no certs)
+        run: |
+          echo "    tls_enabled: false" >> .earthly/config.yml
+          cat .earthly/config.yml
+
       - name: Login to DockerHub
         # Pull-side rate-limit relief for docker.io base images only; a repo without these
         # credentials must not have the whole build fail before it starts.
@@ -74,14 +84,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_USER }}
           password: ${{ secrets.DOCKERHUB_MIDNIGHTNTWRK_TOKEN }}
-
-      - name: Login to GHCR
-        # +build-benchmarks derives from the CI image, which lives in GHCR.
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_WRITE }}
 
       - name: Free disk space
         if: runner.environment != 'self-hosted'
