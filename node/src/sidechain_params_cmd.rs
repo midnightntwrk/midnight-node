@@ -26,6 +26,7 @@ pub struct SidechainParamsCmd {
 	pub shared_params: SharedParams,
 }
 impl SidechainParamsCmd {
+	#[allow(clippy::result_large_err)]
 	pub async fn run<B, C>(&self, client: Arc<C>) -> sc_cli::Result<()>
 	where
 		B: BlockT,
