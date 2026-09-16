@@ -243,3 +243,12 @@ mod tests {
 		assert_eq!(evidence_to_tx_indices(&[], &[0]), Vec::<usize>::new());
 	}
 }
+
+/// Drops proof verification from `strictness` for a revalidation re-check.
+///
+/// Proof verification is gated by `WellFormedStrictness`, *not* by `StateReference::stateless_check`
+/// — so a `RevalidationReference` alone does not skip it, and a caller that forgets this re-runs the
+/// entire proof crypto on a transaction whose proofs it has already verified.
+pub fn defer_proofs(strictness: WellFormedStrictness) -> WellFormedStrictness {
+	strictness.defer_proofs()
+}

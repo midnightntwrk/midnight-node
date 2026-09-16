@@ -304,6 +304,21 @@ impl LedgerMetricsExt {
 		});
 	}
 
+	/// Records one **revalidation** `well_formed` call: a transaction whose proofs a previous
+	/// verification already accepted, re-checked against a `RevalidationReference` so the ZK crypto
+	/// is skipped and only the state-dependent checks re-run.
+	///
+	/// This is the ON path's counterpart to `inline`: batch verification does not remove the
+	/// per-transaction `well_formed` from block execution, it only makes it crypto-free. Whether
+	/// batching is a net win therefore depends on `revalidate` being materially cheaper than
+	/// `inline` — so it is measured rather than assumed.
+	pub fn observe_revalidate_proof_verify(&mut self, time: f64) {
+		self.observe(|m| {
+			m.proof_verify_duration.with_label_values(&["revalidate"]).observe(time);
+			m.proof_verify_txs.with_label_values(&["revalidate"]).inc();
+		});
+	}
+
 	/// Records one aggregate (ON-path) `batch_verify_proofs` call over `tx_count` transactions.
 	/// Per-transaction batched cost = `_sum{mode="batch"}` / `_txs_total{mode="batch"}`.
 	pub fn observe_batch_proof_verify(&mut self, time: f64, tx_count: u64) {
