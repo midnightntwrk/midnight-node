@@ -865,6 +865,13 @@ prep-no-copy:
       && echo "[net]" >> "$CARGO_HOME/config.toml" \
       && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml"
 
+    # rustc 1.98.1 dropped `--allow-undefined` from the wasm32v1-none target spec's
+    # pre-link-args, which Substrate's `sp_io` host-function imports rely on. The repo's
+    # .cargo/config.toml sets this for local builds, but the build/check targets descend
+    # from here and never COPY .cargo in (adding it would also drag in `[profile.release]
+    # debug = 1`), so set it as an ENV for every derived target.
+    ENV WASM_BUILD_RUSTFLAGS="-C link-arg=--allow-undefined"
+
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
 
