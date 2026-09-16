@@ -75,6 +75,9 @@ where
 }
 
 /// Ledger 8 never produces evidence indices; kept so the shared code has one name to call.
-pub fn evidence_to_tx_indices(_evidence_ends: &[usize], _failed: &[usize]) -> alloc::vec::Vec<usize> {
+pub fn evidence_to_tx_indices(
+	_evidence_ends: &[usize],
+	_failed: &[usize],
+) -> alloc::vec::Vec<usize> {
 	alloc::vec::Vec::new()
 }

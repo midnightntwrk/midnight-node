@@ -1081,11 +1081,10 @@ where
 		strictness.verify_native_proofs = false;
 
 		let prep_start = Instant::now();
-		let verified_tx =
-			tx.0.well_formed(&ctx.ref_state, strictness, tblock).map_err(|e| {
-				log::warn!(target: LOG_TARGET, "prepare: transaction malformed: {e}");
-				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
-			})?;
+		let verified_tx = tx.0.well_formed(&ctx.ref_state, strictness, tblock).map_err(|e| {
+			log::warn!(target: LOG_TARGET, "prepare: transaction malformed: {e}");
+			LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
+		})?;
 		let prep_elapsed = prep_start.elapsed();
 
 		let (prepared, evidence_len) =

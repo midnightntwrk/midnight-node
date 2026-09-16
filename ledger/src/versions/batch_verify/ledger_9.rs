@@ -65,12 +65,11 @@ where
 	})?;
 	let count = evidence.len();
 	let mode = WellFormedStrictness::default().proof_verification_mode;
-	let prepared = <ProofMarker as ProofKind<D>>::prepare_proof_evidence(&evidence, mode).map_err(
-		|e| {
+	let prepared =
+		<ProofMarker as ProofKind<D>>::prepare_proof_evidence(&evidence, mode).map_err(|e| {
 			log::warn!(target: LOG_TARGET, "batch proof preparation failed: {e}");
 			BatchVerifyFailure::Unlocalized
-		},
-	)?;
+		})?;
 	Ok((prepared, count))
 }
 
