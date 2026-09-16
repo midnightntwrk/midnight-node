@@ -14,4 +14,10 @@ transmuted `()` into `TryFromIntError`, which 1.98.1 no longer allows), and
 (1.98.1 dropped it from the `wasm32v1-none` target spec, which Substrate's
 `sp_io` host-function imports rely on).
 
+1.98.1 also ships new clippy lints (`useless_borrows_in_formatting`,
+`unnecessary_get_then_check`) and flags some now-unused imports, so a handful of
+call sites across the node, toolkit and the vendored `partner-chains` tree are
+adjusted to keep `cargo clippy -D warnings` green.
+
 PR: https://github.com/midnightntwrk/midnight-node/pull/2166
+Issue: https://github.com/midnightntwrk/midnight-node/issues/2061
