@@ -207,8 +207,8 @@ pub async fn execute(
 	)
 	.await?;
 
-	let state_filename = format!("genesis_state_{}.mn", &args.network);
-	let block_filename = format!("genesis_block_{}.mn", &args.network);
+	let state_filename = format!("genesis_state_{}.mn", args.network);
+	let block_filename = format!("genesis_block_{}.mn", args.network);
 	let genesis_state_path = dir.join(&state_filename);
 	let genesis_tx_path = dir.join(&block_filename);
 

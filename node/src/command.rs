@@ -130,7 +130,7 @@ fn get_cfg(validate: bool) -> sc_cli::Result<Cfg> {
 	let cfg = if validate { Cfg::new() } else { Cfg::new_no_validation() };
 	let cfg = cfg.map_err(|e| {
 		let msg = format!("configuration error: {e}");
-		eprintln!("{}", &msg);
+		eprintln!("{}", msg);
 		Cfg::help();
 		sc_cli::Error::Input(msg)
 	})?;
@@ -228,7 +228,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let (keypair, _) = sp_core::sr25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid AURA seed: {e}")))?;
 		keystore.insert(AURA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
-		log::info!("AURA pubkey: {}", &keypair.public())
+		log::info!("AURA pubkey: {}", keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.grandpa_seed_file {
@@ -241,7 +241,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		let (keypair, _) = sp_core::ed25519::Pair::from_string_with_seed(seed, None)
 			.map_err(|e| sc_cli::Error::Input(format!("Invalid GRANDPA seed: {e}")))?;
 		keystore.insert(GRANDPA_KEY_TYPE, seed, &keypair.public().to_raw_vec()).unwrap();
-		log::info!("GRANDPA pubkey: {}", &keypair.public())
+		log::info!("GRANDPA pubkey: {}", keypair.public())
 	}
 
 	if let Some(seed_file) = &cfg.midnight_cfg.cross_chain_seed_file {
@@ -256,7 +256,7 @@ fn run_node(cfg: Cfg) -> sc_cli::Result<()> {
 		keystore
 			.insert(KeyTypeId(*b"crch"), seed, &keypair.public().to_raw_vec())
 			.unwrap();
-		log::info!("CROSS_CHAIN pubkey: {}", &keypair.public())
+		log::info!("CROSS_CHAIN pubkey: {}", keypair.public())
 	}
 
 	// Hold the database backend handle outside the tokio runtime so we can
