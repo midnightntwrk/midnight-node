@@ -245,6 +245,55 @@ outputs overflows it (`TransactionTooLarge { tx_size: 1080862, limit: 1048576 }`
 carry proofs and dominate the size; NIGHT outputs are cheap, and NIGHT is what backs DUST. Raise the
 unshielded count only — the shielded coins are fanned out by the load step anyway.
 
+## A fixture the benchmark can resolve
+
+Wall-clock sync time is roughly `44 ms x blocks + 3.9 ms x proof-tx`, so how quickly an A/B
+resolves depends on **proof-txs per block**. The default workload is sparse — 233 txs over 82
+blocks, about 20% of sync time — and a real improvement sits close to the noise floor there: it
+took 42 paired runs to establish a direction.
+
+A denser chain fixes that:
+
+```bash
+CHAIN=/abs/path/bench-spec.json LOAD_CHUNK=64 FANOUT_CHUNK=100 ./prime-local.sh 512
+CHAIN=/abs/path/bench-spec.json REPEATS=9 ./benchmark.sh
+```
+
+| | sparse (default) | dense |
+|---|---|---|
+| blocks / proof-txs | 82 / 233 | 129 / 518 |
+| txs per block | 2.84 | 4.02 |
+| txs per *populated* block | 12.3 | 22.5 |
+| verification share of sync | ~20% | ~28% |
+| verification saved per sync | 0.30 s | 0.79 s |
+| paired runs to resolve | 42 (p = 0.0001) | **9, unanimous (p = 0.002)** |
+
+**`FANOUT_CHUNK` is the counter-intuitive knob.** Raising `LOAD_TXS` alone makes density *worse*.
+Every load tx needs its own coin, and fan-out runs one `single-tx` per chunk, each taking ~25 s —
+during which the chain keeps minting empty 6-second blocks. At the default `FANOUT_CHUNK=25`,
+512 coins cost 21 fan-out txs and roughly 87 near-empty blocks. Fat fan-out txs (100 outputs,
+~44 s each) cost 6 txs and ~43 blocks instead. The load phase needs no such help: `batch-single-tx`
+proves a whole chunk before submitting any of it, so a chunk lands in one or two blocks.
+
+Density is ultimately capped by local proving throughput (~1 tx/s) against the 6-second slot, so
+most blocks stay empty regardless. The gain comes from the *absolute* effect size growing —
+0.30 s to 0.79 s — not from the share reaching a majority.
+
+Two side effects of the dense fixture:
+
+- Batches go from 12.3 to 22.5 txs, and because aggregate verification amortises a fixed cost,
+  crypto-only speedup rises from ~2.03x to ~2.33x with no code change.
+- Eight blocks close on `HitBlockWeightLimit` (max 39 extrinsics), where the sparse fixture never
+  filled one. Closer to a loaded chain — and it does not change the block-capacity finding, since
+  weight is declared before execution.
+
+Keep the sparse archive if you want the old numbers reproducible:
+
+```bash
+cp artifacts/chain-archive.tar.gz artifacts/chain-archive-sparse.tar.gz
+cp artifacts/chain-archive.meta   artifacts/chain-archive-sparse.meta
+```
+
 ## The prime workload
 
 `batch-single-tx` builds each transfer independently and doesn't reserve coins
