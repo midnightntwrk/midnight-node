@@ -373,8 +373,8 @@ impl frame_system::Config for Runtime {
 	type MaxConsumers = frame_support::traits::ConstU32<16>;
 	type RuntimeTask = RuntimeTask;
 	type SingleBlockMigrations = (
-		// Add BABE keys
-		crate::migrations::authority_keys::AddBabeToSessionKeysMigration,
+		// Initializes QueuedCommittee (v1 -> v2), and adds BABE keys
+		crate::migrations::authority_keys::MigrateV1ToV2AddBabeSessionKeys,
 	);
 	type MultiBlockMigrator = MultiBlockMigrations;
 	type PreInherents = ();
