@@ -190,6 +190,8 @@ pub mod pallet {
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		// TransferCounter is absent at both block boundaries, so this kill never reaches
+		// the trie and needs no weight reserved for it in on_initialize.
 		fn on_finalize(_n: BlockNumberFor<T>) {
 			TransferCounter::<T>::kill();
 		}
