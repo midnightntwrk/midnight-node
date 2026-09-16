@@ -16,6 +16,7 @@
 //! Runtime benchmark weights.
 
 pub mod frame_system;
+pub mod frame_system_extensions;
 pub mod pallet_beefy_mmr;
 pub mod pallet_c2m_bridge;
 pub mod pallet_cnight_observation;
@@ -28,8 +29,10 @@ pub mod pallet_migrations;
 pub mod pallet_mmr;
 pub mod pallet_partner_chains_bridge;
 pub mod pallet_preimage;
+pub mod pallet_safe_mode;
 pub mod pallet_scheduler;
 pub mod pallet_session_validator_management;
 pub mod pallet_system_parameters;
 pub mod pallet_timestamp;
 pub mod pallet_tx_pause;
+pub mod pallet_version;
