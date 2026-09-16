@@ -55,6 +55,22 @@ cd scripts/tests/batch-verify-perf
 ./benchmark.sh <NODE_IMAGE>
 ```
 
+**Or skip the images entirely.** `prime-local.sh` builds the same archive from locally-built
+binaries, so neither phase needs Docker:
+
+```bash
+cargo build --release -p midnight-node -p midnight-node-toolkit
+just seed-zk-keys                      # this branch's proving keys are not published
+
+cd scripts/tests/batch-verify-perf
+./prime-local.sh 224                   # ~18 min for 224 proof-txs
+./benchmark.sh                         # no args = local mode
+```
+
+That is usually the faster loop: building the two images requires the branch's ledger crates to be
+published as an isolate first (see `Batch-Verification-Notes.md`), whereas the binaries are already
+on disk.
+
 Or via `just`:
 
 ```bash
@@ -176,6 +192,59 @@ unit-test counterpart, which pins the same behaviour against a synthetic state, 
 `proofs_are_reverified_when_a_transaction_reaches_a_new_block` in
 `ledger/src/versions/common/mod.rs`.
 
+## Bigger batches: a custom genesis
+
+Batch verification amortises a fixed cost across the batch, so its benefit depends on how many
+proof-txs share a block. On the stock `undeployed` genesis that number is capped at **5**, and the
+cap has nothing to do with the node: `batch-single-tx` fees every transaction from the genesis
+wallet, and the wallet's DUST sits in one generation output per genesis NIGHT UTXO — of which there
+are five (`--unshielded-num-funding-outputs`, default 5). One invocation can therefore fee at most
+five transactions, and batches stay around 4.
+
+To lift it, generate a genesis with more NIGHT outputs and point the harness at it:
+
+```bash
+# 1. a genesis with 64 NIGHT outputs (keep shielded at 5 — see the size note below)
+midnight-node-toolkit generate-genesis \
+  --network undeployed --seeds-file seeds.json \
+  --ledger-parameters-config res/dev/ledger-parameters-config.json \
+  --cnight-generates-dust-config res/dev/cnight-config.json \
+  --ics-config res/dev/ics-config.json \
+  --reserve-config res/dev/reserve-config.json \
+  --shielded-num-funding-outputs 5 \
+  --unshielded-num-funding-outputs 64
+
+# 2. turn it into a chainspec (see the `--dev` trap below for why this step exists)
+CFG_PRESET=dev \
+  CHAINSPEC_GENESIS_STATE=out/genesis_state_undeployed.mn \
+  CHAINSPEC_GENESIS_BLOCK=out/genesis_block_undeployed.mn \
+  midnight-node build-spec --raw > bench-spec.json
+
+# 3. prime and benchmark against it
+CHAIN=/abs/path/bench-spec.json LOAD_CHUNK=32 ./prime-local.sh 224
+CHAIN=/abs/path/bench-spec.json ./benchmark.sh
+```
+
+Measured on this branch: batch size 3.9 -> 12.3, crypto-only speedup 1.75x -> ~1.9-2.05x. That is
+close to the ceiling — per-tx batched cost asymptotes to the fit's slope (~1.64 ms against ~3.5 ms
+inline, so ~2.1x), and batches of ~12 already capture most of it. Going further buys little.
+
+**Two traps worth knowing.**
+
+*`--dev` silently ignores the genesis config.* `Cfg::load_spec` maps chain id `"dev"` to a hardcoded
+built-in spec; `chainspec_genesis_state` / `_block` are validated (a bad path still errors) but never
+read. A node started with `--dev` therefore runs the committed genesis no matter what those are set
+to. Only chain id `""` builds from them, which is what `build-spec` above uses, and a chainspec
+*path* is what `--chain` needs afterwards. `--dev` also implies `--alice --force-authoring`, so an
+authoring node on a custom chain has to spell those out — `authoring_chain_args` in `lib.sh` does
+this, keyed off `CHAIN`. Verify you got the genesis you meant by diffing the `Initializing Genesis
+block/state (state: 0x…)` line against a stock run.
+
+*Genesis funding is bounded by the 1 MiB transaction limit.* 64 shielded **and** 64 unshielded
+outputs overflows it (`TransactionTooLarge { tx_size: 1080862, limit: 1048576 }`). Shielded outputs
+carry proofs and dominate the size; NIGHT outputs are cheap, and NIGHT is what backs DUST. Raise the
+unshielded count only — the shielded coins are fanned out by the load step anyway.
+
 ## The prime workload
 
 `batch-single-tx` builds each transfer independently and doesn't reserve coins
@@ -208,6 +277,8 @@ defaults):
 | `LOAD_RATE` | load submit rate (txs/sec) | `40` |
 | `SHIELDED` | `1` = shielded (zswap) proofs; `0` = unshielded (no proofs) | `1` |
 | `SYNC_TIMEOUT_SECS` / `STALL_TIMEOUT_SECS` | benchmark watchdogs | `1800` / `240` |
+| `CHAIN` | chain id, or a path to a chainspec JSON (see "Bigger batches") | `dev` |
+| `LOAD_CHUNK` | txs per `batch-single-tx` call; cap is the funder's DUST-output count | `5` |
 | `BATCH_VERIFY_MAX_BATCH_SIZE` etc. | forwarded to the syncer when set | (node defaults) |
 
 A bigger, prove-heavier chain shows a larger absolute gap — scale `LOAD_TXS`

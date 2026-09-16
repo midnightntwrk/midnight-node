@@ -393,9 +393,9 @@ else
   echo "  ⚠️  txs_total ($TXS) < load proof-txs ($PROOF_TXS): some blocks skipped batching"
   echo "     (BatchVerifyError::Unavailable) and inline-verified — investigate before trusting timing."
 fi
-echo "  note: fallback_total is mempool-only (always 0 on a syncer); batch size is"
-echo "        capped at the funder's DUST-output count, so batches stay small — the"
-echo "        per-tx crypto speedup above needs many proof-txs/block to be large."
+echo "  note: fallback_total is mempool-only (always 0 on a syncer). Batch size is"
+echo "        capped at the funder's DUST-output count (5 on the stock genesis);"
+echo "        see README \"Bigger batches: a custom genesis\" to raise it."
 echo "--- raw ON verify counters ---"
 cat "$ON_METRICS" 2>/dev/null || echo "(none scraped)"
 echo "--- raw OFF verify counters ---"
