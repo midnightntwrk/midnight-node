@@ -1753,23 +1753,16 @@ where
 				// (ledger parameters, the contract's registered operation, its maintenance
 				// authority, and the Dust roots at the transaction's ctime).
 				//
-				// This does NOT skip the ZK proof crypto, and cannot yet. Proof verification is
-				// gated by `WellFormedStrictness`, not by `stateless_check`, so the reference
-				// alone does not stand it down — and `defer_proofs()` is not a way to get there,
-				// because the state-dependent checks this path exists to re-run are nested
-				// *inside* the proof flags: in the ledger, `op_check` (verify.rs) and
-				// `dust_spend_check` (dust.rs) are each reachable only under
-				// `verify_contract_proofs` / `verify_native_proofs`, either directly or via
-				// `collect_proof_evidence`. Deferring the proofs would therefore skip exactly the
-				// re-checks that make reusing a previous verification safe — the contract's
-				// registered operation and the Dust roots at the transaction's ctime.
+				// The proof cryptography is skipped, but nothing else is: the reference applies
+				// `WellFormedStrictness::assume_proofs_verified` itself, via the ledger's
+				// `StateReference::adjust_strictness`. Evidence collection still runs, so
+				// `op_check` and `dust_spend_check` still catch a contract operation, verifier
+				// key or Dust root that moved since these proofs were verified.
 				//
-				// So this path saves the signature, binding-commitment and zswap structural work
-				// and nothing else: ~3.2ms/tx against ~3.9ms/tx for a full inline verification.
-				// Making it genuinely cheap needs a ledger-side way to run evidence collection
-				// and its state-dependent checks while skipping only the cryptographic
-				// verification (e.g. a `ProofVerificationMode` that checks inputs but does not
-				// verify). Until that exists, keep the default strictness here: correct, not fast.
+				// Hence the plain `strictness` below — the policy belongs to the reference, not
+				// to this call site. Do not "help" by passing `defer_proofs()`: that clears the
+				// flags gating evidence collection and would skip those state-dependent checks
+				// along with the cryptography.
 				//
 				// Reloading the previous state can fail if the arena no longer holds it (pruned,
 				// or a different process); that is a performance miss, not a correctness problem,

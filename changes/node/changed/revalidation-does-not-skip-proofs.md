@@ -1,42 +1,52 @@
-#node #ledger
-# Correct the claim that revalidation skips proof verification
+#node #ledger #performance
+# Revalidation skips the proof cryptography, and only that
 
-"Verify a transaction's ZK proofs once, not once per state it is validated
-against" described `RevalidationReference` as skipping "proof, signature and
-binding-commitment verification" via `StateReference::stateless_check`. That is
+"Verify a transaction's ZK proofs once, not once per state it is validated against"
+described `RevalidationReference` as skipping "proof, signature and
+binding-commitment verification" via `StateReference::stateless_check`. That was
 wrong. `stateless_check` guards only the signature, binding-commitment and zswap
-structural checks. Proof verification is gated separately, by the
-`verify_native_proofs` / `verify_contract_proofs` flags on
-`WellFormedStrictness` — so the revalidation path has always re-run the full
-proof crypto, and the reported 1.00x was measured by counting `mode="inline"`
-metric samples, which stop being emitted on that path while the work they name
+structural checks; proof verification is gated separately, by
+`WellFormedStrictness`. The revalidation path therefore re-ran the full proof
+cryptography, and the reported 1.00x came from counting `mode="inline"` metric
+samples — which the revalidation branch stops emitting while the work they name
 carries on.
 
-Nor can the node simply pass `defer_proofs()`. In the ledger, the state-dependent
-checks that make reusing a previous verification safe are nested *inside* the
-proof flags: `op_check` (verify.rs) and `dust_spend_check` (dust.rs) are each
-reachable only under `verify_contract_proofs` / `verify_native_proofs`, directly
-or through `collect_proof_evidence`. Deferring the proofs would skip precisely
-the re-checks the reference exists to perform — the contract's registered
-operation and verifier key, and the Dust roots at the transaction's ctime — and
-so accept a transaction whose proofs no longer hold against the new state.
+The obvious fix, passing `defer_proofs()`, is unsound: in the ledger, `op_check`
+and `dust_spend_check` are reachable only under `verify_contract_proofs` /
+`verify_native_proofs`, directly or through `collect_proof_evidence`. Deferring
+the proofs skips exactly the state-dependent re-checks that make reusing an
+earlier verification safe, so a transaction would still be accepted after its
+contract's verifier key changed, or after pruning moved the Dust root at its
+ctime.
 
-What revalidation actually buys today is the signature, binding-commitment and
-zswap structural work: measured at 3.17 ms/tx against 3.92 ms/tx for a full
-inline verification. The call site keeps the default strictness and now says why.
+The ledger now provides `StateReference::adjust_strictness`, and
+`RevalidationReference` overrides it to apply
+`WellFormedStrictness::assume_proofs_verified`. Proof verification was the one
+check with no hook on `StateReference`, which is why a reference alone could not
+stand it down; with the hook the reference states its own policy and this call
+site simply passes the caller's strictness through. Evidence collection still
+runs, so the state-dependent checks still run, and the verifier key is still
+resolved.
 
-Consequence for batch verification on block import: it is a net loss on the
-measured chain. Aggregate verification makes the crypto 2.07x cheaper, but the
-ON path also pays a revalidation pass during execution that the OFF path does
-not, and the totals over an 82-block, 233-transaction sync are 0.513s of batch +
-prep versus 0.884s inline, plus 0.738s of revalidation — 1.24s against 0.88s, a
-ratio of 0.73x.
+Measured over an 82-block, 233-transaction sync:
 
-Making it a win needs a ledger-side way to run evidence collection and its
-state-dependent checks while skipping only the cryptographic verification — for
-example a `ProofVerificationMode` variant that checks public inputs and returns
-without verifying, letting a caller keep `verify_*_proofs` set. With that, the
-revalidation pass should cost roughly the non-crypto `well_formed` plus evidence
-collection, and batch verification would come out ahead on block import.
+| per transaction | before | after |
+|---|---|---|
+| revalidation `well_formed` | 3.169 ms | 0.511 ms |
+
+| whole sync | OFF (inline) | ON (batch) |
+|---|---|---|
+| total proof verification | 0.895s | 0.612s |
+
+That turns batch verification on block import from a net loss (0.73x) into a
+1.46x win. End-to-end sync time improves accordingly: over 21 paired runs the
+batching node was faster in 17, median +0.20s, mean +0.29s (sign test p = 0.004).
+The mean matches the 0.283s of verification saved, so the wall-clock gain is
+fully accounted for by the measured work removed.
+
+A new `ledger_proof_verify_duration_seconds{mode="revalidate"}` metric records
+this path. Without it the regression was invisible: the crypto-only comparison
+showed batch verification 2.03x faster while end-to-end sync was consistently
+slower, because the cost had moved into a pass nothing measured.
 
 PR: <link to PR>
