@@ -1453,7 +1453,7 @@ subwasm:
 srtool-build:
     # Tag shape for srtool is: `<rust version>-<srtool version>`
     # renovate: datasource=docker packageName=shieldedtech/srtool
-    ARG SRTOOL_TAG=1.98.1-0.18.4
+    ARG SRTOOL_TAG=1.98.1-0.18.5
     FROM shieldedtech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
