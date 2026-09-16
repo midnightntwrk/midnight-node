@@ -168,7 +168,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.95-trixie
+    FROM rust:1.98.1-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -1447,9 +1447,10 @@ subwasm:
 # This ensures reproducible builds across different environments
 # See: https://github.com/paritytech/srtool
 #
-# Note: srtool uses its own pinned Rust version (currently 1.93.0) for deterministic builds.
-# The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
-# reproducibility - srtool's environment is fixed and verified.
+# Note: srtool uses its own pinned Rust version (currently 1.98.1) for deterministic builds.
+# The project's rust-toolchain.toml is intentionally NOT used here to maintain
+# reproducibility - srtool's environment is fixed and verified, but keep it in step with
+# rust-toolchain.toml anyway.
 srtool-build:
     # Tag shape for srtool is: `<rust version>-<srtool version>`
     # renovate: datasource=docker packageName=shieldedtech/srtool
@@ -1483,9 +1484,10 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_TAG=1.93.0-0.18.4
-    FROM paritytech/srtool:${SRTOOL_TAG}
+    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # renovate: datasource=docker packageName=shieldedtech/srtool
+    ARG SRTOOL_TAG=1.98.1-0.18.5
+    FROM shieldedtech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
