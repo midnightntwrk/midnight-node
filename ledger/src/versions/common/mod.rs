@@ -1753,17 +1753,23 @@ where
 				// (ledger parameters, the contract's registered operation, its maintenance
 				// authority, and the Dust roots at the transaction's ctime).
 				//
-				// The ZK proofs must be deferred *explicitly*: they are gated by
-				// `WellFormedStrictness`, not by `stateless_check`, so a `default()` strictness
-				// here re-runs the whole proof crypto and makes this path cost MORE than the
-				// full verification it is supposed to replace (measured at 3.2ms/tx vs 3.9ms/tx,
-				// which is what made batch verification a net loss on block import).
+				// This does NOT skip the ZK proof crypto, and cannot yet. Proof verification is
+				// gated by `WellFormedStrictness`, not by `stateless_check`, so the reference
+				// alone does not stand it down — and `defer_proofs()` is not a way to get there,
+				// because the state-dependent checks this path exists to re-run are nested
+				// *inside* the proof flags: in the ledger, `op_check` (verify.rs) and
+				// `dust_spend_check` (dust.rs) are each reachable only under
+				// `verify_contract_proofs` / `verify_native_proofs`, either directly or via
+				// `collect_proof_evidence`. Deferring the proofs would therefore skip exactly the
+				// re-checks that make reusing a previous verification safe — the contract's
+				// registered operation and the Dust roots at the transaction's ctime.
 				//
-				// Deferring them is sound for the same reason the reference exists: the
-				// revalidation cache is keyed by the transaction's own SHA-256 hash, so the proof
-				// bytes and every stateless public input are identical to a transaction whose
-				// proofs already verified, and the state-dependent inputs are exactly what the
-				// reference re-checks above.
+				// So this path saves the signature, binding-commitment and zswap structural work
+				// and nothing else: ~3.2ms/tx against ~3.9ms/tx for a full inline verification.
+				// Making it genuinely cheap needs a ledger-side way to run evidence collection
+				// and its state-dependent checks while skipping only the cryptographic
+				// verification (e.g. a `ProofVerificationMode` that checks inputs but does not
+				// verify). Until that exists, keep the default strictness here: correct, not fast.
 				//
 				// Reloading the previous state can fail if the arena no longer holds it (pruned,
 				// or a different process); that is a performance miss, not a correctness problem,
@@ -1775,11 +1781,8 @@ where
 							new_state: ledger.state.clone(),
 						};
 						let reval_start = Instant::now();
-						let reval_strictness = super::batch_verify::defer_proofs(strictness);
-						let verified_tx = tx
-							.0
-							.well_formed(&reference, reval_strictness, tblock)
-							.map_err(|e| {
+						let verified_tx =
+							tx.0.well_formed(&reference, strictness, tblock).map_err(|e| {
 								log::warn!(target: LOG_TARGET, "Transaction malformed: {e}");
 								LedgerApiError::Transaction(types::TransactionError::Malformed(
 									e.into(),

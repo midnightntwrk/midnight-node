@@ -27,7 +27,7 @@ use super::{
 	midnight_serialize_local::Serializable,
 	mn_ledger_local::{
 		structure::{ProofMarker, SignatureKind, Transaction},
-		verify::{StateReference, WellFormedStrictness},
+		verify::StateReference,
 	},
 	transient_crypto_local::commitment::PureGeneratorPedersen,
 };
@@ -80,11 +80,4 @@ pub fn evidence_to_tx_indices(
 	_failed: &[usize],
 ) -> alloc::vec::Vec<usize> {
 	alloc::vec::Vec::new()
-}
-
-/// Ledger 8 has no `WellFormedStrictness::defer_proofs`, so revalidation cannot skip the proof
-/// crypto and simply re-verifies in full. Correct, just not fast — and unreachable in practice,
-/// since the node only batch-verifies on ledger 9.
-pub fn defer_proofs(strictness: WellFormedStrictness) -> WellFormedStrictness {
-	strictness
 }
