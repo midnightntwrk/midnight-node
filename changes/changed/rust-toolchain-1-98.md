@@ -5,7 +5,7 @@
 Updates Rust to 1.98.1 across all components: the workspace
 `rust-toolchain.toml`, the `subxt` and nightly cNIGHT e2e container base
 images, and the srtool image used for deterministic runtime WASM builds
-(now `midnightntwrk/srtool:1.98.1-0.18.5`, as upstream `paritytech/srtool`
+(now `ghcr.io/shieldedtech/srtool:1.98.1-0.18.5`, as upstream `paritytech/srtool`
 publishes no 1.98.x tag).
 
 Two build fixes were needed for 1.98.1: `ethnum` is bumped to 1.5.3 (1.5.2

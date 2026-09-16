@@ -146,7 +146,7 @@ A release isn't just one Docker image. Each tag (e.g. `node-1.0.0`) produces:
   produced it. Verify with
   `gh attestation verify <file> --repo midnightntwrk/midnight-node`.
 
-The WASM is built with **srtool** (`midnightntwrk/srtool`, our fork of
+The WASM is built with **srtool** (`ghcr.io/shieldedtech/srtool`, our fork of
 `paritytech/srtool`; pinned Rust + srtool versions for determinism — see
 `Earthfile +srtool-build` and `.github/workflows/srtool-build.yml`). The whole
 point is that anyone can re-run the build from the tag and get
