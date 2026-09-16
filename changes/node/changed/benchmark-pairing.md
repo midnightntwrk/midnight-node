@@ -14,6 +14,11 @@ cancels. The report adds the paired deltas, their median, and a sign test; the o
 "spread >= delta" warning has been dropped, because comparing unpaired spreads
 discards the pairing and reports "unresolved" on data that is in fact unanimous.
 
+The "not resolved" warning now fires on the sign test's p-value rather than on the
+pairs disagreeing. Unanimity is the wrong criterion in both directions: with enough
+pairs a few disagreements are expected and the result is still decisive (17/21 is
+p = 0.004), while three pairs agreeing establishes very little (p = 0.125).
+
 Two further harness fixes:
 
 - `CHAIN` is read back from the archive meta. It defaulted to the built-in `dev`

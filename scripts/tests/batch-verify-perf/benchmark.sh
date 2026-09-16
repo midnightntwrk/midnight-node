@@ -409,9 +409,14 @@ printf '%s\n' "${paired_deltas[@]}" | awk '
     tail = 0; c = 1
     for (j = NR; j >= k; j--) { tail += c; c = c * j / (NR - j + 1) }
     half = 1; for (i = 0; i < NR; i++) half = half / 2
-    printf "  ON faster in %d/%d pairs  (sign test p = %.3f, one-sided)\n", wins+0, NR, tail * half
-    if (k < NR)
-      print "  ⚠️  the configs did not agree across every pair — treat the sign as tentative."
+    p = tail * half
+    printf "  ON faster in %d/%d pairs  (sign test p = %.3f, one-sided)\n", wins+0, NR, p
+    # Judge by the sign test, not by unanimity: with enough pairs a few disagreements are
+    # expected and the result is still decisive, while 3/3 agreeing establishes very little.
+    if (p > 0.05) {
+      print "  ⚠️  not resolved (p > 0.05): these pairs do not establish a direction. Raise"
+      print "      REPEATS, or use a chain where verification is a larger share of sync time."
+    }
   }'
 echo
 # Coverage check. The block-import path records batches_total/txs_total/batch_size
