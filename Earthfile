@@ -1451,12 +1451,10 @@ subwasm:
 # The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
 # reproducibility - srtool's environment is fixed and verified.
 srtool-build:
-    # Tag shape is `<rust version>-<srtool version>`, so renovate has to track the whole
-    # tag: given just `0.18.4` it reads the rust half as the image's version and offers
-    # `1.93.0` as a "v1 major", which resolves to a tag that does not exist.
-    # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_TAG=1.93.0-0.18.4
-    FROM paritytech/srtool:${SRTOOL_TAG}
+    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # renovate: datasource=docker packageName=shieldedtech/srtool
+    ARG SRTOOL_TAG=1.98.1-0.18.4
+    FROM shieldedtech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
     WORKDIR /build
