@@ -691,6 +691,100 @@ pub fn batch_verify_transactions(
 	}
 }
 
+/// A prepared transaction, tagged with the storage mode it was prepared against.
+///
+/// `PreparedTx` is parameterised by the ledger's DB type, and the node picks that at runtime from
+/// `LedgerStorageExt`, so the two instantiations are wrapped here to give callers one nameable
+/// type. A process only ever uses one mode, so a batch is always homogeneous in practice.
+#[cfg(feature = "std")]
+pub enum PreparedTransaction {
+	Unified(crate::ledger_9::PreparedTx<Signature, DbUnified>),
+	Separate(crate::ledger_9::PreparedTx<Signature, DbSeparate>),
+}
+
+/// Native (non-WASM) incremental preparation for the active ledger version: everything for one
+/// transaction that does not depend on which others share its batch.
+///
+/// Pair with [`finalize_prepared_batch`]. See `Bridge::prepare_transaction`.
+#[cfg(feature = "std")]
+pub fn prepare_transaction(
+	ext: &mut dyn Externalities,
+	state_key: &[u8],
+	tx_serialized: &[u8],
+	block_context: BlockContext,
+	runtime_version: u32,
+) -> Result<PreparedTransaction, LedgerApiError> {
+	if is_unified(&mut *ext) {
+		Bridge::<Signature, DbUnified>::prepare_transaction(
+			ext,
+			state_key,
+			tx_serialized,
+			block_context,
+			runtime_version,
+		)
+		.map(PreparedTransaction::Unified)
+	} else {
+		Bridge::<Signature, DbSeparate>::prepare_transaction(
+			ext,
+			state_key,
+			tx_serialized,
+			block_context,
+			runtime_version,
+		)
+		.map(PreparedTransaction::Separate)
+	}
+}
+
+/// Native (non-WASM) decision step for a batch built by [`prepare_transaction`]: one fold plus a
+/// single pairing check, then the same cache warming the whole-batch path does.
+///
+/// Returns one result per input transaction, in order. Errors if the batch mixes storage modes,
+/// which cannot happen within a process.
+#[cfg(feature = "std")]
+pub fn finalize_prepared_batch(
+	ext: &mut dyn Externalities,
+	state_key: &[u8],
+	block_context: BlockContext,
+	prepared: Vec<PreparedTransaction>,
+	isolate_on_failure: bool,
+) -> Result<Vec<Result<(), LedgerApiError>>, LedgerApiError> {
+	if prepared.is_empty() {
+		return Ok(Vec::new());
+	}
+	let unified = matches!(prepared[0], PreparedTransaction::Unified(_));
+	if unified {
+		let mut items = Vec::with_capacity(prepared.len());
+		for p in prepared {
+			match p {
+				PreparedTransaction::Unified(p) => items.push(p),
+				PreparedTransaction::Separate(_) => return Err(LedgerApiError::NoLedgerState),
+			}
+		}
+		Bridge::<Signature, DbUnified>::finalize_prepared_batch(
+			ext,
+			state_key,
+			block_context,
+			items,
+			isolate_on_failure,
+		)
+	} else {
+		let mut items = Vec::with_capacity(prepared.len());
+		for p in prepared {
+			match p {
+				PreparedTransaction::Separate(p) => items.push(p),
+				PreparedTransaction::Unified(_) => return Err(LedgerApiError::NoLedgerState),
+			}
+		}
+		Bridge::<Signature, DbSeparate>::finalize_prepared_batch(
+			ext,
+			state_key,
+			block_context,
+			items,
+			isolate_on_failure,
+		)
+	}
+}
+
 #[cfg(all(test, feature = "std"))]
 mod tests {
 	use super::as_ledger_9_error;

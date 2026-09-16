@@ -30,7 +30,10 @@
 //! verification) — it can never cause an invalid transaction to be accepted.
 
 use crate::service::FullClient;
-use midnight_node_ledger::{ledger_9::BlockContext, types::active_version::LedgerApiError};
+use midnight_node_ledger::{
+	host_api::ledger_9::PreparedTransaction, ledger_9::BlockContext,
+	types::active_version::LedgerApiError,
+};
 use midnight_node_runtime::opaque::Block;
 use midnight_primitives_ledger::{
 	LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt,
@@ -169,6 +172,96 @@ impl BatchVerifier {
 		ext
 	}
 
+	/// Resolves the three batch inputs derived from the chain state at `at`.
+	fn batch_inputs(
+		&self,
+		at: BlockHash,
+		extra_secs: u64,
+	) -> Result<(u32, Vec<u8>, BlockContext), BatchVerifyError> {
+		let Some(spec_version) = self.spec_version_at(at) else {
+			return Err(BatchVerifyError::Unavailable("could not resolve runtime version".into()));
+		};
+		if spec_version < LEDGER_9_MIN_SPEC_VERSION {
+			return Err(BatchVerifyError::Unavailable(format!(
+				"block at {at:?} runs a pre-ledger-9 runtime (spec_version {spec_version}); \
+				 batch verification unsupported"
+			)));
+		}
+		let Some(state_key) = self.state_key_at(at) else {
+			return Err(BatchVerifyError::Unavailable("could not read ledger state_key".into()));
+		};
+		Ok((spec_version, state_key, self.block_context_at(at, extra_secs)))
+	}
+
+	/// Runs the per-transaction half of batch verification for one transaction — everything that
+	/// does not depend on which other transactions share its batch.
+	///
+	/// Callers with idle time before they must decide (the mempool queue filling toward its
+	/// dispatch window) run this as each transaction arrives, then pay only [`Self::finalize`].
+	pub fn prepare(
+		&self,
+		at: BlockHash,
+		tx_bytes: &[u8],
+		extra_secs: u64,
+	) -> Result<PreparedTransaction, BatchVerifyError> {
+		let (spec_version, state_key, block_context) = self.batch_inputs(at, extra_secs)?;
+		let mut ext = self.build_externalities();
+		let start = std::time::Instant::now();
+		let result = midnight_node_ledger::host_api::ledger_9::prepare_transaction(
+			&mut ext,
+			&state_key,
+			tx_bytes,
+			block_context,
+			spec_version,
+		);
+		self.metrics.observe_prepare_duration(start.elapsed().as_secs_f64());
+		result.map_err(|e| match e {
+			LedgerApiError::Transaction(_) => BatchVerifyError::ProofInvalid,
+			other => BatchVerifyError::Unavailable(format!("{other:?}")),
+		})
+	}
+
+	/// Decides a batch built by [`Self::prepare`]: one fold plus a single pairing check, at a cost
+	/// essentially independent of the batch size.
+	pub fn finalize(
+		&self,
+		at: BlockHash,
+		prepared: Vec<PreparedTransaction>,
+		isolate_on_failure: bool,
+		extra_secs: u64,
+	) -> Result<Vec<Result<(), LedgerApiError>>, BatchVerifyError> {
+		if prepared.is_empty() {
+			return Ok(Vec::new());
+		}
+		let (_, state_key, block_context) = self.batch_inputs(at, extra_secs)?;
+		let tx_count = prepared.len();
+		let mut ext = self.build_externalities();
+
+		let start = std::time::Instant::now();
+		let result = midnight_node_ledger::host_api::ledger_9::finalize_prepared_batch(
+			&mut ext,
+			&state_key,
+			block_context,
+			prepared,
+			isolate_on_failure,
+		);
+		self.metrics.observe_batch_duration(start.elapsed().as_secs_f64());
+
+		match result {
+			Ok(results) => {
+				self.metrics.observe_batch(tx_count, true);
+				Ok(results)
+			},
+			Err(e) => {
+				self.metrics.observe_batch(tx_count, false);
+				match e {
+					LedgerApiError::Transaction(_) => Err(BatchVerifyError::ProofInvalid),
+					other => Err(BatchVerifyError::Unavailable(format!("{other:?}"))),
+				}
+			},
+		}
+	}
+
 	/// Batch-verifies the proofs of `txs` (serialized Midnight transactions) against the ledger
 	/// state at `at`, warming the process-global proof/soft/strict caches on success.
 	///
@@ -265,6 +358,8 @@ pub struct BatchVerifyMetrics {
 	batch_duration: Option<Histogram>,
 	/// Mempool batches that fell back to per-transaction runtime validation (unavailable).
 	fallback_total: Option<Counter<U64>>,
+	/// Wall-clock time of one transaction's incremental preparation (seconds).
+	prepare_duration: Option<Histogram>,
 }
 
 const OUTCOME_SUCCESS: &str = "success";
@@ -353,6 +448,17 @@ impl BatchVerifyMetrics {
 			)
 			.unwrap()
 		});
+		let prepare_duration = registry.map(|r| {
+			register(
+				Histogram::with_opts(HistogramOpts::new(
+					"midnight_batch_verify_prepare_duration_seconds",
+					"Wall-clock time of one transaction's incremental batch preparation",
+				))
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
 		let _ = OUTCOMES;
 		Self {
 			batch_size,
@@ -363,6 +469,7 @@ impl BatchVerifyMetrics {
 			dispatch_reason,
 			batch_duration,
 			fallback_total,
+			prepare_duration,
 		}
 	}
 
@@ -404,6 +511,13 @@ impl BatchVerifyMetrics {
 	/// Records the wall-clock duration (seconds) of one aggregate batch-verification call.
 	pub fn observe_batch_duration(&self, secs: f64) {
 		if let Some(h) = &self.batch_duration {
+			h.observe(secs);
+		}
+	}
+
+	/// Records the wall-clock duration (seconds) of one transaction's incremental preparation.
+	pub fn observe_prepare_duration(&self, secs: f64) {
+		if let Some(h) = &self.prepare_duration {
 			h.observe(secs);
 		}
 	}

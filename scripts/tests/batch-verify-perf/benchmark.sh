@@ -110,8 +110,9 @@ start_producer() {
     (
       cd "$REPO_ROOT"
       export CFG_PRESET=dev BASE_PATH="$PRODUCER_DIR"
+      mapfile -t chain_args < <(authoring_chain_args)
       exec "$NODE_BIN" \
-        --dev \
+        "${chain_args[@]}" \
         --node-key "$DEV_NODE_KEY" \
         --rpc-external --rpc-cors=all --rpc-port "$PRODUCER_RPC_HOST_PORT" \
         --prometheus-external --prometheus-port "$PRODUCER_PROM_PORT" \
@@ -255,7 +256,7 @@ run_sync() { # $1 = flag (false|true)
 
   local t0 t0_ms t1_ms
   t0=$(date +%s)        # coarse, for the watchdog/stall checks
-  t0_ms=$(date +%s%3N)  # precise, for the reported sync time
+  t0_ms=$(now_ms)  # precise, for the reported sync time
   start_syncer "$flag" "$node_key"
 
   local rpc="http://localhost:${SYNCER_RPC_HOST_PORT}"
@@ -269,7 +270,7 @@ run_sync() { # $1 = flag (false|true)
       || { syncer_logs_tail >&2; die "syncer exited early (flag=$flag) at height $last"; }
     h="$(best_height "$rpc")"; h="${h:-0}"
     if (( h > last )); then last=$h; last_progress=$now; log "  [flag=$flag] best #$last"; fi
-    if (( last >= TARGET_HEIGHT )); then t1_ms=$(date +%s%3N); break; fi
+    if (( last >= TARGET_HEIGHT )); then t1_ms=$(now_ms); break; fi
     (( now - last_progress > STALL_TIMEOUT_SECS )) \
       && { syncer_logs_tail >&2; die "sync stalled at #$last (flag=$flag)"; }
     sleep "$POLL_INTERVAL_SECS"

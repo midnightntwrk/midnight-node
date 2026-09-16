@@ -67,6 +67,11 @@ pub enum BatchVerifyFailure {
 	/// as part of the same aggregate check, so the caller can reject exactly the offenders and keep
 	/// the rest of the batch.
 	Localized(Vec<usize>),
+	/// The ledger localized the invalid proofs, but in **evidence** space rather than transaction
+	/// space: positions within the concatenated proof-evidence sequence. Returned by the
+	/// incremental path, where the caller accumulates evidence across separately-prepared
+	/// transactions and therefore owns the prefix-sum table that maps these back to transactions.
+	LocalizedEvidence(Vec<usize>),
 	/// The failure could not be attributed to individual transactions: `linear_revalidation` was
 	/// `false`, proof-evidence collection failed, or the rejection came from a path the ledger does
 	/// not localize (the legacy v2 proof batch, verifier-key initialization). Nothing may be

@@ -94,6 +94,15 @@ trap cleanup EXIT
 [ -x "$NODE_BIN" ]    || die "node binary not found at '$NODE_BIN' (cargo build --release -p midnight-node)"
 [ -x "$TOOLKIT_BIN" ] || die "toolkit binary not found at '$TOOLKIT_BIN' (cargo build --release -p midnight-node-toolkit)"
 
+# Mean of a Prometheus histogram, in milliseconds (0 when absent): `<name>_sum / <name>_count`.
+histogram_mean_ms() {
+  curl -sf --max-time 3 "$PROM_URL" 2>/dev/null \
+    | awk -v n="$1" '
+        $1 ~ ("^" n "_sum([{ ]|$)")   { s += $NF }
+        $1 ~ ("^" n "_count([{ ]|$)") { c += $NF }
+        END { if (c > 0) printf "%.2f", (s / c) * 1000; else printf "0" }'
+}
+
 # `ledger_proof_verify_txs_total{mode="<m>"}` as an integer (0 when absent).
 proof_verify_count() {
   curl -sf --max-time 3 "$PROM_URL" 2>/dev/null \
@@ -167,6 +176,20 @@ for _ in $(seq 1 60); do
   sleep 3
 done
 
+# Scrape the incremental split before the node is torn down: preparation is the per-transaction
+# half (grows with batch size), the fold is the aggregate half (near-constant).
+prep_ms="$(histogram_mean_ms midnight_batch_verify_prepare_duration_seconds)"
+# The node-side timer spans the whole finalize host call, which also warms the caches and dry-runs
+# each transaction's guaranteed segment -- per-transaction work that does NOT amortise. The
+# ledger-side `mode="batch"` timer wraps only the aggregate crypto, which is the part that does.
+fold_call_ms="$(histogram_mean_ms midnight_batch_verify_duration_seconds)"
+fold_crypto_ms="$(curl -sf --max-time 3 "$PROM_URL" 2>/dev/null \
+  | awk '''$0 ~ /^ledger_proof_verify_duration_seconds_sum\{/ && $0 ~ /mode="batch"/ { s += $NF }
+          $0 ~ /^ledger_proof_verify_duration_seconds_count\{/ && $0 ~ /mode="batch"/ { c += $NF }
+          END { if (c > 0) printf "%.2f", (s / c) * 1000; else printf "0" }''')"
+batches="$(curl -sf --max-time 3 "$PROM_URL" 2>/dev/null \
+  | awk '''$1 ~ /^midnight_batch_verify_batch_size_count/ { s += $NF } END { printf "%d", s+0 }''')"
+
 after_mempool="$(proof_verify_count inline_mempool)"
 after_inline="$(proof_verify_count inline)"
 after_batch="$(proof_verify_count batch)"
@@ -189,6 +212,10 @@ if [ "$submitted" -gt 0 ]; then
   awk -v t="$total" -v n="$submitted" \
     'BEGIN { printf "inline verifications per tx         : %.2fx\n", t / n }'
 fi
+printf 'batches dispatched                  : %s\n' "$batches"
+printf 'prepare, per tx (on arrival)        : %s ms\n' "$prep_ms"
+printf 'fold crypto, per batch              : %s ms   (the part that amortises)\n' "$fold_crypto_ms"
+printf 'finalize call, per batch            : %s ms   (incl. cache warming, per-tx)\n' "$fold_call_ms"
 echo
 echo "node log    : $NODE_LOG"
 echo "toolkit log : $RUN_DIR/toolkit.log"

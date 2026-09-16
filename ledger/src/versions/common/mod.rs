@@ -229,6 +229,21 @@ pub fn revalidation_cache_size() -> u64 {
 	REVALIDATION_CACHE.entry_count()
 }
 
+/// A transaction whose per-batch-independent work is already done: deserialized, non-crypto
+/// `well_formed` checks passed, proof evidence collected and prepared.
+///
+/// Produced by [`Bridge::prepare_transaction`] and decided by [`Bridge::finalize_prepared_batch`].
+#[cfg(feature = "std")]
+pub struct PreparedTx<S: SignatureKind<D>, D: DB> {
+	key: WrappedHash,
+	tx: Transaction<S, D>,
+	verified_tx: VerifiedTransaction<D>,
+	/// Evidence items this transaction contributed, so a fold failure reported in evidence space
+	/// can be mapped back to the transaction that owns it.
+	evidence_len: usize,
+	prepared: super::batch_verify::PreparedProofs,
+}
+
 #[cfg(feature = "std")]
 pub struct Bridge<S: SignatureKind<D>, D: DB> {
 	_phantom: core::marker::PhantomData<(S, D)>,
@@ -957,6 +972,18 @@ where
 			// The ledger localized the offender(s): every other ready transaction verified as part of
 			// the same aggregate check, so no re-verification is needed to accept them.
 			Err(BatchVerifyFailure::Localized(indices)) => indices,
+			// Evidence-space indices only come back from the incremental path, which keeps its own
+			// prefix-sum table; this whole-batch entry point never asks for them.
+			Err(BatchVerifyFailure::LocalizedEvidence(_)) => {
+				log::warn!(
+					target: LOG_TARGET,
+					"batch proof verification reported evidence-space indices on the whole-batch \
+					 path; rejecting batch"
+				);
+				return Err(LedgerApiError::Transaction(types::TransactionError::Invalid(
+					types::InvalidError::UnknownError,
+				)));
+			},
 			// Nothing can be concluded per-transaction — reject the whole batch. On the block-import
 			// path this is the fail-fast rejection; on the mempool path the caller falls back to
 			// per-transaction runtime validation.
@@ -1018,6 +1045,182 @@ where
 		);
 
 		Ok(results)
+	}
+
+	/// Runs everything for one transaction that does not depend on which other transactions share
+	/// its batch: deserialization, the non-crypto `well_formed` checks, proof-evidence collection,
+	/// and the expensive per-proof preparation.
+	///
+	/// This is the incremental counterpart of [`Self::batch_verify_transactions`]. A caller that
+	/// has idle time before it must decide — a mempool queue filling toward its dispatch window —
+	/// can run this as each transaction arrives and then pay only
+	/// [`Self::finalize_prepared_batch`], whose cost is essentially independent of batch size.
+	pub fn prepare_transaction(
+		mut externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		tx_serialized: &[u8],
+		block_context: BlockContext,
+		runtime_version: u32,
+	) -> Result<PreparedTx<S, D>, LedgerApiError>
+	where
+		VerifiedTransaction<D>: Send + Sync + 'static,
+	{
+		Self::set_default_storage(externalities);
+
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let ctx = ledger.get_transaction_context(block_context.clone())?;
+		let tblock = Self::batch_tblock(externalities, &ctx, &block_context);
+
+		let tx = api.tagged_deserialize::<Transaction<S, D>>(tx_serialized)?;
+		let key = Self::tx_validation_cache_key(runtime_version, tx_serialized);
+
+		// Defer proofs: every non-crypto check now, the proof work immediately after.
+		let mut strictness = mn_ledger_local::verify::WellFormedStrictness::default();
+		strictness.verify_contract_proofs = false;
+		strictness.verify_native_proofs = false;
+
+		let prep_start = Instant::now();
+		let verified_tx =
+			tx.0.well_formed(&ctx.ref_state, strictness, tblock).map_err(|e| {
+				log::warn!(target: LOG_TARGET, "prepare: transaction malformed: {e}");
+				LedgerApiError::Transaction(types::TransactionError::Malformed(e.into()))
+			})?;
+		let prep_elapsed = prep_start.elapsed();
+
+		let (prepared, evidence_len) =
+			super::batch_verify::prepare_tx_proofs(&tx.0, &ctx.ref_state).map_err(|_| {
+				LedgerApiError::Transaction(types::TransactionError::Invalid(
+					types::InvalidError::UnknownError,
+				))
+			})?;
+
+		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
+			metrics.observe_batch_prep_verify(prep_elapsed.as_secs_f64(), 1);
+		}
+
+		Ok(PreparedTx { key, tx, verified_tx, evidence_len, prepared })
+	}
+
+	/// Decides a batch of transactions prepared by [`Self::prepare_transaction`]: one fold plus a
+	/// single pairing check, then the same cache warming [`Self::batch_verify_transactions`] does.
+	///
+	/// Returns one result per input transaction, in order.
+	pub fn finalize_prepared_batch(
+		mut externalities: &mut dyn Externalities,
+		state_key: &[u8],
+		block_context: BlockContext,
+		prepared: Vec<PreparedTx<S, D>>,
+		isolate_on_failure: bool,
+	) -> Result<Vec<Result<(), LedgerApiError>>, LedgerApiError>
+	where
+		VerifiedTransaction<D>: Send + Sync + 'static,
+	{
+		if prepared.is_empty() {
+			return Ok(Vec::new());
+		}
+		Self::set_default_storage(externalities);
+
+		let api = api::new();
+		let ledger = Self::get_ledger(&api, state_key)?;
+		let ctx = ledger.get_transaction_context(block_context.clone())?;
+		let state_hash: Hash = ledger.state.state_hash().0.into();
+
+		// Fold every transaction's prepared evidence into one batch, recording the per-transaction
+		// evidence prefix sum so failures reported in evidence space map back to transactions.
+		let mut evidence_ends = Vec::with_capacity(prepared.len());
+		let mut total = 0usize;
+		let mut acc = super::batch_verify::PreparedProofs::default();
+		for p in &prepared {
+			total += p.evidence_len;
+			evidence_ends.push(total);
+		}
+		let mut items = prepared;
+		for item in items.iter_mut() {
+			let taken = core::mem::take(&mut item.prepared);
+			super::batch_verify::merge_prepared::<D>(&mut acc, taken);
+		}
+
+		let crypto_start = Instant::now();
+		let outcome = super::batch_verify::finalize_prepared::<D>(&acc, isolate_on_failure);
+		let crypto_elapsed = crypto_start.elapsed();
+		if let Some(metrics) = externalities.extension::<LedgerMetricsExt>() {
+			metrics.observe_batch_proof_verify(crypto_elapsed.as_secs_f64(), items.len() as u64);
+		}
+
+		let bad: Vec<usize> = match outcome {
+			Ok(()) => Vec::new(),
+			Err(BatchVerifyFailure::LocalizedEvidence(indices)) => {
+				let tx_indices =
+					super::batch_verify::evidence_to_tx_indices(&evidence_ends, &indices);
+				if tx_indices.is_empty() {
+					log::warn!(
+						target: LOG_TARGET,
+						"prepared batch failed for {} transaction(s); could not attribute evidence \
+						 index(es) {indices:?}",
+						items.len(),
+					);
+					return Err(LedgerApiError::Transaction(types::TransactionError::Invalid(
+						types::InvalidError::UnknownError,
+					)));
+				}
+				tx_indices
+			},
+			Err(_) => {
+				log::warn!(
+					target: LOG_TARGET,
+					"prepared batch verification failed without localization; rejecting batch"
+				);
+				return Err(LedgerApiError::Transaction(types::TransactionError::Invalid(
+					types::InvalidError::UnknownError,
+				)));
+			},
+		};
+
+		let mut results = Vec::with_capacity(items.len());
+		for (i, item) in items.into_iter().enumerate() {
+			if bad.contains(&i) {
+				insert_revalidation_result(&item.tx.hash(), ProofOutcome::Invalid);
+				log::warn!(
+					target: LOG_TARGET,
+					"prepared batch: isolated invalid proof for {}",
+					hex::encode(item.key.0),
+				);
+				results.push(Err(LedgerApiError::Transaction(types::TransactionError::Invalid(
+					types::InvalidError::UnknownError,
+				))));
+			} else {
+				results.push(Self::warm_verified_tx(
+					&ledger,
+					&ctx,
+					state_key,
+					state_hash,
+					block_context.tblock,
+					item.key,
+					&item.tx,
+					item.verified_tx,
+					isolate_on_failure,
+				));
+			}
+		}
+		Ok(results)
+	}
+
+	/// The `tblock` the batch paths verify at: the block context's, with the historical-sync
+	/// correction applied exactly as the per-transaction path applies it.
+	fn batch_tblock(
+		mut externalities: &mut dyn Externalities,
+		ctx: &TransactionContext<D>,
+		block_context: &BlockContext,
+	) -> Timestamp {
+		let tblock_correction = externalities.extension::<TBlockCorrectionExt>().map(|e| &e.0);
+		if let Some(tc) = tblock_correction
+			&& block_context.tblock < tc.disable_after
+		{
+			ctx.block_context.tblock + DurationLedger::from_secs(tc.offset as i128)
+		} else {
+			ctx.block_context.tblock
+		}
 	}
 
 	/// Warms the process-global caches for a transaction whose proofs the aggregate batch check
@@ -2317,5 +2520,75 @@ mod tests {
 			"a recorded Invalid outcome must reject without re-running the crypto",
 		);
 		println!("  6. block execution, proofs known bad         rejected without re-verifying");
+	}
+
+	/// How the aggregate crypto cost scales with batch size — i.e. what batching N incoming
+	/// mempool transactions actually buys over verifying them one at a time.
+	///
+	/// Run explicitly:
+	/// ```text
+	/// cargo test -p midnight-node-ledger -p midnight-node-e2e --release --lib \
+	///     bench_batch_verify_scaling -- --ignored --nocapture
+	/// ```
+	///
+	/// The batch is built by repeating one fixture transaction. That is sound for a *timing*
+	/// measurement — `batch_proof_verify` combines every proof's evidence into one aggregate
+	/// check and does not short-circuit duplicates, so N copies cost N proofs' worth of work —
+	/// and it sidesteps the workload-generation ceiling (genesis DUST sits in 5 outputs, so a
+	/// real burst of N distinct transactions cannot be built on a fresh chain).
+	#[test]
+	#[ignore = "benchmark; run with --ignored --nocapture"]
+	fn bench_batch_verify_scaling() {
+		if super::super::CRATE_NAME != crate::latest::CRATE_NAME {
+			println!("ledger-9 only; skipping on {}", super::super::CRATE_NAME);
+			return;
+		}
+		sp_tracing::try_init_simple();
+
+		let api = api::new();
+		let state: LedgerState<DefaultDB> =
+			midnight_serialize_local::tagged_deserialize(UndeployedNetwork.genesis_state())
+				.expect("genesis");
+		let ledger = Ledger::new(state);
+		let (bytes, ctx_raw) = extract_tx_with_context(DEPLOY_TX);
+		let block_ctx: BlockContext = ctx_raw.into();
+		let tx: TestTx = api.tagged_deserialize(&bytes).expect("tx");
+		let ctx = ledger.get_transaction_context(block_ctx.clone()).expect("tctx");
+		let tblock = ctx.block_context.tblock;
+
+		// Per-transaction baseline: a full `well_formed` (crypto included) minus the same call
+		// with proofs deferred. The difference is the ZK crypto batching is meant to amortize.
+		let full = mn_ledger_local::verify::WellFormedStrictness::default();
+		let mut deferred = full;
+		deferred.verify_contract_proofs = false;
+		deferred.verify_native_proofs = false;
+		let warm = tx.0.well_formed(&ctx.ref_state, full, tblock);
+		assert!(warm.is_ok(), "fixture must verify: {:?}", warm.err());
+
+		let t = Instant::now();
+		let _ = tx.0.well_formed(&ctx.ref_state, full, tblock);
+		let full_ms = t.elapsed().as_secs_f64() * 1e3;
+		let t = Instant::now();
+		let _ = tx.0.well_formed(&ctx.ref_state, deferred, tblock);
+		let prep_ms = t.elapsed().as_secs_f64() * 1e3;
+		let crypto_ms = full_ms - prep_ms;
+
+		println!();
+		println!(
+			"per-tx inline: full={full_ms:.2}ms  non-crypto={prep_ms:.2}ms  crypto={crypto_ms:.2}ms"
+		);
+		println!();
+		println!("   N   aggregate    per-tx   vs inline crypto");
+		println!("  ───  ─────────  ────────  ─────────────────");
+		for n in [1usize, 2, 4, 8, 16, 32, 64, 100] {
+			let refs: Vec<&_> = (0..n).map(|_| &tx.0).collect();
+			let t = Instant::now();
+			let r = super::super::batch_verify::batch_verify_proofs(&refs, &ctx.ref_state, false);
+			let ms = t.elapsed().as_secs_f64() * 1e3;
+			assert!(r.is_ok(), "batch of {n} must verify: {:?}", r.err());
+			let per = ms / n as f64;
+			println!("  {n:>3}  {ms:>8.1}ms  {per:>6.2}ms  {:>13.2}x", crypto_ms / per);
+		}
+		println!();
 	}
 }
