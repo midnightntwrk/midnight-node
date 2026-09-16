@@ -464,10 +464,10 @@ jobs:
           FORCE: ${{ github.event.inputs.force }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # If the tag already exists on the remote, refuse to publish unless it
-          # points at the commit we built from. Without this guard, a pre-existing
-          # tag at the wrong commit (e.g. created by a previous buggy run) would
-          # be silently reused by `gh release create/edit`.
+          # A pre-existing tag at the wrong commit would otherwise be silently
+          # reused by `gh release create/edit`, publishing assets against a tree
+          # they were not built from. Without force that is a hard error; with
+          # force the tag is moved onto the built commit (see below).
           # `git/ref/tags/<n>` is the exact-match endpoint; `git/refs/...` is a prefix match and returns an array.
           if EXISTING_TAG_JSON=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GIT_TAG_RELEASE}" 2>/dev/null); then
             EXISTING_SHA=$(echo "$EXISTING_TAG_JSON" | jq -r '.object.sha')
@@ -476,9 +476,21 @@ jobs:
               EXISTING_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${EXISTING_SHA}" --jq '.object.sha')
             fi
             if [ "$EXISTING_SHA" != "$RELEASE_SHA" ]; then
-              echo "::error::Tag ${GIT_TAG_RELEASE} already exists at ${EXISTING_SHA} but the release was built from ${RELEASE_SHA}."
-              echo "::error::Refusing to publish a release whose tag does not match the built tree."
-              exit 1
+              if [ "$FORCE" != "true" ]; then
+                echo "::error::Tag ${GIT_TAG_RELEASE} already exists at ${EXISTING_SHA} but the release was built from ${RELEASE_SHA}."
+                echo "::error::Refusing to publish a release whose tag does not match the built tree."
+                echo "::error::Re-dispatch with force=true to move the tag onto ${RELEASE_SHA}, or with ref=${GIT_TAG_RELEASE} to build the tagged tree instead."
+                exit 1
+              fi
+              # A release and its tag are one identity. Republishing the assets
+              # while leaving the tag behind would leave the release permanently
+              # describing a tree it was not built from, so force moves the tag.
+              # PATCH .../git/refs/tags/<n> rewrites the ref in place; an
+              # annotated tag is replaced by a lightweight one pointing at the
+              # commit, which is what the rest of this workflow assumes anyway.
+              echo "::warning::force=true: moving tag ${GIT_TAG_RELEASE} from ${EXISTING_SHA} to ${RELEASE_SHA}."
+              gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${GIT_TAG_RELEASE}" \
+                -f sha="$RELEASE_SHA" -F force=true >/dev/null
             fi
           fi
 
