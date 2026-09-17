@@ -113,6 +113,14 @@ pub struct PartnerChainsBodyRestore<Inner, B: BlockT> {
 	_phantom: PhantomData<B>,
 }
 
+// The body restore is stateless (it only forwards to `inner`), so it is cheap to clone and
+// requires only `Inner: Clone`. A manual impl avoids the spurious `B: Clone` bound `derive` adds.
+impl<Inner: Clone, B: BlockT> Clone for PartnerChainsBodyRestore<Inner, B> {
+	fn clone(&self) -> Self {
+		Self { inner: self.inner.clone(), _phantom: PhantomData }
+	}
+}
+
 impl<Inner, B: BlockT> PartnerChainsBodyRestore<Inner, B> {
 	/// Creates a new block import wrapping `inner`.
 	pub fn new(inner: Inner) -> Self {

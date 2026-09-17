@@ -224,6 +224,23 @@ pub struct VerifierCIDP<T> {
 	bridge_data_source: Arc<dyn TokenBridgeDataSource<BridgeRecipient> + Send + Sync>,
 }
 
+// Manual impl: a derive would require `T: Clone`, but the client is only ever held behind an `Arc`.
+impl<T> Clone for VerifierCIDP<T> {
+	fn clone(&self) -> Self {
+		Self {
+			config: self.config.clone(),
+			client: self.client.clone(),
+			mc_hash_data_source: self.mc_hash_data_source.clone(),
+			authority_selection_data_source: self.authority_selection_data_source.clone(),
+			cnight_observation_data_source: self.cnight_observation_data_source.clone(),
+			federated_authority_observation_data_source: self
+				.federated_authority_observation_data_source
+				.clone(),
+			bridge_data_source: self.bridge_data_source.clone(),
+		}
+	}
+}
+
 #[async_trait]
 impl<T> CreateInherentDataProviders<Block, (Slot, McBlockHash)> for VerifierCIDP<T>
 where
@@ -363,9 +380,21 @@ pub fn slot_from_predigest(
 ) -> Result<Option<Slot>, Box<dyn Error + Send + Sync>> {
 	if header.number().is_zero() {
 		// genesis block doesn't have a slot
-		Ok(None)
-	} else {
-		Ok(Some(find_pre_digest::<Block, <AuraPair as Pair>::Signature>(header)?))
+		return Ok(None);
+	}
+	// Across the AURA→BABE migration a block's parent may carry either digest: pre-flip (and the
+	// flip block) have an AURA pre-digest, post-flip BABE blocks have a BABE one. Try AURA first,
+	// then fall back to BABE, so the parent slot resolves regardless of the engine that authored it.
+	match find_pre_digest::<Block, <AuraPair as Pair>::Signature>(header) {
+		Ok(slot) => Ok(Some(slot)),
+		Err(aura_err) => match sc_consensus_babe::find_pre_digest::<Block>(header) {
+			Ok(babe_pre_digest) => Ok(Some(babe_pre_digest.slot())),
+			Err(babe_err) => Err(format!(
+				"no AURA or BABE pre-runtime digest in header #{:?}: aura: {aura_err}; babe: {babe_err}",
+				header.number(),
+			)
+			.into()),
+		},
 	}
 }
 
