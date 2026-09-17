@@ -219,9 +219,11 @@ is. Three things account for that, none of them visible to a metadata consumer:
   the deterministic srtool asset. The size gap is largely this, so do not read it as a source
   change.
 
-The practical consequence for clients: **a consumer that resolved metadata against an `rc.1` chain
-does not need to re-fetch or restart before pointing at an `rc.2` one.** The restart guidance in the
-`2.1.0-rc.1` notes applies only to the `beta.1` → `rc.x` step.
+What this does and does not license. It is a property of the two blobs: `rc.2` adds no
+client-facing surface that `rc.1` did not already have. It is **not** an upgrade path — a chain
+running `rc.1` is re-forked from `1.0.300`, not stepped forward onto `rc.2`, and no path between
+2.1.0 pre-releases is supported. The client-facing action remains the one driven by
+`1.0.300` → `2.1.0`: refresh runtime metadata and re-sign.
 
 The practical consequence for operators: three distinct blobs now advertise `spec_version`
 `002_001_000`, so a `set_code` proposal must be identified by blob hash, not by version.
