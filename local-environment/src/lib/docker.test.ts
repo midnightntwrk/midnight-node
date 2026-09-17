@@ -36,10 +36,21 @@ function fakeDockerEnv(opts: {
   inspectExit?: number;
   composeExit?: number;
   images?: string[];
+  /** Build-only service names: present in `config --format json` with no `image` key. */
+  buildOnlyServices?: string[];
 }): { env: Record<string, string>; logFile: string } {
   const binDir = fs.mkdtempSync(path.join(os.tmpdir(), "fake-docker-bin-"));
   tmpDirs.push(binDir);
   const logFile = path.join(binDir, "calls.log");
+
+  const services: Record<string, { image?: string }> = {};
+  (opts.images ?? []).forEach((image, i) => {
+    services[`pulled-${i}`] = { image };
+  });
+  (opts.buildOnlyServices ?? []).forEach((name) => {
+    services[name] = {};
+  });
+  const configJson = JSON.stringify({ services });
 
   fs.writeFileSync(
     path.join(binDir, "docker"),
@@ -53,8 +64,8 @@ if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
 fi
 if [ "$1" = "compose" ]; then
   for arg in "$@"; do
-    if [ "$arg" = "--images" ]; then
-      printf '%s\\n' "\${FAKE_DOCKER_IMAGES:-}"
+    if [ "$arg" = "json" ]; then
+      printf '%s' "\${FAKE_DOCKER_CONFIG_JSON:-\\{\\}}"
       exit 0
     fi
   done
@@ -73,7 +84,7 @@ exit 0
       FAKE_DOCKER_PULL_EXIT: String(opts.pullExit ?? 0),
       FAKE_DOCKER_INSPECT_EXIT: String(opts.inspectExit ?? 0),
       FAKE_DOCKER_COMPOSE_EXIT: String(opts.composeExit ?? 0),
-      FAKE_DOCKER_IMAGES: (opts.images ?? []).join("\n"),
+      FAKE_DOCKER_CONFIG_JSON: configJson,
     },
   };
 }
@@ -109,7 +120,7 @@ describe("runDockerCompose", () => {
     });
     await runDockerCompose({ composeFile: "docker-compose.yml", env });
     const calls = fs.readFileSync(logFile, "utf-8").trim().split("\n");
-    assert.ok(calls.some((c) => c.startsWith("compose") && c.includes("--images")));
+    assert.ok(calls.some((c) => c.startsWith("compose") && c.includes("--format json")));
     assert.ok(calls.includes("pull ghcr.io/midnight-ntwrk/midnight-node:new"));
     assert.ok(calls.includes("pull postgres:17.1-alpine"));
     assert.ok(calls.some((c) => c.includes(" up --build")));
@@ -125,5 +136,16 @@ describe("runDockerCompose", () => {
       () => runDockerCompose({ composeFile: "docker-compose.yml", env }),
       /was not found locally or in a registry/,
     );
+  });
+
+  it("does not try to pull build-only services with no registry image", async () => {
+    const { env, logFile } = fakeDockerEnv({
+      images: ["postgres:17.1-alpine"],
+      buildOnlyServices: ["contract-compiler"],
+    });
+    await runDockerCompose({ composeFile: "docker-compose.yml", env });
+    const calls = fs.readFileSync(logFile, "utf-8").trim().split("\n");
+    assert.ok(!calls.some((c) => c.includes("contract-compiler")));
+    assert.ok(calls.includes("pull postgres:17.1-alpine"));
   });
 });

@@ -109,7 +109,8 @@ function resolveComposeImages(options: DockerComposeOptions): Promise<string[]> 
     ...(options.profiles ?? []).map((p) => `--profile=${p}`),
     ...fileArgs(options),
     "config",
-    "--images",
+    "--format",
+    "json",
   ];
   return new Promise((resolve, reject) => {
     const docker = spawn("docker", args, {
@@ -123,14 +124,28 @@ function resolveComposeImages(options: DockerComposeOptions): Promise<string[]> 
     docker.on("error", reject);
     docker.on("exit", (code) => {
       if (code !== 0) {
-        reject(new Error(`docker compose config --images failed: ${stderr.trim()}`));
+        reject(
+          new Error(
+            `docker compose config --format json failed: ${stderr.trim()}`,
+          ),
+        );
+        return;
+      }
+      let config: { services?: Record<string, { image?: string }> };
+      try {
+        config = JSON.parse(stdout);
+      } catch (err) {
+        reject(
+          new Error(
+            `docker compose config --format json produced invalid JSON: ${err}`,
+          ),
+        );
         return;
       }
       resolve(
-        stdout
-          .split("\n")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        Object.values(config.services ?? {})
+          .map((service) => service.image)
+          .filter((image): image is string => Boolean(image)),
       );
     });
   });
