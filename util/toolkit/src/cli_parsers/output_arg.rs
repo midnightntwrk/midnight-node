@@ -21,7 +21,7 @@
 
 use std::str::FromStr;
 
-use midnight_node_ledger_helpers::WalletAddress;
+use midnight_ledger_unsafe_helpers::WalletAddress;
 
 /// A single per-destination output spec parsed from a `--output` flag value.
 ///

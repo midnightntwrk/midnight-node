@@ -36,6 +36,23 @@ ARG --global NODEJS_VERSION=24.18.0
 # renovate: datasource=npm packageName=npm
 ARG --global NPM_VERSION=12.0.2
 
+# GHCR namespace images are published to. Defaults to the upstream private namespace.
+# Forks and private clones override it so a build never publishes into an org it
+# does not own. CI sets this via EARTHLY_BUILD_ARGS (see .github/workflows).
+ARG --global GHCR_REGISTRY=ghcr.io/midnight-ntwrk
+
+# Public mirror namespace. Defaults to GHCR_REGISTRY, which makes the mirror tag a duplicate
+# of one the build already pushes -- i.e. a no-op. Only the canonical upstream repo sets this
+# to ghcr.io/midnightntwrk, so no fork can publish publicly by accident.
+ARG --global GHCR_REGISTRY_PUBLIC=ghcr.io/midnight-ntwrk
+
+# Image basename, so a fork publishes <owner>/<its-repo> instead of overwriting midnight-node.
+ARG --global IMAGE_REPO=midnight-node
+
+# Repo this build came from, for the OCI source label (GHCR links a package to the repo
+# named here). Workflows override it with $GITHUB_SERVER_URL/$GITHUB_REPOSITORY.
+ARG --global IMAGE_SOURCE_URL=https://github.com/midnightntwrk/midnight-node
+
 # ================ Local Targets START ================
 # If you add a new one here, prefix it with "local-"
 # Add the target name to the doc string so it shows up
@@ -151,7 +168,7 @@ generate-keys:
     SAVE ARTIFACT --if-exists secrets/keys-aws.json AS LOCAL secrets/$NETWORK-keys-aws.json
 
 subxt:
-    FROM rust:1.95-trixie
+    FROM rust:1.98.1-trixie
     RUN rustup component add rustfmt
     # Install cargo binstall:
     # RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
@@ -799,11 +816,14 @@ node-ci-image-single-platform:
     # Security patches land when the FROM @sha256 digest above is bumped (renovate);
     # a rebuild on the same digest reproduces identical packages by design.
     ENV IMAGE_TAG="${RUST_VERSION}-${COMPACTC_VERSION}"
-    LABEL org.opencontainers.image.source=https://github.com/midnightntwrk/midnight-node
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=node-ci
     LABEL org.opencontainers.image.description="Midnight Node CI Image"
+    # Repo-named like every other image here: GHCR_REGISTRY only isolates by *owner*, so two
+    # clones under one owner would otherwise write the same ref. IMAGE_REPO defaults to
+    # midnight-node, so the canonical name stays midnight-node-ci.
     SAVE IMAGE --push \
-        ghcr.io/midnight-ntwrk/midnight-node-ci:$IMAGE_TAG-$NATIVEARCH
+        ${GHCR_REGISTRY}/${IMAGE_REPO}-ci:${IMAGE_TAG}-${NATIVEARCH}
 
 # a common setup of the build environment (not designed to be called directly)
 prep-no-copy:
@@ -844,6 +864,13 @@ prep-no-copy:
     RUN mkdir -p "$CARGO_HOME" \
       && echo "[net]" >> "$CARGO_HOME/config.toml" \
       && echo "git-fetch-with-cli = true" >> "$CARGO_HOME/config.toml"
+
+    # rustc 1.98.1 dropped `--allow-undefined` from the wasm32v1-none target spec's
+    # pre-link-args, which Substrate's `sp_io` host-function imports rely on. The repo's
+    # .cargo/config.toml sets this for local builds, but the build/check targets descend
+    # from here and never COPY .cargo in (adding it would also drag in `[profile.release]
+    # debug = 1`), so set it as an ENV for every derived target.
+    ENV WASM_BUILD_RUSTFLAGS="-C link-arg=--allow-undefined"
 
     RUN cargo --version
     RUN cargo binstall --no-confirm cargo-auditable
@@ -1078,22 +1105,40 @@ check-rust:
     ENV SKIP_WASM_BUILD=1
 
 # check-feature-unification verifies each crate compiles without dev-deps,
-# catching issues where workspace feature unification masks missing dependencies.
+# catching missing dependencies masked by workspace feature unification.
+# partner-chains demo crates excluded: upstream examples, ~5min of serial check.
+# Inputs: .scope/{changed,base-lock,toml-diff}.txt -- git-derived, written by
+# the CI workflow (git only exists on the host; strict --ci forbids LOCALLY).
 check-feature-unification:
     FROM +check-rust-prepare
     IF [ "$CI" != "true" ]
         CACHE --sharing shared --id cargo-git /usr/local/cargo/git
         CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
     END
+    # Scope tooling deps in their own layer so workspace edits don't reinstall.
+    COPY scripts/package.json scripts/package-lock.json scripts/
+    RUN cd scripts && npm ci --no-audit --no-fund
     COPY --keep-ts --dir \
         Cargo.lock Cargo.toml .config .sqlx deny.toml docs \
         ledger LICENSE node pallets primitives README.md res runtime \
     	metadata rustfmt.toml util tests relay partner-chains COMPACTC_VERSION .
+    COPY scripts/feature-unification-scope.ts scripts/feature-unification-scope.ts
+    COPY .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt .scope/
 
     ENV SKIP_WASM_BUILD=1
     ENV CARGO_INCREMENTAL=0
-    RUN cargo binstall --no-confirm cargo-hack
-    RUN cargo hack check --workspace --no-dev-deps
+    # The CI base image ships an unpinned cargo-hack; pin here so the check
+    # doesn't silently change behaviour when that image is rebuilt.
+    # renovate: datasource=crate packageName=cargo-hack
+    ARG CARGO_HACK_VERSION=0.6.45
+    RUN cargo binstall --no-confirm --locked cargo-hack@${CARGO_HACK_VERSION}
+    RUN PACKAGES="$(node scripts/feature-unification-scope.ts \
+            .scope/changed.txt .scope/base-lock.txt .scope/toml-diff.txt)" && \
+        if [ -z "$PACKAGES" ]; then \
+            echo "feature-unification: nothing affected - skipping"; exit 0; \
+        fi && \
+        echo "feature-unification scope: $PACKAGES" && \
+        cargo hack check $PACKAGES --no-dev-deps
 
 # check-metadata confirms that metadata in the repo matches a given node image
 check-metadata:
@@ -1152,8 +1197,9 @@ test:
     # snapshot, which buildkit may export to the remote cache on success.
     WITH DOCKER
         RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-            if [ -n "$DOCKERHUB_TOKEN" ]; then \
-              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            if [ -n "$DOCKERHUB_TOKEN" ] && \
+               ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+              echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
             fi && \
             MIDNIGHT_LEDGER_EXPERIMENTAL=1 cargo nextest r --profile ci --release --workspace --locked \
             --exclude midnight-node-toolkit \
@@ -1284,8 +1330,9 @@ test-toolkit:
                 --load test-toolkit:latest=+build-test-toolkit \
                 --pull $NODE_IMAGE
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-                if [ -n "$DOCKERHUB_TOKEN" ]; then \
-                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                if [ -n "$DOCKERHUB_TOKEN" ] && \
+                   ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+                  echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
                 fi && mkdir -p /root/.docker && \
                 docker run \
                 --network=host \
@@ -1301,8 +1348,9 @@ test-toolkit:
     ELSE
         WITH DOCKER --load test-toolkit:latest=+build-test-toolkit
             RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-                if [ -n "$DOCKERHUB_TOKEN" ]; then \
-                  echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+                if [ -n "$DOCKERHUB_TOKEN" ] && \
+                   ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+                  echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
                 fi && mkdir -p /root/.docker && \
                 docker run \
                 --network=host \
@@ -1406,16 +1454,15 @@ subwasm:
 # This ensures reproducible builds across different environments
 # See: https://github.com/paritytech/srtool
 #
-# Note: srtool uses its own pinned Rust version (currently 1.93.0) for deterministic builds.
-# The project's rust-toolchain.toml (1.90) is intentionally NOT used here to maintain
-# reproducibility - srtool's environment is fixed and verified.
+# Note: srtool uses its own pinned Rust version (currently 1.98.1) for deterministic builds.
+# The project's rust-toolchain.toml is intentionally NOT used here to maintain
+# reproducibility - srtool's environment is fixed and verified, but keep it in step with
+# rust-toolchain.toml anyway.
 srtool-build:
-    # Tag shape is `<rust version>-<srtool version>`, so renovate has to track the whole
-    # tag: given just `0.18.4` it reads the rust half as the image's version and offers
-    # `1.93.0` as a "v1 major", which resolves to a tag that does not exist.
-    # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_TAG=1.93.0-0.18.4
-    FROM paritytech/srtool:${SRTOOL_TAG}
+    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
+    ARG SRTOOL_TAG=1.98.1-0.18.5
+    FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
 
     # srtool expects source code in /build
     WORKDIR /build
@@ -1444,9 +1491,10 @@ srtool-build:
 
 # srtool-info displays information about the srtool build without building
 srtool-info:
-    # renovate: datasource=docker packageName=paritytech/srtool
-    ARG SRTOOL_TAG=1.93.0-0.18.4
-    FROM paritytech/srtool:${SRTOOL_TAG}
+    # Tag shape for srtool is: `<rust version>-<srtool version>`
+    # renovate: datasource=docker packageName=ghcr.io/shieldedtech/srtool
+    ARG SRTOOL_TAG=1.98.1-0.18.5
+    FROM ghcr.io/shieldedtech/srtool:${SRTOOL_TAG}
     WORKDIR /build
     USER root
     COPY Cargo.lock Cargo.toml ./
@@ -1479,20 +1527,22 @@ node-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GIT_CONTENT_HASH_SHORT="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
     ENV IMAGE_TAG_DEV="$(cat /version)-dev-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
-    RUN echo image tag=midnight-node:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
+    RUN echo image tag=$IMAGE_REPO:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_image_tag
     # Only /node needs fixing: the binaries are copied with --chown and the base
     # image already owns ./bin and ./res, so no `chown -R` duplicates them.
     RUN chown -R appuser:appuser /node
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG \
-        $GHCR_REGISTRY/midnight-node:$IMAGE_TAG_DEV \
-        $GHCR_REGISTRY_PUBLIC/midnight-node:$IMAGE_TAG
+        $GHCR_REGISTRY/$IMAGE_REPO:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG \
+        $GHCR_REGISTRY/$IMAGE_REPO:$IMAGE_TAG_DEV
+    # Public mirror. Only the canonical upstream repo points GHCR_REGISTRY_PUBLIC somewhere
+    # else; everywhere else this is a no-op, so a fork cannot publish publicly by accident.
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO:$IMAGE_TAG
+    END
 
     # Re-export build artifacts which contain wasm
     COPY .envrc /artifacts-$NATIVEARCH/.envrc
@@ -1519,11 +1569,10 @@ node-benchmarks-image:
     RUN cat /node/Cargo.toml | grep -m 1 version | sed 's/version *= *"\([^\"]*\)".*/\1/' > /version
 
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
     ENV IMAGE_TAG="$(cat /version)-$CONTENT_HASH_SHORT-$NATIVEARCH"
 
     RUN echo image tag=midnight-node-benchmarks:$IMAGE_TAG | tee /artifacts-$NATIVEARCH/node_benchmarks_image_tag
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     LABEL org.opencontainers.image.title=midnight-node-benchmarks
     LABEL org.opencontainers.image.description="Midnight Node with Runtime Benchmarks"
     SAVE IMAGE --push \
@@ -1581,14 +1630,14 @@ toolkit-image:
 
     LET NODE_VERSION="$(cat node_version)"
     ENV GIT_CONTENT_HASH="$CONTENT_HASH"
-    ENV GHCR_REGISTRY=ghcr.io/midnight-ntwrk
-    ENV GHCR_REGISTRY_PUBLIC=ghcr.io/midnightntwrk
     ENV IMAGE_TAG="${NODE_VERSION}-${CONTENT_HASH_SHORT}-${NATIVEARCH}"
-    LABEL org.opencontainers.image.source=https://github.com/midnight-ntwrk/artifacts
+    LABEL org.opencontainers.image.source=$IMAGE_SOURCE_URL
     SAVE IMAGE --push \
-        $GHCR_REGISTRY/midnight-node-toolkit:latest-$NATIVEARCH \
-        $GHCR_REGISTRY/midnight-node-toolkit:$IMAGE_TAG \
-        $GHCR_REGISTRY_PUBLIC/midnight-node-toolkit:$IMAGE_TAG
+        $GHCR_REGISTRY/$IMAGE_REPO-toolkit:latest-$NATIVEARCH \
+        $GHCR_REGISTRY/$IMAGE_REPO-toolkit:$IMAGE_TAG
+    IF [ "$GHCR_REGISTRY_PUBLIC" != "$GHCR_REGISTRY" ]
+        SAVE IMAGE --push $GHCR_REGISTRY_PUBLIC/$IMAGE_REPO-toolkit:$IMAGE_TAG
+    END
 
 # audit-rust checks for rust security vulnerabilities
 audit-rust:
@@ -1869,11 +1918,11 @@ local-env-ci:
           && test -n "$CHAIN_INDEXER_IMAGE" && test -n "$WALLET_INDEXER_IMAGE" || { \
         echo "+local-env-ci needs all five image refs, e.g.:"; \
         echo "  earthly -P +local-env-ci \\"; \
-        echo "    --NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag> \\"; \
-        echo "    --TOOLKIT_IMAGE=ghcr.io/midnight-ntwrk/midnight-node-toolkit:<tag> \\"; \
-        echo "    --INDEXER_API_IMAGE=ghcr.io/midnight-ntwrk/indexer-api:<tag> \\"; \
-        echo "    --CHAIN_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/chain-indexer:<tag> \\"; \
-        echo "    --WALLET_INDEXER_IMAGE=ghcr.io/midnight-ntwrk/wallet-indexer:<tag>"; \
+        echo "    --NODE_IMAGE=$GHCR_REGISTRY/$IMAGE_REPO:<tag> \\"; \
+        echo "    --TOOLKIT_IMAGE=$GHCR_REGISTRY/$IMAGE_REPO-toolkit:<tag> \\"; \
+        echo "    --INDEXER_API_IMAGE=$GHCR_REGISTRY/indexer-api:<tag> \\"; \
+        echo "    --CHAIN_INDEXER_IMAGE=$GHCR_REGISTRY/chain-indexer:<tag> \\"; \
+        echo "    --WALLET_INDEXER_IMAGE=$GHCR_REGISTRY/wallet-indexer:<tag>"; \
         echo "(no GHCR access? use +local-env-full-ci-localimg — builds/loads images locally.)"; \
         exit 1; }
     # node/npm + the docker compose-v2 plugin both ship in the +prep base image (the
@@ -1897,8 +1946,9 @@ local-env-ci:
             --pull $WALLET_INDEXER_IMAGE \
             --pull $TOOLKIT_IMAGE
         RUN --secret DOCKERHUB_USER --secret DOCKERHUB_TOKEN \
-            if [ -n "$DOCKERHUB_TOKEN" ]; then \
-              echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; \
+            if [ -n "$DOCKERHUB_TOKEN" ] && \
+               ! echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin; then \
+              echo "WARNING: Docker Hub login failed; continuing unauthenticated" >&2; \
             fi && \
             ROOT="$PWD" && \
             cd local-environment && \

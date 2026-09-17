@@ -14,7 +14,7 @@
 use async_trait::async_trait;
 use backoff::{ExponentialBackoff, future::retry};
 
-use midnight_node_ledger_helpers::*;
+use midnight_ledger_unsafe_helpers::*;
 
 const PROOF_SERVER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -73,22 +73,24 @@ impl<D: DB + Clone> ProofProvider<D> for RemoteProofServer {
 }
 
 #[async_trait]
-impl<D: DB + Clone> midnight_node_ledger_helpers::ledger_8::ProofProvider<D> for RemoteProofServer {
+impl<D: DB + Clone> midnight_ledger_unsafe_helpers::ledger_8::ProofProvider<D>
+	for RemoteProofServer
+{
 	async fn prove(
 		&self,
-		tx: midnight_node_ledger_helpers::ledger_8::Transaction<
-			midnight_node_ledger_helpers::ledger_8::Signature,
-			midnight_node_ledger_helpers::ledger_8::ProofPreimageMarker,
-			midnight_node_ledger_helpers::ledger_8::PedersenRandomness,
+		tx: midnight_ledger_unsafe_helpers::ledger_8::Transaction<
+			midnight_ledger_unsafe_helpers::ledger_8::Signature,
+			midnight_ledger_unsafe_helpers::ledger_8::ProofPreimageMarker,
+			midnight_ledger_unsafe_helpers::ledger_8::PedersenRandomness,
 			D,
 		>,
 		_rng: StdRng,
-		resolver: &'static midnight_node_ledger_helpers::ledger_8::Resolver,
-		cost_model: midnight_node_ledger_helpers::ledger_8::CostModel,
-	) -> midnight_node_ledger_helpers::ledger_8::Transaction<
-		midnight_node_ledger_helpers::ledger_8::Signature,
-		midnight_node_ledger_helpers::ledger_8::ProofMarker,
-		midnight_node_ledger_helpers::ledger_8::PedersenRandomness,
+		resolver: &'static midnight_ledger_unsafe_helpers::ledger_8::Resolver,
+		cost_model: midnight_ledger_unsafe_helpers::ledger_8::CostModel,
+	) -> midnight_ledger_unsafe_helpers::ledger_8::Transaction<
+		midnight_ledger_unsafe_helpers::ledger_8::Signature,
+		midnight_ledger_unsafe_helpers::ledger_8::ProofMarker,
+		midnight_ledger_unsafe_helpers::ledger_8::PedersenRandomness,
 		D,
 	> {
 		log::info!("Proof server URL: {}", self.url);
@@ -100,7 +102,7 @@ impl<D: DB + Clone> midnight_node_ledger_helpers::ledger_8::ProofProvider<D> for
 
 		// ledger8 is Send, and we're remote-proving, so we await directly here.
 		retry(backoff, || async {
-			let provider = midnight_node_ledger_helpers::ledger_8::ProofServerProvider {
+			let provider = midnight_ledger_unsafe_helpers::ledger_8::ProofServerProvider {
 				base_url: self.url.clone().into(),
 				resolver,
 			};

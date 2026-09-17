@@ -28,7 +28,7 @@ jobs:
     # upgrades — #1661 tracks replacing this with a baked CI image
     # that closes the drift.
     container:
-      image: rust:1.95-trixie
+      image: rust:1.98.1-trixie
     timeout-minutes: 480
 
     steps:
@@ -44,7 +44,7 @@ jobs:
           submodules: true
 
       # Running as root inside the container, so no sudo.
-      # `rust:1.95-trixie` already ships gcc/make/git/libssl-dev/libpq-dev/
+      # `rust:1.98.1-trixie` already ships gcc/make/git/libssl-dev/libpq-dev/
       # libsqlite3-dev, so we only add what's missing for this crate:
       #   - protobuf-compiler: prost/scale-codec build scripts.
       #   - postgresql-client: psql smoke test against toolkit-cache.
