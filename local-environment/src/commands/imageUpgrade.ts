@@ -14,9 +14,10 @@
 import path from "path";
 import fs, { existsSync } from "fs";
 import { globSync } from "glob";
-import { parse } from "dotenv";
 import { spawn } from "child_process";
 import { ImageUpgradeOptions } from "../lib/types";
+import { ensureImageAvailable } from "../lib/docker";
+import { applyEnvFileOverrides } from "../lib/envFile";
 import { discoverValidators } from "../lib/discoverValidators";
 import {
   mockOverridePath,
@@ -47,18 +48,10 @@ export async function imageUpgrade(
   const healthTimeoutSec = opts.healthTimeoutSec ?? 180;
   const requireHealthy = opts.requireHealthy ?? true;
 
-  let env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-  };
-
-  for (const envFilePath of opts.envFile ?? []) {
-    if (fs.existsSync(envFilePath)) {
-      const envOverrides = parse(fs.readFileSync(envFilePath));
-      env = { ...env, ...envOverrides };
-    } else {
-      console.warn(`⚠️  Env file not found: ${envFilePath}`);
-    }
-  }
+  const env = applyEnvFileOverrides(
+    process.env as Record<string, string>,
+    opts.envFile,
+  );
 
   console.log(`Ensuring network is up with starting tag ${fromTag}`);
   env[imageEnvVar] = fromTag;
@@ -106,6 +99,8 @@ export async function imageUpgrade(
   for (const svc of services) {
     console.log(`\n Upgrading service: ${svc}`);
     env[imageEnvVar] = toTag;
+
+    await ensureImageAvailable(toTag, env);
 
     // Only re-create this one service, do not bounce dependencies.
     await dockerCompose(
