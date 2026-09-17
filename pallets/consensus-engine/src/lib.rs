@@ -13,35 +13,36 @@
 
 //! Pallet driving the consensus-engine change. It must work together with a compatible node.
 //!
-//! The chain starts on AURA (`Aura`) and progresses through a sequence
-//! of states as it arms, schedules, and performs a flip to BABE block
-//! production. The [`ConsensusEngineApi`](midnight_primitives_consensus_engine::ConsensusEngineApi)
+//! The chain starts on AURA (`Aura`) and progresses through a sequence of states as it
+//! schedules and performs a flip to BABE block production. The
+//! [`ConsensusEngineApi`](midnight_primitives_consensus_engine::ConsensusEngineApi)
 //! runtime API surfaces which engine is active for a given state.
 //!
-//! Once governance has armed BABE, the node is expected to start emitting BABE
-//! `PreRuntimeDigest`s that signal secondary slots, using the same authority index as computed
-//! by the AURA logic. This should be done once the majority of validators have registered their
-//! BABE keys.
+//! An updated node attaches a BABE `SecondaryPlain` `PreRuntimeDigest` to every AURA block it
+//! authors, signalling a secondary slot with the same authority index as computed by the AURA
+//! logic. It does so unconditionally, from the moment the binary runs — the runtime that
+//! precedes this pallet has no `pallet-babe` either, so nothing there reads the digest and the
+//! extra item is inert. Node binaries are therefore rolled out *before* the runtime upgrade that
+//! brings this pallet in, and by the time the pallet first executes every author is already
+//! emitting; a node that was not updated first cannot author at all.
 //!
-//! A further governance action is then required to schedule the update. It should be scheduled
-//! only after observing that a finalized block contains a BABE `PreRuntimeDigest`. This
-//! information is not available in the runtime, so we rely on a manual action here.
+//! A governance action then schedules the flip. It should be dispatched only after observing
+//! that finalized blocks contain a BABE `PreRuntimeDigest` — i.e. that the majority of
+//! validators run an updated node and have registered their BABE keys. This information is not
+//! available in the runtime, so we rely on a manual action here.
 //!
-//! Once scheduled, the pallet performs the flip at the last block of the epoch.
-//! From arming onward every block must carry a BABE `SecondaryPlain` pre-runtime
-//! digest matching the AURA slot and AURA author index (`slot % n_authorities`)
-//! (unique, after AURA); a block without it is
-//! rejected on import, so nodes must be updated to emit the digest before
-//! governance arms the flip. `Primary`/`SecondaryVRF` variants are rejected too,
-//! since their VRF material is never client-verified while blocks import through
-//! the AURA pipeline. The flip is postponed while `pallet-babe::Authorities` is
-//! empty (session has not yet populated BABE keys after a runtime upgrade). If the
-//! last slot of an epoch is empty, migration is postponed to a later epoch-end block.
-//! After the flip (`Babe`) the check is mirrored: AURA pre-runtime digests are
-//! rejected, so a stray one cannot hijack slot/author extraction from a block that
-//! BABE authored.
-//! The migration initializes pallet-babe state and transitions to the final state
-//! `Babe`. The first block of the next epoch is authored with BABE.
+//! Once scheduled, the pallet performs the flip at the last block of the epoch. Every block
+//! before the flip must carry a BABE `SecondaryPlain` pre-runtime digest matching the AURA slot
+//! and AURA author index (`slot % n_authorities`) (unique, after AURA); a block without it is
+//! rejected on import, in `Aura` exactly as in `ScheduledFlip`. A malformed or
+//! `Primary`/`SecondaryVRF` one is rejected in every state, so it never reaches `pallet-babe`,
+//! whose VRF material is never client-verified while blocks import through the AURA pipeline.
+//! The flip is postponed while `pallet-babe::Authorities` is empty (session has not
+//! yet populated BABE keys after a runtime upgrade). If the last slot of an epoch is empty,
+//! migration is postponed to a later epoch-end block. After the flip (`Babe`) the check is mirrored: AURA pre-runtime digests are
+//! rejected, so a stray one cannot hijack slot/author extraction from a block that BABE authored.
+//! The migration initializes pallet-babe state and transitions to the final state `Babe`. The
+//! first block of the next epoch is authored with BABE.
 //!
 //! # Hook ordering requirements
 //!
@@ -55,12 +56,11 @@
 //!   `pallet_aura::Authorities` in its `on_initialize`, while the author (and
 //!   the AURA seal check) computed `slot % n` from the parent state. Running
 //!   after rotation would false-reject every honest block at a session boundary
-//!   whose committee size changes while armed;
+//!   whose committee size changes before the flip;
 //! * **before `pallet-scheduler`** (or any hook that can dispatch
-//!   [`Pallet::arm_babe`] / [`Pallet::schedule_flip`] during block
-//!   initialization): a state transition applied before the guard would make
-//!   the guard check the *new* state against a block authored under the old
-//!   one, rejecting the transition block itself.
+//!   [`Pallet::schedule_flip`] during block initialization): a state transition
+//!   applied before the guard would make the guard check the *new* state against
+//!   a block authored under the old one, rejecting the transition block itself.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -133,12 +133,11 @@ pub mod pallet {
 		TypeInfo,
 	)]
 	pub enum State {
-		/// AURA block production, the baseline state before any transition is armed.
+		/// AURA block production, the baseline state before the flip is scheduled. Every block
+		/// must carry a BABE `SecondaryPlain` `PreRuntimeDigest` alongside the AURA one.
 		#[default]
 		Aura,
-		/// A flip to BABE has been armed but not yet scheduled. Node is supposed to add PreRuntimeDigest of BABE Secondary Plain slots in this state.
-		ArmedBabe,
-		/// The flip to BABE is armed to take effect at the last block of an epoch
+		/// The flip to BABE is scheduled to take effect at the last block of an epoch
 		/// that carries a matching BABE pre-runtime digest.
 		/// Blocks are still produced with AURA until the flip actually commits.
 		ScheduledFlip,
@@ -150,7 +149,7 @@ pub mod pallet {
 		/// The consensus engine that is active while in this state.
 		pub fn active_engine(&self) -> ActiveEngine {
 			match self {
-				State::Aura | State::ArmedBabe | State::ScheduledFlip => ActiveEngine::Aura,
+				State::Aura | State::ScheduledFlip => ActiveEngine::Aura,
 				State::Babe => ActiveEngine::Babe,
 			}
 		}
@@ -166,34 +165,70 @@ pub mod pallet {
 		InvalidEngineState,
 	}
 
+	/// The pallet carries no genesis state of its own; the build only pre-seeds
+	/// `pallet-babe` (see [`BuildGenesisConfig::build`]).
+	#[pallet::genesis_config]
+	#[derive(frame_support::DefaultNoBound)]
+	pub struct GenesisConfig<T: Config> {
+		#[serde(skip)]
+		pub _config: core::marker::PhantomData<T>,
+	}
+
+	#[pallet::genesis_build]
+	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
+		/// A chain started from genesis has no upgrade that introduces this pallet, so
+		/// genesis is where its authors start emitting the transition pre-digest — and
+		/// where `pallet-babe` has to be pre-seeded against self-initializing from one.
+		/// See [`Pallet::set_sentinel_babe_genesis_slot`].
+		fn build(&self) {
+			Pallet::<T>::set_sentinel_babe_genesis_slot();
+		}
+	}
+
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		/// Pre-seeds `pallet-babe`'s genesis slot so it does not self-initialize a genesis
+		/// epoch from the transition pre-digests nodes start emitting once this pallet is
+		/// part of the runtime. See [`Pallet::set_sentinel_babe_genesis_slot`].
+		///
+		/// This is the upgrade counterpart of [`BuildGenesisConfig::build`]: it runs in the
+		/// block that brings the pallet into an existing chain's runtime, before any pallet's
+		/// `on_initialize`, so the sentinel is in place before `pallet-babe` reads the first
+		/// block that carries the digest.
+		fn on_runtime_upgrade() -> Weight {
+			// Zero is `GenesisSlot`'s `ValueQuery` default: BABE has neither self-initialized
+			// nor been migrated, so this is the upgrade that introduces the pallet and nothing
+			// real is overwritten. The hook runs on every upgrade; after this one it is a no-op.
+			if pallet_babe::GenesisSlot::<T>::get() == Slot::from(0u64) {
+				Self::set_sentinel_babe_genesis_slot();
+			}
+			<T as frame_system::Config>::DbWeight::get().reads_writes(1, 1)
+		}
+
 		/// Drives the automatic, non-governance part of the state machine each block.
 		///
 		/// The current slot is read from the AURA pre-runtime digest (the validated,
 		/// authoritative slot while AURA is producing).
 		fn on_initialize(_n: BlockNumberFor<T>) -> Weight {
 			match EngineState::<T>::get() {
-				// Before arming, reject any BABE pre-digest. `pallet-babe` (lower
-				// pallet index) runs first and, while `GenesisSlot == 0`, would
-				// consume the first BABE digest and deposit `NextEpochData`.
+				// Updated nodes attach the transition pre-digest to every AURA block they
+				// author, unconditionally, so every block this pallet executes carries one —
+				// including the very block that brought the pallet into the runtime, which was
+				// authored by an already-updated node. A block without it comes from a
+				// non-compliant author and is rejected; so is a malformed one, which
+				// `pallet-babe` (lower pallet index, so it runs first) would otherwise have
+				// consumed.
 				State::Aura => {
 					assert!(
-						!Self::has_pre_runtime_for(BABE_ENGINE_ID),
-						"BABE pre-runtime digest present in state 'Aura'",
-					);
-				},
-				// From arming onward, every block must carry the BABE `SecondaryPlain`
-				// pre-digest matching the AURA slot (unique, after AURA). Nodes should
-				// be updated to emit it when ArmedBabe and ScheduledFlip before
-				// governance arms the flip, so a missing digest means a non-compliant
-				// author and the block is rejected.
-				State::ArmedBabe => {
-					assert!(
 						Self::has_aura_pre_digest_before_babe_pre_digest(),
-						"BABE pre-runtime digest required in state 'ArmedBabe'",
+						"BABE pre-runtime digest required in state 'Aura'",
 					);
 				},
+				// Once the flip is scheduled, every block must carry the BABE
+				// `SecondaryPlain` pre-digest matching the AURA slot (unique, after AURA).
+				// The flip is only scheduled after finalized blocks are seen carrying it,
+				// so a missing digest means a non-compliant author and the block is
+				// rejected.
 				State::ScheduledFlip => {
 					assert!(
 						Self::has_aura_pre_digest_before_babe_pre_digest(),
@@ -237,32 +272,18 @@ pub mod pallet {
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// Arm the flip to BABE: move `Aura` to `ArmedBabe`.
+		/// Schedule the flip to BABE: move `Aura` to `ScheduledFlip`.
 		///
 		/// Governance-gated. Fails with [`Error::InvalidEngineState`] unless the
-		/// engine is currently `Aura`.
+		/// engine is currently `Aura`. From here on every block must carry the BABE
+		/// transition pre-digest, so this should only be dispatched once finalized
+		/// blocks are seen carrying it. The flip itself commits automatically at the
+		/// next epoch boundary; see [`Hooks::on_initialize`].
 		#[pallet::call_index(0)]
-		#[pallet::weight(<T as Config>::WeightInfo::arm_babe())]
-		pub fn arm_babe(origin: OriginFor<T>) -> DispatchResult {
-			T::GovernanceOrigin::ensure_origin(origin)?;
-			ensure!(EngineState::<T>::get() == State::Aura, Error::<T>::InvalidEngineState);
-			// Pre-seed BABE before the node starts emitting BABE pre-digests, so
-			// pallet-babe does not prematurely self-initialize its genesis epoch.
-			Self::set_sentinel_babe_genesis_slot();
-			EngineState::<T>::put(State::ArmedBabe);
-			Ok(())
-		}
-
-		/// Schedule the flip to BABE: move `ArmedBabe` to `ScheduledFlip`.
-		///
-		/// Governance-gated. Fails with [`Error::InvalidEngineState`] unless the
-		/// engine is currently `ArmedBabe`. The flip itself commits automatically at
-		/// the next epoch boundary; see [`Hooks::on_initialize`].
-		#[pallet::call_index(1)]
 		#[pallet::weight(<T as Config>::WeightInfo::schedule_flip())]
 		pub fn schedule_flip(origin: OriginFor<T>) -> DispatchResult {
 			T::GovernanceOrigin::ensure_origin(origin)?;
-			ensure!(EngineState::<T>::get() == State::ArmedBabe, Error::<T>::InvalidEngineState);
+			ensure!(EngineState::<T>::get() == State::Aura, Error::<T>::InvalidEngineState);
 			EngineState::<T>::put(State::ScheduledFlip);
 			Ok(())
 		}
@@ -274,19 +295,16 @@ pub mod pallet {
 			EngineState::<T>::get().active_engine()
 		}
 
-		/// Whether block authors should attach a BABE `SecondaryPlain` pre-runtime digest.
-		pub fn should_emit_babe_preruntime_digest() -> bool {
-			matches!(EngineState::<T>::get(), State::ArmedBabe | State::ScheduledFlip)
-		}
-
 		/// Sets `GenesisSlot` to a non-zero sentinel so pallet-babe's `initialize`
 		/// does not self-initialize a genesis epoch and deposit a bogus `NextEpochData`
 		/// digest into a header we cannot retract.
+		///
+		/// [`Self::migrate_to_babe`] replaces it with the real genesis slot at the flip.
 		fn set_sentinel_babe_genesis_slot() {
 			pallet_babe::GenesisSlot::<T>::put(Slot::from(u64::MAX));
 			log::info!(
 				target: "consensus-engine",
-				"BABE armed: pre-seeded pallet-babe GenesisSlot to suppress premature genesis init.",
+				"Pre-seeded pallet-babe GenesisSlot to suppress premature genesis init.",
 			);
 		}
 
@@ -299,8 +317,9 @@ pub mod pallet {
 		///
 		/// `slot` is the last slot of the ending epoch; BABE's genesis slot is the first slot of the
 		/// next epoch, so BABE epochs stay aligned with the sidechain epochs. This replaces the
-		/// `u64::MAX` sentinel `GenesisSlot` (set at arming to suppress premature self-init) with the
-		/// real genesis slot and resets the epoch index and randomness for epoch 0.
+		/// `u64::MAX` sentinel `GenesisSlot` (written at genesis or by
+		/// [`Hooks::on_runtime_upgrade`] to suppress premature self-init) with the real genesis
+		/// slot and resets the epoch index and randomness for epoch 0.
 		///
 		/// Authorities are deliberately *not* set here. `pallet-babe` is wired as a `pallet_session`
 		/// `OneSessionHandler`, which keeps `Authorities`/`NextAuthorities` in sync with the
@@ -390,8 +409,8 @@ pub mod pallet {
 		/// and the BABE `authority_index` equals the AURA author for that slot
 		/// (`slot % pallet_aura::Authorities.len()`).
 		///
-		/// This is the shape a node emits while still on AURA once it has begun
-		/// signalling BABE secondary slots. Every other arrangement returns `false`:
+		/// This is the shape an updated node emits while still on AURA. Every other
+		/// arrangement returns `false`:
 		/// a missing item, a payload that fails to decode (or carries trailing bytes),
 		/// a duplicate of either engine's item, a BABE item before the AURA one, a slot
 		/// mismatch, a wrong authority index, an empty AURA authority set, or a

@@ -30,9 +30,8 @@
 //!
 //! The header can. `pallet-consensus-engine` asserts in `on_initialize`, for every block that
 //! executes, that:
-//! - before arming, no BABE pre-runtime digest is present;
-//! - from arming to the flip, exactly one AURA and exactly one BABE pre-runtime digest are present
-//!   and the AURA one comes **first**;
+//! - before the flip, exactly one AURA and exactly one BABE pre-runtime digest are present and
+//!   the AURA one comes **first**;
 //! - after the flip, no AURA pre-runtime digest is present.
 //!
 //! So for any valid block the first pre-runtime digest with an AURA or BABE engine id names the
@@ -82,7 +81,7 @@ use std::{marker::PhantomData, sync::Arc};
 /// pre-runtime digest, or `None` if it carries neither.
 ///
 /// See the module docs for why the *first* such digest is decisive: `pallet-consensus-engine`
-/// requires the AURA pre-runtime digest to precede the BABE one on every armed-phase AURA block, and
+/// requires the AURA pre-runtime digest to precede the BABE one on every pre-flip AURA block, and
 /// forbids an AURA pre-runtime digest on every post-flip BABE block.
 pub fn engine_from_pre_runtime_digest<Block: BlockT>(
 	header: &Block::Header,
@@ -323,7 +322,8 @@ mod tests {
 		header
 	}
 
-	/// A pre-arming AURA block: AURA pre-runtime digest only (plus the mc-hash one), AURA seal.
+	/// An AURA block from a node that does not emit the transition digest yet: AURA pre-runtime
+	/// digest only (plus the mc-hash one), AURA seal.
 	fn aura_block(number: u32) -> Header {
 		header_with(
 			number,
@@ -335,9 +335,9 @@ mod tests {
 		)
 	}
 
-	/// An armed-phase AURA block: AURA pre-runtime digest first, then the BABE `SecondaryPlain`
-	/// one, in the order `pallet-consensus-engine` enforces. AURA seal.
-	fn armed_aura_block(number: u32) -> Header {
+	/// A pre-flip AURA block from an updated node: AURA pre-runtime digest first, then the BABE
+	/// `SecondaryPlain` one, in the order `pallet-consensus-engine` enforces. AURA seal.
+	fn transitioning_aura_block(number: u32) -> Header {
 		header_with(
 			number,
 			vec![
@@ -374,11 +374,11 @@ mod tests {
 	}
 
 	#[test]
-	fn armed_aura_block_with_both_pre_digests_is_aura() {
-		// From arming to the flip every AURA block also carries a BABE pre-runtime digest; the
-		// pallet guarantees the AURA one comes first, and that order is what decides.
+	fn transitioning_aura_block_with_both_pre_digests_is_aura() {
+		// Before the flip an AURA block also carries a BABE pre-runtime digest; the pallet
+		// guarantees the AURA one comes first, and that order is what decides.
 		assert_eq!(
-			engine_from_pre_runtime_digest::<Block>(&armed_aura_block(1)),
+			engine_from_pre_runtime_digest::<Block>(&transitioning_aura_block(1)),
 			Some(ActiveEngine::Aura)
 		);
 	}
@@ -403,7 +403,7 @@ mod tests {
 	fn verifier_routes_by_authoring_engine() {
 		let h = Harness::new();
 
-		h.verify(armed_aura_block(10));
+		h.verify(transitioning_aura_block(10));
 		h.verify(babe_block(20));
 		h.verify(aura_block(30));
 
@@ -424,8 +424,8 @@ mod tests {
 		let h = Harness::new();
 
 		// The flip-boundary sequence: the last AURA blocks, then the first BABE blocks.
-		h.verify(armed_aura_block(96));
-		h.verify(armed_aura_block(97));
+		h.verify(transitioning_aura_block(96));
+		h.verify(transitioning_aura_block(97));
 		assert!(h.seeder.parents().is_empty());
 
 		h.verify(babe_block(98));
@@ -462,7 +462,7 @@ mod tests {
 	fn block_import_routes_by_authoring_engine() {
 		let h = Harness::new();
 
-		h.import(armed_aura_block(10));
+		h.import(transitioning_aura_block(10));
 		h.import(babe_block(20));
 		h.import(engineless_block(30));
 

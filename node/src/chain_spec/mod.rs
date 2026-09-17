@@ -260,6 +260,8 @@ fn genesis_config<T: MidnightNetwork>(genesis: T) -> Result<serde_json::Value, C
 		system: Default::default(),
 		aura: Default::default(),
 		babe: Default::default(),
+		// No genesis state of its own; the build pre-seeds pallet-babe's genesis slot.
+		consensus_engine: Default::default(),
 		beefy: BeefyConfig {
 			authorities: genesis
 				.initial_authorities()

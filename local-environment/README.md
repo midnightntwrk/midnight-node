@@ -190,20 +190,13 @@ check and should not be used for production-shaped validation.
 
 ### Consensus engine (AURA → BABE) transitions
 
-`pallet-consensus-engine`'s `arm_babe` and `schedule_flip` calls are gated by
-governance motion filter, like runtime upgrades.
+`pallet-consensus-engine`'s `schedule_flip` call is gated by governance motion
+filter, like runtime upgrades.
 
-`consensus-upgrade-arm-babe` moves the engine from `Aura` to `ArmedBabe`.
-
-```bash
-npm run consensus-upgrade-arm-babe:local-env -- \
-  --technical-uris //One //Two //Three \
-  --council-uris //Four //Five //Six \
-  --executor-uri //One
-```
-
-`consensus-upgrade-schedule-flip` moves it from `ArmedBabe` to `ScheduledFlip`
-Run it only after the finalized blocks have BABE pre-runtime digests.
+`consensus-upgrade-schedule-flip` moves the engine from `Aura` to
+`ScheduledFlip`. Run it only after the finalized blocks have BABE pre-runtime
+digests — nodes start emitting them once the runtime upgrade that adds
+`pallet-consensus-engine` is in.
 
 ```bash
 npm run consensus-upgrade-schedule-flip:local-env -- \
@@ -212,7 +205,7 @@ npm run consensus-upgrade-schedule-flip:local-env -- \
   --executor-uri //One
 ```
 
-Both commands will error if the pallet is not a state expected for given call.
+The command will error if the pallet is not in the state expected for the call.
 
 ### Stopping networks
 

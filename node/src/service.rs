@@ -987,9 +987,9 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 			);
 			let pc: PartnerChainsProposerFactory<_, _, McHashInherentDigest> =
 				PartnerChainsProposerFactory::new(basic);
-			// Attach a BABE `SecondaryPlain` pre-runtime digest to authored blocks while the flip to
-			// BABE is armed, so verifiers already expect them at the flip.
-			crate::armed_babe_proposer::ArmedBabeProposerFactory::new(pc, client.clone())
+			// Attach a BABE `SecondaryPlain` pre-runtime digest to the AURA blocks authored before
+			// the flip, so verifiers already expect them at the flip.
+			crate::babe_predigest_proposer::BabePreDigestProposerFactory::new(pc, client.clone())
 		};
 
 		let aura_worker = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
@@ -1018,7 +1018,7 @@ pub async fn new_full<Network: sc_network::NetworkBackend<Block, <Block as Block
 		)?;
 
 		// --- BABE authoring worker (active after the consensus flip) ---
-		// No ArmedBabe shim here: the BABE slot worker adds its own pre-runtime digest.
+		// No pre-digest shim here: the BABE slot worker adds its own pre-runtime digest.
 		let babe_proposer_factory: PartnerChainsProposerFactory<_, _, McHashInherentDigest> =
 			PartnerChainsProposerFactory::new(sc_basic_authorship::ProposerFactory::new(
 				task_manager.spawn_handle(),

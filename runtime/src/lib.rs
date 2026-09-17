@@ -1119,11 +1119,11 @@ mod runtime {
 	// Consensus engine transition state machine. Hook order (pallet index order) is
 	// load-bearing: its `on_initialize` digest guards must run after Babe (which
 	// consumes BABE pre-digests) but before anything that mutates the state they
-	// check against — Scheduler (18) can dispatch `arm_babe`/`schedule_flip` from
-	// its own `on_initialize`, and Session (30) rotates `pallet_aura::Authorities`,
-	// which the `authority_index == slot % n` transition guard compares with. Both
-	// the block author and the AURA seal verifier work from the parent state, so
-	// the guards must too.
+	// check against — Scheduler (18) can dispatch `schedule_flip` from its own
+	// `on_initialize`, and Session (30) rotates `pallet_aura::Authorities`, which
+	// the `authority_index == slot % n` transition guard compares with. Both the
+	// block author and the AURA seal verifier work from the parent state, so the
+	// guards must too.
 	#[runtime::pallet_index(10)]
 	pub type ConsensusEngine = pallet_consensus_engine::Pallet<Runtime>;
 
@@ -1836,10 +1836,6 @@ impl_runtime_apis! {
 		fn active_engine() -> midnight_primitives_consensus_engine::ActiveEngine {
 			ConsensusEngine::active_engine()
 		}
-
-		fn should_emit_babe_preruntime_digest() -> bool {
-			ConsensusEngine::should_emit_babe_preruntime_digest()
-		}
 	}
 
 	impl sp_sidechain::GetGenesisUtxo<Block> for Runtime {
@@ -2386,23 +2382,17 @@ mod tests {
 			});
 		}
 
-		// The armed and scheduled states still produce AURA blocks, so the slot must
-		// keep coming from AURA until the flip actually completes.
+		// A scheduled flip still produces AURA blocks, so the slot must keep coming
+		// from AURA until the flip actually completes.
 		#[test]
 		fn slot_is_read_from_aura_storage_while_the_flip_is_pending() {
-			for state in [State::ArmedBabe, State::ScheduledFlip] {
-				sp_io::TestExternalities::default().execute_with(|| {
-					EngineState::<Runtime>::put(state);
-					pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
-					pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
+			sp_io::TestExternalities::default().execute_with(|| {
+				EngineState::<Runtime>::put(State::ScheduledFlip);
+				pallet_aura::CurrentSlot::<Runtime>::put(Slot::from(STALE_AURA_SLOT));
+				pallet_babe::CurrentSlot::<Runtime>::put(Slot::from(BABE_SLOT));
 
-					assert_eq!(
-						get_sidechain_status().slot,
-						ScSlotNumber(STALE_AURA_SLOT),
-						"unexpected slot in state {state:?}"
-					);
-				});
-			}
+				assert_eq!(get_sidechain_status().slot, ScSlotNumber(STALE_AURA_SLOT));
+			});
 		}
 	}
 
@@ -2446,6 +2436,43 @@ mod tests {
 
 		fn ongoing() -> bool {
 			<Runtime as frame_system::Config>::MultiBlockMigrator::ongoing()
+		}
+
+		/// Put the chain in the shape a pre-flip block is authored in: one AURA authority and
+		/// `pallet-babe`'s genesis-slot sentinel, as `pallet-consensus-engine`'s
+		/// `on_runtime_upgrade` leaves it.
+		fn seed_pre_flip_consensus_state() {
+			let id = sp_consensus_aura::sr25519::AuthorityId::from(
+				sp_core::sr25519::Public::from_raw([1u8; 32]),
+			);
+			pallet_aura::Authorities::<Runtime>::put(
+				frame_support::BoundedVec::try_from(vec![id]).expect("one authority fits"),
+			);
+			pallet_babe::GenesisSlot::<Runtime>::put(sp_consensus_slots::Slot::from(u64::MAX));
+		}
+
+		/// The digests every block carries before the consensus flip: the AURA pre-runtime
+		/// digest followed by the BABE `SecondaryPlain` transition digest for the same slot and
+		/// author (`slot % 1 == 0` with the single authority seeded above).
+		fn pre_flip_digest(slot: u64) -> sp_runtime::Digest {
+			use sp_consensus_babe::digests::{PreDigest, SecondaryPlainPreDigest};
+			let slot = sp_consensus_slots::Slot::from(slot);
+			sp_runtime::Digest {
+				logs: vec![
+					sp_runtime::DigestItem::PreRuntime(
+						sp_consensus_aura::AURA_ENGINE_ID,
+						slot.encode(),
+					),
+					sp_runtime::DigestItem::PreRuntime(
+						sp_consensus_babe::BABE_ENGINE_ID,
+						PreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+							authority_index: 0,
+							slot,
+						})
+						.encode(),
+					),
+				],
+			}
 		}
 
 		fn can_set_code() -> frame_system::CanSetCodeResult<Runtime> {
@@ -2513,13 +2540,15 @@ mod tests {
 					pallet_safe_mode::Call::force_exit {}
 				)));
 
-				// The next block admits normal (non-inherent) extrinsics again.
+				// The next block admits normal (non-inherent) extrinsics again. It carries the
+				// pre-flip digests, without which `pallet-consensus-engine` rejects it.
+				seed_pre_flip_consensus_state();
 				let header = crate::Header::new(
 					2,
 					Default::default(),
 					Default::default(),
 					frame_system::Pallet::<Runtime>::parent_hash(),
-					Default::default(),
+					pre_flip_digest(2),
 				);
 				assert_eq!(
 					Executive::initialize_block(&header),

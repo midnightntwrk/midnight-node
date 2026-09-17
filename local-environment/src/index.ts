@@ -17,10 +17,7 @@ import { stop } from "./commands/stop";
 import { imageUpgrade } from "./commands/imageUpgrade";
 import { federatedRuntimeUpgrade } from "./commands/federatedRuntimeUpgrade";
 import { fullUpgrade } from "./commands/fullUpgrade";
-import {
-  consensusUpgradeArmBabe,
-  consensusUpgradeScheduleFlip,
-} from "./commands/consensusUpgrade";
+import { consensusUpgradeScheduleFlip } from "./commands/consensusUpgrade";
 import { verifyFinality } from "./commands/verifyFinality";
 import {
   RunOptions,
@@ -467,10 +464,10 @@ program
     await fullUpgrade(network, opts);
   });
 
-// The consensus-engine transitions (arm-babe, schedule-flip) share the same
-// governance surface: a federated-authority motion that dispatches a fixed
-// pallet-consensus-engine call as root. They differ only in which call is run,
-// so register them from one place.
+// The consensus-engine transitions share the same governance surface: a
+// federated-authority motion that dispatches a fixed pallet-consensus-engine
+// call as root. They differ only in which call is run, so register them from
+// one place.
 function parseGovernanceCallCliOpts(
   cliOpts: ConsensusUpgradeCliOpts,
 ): GovernanceCallOptions {
@@ -555,12 +552,6 @@ function registerConsensusUpgradeCommand(
       await handler(network, opts);
     });
 }
-
-registerConsensusUpgradeCommand(
-  "consensus-upgrade-arm-babe",
-  "Arm the AURA-to-BABE consensus flip (pallet-consensus-engine arm_babe) via a federated-authority motion",
-  consensusUpgradeArmBabe,
-);
 
 registerConsensusUpgradeCommand(
   "consensus-upgrade-schedule-flip",

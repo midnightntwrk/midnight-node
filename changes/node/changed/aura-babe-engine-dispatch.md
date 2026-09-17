@@ -12,8 +12,8 @@ read from the block's own header: the engine id of its first AURA or BABE pre-ru
 Chain state cannot be the routing key — a sync batch `[…, flip, flip+1, …]` carries the first BABE
 block together with its parent, so the parent's post-flip state does not exist when the batch is
 queued. The header can, because `pallet-consensus-engine` asserts for every executed block that
-the AURA pre-digest comes first while the flip is armed and that no AURA pre-digest is present
-after it. Digests of other engines (e.g. the main-chain hash) are skipped; a header with neither
+the AURA pre-digest comes first before the flip and that no AURA pre-digest is present after
+it. Digests of other engines (e.g. the main-chain hash) are skipped; a header with neither
 defaults to AURA, whose verifier gives the clearer error. Routing decides *which* verifier runs,
 not whether a block is valid — a block whose digests misstate its engine still fails the receiving
 verifier or the pallet's own digest assertions.

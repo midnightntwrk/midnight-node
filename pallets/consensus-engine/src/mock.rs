@@ -154,16 +154,14 @@ pub fn seed_babe_authorities() {
 	pallet_babe::Authorities::<Test>::put(authorities);
 }
 
-/// Put [`EngineState`] as in production: once past `Aura`, `arm_babe` has already
+/// Put [`EngineState`] as in production, where `on_runtime_upgrade` has already
 /// written the BABE genesis-slot sentinel so pallet-babe does not self-initialize
 /// from a transition digest. Skips the write when `GenesisSlot` is already set
 /// (e.g. after `migrate_to_babe`).
 pub fn put_engine_state(state: crate::State) {
 	use crate::pallet::EngineState;
 	EngineState::<Test>::put(state);
-	if matches!(state, crate::State::ArmedBabe | crate::State::ScheduledFlip | crate::State::Babe)
-		&& pallet_babe::GenesisSlot::<Test>::get() == Slot::from(0u64)
-	{
+	if pallet_babe::GenesisSlot::<Test>::get() == Slot::from(0u64) {
 		pallet_babe::GenesisSlot::<Test>::put(Slot::from(u64::MAX));
 	}
 }
@@ -273,10 +271,17 @@ pub fn start_block_at_slot(slot: u64) {
 }
 
 /// Start a new block whose header carries a BABE pre-runtime digest alongside
-/// the AURA one at the same slot — the shape nodes emit once armed, and the
-/// shape required of the flip block.
+/// the AURA one at the same slot — the shape updated nodes emit before the flip,
+/// and the shape required of the flip block.
 pub fn start_block_with_babe_pre_digest(slot: u64) {
 	start_block_with_logs(vec![aura_pre_digest(slot), babe_pre_digest(slot)]);
+}
+
+/// Externalities built from the *full* runtime genesis, so every pallet's genesis build
+/// runs — the shape of a chain started from genesis. [`new_test_ext`] deliberately builds
+/// only `frame_system`'s, so tests can observe the pre-genesis-build state.
+pub fn genesis_test_ext() -> sp_io::TestExternalities {
+	RuntimeGenesisConfig::default().build_storage().unwrap().into()
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

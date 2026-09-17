@@ -202,9 +202,9 @@ where
 		if !notification.is_new_best {
 			continue;
 		}
-		// Cheap pre-filter for the (possibly long) pre-arming history: the flip block, like every
-		// block from arming onward, carries a BABE pre-runtime digest. Blocks without one cannot be
-		// past the flip, so skip the runtime query for them.
+		// Cheap pre-filter for the (possibly long) pre-migration history: the flip block, like
+		// every block authored by an updated node, carries a BABE pre-runtime digest. Blocks
+		// without one cannot be past the flip, so skip the runtime query for them.
 		if !has_babe_pre_runtime_digest(&notification.header) {
 			continue;
 		}
@@ -272,7 +272,7 @@ where
 /// and the first BABE block (a child of the flip block) has no epoch to be authored/verified under.
 /// This mirrors the warp-sync bootstrap (`import_state`): it resets the tree to the `current`/`next`
 /// epochs the runtime reports at `at`. `migrate_to_babe` makes those runtime APIs return the
-/// epoch-0 genesis, and the flip block carries a BABE pre-digest (from the ArmedBabe proposer) so
+/// epoch-0 genesis, and the flip block carries a BABE pre-digest (from the pre-digest proposer) so
 /// its slot is readable.
 ///
 /// It is a no-op when the tree already covers children of `at` — the other trigger got there first,
@@ -467,10 +467,6 @@ mod tests {
 				self.engine.ok_or_else(|| api_error("active_engine unavailable"))
 			}
 
-			#[advanced]
-			fn should_emit_babe_preruntime_digest(&self, _: Hash) -> Result<bool, sp_api::ApiError> {
-				unimplemented!("not read by active_engine_at")
-			}
 		}
 	}
 

@@ -25,11 +25,11 @@ import { ensureRunningAndConnect } from "./runtimeUpgradeShared";
 
 /**
  * The `pallet-consensus-engine` governance calls, keyed by their camelCased
- * extrinsic name. Both are gated by `EnsureRoot`, so they cannot be submitted
+ * extrinsic name. They are gated by `EnsureRoot`, so they cannot be submitted
  * as signed transactions — they must be dispatched as root via a
  * federated-authority motion.
  */
-type ConsensusAction = "armBabe" | "scheduleFlip";
+type ConsensusAction = "scheduleFlip";
 
 /**
  * The `EngineState` variant each action transitions *from*. The pallet treats a
@@ -37,12 +37,10 @@ type ConsensusAction = "armBabe" | "scheduleFlip";
  * engine is here (and gathering collective votes would be wasted).
  */
 const REQUIRED_STATE: Record<ConsensusAction, string> = {
-  armBabe: "Aura",
-  scheduleFlip: "ArmedBabe",
+  scheduleFlip: "Aura",
 };
 
 const EXPECTED_STATE: Record<ConsensusAction, string> = {
-  armBabe: "ArmedBabe",
   scheduleFlip: "ScheduledFlip",
 };
 
@@ -110,13 +108,6 @@ async function consensusUpgrade(
   } finally {
     await disconnectApi(api, provider);
   }
-}
-
-export async function consensusUpgradeArmBabe(
-  namespace: string,
-  opts: GovernanceCallOptions,
-) {
-  await consensusUpgrade(namespace, opts, "armBabe");
 }
 
 export async function consensusUpgradeScheduleFlip(
