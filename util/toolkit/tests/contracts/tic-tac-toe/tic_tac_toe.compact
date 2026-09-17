@@ -1,0 +1,232 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
+ * Tic-Tac-Toe Game Contract
+ *
+ * Two-player turn-based game on a 3x3 board using Map for state.
+ *
+ * Features:
+ * - Multi-user gameplay (Player X vs Player O identified by private-key-derived identities)
+ * - Move validation (position, turn, occupancy)
+ * - Win detection (3 in a row: horizontal, vertical, diagonal)
+ * - Draw detection (board full with no winner)
+ * - Game state verification for testing
+ *
+ * Test intent:
+ * - Exercise Map-backed board state, Counter-backed move count, and private witnesses
+ * - Check that invalid moves fail before ledger mutation
+ * - Expose small verifier circuits so tests can assert exact state after each move
+ *
+ * Board positions:
+ *  0 | 1 | 2
+ * -----------
+ *  3 | 4 | 5
+ * -----------
+ *  6 | 7 | 8
+ */
+
+import CompactStandardLibrary;
+
+// Board: position -> value (0=empty, 1=X, 2=O)
+// Map lookup returns 0 for non-existent keys (empty positions)
+export ledger board: Map<Uint<8>, Uint<8>>;
+
+// Player identities derived from private witness keys
+export ledger player_x_key: Bytes<32>;
+export ledger player_o_key: Bytes<32>;
+
+// Game state
+export ledger current_turn: Uint<8>;  // 1=X, 2=O
+export ledger move_count: Counter;
+export ledger game_status: Uint<8>;   // 0=in_progress, 1=x_wins, 2=o_wins, 3=draw
+export ledger winner: Uint<8>;        // 0=none, 1=X, 2=O
+
+witness player_secret_key(player: Uint<8>): Bytes<32>;
+
+constructor() {
+    // Bind both players to private witnesses. Later moves must prove knowledge of the
+    // corresponding secret rather than merely supplying a known public wallet key.
+    const x_key = disclose(public_key(player_secret_key(1 as Uint<8>)));
+    const o_key = disclose(public_key(player_secret_key(2 as Uint<8>)));
+    assert(x_key != o_key, "Players must be different");
+
+    // Set players
+    player_x_key = x_key;
+    player_o_key = o_key;
+
+    // Initialize each playable square explicitly; later lookups assert occupancy by position.
+    board.insertDefault(0 as Uint<8>);
+    board.insertDefault(1 as Uint<8>);
+    board.insertDefault(2 as Uint<8>);
+    board.insertDefault(3 as Uint<8>);
+    board.insertDefault(4 as Uint<8>);
+    board.insertDefault(5 as Uint<8>);
+    board.insertDefault(6 as Uint<8>);
+    board.insertDefault(7 as Uint<8>);
+    board.insertDefault(8 as Uint<8>);
+
+    // X starts first
+    current_turn = 1 as Uint<8>;
+    game_status = 0 as Uint<8>;  // In progress
+    winner = 0 as Uint<8>;
+}
+
+/**
+ * Make a move at the specified position (0-8)
+ * Validates turn, position, and checks for win/draw
+ */
+export circuit make_move(board_position: Uint<8>): [] {
+    // The public board position is disclosed because board indexes and test expectations are public.
+    const pos = disclose(board_position);
+
+    // Reject all state changes after a win or draw has been recorded.
+    assert(game_status == 0, "Game already finished");
+
+    // Validate the board index and occupancy before checking the caller's turn.
+    assert(pos < 9, "Invalid position (must be 0-8)");
+    assert(board.lookup(pos) == 0, "Position already occupied");
+
+    // Prove knowledge of the current player's private key and compare its derived identity.
+    const caller_key = disclose(public_key(player_secret_key(disclose(current_turn))));
+    if (current_turn == 1) {
+        assert(caller_key == player_x_key, "Wrong player: expected player X");
+    } else {
+        assert(caller_key == player_o_key, "Wrong player: expected player O");
+    }
+
+    // Store the current player marker in the board map and advance the move counter.
+    board.insert(pos, current_turn);
+    move_count.increment(1 as Uint<16>);
+
+    // Check for a completed row, column, or diagonal for the player who just moved.
+    const has_winner = check_winner(current_turn);
+
+    if (has_winner) {
+        game_status = current_turn;  // 1=X wins, 2=O wins
+        winner = current_turn;
+    } else if (move_count.read() == 9) {
+        // Board full, no winner = draw
+        game_status = 3 as Uint<8>;
+        winner = 0 as Uint<8>;
+    } else {
+        // Switch turns
+        if (current_turn == 1) {
+            current_turn = 2 as Uint<8>;
+        } else {
+            current_turn = 1 as Uint<8>;
+        }
+    }
+}
+
+export circuit public_key(sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([pad(32, "tic-tac-toe:pk:"), sk]);
+}
+
+/**
+ * Check if the current player has won
+ * Returns true if player has 3 in a row
+ */
+circuit check_winner(player: Uint<8>): Boolean {
+    // Check rows: 0-2, 3-5, and 6-8.
+    const row0 = (board.lookup(0) == player && board.lookup(1) == player && board.lookup(2) == player);
+    const row1 = (board.lookup(3) == player && board.lookup(4) == player && board.lookup(5) == player);
+    const row2 = (board.lookup(6) == player && board.lookup(7) == player && board.lookup(8) == player);
+
+    // Check columns: left, middle, and right.
+    const col0 = (board.lookup(0) == player && board.lookup(3) == player && board.lookup(6) == player);
+    const col1 = (board.lookup(1) == player && board.lookup(4) == player && board.lookup(7) == player);
+    const col2 = (board.lookup(2) == player && board.lookup(5) == player && board.lookup(8) == player);
+
+    // Check diagonals: top-left to bottom-right, and top-right to bottom-left.
+    const diag1 = (board.lookup(0) == player && board.lookup(4) == player && board.lookup(8) == player);
+    const diag2 = (board.lookup(2) == player && board.lookup(4) == player && board.lookup(6) == player);
+
+    return row0 || row1 || row2 || col0 || col1 || col2 || diag1 || diag2;
+}
+
+/**
+ * Verify current game state
+ * Used for testing and validation
+ */
+export circuit verify_game_state(
+    expected_current_turn: Uint<8>,
+    expected_game_status: Uint<8>,
+    expected_move_count: Uint<64>
+): [] {
+    // Tests call this after moves and resets to assert the encoded turn, status, and count.
+    assert(current_turn == disclose(expected_current_turn), "Turn mismatch");
+    assert(game_status == disclose(expected_game_status), "Status mismatch");
+    assert(move_count.read() == disclose(expected_move_count), "Move count mismatch");
+}
+
+/**
+ * Verify winner
+ */
+export circuit verify_winner(expected_winner: Uint<8>): [] {
+    // Winner uses the same 0/1/2 encoding as board markers, with 0 meaning no winner.
+    assert(winner == disclose(expected_winner), "Winner mismatch");
+}
+
+/**
+ * Verify board position
+ */
+export circuit verify_board_position(board_position: Uint<8>, expected_value: Uint<8>): [] {
+    const pos = disclose(board_position);
+    // Bounds checking keeps verifier failures clear when a test passes a bad square.
+    assert(pos < 9, "Invalid position");
+    assert(board.lookup(pos) == disclose(expected_value), "Position value mismatch");
+}
+
+/**
+ * Verify player keys
+ */
+export circuit verify_players(
+    expected_player_x: Bytes<32>,
+    expected_player_o: Bytes<32>
+): [] {
+    assert(player_x_key == disclose(expected_player_x), "Player X key mismatch");
+    assert(player_o_key == disclose(expected_player_o), "Player O key mismatch");
+}
+
+/**
+ * Reset game for new round
+ * Keeps the same players, resets board and state
+ */
+export circuit reset_game(force: Boolean): [] {
+    if (!disclose(force)) {
+        // Normal reset is only allowed after a completed game; force supports test setup.
+        assert(game_status > 0, "Game not finished");
+    }
+
+    // Reset board to empty
+    board.resetToDefault();
+
+    // Re-initialize all board positions to 0 (empty)
+    board.insertDefault(0 as Uint<8>);
+    board.insertDefault(1 as Uint<8>);
+    board.insertDefault(2 as Uint<8>);
+    board.insertDefault(3 as Uint<8>);
+    board.insertDefault(4 as Uint<8>);
+    board.insertDefault(5 as Uint<8>);
+    board.insertDefault(6 as Uint<8>);
+    board.insertDefault(7 as Uint<8>);
+    board.insertDefault(8 as Uint<8>);
+
+    current_turn = 1 as Uint<8>;  // X starts again
+    move_count.resetToDefault();
+    game_status = 0 as Uint<8>;   // In progress
+    winner = 0 as Uint<8>;
+}

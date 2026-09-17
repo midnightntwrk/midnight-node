@@ -98,7 +98,12 @@ impl PostgresBackend {
 	}
 
 	fn deserialize_block_data(data: &[u8]) -> RawBlockData {
-		postcard::from_bytes(data).expect("failed to deserialize block data")
+		postcard::from_bytes(data).unwrap_or_else(|e| {
+			panic!(
+				"failed to decode cached block data ({e}); these `raw_block_data_v2` rows were \
+				 written by a toolkit with a different wire format - drop them and re-fetch"
+			)
+		})
 	}
 }
 

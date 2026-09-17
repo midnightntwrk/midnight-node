@@ -22,12 +22,16 @@ import {
   requiredImageVars,
 } from "../lib/localEnv";
 import { assertWellKnownNamespace, RunOptions } from "../lib/types";
-import { runDockerCompose } from "../lib/docker";
+import { removeDockerComposeServices, runDockerCompose } from "../lib/docker";
 import {
   discoverComposeDataMounts,
   restoreSnapshot,
 } from "../lib/snapshotRestore";
-import { loadNetworkConfig, requireMockConfig } from "../lib/networkConfig";
+import {
+  loadNetworkConfig,
+  requireMockConfig,
+  resolveMockValidatorSelection,
+} from "../lib/networkConfig";
 import {
   defaultMockAuthoritiesImage,
   runMockAuthoritiesConvert,
@@ -36,15 +40,25 @@ import {
   generateMockComposeOverride,
   mockOverridePath,
   MOCKED_CONFIG_DIRNAME,
+  readMockValidatorSelection,
 } from "../lib/mockComposeOverride";
+import { writeForkManifest } from "../lib/forkManifest";
+import { generateGenesisComposeOverride } from "../lib/genesisComposeOverride";
 
 /**
  * Bring up a network locally:
  * - "local-env" runs the bundled local Cardano/PC stack from compose.
  * - Any well-known network (devnet/qanet/...) is forked from the
- *   provided snapshot via mock-authorities — there is no k8s-backed path.
+ *   provided snapshot via mock-authorities, or brought up from genesis
+ *   with --from-genesis — there is no k8s-backed path.
  */
 export async function run(network: string, runOptions: RunOptions) {
+  if (runOptions.composeOverride?.length && !runOptions.fromGenesis) {
+    throw new Error(
+      "--compose-override is only supported together with --from-genesis.",
+    );
+  }
+
   if (network === "local-env") {
     console.log("Running environment with local Cardano/PC resources");
     await runLocalEnvironment(runOptions);
@@ -52,15 +66,28 @@ export async function run(network: string, runOptions: RunOptions) {
   }
 
   assertWellKnownNamespace(network);
-  console.log(
-    `Preparing ${network} local fork (mock-authorities-driven bring-up)`,
-  );
+  if (runOptions.fromGenesis) {
+    console.log(`Bringing up ${network} from genesis (base compose, no fork)`);
+  } else {
+    console.log(
+      `Preparing ${network} local fork (mock-authorities-driven bring-up)`,
+    );
+  }
   await runWellKnownNetwork(network, runOptions);
 }
 
 async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
-  const networkConfig = loadNetworkConfig(namespace);
-  const mock = requireMockConfig(namespace, networkConfig);
+  if (runOptions.fromGenesis && runOptions.fromSnapshot) {
+    throw new Error(
+      "--from-genesis and --from-snapshot are mutually exclusive.",
+    );
+  }
+
+  if (runOptions.numValidators !== undefined && !runOptions.fromSnapshot) {
+    throw new Error(
+      "--num-validators requires --from-snapshot so the authority set and validator seeds can be regenerated. Omit it when reusing an existing fork.",
+    );
+  }
 
   const composeFile = resolveComposeFile(namespace);
   const composeDir = path.dirname(composeFile);
@@ -74,6 +101,28 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
       console.warn(`⚠️  Env file not found: ${envFilePath}`);
     }
   }
+
+  if (runOptions.fromGenesis) {
+    await runFromGenesis(namespace, composeFile, env, runOptions);
+    return;
+  }
+
+  const networkConfig = loadNetworkConfig(namespace);
+  const mock = requireMockConfig(namespace, networkConfig);
+
+  // Fail before the (potentially hours-long) snapshot restore rather than at
+  // compose interpolation time. Fork mode has no .envrc fallback: consumers
+  // running from a sparse checkout must provide the image explicitly.
+  if (!env.NODE_IMAGE) {
+    throw new Error(
+      `NODE_IMAGE is not set. Export it or pass an --env-file, e.g. NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:<tag>`,
+    );
+  }
+
+  const validatorSelection = resolveMockValidatorSelection(
+    mock,
+    runOptions.numValidators,
+  );
 
   let overridePath: string;
   if (runOptions.fromSnapshot) {
@@ -105,16 +154,20 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
       dataDir: dataParentDir,
       outputDir: mockedConfigDir,
       chainId: mock.chainId,
-      numValidators: mock.numValidators,
+      numValidators: validatorSelection.numValidators,
       image: defaultMockAuthoritiesImage(),
     });
 
     overridePath = generateMockComposeOverride({
       composeDir,
       network: namespace,
-      validatorServices: mock.validatorServices,
+      validatorServices: validatorSelection.validatorServices,
+      disabledValidatorServices: validatorSelection.disabledValidatorServices,
       extraServices: mock.extraServices,
     });
+    console.log(
+      `Selected ${validatorSelection.numValidators} mock validators: ${validatorSelection.validatorServices.join(", ")}`,
+    );
     console.log(`Generated fork-mode override: ${overridePath}`);
   } else {
     // No snapshot: reuse the fork-mode artifacts from a previous bring-up.
@@ -125,6 +178,18 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     console.log(`Reusing existing fork-mode override: ${overridePath}`);
   }
 
+  const persistedSelection = readMockValidatorSelection(overridePath);
+  if (persistedSelection?.disabledValidatorServices.length) {
+    await removeDockerComposeServices(
+      {
+        composeFile,
+        env,
+        profiles: runOptions.profiles,
+      },
+      persistedSelection.disabledValidatorServices,
+    );
+  }
+
   await runDockerCompose({
     composeFile,
     extraComposeFiles: [overridePath],
@@ -132,6 +197,96 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
     profiles: runOptions.profiles,
     detach: true,
   });
+
+  const manifestPath = writeForkManifest({
+    namespace,
+    composeFile,
+    env,
+  });
+  console.log(`Fork manifest written: ${manifestPath}`);
+}
+
+/**
+ * Bring up the network's base compose from block 0 — no snapshot restore, no
+ * mock-authorities rewrite. The base compose expects the real network inputs
+ * (validator seed phrases, a main-chain data source) via env/--env-file, so
+ * report anything left unset up front rather than letting the chain come up
+ * silently unable to produce blocks.
+ *
+ * The provided seed phrases are wired into node keystores via a generated
+ * compose override: the node only imports keys from *_SEED_FILE paths, not
+ * from the SEED_PHRASE env var the base compose files pass.
+ */
+async function runFromGenesis(
+  namespace: string,
+  composeFile: string,
+  env: Record<string, string>,
+  runOptions: RunOptions,
+) {
+  const staleDataDirs = discoverComposeDataMounts(composeFile).filter((dir) =>
+    isNonEmptyDirectory(dir),
+  );
+  if (staleDataDirs.length > 0) {
+    console.warn(
+      `⚠️  Existing chain data found (${staleDataDirs.join(", ")}); nodes will resume from it rather than genesis. Delete these directories first for a clean block-0 start.`,
+    );
+  }
+
+  const { overridePath, seededServices, missingSeedVars } =
+    generateGenesisComposeOverride({
+      composeFile,
+      network: namespace,
+      env,
+    });
+  if (seededServices.length === 0) {
+    throw new Error(
+      `From-genesis mode needs at least one validator seed phrase, but none of the seed env vars are set (${Object.values(missingSeedVars).join(", ")}). Provide them via --env-file or the environment. Only holders of the network's genesis authority keys can produce blocks from genesis.`,
+    );
+  }
+  console.log(
+    `Generated genesis-mode override: ${overridePath} (seeded: ${seededServices.join(", ")})`,
+  );
+  const missing = Object.entries(missingSeedVars);
+  if (missing.length > 0) {
+    console.warn(
+      `⚠️  No seed phrase for: ${missing.map(([svc, v]) => `${svc} (${v})`).join(", ")}. These validators start with empty keystores and cannot author blocks.`,
+    );
+  }
+
+  const unsetVars = collectUnsetComposeVars(composeFile, env);
+  if (unsetVars.length > 0) {
+    console.warn(
+      `⚠️  Env vars referenced by the compose file but not set: ${unsetVars.join(", ")}. From-genesis mode mocks nothing — a main-chain data source must be provided (db-sync connection strings, or a --compose-override enabling the node's mock follower) for the chain to run.`,
+    );
+  }
+
+  const extraOverrides = runOptions.composeOverride ?? [];
+  for (const override of extraOverrides) {
+    if (!fs.existsSync(override)) {
+      throw new Error(`--compose-override file not found: ${override}`);
+    }
+  }
+
+  await runDockerCompose({
+    composeFile,
+    extraComposeFiles: [overridePath, ...extraOverrides],
+    env,
+    profiles: runOptions.profiles,
+    detach: true,
+  });
+}
+
+/** Env var names referenced by the compose file ($VAR or ${VAR...}) that are unset or blank in env. */
+export function collectUnsetComposeVars(
+  composeFile: string,
+  env: Record<string, string>,
+): string[] {
+  const text = fs.readFileSync(composeFile, "utf8");
+  const names = new Set<string>();
+  for (const match of text.matchAll(/\$\{?([A-Z][A-Z0-9_]*)/g)) {
+    names.add(match[1]);
+  }
+  return [...names].filter((name) => !env[name]).sort();
 }
 
 function assertReusableForkState(
@@ -194,6 +349,11 @@ async function runLocalEnvironment(runOptions: RunOptions) {
   if (runOptions.fromSnapshot) {
     console.warn(
       "--from-snapshot is not supported for the local-env target; ignoring.",
+    );
+  }
+  if (runOptions.numValidators !== undefined) {
+    throw new Error(
+      "--num-validators is only supported for snapshot-based well-known network forks, not local-env.",
     );
   }
 

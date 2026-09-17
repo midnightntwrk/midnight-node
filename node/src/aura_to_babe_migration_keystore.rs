@@ -23,12 +23,21 @@ const LOG_TARGET: &str = "aura-to-babe-migration-keystore";
 /// Operators are expected to insert dedicated BABE keys, but if they don't,
 /// their AURA keys will be used instead.
 ///
+/// Fallback is keyed by the *requested public key*, not by whether any BABE
+/// key exists in the store. A present-but-mismatched BABE key (wrong seed,
+/// leftover from a previous identity, never registered on-chain) must not
+/// suppress the AURA fallback: BABE authorship claims secondary-plain slots
+/// via [`Keystore::has_keys`] and seals via [`Keystore::sr25519_sign`], so an
+/// emptiness check on sign/VRF would claim the slot and then fail the seal.
+///
 /// The fallback only actually helps when the on-chain BABE authority key for
 /// this validator equals its AURA public key (otherwise the AURA lookup misses
 /// and the fallback does not help).
 ///
 /// Cold path operations log WARN so operators can see they are running on the
-/// AURA key and should insert a proper BABE key.
+/// AURA key and should insert a proper BABE key. Hot-path sign/VRF fall back
+/// silently unless a BABE key is present but unusable for the request — that
+/// misconfiguration is loud because it previously caused silent authoring misses.
 pub(crate) struct AuraToBabeMigrationKeystore<T: Keystore> {
 	keystore: T,
 }
@@ -40,6 +49,32 @@ impl<T: Keystore> AuraToBabeMigrationKeystore<T> {
 
 	pub fn new_arc(keystore: T) -> Arc<Self> {
 		Arc::new(Self::new(keystore))
+	}
+
+	/// Run `with_type(BABE)`, and if that yields `Ok(None)` try `with_type(AURA)`
+	/// for the same public. Warn when BABE keys exist but none were usable.
+	fn babe_or_aura<R, F>(
+		&self,
+		public: &sp_core::sr25519::Public,
+		with_type: F,
+	) -> Result<Option<R>, sp_keystore::Error>
+	where
+		F: Fn(sp_runtime::KeyTypeId) -> Result<Option<R>, sp_keystore::Error>,
+	{
+		match with_type(BABE)? {
+			Some(v) => Ok(Some(v)),
+			None => {
+				let aura = with_type(AURA)?;
+				if aura.is_some() && !self.keystore.sr25519_public_keys(BABE).is_empty() {
+					log::warn!(
+						target: LOG_TARGET,
+						"BABE keystore has keys but none match the requested public ({public:?}); \
+						 falling back to AURA. Insert the on-chain BABE key to silence this warning.",
+					);
+				}
+				Ok(aura)
+			},
+		}
 	}
 }
 
@@ -78,8 +113,8 @@ impl<T: Keystore> Keystore for AuraToBabeMigrationKeystore<T> {
 		public: &sp_core::sr25519::Public,
 		msg: &[u8],
 	) -> Result<Option<sp_core::sr25519::Signature>, sp_keystore::Error> {
-		if key_type == BABE && self.keystore.sr25519_public_keys(BABE).is_empty() {
-			self.keystore.sr25519_sign(AURA, public, msg)
+		if key_type == BABE {
+			self.babe_or_aura(public, |kt| self.keystore.sr25519_sign(kt, public, msg))
 		} else {
 			self.keystore.sr25519_sign(key_type, public, msg)
 		}
@@ -91,8 +126,8 @@ impl<T: Keystore> Keystore for AuraToBabeMigrationKeystore<T> {
 		public: &sp_core::sr25519::Public,
 		data: &sp_core::sr25519::vrf::VrfSignData,
 	) -> Result<Option<sp_core::sr25519::vrf::VrfSignature>, sp_keystore::Error> {
-		if key_type == BABE && self.keystore.sr25519_public_keys(BABE).is_empty() {
-			self.keystore.sr25519_vrf_sign(AURA, public, data)
+		if key_type == BABE {
+			self.babe_or_aura(public, |kt| self.keystore.sr25519_vrf_sign(kt, public, data))
 		} else {
 			self.keystore.sr25519_vrf_sign(key_type, public, data)
 		}
@@ -104,8 +139,8 @@ impl<T: Keystore> Keystore for AuraToBabeMigrationKeystore<T> {
 		public: &sp_core::sr25519::Public,
 		input: &sp_core::sr25519::vrf::VrfInput,
 	) -> Result<Option<sp_core::sr25519::vrf::VrfPreOutput>, sp_keystore::Error> {
-		if key_type == BABE && self.keystore.sr25519_public_keys(BABE).is_empty() {
-			self.keystore.sr25519_vrf_pre_output(AURA, public, input)
+		if key_type == BABE {
+			self.babe_or_aura(public, |kt| self.keystore.sr25519_vrf_pre_output(kt, public, input))
 		} else {
 			self.keystore.sr25519_vrf_pre_output(key_type, public, input)
 		}
@@ -292,6 +327,20 @@ mod tests {
 		assert!(sr25519::Pair::verify(&sig, MSG, &babe));
 	}
 
+	/// Regression: a leftover / mismatched BABE key must not block the AURA
+	/// fallback. BABE secondary-plain claims via `has_keys` (already per-key)
+	/// and seals via `sr25519_sign`; emptiness-gated fallback claimed the slot
+	/// then failed the seal.
+	#[test]
+	fn sign_babe_falls_back_to_aura_when_babe_present_but_mismatched() {
+		let (inner, keystore) = mk_keystore();
+		let aura = gen_key(&inner, AURA, "//Aura-seed");
+		let _wrong_babe = gen_key(&inner, BABE, "//Wrong-Babe-seed");
+
+		let sig = keystore.sr25519_sign(BABE, &aura, MSG).unwrap().unwrap();
+		assert!(sr25519::Pair::verify(&sig, MSG, &aura));
+	}
+
 	/// Regression: signing with a non-BABE key type must use that key type, not
 	/// hardcode BABE (which would return `None` for a valid AURA request).
 	#[test]
@@ -325,6 +374,17 @@ mod tests {
 	}
 
 	#[test]
+	fn vrf_sign_falls_back_to_aura_when_babe_present_but_mismatched() {
+		let (inner, w) = mk_keystore();
+		let aura = gen_key(&inner, AURA, "//Aura-seed");
+		let _wrong_babe = gen_key(&inner, BABE, "//Wrong-Babe-seed");
+		let data: VrfSignData = VrfTranscript::new(b"label", &[(b"domain", b"data")]).into();
+
+		let sig = w.sr25519_vrf_sign(BABE, &aura, &data).unwrap();
+		assert!(sig.is_some(), "VRF sign must fall back when BABE key is unusable");
+	}
+
+	#[test]
 	fn vrf_pre_output_falls_back_to_aura_key() {
 		let (inner, w) = mk_keystore();
 		let aura = gen_key(&inner, AURA, "//Aura-seed");
@@ -332,6 +392,17 @@ mod tests {
 
 		let pre = w.sr25519_vrf_pre_output(BABE, &aura, &input).unwrap();
 		assert!(pre.is_some(), "VRF pre-output must fall back to the AURA key");
+	}
+
+	#[test]
+	fn vrf_pre_output_falls_back_to_aura_when_babe_present_but_mismatched() {
+		let (inner, w) = mk_keystore();
+		let aura = gen_key(&inner, AURA, "//Aura-seed");
+		let _wrong_babe = gen_key(&inner, BABE, "//Wrong-Babe-seed");
+		let input = VrfInput::new(b"label", &[(b"domain", b"data")]);
+
+		let pre = w.sr25519_vrf_pre_output(BABE, &aura, &input).unwrap();
+		assert!(pre.is_some(), "VRF pre-output must fall back when BABE key is unusable");
 	}
 
 	// --- keys ---------------------------------------------------------------
@@ -362,6 +433,15 @@ mod tests {
 
 		assert!(w.has_keys(&[(raw(&aura), BABE)]));
 		assert!(w.has_keys(&[(raw(&aura), AURA)]));
+	}
+
+	#[test]
+	fn has_keys_falls_back_to_aura_when_babe_present_but_mismatched() {
+		let (inner, w) = mk_keystore();
+		let aura = gen_key(&inner, AURA, "//Aura-seed");
+		let _wrong_babe = gen_key(&inner, BABE, "//Wrong-Babe-seed");
+
+		assert!(w.has_keys(&[(raw(&aura), BABE)]));
 	}
 
 	#[test]

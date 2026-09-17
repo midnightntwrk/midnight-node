@@ -11,16 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// In-tree replacement for the standalone `try-runtime-cli`, kept slim because
-// the standalone tool only links `sp_io::SubstrateHostFunctions` and so cannot
-// resolve the `ledger_*_bridge` host functions that `pallet-midnight`'s
-// `on_runtime_upgrade` invokes.
-//
-// The snapshot loader is hand-rolled (rather than pulling
-// `frame-remote-externalities`) because that crate's transitive deps perturb
-// `rand_core` resolution in the workspace and break unrelated crates such as
-// `pallas-wallet`. The on-disk format is plain SCALE — see
-// `substrate/utils/frame/remote-externalities/src/config.rs` upstream.
+//! `midnight-node try-runtime`: dry-run a runtime upgrade against a state snapshot.
+//!
+//! In-tree rather than the standalone `try-runtime-cli` because that links only
+//! `sp_io::SubstrateHostFunctions` and cannot resolve the `ledger_*_bridge` host
+//! functions the upgrade calls, so it traps before any check runs. Snapshot
+//! *creation* still uses `try-runtime-cli`, which needs no host functions.
+//!
+//! The snapshot reader is hand-rolled because adding `frame-remote-externalities`
+//! re-resolves `bip39` onto `rand_core 0.4`, which then fails to build
+//! `pallas-wallet`. The layout below mirrors the upstream `Snapshot<B>`.
 
 #![allow(clippy::result_large_err)]
 
@@ -42,21 +42,16 @@ use sp_state_machine::{
 };
 use sp_version::RuntimeVersion;
 
+use midnight_primitives_ledger::{LedgerStorage, LedgerStorageExt};
+
 use crate::service::HostFunctions;
 use midnight_node_runtime::Block;
 
-/// Snapshot file format produced by `try-runtime create-snapshot`. Mirrors the
-/// upstream `frame_remote_externalities::Snapshot<B>` layout (snapshot version
-/// 4) so files created with that tool can be decoded here.
-// `raw_storage` mirrors the upstream `Snapshot<B>` layout exactly — the inner
-// tuple is `(hashed_key, (value, ref_count))`, which is how the trie node
-// payload + refcount is serialised. Not worth introducing an alias the
-// upstream doesn't use.
+/// A snapshot file as written by `try-runtime create-snapshot`, field for field
+/// the upstream `frame_remote_externalities::Snapshot<B>`. `raw_storage` is
+/// `(hashed_key, (trie_node_payload, ref_count))`.
 #[derive(Decode)]
 struct Snapshot {
-	// Decoded as part of the struct for layout fidelity with the upstream
-	// `Snapshot<B>`; the actual version check happens against the prefix in
-	// `load_snapshot`, so the field itself is read-only-by-derive here.
 	#[allow(dead_code)]
 	snapshot_version: Compact<u16>,
 	state_version: StateVersion,
@@ -92,6 +87,20 @@ pub struct TryRuntimeCmd {
 	/// Skip enforcing that the new runtime's `spec_name` matches the on-chain one.
 	#[arg(long, default_value_t = false)]
 	pub disable_spec_name_check: bool,
+
+	/// Path to a node's ledger storage (`<base-path>/ledger_storage`), e.g. from the
+	/// data directory the fork-testing flow restores — see `docs/fork-testing.md`.
+	///
+	/// A snapshot carries substrate storage only, so migrations that read ledger
+	/// state need this. Without it the run gets an empty arena, which is fine for
+	/// upgrades that leave the ledger alone and aborts on any that do not.
+	#[arg(long)]
+	pub ledger_db: Option<PathBuf>,
+
+	/// Arena cache size, in entries. Matches `storage_cache_size` in
+	/// `res/cfg/default.toml`.
+	#[arg(long, default_value_t = 100_000)]
+	pub ledger_cache_size: usize,
 }
 
 impl TryRuntimeCmd {
@@ -150,6 +159,10 @@ impl TryRuntimeCmd {
 		let runtime_code = runtime_code_backend.runtime_code()?;
 		let mut changes = OverlayedChanges::<HashingFor<Block>>::default();
 		let mut extensions = Extensions::default();
+		extensions.register(LedgerStorageExt::new(LedgerStorage::new_separate(
+			self.ledger_db_path()?,
+			self.ledger_cache_size,
+		)));
 
 		let encoded = StateMachine::new(
 			&ext.backend,
@@ -162,7 +175,18 @@ impl TryRuntimeCmd {
 			CallContext::Offchain,
 		)
 		.execute()
-		.map_err(|e| format!("TryRuntime_on_runtime_upgrade failed: {e}"))?;
+		.map_err(|e| {
+			let e = e.to_string();
+			// Say this up front; the trap backtrace below buries the cause.
+			if self.ledger_db.is_none() && e.contains("not in storage arena") {
+				log::error!(
+					"A migration read ledger state the empty scratch arena does not have. \
+					 Pass --ledger-db pointing at the ledger_storage of a node holding \
+					 this chain's state (docs/fork-testing.md)."
+				);
+			}
+			format!("TryRuntime_on_runtime_upgrade failed: {e}")
+		})?;
 
 		let (consumed, max) = <(Weight, Weight)>::decode(&mut &encoded[..])
 			.map_err(|e| format!("decoding migration weight result: {e:?}"))?;
@@ -170,15 +194,28 @@ impl TryRuntimeCmd {
 
 		Ok(())
 	}
+
+	/// Falls back to a fresh directory so the ledger host functions always have an
+	/// arena to open; without one every ledger call fails.
+	fn ledger_db_path(&self) -> sc_cli::Result<PathBuf> {
+		if let Some(path) = &self.ledger_db {
+			log::info!("Using ledger storage at {path:?}");
+			return Ok(path.clone());
+		}
+		let path = std::env::temp_dir()
+			.join(format!("midnight-try-runtime-ledger-{}", std::process::id()));
+		std::fs::create_dir_all(&path)
+			.map_err(|e| format!("creating scratch ledger storage {path:?}: {e}"))?;
+		log::warn!("No --ledger-db given; using an empty scratch arena at {path:?}");
+		Ok(path)
+	}
 }
 
-/// Decode a `Snapshot` file produced by `try-runtime create-snapshot` (version 4)
-/// and rebuild a `TestExternalities` from its raw key-value pairs.
 fn load_snapshot(path: &PathBuf) -> sc_cli::Result<TestExternalities<HashingFor<Block>>> {
 	let bytes = std::fs::read(path).map_err(|e| format!("reading snapshot {path:?}: {e}"))?;
 
-	// The first SCALE-encoded item is the version. Decode it first so a wrong
-	// version yields a clear error instead of a confusing struct-decode failure.
+	// Decode the version prefix first, so a mismatch reports itself instead of
+	// surfacing as a confusing struct-decode failure.
 	let version = Compact::<u16>::decode(&mut &*bytes)
 		.map_err(|e| format!("decoding snapshot version: {e:?}"))?;
 	if version != EXPECTED_SNAPSHOT_VERSION {

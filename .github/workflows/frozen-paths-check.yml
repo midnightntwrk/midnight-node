@@ -1,0 +1,23 @@
+# Guards the frozen res/ per-network config (deployed genesis artifacts) against
+# any change. These files must never change without a deliberate, reviewed decision.
+name: "Frozen Paths Check"
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  frozen-paths:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
+        with:
+          # Full history so the PR base commit is available for the diff.
+          fetch-depth: 0
+
+      - name: Frozen res/ network config
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: scripts/ci/check-frozen-res.sh "$BASE_SHA"

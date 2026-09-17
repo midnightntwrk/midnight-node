@@ -17,60 +17,65 @@
 //! `SingleBlockMigrations` or [`crate::Migrations`]. Re-usable migrations such as
 //! `authority_keys` below are only wired in for the specific upgrade that needs them.
 
-pub mod session_pallet_swap {
-	//! Storage-version alignment for the swap from `pallet-partner-chains-session` to stock
-	//! `pallet_session` + `pallet_session::historical` (#1800, #1802).
-	//!
-	//! The old partner-chains session pallet left the `Session` prefix at storage version 0,
-	//! and `Historical` did not exist on-chain at all. Stock `pallet_session` declares in-code
-	//! version 1 (v1 changed the `DisabledValidators` layout) and `pallet_session::historical`
-	//! declares in-code version 1 (v1 moved its storage out of the `Session` prefix). Without
-	//! these migrations the first upgrade to a runtime containing the stock pallets leaves the
-	//! on-chain versions behind the in-code ones (caught by `try-runtime` dry-runs, and would
-	//! silently mislead any future version-gated migration).
-	//!
-	//! Neither migration moves data on Midnight networks: `Session::DisabledValidators` is
-	//! empty on all live chains, and there never was any `Session`-prefixed historical data.
-	//! Both are `VersionedMigration`s, so they no-op once the versions match. Remove after the
-	//! upgrade carrying them has landed on all live networks.
+use frame_support::{
+	migrations::{FailedMigrationHandler, FailedMigrationHandling, FreezeChainOnFailedMigration},
+	traits::SafeMode as SafeModeTrait,
+};
 
-	use frame_support::migrations::VersionedMigration;
-	use frame_support::traits::UncheckedOnRuntimeUpgrade;
+/// On a failed multi-block migration: enter safe mode indefinitely and force-unstuck the
+/// migration cursor, so the chain keeps producing blocks (with user calls filtered) and
+/// governance can ship a fixed runtime and `force_exit` safe mode.
+///
+/// Upstream's `FreezeChainOnFailedMigration` (and `EnterSafeModeOnFailedMigration`, which
+/// falls back to `KeepStuck` — see paritytech/polkadot-sdk#12921) leave the cursor `Stuck`:
+/// `MultiBlockMigrator::ongoing()` stays true forever, Executive admits only inherents, and
+/// `frame_system::can_set_code` rejects upgrades — a permanent liveness failure with no
+/// on-chain recovery on a standalone chain. Hence this custom handler.
+pub struct EnterSafeModeAndUnstuckOnFailedMigration;
+impl FailedMigrationHandler for EnterSafeModeAndUnstuckOnFailedMigration {
+	fn failed(migration: Option<u32>) -> FailedMigrationHandling {
+		// `enter(MAX)` saturates `EnteredUntil` to `BlockNumber::MAX`: safe mode never
+		// auto-exits, only governance's `force_exit` lifts it.
+		let entered = if crate::SafeMode::is_entered() {
+			<crate::SafeMode as SafeModeTrait>::extend(crate::BlockNumber::MAX)
+		} else {
+			<crate::SafeMode as SafeModeTrait>::enter(crate::BlockNumber::MAX)
+		};
+		if entered.is_err() {
+			// Fail closed: freezing is still safer than running unfiltered on half-migrated state.
+			return FreezeChainOnFailedMigration::failed(migration);
+		}
+		log::error!(
+			"Multi-block migration {migration:?} failed; entered safe mode and unstuck the \
+			 cursor. Governance must ship a fixed runtime and force_exit safe mode."
+		);
+		FailedMigrationHandling::ForceUnstuck
+	}
+}
+
+pub mod session_pallet_swap {
+	//! The swap to stock `pallet_session` (#1800, #1802) left the `Session` prefix at
+	//! storage version 0 while the pallet declares 1. Remove once the upgrade carrying
+	//! this has landed everywhere.
+	//!
+	//! `pallet_session::historical`, new in the same swap, needs no counterpart: its
+	//! prefix holds no keys on any live network, so `BeforeAllRuntimeMigrations`
+	//! initializes its version for us.
 
 	use crate::Runtime;
 
-	/// Bumps `Session` from 0 to 1, converting `DisabledValidators` to the v1 layout
-	/// (a pure version bump on Midnight networks, where the list is empty).
+	/// Converts `DisabledValidators` to the v1 layout — a pure version bump here,
+	/// where the list is unset on every live network.
 	pub type SessionV0ToV1 = pallet_session::migrations::v1::MigrateV0ToV1<
 		Runtime,
 		pallet_session::migrations::v1::InitOffenceSeverity<Runtime>,
 	>;
-
-	/// Inner no-op for [`HistoricalInitV1`]; all trait methods keep their defaults.
-	pub struct NoopMigration;
-	impl UncheckedOnRuntimeUpgrade for NoopMigration {}
-
-	/// Initializes `Historical`'s storage version to its in-code value (1). The pallet is new
-	/// to this runtime, so there is nothing to migrate — upstream v1 only moved data out of
-	/// the `Session` prefix, which Midnight chains never wrote.
-	pub type HistoricalInitV1 = VersionedMigration<
-		0,
-		1,
-		NoopMigration,
-		crate::Historical,
-		<Runtime as frame_system::Config>::DbWeight,
-	>;
 }
 
 pub mod babe_epoch_config {
-	//! Initializes `Babe::EpochConfig` on chains that gained pallet-babe via runtime
-	//! upgrade (#1865) rather than at genesis.
-	//!
-	//! `genesis_build` writes `EpochConfig` for new chains, but nothing does so on upgrade,
-	//! leaving it `None` — which fails babe's `try_state` and would panic the pallet if BABE
-	//! ever activated (AURA→BABE flip). Write [`crate::BABE_GENESIS_EPOCH_CONFIG`], exactly
-	//! what genesis would have stored. Idempotent: only writes when the value is unset, and
-	//! is a no-op on chains initialized at genesis.
+	//! Chains that gained pallet-babe by upgrade (#1865) rather than at genesis have no
+	//! `EpochConfig`: `genesis_build` writes it, nothing else does. That fails babe's
+	//! `try_state` and would panic the pallet on the AURA->BABE flip.
 
 	use frame_support::traits::OnRuntimeUpgrade;
 	use frame_support::weights::Weight;
@@ -102,22 +107,15 @@ pub mod babe_epoch_config {
 }
 
 pub mod bridge_reserve_validator {
-	//! One-shot migration for `Bridge::MainChainScriptsConfiguration` (#1513).
+	//! #1513 added `reserve_validator_address` to `MainChainScripts` without a migration,
+	//! so the stored 3-field value no longer decodes — silently, since the item is
+	//! `OptionQuery`. Re-encode it with the new field empty; the real address is then set
+	//! via `set_main_chain_scripts`. Remove once this has landed everywhere.
 	//!
-	//! #1513 added `reserve_validator_address` to `MainChainScripts` without a storage
-	//! migration, so values written by earlier runtimes fail to decode (caught by the
-	//! `try-runtime` dry-run on every live network). This migration re-encodes the legacy
-	//! 3-field value with the new field defaulted to the empty address. The real reserve
-	//! validator address must then be set via the `set_main_chain_scripts` extrinsic; until
-	//! then the observation layer sees no reserve UTXOs, matching pre-#1513 behaviour.
-	//!
-	//! The bridge pallet declares no storage version, so `VersionedMigration` would leave
-	//! the on-chain version (bumped) ahead of the in-code one (0) and trip the try-runtime
-	//! version assert. Idempotency comes from `decode_all` instead: the legacy layout is a
-	//! strict prefix of the new one, so a value in either layout `decode_all`s exclusively
-	//! as that layout (legacy bytes exhaust too early for the new type; new bytes leave a
-	//! remainder for the legacy type). Remove once the upgrade has landed on all live
-	//! networks.
+	//! The bridge pallet has no storage version, so `VersionedMigration` would push the
+	//! on-chain version past the in-code 0. Idempotency comes from `decode_all` instead:
+	//! legacy bytes run out early for the new type, new bytes leave a remainder for the
+	//! legacy one, so each decodes as exactly one layout.
 
 	use frame_support::traits::OnRuntimeUpgrade;
 	use frame_support::weights::Weight;
@@ -128,6 +126,13 @@ pub mod bridge_reserve_validator {
 	use crate::Runtime;
 
 	type StoredScripts = pallet_partner_chains_bridge::MainChainScriptsConfiguration<Runtime>;
+
+	/// Raw access, because the point is to read bytes the storage item's own type can
+	/// no longer decode.
+	pub(crate) fn stored_scripts_key() -> alloc::vec::Vec<u8> {
+		use frame_support::storage::generator::StorageValue as _;
+		StoredScripts::storage_value_final_key().to_vec()
+	}
 
 	/// `MainChainScripts` as encoded before #1513.
 	#[derive(Decode)]
@@ -153,9 +158,9 @@ pub mod bridge_reserve_validator {
 
 	impl OnRuntimeUpgrade for MigrateMainChainScripts {
 		fn on_runtime_upgrade() -> Weight {
-			use frame_support::storage::{generator::StorageValue as _, unhashed};
+			use frame_support::storage::unhashed;
 
-			let key = StoredScripts::storage_value_final_key();
+			let key = stored_scripts_key();
 			let Some(raw) = unhashed::get_raw(&key) else {
 				return <Runtime as frame_system::Config>::DbWeight::get().reads(1);
 			};
@@ -183,9 +188,9 @@ pub mod bridge_reserve_validator {
 
 		#[cfg(feature = "try-runtime")]
 		fn post_upgrade(_state: alloc::vec::Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
-			use frame_support::storage::{generator::StorageValue as _, unhashed};
+			use frame_support::storage::unhashed;
 
-			let key = StoredScripts::storage_value_final_key();
+			let key = stored_scripts_key();
 			if let Some(raw) = unhashed::get_raw(&key) {
 				frame_support::ensure!(
 					MainChainScripts::decode_all(&mut &raw[..]).is_ok(),
@@ -258,5 +263,131 @@ pub mod authority_keys {
 		assert_impls_on_runtime_upgrade::<
 			AuthorityKeysMigration<Runtime, LegacyCommitteeMember, LegacySessionKeys, 2, 3>,
 		>();
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use frame_support::storage::unhashed;
+	use frame_support::traits::OnRuntimeUpgrade;
+	use parity_scale_codec::{DecodeAll, Encode};
+	use sidechain_domain::{AssetName, MainchainAddress, PolicyId};
+	use sp_partner_chains_bridge::MainChainScripts;
+	use std::str::FromStr;
+
+	use super::{babe_epoch_config::InitBabeEpochConfig, bridge_reserve_validator};
+	use crate::{BABE_GENESIS_EPOCH_CONFIG, Runtime};
+
+	/// The value mainnet actually holds: policy id, `NIGHT`, illiquid supply validator
+	/// address, and no fourth field.
+	const MAINNET_LEGACY_SCRIPTS: &str = concat!(
+		"0691b2fecca1ac4f53cb6dfb00b7013e561d1f34403b957cbb5af1fa144e49474854e861646472317779637a66707866",
+		"6e663568767033366d726e3635357965346b3263776c75766c657a36706878386a7834366b3673327474646171",
+	);
+
+	fn legacy_bytes() -> Vec<u8> {
+		(0..MAINNET_LEGACY_SCRIPTS.len())
+			.step_by(2)
+			.map(|i| u8::from_str_radix(&MAINNET_LEGACY_SCRIPTS[i..i + 2], 16).unwrap())
+			.collect()
+	}
+
+	fn scripts_key() -> Vec<u8> {
+		bridge_reserve_validator::stored_scripts_key()
+	}
+
+	#[test]
+	fn legacy_scripts_do_not_decode_as_the_current_type() {
+		assert!(MainChainScripts::decode_all(&mut &legacy_bytes()[..]).is_err());
+	}
+
+	#[test]
+	fn bridge_scripts_migration_defaults_the_new_field() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			unhashed::put_raw(&scripts_key(), &legacy_bytes());
+
+			bridge_reserve_validator::MigrateMainChainScripts::on_runtime_upgrade();
+
+			let raw = unhashed::get_raw(&scripts_key()).unwrap();
+			let migrated = MainChainScripts::decode_all(&mut &raw[..]).unwrap();
+			assert_eq!(migrated.token_asset_name, AssetName(b"NIGHT".to_vec().try_into().unwrap()));
+			assert_eq!(migrated.token_policy_id.0.len(), 28);
+			assert_eq!(
+				migrated.illiquid_circulation_supply_validator_address,
+				MainchainAddress::from_str(
+					"addr1wyczfpxfnf5hvp36mrn655ye4k2cwluvlez6phx8jx46k6s2ttdaq"
+				)
+				.unwrap()
+			);
+			assert_eq!(migrated.reserve_validator_address, MainchainAddress::default());
+		});
+	}
+
+	#[test]
+	fn bridge_scripts_migration_is_idempotent() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			unhashed::put_raw(&scripts_key(), &legacy_bytes());
+			bridge_reserve_validator::MigrateMainChainScripts::on_runtime_upgrade();
+			let once = unhashed::get_raw(&scripts_key()).unwrap();
+
+			bridge_reserve_validator::MigrateMainChainScripts::on_runtime_upgrade();
+			assert_eq!(unhashed::get_raw(&scripts_key()).unwrap(), once);
+		});
+	}
+
+	#[test]
+	fn bridge_scripts_migration_leaves_a_current_layout_value_alone() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			let current = MainChainScripts {
+				token_policy_id: PolicyId([7u8; 28]),
+				token_asset_name: AssetName::empty(),
+				illiquid_circulation_supply_validator_address: MainchainAddress::from_str("addr1a")
+					.unwrap(),
+				reserve_validator_address: MainchainAddress::from_str("addr1b").unwrap(),
+			};
+			unhashed::put_raw(&scripts_key(), &current.encode());
+
+			bridge_reserve_validator::MigrateMainChainScripts::on_runtime_upgrade();
+
+			let raw = unhashed::get_raw(&scripts_key()).unwrap();
+			assert_eq!(MainChainScripts::decode_all(&mut &raw[..]).unwrap(), current);
+		});
+	}
+
+	#[test]
+	fn bridge_scripts_migration_is_a_noop_when_unset() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			bridge_reserve_validator::MigrateMainChainScripts::on_runtime_upgrade();
+			assert!(unhashed::get_raw(&scripts_key()).is_none());
+		});
+	}
+
+	#[test]
+	fn babe_epoch_config_is_initialized_once() {
+		sp_io::TestExternalities::default().execute_with(|| {
+			assert!(pallet_babe::EpochConfig::<Runtime>::get().is_none());
+
+			InitBabeEpochConfig::on_runtime_upgrade();
+			assert_eq!(pallet_babe::EpochConfig::<Runtime>::get(), Some(BABE_GENESIS_EPOCH_CONFIG));
+
+			// A chain initialized at genesis keeps what it has.
+			let custom = sp_consensus_babe::BabeEpochConfiguration {
+				c: (3, 4),
+				allowed_slots: sp_consensus_babe::AllowedSlots::PrimarySlots,
+			};
+			pallet_babe::EpochConfig::<Runtime>::put(custom.clone());
+			InitBabeEpochConfig::on_runtime_upgrade();
+			assert_eq!(pallet_babe::EpochConfig::<Runtime>::get(), Some(custom));
+		});
+	}
+
+	#[test]
+	fn scripts_key_matches_the_on_chain_key() {
+		let expected = [
+			sp_io::hashing::twox_128(b"Bridge"),
+			sp_io::hashing::twox_128(b"MainChainScriptsConfiguration"),
+		]
+		.concat();
+		assert_eq!(scripts_key(), expected);
 	}
 }

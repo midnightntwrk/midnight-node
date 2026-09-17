@@ -1,5 +1,13 @@
 name: try-runtime upgrade dry-run
 
+# Run before shipping a runtime upgrade. Manual because it scrapes full chain
+# state over RPC, which is heavy on the public endpoints.
+#
+# A snapshot carries substrate storage only, so migrations that read ledger state
+# abort here — those belong to the fork-testing flow (docs/fork-testing.md).
+
+permissions: {}
+
 on:
   workflow_dispatch:
     inputs:
@@ -15,11 +23,6 @@ on:
         description: "Dry-run against mainnet"
         type: boolean
         default: true
-  # TODO: Remove before merge.
-  push:
-    branches: [ jacek-try-runtime-subcommand ]
-
-permissions: { }
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,7 +31,7 @@ concurrency:
 jobs:
   dry-run:
     name: Build node and dry-run upgrade
-    runs-on: ubuntu-latest-16-core-x64
+    runs-on: [self-hosted, "tier:large"]
     timeout-minutes: 120
     permissions:
       contents: read
@@ -36,7 +39,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
@@ -49,26 +52,25 @@ jobs:
 
       - name: Build node with try-runtime feature
         run: |
-          . ./.envrc && earthly -P +try-runtime-build
+          . ./.envrc && earthly --ci -P +try-runtime-build
 
+      # Each network runs even if an earlier one failed — one report per run.
       - name: Dry-run on-runtime-upgrade - preview
-        # TODO: Remove before merge.
-        if: ${{ !cancelled() && (github.event_name == 'push' || inputs.preview) }}
+        if: ${{ !cancelled() && inputs.preview }}
         run: |
-          . ./.envrc && earthly -P +try-runtime-dry-run-preview
+          . ./.envrc && earthly --ci -P +try-runtime-dry-run-preview
 
       - name: Dry-run on-runtime-upgrade - preprod
-        # TODO: Remove before merge.
-        if: ${{ !cancelled() && (github.event_name == 'push' || inputs.preprod) }}
+        if: ${{ !cancelled() && inputs.preprod }}
         run: |
-          . ./.envrc && earthly -P +try-runtime-dry-run-preprod
+          . ./.envrc && earthly --ci -P +try-runtime-dry-run-preprod
 
       - name: Dry-run on-runtime-upgrade - mainnet
-        # TODO: Remove before merge.
-        if: ${{ !cancelled() && (github.event_name == 'push' || inputs.mainnet) }}
+        if: ${{ !cancelled() && inputs.mainnet }}
         run: |
-          . ./.envrc && earthly -P +try-runtime-dry-run-mainnet
+          . ./.envrc && earthly --ci -P +try-runtime-dry-run-mainnet
 
+      # So a failure can be re-run locally against the exact same state.
       - name: Upload snapshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -3,7 +3,6 @@ x-common-variables: &common-variables
   SIDECHAIN_BLOCK_BENEFICIARY: "0000000000000000000000000000000000000000000000000000000000000002"
   CARDANO_SECURITY_PARAMETER: 432
   CARDANO_ACTIVE_SLOTS_COEFF: 0.05
-  BLOCK_STABILITY_MARGIN: 10
   MC__FIRST_EPOCH_TIMESTAMP_MILLIS: 1666656000000
   MC__FIRST_EPOCH_NUMBER: 0
   MC__EPOCH_DURATION_MILLIS: 86400000
@@ -47,6 +46,19 @@ services:
         --no-telemetry
         --name MidnightBootNode_Local
         --public-addr /dns4/boot-node/tcp/30333/ws
+        --reserved-only
+        --reserved-nodes /dns4/node0/tcp/30334/p2p/12D3KooWHdiAxVd8uMQR1hGWXccidmfCwLqcMpGwR6QcTP6QRMuD
+        --reserved-nodes /dns4/node2/tcp/30335/p2p/12D3KooWSCufgHzV4fCwRijfH2k3abrpAJxTKxEvN1FDuRXA2U9x
+        --reserved-nodes /dns4/node3/tcp/30336/p2p/12D3KooWSsChzF81YDUKpe9Uk5AHV5oqAaXAcWNSPYgoLauUk4st
+        --reserved-nodes /dns4/node4/tcp/30337/p2p/12D3KooWSuTq6MG9gPt7qZqLFKkYrfxMewTZhj9nmRHJkPwzWDG2
+        --reserved-nodes /dns4/node5/tcp/30338/p2p/12D3KooWMz5U7fR8mF5DNhZSSyFN8c19kU63xYopzDSNCzoFigYk
+        --reserved-nodes /dns4/node6/tcp/30339/p2p/12D3KooWE3quQCP6Xu7eXpcmmpwVS1KofWnPCBWYNHCswgaqwCso
+        --reserved-nodes /dns4/node7/tcp/30340/p2p/12D3KooWNcx5xKjEvC3gBkuQDEk2d4eJN5bxTDMMb3VLNqZ9VVuB
+        --reserved-nodes /dns4/node8/tcp/30341/p2p/12D3KooWQizATZJGTZSb8ShuaniCCaDCBQSczRQ38QgvWH3sJj9c
+        --reserved-nodes /dns4/node9/tcp/30342/p2p/12D3KooWNHBKuurUCGYNgrWXkNEhro54KonoEvKkjaB3QGKoMNzt
+        --reserved-nodes /dns4/node10/tcp/30343/p2p/12D3KooWF9PqFCdboSo7FTmbuwQqj2A49xvxutKQZCyWo6fXYqJw
+        --reserved-nodes /dns4/node11/tcp/30344/p2p/12D3KooWGyXUfTbVfRdz5axhNSpHkryLQkcAqjiNySwVfVT5R3QF
+        --reserved-nodes /dns4/node12/tcp/30345/p2p/12D3KooWQMkbZgBmjXpCFAXUoH6MfByoEnMaeNfdGrQ2o3fTRUwE
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -67,7 +79,7 @@ services:
       - ./data/node-1:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_01_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_01_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_01_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000002
@@ -83,6 +95,8 @@ services:
         --bootnodes /dns4/boot-node/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --name MidnightNode1_Local
         --public-addr /dns4/node0/tcp/30334
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"] # Check internal RPC port
       interval: 5s
@@ -107,7 +121,7 @@ services:
       - ./data/node-2:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_02_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_02_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_02_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000003
@@ -123,6 +137,8 @@ services:
         --rpc-methods=Unsafe
         --name MidnightNode2_Local
         --public-addr /dns4/node2/tcp/30335
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -148,7 +164,7 @@ services:
       - ./data/node-3:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_03_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_03_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_03_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000004
@@ -164,6 +180,8 @@ services:
         --rpc-methods=Unsafe
         --name MidnightNode3_Local
         --public-addr /dns4/node3/tcp/30336
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
@@ -189,7 +207,7 @@ services:
       - ./data/node-4:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_04_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_04_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_04_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000005
@@ -199,6 +217,8 @@ services:
         --port 30337
         --rpc-port 9944
         --public-addr /dns4/node4/tcp/30337
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-external
@@ -229,7 +249,7 @@ services:
       - ./data/node-5:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_05_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_05_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_05_0}
 
       ARGS: >
@@ -246,6 +266,8 @@ services:
         --rpc-methods=Unsafe
         --name MidnightNode5_Local
         --public-addr /dns4/node5/tcp/30338
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9944/health"]
       interval: 5s
@@ -270,7 +292,7 @@ services:
       - ./data/node-6:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_06_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_06_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_06_0}
 
       ARGS: >
@@ -281,6 +303,8 @@ services:
         --port 30339
         --rpc-port 9944
         --public-addr /dns4/node6/tcp/30339
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -311,7 +335,7 @@ services:
       - ./data/node-7:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_07_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_07_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_07_0}
 
       ARGS: >
@@ -322,6 +346,8 @@ services:
         --port 30340
         --rpc-port 9944
         --public-addr /dns4/node7/tcp/30340
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -352,7 +378,7 @@ services:
       - ./data/node-8:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_08_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_08_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_08_0}
 
       ARGS: >
@@ -363,6 +389,8 @@ services:
         --port 30341
         --rpc-port 9944
         --public-addr /dns4/node8/tcp/30341
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -393,7 +421,7 @@ services:
       - ./data/node-9:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_09_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_09_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_09_0}
 
       ARGS: >
@@ -404,6 +432,8 @@ services:
         --port 30342
         --rpc-port 9944
         --public-addr /dns4/node9/tcp/30342
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -434,7 +464,7 @@ services:
       - ./data/node-10:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_10_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_10_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_10_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000011
@@ -444,6 +474,8 @@ services:
         --port 30343
         --rpc-port 9944
         --public-addr /dns4/node10/tcp/30343
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -468,7 +500,7 @@ services:
       - ./data/node-11:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_11_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_11_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_11_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000012
@@ -478,6 +510,8 @@ services:
         --port 30344 # P2P port for node5
         --rpc-port 9944
         --public-addr /dns4/node11/tcp/30344
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -502,7 +536,7 @@ services:
       - ./data/node-12:/data
     environment:
       <<: *common-variables
-      # SEED_PHRASE: $MIDNIGHT_NODE_12_0_SEED
+      SEED_PHRASE: $MIDNIGHT_NODE_12_0_SEED
       DB_SYNC_POSTGRES_CONNECTION_STRING: ${DB_SYNC_POSTGRES_CONNECTION_STRING_NODE_MIDNIGHT_NODE_12_0}
       ARGS: >
         --node-key=0000000000000000000000000000000000000000000000000000000000000013
@@ -512,6 +546,8 @@ services:
         --port 30345
         --rpc-port 9944
         --public-addr /dns4/node12/tcp/30345
+        --reserved-only
+        --reserved-nodes /dns4/boot-node/tcp/30333/ws/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp
         --base-path=/data
         --unsafe-rpc-external
         --rpc-cors=all
@@ -571,3 +607,12 @@ volumes:
   node-data-11:
   node-data-12:
   node-data-13:
+
+networks:
+  # Stable, project-name-independent network name so external consumers
+  # (e.g. the midnight-indexer overlay) can attach with `external: true`.
+  # Without an explicit name compose derives `<project>_default`, which
+  # shifts when COMPOSE_PROJECT_NAME is set and would no longer match the
+  # MIDNIGHT_FORK_NETWORK recorded in artifacts/qanet.manifest.env.
+  default:
+    name: midnight-fork-qanet

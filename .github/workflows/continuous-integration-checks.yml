@@ -24,7 +24,7 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
 
@@ -37,7 +37,7 @@ jobs:
 
       - name: Login to GHCR
         if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f #v4.6.0
         with:
           registry: ghcr.io
           username: MidnightCI
@@ -58,51 +58,6 @@ jobs:
         if: steps.guard.outputs.hit != 'true'
         run: |
           . ./.envrc && earthly --ci +check
-
-      - uses: ./.github/actions/tree-cache-guard/save
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          key: ${{ steps.guard.outputs.key }}
-
-  feature-unification:
-    name: Feature Unification Check
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    env:
-      FORCE_COLOR: 1
-    steps:
-      - name: Checkout node repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
-        with:
-          submodules: true
-
-      - id: guard
-        uses: ./.github/actions/tree-cache-guard
-
-      - name: Login to GHCR
-        if: steps.guard.outputs.hit != 'true'
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 #v4.4.0
-        with:
-          registry: ghcr.io
-          username: MidnightCI
-          password: ${{ secrets.MIDNIGHTCI_PACKAGES_READ }}
-
-      - uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
-        if: steps.guard.outputs.hit != 'true'
-        with:
-          version: v0.8.16
-          github-token: ${{ github.token }}
-          use-cache: false
-
-      - name: Free disk space
-        if: steps.guard.outputs.hit != 'true'
-        run: scripts/free-disk-space.sh > /tmp/free-disk-space.log 2>&1 &
-
-      - name: Run feature unification check
-        if: steps.guard.outputs.hit != 'true'
-        run: |
-          . ./.envrc && earthly --ci +check-feature-unification
 
       - uses: ./.github/actions/tree-cache-guard/save
         if: steps.guard.outputs.hit != 'true'

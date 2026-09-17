@@ -6,10 +6,6 @@ permissions: {}
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: "The git ref to checkout"
-        required: true
-        default: "main"
       release-tag:
         description: "The release tag to archive under (e.g. node-1.2.3-toolkit-0.4.5)"
         required: true
@@ -55,9 +51,6 @@ on:
 
   workflow_call:
     inputs:
-      ref:
-        type: string
-        required: true
       release-tag:
         type: string
         required: true
@@ -82,6 +75,10 @@ on:
       skip-runtime:
         type: boolean
         default: false
+    secrets:
+      MIDNIGHTCI_PACKAGES_READ:
+        description: 'Read token used by the Season CLI install step'
+        required: true
 
 jobs:
   archive-and-bump:
@@ -93,11 +90,17 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
+      # Always work on the default branch: the PR below is applied to main, so
+      # the diff must be taken against main. `season archive-changes` reads the
+      # change files from the release tag itself (git ls-tree / git show) and
+      # only deletes a source file whose working-tree copy is byte-identical to
+      # the tag's, so a main checkout is exactly what it expects - a release
+      # branch checkout produced a diff that did not apply to main.
       - name: Checkout repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7.0.1
         with:
           submodules: true
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Install Season
         uses: ./.github/actions/install-season
@@ -197,8 +200,12 @@ jobs:
             RPATCH="${DIGITS:6:3}"
             NEW_RPATCH=$(printf '%03d' $(( 10#$RPATCH + 1 )))
             NEW_SPEC="${RMAJOR}_${RMINOR}_${NEW_RPATCH}"
+            NEW_RUNTIME_VERSION="$((10#$RMAJOR)).$((10#$RMINOR)).$((10#$NEW_RPATCH))"
             sed -i "s/spec_version: ${SPEC_RAW}/spec_version: ${NEW_SPEC}/" runtime/src/lib.rs
+            sed -i "0,/^version = \"$RUNTIME_VERSION\"/s//version = \"$NEW_RUNTIME_VERSION\"/" runtime/Cargo.toml
+            sed -i '/^name = "midnight-node-runtime"/{n;s/version = "'"$RUNTIME_VERSION"'"/version = "'"$NEW_RUNTIME_VERSION"'"/;}' Cargo.lock
             echo "Bumped runtime spec_version: $SPEC_RAW -> $NEW_SPEC"
+            echo "Bumped runtime Cargo.toml version: $RUNTIME_VERSION -> $NEW_RUNTIME_VERSION"
           fi
 
       # Create a signed commit on a new branch and open a PR.
@@ -216,6 +223,18 @@ jobs:
 
           OWNER="${GITHUB_REPOSITORY%%/*}"
           REPO="${GITHUB_REPOSITORY##*/}"
+
+          # The commit is built from the diff against this checkout's HEAD, so use
+          # that exact OID as the branch base and expectedHeadOid - not a fresh
+          # query of main, which may have moved since checkout.
+          MAIN_OID=$(git rev-parse HEAD)
+
+          # shellcheck disable=SC2016
+          REPO_ID=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) { id }
+            }
+          ' -f owner="$OWNER" -f name="$REPO" | jq -r '.data.repository.id')
 
           # Stage all working-tree changes so we can diff them
           git add -A
@@ -238,22 +257,6 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-
-          # Get repo ID and main branch HEAD OID
-          # shellcheck disable=SC2016
-          QUERY_RESULT=$(gh api graphql -f query='
-            query($owner: String!, $name: String!) {
-              repository(owner: $owner, name: $name) {
-                id
-                defaultBranchRef {
-                  target { oid }
-                }
-              }
-            }
-          ' -f owner="$OWNER" -f name="$REPO")
-
-          REPO_ID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.id')
-          MAIN_OID=$(echo "$QUERY_RESULT" | jq -r '.data.repository.defaultBranchRef.target.oid')
 
           # Create branch at main HEAD, or force-update if it already exists
           # shellcheck disable=SC2016

@@ -1,6 +1,6 @@
 [package]
 name = "midnight-node"
-version = "2.1.0"
+version = "3.0.0"
 description = "Midnight blockchain node"
 authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
 homepage = "https://substrate.io/"
@@ -25,6 +25,8 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 serde.workspace = true
 async-trait.workspace = true
 futures.workspace = true
+# Must match the version sc-network's `request_response_config` inbound queue expects (1.9).
+async-channel = "1.9"
 
 sc-cli.workspace = true
 sc-chain-spec.workspace = true
@@ -48,8 +50,12 @@ sc-consensus-slots.workspace = true
 sc-offchain.workspace = true
 sc-client-api.workspace = true
 sc-network.workspace = true
+sc-network-sync.workspace = true
 sc-utils.workspace = true
+sp-consensus.workspace = true
 sp-consensus-aura.workspace = true
+sp-consensus-babe.workspace = true
+sp-consensus-slots.workspace = true
 sp-consensus-beefy.workspace = true
 sp-runtime.workspace = true
 sp-state-machine.workspace = true
@@ -78,14 +84,14 @@ sc-basic-authorship.workspace = true
 substrate-frame-rpc-system.workspace = true
 
 # These dependencies are used for runtime benchmarking
-frame-benchmarking = { workspace = true, optional = true }
-frame-benchmarking-cli = { workspace = true, default-features = true }
+frame-benchmarking = {workspace = true, optional = true}
+frame-benchmarking-cli = {workspace = true, default-features = true }
 pallet-staking = { workspace = true, features = ["std"], optional = true }
 
 # Local Dependencies
 midnight-node-runtime = { workspace = true, default-features = true }
 midnight-node-ledger = { workspace = true, default-features = true }
-midnight-node-ledger-helpers = { workspace = true, default-features = true, features = ["fixed-point-custom-serde"] }
+midnight-node-ledger-helpers = {workspace = true, default-features = true, features = ["fixed-point-custom-serde"] }
 midnight-node-res = { workspace = true, features = ["chain-spec"], default-features = true }
 midnight-primitives-beefy = { workspace = true, default-features = true }
 midnight-primitives-ledger = { workspace = true, default-features = true }
@@ -93,25 +99,21 @@ midnight-primitives = { workspace = true, default-features = true }
 midnight-primitives-mainchain-follower = { workspace = true, default-features = true }
 midnight-primitives-federated-authority-observation = { workspace = true, default-features = true }
 midnight-primitives-system-parameters = { workspace = true, default-features = true }
-midnight-primitives-cnight-observation = { workspace = true, default-features = true }
+midnight-primitives-cnight-observation  = { workspace = true, default-features = true }
 midnight-primitives-ics-observation = { workspace = true, default-features = true }
 midnight-primitives-reserve-observation = { workspace = true, default-features = true }
+midnight-primitives-consensus-engine = { workspace = true, default-features = true }
 midnight-primitives-session-info = { workspace = true, default-features = true }
 pallet-midnight = { workspace = true, default-features = true }
 pallet-midnight-rpc = { workspace = true, default-features = true }
 pallet-system-parameters = { workspace = true, default-features = true }
 pallet-system-parameters-rpc = { workspace = true, default-features = true }
 pallet-throttle = { workspace = true, default-features = true }
-pallet-cnight-observation = { workspace = true, default-features = true }
-pallet-cnight-observation-mock = { workspace = true, default-features = true }
+pallet-cnight-observation = { workspace = true, default-features = true}
+pallet-cnight-observation-mock = { workspace = true, default-features = true}
 
-# In-tree `try-runtime` subcommand. The standalone `try-runtime-cli` only links
-# `sp_io::SubstrateHostFunctions` and so cannot resolve Midnight's custom
-# `ledger_*_bridge` host functions. We embed a minimal dry-run path that uses
-# the node's full `service::HostFunctions` tuple. The snapshot reader is
-# inlined (see `try_runtime.rs`) rather than pulling `frame-remote-externalities`,
-# which perturbs the workspace's `rand_core` resolution and breaks
-# `pallas-wallet` (and the rest of the workspace) at lock-resolution time.
+# Powers the in-tree `try-runtime` subcommand, which replaces the standalone
+# `try-runtime-cli`. See `node/src/try_runtime.rs` for why.
 frame-try-runtime = { workspace = true, optional = true, features = ["std"] }
 
 thiserror = "1.0.50"
@@ -155,7 +157,7 @@ documented.workspace = true
 shell-words = "1.1.1"
 derive-new.workspace = true
 
-sqlx = { version = "0.8.5", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"] }
+sqlx = { version = "0.8.5",  default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "migrate", "bigdecimal"]}
 tokio.workspace = true
 blake2b_simd = "1.0"
 

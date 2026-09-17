@@ -14,14 +14,16 @@
 //! Test mock for the consensus-engine pallet.
 
 use frame_support::{
-	derive_impl,
+	derive_impl, parameter_types,
 	traits::{ConstBool, ConstU32, ConstU64},
 };
 use frame_system::EnsureRoot;
-use parity_scale_codec::Encode;
+use parity_scale_codec::{Decode, Encode};
 use sp_consensus_aura::AURA_ENGINE_ID;
 use sp_consensus_babe::BABE_ENGINE_ID;
-use sp_consensus_babe::digests::{PreDigest as BabePreDigest, SecondaryPlainPreDigest};
+use sp_consensus_babe::digests::{
+	PreDigest as BabePreDigest, PrimaryPreDigest, SecondaryPlainPreDigest, SecondaryVRFPreDigest,
+};
 use sp_consensus_slots::Slot;
 use sp_core::H256;
 use sp_runtime::{
@@ -34,17 +36,23 @@ use crate as pallet_consensus_engine;
 /// Epoch length shared by pallet-babe and the consensus-engine pallet in the mock.
 const EPOCH_DURATION: u64 = 300;
 /// Slot duration in milliseconds used by the AURA/BABE/timestamp mock configs.
-const SLOT_DURATION: u64 = 6000;
+pub const SLOT_DURATION: u64 = 6000;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
+// Pallet indices follow production relative order: Babe must run
+// `on_initialize` *before* ConsensusEngine. Digests are consumed by Babe first;
+// ConsensusEngine's guards must still reject unsafe ones.
+// (In production ConsensusEngine must in turn run before Scheduler and Session —
+// see the hook-ordering notes in lib.rs; those pallets are not part of this mock.
+// Babe also runs before Sidechain so `CurrentSlot` is fresh when Sidechain reads it.)
 frame_support::construct_runtime!(
 	pub struct Test {
 		System: frame_system = 0,
-		ConsensusEngine: pallet_consensus_engine = 1,
-		Timestamp: pallet_timestamp = 2,
-		Aura: pallet_aura = 3,
-		Babe: pallet_babe = 4,
+		Timestamp: pallet_timestamp = 1,
+		Aura: pallet_aura = 2,
+		Babe: pallet_babe = 3,
+		ConsensusEngine: pallet_consensus_engine = 4,
 	}
 );
 
@@ -104,11 +112,60 @@ impl pallet_babe::Config for Test {
 	type EquivocationReportSystem = ();
 }
 
+parameter_types! {
+	pub TestBabeEpochConfig: sp_consensus_babe::BabeEpochConfiguration =
+		sp_consensus_babe::BabeEpochConfiguration {
+			c: (1, 4),
+			allowed_slots: sp_consensus_babe::AllowedSlots::PrimaryAndSecondaryVRFSlots,
+		};
+}
+
 impl pallet_consensus_engine::Config for Test {
 	// Only root drives state transitions in the mock, mirroring the runtime's governance origin.
 	type GovernanceOrigin = EnsureRoot<u64>;
 	type EpochDuration = ConstU64<EPOCH_DURATION>;
+	type EpochConfiguration = TestBabeEpochConfig;
 	type WeightInfo = ();
+}
+
+/// Seed `n` AURA authorities so transition digests can be checked against
+/// `slot % n` (the AURA author index).
+pub fn seed_aura_authorities(n: u32) {
+	use frame_support::BoundedVec;
+	use sp_core::sr25519;
+	let authorities: Vec<_> = (0..n)
+		.map(|i| {
+			sp_consensus_aura::sr25519::AuthorityId::from(sr25519::Public::from_raw(
+				[i as u8 + 1; 32],
+			))
+		})
+		.collect();
+	let bounded = BoundedVec::try_from(authorities).expect("n authorities must fit MaxAuthorities");
+	pallet_aura::Authorities::<Test>::put(bounded);
+}
+
+/// Seed a non-empty `pallet-babe::Authorities` set so the flip is allowed to commit.
+pub fn seed_babe_authorities() {
+	use frame_support::WeakBoundedVec;
+	use sp_core::sr25519;
+	let id = sp_consensus_babe::AuthorityId::from(sr25519::Public::from_raw([1u8; 32]));
+	let authorities =
+		WeakBoundedVec::try_from(vec![(id, 1u64)]).expect("one authority fits MaxAuthorities");
+	pallet_babe::Authorities::<Test>::put(authorities);
+}
+
+/// Put [`EngineState`] as in production: once past `Aura`, `arm_babe` has already
+/// written the BABE genesis-slot sentinel so pallet-babe does not self-initialize
+/// from a transition digest. Skips the write when `GenesisSlot` is already set
+/// (e.g. after `migrate_to_babe`).
+pub fn put_engine_state(state: crate::State) {
+	use crate::pallet::EngineState;
+	EngineState::<Test>::put(state);
+	if matches!(state, crate::State::ArmedBabe | crate::State::ScheduledFlip | crate::State::Babe)
+		&& pallet_babe::GenesisSlot::<Test>::get() == Slot::from(0u64)
+	{
+		pallet_babe::GenesisSlot::<Test>::put(Slot::from(u64::MAX));
+	}
 }
 
 /// Start a new block whose header carries exactly the given digest `logs`.
@@ -122,16 +179,86 @@ pub fn aura_pre_digest(slot: u64) -> DigestItem {
 	DigestItem::PreRuntime(AURA_ENGINE_ID, Slot::from(slot).encode())
 }
 
-/// A BABE (secondary plain) pre-runtime digest item for `slot`.
-pub fn babe_pre_digest(slot: u64) -> DigestItem {
+/// A BABE (secondary plain) pre-runtime digest item for `slot` claiming
+/// `authority_index` (must equal `slot % n_aura_authorities` for the transition
+/// guard to accept it).
+pub fn babe_pre_digest_with_authority(slot: u64, authority_index: u32) -> DigestItem {
 	DigestItem::PreRuntime(
 		BABE_ENGINE_ID,
 		BabePreDigest::SecondaryPlain(SecondaryPlainPreDigest {
-			authority_index: 0,
+			authority_index,
 			slot: Slot::from(slot),
 		})
 		.encode(),
 	)
+}
+
+/// A BABE (secondary plain) pre-runtime digest item for `slot` with authority
+/// index 0 — valid when the mock has a single AURA authority (see [`new_test_ext`]).
+pub fn babe_pre_digest(slot: u64) -> DigestItem {
+	babe_pre_digest_with_authority(slot, 0)
+}
+
+/// A BABE `Primary` pre-runtime digest item for `slot`, carrying a (dummy,
+/// unverified) VRF signature — the variant the transition must reject, since
+/// nothing verifies VRF material while blocks import through the AURA pipeline.
+pub fn babe_primary_pre_digest(slot: u64) -> DigestItem {
+	let vrf_signature = sp_core::sr25519::vrf::VrfSignature::decode(&mut &[0u8; 96][..])
+		.expect("zeroed bytes decode as a VRF signature");
+	DigestItem::PreRuntime(
+		BABE_ENGINE_ID,
+		BabePreDigest::Primary(PrimaryPreDigest {
+			authority_index: 0,
+			slot: Slot::from(slot),
+			vrf_signature,
+		})
+		.encode(),
+	)
+}
+
+/// A BABE `SecondaryVRF` pre-runtime digest item for `slot`, carrying a (dummy,
+/// unverified) VRF signature — rejected for the same reason as [`babe_primary_pre_digest`].
+pub fn babe_secondary_vrf_pre_digest(slot: u64) -> DigestItem {
+	let vrf_signature = sp_core::sr25519::vrf::VrfSignature::decode(&mut &[0u8; 96][..])
+		.expect("zeroed bytes decode as a VRF signature");
+	DigestItem::PreRuntime(
+		BABE_ENGINE_ID,
+		BabePreDigest::SecondaryVRF(SecondaryVRFPreDigest {
+			authority_index: 0,
+			slot: Slot::from(slot),
+			vrf_signature,
+		})
+		.encode(),
+	)
+}
+
+/// A BABE pre-runtime item whose payload does not decode as a `PreDigest` at all.
+pub fn undecodable_babe_pre_digest() -> DigestItem {
+	DigestItem::PreRuntime(BABE_ENGINE_ID, vec![0xff, 0xff, 0xff])
+}
+
+/// A BABE pre-runtime item holding a valid `SecondaryPlain` digest for `slot`
+/// followed by trailing bytes.
+///
+/// `as_babe_pre_digest` uses `DecodeAll` and rejects this, but `pallet-babe` reads
+/// it with plain `Decode` and consumes it as a real pre-digest — so the pallet must
+/// treat it as present.
+pub fn babe_pre_digest_with_trailing_bytes(slot: u64) -> DigestItem {
+	let mut payload = BabePreDigest::SecondaryPlain(SecondaryPlainPreDigest {
+		authority_index: 0,
+		slot: Slot::from(slot),
+	})
+	.encode();
+	payload.extend_from_slice(&[0xde, 0xad]);
+	DigestItem::PreRuntime(BABE_ENGINE_ID, payload)
+}
+
+/// An AURA pre-runtime item holding a valid slot followed by trailing bytes —
+/// rejected by `as_aura_pre_digest`, but consumed by `pallet-aura`'s plain `Decode`.
+pub fn aura_pre_digest_with_trailing_bytes(slot: u64) -> DigestItem {
+	let mut payload = Slot::from(slot).encode();
+	payload.extend_from_slice(&[0xde, 0xad]);
+	DigestItem::PreRuntime(AURA_ENGINE_ID, payload)
 }
 
 /// A pre-runtime digest item for an unrelated engine, which the pallet must ignore.
@@ -145,8 +272,9 @@ pub fn start_block_at_slot(slot: u64) {
 	start_block_with_logs(vec![aura_pre_digest(slot)]);
 }
 
-/// Start a new block whose header carries a BABE pre-runtime digest (alongside
-/// the AURA one, at the same slot), simulating a node that emits BABE digests too early.
+/// Start a new block whose header carries a BABE pre-runtime digest alongside
+/// the AURA one at the same slot — the shape nodes emit once armed, and the
+/// shape required of the flip block.
 pub fn start_block_with_babe_pre_digest(slot: u64) {
 	start_block_with_logs(vec![aura_pre_digest(slot), babe_pre_digest(slot)]);
 }
@@ -155,6 +283,10 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 	let t = frame_system::GenesisConfig::<Test>::default().build_storage().unwrap();
 	let mut ext: sp_io::TestExternalities = t.into();
 	// Block 0 does not record events; move to block 1 so `assert_last_event` works.
-	ext.execute_with(|| System::set_block_number(1));
+	// One AURA authority so `babe_pre_digest`'s index 0 matches `slot % 1`.
+	ext.execute_with(|| {
+		System::set_block_number(1);
+		seed_aura_authorities(1);
+	});
 	ext
 }
