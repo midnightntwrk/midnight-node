@@ -1,22 +1,27 @@
-#node #consensus #babe #polkadot-sdk
+#node #runtime #polkadot-sdk
 
-# Use the shieldedtech polkadot-sdk fork (stable2609 + BABE `build_verifier`) and unify the import queue
+# Update Polkadot SDK to stable2609
 
-Points all polkadot-sdk dependencies at `shieldedtech/polkadot-sdk` branch `origin/stable2609`.
-The branch is upstream `paritytech/polkadot-sdk` `stable2609` plus paritytech/polkadot-sdk#13061,
-which exposes `sc_consensus_babe::build_verifier` / `BuildVerifierParams` (the Aura equivalent) so
-a BABE verifier can be composed into a custom import queue.
+Moves the whole polkadot-sdk dependency set from tag `polkadot-stable2606` to branch
+`stable2609`.
 
-With that, the AURA→BABE migration no longer runs two whole import queues behind a dispatcher
-(`DispatchImportQueue`, with its cross-queue ordering gate and held BABE batches). The node has one
-`BasicQueue` whose verifier and block import route each block to the AURA or BABE pipeline by the
-engine that authored it (`EngineDispatchVerifier` / `EngineDispatchBlockImport`). Ordering at the
-flip follows from the single import worker, BABE's epoch tree is seeded right before the first BABE
-block is verified, and the BABE `answer_requests` worker (plus its keep-alive task) is gone. The
-warp ledger-sync import gate now wraps both pipelines, so post-warp BABE blocks are held during
-arena recovery like AURA blocks.
+The bump is what makes the AURA→BABE migration implementable node-side: `stable2609` carries the
+backport of paritytech/polkadot-sdk#13061, which exposes `sc_consensus_babe::build_verifier` /
+`BuildVerifierParams` (the AURA equivalent). A BABE verifier can therefore be composed into the
+node's own import queue instead of only through `sc_consensus_babe::import_queue`, which is what
+lets both engines share one queue — see
+`changes/node/changed/aura-babe-engine-dispatch.md`.
 
-`shieldedtech/polkadot-sdk` is added to `deny.toml`'s git allow-list.
+Call-site changes that come with the bump:
+
+- `sc_service::build_network` gained a `gap_sync_body_policy` parameter and returns an extra
+  bitswap handle (midnight node and the partner-chains demo node).
+- Native runtime execution is gone upstream, so `native_version()` / `sp_version::NativeVersion`
+  are removed from the runtime.
+- CI images build with `OPENSSL_NO_VENDOR=1`: `sc-network`'s `litep2p` pulls in `str0m` with its
+  `vendored` OpenSSL feature, which compiles OpenSSL from source via perl, and AL2023-minimal's
+  perl is incomplete (`Configure` exits 2). `openssl-devel` is already in the CI image, so the
+  system library is used instead.
 
 PR: https://github.com/midnightntwrk/midnight-node/pull/2113
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1757
