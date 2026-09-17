@@ -323,23 +323,6 @@ impl<D: DB> StorableSyntheticCost<D> {
 			_marker: PhantomData,
 		}
 	}
-
-	/// True when every cost component is zero, i.e. this is [`Self::zero`].
-	pub fn is_zero(&self) -> bool {
-		let &Self {
-			read_time,
-			compute_time,
-			block_usage,
-			bytes_written,
-			bytes_churned,
-			_marker: _,
-		} = self;
-		read_time == 0
-			&& compute_time == 0
-			&& block_usage == 0
-			&& bytes_written == 0
-			&& bytes_churned == 0
-	}
 }
 
 impl<D: DB> From<SyntheticCost> for StorableSyntheticCost<D> {
