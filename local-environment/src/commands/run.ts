@@ -14,7 +14,7 @@
 import path from "path";
 import { globSync } from "glob";
 import fs, { existsSync } from "fs";
-import { parse } from "dotenv";
+import { applyEnvFileOverrides, cleanEnv } from "../lib/envFile";
 import {
   generateSecretsIfMissing,
   getLocalEnvSecretVars,
@@ -92,15 +92,7 @@ async function runWellKnownNetwork(namespace: string, runOptions: RunOptions) {
   const composeFile = resolveComposeFile(namespace);
   const composeDir = path.dirname(composeFile);
 
-  let env: Record<string, string> = { ...cleanEnv(process.env) };
-  for (const envFilePath of runOptions.envFile ?? []) {
-    if (fs.existsSync(envFilePath)) {
-      const envOverrides = parse(fs.readFileSync(envFilePath));
-      env = { ...env, ...envOverrides };
-    } else {
-      console.warn(`⚠️  Env file not found: ${envFilePath}`);
-    }
-  }
+  const env = applyEnvFileOverrides(cleanEnv(process.env), runOptions.envFile);
 
   if (runOptions.fromGenesis) {
     await runFromGenesis(namespace, composeFile, env, runOptions);
@@ -362,19 +354,10 @@ async function runLocalEnvironment(runOptions: RunOptions) {
   const localEnvSecretVars = getLocalEnvSecretVars();
   const envDefault = loadEnvDefault();
 
-  let env: Record<string, string> = {
-    ...envDefault,
-    ...localEnvSecretVars,
-  };
-
-  for (const envFilePath of runOptions.envFile ?? []) {
-    if (fs.existsSync(envFilePath)) {
-      const envOverrides = parse(fs.readFileSync(envFilePath));
-      env = { ...env, ...envOverrides };
-    } else {
-      console.warn(`⚠️  Env file not found: ${envFilePath}`);
-    }
-  }
+  let env: Record<string, string> = applyEnvFileOverrides(
+    { ...envDefault, ...localEnvSecretVars },
+    runOptions.envFile,
+  );
 
   // Process environment variables take precendence
   env = {
@@ -427,13 +410,4 @@ function resolveComposeFile(namespace: string): string {
   }
 
   return composeFile;
-}
-
-// Helper to ensure no undefined values in env vars
-function cleanEnv(
-  env: Record<string, string | undefined>,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(env).filter(([, v]) => typeof v === "string"),
-  ) as Record<string, string>;
 }
