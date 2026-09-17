@@ -17,10 +17,10 @@ Upstream template (**v5**): <https://github.com/midnightntwrk/midnight-network-o
 ## 2. Fetch This Release
 
 ```bash
-gh release view $TAG --repo midnightntwrk/midnight-node --json body,publishedAt,tagName
+gh release view $TAG --repo midnightntwrk/midnight-node --json body,publishedAt,tagName,assets
 ```
 
-If that fails, try without `--repo` (assumes current repo). Store the body, date, and tag.
+If that fails, try without `--repo` (assumes current repo). Store the body, date, tag, and the **asset list** — artifact names are read from it in the `## Artifacts` section (step 8), never composed from `VERSION`.
 
 Also fetch the git tree hash for the tag:
 
@@ -67,7 +67,7 @@ Use the tags present in each entry as the primary signal:
 | `#node`, `#client`, `#rpc`, `#networking` only | Node upgrade (binary restart) |
 | `#toolkit` only | Toolkit (separate binary) |
 | Both runtime and node/client/ledger tags | Mixed — note both |
-| `#audit` | Runtime upgrade (pallet storage/logic changes from audit findings) |
+| `#audit` | **Not a component signal** — audit tags describe where the change came from, not what ships. Classify by the accompanying component tag (`#audit #rpc` → node, `#toolkit #audit` → toolkit, `#audit #runtime` → runtime) or, if there is none, by changed paths |
 | `#hardfork` | Runtime upgrade (hard fork related) |
 | `#infra`, `#changed` only | Infrastructure/build |
 | No tags or ambiguous | Inspect PR files via `gh pr view <number> --json files` and classify by path |
@@ -131,32 +131,36 @@ Tool: [`subwasm`](https://github.com/chevdor/subwasm). Confirm it is installed (
 
 1. Try GitHub release assets first:
 
+   Each release publishes **three** runtime blobs (`*.wasm`, `*.compact.wasm`, `*.compact.compressed.wasm` — see `.github/workflows/srtool-build.yml`). `subwasm diff` takes exactly two positional runtimes, so download exactly one variant per side:
+
    ```bash
-   gh release download "$PRIOR_TAG" --repo midnightntwrk/midnight-node --pattern '*runtime*.wasm' --dir /tmp/runtime-prev
-   gh release download "$TAG"       --repo midnightntwrk/midnight-node --pattern '*runtime*.wasm' --dir /tmp/runtime-curr
+   gh release download "$PRIOR_TAG" --repo midnightntwrk/midnight-node --pattern '*.compact.compressed.wasm' --dir /tmp/runtime-prev
+   gh release download "$TAG"       --repo midnightntwrk/midnight-node --pattern '*.compact.compressed.wasm' --dir /tmp/runtime-curr
    ```
+
+   Note the WASM assets carry the **runtime** version, not the node tag (release `node-1.0.2` published `midnight_node_runtime-1.0.0.*.wasm`), so match on the variant suffix rather than on `$VERSION`.
 
 2. If no WASM asset is published, fall back to extracting from the docker image (`docker create` + `docker cp` against the published node image), or — last resort — build via `earthly -P +runtime-wasm` at each tag. Building takes ~20 min per side; ask the user before going down that path.
 
 **Run the diff** and capture both the human-readable and the machine-readable forms:
 
 ```bash
-subwasm diff /tmp/runtime-prev/*.wasm /tmp/runtime-curr/*.wasm > /tmp/subwasm-diff.txt
-subwasm diff /tmp/runtime-prev/*.wasm /tmp/runtime-curr/*.wasm --json > /tmp/subwasm-diff.json
-subwasm info /tmp/runtime-curr/*.wasm > /tmp/subwasm-info-curr.txt
-subwasm info /tmp/runtime-prev/*.wasm > /tmp/subwasm-info-prev.txt
+subwasm diff /tmp/runtime-prev/*.compact.compressed.wasm /tmp/runtime-curr/*.compact.compressed.wasm > /tmp/subwasm-diff.txt
+subwasm diff /tmp/runtime-prev/*.compact.compressed.wasm /tmp/runtime-curr/*.compact.compressed.wasm --json > /tmp/subwasm-diff.json
+subwasm info /tmp/runtime-curr/*.compact.compressed.wasm > /tmp/subwasm-info-curr.txt
+subwasm info /tmp/runtime-prev/*.compact.compressed.wasm > /tmp/subwasm-info-prev.txt
 ```
 
 **Write `docs/release-notes/<VERSION>/runtime-diff.md`** with this structure:
 
 1. `# Runtime Diff: <PRIOR_VERSION> → <VERSION>`
 2. Metadata header table — both runtimes' `spec_name`, `spec_version`, `impl_version`, `transaction_version`, `authoring_version`, blake2-256 of the WASM, compressed size. Pull from `subwasm info`.
-3. `## Summary` — one or two sentences: did `spec_version` bump? `transaction_version`? Any pallets added/removed? (Bumping `transaction_version` means signed extrinsics from the previous runtime won't decode — call this out loudly.)
+3. `## Summary` — one or two sentences: did `spec_version` bump? `transaction_version`? Any pallets added/removed? (A `transaction_version` bump does **not** break SCALE decoding. `frame_system::CheckTxVersion` (`runtime/src/lib.rs`) mixes the version into the signed payload's *implicit* data, so previously-signed extrinsics still decode but fail signature verification. The required action for wallet/SDK authors is to refresh runtime metadata and re-sign, not to change their codec — state it that way, and call it out loudly.)
 4. `## Pallet changes` — added / removed / modified pallets, each with their changed extrinsics, storage items, events, errors, and constants. Use the JSON diff to drive this; the text diff is fine to embed verbatim in a fenced block as a fallback.
 5. `## Runtime APIs` — added / removed / modified runtime API methods.
 6. `## Raw subwasm diff` — fenced block with the full text-mode output, for auditability.
 
-Mention the file in the release notes by adding a row in `## What changed` — `Runtime metadata diff (subwasm)` with type `Runtime upgrade` and the doc path as the link — and include it under `**Engineering docs**:` in `## Links and references`.
+Mention the file in the release notes by adding a row in `## What changed` — `Runtime metadata diff (subwasm)` with type `Runtime upgrade` and `runtime-diff.md` as the link (same folder as the release notes) — and include it under `**Engineering docs**:` in `## Links and references`.
 
 If `transaction_version` bumped, also add a warning blockquote at the top of `## Breaking changes` pointing operators at the diff.
 
@@ -178,16 +182,16 @@ Each subagent should:
 3. For SDK / API pages: signature, parameters, return type, examples, error cases.
 4. For config guides: each new flag/env var, default, when to set it, interaction with existing config.
 5. For engineering docs: motivation, design alternatives considered, architectural impact, links to relevant code.
-6. Cross-link back to the release notes file (`docs/release-notes/release-notes-<VERSION>.md`).
+6. Cross-link back to the release notes file. It is a sibling in the same folder, so the link is just `release-notes-<VERSION>.md`.
 7. Pass `npx markdownlint-cli` cleanly — same disable rules as the release notes file when verbatim content is included.
 
-**After subagents finish:** verify each file actually exists and has substantive content (subagent summaries describe intent, not output). Update the release notes' `## Links and references` buckets to point at the newly created files using relative paths (`docs/release-notes/<VERSION>/...`).
+**After subagents finish:** verify each file actually exists and has substantive content (subagent summaries describe intent, not output). Update the release notes' `## Links and references` buckets to point at the newly created files. They sit in the same folder as the release notes, so the links are bare filenames (`migration-<slug>.md`), not repo-rooted paths.
 
 If any doc could not be filled in fully (missing context, unclear API surface), leave a clearly-marked `TODO:` placeholder rather than fabricating content, and flag it in the report to the user.
 
 ## 8. Generate Output
 
-Write the formatted release notes to `release-notes-VERSION.md` in the repo root.
+Write the formatted release notes to `docs/release-notes/<VERSION>/release-notes-<VERSION>.md` — the same version folder the step 7 supporting docs live in. This matches the existing convention in the repo (`docs/release-notes/2.0.0-alpha.1/release-notes-2.0.0-alpha.1.md`). Create the folder if it does not exist.
 
 ### Template
 
@@ -218,7 +222,7 @@ Section order, naming, and per-item structure follow the v5 component template (
    - `**Governance action required**: <No | Yes — describe>` — on-chain proposal / SPO vote needed to activate, and who triggers it?
    - `**Downtime / coordination**: <None | describe>` — hot-swappable, or needs a maintenance window / cross-operator timing?
 8. `## Artifacts` — node-specific section absorbing the old Docker Images + Tree hash. List each tagged artifact, then a `shell` fenced block of `docker pull` commands (no `$` prefix). Include:
-   - `**Docker**: midnightntwrk/midnight-node:VERSION` and `…/midnight-node-toolkit:VERSION`
+   - `**Docker**: midnightntwrk/midnight-node:<node tag>` and `…/midnight-node-toolkit:<toolkit tag>` — **do not assume either tag equals `VERSION`**. The release workflow derives the toolkit version independently from `util/toolkit/Cargo.toml` (`.github/workflows/release-image.yml`) and can skip the toolkit entirely via `skip-toolkit`. Take the real names from the assets and body fetched in step 2, and omit any component this release did not publish.
    - `**Git tree hash**: <output of git rev-parse TAG^{tree}>`
    (The node ships ≥3 artifacts, so it always uses this section rather than the single-artifact metadata line.)
 9. `## What changed` — first a **bullet list** of new features/improvements/fixes (per v5), then the node value-add **table** with columns: Change, Upgrade Type, PR. Separator row: `| --- | --- | --- |`. (The real published node RN keeps both forms.)
@@ -251,14 +255,14 @@ Section order, naming, and per-item structure follow the v5 component template (
 17. `## Fixed defect list` — table with columns: `Defect number`, `Description`. Separator row: `| --- | --- |`. Write `None` (or an empty-state note) if no defects were fixed.
 18. `## Other Changes` — node-specific appendix replacing the old verbatim "Full Change Details" dump. List **only residual** Added/Changed entries **not already mentioned or linked** elsewhere in the notes (dedup against What Changed, New features, Improvements, and Fixed defect list). Render as a plain bullet list — `- <description> ([#N](url))`. **Omit the whole section if nothing is residual.**
 
-After writing, run `npx markdownlint-cli release-notes-VERSION.md` to verify. Fix any violations before presenting to the user.
+After writing, run `npx markdownlint-cli "docs/release-notes/$VERSION/release-notes-$VERSION.md"` to verify. Fix any violations before presenting to the user.
 
 ## 9. Offer to Update GitHub Release
 
 After writing the file, ask the user if they want to update the GitHub release body with the formatted notes:
 
 ```bash
-gh release edit $TAG --repo midnightntwrk/midnight-node --notes-file release-notes-VERSION.md
+gh release edit $TAG --repo midnightntwrk/midnight-node --notes-file "docs/release-notes/$VERSION/release-notes-$VERSION.md"
 ```
 
 Do NOT run this without explicit user confirmation.
