@@ -68,14 +68,9 @@ pub enum UtxoActionType {
 pub const INITIAL_CARDANO_BLOCK_WINDOW_SIZE: u32 = 1000;
 pub const DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK: u32 = 200;
 
-/// Runtime acceptance envelope: upper bound on the UTXO-to-TX ratio that
-/// `process_tokens` and the worst-case weight will accept per inherent.
-///
-/// This is intentionally *wider* than the IDP's actual fetch factor (which the
-/// node binary picks per `CNightObservationApi` version — 4x at v2+, 64x at v1).
-/// The runtime must keep accepting the legacy 64x envelope so that v1 binaries
-/// pairing with a v2 runtime during the upgrade window can still have their
-/// inherents verified. Do not lower this to match the IDP fetch factor.
+/// Overestimate factor for UTXOs per Cardano transaction.
+/// The mainchain follower applies this multiplier to `CardanoTxCapacityPerBlock`
+/// when pre-allocating the UTXO buffer (see `get_utxos_up_to_capacity`).
 pub const UTXO_PER_TX_OVERESTIMATE: u32 = 64;
 
 /// Upper bound on UTXO count per block, used for worst-case weight declaration.
@@ -85,7 +80,7 @@ pub const MAX_UTXO_COUNT: u32 = DEFAULT_CARDANO_TX_CAPACITY_PER_BLOCK * UTXO_PER
 pub mod pallet {
 	use frame_support::sp_runtime::traits::Hash;
 	use midnight_primitives::{
-		LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionExecutor,
+		LedgerBlockContextProvider, LedgerStateProvider, MidnightSystemTransactionCNightExecutor,
 	};
 	use midnight_primitives_cnight_observation::{
 		CARDANO_ASSET_NAME_MAX_LENGTH, CARDANO_BECH32_ADDRESS_MAX_LENGTH, CNIGHT_POLICY_ID_LENGTH,
@@ -162,7 +157,7 @@ pub mod pallet {
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config<Hash = H256> {
-		type MidnightSystemTransactionExecutor: MidnightSystemTransactionExecutor;
+		type MidnightSystemTransactionExecutor: MidnightSystemTransactionCNightExecutor;
 		/// Reads the ledger state key, to capture the pre-hardfork (ledger-8)
 		/// one before the pallet-midnight translation replaces it.
 		type LedgerStateProvider: LedgerStateProvider;
@@ -614,7 +609,7 @@ pub mod pallet {
 			// post a DUST registration) so this is traced, not warned. Enable trace
 			// level on this target to debug "I registered but no DUST appeared".
 			let Some(ref dust_public_key) = Self::get_registration(&data.owner) else {
-				log::trace!("No valid dust registration for {:?}", &data.owner);
+				log::trace!("No valid dust registration for {:?}", data.owner);
 				return None;
 			};
 

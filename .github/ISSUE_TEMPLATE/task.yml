@@ -1,0 +1,41 @@
+name: Task
+description: A unit of work that isn't a bug or a new feature
+title: "[Task] "
+type: Task
+labels:
+  - status:untriaged
+  - component:midnight-node
+body:
+  - type: dropdown
+    id: components
+    attributes:
+      label: Components
+      description: Which components does this affect?
+      multiple: true
+      options:
+        - component:midnight-node
+        - component:contracts
+        - component:ledger
+        - component:midnight-toolkit
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What needs to be done?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria / done when
+      description: Concrete, verifiable outcomes.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context / notes
+      description: Links to related issues, PRs, docs, or dependencies.

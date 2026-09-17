@@ -39,6 +39,23 @@ Real snapshot URLs for each network can be resolved from the backup system's
 public index — see
 [Finding snapshot archives](../docs/fork-testing.md#finding-snapshot-archives).
 
+Use `--num-validators` to run a smaller mock authority set than the network's
+Compose topology defines. For example, this restores the Preview snapshot,
+generates three validator keysets, and starts only `node1` through `node3`:
+
+```bash
+npm run run:preview -- \
+  --from-snapshot https://example.com/snapshots/preview-latest.tar.zst \
+  --num-validators 3
+```
+
+The count must be a positive integer no larger than the network's
+`mock.validatorServices` list in `src/networks/well-known/<network>/config.json`.
+Changing the count requires `--from-snapshot` so `mock-authorities` can rewrite
+the authority set and regenerate seeds. Later restarts omit both options and
+reuse the generated selection. The option is not supported by the standalone
+`local-env` stack, whose five-validator topology and keys are fixed.
+
 After that initial restore, the same network can be restarted without
 `--from-snapshot` as long as the restored `data/` directories and generated
 mock-authorities output are still present:
@@ -116,8 +133,31 @@ npm run image-upgrade:preview -- --from-snapshot https://example.com/snapshots/p
 ```
 
 `governance-runtime-upgrade` submits the federated-authority flow against a
-running fork. The wasm path must resolve under the repo-level `artifacts/`
-directory.
+running fork. The candidate runtime comes either from a node image or from a
+`--wasm` path, which must resolve under the repo-level `artifacts/` directory.
+
+Node images ship the runtime they were built with under `/artifacts-<arch>/`, so
+the simplest form takes it straight from the image being rolled out — no
+pre-populated `artifacts/` needed. With `--wasm` omitted it defaults to
+`$NEW_NODE_IMAGE`, else `$NODE_IMAGE` / `$MIDNIGHT_NODE_IMAGE`:
+
+```bash
+NEW_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:new \
+npm run governance-runtime-upgrade:preview -- \
+  --council-uris //Dave //Eve //Ferdie \
+  --technical-uris //Alice //Bob //Charlie \
+  --executor-uri //Alice
+```
+
+`--wasm-from-image <image>` names the source image explicitly. The blob is
+extracted with `docker create` + `docker cp` (nothing in the image is executed),
+the `*.compact.compressed.wasm` variant is preferred — what production upgrades
+submit — and it lands in `artifacts/from-image/<image>/`, re-extracted on every
+run so a moved tag never leaves a stale runtime behind.
+
+Use `--wasm` when the blob is not in an image: notably a **release asset**, which
+is the srtool deterministic build rather than the Earthly build an image carries.
+That is the one to validate before a real release.
 
 ```bash
 npm run governance-runtime-upgrade:preview -- \
@@ -127,6 +167,10 @@ npm run governance-runtime-upgrade:preview -- \
   --executor-uri //Alice
 ```
 
+Taking the runtime from the image the network is already running gives a
+candidate with the same `spec_version`, which the runtime rejects; the command
+warns and points at `--allow-same-version` for local rehearsals.
+
 `full-upgrade` runs the production-shaped rehearsal: first the image rollout,
 then the governance runtime upgrade against the running fork.
 
@@ -135,7 +179,6 @@ NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:old \
 NEW_NODE_IMAGE=ghcr.io/midnight-ntwrk/midnight-node:new \
 npm run full-upgrade:preview -- \
   --from-snapshot https://example.com/snapshots/preview-latest.tar.zst \
-  --wasm upgrade/midnight_node_runtime.compact.wasm \
   --council-uris //Dave //Eve //Ferdie \
   --technical-uris //Alice //Bob //Charlie \
   --executor-uri //Alice
@@ -184,6 +227,61 @@ npm run stop:mainnet
 See [fork-testing.md](../docs/fork-testing.md) for snapshot prerequisites and
 archive format details.
 
+### Attaching external services to a fork
+
+Downstream consumers (e.g. [midnight-indexer](https://github.com/midnightntwrk/midnight-indexer))
+can run their own services against a fork without any coupling to this repo's
+layout. The contract has two parts:
+
+1. **A named docker network.** The fork's compose project declares a stable
+   default-network name (mainnet: `midnight-fork-mainnet`). External compose
+   projects join it by declaring it `external: true`.
+2. **A connection manifest.** Every successful `run` writes
+   `artifacts/<network>.manifest.env` describing the fork:
+   `MIDNIGHT_FORK_NETWORK` (docker network name), `MIDNIGHT_FORK_NETWORK_ID`,
+   `MIDNIGHT_FORK_NODE_IMAGE` / `MIDNIGHT_FORK_NODE_TAG`,
+   `MIDNIGHT_FORK_NODE_WS` (in-network primary validator RPC on node1),
+   `MIDNIGHT_FORK_NODE_WS_HOST` (the same RPC published on localhost), plus
+   per-validator `MIDNIGHT_FORK_<SERVICE>_WS[_HOST]`
+   entries. The file reflects the most recent bring-up.
+
+A minimal consumer overlay, run as its own compose project from the consumer's
+repo:
+
+```yaml
+services:
+  my-service:
+    image: my-image
+    environment:
+      NODE_URL: ${MIDNIGHT_FORK_NODE_WS}
+    networks: [default, fork]
+
+networks:
+  fork:
+    name: ${MIDNIGHT_FORK_NETWORK}
+    external: true
+```
+
+```bash
+docker compose --env-file <midnight-node>/local-environment/artifacts/mainnet.manifest.env \
+  -f my-overlay.yaml up -d
+```
+
+Only services that talk to the node need to join the fork network; a
+consumer's private dependencies (databases, brokers) should stay on the
+overlay's own default network. Host-side (non-docker) consumers can use
+`MIDNIGHT_FORK_NODE_WS_HOST` directly and skip the network entirely.
+
+Caveats:
+
+- Tear down the consumer project before `npm run stop:<network>`; the fork
+  cannot remove its network while foreign containers are attached.
+- Don't combine an external indexer overlay with `-p withindexer` — the
+  in-tree indexer profile uses fixed container names (`nats`, `indexer-api`,
+  ...) that will collide with a second copy of the stack.
+- The manifest is regenerated on every `run`; consumers should re-source it
+  after a fork restart rather than caching values.
+
 ### Local environment
 
 In addition to the fork-based workflows above, you can launch a dynamic local
@@ -223,8 +321,9 @@ chain epochs.
 #### Startup phases
 
 `docker compose up` brings the stack up in dependency order: the one-shot jobs
-(`contract-compiler` → `mint-cnight-supply` → `midnight-setup` → `init-mnight-faucet`)
-each run to completion (`exit 0`) before the next phase starts.
+(`contract-compiler` → `mint-cnight-supply` → `midnight-setup-configs` →
+`midnight-setup-genesis` → `midnight-setup` → `init-mnight-faucet`) each run to
+completion (`exit 0`) before the next phase starts.
 
 | Phase | Container(s)                          | Does                                                                                                                        |
 | ----: | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -232,9 +331,60 @@ each run to completion (`exit 0`) before the next phase starts.
 |     1 | `ogmios`, `kupo`, `db-sync`           | Cardano API + chain indexing                                                                                                |
 |     2 | `contract-compiler`                   | compile + deploy the Aiken governance contracts                                                                             |
 |     3 | `mint-cnight-supply`                  | mint the cNIGHT supply → Reserve / ICS / faucet pools, then send the c2m bridge transfer funding wallet `0x..01` (1B NIGHT) |
-|     4 | `midnight-setup`                      | build the chainspec/genesis (bridge checkpoint + pre-approved faucet tx)                                                    |
-|     5 | `midnight-node-1` … `midnight-node-5` | validators; produce + finalize blocks                                                                                       |
-|     6 | `init-mnight-faucet`                  | claim the bridged NIGHT + DUST-register wallet `0x..01`                                                                     |
+|     4 | `midnight-setup-configs`              | patch `res/local/*` with the deployed addresses, policy ids and UTxOs (bridge checkpoint + pre-approved faucet tx)          |
+|     5 | `midnight-setup-genesis`              | build the genesis ledger state with `${TOOLKIT_IMAGE}` into `/shared/genesis`                                               |
+|     6 | `midnight-setup`                      | build the chainspec from the patched configs + that genesis, then wait for the D-parameter                                  |
+|     7 | `midnight-node-1` … `midnight-node-6` | nodes 1–5: validators; produce + finalize blocks. node 6: non-validator archive follower                                    |
+|     8 | `init-mnight-faucet`                  | claim the bridged NIGHT + DUST-register wallet `0x..01`                                                                     |
+
+#### Genesis is built at bring-up, not read from the repo
+
+`midnight-setup-genesis` runs `generate-genesis` on `${TOOLKIT_IMAGE}` instead of using
+the committed `res/genesis/genesis_*_local.mn`. Those blobs carry a version-bound
+serialization tag (`midnight:ledger-state[v18]:…`) and are rebuilt from the checkout, so
+an older `${MIDNIGHT_NODE_IMAGE}` rejects them outright:
+
+```
+ChainSpec GenesisState error: Failed to deserialize genesis state:
+expected header tag 'midnight:ledger-state[v13]:', got 'midnight:ledger-state[v18]:'
+```
+
+Generating genesis with the toolkit that matches the node image removes that coupling, so
+local-env boots on released images (verified on `1.0.0` and on the current build) as well
+as on a local build. `midnight-setup` then points the node's `chainspec_genesis_state` /
+`chainspec_genesis_block` at `/shared/genesis` via env override; on the current image this
+produces exactly the same chain spec as before.
+
+Two things to know when pinning an old image:
+
+- Pin `TOOLKIT_IMAGE` to the **same release** as `MIDNIGHT_NODE_IMAGE` (`local-environment/.envrc`
+  derives both from `MIDNIGHT_NODE_TAG`). A mismatched pair reintroduces the tag error.
+- `res/local/*` tracks the checkout, so an old toolkit can reject a config over a field it
+  still requires. `configurations/midnight-setup/genesis-compat/ledger-parameters-legacy-fields.json`
+  fills those gaps (currently `cost_model.parallelism_factor`, required up to `node-1.0.x`);
+  values in `res/local` always win and newer toolkits ignore the extras. Add a field there if
+  an older toolkit rejects the config.
+
+Genesis is generated once per chain: if `/shared/chain-spec.json` already exists, both the
+genesis and chainspec steps skip, so in-place node/runtime upgrades keep the chain. Drop the
+volume (`docker compose down -v`) for a fresh chain.
+
+The same shadowing applies to the node's own config: `default_cfg()` reads
+`res/cfg/default.toml` from disk at runtime, so a node older than the checkout can abort with
+`missing field <key>` for a key the current default.toml has dropped.
+`configurations/legacy-node-cfg.env` supplies those keys as environment variables (a config
+source of their own), and is wired into every service that runs the node binary. It is a no-op
+for images built from the checkout — build-spec output is byte-identical with and without it.
+Across `node-0.22.1` … `node-2.1.0` only `node-1.0.2` needs any (`tblock_correction_offset`,
+`tblock_correction_disable_after`); add a key there if an older image reports one missing.
+
+`midnight-node-6` is a non-validator archive node (`--state-pruning=archive
+--blocks-pruning=archive`, no keystore): it syncs from `midnight-node-1` and
+keeps full state and block history queryable over RPC. It publishes host ports
+30338 (p2p), 9945 (RPC), and 9620 (Prometheus), and persists its chain data in
+the `midnight-node-6-data` volume. It is labeled `io.midnight.role: archive`
+rather than `validator`, so `verify-finality` and the upgrade/consensus
+commands skip it.
 
 With `-p withindexer`, the indexer stack (`postgres-indexer`, `nats`, `chain-indexer`,
 `wallet-indexer`, `indexer-api`) starts alongside the Cardano services.

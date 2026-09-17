@@ -100,9 +100,10 @@ jobs:
       - name: Run rebuild-metadata
         env:
           EARTHLY_CONFIG: .earthly/config.yml
-          # No .envrc here to forward it, so set directly: disable Earthly build caches on
-          # CI runners (see the CI ARG in the Earthfile).
-          EARTHLY_BUILD_ARGS: CI=true
+          # No .envrc here to forward them, so set directly: disable Earthly build caches
+          # on CI runners, and publish into this repo's own namespace (see the CI and
+          # GHCR_REGISTRY ARGs in the Earthfile).
+          EARTHLY_BUILD_ARGS: CI=true,GHCR_REGISTRY=${{ github.repository == 'midnightntwrk/midnight-node' && 'ghcr.io/midnight-ntwrk' || format('ghcr.io/{0}', github.repository_owner) }},IMAGE_REPO=${{ github.event.repository.name }}
         run: |
           earthly -P +rebuild-metadata
 

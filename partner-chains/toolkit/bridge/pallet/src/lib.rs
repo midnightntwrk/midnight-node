@@ -46,10 +46,11 @@
 //! handle the transfers by itself. Instead, it must be configured with a
 //! [TransferHandler] instance by the Partner Chain builder.
 //!
-//! This handler is expected to never fail and handle any errors internally,
-//! unless there exists a case in which the chain should very deliberately
-//! be unable to produce a block. In practice, this means that any invalid
-//! transfers should be either discarded or saved for reprocessing later.
+//! This handler must never fail the block it is called in. Instead, it signals
+//! transfers it could not apply by returning [TransferHandlerError], which makes
+//! the pallet halt processing for the current block and keep the unhandled
+//! transfers pending, so that they are observed again later. See the documentation
+//! of [TransferHandler] for the exact semantics.
 //!
 //! A minimal example for a runtime that uses `pallet_balances` and `AccountId32`
 //! as its recipient type could look like this:
@@ -58,7 +59,9 @@
 //! pub struct BridgeTransferHelper;
 //!
 //! impl pallet_partner_chains_bridge::TransferHandler<AccountId32> for BridgeTransferHelper {
-//! 	fn handle_incoming_transfer(transfer: BridgeTransferV1<AccountId32>) {
+//! 	fn handle_incoming_transfer(
+//! 		transfer: BridgeTransferV1<AccountId32>,
+//! 	) -> Result<(), TransferHandlerError> {
 //! 		match transfer {
 //! 			BridgeTransferV1::InvalidTransfer { token_amount, utxo_id } => {
 //! 				log::warn!("⚠️ Discarded an invalid transfer of {token_amount} (utxo {utxo_id})");
@@ -72,6 +75,7 @@
 //! 				let _ = Balances::deposit_creating(&T::ReserveAccount::get(), token_amount.into());
 //! 			},
 //! 		}
+//! 		Ok(())
 //! 	}
 //! }
 //! ```rust
@@ -103,11 +107,12 @@
 //! }
 //! ```
 //!
-//! In particular, the pallet needs to be configured with the value  `MaxTransfersPerBlock`,
-//! which determines the upper bound on the number of transactions that can be processed
-//! per block. All outstanding transfers beyond that limit will be processed in subsequent
-//! block. It is important to select a value high enough to guarantee that the chain will
-//! be able to keep up with the volume of transfers coming in.
+//! In particular, the pallet needs to be configured with the value `MaxTransfersPerBlock`,
+//! which determines the upper bound on the number of transfers that can be processed per
+//! block, and thus the weight of the pallet's inherent. All outstanding transfers beyond that
+//! limit are processed in subsequent blocks. Any value of at least one guarantees that
+//! processing progresses, so the value only needs to be selected high enough for the chain to
+//! keep up with the volume of transfers coming in.
 //!
 //! The last thing to implement in the runtime is the runtime API used by the observability
 //! layer to access the configuration stored in the pallet. This is straightforward and
@@ -197,20 +202,48 @@ use frame_support::pallet_prelude::*;
 pub use pallet::*;
 use sp_partner_chains_bridge::BridgeTransferV1;
 
+/// Incoming transfer could not be handled by the [TransferHandler].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransferHandlerError {
+	/// Retry transfer later. Currently the only option, skipping is not implemented, so no error variant for it exists.
+	Retriable,
+}
+
 /// Runtime logic for handling incoming token bridge transfers from Cardano
 ///
 /// The chain builder should implement in accordance with their particular business rules and
-/// ledger structure. Calls to all functions defined by this trait should not return any errors
-/// as this would fail the block creation. Instead, any validation and business logic errors
-/// should be handled gracefully inside the handler code.
+/// ledger structure. Functions defined by this trait must never panic or fail the dispatch they
+/// are called in, as this would fail the block creation. Instead, any validation and business
+/// logic errors should be handled gracefully inside the handler code.
 pub trait TransferHandler<Recipient> {
 	/// Should handle an incoming token transfer of `token_mount` tokens to `recipient`
-	fn handle_incoming_transfer(_transfer: BridgeTransferV1<Recipient>);
+	///
+	/// Returning [TransferHandlerError] means that the transfer could *not* be applied and
+	/// should be handled again later. In that case the pallet:
+	/// 1. skips all remaining transfers of the current block, and
+	/// 2. sets the bridge data checkpoint to the position of the last transfer it did handle,
+	///    leaving it untouched if that is none.
+	///
+	/// This way all transfers that were not handled are observed again in one of the following
+	/// blocks. It is meant for failures that are expected to resolve on their own, such as the
+	/// Partner Chain ledger not being able to accept more transactions in the current block.
+	///
+	/// Unhandled transfers block all transfers made after them, if there is some permanent error
+	/// it likely is a bug and runtime code fix should be applied. If the failing transfer should
+	/// not be included in ledger, then governance action can manually move data checkpoint.
+	/// [set_main_chain_scripts][Pallet::set_main_chain_scripts].
+	fn handle_incoming_transfer(
+		_transfer: BridgeTransferV1<Recipient>,
+	) -> Result<(), TransferHandlerError>;
 }
 
 /// No-op implementation of `TransferHandler` for unit type.
 impl<Recipient> TransferHandler<Recipient> for () {
-	fn handle_incoming_transfer(_transfer: BridgeTransferV1<Recipient>) {}
+	fn handle_incoming_transfer(
+		_transfer: BridgeTransferV1<Recipient>,
+	) -> Result<(), TransferHandlerError> {
+		Ok(())
+	}
 }
 
 #[frame_support::pallet]
@@ -326,9 +359,28 @@ pub mod pallet {
 			ensure_none(origin)?;
 			ensure!(!InherentExecutedThisBlock::<T>::get(), Error::<T>::InherentAlreadyExecuted);
 			InherentExecutedThisBlock::<T>::put(true);
+
+			// Checkpoint reached by the transfers handled so far. While it is `None`, the
+			// checkpoint in storage still describes everything that has been handled.
+			let mut reached: Option<BridgeDataCheckpoint> = None;
+
 			for transfer in transfers {
-				T::TransferHandler::handle_incoming_transfer(transfer);
+				let checkpoint = transfer.checkpoint();
+				let mc_tx_hash = transfer.mc_tx_hash;
+				if T::TransferHandler::handle_incoming_transfer(transfer).is_err() {
+					log::warn!(
+						"⚠️ Handling of a bridge transfer from Cardano transaction {mc_tx_hash} failed. \
+						 It and all transfers observed after it will be handled again in a later block."
+					);
+					if let Some(reached) = reached {
+						DataCheckpoint::<T>::put(reached);
+					}
+					return Ok(());
+				}
+				reached = Some(checkpoint);
 			}
+
+			// Everything processed so store the node supported checkpoint.
 			DataCheckpoint::<T>::put(data_checkpoint);
 			Ok(())
 		}
