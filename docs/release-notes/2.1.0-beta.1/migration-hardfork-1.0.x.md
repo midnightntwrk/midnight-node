@@ -73,13 +73,21 @@ midnight-node-toolkit runtime-upgrade \
 Substitute your network's actual governance keys for the `-c` / `-t` / `--signer-key` values; the
 e2e test uses the dev accounts `//Dave`, `//Eve`, `//Alice`, `//Bob`.
 
+The `ws://` URLs throughout this guide assume a node on the same host or an SSH tunnel. Use
+`wss://` for any RPC endpoint reached over a network. The signing key never crosses the wire
+either way — it is a local CLI argument, and the toolkit submits an already-signed extrinsic.
+
 This pre-release publishes **no runtime WASM asset**
 ([#2061](https://github.com/midnightntwrk/midnight-node/issues/2061)), so extract the blob from
 the node image:
 
 ```shell
-cid=$(docker create midnightntwrk/midnight-node:2.1.0-beta.1)
-docker cp "$cid:/artifacts-amd64/midnight_node_runtime.compact.compressed.wasm" .
+img=midnightntwrk/midnight-node:2.1.0-beta.1
+cid=$(docker create "$img")
+# the tag is a multi-arch manifest and the wasm lives under /artifacts-<arch>,
+# named for the arch the image was built on
+arch=$(docker image inspect -f '{{.Architecture}}' "$img")
+docker cp "$cid:/artifacts-$arch/midnight_node_runtime.compact.compressed.wasm" .
 docker rm -f "$cid"
 ```
 

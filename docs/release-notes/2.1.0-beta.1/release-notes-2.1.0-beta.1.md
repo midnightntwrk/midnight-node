@@ -35,7 +35,7 @@ The change entries below are the delta against the 2.0.0 pre-release line and ag
 ## Dependencies
 
 - **midnight-ledger 9.1.0.0-rc.4** — pinned as a single workspace tag; the node binary provides it via host calls. Ledger 7 is fully removed, so this node cannot decode or replay chain history predating the ledger 7 → 8 hardfork.
-- **The chain must already be running the 1.0.3 runtime** (pending release) — that is the fork-from baseline this release is built and tested against. Forking from 1.0.2 or earlier is not the documented path; see [Other Changes](#other-changes).
+- **The chain must already be running the 1.0.3 runtime** (pending release) — that is the supported fork-from baseline. CI exercises the fork boundary from 1.0.1, not 1.0.3 — see the [migration guide](https://github.com/midnightntwrk/midnight-node/blob/main/docs/release-notes/2.1.0-beta.1/migration-hardfork-1.0.x.md) for what that leaves unexercised. Forking from 1.0.2 or earlier is not the documented path; see [Other Changes](#other-changes).
 
 **Downstream impact (cascading effects)**: the node's consumers must be rebuilt or re-pointed before they can follow a 2.1.0 chain.
 
