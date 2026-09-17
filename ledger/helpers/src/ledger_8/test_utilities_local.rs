@@ -133,7 +133,7 @@ impl ProofServerProvider<'_> {
 		} else {
 			let data =
 				self.resolver.resolve_key(preimage.key_location().clone()).await?.ok_or_else(
-					|| anyhow::anyhow!("failed to find key '{}'", &preimage.key_location().0),
+					|| anyhow::anyhow!("failed to find key '{}'", preimage.key_location().0),
 				)?;
 			Some(WrappedIr(data.ir_source))
 		};
@@ -167,7 +167,7 @@ impl ProvingProvider for ProofServerProvider<'_> {
 			.check_request_body(&ProofPreimageVersioned::V2(std::sync::Arc::new(preimage.clone())))
 			.await?;
 		println!("    Check request: {} bytes", ser.len());
-		let resp = Client::new().post(format!("{}/check", &self.base_url)).body(ser).send().await?;
+		let resp = Client::new().post(format!("{}/check", self.base_url)).body(ser).send().await?;
 		if resp.status().is_success() {
 			let bytes = resp.bytes().await?;
 			println!("    Check response: {} bytes", bytes.len());
@@ -192,7 +192,7 @@ impl ProvingProvider for ProofServerProvider<'_> {
 			)
 			.await?;
 		println!("    Proving request: {} bytes", ser.len());
-		let resp = Client::new().post(format!("{}/prove", &self.base_url)).body(ser).send().await?;
+		let resp = Client::new().post(format!("{}/prove", self.base_url)).body(ser).send().await?;
 		if resp.status().is_success() {
 			let bytes = resp.bytes().await?;
 			println!("    Proving response: {} bytes", bytes.len());
