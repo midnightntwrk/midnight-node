@@ -57,12 +57,28 @@ else
 fi
 [ -f "$ARCHIVE_TAR" ] || die "archive missing: $ARCHIVE_TAR -- run prime.sh first"
 
-# Target height: recorded by prime.sh, overridable via TARGET_HEIGHT env.
+# Target height and chainspec: recorded by prime.sh, overridable via the
+# TARGET_HEIGHT / CHAIN env vars.
+#
+# CHAIN must come from the meta, not from lib.sh's `dev` default: an archive
+# primed against a custom genesis (see the "Bigger batches" section of the
+# README) is unusable under the built-in dev spec, and the failure is silent --
+# the producer simply authors a *different* chain from its own genesis and the
+# syncer never reaches the target height. Re-deriving it here keeps the archive
+# and the spec that produced it from drifting apart.
 if [ -f "$ARCHIVE_META" ]; then
   META_HEIGHT="$(sed -n 's/^height=//p' "$ARCHIVE_META" | head -1)"
   [ -n "$META_HEIGHT" ] && TARGET_HEIGHT="$META_HEIGHT"
+  META_CHAIN="$(sed -n 's/^chain=//p' "$ARCHIVE_META" | head -1)"
+  if [ -n "$META_CHAIN" ] && [ -z "${CHAIN_OVERRIDDEN:-}" ]; then
+    [ "$META_CHAIN" = dev ] || [ -f "$META_CHAIN" ] \
+      || die "archive was primed with chainspec '$META_CHAIN', which no longer exists -- \
+re-prime, or set CHAIN=<spec> explicitly if you have moved it"
+    CHAIN="$META_CHAIN"
+  fi
 fi
 log "🎯 target sync height: $TARGET_HEIGHT"
+log "🔗 chainspec: $CHAIN"
 
 PRODUCER_PID=""
 SYNCER_PID=""
@@ -110,8 +126,9 @@ start_producer() {
     (
       cd "$REPO_ROOT"
       export CFG_PRESET=dev BASE_PATH="$PRODUCER_DIR"
+      mapfile -t chain_args < <(authoring_chain_args)
       exec "$NODE_BIN" \
-        --dev \
+        "${chain_args[@]}" \
         --node-key "$DEV_NODE_KEY" \
         --rpc-external --rpc-cors=all --rpc-port "$PRODUCER_RPC_HOST_PORT" \
         --prometheus-external --prometheus-port "$PRODUCER_PROM_PORT" \
@@ -255,7 +272,7 @@ run_sync() { # $1 = flag (false|true)
 
   local t0 t0_ms t1_ms
   t0=$(date +%s)        # coarse, for the watchdog/stall checks
-  t0_ms=$(date +%s%3N)  # precise, for the reported sync time
+  t0_ms=$(now_ms)  # precise, for the reported sync time
   start_syncer "$flag" "$node_key"
 
   local rpc="http://localhost:${SYNCER_RPC_HOST_PORT}"
@@ -269,10 +286,10 @@ run_sync() { # $1 = flag (false|true)
       || { syncer_logs_tail >&2; die "syncer exited early (flag=$flag) at height $last"; }
     h="$(best_height "$rpc")"; h="${h:-0}"
     if (( h > last )); then last=$h; last_progress=$now; log "  [flag=$flag] best #$last"; fi
-    if (( last >= TARGET_HEIGHT )); then t1_ms=$(date +%s%3N); break; fi
+    if (( last >= TARGET_HEIGHT )); then t1_ms=$(now_ms); break; fi
     (( now - last_progress > STALL_TIMEOUT_SECS )) \
       && { syncer_logs_tail >&2; die "sync stalled at #$last (flag=$flag)"; }
-    sleep "$POLL_INTERVAL_SECS"
+    sleep "$SYNC_POLL_INTERVAL_SECS"
   done
 
   # capture metrics while the node is still up
@@ -282,28 +299,61 @@ run_sync() { # $1 = flag (false|true)
   RESULT_SECS=$(awk -v a="$t0_ms" -v b="$t1_ms" 'BEGIN { printf "%.1f", (b - a) / 1000 }')
 }
 
-# Each config is synced REPEATS times; a fresh full sync is only seconds, so the
-# minimum across runs is the cleanest signal (least startup/connection noise).
-REPEATS="${REPEATS:-3}"
+# Each config is synced REPEATS times. The headline uses the *median*: with a handful of runs a
+# single outlier (a slow peer connection, a scheduler hiccup) moves the min or the mean enough to
+# invert the comparison, and the effect being measured here is a fraction of a second. All samples
+# are printed so the spread is visible -- if it is comparable to the delta, the run has not resolved
+# anything and REPEATS should go up.
+REPEATS="${REPEATS:-5}"
 OFF_TIMES=()
 ON_TIMES=()
+
+# Interleaved and counterbalanced: the two configs alternate within each repeat, and the order
+# inside the pair flips every repeat (OFF,ON / ON,OFF / ...).
+#
+# Running all of one config and then all of the other -- the obvious loop -- makes run order a
+# confound with the thing being measured: the second config always runs later, on a hotter machine
+# with a warmer page cache and whatever else has drifted in the minutes since. That is not a
+# hypothetical; it produced a clean-looking, reproducible, and entirely spurious "batching is
+# slower" signal here. Alternating splits any monotonic drift evenly between the two, and flipping
+# the within-pair order cancels the advantage of going first.
+run_one() {
+  local flag="$1" r="$2"
+  case "$flag" in
+    false) log "════════ OFF (inline) run $r/$REPEATS ════════" ;;
+    true)  log "════════ ON  (batch)  run $r/$REPEATS ════════" ;;
+  esac
+  run_sync "$flag"
+  case "$flag" in
+    false) OFF_TIMES+=( "$RESULT_SECS" ); log "   OFF #$r: ${RESULT_SECS}s" ;;
+    true)  ON_TIMES+=( "$RESULT_SECS" );  log "   ON  #$r: ${RESULT_SECS}s" ;;
+  esac
+}
+
 for r in $(seq 1 "$REPEATS"); do
-  log "════════ OFF (inline) run $r/$REPEATS ════════"
-  run_sync false
-  OFF_TIMES+=( "$RESULT_SECS" )
-  log "   OFF #$r: ${RESULT_SECS}s"
-done
-for r in $(seq 1 "$REPEATS"); do
-  log "════════ ON (batch) run $r/$REPEATS ════════"
-  run_sync true
-  ON_TIMES+=( "$RESULT_SECS" )
-  log "   ON #$r: ${RESULT_SECS}s"
+  if [ $(( r % 2 )) -eq 1 ]; then
+    run_one false "$r"; run_one true "$r"
+  else
+    run_one true "$r"; run_one false "$r"
+  fi
 done
 
-# min + mean of a list of floats
-stats() { awk 'NR==1{m=$1} {s+=$1; if($1<m)m=$1} END{printf "min=%.1fs mean=%.1fs", m, s/NR}' <<<"$(printf '%s\n' "$@")"; }
-OFF_MIN="$(printf '%s\n' "${OFF_TIMES[@]}" | awk 'NR==1{m=$1} $1<m{m=$1} END{printf "%.1f", m}')"
-ON_MIN="$(printf '%s\n' "${ON_TIMES[@]}" | awk 'NR==1{m=$1} $1<m{m=$1} END{printf "%.1f", m}')"
+# median, min and mean of a list of floats
+stats() {
+  printf '%s\n' "$@" | sort -n | awk '
+    {v[NR]=$1; s+=$1}
+    END {
+      m = (NR % 2) ? v[(NR+1)/2] : (v[NR/2] + v[NR/2+1]) / 2
+      printf "median=%.2fs min=%.2fs mean=%.2fs", m, v[1], s/NR
+    }'
+}
+median() { printf '%s\n' "$@" | sort -n | awk '{v[NR]=$1} END {printf "%.2f", (NR%2) ? v[(NR+1)/2] : (v[NR/2]+v[NR/2+1])/2}'; }
+# Spread of the samples, to say whether the delta is resolvable at all.
+spread() { printf '%s\n' "$@" | sort -n | awk '{v[NR]=$1} END {printf "%.2f", v[NR]-v[1]}'; }
+OFF_MED="$(median "${OFF_TIMES[@]}")"
+ON_MED="$(median "${ON_TIMES[@]}")"
+OFF_SPREAD="$(spread "${OFF_TIMES[@]}")"
+ON_SPREAD="$(spread "${ON_TIMES[@]}")"
 
 # --- report (stdout) -------------------------------------------------------
 echo
@@ -316,10 +366,58 @@ fi
 printf 'blocks synced          : %s   (repeats: %s)\n' "$TARGET_HEIGHT" "$REPEATS"
 printf 'OFF (inline verify)    : %s   [%s]\n' "$(stats "${OFF_TIMES[@]}")" "${OFF_TIMES[*]}"
 printf 'ON  (batch verify)     : %s   [%s]\n' "$(stats "${ON_TIMES[@]}")" "${ON_TIMES[*]}"
-awk -v off="$OFF_MIN" -v on="$ON_MIN" 'BEGIN {
-  printf "delta (min off-on)     : %.1fs\n", off - on
-  if (on > 0) printf "speedup (min off/on)   : %.2fx\n", off / on
+awk -v off="$OFF_MED" -v on="$ON_MED" 'BEGIN {
+  d = off - on
+  printf "delta (median off-on)  : %.2fs\n", d
+  if (on > 0) printf "speedup (median off/on): %.2fx\n", off / on
 }'
+
+# Paired analysis. The runs are interleaved, so OFF_TIMES[i] and ON_TIMES[i] come from the same
+# repeat, minutes apart at most -- which makes their difference immune to the slow machine-wide
+# drift that dominates the raw spread. Comparing the two spreads instead (the unpaired test this
+# harness used to apply) throws that away and reports "unresolved" on data that is in fact
+# unanimous, because the drift is counted as noise in both arms rather than cancelled.
+printf 'paired deltas (off-on) : [%s]\n' "$(
+  for i in "${!OFF_TIMES[@]}"; do
+    awk -v a="${OFF_TIMES[$i]}" -v b="${ON_TIMES[$i]}" 'BEGIN{printf "%+.1f ", a-b}'
+  done)"
+paired_deltas=()
+for i in "${!OFF_TIMES[@]}"; do
+  paired_deltas+=( "$(awk -v a="${OFF_TIMES[$i]}" -v b="${ON_TIMES[$i]}" 'BEGIN{printf "%.4f", a-b}')" )
+done
+# Sorted for the median; sign counts come from the unsorted list. (macOS awk has no asort.)
+printf '%s\n' "${paired_deltas[@]}" | sort -n | awk '
+  {v[NR]=$1; s+=$1}
+  END {
+    med = (NR % 2) ? v[(NR+1)/2] : (v[NR/2] + v[NR/2+1]) / 2
+    mean = s/NR
+    printf "  median paired delta  : %+.2fs   (mean %+.2fs)\n", med, mean
+    # The syncer occasionally spends a minute finding the producer peer before importing
+    # anything. That is a harness flake, not a verification cost, and it lands on whichever
+    # config happens to be running -- so trust the median and ignore a mean it has swamped.
+    d = mean - med; if (d < 0) d = -d
+    if (d > 1) {
+      print "  ⚠️  one or more runs are far from the median (likely a slow peer connect);"
+      print "      the mean above is not meaningful — read the median and the sample list."
+    }
+  }'
+printf '%s\n' "${paired_deltas[@]}" | awk '
+  {if ($1 > 0) wins++; else if ($1 < 0) losses++}
+  END {
+    k = (wins > losses) ? wins : losses
+    # Sign test, one-sided: P(X >= k | p=0.5) = 2^-NR * sum_{j=k..NR} C(NR,j).
+    tail = 0; c = 1
+    for (j = NR; j >= k; j--) { tail += c; c = c * j / (NR - j + 1) }
+    half = 1; for (i = 0; i < NR; i++) half = half / 2
+    p = tail * half
+    printf "  ON faster in %d/%d pairs  (sign test p = %.3f, one-sided)\n", wins+0, NR, p
+    # Judge by the sign test, not by unanimity: with enough pairs a few disagreements are
+    # expected and the result is still decisive, while 3/3 agreeing establishes very little.
+    if (p > 0.05) {
+      print "  ⚠️  not resolved (p > 0.05): these pairs do not establish a direction. Raise"
+      print "      REPEATS, or use a chain where verification is a larger share of sync time."
+    }
+  }'
 echo
 # Coverage check. The block-import path records batches_total/txs_total/batch_size
 # (via BatchVerifier::observe_batch) but NOT duration_seconds or fallback_total —
@@ -353,8 +451,17 @@ fi
 #   OFF run -> mode="inline"     : per-tx well_formed WITH proofs (cold cache).
 #   ON  run -> mode="batch"      : per-aggregate-call crypto (batch_verify_proofs).
 #              mode="batch_prep" : per-tx well_formed WITHOUT proofs (non-crypto).
+#              mode="revalidate" : per-tx well_formed during block *execution*, against
+#                                  the RevalidationReference (crypto skipped).
 # Per-tx cost = _sum / _txs_total. Adding ON's batch_prep makes the ON figure
 # apples-to-apples with OFF's fused well_formed; subtracting it isolates crypto.
+#
+# The crypto comparison alone is NOT the bottom line, and reading it as one is a
+# trap this harness fell into: batching does not remove `well_formed` from block
+# execution, it only makes that call crypto-free. So the ON path pays
+# batch + batch_prep (ingress) AND revalidate (execution), where OFF pays inline
+# once. The "total verification cost" block below is the figure that tracks wall
+# clock; keep the two consistent, and trust wall clock when they disagree.
 OFF_METRICS="$ARTIFACTS_DIR/metrics-false.txt"
 PV_DUR=ledger_proof_verify_duration_seconds_sum
 PV_TXS=ledger_proof_verify_txs_total
@@ -364,6 +471,10 @@ on_batch_sum="$(metric_mode "$ON_METRICS" "$PV_DUR" batch)"
 on_batch_txs="$(metric_mode "$ON_METRICS" "$PV_TXS" batch)"
 on_prep_sum="$(metric_mode "$ON_METRICS" "$PV_DUR" batch_prep)"
 on_prep_txs="$(metric_mode "$ON_METRICS" "$PV_TXS" batch_prep)"
+on_reval_sum="$(metric_mode "$ON_METRICS" "$PV_DUR" revalidate)"
+on_reval_txs="$(metric_mode "$ON_METRICS" "$PV_TXS" revalidate)"
+off_reval_sum="$(metric_mode "$OFF_METRICS" "$PV_DUR" revalidate)"
+off_reval_txs="$(metric_mode "$OFF_METRICS" "$PV_TXS" revalidate)"
 echo
 echo "--- per-midnight-tx proof verification (crypto, OFF inline vs ON batched) ---"
 awk -v ois="$off_inline_sum" -v oit="$off_inline_txs" \
@@ -386,15 +497,41 @@ awk -v ois="$off_inline_sum" -v oit="$off_inline_txs" \
     printf "  crypto-only speedup  : %.2fx   (%.3f -> %.3f ms/tx)\n", off_cryp/on_cryp, off_cryp*1000, on_cryp*1000
 }'
 
+echo
+echo "--- total per-midnight-tx verification cost (what wall clock actually sees) ---"
+awk -v ois="$off_inline_sum" -v oit="$off_inline_txs" \
+    -v ors="$off_reval_sum"  -v ort="$off_reval_txs" \
+    -v obs="$on_batch_sum"   -v obt="$on_batch_txs" \
+    -v ops="$on_prep_sum"    -v opt="$on_prep_txs" \
+    -v nrs="$on_reval_sum"   -v nrt="$on_reval_txs" 'BEGIN {
+  if (oit <= 0 || obt <= 0) { print "  (insufficient samples)"; exit }
+  off_total = ois + ors;           # OFF: one fused well_formed per tx (+ any revalidations)
+  on_total  = obs + ops + nrs;     # ON:  ingress batch + prep, then execution revalidate
+  printf "  OFF  : %7.3fs total  = %.3fs inline (%d tx)", off_total, ois, oit
+  if (ort > 0) printf " + %.3fs revalidate (%d tx)", ors, ort
+  printf "\n"
+  printf "  ON   : %7.3fs total  = %.3fs batch (%d tx) + %.3fs prep (%d tx) + %.3fs revalidate (%d tx)\n", \
+         on_total, obs, obt, ops, opt, nrs, nrt
+  if (nrt <= 0) {
+    print "  ⚠️  no revalidate samples on the ON run — the execution-side pass is unaccounted;"
+    print "      the totals below understate the ON cost."
+  }
+  if (on_total > 0)
+    printf "  ratio: %.2fx  (>1 means batching verifies faster overall; <1 means it costs more)\n", off_total/on_total
+  if (nrt > 0)
+    printf "  per-tx: OFF inline %.3f ms  vs  ON revalidate %.3f ms (execution-side, crypto-free)\n", \
+           (ois/oit)*1000, (nrs/nrt)*1000
+}'
+
 if [ "$BATCHES" -gt 0 ] && [ "$TXS" -ge "$PROOF_TXS" ]; then
   echo "  ✅ block-import batched every proof-tx (txs_total >= load proof-txs) — no inline fallback"
 else
   echo "  ⚠️  txs_total ($TXS) < load proof-txs ($PROOF_TXS): some blocks skipped batching"
   echo "     (BatchVerifyError::Unavailable) and inline-verified — investigate before trusting timing."
 fi
-echo "  note: fallback_total is mempool-only (always 0 on a syncer); batch size is"
-echo "        capped at the funder's DUST-output count, so batches stay small — the"
-echo "        per-tx crypto speedup above needs many proof-txs/block to be large."
+echo "  note: fallback_total is mempool-only (always 0 on a syncer). Batch size is"
+echo "        capped at the funder's DUST-output count (5 on the stock genesis);"
+echo "        see README \"Bigger batches: a custom genesis\" to raise it."
 echo "--- raw ON verify counters ---"
 cat "$ON_METRICS" 2>/dev/null || echo "(none scraped)"
 echo "--- raw OFF verify counters ---"

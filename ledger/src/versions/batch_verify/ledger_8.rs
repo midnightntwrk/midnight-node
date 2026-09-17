@@ -33,6 +33,33 @@ use super::{
 };
 use crate::common::batch::BatchVerifyFailure;
 
+/// Ledger 8 has no prepared-evidence type; the unit type keeps the shared code compiling.
+pub type PreparedProofs = ();
+
+/// Ledger 8 cannot prepare proofs ahead of a batch; always signals "unsupported".
+pub fn prepare_tx_proofs<S, D>(
+	_tx: &Transaction<S, ProofMarker, PureGeneratorPedersen, D>,
+	_ref_state: &impl StateReference<D>,
+) -> Result<(PreparedProofs, usize), BatchVerifyFailure>
+where
+	S: SignatureKind<D>,
+	D: DB,
+	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Serializable,
+{
+	Err(BatchVerifyFailure::Unlocalized)
+}
+
+/// No-op: ledger 8 never produces prepared evidence to merge.
+pub fn merge_prepared<D: DB>(_acc: &mut PreparedProofs, _more: PreparedProofs) {}
+
+/// Ledger 8 cannot decide a prepared batch; always signals "unsupported".
+pub fn finalize_prepared<D: DB>(
+	_prepared: &PreparedProofs,
+	_linear_revalidation: bool,
+) -> Result<(), BatchVerifyFailure> {
+	Err(BatchVerifyFailure::Unlocalized)
+}
+
 /// Ledger 8 cannot batch-verify proofs; always signals "unsupported" so the caller falls back.
 pub fn batch_verify_proofs<S, D>(
 	_txs: &[&Transaction<S, ProofMarker, PureGeneratorPedersen, D>],
@@ -45,4 +72,12 @@ where
 	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Serializable,
 {
 	Err(BatchVerifyFailure::Unlocalized)
+}
+
+/// Ledger 8 never produces evidence indices; kept so the shared code has one name to call.
+pub fn evidence_to_tx_indices(
+	_evidence_ends: &[usize],
+	_failed: &[usize],
+) -> alloc::vec::Vec<usize> {
+	alloc::vec::Vec::new()
 }

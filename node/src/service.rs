@@ -460,6 +460,14 @@ pub(crate) fn new_partial_with_pool_options(
 
 	let select_chain = sc_consensus::LongestChain::new(backend.clone());
 
+	// Tell the ledger whether either ingress point is active, so `get_verified_transaction` can
+	// distinguish "a transaction slipped past batch verification" (an error worth logging) from
+	// "inline verification is the configured path" (the default, and not worth a line per tx).
+	midnight_node_ledger::set_batch_verify_enabled(
+		midnight_cfg.batch_verify_mempool,
+		midnight_cfg.batch_verify_block_import,
+	);
+
 	// Batch ZK-proof verification (mempool ingress + block import) shares one `BatchVerifier` and
 	// one metrics set — registering the same Prometheus metrics twice would fail.
 	let batch_verify_metrics = BatchVerifyMetrics::new(config.prometheus_registry());

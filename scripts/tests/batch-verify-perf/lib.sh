@@ -40,7 +40,13 @@ ARCHIVE_META="${ARCHIVE_META:-$ARTIFACTS_DIR/chain-archive.meta}"
 
 # --- docker / topology ----------------------------------------------------
 NETWORK_NAME="${NETWORK_NAME:-batch-verify-net}"
-CHAIN="${CHAIN:-dev}"                       # built-in "Midnight Undeployed" spec
+# Chainspec to run. `dev` is the built-in "Midnight Undeployed" spec; a path
+# selects a custom one (see the README's "Bigger batches" section).
+# CHAIN_OVERRIDDEN records whether the caller chose it, so benchmark.sh can
+# default to the spec recorded in the archive meta without overriding an
+# explicit choice.
+CHAIN_OVERRIDDEN="${CHAIN:+yes}"
+CHAIN="${CHAIN:-dev}"
 BASE_PATH_IN="${BASE_PATH_IN:-/node/chain}" # matches images/node/Dockerfile BASE_PATH
 
 PRIME_CONTAINER="${PRIME_CONTAINER:-bv-prime}"
@@ -128,6 +134,13 @@ TARGET_HEIGHT="${TARGET_HEIGHT:-10}"
 SYNC_TIMEOUT_SECS="${SYNC_TIMEOUT_SECS:-1800}"
 STALL_TIMEOUT_SECS="${STALL_TIMEOUT_SECS:-240}"
 POLL_INTERVAL_SECS="${POLL_INTERVAL_SECS:-2}"
+# How often the benchmark checks whether the syncer has reached the target height. This is the
+# *measurement* resolution: a sync that truly takes T seconds is reported somewhere in
+# [T, T + interval), because completion is only noticed on the next poll. At the old 2 s it
+# quantised a ~4 s sync into "4.1 s or 6.2 s" and buried the sub-second effect the benchmark
+# exists to measure -- more repeats do not help, since the error is a floor-to-poll-boundary
+# artifact rather than zero-mean noise. Each poll is one cheap local RPC.
+SYNC_POLL_INTERVAL_SECS="${SYNC_POLL_INTERVAL_SECS:-0.1}"
 # Optional batch-verify tuning, forwarded to the syncer if set in the env:
 #   BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE
 #   BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY
@@ -154,6 +167,34 @@ rm_volume()    { docker volume rm -f "$1" >/dev/null 2>&1 || true; }
 
 # best-block height (decimal) from an http rpc url, empty on error
 best_height() { _rpc_get_best_height "$1"; }
+
+# Chain-selection args for an *authoring* node.
+#
+# `--dev` is a shorthand that also injects Alice and force-authoring, but it pins the chain id to
+# "dev", and `Cfg::load_spec` maps that to a hardcoded built-in spec — `chainspec_genesis_state`
+# and friends are validated but never consulted. So a custom CHAIN (a chainspec JSON path, e.g. one
+# built with more genesis DUST outputs) cannot go through `--dev`; the flags it implies have to be
+# spelled out instead. Non-authoring nodes just take `--chain "$CHAIN"` directly.
+authoring_chain_args() {
+  if [ "$CHAIN" = "dev" ]; then
+    printf -- '--dev\n'
+  else
+    printf -- '--chain\n%s\n--alice\n--force-authoring\n' "$CHAIN"
+  fi
+}
+
+
+# Milliseconds since the epoch. `date +%s%3N` is GNU-only: BSD/macOS `date` has no `%N` and emits a
+# literal "N", which collapses the millisecond subtraction to ~0 and silently reports every sync as
+# instantaneous. Prefer GNU date when present, else Python.
+now_ms() {
+  if date +%s%3N 2>/dev/null | grep -qE '^[0-9]+$'; then
+    date +%s%3N
+  else
+    python3 -c 'import time; print(int(time.time() * 1000))'
+  fi
+}
+
 
 # archive_volume <volume> <host-tar.gz>: gzip the contents of a named volume.
 # Uses busybox (piping through gzip so we do not rely on busybox tar's -z).

@@ -335,6 +335,11 @@ pub(crate) fn is_ledger_8_state_key(state_key: &[u8]) -> bool {
 
 mod common;
 
+#[cfg(feature = "std")]
+pub use common::batch::{
+	batch_verify_block_enabled, batch_verify_mempool_enabled, set_batch_verify_enabled,
+};
+
 pub mod types {
 	pub use super::common::types::*;
 

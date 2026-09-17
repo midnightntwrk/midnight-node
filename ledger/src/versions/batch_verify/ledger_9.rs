@@ -34,6 +34,85 @@ use super::{
 };
 use crate::common::batch::BatchVerifyFailure;
 
+/// Proof evidence for a set of transactions with the expensive, per-proof half of batch
+/// verification already done. Accumulated with [`merge_prepared`], decided by [`finalize_prepared`].
+pub type PreparedProofs = super::mn_ledger_local::structure::PreparedContractProofs;
+
+/// Collects one transaction's proof evidence and runs the per-proof half of batch verification
+/// over it, returning the prepared evidence and how many evidence items it contributed.
+///
+/// This is the part of [`batch_verify_proofs`] whose cost grows with the number of proofs, and it
+/// does not depend on which other transactions end up in the batch — so a caller may run it as
+/// each transaction arrives and only pay [`finalize_prepared`] when it decides the batch.
+///
+/// The transaction must already have passed the non-crypto `well_formed` checks (run `well_formed`
+/// with proofs deferred first); this only does proof work.
+pub fn prepare_tx_proofs<S, D>(
+	tx: &Transaction<S, ProofMarker, PureGeneratorPedersen, D>,
+	ref_state: &impl StateReference<D>,
+) -> Result<(PreparedProofs, usize), BatchVerifyFailure>
+where
+	S: SignatureKind<D>,
+	D: DB,
+	Transaction<S, ProofMarker, PureGeneratorPedersen, D>: Serializable,
+{
+	let evidence = tx.collect_proof_evidence(ref_state).map_err(|e| {
+		log::warn!(
+			target: LOG_TARGET,
+			"batch proof preparation: failed to collect proof evidence: {e}",
+		);
+		BatchVerifyFailure::Unlocalized
+	})?;
+	let count = evidence.len();
+	let mode = WellFormedStrictness::default().proof_verification_mode;
+	let prepared =
+		<ProofMarker as ProofKind<D>>::prepare_proof_evidence(&evidence, mode).map_err(|e| {
+			log::warn!(target: LOG_TARGET, "batch proof preparation failed: {e}");
+			BatchVerifyFailure::Unlocalized
+		})?;
+	Ok((prepared, count))
+}
+
+/// Appends `more` to `acc`, keeping evidence order so indices reported by [`finalize_prepared`]
+/// stay relative to the whole accumulated batch.
+pub fn merge_prepared<D: DB>(acc: &mut PreparedProofs, more: PreparedProofs) {
+	<ProofMarker as ProofKind<D>>::merge_prepared_evidence(acc, more)
+}
+
+/// Decides a batch accumulated by [`prepare_tx_proofs`] / [`merge_prepared`]: one fold and a single
+/// pairing check, at a cost essentially independent of the batch size.
+///
+/// `linear_revalidation` behaves exactly as in [`batch_verify_proofs`], and the indices reported in
+/// [`BatchVerifyFailure::Localized`] are positions in the accumulated *evidence* sequence — the
+/// caller maps them back to transactions with its own prefix-sum table.
+pub fn finalize_prepared<D: DB>(
+	prepared: &PreparedProofs,
+	linear_revalidation: bool,
+) -> Result<(), BatchVerifyFailure> {
+	let mode = WellFormedStrictness::default().proof_verification_mode;
+	match <ProofMarker as ProofKind<D>>::verify_prepared_evidence(
+		prepared,
+		mode,
+		linear_revalidation,
+	) {
+		Ok(()) => Ok(()),
+		Err(MalformedTransaction::InvalidProofBatch { failed_indices }) => {
+			log::warn!(
+				target: LOG_TARGET,
+				"prepared batch verification failed at evidence index(es) {failed_indices:?}",
+			);
+			Err(BatchVerifyFailure::LocalizedEvidence(failed_indices))
+		},
+		Err(e) => {
+			log::warn!(
+				target: LOG_TARGET,
+				"prepared batch verification failed, not localized: {e}",
+			);
+			Err(BatchVerifyFailure::Unlocalized)
+		},
+	}
+}
+
 /// Collects the proof evidence of every transaction in `txs` and verifies all of it in a single
 /// aggregate `batch_proof_verify` call against `ref_state`.
 ///
@@ -128,7 +207,7 @@ where
 /// index `e` is the first transaction whose end is strictly greater than `e`. Indices past the end
 /// of the evidence are dropped rather than blaming a nonexistent transaction; the caller treats an
 /// empty result as an unlocalized failure.
-fn evidence_to_tx_indices(evidence_ends: &[usize], failed_evidence: &[usize]) -> Vec<usize> {
+pub fn evidence_to_tx_indices(evidence_ends: &[usize], failed_evidence: &[usize]) -> Vec<usize> {
 	let mut tx_indices: Vec<usize> = failed_evidence
 		.iter()
 		.map(|&e| evidence_ends.partition_point(|&end| end <= e))

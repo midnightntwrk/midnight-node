@@ -71,3 +71,7 @@ batch-verify-perf-prime NODE_IMAGE TOOLKIT_IMAGE:
 # A/B benchmark block-import batch verification (off vs on) against the primed archive
 batch-verify-perf-bench NODE_IMAGE:
   @scripts/tests/batch-verify-perf/benchmark.sh {{NODE_IMAGE}}
+
+# Count how many times each tx's ZK proofs are verified, submission -> inclusion (no Docker)
+batch-verify-perf-reverify N_TXS="5":
+  @scripts/tests/batch-verify-perf/proof-reverification.sh {{N_TXS}}

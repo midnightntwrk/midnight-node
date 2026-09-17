@@ -55,6 +55,22 @@ cd scripts/tests/batch-verify-perf
 ./benchmark.sh <NODE_IMAGE>
 ```
 
+**Or skip the images entirely.** `prime-local.sh` builds the same archive from locally-built
+binaries, so neither phase needs Docker:
+
+```bash
+cargo build --release -p midnight-node -p midnight-node-toolkit
+just seed-zk-keys                      # this branch's proving keys are not published
+
+cd scripts/tests/batch-verify-perf
+./prime-local.sh 224                   # ~18 min for 224 proof-txs
+./benchmark.sh                         # no args = local mode
+```
+
+That is usually the faster loop: building the two images requires the branch's ledger crates to be
+published as an isolate first (see `Batch-Verification-Notes.md`), whereas the binaries are already
+on disk.
+
 Or via `just`:
 
 ```bash
@@ -135,6 +151,149 @@ on the ON run. If `batches_total` is 0, the node silently fell back to inline
 verification (e.g. it couldn't build the native block context) — the timing is
 then meaningless; check the syncer logs (`docker logs bv-syncer`).
 
+## Counting proof re-verifications (`proof-reverification.sh`, no Docker)
+
+`benchmark.sh` answers "how much faster is import with batching on?". A different
+question is "how many times does one transaction's proofs get verified at all?" —
+which is what the batch work exists to reduce. `proof-reverification.sh` measures
+that directly, on a single authoring node, with no images and no archive:
+
+```bash
+just batch-verify-perf-reverify 3        # or: ./proof-reverification.sh 3
+```
+
+It starts a dev node, derives a destination, submits N freshly-proved shielded
+transfers over RPC, and diffs the ledger's `ledger_proof_verify_txs_total`
+counters across their `mode` labels:
+
+- `inline_mempool` — proofs verified while admitting the tx to the pool
+- `inline` — proofs verified at `pre_dispatch`, during block authoring/execution
+- `batch` — proofs verified in an aggregate call at a batch ingress point
+
+A transaction counted under **both** inline labels had its proofs verified twice
+on one node. Measured on the shipped defaults:
+
+```
+batch_verify_mempool                : false
+transactions submitted              : 3
+mempool admission  (inline_mempool) : 3
+block execution    (inline)         : 3
+inline verifications per tx         : 2.00x
+```
+
+and with `BATCH_VERIFY_MEMPOOL=true`, `batch=3` with both inline counters at 0
+(0.00x) — the proof cache removes both. Any node config can be forced through the
+environment, e.g. `BATCH_VERIFY_MEMPOOL=true BATCH_VERIFY_WORKERS=1 ...`.
+
+Prerequisites are host binaries rather than images — `cargo build --release -p
+midnight-node -p midnight-node-toolkit` — plus locally compiled proving keys
+(`just seed-zk-keys`), since this branch's `static/version` is not published. The
+unit-test counterpart, which pins the same behaviour against a synthetic state, is
+`proofs_are_reverified_when_a_transaction_reaches_a_new_block` in
+`ledger/src/versions/common/mod.rs`.
+
+## Bigger batches: a custom genesis
+
+Batch verification amortises a fixed cost across the batch, so its benefit depends on how many
+proof-txs share a block. On the stock `undeployed` genesis that number is capped at **5**, and the
+cap has nothing to do with the node: `batch-single-tx` fees every transaction from the genesis
+wallet, and the wallet's DUST sits in one generation output per genesis NIGHT UTXO — of which there
+are five (`--unshielded-num-funding-outputs`, default 5). One invocation can therefore fee at most
+five transactions, and batches stay around 4.
+
+To lift it, generate a genesis with more NIGHT outputs and point the harness at it:
+
+```bash
+# 1. a genesis with 64 NIGHT outputs (keep shielded at 5 — see the size note below)
+midnight-node-toolkit generate-genesis \
+  --network undeployed --seeds-file seeds.json \
+  --ledger-parameters-config res/dev/ledger-parameters-config.json \
+  --cnight-generates-dust-config res/dev/cnight-config.json \
+  --ics-config res/dev/ics-config.json \
+  --reserve-config res/dev/reserve-config.json \
+  --shielded-num-funding-outputs 5 \
+  --unshielded-num-funding-outputs 64
+
+# 2. turn it into a chainspec (see the `--dev` trap below for why this step exists)
+CFG_PRESET=dev \
+  CHAINSPEC_GENESIS_STATE=out/genesis_state_undeployed.mn \
+  CHAINSPEC_GENESIS_BLOCK=out/genesis_block_undeployed.mn \
+  midnight-node build-spec --raw > bench-spec.json
+
+# 3. prime and benchmark against it
+CHAIN=/abs/path/bench-spec.json LOAD_CHUNK=32 ./prime-local.sh 224
+CHAIN=/abs/path/bench-spec.json ./benchmark.sh
+```
+
+Measured on this branch: batch size 3.9 -> 12.3, crypto-only speedup 1.75x -> ~1.9-2.05x. That is
+close to the ceiling — per-tx batched cost asymptotes to the fit's slope (~1.64 ms against ~3.5 ms
+inline, so ~2.1x), and batches of ~12 already capture most of it. Going further buys little.
+
+**Two traps worth knowing.**
+
+*`--dev` silently ignores the genesis config.* `Cfg::load_spec` maps chain id `"dev"` to a hardcoded
+built-in spec; `chainspec_genesis_state` / `_block` are validated (a bad path still errors) but never
+read. A node started with `--dev` therefore runs the committed genesis no matter what those are set
+to. Only chain id `""` builds from them, which is what `build-spec` above uses, and a chainspec
+*path* is what `--chain` needs afterwards. `--dev` also implies `--alice --force-authoring`, so an
+authoring node on a custom chain has to spell those out — `authoring_chain_args` in `lib.sh` does
+this, keyed off `CHAIN`. Verify you got the genesis you meant by diffing the `Initializing Genesis
+block/state (state: 0x…)` line against a stock run.
+
+*Genesis funding is bounded by the 1 MiB transaction limit.* 64 shielded **and** 64 unshielded
+outputs overflows it (`TransactionTooLarge { tx_size: 1080862, limit: 1048576 }`). Shielded outputs
+carry proofs and dominate the size; NIGHT outputs are cheap, and NIGHT is what backs DUST. Raise the
+unshielded count only — the shielded coins are fanned out by the load step anyway.
+
+## A fixture the benchmark can resolve
+
+Wall-clock sync time is roughly `44 ms x blocks + 3.9 ms x proof-tx`, so how quickly an A/B
+resolves depends on **proof-txs per block**. The default workload is sparse — 233 txs over 82
+blocks, about 20% of sync time — and a real improvement sits close to the noise floor there: it
+took 42 paired runs to establish a direction.
+
+A denser chain fixes that:
+
+```bash
+CHAIN=/abs/path/bench-spec.json LOAD_CHUNK=64 FANOUT_CHUNK=100 ./prime-local.sh 512
+CHAIN=/abs/path/bench-spec.json REPEATS=9 ./benchmark.sh
+```
+
+| | sparse (default) | dense |
+|---|---|---|
+| blocks / proof-txs | 82 / 233 | 129 / 518 |
+| txs per block | 2.84 | 4.02 |
+| txs per *populated* block | 12.3 | 22.5 |
+| verification share of sync | ~20% | ~28% |
+| verification saved per sync | 0.30 s | 0.79 s |
+| paired runs to resolve | 42 (p = 0.0001) | **9, unanimous (p = 0.002)** |
+
+**`FANOUT_CHUNK` is the counter-intuitive knob.** Raising `LOAD_TXS` alone makes density *worse*.
+Every load tx needs its own coin, and fan-out runs one `single-tx` per chunk, each taking ~25 s —
+during which the chain keeps minting empty 6-second blocks. At the default `FANOUT_CHUNK=25`,
+512 coins cost 21 fan-out txs and roughly 87 near-empty blocks. Fat fan-out txs (100 outputs,
+~44 s each) cost 6 txs and ~43 blocks instead. The load phase needs no such help: `batch-single-tx`
+proves a whole chunk before submitting any of it, so a chunk lands in one or two blocks.
+
+Density is ultimately capped by local proving throughput (~1 tx/s) against the 6-second slot, so
+most blocks stay empty regardless. The gain comes from the *absolute* effect size growing —
+0.30 s to 0.79 s — not from the share reaching a majority.
+
+Two side effects of the dense fixture:
+
+- Batches go from 12.3 to 22.5 txs, and because aggregate verification amortises a fixed cost,
+  crypto-only speedup rises from ~2.03x to ~2.33x with no code change.
+- Eight blocks close on `HitBlockWeightLimit` (max 39 extrinsics), where the sparse fixture never
+  filled one. Closer to a loaded chain — and it does not change the block-capacity finding, since
+  weight is declared before execution.
+
+Keep the sparse archive if you want the old numbers reproducible:
+
+```bash
+cp artifacts/chain-archive.tar.gz artifacts/chain-archive-sparse.tar.gz
+cp artifacts/chain-archive.meta   artifacts/chain-archive-sparse.meta
+```
+
 ## The prime workload
 
 `batch-single-tx` builds each transfer independently and doesn't reserve coins
@@ -167,6 +326,8 @@ defaults):
 | `LOAD_RATE` | load submit rate (txs/sec) | `40` |
 | `SHIELDED` | `1` = shielded (zswap) proofs; `0` = unshielded (no proofs) | `1` |
 | `SYNC_TIMEOUT_SECS` / `STALL_TIMEOUT_SECS` | benchmark watchdogs | `1800` / `240` |
+| `CHAIN` | chain id, or a path to a chainspec JSON (see "Bigger batches") | `dev` |
+| `LOAD_CHUNK` | txs per `batch-single-tx` call; cap is the funder's DUST-output count | `5` |
 | `BATCH_VERIFY_MAX_BATCH_SIZE` etc. | forwarded to the syncer when set | (node defaults) |
 
 A bigger, prove-heavier chain shows a larger absolute gap — scale `LOAD_TXS`

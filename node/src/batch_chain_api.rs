@@ -49,7 +49,7 @@ use sp_runtime::{
 use sp_transaction_pool::runtime_api::TaggedTransactionQueue;
 use std::sync::Arc;
 use tokio::{
-	sync::{Mutex, mpsc, oneshot},
+	sync::{mpsc, oneshot},
 	time::{Duration, Instant, timeout},
 };
 
@@ -69,7 +69,35 @@ const MEMPOOL_TBLOCK_EXTRA_SECS: u64 = 12;
 ///
 /// The real implementation is [`BatchVerifier`]; it computes proof results natively and warms the
 /// process-global caches. Tests supply a stub that returns scripted results.
+/// An opaque prepared transaction as it travels through the queue.
+///
+/// `BatchVerifier::prepare` returns a ledger type parameterised by the storage-mode DB, which the
+/// node picks at runtime; boxing it here keeps [`MempoolBatcher`] and [`MidnightChainApi`] free of
+/// a type parameter that would otherwise ripple through the pool and the service wiring — and lets
+/// the unit tests below drive the pool with a stub that has no ledger behind it at all.
+pub type PreparedHandle = Box<dyn std::any::Any + Send>;
+
 pub trait BatchVerify<H>: Send + Sync {
+	/// Runs the per-transaction half of batch verification: everything that does not depend on
+	/// which other transactions share the batch. Called as each submission arrives, so the work is
+	/// done during the queue's accumulation window rather than at dispatch.
+	fn prepare(
+		&self,
+		at: H,
+		tx_bytes: &[u8],
+		extra_secs: u64,
+	) -> Result<PreparedHandle, BatchVerifyError>;
+
+	/// Decides a batch built by [`Self::prepare`]: one fold plus a single pairing check, at a cost
+	/// essentially independent of the batch size.
+	fn finalize(
+		&self,
+		at: H,
+		prepared: Vec<PreparedHandle>,
+		isolate_on_failure: bool,
+		extra_secs: u64,
+	) -> Result<Vec<Result<(), LedgerApiError>>, BatchVerifyError>;
+
 	/// Batch-verifies `txs` (serialized Midnight transactions) against the ledger state at `at`,
 	/// warming the caches. Returns one result per input transaction on success (see
 	/// [`BatchVerifier::batch_verify`]).
@@ -95,6 +123,38 @@ impl BatchVerify<<midnight_node_runtime::opaque::Block as BlockT>::Hash> for Bat
 		extra_secs: u64,
 	) -> Result<Vec<Result<(), LedgerApiError>>, BatchVerifyError> {
 		self.batch_verify(at, txs, isolate_on_failure, extra_secs)
+	}
+
+	fn prepare(
+		&self,
+		at: <midnight_node_runtime::opaque::Block as BlockT>::Hash,
+		tx_bytes: &[u8],
+		extra_secs: u64,
+	) -> Result<PreparedHandle, BatchVerifyError> {
+		self.prepare(at, tx_bytes, extra_secs).map(|p| Box::new(p) as PreparedHandle)
+	}
+
+	fn finalize(
+		&self,
+		at: <midnight_node_runtime::opaque::Block as BlockT>::Hash,
+		prepared: Vec<PreparedHandle>,
+		isolate_on_failure: bool,
+		extra_secs: u64,
+	) -> Result<Vec<Result<(), LedgerApiError>>, BatchVerifyError> {
+		let mut items = Vec::with_capacity(prepared.len());
+		for p in prepared {
+			match p.downcast::<midnight_node_ledger::host_api::ledger_9::PreparedTransaction>() {
+				Ok(p) => items.push(*p),
+				// Defensive: only this impl ever puts values in, so a mismatch is a bug rather
+				// than a condition. Fall back rather than reject a possibly-valid transaction.
+				Err(_) => {
+					return Err(BatchVerifyError::Unavailable(
+						"prepared transaction of unexpected type".into(),
+					));
+				},
+			}
+		}
+		self.finalize(at, items, isolate_on_failure, extra_secs)
 	}
 
 	fn runtime_version(
@@ -167,35 +227,61 @@ struct BatchParams {
 	tau: Duration,
 }
 
-/// Owns the bounded queue and spawns the blocking worker pool.
+/// A queued submission whose per-transaction verification work is already done, waiting only for
+/// the batch it will be folded into.
+struct PreparedItem<Block: BlockT> {
+	at: <Block as BlockT>::Hash,
+	tx_bytes: Vec<u8>,
+	prepared: PreparedHandle,
+	reply: oneshot::Sender<WorkerOutcome>,
+}
+
+/// A fully-formed batch of prepared submissions, handed from the dispatcher to a folding worker.
+type Batch<Block> = Vec<PreparedItem<Block>>;
+
+/// Owns the bounded queue and spawns the batch dispatcher plus its blocking worker pool.
 pub struct MempoolBatcher<Block: BlockT> {
 	queue_tx: mpsc::Sender<QueueItem<Block>>,
 	metrics: BatchVerifyMetrics,
 }
 
 impl<Block: BlockT> MempoolBatcher<Block> {
-	/// Builds the queue and spawns `cfg.workers` blocking worker tasks on `spawner`.
+	/// Builds the queue and spawns one dispatcher plus `cfg.workers` blocking verification
+	/// workers on `spawner`.
 	pub fn new(
 		spawner: &impl SpawnEssentialNamed,
 		verifier: Arc<dyn BatchVerify<<Block as BlockT>::Hash>>,
 		cfg: MempoolBatchConfig,
 		metrics: BatchVerifyMetrics,
 	) -> Self {
-		let (queue_tx, rx) = mpsc::channel::<QueueItem<Block>>(cfg.queue_capacity.max(1));
-		let rx = Arc::new(Mutex::new(rx));
+		let (queue_tx, queue_rx) = mpsc::channel::<QueueItem<Block>>(cfg.queue_capacity.max(1));
+		let workers = cfg.workers.max(1);
+		// Formed batches, dispatcher → workers. `async_channel` is MPMC, so each worker owns its
+		// own receiver clone and polls it directly; nothing is shared behind a lock, which is what
+		// makes the hand-off deadlock-free (see `run_dispatcher`).
+		let (batch_tx, batch_rx) = async_channel::bounded::<Batch<Block>>(workers);
 		let params = BatchParams {
 			k_target: cfg.target_batch_size.max(1),
 			max_batch: cfg.max_batch_size.max(1),
 			tau: cfg.max_age,
 		};
-		for _ in 0..cfg.workers.max(1) {
-			let rx = rx.clone();
-			let verifier = verifier.clone();
-			let metrics = metrics.clone();
+
+		spawner.spawn_essential_blocking(
+			"midnight-mempool-batcher",
+			Some("transaction-pool"),
+			Box::pin(run_dispatcher::<Block>(
+				queue_rx,
+				batch_tx,
+				verifier.clone(),
+				params,
+				metrics.clone(),
+			)),
+		);
+		for _ in 0..workers {
 			spawner.spawn_essential_blocking(
 				"midnight-mempool-verify",
 				Some("transaction-pool"),
-				Box::pin(run_worker::<Block>(rx, verifier, params, metrics)),
+				Box::pin(run_worker::<Block>(batch_rx.clone(), verifier.clone(), metrics.clone())),
 			);
 		}
 		Self { queue_tx, metrics }
@@ -225,29 +311,62 @@ impl<Block: BlockT> MempoolBatcher<Block> {
 	}
 }
 
-/// One blocking worker: forms batches from the shared queue and verifies each.
-async fn run_worker<Block: BlockT>(
-	rx: Arc<Mutex<mpsc::Receiver<QueueItem<Block>>>>,
+/// Forms batches from the submission queue and hands each to a verification worker.
+///
+/// Owns `queue_rx` outright, and that exclusive ownership is the point. The previous design gave
+/// every worker a clone of an `Arc<Mutex<Receiver>>` and held that lock across the *idle*
+/// `recv().await`; a worker that had already claimed a batch then blocked forever in its drain
+/// phase on a lock held by an idle sibling, so with the shipped default of four workers no batch
+/// was ever dispatched and Midnight transactions never became ready in the pool.
+///
+/// Keeping batch formation in a single task is also the right shape on its own terms: there is one
+/// queue, so accumulation is inherently serial, and N workers each accumulating their own batch
+/// would split the same arrivals into N smaller batches — the opposite of what batching is for.
+/// Workers are left to do the part that actually parallelises: the aggregate crypto.
+async fn run_dispatcher<Block: BlockT>(
+	mut queue_rx: mpsc::Receiver<QueueItem<Block>>,
+	batch_tx: async_channel::Sender<Batch<Block>>,
 	verifier: Arc<dyn BatchVerify<<Block as BlockT>::Hash>>,
 	params: BatchParams,
 	metrics: BatchVerifyMetrics,
 ) {
-	loop {
-		// Phase 0: block (holding the lock only while idle-waiting with an empty batch) for the
-		// first item. A closed channel ends the worker.
-		let first = {
-			let mut guard = rx.lock().await;
-			match guard.recv().await {
-				Some(item) => item,
-				None => return,
-			}
-		};
-		let deadline = first.enqueued_at + params.tau;
-		let mut batch = vec![first];
+	// Prepares one submission the moment it arrives. On failure the submission is resolved
+	// immediately as `Delegate` — the runtime is authoritative, so an unpreparable transaction just
+	// takes the ordinary path instead of holding up the batch.
+	fn prepare_or_delegate<Block: BlockT>(
+		item: QueueItem<Block>,
+		verifier: &dyn BatchVerify<<Block as BlockT>::Hash>,
+		metrics: &BatchVerifyMetrics,
+	) -> Option<PreparedItem<Block>> {
+		match verifier.prepare(item.at, &item.tx_bytes, MEMPOOL_TBLOCK_EXTRA_SECS) {
+			Ok(prepared) => Some(PreparedItem {
+				at: item.at,
+				tx_bytes: item.tx_bytes,
+				prepared,
+				reply: item.reply,
+			}),
+			Err(reason) => {
+				log::debug!(
+					target: LOG_TARGET,
+					"could not prepare submission, delegating to the runtime: {reason:?}",
+				);
+				metrics.inc_fallback();
+				let _ = item.reply.send(WorkerOutcome::Delegate);
+				None
+			},
+		}
+	}
 
-		// Phase 1: accumulate until the target size is reached or the oldest item hits tau. Each
-		// wait is bounded by the remaining time to the deadline, and the lock is released between
-		// attempts so other workers make progress.
+	loop {
+		// Phase 0: wait for the first submission. A closed queue ends the dispatcher.
+		let Some(first) = queue_rx.recv().await else { break };
+		let deadline = first.enqueued_at + params.tau;
+		// Prepare as it arrives: this is the expensive, per-transaction half, and doing it here
+		// spends the accumulation window on it instead of paying it all at dispatch.
+		let mut batch: Batch<Block> =
+			prepare_or_delegate::<Block>(first, &*verifier, &metrics).into_iter().collect();
+
+		// Phase 1: accumulate until the target size is reached or the oldest item hits tau.
 		let trigger = loop {
 			if batch.len() >= params.k_target {
 				break Trigger::KTarget;
@@ -256,67 +375,87 @@ async fn run_worker<Block: BlockT>(
 			if now >= deadline {
 				break Trigger::Tau;
 			}
-			let remaining = deadline - now;
-			let recv_one = async {
-				let mut guard = rx.lock().await;
-				guard.recv().await
-			};
-			match timeout(remaining, recv_one).await {
-				Ok(Some(item)) => batch.push(item),
+			match timeout(deadline - now, queue_rx.recv()).await {
+				Ok(Some(item)) => {
+					batch.extend(prepare_or_delegate::<Block>(item, &*verifier, &metrics))
+				},
 				Ok(None) => break Trigger::Closed,
 				Err(_) => break Trigger::Tau,
 			}
 		};
 
-		// Phase 2: greedily drain any further immediately-available items, capped at M.
-		{
-			let mut guard = rx.lock().await;
-			while batch.len() < params.max_batch {
-				match guard.try_recv() {
-					Ok(item) => batch.push(item),
-					Err(_) => break,
-				}
+		// Phase 2: greedily take anything else already queued, capped at M.
+		while batch.len() < params.max_batch {
+			match queue_rx.try_recv() {
+				Ok(item) => batch.extend(prepare_or_delegate::<Block>(item, &*verifier, &metrics)),
+				Err(_) => break,
 			}
 		}
 
-		metrics.observe_dispatch(trigger.label());
-		process_batch::<Block>(&*verifier, batch, &metrics);
-
-		if matches!(trigger, Trigger::Closed) {
-			return;
+		// Everything in the batch may have failed preparation and already been answered.
+		if !batch.is_empty() {
+			metrics.observe_dispatch(trigger.label());
+			// Backpressure: when every worker is busy this waits rather than forming ever more
+			// batches. An error means every worker is gone, so there is nothing to dispatch to.
+			if batch_tx.send(batch).await.is_err() {
+				break;
+			}
 		}
+		if matches!(trigger, Trigger::Closed) {
+			break;
+		}
+	}
+	// Stop accepting new batches; workers drain what is already queued, then exit.
+	batch_tx.close();
+}
+
+/// One verification worker: runs the aggregate crypto for whole batches formed by the dispatcher.
+///
+/// Spawned on the blocking pool because [`process_batch`] verifies synchronously. Each worker polls
+/// its own `async_channel` receiver clone, so an idle worker can never hold up a busy one.
+async fn run_worker<Block: BlockT>(
+	batches: async_channel::Receiver<Batch<Block>>,
+	verifier: Arc<dyn BatchVerify<<Block as BlockT>::Hash>>,
+	metrics: BatchVerifyMetrics,
+) {
+	while let Ok(batch) = batches.recv().await {
+		process_batch::<Block>(&*verifier, batch, &metrics);
 	}
 }
 
-/// Verifies one drained batch: groups by target block, runs one aggregate verification per group,
-/// and resolves each parked `oneshot`.
+/// Decides one drained batch: groups by target block, runs one fold per group, and resolves each
+/// parked `oneshot`. The expensive per-transaction work already happened in the dispatcher, so all
+/// that remains here is the aggregate check.
 fn process_batch<Block: BlockT>(
 	verifier: &dyn BatchVerify<<Block as BlockT>::Hash>,
-	batch: Vec<QueueItem<Block>>,
+	batch: Batch<Block>,
 	metrics: &BatchVerifyMetrics,
 ) {
 	for (at, items) in group_by_at::<Block>(batch) {
 		let runtime_version = verifier.runtime_version(at);
-		let txs: Vec<Vec<u8>> = items.iter().map(|i| i.tx_bytes.clone()).collect();
+		let (prepared, rest): (Vec<_>, Vec<_>) =
+			items.into_iter().map(|i| (i.prepared, (i.tx_bytes, i.reply))).unzip();
 
-		// Duration is recorded inside `BatchVerifier::batch_verify` (which `verify` delegates to),
-		// so it is captured here for the mempool and equally on the block-import path.
-		let outcome =
-			verifier.verify(at, txs, /* isolate_on_failure */ true, MEMPOOL_TBLOCK_EXTRA_SECS);
+		let outcome = verifier.finalize(
+			at,
+			prepared,
+			/* isolate_on_failure */ true,
+			MEMPOOL_TBLOCK_EXTRA_SECS,
+		);
 
 		match outcome {
 			Ok(results) => {
-				for (idx, item) in items.into_iter().enumerate() {
+				for (idx, (tx_bytes, reply)) in rest.into_iter().enumerate() {
 					// A verified proof with a known runtime version → native validity tag. Anything
 					// else (per-tx rejection, or no runtime version to tag with) → delegate to the
 					// runtime for the authoritative result.
 					let out = match (results.get(idx), runtime_version) {
 						(Some(Ok(())), Some(v)) => {
-							WorkerOutcome::Validated(success_validity(v, &item.tx_bytes))
+							WorkerOutcome::Validated(success_validity(v, &tx_bytes))
 						},
 						_ => WorkerOutcome::Delegate,
 					};
-					let _ = item.reply.send(out);
+					let _ = reply.send(out);
 				}
 			},
 			Err(reason) => {
@@ -324,12 +463,12 @@ fn process_batch<Block: BlockT>(
 				// reject — delegate every parked submission to the runtime.
 				log::debug!(
 					target: LOG_TARGET,
-					"mempool batch verification unavailable for {} tx(s), delegating to runtime: {reason:?}",
-					items.len(),
+					"mempool batch fold unavailable for {} tx(s), delegating to runtime: {reason:?}",
+					rest.len(),
 				);
 				metrics.inc_fallback();
-				for item in items {
-					let _ = item.reply.send(WorkerOutcome::Delegate);
+				for (_, reply) in rest {
+					let _ = reply.send(WorkerOutcome::Delegate);
 				}
 			},
 		}
@@ -339,9 +478,9 @@ fn process_batch<Block: BlockT>(
 /// Groups a batch by target block hash, preserving first-seen order. Batches are small (≤ M) and
 /// almost always share one `at`, so the linear grouping is cheap.
 fn group_by_at<Block: BlockT>(
-	batch: Vec<QueueItem<Block>>,
-) -> Vec<(<Block as BlockT>::Hash, Vec<QueueItem<Block>>)> {
-	let mut groups: Vec<(<Block as BlockT>::Hash, Vec<QueueItem<Block>>)> = Vec::new();
+	batch: Batch<Block>,
+) -> Vec<(<Block as BlockT>::Hash, Vec<PreparedItem<Block>>)> {
+	let mut groups: Vec<(<Block as BlockT>::Hash, Vec<PreparedItem<Block>>)> = Vec::new();
 	for item in batch {
 		if let Some(group) = groups.iter_mut().find(|(hash, _)| *hash == item.at) {
 			group.1.push(item);
@@ -529,6 +668,8 @@ mod tests {
 		unavailable: bool,
 		runtime_version: Option<u32>,
 		batch_sizes: Arc<StdMutex<Vec<usize>>>,
+		/// Transactions preparation was called for, in arrival order.
+		prepared: Arc<StdMutex<Vec<Vec<u8>>>>,
 	}
 
 	impl StubVerifier {
@@ -538,11 +679,42 @@ mod tests {
 				unavailable: false,
 				runtime_version: Some(2_000_000),
 				batch_sizes: Arc::new(StdMutex::new(Vec::new())),
+				prepared: Arc::new(StdMutex::new(Vec::new())),
 			}
 		}
 	}
 
 	impl BatchVerify<Hash> for StubVerifier {
+		/// The stub has no ledger, so "preparing" just carries the transaction bytes through the
+		/// queue in the opaque handle; `finalize` reads them back to score the batch.
+		fn prepare(
+			&self,
+			_at: Hash,
+			tx_bytes: &[u8],
+			_extra_secs: u64,
+		) -> Result<PreparedHandle, BatchVerifyError> {
+			self.prepared.lock().unwrap().push(tx_bytes.to_vec());
+			Ok(Box::new(tx_bytes.to_vec()))
+		}
+
+		fn finalize(
+			&self,
+			_at: Hash,
+			prepared: Vec<PreparedHandle>,
+			_isolate_on_failure: bool,
+			_extra_secs: u64,
+		) -> Result<Vec<Result<(), LedgerApiError>>, BatchVerifyError> {
+			let txs: Vec<Vec<u8>> = prepared
+				.into_iter()
+				.map(|p| *p.downcast::<Vec<u8>>().expect("stub only boxes tx bytes"))
+				.collect();
+			self.batch_sizes.lock().unwrap().push(txs.len());
+			if self.unavailable {
+				return Err(BatchVerifyError::Unavailable("stub".into()));
+			}
+			Ok(txs.iter().map(|tx| self.results.get(tx).cloned().unwrap_or(Ok(()))).collect())
+		}
+
 		fn verify(
 			&self,
 			_at: Hash,
@@ -578,6 +750,41 @@ mod tests {
 		matches!(outcome, WorkerOutcome::Validated(Ok(_)))
 	}
 
+	/// Spawns one dispatcher plus `workers` verification workers over a fresh queue — the same
+	/// wiring as [`MempoolBatcher::new`], without needing a `SpawnEssentialNamed`.
+	fn spawn_pool(
+		verifier: Arc<dyn BatchVerify<Hash>>,
+		params: BatchParams,
+		workers: usize,
+	) -> (mpsc::Sender<QueueItem<OpaqueBlock>>, Vec<tokio::task::JoinHandle<()>>) {
+		let (tx, rx) = mpsc::channel::<QueueItem<OpaqueBlock>>(64);
+		let (batch_tx, batch_rx) = async_channel::bounded::<Batch<OpaqueBlock>>(workers.max(1));
+		let metrics = BatchVerifyMetrics::new(None);
+		let mut handles = vec![tokio::spawn(run_dispatcher::<OpaqueBlock>(
+			rx,
+			batch_tx,
+			verifier.clone(),
+			params,
+			metrics.clone(),
+		))];
+		for _ in 0..workers {
+			handles.push(tokio::spawn(run_worker::<OpaqueBlock>(
+				batch_rx.clone(),
+				verifier.clone(),
+				metrics.clone(),
+			)));
+		}
+		(tx, handles)
+	}
+
+	/// Awaits every spawned task after the queue is closed, so a test fails loudly on a hang
+	/// instead of leaking tasks.
+	async fn join_all(handles: Vec<tokio::task::JoinHandle<()>>) {
+		for h in handles {
+			let _ = h.await;
+		}
+	}
+
 	#[test]
 	fn success_validity_matches_runtime_tag_shape() {
 		let v = success_validity(2_000_000, b"some-tx-bytes").expect("valid tx must build Ok");
@@ -587,12 +794,23 @@ mod tests {
 		assert!(v.provides[0].ends_with(&tx_validation_cache_key(2_000_000, b"some-tx-bytes")));
 	}
 
+	/// Wraps a queue item as an already-prepared one, as the dispatcher would.
+	fn prepared_item(at: Hash, tx: Vec<u8>) -> PreparedItem<OpaqueBlock> {
+		let (item, _rx) = queue_item(at, tx);
+		PreparedItem {
+			at: item.at,
+			tx_bytes: item.tx_bytes.clone(),
+			prepared: Box::new(item.tx_bytes),
+			reply: item.reply,
+		}
+	}
+
 	#[test]
 	fn group_by_at_preserves_order_and_partitions() {
 		let a = H256::repeat_byte(0xAA);
 		let b = H256::repeat_byte(0xBB);
 		let batch =
-			vec![queue_item(a, vec![1]).0, queue_item(b, vec![2]).0, queue_item(a, vec![3]).0];
+			vec![prepared_item(a, vec![1]), prepared_item(b, vec![2]), prepared_item(a, vec![3])];
 		let groups = group_by_at::<OpaqueBlock>(batch);
 		assert_eq!(groups.len(), 2, "two distinct target blocks");
 		assert_eq!(groups[0].0, a);
@@ -606,14 +824,10 @@ mod tests {
 		let at = H256::repeat_byte(1);
 		let verifier = Arc::new(StubVerifier::new());
 		let sizes = verifier.batch_sizes.clone();
-		let (tx, rx) = mpsc::channel::<QueueItem<OpaqueBlock>>(64);
-		// tau is long; the k_target=3 trigger must fire well before it.
-		let worker = tokio::spawn(run_worker::<OpaqueBlock>(
-			Arc::new(Mutex::new(rx)),
-			verifier,
-			params(3, 64, 60_000),
-			BatchVerifyMetrics::new(None),
-		));
+		// tau is long; the k_target=3 trigger must fire well before it. Four workers (the shipped
+		// default) so this also pins that the three submissions form ONE batch rather than being
+		// split across workers.
+		let (tx, handles) = spawn_pool(verifier, params(3, 64, 60_000), 4);
 
 		let mut replies = Vec::new();
 		for i in 0..3u8 {
@@ -629,7 +843,7 @@ mod tests {
 		// One aggregate call for all three (k_target reached).
 		assert_eq!(sizes.lock().unwrap().as_slice(), &[3]);
 		drop(tx);
-		let _ = worker.await;
+		join_all(handles).await;
 	}
 
 	#[tokio::test]
@@ -637,14 +851,8 @@ mod tests {
 		let at = H256::repeat_byte(2);
 		let verifier = Arc::new(StubVerifier::new());
 		let sizes = verifier.batch_sizes.clone();
-		let (tx, rx) = mpsc::channel::<QueueItem<OpaqueBlock>>(64);
 		// k_target is unreachable with one tx; it must dispatch on the (short, real) tau timeout.
-		let worker = tokio::spawn(run_worker::<OpaqueBlock>(
-			Arc::new(Mutex::new(rx)),
-			verifier,
-			params(100, 64, 30),
-			BatchVerifyMetrics::new(None),
-		));
+		let (tx, handles) = spawn_pool(verifier, params(100, 64, 30), 1);
 
 		let (item, reply_rx) = queue_item(at, vec![7]);
 		tx.send(item).await.unwrap();
@@ -653,7 +861,7 @@ mod tests {
 		assert!(is_validated(&outcome), "the single valid tx must be Validated");
 		assert_eq!(sizes.lock().unwrap().as_slice(), &[1], "one tx dispatched on tau");
 		drop(tx);
-		let _ = worker.await;
+		join_all(handles).await;
 	}
 
 	#[tokio::test]
@@ -671,13 +879,7 @@ mod tests {
 			)),
 		);
 		let verifier = Arc::new(verifier);
-		let (tx, rx) = mpsc::channel::<QueueItem<OpaqueBlock>>(64);
-		let worker = tokio::spawn(run_worker::<OpaqueBlock>(
-			Arc::new(Mutex::new(rx)),
-			verifier,
-			params(2, 64, 60_000),
-			BatchVerifyMetrics::new(None),
-		));
+		let (tx, handles) = spawn_pool(verifier, params(2, 64, 60_000), 1);
 
 		let (good, good_rx) = queue_item(at, vec![8]);
 		let (bad, bad_rx) = queue_item(at, vec![9]);
@@ -690,7 +892,7 @@ mod tests {
 			"rejected tx delegates to the runtime"
 		);
 		drop(tx);
-		let _ = worker.await;
+		join_all(handles).await;
 	}
 
 	#[tokio::test]
@@ -699,13 +901,7 @@ mod tests {
 		let mut verifier = StubVerifier::new();
 		verifier.unavailable = true;
 		let verifier = Arc::new(verifier);
-		let (tx, rx) = mpsc::channel::<QueueItem<OpaqueBlock>>(64);
-		let worker = tokio::spawn(run_worker::<OpaqueBlock>(
-			Arc::new(Mutex::new(rx)),
-			verifier,
-			params(1, 64, 60_000),
-			BatchVerifyMetrics::new(None),
-		));
+		let (tx, handles) = spawn_pool(verifier, params(1, 64, 60_000), 1);
 
 		let (item, reply_rx) = queue_item(at, vec![5]);
 		tx.send(item).await.unwrap();
@@ -714,7 +910,75 @@ mod tests {
 			"availability failure must delegate, never reject"
 		);
 		drop(tx);
-		let _ = worker.await;
+		join_all(handles).await;
+	}
+
+	/// The point of the incremental design: each submission is prepared as it arrives, and the
+	/// batch costs one fold no matter how many transactions it holds.
+	///
+	/// Preparation is the half whose cost grows with the batch (per-proof transcript replay and
+	/// deferred MSM); folding is the half that is essentially constant. Doing the former during the
+	/// accumulation window is what turns dispatch latency from "prepare n + fold" into "fold".
+	#[tokio::test]
+	async fn each_submission_is_prepared_on_arrival_and_the_batch_folds_once() {
+		let at = H256::repeat_byte(9);
+		let verifier = Arc::new(StubVerifier::new());
+		let prepared = verifier.prepared.clone();
+		let sizes = verifier.batch_sizes.clone();
+		// k_target = 3 so the batch dispatches once all three have arrived.
+		let (tx, handles) = spawn_pool(verifier, params(3, 64, 60_000), 1);
+
+		let mut replies = Vec::new();
+		for i in 0..3u8 {
+			let (item, reply_rx) = queue_item(at, vec![i]);
+			tx.send(item).await.unwrap();
+			replies.push(reply_rx);
+		}
+		for reply_rx in replies {
+			assert!(is_validated(&reply_rx.await.expect("worker must resolve the oneshot")));
+		}
+
+		assert_eq!(
+			prepared.lock().unwrap().as_slice(),
+			&[vec![0u8], vec![1u8], vec![2u8]],
+			"every submission must be prepared individually, in arrival order",
+		);
+		assert_eq!(
+			sizes.lock().unwrap().as_slice(),
+			&[3],
+			"and the three prepared transactions must be decided by a single fold",
+		);
+		drop(tx);
+		join_all(handles).await;
+	}
+
+	/// Regression: a batch must still be dispatched when several workers sit idle.
+	///
+	/// The original pool shared one `mpsc::Receiver` between all workers behind a `Mutex` and held
+	/// that lock across the idle `recv().await`. A worker that had claimed a batch then blocked
+	/// forever on the same lock in its drain phase — held by an idle sibling — so at the shipped
+	/// default of four workers no batch was ever verified and Midnight transactions never became
+	/// ready in the pool. Every other test in this module spawns exactly one worker, which is why
+	/// none of them caught it; this one uses the real default.
+	#[tokio::test]
+	async fn pool_dispatches_with_several_idle_workers() {
+		let at = H256::repeat_byte(7);
+		let verifier = Arc::new(StubVerifier::new());
+		let sizes = verifier.batch_sizes.clone();
+		// Short tau so a lone transaction dispatches on the timeout rather than via k_target.
+		let (tx, handles) = spawn_pool(verifier, params(16, 64, 30), 4);
+
+		let (item, reply_rx) = queue_item(at, vec![1]);
+		tx.send(item).await.unwrap();
+
+		let outcome = tokio::time::timeout(Duration::from_secs(5), reply_rx)
+			.await
+			.expect("the batch must dispatch even while other workers idle on the queue")
+			.expect("worker must resolve the oneshot");
+		assert!(is_validated(&outcome));
+		assert_eq!(sizes.lock().unwrap().as_slice(), &[1]);
+		drop(tx);
+		join_all(handles).await;
 	}
 
 	#[tokio::test(flavor = "current_thread")]
