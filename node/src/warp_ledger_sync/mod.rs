@@ -41,7 +41,8 @@ pub mod oracle;
 pub mod protocol;
 pub mod server;
 
-#[cfg(test)]
+// The only test in there drives the `ledger_8` dispatch path with a v13 fixture.
+#[cfg(all(test, feature = "legacy-ledgers"))]
 mod integration_tests;
 
 use parity_scale_codec::Decode;

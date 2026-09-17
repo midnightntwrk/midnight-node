@@ -15,13 +15,10 @@ base-crypto = { workspace = true }
 midnight-serialize = { workspace = true }
 transient-crypto = { workspace = true }
 
-mn-ledger-8 = { workspace = true, features = ["proving"] }
-ledger-storage-ledger-8 = { workspace = true }
 
-mn-ledger-9 = { workspace = true, features = ["proving"] }
 
-# v8->v9 state translation table, used by the fork boundary (`fork::fork_8_to_9`).
-v8-to-v9-state-translation = { workspace = true }
+mn-ledger-10 = { workspace = true, features = ["proving"] }
+
 
 rand = { version = "0.8.4", features = ["small_rng", "getrandom"] }
 rayon.workspace = true
@@ -39,7 +36,11 @@ serde_json.workspace = true
 bech32 = "0.11.0"
 
 [features]
+# Ledger 8 and 9 support. Cannot currently be enabled: their rc.5 crates and the ledger-10
+# alpha's path-dep tree cannot coexist in one graph (see the workspace Cargo.toml). Kept as the
+# cfg the gated code is written against, so re-enabling is a Cargo.toml change, not a rewrite.
+legacy-ledgers = []
 default = []
 erase-proof = []
 test-utils = []
-fixed-point-custom-serde = ["mn-ledger-8/fixed-point-custom-serde", "mn-ledger-9/fixed-point-custom-serde"]
+fixed-point-custom-serde = ["mn-ledger-10/fixed-point-custom-serde"]

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Ledger generation 9: the current ledger.
+//! Ledger generation 9: the pre-ledger-10 ledger.
 //!
 //! Every module under `ledger_9/` binds the v9 ledger crates through the
 //! `*_local` aliases declared below. Its `ledger_8/` counterpart is a separate

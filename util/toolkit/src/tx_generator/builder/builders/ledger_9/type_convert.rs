@@ -11,9 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Conversions from crate-level (latest, i.e. ledger 9) types to this version's types.
+//! Conversions from crate-level (latest, i.e. ledger 10) types to this version's types.
 //!
-//! In the ledger-9 copy these are identity operations (same types). In the ledger-8 copy
+//! In the ledger-9 copy these convert through the shared `base_crypto`/`HashOutput` bytes. In the ledger-8 copy
 //! (coin-structure 2.x) they convert through raw bytes/strings.
 
 use ledger_helpers_local::{

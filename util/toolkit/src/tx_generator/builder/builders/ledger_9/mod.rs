@@ -52,7 +52,11 @@ use midnight_node_ledger_helpers::fork::raw_block_data::SerializedTx;
 pub fn serialize_tx(
 	tx: &TransactionWithContext<Signature, ProofMarker, DefaultDB>,
 ) -> SerializedTx {
+	// `SerializedTx.context` is the latest generation's `BlockContext`.
+	let context = midnight_ledger_unsafe_helpers::fork::fork_9_to_10::block_context_9_to_10(
+		&tx.block_context,
+	);
 	let raw_tx = transactions::from_serde_tx(&tx.tx);
 	let tx_hash = tx.tx.transaction_hash().0.0;
-	SerializedTx { tx: raw_tx, context: tx.block_context.clone(), tx_hash }
+	SerializedTx { tx: raw_tx, context, tx_hash }
 }

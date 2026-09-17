@@ -18,9 +18,11 @@
 
 use midnight_ledger_unsafe_helpers::{
 	BlockContext, DefaultDB, DustLocalState, HashOutput, LedgerContext, LedgerState, Sp, Timestamp,
-	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged, ledger_8,
+	UnshieldedSignatureScheme, Wallet, WalletSeed, WalletState, deserialize_untagged,
 	serialize_untagged,
 };
+#[cfg(feature = "legacy-ledgers")]
+use midnight_ledger_unsafe_helpers::{ledger_8, ledger_9};
 use midnight_node_ledger_helpers::fork::raw_block_data::LedgerVersion;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -151,12 +153,32 @@ fn serialize_ledger_state(state: &LedgerState<DefaultDB>) -> Result<Vec<u8>, Cac
 pub fn serialize_ledger_state_fast(
 	state: &LedgerState<DefaultDB>,
 ) -> Result<Vec<u8>, std::io::Error> {
-	use midnight_ledger_unsafe_helpers::mn_ledger_serialize::{GLOBAL_TAG, Serializable, Tagged};
+	serialize_tagged_fast(state)
+}
+
+#[cfg(feature = "legacy-ledgers")]
+/// Ledger-9 twin of [`serialize_ledger_state_fast`] (ledger 9 and 10 share `DefaultDB`).
+pub fn serialize_ledger_state_fast_9(
+	state: &ledger_9::LedgerState<DefaultDB>,
+) -> Result<Vec<u8>, std::io::Error> {
+	serialize_tagged_fast(state)
+}
+
+/// The generation-independent body of `serialize_ledger_state_fast*`: `Sp`/node-list
+/// machinery is the shared `midnight-storage`, so any ledger generation's state that lives in
+/// `DefaultDB` serializes through it.
+fn serialize_tagged_fast<T>(state: &T) -> Result<Vec<u8>, std::io::Error>
+where
+	T: midnight_ledger_unsafe_helpers::Storable<DefaultDB>
+		+ midnight_ledger_unsafe_helpers::mn_ledger_serialize::Tagged
+		+ Clone,
+{
+	use midnight_ledger_unsafe_helpers::mn_ledger_serialize::{GLOBAL_TAG, Serializable};
 
 	let sp = Sp::new(state.clone());
 	let nodes = sp.serialize_to_node_list();
 
-	let tag_prefix = format!("{}{}:", GLOBAL_TAG, LedgerState::<DefaultDB>::tag());
+	let tag_prefix = format!("{}{}:", GLOBAL_TAG, T::tag());
 	let size = tag_prefix.len() + nodes.serialized_size();
 	let mut bytes = Vec::with_capacity(size);
 	bytes.extend_from_slice(tag_prefix.as_bytes());
@@ -164,6 +186,7 @@ pub fn serialize_ledger_state_fast(
 	Ok(bytes)
 }
 
+#[cfg(feature = "legacy-ledgers")]
 /// Ledger-8 twin of [`serialize_ledger_state_fast`] (`Sp`/node-list machinery
 /// is the shared `midnight-storage-core`).
 pub fn serialize_ledger_state_fast_8(
@@ -298,6 +321,38 @@ pub fn create_ledger_snapshot(
 
 	Ok(LedgerSnapshot {
 		block_height,
+		ledger_version: LedgerVersion::Ledger10,
+		ledger_state_bytes,
+		latest_block_context: serializable_context,
+		state_root,
+	})
+}
+
+#[cfg(feature = "legacy-ledgers")]
+/// Ledger-9 variant of [`create_ledger_snapshot`].
+pub fn create_ledger_snapshot_9(
+	context: &ledger_9::context::LedgerContext<DefaultDB>,
+	block_height: u64,
+) -> Result<LedgerSnapshot, CacheError> {
+	let ledger_state = context
+		.ledger_state
+		.lock()
+		.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?;
+	let ledger_state_bytes = serialize_ledger_state_fast_9(&ledger_state)
+		.map_err(|e| CacheError::SerializeLedgerState(e.to_string()))?;
+	drop(ledger_state);
+
+	let state_root = compute_state_root(&ledger_state_bytes);
+	let latest_block_context = context.latest_block_context();
+	let serializable_context = SerializableBlockContext {
+		tblock_secs: latest_block_context.tblock.to_secs(),
+		tblock_err: latest_block_context.tblock_err,
+		parent_block_hash: latest_block_context.parent_block_hash.0,
+		last_block_time: latest_block_context.last_block_time.to_secs(),
+	};
+
+	Ok(LedgerSnapshot {
+		block_height,
 		ledger_version: LedgerVersion::Ledger9,
 		ledger_state_bytes,
 		latest_block_context: serializable_context,
@@ -305,6 +360,7 @@ pub fn create_ledger_snapshot(
 	})
 }
 
+#[cfg(feature = "legacy-ledgers")]
 /// Ledger-8 variant of [`create_ledger_snapshot`].
 pub fn create_ledger_snapshot_8(
 	context: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
@@ -336,6 +392,7 @@ pub fn create_ledger_snapshot_8(
 	})
 }
 
+#[cfg(feature = "legacy-ledgers")]
 /// Ledger-8 variant of [`create_wallet_snapshot`].
 pub fn create_wallet_snapshot_8(
 	context: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
@@ -372,6 +429,7 @@ pub fn create_wallet_snapshot_8(
 	})
 }
 
+#[cfg(feature = "legacy-ledgers")]
 /// Ledger-8 variant of [`restore_context_from_ledger_snapshot`].
 pub fn restore_context_from_ledger_snapshot_8(
 	snapshot: &LedgerSnapshot,
@@ -432,6 +490,7 @@ pub fn restore_context_from_ledger_snapshot_8(
 	Ok((context, ledger_state, snapshot.block_height))
 }
 
+#[cfg(feature = "legacy-ledgers")]
 /// Ledger-8 variant of [`inject_wallet_from_cache`].
 pub fn inject_wallet_from_cache_8(
 	context: &ledger_8::context::LedgerContext<ledger_8::DefaultDB>,
@@ -506,6 +565,43 @@ pub fn create_wallet_snapshot(
 	})
 }
 
+#[cfg(feature = "legacy-ledgers")]
+/// Ledger-9 twin of [`create_wallet_snapshot`].
+pub fn create_wallet_snapshot_9(
+	context: &ledger_9::context::LedgerContext<DefaultDB>,
+	seed: &WalletSeed,
+	scheme: UnshieldedSignatureScheme,
+	block_height: u64,
+) -> Result<CachedWalletState, CacheError> {
+	let seed_9 = ledger_9::WalletSeed::try_from(seed.as_bytes())
+		.map_err(|e| CacheError::SerializeWalletState(format!("wallet seed: {e:?}")))?;
+	let wallets = context
+		.wallets
+		.lock()
+		.map_err(|_| CacheError::LockPoisoned("wallets".to_string()))?;
+	let wallet = wallets
+		.get(&seed_9)
+		.ok_or_else(|| CacheError::SerializeWalletState("wallet not found in context".into()))?;
+
+	let shielded_state_bytes = serialize_untagged(&wallet.shielded.state)
+		.map_err(|e| CacheError::SerializeWalletState(format!("shielded state: {}", e)))?;
+
+	let dust_local_state_bytes = wallet
+		.dust
+		.dust_local_state
+		.as_ref()
+		.map(|state| serialize_untagged(&**state))
+		.transpose()
+		.map_err(|e| CacheError::SerializeWalletState(format!("dust state: {}", e)))?;
+
+	Ok(CachedWalletState {
+		seed_hash: wallet_cache_key(seed, scheme),
+		block_height,
+		shielded_state_bytes,
+		dust_local_state_bytes,
+	})
+}
+
 /// Restore a [`LedgerContext`] from a [`LedgerSnapshot`], with no wallets.
 ///
 /// The caller should inject wallets via [`inject_wallet_from_cache`] after this.
@@ -513,9 +609,9 @@ pub fn create_wallet_snapshot(
 pub fn restore_context_from_ledger_snapshot(
 	snapshot: &LedgerSnapshot,
 ) -> Result<(LedgerContext<DefaultDB>, LedgerState<DefaultDB>, u64), CacheError> {
-	if snapshot.ledger_version != LedgerVersion::Ledger9 {
+	if snapshot.ledger_version != LedgerVersion::Ledger10 {
 		return Err(CacheError::DeserializeLedgerState(format!(
-			"snapshot is {:?}, expected Ledger9",
+			"snapshot is {:?}, expected Ledger10",
 			snapshot.ledger_version
 		)));
 	}
@@ -543,6 +639,60 @@ pub fn restore_context_from_ledger_snapshot(
 	}
 
 	let block_context = BlockContext {
+		tblock: Timestamp::from_secs(snapshot.latest_block_context.tblock_secs),
+		tblock_err: snapshot.latest_block_context.tblock_err,
+		parent_block_hash: HashOutput(snapshot.latest_block_context.parent_block_hash),
+		last_block_time: Timestamp::from_secs(snapshot.latest_block_context.last_block_time),
+	};
+	{
+		let mut block_ctx = context
+			.latest_block_context
+			.lock()
+			.map_err(|_| CacheError::LockPoisoned("latest_block_context".to_string()))?;
+		*block_ctx = Some(block_context);
+	}
+
+	Ok((context, ledger_state, snapshot.block_height))
+}
+
+#[cfg(feature = "legacy-ledgers")]
+/// Ledger-9 twin of [`restore_context_from_ledger_snapshot`].
+pub fn restore_context_from_ledger_snapshot_9(
+	snapshot: &LedgerSnapshot,
+) -> Result<
+	(ledger_9::context::LedgerContext<DefaultDB>, ledger_9::LedgerState<DefaultDB>, u64),
+	CacheError,
+> {
+	if snapshot.ledger_version != LedgerVersion::Ledger9 {
+		return Err(CacheError::DeserializeLedgerState(format!(
+			"snapshot is {:?}, expected Ledger9",
+			snapshot.ledger_version
+		)));
+	}
+	let computed_root = compute_state_root(&snapshot.ledger_state_bytes);
+	if snapshot.state_root != computed_root {
+		log::error!(
+			"State root mismatch: ledger snapshot may be corrupted (height {})",
+			snapshot.block_height
+		);
+		return Err(CacheError::StateRootMismatch);
+	}
+
+	let ledger_state = super::trusted_deserialize::trusted_deserialize_tagged::<
+		ledger_9::LedgerState<DefaultDB>,
+	>(&snapshot.ledger_state_bytes)
+	.map_err(|e| CacheError::DeserializeLedgerState(e.to_string()))?;
+
+	let context = ledger_9::context::LedgerContext::new("restored");
+	{
+		let mut state = context
+			.ledger_state
+			.lock()
+			.map_err(|_| CacheError::LockPoisoned("ledger_state".to_string()))?;
+		*state = Sp::new(ledger_state.clone());
+	}
+
+	let block_context = ledger_9::BlockContext {
 		tblock: Timestamp::from_secs(snapshot.latest_block_context.tblock_secs),
 		tblock_err: snapshot.latest_block_context.tblock_err,
 		parent_block_hash: HashOutput(snapshot.latest_block_context.parent_block_hash),
@@ -600,6 +750,49 @@ pub fn inject_wallet_from_cache(
 	Ok(())
 }
 
+#[cfg(feature = "legacy-ledgers")]
+/// Ledger-9 twin of [`inject_wallet_from_cache`].
+pub fn inject_wallet_from_cache_9(
+	context: &ledger_9::context::LedgerContext<DefaultDB>,
+	cached: &CachedWalletState,
+	seed: &WalletSeed,
+	scheme: UnshieldedSignatureScheme,
+	ledger_state: &ledger_9::LedgerState<DefaultDB>,
+) -> Result<(), CacheError> {
+	// Rebuild with the cached scheme so the restored unshielded/dust identity matches the seed's
+	// NIGHT key for that scheme (dust derives from the NIGHT identity).
+	let seed_9 = ledger_9::WalletSeed::try_from(seed.as_bytes())
+		.map_err(|e| CacheError::DeserializeWalletState(format!("wallet seed: {e:?}")))?;
+	let scheme_9 = match scheme {
+		UnshieldedSignatureScheme::Schnorr => ledger_9::UnshieldedSignatureScheme::Schnorr,
+		UnshieldedSignatureScheme::Ecdsa => ledger_9::UnshieldedSignatureScheme::Ecdsa,
+	};
+	let mut wallet = ledger_9::Wallet::new(seed_9.clone(), ledger_state, scheme_9);
+
+	if !cached.shielded_state_bytes.is_empty() {
+		let shielded_state = deserialize_untagged::<ledger_9::WalletState<DefaultDB>>(
+			cached.shielded_state_bytes.as_slice(),
+		)
+		.map_err(|e| CacheError::DeserializeWalletState(format!("shielded state: {}", e)))?;
+		wallet.shielded.state = shielded_state;
+	}
+
+	if let Some(ref dust_bytes) = cached.dust_local_state_bytes {
+		let dust_state =
+			deserialize_untagged::<ledger_9::DustLocalState<DefaultDB>>(dust_bytes.as_slice())
+				.map_err(|e| CacheError::DeserializeWalletState(format!("dust state: {}", e)))?;
+		wallet.dust.dust_local_state = Some(Sp::new(dust_state));
+	}
+
+	let mut wallets = context
+		.wallets
+		.lock()
+		.map_err(|_| CacheError::LockPoisoned("wallets".to_string()))?;
+	wallets.insert(seed_9, wallet);
+
+	Ok(())
+}
+
 mod serde_opt_bytes {
 	use serde::{Deserialize, Deserializer, Serializer};
 
@@ -627,6 +820,7 @@ mod tests {
 		assert!(LedgerSnapshot::from_value_bytes(&[], 1).is_err());
 	}
 
+	#[cfg(feature = "legacy-ledgers")]
 	/// An empty state agrees with any serializer, so populate it.
 	fn populated_ledger8_context() -> (
 		midnight_ledger_unsafe_helpers::ledger_8::context::LedgerContext<
@@ -654,6 +848,7 @@ mod tests {
 		(ctx, seed)
 	}
 
+	#[cfg(feature = "legacy-ledgers")]
 	#[test]
 	fn fast_serialize_matches_default_8() {
 		let (ctx, _) = populated_ledger8_context();
@@ -665,6 +860,7 @@ mod tests {
 		assert_eq!(default_bytes, fast_bytes, "ledger-8 fast serializer diverged from default");
 	}
 
+	#[cfg(feature = "legacy-ledgers")]
 	#[test]
 	fn ledger8_snapshot_roundtrip_and_version_dispatch() {
 		use midnight_ledger_unsafe_helpers::ledger_8 as l8;
@@ -711,7 +907,7 @@ mod tests {
 
 	#[test]
 	fn relaxed_replay_with_state_roots_matches_strict_replay() {
-		use midnight_ledger_unsafe_helpers::fork::fork_aware_context::apply_block_9;
+		use midnight_ledger_unsafe_helpers::fork::fork_aware_context::apply_block_10;
 
 		let (source, _) = load_genesis_context(&[]);
 		assert!(source.blocks.iter().all(|b| b.state_root.is_none()));
@@ -720,7 +916,7 @@ mod tests {
 		let strict = LedgerContext::<DefaultDB>::new(&source.network_id);
 		let mut roots = Vec::new();
 		for block in &source.blocks {
-			apply_block_9(&strict, block);
+			apply_block_10(&strict, block);
 			roots.push(strict.state_root().unwrap().expect("local root"));
 		}
 
@@ -728,7 +924,7 @@ mod tests {
 		for (block, root) in source.blocks.iter().zip(&roots) {
 			let mut block = block.clone();
 			block.state_root = Some(root.clone());
-			apply_block_9(&relaxed, &block);
+			apply_block_10(&relaxed, &block);
 		}
 
 		let strict_bytes =
@@ -743,13 +939,13 @@ mod tests {
 	#[test]
 	#[should_panic(expected = "StateRootMismatch")]
 	fn relaxed_replay_aborts_on_state_root_mismatch() {
-		use midnight_ledger_unsafe_helpers::fork::fork_aware_context::apply_block_9;
+		use midnight_ledger_unsafe_helpers::fork::fork_aware_context::apply_block_10;
 
 		let (source, _) = load_genesis_context(&[]);
 		let ctx = LedgerContext::<DefaultDB>::new(&source.network_id);
 		let mut block = source.blocks[0].clone();
 		block.state_root = Some(vec![0xAB; 32]);
-		apply_block_9(&ctx, &block);
+		apply_block_10(&ctx, &block);
 	}
 
 	#[test]
@@ -1056,9 +1252,10 @@ mod tests {
 
 		// Replay remaining blocks
 		use crate::tx_generator::builder::{WalletSchemes, replay_blocks};
-		let fork_ctx = ForkAwareLedgerContext::Ledger9(restored);
+		let fork_ctx = ForkAwareLedgerContext::Ledger10(restored);
 		let fork_ctx = replay_blocks(fork_ctx, &second_half, &[], &WalletSchemes::new());
-		let incremental_context = fork_ctx.into_ledger9().expect("expected ledger 9 after replay");
+		let incremental_context =
+			fork_ctx.into_ledger10().expect("expected ledger 10 after replay");
 
 		// Compare ledger state
 		let full_bytes = {
@@ -1104,7 +1301,7 @@ mod tests {
 
 		let mut snapshot = LedgerSnapshot {
 			block_height: 100,
-			ledger_version: LedgerVersion::Ledger9,
+			ledger_version: LedgerVersion::Ledger10,
 			ledger_state_bytes,
 			latest_block_context: SerializableBlockContext {
 				tblock_secs: 1234567890,

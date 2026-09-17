@@ -15,8 +15,11 @@
 // (`cargo metadata --locked`). This replaces the runtime `Cargo.toml` parse the
 // LeastAuthority audit flagged ("Prefer Cargo.lock For Build-Time Crate Versions"): the constants
 // reflect what was actually resolved and built, and git deps carry their locked tag + commit SHA.
-const LEDGER_8_VERSION: &str = env!("LEDGER_8_VERSION");
-const LEDGER_9_VERSION: &str = env!("LEDGER_9_VERSION");
+// Ledger 8/9 are only present with the `legacy-ledgers` feature; `build.rs` leaves the env
+// var unset otherwise, and the alias then reports `None`.
+const LEDGER_8_VERSION: Option<&str> = option_env!("LEDGER_8_VERSION");
+const LEDGER_9_VERSION: Option<&str> = option_env!("LEDGER_9_VERSION");
+const LEDGER_10_VERSION: &str = env!("LEDGER_10_VERSION");
 
 /// Resolved version of a workspace ledger dependency alias, embedded at compile time from
 /// `Cargo.lock`.
@@ -26,8 +29,9 @@ const LEDGER_9_VERSION: &str = env!("LEDGER_9_VERSION");
 /// Returns `None` for an unknown alias.
 pub fn find_dependency_version(alias: &str) -> Option<String> {
 	match alias {
-		"mn-ledger-8" => Some(LEDGER_8_VERSION.to_owned()),
-		"mn-ledger-9" => Some(LEDGER_9_VERSION.to_owned()),
+		"mn-ledger-8" => LEDGER_8_VERSION.map(str::to_owned),
+		"mn-ledger-9" => LEDGER_9_VERSION.map(str::to_owned),
+		"mn-ledger-10" => Some(LEDGER_10_VERSION.to_owned()),
 		_ => None,
 	}
 }

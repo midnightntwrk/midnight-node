@@ -17,6 +17,7 @@ use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::create_file_wallet_cache;
 use clap::Args;
 use midnight_ledger_unsafe_helpers::ContractAddress;
+use midnight_ledger_unsafe_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
 use std::{fs, path::Path};
 
 #[derive(Args)]
@@ -61,20 +62,28 @@ pub async fn execute(
 	)
 	.await;
 
-	let serialized_state = fork_ctx.dispatch(
-		|ctx| {
+	let serialized_state = match fork_ctx {
+		#[cfg(feature = "legacy-ledgers")]
+		ForkAwareLedgerContext::Ledger8(ctx) => {
 			crate::commands::fork::ledger_8::contract_state::get_contract_state(
 				&ctx,
 				args.contract_address,
 			)
 		},
-		|ctx| {
+		#[cfg(feature = "legacy-ledgers")]
+		ForkAwareLedgerContext::Ledger9(ctx) => {
 			crate::commands::fork::ledger_9::contract_state::get_contract_state(
 				&ctx,
 				args.contract_address,
 			)
 		},
-	)?;
+		ForkAwareLedgerContext::Ledger10(ctx) => {
+			crate::commands::fork::ledger_10::contract_state::get_contract_state(
+				&ctx,
+				args.contract_address,
+			)
+		},
+	}?;
 
 	if let Some(dest_file) = &args.dest_file {
 		let full_path = Path::new(dest_file);

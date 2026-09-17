@@ -215,20 +215,30 @@ pub fn construct_genesis_block<Block: BlockT>(
 	)
 }
 
+/// Host functions of the ledger generations this build carries beyond the always-present
+/// ledger 8 surface (which is a stub without `legacy-ledgers`) and ledger 10.
+#[cfg(feature = "legacy-ledgers")]
+type LegacyLedgerHostFunctions =
+	(midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,);
+#[cfg(not(feature = "legacy-ledgers"))]
+type LegacyLedgerHostFunctions = ();
+
 /// Only enable the benchmarking host functions when we actually want to benchmark.
 #[cfg(feature = "runtime-benchmarks")]
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	frame_benchmarking::benchmarking::HostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
+	LegacyLedgerHostFunctions,
+	midnight_node_ledger::host_api::ledger_10::ledger_10_bridge::HostFunctions,
 );
 /// Otherwise we only use the default Substrate host functions.
 #[cfg(not(feature = "runtime-benchmarks"))]
 pub type HostFunctions = (
 	sp_io::SubstrateHostFunctions,
 	midnight_node_ledger::host_api::ledger_8::ledger_8_bridge::HostFunctions,
-	midnight_node_ledger::host_api::ledger_9::ledger_9_bridge::HostFunctions,
+	LegacyLedgerHostFunctions,
+	midnight_node_ledger::host_api::ledger_10::ledger_10_bridge::HostFunctions,
 );
 
 /// A specialized `WasmExecutor` intended to use across the substrate node. It provides all the

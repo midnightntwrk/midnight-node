@@ -51,10 +51,13 @@ pub enum CoinSelectionStrategy {
 /// To be deserialized when constructing ContractOperations
 pub struct ContractVerifyingKeyBytes(pub Vec<u8>);
 
+pub mod ledger_10;
+#[cfg(feature = "legacy-ledgers")]
 pub mod ledger_8;
+#[cfg(feature = "legacy-ledgers")]
 pub mod ledger_9;
 
-pub use ledger_9 as latest;
+pub use ledger_10 as latest;
 
 pub mod fork;
 

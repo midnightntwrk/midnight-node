@@ -13,7 +13,10 @@
 
 use midnight_node_ledger_helpers::fork::raw_block_data::{RawTransaction, SerializedTx};
 
-pub fn extract_tx_with_context_ledger_9(bytes: &[u8]) -> (Vec<u8>, crate::ledger_9::BlockContext) {
+/// `SerializedTx.context` is the latest generation's (ledger-10) `BlockContext`.
+pub fn extract_tx_with_context_ledger_10(
+	bytes: &[u8],
+) -> (Vec<u8>, crate::ledger_10::BlockContext) {
 	let serialized_tx: SerializedTx =
 		serde_json::from_slice(bytes).expect("failed to deserialize as SerializedTx");
 	let RawTransaction::Midnight(tx_bytes) = serialized_tx.tx else {
@@ -24,6 +27,27 @@ pub fn extract_tx_with_context_ledger_9(bytes: &[u8]) -> (Vec<u8>, crate::ledger
 	(tx_bytes, block_context)
 }
 
+/// The ledger-9 `BlockContext` is field-identical over the shared `base_crypto` types, so
+/// this is a plain re-wrap.
+#[cfg(feature = "legacy-ledgers")]
+pub fn extract_tx_with_context_ledger_9(bytes: &[u8]) -> (Vec<u8>, crate::ledger_9::BlockContext) {
+	let serialized_tx: SerializedTx =
+		serde_json::from_slice(bytes).expect("failed to deserialize as SerializedTx");
+	let RawTransaction::Midnight(tx_bytes) = serialized_tx.tx else {
+		panic!("expected test to run against midnight transaction");
+	};
+
+	let block_context = crate::ledger_9::BlockContext {
+		tblock: serialized_tx.context.tblock,
+		tblock_err: serialized_tx.context.tblock_err,
+		parent_block_hash: serialized_tx.context.parent_block_hash,
+		last_block_time: serialized_tx.context.last_block_time,
+	};
+
+	(tx_bytes, block_context)
+}
+
+#[cfg(feature = "legacy-ledgers")]
 pub fn extract_tx_with_context_ledger_8(bytes: &[u8]) -> (Vec<u8>, crate::ledger_8::BlockContext) {
 	let serialized_tx: SerializedTx =
 		serde_json::from_slice(bytes).expect("failed to deserialize as SerializedTx");

@@ -11,9 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod ledger_9;
-pub use ledger_9::*;
+pub mod ledger_10;
+pub use ledger_10::*;
 
+#[cfg(feature = "legacy-ledgers")]
+pub mod ledger_9;
+
+#[cfg(feature = "legacy-ledgers")]
 pub mod ledger_8;
 
 // Conversion impls for encoded zswap types to ledger types.
@@ -24,12 +28,19 @@ pub mod ledger_8;
 use crate::toolkit_js::encoded_zswap_local_state::{
 	EncodedOutput, EncodedQualifiedShieldedCoinInfo, EncodedRecipient,
 };
+#[cfg(feature = "legacy-ledgers")]
 use midnight_ledger_unsafe_helpers::ledger_8::{
 	CoinInfo as CoinInfoV2, CoinPublicKey as CoinPublicKeyV2, ContractAddress as ContractAddressV2,
 	Nonce as NonceV2, QualifiedInfo as QualifiedInfoV2, Recipient as RecipientV2,
 	ShieldedTokenType as ShieldedTokenTypeV2,
 };
+#[cfg(feature = "legacy-ledgers")]
 use midnight_ledger_unsafe_helpers::ledger_9::{
+	CoinInfo as CoinInfoV9, CoinPublicKey as CoinPublicKeyV9, ContractAddress as ContractAddressV9,
+	Nonce as NonceV9, QualifiedInfo as QualifiedInfoV9, Recipient as RecipientV9,
+	ShieldedTokenType as ShieldedTokenTypeV9,
+};
+use midnight_ledger_unsafe_helpers::ledger_10::{
 	CoinInfo, CoinPublicKey, ContractAddress, HashOutput, Nonce, QualifiedInfo, Recipient,
 	ShieldedTokenType,
 };
@@ -78,6 +89,7 @@ macro_rules! impl_encoded_zswap_conversions {
 	};
 }
 
+#[cfg(feature = "legacy-ledgers")]
 impl_encoded_zswap_conversions!(
 	RecipientV2,
 	CoinPublicKeyV2,
@@ -86,6 +98,16 @@ impl_encoded_zswap_conversions!(
 	NonceV2,
 	ShieldedTokenTypeV2,
 	QualifiedInfoV2
+);
+#[cfg(feature = "legacy-ledgers")]
+impl_encoded_zswap_conversions!(
+	RecipientV9,
+	CoinPublicKeyV9,
+	ContractAddressV9,
+	CoinInfoV9,
+	NonceV9,
+	ShieldedTokenTypeV9,
+	QualifiedInfoV9
 );
 impl_encoded_zswap_conversions!(
 	Recipient,

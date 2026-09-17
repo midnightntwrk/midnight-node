@@ -35,7 +35,7 @@ use midnight_node_toolkit::{
 	serde_def::SourceTransactions,
 	tx_generator::builder::{
 		BuildTxs, RegisterDustAddressArgs,
-		builders::ledger_9::{RegisterDustAddressBuilder, RegisterDustAddressError},
+		builders::ledger_10::{RegisterDustAddressBuilder, RegisterDustAddressError},
 	},
 };
 use std::sync::Arc;

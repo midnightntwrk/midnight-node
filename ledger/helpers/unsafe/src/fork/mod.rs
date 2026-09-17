@@ -17,19 +17,36 @@ use midnight_node_ledger_helpers::fork::raw_block_data::{
 	LedgerVersion, RawBlockData, SerializedTxBatches,
 };
 
+#[cfg(feature = "legacy-ledgers")]
 pub mod fork_8_to_9;
+#[cfg(feature = "legacy-ledgers")]
+pub mod fork_9_to_10;
 pub mod fork_aware_context;
 
 pub fn network_id_and_ledger_version_from_tx_bytes(
 	tx_bytes: &[u8],
 ) -> Result<(String, LedgerVersion), std::io::Error> {
-	let res9 = crate::ledger_9::network_id_from_transaction_bytes(tx_bytes);
-	if let Ok(ref network_id) = res9 {
+	// Newest first: ledger 10 keeps ledger 9's outer `transaction[v12]` tag, so a v9 tx only
+	// fails to decode as v10 where its nested proof tag differs; proof-less txs report v10.
+	if let Ok(network_id) = crate::ledger_10::network_id_from_transaction_bytes(tx_bytes) {
+		return Ok((network_id.to_string(), LedgerVersion::Ledger10));
+	}
+
+	#[cfg(feature = "legacy-ledgers")]
+	if let Ok(network_id) = crate::ledger_9::network_id_from_transaction_bytes(tx_bytes) {
 		return Ok((network_id.to_string(), LedgerVersion::Ledger9));
 	}
 
-	let network_id = crate::ledger_8::network_id_from_transaction_bytes(tx_bytes)?;
-	Ok((network_id.to_string(), LedgerVersion::Ledger8))
+	#[cfg(feature = "legacy-ledgers")]
+	{
+		let network_id = crate::ledger_8::network_id_from_transaction_bytes(tx_bytes)?;
+		Ok((network_id.to_string(), LedgerVersion::Ledger8))
+	}
+	#[cfg(not(feature = "legacy-ledgers"))]
+	Err(std::io::Error::new(
+		std::io::ErrorKind::InvalidData,
+		"transaction is not a ledger-10 transaction (ledger 8/9 are not compiled in)",
+	))
 }
 
 /// Builds the display-friendly `RawBlockData` view of a `SerializedTxBatches` warp

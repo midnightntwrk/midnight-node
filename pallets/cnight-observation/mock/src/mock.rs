@@ -163,7 +163,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 		midnight: MidnightConfig {
 			_config: Default::default(),
 			network_id: UndeployedNetwork.id().to_string(),
-			genesis_state_key: midnight_node_ledger::ledger_9::storage::get_root(
+			genesis_state_key: midnight_node_ledger::latest::storage::get_root(
 				UndeployedNetwork.genesis_state(),
 				Some(UndeployedNetwork.id()),
 			)
