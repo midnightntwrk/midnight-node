@@ -9,5 +9,5 @@ and shipped on the 1.0.300 line instead; the node-1.0.2 build deployed to mainne
 the config-gated version. This puts the `release/node-1.0.2` tree back in step with that build: 
 ledger 8.1.2 and nothing else. Both config keys are removed.
 
-PR: https://github.com/midnightntwrk/midnight-node/pull/TBD
+PR: https://github.com/midnightntwrk/midnight-node/pull/2174
 Issue: https://github.com/midnightntwrk/midnight-node/issues/1924
