@@ -87,6 +87,7 @@ pub enum SystemTransactionError {
 	TreasuryDisabled,
 	MerkleTreeError,
 	UnknownError,
+	NotAllowedForCaller,
 }
 
 #[derive(Debug, Encode, Decode, DecodeWithMemTracking, Clone, TypeInfo, PalletError, PartialEq)]
@@ -535,6 +536,7 @@ impl From<LedgerApiError> for u8 {
 					SystemTransactionError::TreasuryDisabled => 210,
 					SystemTransactionError::MerkleTreeError => 211,
 					SystemTransactionError::UnknownError => 204,
+					SystemTransactionError::NotAllowedForCaller => 140,
 				},
 			},
 			// Reserved from [150-255) for future Errors

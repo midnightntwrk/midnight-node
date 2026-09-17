@@ -1,3 +1,16 @@
+// This file is part of midnight-node.
+// Copyright (C) Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// You may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #[cfg(feature = "std")]
 use crate::ledger_8::Bridge;
 use crate::{
@@ -261,6 +274,78 @@ pub trait Ledger8Bridge {
 			)
 		} else {
 			Bridge::<Signature, DbSeparate>::apply_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+	}
+
+	fn apply_governance_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_governance_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_governance_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+	}
+
+	fn apply_cnight_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_cnight_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		}
+	}
+
+	fn apply_bridge_system_transaction(
+		&mut self,
+		state_key: PassFatPointerAndRead<&[u8]>,
+		tx: PassFatPointerAndRead<&[u8]>,
+		block_context: PassFatPointerAndDecode<BlockContext>,
+		_runtime_version: u32,
+	) -> AllocateAndReturnByCodec<Result<SystemTransactionAppliedStateRoot, LedgerApiError>> {
+		if is_unified(*self) {
+			Bridge::<Signature, DbUnified>::apply_bridge_system_transaction(
+				*self,
+				state_key,
+				tx,
+				block_context,
+			)
+		} else {
+			Bridge::<Signature, DbSeparate>::apply_bridge_system_transaction(
 				*self,
 				state_key,
 				tx,
