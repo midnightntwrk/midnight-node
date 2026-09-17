@@ -44,5 +44,4 @@ that as "nothing to restore"). Consequences while the feature is off:
   (MPT canonicity invariant, canonical HashMap/HashSet decode) - acceptable on a dev chain,
   not for release.
 
-PR: <link to PR>
-Issue: <link to issue>
+PR: https://github.com/midnightntwrk/midnight-node/pull/2173

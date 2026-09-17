@@ -43,7 +43,7 @@ mod tests {
 	#[test]
 	fn annotates_git_dependency_with_tag_and_rev() {
 		// A git dep's tag is mutable; the locked commit SHA is the immutable build identity - both.
-		let v = find_dependency_version("mn-ledger-9").expect("mn-ledger-9 should resolve");
+		let v = find_dependency_version(crate::latest::CRATE_NAME).expect("latest should resolve");
 		assert!(v.contains("tag:"), "expected tag annotation, got {v:?}");
 		let rev = v
 			.split("rev:")
