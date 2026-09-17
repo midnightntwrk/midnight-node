@@ -24,6 +24,7 @@ use crate::{
 	serde_def::{QualifiedDustOutputSer, QualifiedInfoSer, UtxoSer},
 };
 use clap::Args;
+use midnight_ledger_unsafe_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
 
 #[derive(Debug, serde::Serialize)]
 pub struct WalletInfoJson {
@@ -103,22 +104,36 @@ pub async fn execute(
 		)
 		.await;
 
-		Ok(fork_ctx.dispatch(
-			|ctx| {
-			let seed_v8 =
+		Ok(match fork_ctx {
+			#[cfg(feature = "legacy-ledgers")]
+			ForkAwareLedgerContext::Ledger8(ctx) => {
+				let seed_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_seed(seed.clone());
 				let result = crate::commands::fork::ledger_8::show_wallet::show_wallet_from_seed(
 					&ctx, seed_v8, args.debug,
 				);
 				fork_wallet_result_v8(result)
 			},
-			|ctx| {
+			#[cfg(feature = "legacy-ledgers")]
+			ForkAwareLedgerContext::Ledger9(ctx) => {
+				let seed_v9 =
+					crate::tx_generator::builder::builders::ledger_9::type_convert::convert_wallet_seed(
+						seed.clone(),
+					);
 				let result = crate::commands::fork::ledger_9::show_wallet::show_wallet_from_seed(
-					&ctx, seed.clone(), args.debug,
+					&ctx, seed_v9, args.debug,
 				);
 				fork_wallet_result_v9(result)
 			},
-		))
+			ForkAwareLedgerContext::Ledger10(ctx) => {
+				let result = crate::commands::fork::ledger_10::show_wallet::show_wallet_from_seed(
+					&ctx,
+					seed.clone(),
+					args.debug,
+				);
+				fork_wallet_result_v10(result)
+			},
+		})
 	} else {
 		let address = args.address.expect("parsing error; address not given");
 		if address.human_readable_part().contains(HRP_CREDENTIAL_SHIELDED) {
@@ -134,9 +149,11 @@ pub async fn execute(
 		)
 		.await;
 
+		#[cfg(feature = "legacy-ledgers")]
 		let address_clone = address.clone();
-		Ok(fork_ctx.dispatch(
-			|ctx| {
+		Ok(match fork_ctx {
+			#[cfg(feature = "legacy-ledgers")]
+			ForkAwareLedgerContext::Ledger8(ctx) => {
 				let addr_v8 =
 				crate::tx_generator::builder::builders::ledger_8::type_convert::convert_wallet_address(
 					&address_clone,
@@ -146,16 +163,39 @@ pub async fn execute(
 				);
 				fork_wallet_result_v8(result)
 			},
-			|ctx| {
+			#[cfg(feature = "legacy-ledgers")]
+			ForkAwareLedgerContext::Ledger9(ctx) => {
+				let addr_v9 =
+				crate::tx_generator::builder::builders::ledger_9::type_convert::convert_wallet_address(
+					&address_clone,
+				);
 				let result = crate::commands::fork::ledger_9::show_wallet::show_wallet_from_address(
-					&ctx, address,
+					&ctx, addr_v9,
 				);
 				fork_wallet_result_v9(result)
 			},
-		))
+			ForkAwareLedgerContext::Ledger10(ctx) => {
+				let result =
+					crate::commands::fork::ledger_10::show_wallet::show_wallet_from_address(
+						&ctx, address,
+					);
+				fork_wallet_result_v10(result)
+			},
+		})
 	}
 }
 
+fn fork_wallet_result_v10(
+	result: crate::commands::fork::ledger_10::show_wallet::ShowWalletResult,
+) -> ShowWalletResult {
+	use crate::commands::fork::ledger_10::show_wallet::ShowWalletResult as R;
+	match result {
+		R::Debug(s, u) => ShowWalletResult::Debug(s, u),
+		R::Json(j) => ShowWalletResult::Json(j),
+	}
+}
+
+#[cfg(feature = "legacy-ledgers")]
 fn fork_wallet_result_v9(
 	result: crate::commands::fork::ledger_9::show_wallet::ShowWalletResult,
 ) -> ShowWalletResult {
@@ -166,6 +206,7 @@ fn fork_wallet_result_v9(
 	}
 }
 
+#[cfg(feature = "legacy-ledgers")]
 fn fork_wallet_result_v8(
 	result: crate::commands::fork::ledger_8::show_wallet::ShowWalletResult,
 ) -> ShowWalletResult {

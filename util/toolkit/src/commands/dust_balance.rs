@@ -24,6 +24,7 @@ use crate::{
 };
 use clap::Args;
 use midnight_ledger_unsafe_helpers::UnshieldedSignatureScheme;
+use midnight_ledger_unsafe_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
 
 #[derive(Args)]
 pub struct DustBalanceArgs {
@@ -142,8 +143,9 @@ pub async fn execute_many(
 		replay_checkpoint_interval,
 	)
 	.await;
-	let jsons: Vec<DustBalanceJson> = fork_ctx.dispatch(
-		|ctx| {
+	let jsons: Vec<DustBalanceJson> = match fork_ctx {
+		#[cfg(feature = "legacy-ledgers")]
+		ForkAwareLedgerContext::Ledger8(ctx) => {
 			seeds
 				.iter()
 				.map(|seed| {
@@ -154,15 +156,27 @@ pub async fn execute_many(
 				})
 				.collect::<Result<Vec<_>, _>>()
 		},
-		|ctx| {
-		    seeds
+		#[cfg(feature = "legacy-ledgers")]
+		ForkAwareLedgerContext::Ledger9(ctx) => {
+			seeds
 				.iter()
 				.map(|seed| {
-				    crate::commands::fork::ledger_9::dust_balance::dust_balance(&ctx, seed.clone())
+					let seed_v9 = crate::tx_generator::builder::builders::ledger_9::type_convert::convert_wallet_seed(
+						seed.clone(),
+					);
+					crate::commands::fork::ledger_9::dust_balance::dust_balance(&ctx, seed_v9)
 				})
 				.collect::<Result<Vec<_>, _>>()
-		}
-	)?;
+		},
+		ForkAwareLedgerContext::Ledger10(ctx) => {
+			seeds
+				.iter()
+				.map(|seed| {
+					crate::commands::fork::ledger_10::dust_balance::dust_balance(&ctx, seed.clone())
+				})
+				.collect::<Result<Vec<_>, _>>()
+		},
+	}?;
 
 	Ok(seeds
 		.into_iter()
@@ -453,20 +467,21 @@ mod tests {
 		// so without the post-save re-apply step the in-memory tblock
 		// would be the real-head block's historic tblock instead of
 		// wall-clock-now.
-		match fork_ctx_2 {
-			ForkAwareLedgerContext::Ledger9(ctx) => {
-				let ctx_tblock = ctx.latest_block_context().tblock.to_secs();
-				assert!(
-					ctx_tblock >= test_start_secs,
-					"in-memory latest_block_context.tblock should be >= test start \
-					 ({test_start_secs}) after warm restore with dust_warp=true; \
-					 got {ctx_tblock}",
-				);
-			},
+		let ctx_tblock = match fork_ctx_2 {
+			ForkAwareLedgerContext::Ledger10(ctx) => ctx.latest_block_context().tblock.to_secs(),
+			#[cfg(feature = "legacy-ledgers")]
+			ForkAwareLedgerContext::Ledger9(ctx) => ctx.latest_block_context().tblock.to_secs(),
+			#[cfg(feature = "legacy-ledgers")]
 			ForkAwareLedgerContext::Ledger8(_) => {
-				panic!("post-fork context should be on Ledger9 after replay")
+				panic!("post-fork context should be past Ledger8 after replay")
 			},
-		}
+		};
+		assert!(
+			ctx_tblock >= test_start_secs,
+			"in-memory latest_block_context.tblock should be >= test start \
+			 ({test_start_secs}) after warm restore with dust_warp=true; \
+			 got {ctx_tblock}",
+		);
 
 		// Invariant (5): the second call must not have re-persisted the
 		// warp under the real-head height. Re-check the snapshot after

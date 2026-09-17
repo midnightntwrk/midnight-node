@@ -13,11 +13,14 @@
 
 //! Dump the NIGHT pools (Reserved / Locked / Unlocked) held in a network's `LedgerState`.
 
+use crate::commands::fork::ledger_10;
+#[cfg(feature = "legacy-ledgers")]
 use crate::commands::fork::{ledger_8, ledger_9};
 use crate::source::Source;
 use crate::tx_generator::builder::build_fork_aware_context_cached;
 use crate::tx_generator::source::create_file_wallet_cache;
 use crate::{TxGenerator, WalletSeed};
+use midnight_ledger_unsafe_helpers::fork::fork_aware_context::ForkAwareLedgerContext;
 
 use clap::Args;
 
@@ -72,10 +75,13 @@ pub async fn execute(
 	)
 	.await;
 
-	let night_pools = fork_ctx.dispatch(
-		|ctx| ledger_8::night_pools::night_pools(&ctx),
-		|ctx| ledger_9::night_pools::night_pools(&ctx),
-	)?;
+	let night_pools = match fork_ctx {
+		#[cfg(feature = "legacy-ledgers")]
+		ForkAwareLedgerContext::Ledger8(ctx) => ledger_8::night_pools::night_pools(&ctx),
+		#[cfg(feature = "legacy-ledgers")]
+		ForkAwareLedgerContext::Ledger9(ctx) => ledger_9::night_pools::night_pools(&ctx),
+		ForkAwareLedgerContext::Ledger10(ctx) => ledger_10::night_pools::night_pools(&ctx),
+	}?;
 
 	let total = night_pools.reserve
 		+ night_pools.locked

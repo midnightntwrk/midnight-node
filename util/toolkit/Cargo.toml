@@ -12,6 +12,8 @@ path = "src/main.rs"
 
 [features]
 default = []
+# Ledger 8 and 9 support; see ledger/Cargo.toml - cannot currently be enabled.
+legacy-ledgers = []
 erase-proof = ["midnight-ledger-unsafe-helpers/erase-proof"]
 compact-contract-tests = []
 

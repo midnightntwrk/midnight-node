@@ -13,6 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Boots a node on a ledger-8 genesis and forks it to 9: needs both compiled in.
+#![cfg(feature = "legacy-ledgers")]
+
 //! Fork-boundary e2e: build a chain-spec from the previous release, run the
 //! current node on it, upgrade the runtime, and check the boundary.
 //!

@@ -15,10 +15,13 @@ mod utils;
 
 pub use utils::find_dependency_version;
 
+pub mod ledger_10;
+#[cfg(feature = "legacy-ledgers")]
 pub mod ledger_8;
+#[cfg(feature = "legacy-ledgers")]
 pub mod ledger_9;
 
-pub use ledger_9 as latest;
+pub use ledger_10 as latest;
 
 pub mod fork;
 

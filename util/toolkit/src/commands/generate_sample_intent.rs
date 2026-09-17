@@ -90,6 +90,17 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 	}
 
 	match version {
+		LedgerVersion::Ledger10 => {
+			let context = Arc::new(fork_ctx.into_ledger10().expect("expected ledger 10 context"));
+			let prover: Arc<
+				dyn midnight_ledger_unsafe_helpers::ledger_10::ProofProvider<
+						midnight_ledger_unsafe_helpers::ledger_10::DefaultDB,
+					>,
+			> = Arc::new(midnight_ledger_unsafe_helpers::ledger_10::LocalProofServer::new());
+
+			execute_with_builders_v10(args.contract_call, context, prover, &args.dest_dir).await;
+		},
+		#[cfg(feature = "legacy-ledgers")]
 		LedgerVersion::Ledger9 => {
 			let context = Arc::new(fork_ctx.into_ledger9().expect("expected ledger 9 context"));
 			let prover: Arc<
@@ -100,6 +111,7 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 
 			execute_with_builders_v9(args.contract_call, context, prover, &args.dest_dir).await;
 		},
+		#[cfg(feature = "legacy-ledgers")]
 		LedgerVersion::Ledger8 => {
 			let context = Arc::new(fork_ctx.into_ledger8().expect("expected ledger 8 context"));
 			let prover: Arc<
@@ -110,9 +122,52 @@ pub async fn execute(args: GenerateSampleIntentArgs) {
 
 			execute_with_builders_v8(args.contract_call, context, prover, &args.dest_dir).await;
 		},
+		#[cfg(not(feature = "legacy-ledgers"))]
+		LedgerVersion::Ledger8 | LedgerVersion::Ledger9 => panic!(
+			"source chain is on {version:?}; this build only generates ledger 10 intents \
+			 (built without `legacy-ledgers`)"
+		),
 	}
 }
 
+async fn execute_with_builders_v10(
+	contract_call: ContractCall,
+	context: Arc<
+		midnight_ledger_unsafe_helpers::ledger_10::context::LedgerContext<
+			midnight_ledger_unsafe_helpers::ledger_10::DefaultDB,
+		>,
+	>,
+	prover: Arc<
+		dyn midnight_ledger_unsafe_helpers::ledger_10::ProofProvider<
+				midnight_ledger_unsafe_helpers::ledger_10::DefaultDB,
+			>,
+	>,
+	dest_dir: &str,
+) {
+	use crate::tx_generator::builder::builders::ledger_10::{
+		ContractCallBuilder, ContractDeployBuilder, IntentToFile,
+	};
+	type Ctx = midnight_ledger_unsafe_helpers::ledger_10::context::LedgerContext<
+		midnight_ledger_unsafe_helpers::ledger_10::DefaultDB,
+	>;
+	let (mut builder, partial_file_name): (Box<dyn IntentToFile<Ctx> + Send>, &str) =
+		match contract_call {
+			ContractCall::Deploy(a) => {
+				(Box::new(ContractDeployBuilder::new(a, context, prover)), "deploy")
+			},
+			ContractCall::Call(a) => {
+				(Box::new(ContractCallBuilder::new(a, context, prover)), "call")
+			},
+			ContractCall::Maintenance(_) => unimplemented!("not implemented for Maintenance"),
+		};
+
+	builder
+		.generate_intent_file(dest_dir, partial_file_name)
+		.await
+		.expect("failed to generate intent file");
+}
+
+#[cfg(feature = "legacy-ledgers")]
 async fn execute_with_builders_v9(
 	contract_call: ContractCall,
 	context: Arc<
@@ -150,6 +205,7 @@ async fn execute_with_builders_v9(
 		.expect("failed to generate intent file");
 }
 
+#[cfg(feature = "legacy-ledgers")]
 async fn execute_with_builders_v8(
 	contract_call: ContractCall,
 	context: Arc<

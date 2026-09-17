@@ -37,6 +37,8 @@ serde_json.workspace = true
 
 [features]
 default = ["std"]
+# Ledger 8 and 9 support; see ledger/Cargo.toml - cannot currently be enabled.
+legacy-ledgers = []
 std = [
     "frame-support/std",
     "frame-system/std",

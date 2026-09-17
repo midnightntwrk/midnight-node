@@ -177,6 +177,8 @@ substrate-build-script-utils.workspace = true
 
 [features]
 default = []
+# Ledger 8 and 9 support; see ledger/Cargo.toml - cannot currently be enabled.
+legacy-ledgers = []
 
 # Dependencies that are only required if runtime benchmarking should be build.
 runtime-benchmarks = [

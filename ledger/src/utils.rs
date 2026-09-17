@@ -54,8 +54,10 @@ mod tests {
 
 	#[test]
 	fn should_find_crate_version() {
-		let version = find_crate_version("mn-ledger-8");
+		let version = find_crate_version(crate::latest::CRATE_NAME);
 		assert!(version.is_some());
+		// Ledger 8 is only resolvable when compiled in.
+		assert_eq!(find_crate_version("mn-ledger-8").is_some(), cfg!(feature = "legacy-ledgers"));
 	}
 
 	struct Reason(&'static str);

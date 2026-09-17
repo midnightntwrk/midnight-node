@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ledger_9::BlockContext;
+use crate::ledger_10::BlockContext;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use std::str::FromStr;
@@ -85,8 +85,9 @@ mod hex_or_bytes_32 {
 #[repr(u8)]
 pub enum LedgerVersion {
 	Ledger8 = 1,
-	#[default]
 	Ledger9 = 2,
+	#[default]
+	Ledger10 = 3,
 }
 
 /// Discriminant burnt on the retired Ledger7, kept only so it can be rejected by name.
@@ -119,7 +120,7 @@ impl<'de> Deserialize<'de> for LedgerVersion {
 			}
 			Self::from_str(&s).map_err(|_| {
 				D::Error::custom(format!(
-					"unknown ledger version {s:?}, expected `Ledger8` or `Ledger9`"
+					"unknown ledger version {s:?}, expected `Ledger8`, `Ledger9` or `Ledger10`"
 				))
 			})
 		} else {
@@ -129,8 +130,8 @@ impl<'de> Deserialize<'de> for LedgerVersion {
 					retired("0 (Ledger7)")
 				} else {
 					D::Error::custom(format!(
-						"unknown ledger version discriminant {n}, expected 1 (Ledger8) or 2 \
-						 (Ledger9)"
+						"unknown ledger version discriminant {n}, expected 1 (Ledger8), 2 \
+						 (Ledger9) or 3 (Ledger10)"
 					))
 				}
 			})
@@ -159,7 +160,7 @@ impl RawTransaction {
 /// Version-agnostic block data that stores transactions as raw serialized bytes.
 ///
 /// Deserialization into version-specific ledger types happens lazily in
-/// `apply_block_8` / `apply_block_9`, which use the correct types for
+/// `apply_block_8` / `apply_block_9` / `apply_block_10`, which use the correct types for
 /// the respective ledger version.
 ///
 /// The `spec_version` field stores the raw runtime spec version number.
@@ -189,14 +190,16 @@ pub struct RawBlockData {
 impl LedgerVersion {
 	/// Convert a raw spec version to a `LedgerVersion`.
 	///
-	/// Versions 0.22.0..=1.x.y use Ledger8, 2.0.0+ uses Ledger9. Versions below 0.22.0
-	/// (pre-ledger-8) are no longer supported.
+	/// Versions 0.22.0..=1.x.y use Ledger8, 2.x.y uses Ledger9, 3.0.0+ uses Ledger10. Versions
+	/// below 0.22.0 (pre-ledger-8) are no longer supported.
 	pub fn from_spec_version(spec_version: u32) -> Option<Self> {
 		match spec_version {
 			#[allow(clippy::zero_prefixed_literal)]
 			000_022_000..=001_999_999 => Some(LedgerVersion::Ledger8),
 			#[allow(clippy::zero_prefixed_literal)]
-			002_000_000.. => Some(LedgerVersion::Ledger9),
+			002_000_000..=002_999_999 => Some(LedgerVersion::Ledger9),
+			#[allow(clippy::zero_prefixed_literal)]
+			003_000_000.. => Some(LedgerVersion::Ledger10),
 			_ => None,
 		}
 	}
@@ -288,9 +291,11 @@ mod tests {
 	fn postcard_discriminants_are_pinned() {
 		assert_eq!(postcard::to_allocvec(&LedgerVersion::Ledger8).unwrap(), [1]);
 		assert_eq!(postcard::to_allocvec(&LedgerVersion::Ledger9).unwrap(), [2]);
+		assert_eq!(postcard::to_allocvec(&LedgerVersion::Ledger10).unwrap(), [3]);
 
 		assert_eq!(postcard::from_bytes::<LedgerVersion>(&[1]).unwrap(), LedgerVersion::Ledger8);
 		assert_eq!(postcard::from_bytes::<LedgerVersion>(&[2]).unwrap(), LedgerVersion::Ledger9);
+		assert_eq!(postcard::from_bytes::<LedgerVersion>(&[3]).unwrap(), LedgerVersion::Ledger10);
 	}
 
 	/// Discriminant 0 is burnt on the retired Ledger7. A cache written before its
@@ -302,7 +307,7 @@ mod tests {
 
 	#[test]
 	fn postcard_rejects_unknown_discriminant() {
-		assert!(postcard::from_bytes::<LedgerVersion>(&[3]).is_err());
+		assert!(postcard::from_bytes::<LedgerVersion>(&[4]).is_err());
 	}
 
 	/// Human-readable formats keep the variant names the derive used, so existing
@@ -311,11 +316,25 @@ mod tests {
 	fn json_uses_variant_names() {
 		assert_eq!(serde_json::to_string(&LedgerVersion::Ledger8).unwrap(), "\"Ledger8\"");
 		assert_eq!(serde_json::to_string(&LedgerVersion::Ledger9).unwrap(), "\"Ledger9\"");
+		assert_eq!(serde_json::to_string(&LedgerVersion::Ledger10).unwrap(), "\"Ledger10\"");
 
 		assert_eq!(
 			serde_json::from_str::<LedgerVersion>("\"Ledger8\"").unwrap(),
 			LedgerVersion::Ledger8
 		);
 		assert!(serde_json::from_str::<LedgerVersion>("\"Ledger7\"").is_err());
+	}
+
+	/// The runtime `spec_version` is the only record a fetched block carries of which
+	/// ledger produced it; the boundaries are the hardfork runtimes.
+	#[test]
+	#[allow(clippy::zero_prefixed_literal)]
+	fn spec_version_maps_to_ledger() {
+		assert_eq!(LedgerVersion::from_spec_version(000_021_999), None);
+		assert_eq!(LedgerVersion::from_spec_version(000_022_000), Some(LedgerVersion::Ledger8));
+		assert_eq!(LedgerVersion::from_spec_version(001_999_999), Some(LedgerVersion::Ledger8));
+		assert_eq!(LedgerVersion::from_spec_version(002_000_000), Some(LedgerVersion::Ledger9));
+		assert_eq!(LedgerVersion::from_spec_version(002_999_999), Some(LedgerVersion::Ledger9));
+		assert_eq!(LedgerVersion::from_spec_version(003_000_000), Some(LedgerVersion::Ledger10));
 	}
 }
