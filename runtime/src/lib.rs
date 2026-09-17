@@ -1247,6 +1247,12 @@ pub type CheckedExtrinsic = generic::CheckedExtrinsic<AccountId, RuntimeCall, Tx
 /// Migrations to apply on runtime upgrade.
 pub type Migrations = (
 	pallet_throttle::migrations::v1::MigrateV0ToV1<Runtime>,
+	// Gaps surfaced by the try-runtime upgrade dry-run against the live networks.
+	// Independent of the ledger hardfork pair below; kept ahead of it so that pair
+	// stays adjacent.
+	migrations::session_pallet_swap::SessionV0ToV1,
+	migrations::bridge_reserve_validator::MigrateMainChainScripts,
+	migrations::babe_epoch_config::InitBabeEpochConfig,
 	// MUST precede the pallet-midnight translation below: it captures the
 	// still-untranslated v8 state key, which the cNIGHT dust generation replay
 	// (`pallet_cnight_observation::migrations::v2::MigrateV1ToV2`) reads the
@@ -1805,11 +1811,103 @@ impl_runtime_apis! {
 
 	#[cfg(feature = "try-runtime")]
 	impl frame_try_runtime::TryRuntime<Block> for Runtime {
+		/// MBM-aware stand-in for `Executive::try_runtime_upgrade`.
+		///
+		/// Upstream asserts every pallet's on-chain storage version right after
+		/// `on_runtime_upgrade`, which a pallet carried by a multi-block migration
+		/// cannot satisfy yet (cnight-observation is at in-code version 2 and only
+		/// gets there once its MBMs drain). Same steps as upstream, in the same
+		/// order, with the MBM drain where the chain would do it and the pallet
+		/// checks deferred past it.
 		fn on_runtime_upgrade(checks: frame_try_runtime::UpgradeCheckSelect) -> (Weight, Weight) {
-			// NOTE: intentional unwrap: we don't want to propagate the error backwards, and want to
-			// have a backtrace here. If any of the pre/post migration checks fail, we shall stop
-			// right here and right now.
-			let weight = Executive::try_runtime_upgrade(checks).unwrap();
+			use frame_support::migrations::MultiStepMigrator;
+			use frame_support::traits::{
+				BeforeAllRuntimeMigrations, OnRuntimeUpgrade, TryDecodeEntireStorage, TryState,
+			};
+
+			/// The cap only exists so a migration that never completes fails the
+			/// dry-run instead of hanging CI.
+			fn drain_mbm(label: &str) -> (Weight, u32) {
+				const MAX_STEPS: u32 = 100_000;
+				let mut weight = Weight::zero();
+				let mut steps = 0u32;
+				while <Runtime as frame_system::Config>::MultiBlockMigrator::ongoing() {
+					assert!(steps < MAX_STEPS, "{label}: MBM queue did not drain within {MAX_STEPS} steps");
+					weight = weight.saturating_add(
+						<Runtime as frame_system::Config>::MultiBlockMigrator::step(),
+					);
+					steps += 1;
+				}
+				(weight, steps)
+			}
+
+			// The `expect`s are intentional: a failed check should abort here with a
+			// backtrace rather than be reported back.
+			let mut weight =
+				<AllPalletsWithSystem as BeforeAllRuntimeMigrations>::before_all_runtime_migrations();
+
+			// The runtime's own migrations, fully checked, against pre-upgrade state.
+			weight = weight.saturating_add(
+				<(
+					Migrations,
+					<Runtime as frame_system::Config>::SingleBlockMigrations,
+				) as OnRuntimeUpgrade>::try_on_runtime_upgrade(checks.pre_and_post())
+				.expect("runtime migrations failed"),
+			);
+
+			// Unchecked: the storage-version assert in the generated `post_upgrade`
+			// cannot pass until the MBMs below have drained. This onboards them, and
+			// initializes the ledger storage the cNIGHT replay calls into.
+			weight = weight
+				.saturating_add(<AllPalletsWithSystem as OnRuntimeUpgrade>::on_runtime_upgrade());
+
+			let (drain_weight, steps) = drain_mbm("post-migration drain");
+			weight = weight.saturating_add(drain_weight);
+
+			// Second pass, this time checked — the hooks are idempotent, and this is
+			// what recovers the per-pallet checks skipped above. Their log lines repeat.
+			log::info!(target: "try-runtime", "🔁 re-running pallet hooks with checks");
+			weight = weight.saturating_add(
+				<AllPalletsWithSystem as OnRuntimeUpgrade>::try_on_runtime_upgrade(
+					checks.pre_and_post(),
+				)
+				.expect("pallet upgrade checks failed"),
+			);
+
+			// The pass above re-onboarded the queue; the migrations are `Historic` now.
+			let (drain_weight, extra_steps) = drain_mbm("post-check drain");
+			weight = weight.saturating_add(drain_weight);
+
+			log::info!(
+				target: "try-runtime",
+				"🚚 MBM queue drained in {steps} + {extra_steps} step(s)",
+			);
+
+			// After the migrations, as upstream does, so ones keying off
+			// `LastRuntimeUpgrade` see the pre-upgrade value.
+			frame_system::LastRuntimeUpgrade::<Runtime>::put(
+				frame_system::LastRuntimeUpgradeInfo::from(
+					<Runtime as frame_system::Config>::Version::get(),
+				),
+			);
+
+			// Nothing may modify state from here on.
+			let _guard = frame_support::StorageNoopGuard::default();
+
+			if checks.any() {
+				let decoded = AllPalletsWithSystem::try_decode_entire_state()
+					.expect("state is not decodable by the new runtime");
+				log::info!(target: "try-runtime", "🔍 decoded {decoded} storage keys");
+			}
+
+			if checks.try_state() {
+				AllPalletsWithSystem::try_state(
+					frame_system::Pallet::<Runtime>::block_number(),
+					frame_try_runtime::TryStateSelect::All,
+				)
+				.expect("try_state failed");
+			}
+
 			(weight, BlockWeights::get().max_block)
 		}
 

@@ -1,0 +1,79 @@
+name: try-runtime upgrade dry-run
+
+# Run before shipping a runtime upgrade. Manual because it scrapes full chain
+# state over RPC, which is heavy on the public endpoints.
+#
+# A snapshot carries substrate storage only, so migrations that read ledger state
+# abort here — those belong to the fork-testing flow (docs/fork-testing.md).
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: "Dry-run against preview"
+        type: boolean
+        default: true
+      preprod:
+        description: "Dry-run against preprod"
+        type: boolean
+        default: true
+      mainnet:
+        description: "Dry-run against mainnet"
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    name: Build node and dry-run upgrade
+    runs-on: [self-hosted, "tier:large"]
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+
+      - name: Setup Earthly
+        uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
+        with:
+          version: v0.8.16
+          github-token: ${{ github.token }}
+          use-cache: false
+
+      # One build; earthly then schedules the per-network dry-runs in parallel.
+      - name: Dry-run on-runtime-upgrade
+        env:
+          PREVIEW: ${{ inputs.preview }}
+          PREPROD: ${{ inputs.preprod }}
+          MAINNET: ${{ inputs.mainnet }}
+        run: |
+          networks=""
+          [ "$PREVIEW" = "true" ] && networks="$networks preview"
+          [ "$PREPROD" = "true" ] && networks="$networks preprod"
+          [ "$MAINNET" = "true" ] && networks="$networks mainnet"
+          if [ -z "$networks" ]; then
+            echo "::error::no network selected"
+            exit 1
+          fi
+          . ./.envrc && earthly --ci -P +try-runtime-dry-run-all --NETWORKS="${networks# }"
+
+      # So a failure can be re-run locally against the exact same state.
+      - name: Upload snapshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: try-runtime-${{ github.run_id }}
+          path: artifacts-try-runtime/
+          if-no-files-found: ignore
+          retention-days: 14

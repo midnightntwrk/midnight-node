@@ -112,10 +112,9 @@ pallet-throttle = { workspace = true, default-features = true }
 pallet-cnight-observation = { workspace = true, default-features = true}
 pallet-cnight-observation-mock = { workspace = true, default-features = true}
 
-# CLI-specific dependencies
-# try-runtime-cli = { optional = true, workspace = true }
-# The deprecated `try-runtime` subcommand and `try-runtime-cli` crate has been completely removed.
-# If you are not already, you should be using the standalone CLI at https://github.com/paritytech/try-runtime-cli.
+# Powers the in-tree `try-runtime` subcommand, which replaces the standalone
+# `try-runtime-cli`. See `node/src/try_runtime.rs` for why.
+frame-try-runtime = { workspace = true, optional = true, features = ["std"] }
 
 thiserror = "1.0.50"
 log.workspace = true
@@ -189,6 +188,7 @@ runtime-benchmarks = [
 try-runtime = [
     "midnight-node-runtime/try-runtime",
     "pallet-staking/try-runtime",
+    "frame-try-runtime",
 ]
 experimental = [
     #"sp-block-rewards",

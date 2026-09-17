@@ -21,6 +21,7 @@ earthly -P +rebuild-genesis-state-<NETWORK>  # Rebuild genesis for specific netw
 earthly -P +rebuild-all-genesis-states    # Rebuild all network genesis states
 earthly +node-image                       # Build node Docker image
 earthly +toolkit-image                    # Build toolkit image
+earthly -P +try-runtime-dry-run-all       # Dry-run the runtime upgrade against live networks
 earthly doc                               # List all available targets
 ```
 

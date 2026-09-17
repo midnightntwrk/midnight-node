@@ -1443,6 +1443,81 @@ build-benchmarks:
 
     SAVE ARTIFACT /artifacts-$NATIVEARCH AS LOCAL artifacts-benchmarks
 
+# midnight-node built with `--features try-runtime`, plus the runtime WASM to
+# dry-run against it.
+try-runtime-build:
+    FROM +build-prepare
+    ARG TARGETARCH
+    # Same caching rules as +build; see the top-of-file CI/CACHE_KEY ARGs.
+    IF [ "$CI" != "true" ]
+        CACHE --sharing shared --id cargo-git /usr/local/cargo/git
+        CACHE --sharing shared --id cargo-reg /usr/local/cargo/registry
+        CACHE --id target-${CACHE_KEY}-${TARGETARCH} /target
+    END
+    COPY --keep-ts --dir Cargo.lock Cargo.toml docs .sqlx \
+    ledger node pallets primitives metadata res runtime util tests relay partner-chains COMPACTC_VERSION .
+
+    ARG NATIVEARCH
+
+    RUN cargo auditable build -p midnight-node --locked --release --features try-runtime
+
+    # cp (not mv) so the linked binary stays in the /target cache when mounted.
+    RUN mkdir -p /artifacts-try-runtime-$NATIVEARCH/midnight-node-runtime \
+        && cp /target/release/midnight-node /artifacts-try-runtime-$NATIVEARCH/ \
+        && cp /target/release/wbuild/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm \
+              /artifacts-try-runtime-$NATIVEARCH/midnight-node-runtime/
+
+    SAVE ARTIFACT /artifacts-try-runtime-$NATIVEARCH AS LOCAL artifacts-try-runtime
+
+# Used for `create-snapshot` only — the dry-run itself needs the node's host
+# functions, see node/src/try_runtime.rs.
+try-runtime-cli:
+    FROM +prep-no-copy
+    # renovate: datasource=github-releases packageName=paritytech/try-runtime-cli
+    ARG TRY_RUNTIME_CLI_VERSION=v0.10.1
+    # --root so the binary lands at a fixed path regardless of CARGO_HOME.
+    RUN cargo install --git https://github.com/paritytech/try-runtime-cli \
+        --tag $TRY_RUNTIME_CLI_VERSION --locked --root /out try-runtime-cli
+    SAVE ARTIFACT /out/bin/try-runtime
+
+# Snapshot $NETWORK from $URI, then dry-run the upgrade against it. Snapshot
+# creation is --no-cache so each run reflects current chain state.
+try-runtime-dry-run:
+    FROM +try-runtime-build
+    ARG NATIVEARCH
+    ARG --required NETWORK
+    ARG --required URI
+
+    COPY +try-runtime-cli/try-runtime /usr/local/bin/try-runtime
+
+    # NB: --uri takes <URI>... (multi-value); use the equals form so the
+    # positional snapshot path is not consumed as another URI.
+    RUN --no-cache try-runtime create-snapshot --uri="$URI" "$NETWORK.snap"
+
+    RUN /artifacts-try-runtime-$NATIVEARCH/midnight-node try-runtime \
+            --snap "$NETWORK.snap" \
+            --runtime "/artifacts-try-runtime-$NATIVEARCH/midnight-node-runtime/midnight_node_runtime.compact.compressed.wasm" \
+            --checks all
+
+    SAVE ARTIFACT "$NETWORK.snap" AS LOCAL "artifacts-try-runtime/$NETWORK.snap"
+
+# Dry-run against several networks off one +try-runtime-build; earthly schedules
+# the BUILDs in parallel.
+try-runtime-dry-run-all:
+    ARG NETWORKS="preview preprod mainnet"
+    FOR network IN $NETWORKS
+        BUILD +try-runtime-dry-run --NETWORK=$network --URI=wss://rpc.$network.midnight.network
+    END
+
+try-runtime-dry-run-preview:
+    BUILD +try-runtime-dry-run-all --NETWORKS=preview
+
+try-runtime-dry-run-preprod:
+    BUILD +try-runtime-dry-run-all --NETWORKS=preprod
+
+try-runtime-dry-run-mainnet:
+    BUILD +try-runtime-dry-run-all --NETWORKS=mainnet
+
 subwasm:
     ARG NATIVEARCH
     FROM +build
