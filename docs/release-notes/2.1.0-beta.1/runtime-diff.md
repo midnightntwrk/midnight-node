@@ -18,9 +18,9 @@ git diff --stat node-1.0.1 origin/release/node-1.0.3 -- runtime/ pallets/
 So **1.0.3's pallet metadata surface is byte-for-byte 1.0.1's**, and every pallet, storage, call,
 event, error and runtime-API change below — everything except the `System::Version` constant — holds
 unchanged for 1.0.3 → 2.1.0-beta.1. The pallet-surface diff is therefore taken between the published
-`1.0.1` blob and `2.1.0-beta.1` (both extracted from their node images at `/artifacts-amd64/`,
-`subwasm` v0.21.3), while the version fields in the table below are read from
-`release/node-1.0.3`'s source.
+`1.0.1` blob and `2.1.0-beta.1` (both extracted from their node images' `/artifacts-<arch>/`
+directory — amd64 for the run shown here — with `subwasm` v0.21.3), while the version fields in
+the table below are read from `release/node-1.0.3`'s source.
 
 ## Metadata
 
@@ -261,8 +261,11 @@ git diff node-1.0.1 origin/release/node-1.0.3 -- runtime/ pallets/
 
 # Extract the two published blobs and diff them.
 for t in 1.0.1 2.1.0-beta.1; do
-  cid=$(docker create midnightntwrk/midnight-node:$t)
-  docker cp "$cid:/artifacts-amd64/midnight_node_runtime.compact.compressed.wasm" "runtime-$t.wasm"
+  img=midnightntwrk/midnight-node:$t
+  cid=$(docker create "$img")
+  # both tags are multi-arch manifests; the wasm lives under /artifacts-<arch>
+  arch=$(docker image inspect -f '{{.Architecture}}' "$img")
+  docker cp "$cid:/artifacts-$arch/midnight_node_runtime.compact.compressed.wasm" "runtime-$t.wasm"
   docker rm -f "$cid"
 done
 subwasm info runtime-1.0.1.wasm
