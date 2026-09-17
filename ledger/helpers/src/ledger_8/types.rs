@@ -82,45 +82,74 @@ pub enum WalletSeedError {
 	LazyHexLengthTooLong(usize),
 }
 
-/// Convert a `Vec<u8>` to a fixed-size array, mapping failure to [`WalletSeedError::InvalidLength`].
-fn try_into_seed_array<const N: usize>(bytes: Vec<u8>) -> Result<[u8; N], WalletSeedError> {
-	bytes.try_into().map_err(|v: Vec<u8>| WalletSeedError::InvalidLength(v.len()))
+/// Longest accepted seed encoding, in hex characters: the 64-byte `Long` variant.
+const MAX_SEED_HEX_LEN: usize = 128;
+
+/// Strip an optional `0x`/`0X` prefix.
+fn strip_hex_prefix(value: &str) -> &str {
+	value.strip_prefix("0x").or_else(|| value.strip_prefix("0X")).unwrap_or(value)
+}
+
+/// Decode `2 * N` hex characters straight into an `N`-byte array. Callers check the length first,
+/// so untrusted input never sizes a buffer, and the seed bytes never land in a heap `Vec` that
+/// would outlive [`Zeroize`].
+fn decode_hex_exact<const N: usize>(hex_str: &str) -> Result<[u8; N], WalletSeedError> {
+	let mut out = [0u8; N];
+	hex::decode_to_slice(hex_str, &mut out)?;
+	Ok(out)
+}
+
+/// Decode a lazy-hex `head..tail` pair into an `N`-byte array, zero-filling the gap. Both halves
+/// must be even-length and together at most `2 * N` characters.
+fn decode_lazy_hex<const N: usize>(head: &str, tail: &str) -> Result<[u8; N], WalletSeedError> {
+	let mut out = [0u8; N];
+	hex::decode_to_slice(head, &mut out[..head.len() / 2])?;
+	hex::decode_to_slice(tail, &mut out[N - tail.len() / 2..])?;
+	Ok(out)
 }
 
 impl WalletSeed {
+	/// Decode a full hex seed - 32, 64 or 128 hex characters, with an optional `0x` prefix.
+	///
+	/// The length is validated before any decoding, so a hostile string is rejected on its size
+	/// alone; a valid one is decoded in place with no intermediate allocation.
 	pub fn try_from_hex_str(value: &str) -> Result<Self, WalletSeedError> {
-		let bytes = hex::decode(value)?;
-		bytes.as_slice().try_into()
+		let value = strip_hex_prefix(value);
+		if !value.len().is_multiple_of(2) {
+			return Err(WalletSeedError::InvalidHex(hex::FromHexError::OddLength));
+		}
+		match value.len() {
+			32 => Ok(Self::Short(decode_hex_exact(value)?)),
+			64 => Ok(Self::Medium(decode_hex_exact(value)?)),
+			MAX_SEED_HEX_LEN => Ok(Self::Long(decode_hex_exact(value)?)),
+			len => Err(WalletSeedError::InvalidLength(len / 2)),
+		}
 	}
 
-	/// Allow decoding from seeds in the form e.g. 00..01
-	/// Works for Medium and Long seeds only
+	/// Allow decoding from seeds in the form e.g. `00..01`, with an optional `0x` prefix: head and
+	/// tail sit at the seed's edges and the gap between them is zero-filled.
+	/// Works for Medium and Long seeds only.
+	///
+	/// Length is checked in hex characters up front, so an oversized seed costs no allocation.
 	pub fn try_from_lazy_hex(value: &str) -> Result<Self, WalletSeedError> {
-		let parts: Vec<_> = value.split("..").collect();
-		if parts.len() != 2 {
+		let value = strip_hex_prefix(value);
+		let (head, tail) = value.split_once("..").ok_or(WalletSeedError::LazyHexTwoPartsOnly)?;
+		if tail.contains("..") {
 			return Err(WalletSeedError::LazyHexTwoPartsOnly);
 		}
 
-		let hex_len = parts[0].len() + parts[1].len();
-		if hex_len > 128 {
+		let hex_len = head.len() + tail.len();
+		if hex_len > MAX_SEED_HEX_LEN {
 			return Err(WalletSeedError::LazyHexLengthTooLong(hex_len / 2));
 		}
+		if !head.len().is_multiple_of(2) || !tail.len().is_multiple_of(2) {
+			return Err(WalletSeedError::InvalidHex(hex::FromHexError::OddLength));
+		}
 
-		let mut seed = hex::decode(parts[0])?;
-		let seed_tail = hex::decode(parts[1])?;
-
-		let total_len = seed.len() + seed_tail.len();
-
-		let extend_to = |l| {
-			seed.extend(std::iter::repeat_n(0, l - total_len));
-			seed.extend(&seed_tail);
-			seed
-		};
-
-		match total_len {
-			l if l <= 32 => Ok(Self::Medium(try_into_seed_array(extend_to(32))?)),
-			l if l <= 64 => Ok(Self::Long(try_into_seed_array(extend_to(64))?)),
-			len => Err(WalletSeedError::LazyHexLengthTooLong(len)),
+		if hex_len <= 64 {
+			Ok(Self::Medium(decode_lazy_hex(head, tail)?))
+		} else {
+			Ok(Self::Long(decode_lazy_hex(head, tail)?))
 		}
 	}
 
@@ -234,6 +263,14 @@ impl FromStr for Keypair {
 
 pub type MaintenanceCounter = u32;
 
+/// Raised when [`MaintenanceUpdateBuilder::add_addresses`] is handed slices of differing length.
+/// Previously the `zip` silently dropped the tail of the longer one.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MaintenanceUpdateError {
+	#[error("address/counter length mismatch: {addresses} addresses, {counters} counters")]
+	LengthMismatch { addresses: usize, counters: usize },
+}
+
 #[derive(Default, Clone)]
 pub struct MaintenanceUpdateBuilder {
 	pub num_contract_replace_auth: u32,
@@ -262,10 +299,23 @@ impl MaintenanceUpdateBuilder {
 		self.addresses_vec.push(*addr);
 	}
 
-	pub fn add_addresses(&mut self, addrs: &[ContractAddress], counters: &[MaintenanceCounter]) {
-		for (addr, &counter) in addrs.iter().zip(counters.iter()) {
+	/// Add each address with its counter. The slices must be the same length: a mismatch is
+	/// reported rather than truncated, and nothing is applied.
+	pub fn add_addresses(
+		&mut self,
+		addrs: &[ContractAddress],
+		counters: &[MaintenanceCounter],
+	) -> Result<(), MaintenanceUpdateError> {
+		if addrs.len() != counters.len() {
+			return Err(MaintenanceUpdateError::LengthMismatch {
+				addresses: addrs.len(),
+				counters: counters.len(),
+			});
+		}
+		for (addr, &counter) in addrs.iter().zip(counters) {
 			self.add_address(addr, counter);
 		}
+		Ok(())
 	}
 
 	pub fn increase_counter(&mut self, addr: ContractAddress) {
@@ -605,8 +655,9 @@ where
 
 #[cfg(test)]
 mod tests {
-	use crate::WalletSeed;
-	use crate::{WalletSeedError, WalletSeedParseError};
+	use super::{ContractAddress, HashOutput, MaintenanceUpdateBuilder, MaintenanceUpdateError};
+	use crate::{WalletSeed, WalletSeedError, WalletSeedParseError};
+	use std::collections::HashMap;
 
 	#[test]
 	fn should_decode_wallet_seeds_in_different_formats() {
@@ -677,32 +728,125 @@ mod tests {
 	}
 
 	#[test]
-	fn add_addresses_with_zip_truncates_on_mismatch() {
-		use super::MaintenanceUpdateBuilder;
+	fn hex_str_accepts_optional_0x_prefix() {
+		let bare = "a51c86de32d0791f7cffc3bdff1abd9bb54987f0ed5effc30c936dddbb9afd9d";
+		let prefixed = format!("0x{bare}");
+		assert_eq!(
+			WalletSeed::try_from_hex_str(bare).unwrap(),
+			WalletSeed::try_from_hex_str(&prefixed).unwrap(),
+			"a 0x prefix must decode to the same seed"
+		);
+		assert_eq!(
+			prefixed.parse::<WalletSeed>().unwrap(),
+			WalletSeed::try_from_hex_str(bare).unwrap()
+		);
+	}
+
+	#[test]
+	fn lazy_hex_accepts_optional_0x_prefix() {
+		assert_eq!(
+			WalletSeed::try_from_lazy_hex("0x0002..1101").unwrap(),
+			WalletSeed::try_from_lazy_hex("0002..1101").unwrap()
+		);
+	}
+
+	#[test]
+	fn hex_str_rejects_wrong_length_before_decoding() {
+		// 40 hex chars is 20 bytes: not a valid seed size, and every char is valid hex,
+		// so only a length pre-check can reject it.
+		let input = "ab".repeat(20);
+		assert!(
+			matches!(WalletSeed::try_from_hex_str(&input), Err(WalletSeedError::InvalidLength(20))),
+			"a 20-byte hex string must be rejected on length"
+		);
+	}
+
+	#[test]
+	fn hex_str_rejects_oversized_input() {
+		let input = "ab".repeat(200);
+		assert!(matches!(
+			WalletSeed::try_from_hex_str(&input),
+			Err(WalletSeedError::InvalidLength(200))
+		));
+	}
+
+	#[test]
+	fn hex_str_reports_odd_length_as_a_hex_error() {
+		assert!(matches!(
+			WalletSeed::try_from_hex_str("abc"),
+			Err(WalletSeedError::InvalidHex(hex::FromHexError::OddLength))
+		));
+	}
+
+	#[test]
+	fn hex_str_round_trips_every_seed_size() {
+		for (bytes, expected) in [
+			(16, WalletSeed::Short([0xAB; 16])),
+			(32, WalletSeed::Medium([0xAB; 32])),
+			(64, WalletSeed::Long([0xAB; 64])),
+		] {
+			let hex_str = "ab".repeat(bytes);
+			assert_eq!(WalletSeed::try_from_hex_str(&hex_str).unwrap(), expected);
+		}
+	}
+
+	#[test]
+	fn lazy_hex_rejects_more_than_one_ellipsis() {
+		assert!(matches!(
+			WalletSeed::try_from_lazy_hex("00..11..22"),
+			Err(WalletSeedError::LazyHexTwoPartsOnly)
+		));
+	}
+
+	#[test]
+	fn lazy_hex_places_head_and_tail_at_the_seed_edges() {
+		let seed = WalletSeed::try_from_lazy_hex("0102..0304").unwrap();
+		let bytes = seed.as_bytes();
+		assert_eq!(bytes.len(), 32);
+		assert_eq!(&bytes[..2], &[0x01, 0x02]);
+		assert_eq!(&bytes[30..], &[0x03, 0x04]);
+		assert!(bytes[2..30].iter().all(|b| *b == 0), "the gap must be zero-filled");
+	}
+
+	#[test]
+	fn add_addresses_rejects_length_mismatch() {
 		let mut builder = MaintenanceUpdateBuilder::new(0, 0, 0);
 		let addrs = vec![
-			super::ContractAddress(super::HashOutput([1u8; 32])),
-			super::ContractAddress(super::HashOutput([2u8; 32])),
-			super::ContractAddress(super::HashOutput([3u8; 32])),
+			ContractAddress(HashOutput([1u8; 32])),
+			ContractAddress(HashOutput([2u8; 32])),
+			ContractAddress(HashOutput([3u8; 32])),
 		];
 		let counters = vec![10u32, 20u32];
-		builder.add_addresses(&addrs, &counters);
-		assert_eq!(builder.addresses_map.len(), 2, "zip should stop at shorter slice");
-		assert_eq!(builder.addresses_vec.len(), 2);
+		assert_eq!(
+			builder.add_addresses(&addrs, &counters),
+			Err(MaintenanceUpdateError::LengthMismatch { addresses: 3, counters: 2 }),
+			"a short counter slice must be reported, not silently truncated"
+		);
+		assert!(builder.addresses_map.is_empty(), "a rejected call must not partially apply");
+		assert!(builder.addresses_vec.is_empty());
+	}
+
+	#[test]
+	fn add_addresses_applies_matched_slices() {
+		let mut builder = MaintenanceUpdateBuilder::new(0, 0, 0);
+		let addrs =
+			vec![ContractAddress(HashOutput([1u8; 32])), ContractAddress(HashOutput([2u8; 32]))];
+		let counters = vec![10u32, 20u32];
+		assert_eq!(builder.add_addresses(&addrs, &counters), Ok(()));
+		assert_eq!(builder.addresses_map.get(&addrs[1]), Some(&20));
+		assert_eq!(builder.addresses_vec, addrs);
 	}
 
 	#[test]
 	fn add_addresses_empty_inputs() {
-		use super::MaintenanceUpdateBuilder;
 		let mut builder = MaintenanceUpdateBuilder::new(0, 0, 0);
-		builder.add_addresses(&[], &[]);
+		assert_eq!(builder.add_addresses(&[], &[]), Ok(()));
 		assert!(builder.addresses_map.is_empty());
 		assert!(builder.addresses_vec.is_empty());
 	}
 
 	#[test]
 	fn wallet_seed_works_as_hashmap_key() {
-		use std::collections::HashMap;
 		let seed1 = WalletSeed::Medium([1u8; 32]);
 		let seed2 = WalletSeed::Medium([2u8; 32]);
 		let mut map = HashMap::new();
