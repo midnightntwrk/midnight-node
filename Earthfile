@@ -1501,14 +1501,22 @@ try-runtime-dry-run:
 
     SAVE ARTIFACT "$NETWORK.snap" AS LOCAL "artifacts-try-runtime/$NETWORK.snap"
 
+# Dry-run against several networks off one +try-runtime-build; earthly schedules
+# the BUILDs in parallel.
+try-runtime-dry-run-all:
+    ARG NETWORKS="preview preprod mainnet"
+    FOR network IN $NETWORKS
+        BUILD +try-runtime-dry-run --NETWORK=$network --URI=wss://rpc.$network.midnight.network
+    END
+
 try-runtime-dry-run-preview:
-    BUILD +try-runtime-dry-run --NETWORK=preview --URI=wss://rpc.preview.midnight.network
+    BUILD +try-runtime-dry-run-all --NETWORKS=preview
 
 try-runtime-dry-run-preprod:
-    BUILD +try-runtime-dry-run --NETWORK=preprod --URI=wss://rpc.preprod.midnight.network
+    BUILD +try-runtime-dry-run-all --NETWORKS=preprod
 
 try-runtime-dry-run-mainnet:
-    BUILD +try-runtime-dry-run --NETWORK=mainnet --URI=wss://rpc.mainnet.midnight.network
+    BUILD +try-runtime-dry-run-all --NETWORKS=mainnet
 
 subwasm:
     ARG NATIVEARCH

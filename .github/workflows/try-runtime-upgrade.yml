@@ -42,6 +42,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
+          persist-credentials: false
 
       - name: Setup Earthly
         uses: EarthBuild/actions-setup@cae2d9ab68894d8402751fe42e07c7cca0272f7f
@@ -50,25 +51,22 @@ jobs:
           github-token: ${{ github.token }}
           use-cache: false
 
-      - name: Build node with try-runtime feature
+      # One build; earthly then schedules the per-network dry-runs in parallel.
+      - name: Dry-run on-runtime-upgrade
+        env:
+          PREVIEW: ${{ inputs.preview }}
+          PREPROD: ${{ inputs.preprod }}
+          MAINNET: ${{ inputs.mainnet }}
         run: |
-          . ./.envrc && earthly --ci -P +try-runtime-build
-
-      # Each network runs even if an earlier one failed — one report per run.
-      - name: Dry-run on-runtime-upgrade - preview
-        if: ${{ !cancelled() && inputs.preview }}
-        run: |
-          . ./.envrc && earthly --ci -P +try-runtime-dry-run-preview
-
-      - name: Dry-run on-runtime-upgrade - preprod
-        if: ${{ !cancelled() && inputs.preprod }}
-        run: |
-          . ./.envrc && earthly --ci -P +try-runtime-dry-run-preprod
-
-      - name: Dry-run on-runtime-upgrade - mainnet
-        if: ${{ !cancelled() && inputs.mainnet }}
-        run: |
-          . ./.envrc && earthly --ci -P +try-runtime-dry-run-mainnet
+          networks=""
+          [ "$PREVIEW" = "true" ] && networks="$networks preview"
+          [ "$PREPROD" = "true" ] && networks="$networks preprod"
+          [ "$MAINNET" = "true" ] && networks="$networks mainnet"
+          if [ -z "$networks" ]; then
+            echo "::error::no network selected"
+            exit 1
+          fi
+          . ./.envrc && earthly --ci -P +try-runtime-dry-run-all --NETWORKS="${networks# }"
 
       # So a failure can be re-run locally against the exact same state.
       - name: Upload snapshots
