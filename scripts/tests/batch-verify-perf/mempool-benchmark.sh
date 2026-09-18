@@ -55,6 +55,11 @@ REPEATS="${REPEATS:-9}"
 # Submission rate (txs/sec) handed to the toolkit. High enough that submissions overlap, which is
 # the only condition under which the batcher has anything to batch.
 REPLAY_RATE="${REPLAY_RATE:-200}"
+# Seconds to leave the node running after the last submission before scraping. The pool
+# revalidates what it still holds on each block import, so this controls how many revalidations
+# the counters capture -- which is the knob that exposes whether the two arms revalidate at the
+# same cost (see the README's note on the verification-count asymmetry).
+SETTLE_SECS="${SETTLE_SECS:-0}"
 
 require_cmds curl tar
 [ -x "$NODE_BIN" ] || die "node binary not found at '$NODE_BIN'"
@@ -135,6 +140,10 @@ run_replay() {
   # `send` prints one SENT per accepted submission; a rejected one never reaches that line.
   RESULT_OK="$(printf '%s\n' "$out" | grep -c '^SENT' || true)"
 
+  if [ "$SETTLE_SECS" -gt 0 ]; then
+    log "   settling ${SETTLE_SECS}s so pool revalidation is counted"
+    sleep "$SETTLE_SECS"
+  fi
   # `scrape_batch_metrics` prints to stdout, so the file has to come from a redirect.
   scrape_batch_metrics "$NODE_PROM" > "$ARTIFACTS_DIR/mempool-metrics-$flag.txt" || true
   if [ ! -s "$ARTIFACTS_DIR/mempool-metrics-$flag.txt" ]; then

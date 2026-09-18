@@ -112,6 +112,15 @@ pub trait BatchVerify<H>: Send + Sync {
 	/// Runtime `spec_version` at `at`, needed to build the `and_provides` validity tag. `None` when
 	/// unavailable (the worker then delegates that transaction to the runtime).
 	fn runtime_version(&self, at: H) -> Option<u32>;
+
+	/// Whether the runtime's mempool soft cache already holds a successful validation for
+	/// `tx_bytes` under `runtime_version`.
+	///
+	/// The pool revalidates everything it holds on every block import. The inline path answers
+	/// those from this cache on its first line; the batch path has no such check and re-runs the
+	/// full per-proof preparation each time, so without this its cost scales with how long
+	/// transactions sit in the pool rather than with how many were submitted.
+	fn soft_cache_hit(&self, runtime_version: u32, tx_bytes: &[u8]) -> bool;
 }
 
 impl BatchVerify<<midnight_node_runtime::opaque::Block as BlockT>::Hash> for BatchVerifier {
@@ -162,6 +171,14 @@ impl BatchVerify<<midnight_node_runtime::opaque::Block as BlockT>::Hash> for Bat
 		at: <midnight_node_runtime::opaque::Block as BlockT>::Hash,
 	) -> Option<u32> {
 		self.spec_version_at(at)
+	}
+
+	fn soft_cache_hit(&self, runtime_version: u32, tx_bytes: &[u8]) -> bool {
+		let key = midnight_node_ledger::host_api::ledger_9::tx_validation_cache_key(
+			runtime_version,
+			tx_bytes,
+		);
+		midnight_node_ledger::host_api::ledger_9::soft_validation_hit(&key)
 	}
 }
 
@@ -338,6 +355,22 @@ async fn run_dispatcher<Block: BlockT>(
 		verifier: &dyn BatchVerify<<Block as BlockT>::Hash>,
 		metrics: &BatchVerifyMetrics,
 	) -> Option<PreparedItem<Block>> {
+		// The pool revalidates everything it still holds on every block import. Those are the same
+		// transactions the runtime already accepted, and its soft cache will answer them without
+		// touching a proof -- so preparing them here is pure waste, and waste that grows with how
+		// long the pool stays congested rather than with how many transactions were submitted.
+		// Measured without this check: 3 preparations per submission and rising, against exactly
+		// one inline validation per submission on the unbatched path.
+		//
+		// Delegating rather than synthesising a validity keeps the runtime authoritative and costs
+		// only the cache lookup it was going to do anyway.
+		if let Some(version) = verifier.runtime_version(item.at)
+			&& verifier.soft_cache_hit(version, &item.tx_bytes)
+		{
+			metrics.observe_soft_cache_short_circuit();
+			let _ = item.reply.send(WorkerOutcome::Delegate);
+			return None;
+		}
 		match verifier.prepare(item.at, &item.tx_bytes, MEMPOOL_TBLOCK_EXTRA_SECS) {
 			Ok(prepared) => Some(PreparedItem {
 				at: item.at,
@@ -670,6 +703,9 @@ mod tests {
 		batch_sizes: Arc<StdMutex<Vec<usize>>>,
 		/// Transactions preparation was called for, in arrival order.
 		prepared: Arc<StdMutex<Vec<Vec<u8>>>>,
+		/// Transactions the stub reports as already held by the runtime's soft cache, standing in
+		/// for a pool revalidation of something the runtime has already accepted.
+		soft_cached: Arc<StdMutex<Vec<Vec<u8>>>>,
 	}
 
 	impl StubVerifier {
@@ -680,11 +716,16 @@ mod tests {
 				runtime_version: Some(2_000_000),
 				batch_sizes: Arc::new(StdMutex::new(Vec::new())),
 				prepared: Arc::new(StdMutex::new(Vec::new())),
+				soft_cached: Arc::new(StdMutex::new(Vec::new())),
 			}
 		}
 	}
 
 	impl BatchVerify<Hash> for StubVerifier {
+		fn soft_cache_hit(&self, _runtime_version: u32, tx_bytes: &[u8]) -> bool {
+			self.soft_cached.lock().unwrap().iter().any(|t| t == tx_bytes)
+		}
+
 		/// The stub has no ledger, so "preparing" just carries the transaction bytes through the
 		/// queue in the opaque handle; `finalize` reads them back to score the batch.
 		fn prepare(
@@ -908,6 +949,57 @@ mod tests {
 		assert!(
 			matches!(reply_rx.await.unwrap(), WorkerOutcome::Delegate),
 			"availability failure must delegate, never reject"
+		);
+		drop(tx);
+		join_all(handles).await;
+	}
+
+	/// The pool revalidates everything it holds on every block import. Those transactions are
+	/// already in the runtime's soft cache, which the inline path answers from for free — so the
+	/// batcher must not prepare their proofs again. Without this the batch path's cost scales with
+	/// pool residency rather than with submissions: measured at 3 preparations per submission and
+	/// climbing, against exactly one inline validation per submission unbatched.
+	#[tokio::test]
+	async fn a_revalidation_the_runtime_has_cached_is_not_prepared_again() {
+		let at = H256::repeat_byte(4);
+		let verifier = Arc::new(StubVerifier::new());
+		// Stands in for a transaction the runtime already accepted and cached.
+		verifier.soft_cached.lock().unwrap().push(vec![7u8]);
+		let prepared = verifier.prepared.clone();
+		let (tx, handles) = spawn_pool(verifier, params(1, 64, 60_000), 1);
+
+		let (item, reply_rx) = queue_item(at, vec![7u8]);
+		tx.send(item).await.unwrap();
+
+		assert!(
+			matches!(reply_rx.await.unwrap(), WorkerOutcome::Delegate),
+			"a cached transaction must go back to the runtime, which answers from that same cache",
+		);
+		assert!(
+			prepared.lock().unwrap().is_empty(),
+			"no proof preparation may run for a transaction the runtime has already validated",
+		);
+		drop(tx);
+		join_all(handles).await;
+	}
+
+	/// The short-circuit must not swallow first-time submissions.
+	#[tokio::test]
+	async fn an_uncached_submission_is_still_prepared() {
+		let at = H256::repeat_byte(5);
+		let verifier = Arc::new(StubVerifier::new());
+		verifier.soft_cached.lock().unwrap().push(vec![1u8]);
+		let prepared = verifier.prepared.clone();
+		let (tx, handles) = spawn_pool(verifier, params(1, 64, 60_000), 1);
+
+		let (item, reply_rx) = queue_item(at, vec![2u8]);
+		tx.send(item).await.unwrap();
+
+		assert!(is_validated(&reply_rx.await.unwrap()));
+		assert_eq!(
+			prepared.lock().unwrap().as_slice(),
+			&[vec![2u8]],
+			"a transaction the cache does not hold must still be prepared",
 		);
 		drop(tx);
 		join_all(handles).await;

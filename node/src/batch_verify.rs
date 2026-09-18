@@ -366,6 +366,8 @@ pub struct BatchVerifyMetrics {
 	fallback_total: Option<Counter<U64>>,
 	/// Wall-clock time of one transaction's incremental preparation (seconds).
 	prepare_duration: Option<Histogram>,
+	/// Submissions skipped because the runtime's soft cache already had them (pool revalidations).
+	soft_cache_short_circuits: Option<Counter<U64>>,
 	/// Lookahead jobs run ahead of the import cursor, by outcome.
 	lookahead_jobs_total: Option<CounterVec<U64>>,
 	/// Blocks covered by lookahead, by disposition (`scheduled`/`shed`/`hit`/`miss`).
@@ -509,6 +511,17 @@ impl BatchVerifyMetrics {
 			)
 			.unwrap()
 		});
+		let soft_cache_short_circuits = registry.map(|r| {
+			register(
+				Counter::new(
+					"midnight_batch_verify_soft_cache_short_circuits_total",
+					"Submissions the batcher skipped because the runtime soft cache already held them",
+				)
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
 		let _ = OUTCOMES;
 		Self {
 			batch_size,
@@ -520,6 +533,7 @@ impl BatchVerifyMetrics {
 			batch_duration,
 			fallback_total,
 			prepare_duration,
+			soft_cache_short_circuits,
 			lookahead_jobs_total,
 			lookahead_blocks_total,
 			lookahead_duration,
@@ -614,6 +628,15 @@ impl BatchVerifyMetrics {
 	fn inc_lookahead_blocks(&self, disposition: &str, blocks: usize) {
 		if let Some(c) = &self.lookahead_blocks_total {
 			let _ = c.get_metric_with_label_values(&[disposition]).map(|m| m.inc_by(blocks as u64));
+		}
+	}
+
+	/// Records a submission the batcher skipped because the runtime's soft cache already held a
+	/// successful validation for it — a pool revalidation, which the inline path serves from that
+	/// same cache for free.
+	pub fn observe_soft_cache_short_circuit(&self) {
+		if let Some(c) = &self.soft_cache_short_circuits {
+			c.inc();
 		}
 	}
 

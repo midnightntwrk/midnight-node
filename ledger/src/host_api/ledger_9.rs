@@ -785,6 +785,23 @@ pub fn finalize_prepared_batch(
 	}
 }
 
+#[cfg(feature = "std")]
+/// Whether the mempool soft cache already holds a successful validation for this transaction.
+///
+/// Lets the batch ingress take the same short-circuit the inline path takes on its first line —
+/// see `soft_validation_hit` in the versioned common module. The cache is a module-level static
+/// shared by both database layouts, so no `is_unified` dispatch is needed.
+pub fn soft_validation_hit(key: &[u8; 32]) -> bool {
+	crate::ledger_9::soft_validation_hit(key)
+}
+
+#[cfg(feature = "std")]
+/// Recomputes the `tx_validation_cache_key` the soft cache is keyed on, so a caller outside the
+/// runtime can look an entry up. Pair with [`soft_validation_hit`].
+pub fn tx_validation_cache_key(runtime_version: u32, tx_serialized: &[u8]) -> [u8; 32] {
+	Bridge::<Signature, DbUnified>::tx_validation_cache_key(runtime_version, tx_serialized).0
+}
+
 #[cfg(all(test, feature = "std"))]
 mod tests {
 	use super::as_ledger_9_error;

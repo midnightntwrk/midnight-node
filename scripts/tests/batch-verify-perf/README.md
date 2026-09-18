@@ -401,7 +401,13 @@ that subset underneath, labelled, with what it alone would have claimed.
 
 Also watch the transaction counts: the report warns when the arms verify different numbers. A run
 where ON verifies more than it was given is doing redundant work, and a per-transaction ratio will
-not show it.
+not show it — it divides by the inflated count and normalises the redundancy away.
+
+`SETTLE_SECS` leaves the node running after the last submission before scraping, which is how that
+redundancy is exposed: the pool revalidates what it still holds on each block import, so holding
+the workload fixed and varying only this window separates per-submission cost from per-revalidation
+cost. Measured at 144 submissions, OFF stays at exactly 144 verifications at any window while ON
+grows (350 at 0 s, 432 at 45 s) — `prepare_transaction` has no soft-cache short-circuit.
 
 ## How it works (implementation notes)
 
