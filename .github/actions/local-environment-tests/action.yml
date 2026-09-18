@@ -61,7 +61,7 @@ runs:
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
       with:
         repository: midnightntwrk/midnight-reserve-contracts
-        ref: ff561b7714b86599e055b1f0baf5aaa58463def4
+        ref: 424f7f94bb927c10c564d4d7149527fcea3ba5cc # pins @blaze-cardano/blueprint 0.8.2; @latest (0.9.0) emits TypedScript, absent from the locked @blaze-cardano/tx 0.14.1
         token: ${{ inputs.ghcr-password }}
         path: midnight-reserve-contracts
 

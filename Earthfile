@@ -716,14 +716,18 @@ toolkit-js-prep:
     RUN microdnf -y install tar gzip xz && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 23 from official binaries (AL2023's nodejs is v18)
-    ARG NODE_VERSION=23.11.0
+    # Install Node.js 24 (LTS) from official binaries. The CI image ships node 22 / npm 10 under
+    # /usr/local; purge its npm+corepack first - tar overlays but never deletes, and a newer npm
+    # untarred over an older tree is a chimera that dies with "Class extends value undefined".
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=24.21.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then NODE_ARCH="arm64"; else NODE_ARCH="x64"; fi && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version
+        node --version && npm --version && npm ping
 
     COPY COMPACTC_VERSION .
     COPY util/toolkit-js toolkit-js
@@ -911,9 +915,11 @@ build-test-toolkit:
     RUN microdnf -y install tar gzip xz docker && \
         microdnf clean all && rm -rf /var/cache/dnf /var/cache/yum
 
-    # Install Node.js 23 for native platform (AL2023's nodejs is v18, which lacks File API needed by undici)
-    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64
-    ARG NODE_VERSION=23.11.0
+    # Install Node.js 24 (LTS) for native platform; must match +toolkit-js-prep.
+    # Use native architecture since tests run on native platform, even though toolkit-js is from amd64.
+    # Purge the CI image's npm+corepack before untarring - see +toolkit-js-prep for why.
+    # renovate: datasource=node-version depName=node versioning=node
+    ARG NODE_VERSION=24.21.0
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             NODE_ARCH="arm64"; \
@@ -921,9 +927,10 @@ build-test-toolkit:
             NODE_ARCH="x64"; \
         fi && \
         curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz -o node.tar.xz && \
+        rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack && \
         tar -xJf node.tar.xz -C /usr/local --strip-components=1 && \
         rm node.tar.xz && \
-        node --version && npm --version
+        node --version && npm --version && npm ping
 
     # Test
     RUN mkdir /test-artifacts-toolkit
