@@ -369,6 +369,40 @@ A run where jobs succeed but no block hits, or where every job fails instantly,
 is the feature doing nothing while still burning CPU. Both have happened; both
 are invisible in wall clock alone, which is why these counters exist.
 
+## The mempool A/B (`mempool-prime.sh`, `mempool-benchmark.sh`)
+
+Measures `BATCH_VERIFY_MEMPOOL` — the *admission* path — rather than block import. Two phases,
+for the same reason the sync harness has two: proving is seconds per transaction against
+milliseconds of validation, so it has to happen once, outside the timed region.
+
+```bash
+./mempool-prime.sh 144          # fan out, archive the state, build 144 proved txs (once)
+REPEATS=9 ./mempool-benchmark.sh
+```
+
+`mempool-prime.sh` fans the genesis balance into N coins, **archives the chain at that point**, and
+builds N transactions with the toolkit's `--dest-file` without submitting them.
+`mempool-benchmark.sh` restores that exact state for every run and replays the same transactions,
+interleaved and counterbalanced, sharing the paired statistics in `lib.sh`.
+
+**Read the verification budget, not the wall clock.** Submission wall clock is bounded by the AURA
+slot cadence and by how fast one connection can push; neither changes with batching, and the
+samples visibly quantize to 6 s. The budget is:
+
+| arm | cost |
+|---|---|
+| OFF | `ledger_proof_verify_duration_seconds{mode="inline_mempool"}` |
+| ON | `midnight_batch_verify_prepare_duration_seconds` + `midnight_batch_verify_duration_seconds` |
+
+The ON side **must** include `prepare_duration`. The incremental preparation is where the expensive
+per-proof work went, and it has no ledger-side `mode=` counter — totalling only `batch` +
+`batch_prep` omits roughly 3 ms/tx of 3.9 and overstates batching by about 4x. The report prints
+that subset underneath, labelled, with what it alone would have claimed.
+
+Also watch the transaction counts: the report warns when the arms verify different numbers. A run
+where ON verifies more than it was given is doing redundant work, and a per-transaction ratio will
+not show it.
+
 ## How it works (implementation notes)
 
 - **Config flags** flip via env: `-e BATCH_VERIFY_BLOCK_IMPORT=true` overrides

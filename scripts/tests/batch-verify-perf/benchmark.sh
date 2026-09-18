@@ -357,22 +357,10 @@ for r in $(seq 1 "$REPEATS"); do
   fi
 done
 
-# median, min and mean of a list of floats
-stats() {
-  printf '%s\n' "$@" | sort -n | awk '
-    {v[NR]=$1; s+=$1}
-    END {
-      m = (NR % 2) ? v[(NR+1)/2] : (v[NR/2] + v[NR/2+1]) / 2
-      printf "median=%.2fs min=%.2fs mean=%.2fs", m, v[1], s/NR
-    }'
-}
-median() { printf '%s\n' "$@" | sort -n | awk '{v[NR]=$1} END {printf "%.2f", (NR%2) ? v[(NR+1)/2] : (v[NR/2]+v[NR/2+1])/2}'; }
-# Spread of the samples, to say whether the delta is resolvable at all.
-spread() { printf '%s\n' "$@" | sort -n | awk '{v[NR]=$1} END {printf "%.2f", v[NR]-v[1]}'; }
+# `stats`, `median` and `report_paired` live in lib.sh so this harness and mempool-benchmark.sh
+# share one implementation of the paired statistics.
 OFF_MED="$(median "${OFF_TIMES[@]}")"
 ON_MED="$(median "${ON_TIMES[@]}")"
-OFF_SPREAD="$(spread "${OFF_TIMES[@]}")"
-ON_SPREAD="$(spread "${ON_TIMES[@]}")"
 
 # --- report (stdout) -------------------------------------------------------
 echo
@@ -391,53 +379,8 @@ awk -v off="$OFF_MED" -v on="$ON_MED" 'BEGIN {
   printf "delta (median off-on)  : %.2fs\n", d
   if (on > 0) printf "speedup (median off/on): %.2fx\n", off / on
 }'
+report_paired s "${#OFF_TIMES[@]}" "${OFF_TIMES[@]}" "${ON_TIMES[@]}"
 
-# Paired analysis. The runs are interleaved, so OFF_TIMES[i] and ON_TIMES[i] come from the same
-# repeat, minutes apart at most -- which makes their difference immune to the slow machine-wide
-# drift that dominates the raw spread. Comparing the two spreads instead (the unpaired test this
-# harness used to apply) throws that away and reports "unresolved" on data that is in fact
-# unanimous, because the drift is counted as noise in both arms rather than cancelled.
-printf 'paired deltas (off-on) : [%s]\n' "$(
-  for i in "${!OFF_TIMES[@]}"; do
-    awk -v a="${OFF_TIMES[$i]}" -v b="${ON_TIMES[$i]}" 'BEGIN{printf "%+.1f ", a-b}'
-  done)"
-paired_deltas=()
-for i in "${!OFF_TIMES[@]}"; do
-  paired_deltas+=( "$(awk -v a="${OFF_TIMES[$i]}" -v b="${ON_TIMES[$i]}" 'BEGIN{printf "%.4f", a-b}')" )
-done
-# Sorted for the median; sign counts come from the unsorted list. (macOS awk has no asort.)
-printf '%s\n' "${paired_deltas[@]}" | sort -n | awk '
-  {v[NR]=$1; s+=$1}
-  END {
-    med = (NR % 2) ? v[(NR+1)/2] : (v[NR/2] + v[NR/2+1]) / 2
-    mean = s/NR
-    printf "  median paired delta  : %+.2fs   (mean %+.2fs)\n", med, mean
-    # The syncer occasionally spends a minute finding the producer peer before importing
-    # anything. That is a harness flake, not a verification cost, and it lands on whichever
-    # config happens to be running -- so trust the median and ignore a mean it has swamped.
-    d = mean - med; if (d < 0) d = -d
-    if (d > 1) {
-      print "  ⚠️  one or more runs are far from the median (likely a slow peer connect);"
-      print "      the mean above is not meaningful — read the median and the sample list."
-    }
-  }'
-printf '%s\n' "${paired_deltas[@]}" | awk '
-  {if ($1 > 0) wins++; else if ($1 < 0) losses++}
-  END {
-    k = (wins > losses) ? wins : losses
-    # Sign test, one-sided: P(X >= k | p=0.5) = 2^-NR * sum_{j=k..NR} C(NR,j).
-    tail = 0; c = 1
-    for (j = NR; j >= k; j--) { tail += c; c = c * j / (NR - j + 1) }
-    half = 1; for (i = 0; i < NR; i++) half = half / 2
-    p = tail * half
-    printf "  ON faster in %d/%d pairs  (sign test p = %.3f, one-sided)\n", wins+0, NR, p
-    # Judge by the sign test, not by unanimity: with enough pairs a few disagreements are
-    # expected and the result is still decisive, while 3/3 agreeing establishes very little.
-    if (p > 0.05) {
-      print "  ⚠️  not resolved (p > 0.05): these pairs do not establish a direction. Raise"
-      print "      REPEATS, or use a chain where verification is a larger share of sync time."
-    }
-  }'
 echo
 # Coverage check. The block-import path records batches_total/txs_total/batch_size
 # (via BatchVerifier::observe_batch) but NOT duration_seconds or fallback_total —
