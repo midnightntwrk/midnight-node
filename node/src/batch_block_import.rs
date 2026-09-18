@@ -27,12 +27,18 @@
 //! and bodiless blocks are skipped — authored blocks are covered by the mempool ingress path and
 //! never re-execute here.
 
-use crate::batch_verify::{BatchVerifier, BatchVerifyError};
+use crate::{
+	batch_verify::{BatchVerifier, BatchVerifyError, BatchVerifyMetrics},
+	lookahead_import_queue::{
+		LookaheadOutcome, LookaheadRegistry, LookaheadScheduler, await_lookahead,
+	},
+};
 use midnight_node_runtime::opaque::Block;
 use parity_scale_codec::{Decode, Encode};
 use sc_consensus::{BlockCheckParams, BlockImport, BlockImportParams, ImportResult, StateAction};
 use sp_consensus::Error as ConsensusError;
 use sp_runtime::traits::{Block as BlockT, Header as HeaderT};
+use std::sync::Arc;
 
 const LOG_TARGET: &str = "midnight::batch_verify";
 
@@ -43,7 +49,7 @@ const BLOCK_IMPORT_TBLOCK_EXTRA_SECS: u64 = 6;
 
 /// Extracts the serialized Midnight transactions (`send_mn_transaction` payloads) from a block
 /// body, mirroring the decode/match in `filtering_pool`.
-fn extract_midnight_txs(body: &[<Block as BlockT>::Extrinsic]) -> Vec<Vec<u8>> {
+pub(crate) fn extract_midnight_txs(body: &[<Block as BlockT>::Extrinsic]) -> Vec<Vec<u8>> {
 	let mut txs = Vec::new();
 	for xt in body {
 		let Ok(decoded) = midnight_node_runtime::UncheckedExtrinsic::decode(&mut &xt.encode()[..])
@@ -66,11 +72,25 @@ pub struct BatchVerifyBlockImport<Inner> {
 	inner: Inner,
 	verifier: BatchVerifier,
 	enabled: bool,
+	/// Results of verification scheduled ahead of the import cursor by
+	/// [`crate::lookahead_import_queue`]. `None` when lookahead is off, in which case every block
+	/// verifies itself exactly as before.
+	lookahead: Option<Arc<LookaheadRegistry>>,
+	/// Drives that scheduling: each imported block is the reference state for the next group.
+	scheduler: Option<Arc<LookaheadScheduler>>,
+	metrics: BatchVerifyMetrics,
 }
 
 impl<Inner> BatchVerifyBlockImport<Inner> {
-	pub fn new(inner: Inner, verifier: BatchVerifier, enabled: bool) -> Self {
-		Self { inner, verifier, enabled }
+	pub fn new(
+		inner: Inner,
+		verifier: BatchVerifier,
+		enabled: bool,
+		lookahead: Option<Arc<LookaheadRegistry>>,
+		scheduler: Option<Arc<LookaheadScheduler>>,
+		metrics: BatchVerifyMetrics,
+	) -> Self {
+		Self { inner, verifier, enabled, lookahead, scheduler, metrics }
 	}
 
 	/// Batch-verifies the Midnight proofs of a received block up front, warming the proof cache.
@@ -157,10 +177,48 @@ where
 		&self,
 		block: BlockImportParams<Block>,
 	) -> Result<ImportResult, Self::Error> {
-		if let Err(reason) = self.maybe_batch_verify(&block) {
-			log::warn!(target: LOG_TARGET, "rejecting block {:?}: {reason}", block.header.hash());
+		// A lookahead job may already have verified this block's proofs while its predecessors
+		// were executing. Consuming that result is the whole point of the pipeline: it is what
+		// takes verification off the sequential import path.
+		//
+		// A lookahead can only ever have recorded `VerifiedAt`, never `Invalid` (see
+		// `lookahead_import_queue`), so a `Verified` outcome is a reason to skip work here and
+		// never a reason to reject — the block still faces the full runtime checks during
+		// execution. Anything else falls through to verifying the block itself.
+		// `post_hash()`, not `header.hash()`: the verifier strips the seal digest before handing
+		// the block on, so `header` here is the *pre*-header and hashes to something the sync
+		// engine never saw. The scheduler keys everything on the announced (post) hash.
+		let hash = block.post_hash();
+		let number = *block.header.number();
+
+		let mut verified_by_lookahead = false;
+		if let Some(registry) = &self.lookahead {
+			let started = std::time::Instant::now();
+			if let Some(outcome) = await_lookahead(registry, &hash).await {
+				if outcome == LookaheadOutcome::Verified {
+					self.metrics.observe_lookahead_hit(started.elapsed());
+					verified_by_lookahead = true;
+				} else {
+					self.metrics.observe_lookahead_miss();
+				}
+			}
+		}
+
+		if !verified_by_lookahead && let Err(reason) = self.maybe_batch_verify(&block) {
+			log::warn!(target: LOG_TARGET, "rejecting block {hash:?}: {reason}");
 			return Err(ConsensusError::ClientImport(reason));
 		}
-		self.inner.import_block(block).await
+
+		let result = self.inner.import_block(block).await;
+
+		// This block's state now exists, which makes it the reference the *next* group needs. No
+		// earlier point in the pipeline has one: at ingress every queued block's parent is itself
+		// still queued.
+		if result.is_ok()
+			&& let Some(scheduler) = &self.scheduler
+		{
+			scheduler.advance(hash, number);
+		}
+		result
 	}
 }

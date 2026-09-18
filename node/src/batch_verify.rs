@@ -42,7 +42,7 @@ use parity_scale_codec::Decode;
 use prometheus_endpoint::{
 	Counter, CounterVec, Gauge, Histogram, HistogramOpts, Opts, Registry, U64, register,
 };
-use sc_client_api::StorageProvider;
+use sc_client_api::{HeaderBackend, StorageProvider};
 use sp_api::{Core, ProvideRuntimeApi};
 use sp_core::storage::StorageKey;
 use sp_crypto_hashing::twox_128;
@@ -129,6 +129,12 @@ impl BatchVerifier {
 	}
 
 	/// The ledger arena `state_key` (`pallet_midnight::StateKey`) at `at`.
+	/// The chain's current best block. Always imported, so its state is the safest fallback
+	/// reference when a preferred block turns out not to be in the database yet.
+	pub fn best_hash(&self) -> BlockHash {
+		self.client.info().best_hash
+	}
+
 	pub fn state_key_at(&self, at: BlockHash) -> Option<Vec<u8>> {
 		self.read_value::<Vec<u8>>(at, b"Midnight", b"StateKey")
 	}
@@ -360,6 +366,14 @@ pub struct BatchVerifyMetrics {
 	fallback_total: Option<Counter<U64>>,
 	/// Wall-clock time of one transaction's incremental preparation (seconds).
 	prepare_duration: Option<Histogram>,
+	/// Lookahead jobs run ahead of the import cursor, by outcome.
+	lookahead_jobs_total: Option<CounterVec<U64>>,
+	/// Blocks covered by lookahead, by disposition (`scheduled`/`shed`/`hit`/`miss`).
+	lookahead_blocks_total: Option<CounterVec<U64>>,
+	/// Wall-clock time of one lookahead aggregate verification (seconds).
+	lookahead_duration: Option<Histogram>,
+	/// Time an import spent waiting on a lookahead that had not finished (seconds).
+	lookahead_wait_duration: Option<Histogram>,
 }
 
 const OUTCOME_SUCCESS: &str = "success";
@@ -459,6 +473,42 @@ impl BatchVerifyMetrics {
 			)
 			.unwrap()
 		});
+		let lookahead_jobs_total = {
+			let opts = Opts::new(
+				"midnight_batch_verify_lookahead_jobs_total",
+				"Lookahead aggregate verifications run ahead of the import cursor, by outcome",
+			);
+			registry.map(|r| register(CounterVec::new(opts, &["outcome"]).unwrap(), r).unwrap())
+		};
+		let lookahead_blocks_total = {
+			let opts = Opts::new(
+				"midnight_batch_verify_lookahead_blocks_total",
+				"Blocks by lookahead disposition: scheduled, shed, hit, miss",
+			);
+			registry.map(|r| register(CounterVec::new(opts, &["disposition"]).unwrap(), r).unwrap())
+		};
+		let lookahead_duration = registry.map(|r| {
+			register(
+				Histogram::with_opts(HistogramOpts::new(
+					"midnight_batch_verify_lookahead_duration_seconds",
+					"Wall-clock time of one lookahead aggregate verification",
+				))
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
+		let lookahead_wait_duration = registry.map(|r| {
+			register(
+				Histogram::with_opts(HistogramOpts::new(
+					"midnight_batch_verify_lookahead_wait_seconds",
+					"Time a block import spent waiting on an unfinished lookahead",
+				))
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
 		let _ = OUTCOMES;
 		Self {
 			batch_size,
@@ -470,6 +520,10 @@ impl BatchVerifyMetrics {
 			batch_duration,
 			fallback_total,
 			prepare_duration,
+			lookahead_jobs_total,
+			lookahead_blocks_total,
+			lookahead_duration,
+			lookahead_wait_duration,
 		}
 	}
 
@@ -519,6 +573,47 @@ impl BatchVerifyMetrics {
 	pub fn observe_prepare_duration(&self, secs: f64) {
 		if let Some(h) = &self.prepare_duration {
 			h.observe(secs);
+		}
+	}
+
+	/// Records one completed lookahead job and how long its aggregate verification took.
+	pub fn observe_lookahead_job(&self, verified: bool, elapsed: std::time::Duration) {
+		let outcome = if verified { OUTCOME_SUCCESS } else { OUTCOME_FAILURE };
+		if let Some(c) = &self.lookahead_jobs_total {
+			let _ = c.get_metric_with_label_values(&[outcome]).map(|m| m.inc());
+		}
+		if let Some(h) = &self.lookahead_duration {
+			h.observe(elapsed.as_secs_f64());
+		}
+	}
+
+	/// Records blocks dispatched for lookahead verification.
+	pub fn observe_lookahead_scheduled(&self, blocks: usize) {
+		self.inc_lookahead_blocks("scheduled", blocks);
+	}
+
+	/// Records blocks that could not be dispatched because the job queue was full.
+	pub fn observe_lookahead_shed(&self, blocks: usize) {
+		self.inc_lookahead_blocks("shed", blocks);
+	}
+
+	/// Records a block whose import consumed a lookahead result, and what it spent waiting for it.
+	/// A wait near zero is the intended case: the job finished while earlier blocks executed.
+	pub fn observe_lookahead_hit(&self, waited: std::time::Duration) {
+		self.inc_lookahead_blocks("hit", 1);
+		if let Some(h) = &self.lookahead_wait_duration {
+			h.observe(waited.as_secs_f64());
+		}
+	}
+
+	/// Records a block that fell back to verifying itself.
+	pub fn observe_lookahead_miss(&self) {
+		self.inc_lookahead_blocks("miss", 1);
+	}
+
+	fn inc_lookahead_blocks(&self, disposition: &str, blocks: usize) {
+		if let Some(c) = &self.lookahead_blocks_total {
+			let _ = c.get_metric_with_label_values(&[disposition]).map(|m| m.inc_by(blocks as u64));
 		}
 	}
 

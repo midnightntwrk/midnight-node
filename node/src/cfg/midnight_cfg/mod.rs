@@ -65,6 +65,14 @@ fn default_batch_verify_workers() -> usize {
 fn default_batch_verify_queue_capacity() -> usize {
 	4096
 }
+/// Default blocks per cross-block lookahead job.
+fn default_batch_verify_lookahead_blocks() -> usize {
+	4
+}
+/// Default number of blocking lookahead verification workers.
+fn default_batch_verify_lookahead_workers() -> usize {
+	2
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Validate, Documented)]
 #[validate(custom = main_chain_follower_vars)]
@@ -203,6 +211,25 @@ pub struct MidnightCfg {
 	/// Submissions beyond this are shed with a pool `ImmediatelyDropped` error.
 	#[serde(default = "default_batch_verify_queue_capacity")]
 	pub batch_verify_queue_capacity: usize,
+
+	/// Verify the proofs of blocks the sync engine has queued but not yet imported, on worker
+	/// threads, instead of verifying each block inline on the sequential import path.
+	///
+	/// Requires `batch_verify_block_import`; without it there is no batch verification to move off
+	/// the import path. Blocks are verified against the parent of the chunk's earliest block, so a
+	/// lookahead can only record a verified verdict, never an invalid one — the worst a stale
+	/// reference does is send a block back to the ordinary per-block path. Default: false.
+	#[serde(default = "default_false")]
+	pub batch_verify_lookahead: bool,
+
+	/// Blocks covered by one lookahead job. Larger groups amortise a batch's fixed cost over more
+	/// proofs, at the cost of making the first block of a group wait for the whole group.
+	#[serde(default = "default_batch_verify_lookahead_blocks")]
+	pub batch_verify_lookahead_blocks: usize,
+
+	/// Blocking workers running lookahead verifications concurrently with block execution.
+	#[serde(default = "default_batch_verify_lookahead_workers")]
+	pub batch_verify_lookahead_workers: usize,
 
 	/// Offset (seconds) added to the *parent* block's timestamp when verifying the first
 	/// ledger transaction of a block, to allow transactions with invalid ctime values into

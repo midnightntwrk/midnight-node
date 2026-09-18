@@ -329,11 +329,45 @@ defaults):
 | `CHAIN` | chain id, or a path to a chainspec JSON (see "Bigger batches") | `dev` |
 | `LOAD_CHUNK` | txs per `batch-single-tx` call; cap is the funder's DUST-output count | `5` |
 | `BATCH_VERIFY_MAX_BATCH_SIZE` etc. | forwarded to the syncer when set | (node defaults) |
+| `AB_ENV_VAR` | which node setting the A/B flips | `BATCH_VERIFY_BLOCK_IMPORT` |
 
 A bigger, prove-heavier chain shows a larger absolute gap — scale `LOAD_TXS`
 (every tx is proved up-front, so prime time grows with it). Keep `SHIELDED=1`:
 the batching accelerates ZK-proof verification, so the workload has to carry
 proofs.
+
+## Measuring a second feature against an existing baseline
+
+`AB_ENV_VAR` chooses which setting the two arms differ in; everything else is
+held fixed and forwarded to both. That keeps the comparison *paired* when the
+baseline itself already has a feature on — which matters more the smaller the
+effect, since running two separate benchmarks and diffing their medians puts
+machine drift straight back into the answer.
+
+Verification lookahead against plain block-import batching:
+
+```bash
+AB_ENV_VAR=BATCH_VERIFY_LOOKAHEAD \
+BATCH_VERIFY_BLOCK_IMPORT=true \
+BATCH_VERIFY_LOOKAHEAD_BLOCKS=4 \
+BATCH_VERIFY_LOOKAHEAD_WORKERS=2 \
+REPEATS=15 ./benchmark.sh
+```
+
+Both arms then batch-verify, so neither emits `mode="inline"` samples and the
+per-tx sections print "insufficient samples" — that is expected, not a fault.
+Read the wall-clock pairing and the raw counters instead. The ones that say
+whether the pipeline is actually working:
+
+| Counter | Reading |
+|---|---|
+| `lookahead_jobs_total{outcome}` | `failure` means jobs concluded nothing — usually no usable reference state |
+| `lookahead_blocks_total{disposition}` | `hit` is a block that consumed a result; `miss` verified itself anyway |
+| `lookahead_wait_seconds_sum` | time imports spent *waiting*; compare against `midnight_batch_verify_duration_seconds_sum` on the OFF arm to see how much verification came off the critical path |
+
+A run where jobs succeed but no block hits, or where every job fails instantly,
+is the feature doing nothing while still burning CPU. Both have happened; both
+are invisible in wall clock alone, which is why these counters exist.
 
 ## How it works (implementation notes)
 

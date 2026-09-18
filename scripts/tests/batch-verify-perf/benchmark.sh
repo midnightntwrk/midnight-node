@@ -80,6 +80,24 @@ fi
 log "🎯 target sync height: $TARGET_HEIGHT"
 log "🔗 chainspec: $CHAIN"
 
+# Which node setting the A/B flips. Everything else is held fixed across both arms and passed
+# through from the environment, so a second feature can be measured against a baseline that
+# already has the first one on -- e.g. lookahead against plain block-import batching:
+#
+#   AB_ENV_VAR=BATCH_VERIFY_LOOKAHEAD BATCH_VERIFY_BLOCK_IMPORT=true ./benchmark.sh
+#
+# Keeping this a *paired* comparison matters more here than the default one: the effect being
+# measured is smaller, and running two separate benchmarks and diffing their medians would put
+# machine drift straight back into the answer.
+AB_ENV_VAR="${AB_ENV_VAR:-BATCH_VERIFY_BLOCK_IMPORT}"
+# Node settings forwarded to both arms unchanged.
+PASSTHROUGH_ENV=(
+  BATCH_VERIFY_BLOCK_IMPORT BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE
+  BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY
+  BATCH_VERIFY_LOOKAHEAD BATCH_VERIFY_LOOKAHEAD_BLOCKS BATCH_VERIFY_LOOKAHEAD_WORKERS
+)
+log "🔀 A/B variable: $AB_ENV_VAR (off vs on)"
+
 PRODUCER_PID=""
 SYNCER_PID=""
 cleanup() {
@@ -154,10 +172,11 @@ start_syncer() {
     rm_volume "$SYNCER_VOLUME"
     docker volume create "$SYNCER_VOLUME" >/dev/null
     local tuning=() v
-    for v in BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE \
-             BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY; do
+    for v in "${PASSTHROUGH_ENV[@]}"; do
       [ -n "${!v:-}" ] && tuning+=( -e "$v=${!v}" )
     done
+    # Last wins, so the A/B variable overrides any passthrough of the same name.
+    tuning+=( -e "$AB_ENV_VAR=$flag" )
     # CFG_PRESET=dev keeps the mock main-chain-follower config; the explicit run
     # args replace the preset's `--dev ...` (so no dev keys / no authoring) and
     # make this a plain full-sync node whose import queue runs the batch verifier.
@@ -169,7 +188,6 @@ start_syncer() {
       -v "$SYNCER_VOLUME":"$BASE_PATH_IN" \
       -e CFG_PRESET=dev \
       -e WIPE_CHAIN_STATE=true \
-      -e "BATCH_VERIFY_BLOCK_IMPORT=$flag" \
       "${tuning[@]}" \
       "$NODE_IMAGE" \
         --chain "$CHAIN" \
@@ -186,13 +204,14 @@ start_syncer() {
     mkdir -p "$SYNCER_DIR"
     (
       cd "$REPO_ROOT"
-      export CFG_PRESET=dev WIPE_CHAIN_STATE=true BATCH_VERIFY_BLOCK_IMPORT="$flag"
+      export CFG_PRESET=dev WIPE_CHAIN_STATE=true
       export BASE_PATH="$SYNCER_DIR"
       local v
-      for v in BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE \
-               BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY; do
+      for v in "${PASSTHROUGH_ENV[@]}"; do
         [ -n "${!v:-}" ] && export "$v=${!v}"
       done
+      # Exported last so it overrides any passthrough of the same name.
+      export "$AB_ENV_VAR=$flag"
       exec "$NODE_BIN" \
         --chain "$CHAIN" \
         --node-key "$node_key" \
@@ -320,8 +339,8 @@ ON_TIMES=()
 run_one() {
   local flag="$1" r="$2"
   case "$flag" in
-    false) log "════════ OFF (inline) run $r/$REPEATS ════════" ;;
-    true)  log "════════ ON  (batch)  run $r/$REPEATS ════════" ;;
+    false) log "════════ OFF ($AB_ENV_VAR=false) run $r/$REPEATS ════════" ;;
+    true)  log "════════ ON  ($AB_ENV_VAR=true)  run $r/$REPEATS ════════" ;;
   esac
   run_sync "$flag"
   case "$flag" in
@@ -364,8 +383,9 @@ else
   printf 'node binary (local)    : %s\n' "$NODE_BIN"
 fi
 printf 'blocks synced          : %s   (repeats: %s)\n' "$TARGET_HEIGHT" "$REPEATS"
-printf 'OFF (inline verify)    : %s   [%s]\n' "$(stats "${OFF_TIMES[@]}")" "${OFF_TIMES[*]}"
-printf 'ON  (batch verify)     : %s   [%s]\n' "$(stats "${ON_TIMES[@]}")" "${ON_TIMES[*]}"
+printf 'A/B variable           : %s\n' "$AB_ENV_VAR"
+printf 'OFF (=false)           : %s   [%s]\n' "$(stats "${OFF_TIMES[@]}")" "${OFF_TIMES[*]}"
+printf 'ON  (=true)            : %s   [%s]\n' "$(stats "${ON_TIMES[@]}")" "${ON_TIMES[*]}"
 awk -v off="$OFF_MED" -v on="$ON_MED" 'BEGIN {
   d = off - on
   printf "delta (median off-on)  : %.2fs\n", d
