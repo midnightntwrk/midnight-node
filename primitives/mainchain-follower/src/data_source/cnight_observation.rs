@@ -478,7 +478,7 @@ impl MidnightCNightObservationDataSourceImpl {
 			else {
 				log::debug!(
 					"Cardano address {:?} not valid bech32 cardano address",
-					&row.holder_address
+					row.holder_address
 				);
 				continue;
 			};

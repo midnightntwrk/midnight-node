@@ -98,11 +98,15 @@ directories and generated mock-authorities output.
 ```bash
 npm run image-upgrade:qanet
 npm run governance-runtime-upgrade:qanet -- \
-  --wasm upgrade/midnight_node_runtime.compact.wasm \
   --council-uris //Dave //Eve //Ferdie \
   --technical-uris //Alice //Bob //Charlie \
   --executor-uri //Alice
 ```
+
+With no `--wasm`, the candidate runtime is extracted from `$NEW_NODE_IMAGE` (node
+images ship it under `/artifacts-<arch>/`). Pass `--wasm-from-image <image>` to name
+a different image, or `--wasm <path under artifacts/>` for a blob that is not in an
+image — a release asset, say, which is the srtool build rather than the Earthly one.
 
 If the generated fork-mode artifacts or restored `data/` directories are
 missing, the command will fail fast and ask you to rerun with `--from-snapshot`.

@@ -609,7 +609,7 @@ pub mod pallet {
 			// post a DUST registration) so this is traced, not warned. Enable trace
 			// level on this target to debug "I registered but no DUST appeared".
 			let Some(ref dust_public_key) = Self::get_registration(&data.owner) else {
-				log::trace!("No valid dust registration for {:?}", &data.owner);
+				log::trace!("No valid dust registration for {:?}", data.owner);
 				return None;
 			};
 
