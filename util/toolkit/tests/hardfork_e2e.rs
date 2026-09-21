@@ -51,8 +51,8 @@ use testcontainers::{
 /// Genesis-funded dev wallet the test transacts from.
 const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
-/// Seed of the ECDSA identity exercised after the fork. It has no pre-fork history: ledger 8
-/// cannot represent it.
+/// Seed of the ECDSA identity exercised after the fork. Ledger 8 cannot represent an ECDSA
+/// NIGHT key, so the seed replays the pre-fork leg under its Schnorr identity.
 const ECDSA_SEED: &str = "1000000000000000000000000000000000000000000000000000000000000001";
 
 /// Unshielded address for a (possibly `ecdsa:`-prefixed) seed on the `undeployed` network.
@@ -588,8 +588,8 @@ async fn hardfork_single_tx() {
 	])
 	.await;
 
-	// 7. GH #2180: `ecdsa:` seeds on a chain with ledger-8 history. The identity cannot exist
-	//    before the fork; the toolkit creates it at the fork block.
+	// 7. GH #2180: `ecdsa:` seeds on a chain with ledger-8 history. The NIGHT identity cannot
+	//    exist before the fork; the toolkit re-keys it to ECDSA at the fork block.
 	let ecdsa_seed = format!("ecdsa:{ECDSA_SEED}");
 	let ecdsa_address = unshielded_address(&ecdsa_seed);
 

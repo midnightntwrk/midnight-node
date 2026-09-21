@@ -105,3 +105,30 @@ fn ecdsa_address_mip0003_conformance() {
 		assert_eq!(actual, expected, "uniform bytes {uniform_bytes:02x?}");
 	}
 }
+
+/// GH #2180: re-keying an identity to ECDSA at the 8->9 fork keeps the shielded sub-wallet it
+/// replayed the pre-fork chain with. The shielded address is scheme-independent, so shielded
+/// funds sent to an `ecdsa:` seed before the fork must stay spendable after it.
+#[test]
+fn rekey_unshielded_keeps_shielded_history() {
+	use super::{DefaultDB, LedgerContext, UnshieldedSignatureScheme};
+
+	let ctx = LedgerContext::<DefaultDB>::new_from_wallet_seeds("undeployed", &[seed()]);
+
+	// Stand in for a shielded output replayed on the ledger-8 leg.
+	{
+		let mut wallets = ctx.wallets.lock().unwrap();
+		wallets.get_mut(&seed()).unwrap().shielded.state.first_free = 7;
+	}
+
+	ctx.rekey_unshielded(&seed(), UnshieldedSignatureScheme::Ecdsa);
+
+	let wallets = ctx.wallets.lock().unwrap();
+	let wallet = wallets.get(&seed()).expect("wallet survives the re-key");
+	assert_eq!(wallet.shielded.state.first_free, 7, "shielded history must survive the re-key");
+	assert_eq!(
+		wallet.unshielded.user_address,
+		UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address,
+		"NIGHT identity must be the ECDSA one",
+	);
+}
