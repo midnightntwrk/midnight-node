@@ -51,8 +51,15 @@ use testcontainers::{
 /// Genesis-funded dev wallet the test transacts from.
 const SOURCE_SEED: &str = "0000000000000000000000000000000000000000000000000000000000000001";
 
-/// Seed of the ECDSA identity exercised after the fork. Ledger 8 cannot represent an ECDSA
-/// NIGHT key, so the seed replays the pre-fork leg under its Schnorr identity.
+/// Seed of the ECDSA identity exercised after the fork. Ledger 8 cannot represent an ECDSA NIGHT
+/// key, so the seed replays the pre-fork leg watch-only, at its ECDSA address and with no key
+/// material; the fork installs the keys.
+///
+/// Note the address itself is representable before the fork — `UserAddress` is a bare 32-byte
+/// hash and the ledger does not know which scheme it belongs to — so NIGHT *can* be sent to it on
+/// the ledger-8 leg. It just cannot be spent there: ledger 8's signature types have no ECDSA
+/// variant. Such UTxOs survive the state translation and become spendable at the fork. Step 7
+/// funds this identity after the fork, so that path is not covered end to end here.
 const ECDSA_SEED: &str = "1000000000000000000000000000000000000000000000000000000000000001";
 
 /// Unshielded address for a (possibly `ecdsa:`-prefixed) seed on the `undeployed` network.
