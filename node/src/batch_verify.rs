@@ -30,7 +30,10 @@
 //! verification) — it can never cause an invalid transaction to be accepted.
 
 use crate::service::FullClient;
-use midnight_node_ledger::{ledger_9::BlockContext, types::active_version::LedgerApiError};
+use midnight_node_ledger::{
+	host_api::ledger_9::PreparedTransaction, ledger_9::BlockContext,
+	types::active_version::LedgerApiError,
+};
 use midnight_node_runtime::opaque::Block;
 use midnight_primitives_ledger::{
 	LedgerMetrics, LedgerMetricsExt, LedgerStorage, LedgerStorageExt,
@@ -39,7 +42,7 @@ use parity_scale_codec::Decode;
 use prometheus_endpoint::{
 	Counter, CounterVec, Gauge, Histogram, HistogramOpts, Opts, Registry, U64, register,
 };
-use sc_client_api::StorageProvider;
+use sc_client_api::{HeaderBackend, StorageProvider};
 use sp_api::{Core, ProvideRuntimeApi};
 use sp_core::storage::StorageKey;
 use sp_crypto_hashing::twox_128;
@@ -126,6 +129,12 @@ impl BatchVerifier {
 	}
 
 	/// The ledger arena `state_key` (`pallet_midnight::StateKey`) at `at`.
+	/// The chain's current best block. Always imported, so its state is the safest fallback
+	/// reference when a preferred block turns out not to be in the database yet.
+	pub fn best_hash(&self) -> BlockHash {
+		self.client.info().best_hash
+	}
+
 	pub fn state_key_at(&self, at: BlockHash) -> Option<Vec<u8>> {
 		self.read_value::<Vec<u8>>(at, b"Midnight", b"StateKey")
 	}
@@ -167,6 +176,96 @@ impl BatchVerifier {
 		ext.register_extension(LedgerStorageExt::new(self.ledger_storage.clone()));
 		ext.register_extension(LedgerMetricsExt::new(self.ledger_metrics.clone()));
 		ext
+	}
+
+	/// Resolves the three batch inputs derived from the chain state at `at`.
+	fn batch_inputs(
+		&self,
+		at: BlockHash,
+		extra_secs: u64,
+	) -> Result<(u32, Vec<u8>, BlockContext), BatchVerifyError> {
+		let Some(spec_version) = self.spec_version_at(at) else {
+			return Err(BatchVerifyError::Unavailable("could not resolve runtime version".into()));
+		};
+		if spec_version < LEDGER_9_MIN_SPEC_VERSION {
+			return Err(BatchVerifyError::Unavailable(format!(
+				"block at {at:?} runs a pre-ledger-9 runtime (spec_version {spec_version}); \
+				 batch verification unsupported"
+			)));
+		}
+		let Some(state_key) = self.state_key_at(at) else {
+			return Err(BatchVerifyError::Unavailable("could not read ledger state_key".into()));
+		};
+		Ok((spec_version, state_key, self.block_context_at(at, extra_secs)))
+	}
+
+	/// Runs the per-transaction half of batch verification for one transaction — everything that
+	/// does not depend on which other transactions share its batch.
+	///
+	/// Callers with idle time before they must decide (the mempool queue filling toward its
+	/// dispatch window) run this as each transaction arrives, then pay only [`Self::finalize`].
+	pub fn prepare(
+		&self,
+		at: BlockHash,
+		tx_bytes: &[u8],
+		extra_secs: u64,
+	) -> Result<PreparedTransaction, BatchVerifyError> {
+		let (spec_version, state_key, block_context) = self.batch_inputs(at, extra_secs)?;
+		let mut ext = self.build_externalities();
+		let start = std::time::Instant::now();
+		let result = midnight_node_ledger::host_api::ledger_9::prepare_transaction(
+			&mut ext,
+			&state_key,
+			tx_bytes,
+			block_context,
+			spec_version,
+		);
+		self.metrics.observe_prepare_duration(start.elapsed().as_secs_f64());
+		result.map_err(|e| match e {
+			LedgerApiError::Transaction(_) => BatchVerifyError::ProofInvalid,
+			other => BatchVerifyError::Unavailable(format!("{other:?}")),
+		})
+	}
+
+	/// Decides a batch built by [`Self::prepare`]: one fold plus a single pairing check, at a cost
+	/// essentially independent of the batch size.
+	pub fn finalize(
+		&self,
+		at: BlockHash,
+		prepared: Vec<PreparedTransaction>,
+		isolate_on_failure: bool,
+		extra_secs: u64,
+	) -> Result<Vec<Result<(), LedgerApiError>>, BatchVerifyError> {
+		if prepared.is_empty() {
+			return Ok(Vec::new());
+		}
+		let (_, state_key, block_context) = self.batch_inputs(at, extra_secs)?;
+		let tx_count = prepared.len();
+		let mut ext = self.build_externalities();
+
+		let start = std::time::Instant::now();
+		let result = midnight_node_ledger::host_api::ledger_9::finalize_prepared_batch(
+			&mut ext,
+			&state_key,
+			block_context,
+			prepared,
+			isolate_on_failure,
+		);
+		self.metrics.observe_batch_duration(start.elapsed().as_secs_f64());
+
+		match result {
+			Ok(results) => {
+				self.metrics.observe_batch(tx_count, true);
+				Ok(results)
+			},
+			Err(e) => {
+				self.metrics.observe_batch(tx_count, false);
+				match e {
+					LedgerApiError::Transaction(_) => Err(BatchVerifyError::ProofInvalid),
+					other => Err(BatchVerifyError::Unavailable(format!("{other:?}"))),
+				}
+			},
+		}
 	}
 
 	/// Batch-verifies the proofs of `txs` (serialized Midnight transactions) against the ledger
@@ -265,6 +364,18 @@ pub struct BatchVerifyMetrics {
 	batch_duration: Option<Histogram>,
 	/// Mempool batches that fell back to per-transaction runtime validation (unavailable).
 	fallback_total: Option<Counter<U64>>,
+	/// Wall-clock time of one transaction's incremental preparation (seconds).
+	prepare_duration: Option<Histogram>,
+	/// Submissions skipped because the runtime's soft cache already had them (pool revalidations).
+	soft_cache_short_circuits: Option<Counter<U64>>,
+	/// Lookahead jobs run ahead of the import cursor, by outcome.
+	lookahead_jobs_total: Option<CounterVec<U64>>,
+	/// Blocks covered by lookahead, by disposition (`scheduled`/`shed`/`hit`/`miss`).
+	lookahead_blocks_total: Option<CounterVec<U64>>,
+	/// Wall-clock time of one lookahead aggregate verification (seconds).
+	lookahead_duration: Option<Histogram>,
+	/// Time an import spent waiting on a lookahead that had not finished (seconds).
+	lookahead_wait_duration: Option<Histogram>,
 }
 
 const OUTCOME_SUCCESS: &str = "success";
@@ -353,6 +464,64 @@ impl BatchVerifyMetrics {
 			)
 			.unwrap()
 		});
+		let prepare_duration = registry.map(|r| {
+			register(
+				Histogram::with_opts(HistogramOpts::new(
+					"midnight_batch_verify_prepare_duration_seconds",
+					"Wall-clock time of one transaction's incremental batch preparation",
+				))
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
+		let lookahead_jobs_total = {
+			let opts = Opts::new(
+				"midnight_batch_verify_lookahead_jobs_total",
+				"Lookahead aggregate verifications run ahead of the import cursor, by outcome",
+			);
+			registry.map(|r| register(CounterVec::new(opts, &["outcome"]).unwrap(), r).unwrap())
+		};
+		let lookahead_blocks_total = {
+			let opts = Opts::new(
+				"midnight_batch_verify_lookahead_blocks_total",
+				"Blocks by lookahead disposition: scheduled, shed, hit, miss",
+			);
+			registry.map(|r| register(CounterVec::new(opts, &["disposition"]).unwrap(), r).unwrap())
+		};
+		let lookahead_duration = registry.map(|r| {
+			register(
+				Histogram::with_opts(HistogramOpts::new(
+					"midnight_batch_verify_lookahead_duration_seconds",
+					"Wall-clock time of one lookahead aggregate verification",
+				))
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
+		let lookahead_wait_duration = registry.map(|r| {
+			register(
+				Histogram::with_opts(HistogramOpts::new(
+					"midnight_batch_verify_lookahead_wait_seconds",
+					"Time a block import spent waiting on an unfinished lookahead",
+				))
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
+		let soft_cache_short_circuits = registry.map(|r| {
+			register(
+				Counter::new(
+					"midnight_batch_verify_soft_cache_short_circuits_total",
+					"Submissions the batcher skipped because the runtime soft cache already held them",
+				)
+				.unwrap(),
+				r,
+			)
+			.unwrap()
+		});
 		let _ = OUTCOMES;
 		Self {
 			batch_size,
@@ -363,6 +532,12 @@ impl BatchVerifyMetrics {
 			dispatch_reason,
 			batch_duration,
 			fallback_total,
+			prepare_duration,
+			soft_cache_short_circuits,
+			lookahead_jobs_total,
+			lookahead_blocks_total,
+			lookahead_duration,
+			lookahead_wait_duration,
 		}
 	}
 
@@ -405,6 +580,63 @@ impl BatchVerifyMetrics {
 	pub fn observe_batch_duration(&self, secs: f64) {
 		if let Some(h) = &self.batch_duration {
 			h.observe(secs);
+		}
+	}
+
+	/// Records the wall-clock duration (seconds) of one transaction's incremental preparation.
+	pub fn observe_prepare_duration(&self, secs: f64) {
+		if let Some(h) = &self.prepare_duration {
+			h.observe(secs);
+		}
+	}
+
+	/// Records one completed lookahead job and how long its aggregate verification took.
+	pub fn observe_lookahead_job(&self, verified: bool, elapsed: std::time::Duration) {
+		let outcome = if verified { OUTCOME_SUCCESS } else { OUTCOME_FAILURE };
+		if let Some(c) = &self.lookahead_jobs_total {
+			let _ = c.get_metric_with_label_values(&[outcome]).map(|m| m.inc());
+		}
+		if let Some(h) = &self.lookahead_duration {
+			h.observe(elapsed.as_secs_f64());
+		}
+	}
+
+	/// Records blocks dispatched for lookahead verification.
+	pub fn observe_lookahead_scheduled(&self, blocks: usize) {
+		self.inc_lookahead_blocks("scheduled", blocks);
+	}
+
+	/// Records blocks that could not be dispatched because the job queue was full.
+	pub fn observe_lookahead_shed(&self, blocks: usize) {
+		self.inc_lookahead_blocks("shed", blocks);
+	}
+
+	/// Records a block whose import consumed a lookahead result, and what it spent waiting for it.
+	/// A wait near zero is the intended case: the job finished while earlier blocks executed.
+	pub fn observe_lookahead_hit(&self, waited: std::time::Duration) {
+		self.inc_lookahead_blocks("hit", 1);
+		if let Some(h) = &self.lookahead_wait_duration {
+			h.observe(waited.as_secs_f64());
+		}
+	}
+
+	/// Records a block that fell back to verifying itself.
+	pub fn observe_lookahead_miss(&self) {
+		self.inc_lookahead_blocks("miss", 1);
+	}
+
+	fn inc_lookahead_blocks(&self, disposition: &str, blocks: usize) {
+		if let Some(c) = &self.lookahead_blocks_total {
+			let _ = c.get_metric_with_label_values(&[disposition]).map(|m| m.inc_by(blocks as u64));
+		}
+	}
+
+	/// Records a submission the batcher skipped because the runtime's soft cache already held a
+	/// successful validation for it — a pool revalidation, which the inline path serves from that
+	/// same cache for free.
+	pub fn observe_soft_cache_short_circuit(&self) {
+		if let Some(c) = &self.soft_cache_short_circuits {
+			c.inc();
 		}
 	}
 
