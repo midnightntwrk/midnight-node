@@ -380,6 +380,45 @@ async fn ecdsa_wallet_across_the_fork_cache_and_restore() {
 	assert_contexts_equal("ecdsa chunked", &chunked, &raw, &seeds);
 }
 
+/// A cache entry must not wave an ECDSA seed past the ledger-9 requirement. A checkpointing run
+/// against a chain still on ledger 8 writes cache entries before the guard rejects it, so the
+/// retry finds every seed cached; if the guard only looked at the uncached seeds it would see an
+/// empty list and hand back watch-only wallets instead of the error.
+#[tokio::test]
+#[should_panic(expected = "only supported from ledger 9")]
+async fn ecdsa_seed_on_a_ledger8_chain_is_refused_even_when_cached() {
+	let source = synthetic_source(6, 0);
+	let ecdsa = wallet_seed(0x02);
+	let schemes = WalletSchemes::from([(ecdsa.clone(), UnshieldedSignatureScheme::Ecdsa)]);
+	let chain_id = source.chain_id().unwrap();
+	let tmp = tempfile::TempDir::new().unwrap();
+	let backend = FileBackend::new(tmp.path());
+
+	// Plant the ledger-8 entry such a run leaves behind: same seed and heights, keyed under the
+	// ECDSA identity. Replaying it as Schnorr is just a convenient way to produce a real one.
+	let _ = build_fork_aware_context_cached(&[ecdsa.clone()], &source, Some(&backend), 0).await;
+	let mut planted = backend
+		.get_wallet_states(
+			chain_id,
+			&[wallet_cache_key(&ecdsa, UnshieldedSignatureScheme::Schnorr)],
+		)
+		.await
+		.pop()
+		.flatten()
+		.expect("the Schnorr replay must have cached the seed");
+	planted.seed_hash = wallet_cache_key(&ecdsa, UnshieldedSignatureScheme::Ecdsa);
+	backend.set_wallet_states(chain_id, &[planted]).await;
+
+	let _ = build_fork_aware_context_cached_with_schemes(
+		&[ecdsa],
+		&source,
+		Some(&backend),
+		&schemes,
+		2,
+	)
+	.await;
+}
+
 #[tokio::test]
 async fn ledger8_cache_with_mixed_heights_replays_from_genesis() {
 	let tmp = tempfile::TempDir::new().unwrap();

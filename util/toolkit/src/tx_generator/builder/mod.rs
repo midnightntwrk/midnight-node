@@ -962,6 +962,11 @@ fn scheme_of(schemes: &WalletSchemes, seed: &WalletSeed) -> UnshieldedSignatureS
 /// Seeds whose unshielded identity must be given its ECDSA keys at the 8->9 fork, i.e. the ECDSA
 /// ones when the replay starts before the fork. Empty when it starts at ledger 9.
 ///
+/// This is an *install* list, not a guard: pass only seeds whose wallet is in the context at the
+/// fork block, since [`LedgerContext::install_unshielded_keys`] requires one. Seeds restored from
+/// cache are injected after the fork and rebuilt with their real scheme there, so they must be
+/// left out. [`assert_ecdsa_supported`] is what rejects an unsupported chain.
+///
 /// Before the fork these seeds hold a watch-only unshielded sub-wallet (no key material of any
 /// kind — see `ForkAwareLedgerContext::new_from_wallet_seeds_with_schemes`) while their shielded
 /// sub-wallet, which is scheme-independent, replays normally. Only the unshielded identity is
@@ -981,13 +986,26 @@ fn ecdsa_seeds_keyed_at_fork(
 		.collect()
 }
 
-/// Backstop for callers that skip [`ensure_ecdsa_supported`]: without the fork these wallets
-/// would silently keep the Schnorr identity they replayed the ledger-8 leg under.
-fn assert_ecdsa_keyed(ctx: &ForkAwareLedgerContext, keyed_at_fork: &[WalletSeed]) {
+/// Backstop for callers that skip [`ensure_ecdsa_supported`]: an ECDSA unshielded identity only
+/// becomes representable at ledger 9, so a chain that never gets there cannot serve one.
+///
+/// Checked over *every* requested seed, not over [`ecdsa_seeds_keyed_at_fork`]: that list holds
+/// only the seeds built cold (a cached seed is rebuilt with its real scheme on injection instead),
+/// so deriving the guard from it would let any cache entry wave an unsupported chain through —
+/// including the ledger-8 checkpoint a previous, correctly-panicking run wrote mid-replay.
+/// Checked up front against the chain tip, so an unsupported request fails before the replay
+/// rather than after it, leaving no such checkpoint behind.
+fn assert_ecdsa_supported(
+	tip: LedgerVersion,
+	wallet_seeds: &[WalletSeed],
+	schemes: &WalletSchemes,
+) {
 	assert!(
-		keyed_at_fork.is_empty() || ctx.version() == LedgerVersion::Ledger9,
-		"ECDSA unshielded signatures are only supported from ledger 9; the source chain is on {:?}",
-		ctx.version()
+		tip == LedgerVersion::Ledger9
+			|| !wallet_seeds
+				.iter()
+				.any(|seed| scheme_of(schemes, seed) == UnshieldedSignatureScheme::Ecdsa),
+		"ECDSA unshielded signatures are only supported from ledger 9; the source chain is on {tip:?}"
 	);
 }
 
@@ -1460,6 +1478,7 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	schemes: &WalletSchemes,
 	replay_checkpoint_interval: u64,
 ) -> ForkAwareLedgerContext {
+	assert_ecdsa_supported(received_tx.tip_ledger_version(), wallet_seeds, schemes);
 	if wallet_seeds.is_empty() {
 		return build_fork_aware_context_raw_with_schemes(received_tx, wallet_seeds, schemes);
 	}
@@ -1588,7 +1607,6 @@ pub async fn build_fork_aware_context_cached_with_schemes(
 	} else {
 		replay_blocks(fork_ctx, blocks, &cached, schemes, &keyed_at_fork)
 	};
-	assert_ecdsa_keyed(&fork_ctx, &keyed_at_fork);
 
 	// 6. Save updated cache. `blocks.last()` is sound here because
 	// step 4 already excluded the dust-warp synthetic (`number = 0`)
@@ -1811,6 +1829,8 @@ pub fn build_fork_aware_context_raw_with_schemes(
 	wallet_seeds: &[WalletSeed],
 	schemes: &WalletSchemes,
 ) -> ForkAwareLedgerContext {
+	assert_ecdsa_supported(received_tx.tip_ledger_version(), wallet_seeds, schemes);
+
 	let network_id = &received_tx.network_id;
 	let initial_version = received_tx
 		.blocks
@@ -1832,9 +1852,7 @@ pub fn build_fork_aware_context_raw_with_schemes(
 	);
 	log::debug!("[perf] new_from_wallet_seeds (raw) took {:?}", t.elapsed());
 
-	let ctx = replay_blocks(ctx, &received_tx.blocks, &[], schemes, &keyed_at_fork);
-	assert_ecdsa_keyed(&ctx, &keyed_at_fork);
-	ctx
+	replay_blocks(ctx, &received_tx.blocks, &[], schemes, &keyed_at_fork)
 }
 
 /// Build a fork-aware context from source transactions, returning a ledger 9 context.
