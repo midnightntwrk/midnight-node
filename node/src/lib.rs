@@ -30,6 +30,7 @@ pub mod extensions;
 mod filtering_pool;
 pub mod genesis;
 pub mod inherent_data;
+pub mod lookahead_import_queue;
 pub mod main_chain_follower;
 pub mod memory_monitor;
 pub mod metrics_push;

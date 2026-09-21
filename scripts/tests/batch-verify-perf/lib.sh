@@ -296,3 +296,72 @@ derive_addrs() {
     done
   ' _ "$NETWORK_ID" "$flag" "$@"
 }
+
+# --- paired A/B statistics (shared by benchmark.sh and mempool-benchmark.sh) ---
+#
+# Both harnesses interleave their arms, so sample i of each arm comes from the same repeat and
+# their difference is immune to the machine-wide drift that dominates the raw spread. Comparing
+# the two arms' spreads instead throws the pairing away and calls unanimous data "unresolved".
+
+# median, min and mean of a list of floats. $1 is the unit suffix to print.
+stats_unit() {
+  local unit="$1"; shift
+  printf '%s\n' "$@" | sort -n | awk -v u="$unit" '
+    {v[NR]=$1; s+=$1}
+    END {
+      m = (NR % 2) ? v[(NR+1)/2] : (v[NR/2] + v[NR/2+1]) / 2
+      printf "median=%.2f%s min=%.2f%s mean=%.2f%s", m, u, v[1], u, s/NR, u
+    }'
+}
+stats() { stats_unit s "$@"; }
+median() { printf '%s\n' "$@" | sort -n | awk '{v[NR]=$1} END {printf "%.2f", (NR%2) ? v[(NR+1)/2] : (v[NR/2]+v[NR/2+1])/2}'; }
+# Spread of the samples, kept for diagnostics only -- never as the resolution test.
+spread() { printf '%s\n' "$@" | sort -n | awk '{v[NR]=$1} END {printf "%.2f", v[NR]-v[1]}'; }
+
+# Prints the paired deltas, their median/mean, and a one-sided sign test.
+# Usage: report_paired <unit> <n> <off...> <on...>   (both arms must have n samples)
+report_paired() {
+  local unit="$1" n="$2"; shift 2
+  local off=( "${@:1:$n}" ) on=( "${@:$((n+1)):$n}" )
+  printf 'paired deltas (off-on) : [%s]\n' "$(
+    local i
+    for i in $(seq 0 $(( n - 1 ))); do
+      awk -v a="${off[$i]}" -v b="${on[$i]}" 'BEGIN{printf "%+.1f ", a-b}'
+    done)"
+  local deltas=() i
+  for i in $(seq 0 $(( n - 1 ))); do
+    deltas+=( "$(awk -v a="${off[$i]}" -v b="${on[$i]}" 'BEGIN{printf "%.4f", a-b}')" )
+  done
+  # Sorted for the median; sign counts come from the unsorted list. (macOS awk has no asort.)
+  printf '%s\n' "${deltas[@]}" | sort -n | awk -v u="$unit" '
+    {v[NR]=$1; s+=$1}
+    END {
+      med = (NR % 2) ? v[(NR+1)/2] : (v[NR/2] + v[NR/2+1]) / 2
+      mean = s/NR
+      printf "  median paired delta  : %+.2f%s   (mean %+.2f%s)\n", med, u, mean, u
+      # A run far from the median is usually a harness flake (a slow peer connect, a stalled
+      # submission), and it lands on whichever arm happened to be running -- so trust the median.
+      d = mean - med; if (d < 0) d = -d
+      if (d > 1) {
+        print "  ⚠️  one or more runs are far from the median (likely a harness flake);"
+        print "      the mean above is not meaningful — read the median and the sample list."
+      }
+    }'
+  printf '%s\n' "${deltas[@]}" | awk '
+    {if ($1 > 0) wins++; else if ($1 < 0) losses++}
+    END {
+      k = (wins > losses) ? wins : losses
+      # Sign test, one-sided: P(X >= k | p=0.5) = 2^-NR * sum_{j=k..NR} C(NR,j).
+      tail = 0; c = 1
+      for (j = NR; j >= k; j--) { tail += c; c = c * j / (NR - j + 1) }
+      half = 1; for (i = 0; i < NR; i++) half = half / 2
+      p = tail * half
+      printf "  ON faster in %d/%d pairs  (sign test p = %.3f, one-sided)\n", wins+0, NR, p
+      # Judge by the sign test, not by unanimity: with enough pairs a few disagreements are
+      # expected and the result is still decisive, while 3/3 agreeing establishes very little.
+      if (p > 0.05) {
+        print "  ⚠️  not resolved (p > 0.05): these pairs do not establish a direction. Raise"
+        print "      REPEATS, or use a workload where the effect is a larger share of the total."
+      }
+    }'
+}

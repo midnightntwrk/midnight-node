@@ -329,11 +329,85 @@ defaults):
 | `CHAIN` | chain id, or a path to a chainspec JSON (see "Bigger batches") | `dev` |
 | `LOAD_CHUNK` | txs per `batch-single-tx` call; cap is the funder's DUST-output count | `5` |
 | `BATCH_VERIFY_MAX_BATCH_SIZE` etc. | forwarded to the syncer when set | (node defaults) |
+| `AB_ENV_VAR` | which node setting the A/B flips | `BATCH_VERIFY_BLOCK_IMPORT` |
 
 A bigger, prove-heavier chain shows a larger absolute gap — scale `LOAD_TXS`
 (every tx is proved up-front, so prime time grows with it). Keep `SHIELDED=1`:
 the batching accelerates ZK-proof verification, so the workload has to carry
 proofs.
+
+## Measuring a second feature against an existing baseline
+
+`AB_ENV_VAR` chooses which setting the two arms differ in; everything else is
+held fixed and forwarded to both. That keeps the comparison *paired* when the
+baseline itself already has a feature on — which matters more the smaller the
+effect, since running two separate benchmarks and diffing their medians puts
+machine drift straight back into the answer.
+
+Verification lookahead against plain block-import batching:
+
+```bash
+AB_ENV_VAR=BATCH_VERIFY_LOOKAHEAD \
+BATCH_VERIFY_BLOCK_IMPORT=true \
+BATCH_VERIFY_LOOKAHEAD_BLOCKS=4 \
+BATCH_VERIFY_LOOKAHEAD_WORKERS=2 \
+REPEATS=15 ./benchmark.sh
+```
+
+Both arms then batch-verify, so neither emits `mode="inline"` samples and the
+per-tx sections print "insufficient samples" — that is expected, not a fault.
+Read the wall-clock pairing and the raw counters instead. The ones that say
+whether the pipeline is actually working:
+
+| Counter | Reading |
+|---|---|
+| `lookahead_jobs_total{outcome}` | `failure` means jobs concluded nothing — usually no usable reference state |
+| `lookahead_blocks_total{disposition}` | `hit` is a block that consumed a result; `miss` verified itself anyway |
+| `lookahead_wait_seconds_sum` | time imports spent *waiting*; compare against `midnight_batch_verify_duration_seconds_sum` on the OFF arm to see how much verification came off the critical path |
+
+A run where jobs succeed but no block hits, or where every job fails instantly,
+is the feature doing nothing while still burning CPU. Both have happened; both
+are invisible in wall clock alone, which is why these counters exist.
+
+## The mempool A/B (`mempool-prime.sh`, `mempool-benchmark.sh`)
+
+Measures `BATCH_VERIFY_MEMPOOL` — the *admission* path — rather than block import. Two phases,
+for the same reason the sync harness has two: proving is seconds per transaction against
+milliseconds of validation, so it has to happen once, outside the timed region.
+
+```bash
+./mempool-prime.sh 144          # fan out, archive the state, build 144 proved txs (once)
+REPEATS=9 ./mempool-benchmark.sh
+```
+
+`mempool-prime.sh` fans the genesis balance into N coins, **archives the chain at that point**, and
+builds N transactions with the toolkit's `--dest-file` without submitting them.
+`mempool-benchmark.sh` restores that exact state for every run and replays the same transactions,
+interleaved and counterbalanced, sharing the paired statistics in `lib.sh`.
+
+**Read the verification budget, not the wall clock.** Submission wall clock is bounded by the AURA
+slot cadence and by how fast one connection can push; neither changes with batching, and the
+samples visibly quantize to 6 s. The budget is:
+
+| arm | cost |
+|---|---|
+| OFF | `ledger_proof_verify_duration_seconds{mode="inline_mempool"}` |
+| ON | `midnight_batch_verify_prepare_duration_seconds` + `midnight_batch_verify_duration_seconds` |
+
+The ON side **must** include `prepare_duration`. The incremental preparation is where the expensive
+per-proof work went, and it has no ledger-side `mode=` counter — totalling only `batch` +
+`batch_prep` omits roughly 3 ms/tx of 3.9 and overstates batching by about 4x. The report prints
+that subset underneath, labelled, with what it alone would have claimed.
+
+Also watch the transaction counts: the report warns when the arms verify different numbers. A run
+where ON verifies more than it was given is doing redundant work, and a per-transaction ratio will
+not show it — it divides by the inflated count and normalises the redundancy away.
+
+`SETTLE_SECS` leaves the node running after the last submission before scraping, which is how that
+redundancy is exposed: the pool revalidates what it still holds on each block import, so holding
+the workload fixed and varying only this window separates per-submission cost from per-revalidation
+cost. Measured at 144 submissions, OFF stays at exactly 144 verifications at any window while ON
+grows (350 at 0 s, 432 at 45 s) — `prepare_transaction` has no soft-cache short-circuit.
 
 ## How it works (implementation notes)
 

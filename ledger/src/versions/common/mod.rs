@@ -247,6 +247,25 @@ pub fn revalidation_cache_size() -> u64 {
 	REVALIDATION_CACHE.entry_count()
 }
 
+/// Whether the mempool soft cache already holds a successful validation for `key`.
+///
+/// `key` is the `tx_validation_cache_key` — `Twox128(runtime_version_le ++ tx_bytes)` — that
+/// `do_validate_transaction` keys the soft cache on.
+///
+/// Exists so the batch ingress can take the same short-circuit the inline path takes on its first
+/// line. The pool revalidates everything it holds on every block import; inline that is a hash
+/// lookup, but `prepare_transaction` does no cache lookup at all and re-runs the full per-proof
+/// preparation each time. Without this, the batch path's cost scales with how long transactions
+/// sit in the pool rather than with how many were submitted — measured at 3 verifications per
+/// submission, rising with congestion.
+///
+/// Only successful validations are ever cached (see `do_validate_transaction`), so a hit means
+/// "the runtime has already accepted this transaction and will answer from its own cache".
+#[cfg(feature = "std")]
+pub fn soft_validation_hit(key: &Hash) -> bool {
+	matches!(SOFT_TX_VALIDATION_CACHE.get(&SoftTxValidationKey { tx_hash: *key }), Some(Ok(())))
+}
+
 /// A transaction whose per-batch-independent work is already done: deserialized, non-crypto
 /// `well_formed` checks passed, proof evidence collected and prepared.
 ///
@@ -1665,7 +1684,7 @@ where
 
 	/// Calculate tx hash to be used in the `TX_VALIDATION_CACHE`
 	/// `runtime_version` is prepended to differentiate tx validity between versions
-	fn tx_validation_cache_key(runtime_version: u32, tx_serialized: &[u8]) -> WrappedHash {
+	pub fn tx_validation_cache_key(runtime_version: u32, tx_serialized: &[u8]) -> WrappedHash {
 		let to_hash = [&runtime_version.to_le_bytes(), tx_serialized].concat();
 		Twox128::hash(&to_hash).into()
 	}

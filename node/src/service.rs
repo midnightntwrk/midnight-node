@@ -250,7 +250,7 @@ type MidnightService = sc_service::PartialComponents<
 	FullClient,
 	FullBackend,
 	FullSelectChain,
-	sc_consensus::DefaultImportQueue<Block>,
+	crate::lookahead_import_queue::LookaheadImportQueue<sc_consensus::DefaultImportQueue<Block>>,
 	TransactionPool,
 	(
 		GrandpaBlockImport,
@@ -558,10 +558,44 @@ pub(crate) fn new_partial_with_pool_options(
 	// (`other.0`) stay the raw grandpa import, so this leaves the `MidnightService` alias unchanged
 	// and keeps batch verification off the authored-block path (covered by the mempool ingress).
 	// Reuses the shared `batch_verifier` built above (same metrics registration).
+	// Cross-block verification lookahead. Only meaningful alongside block-import batching: it moves
+	// that batch verification off the sequential import path onto workers, so with block-import
+	// batching off there is nothing to move.
+	let lookahead_enabled =
+		midnight_cfg.batch_verify_block_import && midnight_cfg.batch_verify_lookahead;
+	let (lookahead_scheduler, lookahead_registry) = if lookahead_enabled {
+		let cfg = crate::lookahead_import_queue::LookaheadConfig {
+			blocks_per_job: midnight_cfg.batch_verify_lookahead_blocks,
+			max_txs_per_job: midnight_cfg.batch_verify_max_batch_size,
+			workers: midnight_cfg.batch_verify_lookahead_workers,
+			..Default::default()
+		};
+		let (scheduler, registry) = crate::lookahead_import_queue::LookaheadScheduler::new(
+			&task_manager.spawn_essential_handle(),
+			Arc::new(batch_verifier.clone()),
+			cfg,
+			batch_verify_metrics.clone(),
+		);
+		// Logged at INFO so an operator (and the perf harness) can confirm from the log alone that
+		// the flag took effect, rather than inferring it from timings.
+		log::info!(
+			target: "midnight::batch_verify",
+			"🔭 block-import verification lookahead enabled ({} block(s)/job, {} worker(s))",
+			cfg.blocks_per_job,
+			cfg.workers,
+		);
+		(Some(scheduler), Some(registry))
+	} else {
+		(None, None)
+	};
+
 	let batch_block_import = BatchVerifyBlockImport::new(
 		grandpa_block_import.clone(),
 		batch_verifier,
 		midnight_cfg.batch_verify_block_import,
+		lookahead_registry,
+		lookahead_scheduler.clone(),
+		batch_verify_metrics.clone(),
 	);
 
 	// Warp ledger-sync recovery gate, shared by the import queue (below), the authoring oracle, and
@@ -625,6 +659,11 @@ pub(crate) fn new_partial_with_pool_options(
 		&task_manager.spawn_essential_handle(),
 		config.prometheus_registry(),
 	);
+	// Dispatches each queued chunk for verification before the (strictly sequential) inner queue
+	// starts importing it. A `None` scheduler makes this a pass-through, so the queue type does not
+	// depend on whether the feature is on.
+	let import_queue =
+		crate::lookahead_import_queue::LookaheadImportQueue::new(import_queue, lookahead_scheduler);
 
 	let partial_components = sc_service::PartialComponents {
 		client: client.clone(),

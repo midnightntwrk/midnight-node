@@ -80,6 +80,24 @@ fi
 log "🎯 target sync height: $TARGET_HEIGHT"
 log "🔗 chainspec: $CHAIN"
 
+# Which node setting the A/B flips. Everything else is held fixed across both arms and passed
+# through from the environment, so a second feature can be measured against a baseline that
+# already has the first one on -- e.g. lookahead against plain block-import batching:
+#
+#   AB_ENV_VAR=BATCH_VERIFY_LOOKAHEAD BATCH_VERIFY_BLOCK_IMPORT=true ./benchmark.sh
+#
+# Keeping this a *paired* comparison matters more here than the default one: the effect being
+# measured is smaller, and running two separate benchmarks and diffing their medians would put
+# machine drift straight back into the answer.
+AB_ENV_VAR="${AB_ENV_VAR:-BATCH_VERIFY_BLOCK_IMPORT}"
+# Node settings forwarded to both arms unchanged.
+PASSTHROUGH_ENV=(
+  BATCH_VERIFY_BLOCK_IMPORT BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE
+  BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY
+  BATCH_VERIFY_LOOKAHEAD BATCH_VERIFY_LOOKAHEAD_BLOCKS BATCH_VERIFY_LOOKAHEAD_WORKERS
+)
+log "🔀 A/B variable: $AB_ENV_VAR (off vs on)"
+
 PRODUCER_PID=""
 SYNCER_PID=""
 cleanup() {
@@ -154,10 +172,11 @@ start_syncer() {
     rm_volume "$SYNCER_VOLUME"
     docker volume create "$SYNCER_VOLUME" >/dev/null
     local tuning=() v
-    for v in BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE \
-             BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY; do
+    for v in "${PASSTHROUGH_ENV[@]}"; do
       [ -n "${!v:-}" ] && tuning+=( -e "$v=${!v}" )
     done
+    # Last wins, so the A/B variable overrides any passthrough of the same name.
+    tuning+=( -e "$AB_ENV_VAR=$flag" )
     # CFG_PRESET=dev keeps the mock main-chain-follower config; the explicit run
     # args replace the preset's `--dev ...` (so no dev keys / no authoring) and
     # make this a plain full-sync node whose import queue runs the batch verifier.
@@ -169,7 +188,6 @@ start_syncer() {
       -v "$SYNCER_VOLUME":"$BASE_PATH_IN" \
       -e CFG_PRESET=dev \
       -e WIPE_CHAIN_STATE=true \
-      -e "BATCH_VERIFY_BLOCK_IMPORT=$flag" \
       "${tuning[@]}" \
       "$NODE_IMAGE" \
         --chain "$CHAIN" \
@@ -186,13 +204,14 @@ start_syncer() {
     mkdir -p "$SYNCER_DIR"
     (
       cd "$REPO_ROOT"
-      export CFG_PRESET=dev WIPE_CHAIN_STATE=true BATCH_VERIFY_BLOCK_IMPORT="$flag"
+      export CFG_PRESET=dev WIPE_CHAIN_STATE=true
       export BASE_PATH="$SYNCER_DIR"
       local v
-      for v in BATCH_VERIFY_MAX_BATCH_SIZE BATCH_VERIFY_TARGET_BATCH_SIZE \
-               BATCH_VERIFY_MAX_AGE_MS BATCH_VERIFY_WORKERS BATCH_VERIFY_QUEUE_CAPACITY; do
+      for v in "${PASSTHROUGH_ENV[@]}"; do
         [ -n "${!v:-}" ] && export "$v=${!v}"
       done
+      # Exported last so it overrides any passthrough of the same name.
+      export "$AB_ENV_VAR=$flag"
       exec "$NODE_BIN" \
         --chain "$CHAIN" \
         --node-key "$node_key" \
@@ -320,8 +339,8 @@ ON_TIMES=()
 run_one() {
   local flag="$1" r="$2"
   case "$flag" in
-    false) log "════════ OFF (inline) run $r/$REPEATS ════════" ;;
-    true)  log "════════ ON  (batch)  run $r/$REPEATS ════════" ;;
+    false) log "════════ OFF ($AB_ENV_VAR=false) run $r/$REPEATS ════════" ;;
+    true)  log "════════ ON  ($AB_ENV_VAR=true)  run $r/$REPEATS ════════" ;;
   esac
   run_sync "$flag"
   case "$flag" in
@@ -338,22 +357,10 @@ for r in $(seq 1 "$REPEATS"); do
   fi
 done
 
-# median, min and mean of a list of floats
-stats() {
-  printf '%s\n' "$@" | sort -n | awk '
-    {v[NR]=$1; s+=$1}
-    END {
-      m = (NR % 2) ? v[(NR+1)/2] : (v[NR/2] + v[NR/2+1]) / 2
-      printf "median=%.2fs min=%.2fs mean=%.2fs", m, v[1], s/NR
-    }'
-}
-median() { printf '%s\n' "$@" | sort -n | awk '{v[NR]=$1} END {printf "%.2f", (NR%2) ? v[(NR+1)/2] : (v[NR/2]+v[NR/2+1])/2}'; }
-# Spread of the samples, to say whether the delta is resolvable at all.
-spread() { printf '%s\n' "$@" | sort -n | awk '{v[NR]=$1} END {printf "%.2f", v[NR]-v[1]}'; }
+# `stats`, `median` and `report_paired` live in lib.sh so this harness and mempool-benchmark.sh
+# share one implementation of the paired statistics.
 OFF_MED="$(median "${OFF_TIMES[@]}")"
 ON_MED="$(median "${ON_TIMES[@]}")"
-OFF_SPREAD="$(spread "${OFF_TIMES[@]}")"
-ON_SPREAD="$(spread "${ON_TIMES[@]}")"
 
 # --- report (stdout) -------------------------------------------------------
 echo
@@ -364,60 +371,16 @@ else
   printf 'node binary (local)    : %s\n' "$NODE_BIN"
 fi
 printf 'blocks synced          : %s   (repeats: %s)\n' "$TARGET_HEIGHT" "$REPEATS"
-printf 'OFF (inline verify)    : %s   [%s]\n' "$(stats "${OFF_TIMES[@]}")" "${OFF_TIMES[*]}"
-printf 'ON  (batch verify)     : %s   [%s]\n' "$(stats "${ON_TIMES[@]}")" "${ON_TIMES[*]}"
+printf 'A/B variable           : %s\n' "$AB_ENV_VAR"
+printf 'OFF (=false)           : %s   [%s]\n' "$(stats "${OFF_TIMES[@]}")" "${OFF_TIMES[*]}"
+printf 'ON  (=true)            : %s   [%s]\n' "$(stats "${ON_TIMES[@]}")" "${ON_TIMES[*]}"
 awk -v off="$OFF_MED" -v on="$ON_MED" 'BEGIN {
   d = off - on
   printf "delta (median off-on)  : %.2fs\n", d
   if (on > 0) printf "speedup (median off/on): %.2fx\n", off / on
 }'
+report_paired s "${#OFF_TIMES[@]}" "${OFF_TIMES[@]}" "${ON_TIMES[@]}"
 
-# Paired analysis. The runs are interleaved, so OFF_TIMES[i] and ON_TIMES[i] come from the same
-# repeat, minutes apart at most -- which makes their difference immune to the slow machine-wide
-# drift that dominates the raw spread. Comparing the two spreads instead (the unpaired test this
-# harness used to apply) throws that away and reports "unresolved" on data that is in fact
-# unanimous, because the drift is counted as noise in both arms rather than cancelled.
-printf 'paired deltas (off-on) : [%s]\n' "$(
-  for i in "${!OFF_TIMES[@]}"; do
-    awk -v a="${OFF_TIMES[$i]}" -v b="${ON_TIMES[$i]}" 'BEGIN{printf "%+.1f ", a-b}'
-  done)"
-paired_deltas=()
-for i in "${!OFF_TIMES[@]}"; do
-  paired_deltas+=( "$(awk -v a="${OFF_TIMES[$i]}" -v b="${ON_TIMES[$i]}" 'BEGIN{printf "%.4f", a-b}')" )
-done
-# Sorted for the median; sign counts come from the unsorted list. (macOS awk has no asort.)
-printf '%s\n' "${paired_deltas[@]}" | sort -n | awk '
-  {v[NR]=$1; s+=$1}
-  END {
-    med = (NR % 2) ? v[(NR+1)/2] : (v[NR/2] + v[NR/2+1]) / 2
-    mean = s/NR
-    printf "  median paired delta  : %+.2fs   (mean %+.2fs)\n", med, mean
-    # The syncer occasionally spends a minute finding the producer peer before importing
-    # anything. That is a harness flake, not a verification cost, and it lands on whichever
-    # config happens to be running -- so trust the median and ignore a mean it has swamped.
-    d = mean - med; if (d < 0) d = -d
-    if (d > 1) {
-      print "  ⚠️  one or more runs are far from the median (likely a slow peer connect);"
-      print "      the mean above is not meaningful — read the median and the sample list."
-    }
-  }'
-printf '%s\n' "${paired_deltas[@]}" | awk '
-  {if ($1 > 0) wins++; else if ($1 < 0) losses++}
-  END {
-    k = (wins > losses) ? wins : losses
-    # Sign test, one-sided: P(X >= k | p=0.5) = 2^-NR * sum_{j=k..NR} C(NR,j).
-    tail = 0; c = 1
-    for (j = NR; j >= k; j--) { tail += c; c = c * j / (NR - j + 1) }
-    half = 1; for (i = 0; i < NR; i++) half = half / 2
-    p = tail * half
-    printf "  ON faster in %d/%d pairs  (sign test p = %.3f, one-sided)\n", wins+0, NR, p
-    # Judge by the sign test, not by unanimity: with enough pairs a few disagreements are
-    # expected and the result is still decisive, while 3/3 agreeing establishes very little.
-    if (p > 0.05) {
-      print "  ⚠️  not resolved (p > 0.05): these pairs do not establish a direction. Raise"
-      print "      REPEATS, or use a chain where verification is a larger share of sync time."
-    }
-  }'
 echo
 # Coverage check. The block-import path records batches_total/txs_total/batch_size
 # (via BatchVerifier::observe_batch) but NOT duration_seconds or fallback_total —
