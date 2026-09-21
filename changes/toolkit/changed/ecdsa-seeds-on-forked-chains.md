@@ -9,7 +9,8 @@ Ledger 8 cannot represent an ECDSA NIGHT key, so before the fork such a seed get
 unshielded sub-wallet at its ECDSA address — no key material is derived for it, and in particular
 not the seed's Schnorr key, which is a separate identity at a separate derivation path
 (`m/44'/2400'/0'/0/0` vs `.../4/0`). Its shielded and dust sub-wallets are real and replay
-normally, and the real ECDSA key material is installed at the fork block.
+normally, and the ECDSA key material is installed at the fork block, at the same address the
+pre-fork wallet was already watching.
 
 That matters because the shielded address is scheme-independent — `ecdsa:<seed>` and `<seed>`
 share one — so shielded funds received before the fork stay visible and spendable after it.

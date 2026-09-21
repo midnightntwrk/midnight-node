@@ -102,7 +102,7 @@ impl ForkAwareLedgerContext {
 	/// one — a distinct identity, at a distinct derivation path, that the caller did not ask for.
 	/// The unshielded sub-wallet is never read while replaying blocks (shielded replay uses
 	/// `shielded`, dust replay uses `dust`), so the seed still accumulates its pre-fork shielded
-	/// history; [`crate::ledger_9::context::LedgerContext::rekey_unshielded`] installs the real
+	/// history; [`crate::ledger_9::context::LedgerContext::install_unshielded_keys`] installs the real
 	/// ECDSA key material once the 8->9 fork is crossed.
 	pub fn new_from_wallet_seeds_with_schemes(
 		version: LedgerVersion,

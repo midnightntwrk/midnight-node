@@ -158,18 +158,23 @@ impl<D: DB + Clone> LedgerContext<D> {
 		}
 	}
 
-	/// Swap an existing wallet's unshielded (NIGHT) identity to `scheme`, keeping its shielded
-	/// sub-wallet — and therefore every pre-fork shielded output it has already replayed.
+	/// Give an existing wallet the `scheme` key material for its unshielded (NIGHT) identity,
+	/// keeping its shielded sub-wallet — and therefore every pre-fork shielded output it has
+	/// already replayed.
 	///
 	/// ECDSA is unrepresentable before ledger 9 (see `ledger_8::ecdsa`), so a seed requested as
-	/// `ecdsa:` replays the pre-fork chain under its Schnorr identity and is re-keyed here, at
-	/// the fork. Only `unshielded` is scheme-dependent: `shielded` derives from the root seed
-	/// alone, and `dust` is wiped across the fork anyway (see `fork_context_8_to_9`).
-	pub fn rekey_unshielded(&self, seed: &WalletSeed, scheme: UnshieldedSignatureScheme) {
+	/// `ecdsa:` replays the pre-fork chain *watch-only*, at its ECDSA address and with no key
+	/// material; this hands it the keys once the fork makes them representable. The address is
+	/// unchanged — it is derived from the same seed and scheme the watcher used — so this grants
+	/// the ability to spend, it does not move the identity.
+	///
+	/// Only `unshielded` is scheme-dependent: `shielded` derives from the root seed alone, and
+	/// `dust` is wiped across the fork anyway (see `fork_context_8_to_9`).
+	pub fn install_unshielded_keys(&self, seed: &WalletSeed, scheme: UnshieldedSignatureScheme) {
 		let mut wallets = self.wallets.lock().expect("Error locking `LedgerContext` wallets");
 		let wallet = wallets
 			.get_mut(seed)
-			.expect("Cannot re-key an unshielded identity that is not in the `LedgerContext`");
+			.expect("Cannot key an unshielded identity that is not in the `LedgerContext`");
 		wallet.unshielded = UnshieldedWallet::new(seed.clone(), scheme);
 	}
 

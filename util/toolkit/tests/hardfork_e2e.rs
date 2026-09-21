@@ -589,7 +589,7 @@ async fn hardfork_single_tx() {
 	.await;
 
 	// 7. GH #2180: `ecdsa:` seeds on a chain with ledger-8 history. The NIGHT identity cannot
-	//    exist before the fork; the toolkit re-keys it to ECDSA at the fork block.
+	//    exist before the fork; the toolkit watches it and installs its keys at the fork block.
 	let ecdsa_seed = format!("ecdsa:{ECDSA_SEED}");
 	let ecdsa_address = unshielded_address(&ecdsa_seed);
 

@@ -106,29 +106,40 @@ fn ecdsa_address_mip0003_conformance() {
 	}
 }
 
-/// GH #2180: re-keying an identity to ECDSA at the 8->9 fork keeps the shielded sub-wallet it
+/// GH #2180: installing ECDSA keys at the 8->9 fork keeps the shielded sub-wallet the identity
 /// replayed the pre-fork chain with. The shielded address is scheme-independent, so shielded
 /// funds sent to an `ecdsa:` seed before the fork must stay spendable after it.
+///
+/// Also pins that installing keys does not *move* the identity: the NIGHT address is the one the
+/// pre-fork wallet was already watching, so funds are never watched at one address and spent
+/// from another.
 #[test]
-fn rekey_unshielded_keeps_shielded_history() {
+fn install_unshielded_keys_keeps_shielded_history() {
 	use super::{DefaultDB, LedgerContext, UnshieldedSignatureScheme};
 
 	let ctx = LedgerContext::<DefaultDB>::new_from_wallet_seeds("undeployed", &[seed()]);
 
-	// Stand in for a shielded output replayed on the ledger-8 leg.
+	// Stand in for the pre-fork wallet: a shielded output replayed on the ledger-8 leg, and a
+	// watch-only NIGHT identity at the ECDSA address (what `watch_only_ecdsa_wallet_8` builds).
+	let watched = UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address;
 	{
 		let mut wallets = ctx.wallets.lock().unwrap();
-		wallets.get_mut(&seed()).unwrap().shielded.state.first_free = 7;
+		let wallet = wallets.get_mut(&seed()).unwrap();
+		wallet.shielded.state.first_free = 7;
+		wallet.unshielded = UnshieldedWallet::from(watched);
 	}
 
-	ctx.rekey_unshielded(&seed(), UnshieldedSignatureScheme::Ecdsa);
+	ctx.install_unshielded_keys(&seed(), UnshieldedSignatureScheme::Ecdsa);
 
 	let wallets = ctx.wallets.lock().unwrap();
-	let wallet = wallets.get(&seed()).expect("wallet survives the re-key");
-	assert_eq!(wallet.shielded.state.first_free, 7, "shielded history must survive the re-key");
+	let wallet = wallets.get(&seed()).expect("wallet survives the key install");
+	assert_eq!(wallet.shielded.state.first_free, 7, "shielded history must survive the install");
 	assert_eq!(
-		wallet.unshielded.user_address,
-		UnshieldedWallet::new(seed(), UnshieldedSignatureScheme::Ecdsa).user_address,
-		"NIGHT identity must be the ECDSA one",
+		wallet.unshielded.user_address, watched,
+		"installing keys must not move the identity off the address it was watching",
+	);
+	assert!(
+		wallet.unshielded.maintenance_verifying_key().is_some(),
+		"the identity must now hold key material",
 	);
 }
